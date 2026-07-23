@@ -1,0 +1,397 @@
+import React, { useState, useRef, useCallback, useEffect } from 'react'
+import { Link } from 'react-router-dom'
+import ProcessingQueue from '../components/ProcessingQueue'
+
+// ─── Panduan dokumen per jenis ────────────────────────────────
+const PANDUAN: Record<string, {label: string, wajib: boolean, icon: string}[]> = {
+  PIB: [
+    { label: 'Dokumen PIB (BC 2.0)',           wajib: true,  icon: '🏛️' },
+    { label: 'Invoice Duty DHL/FedEx (FINAL)', wajib: true,  icon: '💰' },
+    { label: 'Invoice Freight DHL/FedEx',      wajib: true,  icon: '✈️' },
+    { label: 'BPN (Bukti Penerimaan Negara)',  wajib: true,  icon: '🏦' },
+    { label: 'Vendor Invoice / CIPL',          wajib: false, icon: '📄' },
+    { label: 'Dokumen lain boleh disertakan — AI akan abaikan yang tidak relevan', wajib: false, icon: 'ℹ️' },
+  ],
+  CN: [
+    { label: 'Dokumen SPPBMCP',                wajib: true,  icon: '🏛️' },
+    { label: 'Invoice Duty DHL/FedEx',         wajib: true,  icon: '💰' },
+    { label: 'Invoice Freight DHL/FedEx',      wajib: true,  icon: '✈️' },
+    { label: 'History Tracking Bea Cukai',     wajib: true,  icon: '🔍' },
+    { label: 'Vendor Invoice / CIPL',          wajib: false, icon: '📄' },
+    { label: 'Dokumen lain boleh disertakan — AI akan abaikan yang tidak relevan', wajib: false, icon: 'ℹ️' },
+  ],
+}
+
+// ─── Loading Overlay ──────────────────────────────────────────
+function LoadingOverlay({ jenis, count }: { jenis: string, count: number }) {
+  const [step, setStep] = useState(0)
+  const steps = [
+    'Mengirim ' + count + ' file ke n8n...',
+    'AI memproses setiap PDF satu per satu...',
+    'Mengidentifikasi jenis setiap dokumen...',
+    'Mengekstrak data kepabeanan...',
+    'Mengekstrak data courier & BPN...',
+    'Membaca vendor invoice untuk PO & item price...',
+    'Menghitung & memvalidasi angka...',
+    'Menyimpan ke Supabase...',
+  ]
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setStep(s => s < steps.length - 1 ? s + 1 : s)
+    }, 4000)
+    return () => clearInterval(id)
+  }, [steps.length])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+      <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full mx-4 text-center">
+        <div className="relative w-20 h-20 mx-auto mb-5">
+          <div className="absolute inset-0 rounded-full border-4 border-blue-100" />
+          <div className="absolute inset-0 rounded-full border-4 border-blue-600 border-t-transparent animate-spin" />
+          <div className="absolute inset-0 flex items-center justify-center text-2xl">
+            {jenis === 'PIB' ? '📋' : '📦'}
+          </div>
+        </div>
+        <h3 className="font-bold text-slate-900 text-lg mb-1">AI Sedang Membaca Dokumen</h3>
+        <p className="text-slate-400 text-xs mb-5">
+          {count} file · Menunggu respons n8n (maksimal 5 menit)
+        </p>
+        <div className="bg-slate-50 rounded-xl p-4 text-left space-y-1">
+          {steps.map((s, i) => (
+            <div key={i} className={`flex items-center gap-2 text-xs py-0.5 transition-all duration-500 ${
+              i < step ? 'text-emerald-500' : i === step ? 'text-slate-800 font-semibold' : 'text-slate-300'
+            }`}>
+              <span className="w-4 flex-shrink-0 text-center">
+                {i < step ? '✓' : i === step ? '▶' : '·'}
+              </span>
+              {s}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── File Row ─────────────────────────────────────────────────
+const FileRow: React.FC<{ file: File, index: number, onRemove: (i: number) => void }> = ({ file, index, onRemove }) => {
+  const size = file.size > 1024 * 1024
+    ? (file.size / 1024 / 1024).toFixed(1) + ' MB'
+    : (file.size / 1024).toFixed(0) + ' KB'
+  return (
+    <div className="flex items-center gap-3 py-2.5 px-3 rounded-xl bg-slate-50 border border-slate-200">
+      <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center text-sm flex-shrink-0">📄</div>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-semibold text-slate-700 truncate">{file.name}</p>
+        <p className="text-[10px] text-slate-400 mt-0.5">{size}</p>
+      </div>
+      <button
+        onClick={() => onRemove(index)}
+        className="w-6 h-6 rounded-full bg-slate-200 hover:bg-red-200 text-slate-500 hover:text-red-600 flex items-center justify-center text-xs flex-shrink-0 transition-all"
+      >✕</button>
+    </div>
+  )
+}
+
+// ─── Hasil Sukses ─────────────────────────────────────────────
+function ResultSuccess({ data, onReset }: { data: any, onReset: () => void }) {
+  const klasifikasi = data.klasifikasi || []
+  return (
+    <div className="rounded-2xl border-2 border-emerald-300 bg-emerald-50 p-5">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-11 h-11 rounded-xl bg-emerald-500 flex items-center justify-center text-white text-lg">✓</div>
+        <div>
+          <p className="font-bold text-emerald-800">Dokumen Berhasil Diarsipkan</p>
+          <p className="text-xs text-emerald-600 mt-0.5">{data.pesan}</p>
+        </div>
+      </div>
+      <div className="bg-white rounded-xl p-4 border border-emerald-200 space-y-2 mb-3">
+        {[['Jenis', data.jenis], ['No. Dokumen', data.no_dokumen], ['AWB', data.awb], ['Vendor', data.vendor], ['PO ORI', data.po_ori]].map(([label, val]) => (
+          <div key={label} className="flex justify-between items-start gap-4">
+            <span className="text-xs text-slate-400 flex-shrink-0">{label}</span>
+            <span className="text-xs font-semibold text-slate-800 text-right font-mono truncate max-w-[220px]">{val || '—'}</span>
+          </div>
+        ))}
+      </div>
+      {klasifikasi.length > 0 && (
+        <div className="bg-white rounded-xl p-4 border border-emerald-200 mb-4">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Hasil Identifikasi AI</p>
+          <div className="space-y-1.5">
+            {klasifikasi.map((k: any, i: number) => (
+              <div key={i} className="flex items-center justify-between gap-2">
+                <span className="text-[11px] text-slate-500 truncate flex-1">{k.file}</span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${
+                  ['PIB','SPPBMCP'].includes(k.jenis) ? 'bg-blue-100 text-blue-700' :
+                  k.jenis === 'INVOICE_DUTY'    ? 'bg-amber-100 text-amber-700' :
+                  k.jenis === 'INVOICE_FREIGHT' ? 'bg-sky-100 text-sky-700' :
+                  k.jenis === 'BPN'             ? 'bg-purple-100 text-purple-700' :
+                  k.jenis === 'VENDOR_INVOICE'  ? 'bg-emerald-100 text-emerald-700' :
+                                                  'bg-slate-100 text-slate-500'
+                }`}>{k.jenis}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        <button onClick={onReset} className="py-3 rounded-xl border border-emerald-300 text-emerald-700 font-semibold text-sm hover:bg-emerald-100 transition-all">
+          Upload Lagi
+        </button>
+        <Link to="/dashboard" className="py-3 flex items-center justify-center rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm text-center transition-all">
+          Lihat Dashboard →
+        </Link>
+      </div>
+    </div>
+  )
+}
+
+// ─── Hasil Gagal ──────────────────────────────────────────────
+function ResultError({ data, onReset }: { data: any, onReset: () => void }) {
+  return (
+    <div className="rounded-2xl border-2 border-red-300 bg-red-50 p-5">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-11 h-11 rounded-xl bg-red-500 flex items-center justify-center text-white text-lg">✕</div>
+        <div>
+          <p className="font-bold text-red-800">Gagal Memproses Dokumen</p>
+          {data.node_gagal && data.node_gagal !== '-' && (
+            <p className="text-xs text-red-500 mt-0.5 font-mono">Node: {data.node_gagal}</p>
+          )}
+        </div>
+      </div>
+      <div className="bg-white rounded-xl p-4 border border-red-200 space-y-3 mb-4">
+        <div>
+          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Pesan Error</p>
+          <p className="text-sm text-red-700">{data.pesan || 'Terjadi kesalahan tidak diketahui'}</p>
+        </div>
+        {data.saran && data.saran !== data.pesan && (
+          <div>
+            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">💡 Saran</p>
+            <p className="text-sm text-slate-700">{data.saran}</p>
+          </div>
+        )}
+      </div>
+      <button onClick={onReset} className="w-full py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-all">
+        Coba Lagi
+      </button>
+    </div>
+  )
+}
+
+// ─── Halaman Utama ────────────────────────────────────────────
+export default function UploadPage() {
+  const [jenis,   setJenis]   = useState('PIB')
+  const [webhookType, setWebhookType] = useState<'courier' | 'sea_air'>('courier')
+  const [files,   setFiles]   = useState<File[]>([])
+  const [loading, setLoading] = useState(false)
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [result,  setResult]  = useState<any>(null)
+  const [dragging, setDragging] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { document.title = 'Upload Dokumen · IMI Import System' }, [])
+
+  const panduan   = PANDUAN[jenis]
+  const canSubmit = files.length >= 4 && !loading
+
+  const addFiles = useCallback((newFiles: FileList | null) => {
+    if(!newFiles) return
+    const allowed = Array.from(newFiles).filter(f => 
+      f.type === 'application/pdf' || 
+      f.type === 'image/jpeg' || 
+      f.type === 'image/png' ||
+      f.type === 'image/jpg'
+    )
+    if (!allowed.length) return
+    
+    setFiles(prev => {
+      const existing = new Set(prev.map(f => f.name + '_' + f.size))
+      return [...prev, ...allowed.filter(f => !existing.has(f.name + '_' + f.size))]
+    })
+  }, [])
+
+  const removeFile = (i: number) => setFiles(prev => prev.filter((_, idx) => idx !== i))
+
+  const handleDrop = (e: React.DragEvent) => { e.preventDefault(); setDragging(false); addFiles(e.dataTransfer.files) }
+
+  const handleJenisChange = (j: string) => { setJenis(j); setResult(null) }
+  const handleReset = () => { setFiles([]); setResult(null) }
+
+  const handleSubmit = async () => {
+    if (!canSubmit) return
+    setLoading(true)
+    setResult(null)
+    const formData = new FormData()
+    files.forEach((file, i) => formData.append('file_' + i, file))
+    try {
+      const customWebhook = localStorage.getItem(webhookType === 'courier' ? 'n8n_webhook_url' : 'n8n_seaair_webhook_url');
+      const headers: HeadersInit = {
+        'X-Webhook-Type': webhookType
+      };
+      if (customWebhook) {
+        headers['X-Webhook-Url'] = customWebhook;
+      }
+      
+      const res  = await fetch('/api/n8n-proxy-start', { method: 'POST', body: formData, headers })
+      const data = await res.json()
+      
+      if (!res.ok) throw new Error(data.pesan || 'Gagal memulai proses ke n8n.')
+      
+      // Success quick response
+      if (data.status === 'warning') {
+        setToastMessage('⚠️ ' + data.pesan);
+      } else {
+        setToastMessage('Dokumen berhasil dikirim ke antrian n8n.'); 
+      }
+      setTimeout(() => setToastMessage(null), 8000);
+      setFiles([]);
+      setResult(null);
+    } catch (err: any) {
+      setToastMessage('Gagal: ' + err.message); setTimeout(() => setToastMessage(null), 5000);
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <>
+      {toastMessage && (
+        <div className="fixed top-5 right-5 bg-slate-900 border border-slate-700 text-white px-5 py-3.5 rounded-xl shadow-2xl flex items-center justify-between animate-in fade-in slide-in-from-top-4 font-medium text-sm z-[9999] min-w-[300px]">
+          <div className="flex items-center gap-3">
+            {toastMessage.includes('Gagal') ? <span className="text-rose-400 text-lg">❌</span> : toastMessage.includes('⚠️') ? <span className="text-amber-400 text-lg">⚠️</span> : <span className="text-emerald-400 text-lg">✅</span>}
+            <span className="leading-tight max-w-[400px]">{toastMessage.replace('⚠️ ', '')}</span>
+          </div>
+          <button onClick={() => setToastMessage(null)} className="text-slate-400 hover:text-white p-1 ml-4">&times;</button>
+        </div>
+      )}
+
+      <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
+        <main className="max-w-xl mx-auto px-4 py-6 space-y-4">
+          <ProcessingQueue />
+
+          {/* Webhook Selector */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-1 shadow-sm flex">
+            <button
+              onClick={() => setWebhookType('courier')}
+              className={`flex-1 py-2.5 text-sm font-semibold rounded-xl transition-all ${
+                webhookType === 'courier' ? 'bg-[#3D2C44] text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'
+              }`}
+            >
+              Courier (DHL/FedEx)
+            </button>
+            <button
+              onClick={() => setWebhookType('sea_air')}
+              className={`flex-1 py-2.5 text-sm font-semibold rounded-xl transition-all ${
+                webhookType === 'sea_air' ? 'bg-[#3D2C44] text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'
+              }`}
+            >
+              Sea & Air
+            </button>
+          </div>
+
+          {/* Step 1 */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Langkah 1 — Upload Semua PDF</p>
+              {files.length > 0 && (
+                <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
+                  files.length >= 4 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                }`}>{files.length} file</span>
+              )}
+            </div>
+
+            {/* Drop zone */}
+            <div
+              onDrop={handleDrop}
+              onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+              onDragLeave={() => setDragging(false)}
+              onClick={() => inputRef.current?.click()}
+              className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${
+                dragging ? 'border-blue-400 bg-blue-50' :
+                files.length >= 4 ? 'border-emerald-300 bg-emerald-50/50 hover:border-emerald-400' :
+                'border-slate-200 bg-slate-50 hover:border-blue-300 hover:bg-blue-50/40'
+              }`}
+            >
+              <input ref={inputRef} type="file" accept="application/pdf,image/jpeg,image/png" multiple className="hidden"
+                onChange={(e) => addFiles(e.target.files)} />
+              <div className="text-3xl mb-2">
+                {dragging ? '📂' : files.length >= 4 ? '✅' : '📁'}
+              </div>
+              <p className="font-semibold text-sm text-slate-700">
+                {dragging ? 'Lepaskan file di sini...' :
+                 files.length === 0 ? 'Klik atau drag & drop file (PDF, JPG, PNG)' :
+                 'Klik untuk tambah file lagi'}
+              </p>
+              <p className="text-xs text-slate-400 mt-1">
+                {files.length === 0 ? 'AI akan mengenali jenis setiap dokumen secara otomatis' :
+                 files.length < 4 ? 'Tambahkan ' + (4 - files.length) + ' file lagi (minimal 4 wajib)' :
+                 'Sudah cukup — boleh tambah vendor invoice jika ada'}
+              </p>
+            </div>
+
+            {/* Daftar file */}
+            {files.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {files.map((file, i) => (
+                  <FileRow key={file.name + i} file={file} index={i} onRemove={removeFile} />
+                ))}
+                <button onClick={() => setFiles([])}
+                  className="w-full py-2 text-xs text-slate-400 hover:text-red-500 border border-dashed border-slate-200 hover:border-red-300 rounded-xl transition-all">
+                  Hapus semua file
+                </button>
+              </div>
+            )}
+
+            {/* Panduan */}
+            <div className="mt-4 bg-slate-50 rounded-xl p-4 border border-slate-100">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
+                Dokumen yang dibutuhkan
+              </p>
+              <div className="space-y-1.5">
+                {panduan.map((item, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <span className="text-sm flex-shrink-0">{item.icon}</span>
+                    <span className={`text-xs leading-tight ${item.wajib ? 'text-slate-700 font-medium' : 'text-slate-400 italic'}`}>
+                      {item.wajib && <span className="text-red-500 font-bold">* </span>}
+                      {item.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px] text-slate-400 mt-2"><span className="text-red-500">*</span> Wajib</p>
+            </div>
+          </div>
+
+          {/* Step 2 */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Langkah 2 — Proses & Arsipkan</p>
+            <button onClick={handleSubmit} disabled={!canSubmit || loading}
+              className={`w-full py-4 rounded-xl font-bold text-sm transition-all ${
+                (canSubmit && !loading) ? 'bg-[#3D2C44] hover:bg-[#2B1E30] text-white shadow-md active:scale-[0.98]'
+                          : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+              }`}>
+              {loading 
+                ? 'Mengirim dokumen...' 
+                : files.length < 4
+                  ? 'Tambahkan ' + (4 - files.length) + ' file lagi untuk melanjutkan'
+                  : '🚀  Proses ' + files.length + ' Dokumen dengan AI'
+              }
+            </button>
+            {files.length >= 4 && (
+              <p className="text-center text-xs text-slate-400 mt-2">
+                AI mengidentifikasi dan mengekstrak data setiap PDF secara otomatis
+              </p>
+            )}
+          </div>
+
+
+
+        </main>
+
+        <footer className="text-center py-8 text-xs text-slate-400">
+          IMI Import System · Powered by n8n + Gemini + Supabase
+        </footer>
+      </div>
+    </>
+  )
+}
