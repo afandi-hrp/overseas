@@ -745,7 +745,8 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
        let match = 0, mismatch = 0, partial = 0, empty = 0;
        activeSections.forEach(s => s.rows.forEach(r => {
            const v = values[r.id] || {src: '', cmp: ''};
-           const st = computeStatus(v.src, v.cmp, r.isFormat, r.field);
+           const stComputed = computeStatus(v.src, v.cmp, r.isFormat, r.field);
+           const st = v.manual_status || stComputed;
            if (st === "match") match++;
            else if (st === "mismatch") mismatch++;
            else if (st === "partial") partial++;
@@ -812,9 +813,27 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
      return false;
   };
 
+  const toggleManualStatus = (id: string, currentSt: string) => {
+    if (!isEditMode) return;
+    setValues((prev: any) => {
+      let nextSt = 'match';
+      if (currentSt === 'match') nextSt = 'mismatch';
+      else if (currentSt === 'mismatch') nextSt = 'match';
+      else nextSt = 'match';
+      
+      return {
+        ...prev,
+        [id]: {
+          ...prev[id],
+          manual_status: nextSt
+        }
+      };
+    });
+  };
+
   const setObj = (id: string, side: string, val: any) => {
     setValues((v: any) => {
-      const vNew = { ...v, [id]: { ...v[id], [side]: val, [`${side}_edited`]: true } };
+      const vNew = { ...v, [id]: { ...v[id], [side]: val, [`${side}_edited`]: true, manual_status: null } };
       if (side === 'cmp' && ['pib08', 'sppb02', 'fpfd01', 'fpr01'].includes(id) && val) {
         const cleanVal = val.replace(/\D/g, '');
         const found = npwps.find(n => n.npwp === val || (n.npwp && cleanVal && n.npwp.replace(/\D/g, '') === cleanVal));
@@ -855,7 +874,8 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
     let match = 0, mismatch = 0, partial = 0, empty = 0;
     activeSections.forEach(s => s.rows.forEach(r => {
       const v = values[r.id] || {src: '', cmp: ''};
-      const st = computeStatus(v.src, v.cmp, r.isFormat, r.field);
+      const stComputed = computeStatus(v.src, v.cmp, r.isFormat, r.field);
+      const st = v.manual_status || stComputed;
       if (st === "match") match++;
       else if (st === "mismatch") mismatch++;
       else if (st === "partial") partial++;
@@ -876,7 +896,8 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
     let m = 0, mm = 0, tot = section.rows.length;
     section.rows.forEach((r: any) => {
       const v = values[r.id] || {src: '', cmp: ''};
-      const st = computeStatus(v.src, v.cmp, r.isFormat, r.field);
+      const stComputed = computeStatus(v.src, v.cmp, r.isFormat, r.field);
+      const st = v.manual_status || stComputed;
       if (st === "match") m++;
       else if (st === "mismatch") mm++;
     });
@@ -1273,7 +1294,8 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                                   return <td key={doc as string} className="p-3 border-r border-slate-200 last:border-r-0 text-center text-slate-300 align-middle bg-slate-50/30">-</td>;
                                }
                                const v = values[rowMatch.id] || {src:'', cmp:''};
-                               const st = computeStatus(v.src, v.cmp, rowMatch.isFormat, field);
+                               const stComputed = computeStatus(v.src, v.cmp, rowMatch.isFormat, field);
+                               const st = v.manual_status || stComputed;
                                const errNpwp = v.cmp && hasNpwpError(rowMatch.id, v.cmp);
                                
                                return (
@@ -1322,7 +1344,11 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                                          )}
                                          
                                          {/* STATUS ICON */}
-                                         <div className="shrink-0 flex items-center justify-center w-5 h-5 ml-1">
+                                         <div 
+                                           className={`shrink-0 flex items-center justify-center w-5 h-5 ml-1 ${isEditMode ? 'cursor-pointer hover:opacity-75 transition-opacity' : ''}`}
+                                           onClick={() => toggleManualStatus(rowMatch.id, st)}
+                                           title={isEditMode ? "Klik untuk merubah status manual" : undefined}
+                                         >
                                            {st === 'match' && <CheckCircle2 size={18} className="text-emerald-500 fill-emerald-50" />}
                                            {st === 'mismatch' && <XCircle size={18} className="text-red-500 fill-red-50" />}
                                            {st === 'partial' && <Clock size={18} className="text-amber-500 fill-amber-50" />}

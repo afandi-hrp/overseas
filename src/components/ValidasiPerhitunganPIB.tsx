@@ -5,13 +5,13 @@ import { Calculator, Percent, Plus, X, CheckCircle2, XCircle } from 'lucide-reac
 const FORMULA = {
   nilai23: "Nilai Barang dari dokumen PIB",
   freight: "Total Invoice Freight Courier (IDR) / NDPBM (22)",
-  asuransi: "[Nilai (23) + Freight (25)] × 0.5%",
-  nilaiPabean: "Nilai (23) + Freight (25) nilai aktual + Asuransi (24) nilai aktual",
+  asuransi: "[Nilai (23) + Freight (25)] × 0.5% (nilai dari dokumen PIB)",
+  nilaiPabean: "Nilai (23) + Freight (25) + Asuransi (24) (nilai Freight & Asuransi dari dokumen PIB)",
   bm:  "BM per item: (Nilai Pabean per item x NDPBM) x Tarif persen BM",
   ppn: "PPN per item: ((Nilai Pabean per item x NDPBM) + Total BM per item) x Tarif persen PPN (11%)",
   pph: "PPH per item: ((Nilai Pabean per item x NDPBM) + Total BM per item) x Tarif persen PPH",
   totalBMPPNPPH: "Total BM (37) + PPN (41) + PPH (43)",
-  ndpbmXnilai: "NDPBM (22) X Nilai Pabean (26). Yang tertera pada dokumen PIB harus sesuai dengan hasil perkalian",
+  ndpbmXnilai: "NDPBM (22) X Nilai Pabean (26). Yang tertera pada dokumen PIB harus sesuai dengan hasil perkalian NDPBM x Nilai Pabean (keduanya dari dokumen).",
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -96,24 +96,25 @@ function statusOf(actualStr: any, expected: number) {
   return diff <= 1 ? "match" : "mismatch";
 }
 
-function StatusBadge({ st }: { st: string }) {
+function StatusBadge({ st, isEditMode, onClick }: { st: string, isEditMode?: boolean, onClick?: () => void }) {
+  const baseClasses = isEditMode ? "cursor-pointer hover:opacity-75 transition-opacity" : "";
   if (st === "match") {
     return (
-      <div className="flex items-center justify-center text-emerald-600 font-bold">
+      <div className={`flex items-center justify-center text-emerald-600 font-bold ${baseClasses}`} onClick={onClick} title={isEditMode ? "Klik untuk merubah status manual" : undefined}>
         <CheckCircle2 size={16} className="mr-1" />
         Sesuai
       </div>
     );
   } else if (st === "mismatch") {
     return (
-      <div className="flex items-center justify-center text-rose-600 font-bold">
+      <div className={`flex items-center justify-center text-rose-600 font-bold ${baseClasses}`} onClick={onClick} title={isEditMode ? "Klik untuk merubah status manual" : undefined}>
         <XCircle size={16} className="mr-1" />
         Tidak Sesuai
       </div>
     );
   }
   return (
-    <div className="text-center text-slate-300 font-bold">-</div>
+    <div className={`text-center text-slate-300 font-bold ${baseClasses}`} onClick={onClick} title={isEditMode ? "Klik untuk merubah status manual" : undefined}>-</div>
   );
 }
 
@@ -151,6 +152,18 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
   const [aktualSPPBMCP, setAktualSPPBMCP] = useState({
     bm: "", ppn: "", pph: "", ndpbmXnilai: "",
   });
+
+  const [manualStatus, setManualStatus] = useState<Record<string, string>>({});
+
+  const toggleManualStatus = (id: string, currentSt: string) => {
+    if (!isEditMode) return;
+    setManualStatus(prev => {
+      let nextSt = 'match';
+      if (currentSt === 'match') nextSt = 'mismatch';
+      else if (currentSt === 'mismatch') nextSt = 'match';
+      return { ...prev, [id]: nextSt };
+    });
+  };
 
   const rawString = JSON.stringify(dataValidasiRaw || {});
 
@@ -244,17 +257,19 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
 
     // B. ASURANSI (24)
     const nilai23 = Number(pibCalc.nilai_23) || 0;
-    const expectedAsuransi = (nilai23 + expectedFreight) * 0.005;
+    const nilai25 = Number(pibCalc.nilai_25) || 0;
+    const expectedAsuransi = Math.round((nilai23 + nilai25) * 0.005 * 100) / 100;
 
     // C. NILAI PABEAN (26)
     const aktualFreight = parseRobust(aktualPIB.freight);
     const aktualAsuransi = parseRobust(aktualPIB.asuransi);
-    const expectedNilaiPabean = nilai23 + aktualFreight + aktualAsuransi;
+    const expectedNilaiPabean = Math.round((nilai23 + nilai25 + expectedAsuransi) * 100) / 100;
 
     // D. TOTAL BM+PPN+PPH
     const totalExpectedBMPPNPPH = totalBM + totalPPN + totalPPH;
 
-    const ndpbmXnilai = ndpbmNum * totalNilaiPabean;
+    const nilaiPabean26Doc = Number(pibCalc.aktual_nilai_pabean) || 0;
+    const ndpbmXnilai = Math.round(ndpbmNum * nilaiPabean26Doc * 100) / 100;
 
     return { 
       nilai23,
@@ -275,17 +290,30 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
   const setItem = (id: string, field: string, val: string) =>
     setItems(prev => prev.map(i => i.id === id ? { ...i, [field]: val } : i));
 
-  const setAk1 = (field: string, val: string) => setAktualPIB(prev => ({ ...prev, [field]: val }));
-  const setAk2 = (field: string, val: string) => setAktualSPPBMCP(prev => ({ ...prev, [field]: val }));
+  const setAk1 = (field: string, val: string) => {
+    setAktualPIB(prev => ({ ...prev, [field]: val }));
+    setManualStatus(prev => ({ ...prev, [field]: "" }));
+  };
+  const setAk2 = (field: string, val: string) => {
+    setAktualSPPBMCP(prev => ({ ...prev, [field]: val }));
+    setManualStatus(prev => ({ ...prev, [field]: "" }));
+  };
 
   // ── Baris tabel 1: PIB ──
   const totalAktualBMPPNPPH = (Number(toNum(aktualPIB.bm)) || 0) + (Number(toNum(aktualPIB.ppn)) || 0) + (Number(toNum(aktualPIB.pph)) || 0);
 
+  const zeroToleranceStatus = (ak: any, exp: any) => {
+    if (exp === null) return "empty";
+    const akNum = toNum(ak);
+    const diff = Math.abs(akNum - exp);
+    return diff <= 0.01 ? "match" : "mismatch";
+  };
+
   const pibRows = [
-    { id: "freight", label: "Freight (25)", expected: calc.expectedFreight, fmt: fmtNum, formula: FORMULA.freight, ak: aktualPIB.freight, akNum: toNum(aktualPIB.freight), setAk: (v: string) => setAk1("freight", v) },
-    { id: "asuransi", label: "Asuransi (24)", expected: calc.expectedAsuransi, fmt: fmtNum, formula: FORMULA.asuransi, ak: aktualPIB.asuransi, akNum: toNum(aktualPIB.asuransi), setAk: (v: string) => setAk1("asuransi", v) },
-    { id: "nilaiPabean", label: "Nilai Pabean (26)", expected: calc.expectedNilaiPabean, fmt: fmtNum, formula: FORMULA.nilaiPabean, ak: aktualPIB.nilaiPabean, akNum: toNum(aktualPIB.nilaiPabean), setAk: (v: string) => setAk1("nilaiPabean", v) },
-    { id: "ndpbmXnilai", label: "Total Nilai Pabean", expected: calc.ndpbmXnilai, fmt: fmtIDR, formula: FORMULA.ndpbmXnilai, ak: aktualPIB.ndpbmXnilai, akNum: toNum(aktualPIB.ndpbmXnilai), setAk: (v: string) => setAk1("ndpbmXnilai", v) },
+    { id: "freight", label: "Freight (25)", expected: calc.expectedFreight, fmt: fmtNum, formula: FORMULA.freight, ak: aktualPIB.freight, akNum: toNum(aktualPIB.freight), setAk: (v: string) => setAk1("freight", v), customStatus: zeroToleranceStatus },
+    { id: "asuransi", label: "Asuransi (24)", expected: calc.expectedAsuransi, fmt: fmtNum, formula: FORMULA.asuransi, ak: aktualPIB.asuransi, akNum: toNum(aktualPIB.asuransi), setAk: (v: string) => setAk1("asuransi", v), customStatus: zeroToleranceStatus },
+    { id: "nilaiPabean", label: "Nilai Pabean (26)", expected: calc.expectedNilaiPabean, fmt: fmtNum, formula: FORMULA.nilaiPabean, ak: aktualPIB.nilaiPabean, akNum: toNum(aktualPIB.nilaiPabean), setAk: (v: string) => setAk1("nilaiPabean", v), customStatus: zeroToleranceStatus },
+    { id: "ndpbmXnilai", label: "Total Nilai Pabean", expected: calc.ndpbmXnilai, fmt: fmtIDR, formula: FORMULA.ndpbmXnilai, ak: aktualPIB.ndpbmXnilai, akNum: toNum(aktualPIB.ndpbmXnilai), setAk: (v: string) => setAk1("ndpbmXnilai", v), customStatus: zeroToleranceStatus },
     { id: "bm",  label: "BM (37)",  expected: calc.totalBM,  fmt: fmtIDR, formula: FORMULA.bm,  ak: aktualPIB.bm, akNum: toNum(aktualPIB.bm),  setAk: (v: string) => setAk1("bm", v), ignoreForStats: true },
     { id: "ppn", label: "PPN (41)", expected: calc.totalPPN, fmt: fmtIDR, formula: FORMULA.ppn, ak: aktualPIB.ppn, akNum: toNum(aktualPIB.ppn), setAk: (v: string) => setAk1("ppn", v), ignoreForStats: true },
     { id: "pph", label: "PPH (43)", expected: calc.totalPPH, fmt: fmtIDR, formula: FORMULA.pph, ak: aktualPIB.pph, akNum: toNum(aktualPIB.pph), setAk: (v: string) => setAk1("pph", v), ignoreForStats: true },
@@ -356,14 +384,15 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
     const rows = jnsUpper === "PIB" ? pibRows : (jnsUpper === "CN" ? sppbmcpRows : []);
     rows.forEach((r: any) => {
       if (r.ignoreForStats) return;
-      const st = r.customStatus ? r.customStatus(r.ak, r.expected) : statusOf(r.ak, r.expected);
+      const stComputed = r.customStatus ? r.customStatus(r.ak, r.expected) : statusOf(r.ak, r.expected);
+      const st = manualStatus[r.id] || stComputed;
       if (st === "match") match++;
       else if (st === "mismatch") mismatch++;
       else empty++;
     });
     onStatsChange({ match, mismatch, empty });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jnsUpper, aktualPIB, aktualSPPBMCP, calc]);
+  }, [jnsUpper, aktualPIB, aktualSPPBMCP, calc, manualStatus]);
 
   function ValidationTable({ title, rows }: { title: string, rows: any[] }) {
     return (
@@ -390,7 +419,8 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
           </thead>
           <tbody>
             {rows.map((row, idx) => {
-              const st = row.customStatus ? row.customStatus(row.ak, row.expected) : statusOf(row.ak, row.expected);
+              const stComputed = row.customStatus ? row.customStatus(row.ak, row.expected) : statusOf(row.ak, row.expected);
+              const st = manualStatus[row.id] || stComputed;
               
               const isSPPBMCP = title === "Validasi SPPBMCP";
               const toleransi = isSPPBMCP ? 1000 : 1;
@@ -436,7 +466,7 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
                     {['bm', 'ppn', 'pph'].includes(row.id) && !isSPPBMCP ? (
                       <span className="text-slate-400">—</span>
                     ) : (
-                      <StatusBadge st={st} />
+                      <StatusBadge st={st} isEditMode={isEditMode} onClick={() => toggleManualStatus(row.id, st)} />
                     )}
                   </td>
                 </tr>
