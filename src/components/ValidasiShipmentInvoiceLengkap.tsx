@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { X, CheckCircle2, Edit3, Printer, XCircle, Clock, Info, Receipt } from 'lucide-react';
+import { X, CheckCircle2, Edit3, Printer, XCircle, Clock, Info, Receipt, Save } from 'lucide-react';
 
 export const EditModeContext = React.createContext(false);
 
@@ -55,7 +55,59 @@ const StatusBadge = ({ status }: { status: string }) => {
   );
 };
 
-const EditableIDR = ({ val, onSave, isUSD }: any) => {
+const ShipmentEditableField = ({ recordId, field, initialValue, onSave, onUpdate, toastHandler, type = "text", placeholder = "Isi nilai...", className = "" }: any) => {
+  const isEditMode = React.useContext(EditModeContext);
+  const [isEditing, setIsEditing] = useState(false);
+  const [tempVal, setTempVal] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setIsEditing(false);
+    if (tempVal !== initialValue && tempVal !== (initialValue || '')) {
+      setSaving(true);
+      const { error } = await supabase.from('rekapan_seaair').update({ [field]: tempVal || null }).eq('seaair_id', recordId);
+      setSaving(false);
+      if (error) {
+        if (toastHandler) toastHandler({ msg: 'Gagal update ' + field + ': ' + error.message, type: 'error' });
+      } else {
+        if (toastHandler) toastHandler({ msg: 'Update ' + field + ' berhasil', type: 'success' });
+        if (onUpdate) onUpdate(tempVal);
+        if (onSave) onSave(tempVal);
+      }
+    }
+  };
+
+  if (isEditing) {
+    return (
+      <input 
+        type={type}
+        autoFocus
+        disabled={saving}
+        className="border border-blue-400 rounded px-1.5 py-0.5 text-[11px] outline-none font-medium bg-white shadow-inner min-w-[80px]"
+        value={tempVal}
+        onChange={e => setTempVal(e.target.value)}
+        onBlur={handleSave}
+        onKeyDown={e => { if (e.key === 'Enter') handleSave(); else if (e.key === 'Escape') setIsEditing(false); }}
+      />
+    );
+  }
+  
+  return (
+    <span 
+      className={`font-semibold text-slate-800 ${className} ${isEditMode && !saving ? 'cursor-pointer hover:bg-slate-200 ring-1 ring-slate-200 bg-white rounded px-1 -mx-1' : ''}`}
+      onClick={() => { 
+         if (isEditMode && !saving) {
+          setTempVal(initialValue || ''); 
+          setIsEditing(true); 
+         }
+      }}
+    >
+      {initialValue || (isEditMode ? <span className="text-slate-400 italic font-normal">{placeholder}</span> : '—')}
+    </span>
+  );
+};
+
+const EditableIDR = ({ val, onSave, isUSD, isKurs }: any) => {
   const isEditMode = React.useContext(EditModeContext);
   const [isEditing, setIsEditing] = useState(false);
   const [tempVal, setTempVal] = useState('');
@@ -64,7 +116,7 @@ const EditableIDR = ({ val, onSave, isUSD }: any) => {
     return (
       <input 
         autoFocus
-        className="border border-blue-400 rounded px-2 py-1 text-xs w-28 outline-none font-mono text-right bg-white shadow-inner"
+        className="border border-blue-400 rounded px-2 py-1 text-xs w-28 outline-none  text-right bg-white shadow-inner"
         value={tempVal}
         onChange={e => setTempVal(e.target.value)}
         onBlur={() => { setIsEditing(false); onSave(tempVal); }}
@@ -85,7 +137,7 @@ const EditableIDR = ({ val, onSave, isUSD }: any) => {
     >
       <div className="flex items-center justify-end gap-1">
         {val != null && val !== '' ? (
-          (isUSD ? fmtUSD(val) : fmtIDR(val))
+          (isKurs ? Number(val).toLocaleString('id-ID') : (isUSD ? fmtUSD(val) : fmtIDR(val)))
         ) : (
           isEditMode ? <span className="text-slate-400 italic text-xs">Klik isi</span> : <span className="text-slate-300">—</span>
         )}
@@ -123,15 +175,12 @@ const ValidationTable = ({ title, rows, updateCheck }: { title: string, rows: an
     return row;
   });
 
+
+
   return (
-    <div className="mb-8">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-3">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-slate-800 text-white flex items-center justify-center shrink-0 shadow-sm">
-            <Receipt size={16} />
-          </div>
-          <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider">{title}</h4>
-        </div>
+    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6 overflow-x-auto">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 border-b pb-2">
+        <h2 className="text-lg font-bold text-slate-900">{title}</h2>
         
         {hasJalurMerahOption && (
           <div className="flex flex-col items-end">
@@ -163,48 +212,97 @@ const ValidationTable = ({ title, rows, updateCheck }: { title: string, rows: an
           </div>
         )}
       </div>
-      <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="border-b border-slate-200">
-              <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-widest border-r border-slate-200" style={{ backgroundColor: "#f1f5f9", color: "#475569", width: '35%' }}>Validasi</th>
-              <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-widest text-right border-r border-slate-200" style={{ backgroundColor: "#bae6fd", color: "#0369a1", width: '15%' }}>Expected {hasJalurMerahOption && isJalurMerah && <span className="text-rose-600 ml-1">(Merah)</span>}</th>
-              <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-widest text-right border-r border-slate-200" style={{ backgroundColor: "#fef08a", color: "#854d0e", width: '15%' }}>Actual</th>
-              <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-widest text-right border-r border-slate-200" style={{ backgroundColor: "#e9d5ff", color: "#6b21a8", width: '20%' }}>Selisih</th>
-              <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-widest text-center" style={{ backgroundColor: "#f1f5f9", color: "#475569", width: '15%' }}>Status</th>
+      <table className="w-full text-sm text-left">
+          <thead className="text-xs text-slate-500 bg-slate-50 uppercase border-b border-slate-200 sticky top-0 z-10 shadow-sm">
+            <tr>
+              <th className="px-4 py-3 font-semibold rounded-tl-lg w-1/3">Validasi</th>
+              <th className="px-4 py-3 font-semibold text-right">Expected {hasJalurMerahOption && isJalurMerah && <span className="text-rose-600 ml-1">(Merah)</span>}</th>
+              <th className="px-4 py-3 font-semibold text-right">Actual</th>
+              <th className="px-4 py-3 font-semibold text-right">Selisih</th>
+              <th className="px-4 py-3 font-semibold text-center rounded-tr-lg">Status</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {displayRows.map((row, idx) => (
+            {displayRows.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-6 text-center text-sm text-slate-400 italic bg-slate-50/50">
+                  Tidak ada data untuk {title}.
+                </td>
+              </tr>
+            )}
+            {displayRows.map((row, idx) => {
+              const rowUpper = String(row.row || '').toUpperCase();
+              const isPpn = rowUpper.startsWith('PPN');
+              const isTotal = rowUpper === 'TOTAL';
+              const isTotalKeseluruhan = rowUpper === 'TOTAL KESELURUHAN';
+              const isSummary = isTotal || isTotalKeseluruhan;
+              
+              let rowBg = 'bg-white';
+              if (isTotalKeseluruhan) rowBg = 'bg-slate-100';
+              else if (isTotal) rowBg = 'bg-slate-50';
+              else if (isPpn) rowBg = 'bg-slate-50/70';
+
+              let fontStyle = 'font-medium';
+              if (isTotalKeseluruhan) fontStyle = 'font-bold uppercase text-slate-800';
+              else if (isTotal) fontStyle = 'font-bold text-slate-800';
+              else if (isPpn) fontStyle = 'font-bold italic';
+
+              return (
               <React.Fragment key={idx}>
-                <tr className="hover:bg-slate-50/50 transition-colors group">
-                  <td className="px-4 py-3 text-xs text-slate-700 font-medium border-r border-slate-200 bg-white">
-                    <div className="flex items-center gap-1.5">
-                      {row.row}
-                      {row.vendor_name && <span className="text-slate-400">({row.vendor_name})</span>}
-                      {row.manual && (
-                        <Edit3 size={12} className="text-amber-500 ml-1 shrink-0" title="Diedit manual" />
-                      )}
+                <tr className={`hover:bg-slate-50 transition-colors group ${isSummary ? 'border-t-2 border-slate-300' : isPpn ? 'border-t border-slate-200' : ''}`}>
+                  <td className={`px-4 py-3 text-sm text-slate-700 ${rowBg} ${fontStyle}`}>
+                    <div className="flex flex-col gap-0.5">
+                      {(() => {
+                        const text = row.row || '';
+                        const match = text.match(/^(.*?)\s*(\(.*?\))$/);
+                        if (match) {
+                          return (
+                            <div className="flex flex-col gap-0.5 w-full">
+                              <div className="flex items-center gap-1.5">
+                                <span>{match[1]}</span>
+                                {row.manual && !isSummary && (
+                                  <Edit3 size={12} className="text-amber-500 shrink-0" title="Diedit manual" />
+                                )}
+                              </div>
+                              <span className="text-[10px] text-slate-500 font-medium leading-tight">{match[2]}</span>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="flex flex-col gap-0.5 w-full">
+                            <div className="flex items-center gap-1.5">
+                              <span>{text}</span>
+                              {row.manual && !isSummary && (
+                                <Edit3 size={12} className="text-amber-500 shrink-0" title="Diedit manual" />
+                              )}
+                            </div>
+                            {row.vendor_name && (
+                              <span className="text-[10px] text-slate-500 font-medium leading-tight">({row.vendor_name})</span>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </td>
-                  <td className={`px-4 py-3 text-sm font-mono text-right border-r border-slate-200 ${row.isAlt ? 'bg-rose-50/30 text-rose-800' : 'bg-white text-slate-700'}`}>
-                    <EditableIDR isUSD={row.mata_uang === 'USD'} val={row.expected} onSave={(v: any) => updateCheck(row.section, row.row, row.vendor_name, row.isAlt ? 'expected_alt.nilai' : 'expected', v)} />
+                  <td className={`px-4 py-3 text-sm text-right ${row.isAlt ? 'text-rose-800' : ''} ${isSummary ? 'font-bold text-slate-800' : isPpn ? 'text-slate-700 italic' : 'text-slate-700'} ${rowBg}`}>
+                    <EditableIDR isKurs={row.row === 'KURS BI'} isUSD={row.mata_uang === 'USD'} val={row.expected} onSave={(v: any) => updateCheck(row.section, row.row, row.vendor_name, row.isAlt ? 'expected_alt.nilai' : 'expected', v)} />
                   </td>
-                  <td className="px-4 py-3 text-sm font-mono text-slate-700 text-right border-r border-slate-200 bg-amber-50/20">
-                    <EditableIDR isUSD={row.mata_uang === 'USD'} val={row.actual} onSave={(v: any) => updateCheck(row.section, row.row, row.vendor_name, 'actual', v)} />
+                  <td className={`px-4 py-3 text-sm text-right ${isSummary ? 'font-bold text-slate-900' : isPpn ? 'text-slate-700 italic font-medium' : 'text-slate-700 font-medium'} ${rowBg}`}>
+                    <EditableIDR isKurs={row.row === 'KURS BI'} isUSD={row.mata_uang === 'USD'} val={row.actual} onSave={(v: any) => updateCheck(row.section, row.row, row.vendor_name, 'actual', v)} />
                   </td>
-                  <td className="px-4 py-3 text-sm font-mono text-right border-r border-slate-200 bg-white">
+                  <td className={`px-4 py-3 text-sm text-right ${rowBg}`}>
                     {(() => {
-                      const toleransi = row.mata_uang === 'USD' ? 1 : 1000;
+                      let toleransi = row.mata_uang === 'USD' ? 1 : 1000;
+                      if (row.row === 'KURS BI') toleransi = 1;
                       return (
                         <span className={!row.selisih || Math.abs(row.selisih) <= toleransi ? 'text-emerald-600' : 'text-rose-600 font-bold'}>
-                          {row.selisih != null ? (row.mata_uang === 'USD' ? fmtUSD(row.selisih) : fmtIDR(row.selisih)) : '—'}
+                          {row.selisih != null && row.selisih !== '' ? (row.row === 'KURS BI' ? Number(row.selisih).toLocaleString('id-ID') : (row.mata_uang === 'USD' ? fmtUSD(row.selisih) : fmtIDR(row.selisih))) : '—'}
                         </span>
                       );
                     })()}
                   </td>
-                  <td className="px-4 py-3 text-center bg-white">
-                    <StatusBadge status={row.status} />
+                  <td className={`px-4 py-3 text-center ${rowBg}`}>
+                    {!isSummary ? <StatusBadge status={row.status} /> : null}
                   </td>
                 </tr>
                 {row.catatan && (
@@ -220,11 +318,11 @@ const ValidationTable = ({ title, rows, updateCheck }: { title: string, rows: an
                   </tr>
                 )}
               </React.Fragment>
-            ))}
+            )})}
+
           </tbody>
         </table>
       </div>
-    </div>
   );
 };
 
@@ -248,10 +346,10 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
         setLoading(true);
         
         const [validasiRes, auditRes, rekapRes, matriksRes] = await Promise.all([
-           supabase.from('cost_validasi_seaair').select('*').eq('seaair_id', record.id).single(),
-           supabase.from('tabel_audit_seaair').select('awb, via, cbm').eq('id', record.id).single(),
-           supabase.from('rekapan_seaair').select('emkl_vendor, etd, atd, eta, ata, weight_kg, tgl_invoice_freight, tgl_storage_mulai, tgl_storage_selesai').eq('seaair_id', record.id).single(),
-           supabase.from('dokumen_validasi_matriks_seaair').select('checks').eq('seaair_id', record.id).single()
+           supabase.from('cost_validasi_seaair').select('*').eq('seaair_id', (record.seaair_id || record.id)).maybeSingle(),
+           supabase.from('tabel_audit_seaair').select('awb, via, cbm').eq('id', (record.seaair_id || record.id)).maybeSingle(),
+           supabase.from('rekapan_seaair').select('vendor, emkl_vendor, etd, atd, eta, ata, notes, weight_kg, tgl_invoice_freight, tgl_storage_mulai, tgl_storage_selesai').eq('seaair_id', (record.seaair_id || record.id)).maybeSingle(),
+           supabase.from('dokumen_validasi_matriks_seaair').select('checks').eq('seaair_id', (record.seaair_id || record.id)).maybeSingle()
         ]);
         
         console.log("rekapRes.data:", rekapRes.data);
@@ -264,7 +362,7 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
              .lte('tanggal', rekapRes.data?.tgl_invoice_freight)
              .order('tanggal', { ascending: false })
              .limit(1)
-             .single();
+             .maybeSingle();
            if (kursRes.data) {
              setKursSaatItu(kursRes.data.kurs_jual);
            } else {
@@ -299,7 +397,7 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
 
         setShipmentInfo({
            awb: auditRes.data?.awb,
-           vendor: rekapRes.data?.emkl_vendor,
+           vendor: rekapRes.data?.vendor,
            via: auditRes.data?.via,
            kg: rekapRes.data?.weight_kg,
            cbm: cbmValue,
@@ -307,6 +405,7 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
            atd: rekapRes.data?.atd,
            eta: rekapRes.data?.eta,
            ata: rekapRes.data?.ata,
+           notes: rekapRes.data?.notes,
            tglInvoiceFreight: rekapRes.data?.tgl_invoice_freight,
            tglStorageMulai: rekapRes.data?.tgl_storage_mulai,
            tglStorageSelesai: rekapRes.data?.tgl_storage_selesai,
@@ -321,7 +420,43 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
           }
         } else if (validasiRes.data) {
           setCostValidasiId(validasiRes.data.id);
-          setChecks(validasiRes.data.checks || []);
+          let loadedChecks = validasiRes.data.checks || [];
+          
+          // Inject missing SURVEYOR rows if they don't exist
+          const hasSurveyorSection = loadedChecks.some((c: any) => c.section === 'SURVEYOR');
+          if (hasSurveyorSection) {
+            const hasKursBi = loadedChecks.some((c: any) => c.section === 'SURVEYOR' && c.row === 'KURS BI');
+            if (!hasKursBi) {
+              // Find the vendor_name from the existing SURVEYOR row to match it
+              const existingSurveyor = loadedChecks.find((c: any) => c.section === 'SURVEYOR' && c.row === 'SURVEYOR');
+              const vendor = existingSurveyor ? existingSurveyor.vendor_name : undefined;
+              
+              loadedChecks.push({
+                section: 'SURVEYOR',
+                row: 'KURS BI',
+                vendor_name: vendor,
+                expected: null,
+                actual: null,
+                mata_uang: 'IDR',
+                selisih: null,
+                status: 'BELUM_LENGKAP',
+                manual: false
+              });
+              loadedChecks.push({
+                section: 'SURVEYOR',
+                row: 'NILAI RUPIAH',
+                vendor_name: vendor,
+                expected: null,
+                actual: null,
+                mata_uang: 'IDR',
+                selisih: null,
+                status: 'BELUM_LENGKAP',
+                manual: false
+              });
+            }
+          }
+          
+          setChecks(loadedChecks);
         }
       } catch (err: any) {
         setLoadError(err.message);
@@ -347,7 +482,9 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
           return newCheck;
         } else {
           const newCheck = { ...c, [field]: val === '' ? null : val, manual: true };
-          const { status, selisih } = selisihStatus(newCheck.expected, newCheck.actual, 1000);
+          let toleransi = newCheck.mata_uang === 'USD' ? 1 : 1000;
+          if (newCheck.row === 'KURS BI') toleransi = 1;
+          const { status, selisih } = selisihStatus(newCheck.expected, newCheck.actual, toleransi);
           newCheck.status = status;
           newCheck.selisih = selisih;
           setHasUnsavedChanges(true);
@@ -374,7 +511,7 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
       if (error) throw error;
       
       // Verify saved successfully
-      const { data: verifyData } = await supabase.from('cost_validasi_seaair').select('id').eq('id', costValidasiId).single();
+      const { data: verifyData } = await supabase.from('cost_validasi_seaair').select('id').eq('id', costValidasiId).maybeSingle();
       if (!verifyData) throw new Error("Verifikasi gagal");
       
       showToast('Berhasil menyimpan perubahan validasi!', 'success');
@@ -398,7 +535,7 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
     return { match, mismatch, overcharge, undercharge, total, pct: total > 0 ? Math.round((match / total) * 100) : 0 };
   }, [checks]);
 
-  const getRowsFor = (section: string) => checks.filter(c => c.section === section);
+  const getRowsFor = (section: string) => checks.filter(c => c.section?.trim().toUpperCase() === section.trim().toUpperCase());
 
   if (loading) {
     return (
@@ -414,13 +551,13 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
   return (
     <EditModeContext.Provider value={isEditMode}>
       <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center p-2 sm:p-4 md:p-6 w-full h-full print:bg-white print:p-0">
-        <div className="bg-slate-50 w-full h-full rounded-2xl shadow-xl flex flex-col relative overflow-hidden print:shadow-none print:w-full print:m-0 print:border-none print:rounded-none">
+        <div className="bg-slate-50 w-full max-w-5xl h-[90vh] max-h-[90vh] rounded-2xl shadow-2xl flex flex-col relative overflow-hidden print:shadow-none print:w-full print:m-0 print:border-none print:rounded-none">
           
           {/* Header */}
           <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-slate-200 bg-white shrink-0 print:hidden">
             <div>
               <h2 className="text-lg font-bold tracking-tight text-slate-800">Cost Validasi Shipment & Invoice</h2>
-              <p className="text-sm text-slate-500">Review dan koreksi data cost Sea & Air ({record.no_master_awb_bl || record.awb || record.id})</p>
+              <p className="text-sm text-slate-500">Review dan koreksi data cost Sea & Air ({record.no_master_awb_bl || record.awb || (record.seaair_id || record.id)})</p>
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -451,82 +588,68 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
           <div className="flex-1 overflow-y-auto custom-scrollbar print:p-0 print:overflow-visible relative">
             
             {loadError ? (
-               <div className="p-4 md:p-6 pb-24"><div className="p-8 text-center text-rose-600 bg-rose-50 border border-rose-200 rounded-xl">{loadError}</div></div>
+              <div className="p-4 md:p-6 pb-24"><div className="p-8 text-center text-rose-600 bg-rose-50 border border-rose-200 rounded-xl">{loadError}</div></div>
             ) : (
               <div className="pb-24">
                 {/* SHIPMENT INFO */}
-                <div className="sticky top-0 z-20 bg-slate-50 pt-2 px-4 md:pt-4 md:px-6 pb-2 border-b border-slate-200 shadow-sm print:relative print:border-none print:shadow-none print:p-0 print:pb-6">
-                  <div className="bg-blue-50/60 border border-blue-100 rounded-lg p-2 px-3 shadow-sm">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <h4 className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Shipment Info</h4>
+                <div className="px-4 md:px-6 pt-6 mb-2">
+                  <div className="bg-transparent">
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-lg font-bold text-slate-900">Shipment Info</h2>
                       {shipmentInfoError && (
-                        <span className="text-[10px] text-rose-500 italic bg-white/60 px-2 py-0.5 rounded max-w-md truncate" title={shipmentInfoError}>
+                        <span className="text-xs text-rose-500 font-medium bg-rose-50 px-2 py-1 rounded" title={shipmentInfoError}>
                           {shipmentInfoError}
                         </span>
                       )}
                     </div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-y-1 gap-x-3 text-xs">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-4 text-sm bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                       <div>
-                        <span className="block text-[10px] text-slate-500 uppercase">No AWB/BL</span>
-                        <span className="font-semibold text-slate-800">{shipmentInfo?.awb || '—'}</span>
+                        <p className="text-slate-500 mb-1 font-medium">AWB</p>
+                        <p className="font-semibold text-slate-800">{shipmentInfo?.awb || '—'}</p>
                       </div>
                       <div>
-                        <span className="block text-[10px] text-slate-500 uppercase">Vendor</span>
-                        <span className="font-semibold text-slate-800 truncate block w-full" title={shipmentInfo?.vendor || ''}>{shipmentInfo?.vendor || '—'}</span>
+                        <p className="text-slate-500 mb-1 font-medium">Vendor</p>
+                        <p className="font-semibold text-slate-800 truncate block w-full" title={shipmentInfo?.vendor || ''}>{shipmentInfo?.vendor || '—'}</p>
                       </div>
                       <div>
-                        <span className="block text-[10px] text-slate-500 uppercase">Shipment Mode</span>
-                        <span className="font-semibold text-slate-800">{shipmentInfo?.via || '—'}</span>
+                        <p className="text-slate-500 mb-1 font-medium">Shipment Mode</p>
+                        <p className="font-semibold text-slate-800">{shipmentInfo?.via || '—'}</p>
                       </div>
-                      <div className="flex gap-4">
-                        <div>
-                          <span className="block text-[10px] text-slate-500 uppercase">KG</span>
-                          <span className="font-semibold text-slate-800">{shipmentInfo?.kg != null ? `${shipmentInfo.kg} Kg` : '—'}</span>
+                      <div>
+                        <p className="text-slate-500 mb-1 font-medium">Weight / Volume</p>
+                        <p className="font-semibold text-slate-800">
+                          {shipmentInfo?.kg != null ? `${shipmentInfo.kg} Kg` : '—'} <span className="text-slate-400 font-semibold mx-1">/</span> {shipmentInfo?.cbm != null ? `${Number(shipmentInfo.cbm).toFixed(2)} M3` : '—'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-slate-500 mb-1 font-medium">ETD / ETA</p>
+                        <div className="flex items-center gap-1 font-semibold text-slate-800">
+                          <ShipmentEditableField toastHandler={(data: any) => showToast(data.msg, data.type)} recordId={(record.seaair_id || record.id)} field="etd" type="date" initialValue={shipmentInfo?.etd} onSave={(v) => { if (shipmentInfo) setShipmentInfo({...shipmentInfo, etd: v}) }} />
+                          <span>/</span>
+                          <ShipmentEditableField toastHandler={(data: any) => showToast(data.msg, data.type)} recordId={(record.seaair_id || record.id)} field="eta" type="date" initialValue={shipmentInfo?.eta} onSave={(v) => { if (shipmentInfo) setShipmentInfo({...shipmentInfo, eta: v}) }} />
                         </div>
-                        <div>
-                          <span className="block text-[10px] text-slate-500 uppercase">CBM</span>
-                          <span className="font-semibold text-slate-800">{shipmentInfo?.cbm != null ? `${Number(shipmentInfo.cbm).toFixed(2)} M3` : '—'}</span>
+                      </div>
+                      <div>
+                        <p className="text-slate-500 mb-1 font-medium">ATD / ATA</p>
+                        <div className="flex items-center gap-1 font-semibold text-slate-800">
+                          <ShipmentEditableField toastHandler={(data: any) => showToast(data.msg, data.type)} recordId={(record.seaair_id || record.id)} field="atd" type="date" initialValue={shipmentInfo?.atd} onSave={(v) => { if (shipmentInfo) setShipmentInfo({...shipmentInfo, atd: v}) }} />
+                          <span>/</span>
+                          <ShipmentEditableField toastHandler={(data: any) => showToast(data.msg, data.type)} recordId={(record.seaair_id || record.id)} field="ata" type="date" initialValue={shipmentInfo?.ata} onSave={(v) => { if (shipmentInfo) setShipmentInfo({...shipmentInfo, ata: v}) }} />
                         </div>
                       </div>
                       <div>
-                        <span className="block text-[10px] text-slate-500 uppercase">ETD / ATD</span>
-                        <span className="font-semibold text-slate-800">{shipmentInfo?.etd || '—'} / {shipmentInfo?.atd || '—'}</span>
-                      </div>
-                      <div>
-                        <span className="block text-[10px] text-slate-500 uppercase">ETA / ATA</span>
-                        <span className="font-semibold text-slate-800">{shipmentInfo?.eta || '—'} / {shipmentInfo?.ata || '—'}</span>
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-1 relative">
-                          <span className="block text-[10px] text-slate-500 uppercase">Tgl Invoice Freight</span>
-                          {shipmentInfo?.tglInvoiceFreight && (
-                            <div className="relative">
-                              <button
-                                onClick={() => setShowKursTooltip(!showKursTooltip)}
-                                className="text-slate-400 hover:text-blue-500 transition-colors rounded-full focus:outline-none"
-                              >
-                                <Info size={12} />
-                              </button>
-                              {showKursTooltip && (
-                                <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1 w-max max-w-[200px] bg-slate-800 text-white text-[10px] p-2 rounded shadow-lg z-50 pointer-events-none">
-                                  {kursSaatItu ? `Kurs USD: Rp ${kursSaatItu.toLocaleString('id-ID')}` : "Data kurs belum tersedia"}
-                                  <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-800"></div>
-                                </div>
-                              )}
-                            </div>
-                          )}
+                        <p className="text-slate-500 mb-1 font-medium">Origin - Dest</p>
+                        <div className="flex items-center gap-1 font-semibold text-slate-800">
+                          <ShipmentEditableField toastHandler={(data: any) => showToast(data.msg, data.type)} recordId={(record.seaair_id || record.id)} field="pol" type="text" placeholder="POL" initialValue={shipmentInfo?.pol} onSave={(v) => { if (shipmentInfo) setShipmentInfo({...shipmentInfo, pol: v}) }} />
+                          <span>-</span>
+                          <ShipmentEditableField toastHandler={(data: any) => showToast(data.msg, data.type)} recordId={(record.seaair_id || record.id)} field="pod" type="text" placeholder="POD" initialValue={shipmentInfo?.pod} onSave={(v) => { if (shipmentInfo) setShipmentInfo({...shipmentInfo, pod: v}) }} />
                         </div>
-                        <span className="font-semibold text-slate-800 block">
-                          {shipmentInfo?.tglInvoiceFreight || '—'}
-                        </span>
                       </div>
-                      <div>
-                        <span className="block text-[10px] text-slate-500 uppercase">Storage</span>
-                        <span className="font-semibold text-slate-800 block">
-                          {(shipmentInfo?.tglStorageMulai && shipmentInfo?.tglStorageSelesai) 
-                            ? `${shipmentInfo.tglStorageMulai} - ${shipmentInfo.tglStorageSelesai} (${shipmentInfo.hariStorage} hari)`
-                            : '—'}
-                        </span>
+                      <div className="col-span-2 md:col-span-4 mt-2">
+                        <p className="text-slate-500 mb-1 font-medium">Notes</p>
+                        <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 min-h-[60px]">
+                          <ShipmentEditableField toastHandler={(data: any) => showToast(data.msg, data.type)} className="text-slate-700 w-full inline-block" recordId={(record.seaair_id || record.id)} field="notes" type="text" placeholder="Tambahkan notes terkait shipment ini..." initialValue={shipmentInfo?.notes} onSave={(v) => { if (shipmentInfo) setShipmentInfo({...shipmentInfo, notes: v}) }} />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -556,24 +679,23 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
                       <span className="block text-xl font-bold leading-none">{globalStats.undercharge}</span>
                       <span className="block text-[10px] uppercase font-bold mt-1 tracking-wide">Under</span>
                     </div>
-                    <div className="w-40 mx-2">
-                      <div className="flex justify-between mb-1">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase">Progres</span>
-                        <span className="text-[10px] font-bold text-slate-700">{globalStats.match}/{globalStats.total}</span>
-                      </div>
-                      <div className="h-2 rounded-full bg-slate-100 overflow-hidden shadow-inner">
-                        <div 
-                          className={`h-full transition-all duration-500 ${globalStats.pct >= 90 ? 'bg-emerald-500' : globalStats.pct >= 60 ? 'bg-amber-500' : 'bg-rose-500'}`} 
-                          style={{ width: `${globalStats.pct}%` }} 
-                        />
-                      </div>
-                    </div>
                   </div>
                 </div>
 
+                <div className="flex flex-col gap-6">
                 <ValidationTable
                   title="INVOICE EMKL"
                   rows={getRowsFor("EMKL")}
+                  updateCheck={updateCheck}
+                />
+                <ValidationTable
+                  title="INVOICE CUSTOM"
+                  rows={getRowsFor("CUSTOM")}
+                  updateCheck={updateCheck}
+                />
+                <ValidationTable
+                  title="INVOICE TRUCKING"
+                  rows={getRowsFor("TRUCKING")}
                   updateCheck={updateCheck}
                 />
                 <ValidationTable
@@ -598,6 +720,7 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
                 />
                 </div>
               </div>
+              </div>
             )}
           </div>
           
@@ -615,7 +738,8 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
                   disabled={saving}
                   className="ml-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full text-sm font-bold transition-colors disabled:opacity-50 flex items-center gap-2"
                >
-                  {saving ? "Menyimpan..." : "Simpan Perubahan"}
+                 <Save size={16} />
+                 {saving ? 'Menyimpan...' : 'Simpan'}
                </button>
             </div>
           )}

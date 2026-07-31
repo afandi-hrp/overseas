@@ -348,7 +348,7 @@ function InvoiceFCLTable({ checks, onToggleRow, onUpdate }: { checks: any[], onT
   const dataCols = INVOICE_FCL_COLS.filter(c => c !== "Status");
 
   return (
-    <SectionWrap title="INVOICE FCL" icon={<Receipt size={24} />}>
+    <SectionWrap title="INVOICE" icon={<Receipt size={24} />}>
       <table className="w-full text-left border-collapse min-w-[760px]">
         <thead>
           <tr>
@@ -415,7 +415,7 @@ function FakturPajakFCLTable({ checks, onToggle, onUpdate }: { checks: any[], on
   }
   
   return (
-    <SectionWrap title="FAKTUR PAJAK FCL" icon={<Percent size={24} />}>
+    <SectionWrap title="FAKTUR PAJAK" icon={<Percent size={24} />}>
       <table className="w-full text-left border-collapse min-w-[900px]">
         <thead>
           <tr>
@@ -496,18 +496,18 @@ const PIB_COLS = [
   "Final Invoice", "Bukti TF"
 ];
 const PIB_ROWS = [
-  { label: "NO PIB (No Pengajuan)",       required: ["SPPB", "Billing DJBC", "BPN"] },
-  { label: "NAMA PT (PIB No. 2,3)",       required: ["SPPB","AWB","ME/AK/IJEPA (opsional)","ECOO (opsional)","Laporan Surveyor (opsional)","Billing DJBC","BPN","CIPL","PO","Final Invoice","Bukti TF"] },
-  { label: "NAMA VENDOR (PIB No. 1a)",    required: ["AWB","ME/AK/IJEPA (opsional)","ECOO (opsional)","Laporan Surveyor (opsional)","CIPL","PO","Final Invoice","Bukti TF"] },
-  { label: "AWB (PIB No. 17)",            required: ["AWB"] },
-  { label: "INVOICE NO",                  required: ["ME/AK/IJEPA (opsional)","ECOO (opsional)","Laporan Surveyor (opsional)","Billing DJBC","PO","Final Invoice","CIPL","Bukti TF"] },
-  { label: "KG (PIB No. 29)",             required: ["AWB","ME/AK/IJEPA (opsional)"] },
-  { label: "PACKAGES (PIB No. 28)",       required: ["AWB","ECOO (opsional)","Laporan Surveyor (opsional)"] },
-  { label: "ORIGIN",                      required: ["AWB","ECOO (opsional)","Laporan Surveyor (opsional)"] },
-  { label: "DESTINATION",                 required: ["AWB","ECOO (opsional)","Laporan Surveyor (opsional)"] },
-  { label: "NO PO",                       required: ["CIPL", "Final Invoice", "PO"] },
-  { label: "TOTAL DUTY (PIB No. 44)",     required: ["Billing DJBC","BPN"] },
-  { label: "TOTAL CIPL (PIB No. 23)",     required: ["CIPL","PO","Final Invoice"] },
+  { label: "NO PIB", dbRow: "NO PIB (No Pengajuan)",       required: ["SPPB", "Billing DJBC", "BPN"] },
+  { label: "NAMA PT", dbRow: "NAMA PT (PIB No. 2,3)",       required: ["SPPB","AWB","ME/AK/IJEPA (opsional)","ECOO (opsional)","Laporan Surveyor (opsional)","Billing DJBC","BPN","CIPL","PO","Final Invoice","Bukti TF"] },
+  { label: "NAMA VENDOR", dbRow: "NAMA VENDOR (PIB No. 1a)",    required: ["AWB","ME/AK/IJEPA (opsional)","ECOO (opsional)","Laporan Surveyor (opsional)","CIPL","PO","Final Invoice","Bukti TF"] },
+  { label: "AWB", dbRow: "AWB (PIB No. 17)",            required: ["AWB"] },
+  { label: "INVOICE NO", dbRow: "INVOICE NO",                  required: ["ME/AK/IJEPA (opsional)","ECOO (opsional)","Laporan Surveyor (opsional)","Billing DJBC","PO","Final Invoice","CIPL","Bukti TF"] },
+  { label: "KG", dbRow: "KG (PIB No. 29)",             required: ["AWB","ME/AK/IJEPA (opsional)"] },
+  { label: "PACKAGES", dbRow: "PACKAGES (PIB No. 28)",       required: ["AWB","ECOO (opsional)","Laporan Surveyor (opsional)"] },
+  { label: "ORIGIN", dbRow: "ORIGIN",                      required: ["AWB","ECOO (opsional)","Laporan Surveyor (opsional)"] },
+  { label: "DESTINATION", dbRow: "DESTINATION",                 required: ["AWB","ECOO (opsional)","Laporan Surveyor (opsional)"] },
+  { label: "NO PO", dbRow: "NO PO",                       required: ["CIPL", "Final Invoice", "PO"] },
+  { label: "TOTAL DUTY", dbRow: "TOTAL DUTY (PIB No. 44)",     required: ["Billing DJBC","BPN"] },
+  { label: "TOTAL CIPL", dbRow: "TOTAL CIPL (PIB No. 23)",     required: ["CIPL","PO","Final Invoice"] },
 ];
 
 // ============================================================================
@@ -579,7 +579,7 @@ function PIBMatrixTable({ checks, onToggle, onUpdate }: { checks: any[], onToggl
     let total = 0, match = 0, mismatch = 0;
     PIB_ROWS.forEach(row => {
       row.required.forEach(col => {
-        const c = getCheck(row.label, col);
+        const c = getCheck(row.dbRow, col);
         if (c && c.match !== undefined && c.match !== null) {
            total++;
            if (c.match === true) match++;
@@ -613,16 +613,16 @@ function PIBMatrixTable({ checks, onToggle, onUpdate }: { checks: any[], onToggl
           {PIB_ROWS.map((row, idx) => {
              let pibRefText = "—";
              for (const reqCol of row.required) {
-                const c = getCheck(row.label, reqCol);
+                const c = getCheck(row.dbRow, reqCol);
                 if (c && c.values && c.values.ref !== undefined && c.values.ref !== null && String(c.values.ref) !== "") {
                    pibRefText = String(c.values.ref);
                    break;
                 }
              }
              if (pibRefText !== "—") {
-                if (row.label === "TOTAL DUTY (PIB No. 44)") {
+                if (row.dbRow === "TOTAL DUTY (PIB No. 44)") {
                    pibRefText = fmtIDR(toNum(pibRefText));
-                } else if (row.label === "TOTAL CIPL (PIB No. 23)") {
+                } else if (row.dbRow === "TOTAL CIPL (PIB No. 23)") {
                    const num = toNum(pibRefText);
                    pibRefText = isNaN(num) ? pibRefText : num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 }
@@ -630,12 +630,12 @@ function PIBMatrixTable({ checks, onToggle, onUpdate }: { checks: any[], onToggl
 
 
              return (
-              <tr key={row.label} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50"}>
+              <tr key={row.dbRow} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50"}>
                 <td className={tdLabelClass}>{row.label}</td>
                 {PIB_COLS.map(col => {
                   if (col === "PIB") {
                      const isManual = row.required.some(reqCol => {
-                        const c = getCheck(row.label, reqCol);
+                        const c = getCheck(row.dbRow, reqCol);
                         return c?.manual;
                      });
                      return (
@@ -655,7 +655,7 @@ function PIBMatrixTable({ checks, onToggle, onUpdate }: { checks: any[], onToggl
                     return <td key={col} className={tdClass + " text-slate-300 bg-slate-50/50"}>—</td>;
                   }
                   
-                  const check = getCheck(row.label, col);
+                  const check = getCheck(row.dbRow, col);
                   if (!check) {
                     return <td key={col} className={tdClass + " text-slate-300 bg-slate-50/50"}>—</td>;
                   }
@@ -668,9 +668,9 @@ function PIBMatrixTable({ checks, onToggle, onUpdate }: { checks: any[], onToggl
                   return (
                     <td key={col} className={tdClass}>
                       <div className="flex flex-col gap-1 items-center">
-                        <StatusBadge match={check.match} onClick={() => onToggle(row.label, col)} manual={check.manual} />
+                        <StatusBadge match={check.match} onClick={() => onToggle(row.dbRow, col)} manual={check.manual} />
                         <div className="text-[11px] font-medium text-slate-800 text-center break-words max-w-full leading-tight">
-                           <EditableCell value={text} onUpdate={(v) => onUpdate(row.label, col, v)} isCurrency={row.label === "TOTAL DUTY (PIB No. 44)"} isForeignCurrency={row.label === "TOTAL CIPL (PIB No. 23)"} manual={check.manual} />
+                           <EditableCell value={text} onUpdate={(v) => onUpdate(row.dbRow, col, v)} isCurrency={row.dbRow === "TOTAL DUTY (PIB No. 44)"} isForeignCurrency={row.dbRow === "TOTAL CIPL (PIB No. 23)"} manual={check.manual} />
                         </div>
                       </div>
                     </td>
@@ -1092,9 +1092,9 @@ export default function SeaAirValidasiModal({ record, onClose }: { record: any, 
       const { data } = await supabase
         .from('dokumen_validasi_matriks_seaair')
         .select('*')
-        .eq('seaair_id', record.id)
+        .eq('seaair_id', record.seaair_id || record.id)
         .limit(1)
-        .single();
+        .maybeSingle();
         
       if (data) {
         setMatriksId(data.id);

@@ -144,6 +144,35 @@ export default function SeaAirChecklistModal({ record, onClose }: { record: any,
             <div className="col-span-full mb-2 mt-6">
               <h3 className="text-sm font-bold text-slate-700 border-b border-slate-200 pb-2">Dokumen Opsional</h3>
             </div>
+            {(() => {
+              const adaSurveyor = data?.ada_invoice_surveyor === true || data?.ada_laporan_surveyor === true;
+              return (
+                <>
+                  <div className="flex justify-between items-center p-3 bg-white border border-slate-100 rounded-lg shadow-sm">
+                    <span className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                      Surveyor
+                      <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-semibold">(Opsional)</span>
+                    </span>
+                    {adaSurveyor ? (
+                      <CheckCircle2 size={20} className="text-emerald-500" />
+                    ) : (
+                      <span className="text-xs text-slate-400 font-medium bg-slate-100 px-2 py-0.5 rounded-full">—</span>
+                    )}
+                  </div>
+                  <div className="flex justify-between items-center p-3 bg-white border border-slate-100 rounded-lg shadow-sm">
+                    <span className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                      Insurance
+                      <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-semibold">(Opsional)</span>
+                    </span>
+                    {data?.ada_insurance === true ? (
+                      <CheckCircle2 size={20} className="text-emerald-500" />
+                    ) : (
+                      <span className="text-xs text-slate-400 font-medium bg-slate-100 px-2 py-0.5 rounded-full">—</span>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
             {optionalFields.map(field => {
               const val = data?.[field.key];
               return (

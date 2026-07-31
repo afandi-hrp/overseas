@@ -435,6 +435,7 @@ function EditModal({ record, tab, cols, onClose, onSaved }: { record: any, tab: 
 // ─── Columns Config ─────────────────────────────────────────────
 
 const SEA_AIR_AUDIT_COLS = [
+  { key: 'jenis_dokumen', label: 'Jenis Dokumen' },
   { key: 'po_ori', label: 'PO ORI' },
   { key: 'vendor', label: 'Vendor' },
   { key: 'remarks', label: 'Remarks' },
@@ -469,7 +470,6 @@ const SEA_AIR_AUDIT_COLS = [
   { key: 'status', label: 'Status', type: 'status' },
   { key: 'balance', label: 'Balance', type: 'num_dash_null' },
   { key: 'asuransi', label: 'Asuransi', type: 'num' },
-  { key: 'jenis_dokumen', label: 'Jenis Dokumen' },
   { key: 'notes', label: 'Notes' },
 ]
 
@@ -1203,11 +1203,9 @@ const SeaAirAuditRowGroup: React.FC<{
   rec: any, index: number, cols: any[], 
   onEdit?: (r: any) => void,
   onChecklist?: (r: any) => void,
-  onValidasi?: (r: any) => void,
-  onCostValidasi?: (r: any) => void,
   onDelete?: (r: any) => void,
   onInlineSaveRow?: (id: number, payload: any) => Promise<boolean>
-}> = ({ rec, index, cols, onEdit, onChecklist, onValidasi, onCostValidasi, onDelete, onInlineSaveRow }) => {
+}> = ({ rec, index, cols, onEdit, onChecklist, onDelete, onInlineSaveRow }) => {
   const repeatingCols = ['po_ori', 'vendor_inv_no', 'po_harga_detail'];
   
   const [isEditing, setIsEditing] = useState(false);
@@ -1257,9 +1255,9 @@ const SeaAirAuditRowGroup: React.FC<{
   const maxLen = Math.max(pos.length, invs.length, hargas.length);
   for (let i = 0; i < maxLen; i++) {
     splittedData.push({
-      po: pos[i] || '',
-      inv: invs[i] || '',
-      harga: hargas[i] || ''
+      po: pos[i] || (pos.length === 1 ? pos[0] : ''),
+      inv: invs[i] || (invs.length === 1 ? invs[0] : ''),
+      harga: hargas[i] || (hargas.length === 1 ? hargas[0] : '')
     });
   }
 
@@ -1374,22 +1372,6 @@ const SeaAirAuditRowGroup: React.FC<{
                           ✓ Checklist
                         </button>
                       )}
-                      {onValidasi && (
-                        <button
-                          onClick={() => onValidasi(rec)}
-                          className="w-[80px] bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm"
-                        >
-                          🔎 Validasi
-                        </button>
-                      )}
-                      {onCostValidasi && (
-                        <button
-                          onClick={() => onCostValidasi(rec)}
-                          className="w-[80px] bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100 hover:border-purple-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm"
-                        >
-                          💲 Cost Validasi
-                        </button>
-                      )}
                       {onDelete && (
                         <button
                           onClick={() => onDelete(rec)}
@@ -1463,9 +1445,9 @@ const CourierAuditRowGroup: React.FC<{
   const maxLen = Math.max(pos.length, invs.length, hargas.length);
   for (let i = 0; i < maxLen; i++) {
     splittedData.push({
-      po: pos[i] || '',
-      inv: invs[i] || '',
-      harga: hargas[i] || ''
+      po: pos[i] || (pos.length === 1 ? pos[0] : ''),
+      inv: invs[i] || (invs.length === 1 ? invs[0] : ''),
+      harga: hargas[i] || (hargas.length === 1 ? hargas[0] : '')
     });
   }
 
@@ -1647,8 +1629,8 @@ const CourierRekapanRowGroup: React.FC<{
     const maxLen = Math.max(pos.length, vessels.length);
     for (let i = 0; i < maxLen; i++) {
       poVesselPairs.push({
-        po: pos[i] || '',
-        vessel: vessels[i] || ''
+        po: pos[i] || (pos.length === 1 ? pos[0] : ''),
+        vessel: vessels[i] || (vessels.length === 1 ? vessels[0] : '')
       });
     }
   }
@@ -1762,10 +1744,12 @@ const CourierRekapanRowGroup: React.FC<{
 const SeaAirRekapanRowGroup: React.FC<{ 
   rec: any, index: number, cols: any[], 
   onEdit?: (r: any) => void,
+  onValidasi?: (r: any) => void,
+  onCostValidasi?: (r: any) => void,
   onDelete?: (r: any) => void,
   onVesselChange: (recId: number, poNo: string, newVal: string) => void,
   onInlineSaveRow?: (id: number, payload: any) => Promise<boolean>
-}> = ({ rec, index, cols, onEdit, onDelete, onVesselChange, onInlineSaveRow }) => {
+}> = ({ rec, index, cols, onEdit, onValidasi, onCostValidasi, onDelete, onVesselChange, onInlineSaveRow }) => {
   const repeatingCols = ['po_no', 'vessel', 'emkl_split', 'split_biaya_origin', 'split_biaya_destination', 'pbm_split', 'lift_off_split', 'inspeksi_split', 'handling_split', 'other_split', 'duty_split', 'bm_split', 'ppn_split', 'pph_split'];
   
   const [isEditing, setIsEditing] = useState(false);
@@ -1964,6 +1948,16 @@ const SeaAirRekapanRowGroup: React.FC<{
                           Edit
                         </button>
                       )}
+                      {onValidasi && (
+                        <button onClick={() => onValidasi(rec)} className="w-[80px] bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
+                          🔎 Doc Validation
+                        </button>
+                      )}
+                      {onCostValidasi && (
+                        <button onClick={() => onCostValidasi(rec)} className="w-[80px] bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100 hover:border-purple-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
+                          💲 Cost Validasi
+                        </button>
+                      )}
                       {onDelete && (
                         <button
                           onClick={() => onDelete(rec)}
@@ -2117,7 +2111,7 @@ const DataRow: React.FC<{
                   onClick={() => onValidasi(rec)}
                   className="w-[80px] bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm"
                 >
-                  🔎 Validasi
+                  🔎 Doc Validation
                 </button>
               )}
               {onCostValidasi && rec.status !== 'LENGKAP' && (
@@ -2255,6 +2249,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
   useEffect(() => {
     setSelectedIds(new Set());
+    setPage(1);
+    setSortColumn('created_at');
+    setSortDirection('desc');
+    setSearch('');
+    setDebouncedSearch('');
   }, [activeMainTab, activeSubTab, activeTrailFilter])
   const tableRef = useRef<HTMLTableElement>(null)
   const [tableWidth, setTableWidth] = useState(0)
@@ -3278,8 +3277,6 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                             cols={activeCols}
                             onEdit={setEditRecord}
                             onChecklist={setSeaAirChecklistRecord}
-                            onValidasi={setSeaAirValidasiRecord}
-                            onCostValidasi={setSeaAirCostValidasiRecord}
                             onDelete={handleDelete}
                             onInlineSaveRow={handleInlineSaveRow}
                           />
@@ -3292,6 +3289,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                             rec={rec}
                             index={startIndex + index}
                             cols={activeCols}
+                            onValidasi={setSeaAirValidasiRecord}
+                            onCostValidasi={setSeaAirCostValidasiRecord}
                             onDelete={handleDelete}
                             onVesselChange={handleUpdateVessel}
                             onInlineSaveRow={handleInlineSaveRow}
