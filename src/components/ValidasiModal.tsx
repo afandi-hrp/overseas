@@ -1,30 +1,33 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { supabase } from '../lib/supabase';
-import { Receipt, FileText, Landmark, Ship, FileDigit, ClipboardList, ShoppingCart, Percent, Edit3, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { Receipt, FileText, Landmark, Ship, FileDigit, ClipboardList, ShoppingCart, Edit3, CheckCircle2, XCircle, Clock } from 'lucide-react';
 import ValidasiPerhitunganPIB from './ValidasiPerhitunganPIB';
 
 const sectionIcons: Record<string, React.ReactNode> = {
-  "s_inv_freight": <Receipt size={24} />,
-  "s_inv_duty": <FileText size={24} />,
+  "s_inv_freight_duty": <Receipt size={24} />,
+  "s_tabel_npwp": <Landmark size={24} />,
   "s_pib": <Landmark size={24} />,
   "s_sppbmcp": <Ship size={24} />,
   "s_billing": <FileDigit size={24} />,
   "s_cipl": <ClipboardList size={24} />,
-  "s_po": <ShoppingCart size={24} />,
-  "s_final_inv": <FileText size={24} />,
-  "s_fp_freight_duty": <Percent size={24} />,
-  "s_fp_revisi": <Edit3 size={24} />,
+  "s_no_vessel_imo": <ShoppingCart size={24} />,
   "s_sptnp": <Landmark size={24} />,
-  "s_cn_freight": <Receipt size={24} />,
-  "s_cn_duty": <FileText size={24} />
 };
 
 const headerColors: Record<string, { bg: string, text: string }> = {
   "Invoice Duty": { bg: "#fef08a", text: "#854d0e" }, 
   "FP Freight": { bg: "#bae6fd", text: "#0369a1" }, 
-  "AWB": { bg: "#bbf7d0", text: "#166534" }, 
-  "PIB / SPPBMCP": { bg: "#e9d5ff", text: "#6b21a8" }, 
-  "FP Duty": { bg: "#fef08a", text: "#854d0e" }, 
+  "AWB": { bg: "#bbf7d0", text: "#166534" },
+  "AWB Freight": { bg: "#bbf7d0", text: "#166534" },
+  "AWB Duty": { bg: "#a7f3d0", text: "#065f46" },
+  "PIB / SPPBMCP": { bg: "#e9d5ff", text: "#6b21a8" },
+  "PIB / SPPBMCP Freight": { bg: "#e9d5ff", text: "#6b21a8" },
+  "PIB / SPPBMCP Duty": { bg: "#ddd6fe", text: "#5b21b6" },
+  "FP Duty": { bg: "#fef08a", text: "#854d0e" },
+  "FP Revisi Freight": { bg: "#99f6e4", text: "#115e59" },
+  "FP Revisi Duty": { bg: "#fed7aa", text: "#9a3412" },
+  "CN INVOICE FREIGHT": { bg: "#c7d2fe", text: "#3730a3" },
+  "CN INVOICE DUTY": { bg: "#fde68a", text: "#92400e" },
   "SPPB": { bg: "#fef08a", text: "#854d0e" }, 
   "CIPL": { bg: "#bae6fd", text: "#0369a1" }, 
   "Final Invoice": { bg: "#e9d5ff", text: "#6b21a8" }, 
@@ -34,6 +37,9 @@ const headerColors: Record<string, { bg: string, text: string }> = {
   "No. Vessel": { bg: "#bbf7d0", text: "#166534" },
   "PIB": { bg: "#fef08a", text: "#854d0e" },
   "BPN": { bg: "#bae6fd", text: "#0369a1" },
+  "BILLING DJBC": { bg: "#fecdd3", text: "#9f1239" },
+  "Invoice Freight": { bg: "#93c5fd", text: "#1e3a8a" },
+  "SPPBMCP": { bg: "#a5f3fc", text: "#155e75" },
 };
 
 function getHeaderColor(doc: string) {
@@ -44,6 +50,7 @@ type RowConfig = {
   id: string;
   compareDoc: string;
   field: string;
+  rowLabel?: string;
   hint?: string;
   isFormat?: boolean;
 };
@@ -55,36 +62,70 @@ type SectionConfig = {
   rows: RowConfig[];
 };
 
+// Menentukan label "Nilai dari ..." pada tooltip input Src.
+// Beberapa section menggabungkan baris dari sumber dokumen berbeda-beda (lihat komentar
+// rowLabel di atas), jadi label sumber tidak selalu sama dengan section.srcLabel.
+function getSrcTooltipLabel(rowMatch: RowConfig, section: SectionConfig): string {
+  if (rowMatch.id === 'id04') return 'Invoice Freight';
+
+  if (section.id === 's_inv_freight_duty') {
+    if (rowMatch.id.startsWith('if')) return 'Invoice Freight';
+    if (rowMatch.id.startsWith('id')) return 'Invoice Duty';
+    if (rowMatch.id.startsWith('fpfd') || rowMatch.id.startsWith('fpr') || rowMatch.id.startsWith('cnf') || rowMatch.id.startsWith('cnd')) return rowMatch.compareDoc;
+    return 'PIB'; // pib02, pib05
+  }
+
+  if (section.id === 's_pib' && rowMatch.id.startsWith('bdjbc')) {
+    return (rowMatch.id === 'bdjbc02' || rowMatch.id === 'bdjbc04') ? 'Billing DJBC' : 'BPN';
+  }
+
+  if (section.id === 's_no_vessel_imo') return rowMatch.compareDoc;
+
+  if (section.id === 's_tabel_npwp') {
+    if (rowMatch.id.startsWith('if')) return 'Invoice Freight';
+    if (rowMatch.id.startsWith('id')) return 'Invoice Duty';
+    if (rowMatch.id === 'cnf04_a') return 'CN Freight';
+    if (rowMatch.id === 'cnd04_a') return 'CN Duty';
+    if (rowMatch.id === 'cipl02') return 'CIPL';
+    return rowMatch.compareDoc; // pib08-10, fpfd01-04, fpr01-04, sppb02-04 -- compareDoc = dokumen sumber
+  }
+
+  return section.srcLabel;
+}
+
 const SECTIONS: SectionConfig[] = [
   {
-    id: "s_inv_freight",
-    label: "INVOICE FREIGHT",
-    srcLabel: "Invoice Freight",
+    id: "s_inv_freight_duty",
+    label: "INVOICE FREIGHT & INVOICE DUTY",
+    srcLabel: "Invoice Freight & Invoice Duty",
     rows: [
-      { id: "if01", compareDoc: "Invoice Duty",   field: "No. AWB" },
-      { id: "if02", compareDoc: "FP Freight",     field: "Subtotal" },
-      { id: "if03", compareDoc: "FP Freight",     field: "PPN" },
-      { id: "if04", compareDoc: "FP Freight",     field: "Nama PT",        hint: "PT IMI / VNS / GMI, dll." },
-      { id: "if05", compareDoc: "AWB",            field: "Berat (kg)" },
-      { id: "if06", compareDoc: "AWB",            field: "Nama PT" },
-      { id: "if07", compareDoc: "AWB",            field: "No. AWB" },
-      { id: "if08", compareDoc: "PIB / SPPBMCP",  field: "No. AWB" },
-      { id: "if09", compareDoc: "PIB / SPPBMCP",  field: "Nama PT" },
-    ]
-  },
-  {
-    id: "s_inv_duty",
-    label: "INVOICE DUTY",
-    srcLabel: "Invoice Duty",
-    rows: [
-      { id: "id06", compareDoc: "AWB",            field: "No. AWB" },
-      { id: "id07", compareDoc: "PIB / SPPBMCP",  field: "No. AWB" },
-      { id: "id01", compareDoc: "FP Duty",        field: "Subtotal" },
-      { id: "id02", compareDoc: "FP Duty",        field: "PPN" },
-      { id: "id03", compareDoc: "FP Duty",        field: "Nama PT",        hint: "PT IMI / VNS / GMI, dll." },
-      { id: "id05", compareDoc: "AWB",            field: "Nama PT" },
-      { id: "id08", compareDoc: "PIB / SPPBMCP",  field: "Nama PT" },
-      { id: "id04", compareDoc: "AWB",            field: "Berat (kg)", hint: "(dari Invoice Freight)" },
+      { id: "if01", compareDoc: "Invoice Duty",          field: "No. AWB" },
+      { id: "if02", compareDoc: "FP Freight",            field: "Subtotal" },
+      { id: "if03", compareDoc: "FP Freight",            field: "PPN" },
+      { id: "if05", compareDoc: "AWB Freight",           field: "Berat (kg)" },
+      { id: "if07", compareDoc: "AWB Freight",           field: "No. AWB" },
+      { id: "if08", compareDoc: "PIB / SPPBMCP Freight", field: "No. AWB" },
+      { id: "id06", compareDoc: "AWB Duty",              field: "No. AWB" },
+      { id: "id07", compareDoc: "PIB / SPPBMCP Duty",    field: "No. AWB" },
+      { id: "id01", compareDoc: "FP Duty",               field: "Subtotal" },
+      { id: "id02", compareDoc: "FP Duty",               field: "PPN" },
+      { id: "id04", compareDoc: "AWB Duty",              field: "Berat (kg)", hint: "(dari Invoice Freight)" },
+      { id: "pib02", compareDoc: "SPPB",                 field: "No. AWB" },
+      { id: "pib05", compareDoc: "AWB",                  field: "No. AWB" },
+      { id: "fpfd05", compareDoc: "FP Freight",        field: "DPP (Freight)",        rowLabel: "DPP" },
+      { id: "fpfd06", compareDoc: "FP Freight",        field: "Referensi (Freight)",  rowLabel: "Referensi" },
+      { id: "fpfd07", compareDoc: "FP Duty",           field: "DPP (Duty)",           rowLabel: "DPP" },
+      { id: "fpfd08", compareDoc: "FP Duty",           field: "Referensi (Duty)",     rowLabel: "Referensi" },
+      { id: "fpr05",  compareDoc: "FP Revisi Freight", field: "DPP (Freight)",        rowLabel: "DPP" },
+      { id: "fpr06",  compareDoc: "FP Revisi Freight", field: "Referensi (Freight)",  rowLabel: "Referensi" },
+      { id: "fpr07",  compareDoc: "FP Revisi Duty",    field: "DPP (Duty)",           rowLabel: "DPP" },
+      { id: "fpr08",  compareDoc: "FP Revisi Duty",    field: "Referensi (Duty)",     rowLabel: "Referensi" },
+      { id: "cnf01_a", compareDoc: "CN INVOICE FREIGHT", field: "AWB" },
+      { id: "cnf02_b", compareDoc: "CN INVOICE FREIGHT", field: "Other Fees / Harga Jual" },
+      { id: "cnf03_b", compareDoc: "CN INVOICE FREIGHT", field: "PPN" },
+      { id: "cnd01_a", compareDoc: "CN INVOICE DUTY",    field: "AWB" },
+      { id: "cnd02_b", compareDoc: "CN INVOICE DUTY",    field: "Other Fees / Harga Jual" },
+      { id: "cnd03_b", compareDoc: "CN INVOICE DUTY",    field: "PPN" },
     ]
   },
   {
@@ -92,16 +133,15 @@ const SECTIONS: SectionConfig[] = [
     label: "PIB",
     srcLabel: "PIB",
     rows: [
-      { id: "pib01", compareDoc: "SPPB",          field: "No. Pengajuan vs No. Aju" },
-      { id: "pib02", compareDoc: "SPPB",          field: "No. AWB" },
-      { id: "pib03", compareDoc: "CIPL",          field: "No. Invoice" },
-      { id: "pib04", compareDoc: "CIPL",          field: "Item Value" },
-      { id: "pib05", compareDoc: "AWB",           field: "No. AWB" },
-      { id: "pib06", compareDoc: "Final Invoice", field: "No. Invoice" },
-      { id: "pib07", compareDoc: "Final Invoice", field: "Item Value" },
-      { id: "pib08", compareDoc: "Tabel NPWP",    field: "No. NPWP" },
-      { id: "pib09", compareDoc: "Tabel NPWP",    field: "Nama NPWP" },
-      { id: "pib10", compareDoc: "Tabel NPWP",    field: "Alamat NPWP" },
+      { id: "pib01",   compareDoc: "SPPB",          field: "No. Pengajuan vs No. Aju" },
+      { id: "pib03",   compareDoc: "CIPL",          field: "No. Invoice" },
+      { id: "pib04",   compareDoc: "CIPL",          field: "Item Value" },
+      { id: "pib06",   compareDoc: "Final Invoice", field: "No. Invoice" },
+      { id: "pib07",   compareDoc: "Final Invoice", field: "Item Value" },
+      { id: "bdjbc01", compareDoc: "BILLING DJBC",  field: "Nomor Aju" },
+      { id: "bdjbc02", compareDoc: "BILLING DJBC",  field: "Total" },
+      { id: "bdjbc03", compareDoc: "BPN",           field: "Nomor Aju" },
+      { id: "bdjbc04", compareDoc: "BPN",           field: "Total" },
     ]
   },
   {
@@ -110,9 +150,6 @@ const SECTIONS: SectionConfig[] = [
     srcLabel: "SPPBMCP",
     rows: [
       { id: "sppb01", compareDoc: "BPN DHL / HTBK",  field: "Total Nilai Pabean vs CIF Penetapan" },
-      { id: "sppb02", compareDoc: "Tabel NPWP",       field: "No. NPWP" },
-      { id: "sppb03", compareDoc: "Tabel NPWP",       field: "Nama NPWP" },
-      { id: "sppb04", compareDoc: "Tabel NPWP",       field: "Alamat NPWP" },
     ]
   },
   {
@@ -120,9 +157,7 @@ const SECTIONS: SectionConfig[] = [
     label: "BILLING DJBC",
     srcLabel: "Billing DJBC",
     rows: [
-      { id: "bdjbc01", compareDoc: "PIB",  field: "Nomor Aju vs No. Pengajuan" },
-      { id: "bdjbc02", compareDoc: "PIB",  field: "Total" },
-      { id: "bdjbc03", compareDoc: "BPN",  field: "Nomor Aju vs Nomor Dokumen" },
+      { id: "bdjbc03", compareDoc: "BPN",  field: "Nomor Aju" },
       { id: "bdjbc04", compareDoc: "BPN",  field: "Total" },
     ]
   },
@@ -132,56 +167,18 @@ const SECTIONS: SectionConfig[] = [
     srcLabel: "CIPL",
     rows: [
       { id: "cipl01", compareDoc: "PO",             field: "Total Value (excl. other cost)" },
-      { id: "cipl02", compareDoc: "PO",             field: "Penerima Barang vs Nama PT" },
       { id: "cipl03", compareDoc: "Final Invoice",  field: "No. Invoice" },
       { id: "cipl04", compareDoc: "Final Invoice",  field: "Total Value" },
-      { id: "cipl05", compareDoc: "Tidak Ada Nama Vessel & Nomor IMO", field: "Format Pass: Tidak Ada Vessel & IMO", isFormat: true, hint: 'Sesuai jika kosong' },
     ]
   },
   {
-    id: "s_po",
-    label: "PO",
-    srcLabel: "PO",
+    id: "s_no_vessel_imo",
+    label: "TIDAK ADA NAMA VESSEL DAN NOMOR IMO",
+    srcLabel: "Tidak Ada Nama Vessel & Nomor IMO",
     rows: [
-      { id: "po01", compareDoc: "No. Vessel", field: "Format Pass", isFormat: true, hint: 'Format harus mengandung tanda "-"' },
-    ]
-  },
-  {
-    id: "s_final_inv",
-    label: "FINAL INVOICE",
-    srcLabel: "Final Invoice",
-    rows: [
-      { id: "fi01", compareDoc: "Tidak Ada Nama Vessel & Nomor IMO", field: "Format Pass: Tidak Ada Vessel & IMO", isFormat: true, hint: 'Sesuai jika kosong' },
-    ]
-  },
-  {
-    id: "s_fp_freight_duty",
-    label: "FP FREIGHT & FP DUTY",
-    srcLabel: "FP Freight / FP Duty",
-    rows: [
-      { id: "fpfd01", compareDoc: "Tabel Master NPWP", field: "No. NPWP (Freight)" },
-      { id: "fpfd02", compareDoc: "Tabel Master NPWP", field: "Alamat NPWP (Freight)" },
-      { id: "fpfd05", compareDoc: "INVOICE FREIGHT / INVOICE DUTY", field: "DPP (Freight)" },
-      { id: "fpfd06", compareDoc: "INVOICE FREIGHT / INVOICE DUTY", field: "Referensi (Freight)" },
-      { id: "fpfd03", compareDoc: "Tabel Master NPWP", field: "No. NPWP (Duty)" },
-      { id: "fpfd04", compareDoc: "Tabel Master NPWP", field: "Alamat NPWP (Duty)" },
-      { id: "fpfd07", compareDoc: "INVOICE FREIGHT / INVOICE DUTY", field: "DPP (Duty)" },
-      { id: "fpfd08", compareDoc: "INVOICE FREIGHT / INVOICE DUTY", field: "Referensi (Duty)" },
-    ]
-  },
-  {
-    id: "s_fp_revisi",
-    label: "FP REVISI INV FREIGHT & FP REVISI INV DUTY",
-    srcLabel: "FP Revisi",
-    rows: [
-      { id: "fpr01", compareDoc: "Tabel Master NPWP", field: "No. NPWP (Freight)" },
-      { id: "fpr02", compareDoc: "Tabel Master NPWP", field: "Alamat NPWP (Freight)" },
-      { id: "fpr05", compareDoc: "INVOICE FREIGHT / INVOICE DUTY", field: "DPP (Freight)" },
-      { id: "fpr06", compareDoc: "INVOICE FREIGHT / INVOICE DUTY", field: "Referensi (Freight)" },
-      { id: "fpr03", compareDoc: "Tabel Master NPWP", field: "No. NPWP (Duty)" },
-      { id: "fpr04", compareDoc: "Tabel Master NPWP", field: "Alamat NPWP (Duty)" },
-      { id: "fpr07", compareDoc: "INVOICE FREIGHT / INVOICE DUTY", field: "DPP (Duty)" },
-      { id: "fpr08", compareDoc: "INVOICE FREIGHT / INVOICE DUTY", field: "Referensi (Duty)" },
+      { id: "cipl05", compareDoc: "CIPL",          field: "Format Pass: Tidak Ada Vessel & IMO", isFormat: true, hint: 'Sesuai jika kosong' },
+      { id: "po01",   compareDoc: "PO",            field: "Format Pass", rowLabel: "Format Pass: Tidak Ada Vessel & IMO", isFormat: true, hint: 'Format harus mengandung tanda "-"' },
+      { id: "fi01",   compareDoc: "Final Invoice", field: "Format Pass: Tidak Ada Vessel & IMO", isFormat: true, hint: 'Sesuai jika kosong' },
     ]
   },
   {
@@ -200,25 +197,35 @@ const SECTIONS: SectionConfig[] = [
     ]
   },
   {
-    id: "s_cn_freight",
-    label: "CN INVOICE FREIGHT",
-    srcLabel: "CN Freight",
+    id: "s_tabel_npwp",
+    label: "TABEL NPWP",
+    srcLabel: "Tabel NPWP",
     rows: [
-      { id: "cnf01_a", compareDoc: "Invoice Freight", field: "AWB" },
-      { id: "cnf02_b", compareDoc: "FP Revisi", field: "Other Fees / Harga Jual" },
-      { id: "cnf03_b", compareDoc: "FP Revisi", field: "PPN" },
-      { id: "cnf04_a", compareDoc: "Invoice Freight", field: "Nama PT" },
-    ]
-  },
-  {
-    id: "s_cn_duty",
-    label: "CN INVOICE DUTY",
-    srcLabel: "CN Duty",
-    rows: [
-      { id: "cnd01_a", compareDoc: "Invoice Duty", field: "AWB" },
-      { id: "cnd02_b", compareDoc: "FP Revisi", field: "Other Fees / Harga Jual" },
-      { id: "cnd03_b", compareDoc: "FP Revisi", field: "PPN" },
-      { id: "cnd04_a", compareDoc: "Invoice Duty", field: "Nama PT" },
+      { id: "pib08",   compareDoc: "PIB",               field: "No. NPWP" },
+      { id: "sppb02",  compareDoc: "SPPBMCP",           field: "No. NPWP" },
+      { id: "fpfd01",  compareDoc: "FP Freight",        field: "No. NPWP (Freight)",    rowLabel: "No. NPWP" },
+      { id: "fpfd03",  compareDoc: "FP Duty",           field: "No. NPWP (Duty)",       rowLabel: "No. NPWP" },
+      { id: "fpr01",   compareDoc: "FP Revisi Freight", field: "No. NPWP (Freight)",    rowLabel: "No. NPWP" },
+      { id: "fpr03",   compareDoc: "FP Revisi Duty",    field: "No. NPWP (Duty)",       rowLabel: "No. NPWP" },
+
+      { id: "pib09",   compareDoc: "PIB",     field: "Nama NPWP" },
+      { id: "sppb03",  compareDoc: "SPPBMCP", field: "Nama NPWP" },
+      { id: "if04",    compareDoc: "FP Freight",             field: "Nama PT", rowLabel: "Nama NPWP", hint: "PT IMI / VNS / GMI, dll." },
+      { id: "if06",    compareDoc: "AWB Freight",             field: "Nama PT", rowLabel: "Nama NPWP" },
+      { id: "if09",    compareDoc: "PIB / SPPBMCP Freight",   field: "Nama PT", rowLabel: "Nama NPWP" },
+      { id: "id03",    compareDoc: "FP Duty",                 field: "Nama PT", rowLabel: "Nama NPWP", hint: "PT IMI / VNS / GMI, dll." },
+      { id: "id05",    compareDoc: "AWB Duty",                field: "Nama PT", rowLabel: "Nama NPWP" },
+      { id: "id08",    compareDoc: "PIB / SPPBMCP Duty",      field: "Nama PT", rowLabel: "Nama NPWP" },
+      { id: "cnf04_a", compareDoc: "Invoice Freight",         field: "Nama PT", rowLabel: "Nama NPWP" },
+      { id: "cnd04_a", compareDoc: "Invoice Duty",            field: "Nama PT", rowLabel: "Nama NPWP" },
+      { id: "cipl02",  compareDoc: "PO",                      field: "Penerima Barang vs Nama PT", rowLabel: "Nama NPWP" },
+
+      { id: "pib10",   compareDoc: "PIB",               field: "Alamat NPWP" },
+      { id: "sppb04",  compareDoc: "SPPBMCP",           field: "Alamat NPWP" },
+      { id: "fpfd02",  compareDoc: "FP Freight",        field: "Alamat NPWP (Freight)", rowLabel: "Alamat NPWP" },
+      { id: "fpfd04",  compareDoc: "FP Duty",           field: "Alamat NPWP (Duty)",    rowLabel: "Alamat NPWP" },
+      { id: "fpr02",   compareDoc: "FP Revisi Freight", field: "Alamat NPWP (Freight)", rowLabel: "Alamat NPWP" },
+      { id: "fpr04",   compareDoc: "FP Revisi Duty",    field: "Alamat NPWP (Duty)",    rowLabel: "Alamat NPWP" },
     ]
   },
 ];
@@ -376,14 +383,15 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
       if (docType === 'CN' && section.id === 's_pib') return false;
       if (docType === 'CN' && section.id === 's_sptnp') return false;
       if (docType === 'PIB' && section.id === 's_sppbmcp') return false;
+      // Kolom BILLING DJBC/BPN sudah pindah ke tabel PIB untuk jalur PIB — sisakan section ini khusus jalur CN
+      if (docType === 'PIB' && section.id === 's_billing') return false;
 
       const docObj = debugData?.doc && Object.keys(debugData.doc).length > 0 ? debugData.doc : record;
       
-      // Sembunyikan V6 jika v6_if_awb atau if_awb null
-      if (section.id === 's_inv_freight' && (docObj?.v6_if_awb === null || docObj?.if_awb === null)) return false;
-      
-      // Sembunyikan V7 jika v7_id_awb atau id_awb null
-      if (section.id === 's_inv_duty' && (docObj?.v7_id_awb === null || docObj?.id_awb === null)) return false;
+      // Sembunyikan section gabungan Invoice Freight & Duty hanya jika KEDUA sisinya tidak ada data
+      const freightAwbMissing = (docObj?.v6_if_awb === null || docObj?.if_awb === null);
+      const dutyAwbMissing = (docObj?.v7_id_awb === null || docObj?.id_awb === null);
+      if (section.id === 's_inv_freight_duty' && freightAwbMissing && dutyAwbMissing) return false;
 
       return true;
     });
@@ -1227,9 +1235,13 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
             {activeSections.map((section) => {
               const ss = sectionStats(section);
               const uniqueCompareDocs = Array.from(new Set(section.rows.map((r: any) => r.compareDoc)));
+              // rowLabel (jika ada) menentukan pengelompokan baris tampilan tanpa mengubah `field`
+              // yang dipakai computeStatus, jadi beberapa cek dengan logika berbeda tetap bisa satu baris.
+              const groupKey = (r: any) => r.rowLabel || r.field;
               const uniqueFields: string[] = [];
               section.rows.forEach((r: any) => {
-                if (!uniqueFields.includes(r.field)) uniqueFields.push(r.field);
+                const key = groupKey(r);
+                if (!uniqueFields.includes(key)) uniqueFields.push(key);
               });
 
               return (
@@ -1243,9 +1255,6 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                       {section.label}
                       {section.id === "s_sptnp" && (
                          <div className="text-[9px] mt-1 text-slate-500 normal-case tracking-normal">jika ada — khusus jalur PIB</div>
-                      )}
-                      {(section.id === "s_cn_freight" || section.id === "s_cn_duty") && (
-                         <div className="text-[9px] mt-1 text-rose-500 font-bold normal-case tracking-normal">(jika ada)</div>
                       )}
                     </div>
                     <div className="md:mt-auto ml-auto md:ml-0 flex items-center justify-center">
@@ -1268,7 +1277,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                           {uniqueCompareDocs.map(doc => {
                              const colorObj = getHeaderColor(doc as string);
                              return (
-                               <th key={doc as string} className="p-3 border-b border-r last:border-r-0 border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center" style={{ backgroundColor: colorObj.bg, color: colorObj.text }}>
+                               <th key={doc as string} className="p-3 border-b border-r last:border-r-0 border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center min-w-[150px]" style={{ backgroundColor: colorObj.bg, color: colorObj.text }}>
                                  {doc as string}
                                </th>
                              )
@@ -1281,37 +1290,37 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                             <td className="p-3 border-r border-slate-200 text-xs font-bold text-slate-800 bg-white whitespace-nowrap w-[1%] sticky left-0 z-10 align-middle shadow-[1px_0_0_0_#e2e8f0]">
                               {field}
                               {(() => {
-                                 const rWithHint = section.rows.find((r: any) => r.field === field && r.hint);
-                                 if (rWithHint) {
-                                    return <div className="text-[10px] text-slate-400 mt-1 font-medium leading-tight whitespace-normal">{rWithHint.hint}</div>;
-                                 }
-                                 return null;
+                                 const hints = Array.from(new Set(section.rows.filter((r: any) => groupKey(r) === field && r.hint).map((r: any) => r.hint)));
+                                 if (hints.length === 0) return null;
+                                 return hints.map((h, i) => (
+                                    <div key={i} className="text-[10px] text-slate-400 mt-1 font-medium leading-tight whitespace-normal">{h as string}</div>
+                                 ));
                               })()}
                             </td>
                             {uniqueCompareDocs.map(doc => {
-                               const rowMatch = section.rows.find((r: any) => r.compareDoc === doc && r.field === field);
+                               const rowMatch = section.rows.find((r: any) => r.compareDoc === doc && groupKey(r) === field);
                                if (!rowMatch) {
-                                  return <td key={doc as string} className="p-3 border-r border-slate-200 last:border-r-0 text-center text-slate-300 align-middle bg-slate-50/30">-</td>;
+                                  return <td key={doc as string} className="p-3 border-r border-slate-200 last:border-r-0 text-center text-slate-300 align-middle bg-slate-50/30 min-w-[150px]">-</td>;
                                }
                                const v = values[rowMatch.id] || {src:'', cmp:''};
-                               const stComputed = computeStatus(v.src, v.cmp, rowMatch.isFormat, field);
+                               const stComputed = computeStatus(v.src, v.cmp, rowMatch.isFormat, rowMatch.field);
                                const st = v.manual_status || stComputed;
                                const errNpwp = v.cmp && hasNpwpError(rowMatch.id, v.cmp);
                                
                                return (
-                                  <td key={doc as string} className="p-3 border-r border-slate-200 last:border-r-0 align-middle">
-                                     <div className="flex flex-col gap-2 justify-center items-center">
-                                       <div className="flex items-center gap-1.5 w-full">
+                                  <td key={doc as string} className="p-3 border-r border-slate-200 last:border-r-0 align-middle min-w-[150px]">
+                                     <div className="flex flex-col gap-2 justify-center items-center w-full">
+                                       <div className="flex flex-col items-center gap-1 w-full">
                                          {isEditMode ? (
-                                           <input 
-                                             className="flex-1 w-0 min-w-0 border border-slate-200 rounded px-2 py-1.5 text-xs text-center focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium text-slate-700 bg-slate-50 hover:bg-white" 
-                                             value={v.src || ""} 
-                                             onChange={e => setObj(rowMatch.id, 'src', e.target.value)} 
+                                           <input
+                                             className="w-full border border-slate-200 rounded px-2 py-1.5 text-xs text-center focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium text-slate-700 bg-slate-50 hover:bg-white"
+                                             value={v.src || ""}
+                                             onChange={e => setObj(rowMatch.id, 'src', e.target.value)}
                                              placeholder={rowMatch.isFormat ? "Format..." : "Src"}
-                                             title={`Nilai dari ${rowMatch.id === 'id04' ? 'Invoice Freight' : section.srcLabel}`}
+                                             title={`Nilai dari ${getSrcTooltipLabel(rowMatch, section)}`}
                                            />
                                          ) : (
-                                           <span className={`flex-1 flex flex-col items-center justify-center text-xs text-center w-0 min-w-0 break-all px-1 ${v.src_edited ? 'text-blue-700 font-bold' : 'text-slate-700 font-medium'}`}>
+                                           <span className={`flex flex-col items-center justify-center text-xs text-center w-full break-words px-1 ${v.src_edited ? 'text-blue-700 font-bold' : 'text-slate-700 font-medium'}`}>
                                              <div>
                                                {v.srcDisplay ? v.srcDisplay : formatViewValue(v.src, field)}
                                                {v.src_edited && <Edit3 size={10} className="inline ml-1 text-blue-500 opacity-70" title="Diedit manual" />}
@@ -1322,42 +1331,42 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
 
                                          {!rowMatch.isFormat && (
                                            <>
-                                             <span className="text-[10px] text-slate-400 font-bold lowercase italic shrink-0 px-2 mx-1 bg-white/80 rounded-full">vs</span>
+                                             <span className="text-[10px] text-slate-400 font-bold lowercase italic shrink-0 px-2 bg-white/80 rounded-full">vs</span>
                                              {isEditMode ? (
-                                               <input 
-                                                 className={`flex-1 w-0 min-w-0 border rounded px-2 py-1.5 text-xs text-center focus:outline-none focus:ring-1 transition-all font-medium text-slate-700 ${(errNpwp || v.npwp_status === 'not_found') ? 'border-amber-400 bg-amber-50 focus:border-amber-500 focus:ring-amber-500' : 'border-slate-200 bg-slate-50 hover:bg-white focus:border-blue-500 focus:ring-blue-500'}`} 
-                                                 value={v.cmp || ""} 
+                                               <input
+                                                 className={`w-full border rounded px-2 py-1.5 text-xs text-center focus:outline-none focus:ring-1 transition-all font-medium text-slate-700 ${(errNpwp || v.npwp_status === 'not_found') ? 'border-amber-400 bg-amber-50 focus:border-amber-500 focus:ring-amber-500' : 'border-slate-200 bg-slate-50 hover:bg-white focus:border-blue-500 focus:ring-blue-500'}`}
+                                                 value={v.cmp || ""}
                                                  onChange={e => {
                                                    setObj(rowMatch.id, 'cmp', e.target.value);
                                                    setValues((prev: any) => ({ ...prev, [rowMatch.id]: { ...prev[rowMatch.id], npwp_status: null } }));
-                                                 }} 
+                                                 }}
                                                  placeholder={"Cmp"}
                                                  title={`Nilai dari ${rowMatch.compareDoc}`}
                                                />
                                              ) : (
-                                               <span className={`flex-1 text-xs text-center w-0 min-w-0 break-all px-1 ${v.cmp_edited ? 'text-blue-700 font-bold' : 'text-slate-700 font-medium'}`}>
+                                               <span className={`text-xs text-center w-full break-words px-1 ${v.cmp_edited ? 'text-blue-700 font-bold' : 'text-slate-700 font-medium'}`}>
                                                  {formatViewValue(v.cmp, field)}
                                                  {v.cmp_edited && <Edit3 size={10} className="inline ml-1 text-blue-500 opacity-70" title="Diedit manual" />}
                                                </span>
                                              )}
                                            </>
                                          )}
-                                         
-                                         {/* STATUS ICON */}
-                                         <div 
-                                           className={`shrink-0 flex items-center justify-center w-5 h-5 ml-1 ${isEditMode ? 'cursor-pointer hover:opacity-75 transition-opacity' : ''}`}
-                                           onClick={() => toggleManualStatus(rowMatch.id, st)}
-                                           title={isEditMode ? "Klik untuk merubah status manual" : undefined}
-                                         >
-                                           {st === 'match' && <CheckCircle2 size={18} className="text-emerald-500 fill-emerald-50" />}
-                                           {st === 'mismatch' && <XCircle size={18} className="text-red-500 fill-red-50" />}
-                                           {st === 'partial' && <Clock size={18} className="text-amber-500 fill-amber-50" />}
-                                           {st === 'empty' && <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>}
-                                         </div>
                                        </div>
-                                       
+
+                                       {/* STATUS ICON */}
+                                       <div
+                                         className={`shrink-0 flex items-center justify-center w-5 h-5 ${isEditMode ? 'cursor-pointer hover:opacity-75 transition-opacity' : ''}`}
+                                         onClick={() => toggleManualStatus(rowMatch.id, st)}
+                                         title={isEditMode ? "Klik untuk merubah status manual" : undefined}
+                                       >
+                                         {st === 'match' && <CheckCircle2 size={18} className="text-emerald-500 fill-emerald-50" />}
+                                         {st === 'mismatch' && <XCircle size={18} className="text-red-500 fill-red-50" />}
+                                         {st === 'partial' && <Clock size={18} className="text-amber-500 fill-amber-50" />}
+                                         {st === 'empty' && <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>}
+                                       </div>
+
                                        {(errNpwp || v.npwp_status === 'not_found') && (
-                                         <div className="text-[9px] text-amber-700 bg-amber-100 px-2 py-0.5 rounded text-center -mt-1 font-bold tracking-wide uppercase border border-amber-200 shadow-sm w-full">
+                                         <div className="text-[9px] text-amber-700 bg-amber-100 px-2 py-0.5 rounded text-center font-bold tracking-wide uppercase border border-amber-200 shadow-sm w-full">
                                            NPWP tidak terdaftar
                                          </div>
                                        )}

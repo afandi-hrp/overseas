@@ -50,8 +50,8 @@ const MANUAL_FIELDS = {
     { key: 'ntpn',        label: 'NTPN', type: 'text' },
     { key: 'tgl_lunas',   label: 'Tgl Lunas', type: 'date' },
     { key: 'submit_date', label: 'Tgl Approved / Submit', type: 'date' },
-    { key: 'keterangan',  label: 'Keterangan Internal', type: 'text' },
-    { key: 'notes',       label: 'Notes', type: 'textarea' },
+    { key: 'keterangan',  label: 'Internal Remarks', type: 'text' },
+    { key: 'notes',       label: 'Remarks', type: 'textarea' },
   ],
 }
 
@@ -665,10 +665,10 @@ const COURIER_COLS = [
   { key: 'breakdown_freight_vessel', label: 'Breakdown Freight (Vessel)', type: 'num' },
   { key: 'breakdown_bm_vessel', label: 'Breakdown BM (Vessel)', type: 'num' },
   { key: 'breakdown_ppnpph_vessel', label: 'Breakdown PPN/PPH (Vessel)', type: 'num' },
-  { key: 'notes', label: 'Notes' },
+  { key: 'notes', label: 'Remarks' },
   { key: 'submit_date', label: 'Submit Date', type: 'date' },
   { key: 'tgl_lunas', label: 'Tgl Lunas', type: 'date' },
-  { key: 'keterangan', label: 'Keterangan' },
+  { key: 'keterangan', label: 'Internal Remarks' },
   { key: 'created_at', label: 'Created At', type: 'date' }
 ]
 
@@ -1196,7 +1196,10 @@ const getCellData = (c: any, rec: any, index: number) => {
 
 
 const isInlineEditable = (colKey: string) => {
-   return !['id', 'created_at', 'seaair_id', 'po_detail', 'index', 'cek_selisih', 'action', 'emkl_vendor'].includes(colKey);
+   // status_kelengkapan/dokumen_kurang/pct_kelengkapan berasal dari view v_pib_lengkap/v_cn_lengkap
+   // (join ke dokumen_checklist), bukan kolom asli tabel_audit_pib/tabel_audit_cn -- kalau diedit di
+   // sini, penyimpanannya akan gagal karena kolom itu tidak ada di tabel tujuan.
+   return !['id', 'created_at', 'seaair_id', 'po_detail', 'index', 'cek_selisih', 'action', 'emkl_vendor', 'status_kelengkapan', 'dokumen_kurang', 'pct_kelengkapan'].includes(colKey);
 };
 
 const SeaAirAuditRowGroup: React.FC<{ 
@@ -1488,7 +1491,7 @@ const CourierAuditRowGroup: React.FC<{
               
               const additionalClasses = !isRepeating && isFirst && rowCount > 1 && isExpanded ? 'border-r border-slate-200 bg-white group-hover:bg-blue-50/30' : '';
               
-              if (isEditing && isInlineEditable(c.key) && (!isRepeating || isFirst) && c.key !== 'po_no' && c.key !== 'vessel' && c.key !== 'po_ori' && c.key !== 'vendor_inv_no' && c.key !== 'po_harga_detail') {
+              if (isEditing && isInlineEditable(c.key) && (!isRepeating || isFirst) && c.key !== 'po_no' && c.key !== 'vessel') {
                 let inputEl;
                 if (c.type === 'date' || c.type === 'date_dash_if_null' || c.type === 'datetime' || c.type === 'date_badge_if_null') {
                   const val = editForm[c.key] ? String(editForm[c.key]).substring(0, 10) : '';
@@ -1499,6 +1502,9 @@ const CourierAuditRowGroup: React.FC<{
                   inputEl = (
                     <select className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-slate-800" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})}>
                       <option value="LENGKAP">LENGKAP</option>
+                      <option value="PROSES">PROSES</option>
+                      <option value="PENDING">PENDING</option>
+                      <option value="REVISI">REVISI</option>
                       <option value="ARCHIVED">ARCHIVED</option>
                     </select>
                   );
@@ -1511,14 +1517,14 @@ const CourierAuditRowGroup: React.FC<{
                   </td>
                 );
               }
-              
+
               return (
                 <td key={c.key} className={`px-4 py-3 text-[11px] align-top ${alignClass} ${additionalClasses}`} rowSpan={isRepeating ? 1 : (isExpanded ? rowCount : 1)}>
                    {content}
                 </td>
               )
             })}
-            
+
             {isFirst && (
               <td className="px-4 py-3 text-center sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.03)] z-10 transition-colors border-l border-slate-100" rowSpan={isExpanded ? rowCount : 1}>
                 <div className="flex flex-col items-center gap-1.5">
@@ -1555,12 +1561,12 @@ const CourierAuditRowGroup: React.FC<{
                       )}
                       {onArchive && (
                         <button onClick={() => onArchive(rec)} className="w-[80px] bg-orange-50 text-orange-600 hover:bg-orange-100 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all border border-orange-200 shadow-sm">
-                          {rec.status === 'LENGKAP' ? '📦 Unarchived' : '🗄️ Draf'}
+                          {rec.status === 'LENGKAP' ? '📦 Unarchived' : '🗄️ Draft'}
                         </button>
                       )}
                       {onUndraft && (
                         <button onClick={() => onUndraft(rec)} className="w-[80px] bg-emerald-50 border border-emerald-200 text-emerald-600 hover:bg-emerald-100 hover:border-emerald-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
-                          🗄️ Draf
+                          🗄️ Undraft
                         </button>
                       )}
                       {onDelete && rec.status !== 'LENGKAP' && (
@@ -2148,7 +2154,7 @@ const DataRow: React.FC<{
                   onClick={() => onArchive(rec)}
                   className="w-[80px] bg-orange-50 text-orange-600 hover:bg-orange-100 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all border border-orange-200 shadow-sm"
                 >
-                  {rec.status === 'LENGKAP' ? '📦 Unarchived' : '🗄️ Draf'}
+                  {rec.status === 'LENGKAP' ? '📦 Unarchived' : '🗄️ Draft'}
                 </button>
               )}
               {onUndraft && (
@@ -2156,7 +2162,7 @@ const DataRow: React.FC<{
                   onClick={() => onUndraft(rec)}
                   className="w-[80px] bg-emerald-50 text-emerald-600 hover:bg-emerald-100 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all border border-emerald-200 shadow-sm"
                 >
-                  🗄️ Draf
+                  🗄️ Undraft
                 </button>
               )}
               {onDelete && rec.status !== 'LENGKAP' && (
@@ -3055,7 +3061,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   {/* Courier Audit Type Filter */}
                   {(activeMainTab === 'courier' && activeSubTab === 'courier_audit') && (
                     <div className="flex gap-2 items-center pb-1 overflow-x-auto max-w-[60vw]">
-                      {[{id: 'pib', label: 'PIB'}, {id: 'cn', label: 'CN'}, {id: 'archive', label: '🗄️ Draf'}].map(type => (
+                      {[{id: 'pib', label: 'PIB'}, {id: 'cn', label: 'CN'}, {id: 'archive', label: '🗄️ Draft'}].map(type => (
                         <button
                           key={type.id}
                           onClick={() => { setCourierAuditType(type.id); setPage(1); }}

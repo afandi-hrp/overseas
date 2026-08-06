@@ -1,33 +1,36 @@
 export const SECTIONS = [
   {
-    id: "s_inv_freight",
-    label: "INVOICE FREIGHT",
-    srcLabel: "Invoice Freight",
+    id: "s_inv_freight_duty",
+    label: "INVOICE FREIGHT & INVOICE DUTY",
+    srcLabel: "Invoice Freight & Invoice Duty",
     rows: [
-      { id: "if01", compareDoc: "Invoice Duty",   field: "No. AWB" },
-      { id: "if02", compareDoc: "FP Freight",     field: "Subtotal" },
-      { id: "if03", compareDoc: "FP Freight",     field: "PPN" },
-      { id: "if04", compareDoc: "FP Freight",     field: "Nama PT",        hint: "PT IMI / VNS / GMI, dll." },
-      { id: "if05", compareDoc: "AWB",            field: "Berat (kg)" },
-      { id: "if06", compareDoc: "AWB",            field: "Nama PT" },
-      { id: "if07", compareDoc: "AWB",            field: "No. AWB" },
-      { id: "if08", compareDoc: "PIB / SPPBMCP",  field: "No. AWB" },
-      { id: "if09", compareDoc: "PIB / SPPBMCP",  field: "Nama PT" },
-    ]
-  },
-  {
-    id: "s_inv_duty",
-    label: "INVOICE DUTY",
-    srcLabel: "Invoice Duty",
-    rows: [
-      { id: "id06", compareDoc: "AWB",            field: "No. AWB" },
-      { id: "id07", compareDoc: "PIB / SPPBMCP",  field: "No. AWB" },
-      { id: "id01", compareDoc: "FP Duty",        field: "Subtotal" },
-      { id: "id02", compareDoc: "FP Duty",        field: "PPN" },
-      { id: "id03", compareDoc: "FP Duty",        field: "Nama PT",        hint: "PT IMI / VNS / GMI, dll." },
-      { id: "id05", compareDoc: "AWB",            field: "Nama PT" },
-      { id: "id08", compareDoc: "PIB / SPPBMCP",  field: "Nama PT" },
-      { id: "id04", compareDoc: "AWB",            field: "Berat (kg)", hint: "(dari Invoice Freight)" },
+      { id: "if01", compareDoc: "Invoice Duty",          field: "No. AWB" },
+      { id: "if02", compareDoc: "FP Freight",            field: "Subtotal" },
+      { id: "if03", compareDoc: "FP Freight",            field: "PPN" },
+      { id: "if05", compareDoc: "AWB Freight",           field: "Berat (kg)" },
+      { id: "if07", compareDoc: "AWB Freight",           field: "No. AWB" },
+      { id: "if08", compareDoc: "PIB / SPPBMCP Freight", field: "No. AWB" },
+      { id: "id06", compareDoc: "AWB Duty",              field: "No. AWB" },
+      { id: "id07", compareDoc: "PIB / SPPBMCP Duty",    field: "No. AWB" },
+      { id: "id01", compareDoc: "FP Duty",               field: "Subtotal" },
+      { id: "id02", compareDoc: "FP Duty",               field: "PPN" },
+      { id: "id04", compareDoc: "AWB Duty",              field: "Berat (kg)", hint: "(dari Invoice Freight)" },
+      { id: "pib02", compareDoc: "SPPB",                 field: "No. AWB" },
+      { id: "pib05", compareDoc: "AWB",                  field: "No. AWB" },
+      { id: "fpfd05", compareDoc: "FP Freight",        field: "DPP (Freight)",        rowLabel: "DPP" },
+      { id: "fpfd06", compareDoc: "FP Freight",        field: "Referensi (Freight)",  rowLabel: "Referensi" },
+      { id: "fpfd07", compareDoc: "FP Duty",           field: "DPP (Duty)",           rowLabel: "DPP" },
+      { id: "fpfd08", compareDoc: "FP Duty",           field: "Referensi (Duty)",     rowLabel: "Referensi" },
+      { id: "fpr05",  compareDoc: "FP Revisi Freight", field: "DPP (Freight)",        rowLabel: "DPP" },
+      { id: "fpr06",  compareDoc: "FP Revisi Freight", field: "Referensi (Freight)",  rowLabel: "Referensi" },
+      { id: "fpr07",  compareDoc: "FP Revisi Duty",    field: "DPP (Duty)",           rowLabel: "DPP" },
+      { id: "fpr08",  compareDoc: "FP Revisi Duty",    field: "Referensi (Duty)",     rowLabel: "Referensi" },
+      { id: "cnf01_a", compareDoc: "CN INVOICE FREIGHT", field: "AWB" },
+      { id: "cnf02_b", compareDoc: "CN INVOICE FREIGHT", field: "Other Fees / Harga Jual" },
+      { id: "cnf03_b", compareDoc: "CN INVOICE FREIGHT", field: "PPN" },
+      { id: "cnd01_a", compareDoc: "CN INVOICE DUTY",    field: "AWB" },
+      { id: "cnd02_b", compareDoc: "CN INVOICE DUTY",    field: "Other Fees / Harga Jual" },
+      { id: "cnd03_b", compareDoc: "CN INVOICE DUTY",    field: "PPN" },
     ]
   },
   {
@@ -35,16 +38,15 @@ export const SECTIONS = [
     label: "PIB",
     srcLabel: "PIB",
     rows: [
-      { id: "pib01", compareDoc: "SPPB",          field: "No. Pengajuan vs No. Aju" },
-      { id: "pib02", compareDoc: "SPPB",          field: "No. AWB" },
-      { id: "pib03", compareDoc: "CIPL",          field: "No. Invoice" },
-      { id: "pib04", compareDoc: "CIPL",          field: "Item Value" },
-      { id: "pib05", compareDoc: "AWB",           field: "No. AWB" },
-      { id: "pib06", compareDoc: "Final Invoice", field: "No. Invoice" },
-      { id: "pib07", compareDoc: "Final Invoice", field: "Item Value" },
-      { id: "pib08", compareDoc: "Tabel NPWP",    field: "No. NPWP" },
-      { id: "pib09", compareDoc: "Tabel NPWP",    field: "Nama NPWP" },
-      { id: "pib10", compareDoc: "Tabel NPWP",    field: "Alamat NPWP" },
+      { id: "pib01",   compareDoc: "SPPB",          field: "No. Pengajuan vs No. Aju" },
+      { id: "pib03",   compareDoc: "CIPL",          field: "No. Invoice" },
+      { id: "pib04",   compareDoc: "CIPL",          field: "Item Value" },
+      { id: "pib06",   compareDoc: "Final Invoice", field: "No. Invoice" },
+      { id: "pib07",   compareDoc: "Final Invoice", field: "Item Value" },
+      { id: "bdjbc01", compareDoc: "BILLING DJBC",  field: "Nomor Aju" },
+      { id: "bdjbc02", compareDoc: "BILLING DJBC",  field: "Total" },
+      { id: "bdjbc03", compareDoc: "BPN",           field: "Nomor Aju" },
+      { id: "bdjbc04", compareDoc: "BPN",           field: "Total" },
     ]
   },
   {
@@ -53,9 +55,6 @@ export const SECTIONS = [
     srcLabel: "SPPBMCP",
     rows: [
       { id: "sppb01", compareDoc: "BPN DHL / HTBK",  field: "Total Nilai Pabean vs CIF Penetapan" },
-      { id: "sppb02", compareDoc: "Tabel NPWP",       field: "No. NPWP" },
-      { id: "sppb03", compareDoc: "Tabel NPWP",       field: "Nama NPWP" },
-      { id: "sppb04", compareDoc: "Tabel NPWP",       field: "Alamat NPWP" },
     ]
   },
   {
@@ -63,9 +62,7 @@ export const SECTIONS = [
     label: "BILLING DJBC",
     srcLabel: "Billing DJBC",
     rows: [
-      { id: "bdjbc01", compareDoc: "PIB",  field: "Nomor Aju vs No. Pengajuan" },
-      { id: "bdjbc02", compareDoc: "PIB",  field: "Total" },
-      { id: "bdjbc03", compareDoc: "BPN",  field: "Nomor Aju vs Nomor Dokumen" },
+      { id: "bdjbc03", compareDoc: "BPN",  field: "Nomor Aju" },
       { id: "bdjbc04", compareDoc: "BPN",  field: "Total" },
     ]
   },
@@ -75,56 +72,18 @@ export const SECTIONS = [
     srcLabel: "CIPL",
     rows: [
       { id: "cipl01", compareDoc: "PO",             field: "Total Value (excl. other cost)" },
-      { id: "cipl02", compareDoc: "PO",             field: "Penerima Barang vs Nama PT" },
       { id: "cipl03", compareDoc: "Final Invoice",  field: "No. Invoice" },
       { id: "cipl04", compareDoc: "Final Invoice",  field: "Total Value" },
-      { id: "cipl05", compareDoc: "Tidak Ada Nama Vessel & Nomor IMO", field: "Format Pass: Tidak Ada Vessel & IMO", isFormat: true, hint: 'Sesuai jika kosong' },
     ]
   },
   {
-    id: "s_po",
-    label: "PO",
-    srcLabel: "PO",
+    id: "s_no_vessel_imo",
+    label: "TIDAK ADA NAMA VESSEL DAN NOMOR IMO",
+    srcLabel: "Tidak Ada Nama Vessel & Nomor IMO",
     rows: [
-      { id: "po01", compareDoc: "No. Vessel", field: "Format Pass", isFormat: true, hint: 'Format harus mengandung tanda "-"' },
-    ]
-  },
-  {
-    id: "s_final_inv",
-    label: "FINAL INVOICE",
-    srcLabel: "Final Invoice",
-    rows: [
-      { id: "fi01", compareDoc: "Tidak Ada Nama Vessel & Nomor IMO", field: "Format Pass: Tidak Ada Vessel & IMO", isFormat: true, hint: 'Sesuai jika kosong' },
-    ]
-  },
-  {
-    id: "s_fp_freight_duty",
-    label: "FP FREIGHT & FP DUTY",
-    srcLabel: "FP Freight / FP Duty",
-    rows: [
-      { id: "fpfd01", compareDoc: "Tabel Master NPWP", field: "No. NPWP (Freight)" },
-      { id: "fpfd02", compareDoc: "Tabel Master NPWP", field: "Alamat NPWP (Freight)" },
-      { id: "fpfd05", compareDoc: "INVOICE FREIGHT / INVOICE DUTY", field: "DPP (Freight)" },
-      { id: "fpfd06", compareDoc: "INVOICE FREIGHT / INVOICE DUTY", field: "Referensi (Freight)" },
-      { id: "fpfd03", compareDoc: "Tabel Master NPWP", field: "No. NPWP (Duty)" },
-      { id: "fpfd04", compareDoc: "Tabel Master NPWP", field: "Alamat NPWP (Duty)" },
-      { id: "fpfd07", compareDoc: "INVOICE FREIGHT / INVOICE DUTY", field: "DPP (Duty)" },
-      { id: "fpfd08", compareDoc: "INVOICE FREIGHT / INVOICE DUTY", field: "Referensi (Duty)" },
-    ]
-  },
-  {
-    id: "s_fp_revisi",
-    label: "FP REVISI INV FREIGHT & FP REVISI INV DUTY",
-    srcLabel: "FP Revisi",
-    rows: [
-      { id: "fpr01", compareDoc: "Tabel Master NPWP", field: "No. NPWP (Freight)" },
-      { id: "fpr02", compareDoc: "Tabel Master NPWP", field: "Alamat NPWP (Freight)" },
-      { id: "fpr05", compareDoc: "INVOICE FREIGHT / INVOICE DUTY", field: "DPP (Freight)" },
-      { id: "fpr06", compareDoc: "INVOICE FREIGHT / INVOICE DUTY", field: "Referensi (Freight)" },
-      { id: "fpr03", compareDoc: "Tabel Master NPWP", field: "No. NPWP (Duty)" },
-      { id: "fpr04", compareDoc: "Tabel Master NPWP", field: "Alamat NPWP (Duty)" },
-      { id: "fpr07", compareDoc: "INVOICE FREIGHT / INVOICE DUTY", field: "DPP (Duty)" },
-      { id: "fpr08", compareDoc: "INVOICE FREIGHT / INVOICE DUTY", field: "Referensi (Duty)" },
+      { id: "cipl05", compareDoc: "CIPL",          field: "Format Pass: Tidak Ada Vessel & IMO", isFormat: true, hint: 'Sesuai jika kosong' },
+      { id: "po01",   compareDoc: "PO",            field: "Format Pass", rowLabel: "Format Pass: Tidak Ada Vessel & IMO", isFormat: true, hint: 'Format harus mengandung tanda "-"' },
+      { id: "fi01",   compareDoc: "Final Invoice", field: "Format Pass: Tidak Ada Vessel & IMO", isFormat: true, hint: 'Sesuai jika kosong' },
     ]
   },
   {
@@ -143,25 +102,35 @@ export const SECTIONS = [
     ]
   },
   {
-    id: "s_cn_freight",
-    label: "CN INVOICE FREIGHT",
-    srcLabel: "CN Freight",
+    id: "s_tabel_npwp",
+    label: "TABEL NPWP",
+    srcLabel: "Tabel NPWP",
     rows: [
-      { id: "cnf01_a", compareDoc: "Invoice Freight", field: "AWB" },
-      { id: "cnf02_b", compareDoc: "FP Revisi", field: "Other Fees / Harga Jual" },
-      { id: "cnf03_b", compareDoc: "FP Revisi", field: "PPN" },
-      { id: "cnf04_a", compareDoc: "Invoice Freight", field: "Nama PT" },
-    ]
-  },
-  {
-    id: "s_cn_duty",
-    label: "CN INVOICE DUTY",
-    srcLabel: "CN Duty",
-    rows: [
-      { id: "cnd01_a", compareDoc: "Invoice Duty", field: "AWB" },
-      { id: "cnd02_b", compareDoc: "FP Revisi", field: "Other Fees / Harga Jual" },
-      { id: "cnd03_b", compareDoc: "FP Revisi", field: "PPN" },
-      { id: "cnd04_a", compareDoc: "Invoice Duty", field: "Nama PT" },
+      { id: "pib08",   compareDoc: "PIB",               field: "No. NPWP" },
+      { id: "sppb02",  compareDoc: "SPPBMCP",           field: "No. NPWP" },
+      { id: "fpfd01",  compareDoc: "FP Freight",        field: "No. NPWP (Freight)",    rowLabel: "No. NPWP" },
+      { id: "fpfd03",  compareDoc: "FP Duty",           field: "No. NPWP (Duty)",       rowLabel: "No. NPWP" },
+      { id: "fpr01",   compareDoc: "FP Revisi Freight", field: "No. NPWP (Freight)",    rowLabel: "No. NPWP" },
+      { id: "fpr03",   compareDoc: "FP Revisi Duty",    field: "No. NPWP (Duty)",       rowLabel: "No. NPWP" },
+
+      { id: "pib09",   compareDoc: "PIB",     field: "Nama NPWP" },
+      { id: "sppb03",  compareDoc: "SPPBMCP", field: "Nama NPWP" },
+      { id: "if04",    compareDoc: "FP Freight",             field: "Nama PT", rowLabel: "Nama NPWP", hint: "PT IMI / VNS / GMI, dll." },
+      { id: "if06",    compareDoc: "AWB Freight",             field: "Nama PT", rowLabel: "Nama NPWP" },
+      { id: "if09",    compareDoc: "PIB / SPPBMCP Freight",   field: "Nama PT", rowLabel: "Nama NPWP" },
+      { id: "id03",    compareDoc: "FP Duty",                 field: "Nama PT", rowLabel: "Nama NPWP", hint: "PT IMI / VNS / GMI, dll." },
+      { id: "id05",    compareDoc: "AWB Duty",                field: "Nama PT", rowLabel: "Nama NPWP" },
+      { id: "id08",    compareDoc: "PIB / SPPBMCP Duty",      field: "Nama PT", rowLabel: "Nama NPWP" },
+      { id: "cnf04_a", compareDoc: "Invoice Freight",         field: "Nama PT", rowLabel: "Nama NPWP" },
+      { id: "cnd04_a", compareDoc: "Invoice Duty",            field: "Nama PT", rowLabel: "Nama NPWP" },
+      { id: "cipl02",  compareDoc: "PO",                      field: "Penerima Barang vs Nama PT", rowLabel: "Nama NPWP" },
+
+      { id: "pib10",   compareDoc: "PIB",               field: "Alamat NPWP" },
+      { id: "sppb04",  compareDoc: "SPPBMCP",           field: "Alamat NPWP" },
+      { id: "fpfd02",  compareDoc: "FP Freight",        field: "Alamat NPWP (Freight)", rowLabel: "Alamat NPWP" },
+      { id: "fpfd04",  compareDoc: "FP Duty",           field: "Alamat NPWP (Duty)",    rowLabel: "Alamat NPWP" },
+      { id: "fpr02",   compareDoc: "FP Revisi Freight", field: "Alamat NPWP (Freight)", rowLabel: "Alamat NPWP" },
+      { id: "fpr04",   compareDoc: "FP Revisi Duty",    field: "Alamat NPWP (Duty)",    rowLabel: "Alamat NPWP" },
     ]
   },
 ];

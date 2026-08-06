@@ -358,7 +358,7 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
   };
 
   const pibRows = [
-    { id: "freight", label: "Freight (25)", expected: calc.expectedFreight, fmt: fmtNum, formula: FORMULA.freight, ak: aktualPIB.freight, akNum: toNum(aktualPIB.freight), setAk: (v: string) => setAk1("freight", v), customStatus: zeroToleranceStatus },
+    { id: "freight", label: "Freight (25)", expected: calc.expectedFreight, fmt: fmtNum, formula: FORMULA.freight, ak: aktualPIB.freight, akNum: toNum(aktualPIB.freight), setAk: (v: string) => setAk1("freight", v), customStatus: zeroToleranceStatus, ignoreForStats: true },
     { id: "asuransi", label: "Asuransi (24)", expected: calc.expectedAsuransi, fmt: fmtNum, formula: FORMULA.asuransi, ak: aktualPIB.asuransi, akNum: toNum(aktualPIB.asuransi), setAk: (v: string) => setAk1("asuransi", v), customStatus: zeroToleranceStatus },
     { id: "nilaiPabean", label: "Nilai Pabean (26)", expected: calc.expectedNilaiPabean, fmt: fmtNum, formula: FORMULA.nilaiPabean, ak: aktualPIB.nilaiPabean, akNum: toNum(aktualPIB.nilaiPabean), setAk: (v: string) => setAk1("nilaiPabean", v), customStatus: zeroToleranceStatus },
     { id: "ndpbmXnilai", label: "Total Nilai Pabean", expected: calc.ndpbmXnilai, fmt: fmtIDR, formula: FORMULA.ndpbmXnilai, ak: aktualPIB.ndpbmXnilai, akNum: toNum(aktualPIB.ndpbmXnilai), setAk: (v: string) => setAk1("ndpbmXnilai", v), customStatus: zeroToleranceStatus },
@@ -509,7 +509,7 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
                     {row.formula}
                   </td>
                   <td className="p-3 border-slate-200 text-center align-middle">
-                    {['bm', 'ppn', 'pph'].includes(row.id) ? (
+                    {['bm', 'ppn', 'pph', 'freight'].includes(row.id) ? (
                       <span className="text-slate-400">—</span>
                     ) : (
                       <StatusBadge st={st} isEditMode={isEditMode} onClick={() => toggleManualStatus(row.id, st)} />
