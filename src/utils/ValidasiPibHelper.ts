@@ -35,7 +35,7 @@ function statusOf(actualStr: any, expected: number) {
   return diff <= 1 ? 'match' : 'mismatch';
 }
 
-export const calculatePibStats = (raw: any, jenisDokumen: string) => {
+export const calculatePibStats = (raw: any, jenisDokumen: string, kursBiHarian?: number | null) => {
   const pibData = raw.perhitungan_pib_v;
   const cnData = raw.perhitungan_sppbmcp_v;
   const jns = String(jenisDokumen || '').toUpperCase();
@@ -43,7 +43,7 @@ export const calculatePibStats = (raw: any, jenisDokumen: string) => {
   let ndpbm = '';
   let items: any[] = [];
     let aktualPIB = { nilaiPabean: '', bm: '', ppn: '', pph: '', ndpbmXnilai: '', freight: '', asuransi: '' };
-  let aktualSPPBMCP = { bm: '', ppn: '', pph: '', ndpbmXnilai: '' };
+  let aktualSPPBMCP = { bm: '', ppn: '', pph: '', ndpbmXnilai: '', sanksiAdm: '' };
 
   if (jns === 'PIB' && pibData) {
     ndpbm = formatForInput(pibData.ndpbm);
@@ -79,6 +79,7 @@ export const calculatePibStats = (raw: any, jenisDokumen: string) => {
       ppn: formatForInput(cnData.aktual_ppn),
       pph: formatForInput(cnData.aktual_pph),
       ndpbmXnilai: formatForInput(cnData.aktual_ndpbm_x_nilai),
+      sanksiAdm: formatForInput(cnData.aktual_sanksi_adm ?? cnData.sanksi_adm ?? ''),
     };
   }
 
@@ -126,36 +127,52 @@ export const calculatePibStats = (raw: any, jenisDokumen: string) => {
       else empty++;
     });
   } else if (jns === 'CN') {
+    const cnCalc = raw.perhitungan_sppbmcp_v || {};
     const ciplValue = Number(raw.cipl_v?.total_value) || 0;
-    const freightSubtotal = Number(raw.invoice_freight_v?.subtotal) || 0;
-    const aktualNdpbmXnilai = ndpbmNum * totalNilaiPabean;
-    
-    let expectedNdpbmXnilai = null;
-    if (raw.cipl_v?.total_value && raw.invoice_freight_v?.subtotal && ndpbmNum !== 0) {
-      const freightValas = freightSubtotal / ndpbmNum;
-      const fobPlusFreight = ciplValue + freightValas;
-      const asuransi = fobPlusFreight * 0.005;
-      const cifValas = fobPlusFreight + asuransi;
-      expectedNdpbmXnilai = cifValas * ndpbmNum;
+    const totalInvoiceFreight = Number(raw.invoice_freight_v?.subtotal) || 0;
+    const ciplCurrency = (cnCalc.cipl_currency || '').toUpperCase();
+
+    let expectedTotalNilaiPabeanSppbmcp: number | null = null;
+    if (ciplCurrency === 'USD') {
+      if (ndpbmNum > 0) {
+        const ciplIdr = ciplValue * ndpbmNum;
+        const dasarNilaiPabean = ciplIdr + totalInvoiceFreight;
+        const asuransiSppbmcp = dasarNilaiPabean * 0.005;
+        expectedTotalNilaiPabeanSppbmcp = dasarNilaiPabean + asuransiSppbmcp;
+      }
+    } else if (ciplCurrency && ciplCurrency !== 'USD') {
+      if (kursBiHarian) {
+        const ciplIdr = ciplValue * kursBiHarian;
+        const dasarNilaiPabean = ciplIdr + totalInvoiceFreight;
+        const asuransiSppbmcp = dasarNilaiPabean * 0.005;
+        expectedTotalNilaiPabeanSppbmcp = dasarNilaiPabean + asuransiSppbmcp;
+      }
     }
 
-    [
-      { ak: aktualSPPBMCP.bm, expected: totalBM },
-      { ak: aktualSPPBMCP.ppn, expected: totalPPN },
-      { ak: aktualSPPBMCP.pph, expected: totalPPH },
-    ].forEach(r => {
-      const st = statusOf(r.ak, r.expected);
-      if (st === 'match') match++;
-      else if (st === 'mismatch') mismatch++;
-      else empty++;
-    });
-
-    if (expectedNdpbmXnilai === null) {
+    // 1. Total Nilai Pabean
+    const akNumTotalPabean = toNum(aktualSPPBMCP.ndpbmXnilai);
+    if (expectedTotalNilaiPabeanSppbmcp === null) {
       empty++;
     } else {
-      const diff = Math.abs(aktualNdpbmXnilai - expectedNdpbmXnilai);
-      if (diff <= 1000) match++; else mismatch++;
+      const diff = Math.abs(akNumTotalPabean - expectedTotalNilaiPabeanSppbmcp);
+      if (diff <= 1) match++; else mismatch++;
     }
+
+    // 2. Sanksi Administrasi (Expected 0)
+    const stSanksi = statusOf(aktualSPPBMCP.sanksiAdm, 0);
+    if (stSanksi === 'match') match++;
+    else if (stSanksi === 'mismatch') mismatch++;
+    else empty++;
+
+    // 3. Total BM+PPN+PPH+Sanksi ADM (Tolerance +- 5000)
+    const totalAktualSppbmcp = 
+        (Number(toNum(aktualSPPBMCP.bm)) || 0)
+      + (Number(toNum(aktualSPPBMCP.ppn)) || 0)
+      + (Number(toNum(aktualSPPBMCP.pph)) || 0)
+      + (Number(toNum(aktualSPPBMCP.sanksiAdm)) || 0);
+    const totalExpectedSppbmcp = totalBM + totalPPN + totalPPH + 0;
+    const diffTotal = Math.abs(totalAktualSppbmcp - totalExpectedSppbmcp);
+    if (diffTotal <= 5000) match++; else mismatch++;
   }
 
   return { match, mismatch, empty };

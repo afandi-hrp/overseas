@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from "react";
-import { Calculator, Percent, Plus, X, CheckCircle2, XCircle } from 'lucide-react';
+import { Calculator, Percent, Plus, X, CheckCircle2, XCircle, ChevronDown, ChevronRight } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 // ─── Formula text (statis, sesuai dokumen kerja) ──────────────────────────────
 const FORMULA = {
@@ -150,10 +151,34 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
     nilai23: "", freight: "", asuransi: "", nilaiPabean: "", bm: "", ppn: "", pph: "", ndpbmXnilai: "",
   });
   const [aktualSPPBMCP, setAktualSPPBMCP] = useState({
-    bm: "", ppn: "", pph: "", ndpbmXnilai: "",
+    bm: "", ppn: "", pph: "", ndpbmXnilai: "", sanksiAdm: "",
   });
 
   const [manualStatus, setManualStatus] = useState<Record<string, string>>({});
+  const [kursBiHarian, setKursBiHarian] = useState<number | null>(null);
+  const [showItemDetail, setShowItemDetail] = useState(false);
+
+  useEffect(() => {
+    const raw = dataValidasiRaw || {};
+    const cnCalc = raw.perhitungan_sppbmcp_v || {};
+    const currency = cnCalc.cipl_currency;
+    const tanggal = cnCalc.tgl_sppbmcp;
+    
+    if (currency && currency.toUpperCase() !== 'USD' && tanggal) {
+      supabase.rpc('get_kurs_efektif', {
+        p_mata_uang: currency.toUpperCase(),
+        p_tanggal: tanggal
+      }).then(({ data, error }) => {
+        if (!error && data !== null) {
+          setKursBiHarian(Number(data));
+        } else {
+          setKursBiHarian(null);
+        }
+      });
+    } else {
+      setKursBiHarian(null);
+    }
+  }, [dataValidasiRaw]);
 
   const toggleManualStatus = (id: string, currentSt: string) => {
     if (!isEditMode) return;
@@ -171,7 +196,7 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
     let initialNdpbm = "";
     let initialItems = [newItem(0)];
     let initialAktualPIB = { nilai23: "", freight: "", asuransi: "", nilaiPabean: "", bm: "", ppn: "", pph: "", ndpbmXnilai: "" };
-    let initialAktualSPPBMCP = { bm: "", ppn: "", pph: "", ndpbmXnilai: "" };
+    let initialAktualSPPBMCP = { bm: "", ppn: "", pph: "", ndpbmXnilai: "", sanksiAdm: "" };
 
     const raw = dataValidasiRaw || {};
     const pibData = raw.perhitungan_pib_v;
@@ -216,6 +241,7 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
         ppn: formatForInput(cnData.aktual_ppn),
         pph: formatForInput(cnData.aktual_pph),
         ndpbmXnilai: formatForInput(cnData.aktual_ndpbm_x_nilai),
+        sanksiAdm: formatForInput(cnData.aktual_sanksi_adm ?? cnData.sanksi_adm ?? ''),
       };
     }
 
@@ -261,8 +287,6 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
     const expectedAsuransi = Math.round((nilai23 + nilai25) * 0.005 * 100) / 100;
 
     // C. NILAI PABEAN (26)
-    const aktualFreight = parseRobust(aktualPIB.freight);
-    const aktualAsuransi = parseRobust(aktualPIB.asuransi);
     const expectedNilaiPabean = Math.round((nilai23 + nilai25 + expectedAsuransi) * 100) / 100;
 
     // D. TOTAL BM+PPN+PPH
@@ -270,6 +294,29 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
 
     const nilaiPabean26Doc = Number(pibCalc.aktual_nilai_pabean) || 0;
     const ndpbmXnilai = Math.round(ndpbmNum * nilaiPabean26Doc * 100) / 100;
+
+    // SPPBMCP Expected Total Nilai Pabean
+    const cnCalc = raw.perhitungan_sppbmcp_v || {};
+    const ciplValue = Number(raw.cipl_v?.total_value) || 0;
+    const cnNdpbm = ndpbmNum;
+    const ciplCurrency = (cnCalc.cipl_currency || '').toUpperCase();
+
+    let expectedTotalNilaiPabeanSppbmcp: number | null = null;
+    if (ciplCurrency === 'USD') {
+      if (cnNdpbm > 0) {
+        const ciplIdr = ciplValue * cnNdpbm;
+        const dasarNilaiPabean = ciplIdr + totalInvoiceFreight;
+        const asuransiSppbmcp = dasarNilaiPabean * 0.005;
+        expectedTotalNilaiPabeanSppbmcp = dasarNilaiPabean + asuransiSppbmcp;
+      }
+    } else if (ciplCurrency && ciplCurrency !== 'USD') {
+      if (kursBiHarian) {
+        const ciplIdr = ciplValue * kursBiHarian;
+        const dasarNilaiPabean = ciplIdr + totalInvoiceFreight;
+        const asuransiSppbmcp = dasarNilaiPabean * 0.005;
+        expectedTotalNilaiPabeanSppbmcp = dasarNilaiPabean + asuransiSppbmcp;
+      }
+    }
 
     return { 
       nilai23,
@@ -281,9 +328,10 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
       totalBM, 
       totalPPN, 
       totalPPH, 
-      ndpbmXnilai 
+      ndpbmXnilai,
+      expectedTotalNilaiPabeanSppbmcp
     };
-  }, [ndpbm, items, dataValidasiRaw, aktualPIB.freight, aktualPIB.asuransi]);
+  }, [ndpbm, items, dataValidasiRaw, aktualPIB.freight, aktualPIB.asuransi, kursBiHarian]);
 
   const addItem = () => setItems(prev => [...prev, newItem(prev.length)]);
   const removeItem = (id: string) => setItems(prev => prev.length > 1 ? prev.filter(i => i.id !== id) : prev);
@@ -334,45 +382,43 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
     },
   ];
 
-  const calcCN = useMemo(() => {
-    const raw = dataValidasiRaw || {};
-    const ciplValue = Number(raw.cipl_v?.total_value) || 0;
-    const freightSubtotal = Number(raw.invoice_freight_v?.subtotal) || 0;
-    const ndpbmNum = toNum(ndpbm);
-    const aktualNdpbmXnilai = ndpbmNum * calc.totalNilaiPabean;
-
-    if (!raw.cipl_v?.total_value || !raw.invoice_freight_v?.subtotal || ndpbmNum === 0) {
-      return { expected: null, aktual: aktualNdpbmXnilai };
-    }
-
-    const freightValas = freightSubtotal / ndpbmNum;
-    const fobPlusFreight = ciplValue + freightValas;
-    const asuransi = fobPlusFreight * 0.005;
-    const cifValas = fobPlusFreight + asuransi;
-    
-    const expectedNdpbmXnilai = cifValas * ndpbmNum;
-
-    return { expected: expectedNdpbmXnilai, aktual: aktualNdpbmXnilai };
-  }, [dataValidasiRaw, ndpbm, calc.totalNilaiPabean]);
-
   // ── Baris tabel 2: SPPBMCP (tanpa Nilai Pabean) ──
+  const totalAktualSppbmcp = 
+      (Number(toNum(aktualSPPBMCP.bm)) || 0)
+    + (Number(toNum(aktualSPPBMCP.ppn)) || 0)
+    + (Number(toNum(aktualSPPBMCP.pph)) || 0)
+    + (Number(toNum(aktualSPPBMCP.sanksiAdm)) || 0);
+
+  const totalExpectedSppbmcp = calc.totalBM + calc.totalPPN + calc.totalPPH + 0;
+
   const sppbmcpRows = [
-    { id: "bm",  label: "BM",  expected: calc.totalBM,  fmt: fmtIDR, formula: FORMULA.bm,  ak: aktualSPPBMCP.bm, akNum: toNum(aktualSPPBMCP.bm),  setAk: (v: string) => setAk2("bm", v) },
-    { id: "ppn", label: "PPN", expected: calc.totalPPN, fmt: fmtIDR, formula: FORMULA.ppn, ak: aktualSPPBMCP.ppn, akNum: toNum(aktualSPPBMCP.ppn), setAk: (v: string) => setAk2("ppn", v) },
-    { id: "pph", label: "PPH", expected: calc.totalPPH, fmt: fmtIDR, formula: FORMULA.pph, ak: aktualSPPBMCP.pph, akNum: toNum(aktualSPPBMCP.pph), setAk: (v: string) => setAk2("pph", v) },
     { 
       id: "ndpbmXnilai", 
-      label: "NDPBM X Nilai Pabean", 
-      expected: calcCN.expected, 
-      fmt: (val: any) => val === null ? "—" : fmtIDR(val), 
-      formula: FORMULA.ndpbmXnilai, 
-      ak: fmtIDR(calcCN.aktual),
-      akNum: calcCN.aktual,
+      label: "Total Nilai Pabean", 
+      expected: calc.expectedTotalNilaiPabeanSppbmcp, 
+      fmt: (val: any) => (val === null || val === undefined) ? "—" : fmtIDR(val), 
+      formula: "Jika USD: (CIPL × NDPBM + Freight) + 0.5%. Jika non-USD: (CIPL × Kurs BI Harian + Freight) + 0.5%", 
+      ak: aktualSPPBMCP.ndpbmXnilai,
+      akNum: toNum(aktualSPPBMCP.ndpbmXnilai),
+      setAk: (v: string) => setAk2("ndpbmXnilai", v)
+    },
+    { id: "bm",  label: "BM",  expected: calc.totalBM,  fmt: fmtIDR, formula: FORMULA.bm,  ak: aktualSPPBMCP.bm, akNum: toNum(aktualSPPBMCP.bm),  setAk: (v: string) => setAk2("bm", v), ignoreForStats: true },
+    { id: "sanksiAdm", label: "Sanksi Administrasi", expected: 0, fmt: fmtIDR, formula: "Fixed Expected = 0", ak: aktualSPPBMCP.sanksiAdm, akNum: toNum(aktualSPPBMCP.sanksiAdm), setAk: (v: string) => setAk2("sanksiAdm", v) },
+    { id: "ppn", label: "PPN", expected: calc.totalPPN, fmt: fmtIDR, formula: FORMULA.ppn, ak: aktualSPPBMCP.ppn, akNum: toNum(aktualSPPBMCP.ppn), setAk: (v: string) => setAk2("ppn", v), ignoreForStats: true },
+    { id: "pph", label: "PPH", expected: calc.totalPPH, fmt: fmtIDR, formula: FORMULA.pph, ak: aktualSPPBMCP.pph, akNum: toNum(aktualSPPBMCP.pph), setAk: (v: string) => setAk2("pph", v), ignoreForStats: true },
+    {
+      id: "totalSppbmcp",
+      label: "Total BM+PPN+PPH+Sanksi ADM",
+      expected: totalExpectedSppbmcp,
+      fmt: fmtIDR,
+      formula: "BM + PPN + PPH + Sanksi Administrasi",
+      ak: fmtIDR(totalAktualSppbmcp),
+      akNum: totalAktualSppbmcp,
       isText: true,
       customStatus: (ak: any, exp: any) => {
         if (exp === null) return "empty";
-        const diff = Math.abs(calcCN.aktual - exp);
-        return diff <= 1000 ? "match" : "mismatch";
+        const diff = Math.abs(totalAktualSppbmcp - exp);
+        return diff <= 5000 ? "match" : "mismatch";
       }
     },
   ]; 
@@ -463,7 +509,7 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
                     {row.formula}
                   </td>
                   <td className="p-3 border-slate-200 text-center align-middle">
-                    {['bm', 'ppn', 'pph'].includes(row.id) && !isSPPBMCP ? (
+                    {['bm', 'ppn', 'pph'].includes(row.id) ? (
                       <span className="text-slate-400">—</span>
                     ) : (
                       <StatusBadge st={st} isEditMode={isEditMode} onClick={() => toggleManualStatus(row.id, st)} />
@@ -481,6 +527,99 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
 
   return (
     <div className="w-full">
+      {/* Tabel Rincian Item Pabean (Halaman Lanjutan) */}
+      {(jnsUpper === 'PIB' || jnsUpper === '') && items.length > 0 && (
+        <div className="border border-slate-200 rounded-xl overflow-hidden mb-6 bg-white shadow-sm">
+          <div className="bg-slate-800 text-white p-4 border-b border-slate-700">
+            <button
+              type="button"
+              onClick={() => setShowItemDetail(!showItemDetail)}
+              style={{ 
+                display: 'flex', alignItems: 'center', gap: 6,
+                cursor: 'pointer', background: 'transparent', 
+                border: 'none', width: '100%', textAlign: 'left',
+                padding: 0, color: 'inherit'
+              }}
+            >
+              {showItemDetail ? (
+                <ChevronDown size={18} className="text-slate-300 shrink-0" />
+              ) : (
+                <ChevronRight size={18} className="text-slate-300 shrink-0" />
+              )}
+              <span className="font-bold text-xs md:text-sm tracking-wide uppercase">
+                Rincian Item Pabean (Halaman Lanjutan)
+              </span>
+              <span style={{ fontSize: 11, opacity: 0.6 }}>
+                ({items.length} item)
+              </span>
+            </button>
+            <p className="text-[11px] text-slate-300 mt-1 pl-6">
+              Diekstrak otomatis dari dokumen PIB — dapat diedit manual melalui form di bawah jika ada koreksi
+            </p>
+          </div>
+          {showItemDetail && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-800 border-b border-slate-200">
+                    <th className="p-3 border-r border-slate-200 text-center font-bold uppercase tracking-wider w-12">No</th>
+                    <th className="p-3 border-r border-slate-200 text-right font-bold uppercase tracking-wider">Nilai Pabean</th>
+                    <th className="p-3 border-r border-slate-200 text-center font-bold uppercase tracking-wider">% BM</th>
+                    <th className="p-3 border-r border-slate-200 text-right font-bold uppercase tracking-wider">BM (Rp)</th>
+                    <th className="p-3 border-r border-slate-200 text-center font-bold uppercase tracking-wider">% PPN</th>
+                    <th className="p-3 border-r border-slate-200 text-right font-bold uppercase tracking-wider">PPN (Rp)</th>
+                    <th className="p-3 border-r border-slate-200 text-center font-bold uppercase tracking-wider">% PPH</th>
+                    <th className="p-3 font-bold text-right uppercase tracking-wider">PPH (Rp)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((it, idx) => {
+                    const fc = toNum(it.nilaiPabean);
+                    const bmPct = toNum(it.bmPct);
+                    const phPct = toNum(it.phPct);
+                    const ndpbmNum = toNum(ndpbm);
+
+                    const nilaiPabeanRp = fc * ndpbmNum;
+                    const bmItemRp = nilaiPabeanRp * (bmPct / 100);
+                    const basisItem = nilaiPabeanRp + bmItemRp;
+                    const ppnItemRp = basisItem * (11 / 100);
+                    const pphItemRp = basisItem * (phPct / 100);
+
+                    const bmDisplay = it.bmPct ? (String(it.bmPct).endsWith('%') ? it.bmPct : `${it.bmPct}%`) : '0%';
+                    const pphDisplay = it.phPct ? (String(it.phPct).endsWith('%') ? it.phPct : `${it.phPct}%`) : '0%';
+
+                    return (
+                      <tr key={it.id || idx} className="border-b border-slate-200 hover:bg-slate-50/50 transition-colors">
+                        <td className="p-3 border-r border-slate-200 text-center font-medium text-slate-600">{idx + 1}</td>
+                        <td className="p-3 border-r border-slate-200 text-right font-medium text-slate-800">{fmtNum(fc)}</td>
+                        <td className="p-3 border-r border-slate-200 text-center font-medium text-slate-800">{bmDisplay}</td>
+                        <td className="p-3 border-r border-slate-200 text-right font-medium text-slate-800">{fmtIDR(bmItemRp)}</td>
+                        <td className="p-3 border-r border-slate-200 text-center font-medium text-slate-800">11%</td>
+                        <td className="p-3 border-r border-slate-200 text-right font-medium text-slate-800">{fmtIDR(ppnItemRp)}</td>
+                        <td className="p-3 border-r border-slate-200 text-center font-medium text-slate-800">{pphDisplay}</td>
+                        <td className="p-3 text-right font-medium text-slate-800">{fmtIDR(pphItemRp)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-100 font-bold text-slate-900 border-t-2 border-slate-300">
+                    <td className="p-3 border-r border-slate-200 text-center">TOTAL</td>
+                    <td className="p-3 border-r border-slate-200 text-right">{fmtNum(calc.totalNilaiPabean)}</td>
+                    <td className="p-3 border-r border-slate-200 text-center text-slate-400">—</td>
+                    <td className="p-3 border-r border-slate-200 text-right">{fmtIDR(calc.totalBM)}</td>
+                    <td className="p-3 border-r border-slate-200 text-center text-slate-400">—</td>
+                    <td className="p-3 border-r border-slate-200 text-right">{fmtIDR(calc.totalPPN)}</td>
+                    <td className="p-3 border-r border-slate-200 text-center text-slate-400">—</td>
+                    <td className="p-3 text-right">{fmtIDR(calc.totalPPH)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Tabel 1: PIB */}
       {(jnsUpper === 'PIB' || jnsUpper === '') && (
         <ValidationTable title="Validasi PIB" rows={pibRows} />

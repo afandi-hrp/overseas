@@ -1393,7 +1393,7 @@ const SeaAirAuditRowGroup: React.FC<{
 };
 
 
-const CourierAuditRowGroup: React.FC<{
+const CourierAuditRowGroup: React.FC<{ 
   rec: any, index: number, cols: any[], 
   onEdit?: (r: any) => void,
   onChecklist?: (r: any) => void,
@@ -1668,7 +1668,22 @@ const CourierRekapanRowGroup: React.FC<{
                 );
                 alignClass = 'text-left font-mono text-slate-600';
               } else if (c.key === 'vessel') {
-                content = pair.vessel || '—';
+                if (isEditing) {
+                  if (isFirst) {
+                    content = (
+                      <input 
+                        type="text"
+                        className="w-full min-w-[120px] text-[10px] p-1 border border-blue-400 rounded outline-none text-slate-800 bg-white"
+                        value={editForm.vessel ?? ''}
+                        onChange={e => setEditForm({ ...editForm, vessel: e.target.value })}
+                      />
+                    );
+                  } else {
+                    content = pair.vessel || '—';
+                  }
+                } else {
+                  content = pair.vessel || '—';
+                }
                 alignClass = 'text-left font-mono text-slate-600';
               }
               
