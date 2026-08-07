@@ -43,7 +43,7 @@ export const calculatePibStats = (raw: any, jenisDokumen: string, kursBiHarian?:
   let ndpbm = '';
   let items: any[] = [];
     let aktualPIB = { nilaiPabean: '', bm: '', ppn: '', pph: '', ndpbmXnilai: '', freight: '', asuransi: '' };
-  let aktualSPPBMCP = { bm: '', ppn: '', pph: '', ndpbmXnilai: '', sanksiAdm: '' };
+  let aktualSPPBMCP = { bm: '', ppn: '', pph: '', sanksiAdm: '' };
 
   if (jns === 'PIB' && pibData) {
     ndpbm = formatForInput(pibData.ndpbm);
@@ -78,7 +78,6 @@ export const calculatePibStats = (raw: any, jenisDokumen: string, kursBiHarian?:
       bm: formatForInput(cnData.aktual_bm),
       ppn: formatForInput(cnData.aktual_ppn),
       pph: formatForInput(cnData.aktual_pph),
-      ndpbmXnilai: formatForInput(cnData.aktual_ndpbm_x_nilai),
       sanksiAdm: formatForInput(cnData.aktual_sanksi_adm ?? cnData.sanksi_adm ?? ''),
     };
   }
@@ -129,7 +128,9 @@ export const calculatePibStats = (raw: any, jenisDokumen: string, kursBiHarian?:
   } else if (jns === 'CN') {
     const cnCalc = raw.perhitungan_sppbmcp_v || {};
     const ciplValue = Number(raw.cipl_v?.total_value) || 0;
-    const totalInvoiceFreight = Number(raw.invoice_freight_v?.subtotal) || 0;
+    const totalInvoiceFreight =
+        (Number(raw.invoice_freight_v?.subtotal) || 0)
+      + (Number(raw.invoice_freight_v?.ppn) || 0);
     const ciplCurrency = (cnCalc.cipl_currency || '').toUpperCase();
 
     let expectedTotalNilaiPabeanSppbmcp: number | null = null;
@@ -149,8 +150,8 @@ export const calculatePibStats = (raw: any, jenisDokumen: string, kursBiHarian?:
       }
     }
 
-    // 1. Total Nilai Pabean
-    const akNumTotalPabean = toNum(aktualSPPBMCP.ndpbmXnilai);
+    // 1. Total Nilai Pabean — aktual dihitung otomatis dari SUM items[].nilaiPabean x NDPBM (bukan dari field dokumen)
+    const akNumTotalPabean = ndpbmXnilai;
     if (expectedTotalNilaiPabeanSppbmcp === null) {
       empty++;
     } else {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
+import warunaLogo from '../assets/waruna-logo-white.png';
 
 const MAIN_TABS = [
   { 
@@ -46,9 +47,12 @@ export default function MainLayout() {
     <div className="flex flex-col md:flex-row h-screen overflow-hidden bg-gradient-to-br from-[#FFF0E2] to-[#FFC3A0] md:p-4 md:gap-4">
       
       {/* ── Mobile Top Navigation ── */}
-      <div className="md:hidden flex flex-col shrink-0 bg-[#3D2C44] text-white z-50 shadow-md rounded-b-[1.5rem]">
+      <div className="md:hidden flex flex-col shrink-0 bg-gradient-to-b from-[#3D2C44] to-[#2B1E30] text-white z-50 shadow-md rounded-b-[1.5rem]">
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
-           <div className="font-bold text-xl tracking-wide">WARUNA HO</div>
+           <div className="flex items-center gap-2.5">
+             <img src={warunaLogo} alt="Waruna" className="h-7 w-7 object-contain shrink-0" />
+             <div className="font-bold text-xl tracking-wide">WARUNA HO</div>
+           </div>
            <div className="flex gap-4">
              <Link to="/" className="text-xl opacity-80 hover:opacity-100 transition-opacity">📤</Link>
              <Link to="/settings" className="text-xl opacity-80 hover:opacity-100 transition-opacity">⚙️</Link>
@@ -97,21 +101,20 @@ export default function MainLayout() {
 
       {/* ── Desktop Sidebar Navigation ── */}
       <div className="hidden md:block relative shrink-0 w-[4.5rem] z-50">
-        <div 
-          className={`absolute left-0 top-0 bottom-0 bg-[#3D2C44] transition-all duration-300 shadow-2xl flex flex-col overflow-hidden rounded-[2.25rem] ${
+        <div
+          className={`absolute left-0 top-0 bottom-0 bg-gradient-to-b from-[#3D2C44] to-[#2B1E30] transition-all duration-300 shadow-2xl flex flex-col overflow-hidden rounded-[2.25rem] ring-1 ring-white/[0.06] ${
             isSidebarOpen ? 'w-[17rem]' : 'w-[4.5rem]'
           }`}
           onMouseEnter={() => setIsSidebarOpen(true)}
           onMouseLeave={() => setIsSidebarOpen(false)}
         >
-          <div className={`flex items-center h-20 shrink-0 mt-4 transition-all duration-300 ${isSidebarOpen ? 'px-6' : 'justify-center'}`}>
-            <div className="flex items-center gap-3">
-              <span className={`text-white font-bold text-xl whitespace-nowrap transition-opacity duration-300 ${isSidebarOpen ? 'opacity-100' : 'opacity-0 hidden'}`}>
-                WARUNA HO
-              </span>
-            </div>
+          <div className={`flex items-center h-20 shrink-0 mt-4 transition-all duration-300 ${isSidebarOpen ? 'px-6 gap-3' : 'justify-center'}`}>
+            <img src={warunaLogo} alt="Waruna" className="h-9 w-9 object-contain shrink-0 drop-shadow-sm" />
+            <span className={`text-white font-bold text-lg tracking-wide whitespace-nowrap transition-opacity duration-300 ${isSidebarOpen ? 'opacity-100' : 'opacity-0 hidden'}`}>
+              WARUNA HO
+            </span>
           </div>
-          
+
           <div className="flex-1 flex flex-col py-4 gap-0.5 px-3 overflow-y-auto mt-2 hide-scrollbar">
             {MAIN_TABS.map(t => {
               const isActive = activeMainTab === t.id;
@@ -121,8 +124,10 @@ export default function MainLayout() {
                 <div key={t.id} className="flex flex-col">
                   <button
                     onClick={() => navigate(t.path)}
-                    className={`flex items-center justify-between px-3 py-2.5 rounded-xl transition-all ${
-                      isActive ? 'text-white' : 'text-[#a394a8] hover:bg-white/5 hover:text-white'
+                    className={`flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all ${
+                      isActive
+                        ? 'text-white bg-white/10 backdrop-blur-md border-white/20 shadow-lg shadow-black/10'
+                        : 'text-[#a394a8] border-transparent hover:bg-white/5 hover:text-white'
                     }`}
                     title={!isSidebarOpen ? text : undefined}
                   >

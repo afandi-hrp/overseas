@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { CheckCircle2, XCircle, X } from 'lucide-react'
+import { CheckCircle2, XCircle, X, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import ExportModal from '../components/ExportModal'
@@ -1210,11 +1210,12 @@ const SeaAirAuditRowGroup: React.FC<{
   onInlineSaveRow?: (id: number, payload: any) => Promise<boolean>
 }> = ({ rec, index, cols, onEdit, onChecklist, onDelete, onInlineSaveRow }) => {
   const repeatingCols = ['po_ori', 'vendor_inv_no', 'po_harga_detail'];
-  
+
   const [isEditing, setIsEditing] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [showActions, setShowActions] = useState(false);
 
   const handleStartEdit = () => {
     if (onInlineSaveRow) {
@@ -1228,7 +1229,7 @@ const SeaAirAuditRowGroup: React.FC<{
   const handleSave = async () => {
     if (!onInlineSaveRow) return;
     setIsSaving(true);
-    
+
     // Only send changed fields
     const changes: any = {};
     Object.keys(editForm).forEach(k => {
@@ -1355,33 +1356,48 @@ const SeaAirAuditRowGroup: React.FC<{
                     </>
                   ) : (
                     <>
-                      {onEdit && (
-                        <button
-                          onClick={handleStartEdit}
-                          className="w-[80px] bg-white border border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm"
-                        >
-                          ✏️ Edit
-                        </button>
-                      )}
-                      {onChecklist && (
-                        <button
-                          onClick={() => onChecklist(rec)}
-                          className={`w-[80px] border text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm ${
-                            rec.status_kelengkapan === 'LENGKAP' 
-                              ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
-                              : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
-                          }`}
-                        >
-                          ✓ Checklist
-                        </button>
-                      )}
-                      {onDelete && (
-                        <button
-                          onClick={() => onDelete(rec)}
-                          className="w-[80px] bg-red-50 text-red-600 hover:bg-red-100 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all border border-red-100"
-                        >
-                          🗑️ Hapus
-                        </button>
+                      <button
+                        onClick={() => setShowActions(!showActions)}
+                        className={`w-[80px] flex items-center justify-center gap-1 text-[10px] font-bold px-2 py-2 rounded-lg border transition-all ${
+                          showActions
+                            ? 'bg-[#3D2C44] text-white border-[#3D2C44] shadow-md'
+                            : 'bg-white text-[#3D2C44] border-slate-200 shadow-sm hover:border-[#3D2C44] hover:bg-[#3D2C44]/5'
+                        }`}
+                      >
+                        Aksi
+                        <ChevronDown size={13} className={`transition-transform duration-200 ${showActions ? 'rotate-180' : ''}`} />
+                      </button>
+                      {showActions && (
+                        <div className="flex flex-col gap-1.5 items-center bg-slate-50 border border-slate-200 rounded-lg p-1.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
+                          {onEdit && (
+                            <button
+                              onClick={handleStartEdit}
+                              className="w-[80px] bg-white border border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm"
+                            >
+                              ✏️ Edit
+                            </button>
+                          )}
+                          {onChecklist && (
+                            <button
+                              onClick={() => onChecklist(rec)}
+                              className={`w-[80px] border text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm ${
+                                rec.status_kelengkapan === 'LENGKAP'
+                                  ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
+                                  : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+                              }`}
+                            >
+                              ✓ Checklist
+                            </button>
+                          )}
+                          {onDelete && (
+                            <button
+                              onClick={() => onDelete(rec)}
+                              className="w-[80px] bg-red-50 text-red-600 hover:bg-red-100 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all border border-red-100"
+                            >
+                              🗑️ Hapus
+                            </button>
+                          )}
+                        </div>
                       )}
                     </>
                   )}
@@ -1762,21 +1778,24 @@ const CourierRekapanRowGroup: React.FC<{
   )
 };
 
-const SeaAirRekapanRowGroup: React.FC<{ 
-  rec: any, index: number, cols: any[], 
+const SeaAirRekapanRowGroup: React.FC<{
+  rec: any, index: number, cols: any[],
   onEdit?: (r: any) => void,
   onValidasi?: (r: any) => void,
   onCostValidasi?: (r: any) => void,
   onDelete?: (r: any) => void,
+  onDraft?: (r: any) => void,
+  onUndraft?: (r: any) => void,
   onVesselChange: (recId: number, poNo: string, newVal: string) => void,
   onInlineSaveRow?: (id: number, payload: any) => Promise<boolean>
-}> = ({ rec, index, cols, onEdit, onValidasi, onCostValidasi, onDelete, onVesselChange, onInlineSaveRow }) => {
+}> = ({ rec, index, cols, onEdit, onValidasi, onCostValidasi, onDelete, onDraft, onUndraft, onVesselChange, onInlineSaveRow }) => {
   const repeatingCols = ['po_no', 'vessel', 'emkl_split', 'split_biaya_origin', 'split_biaya_destination', 'pbm_split', 'lift_off_split', 'inspeksi_split', 'handling_split', 'other_split', 'duty_split', 'bm_split', 'ppn_split', 'pph_split'];
-  
+
   const [isEditing, setIsEditing] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [showActions, setShowActions] = useState(false);
 
   let pos: any[] = [];
   try {
@@ -1961,31 +1980,64 @@ const SeaAirRekapanRowGroup: React.FC<{
                     </>
                   ) : (
                     <>
-                      {(onEdit || onInlineSaveRow) && rec.status !== 'LENGKAP' && (
-                        <button
-                          onClick={handleStartEdit}
-                          className="w-[80px] text-blue-600 hover:text-white hover:bg-[#3D2C44] text-[10px] font-bold px-2 py-1 rounded-md border border-blue-200 hover:border-blue-600 transition-all"
-                        >
-                          Edit
-                        </button>
-                      )}
-                      {onValidasi && (
-                        <button onClick={() => onValidasi(rec)} className="w-[80px] bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
-                          🔎 Doc Validation
-                        </button>
-                      )}
-                      {onCostValidasi && (
-                        <button onClick={() => onCostValidasi(rec)} className="w-[80px] bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100 hover:border-purple-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
-                          💲 Cost Validasi
-                        </button>
-                      )}
-                      {onDelete && (
-                        <button
-                          onClick={() => onDelete(rec)}
-                          className="w-[80px] text-red-600 hover:text-white hover:bg-red-600 text-[10px] font-bold px-2 py-1 rounded-md border border-red-200 hover:border-red-600 transition-all"
-                        >
-                          Hapus
-                        </button>
+                      <button
+                        onClick={() => setShowActions(!showActions)}
+                        className={`w-[80px] flex items-center justify-center gap-1 text-[10px] font-bold px-2 py-2 rounded-lg border transition-all ${
+                          showActions
+                            ? 'bg-[#3D2C44] text-white border-[#3D2C44] shadow-md'
+                            : 'bg-white text-[#3D2C44] border-slate-200 shadow-sm hover:border-[#3D2C44] hover:bg-[#3D2C44]/5'
+                        }`}
+                      >
+                        Aksi
+                        <ChevronDown size={13} className={`transition-transform duration-200 ${showActions ? 'rotate-180' : ''}`} />
+                      </button>
+                      {showActions && (
+                        <div className="flex flex-col gap-1.5 items-center bg-slate-50 border border-slate-200 rounded-lg p-1.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
+                          {(onEdit || onInlineSaveRow) && rec.status !== 'LENGKAP' && (
+                            <button
+                              onClick={handleStartEdit}
+                              className="w-[80px] bg-white text-blue-600 hover:text-white hover:bg-[#3D2C44] text-[10px] font-bold px-2 py-1 rounded-md border border-blue-200 hover:border-blue-600 transition-all"
+                            >
+                              Edit
+                            </button>
+                          )}
+                          {onValidasi && (
+                            <button onClick={() => onValidasi(rec)} className="w-[80px] bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
+                              🔎 Doc Validation
+                            </button>
+                          )}
+                          {onCostValidasi && (
+                            <button onClick={() => onCostValidasi(rec)} className="w-[80px] bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100 hover:border-purple-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
+                              💲 Cost Validasi
+                            </button>
+                          )}
+                          {rec.audit_status === 'ARCHIVED'
+                            ? (onUndraft && (
+                                <button
+                                  onClick={() => onUndraft(rec)}
+                                  className="w-[80px] bg-emerald-50 border border-emerald-200 text-emerald-600 hover:bg-emerald-100 hover:border-emerald-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm"
+                                >
+                                  🗄️ Undraft
+                                </button>
+                              ))
+                            : (onDraft && (
+                                <button
+                                  onClick={() => onDraft(rec)}
+                                  className="w-[80px] bg-orange-50 text-orange-600 hover:bg-orange-100 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all border border-orange-200 shadow-sm"
+                                >
+                                  🗄️ Draft
+                                </button>
+                              ))
+                          }
+                          {onDelete && (
+                            <button
+                              onClick={() => onDelete(rec)}
+                              className="w-[80px] bg-white text-red-600 hover:text-white hover:bg-red-600 text-[10px] font-bold px-2 py-1 rounded-md border border-red-200 hover:border-red-600 transition-all"
+                            >
+                              Hapus
+                            </button>
+                          )}
+                        </div>
                       )}
                     </>
                   )}
@@ -2181,6 +2233,14 @@ const DataRow: React.FC<{
   )
 }
 
+// ─── Gaya toolbar terpadu (dipakai semua pill filter, input, dan dropdown) ─────
+const TOOLBAR_PILL_BASE = 'px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border'
+const TOOLBAR_PILL_ACTIVE = 'bg-[#3D2C44] text-white border-[#3D2C44] shadow-sm shadow-[#3D2C44]/25'
+const TOOLBAR_PILL_INACTIVE = 'bg-white/70 backdrop-blur-md text-slate-500 border-white/60 shadow-sm hover:bg-white/90 hover:border-[#3D2C44]/25 hover:text-[#3D2C44]'
+const toolbarPillClass = (isActive: boolean) => `${TOOLBAR_PILL_BASE} ${isActive ? TOOLBAR_PILL_ACTIVE : TOOLBAR_PILL_INACTIVE}`
+// Kapsul kaca untuk elemen non-pill di toolbar (search, date range, refresh, dropdown)
+const TOOLBAR_GLASS = 'bg-white/70 backdrop-blur-md border-slate-200/80 shadow-sm'
+
 export default function SharedDataTable({ defaultMainTab = 'courier', defaultSubTab = 'courier_audit' }: { defaultMainTab?: string, defaultSubTab?: string }) {
   const [activeMainTab, setActiveMainTab] = useState(defaultMainTab)
   const [activeSubTab,  setActiveSubTab]  = useState(defaultSubTab)
@@ -2192,9 +2252,14 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   }, [defaultMainTab, defaultSubTab]);
 
   const [courierAuditType, setCourierAuditType] = useState('pib')
+  const [seaAirAuditType, setSeaAirAuditType] = useState('audit')
   const [activeTrailFilter, setActiveTrailFilter] = useState('All')
   const [activePpjkFilter, setActivePpjkFilter] = useState('All')
   const [activeShipmentTypeFilter, setActiveShipmentTypeFilter] = useState('Semua')
+  const [activeAnFilter, setActiveAnFilter] = useState('Semua')
+  const [anTabs, setAnTabs] = useState<string[]>(['Semua'])
+  const [activeImporAnFilter, setActiveImporAnFilter] = useState('Semua')
+  const [importAnTabs, setImportAnTabs] = useState<string[]>(['Semua'])
   const [ppjkTabs, setPpjkTabs] = useState<string[]>(['All'])
   const [records,       setRecords]       = useState<any[]>([])
   const [totalRecords,  setTotalRecords]  = useState(0)
@@ -2222,6 +2287,30 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       }
     };
     fetchPpjks();
+  }, []);
+
+  useEffect(() => {
+    const fetchAns = async () => {
+      // Fetch distinct A/N from recent rekapan Sea & Air records
+      const { data } = await supabase.from('rekapan_seaair').select('a_n').neq('a_n', null).order('created_at', { ascending: false }).limit(1000);
+      if (data) {
+        const unique = Array.from(new Set(data.map(d => d.a_n && String(d.a_n).trim()).filter(Boolean))) as string[];
+        setAnTabs(['Semua', ...unique.sort()]);
+      }
+    };
+    fetchAns();
+  }, []);
+
+  useEffect(() => {
+    const fetchImporAns = async () => {
+      // Fetch distinct Impor An from recent audit Sea & Air records
+      const { data } = await supabase.from('tabel_audit_seaair').select('impor_an').neq('impor_an', null).order('created_at', { ascending: false }).limit(1000);
+      if (data) {
+        const unique = Array.from(new Set(data.map(d => d.impor_an && String(d.impor_an).trim()).filter(Boolean))) as string[];
+        setImportAnTabs(['Semua', ...unique.sort()]);
+      }
+    };
+    fetchImporAns();
   }, []);
 
   useEffect(() => {
@@ -2393,6 +2482,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       query = query.neq('status', 'ARCHIVED');
     }
 
+    // Apply Archive Filter (Sea & Air Audit -- Draf berisi status ARCHIVED, Audit menyembunyikannya)
+    if (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit') {
+      query = seaAirAuditType === 'draft' ? query.eq('status', 'ARCHIVED') : query.neq('status', 'ARCHIVED');
+    }
+
     // Apply Filter by Trail
     if (activeMainTab === 'trail' && activeTrailFilter !== 'All') {
       if (activeTrailFilter === 'PIB_CN') query = query.in('tabel', ['tabel_audit_pib', 'tabel_audit_cn']);
@@ -2407,6 +2501,16 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     // Apply Filter by Shipment Type
     if (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan' && activeShipmentTypeFilter !== 'Semua') {
       query = query.eq('shipment_type', activeShipmentTypeFilter);
+    }
+
+    // Apply Filter by A/N
+    if (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan' && activeAnFilter !== 'Semua') {
+      query = query.eq('a_n', activeAnFilter);
+    }
+
+    // Apply Filter by Impor An
+    if (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit' && activeImporAnFilter !== 'Semua') {
+      query = query.eq('impor_an', activeImporAnFilter);
     }
 
     // Apply Date Filter
@@ -2496,7 +2600,25 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         }
       }
 
+      let seaAirAuditStatusMap: Record<string, string> = {};
+      if ((activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan') && data && data.length > 0) {
+        const seaairIds = Array.from(new Set(data.map(r => r.seaair_id).filter(Boolean)));
+        if (seaairIds.length > 0) {
+          const chunkSize = 50;
+          let allStatusData: any[] = [];
+          for (let i = 0; i < seaairIds.length; i += chunkSize) {
+            const chunkIds = seaairIds.slice(i, i + chunkSize);
+            const { data: statusChunk } = await supabase.from('tabel_audit_seaair').select('id, status').in('id', chunkIds);
+            if (statusChunk) allStatusData = [...allStatusData, ...statusChunk];
+          }
+          seaAirAuditStatusMap = Object.fromEntries(allStatusData.map(r => [r.id, r.status]));
+        }
+      }
+
       const enrichedData = (data || []).map(r => {
+        if ((activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan')) {
+          r.audit_status = r.seaair_id ? (seaAirAuditStatusMap[r.seaair_id] ?? null) : null;
+        }
         if ((activeMainTab === 'courier' && activeSubTab === 'courier_rekapan')) {
           const cv = costValidations.find(c => c.awb === r.awb);
           r.status_cost = cv ? cv.status_cost : null;
@@ -2539,7 +2661,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       setFetchError(error.message);
     }
     setLoading(false)
-  }, [tab, activeMainTab, activeSubTab, courierAuditType, activeTrailFilter, activePpjkFilter, activeShipmentTypeFilter, debouncedSearch, sortColumn, sortDirection, page, pageSize, filterStartDate, filterEndDate])
+  }, [tab, activeMainTab, activeSubTab, courierAuditType, seaAirAuditType, activeTrailFilter, activePpjkFilter, activeShipmentTypeFilter, activeAnFilter, activeImporAnFilter, debouncedSearch, sortColumn, sortDirection, page, pageSize, filterStartDate, filterEndDate])
 
   const getExportData = async (startDate?: string, endDate?: string) => {
     if (!tab) return []
@@ -2613,6 +2735,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       query = query.neq('status', 'ARCHIVED');
     }
 
+    // Apply Archive Filter (Sea & Air Audit -- Draf berisi status ARCHIVED, Audit menyembunyikannya)
+    if (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit') {
+      query = seaAirAuditType === 'draft' ? query.eq('status', 'ARCHIVED') : query.neq('status', 'ARCHIVED');
+    }
+
     // Apply Filter by Trail
     if (activeMainTab === 'trail' && activeTrailFilter !== 'All') {
       if (activeTrailFilter === 'PIB_CN') query = query.in('tabel', ['tabel_audit_pib', 'tabel_audit_cn']);
@@ -2627,6 +2754,16 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     // Apply Filter by Shipment Type
     if (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan' && activeShipmentTypeFilter !== 'Semua') {
       query = query.eq('shipment_type', activeShipmentTypeFilter);
+    }
+
+    // Apply Filter by A/N
+    if (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan' && activeAnFilter !== 'Semua') {
+      query = query.eq('a_n', activeAnFilter);
+    }
+
+    // Apply Filter by Impor An
+    if (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit' && activeImporAnFilter !== 'Semua') {
+      query = query.eq('impor_an', activeImporAnFilter);
     }
 
     // Apply Search
@@ -2842,6 +2979,42 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     }
   };
 
+  // Dipicu dari halaman Rekapan Sea & Air -- record di sini adalah baris rekapan_seaair,
+  // jadi update status-nya menyasar tabel_audit_seaair lewat seaair_id (bukan record.id).
+  const handleDraftSeaAir = async (record: any) => {
+    if (!record.seaair_id) {
+      alert('Data Audit terkait tidak ditemukan untuk record ini.');
+      return;
+    }
+    try {
+      setLoading(true);
+      const { error } = await supabase.rpc('update_seaair_row', { p_id: record.seaair_id, p_updates: { status: 'ARCHIVED' } });
+      if (error) throw error;
+      fetchRecords();
+    } catch (e: any) {
+      alert('Gagal memindahkan ke Draft: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUndraftSeaAir = async (record: any) => {
+    if (!record.seaair_id) {
+      alert('Data Audit terkait tidak ditemukan untuk record ini.');
+      return;
+    }
+    try {
+      setLoading(true);
+      const { error } = await supabase.rpc('update_seaair_row', { p_id: record.seaair_id, p_updates: { status: 'LENGKAP' } });
+      if (error) throw error;
+      fetchRecords();
+    } catch (e: any) {
+      alert('Gagal undraft: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleBulkDelete = () => {
     const selectedRecords = records.filter(r => selectedIds.has(r.id));
     if (selectedRecords.length > 0) {
@@ -2892,8 +3065,12 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     : activeTabId === 'sea_air_audit'
     ? SEA_AIR_AUDIT_COLS
     : activeTabId === 'sea_air_rekapan'
-    ? SEA_AIR_REKAPAN_COLS
-    : activeTabId === 'trail' 
+    ? ((activeShipmentTypeFilter === 'LCL' || activeShipmentTypeFilter === 'AIR')
+        // Lift Off cuma relevan untuk shipment FCL (container) -- sembunyikan kolomnya
+        // saat filter LCL/AIR aktif, bukan cuma di-dash-kan seperti sebelumnya.
+        ? SEA_AIR_REKAPAN_COLS.filter(c => !['lift_off_vendor', 'lift_off_biaya', 'lift_off_split'].includes(c.key))
+        : SEA_AIR_REKAPAN_COLS)
+    : activeTabId === 'trail'
     ? TRAIL_COLS 
     : (activeMainTab === 'courier' && activeSubTab === 'courier_validasi') 
     ? VALIDASI_COLS 
@@ -3022,11 +3199,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                           <button
                             key={t.id}
                             onClick={() => { setActiveTrailFilter(t.id); setPage(1); }}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                              activeTrailFilter === t.id
-                                ? 'bg-blue-100 text-blue-700 border border-blue-200 shadow-sm'
-                                : 'bg-slate-50 border border-slate-200 text-slate-500 hover:border-slate-300'
-                            }`}
+                            className={toolbarPillClass(activeTrailFilter === t.id)}
                           >
                             {t.label}
                           </button>
@@ -3046,11 +3219,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         <button
                           key={ppjk}
                           onClick={() => { setActivePpjkFilter(ppjk); setPage(1); }}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
-                            activePpjkFilter === ppjk
-                              ? 'bg-blue-100 text-blue-700 border border-blue-200 shadow-sm'
-                              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                          }`}
+                          className={toolbarPillClass(activePpjkFilter === ppjk)}
                         >
                           {ppjk === 'All' ? 'Semua PPJK' : ppjk}
                         </button>
@@ -3065,11 +3234,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         <button
                           key={type.id}
                           onClick={() => { setCourierAuditType(type.id); setPage(1); }}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
-                            courierAuditType === type.id
-                              ? 'bg-blue-100 text-blue-700 border border-blue-200 shadow-sm'
-                              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                          }`}
+                          className={toolbarPillClass(courierAuditType === type.id)}
                         >
                           {type.label}
                         </button>
@@ -3077,6 +3242,21 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                     </div>
                   )}
                   
+                  {/* Sea & Air Audit Type Filter (Audit / Draft) */}
+                  {activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit' && (
+                    <div className="flex gap-2 items-center pb-1 overflow-x-auto max-w-[60vw]">
+                      {[{id: 'audit', label: 'Audit'}, {id: 'draft', label: '🗄️ Draft'}].map(type => (
+                        <button
+                          key={type.id}
+                          onClick={() => { setSeaAirAuditType(type.id); setPage(1); }}
+                          className={toolbarPillClass(seaAirAuditType === type.id)}
+                        >
+                          {type.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   {/* Shipment Type Filter for Sea & Air Rekapan */}
                   {activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan' && (
                     <div className="flex gap-2 items-center pb-1 overflow-x-auto max-w-[60vw]">
@@ -3084,11 +3264,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         <button
                           key={type}
                           onClick={() => { setActiveShipmentTypeFilter(type); setPage(1); }}
-                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all ${
-                            activeShipmentTypeFilter === type
-                              ? 'bg-indigo-100 text-indigo-700 border border-indigo-200 shadow-sm'
-                              : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                          }`}
+                          className={toolbarPillClass(activeShipmentTypeFilter === type)}
                         >
                           {type}
                         </button>
@@ -3096,90 +3272,116 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                     </div>
                   )}
                 </div>
-                <div className="flex gap-3 items-center flex-wrap justify-end">
+                <div className="flex gap-2.5 items-center flex-wrap justify-end">
                 {['sea_air_audit', 'sea_air_rekapan'].includes(activeSubTab) && (
-                  <div className="flex gap-2 items-center bg-white border border-slate-300 rounded-xl px-2 py-1 shadow-sm h-[38px]">
-                    <span className="text-xs text-slate-500 font-semibold px-2 border-r border-slate-200">Date</span>
-                    <input 
-                      type="date" 
-                      value={filterStartDate} 
-                      onChange={e => setFilterStartDate(e.target.value)} 
+                  <div className={`flex gap-2 items-center rounded-full pl-3.5 pr-2 py-1 h-[38px] border ${TOOLBAR_GLASS}`}>
+                    <CalendarDays size={14} className="text-slate-400 shrink-0" />
+                    <input
+                      type="date"
+                      value={filterStartDate}
+                      onChange={e => setFilterStartDate(e.target.value)}
                       className="text-xs bg-transparent focus:outline-none text-slate-600 cursor-pointer"
                     />
-                    <span className="text-slate-400 text-xs">-</span>
-                    <input 
-                      type="date" 
-                      value={filterEndDate} 
-                      onChange={e => setFilterEndDate(e.target.value)} 
+                    <span className="text-slate-300 text-xs">–</span>
+                    <input
+                      type="date"
+                      value={filterEndDate}
+                      onChange={e => setFilterEndDate(e.target.value)}
                       className="text-xs bg-transparent focus:outline-none text-slate-600 cursor-pointer"
                     />
                     {(filterStartDate || filterEndDate) && (
-                      <button onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }} className="text-slate-400 hover:text-slate-600 ml-1">
-                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                           <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                         </svg>
+                      <button onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }} className="text-slate-400 hover:text-slate-600 ml-0.5">
+                         <X size={14} />
                       </button>
                     )}
                   </div>
                 )}
                 <div className="relative">
+                  <SearchIcon size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                   <input
                     type="text"
-                    placeholder="🔍  Cari..."
+                    placeholder="Cari..."
                     value={search}
                     onChange={e => setSearch(e.target.value)}
-                    className="w-48 border border-slate-300 rounded-xl px-4 py-2 pr-8 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                    className={`w-52 rounded-full pl-9 pr-8 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3D2C44]/15 focus:border-[#3D2C44] focus:bg-white/90 transition-all border ${TOOLBAR_GLASS}`}
                   />
                   {search && (
                     <button
                       onClick={() => setSearch('')}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none"
                     >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                      </svg>
+                      <X size={14} />
                     </button>
                   )}
                 </div>
 
                 <button
                   onClick={fetchRecords}
-                  className="px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-600 text-xs font-semibold hover:border-slate-300 transition-all h-[38px]"
+                  className={`px-4 py-2 rounded-full text-slate-600 text-xs font-semibold hover:border-[#3D2C44]/30 hover:text-[#3D2C44] hover:bg-white/90 transition-all h-[38px] flex items-center gap-1.5 border ${TOOLBAR_GLASS}`}
                 >
-                  ↻ Refresh
+                  <RefreshCw size={13} />
+                  Refresh
                 </button>
                 {((activeMainTab === 'courier' && activeSubTab === 'courier_audit') || (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') || (activeMainTab === 'courier' && activeSubTab === 'courier_validasi')) && (
                   <button
                     onClick={() => {
-                      const title = (activeMainTab === 'courier' && activeSubTab === 'courier_audit') 
-                        ? ((courierAuditType === 'pib') ? 'PIB' : 'CN') 
+                      const title = (activeMainTab === 'courier' && activeSubTab === 'courier_audit')
+                        ? ((courierAuditType === 'pib') ? 'PIB' : 'CN')
                         : (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') ? 'Rekapan Courier' : 'Validasi Dokumen'
                       let dateFieldLabel = undefined;
                       if ((activeMainTab === 'courier' && activeSubTab === 'courier_audit')) dateFieldLabel = 'Filter Tgl. PPJK';
                       else if ((activeMainTab === 'courier' && activeSubTab === 'courier_rekapan')) dateFieldLabel = 'Filter Tgl. Terima Email';
-                      
+
                       setExportModalState({ title, cols: activeCols, dateFieldLabel })
                     }}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold border border-emerald-700 transition-all h-[38px] flex justify-center items-center gap-1.5"
+                    className="px-4 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold border border-emerald-700 transition-all h-[38px] flex justify-center items-center gap-1.5 shadow-sm"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
                     Export
                   </button>
                 )}
-                
-                <div className="flex items-center gap-2 ml-2">
-                  <span className="text-xs text-slate-500 font-medium">Tampilkan items:</span>
-                  <select
-                    value={pageSize}
-                    onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
-                    className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-semibold bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all cursor-pointer"
-                  >
-                    <option value={10}>10</option>
-                    <option value={20}>20</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                  </select>
-                </div>
+
+                {activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan' ? (
+                  <div className={`flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[38px] border ${TOOLBAR_GLASS}`}>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">A/N</span>
+                    <select
+                      value={activeAnFilter}
+                      onChange={e => { setActiveAnFilter(e.target.value); setPage(1); }}
+                      className="border-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer max-w-[160px]"
+                    >
+                      {anTabs.map(an => (
+                        <option key={an} value={an}>{an}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit' ? (
+                  <div className={`flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[38px] border ${TOOLBAR_GLASS}`}>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">Impor An</span>
+                    <select
+                      value={activeImporAnFilter}
+                      onChange={e => { setActiveImporAnFilter(e.target.value); setPage(1); }}
+                      className="border-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer max-w-[160px]"
+                    >
+                      {importAnTabs.map(an => (
+                        <option key={an} value={an}>{an}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div className={`flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[38px] border ${TOOLBAR_GLASS}`}>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">Items</span>
+                    <select
+                      value={pageSize}
+                      onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
+                      className="border-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
+                    >
+                      <option value={10}>10</option>
+                      <option value={20}>20</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -3305,7 +3507,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                       }
                       if (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan') {
                         return (
-                          <SeaAirRekapanRowGroup 
+                          <SeaAirRekapanRowGroup
                             key={rec.id}
                             rec={rec}
                             index={startIndex + index}
@@ -3313,6 +3515,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                             onValidasi={setSeaAirValidasiRecord}
                             onCostValidasi={setSeaAirCostValidasiRecord}
                             onDelete={handleDelete}
+                            onDraft={handleDraftSeaAir}
+                            onUndraft={handleUndraftSeaAir}
                             onVesselChange={handleUpdateVessel}
                             onInlineSaveRow={handleInlineSaveRow}
                           />

@@ -44,12 +44,7 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
         fill("if02", hasInvoiceFreight ? invF.subtotal : "", fpF.subtotal);
         fill("if03", hasInvoiceFreight ? invF.ppn : "", fpF.ppn);
         fill("if04", hasInvoiceFreight ? invF.pt_penerima : "", fpF.pt_pembeli);
-        fill("if05", hasInvoiceFreight ? idOther.actual_weight_kg : "", awbDet.weight);
         fill("if06", hasInvoiceFreight ? invF.pt_penerima : "", awbDet.pt_name);
-        fill("if07", hasInvoiceFreight ? docAwb : "", cmpAwbFisik);
-        
-        fill("if08", hasInvoiceFreight ? docAwb : "", sppbV.no_awb || "");
-        fill("if09", hasInvoiceFreight ? invF.pt_penerima : "", sppbV.nama_pt || ""); 
 
         // INVOICE DUTY
         fill("id01", invDutyCost.vat_duty_basis_idr || "", fpD.harga_jual || "");
@@ -66,8 +61,7 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
         fill("pib01", pibV.no_pengajuan || "", sppbV.no_pengajuan || "");
         fill("pib02", pibV.no_awb || "", sppbV.no_awb || "");
         fill("pib03", pibV.no_invoice || "", ciplV.no_invoice || "");
-        fill("pib04", pibV.item_value || "", ciplV.total_value || ""); 
-        fill("pib05", pibV.no_awb || "", docAwb);
+        fill("pib04", pibV.item_value || "", ciplV.total_value || "");
         fill("pib06", pibV.no_invoice || "", fi.inv_no || "");
         fill("pib07", pibV.item_value || "", fi.total_value || "");
         

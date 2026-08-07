@@ -155,12 +155,12 @@ const fmtIDR = (val: any) => {
 const fmtNum = (val: any) => {
   if (val === null || val === undefined || val === "" || val === "—") return "—";
   if (typeof val === "number") {
-    return val.toLocaleString("id-ID", { maximumFractionDigits: 4 });
+    return val.toLocaleString("en-US", { maximumFractionDigits: 4 });
   }
   const s = String(val).trim();
   if (/^-?\d+(\.\d+)?$/.test(s)) {
       const num = parseFloat(s);
-      return num.toLocaleString("id-ID", { maximumFractionDigits: 4 });
+      return num.toLocaleString("en-US", { maximumFractionDigits: 4 });
   }
   return s;
 };
@@ -208,7 +208,7 @@ const parseForeignInput = (val: string) => {
   return val;
 };
 
-function EditableCell({ value, onUpdate, isCurrency, isNumber, isForeignCurrency, manual }: { value: any, onUpdate: (val: any) => void, isCurrency?: boolean, isNumber?: boolean, isForeignCurrency?: boolean, manual?: boolean }) {
+function EditableCell({ value, onUpdate, isCurrency, isNumber, isForeignCurrency, manual, formatList }: { value: any, onUpdate: (val: any) => void, isCurrency?: boolean, isNumber?: boolean, isForeignCurrency?: boolean, manual?: boolean, formatList?: boolean }) {
   const isEditMode = React.useContext(EditModeContext);
   const [editing, setEditing] = React.useState(false);
   const [val, setVal] = React.useState(value === null || value === undefined ? "" : String(value));
@@ -226,7 +226,7 @@ function EditableCell({ value, onUpdate, isCurrency, isNumber, isForeignCurrency
         onBlur={() => {
           setEditing(false);
           if (val !== (value === null || value === undefined ? "" : String(value))) {
-             const finalVal = isForeignCurrency ? parseForeignInput(val) : ((isCurrency || isNumber) ? parseIndoInput(val) : val);
+             const finalVal = (isForeignCurrency || isNumber) ? parseForeignInput(val) : (isCurrency ? parseIndoInput(val) : val);
              onUpdate(finalVal);
           }
         }}
@@ -234,7 +234,7 @@ function EditableCell({ value, onUpdate, isCurrency, isNumber, isForeignCurrency
           if (e.key === 'Enter') {
             setEditing(false);
             if (val !== (value === null || value === undefined ? "" : String(value))) {
-               const finalVal = isForeignCurrency ? parseForeignInput(val) : ((isCurrency || isNumber) ? parseIndoInput(val) : val);
+               const finalVal = (isForeignCurrency || isNumber) ? parseForeignInput(val) : (isCurrency ? parseIndoInput(val) : val);
                onUpdate(finalVal);
             }
           }
@@ -254,9 +254,32 @@ function EditableCell({ value, onUpdate, isCurrency, isNumber, isForeignCurrency
     else if (isForeignCurrency) displayText = fmtForeignCurrency(value);
     else if (isNumber) displayText = fmtNum(value);
   }
+
+  // Nilai gabungan (mis. beberapa No. PO disambung "+") -- tampilkan satu per baris
+  // supaya rapi, bukan dibungkus jadi satu blok teks yang kepotong sembarangan.
+  const listItems = formatList && displayText !== "—" ? displayText.split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean) : [];
+
+  if (listItems.length > 1) {
+    return (
+      <div
+        className={`${isEditMode ? "cursor-text hover:bg-slate-100" : ""} rounded px-1 py-1 flex flex-col items-center justify-center relative group min-w-[30px] gap-1`}
+        onClick={() => isEditMode && setEditing(true)}
+      >
+        {listItems.map((item, i) => (
+          <span key={i} className="break-all leading-snug">{item}{i < listItems.length - 1 ? ' +' : ''}</span>
+        ))}
+        {manual && (
+          <span className="absolute right-0 -top-1 text-amber-500 p-0.5" title="Nilai ini sudah diedit manual oleh user">
+            <Edit3 size={10} />
+          </span>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div 
-      className={`${isEditMode ? "cursor-text hover:bg-slate-100" : ""} rounded px-1 min-h-[24px] flex items-center justify-center relative group min-w-[30px]`} 
+    <div
+      className={`${isEditMode ? "cursor-text hover:bg-slate-100" : ""} rounded px-1 min-h-[24px] flex items-center justify-center relative group min-w-[30px]`}
       onClick={() => isEditMode && setEditing(true)}
     >
       <span className={(isCurrency || isNumber) && value && value !== "—" ? "font-mono break-all" : "break-all"}>{displayText}</span>
@@ -271,27 +294,30 @@ function EditableCell({ value, onUpdate, isCurrency, isNumber, isForeignCurrency
 
 function StatusBadge({ match, tooltip, onClick, manual }: { match: boolean | null, tooltip?: string | null, onClick?: () => void, manual?: boolean }) {
   const isEditMode = React.useContext(EditModeContext);
+  // Badge hanya boleh terlihat bisa diklik (cursor & hover) kalau memang ada handler-nya --
+  // beberapa tabel (mis. DUTY) belum punya toggle manual, jadi badge di situ harus tampak diam.
+  const clickable = isEditMode && !!onClick;
   let content = null;
   if (match === true) {
     content = (
-      <span title={tooltip || undefined} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium whitespace-nowrap bg-emerald-100 text-emerald-700 cursor-pointer hover:bg-emerald-200 transition-colors">
+      <span title={tooltip || undefined} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium whitespace-nowrap bg-emerald-100 text-emerald-700 transition-colors ${clickable ? 'cursor-pointer hover:bg-emerald-200' : ''}`}>
         <CheckCircle2 size={12} /> Sesuai {manual && <Edit3 size={10} className="ml-1 text-amber-500 inline" title="Status ini sudah diedit manual oleh user" />}
       </span>
     );
   } else if (match === false) {
     content = (
-      <span title={tooltip || undefined} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium whitespace-nowrap bg-red-100 text-red-700 cursor-pointer hover:bg-red-200 transition-colors">
+      <span title={tooltip || undefined} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium whitespace-nowrap bg-red-100 text-red-700 transition-colors ${clickable ? 'cursor-pointer hover:bg-red-200' : ''}`}>
         <XCircle size={12} /> Tidak sesuai {manual && <Edit3 size={10} className="ml-1 text-amber-500 inline" title="Status ini sudah diedit manual oleh user" />}
       </span>
     );
   } else {
     content = (
-      <span title={tooltip || "Data tidak tersedia di salah satu dokumen"} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium whitespace-nowrap bg-slate-100 text-slate-500 cursor-pointer hover:bg-slate-200 transition-colors">
+      <span title={tooltip || "Data tidak tersedia di salah satu dokumen"} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium whitespace-nowrap bg-slate-100 text-slate-500 transition-colors ${clickable ? 'cursor-pointer hover:bg-slate-200' : ''}`}>
         <Clock size={12} /> Belum dicek {manual && <Edit3 size={10} className="ml-1 text-amber-500 inline" title="Status ini sudah diedit manual oleh user" />}
       </span>
     );
   }
-  return <div onClick={() => isEditMode && onClick && onClick()} className={isEditMode && onClick ? "cursor-pointer" : ""}>{content}</div>;
+  return <div onClick={() => clickable && onClick && onClick()} className={clickable ? "cursor-pointer" : ""}>{content}</div>;
 }
 
 function SectionWrap({ title, icon, children }: { title: string, icon?: React.ReactNode, children: React.ReactNode }) {
@@ -638,10 +664,17 @@ function PIBMatrixTable({ checks, onToggle, onUpdate }: { checks: any[], onToggl
                         const c = getCheck(row.dbRow, reqCol);
                         return c?.manual;
                      });
+                     // Nilai gabungan (mis. beberapa No. PO disambung "+") -- tampilkan satu per baris,
+                     // sama seperti kolom CIPL/PO/Final Invoice, supaya seragam dan mudah dibaca.
+                     const pibListItems = row.dbRow === "NO PO" && pibRefText !== "—"
+                        ? pibRefText.split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean)
+                        : [];
                      return (
                        <td key={col} className={tdClass + " font-medium text-slate-700 bg-slate-100"}>
-                         <div className="relative inline-flex items-center justify-center pr-3 group">
-                           {pibRefText}
+                         <div className="relative inline-flex flex-col items-center justify-center pr-3 group gap-1">
+                           {pibListItems.length > 1
+                              ? pibListItems.map((item, i) => <span key={i} className="break-all leading-snug">{item}{i < pibListItems.length - 1 ? ' +' : ''}</span>)
+                              : pibRefText}
                            {isManual && (
                               <span className="absolute right-0 -top-1 text-amber-500 p-0.5" title="Nilai ini sudah diedit manual oleh user"><Edit3 size={10} /></span>
                            )}
@@ -670,8 +703,13 @@ function PIBMatrixTable({ checks, onToggle, onUpdate }: { checks: any[], onToggl
                       <div className="flex flex-col gap-1 items-center">
                         <StatusBadge match={check.match} onClick={() => onToggle(row.dbRow, col)} manual={check.manual} />
                         <div className="text-[11px] font-medium text-slate-800 text-center break-words max-w-full leading-tight">
-                           <EditableCell value={text} onUpdate={(v) => onUpdate(row.dbRow, col, v)} isCurrency={row.dbRow === "TOTAL DUTY (PIB No. 44)"} isForeignCurrency={row.dbRow === "TOTAL CIPL (PIB No. 23)"} manual={check.manual} />
+                           <EditableCell value={text} onUpdate={(v) => onUpdate(row.dbRow, col, v)} isCurrency={row.dbRow === "TOTAL DUTY (PIB No. 44)"} isForeignCurrency={row.dbRow === "TOTAL CIPL (PIB No. 23)"} manual={check.manual} formatList={row.dbRow === "NO PO"} />
                         </div>
+                        {row.dbRow === "TOTAL CIPL (PIB No. 23)" && check.note && (
+                          <div className="text-[10px] text-slate-400 text-center break-words max-w-full leading-tight">
+                            {check.note}
+                          </div>
+                        )}
                       </div>
                     </td>
                   );
@@ -688,7 +726,7 @@ function PIBMatrixTable({ checks, onToggle, onUpdate }: { checks: any[], onToggl
 // ============================================================================
 // 4. DUTY
 // ============================================================================
-function DutyTable({ ndpbm, setNdpbm, items, addItem, removeItem, setItem, aktual, setAktual, onToggleManual }: any) {
+function DutyTable({ ndpbm, setNdpbm, items, addItem, removeItem, setItem, aktual, setAktual }: any) {
   const isEditMode = React.useContext(EditModeContext);
   const [showItems, setShowItems] = React.useState(false);
   const calc = useMemo(() => {
@@ -722,7 +760,7 @@ function DutyTable({ ndpbm, setNdpbm, items, addItem, removeItem, setItem, aktua
   function statusOf(actualStr: any, expected: number) {
     if (actualStr === null || actualStr === undefined || String(actualStr).trim() === "") return null;
     const a = String(actualStr).trim();
-    return Math.abs(toNum(a) - expected) <= 1000 ? true : false;
+    return Math.abs(toNum(a) - expected) <= 3000 ? true : false;
   }
 
   return (
@@ -796,7 +834,7 @@ function DutyTable({ ndpbm, setNdpbm, items, addItem, removeItem, setItem, aktua
                   <div className="font-semibold text-slate-800 mb-0.5">{fmtIDR(r.expected)}</div>
                   <div className="text-[10px] text-slate-500 italic">{r.formula}</div>
                 </td>
-                <td className={tdClass}><StatusBadge match={st} onClick={() => onToggleManual && onToggleManual(r.key)} manual={aktual[r.key + "_manual"]} /></td>
+                <td className={tdClass}><StatusBadge match={st} /></td>
               </tr>
             );
           })}
@@ -916,10 +954,12 @@ function ActualTable({ checks, onToggleRow, onUpdate }: { checks: any[], onToggl
                     );
                   }
                   if (col === "PIB") {
+                    const isNumericRow = row === "KG" || row === "CBM" || row === "QTY";
+                    const displayRef = isNumericRow && pibRef !== "—" ? fmtNum(pibRef) : pibRef;
                     return (
                       <td key={col} className={`${tdClass} text-slate-600`}>
                         <div className="relative inline-flex items-center justify-center pr-3 group">
-                           {pibRef}
+                           <span className={isNumericRow ? "font-mono" : ""}>{displayRef}</span>
                            {rowChecks.some(c => c.manual) && (
                               <span className="absolute right-0 -top-1 text-amber-500 p-0.5" title="Nilai ini sudah diedit manual oleh user"><Edit3 size={10} /></span>
                            )}
@@ -991,13 +1031,30 @@ export default function SeaAirValidasiModal({ record, onClose }: { record: any, 
   };
 
   const toggleRowStatus = (section: string, row: string) => {
-    setChecks(prev => prev.map(c => {
-      if (c.section === section && c.row === row) {
-        const nextMatch = c.match === null ? true : c.match === true ? false : null;
-        return { ...c, match: nextMatch, manual: true };
-      }
-      return c;
-    }));
+    setChecks(prev => {
+      const rowChecks = prev.filter(c => c.section === section && c.row === row);
+      if (rowChecks.length === 0) return prev;
+
+      // Badge status baris adalah gabungan beberapa cek (lihat rowStatusMatch di
+      // InvoiceFCLTable/ActualTable): null jika semua kosong, false jika ADA yang
+      // tidak sesuai, else true. Toggle harus mengikuti status gabungan yang sama
+      // ini -- kalau tiap cek diputar sendiri-sendiri berdasar nilai lamanya
+      // masing-masing, hasilnya bisa jadi campur aduk dan badge-nya "macet"
+      // walau nilai di baliknya sudah berubah (persentase ikut berubah diam-diam).
+      let currentMatch: boolean | null;
+      if (rowChecks.every(c => c.match === null)) currentMatch = null;
+      else if (rowChecks.some(c => c.match === false)) currentMatch = false;
+      else currentMatch = true;
+
+      const nextMatch = currentMatch === null ? true : currentMatch === true ? false : null;
+
+      return prev.map(c => {
+        if (c.section === section && c.row === row) {
+          return { ...c, match: nextMatch, manual: true };
+        }
+        return c;
+      });
+    });
     setHasUnsavedChanges(true);
   };
 

@@ -1,7 +1,54 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from '../lib/supabase';
-import { Receipt, FileText, Landmark, Ship, FileDigit, ClipboardList, ShoppingCart, Edit3, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { Receipt, FileText, Landmark, Ship, FileDigit, ClipboardList, ShoppingCart, Edit3, CheckCircle2, XCircle, Clock, Building2, Plane, CalendarDays, UserCheck } from 'lucide-react';
 import ValidasiPerhitunganPIB from './ValidasiPerhitunganPIB';
+
+// Tabel lebar dengan scrollbar horizontal ganda (atas & bawah) yang disinkronkan,
+// supaya baris tabel yang panjang ke bawah tidak perlu discroll dulu sampai bawah untuk geser kiri-kanan.
+function DualScrollTable({ children }: { children: React.ReactNode }) {
+  const topRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLDivElement>(null);
+  const [contentWidth, setContentWidth] = useState(0);
+  const syncingFromTop = useRef(false);
+  const syncingFromBottom = useRef(false);
+
+  useEffect(() => {
+    const el = measureRef.current;
+    if (!el) return;
+    const update = () => setContentWidth(el.scrollWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const onTopScroll = () => {
+    if (syncingFromBottom.current) { syncingFromBottom.current = false; return; }
+    if (!topRef.current || !bottomRef.current) return;
+    syncingFromTop.current = true;
+    bottomRef.current.scrollLeft = topRef.current.scrollLeft;
+  };
+  const onBottomScroll = () => {
+    if (syncingFromTop.current) { syncingFromTop.current = false; return; }
+    if (!topRef.current || !bottomRef.current) return;
+    syncingFromBottom.current = true;
+    topRef.current.scrollLeft = bottomRef.current.scrollLeft;
+  };
+
+  return (
+    <div className="flex-1 min-w-0 flex flex-col">
+      {contentWidth > 0 && (
+        <div ref={topRef} onScroll={onTopScroll} className="overflow-x-auto overflow-y-hidden" style={{ height: 14 }}>
+          <div style={{ width: contentWidth, height: 1 }} />
+        </div>
+      )}
+      <div ref={bottomRef} onScroll={onBottomScroll} className="overflow-x-auto">
+        <div ref={measureRef}>{children}</div>
+      </div>
+    </div>
+  );
+}
 
 const sectionIcons: Record<string, React.ReactNode> = {
   "s_inv_freight_duty": <Receipt size={24} />,
@@ -21,8 +68,6 @@ const headerColors: Record<string, { bg: string, text: string }> = {
   "AWB Freight": { bg: "#bbf7d0", text: "#166534" },
   "AWB Duty": { bg: "#a7f3d0", text: "#065f46" },
   "PIB / SPPBMCP": { bg: "#e9d5ff", text: "#6b21a8" },
-  "PIB / SPPBMCP Freight": { bg: "#e9d5ff", text: "#6b21a8" },
-  "PIB / SPPBMCP Duty": { bg: "#ddd6fe", text: "#5b21b6" },
   "FP Duty": { bg: "#fef08a", text: "#854d0e" },
   "FP Revisi Freight": { bg: "#99f6e4", text: "#115e59" },
   "FP Revisi Duty": { bg: "#fed7aa", text: "#9a3412" },
@@ -101,17 +146,15 @@ const SECTIONS: SectionConfig[] = [
     rows: [
       { id: "if01", compareDoc: "Invoice Duty",          field: "No. AWB" },
       { id: "if02", compareDoc: "FP Freight",            field: "Subtotal" },
+      { id: "cnf02_b", compareDoc: "CN INVOICE FREIGHT", field: "Subtotal after CN" },
       { id: "if03", compareDoc: "FP Freight",            field: "PPN" },
-      { id: "if05", compareDoc: "AWB Freight",           field: "Berat (kg)" },
-      { id: "if07", compareDoc: "AWB Freight",           field: "No. AWB" },
-      { id: "if08", compareDoc: "PIB / SPPBMCP Freight", field: "No. AWB" },
-      { id: "id06", compareDoc: "AWB Duty",              field: "No. AWB" },
-      { id: "id07", compareDoc: "PIB / SPPBMCP Duty",    field: "No. AWB" },
+      { id: "id06", compareDoc: "AWB",                   field: "No. AWB" },
+      { id: "id07", compareDoc: "PIB / SPPBMCP",         field: "No. AWB" },
       { id: "id01", compareDoc: "FP Duty",               field: "Subtotal" },
+      { id: "cnd02_b", compareDoc: "CN INVOICE DUTY",    field: "Subtotal after CN" },
       { id: "id02", compareDoc: "FP Duty",               field: "PPN" },
-      { id: "id04", compareDoc: "AWB Duty",              field: "Berat (kg)", hint: "(dari Invoice Freight)" },
+      { id: "id04", compareDoc: "AWB",                   field: "Berat (kg)", hint: "(dari Invoice Freight)" },
       { id: "pib02", compareDoc: "SPPB",                 field: "No. AWB" },
-      { id: "pib05", compareDoc: "AWB",                  field: "No. AWB" },
       { id: "fpfd05", compareDoc: "FP Freight",        field: "DPP (Freight)",        rowLabel: "DPP" },
       { id: "fpfd06", compareDoc: "FP Freight",        field: "Referensi (Freight)",  rowLabel: "Referensi" },
       { id: "fpfd07", compareDoc: "FP Duty",           field: "DPP (Duty)",           rowLabel: "DPP" },
@@ -120,11 +163,9 @@ const SECTIONS: SectionConfig[] = [
       { id: "fpr06",  compareDoc: "FP Revisi Freight", field: "Referensi (Freight)",  rowLabel: "Referensi" },
       { id: "fpr07",  compareDoc: "FP Revisi Duty",    field: "DPP (Duty)",           rowLabel: "DPP" },
       { id: "fpr08",  compareDoc: "FP Revisi Duty",    field: "Referensi (Duty)",     rowLabel: "Referensi" },
-      { id: "cnf01_a", compareDoc: "CN INVOICE FREIGHT", field: "AWB" },
-      { id: "cnf02_b", compareDoc: "CN INVOICE FREIGHT", field: "Other Fees / Harga Jual" },
+      { id: "cnf01_a", compareDoc: "CN INVOICE FREIGHT", field: "AWB", rowLabel: "No. AWB" },
       { id: "cnf03_b", compareDoc: "CN INVOICE FREIGHT", field: "PPN" },
-      { id: "cnd01_a", compareDoc: "CN INVOICE DUTY",    field: "AWB" },
-      { id: "cnd02_b", compareDoc: "CN INVOICE DUTY",    field: "Other Fees / Harga Jual" },
+      { id: "cnd01_a", compareDoc: "CN INVOICE DUTY",    field: "AWB", rowLabel: "No. AWB" },
       { id: "cnd03_b", compareDoc: "CN INVOICE DUTY",    field: "PPN" },
     ]
   },
@@ -212,10 +253,9 @@ const SECTIONS: SectionConfig[] = [
       { id: "sppb03",  compareDoc: "SPPBMCP", field: "Nama NPWP" },
       { id: "if04",    compareDoc: "FP Freight",             field: "Nama PT", rowLabel: "Nama NPWP", hint: "PT IMI / VNS / GMI, dll." },
       { id: "if06",    compareDoc: "AWB Freight",             field: "Nama PT", rowLabel: "Nama NPWP" },
-      { id: "if09",    compareDoc: "PIB / SPPBMCP Freight",   field: "Nama PT", rowLabel: "Nama NPWP" },
       { id: "id03",    compareDoc: "FP Duty",                 field: "Nama PT", rowLabel: "Nama NPWP", hint: "PT IMI / VNS / GMI, dll." },
       { id: "id05",    compareDoc: "AWB Duty",                field: "Nama PT", rowLabel: "Nama NPWP" },
-      { id: "id08",    compareDoc: "PIB / SPPBMCP Duty",      field: "Nama PT", rowLabel: "Nama NPWP" },
+      { id: "id08",    compareDoc: "PIB / SPPBMCP",           field: "Nama PT", rowLabel: "Nama NPWP" },
       { id: "cnf04_a", compareDoc: "Invoice Freight",         field: "Nama PT", rowLabel: "Nama NPWP" },
       { id: "cnd04_a", compareDoc: "Invoice Duty",            field: "Nama PT", rowLabel: "Nama NPWP" },
       { id: "cipl02",  compareDoc: "PO",                      field: "Penerima Barang vs Nama PT", rowLabel: "Nama NPWP" },
@@ -412,7 +452,6 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
   const [npwps, setNpwps] = useState<any[]>([]);
   const [isEditMode, setIsEditMode] = useState(false);
   const [snapshotValues, setSnapshotValues] = useState<any>(null);
-  const [showDebug, setShowDebug] = useState(false);
   const [pibStats, setPibStats] = useState({ match: 0, mismatch: 0, empty: 0 });
 
   useEffect(() => {
@@ -551,12 +590,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
         fill("if02", hasInvoiceFreight ? invF.subtotal : "", fpF.subtotal);
         fill("if03", hasInvoiceFreight ? invF.ppn : "", fpF.ppn);
         fill("if04", hasInvoiceFreight ? invF.pt_penerima : "", fpF.pt_pembeli);
-        fill("if05", hasInvoiceFreight ? idOther.actual_weight_kg : "", awbDet.weight);
         fill("if06", hasInvoiceFreight ? invF.pt_penerima : "", awbDet.pt_name);
-        fill("if07", hasInvoiceFreight ? docAwb : "", cmpAwbFisik);
-        
-        fill("if08", hasInvoiceFreight ? docAwb : "", sppbV.no_awb || "");
-        fill("if09", hasInvoiceFreight ? invF.pt_penerima : "", sppbV.nama_pt || ""); 
 
         // INVOICE DUTY
         fill("id01", invDutyCost.vat_duty_basis_idr || "", fpD.harga_jual || "");
@@ -573,8 +607,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
         fill("pib01", pibV.no_pengajuan || "", sppbV.no_pengajuan || "");
         fill("pib02", pibV.no_awb || "", sppbV.no_awb || "");
         fill("pib03", pibV.no_invoice || "", ciplV.no_invoice || "");
-        fill("pib04", pibV.item_value || "", ciplV.total_value || ""); 
-        fill("pib05", pibV.no_awb || "", docAwb);
+        fill("pib04", pibV.item_value || "", ciplV.total_value || "");
         fill("pib06", pibV.no_invoice || "", fi.inv_no || "");
         fill("pib07", pibV.item_value || "", fi.total_value || "");
         
@@ -1074,38 +1107,61 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
           </div>
         </div>
         
-        <div className="bg-white px-3 md:px-4 pt-3 md:pt-4 pb-3 border-b border-slate-100 shrink-0 z-10 print:p-0">
+        <div className="bg-gradient-to-r from-purple-50 via-purple-50/60 to-white px-3 md:px-4 pt-3 md:pt-4 pb-3 border-b border-purple-100 shrink-0 z-10 print:p-0 print:bg-white">
           <div style={S.page}>
             <div style={{...S.header, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', gap: '10px'}}>
               <div style={{ flex: 1 }}>
-                <p style={{...S.title, fontSize: "16px"}}>Tabel Validasi Dokumen Import</p>
-                <p style={{...S.subtitle, marginTop: "2px", fontSize: "11px"}}>PT Indo Mulia Indah — isi nilai dari masing-masing dokumen, status sesuai/tidak sesuai akan tampil otomatis</p>
-                <div style={{...S.metaRow, marginTop: "6px", gap: "10px"}}>
-                  <div>
-                    <label style={{ fontSize: "11px", color: txtSec, display: "block", marginBottom: "3px" }}>Jenis Dokumen</label>
-                    <div style={{ fontSize: "13px", fontWeight: 500, color: "#1e293b" }}>{record?.jenis_dokumen || docType || "—"}</div>
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-[#3D2C44]/10 flex items-center justify-center shrink-0 print:hidden">
+                    <ClipboardList size={14} className="text-[#3D2C44]" />
+                  </div>
+                  <p style={{...S.title, fontSize: "16px"}}>Tabel Validasi Dokumen Import</p>
+                </div>
+                <p style={{...S.subtitle, marginTop: "2px", fontSize: "11px", marginLeft: "0" }} className="print:ml-0">PT Indo Mulia Indah — isi nilai dari masing-masing dokumen, status sesuai/tidak sesuai akan tampil otomatis</p>
+                <div style={{...S.metaRow, marginTop: "10px", gap: "8px"}}>
+                  <div className="flex items-center gap-2 bg-white/70 border border-purple-100 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
+                    <FileText size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
+                    <div>
+                      <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Jenis Dokumen</div>
+                      <div className="text-[13px] font-semibold text-[#3D2C44] leading-tight">{record?.jenis_dokumen || docType || "—"}</div>
+                    </div>
                   </div>
                   {(record?.no_pib || record?.nomor_pib) && (
-                    <div>
-                      <label style={{ fontSize: "11px", color: txtSec, display: "block", marginBottom: "3px" }}>No. PIB</label>
-                      <div style={{ fontSize: "13px", fontWeight: 500, color: "#1e293b" }}>{record?.no_pib || record?.nomor_pib}</div>
+                    <div className="flex items-center gap-2 bg-white/70 border border-purple-100 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
+                      <FileDigit size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
+                      <div>
+                        <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">No. PIB</div>
+                        <div className="text-[13px] font-semibold text-[#3D2C44] leading-tight">{record?.no_pib || record?.nomor_pib}</div>
+                      </div>
                     </div>
                   )}
-                  <div>
-                    <label style={{ fontSize: "11px", color: txtSec, display: "block", marginBottom: "3px" }}>Vendor</label>
-                    <div style={{ fontSize: "13px", fontWeight: 500, color: "#1e293b" }}>{record?.vendor || record?.nama_vendor || "—"}</div>
+                  <div className="flex items-center gap-2 bg-white/70 border border-purple-100 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
+                    <Building2 size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
+                    <div>
+                      <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Vendor</div>
+                      <div className="text-[13px] font-semibold text-[#3D2C44] leading-tight">{record?.vendor || record?.nama_vendor || "—"}</div>
+                    </div>
                   </div>
-                  <div>
-                    <label style={{ fontSize: "11px", color: txtSec, display: "block", marginBottom: "3px" }}>No. AWB</label>
-                    {isEditMode ? <input style={S.metaInput} value={awbNo || ""} onChange={e => setAwbNo(e.target.value)} placeholder="Misal: 1234567890" /> : <div style={{ fontSize: "13px", fontWeight: 500, color: "#1e293b" }}>{awbNo || "—"}</div>}
+                  <div className="flex items-center gap-2 bg-white/70 border border-purple-100 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
+                    <Plane size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
+                    <div>
+                      <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">No. AWB</div>
+                      {isEditMode ? <input style={S.metaInput} value={awbNo || ""} onChange={e => setAwbNo(e.target.value)} placeholder="Misal: 1234567890" /> : <div className="text-[13px] font-semibold text-[#3D2C44] leading-tight">{awbNo || "—"}</div>}
+                    </div>
                   </div>
-                  <div>
-                    <label style={{ fontSize: "11px", color: txtSec, display: "block", marginBottom: "3px" }}>Tanggal cek</label>
-                    {isEditMode ? <input type="date" style={S.metaInput} value={tanggal || ""} onChange={e => setTanggal(e.target.value)} /> : <div style={{ fontSize: "13px", fontWeight: 500, color: "#1e293b" }}>{tanggal ? new Date(tanggal).toLocaleDateString('id-ID') : "—"}</div>}
+                  <div className="flex items-center gap-2 bg-white/70 border border-purple-100 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
+                    <CalendarDays size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
+                    <div>
+                      <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Tanggal cek</div>
+                      {isEditMode ? <input type="date" style={S.metaInput} value={tanggal || ""} onChange={e => setTanggal(e.target.value)} /> : <div className="text-[13px] font-semibold text-[#3D2C44] leading-tight">{tanggal ? new Date(tanggal).toLocaleDateString('id-ID') : "—"}</div>}
+                    </div>
                   </div>
-                  <div>
-                    <label style={{ fontSize: "11px", color: txtSec, display: "block", marginBottom: "3px" }}>Diperiksa oleh</label>
-                    {isEditMode ? <input style={S.metaInput} value={namaChecker || ""} onChange={e => setNamaChecker(e.target.value)} placeholder="Nama pemeriksa" /> : <div style={{ fontSize: "13px", fontWeight: 500, color: "#1e293b" }}>{namaChecker || "—"}</div>}
+                  <div className="flex items-center gap-2 bg-white/70 border border-purple-100 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
+                    <UserCheck size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
+                    <div>
+                      <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Diperiksa oleh</div>
+                      {isEditMode ? <input style={S.metaInput} value={namaChecker || ""} onChange={e => setNamaChecker(e.target.value)} placeholder="Nama pemeriksa" /> : <div className="text-[13px] font-semibold text-[#3D2C44] leading-tight">{namaChecker || "—"}</div>}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1143,95 +1199,6 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
         
         <div className="flex-1 overflow-y-auto p-4 md:p-6 pt-4 md:pt-6 pb-12 print:p-0 print:overflow-visible">
           <div style={S.page}>
-            <div className="mb-6 bg-slate-50 border border-slate-200 rounded-xl overflow-hidden mt-2">
-              <button 
-                onClick={() => setShowDebug(!showDebug)} 
-                className="w-full flex items-center justify-between p-3 bg-slate-100 hover:bg-slate-200 transition-colors text-sm font-semibold text-slate-700"
-              >
-                <span>🔍 Debug Data Raw</span>
-                <span>{showDebug ? "▲ Collapse" : "▼ Expand"}</span>
-              </button>
-              
-              {showDebug && (
-                <div className="p-4 text-[11px] font-mono text-slate-600 bg-white overflow-x-auto max-h-[400px] overflow-y-auto w-full">
-                   <div className="flex flex-col gap-6 md:flex-row w-full">
-                      <div className="flex-1 min-w-[300px]">
-                        <div className="font-bold text-slate-800 mb-2 border-b border-slate-200 pb-1">dokumen_validasi</div>
-                        <table className="w-full">
-                           <tbody>
-                             {[
-                               { label: "awb", val: debugData?.doc?.awb },
-                               { label: "jenis_dokumen", val: debugData?.doc?.jenis_dokumen },
-                               { label: "status_validasi", val: debugData?.doc?.status_validasi },
-                               { label: "total_lulus", val: debugData?.doc?.total_lulus },
-                               { label: "total_gagal", val: debugData?.doc?.total_gagal }
-                             ].map((item, idx) => (
-                               <tr key={idx} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
-                                 <td className="py-1 pr-2 w-40 truncate" title={item.label}>{item.label}</td>
-                                 <td className="py-1 font-semibold break-all">
-                                   {item.val !== undefined && item.val !== null && item.val !== "" ? (
-                                      <span className="text-emerald-600">{String(item.val)}</span>
-                                   ) : (
-                                      <span className="text-rose-500">—</span>
-                                   )}
-                                 </td>
-                               </tr>
-                             ))}
-                           </tbody>
-                        </table>
-                      </div>
-
-                      <div className="flex-1 min-w-[300px]">
-                        <div className="font-bold text-slate-800 mb-2 border-b border-slate-200 pb-1">data_validasi_raw</div>
-                        <table className="w-full">
-                           <tbody>
-                             {[
-                               { label: "pib_v.no_pengajuan", val: debugData?.raw?.pib_v?.no_pengajuan },
-                               { label: "pib_v.npwp", val: debugData?.raw?.pib_v?.npwp },
-                               { label: "pib_v.nama_pt", val: debugData?.raw?.pib_v?.nama_pt },
-                               { label: "pib_v.alamat_npwp", val: debugData?.raw?.pib_v?.alamat_npwp },
-                               { label: "pib_v.item_value", val: debugData?.raw?.pib_v?.item_value },
-                               { label: "pib_v.total_bayar", val: debugData?.raw?.pib_v?.total_bayar },
-                               { label: "sppb_v.no_sppb", val: debugData?.raw?.sppb_v?.no_sppb },
-                               { label: "sppb_v.no_pengajuan", val: debugData?.raw?.sppb_v?.no_pengajuan },
-                               { label: "sppb_v.no_awb", val: debugData?.raw?.sppb_v?.no_awb },
-                               { label: "sppb_v.npwp", val: debugData?.raw?.sppb_v?.npwp },
-                               { label: "sppb_v.nama_pt", val: debugData?.raw?.sppb_v?.nama_pt },
-                               { label: "bpn_v.nomor_aju", val: debugData?.raw?.bpn_v?.nomor_aju },
-                               { label: "bpn_v.nomor_dokumen", val: debugData?.raw?.bpn_v?.nomor_dokumen },
-                               { label: "bpn_v.total", val: debugData?.raw?.bpn_v?.total },
-                               { label: "cipl_v.no_invoice", val: debugData?.raw?.cipl_v?.no_invoice },
-                               { label: "cipl_v.total_value", val: debugData?.raw?.cipl_v?.total_value },
-                               { label: "cipl_v.penerima_barang", val: debugData?.raw?.cipl_v?.penerima_barang },
-                               { label: "po_total_value", val: debugData?.raw?.po_total_value },
-                               { label: "po_penerima", val: debugData?.raw?.po_penerima },
-                               { label: "billing_djbc_total", val: debugData?.raw?.billing_djbc_total },
-                               { label: "faktur_pajak_freight_npwp", val: debugData?.raw?.faktur_pajak_freight_npwp },
-                               { label: "faktur_pajak_freight_alamat", val: debugData?.raw?.faktur_pajak_freight_alamat },
-                               { label: "faktur_pajak_duty_npwp", val: debugData?.raw?.faktur_pajak_duty_npwp },
-                               { label: "faktur_pajak_duty_alamat", val: debugData?.raw?.faktur_pajak_duty_alamat },
-                               { label: "fp_revisi_duty_npwp", val: debugData?.raw?.fp_revisi_duty_npwp },
-                               { label: "fp_revisi_duty_alamat", val: debugData?.raw?.fp_revisi_duty_alamat },
-                             ].map((item, idx) => (
-                               <tr key={idx} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
-                                 <td className="py-1 pr-2 w-52 truncate" title={item.label}>{item.label}</td>
-                                 <td className="py-1 font-semibold break-all">
-                                   {item.val !== undefined && item.val !== null && item.val !== "" ? (
-                                      <span className="text-emerald-600">{String(item.val)}</span>
-                                   ) : (
-                                      <span className="text-rose-500">—</span>
-                                   )}
-                                 </td>
-                               </tr>
-                             ))}
-                           </tbody>
-                        </table>
-                      </div>
-                   </div>
-                </div>
-              )}
-            </div>
-
             {activeSections.map((section) => {
               const ss = sectionStats(section);
               const uniqueCompareDocs = Array.from(new Set(section.rows.map((r: any) => r.compareDoc)));
@@ -1269,7 +1236,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                   </div>
                   
                   {/* Right side Table Container */}
-                  <div className="flex-1 overflow-x-auto">
+                  <DualScrollTable>
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr>
@@ -1378,7 +1345,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                         ))}
                       </tbody>
                     </table>
-                  </div>
+                  </DualScrollTable>
                 </div>
               );
             })}

@@ -151,7 +151,7 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
     nilai23: "", freight: "", asuransi: "", nilaiPabean: "", bm: "", ppn: "", pph: "", ndpbmXnilai: "",
   });
   const [aktualSPPBMCP, setAktualSPPBMCP] = useState({
-    bm: "", ppn: "", pph: "", ndpbmXnilai: "", sanksiAdm: "",
+    bm: "", ppn: "", pph: "", sanksiAdm: "",
   });
 
   const [manualStatus, setManualStatus] = useState<Record<string, string>>({});
@@ -196,7 +196,7 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
     let initialNdpbm = "";
     let initialItems = [newItem(0)];
     let initialAktualPIB = { nilai23: "", freight: "", asuransi: "", nilaiPabean: "", bm: "", ppn: "", pph: "", ndpbmXnilai: "" };
-    let initialAktualSPPBMCP = { bm: "", ppn: "", pph: "", ndpbmXnilai: "", sanksiAdm: "" };
+    let initialAktualSPPBMCP = { bm: "", ppn: "", pph: "", sanksiAdm: "" };
 
     const raw = dataValidasiRaw || {};
     const pibData = raw.perhitungan_pib_v;
@@ -240,7 +240,6 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
         bm: formatForInput(cnData.aktual_bm),
         ppn: formatForInput(cnData.aktual_ppn),
         pph: formatForInput(cnData.aktual_pph),
-        ndpbmXnilai: formatForInput(cnData.aktual_ndpbm_x_nilai),
         sanksiAdm: formatForInput(cnData.aktual_sanksi_adm ?? cnData.sanksi_adm ?? ''),
       };
     }
@@ -277,8 +276,10 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
     const raw = dataValidasiRaw || {};
     const pibCalc = raw.perhitungan_pib_v || {};
     
-    // A. FREIGHT (25)
-    const totalInvoiceFreight = Number(raw.invoice_freight_v?.subtotal) || 0;
+    // A. FREIGHT (25) — Total Invoice Freight Courier = subtotal + PPN (total invoice lengkap yang dibayar ke courier)
+    const totalInvoiceFreight =
+        (Number(raw.invoice_freight_v?.subtotal) || 0)
+      + (Number(raw.invoice_freight_v?.ppn) || 0);
     const expectedFreight = ndpbmNum > 0 ? totalInvoiceFreight / ndpbmNum : 0;
 
     // B. ASURANSI (24)
@@ -294,6 +295,10 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
 
     const nilaiPabean26Doc = Number(pibCalc.aktual_nilai_pabean) || 0;
     const ndpbmXnilai = Math.round(ndpbmNum * nilaiPabean26Doc * 100) / 100;
+
+    // SPPBMCP Aktual Total Nilai Pabean — dihitung otomatis dari SUM items[].nilaiPabean x NDPBM,
+    // bukan dari field dokumen (dokumen SPPBMCP tidak punya baris "NDPBM x Nilai Pabean" eksplisit)
+    const ndpbmXnilaiSppbmcp = Math.round(ndpbmNum * totalNilaiPabean * 100) / 100;
 
     // SPPBMCP Expected Total Nilai Pabean
     const cnCalc = raw.perhitungan_sppbmcp_v || {};
@@ -329,6 +334,7 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
       totalPPN, 
       totalPPH, 
       ndpbmXnilai,
+      ndpbmXnilaiSppbmcp,
       expectedTotalNilaiPabeanSppbmcp
     };
   }, [ndpbm, items, dataValidasiRaw, aktualPIB.freight, aktualPIB.asuransi, kursBiHarian]);
@@ -397,10 +403,15 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
       label: "Total Nilai Pabean", 
       expected: calc.expectedTotalNilaiPabeanSppbmcp, 
       fmt: (val: any) => (val === null || val === undefined) ? "—" : fmtIDR(val), 
-      formula: "Jika USD: (CIPL × NDPBM + Freight) + 0.5%. Jika non-USD: (CIPL × Kurs BI Harian + Freight) + 0.5%", 
-      ak: aktualSPPBMCP.ndpbmXnilai,
-      akNum: toNum(aktualSPPBMCP.ndpbmXnilai),
-      setAk: (v: string) => setAk2("ndpbmXnilai", v)
+      formula: "Jika USD: (CIPL × NDPBM + Freight) + 0.5%. Jika non-USD: (CIPL × Kurs BI Harian + Freight) + 0.5%",
+      ak: fmtIDR(calc.ndpbmXnilaiSppbmcp),
+      akNum: calc.ndpbmXnilaiSppbmcp,
+      isText: true,
+      customStatus: (ak: any, exp: any) => {
+        if (exp === null) return "empty";
+        const diff = Math.abs(calc.ndpbmXnilaiSppbmcp - exp);
+        return diff <= 1 ? "match" : "mismatch";
+      }
     },
     { id: "bm",  label: "BM",  expected: calc.totalBM,  fmt: fmtIDR, formula: FORMULA.bm,  ak: aktualSPPBMCP.bm, akNum: toNum(aktualSPPBMCP.bm),  setAk: (v: string) => setAk2("bm", v), ignoreForStats: true },
     { id: "sanksiAdm", label: "Sanksi Administrasi", expected: 0, fmt: fmtIDR, formula: "Fixed Expected = 0", ak: aktualSPPBMCP.sanksiAdm, akNum: toNum(aktualSPPBMCP.sanksiAdm), setAk: (v: string) => setAk2("sanksiAdm", v) },
@@ -509,7 +520,7 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
                     {row.formula}
                   </td>
                   <td className="p-3 border-slate-200 text-center align-middle">
-                    {['bm', 'ppn', 'pph', 'freight'].includes(row.id) ? (
+                    {['bm', 'ppn', 'pph', 'freight'].includes(row.id) || (isSPPBMCP && row.id === 'ndpbmXnilai') ? (
                       <span className="text-slate-400">—</span>
                     ) : (
                       <StatusBadge st={st} isEditMode={isEditMode} onClick={() => toggleManualStatus(row.id, st)} />
@@ -559,6 +570,9 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
           </div>
           {showItemDetail && (
             <div className="overflow-x-auto">
+              <div className="px-4 pt-3" style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
+                NDPBM yang digunakan: {ndpbm || "—"}
+              </div>
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-100 text-slate-800 border-b border-slate-200">
