@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { ArrowLeft, Fuel } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 export default function FuelSurchargePage() {
   const [rates, setRates] = useState<any[]>([]);
@@ -70,49 +71,55 @@ export default function FuelSurchargePage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#FFF0E2] to-[#FFC3A0] font-sans text-slate-800">
-      <header className="bg-slate-900 text-white sticky top-0 z-10 shadow-lg">
+      <header className="bg-gradient-to-r from-[#3D2C44] to-[#2B1E30] text-white sticky top-0 z-10 shadow-lg">
         <div className="max-w-4xl mx-auto px-5 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="font-bold text-base leading-tight mt-0.5">Fuel Surcharge Settings</h1>
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
+              <Fuel size={17} />
+            </div>
+            <div>
+              <h1 className="font-bold text-base leading-tight">Fuel Surcharge</h1>
+              <p className="text-[11px] text-white/50 mt-0.5">Persentase fuel surcharge mingguan DHL & FedEx</p>
+            </div>
           </div>
-          <Link to="/settings" className="text-xs flex items-center justify-center font-semibold text-slate-300 hover:text-white border border-slate-600 hover:border-slate-400 px-3 py-1.5 rounded-lg transition-all">
-            ← Kembali ke Pengaturan
+          <Link to="/settings" className="text-xs flex items-center gap-1.5 font-semibold text-white/70 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1.5 rounded-lg transition-all">
+            <ArrowLeft size={13} /> Pengaturan
           </Link>
         </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-4 py-8">
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-8">
-          <h2 className="text-lg font-bold mb-4">Add Rate</h2>
+        <div className="bg-white/70 backdrop-blur-md p-6 rounded-2xl shadow-sm border border-white/60 mb-6">
+          <h2 className="text-base font-bold text-slate-800 mb-4">Tambah Rate</h2>
           <form onSubmit={handleAdd} className="flex flex-wrap gap-4 items-end">
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Courier</label>
-              <select value={courier} onChange={e => setCourier(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-32 focus:ring focus:ring-blue-200">
+              <select value={courier} onChange={e => setCourier(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-32 bg-white focus:outline-none focus:ring-2 focus:ring-[#3D2C44]/15 focus:border-[#3D2C44]">
                 <option value="DHL">DHL</option>
                 <option value="FEDEX">FEDEX</option>
               </select>
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Week Start (Monday)</label>
-              <input type="date" value={weekStart} onChange={e => setWeekStart(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-40 focus:ring focus:ring-blue-200" />
+              <input type="date" value={weekStart} onChange={e => setWeekStart(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-40 bg-white focus:outline-none focus:ring-2 focus:ring-[#3D2C44]/15 focus:border-[#3D2C44]" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Week End (Sunday)</label>
-              <input type="date" value={weekEnd} onChange={e => setWeekEnd(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-40 focus:ring focus:ring-blue-200" />
+              <input type="date" value={weekEnd} onChange={e => setWeekEnd(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-40 bg-white focus:outline-none focus:ring-2 focus:ring-[#3D2C44]/15 focus:border-[#3D2C44]" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Fuel Surcharge (%)</label>
-              <input type="number" step="0.01" min="0" max="100" placeholder="e.g. 24.50" value={fuelPct} onChange={e => setFuelPct(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-32 focus:ring focus:ring-blue-200" />
+              <input type="number" step="0.01" min="0" max="100" placeholder="e.g. 24.50" value={fuelPct} onChange={e => setFuelPct(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-32 bg-white focus:outline-none focus:ring-2 focus:ring-[#3D2C44]/15 focus:border-[#3D2C44]" />
             </div>
-            <button type="submit" disabled={saving} className="bg-[#3D2C44] hover:bg-[#2B1E30] text-white font-bold text-sm px-5 py-1.5 rounded-lg disabled:opacity-50 h-[34px] transition-colors">
+            <button type="submit" disabled={saving} className="bg-[#3D2C44] hover:bg-[#2B1E30] text-white font-bold text-sm px-5 py-1.5 rounded-lg disabled:opacity-50 h-[34px] transition-colors shadow-sm">
               {saving ? 'Menyimpan...' : 'Tambah'}
             </button>
           </form>
           {err && <p className="text-red-500 text-xs font-bold mt-3">{err}</p>}
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-          <h2 className="text-lg font-bold mb-4 border-b pb-2">Rate History</h2>
+        <div className="bg-white/70 backdrop-blur-md p-6 rounded-2xl shadow-sm border border-white/60">
+          <h2 className="text-base font-bold text-slate-800 mb-4 border-b border-slate-100 pb-3">Riwayat Rate</h2>
           {loading ? (
             <p className="text-slate-500 text-sm">Loading rates...</p>
           ) : rates.length === 0 ? (
@@ -120,7 +127,7 @@ export default function FuelSurchargePage() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
-                <thead className="text-xs text-slate-500 bg-slate-50 uppercase">
+                <thead className="text-xs text-[#3D2C44]/70 bg-[#3D2C44]/5 uppercase">
                   <tr>
                     <th className="px-4 py-3 font-semibold rounded-tl-lg">Courier</th>
                     <th className="px-4 py-3 font-semibold">Week Start</th>

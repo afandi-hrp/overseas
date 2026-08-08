@@ -56,7 +56,7 @@ export default function SettingsPage() {
       const data = await res.json();
       
       if (res.ok) {
-        setTestResult({ type: 'sukses', message: 'Koneksi berhasil! N8N merespon dengan baik.', target: type });
+        setTestResult({ type: 'sukses', message: 'Koneksi berhasil! Sistem otomasi merespon dengan baik.', target: type });
       } else {
         setTestResult({ type: 'gagal', message: data?.pesan || 'Koneksi gagal.', target: type });
       }
@@ -71,8 +71,8 @@ export default function SettingsPage() {
     <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
       <main className="max-w-2xl mx-auto px-4 py-8">
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-          <h2 className="text-lg font-bold text-slate-800 mb-2">Konfigurasi n8n Webhook</h2>
-          <p className="text-sm text-slate-500 mb-6">Ubah URL webhook yang digunakan untuk mengirim dokumen impor ke n8n.</p>
+          <h2 className="text-lg font-bold text-slate-800 mb-2">Konfigurasi Webhook Otomasi</h2>
+          <p className="text-sm text-slate-500 mb-6">Ubah URL webhook yang digunakan untuk mengirim dokumen impor ke sistem otomasi.</p>
           
           <div className="space-y-6">
             <div>

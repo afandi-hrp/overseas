@@ -1,6 +1,70 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+import { UploadCloud, FolderOpen, CheckCircle2, FileText, Sparkles, Plane, Ship, X, AlertTriangle, RotateCcw } from 'lucide-react'
 import ProcessingQueue from '../components/ProcessingQueue'
+
+// ─── Terjemahkan error teknis jadi pesan yang mudah dipahami ──
+function humanizeUploadError(raw: string): string {
+  const msg = (raw || '').toLowerCase();
+  if (msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('load failed')) {
+    return 'Tidak dapat terhubung ke server. Periksa koneksi internet Anda, lalu coba lagi.';
+  }
+  if (msg.includes('webhook url tidak dikonfigurasi')) {
+    return 'URL webhook belum diatur di server. Hubungi admin untuk mengatur konfigurasinya.';
+  }
+  if (msg.includes('timeout') || msg.includes('timed out') || msg.includes('aborted')) {
+    return 'Server otomasi tidak merespon dalam waktu yang wajar (timeout). Dokumen mungkin masih diproses di belakang layar — cek "Antrian Proses" beberapa saat lagi sebelum mencoba ulang.';
+  }
+  if (msg.includes('502') || msg.includes('503') || msg.includes('504') || msg.includes('bad gateway') || msg.includes('unavailable') || msg.includes('econnrefused')) {
+    return 'Server otomasi sedang tidak dapat dihubungi (kemungkinan sedang sibuk atau maintenance). Coba lagi dalam beberapa menit.';
+  }
+  if (msg.includes('401') || msg.includes('403') || msg.includes('unauthorized') || msg.includes('forbidden')) {
+    return 'Akses ke server otomasi ditolak. Hubungi admin untuk memeriksa kredensial/izin akses.';
+  }
+  if (msg.includes('413') || msg.includes('too large') || msg.includes('payload')) {
+    return 'Ukuran file terlalu besar untuk dikirim. Coba kompres file atau kirim dalam beberapa kali upload.';
+  }
+  return 'Terjadi kesalahan saat mengirim dokumen ke server otomasi. Silakan coba lagi, atau hubungi admin jika masalah terus berulang.';
+}
+
+// ─── Modal Notifikasi Gagal Kirim ──────────────────────────────
+function UploadErrorModal({ friendly, raw, onClose, onRetry }: { friendly: string, raw: string, onClose: () => void, onRetry: () => void }) {
+  const [showDetail, setShowDetail] = useState(false)
+  return (
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-11 h-11 rounded-xl bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+            <AlertTriangle size={22} />
+          </div>
+          <div>
+            <h3 className="font-bold text-slate-800 leading-tight">Gagal Mengirim Dokumen</h3>
+            <p className="text-xs text-slate-400 mt-0.5">File tidak terkirim ke server otomasi</p>
+          </div>
+        </div>
+        <p className="text-sm text-slate-600 leading-relaxed mb-4">{friendly}</p>
+        {raw && (
+          <div className="mb-5">
+            <button onClick={() => setShowDetail(s => !s)} className="text-xs text-slate-400 hover:text-slate-600 font-semibold underline">
+              {showDetail ? 'Sembunyikan detail teknis' : 'Lihat detail teknis'}
+            </button>
+            {showDetail && (
+              <div className="mt-2 bg-slate-50 border border-slate-200 rounded-lg p-3 text-[11px] font-mono text-slate-500 break-words max-h-32 overflow-y-auto">{raw}</div>
+            )}
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={onClose} className="py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold text-sm hover:bg-slate-50 transition-all">
+            Tutup
+          </button>
+          <button onClick={onRetry} className="py-2.5 rounded-xl bg-[#3D2C44] hover:bg-[#2B1E30] text-white font-semibold text-sm transition-all flex items-center justify-center gap-1.5">
+            <RotateCcw size={14} /> Coba Lagi
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 // ─── Panduan dokumen per jenis ────────────────────────────────
 const PANDUAN: Record<string, {label: string, wajib: boolean, icon: string}[]> = {
@@ -47,8 +111,8 @@ function LoadingOverlay({ jenis, count }: { jenis: string, count: number }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
       <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full mx-4 text-center">
         <div className="relative w-20 h-20 mx-auto mb-5">
-          <div className="absolute inset-0 rounded-full border-4 border-blue-100" />
-          <div className="absolute inset-0 rounded-full border-4 border-blue-600 border-t-transparent animate-spin" />
+          <div className="absolute inset-0 rounded-full border-4 border-[#3D2C44]/10" />
+          <div className="absolute inset-0 rounded-full border-4 border-[#3D2C44] border-t-transparent animate-spin" />
           <div className="absolute inset-0 flex items-center justify-center text-2xl">
             {jenis === 'PIB' ? '📋' : '📦'}
           </div>
@@ -80,16 +144,20 @@ const FileRow: React.FC<{ file: File, index: number, onRemove: (i: number) => vo
     ? (file.size / 1024 / 1024).toFixed(1) + ' MB'
     : (file.size / 1024).toFixed(0) + ' KB'
   return (
-    <div className="flex items-center gap-3 py-2.5 px-3 rounded-xl bg-slate-50 border border-slate-200">
-      <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center text-sm flex-shrink-0">📄</div>
+    <div className="flex items-center gap-3 py-2.5 px-3 rounded-xl bg-white/70 border border-white/60">
+      <div className="w-8 h-8 rounded-lg bg-red-50 text-red-500 flex items-center justify-center flex-shrink-0">
+        <FileText size={15} />
+      </div>
       <div className="flex-1 min-w-0">
         <p className="text-xs font-semibold text-slate-700 truncate">{file.name}</p>
         <p className="text-[10px] text-slate-400 mt-0.5">{size}</p>
       </div>
       <button
         onClick={() => onRemove(index)}
-        className="w-6 h-6 rounded-full bg-slate-200 hover:bg-red-200 text-slate-500 hover:text-red-600 flex items-center justify-center text-xs flex-shrink-0 transition-all"
-      >✕</button>
+        className="w-6 h-6 rounded-full bg-slate-200 hover:bg-red-200 text-slate-500 hover:text-red-600 flex items-center justify-center flex-shrink-0 transition-all"
+      >
+        <X size={12} />
+      </button>
     </div>
   )
 }
@@ -179,17 +247,20 @@ function ResultError({ data, onReset }: { data: any, onReset: () => void }) {
 }
 
 // ─── Halaman Utama ────────────────────────────────────────────
-export default function UploadPage() {
+export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea_air' } = {}) {
   const [jenis,   setJenis]   = useState('PIB')
-  const [webhookType, setWebhookType] = useState<'courier' | 'sea_air'>('courier')
+  const [webhookType, setWebhookType] = useState<'courier' | 'sea_air'>(fixedType || 'courier')
   const [files,   setFiles]   = useState<File[]>([])
   const [loading, setLoading] = useState(false)
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [result,  setResult]  = useState<any>(null)
+  const [errorModal, setErrorModal] = useState<{ friendly: string, raw: string } | null>(null)
   const [dragging, setDragging] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => { document.title = 'Upload Dokumen · IMI Import System' }, [])
+  useEffect(() => {
+    document.title = (fixedType === 'sea_air' ? 'Upload Dokumen Sea & Air' : fixedType === 'courier' ? 'Upload Dokumen Courier' : 'Upload Dokumen') + ' · IMI Import System'
+  }, [fixedType])
 
   const panduan   = PANDUAN[jenis]
   const canSubmit = files.length >= 4 && !loading
@@ -235,19 +306,20 @@ export default function UploadPage() {
       const res  = await fetch('/api/n8n-proxy-start', { method: 'POST', body: formData, headers })
       const data = await res.json()
       
-      if (!res.ok) throw new Error(data.pesan || 'Gagal memulai proses ke n8n.')
-      
+      if (!res.ok) throw new Error(data.pesan || 'Gagal memulai proses ke server otomasi.')
+
       // Success quick response
       if (data.status === 'warning') {
         setToastMessage('⚠️ ' + data.pesan);
       } else {
-        setToastMessage('Dokumen berhasil dikirim ke antrian n8n.'); 
+        setToastMessage('Dokumen berhasil dikirim ke antrian proses.');
       }
       setTimeout(() => setToastMessage(null), 8000);
       setFiles([]);
       setResult(null);
     } catch (err: any) {
-      setToastMessage('Gagal: ' + err.message); setTimeout(() => setToastMessage(null), 5000);
+      const raw = err?.message || String(err);
+      setErrorModal({ friendly: humanizeUploadError(raw), raw });
     } finally {
       setLoading(false)
     }
@@ -265,32 +337,59 @@ export default function UploadPage() {
         </div>
       )}
 
+      {errorModal && (
+        <UploadErrorModal
+          friendly={errorModal.friendly}
+          raw={errorModal.raw}
+          onClose={() => setErrorModal(null)}
+          onRetry={() => { setErrorModal(null); handleSubmit(); }}
+        />
+      )}
+
       <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
         <main className="max-w-xl mx-auto px-4 py-6 space-y-4">
-          <ProcessingQueue />
+          {fixedType && (
+            <div className="flex items-center gap-3 mb-1">
+              <div className="w-11 h-11 rounded-xl bg-[#3D2C44] text-white flex items-center justify-center shrink-0 shadow-sm">
+                {fixedType === 'sea_air' ? <Ship size={20} /> : <Plane size={20} />}
+              </div>
+              <div>
+                <h1 className="font-bold text-slate-800 text-base leading-tight">
+                  Upload Dokumen {fixedType === 'sea_air' ? 'Sea & Air' : 'Courier'}
+                </h1>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {fixedType === 'sea_air' ? 'AI akan membaca & mengarsipkan dokumen sea & air secara otomatis' : 'AI akan membaca & mengarsipkan dokumen DHL/FedEx secara otomatis'}
+                </p>
+              </div>
+            </div>
+          )}
 
-          {/* Webhook Selector */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-1 shadow-sm flex">
-            <button
-              onClick={() => setWebhookType('courier')}
-              className={`flex-1 py-2.5 text-sm font-semibold rounded-xl transition-all ${
-                webhookType === 'courier' ? 'bg-[#3D2C44] text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'
-              }`}
-            >
-              Courier (DHL/FedEx)
-            </button>
-            <button
-              onClick={() => setWebhookType('sea_air')}
-              className={`flex-1 py-2.5 text-sm font-semibold rounded-xl transition-all ${
-                webhookType === 'sea_air' ? 'bg-[#3D2C44] text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'
-              }`}
-            >
-              Sea & Air
-            </button>
-          </div>
+          <ProcessingQueue type={webhookType} />
+
+          {/* Webhook Selector — disembunyikan jika halaman sudah spesifik Courier/Sea & Air */}
+          {!fixedType && (
+            <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 p-1 shadow-sm flex">
+              <button
+                onClick={() => setWebhookType('courier')}
+                className={`flex-1 py-2.5 text-sm font-semibold rounded-xl transition-all ${
+                  webhookType === 'courier' ? 'bg-[#3D2C44] text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                Courier (DHL/FedEx)
+              </button>
+              <button
+                onClick={() => setWebhookType('sea_air')}
+                className={`flex-1 py-2.5 text-sm font-semibold rounded-xl transition-all ${
+                  webhookType === 'sea_air' ? 'bg-[#3D2C44] text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                Sea & Air
+              </button>
+            </div>
+          )}
 
           {/* Step 1 */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+          <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 p-5 shadow-sm">
             <div className="flex items-center justify-between mb-3">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Langkah 1 — Upload Semua PDF</p>
               {files.length > 0 && (
@@ -307,15 +406,17 @@ export default function UploadPage() {
               onDragLeave={() => setDragging(false)}
               onClick={() => inputRef.current?.click()}
               className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${
-                dragging ? 'border-blue-400 bg-blue-50' :
+                dragging ? 'border-[#3D2C44] bg-[#3D2C44]/5' :
                 files.length >= 4 ? 'border-emerald-300 bg-emerald-50/50 hover:border-emerald-400' :
-                'border-slate-200 bg-slate-50 hover:border-blue-300 hover:bg-blue-50/40'
+                'border-slate-200 bg-slate-50 hover:border-[#3D2C44]/40 hover:bg-[#3D2C44]/5'
               }`}
             >
               <input ref={inputRef} type="file" accept="application/pdf,image/jpeg,image/png" multiple className="hidden"
                 onChange={(e) => addFiles(e.target.files)} />
-              <div className="text-3xl mb-2">
-                {dragging ? '📂' : files.length >= 4 ? '✅' : '📁'}
+              <div className={`w-14 h-14 rounded-full mx-auto mb-3 flex items-center justify-center transition-colors ${
+                dragging ? 'bg-[#3D2C44] text-white' : files.length >= 4 ? 'bg-emerald-500 text-white' : 'bg-[#3D2C44]/8 text-[#3D2C44]'
+              }`}>
+                {dragging ? <FolderOpen size={22} strokeWidth={1.75} /> : files.length >= 4 ? <CheckCircle2 size={22} strokeWidth={1.75} /> : <UploadCloud size={22} strokeWidth={1.75} />}
               </div>
               <p className="font-semibold text-sm text-slate-700">
                 {dragging ? 'Lepaskan file di sini...' :
@@ -343,7 +444,7 @@ export default function UploadPage() {
             )}
 
             {/* Panduan */}
-            <div className="mt-4 bg-slate-50 rounded-xl p-4 border border-slate-100">
+            <div className="mt-4 bg-[#3D2C44]/5 rounded-xl p-4 border border-[#3D2C44]/10">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
                 Dokumen yang dibutuhkan
               </p>
@@ -363,18 +464,18 @@ export default function UploadPage() {
           </div>
 
           {/* Step 2 */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+          <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 p-5 shadow-sm">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Langkah 2 — Proses & Arsipkan</p>
             <button onClick={handleSubmit} disabled={!canSubmit || loading}
-              className={`w-full py-4 rounded-xl font-bold text-sm transition-all ${
+              className={`w-full py-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${
                 (canSubmit && !loading) ? 'bg-[#3D2C44] hover:bg-[#2B1E30] text-white shadow-md active:scale-[0.98]'
                           : 'bg-slate-100 text-slate-400 cursor-not-allowed'
               }`}>
-              {loading 
-                ? 'Mengirim dokumen...' 
+              {loading
+                ? 'Mengirim dokumen...'
                 : files.length < 4
                   ? 'Tambahkan ' + (4 - files.length) + ' file lagi untuk melanjutkan'
-                  : '🚀  Proses ' + files.length + ' Dokumen dengan AI'
+                  : <><Sparkles size={15} /> Proses {files.length} Dokumen dengan AI</>
               }
             </button>
             {files.length >= 4 && (

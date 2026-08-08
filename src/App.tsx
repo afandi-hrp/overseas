@@ -29,15 +29,17 @@ export default function App() {
         
         {/* Main Application with Sidebar */}
         <Route element={<MainLayout />}>
-          <Route path="/" element={<UploadPage />} />
+          <Route path="/" element={<Navigate to="/courier/upload" replace />} />
           <Route path="/dashboard" element={<Navigate to="/courier/audit" replace />} />
+          <Route path="/courier/upload" element={<UploadPage fixedType="courier" />} />
           <Route path="/courier/audit" element={<CourierAuditPage />} />
           <Route path="/courier/rekapan" element={<CourierRekapanPage />} />
           <Route path="/courier/validasi" element={<CourierValidasiPage />} />
-          
+
+          <Route path="/sea-air/upload" element={<UploadPage fixedType="sea_air" />} />
           <Route path="/sea-air/audit" element={<SeaAirAuditPage />} />
           <Route path="/sea-air/rekapan" element={<SeaAirRekapanPage />} />
-          
+
           <Route path="/audit-trail" element={<AuditTrailPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>

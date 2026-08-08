@@ -538,8 +538,8 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
 
   return (
     <div className="w-full">
-      {/* Tabel Rincian Item Pabean (Halaman Lanjutan) */}
-      {(jnsUpper === 'PIB' || jnsUpper === '') && items.length > 0 && (
+      {/* Tabel Rincian Item Pabean (Halaman Lanjutan) — berlaku untuk jalur PIB maupun CN (SPPBMCP) */}
+      {(jnsUpper === 'PIB' || jnsUpper === 'CN' || jnsUpper === '') && items.length > 0 && (
         <div className="border border-slate-200 rounded-xl overflow-hidden mb-6 bg-white shadow-sm">
           <div className="bg-slate-800 text-white p-4 border-b border-slate-700">
             <button
@@ -565,7 +565,7 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
               </span>
             </button>
             <p className="text-[11px] text-slate-300 mt-1 pl-6">
-              Diekstrak otomatis dari dokumen PIB — dapat diedit manual melalui form di bawah jika ada koreksi
+              Diekstrak otomatis dari dokumen {jnsUpper === 'CN' ? 'SPPBMCP' : 'PIB'} — dapat diedit manual melalui form di bawah jika ada koreksi
             </p>
           </div>
           {showItemDetail && (

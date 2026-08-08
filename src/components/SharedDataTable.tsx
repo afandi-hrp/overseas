@@ -3409,7 +3409,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   {search ? 'Coba kata kunci lain' : 'Upload dokumen pertama Anda'}
                 </p>
                 {!search && (
-                  <Link to="/" className="inline-block mt-4 text-sm text-blue-600 hover:underline">
+                  <Link to={activeMainTab === 'sea_air' ? '/sea-air/upload' : '/courier/upload'} className="inline-block mt-4 text-sm text-blue-600 hover:underline">
                     Upload sekarang →
                   </Link>
                 )}

@@ -1,19 +1,25 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Link } from 'react-router-dom';
+import { Clock, X } from 'lucide-react';
 
-export default function ProcessingQueue({ onOpenDetail }: { onOpenDetail?: (id: string, type: string) => void }) {
+export default function ProcessingQueue({ onOpenDetail, type }: { onOpenDetail?: (id: string, type: string) => void, type?: 'courier' | 'sea_air' }) {
     const [queue, setQueue] = useState<any[]>([]);
     const [isOpen, setIsOpen] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
 
     const fetchQueue = async () => {
-        const { data, error } = await supabase
+        let query = supabase
             .from('tabel_processing_queue')
             .select('*')
             .order('created_at', { ascending: false })
             .limit(20);
-        
+
+        if (type === 'sea_air') query = query.not('seaair_id', 'is', null);
+        else if (type === 'courier') query = query.or('pib_id.not.is.null,cn_id.not.is.null');
+
+        const { data, error } = await query;
+
         if (!error && data) {
             // Auto hide success > 24 hours
             const now = new Date().getTime();
@@ -34,7 +40,8 @@ export default function ProcessingQueue({ onOpenDetail }: { onOpenDetail?: (id: 
         fetchQueue();
         const interval = setInterval(fetchQueue, 5000);
         return () => clearInterval(interval);
-    }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [type]);
     
     useEffect(() => {
         if (isOpen && unreadCount > 0) {
@@ -73,11 +80,11 @@ export default function ProcessingQueue({ onOpenDetail }: { onOpenDetail?: (id: 
 
     return (
         <div className="mb-6">
-            <button 
+            <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:bg-slate-50 transition-all shadow-sm relative"
+                className="flex items-center gap-2 px-4 py-2 bg-white/70 backdrop-blur-md border border-white/60 rounded-xl text-sm font-bold text-slate-700 hover:bg-white/90 transition-all shadow-sm relative"
             >
-                ⏳ Antrian Proses
+                <Clock size={15} className="text-[#3D2C44]" /> Antrian Proses
                 {unreadCount > 0 && (
                     <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
                         {unreadCount}
@@ -86,7 +93,7 @@ export default function ProcessingQueue({ onOpenDetail }: { onOpenDetail?: (id: 
             </button>
 
             {isOpen && (
-                <div className="mt-3 bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                <div className="mt-3 bg-white/70 backdrop-blur-md border border-white/60 rounded-xl p-4 shadow-sm">
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-3">
                             <h2 className="text-sm font-bold text-slate-800">Antrian Proses Dokumen</h2>
@@ -116,7 +123,7 @@ export default function ProcessingQueue({ onOpenDetail }: { onOpenDetail?: (id: 
                                 </button>
                             )}
                         </div>
-                        <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-slate-600 font-bold text-lg leading-none">&times;</button>
+                        <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-slate-600 p-1"><X size={16} /></button>
                     </div>
                     
                     {queue.length === 0 ? (
@@ -180,7 +187,7 @@ export default function ProcessingQueue({ onOpenDetail }: { onOpenDetail?: (id: 
                                             <div className="text-rose-900 truncate" title={filesStr}>File: {filesStr}</div>
                                             <div className="text-rose-700/80 text-[10px] break-words">Error: {item.error_message || '-'}</div>
                                             <div className="mt-1">
-                                                <Link to="/" onClick={(e) => handleDismiss(item.id, e as any)} className="text-rose-700 font-bold underline">Coba Lagi</Link>
+                                                <Link to={type === 'sea_air' ? '/sea-air/upload' : '/courier/upload'} onClick={(e) => handleDismiss(item.id, e as any)} className="text-rose-700 font-bold underline">Coba Lagi</Link>
                                             </div>
                                         </div>
                                     )
