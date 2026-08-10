@@ -121,6 +121,7 @@ export default function CourierValidasiPage() {
           const activeSections = SECTIONS.filter(section => {
             if (docType === 'CN' && section.id === 's_pib') return false;
             if (docType === 'CN' && section.id === 's_sptnp') return false;
+            if (docType === 'PIB' && section.id === 's_cipl') return false;
             if (docType === 'PIB' && section.id === 's_sppbmcp') return false;
             if (docType === 'PIB' && section.id === 's_billing') return false;
             return true;
@@ -259,6 +260,7 @@ export default function CourierValidasiPage() {
             const activeSections = SECTIONS.filter(section => {
               if (docType === 'CN' && section.id === 's_pib') return false;
               if (docType === 'CN' && section.id === 's_sptnp') return false;
+              if (docType === 'PIB' && section.id === 's_cipl') return false;
               if (docType === 'PIB' && section.id === 's_sppbmcp') return false;
               if (docType === 'PIB' && section.id === 's_billing') return false;
               return true;

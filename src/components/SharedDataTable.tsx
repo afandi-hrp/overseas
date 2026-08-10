@@ -658,6 +658,7 @@ const COURIER_COLS = [
   { key: 'awb', label: 'AWB' },
   { key: 'weight_kg', label: 'Weight (Kg)', type: 'num' },
   { key: 'an', label: 'A/N' },
+  { key: 'po_shipping', label: 'PO Shipping' },
   { key: 'po_pt_imi', label: 'PO PT IMI' },
   { key: 'vessel', label: 'Vessel' },
   { key: 'breakdown_courier_adm_vessel', label: 'Breakdown Courier Adm (Vessel)', type: 'num' },
@@ -743,7 +744,7 @@ const CHECKLIST_FIELDS = [
   { key: 'ada_sppbmcp', label: 'SPPBMCP', mand: ['cn'], scope: ['cn'] },
   { key: 'ada_billing_djbc', label: 'Billing DJBC', mand: ['pib', 'cn'], scope: ['pib', 'cn'] },
   { key: 'ada_bpn', label: 'BPN', mand: ['pib', 'cn'], scope: ['pib', 'cn'] },
-  { key: 'ada_po', label: 'PO (Ascend)', mand: ['pib'], scope: ['pib'] },
+  { key: 'ada_po', label: 'PO (Ascend)', mand: ['pib', 'cn'], scope: ['pib', 'cn'] },
   { key: 'ada_cipl', label: 'CIPL', mand: ['pib', 'cn'], scope: ['pib', 'cn'] },
   { key: 'ada_awb', label: 'AWB', mand: ['pib', 'cn'], scope: ['pib', 'cn'] },
   { key: 'ada_final_invoice', label: 'Final Invoice', mand: ['pib', 'cn'], scope: ['pib', 'cn'] },
@@ -1354,6 +1355,10 @@ const SeaAirAuditRowGroup: React.FC<{
                         Batal
                       </button>
                     </>
+                  ) : rec.status === 'LENGKAP' ? (
+                    <span className="text-[10px] text-slate-400 font-semibold bg-slate-100 px-2.5 py-1.5 rounded-full whitespace-nowrap">
+                      ✓ Selesai
+                    </span>
                   ) : (
                     <>
                       <button

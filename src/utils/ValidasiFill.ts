@@ -36,11 +36,13 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
         const sppbV = raw.sppb_v || {};
         const bpnV = raw.bpn_v || {};
         const ciplV = raw.cipl_v || {};
+        const btVendorV = raw.bt_vendor_v || {};
 
         const hasInvoiceFreight = invF.subtotal != null || invF.ppn != null || invF.pt_penerima != null;
         const cmpAwbFisik = Object.keys(awbDet).length > 0 ? docAwb : "";
 
         fill("if01", hasInvoiceFreight ? docAwb : "", docAwb);
+        fill("bpn_awb_vs_freight_awb", bpnV.awb, invF.awb);
         fill("if02", hasInvoiceFreight ? invF.subtotal : "", fpF.subtotal);
         fill("if03", hasInvoiceFreight ? invF.ppn : "", fpF.ppn);
         fill("if04", hasInvoiceFreight ? invF.pt_penerima : "", fpF.pt_pembeli);
@@ -62,8 +64,11 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
         fill("pib02", pibV.no_awb || "", sppbV.no_awb || "");
         fill("pib03", pibV.no_invoice || "", ciplV.no_invoice || "");
         fill("pib04", pibV.item_value || "", ciplV.total_value || "");
+        fill("bt_vendor_no_invoice_vs_pib", pibV.no_invoice || "", btVendorV.no_invoice || "");
+        fill("bt_vendor_item_value_vs_pib", pibV.item_value || "", btVendorV.item_value || "");
         fill("pib06", pibV.no_invoice || "", fi.inv_no || "");
         fill("pib07", pibV.item_value || "", fi.total_value || "");
+        fill("po_item_value_vs_pib", pibV.item_value || "", raw.po_total_value || "");
         
         // PIB NPWP Lookup
         const pibNpwp = findNpwp(pibV.npwp);
@@ -81,6 +86,23 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
         fill("sppb03", sppbV.nama_pt || "", sppbNpwp?.nama || "");
         fill("sppb04", sppbV.alamat || "", sppbNpwp?.alamat || "");
         if (newV["sppb02"]) newV["sppb02"].npwp_status = sppbV.npwp && !sppbNpwp ? 'not_found' : null;
+
+        // BPN/HTBK NPWP Lookup
+        const bpnMasterNpwp = findNpwp(bpnV.npwp);
+        fill("bpn_no_npwp", bpnV.npwp || "", bpnMasterNpwp?.npwp || "");
+        fill("bpn_nama_npwp", bpnV.nama_pt || "", bpnMasterNpwp?.nama || "");
+
+        // CIPL NPWP Lookup
+        const ciplMasterNpwp = findNpwp(ciplV.npwp);
+        fill("cipl_nama_npwp", ciplV.penerima_barang || "", ciplMasterNpwp?.nama || "");
+
+        // Final Invoice NPWP Lookup
+        const finalInvoiceMasterNpwp = findNpwp(fi.npwp);
+        fill("final_invoice_nama_npwp", fi.nama_pt || "", finalInvoiceMasterNpwp?.nama || "");
+
+        // BT Vendor NPWP Lookup
+        const btVendorMasterNpwp = findNpwp(btVendorV.npwp);
+        fill("bt_vendor_nama_npwp", btVendorV.nama_pt || "", btVendorMasterNpwp?.nama || "");
 
         // BILLING DJBC
         fill("bdjbc01", bpnV.nomor_aju || "", pibV.no_pengajuan || "");
@@ -173,8 +195,21 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
            fill("sptnp03_b", sptnpV.npwp, bpnSptnp.npwp);
            fill("sptnp04_a", sptnpV.nama_pt, billingSptnp.nama_pt);
            fill("sptnp04_b", sptnpV.nama_pt, bpnSptnp.nama_pt);
+
+           // SPTNP / Billing SPTNP / BPN SPTNP NPWP Lookup (vs Master NPWP)
+           const sptnpMasterNpwp = findNpwp(sptnpV.npwp);
+           fill("sptnp_no_npwp", sptnpV.npwp || "", sptnpMasterNpwp?.npwp || "");
+           fill("sptnp_nama_npwp", sptnpV.nama_pt || "", sptnpMasterNpwp?.nama || "");
+
+           const billingSptnpMasterNpwp = findNpwp(billingSptnp.npwp);
+           fill("billing_sptnp_no_npwp", billingSptnp.npwp || "", billingSptnpMasterNpwp?.npwp || "");
+           fill("billing_sptnp_nama_npwp", billingSptnp.nama_pt || "", billingSptnpMasterNpwp?.nama || "");
+
+           const bpnSptnpMasterNpwp = findNpwp(bpnSptnp.npwp);
+           fill("bpn_sptnp_no_npwp", bpnSptnp.npwp || "", bpnSptnpMasterNpwp?.npwp || "");
+           fill("bpn_sptnp_nama_npwp", bpnSptnp.nama_pt || "", bpnSptnpMasterNpwp?.nama || "");
         } else {
-           const ids = ["sptnp01_a", "sptnp01_b", "sptnp02_a", "sptnp02_b", "sptnp03_a", "sptnp03_b", "sptnp04_a", "sptnp04_b"];
+           const ids = ["sptnp01_a", "sptnp01_b", "sptnp02_a", "sptnp02_b", "sptnp03_a", "sptnp03_b", "sptnp04_a", "sptnp04_b", "sptnp_no_npwp", "sptnp_nama_npwp", "billing_sptnp_no_npwp", "billing_sptnp_nama_npwp", "bpn_sptnp_no_npwp", "bpn_sptnp_nama_npwp"];
            ids.forEach(id => fill(id, null, null));
         }
 
@@ -194,8 +229,13 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
            fill("cnf03_b", calcPpnF, fpRF.ppn, (fpF.ppn != null && cnF.ppn != null) ? `${Number(fpF.ppn).toLocaleString('id-ID')} - ${Number(cnF.ppn).toLocaleString('id-ID')}` : undefined, noteF);
 
            fill("cnf04_a", cnF.pt_penerima, invF.pt_penerima);
+
+           // CN Freight NPWP Lookup (vs Master NPWP)
+           const cnFreightMasterNpwp = findNpwp(cnF.npwp);
+           fill("cn_freight_nama_npwp", cnF.pt_penerima || "", cnFreightMasterNpwp?.nama || "");
+           fill("cn_freight_alamat_npwp", cnF.alamat || "", cnFreightMasterNpwp?.alamat || "");
         } else {
-           const ids = ["cnf01_a", "cnf02_b", "cnf03_b", "cnf04_a"];
+           const ids = ["cnf01_a", "cnf02_b", "cnf03_b", "cnf04_a", "cn_freight_nama_npwp", "cn_freight_alamat_npwp"];
            ids.forEach(id => fill(id, null, null));
         }
 
@@ -215,8 +255,13 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
            fill("cnd03_b", calcPpnD, fpRD.ppn, (fpD.ppn != null && cnD.ppn != null) ? `${Number(fpD.ppn).toLocaleString('id-ID')} - ${Number(cnD.ppn).toLocaleString('id-ID')}` : undefined, noteD);
 
            fill("cnd04_a", cnD.pt_penerima, invD.pt_penerima);
+
+           // CN Duty NPWP Lookup (vs Master NPWP)
+           const cnDutyMasterNpwp = findNpwp(cnD.npwp);
+           fill("cn_duty_nama_npwp", cnD.pt_penerima || "", cnDutyMasterNpwp?.nama || "");
+           fill("cn_duty_alamat_npwp", cnD.alamat || "", cnDutyMasterNpwp?.alamat || "");
         } else {
-           const ids = ["cnd01_a", "cnd02_b", "cnd03_b", "cnd04_a"];
+           const ids = ["cnd01_a", "cnd02_b", "cnd03_b", "cnd04_a", "cn_duty_nama_npwp", "cn_duty_alamat_npwp"];
            ids.forEach(id => fill(id, null, null));
         }
 

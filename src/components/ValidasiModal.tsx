@@ -62,8 +62,9 @@ const sectionIcons: Record<string, React.ReactNode> = {
 };
 
 const headerColors: Record<string, { bg: string, text: string }> = {
-  "Invoice Duty": { bg: "#fef08a", text: "#854d0e" }, 
-  "FP Freight": { bg: "#bae6fd", text: "#0369a1" }, 
+  "Invoice Duty": { bg: "#fef08a", text: "#854d0e" },
+  "BPN/HTBK": { bg: "#ccfbf1", text: "#0f766e" },
+  "FP Freight": { bg: "#bae6fd", text: "#0369a1" },
   "AWB": { bg: "#bbf7d0", text: "#166534" },
   "AWB Freight": { bg: "#bbf7d0", text: "#166534" },
   "AWB Duty": { bg: "#a7f3d0", text: "#065f46" },
@@ -74,8 +75,9 @@ const headerColors: Record<string, { bg: string, text: string }> = {
   "CN INVOICE FREIGHT": { bg: "#c7d2fe", text: "#3730a3" },
   "CN INVOICE DUTY": { bg: "#fde68a", text: "#92400e" },
   "SPPB": { bg: "#fef08a", text: "#854d0e" }, 
-  "CIPL": { bg: "#bae6fd", text: "#0369a1" }, 
-  "Final Invoice": { bg: "#e9d5ff", text: "#6b21a8" }, 
+  "CIPL": { bg: "#bae6fd", text: "#0369a1" },
+  "BT Vendor": { bg: "#fbcfe8", text: "#9d174d" },
+  "Final Invoice": { bg: "#e9d5ff", text: "#6b21a8" },
   "BPN DHL / HTBK": { bg: "#fef08a", text: "#854d0e" }, 
   "Tabel NPWP": { bg: "#bae6fd", text: "#0369a1" }, 
   "PO": { bg: "#fef08a", text: "#854d0e" }, 
@@ -89,6 +91,13 @@ const headerColors: Record<string, { bg: string, text: string }> = {
 
 function getHeaderColor(doc: string) {
   return headerColors[doc] || { bg: "#f1f5f9", text: "#475569" };
+}
+
+// "SPPBMCP" adalah nama dokumen SPPB untuk jalur CN; jalur PIB menyebutnya "SPPB".
+// Sumber datanya sama (raw.sppb_v), jadi labelnya saja yang menyesuaikan jenis dokumen.
+function getColumnDisplayLabel(doc: string, docType: 'PIB' | 'CN' | null) {
+  if (doc === 'SPPBMCP' && docType === 'PIB') return 'SPPB';
+  return doc;
 }
 
 type RowConfig = {
@@ -114,6 +123,7 @@ function getSrcTooltipLabel(rowMatch: RowConfig, section: SectionConfig): string
   if (rowMatch.id === 'id04') return 'Invoice Freight';
 
   if (section.id === 's_inv_freight_duty') {
+    if (rowMatch.id === 'bpn_awb_vs_freight_awb') return 'BPN/HTBK';
     if (rowMatch.id.startsWith('if')) return 'Invoice Freight';
     if (rowMatch.id.startsWith('id')) return 'Invoice Duty';
     if (rowMatch.id.startsWith('fpfd') || rowMatch.id.startsWith('fpr') || rowMatch.id.startsWith('cnf') || rowMatch.id.startsWith('cnd')) return rowMatch.compareDoc;
@@ -145,28 +155,29 @@ const SECTIONS: SectionConfig[] = [
     srcLabel: "Invoice Freight & Invoice Duty",
     rows: [
       { id: "if01", compareDoc: "Invoice Duty",          field: "No. AWB" },
-      { id: "if02", compareDoc: "FP Freight",            field: "Subtotal" },
-      { id: "cnf02_b", compareDoc: "CN INVOICE FREIGHT", field: "Subtotal after CN" },
-      { id: "if03", compareDoc: "FP Freight",            field: "PPN" },
-      { id: "id06", compareDoc: "AWB",                   field: "No. AWB" },
-      { id: "id07", compareDoc: "PIB / SPPBMCP",         field: "No. AWB" },
-      { id: "id01", compareDoc: "FP Duty",               field: "Subtotal" },
-      { id: "cnd02_b", compareDoc: "CN INVOICE DUTY",    field: "Subtotal after CN" },
-      { id: "id02", compareDoc: "FP Duty",               field: "PPN" },
-      { id: "id04", compareDoc: "AWB",                   field: "Berat (kg)", hint: "(dari Invoice Freight)" },
-      { id: "pib02", compareDoc: "SPPB",                 field: "No. AWB" },
-      { id: "fpfd05", compareDoc: "FP Freight",        field: "DPP (Freight)",        rowLabel: "DPP" },
-      { id: "fpfd06", compareDoc: "FP Freight",        field: "Referensi (Freight)",  rowLabel: "Referensi" },
-      { id: "fpfd07", compareDoc: "FP Duty",           field: "DPP (Duty)",           rowLabel: "DPP" },
-      { id: "fpfd08", compareDoc: "FP Duty",           field: "Referensi (Duty)",     rowLabel: "Referensi" },
-      { id: "fpr05",  compareDoc: "FP Revisi Freight", field: "DPP (Freight)",        rowLabel: "DPP" },
-      { id: "fpr06",  compareDoc: "FP Revisi Freight", field: "Referensi (Freight)",  rowLabel: "Referensi" },
-      { id: "fpr07",  compareDoc: "FP Revisi Duty",    field: "DPP (Duty)",           rowLabel: "DPP" },
-      { id: "fpr08",  compareDoc: "FP Revisi Duty",    field: "Referensi (Duty)",     rowLabel: "Referensi" },
+      { id: "fpfd06", compareDoc: "FP Freight",        field: "Referensi (Freight)",  rowLabel: "No Invoice PPJK" },
+      { id: "fpfd08", compareDoc: "FP Duty",           field: "Referensi (Duty)",     rowLabel: "No Invoice PPJK" },
       { id: "cnf01_a", compareDoc: "CN INVOICE FREIGHT", field: "AWB", rowLabel: "No. AWB" },
-      { id: "cnf03_b", compareDoc: "CN INVOICE FREIGHT", field: "PPN" },
       { id: "cnd01_a", compareDoc: "CN INVOICE DUTY",    field: "AWB", rowLabel: "No. AWB" },
+      { id: "fpr06",  compareDoc: "FP Revisi Freight", field: "Referensi (Freight)",  rowLabel: "No Invoice PPJK" },
+      { id: "fpr08",  compareDoc: "FP Revisi Duty",    field: "Referensi (Duty)",     rowLabel: "No Invoice PPJK" },
+      { id: "pib02", compareDoc: "SPPB",                 field: "No. AWB" },
+      { id: "id07", compareDoc: "PIB / SPPBMCP",         field: "No. AWB" },
+      { id: "bpn_awb_vs_freight_awb", compareDoc: "BPN/HTBK", field: "Nomor AWB", rowLabel: "No. AWB" },
+      { id: "id06", compareDoc: "AWB",                   field: "No. AWB" },
+      { id: "if02", compareDoc: "FP Freight",            field: "Subtotal" },
+      { id: "id01", compareDoc: "FP Duty",               field: "Subtotal" },
+      { id: "cnf02_b", compareDoc: "CN INVOICE FREIGHT", field: "Subtotal after CN" },
+      { id: "cnd02_b", compareDoc: "CN INVOICE DUTY",    field: "Subtotal after CN" },
+      { id: "fpfd05", compareDoc: "FP Freight",        field: "DPP (Freight)",        rowLabel: "DPP" },
+      { id: "fpfd07", compareDoc: "FP Duty",           field: "DPP (Duty)",           rowLabel: "DPP" },
+      { id: "fpr05",  compareDoc: "FP Revisi Freight", field: "DPP (Freight)",        rowLabel: "DPP" },
+      { id: "fpr07",  compareDoc: "FP Revisi Duty",    field: "DPP (Duty)",           rowLabel: "DPP" },
+      { id: "if03", compareDoc: "FP Freight",            field: "PPN" },
+      { id: "id02", compareDoc: "FP Duty",               field: "PPN" },
+      { id: "cnf03_b", compareDoc: "CN INVOICE FREIGHT", field: "PPN" },
       { id: "cnd03_b", compareDoc: "CN INVOICE DUTY",    field: "PPN" },
+      { id: "id04", compareDoc: "AWB",                   field: "Berat (kg)", hint: "(dari Invoice Freight)" },
     ]
   },
   {
@@ -175,14 +186,17 @@ const SECTIONS: SectionConfig[] = [
     srcLabel: "PIB",
     rows: [
       { id: "pib01",   compareDoc: "SPPB",          field: "No. Pengajuan vs No. Aju" },
-      { id: "pib03",   compareDoc: "CIPL",          field: "No. Invoice" },
+      { id: "bdjbc01", compareDoc: "BILLING DJBC",  field: "Nomor Aju", rowLabel: "No. Pengajuan vs No. Aju" },
+      { id: "bdjbc03", compareDoc: "BPN",           field: "Nomor Aju", rowLabel: "No. Pengajuan vs No. Aju" },
+      { id: "po_item_value_vs_pib", compareDoc: "PO", field: "Item Value" },
       { id: "pib04",   compareDoc: "CIPL",          field: "Item Value" },
-      { id: "pib06",   compareDoc: "Final Invoice", field: "No. Invoice" },
       { id: "pib07",   compareDoc: "Final Invoice", field: "Item Value" },
-      { id: "bdjbc01", compareDoc: "BILLING DJBC",  field: "Nomor Aju" },
-      { id: "bdjbc02", compareDoc: "BILLING DJBC",  field: "Total" },
-      { id: "bdjbc03", compareDoc: "BPN",           field: "Nomor Aju" },
-      { id: "bdjbc04", compareDoc: "BPN",           field: "Total" },
+      { id: "bt_vendor_item_value_vs_pib", compareDoc: "BT Vendor", field: "Item Value" },
+      { id: "pib03",   compareDoc: "CIPL",          field: "No Invoice Vendor" },
+      { id: "pib06",   compareDoc: "Final Invoice", field: "No Invoice Vendor" },
+      { id: "bt_vendor_no_invoice_vs_pib", compareDoc: "BT Vendor", field: "No Invoice Vendor" },
+      { id: "bdjbc02", compareDoc: "BILLING DJBC",  field: "Total Duty Impor" },
+      { id: "bdjbc04", compareDoc: "BPN",           field: "Total Duty Impor" },
     ]
   },
   {
@@ -204,7 +218,7 @@ const SECTIONS: SectionConfig[] = [
   },
   {
     id: "s_cipl",
-    label: "CIPL",
+    label: "CIPL (khusus jalur CN)",
     srcLabel: "CIPL",
     rows: [
       { id: "cipl01", compareDoc: "PO",             field: "Total Value (excl. other cost)" },
@@ -248,6 +262,10 @@ const SECTIONS: SectionConfig[] = [
       { id: "fpfd03",  compareDoc: "FP Duty",           field: "No. NPWP (Duty)",       rowLabel: "No. NPWP" },
       { id: "fpr01",   compareDoc: "FP Revisi Freight", field: "No. NPWP (Freight)",    rowLabel: "No. NPWP" },
       { id: "fpr03",   compareDoc: "FP Revisi Duty",    field: "No. NPWP (Duty)",       rowLabel: "No. NPWP" },
+      { id: "bpn_no_npwp",           compareDoc: "BPN/HTBK",      field: "No. NPWP" },
+      { id: "sptnp_no_npwp",         compareDoc: "SPTNP",         field: "No. NPWP" },
+      { id: "billing_sptnp_no_npwp", compareDoc: "Billing SPTNP", field: "No. NPWP" },
+      { id: "bpn_sptnp_no_npwp",     compareDoc: "BPN SPTNP",     field: "No. NPWP" },
 
       { id: "pib09",   compareDoc: "PIB",     field: "Nama NPWP" },
       { id: "sppb03",  compareDoc: "SPPBMCP", field: "Nama NPWP" },
@@ -259,6 +277,15 @@ const SECTIONS: SectionConfig[] = [
       { id: "cnf04_a", compareDoc: "Invoice Freight",         field: "Nama PT", rowLabel: "Nama NPWP" },
       { id: "cnd04_a", compareDoc: "Invoice Duty",            field: "Nama PT", rowLabel: "Nama NPWP" },
       { id: "cipl02",  compareDoc: "PO",                      field: "Penerima Barang vs Nama PT", rowLabel: "Nama NPWP" },
+      { id: "cn_freight_nama_npwp",     compareDoc: "CN Freight",     field: "Nama NPWP" },
+      { id: "cn_duty_nama_npwp",        compareDoc: "CN Duty",        field: "Nama NPWP" },
+      { id: "bpn_nama_npwp",            compareDoc: "BPN/HTBK",       field: "Nama NPWP" },
+      { id: "sptnp_nama_npwp",          compareDoc: "SPTNP",          field: "Nama NPWP" },
+      { id: "billing_sptnp_nama_npwp",  compareDoc: "Billing SPTNP",  field: "Nama NPWP" },
+      { id: "bpn_sptnp_nama_npwp",      compareDoc: "BPN SPTNP",      field: "Nama NPWP" },
+      { id: "cipl_nama_npwp",           compareDoc: "CIPL",           field: "Nama NPWP" },
+      { id: "final_invoice_nama_npwp",  compareDoc: "Final Invoice",  field: "Nama NPWP" },
+      { id: "bt_vendor_nama_npwp",      compareDoc: "BT Vendor",      field: "Nama NPWP" },
 
       { id: "pib10",   compareDoc: "PIB",               field: "Alamat NPWP" },
       { id: "sppb04",  compareDoc: "SPPBMCP",           field: "Alamat NPWP" },
@@ -266,6 +293,8 @@ const SECTIONS: SectionConfig[] = [
       { id: "fpfd04",  compareDoc: "FP Duty",           field: "Alamat NPWP (Duty)",    rowLabel: "Alamat NPWP" },
       { id: "fpr02",   compareDoc: "FP Revisi Freight", field: "Alamat NPWP (Freight)", rowLabel: "Alamat NPWP" },
       { id: "fpr04",   compareDoc: "FP Revisi Duty",    field: "Alamat NPWP (Duty)",    rowLabel: "Alamat NPWP" },
+      { id: "cn_freight_alamat_npwp",   compareDoc: "CN Freight",     field: "Alamat NPWP" },
+      { id: "cn_duty_alamat_npwp",      compareDoc: "CN Duty",        field: "Alamat NPWP" },
     ]
   },
 ];
@@ -422,6 +451,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
     return SECTIONS.filter(section => {
       if (docType === 'CN' && section.id === 's_pib') return false;
       if (docType === 'CN' && section.id === 's_sptnp') return false;
+      if (docType === 'PIB' && section.id === 's_cipl') return false;
       if (docType === 'PIB' && section.id === 's_sppbmcp') return false;
       // Kolom BILLING DJBC/BPN sudah pindah ke tabel PIB untuk jalur PIB — sisakan section ini khusus jalur CN
       if (docType === 'PIB' && section.id === 's_billing') return false;
@@ -582,11 +612,13 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
         const sppbV = raw.sppb_v || {};
         const bpnV = raw.bpn_v || {};
         const ciplV = raw.cipl_v || {};
+        const btVendorV = raw.bt_vendor_v || {};
 
         const hasInvoiceFreight = invF.subtotal != null || invF.ppn != null || invF.pt_penerima != null;
         const cmpAwbFisik = Object.keys(awbDet).length > 0 ? docAwb : "";
 
         fill("if01", hasInvoiceFreight ? docAwb : "", docAwb);
+        fill("bpn_awb_vs_freight_awb", bpnV.awb, invF.awb);
         fill("if02", hasInvoiceFreight ? invF.subtotal : "", fpF.subtotal);
         fill("if03", hasInvoiceFreight ? invF.ppn : "", fpF.ppn);
         fill("if04", hasInvoiceFreight ? invF.pt_penerima : "", fpF.pt_pembeli);
@@ -608,8 +640,11 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
         fill("pib02", pibV.no_awb || "", sppbV.no_awb || "");
         fill("pib03", pibV.no_invoice || "", ciplV.no_invoice || "");
         fill("pib04", pibV.item_value || "", ciplV.total_value || "");
+        fill("bt_vendor_no_invoice_vs_pib", pibV.no_invoice || "", btVendorV.no_invoice || "");
+        fill("bt_vendor_item_value_vs_pib", pibV.item_value || "", btVendorV.item_value || "");
         fill("pib06", pibV.no_invoice || "", fi.inv_no || "");
         fill("pib07", pibV.item_value || "", fi.total_value || "");
+        fill("po_item_value_vs_pib", pibV.item_value || "", raw.po_total_value || "");
         
         // PIB NPWP Lookup
         const pibNpwp = findNpwp(pibV.npwp);
@@ -627,6 +662,23 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
         fill("sppb03", sppbV.nama_pt || "", sppbNpwp?.nama || "");
         fill("sppb04", sppbV.alamat || "", sppbNpwp?.alamat || "");
         if (newV["sppb02"]) newV["sppb02"].npwp_status = sppbV.npwp && !sppbNpwp ? 'not_found' : null;
+
+        // BPN/HTBK NPWP Lookup
+        const bpnMasterNpwp = findNpwp(bpnV.npwp);
+        fill("bpn_no_npwp", bpnV.npwp || "", bpnMasterNpwp?.npwp || "");
+        fill("bpn_nama_npwp", bpnV.nama_pt || "", bpnMasterNpwp?.nama || "");
+
+        // CIPL NPWP Lookup
+        const ciplMasterNpwp = findNpwp(ciplV.npwp);
+        fill("cipl_nama_npwp", ciplV.penerima_barang || "", ciplMasterNpwp?.nama || "");
+
+        // Final Invoice NPWP Lookup
+        const finalInvoiceMasterNpwp = findNpwp(fi.npwp);
+        fill("final_invoice_nama_npwp", fi.nama_pt || "", finalInvoiceMasterNpwp?.nama || "");
+
+        // BT Vendor NPWP Lookup
+        const btVendorMasterNpwp = findNpwp(btVendorV.npwp);
+        fill("bt_vendor_nama_npwp", btVendorV.nama_pt || "", btVendorMasterNpwp?.nama || "");
 
         // BILLING DJBC
         fill("bdjbc01", bpnV.nomor_aju || "", pibV.no_pengajuan || "");
@@ -719,8 +771,21 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
            fill("sptnp03_b", sptnpV.npwp, bpnSptnp.npwp);
            fill("sptnp04_a", sptnpV.nama_pt, billingSptnp.nama_pt);
            fill("sptnp04_b", sptnpV.nama_pt, bpnSptnp.nama_pt);
+
+           // SPTNP / Billing SPTNP / BPN SPTNP NPWP Lookup (vs Master NPWP)
+           const sptnpMasterNpwp = findNpwp(sptnpV.npwp);
+           fill("sptnp_no_npwp", sptnpV.npwp || "", sptnpMasterNpwp?.npwp || "");
+           fill("sptnp_nama_npwp", sptnpV.nama_pt || "", sptnpMasterNpwp?.nama || "");
+
+           const billingSptnpMasterNpwp = findNpwp(billingSptnp.npwp);
+           fill("billing_sptnp_no_npwp", billingSptnp.npwp || "", billingSptnpMasterNpwp?.npwp || "");
+           fill("billing_sptnp_nama_npwp", billingSptnp.nama_pt || "", billingSptnpMasterNpwp?.nama || "");
+
+           const bpnSptnpMasterNpwp = findNpwp(bpnSptnp.npwp);
+           fill("bpn_sptnp_no_npwp", bpnSptnp.npwp || "", bpnSptnpMasterNpwp?.npwp || "");
+           fill("bpn_sptnp_nama_npwp", bpnSptnp.nama_pt || "", bpnSptnpMasterNpwp?.nama || "");
         } else {
-           const ids = ["sptnp01_a", "sptnp01_b", "sptnp02_a", "sptnp02_b", "sptnp03_a", "sptnp03_b", "sptnp04_a", "sptnp04_b"];
+           const ids = ["sptnp01_a", "sptnp01_b", "sptnp02_a", "sptnp02_b", "sptnp03_a", "sptnp03_b", "sptnp04_a", "sptnp04_b", "sptnp_no_npwp", "sptnp_nama_npwp", "billing_sptnp_no_npwp", "billing_sptnp_nama_npwp", "bpn_sptnp_no_npwp", "bpn_sptnp_nama_npwp"];
            ids.forEach(id => fill(id, null, null));
         }
 
@@ -740,8 +805,13 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
            fill("cnf03_b", calcPpnF, fpRF.ppn, (fpF.ppn != null && cnF.ppn != null) ? `${Number(fpF.ppn).toLocaleString('id-ID')} - ${Number(cnF.ppn).toLocaleString('id-ID')}` : undefined, noteF);
 
            fill("cnf04_a", cnF.pt_penerima, invF.pt_penerima);
+
+           // CN Freight NPWP Lookup (vs Master NPWP)
+           const cnFreightMasterNpwp = findNpwp(cnF.npwp);
+           fill("cn_freight_nama_npwp", cnF.pt_penerima || "", cnFreightMasterNpwp?.nama || "");
+           fill("cn_freight_alamat_npwp", cnF.alamat || "", cnFreightMasterNpwp?.alamat || "");
         } else {
-           const ids = ["cnf01_a", "cnf02_b", "cnf03_b", "cnf04_a"];
+           const ids = ["cnf01_a", "cnf02_b", "cnf03_b", "cnf04_a", "cn_freight_nama_npwp", "cn_freight_alamat_npwp"];
            ids.forEach(id => fill(id, null, null));
         }
 
@@ -761,8 +831,13 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
            fill("cnd03_b", calcPpnD, fpRD.ppn, (fpD.ppn != null && cnD.ppn != null) ? `${Number(fpD.ppn).toLocaleString('id-ID')} - ${Number(cnD.ppn).toLocaleString('id-ID')}` : undefined, noteD);
 
            fill("cnd04_a", cnD.pt_penerima, invD.pt_penerima);
+
+           // CN Duty NPWP Lookup (vs Master NPWP)
+           const cnDutyMasterNpwp = findNpwp(cnD.npwp);
+           fill("cn_duty_nama_npwp", cnD.pt_penerima || "", cnDutyMasterNpwp?.nama || "");
+           fill("cn_duty_alamat_npwp", cnD.alamat || "", cnDutyMasterNpwp?.alamat || "");
         } else {
-           const ids = ["cnd01_a", "cnd02_b", "cnd03_b", "cnd04_a"];
+           const ids = ["cnd01_a", "cnd02_b", "cnd03_b", "cnd04_a", "cn_duty_nama_npwp", "cn_duty_alamat_npwp"];
            ids.forEach(id => fill(id, null, null));
         }
 
@@ -1245,7 +1320,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                              const colorObj = getHeaderColor(doc as string);
                              return (
                                <th key={doc as string} className="p-3 border-b border-r last:border-r-0 border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center min-w-[150px]" style={{ backgroundColor: colorObj.bg, color: colorObj.text }}>
-                                 {doc as string}
+                                 {getColumnDisplayLabel(doc as string, docType)}
                                </th>
                              )
                           })}
@@ -1308,7 +1383,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                                                    setValues((prev: any) => ({ ...prev, [rowMatch.id]: { ...prev[rowMatch.id], npwp_status: null } }));
                                                  }}
                                                  placeholder={"Cmp"}
-                                                 title={`Nilai dari ${rowMatch.compareDoc}`}
+                                                 title={`Nilai dari ${getColumnDisplayLabel(rowMatch.compareDoc, docType)}`}
                                                />
                                              ) : (
                                                <span className={`text-xs text-center w-full break-words px-1 ${v.cmp_edited ? 'text-blue-700 font-bold' : 'text-slate-700 font-medium'}`}>

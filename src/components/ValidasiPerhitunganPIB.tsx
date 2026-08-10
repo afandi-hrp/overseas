@@ -411,7 +411,8 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
         if (exp === null) return "empty";
         const diff = Math.abs(calc.ndpbmXnilaiSppbmcp - exp);
         return diff <= 1 ? "match" : "mismatch";
-      }
+      },
+      ignoreForStats: true
     },
     { id: "bm",  label: "BM",  expected: calc.totalBM,  fmt: fmtIDR, formula: FORMULA.bm,  ak: aktualSPPBMCP.bm, akNum: toNum(aktualSPPBMCP.bm),  setAk: (v: string) => setAk2("bm", v), ignoreForStats: true },
     { id: "sanksiAdm", label: "Sanksi Administrasi", expected: 0, fmt: fmtIDR, formula: "Fixed Expected = 0", ak: aktualSPPBMCP.sanksiAdm, akNum: toNum(aktualSPPBMCP.sanksiAdm), setAk: (v: string) => setAk2("sanksiAdm", v) },
