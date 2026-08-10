@@ -3185,7 +3185,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
                               {/* ── Tabs & Search ── */}
             <div className="flex flex-col gap-4 mb-4">
-              <div className="flex flex-wrap justify-between items-center gap-3">
+              <div className={`flex flex-wrap justify-between items-center gap-3 rounded-2xl px-3.5 py-3 border ${TOOLBAR_GLASS}`}>
                 <div className="flex-1 flex gap-2 items-center flex-wrap">
                   {/* Trail Filter */}
                   {activeMainTab === 'trail' && (
