@@ -71,9 +71,9 @@ export const SECTIONS = [
     label: "CIPL (khusus jalur CN)",
     srcLabel: "CIPL",
     rows: [
-      { id: "cipl01", compareDoc: "PO",             field: "Total Value (excl. other cost)" },
+      { id: "cipl01", compareDoc: "PO",             field: "Total Item Value" },
       { id: "cipl03", compareDoc: "Final Invoice",  field: "No. Invoice" },
-      { id: "cipl04", compareDoc: "Final Invoice",  field: "Total Value" },
+      { id: "cipl04", compareDoc: "Final Invoice",  field: "Total Item Value" },
     ]
   },
   {
