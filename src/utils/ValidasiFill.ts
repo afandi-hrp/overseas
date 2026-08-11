@@ -45,6 +45,10 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
     return found || null;
   };
 
+  const findNpwpWithFallback = (npwpVal: any, namaVal: any) => {
+    return findNpwp(npwpVal) || findNpwpByName(namaVal);
+  };
+
   const fill = (id: string, srcVal: any, cmpVal: any, srcDisplay?: string, srcNote?: string) => {
            if (newV[id]) {
               newV[id] = { 
@@ -113,19 +117,16 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
         // BPN/HTBK NPWP Lookup
         const bpnMasterNpwp = findNpwp(bpnV.npwp);
         fill("bpn_no_npwp", bpnV.npwp || "", bpnMasterNpwp?.npwp || "");
-        fill("bpn_nama_npwp", bpnV.nama_pt || "", bpnMasterNpwp?.nama || "");
+        fill("bpn_nama_npwp", bpnV.nama_pt || "", findNpwpWithFallback(bpnV.npwp, bpnV.nama_pt)?.nama || "");
 
         // CIPL NPWP Lookup
-        const ciplMasterNpwp = findNpwp(ciplV.npwp);
-        fill("cipl_nama_npwp", ciplV.penerima_barang || "", ciplMasterNpwp?.nama || "");
+        fill("cipl_nama_npwp", ciplV.penerima_barang || "", findNpwpWithFallback(ciplV.npwp, ciplV.penerima_barang)?.nama || "");
 
         // Final Invoice NPWP Lookup
-        const finalInvoiceMasterNpwp = findNpwp(fi.npwp);
-        fill("final_invoice_nama_npwp", fi.nama_pt || "", finalInvoiceMasterNpwp?.nama || "");
+        fill("final_invoice_nama_npwp", fi.nama_pt || "", findNpwpWithFallback(fi.npwp, fi.nama_pt)?.nama || "");
 
         // BT Vendor NPWP Lookup
-        const btVendorMasterNpwp = findNpwp(btVendorV.npwp);
-        fill("bt_vendor_nama_npwp", btVendorV.nama_pt || "", btVendorMasterNpwp?.nama || "");
+        fill("bt_vendor_nama_npwp", btVendorV.nama_pt || "", findNpwpWithFallback(btVendorV.npwp, btVendorV.nama_pt)?.nama || "");
 
         // BILLING DJBC
         fill("bdjbc01", bpnV.nomor_aju || "", pibV.no_pengajuan || "");
@@ -222,15 +223,15 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
            // SPTNP / Billing SPTNP / BPN SPTNP NPWP Lookup (vs Master NPWP)
            const sptnpMasterNpwp = findNpwp(sptnpV.npwp);
            fill("sptnp_no_npwp", sptnpV.npwp || "", sptnpMasterNpwp?.npwp || "");
-           fill("sptnp_nama_npwp", sptnpV.nama_pt || "", sptnpMasterNpwp?.nama || "");
+           fill("sptnp_nama_npwp", sptnpV.nama_pt || "", findNpwpWithFallback(sptnpV.npwp, sptnpV.nama_pt)?.nama || "");
 
            const billingSptnpMasterNpwp = findNpwp(billingSptnp.npwp);
            fill("billing_sptnp_no_npwp", billingSptnp.npwp || "", billingSptnpMasterNpwp?.npwp || "");
-           fill("billing_sptnp_nama_npwp", billingSptnp.nama_pt || "", billingSptnpMasterNpwp?.nama || "");
+           fill("billing_sptnp_nama_npwp", billingSptnp.nama_pt || "", findNpwpWithFallback(billingSptnp.npwp, billingSptnp.nama_pt)?.nama || "");
 
            const bpnSptnpMasterNpwp = findNpwp(bpnSptnp.npwp);
            fill("bpn_sptnp_no_npwp", bpnSptnp.npwp || "", bpnSptnpMasterNpwp?.npwp || "");
-           fill("bpn_sptnp_nama_npwp", bpnSptnp.nama_pt || "", bpnSptnpMasterNpwp?.nama || "");
+           fill("bpn_sptnp_nama_npwp", bpnSptnp.nama_pt || "", findNpwpWithFallback(bpnSptnp.npwp, bpnSptnp.nama_pt)?.nama || "");
         } else {
            const ids = ["sptnp01_a", "sptnp01_b", "sptnp02_a", "sptnp02_b", "sptnp03_a", "sptnp03_b", "sptnp04_a", "sptnp04_b", "sptnp_no_npwp", "sptnp_nama_npwp", "billing_sptnp_no_npwp", "billing_sptnp_nama_npwp", "bpn_sptnp_no_npwp", "bpn_sptnp_nama_npwp"];
            ids.forEach(id => fill(id, null, null));
@@ -253,7 +254,7 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
 
            // CN Freight NPWP Lookup (vs Master NPWP)
            const cnFreightMasterNpwp = findNpwp(cnF.npwp);
-           fill("cn_freight_nama_npwp", cnF.pt_penerima || "", cnFreightMasterNpwp?.nama || "");
+           fill("cn_freight_nama_npwp", cnF.pt_penerima || "", findNpwpWithFallback(cnF.npwp, cnF.pt_penerima)?.nama || "");
            fill("cn_freight_alamat_npwp", cnF.alamat || "", cnFreightMasterNpwp?.alamat || "");
         } else {
            const ids = ["cnf01_a", "cnf02_b", "cnf03_b", "cn_freight_nama_npwp", "cn_freight_alamat_npwp"];
@@ -280,7 +281,7 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
 
            // CN Duty NPWP Lookup (vs Master NPWP)
            const cnDutyMasterNpwp = findNpwp(cnD.npwp);
-           fill("cn_duty_nama_npwp", cnD.pt_penerima || "", cnDutyMasterNpwp?.nama || "");
+           fill("cn_duty_nama_npwp", cnD.pt_penerima || "", findNpwpWithFallback(cnD.npwp, cnD.pt_penerima)?.nama || "");
            fill("cn_duty_alamat_npwp", cnD.alamat || "", cnDutyMasterNpwp?.alamat || "");
         } else {
            const ids = ["cnd01_a", "cnd02_b", "cnd03_b", "cn_duty_nama_npwp", "cn_duty_alamat_npwp"];
