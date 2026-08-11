@@ -82,7 +82,7 @@ export const SECTIONS = [
     srcLabel: "Tidak Ada Nama Vessel & Nomor IMO",
     rows: [
       { id: "cipl05", compareDoc: "CIPL",          field: "Format Pass: Tidak Ada Vessel & IMO", isFormat: true, hint: 'Sesuai jika kosong' },
-      { id: "po01",   compareDoc: "PO",            field: "Format Pass", rowLabel: "Format Pass: Tidak Ada Vessel & IMO", isFormat: true, hint: 'Format harus mengandung tanda "-"' },
+      { id: "po01",   compareDoc: "PO",            field: "Format Pass: Tidak Ada Vessel & IMO", isFormat: true, hint: 'Sesuai jika kosong' },
       { id: "fi01",   compareDoc: "Final Invoice", field: "Format Pass: Tidak Ada Vessel & IMO", isFormat: true, hint: 'Sesuai jika kosong' },
     ]
   },
@@ -119,14 +119,13 @@ export const SECTIONS = [
 
       { id: "pib09",   compareDoc: "PIB",     field: "Nama NPWP" },
       { id: "sppb03",  compareDoc: "SPPBMCP", field: "Nama NPWP" },
-      { id: "if04",    compareDoc: "FP Freight",             field: "Nama PT", rowLabel: "Nama NPWP", hint: "PT IMI / VNS / GMI, dll." },
-      { id: "if06",    compareDoc: "AWB Freight",             field: "Nama PT", rowLabel: "Nama NPWP" },
-      { id: "id03",    compareDoc: "FP Duty",                 field: "Nama PT", rowLabel: "Nama NPWP", hint: "PT IMI / VNS / GMI, dll." },
-      { id: "id05",    compareDoc: "AWB Duty",                field: "Nama PT", rowLabel: "Nama NPWP" },
-      { id: "id08",    compareDoc: "PIB / SPPBMCP",           field: "Nama PT", rowLabel: "Nama NPWP" },
-      { id: "cnf04_a", compareDoc: "Invoice Freight",         field: "Nama PT", rowLabel: "Nama NPWP" },
-      { id: "cnd04_a", compareDoc: "Invoice Duty",            field: "Nama PT", rowLabel: "Nama NPWP" },
-      { id: "cipl02",  compareDoc: "PO",                      field: "Penerima Barang vs Nama PT", rowLabel: "Nama NPWP" },
+      { id: "if04",    compareDoc: "FP Freight",             field: "Nama PT (Cek Master NPWP)", rowLabel: "Nama NPWP", hint: "PT IMI / VNS / GMI, dll." },
+      { id: "if06",    compareDoc: "AWB",                     field: "Nama PT (Cek Master NPWP)", rowLabel: "Nama NPWP" },
+      { id: "id03",    compareDoc: "FP Duty",                 field: "Nama PT (Cek Master NPWP)", rowLabel: "Nama NPWP", hint: "PT IMI / VNS / GMI, dll." },
+      { id: "id08",    compareDoc: "PIB / SPPBMCP",           field: "Nama PT (Cek Master NPWP)", rowLabel: "Nama NPWP" },
+      { id: "cnf04_a", compareDoc: "Invoice Freight",         field: "Nama PT (Cek Master NPWP)", rowLabel: "Nama NPWP" },
+      { id: "cnd04_a", compareDoc: "Invoice Duty",            field: "Nama PT (Cek Master NPWP)", rowLabel: "Nama NPWP" },
+      { id: "cipl02",  compareDoc: "PO",                      field: "Nama PT (Cek Master NPWP)", rowLabel: "Nama NPWP" },
       { id: "cn_freight_nama_npwp",     compareDoc: "CN Freight",     field: "Nama NPWP" },
       { id: "cn_duty_nama_npwp",        compareDoc: "CN Duty",        field: "Nama NPWP" },
       { id: "bpn_nama_npwp",            compareDoc: "BPN/HTBK",       field: "Nama NPWP" },
@@ -248,6 +247,11 @@ export function computeStatus(srcVal: any, cmpVal: any, isFormat: boolean | unde
   if (fieldName.includes("Referensi (")) {
     if (!srcVal || !cmpVal) return "empty";
     return String(srcVal).toLowerCase().includes(String(cmpVal).toLowerCase()) ? "match" : "mismatch";
+  }
+
+  if (fieldName.includes("Cek Master NPWP")) {
+    if (!srcVal) return "empty";
+    return cmpVal ? "match" : "mismatch";
   }
 
   const s = String(srcVal || "").trim();
