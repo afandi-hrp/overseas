@@ -3348,7 +3348,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
                 {activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan' ? (
                   <div className={`flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[38px] border ${TOOLBAR_GLASS}`}>
-                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">A/N</span>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">Company</span>
                     <select
                       value={activeAnFilter}
                       onChange={e => { setActiveAnFilter(e.target.value); setPage(1); }}
@@ -3361,7 +3361,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   </div>
                 ) : activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit' ? (
                   <div className={`flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[38px] border ${TOOLBAR_GLASS}`}>
-                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">Impor An</span>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">Company</span>
                     <select
                       value={activeImporAnFilter}
                       onChange={e => { setActiveImporAnFilter(e.target.value); setPage(1); }}
