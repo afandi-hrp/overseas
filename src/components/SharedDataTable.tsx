@@ -437,8 +437,8 @@ function EditModal({ record, tab, cols, onClose, onSaved }: { record: any, tab: 
 const SEA_AIR_AUDIT_COLS = [
   { key: 'jenis_dokumen', label: 'Jenis Dokumen' },
   { key: 'po_ori', label: 'PO ORI' },
-  { key: 'vendor', label: 'Vendor' },
   { key: 'remarks', label: 'Remarks' },
+  { key: 'vendor', label: 'Vendor' },
   { key: 'kurs', label: 'Kurs', type: 'num' },
   { key: 'item_price', label: 'Item Price', type: 'num' },
   { key: 'other_cost', label: 'Other Cost', type: 'num' },
