@@ -112,6 +112,7 @@ export const SECTIONS = [
       { id: "fpfd03",  compareDoc: "FP Duty",           field: "No. NPWP (Duty)",       rowLabel: "No. NPWP" },
       { id: "fpr01",   compareDoc: "FP Revisi Freight", field: "No. NPWP (Freight)",    rowLabel: "No. NPWP" },
       { id: "fpr03",   compareDoc: "FP Revisi Duty",    field: "No. NPWP (Duty)",       rowLabel: "No. NPWP" },
+      { id: "billing_djbc_no_npwp",  compareDoc: "Billing DJBC",  field: "No. NPWP" },
       { id: "bpn_no_npwp",           compareDoc: "BPN/HTBK",      field: "No. NPWP" },
       { id: "sptnp_no_npwp",         compareDoc: "SPTNP",         field: "No. NPWP" },
       { id: "billing_sptnp_no_npwp", compareDoc: "Billing SPTNP", field: "No. NPWP" },
@@ -122,13 +123,13 @@ export const SECTIONS = [
       { id: "if04",    compareDoc: "FP Freight",             field: "Nama PT (Cek Master NPWP)", rowLabel: "Nama NPWP", hint: "PT IMI / VNS / GMI, dll." },
       { id: "if06",    compareDoc: "AWB",                     field: "Nama PT (Cek Master NPWP)", rowLabel: "Nama NPWP" },
       { id: "id03",    compareDoc: "FP Duty",                 field: "Nama PT (Cek Master NPWP)", rowLabel: "Nama NPWP", hint: "PT IMI / VNS / GMI, dll." },
-      { id: "id08",    compareDoc: "PIB / SPPBMCP",           field: "Nama PT (Cek Master NPWP)", rowLabel: "Nama NPWP" },
       { id: "cnf04_a", compareDoc: "Invoice Freight",         field: "Nama PT (Cek Master NPWP)", rowLabel: "Nama NPWP" },
       { id: "cnd04_a", compareDoc: "Invoice Duty",            field: "Nama PT (Cek Master NPWP)", rowLabel: "Nama NPWP" },
       { id: "cipl02",  compareDoc: "PO",                      field: "Nama PT (Cek Master NPWP)", rowLabel: "Nama NPWP" },
       { id: "cn_freight_nama_npwp",     compareDoc: "CN Freight",     field: "Nama NPWP (Cek Master NPWP)", rowLabel: "Nama NPWP" },
       { id: "cn_duty_nama_npwp",        compareDoc: "CN Duty",        field: "Nama NPWP (Cek Master NPWP)", rowLabel: "Nama NPWP" },
       { id: "bpn_nama_npwp",            compareDoc: "BPN/HTBK",       field: "Nama NPWP (Cek Master NPWP)", rowLabel: "Nama NPWP" },
+      { id: "billing_djbc_nama_npwp",   compareDoc: "Billing DJBC",   field: "Nama NPWP (Cek Master NPWP)", rowLabel: "Nama NPWP" },
       { id: "sptnp_nama_npwp",          compareDoc: "SPTNP",          field: "Nama NPWP (Cek Master NPWP)", rowLabel: "Nama NPWP" },
       { id: "billing_sptnp_nama_npwp",  compareDoc: "Billing SPTNP",  field: "Nama NPWP (Cek Master NPWP)", rowLabel: "Nama NPWP" },
       { id: "bpn_sptnp_nama_npwp",      compareDoc: "BPN SPTNP",      field: "Nama NPWP (Cek Master NPWP)", rowLabel: "Nama NPWP" },
@@ -144,6 +145,9 @@ export const SECTIONS = [
       { id: "fpr04",   compareDoc: "FP Revisi Duty",    field: "Alamat NPWP (Duty)",    rowLabel: "Alamat NPWP" },
       { id: "cn_freight_alamat_npwp",   compareDoc: "CN Freight",     field: "Alamat NPWP" },
       { id: "cn_duty_alamat_npwp",      compareDoc: "CN Duty",        field: "Alamat NPWP" },
+      { id: "invoice_freight_alamat_npwp", compareDoc: "Invoice Freight", field: "Alamat NPWP" },
+      { id: "invoice_duty_alamat_npwp",    compareDoc: "Invoice Duty",    field: "Alamat NPWP" },
+      { id: "po_alamat_npwp",              compareDoc: "PO",              field: "Alamat NPWP" },
     ]
   },
 ];
@@ -168,7 +172,7 @@ export function compareAlamat(srcVal: any, cmpVal: any) {
   const b = normalizeAlamat(cmpVal).split(' ').filter(w => w.length > 4);
   if (a.length === 0 || b.length === 0) return false;
   const matched = a.filter(word => b.includes(word)).length;
-  return matched / Math.max(a.length, b.length) >= 0.6;
+  return matched / Math.min(a.length, b.length) >= 0.6;
 }
 
 export function normalizeValue(val: any) {
@@ -193,8 +197,9 @@ export function normalizeAwb(val: any) {
 
 export function compareInvoices(src: string, cmp: string) {
   const clean = (s: string) => s.replace(/\s+/g, '').toLowerCase();
-  const srcItems = src.split('+').map(clean).filter(Boolean);
-  const cmpItems = cmp.split('+').map(clean).filter(Boolean);
+  // Ekstrak Gemini kadang pakai koma, bukan "+", untuk pisahkan beberapa nomor invoice — perlakukan setara.
+  const srcItems = src.split(/[+,]/).map(clean).filter(Boolean);
+  const cmpItems = cmp.split(/[+,]/).map(clean).filter(Boolean);
   
   if (srcItems.length !== cmpItems.length) return false;
   
@@ -202,6 +207,12 @@ export function compareInvoices(src: string, cmp: string) {
   const sortedCmp = cmpItems.sort().join('+');
   
   return sortedSrc === sortedCmp;
+}
+
+// Ekstrak Gemini kadang pakai koma untuk pisahkan beberapa nomor invoice — samakan tampilannya jadi "+".
+export function normalizeInvoiceSeparator(val: any) {
+  if (!val) return val;
+  return String(val).replace(/\s*,\s*/g, ' + ');
 }
 
 export function hitungDppCmp(hargaJual: any, noSeri: any) {
@@ -239,7 +250,7 @@ export function normalizePt(val: any) {
     .trim();
 }
 
-export function computeStatus(srcVal: any, cmpVal: any, isFormat: boolean | undefined, fieldName: string = "") {
+export function computeStatus(srcVal: any, cmpVal: any, isFormat: boolean | undefined, fieldName: string = "", isPoNonImi?: boolean) {
   if (fieldName.includes("DPP (")) {
     return compareNumeric(srcVal, cmpVal);
   }
@@ -258,6 +269,8 @@ export function computeStatus(srcVal: any, cmpVal: any, isFormat: boolean | unde
   const c = String(cmpVal || "").trim();
   if (isFormat) {
     if (fieldName.includes("Tidak Ada Vessel")) {
+       // PO non-IMI (raw.is_po_non_imi) boleh cantumkan vessel/IMO — selalu pass.
+       if (isPoNonImi) return "match";
        const val = (s === "—" || s === "-") ? "" : s;
        return !val ? "match" : "mismatch";
     }

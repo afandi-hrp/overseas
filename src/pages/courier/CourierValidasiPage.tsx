@@ -132,7 +132,7 @@ export default function CourierValidasiPage() {
 
           activeSections.forEach(s => s.rows.forEach(row => {
             const v = values[row.id] || {src: '', cmp: ''};
-            const st = computeStatus(v.src, v.cmp, (row as any).isFormat, row.field);
+            const st = computeStatus(v.src, v.cmp, (row as any).isFormat, row.field, raw?.is_po_non_imi);
             if (st === "match") match++;
             else if (st === "mismatch") mismatch++;
             else if (st === "partial") partial++;
@@ -271,7 +271,7 @@ export default function CourierValidasiPage() {
 
             activeSections.forEach(s => s.rows.forEach(row => {
               const v = values[row.id] || {src: '', cmp: ''};
-              const st = computeStatus(v.src, v.cmp, (row as any).isFormat, row.field);
+              const st = computeStatus(v.src, v.cmp, (row as any).isFormat, row.field, raw?.is_po_non_imi);
               if (st === "match") match++;
               else if (st === "mismatch") mismatch++;
               else if (st === "partial") partial++;

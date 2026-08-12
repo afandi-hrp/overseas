@@ -138,7 +138,6 @@ function getSrcTooltipLabel(rowMatch: RowConfig, section: SectionConfig): string
     if (rowMatch.id === 'if04') return 'FP Freight';
     if (rowMatch.id === 'if06') return 'AWB';
     if (rowMatch.id === 'id03') return 'FP Duty';
-    if (rowMatch.id === 'id08') return 'SPPBMCP';
     if (rowMatch.id === 'cnf04_a') return 'Invoice Freight';
     if (rowMatch.id === 'cnd04_a') return 'Invoice Duty';
     if (rowMatch.id === 'cipl02') return 'PO';
@@ -264,6 +263,7 @@ const SECTIONS: SectionConfig[] = [
       { id: "fpfd03",  compareDoc: "FP Duty",           field: "No. NPWP (Duty)",       rowLabel: "No. NPWP" },
       { id: "fpr01",   compareDoc: "FP Revisi Freight", field: "No. NPWP (Freight)",    rowLabel: "No. NPWP" },
       { id: "fpr03",   compareDoc: "FP Revisi Duty",    field: "No. NPWP (Duty)",       rowLabel: "No. NPWP" },
+      { id: "billing_djbc_no_npwp",  compareDoc: "Billing DJBC",  field: "No. NPWP" },
       { id: "bpn_no_npwp",           compareDoc: "BPN/HTBK",      field: "No. NPWP" },
       { id: "sptnp_no_npwp",         compareDoc: "SPTNP",         field: "No. NPWP" },
       { id: "billing_sptnp_no_npwp", compareDoc: "Billing SPTNP", field: "No. NPWP" },
@@ -274,13 +274,13 @@ const SECTIONS: SectionConfig[] = [
       { id: "if04",    compareDoc: "FP Freight",             field: "Nama PT (Cek Master NPWP)", rowLabel: "Nama NPWP", hint: "PT IMI / VNS / GMI, dll." },
       { id: "if06",    compareDoc: "AWB",                     field: "Nama PT (Cek Master NPWP)", rowLabel: "Nama NPWP" },
       { id: "id03",    compareDoc: "FP Duty",                 field: "Nama PT (Cek Master NPWP)", rowLabel: "Nama NPWP", hint: "PT IMI / VNS / GMI, dll." },
-      { id: "id08",    compareDoc: "PIB / SPPBMCP",           field: "Nama PT (Cek Master NPWP)", rowLabel: "Nama NPWP" },
       { id: "cnf04_a", compareDoc: "Invoice Freight",         field: "Nama PT (Cek Master NPWP)", rowLabel: "Nama NPWP" },
       { id: "cnd04_a", compareDoc: "Invoice Duty",            field: "Nama PT (Cek Master NPWP)", rowLabel: "Nama NPWP" },
       { id: "cipl02",  compareDoc: "PO",                      field: "Nama PT (Cek Master NPWP)", rowLabel: "Nama NPWP" },
       { id: "cn_freight_nama_npwp",     compareDoc: "CN Freight",     field: "Nama NPWP (Cek Master NPWP)", rowLabel: "Nama NPWP" },
       { id: "cn_duty_nama_npwp",        compareDoc: "CN Duty",        field: "Nama NPWP (Cek Master NPWP)", rowLabel: "Nama NPWP" },
       { id: "bpn_nama_npwp",            compareDoc: "BPN/HTBK",       field: "Nama NPWP (Cek Master NPWP)", rowLabel: "Nama NPWP" },
+      { id: "billing_djbc_nama_npwp",   compareDoc: "Billing DJBC",   field: "Nama NPWP (Cek Master NPWP)", rowLabel: "Nama NPWP" },
       { id: "sptnp_nama_npwp",          compareDoc: "SPTNP",          field: "Nama NPWP (Cek Master NPWP)", rowLabel: "Nama NPWP" },
       { id: "billing_sptnp_nama_npwp",  compareDoc: "Billing SPTNP",  field: "Nama NPWP (Cek Master NPWP)", rowLabel: "Nama NPWP" },
       { id: "bpn_sptnp_nama_npwp",      compareDoc: "BPN SPTNP",      field: "Nama NPWP (Cek Master NPWP)", rowLabel: "Nama NPWP" },
@@ -296,6 +296,9 @@ const SECTIONS: SectionConfig[] = [
       { id: "fpr04",   compareDoc: "FP Revisi Duty",    field: "Alamat NPWP (Duty)",    rowLabel: "Alamat NPWP" },
       { id: "cn_freight_alamat_npwp",   compareDoc: "CN Freight",     field: "Alamat NPWP" },
       { id: "cn_duty_alamat_npwp",      compareDoc: "CN Duty",        field: "Alamat NPWP" },
+      { id: "invoice_freight_alamat_npwp", compareDoc: "Invoice Freight", field: "Alamat NPWP" },
+      { id: "invoice_duty_alamat_npwp",    compareDoc: "Invoice Duty",    field: "Alamat NPWP" },
+      { id: "po_alamat_npwp",              compareDoc: "PO",              field: "Alamat NPWP" },
     ]
   },
 ];
@@ -319,7 +322,7 @@ function compareAlamat(srcVal: any, cmpVal: any) {
   const b = normalizeAlamat(cmpVal).split(' ').filter(w => w.length > 4);
   if (a.length === 0 || b.length === 0) return false;
   const matched = a.filter(word => b.includes(word)).length;
-  return matched / Math.max(a.length, b.length) >= 0.6;
+  return matched / Math.min(a.length, b.length) >= 0.6;
 }
 
 function normalizeValue(val: any) {
@@ -344,8 +347,9 @@ function normalizeAwb(val: any) {
 
 function compareInvoices(src: string, cmp: string) {
   const clean = (s: string) => s.replace(/\s+/g, '').toLowerCase();
-  const srcItems = src.split('+').map(clean).filter(Boolean);
-  const cmpItems = cmp.split('+').map(clean).filter(Boolean);
+  // Ekstrak Gemini kadang pakai koma, bukan "+", untuk pisahkan beberapa nomor invoice — perlakukan setara.
+  const srcItems = src.split(/[+,]/).map(clean).filter(Boolean);
+  const cmpItems = cmp.split(/[+,]/).map(clean).filter(Boolean);
   
   if (srcItems.length !== cmpItems.length) return false;
   
@@ -353,6 +357,12 @@ function compareInvoices(src: string, cmp: string) {
   const sortedCmp = cmpItems.sort().join('+');
   
   return sortedSrc === sortedCmp;
+}
+
+// Ekstrak Gemini kadang pakai koma untuk pisahkan beberapa nomor invoice — samakan tampilannya jadi "+".
+function normalizeInvoiceSeparator(val: any) {
+  if (!val) return val;
+  return String(val).replace(/\s*,\s*/g, ' + ');
 }
 
 function hitungDppCmp(hargaJual: any, noSeri: any) {
@@ -390,7 +400,7 @@ function normalizePt(val: any) {
     .trim();
 }
 
-function computeStatus(srcVal: any, cmpVal: any, isFormat: boolean | undefined, fieldName: string = "") {
+function computeStatus(srcVal: any, cmpVal: any, isFormat: boolean | undefined, fieldName: string = "", isPoNonImi?: boolean) {
   if (fieldName.includes("DPP (")) {
     return compareNumeric(srcVal, cmpVal);
   }
@@ -411,6 +421,8 @@ function computeStatus(srcVal: any, cmpVal: any, isFormat: boolean | undefined, 
   const c = String(cmpVal || "").trim();
   if (isFormat) {
     if (fieldName.includes("Tidak Ada Vessel")) {
+       // PO non-IMI (raw.is_po_non_imi) boleh cantumkan vessel/IMO — selalu pass.
+       if (isPoNonImi) return "match";
        const val = (s === "—" || s === "-") ? "" : s;
        return !val ? "match" : "mismatch";
     }
@@ -624,6 +636,11 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
             clean.includes(normalizeName(n.nama))
           );
         }
+        if (!found) {
+          // Toleransi kurang/lebih spasi dari hasil ekstraksi OCR (mis. "NUSASENTANA" vs "NUSA SENTANA").
+          const cleanNoSpace = clean.replace(/\s+/g, '');
+          found = localNpwps.find(n => normalizeName(n.nama).replace(/\s+/g, '') === cleanNoSpace);
+        }
         return found || null;
       };
 
@@ -669,16 +686,15 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
 
         fill("id06", docAwb, cmpAwbFisik);
         fill("id07", docAwb, sppbV.no_awb || "");
-        fill("id08", sppbV.nama_pt || "", findNpwpByName(sppbV.nama_pt)?.nama || "");
 
         // PIB
         fill("pib01", pibV.no_pengajuan || "", sppbV.no_pengajuan || "");
         fill("pib02", pibV.no_awb || "", sppbV.no_awb || "");
-        fill("pib03", pibV.no_invoice || "", ciplV.no_invoice || "");
+        fill("pib03", normalizeInvoiceSeparator(pibV.no_invoice) || "", normalizeInvoiceSeparator(ciplV.no_invoice) || "");
         fill("pib04", pibV.item_value || "", ciplV.total_value || "");
-        fill("bt_vendor_no_invoice_vs_pib", pibV.no_invoice || "", btVendorV.no_invoice || "");
+        fill("bt_vendor_no_invoice_vs_pib", normalizeInvoiceSeparator(pibV.no_invoice) || "", normalizeInvoiceSeparator(btVendorV.no_invoice) || "");
         fill("bt_vendor_item_value_vs_pib", pibV.item_value || "", btVendorV.item_value || "");
-        fill("pib06", pibV.no_invoice || "", fi.inv_no || "");
+        fill("pib06", normalizeInvoiceSeparator(pibV.no_invoice) || "", normalizeInvoiceSeparator(fi.inv_no) || "");
         fill("pib07", pibV.item_value || "", fi.total_value || "");
         fill("po_item_value_vs_pib", pibV.item_value || "", raw.po_total_value || "");
         
@@ -704,6 +720,11 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
         fill("bpn_no_npwp", bpnV.npwp || "", bpnMasterNpwp?.npwp || "");
         fill("bpn_nama_npwp", bpnV.nama_pt || "", findNpwpWithFallback(bpnV.npwp, bpnV.nama_pt)?.nama || "");
 
+        // Billing DJBC NPWP Lookup (dokumen tidak mencantumkan alamat)
+        const billingDjbcMasterNpwp = findNpwp(raw.billing_djbc_npwp);
+        fill("billing_djbc_no_npwp", raw.billing_djbc_npwp || "", billingDjbcMasterNpwp?.npwp || "");
+        fill("billing_djbc_nama_npwp", raw.billing_djbc_nama_pt || "", findNpwpWithFallback(raw.billing_djbc_npwp, raw.billing_djbc_nama_pt)?.nama || "");
+
         // CIPL NPWP Lookup
         fill("cipl_nama_npwp", ciplV.penerima_barang || "", findNpwpWithFallback(ciplV.npwp, ciplV.penerima_barang)?.nama || "");
 
@@ -722,6 +743,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
         // CIPL
         fill("cipl01", ciplV.total_value || "", raw.po_total_value || "");
         fill("cipl02", raw.po_penerima || "", findNpwpByName(raw.po_penerima)?.nama || "");
+        fill("po_alamat_npwp", raw.po_alamat || "", findNpwpByName(raw.po_penerima)?.alamat || "");
         fill("cipl03", ciplV.no_invoice || "", fi.inv_no || "");
         fill("cipl04", ciplV.total_value || "", fi.total_value || "");
         fill("cipl05", raw.cipl_vessel || "", "");
@@ -838,16 +860,17 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
            fill("cnf03_b", calcPpnF, fpRF.ppn, (fpF.ppn != null && cnF.ppn != null) ? `${Number(fpF.ppn).toLocaleString('id-ID')} - ${Number(cnF.ppn).toLocaleString('id-ID')}` : undefined, noteF);
 
            // CN Freight NPWP Lookup (vs Master NPWP)
-           const cnFreightMasterNpwp = findNpwp(cnF.npwp);
            fill("cn_freight_nama_npwp", cnF.pt_penerima || "", findNpwpWithFallback(cnF.npwp, cnF.pt_penerima)?.nama || "");
-           fill("cn_freight_alamat_npwp", cnF.alamat || "", cnFreightMasterNpwp?.alamat || "");
+           fill("cn_freight_alamat_npwp", cnF.alamat || "", findNpwpWithFallback(cnF.npwp, cnF.pt_penerima)?.alamat || "");
         } else {
            const ids = ["cnf01_a", "cnf02_b", "cnf03_b", "cn_freight_nama_npwp", "cn_freight_alamat_npwp"];
            ids.forEach(id => fill(id, null, null));
         }
 
-        // Invoice Freight — Nama PT vs Master NPWP (selalu relevan, tidak tergantung ada/tidaknya Credit Note)
+        // Invoice Freight — Nama PT & Alamat vs Master NPWP (selalu relevan, tidak tergantung ada/tidaknya Credit Note).
+        // Invoice Freight tidak mencantumkan NPWP, jadi lookup selalu berdasarkan nama.
         fill("cnf04_a", invF.pt_penerima || "", findNpwpByName(invF.pt_penerima)?.nama || "");
+        fill("invoice_freight_alamat_npwp", invF.alamat || "", findNpwpByName(invF.pt_penerima)?.alamat || "");
 
         // CN INVOICE DUTY
         const cnD = raw.credit_note_duty_v || {};
@@ -865,16 +888,17 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
            fill("cnd03_b", calcPpnD, fpRD.ppn, (fpD.ppn != null && cnD.ppn != null) ? `${Number(fpD.ppn).toLocaleString('id-ID')} - ${Number(cnD.ppn).toLocaleString('id-ID')}` : undefined, noteD);
 
            // CN Duty NPWP Lookup (vs Master NPWP)
-           const cnDutyMasterNpwp = findNpwp(cnD.npwp);
            fill("cn_duty_nama_npwp", cnD.pt_penerima || "", findNpwpWithFallback(cnD.npwp, cnD.pt_penerima)?.nama || "");
-           fill("cn_duty_alamat_npwp", cnD.alamat || "", cnDutyMasterNpwp?.alamat || "");
+           fill("cn_duty_alamat_npwp", cnD.alamat || "", findNpwpWithFallback(cnD.npwp, cnD.pt_penerima)?.alamat || "");
         } else {
            const ids = ["cnd01_a", "cnd02_b", "cnd03_b", "cn_duty_nama_npwp", "cn_duty_alamat_npwp"];
            ids.forEach(id => fill(id, null, null));
         }
 
-        // Invoice Duty — Nama PT vs Master NPWP (selalu relevan, tidak tergantung ada/tidaknya Credit Note)
+        // Invoice Duty — Nama PT & Alamat vs Master NPWP (selalu relevan, tidak tergantung ada/tidaknya Credit Note).
+        // Invoice Duty tidak mencantumkan NPWP, jadi lookup selalu berdasarkan nama.
         fill("cnd04_a", invD.pt_penerima || "", findNpwpByName(invD.pt_penerima)?.nama || "");
+        fill("invoice_duty_alamat_npwp", invD.alamat || "", findNpwpByName(invD.pt_penerima)?.alamat || "");
 
         return newV;
       });
@@ -896,7 +920,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
        let match = 0, mismatch = 0, partial = 0, empty = 0;
        activeSections.forEach(s => s.rows.forEach(r => {
            const v = values[r.id] || {src: '', cmp: ''};
-           const stComputed = computeStatus(v.src, v.cmp, r.isFormat, r.field);
+           const stComputed = computeStatus(v.src, v.cmp, r.isFormat, r.field, debugData.raw?.is_po_non_imi);
            const st = v.manual_status || stComputed;
            if (st === "match") match++;
            else if (st === "mismatch") mismatch++;
@@ -953,7 +977,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
        }
     }, 2000);
     return () => clearTimeout(tid);
-  }, [values, awbNo, tanggal, namaChecker, loading, mainTab, subTab, record, activeSections, pibStats]);
+  }, [values, awbNo, tanggal, namaChecker, loading, mainTab, subTab, record, activeSections, pibStats, debugData]);
 
   const hasNpwpError = (id: string, val: string) => {
      if (!val) return false;
@@ -1025,7 +1049,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
     let match = 0, mismatch = 0, partial = 0, empty = 0;
     activeSections.forEach(s => s.rows.forEach(r => {
       const v = values[r.id] || {src: '', cmp: ''};
-      const stComputed = computeStatus(v.src, v.cmp, r.isFormat, r.field);
+      const stComputed = computeStatus(v.src, v.cmp, r.isFormat, r.field, debugData.raw?.is_po_non_imi);
       const st = v.manual_status || stComputed;
       if (st === "match") match++;
       else if (st === "mismatch") mismatch++;
@@ -1041,13 +1065,13 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
     const totalItems = match + mismatch + partial + empty;
     const pct = checked === 0 ? 0 : Math.round((match / checked) * 100);
     return { match, mismatch, partial, empty, checked, pct, total: totalItems };
-  }, [values, activeSections, computeStatus, pibStats]);
+  }, [values, activeSections, computeStatus, pibStats, debugData]);
 
   const sectionStats = (section: any) => {
     let m = 0, mm = 0, tot = section.rows.length;
     section.rows.forEach((r: any) => {
       const v = values[r.id] || {src: '', cmp: ''};
-      const stComputed = computeStatus(v.src, v.cmp, r.isFormat, r.field);
+      const stComputed = computeStatus(v.src, v.cmp, r.isFormat, r.field, debugData.raw?.is_po_non_imi);
       const st = v.manual_status || stComputed;
       if (st === "match") m++;
       else if (st === "mismatch") mm++;
@@ -1380,7 +1404,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                                   return <td key={doc as string} className="p-3 border-r border-slate-200 last:border-r-0 text-center text-slate-300 align-middle bg-slate-50/30 min-w-[150px]">-</td>;
                                }
                                const v = values[rowMatch.id] || {src:'', cmp:''};
-                               const stComputed = computeStatus(v.src, v.cmp, rowMatch.isFormat, rowMatch.field);
+                               const stComputed = computeStatus(v.src, v.cmp, rowMatch.isFormat, rowMatch.field, debugData.raw?.is_po_non_imi);
                                const st = v.manual_status || stComputed;
                                const errNpwp = v.cmp && hasNpwpError(rowMatch.id, v.cmp);
                                
@@ -1424,6 +1448,11 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                                                <span className={`text-xs text-center w-full break-words px-1 ${v.cmp_edited ? 'text-blue-700 font-bold' : 'text-slate-700 font-medium'}`}>
                                                  {formatViewValue(v.cmp, field)}
                                                  {v.cmp_edited && <Edit3 size={10} className="inline ml-1 text-blue-500 opacity-70" title="Diedit manual" />}
+                                                 {rowMatch.id === 'po_item_value_vs_pib' && Number(debugData.raw?.other_cost_valas) > 0 && (
+                                                   <div style={{ fontSize: '0.85em', fontStyle: 'italic', color: 'var(--color-text-secondary)', marginTop: 2 }}>
+                                                     Other Cost: {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 4 }).format(Number(debugData.raw.other_cost_valas))}
+                                                   </div>
+                                                 )}
                                                </span>
                                              )}
                                            </>

@@ -1,4 +1,4 @@
-import { SECTIONS, hitungDppCmp } from './ValidasiHelper';
+import { SECTIONS, hitungDppCmp, normalizeInvoiceSeparator } from './ValidasiHelper';
 
 export const generateValues = (raw: any, docAwb: string, localNpwps: any[]) => {
 let newV: any = {};
@@ -42,6 +42,11 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
         clean.includes(normalizeName(n.nama))
       );
     }
+    if (!found) {
+      // Toleransi kurang/lebih spasi dari hasil ekstraksi OCR (mis. "NUSASENTANA" vs "NUSA SENTANA").
+      const cleanNoSpace = clean.replace(/\s+/g, '');
+      found = localNpwps.find(n => normalizeName(n.nama).replace(/\s+/g, '') === cleanNoSpace);
+    }
     return found || null;
   };
 
@@ -84,16 +89,15 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
 
         fill("id06", docAwb, cmpAwbFisik);
         fill("id07", docAwb, sppbV.no_awb || "");
-        fill("id08", sppbV.nama_pt || "", findNpwpByName(sppbV.nama_pt)?.nama || "");
 
         // PIB
         fill("pib01", pibV.no_pengajuan || "", sppbV.no_pengajuan || "");
         fill("pib02", pibV.no_awb || "", sppbV.no_awb || "");
-        fill("pib03", pibV.no_invoice || "", ciplV.no_invoice || "");
+        fill("pib03", normalizeInvoiceSeparator(pibV.no_invoice) || "", normalizeInvoiceSeparator(ciplV.no_invoice) || "");
         fill("pib04", pibV.item_value || "", ciplV.total_value || "");
-        fill("bt_vendor_no_invoice_vs_pib", pibV.no_invoice || "", btVendorV.no_invoice || "");
+        fill("bt_vendor_no_invoice_vs_pib", normalizeInvoiceSeparator(pibV.no_invoice) || "", normalizeInvoiceSeparator(btVendorV.no_invoice) || "");
         fill("bt_vendor_item_value_vs_pib", pibV.item_value || "", btVendorV.item_value || "");
-        fill("pib06", pibV.no_invoice || "", fi.inv_no || "");
+        fill("pib06", normalizeInvoiceSeparator(pibV.no_invoice) || "", normalizeInvoiceSeparator(fi.inv_no) || "");
         fill("pib07", pibV.item_value || "", fi.total_value || "");
         fill("po_item_value_vs_pib", pibV.item_value || "", raw.po_total_value || "");
         
@@ -119,6 +123,11 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
         fill("bpn_no_npwp", bpnV.npwp || "", bpnMasterNpwp?.npwp || "");
         fill("bpn_nama_npwp", bpnV.nama_pt || "", findNpwpWithFallback(bpnV.npwp, bpnV.nama_pt)?.nama || "");
 
+        // Billing DJBC NPWP Lookup (dokumen tidak mencantumkan alamat)
+        const billingDjbcMasterNpwp = findNpwp(raw.billing_djbc_npwp);
+        fill("billing_djbc_no_npwp", raw.billing_djbc_npwp || "", billingDjbcMasterNpwp?.npwp || "");
+        fill("billing_djbc_nama_npwp", raw.billing_djbc_nama_pt || "", findNpwpWithFallback(raw.billing_djbc_npwp, raw.billing_djbc_nama_pt)?.nama || "");
+
         // CIPL NPWP Lookup
         fill("cipl_nama_npwp", ciplV.penerima_barang || "", findNpwpWithFallback(ciplV.npwp, ciplV.penerima_barang)?.nama || "");
 
@@ -137,6 +146,7 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
         // CIPL
         fill("cipl01", ciplV.total_value || "", raw.po_total_value || "");
         fill("cipl02", raw.po_penerima || "", findNpwpByName(raw.po_penerima)?.nama || "");
+        fill("po_alamat_npwp", raw.po_alamat || "", findNpwpByName(raw.po_penerima)?.alamat || "");
         fill("cipl03", ciplV.no_invoice || "", fi.inv_no || "");
         fill("cipl04", ciplV.total_value || "", fi.total_value || "");
         fill("cipl05", raw.cipl_vessel || "", "");
@@ -253,16 +263,17 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
            fill("cnf03_b", calcPpnF, fpRF.ppn, (fpF.ppn != null && cnF.ppn != null) ? `${Number(fpF.ppn).toLocaleString('id-ID')} - ${Number(cnF.ppn).toLocaleString('id-ID')}` : undefined, noteF);
 
            // CN Freight NPWP Lookup (vs Master NPWP)
-           const cnFreightMasterNpwp = findNpwp(cnF.npwp);
            fill("cn_freight_nama_npwp", cnF.pt_penerima || "", findNpwpWithFallback(cnF.npwp, cnF.pt_penerima)?.nama || "");
-           fill("cn_freight_alamat_npwp", cnF.alamat || "", cnFreightMasterNpwp?.alamat || "");
+           fill("cn_freight_alamat_npwp", cnF.alamat || "", findNpwpWithFallback(cnF.npwp, cnF.pt_penerima)?.alamat || "");
         } else {
            const ids = ["cnf01_a", "cnf02_b", "cnf03_b", "cn_freight_nama_npwp", "cn_freight_alamat_npwp"];
            ids.forEach(id => fill(id, null, null));
         }
 
-        // Invoice Freight — Nama PT vs Master NPWP (selalu relevan, tidak tergantung ada/tidaknya Credit Note)
+        // Invoice Freight — Nama PT & Alamat vs Master NPWP (selalu relevan, tidak tergantung ada/tidaknya Credit Note).
+        // Invoice Freight tidak mencantumkan NPWP, jadi lookup selalu berdasarkan nama.
         fill("cnf04_a", invF.pt_penerima || "", findNpwpByName(invF.pt_penerima)?.nama || "");
+        fill("invoice_freight_alamat_npwp", invF.alamat || "", findNpwpByName(invF.pt_penerima)?.alamat || "");
 
         // CN INVOICE DUTY
         const cnD = raw.credit_note_duty_v || {};
@@ -280,16 +291,17 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
            fill("cnd03_b", calcPpnD, fpRD.ppn, (fpD.ppn != null && cnD.ppn != null) ? `${Number(fpD.ppn).toLocaleString('id-ID')} - ${Number(cnD.ppn).toLocaleString('id-ID')}` : undefined, noteD);
 
            // CN Duty NPWP Lookup (vs Master NPWP)
-           const cnDutyMasterNpwp = findNpwp(cnD.npwp);
            fill("cn_duty_nama_npwp", cnD.pt_penerima || "", findNpwpWithFallback(cnD.npwp, cnD.pt_penerima)?.nama || "");
-           fill("cn_duty_alamat_npwp", cnD.alamat || "", cnDutyMasterNpwp?.alamat || "");
+           fill("cn_duty_alamat_npwp", cnD.alamat || "", findNpwpWithFallback(cnD.npwp, cnD.pt_penerima)?.alamat || "");
         } else {
            const ids = ["cnd01_a", "cnd02_b", "cnd03_b", "cn_duty_nama_npwp", "cn_duty_alamat_npwp"];
            ids.forEach(id => fill(id, null, null));
         }
 
-        // Invoice Duty — Nama PT vs Master NPWP (selalu relevan, tidak tergantung ada/tidaknya Credit Note)
+        // Invoice Duty — Nama PT & Alamat vs Master NPWP (selalu relevan, tidak tergantung ada/tidaknya Credit Note).
+        // Invoice Duty tidak mencantumkan NPWP, jadi lookup selalu berdasarkan nama.
         fill("cnd04_a", invD.pt_penerima || "", findNpwpByName(invD.pt_penerima)?.nama || "");
+        fill("invoice_duty_alamat_npwp", invD.alamat || "", findNpwpByName(invD.pt_penerima)?.alamat || "");
 
         return newV;
 };
