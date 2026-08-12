@@ -450,7 +450,6 @@ const SEA_AIR_AUDIT_COLS = [
   { key: 'delivery_term', label: 'Delivery Term' },
   { key: 'no_pib', label: 'No. PIB', type: 'no_aju_format' },
   { key: 'awb', label: 'AWB/BL' },
-  { key: 'cbm', label: 'CBM', type: 'num_dash_null_2dec' },
   { key: 'total_pib', label: 'Total PIB', type: 'num_bold' },
   { key: 'total_inv_freight', label: 'Total Inv Freight', type: 'num' },
   { key: 'no_sptnp', label: 'No. SPTNP', type: 'dash_if_null' },
@@ -1786,6 +1785,7 @@ const CourierRekapanRowGroup: React.FC<{
 const SeaAirRekapanRowGroup: React.FC<{
   rec: any, index: number, cols: any[],
   onEdit?: (r: any) => void,
+  onChecklist?: (r: any) => void,
   onValidasi?: (r: any) => void,
   onCostValidasi?: (r: any) => void,
   onDelete?: (r: any) => void,
@@ -1793,8 +1793,14 @@ const SeaAirRekapanRowGroup: React.FC<{
   onUndraft?: (r: any) => void,
   onVesselChange: (recId: number, poNo: string, newVal: string) => void,
   onInlineSaveRow?: (id: number, payload: any) => Promise<boolean>
-}> = ({ rec, index, cols, onEdit, onValidasi, onCostValidasi, onDelete, onDraft, onUndraft, onVesselChange, onInlineSaveRow }) => {
+}> = ({ rec, index, cols, onEdit, onChecklist, onValidasi, onCostValidasi, onDelete, onDraft, onUndraft, onVesselChange, onInlineSaveRow }) => {
   const repeatingCols = ['po_no', 'vessel', 'emkl_split', 'split_biaya_origin', 'split_biaya_destination', 'pbm_split', 'lift_off_split', 'inspeksi_split', 'handling_split', 'other_split', 'duty_split', 'bm_split', 'ppn_split', 'pph_split'];
+  // Record ini sudah aktif/pindah ke tab Audit (status audit terkait LENGKAP) -- tandai warna sesuai shipment type.
+  const isAudited = rec.audit_status === 'LENGKAP';
+  const auditHighlightClass = rec.shipment_type === 'LCL' ? 'bg-orange-100 hover:bg-orange-200'
+    : rec.shipment_type === 'FCL' ? 'bg-blue-100 hover:bg-blue-200'
+    : rec.shipment_type === 'AIR' ? 'bg-pink-100 hover:bg-pink-200'
+    : 'bg-sky-100 hover:bg-sky-200';
 
   const [isEditing, setIsEditing] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -1870,7 +1876,7 @@ const SeaAirRekapanRowGroup: React.FC<{
       {displayPos.map((po: any, i: number) => {
         const isFirst = i === 0;
         return (
-          <tr key={`${rec.id}-${i}`} className={`transition-colors group ${(isExpanded ? i === rowCount - 1 : true) ? 'border-b-[3px] border-slate-300' : 'border-b border-slate-100'} ${!isFirst ? 'border-t-0 bg-slate-50/40' : ''} ${isEditing ? 'bg-blue-50/50 hover:bg-blue-50/60' : 'hover:bg-blue-50/30'}`}>
+          <tr key={`${rec.id}-${i}`} className={`transition-colors group ${(isExpanded ? i === rowCount - 1 : true) ? 'border-b-[3px] border-slate-300' : 'border-b border-slate-100'} ${!isFirst ? 'border-t-0' : ''} ${isEditing ? 'bg-blue-50/50 hover:bg-blue-50/60' : isAudited ? auditHighlightClass : (!isFirst ? 'bg-slate-50/40 hover:bg-blue-50/30' : 'hover:bg-blue-50/30')}`}>
             {cols.map(c => {
               const isRepeating = repeatingCols.includes(c.key);
               if (!isRepeating && !isFirst) {
@@ -2016,13 +2022,25 @@ const SeaAirRekapanRowGroup: React.FC<{
                               💲 Cost Validasi
                             </button>
                           )}
+                          {onChecklist && (
+                            <button
+                              onClick={() => onChecklist(rec)}
+                              className={`w-[80px] border text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm ${
+                                rec.status_kelengkapan === 'LENGKAP'
+                                  ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
+                                  : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+                              }`}
+                            >
+                              ✓ Checklist
+                            </button>
+                          )}
                           {rec.audit_status === 'ARCHIVED'
                             ? (onUndraft && (
                                 <button
                                   onClick={() => onUndraft(rec)}
                                   className="w-[80px] bg-emerald-50 border border-emerald-200 text-emerald-600 hover:bg-emerald-100 hover:border-emerald-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm"
                                 >
-                                  🗄️ Undraft
+                                  🗄️ Audit
                                 </button>
                               ))
                             : (onDraft && (
@@ -3070,11 +3088,14 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     : activeTabId === 'sea_air_audit'
     ? SEA_AIR_AUDIT_COLS
     : activeTabId === 'sea_air_rekapan'
-    ? ((activeShipmentTypeFilter === 'LCL' || activeShipmentTypeFilter === 'AIR')
+    ? SEA_AIR_REKAPAN_COLS.filter(c => {
         // Lift Off cuma relevan untuk shipment FCL (container) -- sembunyikan kolomnya
         // saat filter LCL/AIR aktif, bukan cuma di-dash-kan seperti sebelumnya.
-        ? SEA_AIR_REKAPAN_COLS.filter(c => !['lift_off_vendor', 'lift_off_biaya', 'lift_off_split'].includes(c.key))
-        : SEA_AIR_REKAPAN_COLS)
+        if ((activeShipmentTypeFilter === 'LCL' || activeShipmentTypeFilter === 'AIR') && ['lift_off_vendor', 'lift_off_biaya', 'lift_off_split'].includes(c.key)) return false;
+        // Inspeksi & Handling cuma relevan untuk shipment SEA -- sembunyikan saat filter AIR aktif.
+        if (activeShipmentTypeFilter === 'AIR' && ['inspeksi_vendor', 'inspeksi_biaya', 'inspeksi_split', 'handling_vendor', 'handling_biaya', 'handling_split'].includes(c.key)) return false;
+        return true;
+      })
     : activeTabId === 'trail'
     ? TRAIL_COLS 
     : (activeMainTab === 'courier' && activeSubTab === 'courier_validasi') 
@@ -3498,13 +3519,12 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                     {records.map((rec, index) => {
                       if (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit') {
                         return (
-                          <SeaAirAuditRowGroup 
+                          <SeaAirAuditRowGroup
                             key={rec.id}
                             rec={rec}
                             index={startIndex + index}
                             cols={activeCols}
                             onEdit={setEditRecord}
-                            onChecklist={setSeaAirChecklistRecord}
                             onDelete={handleDelete}
                             onInlineSaveRow={handleInlineSaveRow}
                           />
@@ -3517,6 +3537,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                             rec={rec}
                             index={startIndex + index}
                             cols={activeCols}
+                            onChecklist={setSeaAirChecklistRecord}
                             onValidasi={setSeaAirValidasiRecord}
                             onCostValidasi={setSeaAirCostValidasiRecord}
                             onDelete={handleDelete}

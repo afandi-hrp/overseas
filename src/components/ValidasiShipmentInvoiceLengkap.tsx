@@ -12,6 +12,14 @@ const fmtIDR = (val: any) => {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(num);
 };
 
+const formatDateDisplay = (val: any) => {
+  if (!val) return '';
+  const parts = String(val).split('-');
+  if (parts.length !== 3) return val;
+  const [y, m, d] = parts;
+  return `${d}/${m}/${y}`;
+};
+
 const selisihStatus = (exp: any, act: any, tolerance: number = 1000) => {
   if (exp == null || act == null || exp === '' || act === '') return { status: 'BELUM_LENGKAP', selisih: 0 };
   const e = Number(exp);
@@ -26,7 +34,8 @@ const selisihStatus = (exp: any, act: any, tolerance: number = 1000) => {
   return { status: 'UNDERCHARGE', selisih: diff };
 };
 
-const StatusBadge = ({ status }: { status: string }) => {
+const StatusBadge = ({ status }: { status: string | null }) => {
+  if (status == null) return null;
   if (status === 'MATCH') {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold whitespace-nowrap bg-emerald-100 text-emerald-700">
@@ -102,7 +111,7 @@ const ShipmentEditableField = ({ recordId, field, initialValue, onSave, onUpdate
          }
       }}
     >
-      {initialValue || (isEditMode ? <span className="text-slate-400 italic font-normal">{placeholder}</span> : '—')}
+      {initialValue ? (type === 'date' ? formatDateDisplay(initialValue) : initialValue) : (isEditMode ? <span className="text-slate-400 italic font-normal">{placeholder}</span> : '—')}
     </span>
   );
 };
@@ -348,7 +357,7 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
         const [validasiRes, auditRes, rekapRes, matriksRes] = await Promise.all([
            supabase.from('cost_validasi_seaair').select('*').eq('seaair_id', (record.seaair_id || record.id)).maybeSingle(),
            supabase.from('tabel_audit_seaair').select('awb, via, cbm').eq('id', (record.seaair_id || record.id)).maybeSingle(),
-           supabase.from('rekapan_seaair').select('vendor, emkl_vendor, etd, atd, eta, ata, notes, weight_kg, tgl_invoice_freight, tgl_storage_mulai, tgl_storage_selesai').eq('seaair_id', (record.seaair_id || record.id)).maybeSingle(),
+           supabase.from('rekapan_seaair').select('vendor, emkl_vendor, etd, atd, eta, ata, notes, weight_kg, tgl_invoice_freight, tgl_storage_mulai, tgl_storage_selesai, origin, destination').eq('seaair_id', (record.seaair_id || record.id)).maybeSingle(),
            supabase.from('dokumen_validasi_matriks_seaair').select('checks').eq('seaair_id', (record.seaair_id || record.id)).maybeSingle()
         ]);
         
@@ -405,6 +414,8 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
            atd: rekapRes.data?.atd,
            eta: rekapRes.data?.eta,
            ata: rekapRes.data?.ata,
+           origin: rekapRes.data?.origin,
+           destination: rekapRes.data?.destination,
            notes: rekapRes.data?.notes,
            tglInvoiceFreight: rekapRes.data?.tgl_invoice_freight,
            tglStorageMulai: rekapRes.data?.tgl_storage_mulai,
@@ -640,9 +651,9 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
                       <div>
                         <p className="text-slate-500 mb-1 font-medium">Origin - Dest</p>
                         <div className="flex items-center gap-1 font-semibold text-slate-800">
-                          <ShipmentEditableField toastHandler={(data: any) => showToast(data.msg, data.type)} recordId={(record.seaair_id || record.id)} field="pol" type="text" placeholder="POL" initialValue={shipmentInfo?.pol} onSave={(v) => { if (shipmentInfo) setShipmentInfo({...shipmentInfo, pol: v}) }} />
+                          <ShipmentEditableField toastHandler={(data: any) => showToast(data.msg, data.type)} recordId={(record.seaair_id || record.id)} field="origin" type="text" placeholder="Origin" initialValue={shipmentInfo?.origin} onSave={(v) => { if (shipmentInfo) setShipmentInfo({...shipmentInfo, origin: v}) }} />
                           <span>-</span>
-                          <ShipmentEditableField toastHandler={(data: any) => showToast(data.msg, data.type)} recordId={(record.seaair_id || record.id)} field="pod" type="text" placeholder="POD" initialValue={shipmentInfo?.pod} onSave={(v) => { if (shipmentInfo) setShipmentInfo({...shipmentInfo, pod: v}) }} />
+                          <ShipmentEditableField toastHandler={(data: any) => showToast(data.msg, data.type)} recordId={(record.seaair_id || record.id)} field="destination" type="text" placeholder="Destination" initialValue={shipmentInfo?.destination} onSave={(v) => { if (shipmentInfo) setShipmentInfo({...shipmentInfo, destination: v}) }} />
                         </div>
                       </div>
                       <div className="col-span-2 md:col-span-4 mt-2">
@@ -699,8 +710,13 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
                   updateCheck={updateCheck}
                 />
                 <ValidationTable
-                  title="INVOICE FREIGHT"
-                  rows={getRowsFor("FREIGHT")}
+                  title="INVOICE FREIGHT (ORIGIN)"
+                  rows={getRowsFor("FREIGHT_ORIGIN")}
+                  updateCheck={updateCheck}
+                />
+                <ValidationTable
+                  title="INVOICE FREIGHT (DESTINATION)"
+                  rows={getRowsFor("FREIGHT_DESTINATION")}
                   updateCheck={updateCheck}
                 />
                 <ValidationTable

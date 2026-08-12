@@ -533,7 +533,7 @@ const PIB_ROWS = [
   { label: "DESTINATION", dbRow: "DESTINATION",                 required: ["AWB","ECOO (opsional)","Laporan Surveyor (opsional)"] },
   { label: "NO PO", dbRow: "NO PO",                       required: ["CIPL", "Final Invoice", "PO"] },
   { label: "TOTAL DUTY", dbRow: "TOTAL DUTY (PIB No. 44)",     required: ["Billing DJBC","BPN"] },
-  { label: "TOTAL CIPL", dbRow: "TOTAL CIPL (PIB No. 23)",     required: ["CIPL","PO","Final Invoice"] },
+  { label: "TOTAL CIPL", dbRow: "TOTAL CIPL (PIB No. 23)",     required: ["CIPL","PO","Final Invoice","Bukti TF"] },
 ];
 
 // ============================================================================
@@ -645,6 +645,7 @@ function PIBMatrixTable({ checks, onToggle, onUpdate }: { checks: any[], onToggl
                    break;
                 }
              }
+             const pibRefNum = pibRefText !== "—" ? toNum(pibRefText) : null;
              if (pibRefText !== "—") {
                 if (row.dbRow === "TOTAL DUTY (PIB No. 44)") {
                    pibRefText = fmtIDR(toNum(pibRefText));
@@ -698,13 +699,30 @@ function PIBMatrixTable({ checks, onToggle, onUpdate }: { checks: any[], onToggl
                      text = check.values.doc;
                   }
 
+                  // Bukti TF di baris TOTAL CIPL bisa berisi beberapa nilai gabungan (mis. "USD 14.070 + USD 6.030")
+                  // -- totalkan dulu, baru validasi terhadap angka TOTAL CIPL di kolom PIB.
+                  let cellMatch = check.match;
+                  let buktiTfSum: number | null = null;
+                  if (row.dbRow === "TOTAL CIPL (PIB No. 23)" && col === "Bukti TF" && text !== "—") {
+                     const parts = String(text).split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean);
+                     buktiTfSum = parts.reduce((acc, p) => acc + toNum(p), 0);
+                     if (!check.manual && pibRefNum !== null) {
+                        cellMatch = Math.abs(buktiTfSum - pibRefNum) <= 1;
+                     }
+                  }
+
                   return (
                     <td key={col} className={tdClass}>
                       <div className="flex flex-col gap-1 items-center">
-                        <StatusBadge match={check.match} onClick={() => onToggle(row.dbRow, col)} manual={check.manual} />
+                        <StatusBadge match={cellMatch} onClick={() => onToggle(row.dbRow, col)} manual={check.manual} />
                         <div className="text-[11px] font-medium text-slate-800 text-center break-words max-w-full leading-tight">
-                           <EditableCell value={text} onUpdate={(v) => onUpdate(row.dbRow, col, v)} isCurrency={row.dbRow === "TOTAL DUTY (PIB No. 44)"} isForeignCurrency={row.dbRow === "TOTAL CIPL (PIB No. 23)"} manual={check.manual} formatList={row.dbRow === "NO PO"} />
+                           <EditableCell value={text} onUpdate={(v) => onUpdate(row.dbRow, col, v)} isCurrency={row.dbRow === "TOTAL DUTY (PIB No. 44)"} isForeignCurrency={row.dbRow === "TOTAL CIPL (PIB No. 23)" && col !== "Bukti TF"} manual={check.manual} formatList={row.dbRow === "NO PO" || (row.dbRow === "TOTAL CIPL (PIB No. 23)" && col === "Bukti TF")} />
                         </div>
+                        {buktiTfSum !== null && (
+                          <div className="text-[10px] text-slate-500 italic text-center break-words max-w-full leading-tight">
+                            Total {buktiTfSum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                        )}
                         {row.dbRow === "TOTAL CIPL (PIB No. 23)" && check.note && (
                           <div className="text-[10px] text-slate-400 text-center break-words max-w-full leading-tight">
                             {check.note}
