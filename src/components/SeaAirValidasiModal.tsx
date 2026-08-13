@@ -77,6 +77,30 @@ const toNum = (v: any) => {
   return isNaN(n) ? 0 : n;
 };
 
+// Untuk field nomor referensi murni (mis. No. Aju/No PIB) -- fuzzyMatch terlalu longgar karena
+// salah satu cabangnya membandingkan HURUF SAJA (angka dibuang), jadi dua nomor aju berbeda yang
+// kebetulan sama-sama punya kode kantor "JAJ" bisa dianggap match walau angkanya jelas beda.
+// Comparator ini butuh kecocokan alfanumerik persis (tanpa toleransi huruf-saja/fuzzy).
+const strictAlnumMatch = (val1: any, val2: any): boolean => {
+  if (val1 === null || val2 === null || val1 === undefined || val2 === undefined) return false;
+  const norm = (s: any) => String(s).toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+  const n1 = norm(val1);
+  const n2 = norm(val2);
+  if (n1 === '' || n2 === '') return false;
+  return n1 === n2;
+};
+
+// Untuk baris "NO PO" -- nomor PO digabung "+" bisa beda urutan & beda format prefix antar dokumen
+// (mis. "2603/0074/IMI" vs "I.PO/IMI.MDN/2603/0074") padahal nomornya sama. Pecah per "+", normalisasi
+// tiap item jadi digit-only (biar prefix beda tidak masalah), lalu bandingkan sebagai set (urutan bebas).
+const comparePoSet = (refVal: any, docVal: any): boolean => {
+  const toDigitSet = (val: any) => String(val).split(/\s*\+\s*/).map(s => s.replace(/[^0-9]/g, '')).filter(Boolean).sort();
+  const a = toDigitSet(refVal);
+  const b = toDigitSet(docVal);
+  if (a.length === 0 || b.length === 0 || a.length !== b.length) return false;
+  return a.every((v, i) => v === b[i]);
+};
+
 const fuzzyMatch = (val1: any, val2: any): boolean => {
   if (val1 === null || val2 === null || val1 === undefined || val2 === undefined) return false;
   
@@ -105,7 +129,17 @@ const fuzzyMatch = (val1: any, val2: any): boolean => {
   if (str1.length > 4 && str2.length > 4) {
       if (str1.includes(str2) || str2.includes(str1)) return true;
   }
-  
+
+  // Nama vendor/PT kadang disingkat jadi akronim di salah satu dokumen (mis. "SURYA CEMERLANG
+  // LOGISTIK" vs "SCL Trans") -- kalau akronim dari huruf pertama tiap kata di satu sisi persis
+  // sama dengan salah satu kata di sisi lain, anggap match. Butuh >=2 kata biar tidak longgar.
+  const words1 = s1.split(/\s+/).filter(Boolean);
+  const words2 = s2.split(/\s+/).filter(Boolean);
+  const acronym1 = words1.map(w => w[0]).join('');
+  const acronym2 = words2.map(w => w[0]).join('');
+  if (words1.length >= 2 && acronym1.length >= 2 && words2.includes(acronym1)) return true;
+  if (words2.length >= 2 && acronym2.length >= 2 && words1.includes(acronym2)) return true;
+
   const getEditDistance = (a: string, b: string) => {
       if(a.length === 0) return b.length; 
       if(b.length === 0) return a.length; 
@@ -796,22 +830,54 @@ function DutyTable({ ndpbm, setNdpbm, items, addItem, removeItem, setItem, aktua
              </button>
           </div>
           {showItems && (
-            <div className="flex items-center gap-2 flex-wrap mt-1">
-              {items.map((it: any, i: number) => (
-                <div key={it.id} className="flex gap-1 items-center bg-white p-1 rounded-md border border-slate-200 shadow-sm">
-                  <span className="text-[10px] text-slate-400 w-4 text-center">#{i + 1}</span>
-                  <VInput type="number" value={it.nilaiPabean} onChange={v => setItem(it.id, "nilaiPabean", v)} placeholder="Nilai Pabean" width={90} />
-                  <VInput type="number" value={it.bmPct} onChange={v => setItem(it.id, "bmPct", v)} placeholder="%BM" width={50} />
-                  <VInput type="number" value={it.ppnPct} onChange={v => setItem(it.id, "ppnPct", v)} placeholder="%PPN" width={50} />
-                  <VInput type="number" value={it.phPct} onChange={v => setItem(it.id, "phPct", v)} placeholder="%PPH" width={50} />
-                  {isEditMode && <button onClick={() => removeItem(it.id)} className="p-1 text-slate-400 hover:text-red-500 transition-colors" title="Hapus item">
-                    <Trash2 size={12} />
-                  </button>}
+            <div className="w-full mt-1 border border-slate-200 rounded-lg overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
+                      <th className="p-2 border-r border-slate-200 text-center font-bold uppercase tracking-wider w-10">No</th>
+                      <th className="p-2 border-r border-slate-200 text-left font-bold uppercase tracking-wider">Nilai Pabean</th>
+                      <th className="p-2 border-r border-slate-200 text-center font-bold uppercase tracking-wider">% BM</th>
+                      <th className="p-2 border-r border-slate-200 text-center font-bold uppercase tracking-wider">% PPN</th>
+                      <th className="p-2 text-center font-bold uppercase tracking-wider">% PPH</th>
+                      {isEditMode && <th className="p-2 border-l border-slate-200 text-center font-bold uppercase tracking-wider w-10"></th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((it: any, i: number) => (
+                      <tr key={it.id} className="border-b border-slate-200 hover:bg-slate-50/50 transition-colors">
+                        <td className="p-2 border-r border-slate-200 text-center text-slate-400 font-medium">{i + 1}</td>
+                        <td className="p-2 border-r border-slate-200">
+                          <VInput type="number" value={it.nilaiPabean} onChange={v => setItem(it.id, "nilaiPabean", v)} placeholder="Nilai Pabean" width={110} />
+                        </td>
+                        <td className="p-2 border-r border-slate-200 text-center">
+                          <VInput type="number" value={it.bmPct} onChange={v => setItem(it.id, "bmPct", v)} placeholder="%BM" width={55} />
+                        </td>
+                        <td className="p-2 border-r border-slate-200 text-center">
+                          <VInput type="number" value={it.ppnPct} onChange={v => setItem(it.id, "ppnPct", v)} placeholder="%PPN" width={55} />
+                        </td>
+                        <td className="p-2 text-center">
+                          <VInput type="number" value={it.phPct} onChange={v => setItem(it.id, "phPct", v)} placeholder="%PPH" width={55} />
+                        </td>
+                        {isEditMode && (
+                          <td className="p-2 border-l border-slate-200 text-center">
+                            <button onClick={() => removeItem(it.id)} className="p-1 text-slate-400 hover:text-red-500 transition-colors" title="Hapus item">
+                              <Trash2 size={12} />
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {isEditMode && (
+                <div className="p-2 bg-slate-50 border-t border-slate-200">
+                  <button onClick={addItem} className="text-[11px] px-2 py-1.5 rounded-md border border-slate-300 bg-white text-blue-600 hover:bg-blue-50 flex items-center gap-1 transition-colors font-medium shadow-sm">
+                    <Plus size={12} /> item
+                  </button>
                 </div>
-              ))}
-              {isEditMode && <button onClick={addItem} className="text-[11px] px-2 py-1.5 rounded-md border border-slate-300 bg-white text-blue-600 hover:bg-blue-50 flex items-center gap-1 transition-colors font-medium shadow-sm">
-                <Plus size={12} /> item
-              </button>}
+              )}
             </div>
           )}
         </div>
@@ -1176,16 +1242,33 @@ export default function SeaAirValidasiModal({ record, onClose }: { record: any, 
         if (data.checks) {
             // Evaluasi ulang menggunakan fuzzyMatch pada client
             const relaxedChecks = data.checks.map((c: any) => {
-               if (!c.manual && c.values && c.values.ref !== undefined && c.values.doc !== undefined) {
-                   if (c.values.ref === null || c.values.doc === null || String(c.values.ref).trim() === "" || String(c.values.doc).trim() === "") {
-                       // tetap pada status awal
+               if (!c.manual && c.values) {
+                   const docEmpty = c.values.doc === null || c.values.doc === undefined || String(c.values.doc).trim() === "";
+                   let effectiveRef = c.values.ref;
+                   let refEmpty = effectiveRef === null || effectiveRef === undefined || String(effectiveRef).trim() === "";
+                   if (c.row === "NO PO" && c.col === "PO" && refEmpty) {
+                       // Kolom PO kadang tidak dikirim ref-nya sendiri oleh backend -- pinjam ref dari
+                       // kolom lain (CIPL/Final Invoice) di baris yang sama, karena rujukannya sama-sama dari PIB.
+                       const sibling = data.checks.find((sc: any) => sc.row === "NO PO" && sc.values && sc.values.ref !== null && sc.values.ref !== undefined && String(sc.values.ref).trim() !== "");
+                       if (sibling) {
+                           effectiveRef = sibling.values.ref;
+                           refEmpty = false;
+                       }
+                   }
+                   if (refEmpty || docEmpty) {
+                       // Salah satu sisi datanya belum ada -- "Belum dicek", bukan "Tidak sesuai".
+                       c.match = null;
                    } else {
                        if (c.row === "TOTAL DUTY (PIB No. 44)") {
-                           const refNum = toNum(c.values.ref);
+                           const refNum = toNum(effectiveRef);
                            const docNum = toNum(c.values.doc);
                            c.match = Math.abs(refNum - docNum) <= 1000;
+                       } else if (c.row === "NO PIB (No Pengajuan)") {
+                           c.match = strictAlnumMatch(effectiveRef, c.values.doc);
+                       } else if (c.row === "NO PO") {
+                           c.match = comparePoSet(effectiveRef, c.values.doc);
                        } else {
-                           c.match = fuzzyMatch(c.values.ref, c.values.doc);
+                           c.match = fuzzyMatch(effectiveRef, c.values.doc);
                        }
                    }
                }
