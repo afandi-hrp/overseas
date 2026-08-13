@@ -31,7 +31,7 @@ export default function SeaAirChecklistModal({ record, onClose }: { record: any,
       const { data: result } = await supabase
         .from('dokumen_checklist_seaair')
         .select('*')
-        .eq('seaair_id', record.id)
+        .eq('seaair_id', record.seaair_id || record.id)
         .limit(1)
         .single();
       

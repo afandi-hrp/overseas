@@ -15,8 +15,11 @@ export default function ProcessingQueue({ onOpenDetail, type }: { onOpenDetail?:
             .order('created_at', { ascending: false })
             .limit(20);
 
-        if (type === 'sea_air') query = query.not('seaair_id', 'is', null);
-        else if (type === 'courier') query = query.or('pib_id.not.is.null,cn_id.not.is.null');
+        // Selagi masih PENDING/PROCESSING, n8n belum mengisi FK (seaair_id/pib_id/cn_id) sehingga
+        // tipe dokumennya belum bisa dipastikan -- tetap tampilkan di kedua tab sampai FK terisi
+        // dan otomatis pindah ke tab yang benar.
+        if (type === 'sea_air') query = query.or('seaair_id.not.is.null,status.eq.PENDING,status.eq.PROCESSING');
+        else if (type === 'courier') query = query.or('pib_id.not.is.null,cn_id.not.is.null,status.eq.PENDING,status.eq.PROCESSING');
 
         const { data, error } = await query;
 

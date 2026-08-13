@@ -2283,6 +2283,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   const [anTabs, setAnTabs] = useState<string[]>(['Semua'])
   const [activeImporAnFilter, setActiveImporAnFilter] = useState('Semua')
   const [importAnTabs, setImportAnTabs] = useState<string[]>(['Semua'])
+  const [activeCourierAnFilter, setActiveCourierAnFilter] = useState('Semua')
+  const [courierAnTabs, setCourierAnTabs] = useState<string[]>(['Semua'])
+  const [activeCourierImporAnFilter, setActiveCourierImporAnFilter] = useState('Semua')
+  const [courierImporAnTabs, setCourierImporAnTabs] = useState<string[]>(['Semua'])
   const [ppjkTabs, setPpjkTabs] = useState<string[]>(['All'])
   const [records,       setRecords]       = useState<any[]>([])
   const [totalRecords,  setTotalRecords]  = useState(0)
@@ -2334,6 +2338,32 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       }
     };
     fetchImporAns();
+  }, []);
+
+  useEffect(() => {
+    const fetchCourierAns = async () => {
+      // Fetch distinct A/N from recent rekapan Courier records
+      const { data } = await supabase.from('rekapan_courier').select('an').neq('an', null).order('created_at', { ascending: false }).limit(1000);
+      if (data) {
+        const unique = Array.from(new Set(data.map((d: any) => d.an && String(d.an).trim()).filter(Boolean))) as string[];
+        setCourierAnTabs(['Semua', ...unique.sort()]);
+      }
+    };
+    fetchCourierAns();
+  }, []);
+
+  useEffect(() => {
+    const fetchCourierImporAns = async () => {
+      // Fetch distinct Impor An dari audit Courier (PIB + CN)
+      const [pibRes, cnRes] = await Promise.all([
+        supabase.from('tabel_audit_pib').select('impor_an').neq('impor_an', null).order('created_at', { ascending: false }).limit(1000),
+        supabase.from('tabel_audit_cn').select('impor_an').neq('impor_an', null).order('created_at', { ascending: false }).limit(1000),
+      ]);
+      const combined = [...(pibRes.data || []), ...(cnRes.data || [])];
+      const unique = Array.from(new Set(combined.map((d: any) => d.impor_an && String(d.impor_an).trim()).filter(Boolean))) as string[];
+      setCourierImporAnTabs(['Semua', ...unique.sort()]);
+    };
+    fetchCourierImporAns();
   }, []);
 
   useEffect(() => {
@@ -2536,6 +2566,16 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       query = query.eq('impor_an', activeImporAnFilter);
     }
 
+    // Apply Filter by A/N (Rekapan Courier)
+    if (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan' && activeCourierAnFilter !== 'Semua') {
+      query = query.eq('an', activeCourierAnFilter);
+    }
+
+    // Apply Filter by Impor An (Audit Courier)
+    if (activeMainTab === 'courier' && activeSubTab === 'courier_audit' && activeCourierImporAnFilter !== 'Semua') {
+      query = query.eq('impor_an', activeCourierImporAnFilter);
+    }
+
     // Apply Date Filter
     if (filterStartDate) {
       if ((activeMainTab === 'courier' && activeSubTab === 'courier_rekapan')) query = query.gte('tgl_terima_email', filterStartDate);
@@ -2684,7 +2724,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       setFetchError(error.message);
     }
     setLoading(false)
-  }, [tab, activeMainTab, activeSubTab, courierAuditType, seaAirAuditType, activeTrailFilter, activePpjkFilter, activeShipmentTypeFilter, activeAnFilter, activeImporAnFilter, debouncedSearch, sortColumn, sortDirection, page, pageSize, filterStartDate, filterEndDate])
+  }, [tab, activeMainTab, activeSubTab, courierAuditType, seaAirAuditType, activeTrailFilter, activePpjkFilter, activeShipmentTypeFilter, activeAnFilter, activeImporAnFilter, activeCourierAnFilter, activeCourierImporAnFilter, debouncedSearch, sortColumn, sortDirection, page, pageSize, filterStartDate, filterEndDate])
 
   const getExportData = async (startDate?: string, endDate?: string) => {
     if (!tab) return []
@@ -2787,6 +2827,16 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     // Apply Filter by Impor An
     if (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit' && activeImporAnFilter !== 'Semua') {
       query = query.eq('impor_an', activeImporAnFilter);
+    }
+
+    // Apply Filter by A/N (Rekapan Courier)
+    if (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan' && activeCourierAnFilter !== 'Semua') {
+      query = query.eq('an', activeCourierAnFilter);
+    }
+
+    // Apply Filter by Impor An (Audit Courier)
+    if (activeMainTab === 'courier' && activeSubTab === 'courier_audit' && activeCourierImporAnFilter !== 'Semua') {
+      query = query.eq('impor_an', activeCourierImporAnFilter);
     }
 
     // Apply Search
@@ -3389,6 +3439,32 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                       className="border-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer max-w-[160px]"
                     >
                       {importAnTabs.map(an => (
+                        <option key={an} value={an}>{an}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : activeMainTab === 'courier' && activeSubTab === 'courier_rekapan' ? (
+                  <div className={`flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[38px] border ${TOOLBAR_GLASS}`}>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">Company</span>
+                    <select
+                      value={activeCourierAnFilter}
+                      onChange={e => { setActiveCourierAnFilter(e.target.value); setPage(1); }}
+                      className="border-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer max-w-[160px]"
+                    >
+                      {courierAnTabs.map(an => (
+                        <option key={an} value={an}>{an}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : activeMainTab === 'courier' && activeSubTab === 'courier_audit' ? (
+                  <div className={`flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[38px] border ${TOOLBAR_GLASS}`}>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">Company</span>
+                    <select
+                      value={activeCourierImporAnFilter}
+                      onChange={e => { setActiveCourierImporAnFilter(e.target.value); setPage(1); }}
+                      className="border-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer max-w-[160px]"
+                    >
+                      {courierImporAnTabs.map(an => (
                         <option key={an} value={an}>{an}</option>
                       ))}
                     </select>

@@ -1448,7 +1448,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                                                <span className={`text-xs text-center w-full break-words px-1 ${v.cmp_edited ? 'text-blue-700 font-bold' : 'text-slate-700 font-medium'}`}>
                                                  {formatViewValue(v.cmp, field)}
                                                  {v.cmp_edited && <Edit3 size={10} className="inline ml-1 text-blue-500 opacity-70" title="Diedit manual" />}
-                                                 {rowMatch.id === 'po_item_value_vs_pib' && Number(debugData.raw?.other_cost_valas) > 0 && (
+                                                 {(rowMatch.id === 'po_item_value_vs_pib' || rowMatch.id === 'cipl01') && Number(debugData.raw?.other_cost_valas) > 0 && (
                                                    <div style={{ fontSize: '0.85em', fontStyle: 'italic', color: 'var(--color-text-secondary)', marginTop: 2 }}>
                                                      Other Cost: {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 4 }).format(Number(debugData.raw.other_cost_valas))}
                                                    </div>
