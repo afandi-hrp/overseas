@@ -724,7 +724,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
             {data && !isEditing && (
               <button 
                 onClick={handleEditClick} 
-                className="bg-[#3D2C44] hover:bg-[#2B1E30] text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition-colors"
+                className="bg-[#5A305A] hover:bg-[#73507B] text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition-colors"
                >
                  <span>✏️</span> Edit Cost Validasi
                </button>

@@ -358,7 +358,7 @@ function SectionWrap({ title, icon, children }: { title: string, icon?: React.Re
   return (
     <div className="flex flex-col md:flex-row mb-6 rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-white">
       <div className="w-full md:w-40 bg-slate-50 flex flex-row md:flex-col items-center justify-center p-4 border-b md:border-b-0 md:border-r border-slate-200 shrink-0 gap-3">
-        <div className="w-12 h-12 bg-[#3D2C44] text-white rounded-xl shadow-inner flex items-center justify-center shrink-0">
+        <div className="w-12 h-12 bg-[#5A305A] text-white rounded-xl shadow-inner flex items-center justify-center shrink-0">
           {icon || <FileText size={24} />}
         </div>
         <div className="text-center font-bold text-slate-800 text-[11px] tracking-wider uppercase">

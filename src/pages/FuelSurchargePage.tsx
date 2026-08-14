@@ -70,8 +70,8 @@ export default function FuelSurchargePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FFF0E2] to-[#FFC3A0] font-sans text-slate-800">
-      <header className="bg-gradient-to-r from-[#3D2C44] to-[#2B1E30] text-white sticky top-0 z-10 shadow-lg">
+    <div className="min-h-screen bg-gradient-to-br from-[#FFF5C5] to-[#F58C77] font-sans text-slate-800">
+      <header className="bg-gradient-to-r from-[#5A305A] to-[#73507B] text-white sticky top-0 z-10 shadow-lg">
         <div className="max-w-4xl mx-auto px-5 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
@@ -94,24 +94,24 @@ export default function FuelSurchargePage() {
           <form onSubmit={handleAdd} className="flex flex-wrap gap-4 items-end">
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Courier</label>
-              <select value={courier} onChange={e => setCourier(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-32 bg-white focus:outline-none focus:ring-2 focus:ring-[#3D2C44]/15 focus:border-[#3D2C44]">
+              <select value={courier} onChange={e => setCourier(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-32 bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A]">
                 <option value="DHL">DHL</option>
                 <option value="FEDEX">FEDEX</option>
               </select>
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Week Start (Monday)</label>
-              <input type="date" value={weekStart} onChange={e => setWeekStart(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-40 bg-white focus:outline-none focus:ring-2 focus:ring-[#3D2C44]/15 focus:border-[#3D2C44]" />
+              <input type="date" value={weekStart} onChange={e => setWeekStart(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-40 bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A]" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Week End (Sunday)</label>
-              <input type="date" value={weekEnd} onChange={e => setWeekEnd(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-40 bg-white focus:outline-none focus:ring-2 focus:ring-[#3D2C44]/15 focus:border-[#3D2C44]" />
+              <input type="date" value={weekEnd} onChange={e => setWeekEnd(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-40 bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A]" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Fuel Surcharge (%)</label>
-              <input type="number" step="0.01" min="0" max="100" placeholder="e.g. 24.50" value={fuelPct} onChange={e => setFuelPct(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-32 bg-white focus:outline-none focus:ring-2 focus:ring-[#3D2C44]/15 focus:border-[#3D2C44]" />
+              <input type="number" step="0.01" min="0" max="100" placeholder="e.g. 24.50" value={fuelPct} onChange={e => setFuelPct(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-32 bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A]" />
             </div>
-            <button type="submit" disabled={saving} className="bg-[#3D2C44] hover:bg-[#2B1E30] text-white font-bold text-sm px-5 py-1.5 rounded-lg disabled:opacity-50 h-[34px] transition-colors shadow-sm">
+            <button type="submit" disabled={saving} className="bg-[#5A305A] hover:bg-[#73507B] text-white font-bold text-sm px-5 py-1.5 rounded-lg disabled:opacity-50 h-[34px] transition-colors shadow-sm">
               {saving ? 'Menyimpan...' : 'Tambah'}
             </button>
           </form>
@@ -127,7 +127,7 @@ export default function FuelSurchargePage() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
-                <thead className="text-xs text-[#3D2C44]/70 bg-[#3D2C44]/5 uppercase">
+                <thead className="text-xs text-[#5A305A]/70 bg-[#5A305A]/5 uppercase">
                   <tr>
                     <th className="px-4 py-3 font-semibold rounded-tl-lg">Courier</th>
                     <th className="px-4 py-3 font-semibold">Week Start</th>

@@ -504,6 +504,22 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
   const [snapshotValues, setSnapshotValues] = useState<any>(null);
   const [pibStats, setPibStats] = useState({ match: 0, mismatch: 0, empty: 0 });
 
+  // Ref "salinan terbaru" -- dibaca saat auto-save benar-benar jalan, tapi TIDAK memicu
+  // ulang timer debounce-nya (beda dari taruh langsung di dependency array useEffect di bawah).
+  // Soalnya activeSections/debugData/pibStats bisa berubah sendiri (loading data awal modal,
+  // rekalkulasi komponen anak) walau user tidak sedang mengedit apa pun -- kalau ikut jadi
+  // pemicu, auto-save bisa jalan dobel untuk 1 kali edit yang sama.
+  const activeSectionsRef = useRef(activeSections);
+  activeSectionsRef.current = activeSections;
+  const pibStatsRef = useRef(pibStats);
+  pibStatsRef.current = pibStats;
+  const debugDataRef = useRef(debugData);
+  debugDataRef.current = debugData;
+  // Set true tiap kali doLoad() mengisi values/awbNo/tanggal/namaChecker secara programatis
+  // (dari checklist tersimpan ATAU auto-suggest dari dokumen sumber) -- itu BUKAN edit user,
+  // jadi auto-save berikutnya yang terpicu oleh pengisian itu harus dilewati sekali saja.
+  const skipNextAutosaveRef = useRef(false);
+
   useEffect(() => {
     supabase.from('tabel_npwp').select('*').then(({data}) => {
        if (data) setNpwps(data);
@@ -579,6 +595,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
            if (cl.tanggal_cek) setTanggal(cl.tanggal_cek);
            if (cl.nama_checker) setNamaChecker(cl.nama_checker);
            setAwbNo(cl.awb || rAwb || "");
+           skipNextAutosaveRef.current = true;
            setLoading(false);
            return;
         }
@@ -908,6 +925,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
         const today = new Date().toISOString().split('T')[0];
         setTanggal(today);
       }
+      skipNextAutosaveRef.current = true;
       setLoading(false);
     };
 
@@ -916,11 +934,18 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
 
   useEffect(() => {
     if (loading) return;
+    const shouldSkip = skipNextAutosaveRef.current;
+    skipNextAutosaveRef.current = false;
+    if (shouldSkip) return;
     const tid = setTimeout(async () => {
+       const activeSectionsNow = activeSectionsRef.current;
+       const pibStatsNow = pibStatsRef.current;
+       const debugDataNow = debugDataRef.current;
+
        let match = 0, mismatch = 0, partial = 0, empty = 0;
-       activeSections.forEach(s => s.rows.forEach(r => {
+       activeSectionsNow.forEach(s => s.rows.forEach(r => {
            const v = values[r.id] || {src: '', cmp: ''};
-           const stComputed = computeStatus(v.src, v.cmp, r.isFormat, r.field, debugData.raw?.is_po_non_imi);
+           const stComputed = computeStatus(v.src, v.cmp, r.isFormat, r.field, debugDataNow.raw?.is_po_non_imi);
            const st = v.manual_status || stComputed;
            if (st === "match") match++;
            else if (st === "mismatch") mismatch++;
@@ -928,9 +953,9 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
            else empty++;
        }));
 
-       match += pibStats.match;
-       mismatch += pibStats.mismatch;
-       empty += pibStats.empty;
+       match += pibStatsNow.match;
+       mismatch += pibStatsNow.mismatch;
+       empty += pibStatsNow.empty;
 
        let status_checklist = 'BELUM LENGKAP';
        if (mismatch > 0) status_checklist = 'ADA KETIDAKSESUAIAN';
@@ -977,7 +1002,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
        }
     }, 2000);
     return () => clearTimeout(tid);
-  }, [values, awbNo, tanggal, namaChecker, loading, mainTab, subTab, record, activeSections, pibStats, debugData]);
+  }, [values, awbNo, tanggal, namaChecker, loading, mainTab, subTab, record]);
 
   const hasNpwpError = (id: string, val: string) => {
      if (!val) return false;
@@ -1246,8 +1271,8 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
             <div style={{...S.header, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', gap: '10px'}}>
               <div style={{ flex: 1 }}>
                 <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-[#3D2C44]/10 flex items-center justify-center shrink-0 print:hidden">
-                    <ClipboardList size={14} className="text-[#3D2C44]" />
+                  <div className="w-7 h-7 rounded-lg bg-[#5A305A]/10 flex items-center justify-center shrink-0 print:hidden">
+                    <ClipboardList size={14} className="text-[#5A305A]" />
                   </div>
                   <p style={{...S.title, fontSize: "16px"}}>Tabel Validasi Dokumen Import</p>
                 </div>
@@ -1257,7 +1282,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                     <FileText size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
                     <div>
                       <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Jenis Dokumen</div>
-                      <div className="text-[13px] font-semibold text-[#3D2C44] leading-tight">{record?.jenis_dokumen || docType || "—"}</div>
+                      <div className="text-[13px] font-semibold text-[#5A305A] leading-tight">{record?.jenis_dokumen || docType || "—"}</div>
                     </div>
                   </div>
                   {(record?.no_pib || record?.nomor_pib) && (
@@ -1265,7 +1290,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                       <FileDigit size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
                       <div>
                         <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">No. PIB</div>
-                        <div className="text-[13px] font-semibold text-[#3D2C44] leading-tight">{record?.no_pib || record?.nomor_pib}</div>
+                        <div className="text-[13px] font-semibold text-[#5A305A] leading-tight">{record?.no_pib || record?.nomor_pib}</div>
                       </div>
                     </div>
                   )}
@@ -1273,28 +1298,28 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                     <Building2 size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
                     <div>
                       <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Vendor</div>
-                      <div className="text-[13px] font-semibold text-[#3D2C44] leading-tight">{record?.vendor || record?.nama_vendor || "—"}</div>
+                      <div className="text-[13px] font-semibold text-[#5A305A] leading-tight">{record?.vendor || record?.nama_vendor || "—"}</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 bg-white/70 border border-purple-100 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
                     <Plane size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
                     <div>
                       <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">No. AWB</div>
-                      {isEditMode ? <input style={S.metaInput} value={awbNo || ""} onChange={e => setAwbNo(e.target.value)} placeholder="Misal: 1234567890" /> : <div className="text-[13px] font-semibold text-[#3D2C44] leading-tight">{awbNo || "—"}</div>}
+                      {isEditMode ? <input style={S.metaInput} value={awbNo || ""} onChange={e => setAwbNo(e.target.value)} placeholder="Misal: 1234567890" /> : <div className="text-[13px] font-semibold text-[#5A305A] leading-tight">{awbNo || "—"}</div>}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 bg-white/70 border border-purple-100 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
                     <CalendarDays size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
                     <div>
                       <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Tanggal cek</div>
-                      {isEditMode ? <input type="date" style={S.metaInput} value={tanggal || ""} onChange={e => setTanggal(e.target.value)} /> : <div className="text-[13px] font-semibold text-[#3D2C44] leading-tight">{tanggal ? new Date(tanggal).toLocaleDateString('id-ID') : "—"}</div>}
+                      {isEditMode ? <input type="date" style={S.metaInput} value={tanggal || ""} onChange={e => setTanggal(e.target.value)} /> : <div className="text-[13px] font-semibold text-[#5A305A] leading-tight">{tanggal ? new Date(tanggal).toLocaleDateString('id-ID') : "—"}</div>}
                     </div>
                   </div>
                   <div className="flex items-center gap-2 bg-white/70 border border-purple-100 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
                     <UserCheck size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
                     <div>
                       <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Diperiksa oleh</div>
-                      {isEditMode ? <input style={S.metaInput} value={namaChecker || ""} onChange={e => setNamaChecker(e.target.value)} placeholder="Nama pemeriksa" /> : <div className="text-[13px] font-semibold text-[#3D2C44] leading-tight">{namaChecker || "—"}</div>}
+                      {isEditMode ? <input style={S.metaInput} value={namaChecker || ""} onChange={e => setNamaChecker(e.target.value)} placeholder="Nama pemeriksa" /> : <div className="text-[13px] font-semibold text-[#5A305A] leading-tight">{namaChecker || "—"}</div>}
                     </div>
                   </div>
                 </div>
@@ -1349,7 +1374,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                 <div key={section.id} className="flex flex-col md:flex-row border border-slate-200 rounded-xl overflow-hidden mb-6 bg-white shadow-sm">
                   {/* Left Sidebar */}
                   <div className="w-full md:w-40 bg-slate-50 flex flex-row md:flex-col items-center justify-center p-4 border-b md:border-b-0 md:border-r border-slate-200 shrink-0 gap-3">
-                    <div className="w-12 h-12 bg-[#3D2C44] text-white rounded-xl shadow-inner flex items-center justify-center shrink-0">
+                    <div className="w-12 h-12 bg-[#5A305A] text-white rounded-xl shadow-inner flex items-center justify-center shrink-0">
                        {sectionIcons[section.id] || <FileText size={24} />}
                     </div>
                     <div className="text-center font-bold text-slate-800 text-[11px] tracking-wider uppercase">

@@ -23,8 +23,8 @@ export default function RateTablesAdmin() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FFF0E2] to-[#FFC3A0] font-sans text-slate-800 flex flex-col">
-      <header className="bg-gradient-to-r from-[#3D2C44] to-[#2B1E30] text-white sticky top-0 z-30 shadow-lg">
+    <div className="min-h-screen bg-gradient-to-br from-[#FFF5C5] to-[#F58C77] font-sans text-slate-800 flex flex-col">
+      <header className="bg-gradient-to-r from-[#5A305A] to-[#73507B] text-white sticky top-0 z-30 shadow-lg">
         <div className="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
@@ -50,7 +50,7 @@ export default function RateTablesAdmin() {
                 onClick={() => setActiveTab(tab.id)}
                 className={`px-4 py-2.5 text-sm font-bold transition-all rounded-xl whitespace-nowrap ${
                   activeTab === tab.id
-                    ? 'bg-[#3D2C44] text-white shadow-sm'
+                    ? 'bg-[#5A305A] text-white shadow-sm'
                     : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
                 }`}
               >

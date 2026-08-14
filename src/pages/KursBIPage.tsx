@@ -78,7 +78,7 @@ export default function KursBIPage() {
   };
 
   return (
-    <div className="flex-1 h-full min-h-screen overflow-y-auto pb-10 bg-gradient-to-br from-[#FFF0E2] to-[#FFC3A0]">
+    <div className="flex-1 h-full min-h-screen overflow-y-auto pb-10 bg-gradient-to-br from-[#FFF5C5] to-[#F58C77]">
       <main className="max-w-4xl mx-auto px-4 py-8">
         
         {/* Header & Back Button */}

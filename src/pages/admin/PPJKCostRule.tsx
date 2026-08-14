@@ -141,7 +141,7 @@ export default function PPJKCostRule() {
           </div>
         </div>
         <div>
-          <button onClick={() => handleOpenModal()} className="bg-[#3D2C44] hover:bg-[#2B1E30] text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-sm">+ Tambah Rule</button>
+          <button onClick={() => handleOpenModal()} className="bg-[#5A305A] hover:bg-[#73507B] text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-sm">+ Tambah Rule</button>
         </div>
       </div>
       
@@ -304,7 +304,7 @@ export default function PPJKCostRule() {
               </div>
               <div className="p-5 border-t border-slate-100 flex justify-end gap-3 bg-slate-50 shrink-0">
                 <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 rounded-lg text-slate-600 text-sm font-bold hover:bg-slate-200 transition-colors">Batal</button>
-                <button type="submit" disabled={saving} className="px-4 py-2 rounded-lg bg-[#3D2C44] text-white text-sm font-bold hover:bg-[#2B1E30] disabled:opacity-50 transition-colors">
+                <button type="submit" disabled={saving} className="px-4 py-2 rounded-lg bg-[#5A305A] text-white text-sm font-bold hover:bg-[#73507B] disabled:opacity-50 transition-colors">
                   {saving ? 'Menyimpan...' : 'Simpan'}
                 </button>
               </div>

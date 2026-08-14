@@ -87,7 +87,7 @@ export default function ProcessingQueue({ onOpenDetail, type }: { onOpenDetail?:
                 onClick={() => setIsOpen(!isOpen)}
                 className="flex items-center gap-2 px-4 py-2 bg-white/70 backdrop-blur-md border border-white/60 rounded-xl text-sm font-bold text-slate-700 hover:bg-white/90 transition-all shadow-sm relative"
             >
-                <Clock size={15} className="text-[#3D2C44]" /> Antrian Proses
+                <Clock size={15} className="text-[#5A305A]" /> Antrian Proses
                 {unreadCount > 0 && (
                     <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
                         {unreadCount}

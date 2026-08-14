@@ -120,7 +120,7 @@ export default function SettingsPage() {
             <div className="flex items-center gap-3 pt-4 border-t border-slate-100">
               <button
                 onClick={handleSave}
-                className="bg-[#3D2C44] hover:bg-[#2B1E30] text-white font-semibold py-2.5 px-6 rounded-xl transition-all shadow-sm flex items-center gap-2 w-full justify-center"
+                className="bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold py-2.5 px-6 rounded-xl transition-all shadow-sm flex items-center gap-2 w-full justify-center"
               >
                 {isSaved ? 'Tersimpan ✓' : 'Simpan Semua Pengaturan'}
               </button>

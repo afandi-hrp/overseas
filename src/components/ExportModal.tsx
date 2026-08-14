@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
 
 const formatNoAju = (v: any) => {
   if (!v) return '—'
@@ -31,11 +31,13 @@ const fmtDate = (v: any) => {
   return new Date(v).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+const isNumType = (type: string, key: string) => key === 'cek_selisih' || type.startsWith('num')
+const isPctType = (type: string) => type.startsWith('pct')
+
 const formatValue = (v: any, type: string, key: string) => {
   if (v === null || v === undefined) return '—';
-  if (key === 'cek_selisih') return fmt(v);
-  if (type === 'num') return fmt(v);
-  if (type === 'pct' || type === 'pct_dynamic') return fmtPct(v);
+  if (isNumType(type, key)) return fmt(v);
+  if (isPctType(type)) return fmtPct(v);
   if (type === 'date') return fmtDate(v);
   if (type === 'datetime') {
     if (!v) return '—';
@@ -90,16 +92,23 @@ export default function ExportModal({
     load()
   }, [])
 
-  const handleExport = () => {
+  const handleExport = async () => {
     try {
       setExporting(true)
 
-      // Convert data based on cols
-      const exportJson = data.map((item, idx) => {
-        const row: any = { 'No.': idx + 1 }
+      const workbook = new ExcelJS.Workbook()
+      const worksheet = workbook.addWorksheet('Data')
+
+      worksheet.columns = [
+        { header: 'No.', key: '__no', width: 6 },
+        ...exportCols.map(c => ({ header: c.label, key: c.key, width: 18 }))
+      ]
+
+      data.forEach((item, idx) => {
+        const rowValues: any = { __no: idx + 1 }
         exportCols.forEach(c => {
           let val = item[c.key]
-          
+
           if (c.key === 'hs_code' && typeof val === 'string') {
             const parts = val.split(/[+,]+/).map((s: string) => s.trim()).filter(Boolean);
             val = Array.from(new Set(parts)).join(', ');
@@ -107,18 +116,46 @@ export default function ExportModal({
             val = formatNoAju(val);
           }
 
-          row[c.label] = formatValue(val, c.type || '', c.key);
+          const type = c.type || ''
+          const numericVal = Number(val)
+          const isRealNumber = (isNumType(type, c.key) || isPctType(type)) && val !== null && val !== undefined && val !== '' && !isNaN(numericVal)
+
+          rowValues[c.key] = isRealNumber ? numericVal : formatValue(val, type, c.key)
         })
-        return row
+
+        const row = worksheet.addRow(rowValues)
+
+        exportCols.forEach(c => {
+          const type = c.type || ''
+          const cell = row.getCell(c.key)
+          if (typeof cell.value === 'number') {
+            cell.numFmt = isPctType(type) ? '0.00"%"' : (type.includes('2dec') ? '#,##0.00' : '#,##0')
+            cell.alignment = { horizontal: 'right' }
+          }
+        })
       })
 
-      const worksheet = XLSX.utils.json_to_sheet(exportJson)
-      const workbook = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Data')
-      
+      // Header -- warna beda dari isi list-nya
+      const headerRow = worksheet.getRow(1)
+      headerRow.height = 22
+      headerRow.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF5A305A' } }
+        cell.font = { color: { argb: 'FFFFFFFF' }, bold: true }
+        cell.alignment = { vertical: 'middle', horizontal: 'center' }
+      })
+
       const fileName = `Export_${title}_${new Date().toISOString().slice(0,10)}.xlsx`
-      XLSX.writeFile(workbook, fileName)
-      
+      const buffer = await workbook.xlsx.writeBuffer()
+      const blob = new Blob([buffer as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = fileName
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
       onClose()
     } catch (error: any) {
       setErr(error.message || 'Gagal saat memproses file Excel.')
@@ -141,7 +178,7 @@ export default function ExportModal({
             <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="border border-slate-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500" />
             <span className="text-slate-400 text-sm">s/d</span>
             <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="border border-slate-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500" />
-            <button onClick={load} className="bg-[#4a3552] hover:bg-[#3D2C44] text-white text-sm px-4 py-1.5 rounded transition-colors font-medium">Terapkan Filter</button>
+            <button onClick={load} className="bg-[#4a3552] hover:bg-[#5A305A] text-white text-sm px-4 py-1.5 rounded transition-colors font-medium">Terapkan Filter</button>
           </div>
 
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors ml-auto">

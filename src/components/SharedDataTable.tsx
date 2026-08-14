@@ -127,7 +127,7 @@ const NumberInput = ({ value, onChange, placeholder, className, isPct }: { value
 }
 
 // ─── Edit Modal ───────────────────────────────────────────────
-function EditModal({ record, tab, cols, onClose, onSaved }: { record: any, tab: any, cols: any[], onClose: () => void, onSaved: () => void }) {
+function EditModal({ record, tab, cols, onClose, onSaved, isCreate }: { record: any, tab: any, cols: any[], onClose: () => void, onSaved: () => void, isCreate?: boolean }) {
   const [form, setForm] = useState<Record<string, any>>(() => {
     const init: Record<string, any> = {}
     cols.forEach(f => {
@@ -270,6 +270,17 @@ function EditModal({ record, tab, cols, onClose, onSaved }: { record: any, tab: 
 
       EXCLUDED_COLS.forEach(k => delete payload[k]);
 
+      if (isCreate) {
+        if (tab.table === 'tabel_audit_seaair') {
+          const { error: rpcErr } = await supabase.rpc('insert_seaair_row', { p_data: payload });
+          if (rpcErr) throw rpcErr;
+          onSaved()
+          onClose()
+          return;
+        }
+        throw new Error('Tambah data manual belum didukung untuk tabel ini.');
+      }
+
       let targetTable = tab.table;
       if (!targetTable) {
         if (record.jenis_dokumen === 'PIB' || payload.jenis_dokumen === 'PIB') {
@@ -325,9 +336,9 @@ function EditModal({ record, tab, cols, onClose, onSaved }: { record: any, tab: 
         {/* Header Modal */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
           <div>
-            <h3 className="font-bold text-slate-900">Edit Record</h3>
+            <h3 className="font-bold text-slate-900">{isCreate ? 'Tambah Data Baru' : 'Edit Record'}</h3>
             <p className="text-xs text-slate-400 mt-0.5 font-mono">
-              {record.awb || record.no_invoice || record.no_pib || record.no_aju || record.id}
+              {isCreate ? 'Isi kolom yang tersedia, sisanya bisa dilengkapi lewat Edit nanti' : (record.awb || record.no_invoice || record.no_pib || record.no_aju || record.id)}
             </p>
           </div>
           <button
@@ -422,7 +433,7 @@ function EditModal({ record, tab, cols, onClose, onSaved }: { record: any, tab: 
           <button
             onClick={handleSave}
             disabled={saving}
-            className="flex-1 py-3 rounded-xl bg-[#3D2C44] hover:bg-[#2B1E30] text-white font-bold text-sm disabled:opacity-50 transition-all"
+            className="flex-1 py-3 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-bold text-sm disabled:opacity-50 transition-all"
           >
             {saving ? 'Menyimpan...' : 'Simpan Perubahan'}
           </button>
@@ -1364,8 +1375,8 @@ const SeaAirAuditRowGroup: React.FC<{
                         onClick={() => setShowActions(!showActions)}
                         className={`w-[80px] flex items-center justify-center gap-1 text-[10px] font-bold px-2 py-2 rounded-lg border transition-all ${
                           showActions
-                            ? 'bg-[#3D2C44] text-white border-[#3D2C44] shadow-md'
-                            : 'bg-white text-[#3D2C44] border-slate-200 shadow-sm hover:border-[#3D2C44] hover:bg-[#3D2C44]/5'
+                            ? 'bg-[#5A305A] text-white border-[#5A305A] shadow-md'
+                            : 'bg-white text-[#5A305A] border-slate-200 shadow-sm hover:border-[#5A305A] hover:bg-[#5A305A]/5'
                         }`}
                       >
                         Aksi
@@ -1795,12 +1806,9 @@ const SeaAirRekapanRowGroup: React.FC<{
   onInlineSaveRow?: (id: number, payload: any) => Promise<boolean>
 }> = ({ rec, index, cols, onEdit, onChecklist, onValidasi, onCostValidasi, onDelete, onDraft, onUndraft, onVesselChange, onInlineSaveRow }) => {
   const repeatingCols = ['po_no', 'vessel', 'emkl_split', 'split_biaya_origin', 'split_biaya_destination', 'pbm_split', 'lift_off_split', 'inspeksi_split', 'handling_split', 'other_split', 'duty_split', 'bm_split', 'ppn_split', 'pph_split'];
-  // Record ini sudah aktif/pindah ke tab Audit (status audit terkait LENGKAP) -- tandai warna sesuai shipment type.
+  // Record ini sudah aktif/pindah ke tab Audit (status audit terkait LENGKAP) -- tandai dengan highlight biru.
   const isAudited = rec.audit_status === 'LENGKAP';
-  const auditHighlightClass = rec.shipment_type === 'LCL' ? 'bg-orange-100 hover:bg-orange-200'
-    : rec.shipment_type === 'FCL' ? 'bg-blue-100 hover:bg-blue-200'
-    : rec.shipment_type === 'AIR' ? 'bg-pink-100 hover:bg-pink-200'
-    : 'bg-sky-100 hover:bg-sky-200';
+  const auditHighlightClass = 'bg-blue-100 hover:bg-blue-200';
 
   const [isEditing, setIsEditing] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -1995,8 +2003,8 @@ const SeaAirRekapanRowGroup: React.FC<{
                         onClick={() => setShowActions(!showActions)}
                         className={`w-[80px] flex items-center justify-center gap-1 text-[10px] font-bold px-2 py-2 rounded-lg border transition-all ${
                           showActions
-                            ? 'bg-[#3D2C44] text-white border-[#3D2C44] shadow-md'
-                            : 'bg-white text-[#3D2C44] border-slate-200 shadow-sm hover:border-[#3D2C44] hover:bg-[#3D2C44]/5'
+                            ? 'bg-[#5A305A] text-white border-[#5A305A] shadow-md'
+                            : 'bg-white text-[#5A305A] border-slate-200 shadow-sm hover:border-[#5A305A] hover:bg-[#5A305A]/5'
                         }`}
                       >
                         Aksi
@@ -2007,7 +2015,7 @@ const SeaAirRekapanRowGroup: React.FC<{
                           {(onEdit || onInlineSaveRow) && rec.status !== 'LENGKAP' && (
                             <button
                               onClick={handleStartEdit}
-                              className="w-[80px] bg-white text-blue-600 hover:text-white hover:bg-[#3D2C44] text-[10px] font-bold px-2 py-1 rounded-md border border-blue-200 hover:border-blue-600 transition-all"
+                              className="w-[80px] bg-white text-blue-600 hover:text-white hover:bg-[#5A305A] text-[10px] font-bold px-2 py-1 rounded-md border border-blue-200 hover:border-blue-600 transition-all"
                             >
                               Edit
                             </button>
@@ -2258,8 +2266,8 @@ const DataRow: React.FC<{
 
 // ─── Gaya toolbar terpadu (dipakai semua pill filter, input, dan dropdown) ─────
 const TOOLBAR_PILL_BASE = 'px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border'
-const TOOLBAR_PILL_ACTIVE = 'bg-[#3D2C44] text-white border-[#3D2C44] shadow-sm shadow-[#3D2C44]/25'
-const TOOLBAR_PILL_INACTIVE = 'bg-white/70 backdrop-blur-md text-slate-500 border-white/60 shadow-sm hover:bg-white/90 hover:border-[#3D2C44]/25 hover:text-[#3D2C44]'
+const TOOLBAR_PILL_ACTIVE = 'bg-[#5A305A] text-white border-[#5A305A] shadow-sm shadow-[#5A305A]/25'
+const TOOLBAR_PILL_INACTIVE = 'bg-white/70 backdrop-blur-md text-slate-500 border-white/60 shadow-sm hover:bg-white/90 hover:border-[#5A305A]/25 hover:text-[#5A305A]'
 const toolbarPillClass = (isActive: boolean) => `${TOOLBAR_PILL_BASE} ${isActive ? TOOLBAR_PILL_ACTIVE : TOOLBAR_PILL_INACTIVE}`
 // Kapsul kaca untuk elemen non-pill di toolbar (search, date range, refresh, dropdown)
 const TOOLBAR_GLASS = 'bg-white/70 backdrop-blur-md border-slate-200/80 shadow-sm'
@@ -2276,7 +2284,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
   const [courierAuditType, setCourierAuditType] = useState('pib')
   const [seaAirAuditType, setSeaAirAuditType] = useState('audit')
-  const [activeTrailFilter, setActiveTrailFilter] = useState('All')
+  const [activeTrailFilter, setActiveTrailFilter] = useState('COURIER')
   const [activePpjkFilter, setActivePpjkFilter] = useState('All')
   const [activeShipmentTypeFilter, setActiveShipmentTypeFilter] = useState('Semua')
   const [activeAnFilter, setActiveAnFilter] = useState('Semua')
@@ -2376,6 +2384,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
   // Remove debouncedPpjkFilter logic
   const [editRecord,    setEditRecord]    = useState<any>(null)
+  const [showAddSeaAirModal, setShowAddSeaAirModal] = useState(false)
   const [chkRecord,     setChkRecord]     = useState<any>(null)
   const [seaAirChecklistRecord, setSeaAirChecklistRecord] = useState<any>(null)
   const [deleteRecord,  setDeleteRecord]  = useState<any>(null)
@@ -2383,9 +2392,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   const [seaAirValidasiRecord, setSeaAirValidasiRecord] = useState<any>(null)
   const [seaAirCostValidasiRecord, setSeaAirCostValidasiRecord] = useState<any>(null)
   const [costValidasiRecord, setCostValidasiRecord] = useState<any>(null)
-  
-  // Selection
-  const [selectedIds,   setSelectedIds]   = useState<Set<string>>(new Set())
+
 
   // Pagination
   const [page,          setPage]          = useState(1)
@@ -2411,7 +2418,6 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   }, [records, sortColumn, sortDirection]);
 
   useEffect(() => {
-    setSelectedIds(new Set());
     setPage(1);
     setSortColumn('created_at');
     setSortDirection('desc');
@@ -2540,10 +2546,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       query = seaAirAuditType === 'draft' ? query.eq('status', 'ARCHIVED') : query.neq('status', 'ARCHIVED');
     }
 
-    // Apply Filter by Trail
-    if (activeMainTab === 'trail' && activeTrailFilter !== 'All') {
-      if (activeTrailFilter === 'PIB_CN') query = query.in('tabel', ['tabel_audit_pib', 'tabel_audit_cn']);
-      if (activeTrailFilter === 'COURIER') query = query.eq('tabel', 'rekapan_courier');
+    // Apply Filter by Trail -- dipisah Courier vs Sea & Air
+    if (activeMainTab === 'trail') {
+      if (activeTrailFilter === 'COURIER') query = query.in('tabel', ['tabel_audit_pib', 'tabel_audit_cn', 'rekapan_courier', 'tabel_checklist_validasi', 'tabel_cost_validasi']);
+      if (activeTrailFilter === 'SEA_AIR') query = query.in('tabel', ['tabel_audit_seaair', 'rekapan_seaair', 'dokumen_validasi_matriks_seaair', 'cost_validasi_seaair']);
     }
 
     // Apply Filter by PPJK
@@ -2803,10 +2809,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       query = seaAirAuditType === 'draft' ? query.eq('status', 'ARCHIVED') : query.neq('status', 'ARCHIVED');
     }
 
-    // Apply Filter by Trail
-    if (activeMainTab === 'trail' && activeTrailFilter !== 'All') {
-      if (activeTrailFilter === 'PIB_CN') query = query.in('tabel', ['tabel_audit_pib', 'tabel_audit_cn']);
-      if (activeTrailFilter === 'COURIER') query = query.eq('tabel', 'rekapan_courier');
+    // Apply Filter by Trail -- dipisah Courier vs Sea & Air
+    if (activeMainTab === 'trail') {
+      if (activeTrailFilter === 'COURIER') query = query.in('tabel', ['tabel_audit_pib', 'tabel_audit_cn', 'rekapan_courier', 'tabel_checklist_validasi', 'tabel_cost_validasi']);
+      if (activeTrailFilter === 'SEA_AIR') query = query.in('tabel', ['tabel_audit_seaair', 'rekapan_seaair', 'dokumen_validasi_matriks_seaair', 'cost_validasi_seaair']);
     }
 
     // Apply Filter by PPJK
@@ -3088,31 +3094,6 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     }
   };
 
-  const handleBulkDelete = () => {
-    const selectedRecords = records.filter(r => selectedIds.has(r.id));
-    if (selectedRecords.length > 0) {
-      setDeleteRecord(selectedRecords);
-    }
-  };
-
-  const handleSelect = (record: any, checked: boolean) => {
-    const next = new Set(selectedIds);
-    if (checked) {
-      next.add(record.id);
-    } else {
-      next.delete(record.id);
-    }
-    setSelectedIds(next);
-  };
-
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      setSelectedIds(new Set(records.map(r => r.id)));
-    } else {
-      setSelectedIds(new Set());
-    }
-  };
-
   useEffect(() => {
     document.title = 'Dashboard · IMI Import System'
     // Jangan reset search, dll di sini secara lgsg kecuali kalau pindah tab beneran
@@ -3164,6 +3145,17 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         />
       )}
 
+      {showAddSeaAirModal && tab && (
+        <EditModal
+          record={{}}
+          tab={tab}
+          cols={activeCols}
+          isCreate
+          onClose={() => setShowAddSeaAirModal(false)}
+          onSaved={fetchRecords}
+        />
+      )}
+
       {chkRecord && tab && (
         <ChecklistModal
           record={chkRecord}
@@ -3184,7 +3176,6 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           onClose={() => setDeleteRecord(null)}
           onSaved={() => {
             fetchRecords();
-            setSelectedIds(new Set());
           }}
         />
       )}
@@ -3261,31 +3252,23 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
                               {/* ── Tabs & Search ── */}
             <div className="flex flex-col gap-4 mb-4">
-              <div className={`flex flex-wrap justify-between items-center gap-3 rounded-2xl px-3.5 py-3 border ${TOOLBAR_GLASS}`}>
+              <div className={`flex flex-nowrap justify-between items-center gap-2 rounded-2xl px-3 py-3 border overflow-x-auto ${TOOLBAR_GLASS}`}>
                 <div className="flex-1 flex gap-2 items-center flex-wrap">
-                  {/* Trail Filter */}
+                  {/* Trail Filter -- dipisah Courier vs Sea & Air */}
                   {activeMainTab === 'trail' && (
-                    <div className="flex gap-2 w-full justify-between items-center">
-                      <div className="flex gap-2">
-                        {[
-                          { id: 'All', label: 'Semua' },
-                          { id: 'PIB_CN', label: 'PIB & CN' },
-                          { id: 'COURIER', label: 'Rekapan Courier' }
-                        ].map(t => (
-                          <button
-                            key={t.id}
-                            onClick={() => { setActiveTrailFilter(t.id); setPage(1); }}
-                            className={toolbarPillClass(activeTrailFilter === t.id)}
-                          >
-                            {t.label}
-                          </button>
-                        ))}
-                      </div>
-                      {selectedIds.size > 0 && (
-                        <button onClick={handleBulkDelete} className="px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded-lg shadow-sm hover:bg-red-700 transition">
-                          Hapus {selectedIds.size} Terpilih
+                    <div className="flex gap-2">
+                      {[
+                        { id: 'COURIER', label: 'Courier' },
+                        { id: 'SEA_AIR', label: 'Sea & Air' }
+                      ].map(t => (
+                        <button
+                          key={t.id}
+                          onClick={() => { setActiveTrailFilter(t.id); setPage(1); }}
+                          className={toolbarPillClass(activeTrailFilter === t.id)}
+                        >
+                          {t.label}
                         </button>
-                      )}
+                      ))}
                     </div>
                   )}
                   {/* PPJK Filter for Courier */}
@@ -3348,43 +3331,43 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                     </div>
                   )}
                 </div>
-                <div className="flex gap-2.5 items-center flex-wrap justify-end">
+                <div className="flex gap-1.5 items-center flex-wrap justify-end">
                 {['sea_air_audit', 'sea_air_rekapan'].includes(activeSubTab) && (
-                  <div className={`flex gap-2 items-center rounded-full pl-3.5 pr-2 py-1 h-[38px] border ${TOOLBAR_GLASS}`}>
-                    <CalendarDays size={14} className="text-slate-400 shrink-0" />
+                  <div className={`flex gap-1.5 items-center rounded-full pl-2.5 pr-1.5 py-1 h-[38px] border shrink-0 ${TOOLBAR_GLASS}`}>
+                    <CalendarDays size={13} className="text-slate-400 shrink-0" />
                     <input
                       type="date"
                       value={filterStartDate}
                       onChange={e => setFilterStartDate(e.target.value)}
-                      className="text-xs bg-transparent focus:outline-none text-slate-600 cursor-pointer"
+                      className="w-[100px] text-[11px] bg-transparent focus:outline-none text-slate-600 cursor-pointer"
                     />
                     <span className="text-slate-300 text-xs">–</span>
                     <input
                       type="date"
                       value={filterEndDate}
                       onChange={e => setFilterEndDate(e.target.value)}
-                      className="text-xs bg-transparent focus:outline-none text-slate-600 cursor-pointer"
+                      className="w-[100px] text-[11px] bg-transparent focus:outline-none text-slate-600 cursor-pointer"
                     />
                     {(filterStartDate || filterEndDate) && (
-                      <button onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }} className="text-slate-400 hover:text-slate-600 ml-0.5">
+                      <button onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }} className="text-slate-400 hover:text-slate-600 ml-0.5 shrink-0">
                          <X size={14} />
                       </button>
                     )}
                   </div>
                 )}
-                <div className="relative">
-                  <SearchIcon size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <div className="relative shrink-0">
+                  <SearchIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                   <input
                     type="text"
                     placeholder="Cari..."
                     value={search}
                     onChange={e => setSearch(e.target.value)}
-                    className={`w-52 rounded-full pl-9 pr-8 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#3D2C44]/15 focus:border-[#3D2C44] focus:bg-white/90 transition-all border ${TOOLBAR_GLASS}`}
+                    className={`w-32 rounded-full pl-8 pr-7 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A] focus:bg-white/90 focus:w-44 transition-all border ${TOOLBAR_GLASS}`}
                   />
                   {search && (
                     <button
                       onClick={() => setSearch('')}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none"
                     >
                       <X size={14} />
                     </button>
@@ -3393,37 +3376,52 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
                 <button
                   onClick={fetchRecords}
-                  className={`px-4 py-2 rounded-full text-slate-600 text-xs font-semibold hover:border-[#3D2C44]/30 hover:text-[#3D2C44] hover:bg-white/90 transition-all h-[38px] flex items-center gap-1.5 border ${TOOLBAR_GLASS}`}
+                  className={`px-3 py-2 rounded-full text-slate-600 text-xs font-semibold hover:border-[#5A305A]/30 hover:text-[#5A305A] hover:bg-white/90 transition-all h-[38px] flex items-center gap-1.5 border shrink-0 ${TOOLBAR_GLASS}`}
                 >
                   <RefreshCw size={13} />
                   Refresh
                 </button>
-                {((activeMainTab === 'courier' && activeSubTab === 'courier_audit') || (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') || (activeMainTab === 'courier' && activeSubTab === 'courier_validasi')) && (
+                {((activeMainTab === 'courier' && activeSubTab === 'courier_audit') || (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') || (activeMainTab === 'courier' && activeSubTab === 'courier_validasi') || (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit') || (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan')) && (
                   <button
                     onClick={() => {
                       const title = (activeMainTab === 'courier' && activeSubTab === 'courier_audit')
                         ? ((courierAuditType === 'pib') ? 'PIB' : 'CN')
-                        : (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') ? 'Rekapan Courier' : 'Validasi Dokumen'
+                        : (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') ? 'Rekapan Courier'
+                        : (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit') ? 'Audit Sea & Air'
+                        : (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan') ? 'Rekapan Sea & Air'
+                        : 'Validasi Dokumen'
                       let dateFieldLabel = undefined;
                       if ((activeMainTab === 'courier' && activeSubTab === 'courier_audit')) dateFieldLabel = 'Filter Tgl. PPJK';
                       else if ((activeMainTab === 'courier' && activeSubTab === 'courier_rekapan')) dateFieldLabel = 'Filter Tgl. Terima Email';
+                      else if ((activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit')) dateFieldLabel = 'Filter Tgl. PPJK';
+                      else if ((activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan')) dateFieldLabel = 'Filter Tgl.';
 
                       setExportModalState({ title, cols: activeCols, dateFieldLabel })
                     }}
-                    className="px-4 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold border border-emerald-700 transition-all h-[38px] flex justify-center items-center gap-1.5 shadow-sm"
+                    className="px-3 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold border border-emerald-700 transition-all h-[38px] flex justify-center items-center gap-1.5 shadow-sm shrink-0"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
                     Export
                   </button>
                 )}
 
+                {activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit' && (
+                  <button
+                    onClick={() => setShowAddSeaAirModal(true)}
+                    className="px-3 py-2 rounded-full bg-[#5A305A] hover:bg-[#4a2749] text-white text-xs font-semibold border border-[#5A305A] transition-all h-[38px] flex justify-center items-center gap-1.5 shadow-sm shrink-0"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Tambah Data
+                  </button>
+                )}
+
                 {activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan' ? (
-                  <div className={`flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[38px] border ${TOOLBAR_GLASS}`}>
+                  <div className={`flex items-center gap-1.5 rounded-full pl-2.5 pr-1.5 py-1 h-[38px] border shrink-0 ${TOOLBAR_GLASS}`}>
                     <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">Company</span>
                     <select
                       value={activeAnFilter}
                       onChange={e => { setActiveAnFilter(e.target.value); setPage(1); }}
-                      className="border-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer max-w-[160px]"
+                      className="border-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer max-w-[110px]"
                     >
                       {anTabs.map(an => (
                         <option key={an} value={an}>{an}</option>
@@ -3543,16 +3541,6 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   <table ref={tableRef} className="w-full text-sm min-w-max relative border-collapse">
                   <thead className="sticky top-0 z-20">
                     <tr className="bg-slate-50 shadow-sm border-b border-slate-200">
-                      {activeMainTab === 'trail' && (
-                        <th className="px-4 py-3 text-center border-r border-slate-200 w-10">
-                          <input 
-                            type="checkbox" 
-                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" 
-                            checked={records.length > 0 && selectedIds.size === records.length}
-                            onChange={(e) => handleSelectAll(e.target.checked)}
-                          />
-                        </th>
-                      )}
                       {activeCols.map(col => (
                         <th
                           key={col.key}
@@ -3664,10 +3652,9 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                           onEdit={setEditRecord}
                           onChecklist={undefined}
                           showChecklist={false}
-                          onDelete={handleDelete}
+                          onDelete={activeMainTab === 'trail' ? undefined : handleDelete}
                           hideEdit={activeMainTab === 'trail'}
-                          selected={selectedIds.has(rec.id)}
-                          onSelect={activeMainTab === 'trail' ? handleSelect : undefined}
+                          onSelect={undefined}
                           showValidasi={false}
                           onValidasi={undefined}
                           onCostValidasi={undefined}

@@ -57,7 +57,7 @@ function UploadErrorModal({ friendly, raw, onClose, onRetry }: { friendly: strin
           <button onClick={onClose} className="py-2.5 rounded-xl border border-slate-200 text-slate-600 font-semibold text-sm hover:bg-slate-50 transition-all">
             Tutup
           </button>
-          <button onClick={onRetry} className="py-2.5 rounded-xl bg-[#3D2C44] hover:bg-[#2B1E30] text-white font-semibold text-sm transition-all flex items-center justify-center gap-1.5">
+          <button onClick={onRetry} className="py-2.5 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-sm transition-all flex items-center justify-center gap-1.5">
             <RotateCcw size={14} /> Coba Lagi
           </button>
         </div>
@@ -111,8 +111,8 @@ function LoadingOverlay({ jenis, count }: { jenis: string, count: number }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
       <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-sm w-full mx-4 text-center">
         <div className="relative w-20 h-20 mx-auto mb-5">
-          <div className="absolute inset-0 rounded-full border-4 border-[#3D2C44]/10" />
-          <div className="absolute inset-0 rounded-full border-4 border-[#3D2C44] border-t-transparent animate-spin" />
+          <div className="absolute inset-0 rounded-full border-4 border-[#5A305A]/10" />
+          <div className="absolute inset-0 rounded-full border-4 border-[#5A305A] border-t-transparent animate-spin" />
           <div className="absolute inset-0 flex items-center justify-center text-2xl">
             {jenis === 'PIB' ? '📋' : '📦'}
           </div>
@@ -350,7 +350,7 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
         <main className="max-w-xl mx-auto px-4 py-6 space-y-4">
           {fixedType && (
             <div className="flex items-center gap-3 mb-1">
-              <div className="w-11 h-11 rounded-xl bg-[#3D2C44] text-white flex items-center justify-center shrink-0 shadow-sm">
+              <div className="w-11 h-11 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0 shadow-sm">
                 {fixedType === 'sea_air' ? <Ship size={20} /> : <Plane size={20} />}
               </div>
               <div>
@@ -372,7 +372,7 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
               <button
                 onClick={() => setWebhookType('courier')}
                 className={`flex-1 py-2.5 text-sm font-semibold rounded-xl transition-all ${
-                  webhookType === 'courier' ? 'bg-[#3D2C44] text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'
+                  webhookType === 'courier' ? 'bg-[#5A305A] text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'
                 }`}
               >
                 Courier (DHL/FedEx)
@@ -380,7 +380,7 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
               <button
                 onClick={() => setWebhookType('sea_air')}
                 className={`flex-1 py-2.5 text-sm font-semibold rounded-xl transition-all ${
-                  webhookType === 'sea_air' ? 'bg-[#3D2C44] text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'
+                  webhookType === 'sea_air' ? 'bg-[#5A305A] text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'
                 }`}
               >
                 Sea & Air
@@ -406,15 +406,15 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
               onDragLeave={() => setDragging(false)}
               onClick={() => inputRef.current?.click()}
               className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${
-                dragging ? 'border-[#3D2C44] bg-[#3D2C44]/5' :
+                dragging ? 'border-[#5A305A] bg-[#5A305A]/5' :
                 files.length >= 4 ? 'border-emerald-300 bg-emerald-50/50 hover:border-emerald-400' :
-                'border-slate-200 bg-slate-50 hover:border-[#3D2C44]/40 hover:bg-[#3D2C44]/5'
+                'border-slate-200 bg-slate-50 hover:border-[#5A305A]/40 hover:bg-[#5A305A]/5'
               }`}
             >
               <input ref={inputRef} type="file" accept="application/pdf,image/jpeg,image/png" multiple className="hidden"
                 onChange={(e) => addFiles(e.target.files)} />
               <div className={`w-14 h-14 rounded-full mx-auto mb-3 flex items-center justify-center transition-colors ${
-                dragging ? 'bg-[#3D2C44] text-white' : files.length >= 4 ? 'bg-emerald-500 text-white' : 'bg-[#3D2C44]/8 text-[#3D2C44]'
+                dragging ? 'bg-[#5A305A] text-white' : files.length >= 4 ? 'bg-emerald-500 text-white' : 'bg-[#5A305A]/8 text-[#5A305A]'
               }`}>
                 {dragging ? <FolderOpen size={22} strokeWidth={1.75} /> : files.length >= 4 ? <CheckCircle2 size={22} strokeWidth={1.75} /> : <UploadCloud size={22} strokeWidth={1.75} />}
               </div>
@@ -444,7 +444,7 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
             )}
 
             {/* Panduan */}
-            <div className="mt-4 bg-[#3D2C44]/5 rounded-xl p-4 border border-[#3D2C44]/10">
+            <div className="mt-4 bg-[#5A305A]/5 rounded-xl p-4 border border-[#5A305A]/10">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
                 Dokumen yang dibutuhkan
               </p>
@@ -468,7 +468,7 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Langkah 2 — Proses & Arsipkan</p>
             <button onClick={handleSubmit} disabled={!canSubmit || loading}
               className={`w-full py-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${
-                (canSubmit && !loading) ? 'bg-[#3D2C44] hover:bg-[#2B1E30] text-white shadow-md active:scale-[0.98]'
+                (canSubmit && !loading) ? 'bg-[#5A305A] hover:bg-[#73507B] text-white shadow-md active:scale-[0.98]'
                           : 'bg-slate-100 text-slate-400 cursor-not-allowed'
               }`}>
               {loading
