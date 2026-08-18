@@ -12,6 +12,21 @@ const formatNoAju = (v: any) => {
   return v
 }
 
+// Rekapan Sea & Air: kolom "PO No." dan "Vessel" tidak ada sebagai kolom asli di tabel --
+// keduanya cuma tersimpan di dalam po_detail (JSON array pasangan {po_no, vessel}, karena 1
+// shipment bisa punya beberapa PO/vessel). Tampilan tabel di layar sudah tahu cara baca ini,
+// tapi export tadinya cuma baca item['po_no']/item['vessel'] langsung -- makanya kosong.
+const extractPoDetailField = (item: any, field: 'po_no' | 'vessel'): string => {
+  let arr: any[] = []
+  const raw = item?.po_detail
+  if (Array.isArray(raw)) arr = raw
+  else if (typeof raw === 'string') {
+    try { arr = JSON.parse(raw) || [] } catch (e) { arr = [] }
+  }
+  const values = arr.map((p: any) => (p?.[field] || '').toString().trim()).filter(Boolean)
+  return Array.from(new Set(values)).join(' + ')
+}
+
 const fmt = (v: any) => {
   if (v === null || v === undefined || v === '') return '—'
   const num = Number(v)
@@ -109,7 +124,9 @@ export default function ExportModal({
         exportCols.forEach(c => {
           let val = item[c.key]
 
-          if (c.key === 'hs_code' && typeof val === 'string') {
+          if ((c.key === 'po_no' || c.key === 'vessel') && (val === null || val === undefined || val === '') && item.po_detail) {
+            val = extractPoDetailField(item, c.key) || null;
+          } else if (c.key === 'hs_code' && typeof val === 'string') {
             const parts = val.split(/[+,]+/).map((s: string) => s.trim()).filter(Boolean);
             val = Array.from(new Set(parts)).join(', ');
           } else if (c.key === 'no_aju' || c.key === 'no_pib') {
@@ -216,8 +233,10 @@ export default function ExportModal({
                         <td className="px-4 py-2 font-mono text-xs text-[#5A305A] text-center">{idx + 1}</td>
                         {exportCols.map(c => {
                           let val = row[c.key]
-                          
-                          if (c.key === 'hs_code' && typeof val === 'string') {
+
+                          if ((c.key === 'po_no' || c.key === 'vessel') && (val === null || val === undefined || val === '') && row.po_detail) {
+                            val = extractPoDetailField(row, c.key) || null;
+                          } else if (c.key === 'hs_code' && typeof val === 'string') {
                             const parts = val.split(/[+,]+/).map((s: string) => s.trim()).filter(Boolean);
                             val = Array.from(new Set(parts)).join(', ');
                           } else if (c.key === 'no_aju' || c.key === 'no_pib') {

@@ -544,11 +544,11 @@ const SEA_AIR_REKAPAN_COLS = [
   { key: 'ppn_split', label: 'PPN', type: 'num' },
   { key: 'pph_split', label: 'PPH', type: 'num' },
 
-  { key: 'notes', label: 'Notes' },
-  
   { key: 'bm', label: 'BM (Total)', type: 'num' },
   { key: 'ppn', label: 'PPN (Total)', type: 'num' },
   { key: 'pph', label: 'PPH (Total)', type: 'num' },
+
+  { key: 'notes', label: 'Notes' },
 ]
 
 const PIB_COLS = [
@@ -562,7 +562,7 @@ const PIB_COLS = [
   { key: 'item_price_idr', label: 'Item Price (Rp)', type: 'num' },
   { key: 'vendor_inv_no', label: 'Vendor Inv No' },
   { key: 'po_harga_detail', label: 'PO Harga Detail' },
-  { key: 'impor_an', label: 'Impor An' },
+  { key: 'impor_an', label: 'A/N' },
   { key: 'via', label: 'Via' },
   { key: 'delivery_term', label: 'Delivery Term' },
   { key: 'awb', label: 'AWB' },
@@ -611,7 +611,7 @@ const CN_COLS = [
   { key: 'item_price_idr', label: 'Item Price (Rp)', type: 'num' },
   { key: 'vendor_inv_no', label: 'Vendor Inv No' },
   { key: 'po_harga_detail', label: 'PO Harga Detail' },
-  { key: 'impor_an', label: 'Impor An' },
+  { key: 'impor_an', label: 'A/N' },
   { key: 'via', label: 'Via' },
   { key: 'delivery_term', label: 'Delivery Term' },
   { key: 'awb', label: 'AWB' },
@@ -669,7 +669,7 @@ const COURIER_COLS = [
   { key: 'weight_kg', label: 'Weight (Kg)', type: 'num' },
   { key: 'an', label: 'A/N' },
   { key: 'po_pt_imi', label: 'PO PT IMI' },
-  { key: 'po_shipping', label: 'PO Shipping' },
+  { key: 'po_shipping', label: 'PO Non IMI' },
   { key: 'vessel', label: 'Vessel' },
   { key: 'breakdown_courier_adm_vessel', label: 'Breakdown Courier Adm (Vessel)', type: 'num' },
   { key: 'breakdown_duty_vessel', label: 'Breakdown Duty (Vessel)', type: 'num' },
@@ -1808,7 +1808,7 @@ const SeaAirRekapanRowGroup: React.FC<{
   const repeatingCols = ['po_no', 'vessel', 'emkl_split', 'split_biaya_origin', 'split_biaya_destination', 'pbm_split', 'lift_off_split', 'inspeksi_split', 'handling_split', 'other_split', 'duty_split', 'bm_split', 'ppn_split', 'pph_split'];
   // Record ini sudah aktif/pindah ke tab Audit (status audit terkait LENGKAP) -- tandai dengan highlight biru.
   const isAudited = rec.audit_status === 'LENGKAP';
-  const auditHighlightClass = 'bg-blue-100 hover:bg-blue-200';
+  const auditHighlightClass = 'bg-[#FFF5C5] hover:bg-[#F5E28F]';
 
   const [isEditing, setIsEditing] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -2282,7 +2282,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     setPage(1); // Reset page on tab switch
   }, [defaultMainTab, defaultSubTab]);
 
-  const [courierAuditType, setCourierAuditType] = useState('pib')
+  const [courierAuditType, setCourierAuditType] = useState('archive')
   const [seaAirAuditType, setSeaAirAuditType] = useState('audit')
   const [activeTrailFilter, setActiveTrailFilter] = useState('COURIER')
   const [activePpjkFilter, setActivePpjkFilter] = useState('All')
@@ -2471,6 +2471,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         let queryPib = supabase.from('v_pib_lengkap').select('*').eq('status', 'ARCHIVED')
         // Fetch CN
         let queryCn = supabase.from('v_cn_lengkap').select('*').eq('status', 'ARCHIVED')
+
+        if (activeCourierImporAnFilter !== 'Semua') {
+          queryPib = queryPib.eq('impor_an', activeCourierImporAnFilter);
+          queryCn = queryCn.eq('impor_an', activeCourierImporAnFilter);
+        }
 
         if (debouncedSearch) {
           const searchColsPib = ['awb', 'vendor_inv_no', 'no_pib', 'po_ori', 'vendor'];
@@ -2739,7 +2744,12 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     if ((activeMainTab === 'courier' && activeSubTab === 'courier_audit') && (courierAuditType === 'archive')) {
       let queryPib = supabase.from('v_pib_lengkap').select('*').eq('status', 'ARCHIVED').limit(25000);
       let queryCn = supabase.from('v_cn_lengkap').select('*').eq('status', 'ARCHIVED').limit(25000);
-      
+
+      if (activeCourierImporAnFilter !== 'Semua') {
+        queryPib = queryPib.eq('impor_an', activeCourierImporAnFilter);
+        queryCn = queryCn.eq('impor_an', activeCourierImporAnFilter);
+      }
+
       if (startDate) {
         queryPib = queryPib.gte('tgl_ppjk', startDate);
         queryCn = queryCn.gte('tgl_ppjk', startDate);
@@ -2782,7 +2792,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       return combined;
     }
 
-    const fetchTarget = (tab as any).view || tab.table
+    let fetchTarget = (tab as any).view || tab.table
+    if (activeMainTab === 'courier' && activeSubTab === 'courier_audit') {
+      fetchTarget = courierAuditType === 'pib' ? 'v_pib_lengkap' : 'v_cn_lengkap';
+    }
     let query = supabase.from(fetchTarget).select('*').limit(50000)
 
     if (startDate) {
@@ -3289,7 +3302,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   {/* Courier Audit Type Filter */}
                   {(activeMainTab === 'courier' && activeSubTab === 'courier_audit') && (
                     <div className="flex gap-2 items-center pb-1 overflow-x-auto max-w-[60vw]">
-                      {[{id: 'pib', label: 'PIB'}, {id: 'cn', label: 'CN'}, {id: 'archive', label: '🗄️ Draft'}].map(type => (
+                      {[{id: 'archive', label: '🗄️ Draft'}, {id: 'pib', label: 'PIB'}, {id: 'cn', label: 'CN'}].map(type => (
                         <button
                           key={type.id}
                           onClick={() => { setCourierAuditType(type.id); setPage(1); }}
