@@ -1194,7 +1194,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
       <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center h-full w-full">
         <div className="bg-white p-6 rounded-2xl shadow-xl">
            <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
-           <p className="text-slate-600 font-medium">Memuat data dokumen...</p>
+           <p className="text-[#5A305A] font-medium">Memuat data dokumen...</p>
         </div>
       </div>
     );
@@ -1223,7 +1223,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
         
         <div className="flex justify-between items-center p-3 sm:px-4 sm:py-2.5 border-b border-slate-100 shrink-0 print:hidden">
           <div>
-            <h2 className="text-lg font-bold tracking-tight text-slate-800">Validasi Dokumen <span className="text-sm font-normal text-slate-500 ml-2 hidden sm:inline-block">Hasil validasi dokumen terkait</span></h2>
+            <h2 className="text-lg font-bold tracking-tight text-[#5A305A]">Validasi Dokumen <span className="text-sm font-normal text-[#5A305A] ml-2 hidden sm:inline-block">Hasil validasi dokumen terkait</span></h2>
           </div>
           <div className="flex items-center gap-2">
             {!isEditMode && (
@@ -1260,7 +1260,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                 </button>
               </>
             )}
-            <button onClick={onClose} className="p-1.5 ml-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors">
+            <button onClick={onClose} className="p-1.5 ml-2 hover:bg-slate-100 rounded-full text-[#5A305A] hover:text-[#5A305A] transition-colors">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>
             </button>
           </div>
@@ -1377,10 +1377,10 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                     <div className="w-12 h-12 bg-[#5A305A] text-white rounded-xl shadow-inner flex items-center justify-center shrink-0">
                        {sectionIcons[section.id] || <FileText size={24} />}
                     </div>
-                    <div className="text-center font-bold text-slate-800 text-[11px] tracking-wider uppercase">
+                    <div className="text-center font-bold text-[#5A305A] text-[11px] tracking-wider uppercase">
                       {section.label}
                       {section.id === "s_sptnp" && (
-                         <div className="text-[9px] mt-1 text-slate-500 normal-case tracking-normal">jika ada — khusus jalur PIB</div>
+                         <div className="text-[9px] mt-1 text-[#5A305A] normal-case tracking-normal">jika ada — khusus jalur PIB</div>
                       )}
                     </div>
                     <div className="md:mt-auto ml-auto md:ml-0 flex items-center justify-center">
@@ -1399,7 +1399,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr>
-                          <th className="p-3 bg-slate-100 border-b border-r border-slate-200 text-[11px] font-bold text-slate-800 uppercase tracking-wide whitespace-nowrap w-[1%] sticky left-0 z-10 shadow-[1px_0_0_0_#e2e8f0]">VALIDASI FIELD</th>
+                          <th className="p-3 bg-slate-100 border-b border-r border-slate-200 text-[11px] font-bold text-[#5A305A] uppercase tracking-wide whitespace-nowrap w-[1%] sticky left-0 z-10 shadow-[1px_0_0_0_#e2e8f0]">VALIDASI FIELD</th>
                           {uniqueCompareDocs.map(doc => {
                              const colorObj = getHeaderColor(doc as string);
                              return (
@@ -1413,20 +1413,20 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                       <tbody>
                         {uniqueFields.map(field => (
                           <tr key={field} className="border-b border-slate-200 last:border-b-0 hover:bg-slate-50/50 transition-colors">
-                            <td className="p-3 border-r border-slate-200 text-xs font-bold text-slate-800 bg-white whitespace-nowrap w-[1%] sticky left-0 z-10 align-middle shadow-[1px_0_0_0_#e2e8f0]">
+                            <td className="p-3 border-r border-slate-200 text-xs font-bold text-[#5A305A] bg-white whitespace-nowrap w-[1%] sticky left-0 z-10 align-middle shadow-[1px_0_0_0_#e2e8f0]">
                               {field}
                               {(() => {
                                  const hints = Array.from(new Set(section.rows.filter((r: any) => groupKey(r) === field && r.hint).map((r: any) => r.hint)));
                                  if (hints.length === 0) return null;
                                  return hints.map((h, i) => (
-                                    <div key={i} className="text-[10px] text-slate-400 mt-1 font-medium leading-tight whitespace-normal">{h as string}</div>
+                                    <div key={i} className="text-[10px] text-[#5A305A] mt-1 font-medium leading-tight whitespace-normal">{h as string}</div>
                                  ));
                               })()}
                             </td>
                             {uniqueCompareDocs.map(doc => {
                                const rowMatch = section.rows.find((r: any) => r.compareDoc === doc && groupKey(r) === field);
                                if (!rowMatch) {
-                                  return <td key={doc as string} className="p-3 border-r border-slate-200 last:border-r-0 text-center text-slate-300 align-middle bg-slate-50/30 min-w-[150px]">-</td>;
+                                  return <td key={doc as string} className="p-3 border-r border-slate-200 last:border-r-0 text-center text-[#5A305A] align-middle bg-slate-50/30 min-w-[150px]">-</td>;
                                }
                                const v = values[rowMatch.id] || {src:'', cmp:''};
                                const stComputed = computeStatus(v.src, v.cmp, rowMatch.isFormat, rowMatch.field, debugData.raw?.is_po_non_imi);
@@ -1439,14 +1439,14 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                                        <div className="flex flex-col items-center gap-1 w-full">
                                          {isEditMode ? (
                                            <input
-                                             className="w-full border border-slate-200 rounded px-2 py-1.5 text-xs text-center focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium text-slate-700 bg-slate-50 hover:bg-white"
+                                             className="w-full border border-slate-200 rounded px-2 py-1.5 text-xs text-center focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium text-[#5A305A] bg-slate-50 hover:bg-white"
                                              value={v.src || ""}
                                              onChange={e => setObj(rowMatch.id, 'src', e.target.value)}
                                              placeholder={rowMatch.isFormat ? "Format..." : "Src"}
                                              title={`Nilai dari ${getSrcTooltipLabel(rowMatch, section)}`}
                                            />
                                          ) : (
-                                           <span className={`flex flex-col items-center justify-center text-xs text-center w-full break-words px-1 ${v.src_edited ? 'text-blue-700 font-bold' : 'text-slate-700 font-medium'}`}>
+                                           <span className={`flex flex-col items-center justify-center text-xs text-center w-full break-words px-1 ${v.src_edited ? 'text-blue-700 font-bold' : 'text-[#5A305A] font-medium'}`}>
                                              <div>
                                                {v.srcDisplay ? v.srcDisplay : formatViewValue(v.src, field)}
                                                {v.src_edited && <Edit3 size={10} className="inline ml-1 text-blue-500 opacity-70" title="Diedit manual" />}
@@ -1457,10 +1457,10 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
 
                                          {!rowMatch.isFormat && (
                                            <>
-                                             <span className="text-[10px] text-slate-400 font-bold lowercase italic shrink-0 px-2 bg-white/80 rounded-full">vs</span>
+                                             <span className="text-[10px] text-[#5A305A] font-bold lowercase italic shrink-0 px-2 bg-white/80 rounded-full">vs</span>
                                              {isEditMode ? (
                                                <input
-                                                 className={`w-full border rounded px-2 py-1.5 text-xs text-center focus:outline-none focus:ring-1 transition-all font-medium text-slate-700 ${(errNpwp || v.npwp_status === 'not_found') ? 'border-amber-400 bg-amber-50 focus:border-amber-500 focus:ring-amber-500' : 'border-slate-200 bg-slate-50 hover:bg-white focus:border-blue-500 focus:ring-blue-500'}`}
+                                                 className={`w-full border rounded px-2 py-1.5 text-xs text-center focus:outline-none focus:ring-1 transition-all font-medium text-[#5A305A] ${(errNpwp || v.npwp_status === 'not_found') ? 'border-amber-400 bg-amber-50 focus:border-amber-500 focus:ring-amber-500' : 'border-slate-200 bg-slate-50 hover:bg-white focus:border-blue-500 focus:ring-blue-500'}`}
                                                  value={v.cmp || ""}
                                                  onChange={e => {
                                                    setObj(rowMatch.id, 'cmp', e.target.value);
@@ -1470,10 +1470,10 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                                                  title={`Nilai dari ${getColumnDisplayLabel(rowMatch.compareDoc, docType)}`}
                                                />
                                              ) : (
-                                               <span className={`text-xs text-center w-full break-words px-1 ${v.cmp_edited ? 'text-blue-700 font-bold' : 'text-slate-700 font-medium'}`}>
+                                               <span className={`text-xs text-center w-full break-words px-1 ${v.cmp_edited ? 'text-blue-700 font-bold' : 'text-[#5A305A] font-medium'}`}>
                                                  {formatViewValue(v.cmp, field)}
                                                  {v.cmp_edited && <Edit3 size={10} className="inline ml-1 text-blue-500 opacity-70" title="Diedit manual" />}
-                                                 {(rowMatch.id === 'po_item_value_vs_pib' || rowMatch.id === 'cipl01') && Number(debugData.raw?.other_cost_valas) > 0 && (
+                                                 {(rowMatch.id === 'po_item_value_vs_pib' || rowMatch.id === 'cipl01') && Number(debugData.raw?.other_cost_valas) !== 0 && (
                                                    <div style={{ fontSize: '0.85em', fontStyle: 'italic', color: 'var(--color-text-secondary)', marginTop: 2 }}>
                                                      Other Cost: {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 4 }).format(Number(debugData.raw.other_cost_valas))}
                                                    </div>

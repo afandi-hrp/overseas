@@ -105,7 +105,7 @@ export default function PPJKCostRule() {
       <div className="p-4 border-b border-slate-200 flex flex-wrap gap-4 items-end justify-between bg-slate-50 rounded-t-xl">
         <div className="flex gap-4 flex-wrap items-end">
           <div>
-            <label className="block tracking-wider text-[10px] font-bold text-slate-500 uppercase mb-1">Courier</label>
+            <label className="block tracking-wider text-[10px] font-bold text-[#5A305A] uppercase mb-1">Courier</label>
             <select className="border border-slate-300 rounded px-2 py-1 text-sm bg-white" value={fCourier} onChange={e => setFCourier(e.target.value)}>
               <option value="Semua">Semua</option>
               <option value="DHL">DHL</option>
@@ -114,7 +114,7 @@ export default function PPJKCostRule() {
             </select>
           </div>
           <div>
-            <label className="block tracking-wider text-[10px] font-bold text-slate-500 uppercase mb-1">Category</label>
+            <label className="block tracking-wider text-[10px] font-bold text-[#5A305A] uppercase mb-1">Category</label>
             <select className="border border-slate-300 rounded px-2 py-1 text-sm bg-white" value={fCat} onChange={e => setFCat(e.target.value)}>
               <option value="Semua">Semua</option>
               <option value="CLEARANCE">CLEARANCE</option>
@@ -147,7 +147,7 @@ export default function PPJKCostRule() {
       
       <div className="overflow-x-auto">
         <table className="w-full text-sm text-left">
-          <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase tracking-wider">
+          <thead className="bg-slate-50 text-[#5A305A] text-[10px] uppercase tracking-wider">
             <tr>
               <th className="px-4 py-3">Courier</th>
               <th className="px-4 py-3">Kode</th>
@@ -162,15 +162,15 @@ export default function PPJKCostRule() {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td colSpan={9} className="text-center py-10 text-slate-400">Loading...</td></tr>
+              <tr><td colSpan={9} className="text-center py-10 text-[#5A305A]">Loading...</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={9} className="text-center py-10 text-slate-400">Data tidak ditemukan</td></tr>
+              <tr><td colSpan={9} className="text-center py-10 text-[#5A305A]">Data tidak ditemukan</td></tr>
             ) : (
               filtered.map(row => {
                 return (
                   <tr key={row.id} className="hover:bg-slate-50/50">
                     <td className="px-4 py-2 font-bold">{row.courier}</td>
-                    <td className="px-4 py-2 font-mono font-bold text-slate-700">{row.rule_code}</td>
+                    <td className="px-4 py-2 font-mono font-bold text-[#5A305A]">{row.rule_code}</td>
                     <td className="px-4 py-2 font-medium">{row.rule_name}</td>
                     <td className="px-4 py-2 text-xs">{row.category}</td>
                     <td className="px-4 py-2 text-xs">{row.price_mechanism}</td>
@@ -179,7 +179,7 @@ export default function PPJKCostRule() {
                     </td>
                     <td className="px-4 py-2 text-center">{row.free_days || '-'}</td>
                     <td className="px-4 py-2 text-center">
-                       {currentActive(row) ? <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded font-bold">AKTIF</span> : <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-bold">NONAKTIF</span>}
+                       {currentActive(row) ? <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded font-bold">AKTIF</span> : <span className="text-[10px] bg-slate-200 text-[#5A305A] px-2 py-0.5 rounded font-bold">NONAKTIF</span>}
                     </td>
                     <td className="px-4 py-2 text-right">
                       <div className="flex justify-end gap-2">
@@ -197,16 +197,16 @@ export default function PPJKCostRule() {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#5A305A]/50 p-4">
           <form onSubmit={handleSave} className="bg-white rounded-xl w-full max-w-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
             <div className="p-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
-              <h3 className="font-bold text-lg text-slate-800">{editRecord ? 'Edit PPJK Rule' : 'Tambah PPJK Rule'}</h3>
-              <button type="button" onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+              <h3 className="font-bold text-lg text-[#5A305A]">{editRecord ? 'Edit PPJK Rule' : 'Tambah PPJK Rule'}</h3>
+              <button type="button" onClick={() => setShowModal(false)} className="text-[#5A305A] hover:text-[#5A305A]">✕</button>
             </div>
             <div className="p-5 overflow-y-auto space-y-4 flex-1">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Courier</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">Courier</label>
                     <select className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.courier || ''} onChange={e => setForm({...form, courier: e.target.value})} required>
                       <option value="DHL">DHL</option>
                       <option value="FEDEX">FEDEX</option>
@@ -214,7 +214,7 @@ export default function PPJKCostRule() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Category</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">Category</label>
                     <select className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.category || ''} onChange={e => setForm({...form, category: e.target.value})} required>
                       <option value="CLEARANCE">CLEARANCE</option>
                       <option value="DISBURSEMENT">DISBURSEMENT</option>
@@ -230,15 +230,15 @@ export default function PPJKCostRule() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Rule Code</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">Rule Code</label>
                     <input type="text" className="w-full border border-slate-300 rounded px-3 py-2 text-sm uppercase" value={form.rule_code || ''} onChange={e => setForm({...form, rule_code: e.target.value.toUpperCase()})} required />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Rule Name</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">Rule Name</label>
                     <input type="text" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.rule_name || ''} onChange={e => setForm({...form, rule_name: e.target.value})} required />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Price Mechanism</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">Price Mechanism</label>
                     <select className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.price_mechanism || ''} onChange={e => setForm({...form, price_mechanism: e.target.value})} required>
                       <option value="FLAT_PER_SHIPMENT">FLAT_PER_SHIPMENT</option>
                       <option value="FLAT_PER_KG">FLAT_PER_KG</option>
@@ -250,60 +250,60 @@ export default function PPJKCostRule() {
                   
                   <div className="col-span-2 grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">Flat IDR</label>
+                      <label className="block text-xs font-bold text-[#5A305A] mb-1">Flat IDR</label>
                       <input type="number" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.flat_idr ?? ''} onChange={e => setForm({...form, flat_idr: Number(e.target.value)})} />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">Per KG IDR</label>
+                      <label className="block text-xs font-bold text-[#5A305A] mb-1">Per KG IDR</label>
                       <input type="number" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.per_kg_idr ?? ''} onChange={e => setForm({...form, per_kg_idr: Number(e.target.value)})} />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">Per Day IDR</label>
+                      <label className="block text-xs font-bold text-[#5A305A] mb-1">Per Day IDR</label>
                       <input type="number" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.per_day_idr ?? ''} onChange={e => setForm({...form, per_day_idr: Number(e.target.value)})} />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">Pct Value (%)</label>
+                      <label className="block text-xs font-bold text-[#5A305A] mb-1">Pct Value (%)</label>
                       <input type="number" step="any" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.pct_value ?? ''} onChange={e => setForm({...form, pct_value: Number(e.target.value)})} />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">Minimum IDR</label>
+                      <label className="block text-xs font-bold text-[#5A305A] mb-1">Minimum IDR</label>
                       <input type="number" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.min_idr ?? ''} onChange={e => setForm({...form, min_idr: Number(e.target.value)})} />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">Maximum IDR</label>
+                      <label className="block text-xs font-bold text-[#5A305A] mb-1">Maximum IDR</label>
                       <input type="number" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.max_idr ?? ''} onChange={e => setForm({...form, max_idr: Number(e.target.value)})} />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">Fiscal Threshold IDR</label>
+                      <label className="block text-xs font-bold text-[#5A305A] mb-1">Fiscal Threshold IDR</label>
                       <input type="number" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.fiscal_threshold_idr ?? ''} onChange={e => setForm({...form, fiscal_threshold_idr: Number(e.target.value)})} />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">Free Days</label>
+                      <label className="block text-xs font-bold text-[#5A305A] mb-1">Free Days</label>
                       <input type="number" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.free_days ?? ''} onChange={e => setForm({...form, free_days: Number(e.target.value)})} />
                     </div>
                   </div>
 
                   <div className="col-span-2">
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Products Applicable</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">Products Applicable</label>
                     <input type="text" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.products_applicable || ''} onChange={e => setForm({...form, products_applicable: e.target.value})} placeholder="e.g. ALL" />
                   </div>
                   
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Effective From</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">Effective From</label>
                     <input type="date" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.effective_from || ''} onChange={e => setForm({...form, effective_from: e.target.value})} required />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Effective To</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">Effective To</label>
                     <input type="date" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.effective_to || ''} onChange={e => setForm({...form, effective_to: e.target.value})} />
                   </div>
                   <div className="col-span-2">
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Notes / Description</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">Notes / Description</label>
                     <textarea rows={2} className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.notes || form.description || ''} onChange={e => setForm({...form, notes: e.target.value, description: e.target.value})} />
                   </div>
                 </div>
               </div>
               <div className="p-5 border-t border-slate-100 flex justify-end gap-3 bg-slate-50 shrink-0">
-                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 rounded-lg text-slate-600 text-sm font-bold hover:bg-slate-200 transition-colors">Batal</button>
+                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 rounded-lg text-[#5A305A] text-sm font-bold hover:bg-slate-200 transition-colors">Batal</button>
                 <button type="submit" disabled={saving} className="px-4 py-2 rounded-lg bg-[#5A305A] text-white text-sm font-bold hover:bg-[#73507B] disabled:opacity-50 transition-colors">
                   {saving ? 'Menyimpan...' : 'Simpan'}
                 </button>

@@ -114,7 +114,7 @@ export default function LoginPage() {
                 autoFocus
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                className="flex-1 min-w-0 bg-transparent border-none outline-none text-sm px-3 py-2.5 placeholder:text-slate-400"
+                className="flex-1 min-w-0 bg-transparent border-none outline-none text-sm px-3 py-2.5 placeholder:text-[#5A305A]"
                 placeholder="username or email"
               />
             </div>
@@ -128,7 +128,7 @@ export default function LoginPage() {
                 required
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="flex-1 min-w-0 bg-transparent border-none outline-none text-sm px-3 py-2.5 placeholder:text-slate-400"
+                className="flex-1 min-w-0 bg-transparent border-none outline-none text-sm px-3 py-2.5 placeholder:text-[#5A305A]"
                 placeholder="password"
               />
               <button

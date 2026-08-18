@@ -392,15 +392,15 @@ export default function CourierValidasiPage() {
     <div className="flex-1 flex flex-col h-screen overflow-hidden bg-slate-50 relative">
       <div className="p-4 md:px-6 md:py-5 border-b border-slate-200 bg-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0">
         <div>
-          <h1 className="text-xl font-bold text-slate-800">Validasi Courier</h1>
-          <p className="text-sm text-slate-500 mt-1">Daftar rekapan validasi dokumen</p>
+          <h1 className="text-xl font-bold text-[#5A305A]">Validasi Courier</h1>
+          <p className="text-sm text-[#5A305A] mt-1">Daftar rekapan validasi dokumen</p>
     
     </div>
         
         <div className="flex items-center gap-2">
           <button
             onClick={fetchRecords}
-            className="px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-600 text-xs font-semibold hover:border-slate-300 transition-all h-[38px]"
+            className="px-4 py-2 rounded-xl bg-white border border-slate-200 text-[#5A305A] text-xs font-semibold hover:border-slate-300 transition-all h-[38px]"
           >
             ↻ Refresh
           </button>
@@ -422,7 +422,7 @@ export default function CourierValidasiPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+          <Search className="w-4 h-4 text-[#5A305A] absolute left-3 top-2.5" />
     
     </div>
   
@@ -435,7 +435,7 @@ export default function CourierValidasiPage() {
       
     </div>
         ) : records.length === 0 ? (
-          <div className="text-center py-12 text-slate-500 bg-white rounded-xl border border-slate-200">
+          <div className="text-center py-12 text-[#5A305A] bg-white rounded-xl border border-slate-200">
             Tidak ada data validasi ditemukan.
       
     </div>
@@ -533,22 +533,22 @@ export default function CourierValidasiPage() {
       {/* Pagination Footer */}
       {!loading && totalPages > 1 && (
         <div className="px-4 py-3 border-t border-slate-200 bg-white flex items-center justify-between shrink-0">
-          <div className="text-sm text-slate-500">
-            Menampilkan <span className="font-medium text-slate-700">{((page - 1) * pageSize) + 1}</span> hingga <span className="font-medium text-slate-700">{Math.min(page * pageSize, totalRecords)}</span> dari <span className="font-medium text-slate-700">{totalRecords}</span> dokumen
+          <div className="text-sm text-[#5A305A]">
+            Menampilkan <span className="font-medium text-[#5A305A]">{((page - 1) * pageSize) + 1}</span> hingga <span className="font-medium text-[#5A305A]">{Math.min(page * pageSize, totalRecords)}</span> dari <span className="font-medium text-[#5A305A]">{totalRecords}</span> dokumen
       
     </div>
           <div className="flex gap-2">
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="p-1.5 rounded border border-slate-300 text-slate-600 disabled:opacity-50 hover:bg-slate-50"
+              className="p-1.5 rounded border border-slate-300 text-[#5A305A] disabled:opacity-50 hover:bg-slate-50"
             >
               <ChevronLeft size={18} />
             </button>
             <button
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
-              className="p-1.5 rounded border border-slate-300 text-slate-600 disabled:opacity-50 hover:bg-slate-50"
+              className="p-1.5 rounded border border-slate-300 text-[#5A305A] disabled:opacity-50 hover:bg-slate-50"
             >
               <ChevronRight size={18} />
             </button>

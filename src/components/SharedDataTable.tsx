@@ -95,10 +95,10 @@ function StatusBadge({ status }: { status: string }) {
     'BELUM LENGKAP': 'bg-amber-100 text-amber-700',
     LULUS: 'bg-emerald-100 text-emerald-700',
     'PERLU REVIEW': 'bg-amber-100 text-amber-700',
-    ARCHIVED: 'bg-slate-100 text-slate-700',
+    ARCHIVED: 'bg-slate-100 text-[#5A305A]',
   }
   return (
-    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${map[status] || 'bg-slate-100 text-slate-500'}`}>
+    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${map[status] || 'bg-slate-100 text-[#5A305A]'}`}>
       {status || '—'}
     </span>
   )
@@ -336,14 +336,14 @@ function EditModal({ record, tab, cols, onClose, onSaved, isCreate }: { record: 
         {/* Header Modal */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
           <div>
-            <h3 className="font-bold text-slate-900">{isCreate ? 'Tambah Data Baru' : 'Edit Record'}</h3>
-            <p className="text-xs text-slate-400 mt-0.5 font-mono">
+            <h3 className="font-bold text-[#5A305A]">{isCreate ? 'Tambah Data Baru' : 'Edit Record'}</h3>
+            <p className="text-xs text-[#5A305A] mt-0.5 font-mono">
               {isCreate ? 'Isi kolom yang tersedia, sisanya bisa dilengkapi lewat Edit nanti' : (record.awb || record.no_invoice || record.no_pib || record.no_aju || record.id)}
             </p>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 text-sm transition-all"
+            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-[#5A305A] text-sm transition-all"
           >
             ✕
           </button>
@@ -364,7 +364,7 @@ function EditModal({ record, tab, cols, onClose, onSaved, isCreate }: { record: 
                   <select
                     value={form[c.key] ?? ''}
                     onChange={e => set(c.key, e.target.value)}
-                    className="w-full border border-blue-200 bg-blue-50/30 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-medium text-slate-700 h-[34px]"
+                    className="w-full border border-blue-200 bg-blue-50/30 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-medium text-[#5A305A] h-[34px]"
                   >
                     <option value="">— Pilih —</option>
                     {['LENGKAP', 'PROSES', 'PENDING', 'REVISI'].map(o => <option key={o} value={o}>{o}</option>)}
@@ -377,7 +377,7 @@ function EditModal({ record, tab, cols, onClose, onSaved, isCreate }: { record: 
                     onChange={e => set(c.key, e.target.value)}
                     rows={3}
                     placeholder={`Isi ${c.label}...`}
-                    className="w-full border border-blue-200 bg-blue-50/30 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none transition-all font-medium text-slate-700"
+                    className="w-full border border-blue-200 bg-blue-50/30 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none transition-all font-medium text-[#5A305A]"
                   />
                 )
               } else if (c.type === 'num' || c.type === 'pct') {
@@ -386,7 +386,7 @@ function EditModal({ record, tab, cols, onClose, onSaved, isCreate }: { record: 
                     value={form[c.key]}
                     onChange={(v) => set(c.key, v)}
                     placeholder={`Isi ${c.label}...`}
-                    className="w-full border border-blue-200 bg-blue-50/30 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-medium text-slate-700 h-[34px]"
+                    className="w-full border border-blue-200 bg-blue-50/30 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-medium text-[#5A305A] h-[34px]"
                     isPct={c.type === 'pct'}
                   />
                 )
@@ -398,7 +398,7 @@ function EditModal({ record, tab, cols, onClose, onSaved, isCreate }: { record: 
                     value={form[c.key] ?? ''}
                     onChange={e => set(c.key, e.target.value)}
                     placeholder={c.type === 'date' ? 'YYYY-MM-DD' : `Isi ${c.label}...`}
-                    className="w-full border border-blue-200 bg-blue-50/30 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-medium text-slate-700 h-[34px]"
+                    className="w-full border border-blue-200 bg-blue-50/30 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-medium text-[#5A305A] h-[34px]"
                   />
                 )
               }
@@ -426,7 +426,7 @@ function EditModal({ record, tab, cols, onClose, onSaved, isCreate }: { record: 
         <div className="flex gap-3 px-6 py-5 border-t border-slate-100">
           <button
             onClick={onClose}
-            className="flex-1 py-3 rounded-xl border border-slate-200 text-slate-600 font-semibold text-sm hover:bg-slate-50 transition-all"
+            className="flex-1 py-3 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all"
           >
             Batal
           </button>
@@ -876,7 +876,7 @@ function ChecklistModal({ record, tab, onClose, onSaved }: { record: any, tab: a
       <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center h-full w-full">
         <div className="bg-white p-6 rounded-2xl shadow-xl">
            <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
-           <p className="text-slate-600 font-medium">Memuat checklist...</p>
+           <p className="text-[#5A305A] font-medium">Memuat checklist...</p>
         </div>
       </div>
     );
@@ -886,8 +886,8 @@ function ChecklistModal({ record, tab, onClose, onSaved }: { record: any, tab: a
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl flex flex-col overflow-hidden max-h-[90vh]">
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-          <h2 className="text-lg font-bold text-slate-800">Checklist Kelengkapan Dokumen</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+          <h2 className="text-lg font-bold text-[#5A305A]">Checklist Kelengkapan Dokumen</h2>
+          <button onClick={onClose} className="text-[#5A305A] hover:text-[#5A305A] transition-colors">
             <X size={20} />
           </button>
         </div>
@@ -896,14 +896,14 @@ function ChecklistModal({ record, tab, onClose, onSaved }: { record: any, tab: a
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 mb-6">
             <div className="flex justify-between items-center mb-4">
               <div>
-                <p className="text-sm text-slate-500 mb-1">Status Kelengkapan</p>
-                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${mapStatusColor[status] || 'bg-slate-100 text-slate-500'}`}>
+                <p className="text-sm text-[#5A305A] mb-1">Status Kelengkapan</p>
+                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${mapStatusColor[status] || 'bg-slate-100 text-[#5A305A]'}`}>
                   {status}
                 </span>
               </div>
               <div className="text-right">
-                <p className="text-sm text-slate-500 mb-1">Persentase</p>
-                <span className="text-2xl font-bold text-slate-800">{pct}%</span>
+                <p className="text-sm text-[#5A305A] mb-1">Persentase</p>
+                <span className="text-2xl font-bold text-[#5A305A]">{pct}%</span>
               </div>
             </div>
             
@@ -927,17 +927,17 @@ function ChecklistModal({ record, tab, onClose, onSaved }: { record: any, tab: a
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
             <div className="col-span-full mb-2">
-              <h3 className="text-sm font-bold text-slate-700 border-b border-slate-200 pb-2">Dokumen Wajib</h3>
+              <h3 className="text-sm font-bold text-[#5A305A] border-b border-slate-200 pb-2">Dokumen Wajib</h3>
             </div>
             {mandatoryFields.map(field => {
               const val = form[field.key];
               return (
                 <div key={field.key} onClick={() => toggle(field.key)} className="flex justify-between items-center p-3 bg-white border border-slate-200 hover:border-slate-300 rounded-lg shadow-sm cursor-pointer transition-colors group">
-                  <span className="text-sm font-medium text-slate-700">{field.label}</span>
+                  <span className="text-sm font-medium text-[#5A305A]">{field.label}</span>
                   {val ? (
                     <CheckCircle2 size={20} className="text-emerald-500" />
                   ) : (
-                    <span className="text-xs text-slate-400 group-hover:text-slate-500 font-medium bg-slate-100 px-2 py-0.5 rounded-full">—</span>
+                    <span className="text-xs text-[#5A305A] group-hover:text-[#5A305A] font-medium bg-slate-100 px-2 py-0.5 rounded-full">—</span>
                   )}
                 </div>
               );
@@ -946,20 +946,20 @@ function ChecklistModal({ record, tab, onClose, onSaved }: { record: any, tab: a
             {optionalFields.length > 0 && (
               <>
                 <div className="col-span-full mb-2 mt-6">
-                  <h3 className="text-sm font-bold text-slate-700 border-b border-slate-200 pb-2">Dokumen Opsional</h3>
+                  <h3 className="text-sm font-bold text-[#5A305A] border-b border-slate-200 pb-2">Dokumen Opsional</h3>
                 </div>
                 {optionalFields.map(field => {
                   const val = form[field.key];
                   return (
                     <div key={field.key} onClick={() => toggle(field.key)} className="flex justify-between items-center p-3 bg-white border border-slate-200 hover:border-slate-300 rounded-lg shadow-sm cursor-pointer transition-colors group">
-                      <span className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                      <span className="text-sm font-medium text-[#5A305A] flex items-center gap-2">
                         {field.label}
-                        <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-semibold">(Opsional)</span>
+                        <span className="text-[10px] bg-slate-100 text-[#5A305A] px-1.5 py-0.5 rounded font-semibold">(Opsional)</span>
                       </span>
                       {val ? (
                         <CheckCircle2 size={20} className="text-emerald-500" />
                       ) : (
-                        <span className="text-xs text-slate-400 group-hover:text-slate-500 font-medium bg-slate-100 px-2 py-0.5 rounded-full">—</span>
+                        <span className="text-xs text-[#5A305A] group-hover:text-[#5A305A] font-medium bg-slate-100 px-2 py-0.5 rounded-full">—</span>
                       )}
                     </div>
                   );
@@ -979,7 +979,7 @@ function ChecklistModal({ record, tab, onClose, onSaved }: { record: any, tab: a
         <div className="flex gap-3 px-6 py-5 border-t border-slate-100 bg-slate-50">
           <button
             onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 font-semibold text-sm hover:bg-slate-50 transition-all"
+            className="flex-1 py-2.5 rounded-xl border border-slate-200 bg-white text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all"
           >
             Batal
           </button>
@@ -1058,23 +1058,23 @@ const DeleteModal: React.FC<{ record: any | any[], tab: any, onClose: () => void
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
       <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl flex flex-col">
         <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-          <h3 className="text-lg font-bold text-slate-800">Konfirmasi Hapus</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+          <h3 className="text-lg font-bold text-[#5A305A]">Konfirmasi Hapus</h3>
+          <button onClick={onClose} className="text-[#5A305A] hover:text-[#5A305A] transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
           </button>
         </div>
         <div className="p-6">
-          <p className="text-sm text-slate-600 mb-3">{customMessage ? customMessage : `Apakah Anda yakin ingin menghapus ${isBulk ? `${records.length} data` : 'data ini'}? Tindakan ini tidak dapat dibatalkan.`}</p>
+          <p className="text-sm text-[#5A305A] mb-3">{customMessage ? customMessage : `Apakah Anda yakin ingin menghapus ${isBulk ? `${records.length} data` : 'data ini'}? Tindakan ini tidak dapat dibatalkan.`}</p>
           {!isBulk && (
             <>
-              {record.no_pib && <p className="text-xs font-bold text-slate-800 mb-1">No. PIB: {record.no_pib}</p>}
-              {record.awb && <p className="text-xs font-bold text-slate-800">AWB: {record.awb}</p>}
+              {record.no_pib && <p className="text-xs font-bold text-[#5A305A] mb-1">No. PIB: {record.no_pib}</p>}
+              {record.awb && <p className="text-xs font-bold text-[#5A305A]">AWB: {record.awb}</p>}
             </>
           )}
           {err && <div className="mt-4 text-xs text-red-600 bg-red-50 border border-red-200 p-3 rounded-lg">{err}</div>}
         </div>
         <div className="flex gap-3 px-6 py-5 border-t border-slate-100">
-          <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-slate-200 text-slate-600 font-semibold text-sm hover:bg-slate-50 transition-all">Batal</button>
+          <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all">Batal</button>
           <button onClick={handleDelete} disabled={loading} className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm disabled:opacity-50 transition-all">{loading ? 'Proses...' : 'Ya, Hapus'}</button>
         </div>
       </div>
@@ -1091,14 +1091,14 @@ const getCellData = (c: any, rec: any, index: number) => {
   if (rec.shipment_type === 'LCL') {
     const hiddenForLcl = ['lift_off_vendor', 'lift_off_biaya', 'lift_off_split', 'handling_vendor', 'handling_biaya', 'handling_split'];
     if (hiddenForLcl.includes(c.key)) {
-      return { content: '—', alignClass: 'text-center text-slate-400 font-mono' };
+      return { content: '—', alignClass: 'text-center text-[#5A305A] font-mono' };
     }
   }
-  let alignClass = 'text-left font-mono text-slate-600';
+  let alignClass = 'text-left font-mono text-[#5A305A]';
 
   if (c.type === 'index') {
     content = index + 1;
-    alignClass = 'text-center font-bold text-slate-500 whitespace-nowrap';
+    alignClass = 'text-center font-bold text-[#5A305A] whitespace-nowrap';
   } else if (c.key === 'cek_selisih') {
     const val = Number(rec[c.key]);
     if (!isNaN(val) && (val >= 4000000 || val <= -4000000)) {
@@ -1106,28 +1106,28 @@ const getCellData = (c: any, rec: any, index: number) => {
     } else {
       content = fmt(rec[c.key]);
     }
-    alignClass = 'text-right font-mono text-slate-700 whitespace-nowrap';
+    alignClass = 'text-right font-mono text-[#5A305A] whitespace-nowrap';
   } else if (c.type === 'num') {
     content = fmt(rec[c.key]);
-    alignClass = 'text-right font-mono text-slate-700 whitespace-nowrap';
+    alignClass = 'text-right font-mono text-[#5A305A] whitespace-nowrap';
   } else if (c.type === 'pct') {
     content = fmtPct(rec[c.key]);
-    alignClass = 'text-right font-mono text-slate-700 whitespace-nowrap';
+    alignClass = 'text-right font-mono text-[#5A305A] whitespace-nowrap';
   } else if (c.type === 'pct_dynamic') {
     const match = rec.total_lulus || 0;
     const mismatch = rec.total_gagal || 0;
     const checked = match + mismatch;
     content = checked === 0 ? '0%' : Math.round((match / checked) * 100) + '%';
-    alignClass = 'text-center font-bold text-slate-700 whitespace-nowrap';
+    alignClass = 'text-center font-bold text-[#5A305A] whitespace-nowrap';
   } else if (c.type === 'date') {
     content = fmtDate(rec[c.key]);
-    alignClass = 'text-slate-500 whitespace-nowrap';
+    alignClass = 'text-[#5A305A] whitespace-nowrap';
   } else if (c.type === 'datetime') {
     content = rec[c.key] ? new Date(rec[c.key]).toLocaleString('id-ID') : '—';
-    alignClass = 'text-slate-500 whitespace-nowrap';
+    alignClass = 'text-[#5A305A] whitespace-nowrap';
   } else if (c.type === 'json') {
     content = rec[c.key] ? JSON.stringify(rec[c.key], null, 2) : '—';
-    alignClass = 'text-left font-mono text-slate-500 whitespace-pre max-w-xs overflow-hidden text-ellipsis';
+    alignClass = 'text-left font-mono text-[#5A305A] whitespace-pre max-w-xs overflow-hidden text-ellipsis';
   } else if (c.type === 'bool') {
     content = rec[c.key] === true ? '✅ LULUS' : rec[c.key] === false ? '❌ GAGAL' : '—';
     alignClass = 'text-center font-bold whitespace-nowrap text-[10px]';
@@ -1138,7 +1138,7 @@ const getCellData = (c: any, rec: any, index: number) => {
     content = (
       <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
         rec[c.key] === 'SEA' ? 'bg-sky-100 text-sky-700' : 
-        rec[c.key] === 'AIR' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-700'
+        rec[c.key] === 'AIR' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-[#5A305A]'
       }`}>
         {rec[c.key] || '—'}
       </span>
@@ -1149,7 +1149,7 @@ const getCellData = (c: any, rec: any, index: number) => {
       <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
         rec[c.key] === 'LCL' ? 'bg-cyan-100 text-cyan-700' : 
         rec[c.key] === 'FCL' ? 'bg-blue-100 text-blue-700' : 
-        rec[c.key] === 'AIR' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-700'
+        rec[c.key] === 'AIR' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-[#5A305A]'
       }`}>
         {rec[c.key] || '—'}
       </span>
@@ -1157,27 +1157,27 @@ const getCellData = (c: any, rec: any, index: number) => {
     alignClass = 'whitespace-nowrap';
   } else if (c.type === 'num_dash_null' || c.type === 'num_dash_if_null') {
     content = rec[c.key] === null || rec[c.key] === 0 ? '—' : fmt(rec[c.key]);
-    alignClass = 'text-right font-mono text-slate-700 whitespace-nowrap';
+    alignClass = 'text-right font-mono text-[#5A305A] whitespace-nowrap';
   } else if (c.type === 'num_dash_null_2dec') {
     content = rec[c.key] === null || rec[c.key] === '' ? '—' : Number(rec[c.key]).toFixed(2);
-    alignClass = 'text-right font-mono text-slate-700 whitespace-nowrap';
+    alignClass = 'text-right font-mono text-[#5A305A] whitespace-nowrap';
   } else if (c.type === 'date_dash_if_null') {
     content = rec[c.key] ? fmtDate(rec[c.key]) : '—';
-    alignClass = 'text-slate-500 whitespace-nowrap';
+    alignClass = 'text-[#5A305A] whitespace-nowrap';
   } else if (c.type === 'dash_if_null') {
     content = rec[c.key] || '—';
-    alignClass = 'text-slate-600';
+    alignClass = 'text-[#5A305A]';
   } else if (c.type === 'num_bold') {
     content = rec[c.key] ? <span className="font-bold">{fmt(rec[c.key])}</span> : '—';
-    alignClass = 'text-right font-mono text-slate-900 whitespace-nowrap';
+    alignClass = 'text-right font-mono text-[#5A305A] whitespace-nowrap';
   } else if (c.type === 'num_highlight') {
     content = rec[c.key] ? <span className="font-bold bg-amber-100 text-amber-900 px-2 py-1 rounded">{fmt(rec[c.key])}</span> : '—';
-    alignClass = 'text-right font-mono text-slate-900 whitespace-nowrap';
+    alignClass = 'text-right font-mono text-[#5A305A] whitespace-nowrap';
   } else if (c.type === 'date_badge_if_null') {
     content = rec[c.key] 
       ? fmtDate(rec[c.key]) 
       : <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-700">Belum Submit</span>;
-    alignClass = 'text-slate-500 whitespace-nowrap';
+    alignClass = 'text-[#5A305A] whitespace-nowrap';
   } else if (c.type === 'invType') {
     content = (
       <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
@@ -1310,7 +1310,7 @@ const SeaAirAuditRowGroup: React.FC<{
                     )}
                   </div>
                 );
-                alignClass = 'text-left font-mono text-slate-600';
+                alignClass = 'text-left font-mono text-[#5A305A]';
               }  
               
               const additionalClasses = !isRepeating && isFirst && rowCount > 1 && isExpanded ? 'border-r border-slate-200 bg-white group-hover:bg-blue-50/30' : '';
@@ -1319,18 +1319,18 @@ const SeaAirAuditRowGroup: React.FC<{
                 let inputEl;
                 if (c.type === 'date' || c.type === 'date_dash_if_null' || c.type === 'datetime' || c.type === 'date_badge_if_null') {
                   const val = editForm[c.key] ? String(editForm[c.key]).substring(0, 10) : '';
-                  inputEl = <input type="date" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-slate-800" value={val} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
+                  inputEl = <input type="date" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={val} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
                 } else if (c.type === 'num' || c.type === 'num_dash_null' || c.type === 'num_dash_null_2dec' || c.type === 'num_dash_if_null' || c.type === 'num_bold' || c.type === 'num_highlight') {
-                  inputEl = <input type="number" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-slate-800 text-right" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: Number(e.target.value)})} />;
+                  inputEl = <input type="number" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A] text-right" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: Number(e.target.value)})} />;
                 } else if (c.key === 'status') {
                   inputEl = (
-                    <select className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-slate-800" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})}>
+                    <select className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})}>
                       <option value="LENGKAP">LENGKAP</option>
                       <option value="ARCHIVED">ARCHIVED</option>
                     </select>
                   );
                 } else {
-                  inputEl = <input type="text" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-slate-800" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
+                  inputEl = <input type="text" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
                 }
                 return (
                   <td key={c.key} className={`px-2 py-2 align-top ${additionalClasses}`} rowSpan={isRepeating ? 1 : (isExpanded ? rowCount : 1)}>
@@ -1360,13 +1360,13 @@ const SeaAirAuditRowGroup: React.FC<{
                       </button>
                       <button
                         onClick={() => setIsEditing(false)}
-                        className="w-[80px] bg-slate-200 text-slate-700 hover:bg-slate-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all"
+                        className="w-[80px] bg-slate-200 text-[#5A305A] hover:bg-slate-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all"
                       >
                         Batal
                       </button>
                     </>
                   ) : rec.status === 'LENGKAP' ? (
-                    <span className="text-[10px] text-slate-400 font-semibold bg-slate-100 px-2.5 py-1.5 rounded-full whitespace-nowrap">
+                    <span className="text-[10px] text-[#5A305A] font-semibold bg-slate-100 px-2.5 py-1.5 rounded-full whitespace-nowrap">
                       ✓ Selesai
                     </span>
                   ) : (
@@ -1387,7 +1387,7 @@ const SeaAirAuditRowGroup: React.FC<{
                           {onEdit && (
                             <button
                               onClick={handleStartEdit}
-                              className="w-[80px] bg-white border border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm"
+                              className="w-[80px] bg-white border border-slate-200 text-[#5A305A] hover:border-slate-300 hover:bg-slate-50 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm"
                             >
                               ✏️ Edit
                             </button>
@@ -1517,7 +1517,7 @@ const CourierAuditRowGroup: React.FC<{
                     )}
                   </div>
                 );
-                alignClass = 'text-left font-mono text-slate-600';
+                alignClass = 'text-left font-mono text-[#5A305A]';
               }  
               
               const additionalClasses = !isRepeating && isFirst && rowCount > 1 && isExpanded ? 'border-r border-slate-200 bg-white group-hover:bg-blue-50/30' : '';
@@ -1526,12 +1526,12 @@ const CourierAuditRowGroup: React.FC<{
                 let inputEl;
                 if (c.type === 'date' || c.type === 'date_dash_if_null' || c.type === 'datetime' || c.type === 'date_badge_if_null') {
                   const val = editForm[c.key] ? String(editForm[c.key]).substring(0, 10) : '';
-                  inputEl = <input type="date" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-slate-800" value={val} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
+                  inputEl = <input type="date" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={val} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
                 } else if (c.type === 'num' || c.type === 'num_dash_null' || c.type === 'num_dash_null_2dec' || c.type === 'num_dash_if_null' || c.type === 'num_bold' || c.type === 'num_highlight') {
-                  inputEl = <input type="number" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-slate-800 text-right" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: Number(e.target.value)})} />;
+                  inputEl = <input type="number" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A] text-right" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: Number(e.target.value)})} />;
                 } else if (c.key === 'status') {
                   inputEl = (
-                    <select className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-slate-800" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})}>
+                    <select className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})}>
                       <option value="LENGKAP">LENGKAP</option>
                       <option value="PROSES">PROSES</option>
                       <option value="PENDING">PENDING</option>
@@ -1540,7 +1540,7 @@ const CourierAuditRowGroup: React.FC<{
                     </select>
                   );
                 } else {
-                  inputEl = <input type="text" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-slate-800" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
+                  inputEl = <input type="text" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
                 }
                 return (
                   <td key={c.key} className={`px-2 py-2 align-top ${additionalClasses}`} rowSpan={isRepeating ? 1 : (isExpanded ? rowCount : 1)}>
@@ -1564,14 +1564,14 @@ const CourierAuditRowGroup: React.FC<{
                       <button onClick={handleSave} disabled={isSaving} className="w-[80px] bg-green-600 text-white hover:bg-green-700 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all disabled:opacity-50">
                         {isSaving ? 'Menyimpan...' : 'Simpan'}
                       </button>
-                      <button onClick={() => setIsEditing(false)} disabled={isSaving} className="w-[80px] bg-slate-200 text-slate-700 hover:bg-slate-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all disabled:opacity-50">
+                      <button onClick={() => setIsEditing(false)} disabled={isSaving} className="w-[80px] bg-slate-200 text-[#5A305A] hover:bg-slate-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all disabled:opacity-50">
                         Batal
                       </button>
                     </>
                   ) : (
                     <>
                       {(onEdit || onInlineSaveRow) && rec.status !== 'LENGKAP' && (
-                        <button onClick={handleStartEdit} className="w-[80px] bg-white border border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
+                        <button onClick={handleStartEdit} className="w-[80px] bg-white border border-slate-200 text-[#5A305A] hover:border-slate-300 hover:bg-slate-50 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
                           ✏️ Edit
                         </button>
                       )}
@@ -1703,14 +1703,14 @@ const CourierRekapanRowGroup: React.FC<{
                     )}
                   </div>
                 );
-                alignClass = 'text-left font-mono text-slate-600';
+                alignClass = 'text-left font-mono text-[#5A305A]';
               } else if (c.key === 'vessel') {
                 if (isEditing) {
                   if (isFirst) {
                     content = (
                       <input 
                         type="text"
-                        className="w-full min-w-[120px] text-[10px] p-1 border border-blue-400 rounded outline-none text-slate-800 bg-white"
+                        className="w-full min-w-[120px] text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A] bg-white"
                         value={editForm.vessel ?? ''}
                         onChange={e => setEditForm({ ...editForm, vessel: e.target.value })}
                       />
@@ -1721,7 +1721,7 @@ const CourierRekapanRowGroup: React.FC<{
                 } else {
                   content = pair.vessel || '—';
                 }
-                alignClass = 'text-left font-mono text-slate-600';
+                alignClass = 'text-left font-mono text-[#5A305A]';
               }
               
               const additionalClasses = !isRepeating && isFirst && rowCount > 1 && isExpanded ? 'border-r border-slate-200 bg-white group-hover:bg-blue-50/30' : '';
@@ -1730,18 +1730,18 @@ const CourierRekapanRowGroup: React.FC<{
                 let inputEl;
                 if (c.type === 'date' || c.type === 'date_dash_if_null' || c.type === 'datetime' || c.type === 'date_badge_if_null') {
                   const val = editForm[c.key] ? String(editForm[c.key]).substring(0, 10) : '';
-                  inputEl = <input type="date" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-slate-800" value={val} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
+                  inputEl = <input type="date" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={val} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
                 } else if (c.type === 'num' || c.type === 'num_dash_null' || c.type === 'num_dash_null_2dec' || c.type === 'num_dash_if_null' || c.type === 'num_bold' || c.type === 'num_highlight') {
-                  inputEl = <input type="number" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-slate-800 text-right" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: Number(e.target.value)})} />;
+                  inputEl = <input type="number" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A] text-right" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: Number(e.target.value)})} />;
                 } else if (c.key === 'status') {
                   inputEl = (
-                    <select className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-slate-800" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})}>
+                    <select className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})}>
                       <option value="LENGKAP">LENGKAP</option>
                       <option value="ARCHIVED">ARCHIVED</option>
                     </select>
                   );
                 } else {
-                  inputEl = <input type="text" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-slate-800" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
+                  inputEl = <input type="text" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
                 }
                 return (
                   <td key={c.key} className={`px-2 py-2 align-top ${additionalClasses}`} rowSpan={isRepeating ? 1 : (isExpanded ? rowCount : 1)}>
@@ -1765,14 +1765,14 @@ const CourierRekapanRowGroup: React.FC<{
                       <button onClick={handleSave} disabled={isSaving} className="w-[80px] bg-green-600 text-white hover:bg-green-700 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all disabled:opacity-50">
                         {isSaving ? 'Menyimpan...' : 'Simpan'}
                       </button>
-                      <button onClick={() => setIsEditing(false)} disabled={isSaving} className="w-[80px] bg-slate-200 text-slate-700 hover:bg-slate-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all disabled:opacity-50">
+                      <button onClick={() => setIsEditing(false)} disabled={isSaving} className="w-[80px] bg-slate-200 text-[#5A305A] hover:bg-slate-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all disabled:opacity-50">
                         Batal
                       </button>
                     </>
                   ) : (
                     <>
                       {(onEdit || onInlineSaveRow) && rec.status !== 'LENGKAP' && (
-                        <button onClick={handleStartEdit} className="w-[80px] bg-white border border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
+                        <button onClick={handleStartEdit} className="w-[80px] bg-white border border-slate-200 text-[#5A305A] hover:border-slate-300 hover:bg-slate-50 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
                           ✏️ Edit
                         </button>
                       )}
@@ -1898,7 +1898,7 @@ const SeaAirRekapanRowGroup: React.FC<{
                   content = (
                     <input
                       type="text"
-                      className="w-full min-w-[120px] bg-white border border-blue-400 rounded px-1 py-0.5 text-slate-800 focus:outline-none"
+                      className="w-full min-w-[120px] bg-white border border-blue-400 rounded px-1 py-0.5 text-[#5A305A] focus:outline-none"
                       value={po.po_no || ''}
                       onChange={(e) => {
                         const newArr = [...localPoDetail];
@@ -1923,13 +1923,13 @@ const SeaAirRekapanRowGroup: React.FC<{
                     </div>
                   );
                 }
-                alignClass = 'text-left font-mono text-slate-600';
+                alignClass = 'text-left font-mono text-[#5A305A]';
               } else if (c.key === 'vessel') {
                 if (isEditing) {
                   content = (
                     <input 
                       type="text"
-                      className="w-full min-w-[120px] bg-white border border-blue-400 rounded px-1 py-0.5 text-slate-800 focus:outline-none"
+                      className="w-full min-w-[120px] bg-white border border-blue-400 rounded px-1 py-0.5 text-[#5A305A] focus:outline-none"
                       value={po.vessel || ''}
                       onChange={(e) => {
                         const newArr = [...localPoDetail];
@@ -1941,7 +1941,7 @@ const SeaAirRekapanRowGroup: React.FC<{
                 } else {
                   content = po.vessel || '—';
                 }
-                alignClass = 'text-left font-mono text-slate-600';
+                alignClass = 'text-left font-mono text-[#5A305A]';
               }
               
               const additionalClasses = !isRepeating && isFirst && rowCount > 1 && isExpanded ? 'border-r border-slate-200 bg-white group-hover:bg-blue-50/30' : '';
@@ -1950,18 +1950,18 @@ const SeaAirRekapanRowGroup: React.FC<{
                 let inputEl;
                 if (c.type === 'date' || c.type === 'date_dash_if_null' || c.type === 'datetime' || c.type === 'date_badge_if_null') {
                   const val = editForm[c.key] ? String(editForm[c.key]).substring(0, 10) : '';
-                  inputEl = <input type="date" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-slate-800" value={val} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
+                  inputEl = <input type="date" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={val} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
                 } else if (c.type === 'num' || c.type === 'num_dash_null' || c.type === 'num_dash_null_2dec' || c.type === 'num_dash_if_null' || c.type === 'num_bold' || c.type === 'num_highlight') {
-                  inputEl = <input type="number" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-slate-800 text-right" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: Number(e.target.value)})} />;
+                  inputEl = <input type="number" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A] text-right" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: Number(e.target.value)})} />;
                 } else if (c.key === 'status') {
                   inputEl = (
-                    <select className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-slate-800" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})}>
+                    <select className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})}>
                       <option value="LENGKAP">LENGKAP</option>
                       <option value="ARCHIVED">ARCHIVED</option>
                     </select>
                   );
                 } else {
-                  inputEl = <input type="text" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-slate-800" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
+                  inputEl = <input type="text" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
                 }
                 return (
                   <td key={c.key} className={`px-2 py-2 align-top ${additionalClasses}`} rowSpan={isRepeating ? 1 : (isExpanded ? rowCount : 1)}>
@@ -1992,7 +1992,7 @@ const SeaAirRekapanRowGroup: React.FC<{
                       <button
                         onClick={() => setIsEditing(false)}
                         disabled={isSaving}
-                        className="w-[80px] bg-slate-200 text-slate-700 hover:bg-slate-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all disabled:opacity-50"
+                        className="w-[80px] bg-slate-200 text-[#5A305A] hover:bg-slate-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all disabled:opacity-50"
                       >
                         Batal
                       </button>
@@ -2141,18 +2141,18 @@ const DataRow: React.FC<{
           let inputEl;
           if (c.type === 'date' || c.type === 'date_dash_if_null' || c.type === 'datetime' || c.type === 'date_badge_if_null') {
             const val = editForm[c.key] ? String(editForm[c.key]).substring(0, 10) : '';
-            inputEl = <input type="date" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-slate-800" value={val} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
+            inputEl = <input type="date" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={val} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
           } else if (c.type === 'num' || c.type === 'num_dash_null' || c.type === 'num_dash_null_2dec' || c.type === 'num_dash_if_null' || c.type === 'num_bold' || c.type === 'num_highlight') {
-            inputEl = <input type="number" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-slate-800 text-right" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: Number(e.target.value)})} />;
+            inputEl = <input type="number" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A] text-right" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: Number(e.target.value)})} />;
           } else if (c.key === 'status') {
             inputEl = (
-              <select className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-slate-800" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})}>
+              <select className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})}>
                 <option value="LENGKAP">LENGKAP</option>
                 <option value="ARCHIVED">ARCHIVED</option>
               </select>
             );
           } else {
-            inputEl = <input type="text" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-slate-800" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
+            inputEl = <input type="text" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
           }
           return (
             <td key={c.key} className={`px-2 py-2 align-top`}>
@@ -2183,7 +2183,7 @@ const DataRow: React.FC<{
               <button
                 onClick={() => setIsEditing(false)}
                 disabled={isSaving}
-                className="w-[80px] bg-slate-200 text-slate-700 hover:bg-slate-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all disabled:opacity-50"
+                className="w-[80px] bg-slate-200 text-[#5A305A] hover:bg-slate-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all disabled:opacity-50"
               >
                 Batal
               </button>
@@ -2193,7 +2193,7 @@ const DataRow: React.FC<{
               {!hideEdit && (onEdit || onInlineSaveRow) && rec.status !== 'LENGKAP' && (
                 <button
                   onClick={handleStartEdit}
-                  className="w-[80px] bg-white border border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm"
+                  className="w-[80px] bg-white border border-slate-200 text-[#5A305A] hover:border-slate-300 hover:bg-slate-50 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm"
                 >
                   ✏️ Edit
                 </button>
@@ -2226,7 +2226,7 @@ const DataRow: React.FC<{
                       ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
                       : rec.status_cost === 'ADA SELISIH' || rec.status_cost === 'SELISIH'
                       ? 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100'
-                      : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                      : 'bg-slate-50 border-slate-200 text-[#5A305A] hover:bg-slate-100'
                   }`}
                 >
                   💰 Cost Valid.
@@ -2267,7 +2267,7 @@ const DataRow: React.FC<{
 // ─── Gaya toolbar terpadu (dipakai semua pill filter, input, dan dropdown) ─────
 const TOOLBAR_PILL_BASE = 'px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border'
 const TOOLBAR_PILL_ACTIVE = 'bg-[#5A305A] text-white border-[#5A305A] shadow-sm shadow-[#5A305A]/25'
-const TOOLBAR_PILL_INACTIVE = 'bg-white/70 backdrop-blur-md text-slate-500 border-white/60 shadow-sm hover:bg-white/90 hover:border-[#5A305A]/25 hover:text-[#5A305A]'
+const TOOLBAR_PILL_INACTIVE = 'bg-white/70 backdrop-blur-md text-[#5A305A] border-white/60 shadow-sm hover:bg-white/90 hover:border-[#5A305A]/25 hover:text-[#5A305A]'
 const toolbarPillClass = (isActive: boolean) => `${TOOLBAR_PILL_BASE} ${isActive ? TOOLBAR_PILL_ACTIVE : TOOLBAR_PILL_INACTIVE}`
 // Kapsul kaca untuk elemen non-pill di toolbar (search, date range, refresh, dropdown)
 const TOOLBAR_GLASS = 'bg-white/70 backdrop-blur-md border-slate-200/80 shadow-sm'
@@ -3236,11 +3236,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         
         <header className="px-6 pt-5 pb-2 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <h1 className="font-bold text-xl text-slate-800 leading-tight">
+            <h1 className="font-bold text-xl text-[#5A305A] leading-tight">
               {tab?.label || mainTabObj?.label || 'Dashboard'}
             </h1>
             {mainTabObj?.label && tab?.label !== mainTabObj?.label && (
-              <div className="flex items-center gap-2 text-sm text-slate-500">
+              <div className="flex items-center gap-2 text-sm text-[#5A305A]">
                 <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
                 <span>{mainTabObj.label}</span>
               </div>
@@ -3334,29 +3334,29 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 <div className="flex gap-1.5 items-center flex-wrap justify-end">
                 {['sea_air_audit', 'sea_air_rekapan'].includes(activeSubTab) && (
                   <div className={`flex gap-1.5 items-center rounded-full pl-2.5 pr-1.5 py-1 h-[38px] border shrink-0 ${TOOLBAR_GLASS}`}>
-                    <CalendarDays size={13} className="text-slate-400 shrink-0" />
+                    <CalendarDays size={13} className="text-[#5A305A] shrink-0" />
                     <input
                       type="date"
                       value={filterStartDate}
                       onChange={e => setFilterStartDate(e.target.value)}
-                      className="w-[100px] text-[11px] bg-transparent focus:outline-none text-slate-600 cursor-pointer"
+                      className="w-[100px] text-[11px] bg-transparent focus:outline-none text-[#5A305A] cursor-pointer"
                     />
-                    <span className="text-slate-300 text-xs">–</span>
+                    <span className="text-[#5A305A] text-xs">–</span>
                     <input
                       type="date"
                       value={filterEndDate}
                       onChange={e => setFilterEndDate(e.target.value)}
-                      className="w-[100px] text-[11px] bg-transparent focus:outline-none text-slate-600 cursor-pointer"
+                      className="w-[100px] text-[11px] bg-transparent focus:outline-none text-[#5A305A] cursor-pointer"
                     />
                     {(filterStartDate || filterEndDate) && (
-                      <button onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }} className="text-slate-400 hover:text-slate-600 ml-0.5 shrink-0">
+                      <button onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }} className="text-[#5A305A] hover:text-[#5A305A] ml-0.5 shrink-0">
                          <X size={14} />
                       </button>
                     )}
                   </div>
                 )}
                 <div className="relative shrink-0">
-                  <SearchIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <SearchIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A305A] pointer-events-none" />
                   <input
                     type="text"
                     placeholder="Cari..."
@@ -3367,7 +3367,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   {search && (
                     <button
                       onClick={() => setSearch('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 focus:outline-none"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#5A305A] hover:text-[#5A305A] focus:outline-none"
                     >
                       <X size={14} />
                     </button>
@@ -3376,7 +3376,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
                 <button
                   onClick={fetchRecords}
-                  className={`px-3 py-2 rounded-full text-slate-600 text-xs font-semibold hover:border-[#5A305A]/30 hover:text-[#5A305A] hover:bg-white/90 transition-all h-[38px] flex items-center gap-1.5 border shrink-0 ${TOOLBAR_GLASS}`}
+                  className={`px-3 py-2 rounded-full text-[#5A305A] text-xs font-semibold hover:border-[#5A305A]/30 hover:text-[#5A305A] hover:bg-white/90 transition-all h-[38px] flex items-center gap-1.5 border shrink-0 ${TOOLBAR_GLASS}`}
                 >
                   <RefreshCw size={13} />
                   Refresh
@@ -3417,11 +3417,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
                 {activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan' ? (
                   <div className={`flex items-center gap-1.5 rounded-full pl-2.5 pr-1.5 py-1 h-[38px] border shrink-0 ${TOOLBAR_GLASS}`}>
-                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">Company</span>
+                    <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">Company</span>
                     <select
                       value={activeAnFilter}
                       onChange={e => { setActiveAnFilter(e.target.value); setPage(1); }}
-                      className="border-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer max-w-[110px]"
+                      className="border-0 bg-transparent text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer max-w-[110px]"
                     >
                       {anTabs.map(an => (
                         <option key={an} value={an}>{an}</option>
@@ -3430,11 +3430,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   </div>
                 ) : activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit' ? (
                   <div className={`flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[38px] border ${TOOLBAR_GLASS}`}>
-                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">Company</span>
+                    <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">Company</span>
                     <select
                       value={activeImporAnFilter}
                       onChange={e => { setActiveImporAnFilter(e.target.value); setPage(1); }}
-                      className="border-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer max-w-[160px]"
+                      className="border-0 bg-transparent text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer max-w-[160px]"
                     >
                       {importAnTabs.map(an => (
                         <option key={an} value={an}>{an}</option>
@@ -3443,11 +3443,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   </div>
                 ) : activeMainTab === 'courier' && activeSubTab === 'courier_rekapan' ? (
                   <div className={`flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[38px] border ${TOOLBAR_GLASS}`}>
-                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">Company</span>
+                    <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">Company</span>
                     <select
                       value={activeCourierAnFilter}
                       onChange={e => { setActiveCourierAnFilter(e.target.value); setPage(1); }}
-                      className="border-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer max-w-[160px]"
+                      className="border-0 bg-transparent text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer max-w-[160px]"
                     >
                       {courierAnTabs.map(an => (
                         <option key={an} value={an}>{an}</option>
@@ -3456,11 +3456,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   </div>
                 ) : activeMainTab === 'courier' && activeSubTab === 'courier_audit' ? (
                   <div className={`flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[38px] border ${TOOLBAR_GLASS}`}>
-                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">Company</span>
+                    <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">Company</span>
                     <select
                       value={activeCourierImporAnFilter}
                       onChange={e => { setActiveCourierImporAnFilter(e.target.value); setPage(1); }}
-                      className="border-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer max-w-[160px]"
+                      className="border-0 bg-transparent text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer max-w-[160px]"
                     >
                       {courierImporAnTabs.map(an => (
                         <option key={an} value={an}>{an}</option>
@@ -3469,11 +3469,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   </div>
                 ) : (
                   <div className={`flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[38px] border ${TOOLBAR_GLASS}`}>
-                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide">Items</span>
+                    <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">Items</span>
                     <select
                       value={pageSize}
                       onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
-                      className="border-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
+                      className="border-0 bg-transparent text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer"
                     >
                       <option value={10}>10</option>
                       <option value={20}>20</option>
@@ -3490,7 +3490,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           {/* ── Tabel ── */}
           <div className="relative bg-white rounded-2xl border border-slate-200 shadow-sm isolate flex-1 flex flex-col min-h-0 overflow-hidden">
             {loading && records.length === 0 ? (
-              <div className="flex items-center justify-center py-24 text-slate-400">
+              <div className="flex items-center justify-center py-24 text-[#5A305A]">
                 <div className="w-7 h-7 border-2 border-blue-500 border-t-transparent rounded-full animate-spin-slow mr-3" />
                 <span className="text-sm">Memuat data dari Supabase...</span>
               </div>
@@ -3499,12 +3499,12 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 <p className="text-4xl mb-3">⚠️</p>
                 <p className="font-semibold">Terjadi Kesalahan</p>
                 <p className="text-sm mt-1 max-w-lg mx-auto bg-red-50 p-4 rounded-lg break-words">{fetchError}</p>
-                <p className="text-xs text-slate-500 mt-4">Tip: Jika Anda baru saja menghapus kolom (seperti no_cn), pastikan View (v_cn_lengkap/v_pib_lengkap) di Supabase sudah di-update.</p>
+                <p className="text-xs text-[#5A305A] mt-4">Tip: Jika Anda baru saja menghapus kolom (seperti no_cn), pastikan View (v_cn_lengkap/v_pib_lengkap) di Supabase sudah di-update.</p>
               </div>
             ) : records.length === 0 ? (
-              <div className="text-center py-24 text-slate-400">
+              <div className="text-center py-24 text-[#5A305A]">
                 <p className="text-4xl mb-3">📭</p>
-                <p className="font-semibold text-slate-600">Belum ada data</p>
+                <p className="font-semibold text-[#5A305A]">Belum ada data</p>
                 <p className="text-sm mt-1">
                   {search ? 'Coba kata kunci lain' : 'Upload dokumen pertama Anda'}
                 </p>
@@ -3518,7 +3518,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
               <div className="flex-1 flex flex-col min-h-0 relative w-full">
                 {loading && (
                   <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-50 flex items-center justify-center">
-                    <div className="flex items-center bg-white px-4 py-2 rounded-xl shadow-md border border-slate-100 text-slate-600 font-medium text-sm">
+                    <div className="flex items-center bg-white px-4 py-2 rounded-xl shadow-md border border-slate-100 text-[#5A305A] font-medium text-sm">
                       <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mr-3" />
                       Memperbarui data...
                     </div>
@@ -3555,9 +3555,9 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                               }
                             }
                           }}
-                          className={`px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap bg-slate-50 ${
+                          className={`px-4 py-3 text-[10px] font-bold text-[#5A305A] uppercase tracking-wider whitespace-nowrap bg-slate-50 ${
                             col.type === 'index' ? 'text-center' : (col.type === 'num' || col.type === 'pct') ? 'text-right' : 'text-left'
-                          } ${(!col.key.startsWith('breakdown_') && col.key !== 'cek_selisih' && col.type !== 'index') ? 'cursor-pointer hover:bg-slate-100 hover:text-slate-600 transition-colors' : ''}`}
+                          } ${(!col.key.startsWith('breakdown_') && col.key !== 'cek_selisih' && col.type !== 'index') ? 'cursor-pointer hover:bg-slate-100 hover:text-[#5A305A] transition-colors' : ''}`}
                         >
                           <div className={`flex items-center gap-1 ${col.type === 'index' ? 'justify-center' : (col.type === 'num' || col.type === 'pct') ? 'justify-end' : 'justify-start'}`}>
                             {col.label}
@@ -3574,7 +3574,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         </th>
                       ))}
                       {/* Sticky Right Column Header */}
-                      <th className="px-4 py-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-center sticky right-0 top-0 bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.03)] z-30 border-l border-slate-100">
+                      <th className="px-4 py-3 text-[10px] font-bold text-[#5A305A] uppercase tracking-wider text-center sticky right-0 top-0 bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.03)] z-30 border-l border-slate-100">
                         Aksi
                       </th>
                     </tr>
@@ -3673,25 +3673,25 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
             {/* Footer Pagination */}
             {records.length > 0 && (
               <div className="flex max-sm:flex-col justify-between items-center px-5 py-3 border-t border-slate-200 bg-slate-50 gap-3 shrink-0 relative z-20">
-                <div className="text-xs text-slate-500">
-                  Menampilkan <span className="font-semibold text-slate-700">{startIndex + 1}-{Math.min(startIndex + pageSize, totalRecords)}</span> dari <span className="font-semibold text-slate-700">{totalRecords}</span> record
+                <div className="text-xs text-[#5A305A]">
+                  Menampilkan <span className="font-semibold text-[#5A305A]">{startIndex + 1}-{Math.min(startIndex + pageSize, totalRecords)}</span> dari <span className="font-semibold text-[#5A305A]">{totalRecords}</span> record
                   {search && ` (Filter: "${search}")`}
                 </div>
                 <div className="flex items-center gap-2">
                   <button 
                     onClick={() => setPage(p => Math.max(1, p - 1))}
                     disabled={validPage === 1}
-                    className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 text-xs font-semibold hover:bg-slate-100 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+                    className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[#5A305A] text-xs font-semibold hover:bg-slate-100 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
                   >
                     Prev
                   </button>
-                  <span className="text-xs text-slate-500 font-medium min-w-[80px] text-center">
-                    Page <span className="font-bold text-slate-700">{validPage}</span> of {totalPages}
+                  <span className="text-xs text-[#5A305A] font-medium min-w-[80px] text-center">
+                    Page <span className="font-bold text-[#5A305A]">{validPage}</span> of {totalPages}
                   </span>
                   <button 
                     onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                     disabled={validPage === totalPages}
-                    className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 text-xs font-semibold hover:bg-slate-100 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+                    className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[#5A305A] text-xs font-semibold hover:bg-slate-100 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
                   >
                     Next
                   </button>

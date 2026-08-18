@@ -459,7 +459,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
       else if (selisih < -1000) finalStatus = 'UNDERCHARGE';
     }
 
-    if (!finalStatus || finalStatus === 'N/A') return <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded font-bold text-xs">⬜ N/A</span>;
+    if (!finalStatus || finalStatus === 'N/A') return <span className="px-2 py-0.5 bg-slate-100 text-[#5A305A] rounded font-bold text-xs">⬜ N/A</span>;
     if (finalStatus === 'OK') return <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded font-bold text-xs">✅ OK</span>;
     if (finalStatus === 'MANUAL') return <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded font-bold text-xs">🔍 MANUAL</span>;
     if (finalStatus.includes('NOT_FOUND')) return <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded font-bold text-xs">❓ {finalStatus}</span>;
@@ -555,7 +555,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                 
                 return (
                     <tr key={`other-${row.original_idx}`}>
-                        <td className="px-4 py-3 text-slate-700 font-medium bg-white">
+                        <td className="px-4 py-3 text-[#5A305A] font-medium bg-white">
                             <div className="flex flex-col gap-2">
                                 <span>{row.name || row.surcharge_name}</span>
                                 {hasCn && !isEditing && maxActual > 0 && (
@@ -590,8 +590,8 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                                 )}
                             </div>
                         </td>
-                        <td className="px-4 py-3 bg-white text-slate-600 align-top">{row.expected == null ? '-' : formatRp(row.expected)}</td>
-                        <td className="px-4 py-3 bg-white text-slate-600 align-top">
+                        <td className="px-4 py-3 bg-white text-[#5A305A] align-top">{row.expected == null ? '-' : formatRp(row.expected)}</td>
+                        <td className="px-4 py-3 bg-white text-[#5A305A] align-top">
                             <ActualInlineInput 
                                initialValue={row.displayed_actual} 
                                isEditing={isEditing} 
@@ -606,7 +606,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                                }} 
                             />
                         </td>
-                        {!isEditing && <td className="px-4 py-3 text-slate-500 bg-white align-top">{row.selisih == null ? '-' : formatRp(row.selisih)}</td>}
+                        {!isEditing && <td className="px-4 py-3 text-[#5A305A] bg-white align-top">{row.selisih == null ? '-' : formatRp(row.selisih)}</td>}
                         <td className="px-4 py-3 bg-white align-top">
                             {(() => {
                                 let badgeStatus = row.status;
@@ -620,9 +620,9 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                                       badgeStatus === 'OVERCHARGE' ? 'bg-red-100 text-red-700 border-red-200' :
                                       badgeStatus === 'UNDERCHARGE' ? 'bg-blue-100 text-blue-700 border-blue-200' :
                                       badgeStatus === 'SELISIH' ? 'bg-rose-100 text-rose-700 border-rose-200' :
-                                      badgeStatus === 'N/A' || !badgeStatus ? 'bg-slate-100 text-slate-500 border-slate-200' :
-                                      badgeStatus === 'RULE_NOT_FOUND' ? 'bg-slate-100 text-slate-500 border-slate-200' :
-                                      'bg-slate-100 text-slate-700 border-slate-200'
+                                      badgeStatus === 'N/A' || !badgeStatus ? 'bg-slate-100 text-[#5A305A] border-slate-200' :
+                                      badgeStatus === 'RULE_NOT_FOUND' ? 'bg-slate-100 text-[#5A305A] border-slate-200' :
+                                      'bg-slate-100 text-[#5A305A] border-slate-200'
                                   }`}>
                                       {badgeStatus === 'OK' ? '✅ OK' :
                                        badgeStatus === 'OVERCHARGE' ? '⚠️ OVERCHARGE' :
@@ -687,15 +687,15 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
       {reviseConfirm && (
         <div className="fixed inset-0 z-[9999] bg-slate-900/50 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 animate-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-bold text-slate-800 mb-2">Konfirmasi Revisi</h3>
-            <p className="text-sm text-slate-600 mb-6">
-              Batalkan pemotongan <span className="font-bold text-slate-800">Rp {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(Number(reviseConfirm.log.amount) || 0).replace('Rp', '').trim()}</span> dari <span className="font-bold text-slate-800">{reviseConfirm.log.target}</span>? Nilai akan dikembalikan dan bisa dipotong ulang.
+            <h3 className="text-lg font-bold text-[#5A305A] mb-2">Konfirmasi Revisi</h3>
+            <p className="text-sm text-[#5A305A] mb-6">
+              Batalkan pemotongan <span className="font-bold text-[#5A305A]">Rp {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(Number(reviseConfirm.log.amount) || 0).replace('Rp', '').trim()}</span> dari <span className="font-bold text-[#5A305A]">{reviseConfirm.log.target}</span>? Nilai akan dikembalikan dan bisa dipotong ulang.
             </p>
             <div className="flex items-center justify-end gap-3">
               <button 
                 onClick={() => setReviseConfirm(null)}
                 disabled={updating}
-                className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
+                className="px-4 py-2 text-sm font-semibold text-[#5A305A] hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
               >
                 Batal
               </button>
@@ -714,11 +714,11 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
       <div className="bg-white rounded-2xl w-full max-w-5xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
         <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
           <div>
-            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-3">
+            <h3 className="text-lg font-bold text-[#5A305A] flex items-center gap-3">
               Cost Validation Details
               {data?.is_edited && !isEditing && <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider">✏️ Edited</span>}
             </h3>
-            <p className="text-sm text-slate-500 mt-1">AWB: {awb}</p>
+            <p className="text-sm text-[#5A305A] mt-1">AWB: {awb}</p>
           </div>
           <div className="flex items-center gap-3">
             {data && !isEditing && (
@@ -731,7 +731,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
             )}
             {isEditing && (
               <div className="flex gap-2">
-                <button onClick={handleCancelEdit} className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2 rounded-lg text-sm font-semibold transition-colors">
+                <button onClick={handleCancelEdit} className="bg-slate-200 hover:bg-slate-300 text-[#5A305A] px-4 py-2 rounded-lg text-sm font-semibold transition-colors">
                   Batal
                 </button>
                 <button onClick={handleSaveEdit} disabled={savingEdit} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition-colors">
@@ -739,7 +739,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                 </button>
               </div>
             )}
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors ml-4 bg-slate-200 p-2 rounded-full">
+            <button onClick={onClose} className="text-[#5A305A] hover:text-[#5A305A] transition-colors ml-4 bg-slate-200 p-2 rounded-full">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
             </button>
           </div>
@@ -747,12 +747,12 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
 
         <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50">
           {loading ? (
-            <div className="flex flex-col items-center justify-center h-full text-slate-400 py-10">
+            <div className="flex flex-col items-center justify-center h-full text-[#5A305A] py-10">
               <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
               <span className="text-sm font-medium">Memuat data validation...</span>
             </div>
           ) : !data ? (
-            <div className="text-center py-10 text-slate-500">
+            <div className="text-center py-10 text-[#5A305A]">
               <div className="text-4xl mb-4">🔍</div>
               <p>Belum ada hasil validasi untuk AWB ini.</p>
             </div>
@@ -760,18 +760,18 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
             <div>
               {/* Basic Info */}
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6">
-                <h2 className="text-lg font-bold mb-4 text-slate-900 border-b pb-2">Shipment Info</h2>
+                <h2 className="text-lg font-bold mb-4 text-[#5A305A] border-b pb-2">Shipment Info</h2>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                   <div>
-                    <p className="text-slate-500 mb-1 font-medium">AWB</p>
+                    <p className="text-[#5A305A] mb-1 font-medium">AWB</p>
                     <p className="font-semibold">{data.awb}</p>
                   </div>
                   <div>
-                    <p className="text-slate-500 mb-1 font-medium">Vendor</p>
-                    <p className="font-semibold text-slate-800">{data.vendor || '-'}</p>
+                    <p className="text-[#5A305A] mb-1 font-medium">Vendor</p>
+                    <p className="font-semibold text-[#5A305A]">{data.vendor || '-'}</p>
                   </div>
                   <div>
-                    <p className="text-slate-500 mb-1 font-medium">Jalur</p>
+                    <p className="text-[#5A305A] mb-1 font-medium">Jalur</p>
                     <p>
                       {(data.jenis_dokumen || jenisDokumen)?.toUpperCase() === 'PIB' ? (
                         <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded font-bold text-xs inline-block shadow-sm">PIB</span>
@@ -783,15 +783,15 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                     </p>
                   </div>
                   <div>
-                    <p className="text-slate-500 mb-1 font-medium">Courier</p>
+                    <p className="text-[#5A305A] mb-1 font-medium">Courier</p>
                     <p className="font-semibold">{data.cv_courier || '-'}</p>
                   </div>
                   <div>
-                    <p className="text-slate-500 mb-1 font-medium">Direction / Type</p>
+                    <p className="text-[#5A305A] mb-1 font-medium">Direction / Type</p>
                     <p className="font-semibold">{data.cv_direction || '-'} / {data.cv_shipment_type || '-'}</p>
                   </div>
                   <div>
-                    <p className="text-slate-500 mb-1 font-medium">Ship Date</p>
+                    <p className="text-[#5A305A] mb-1 font-medium">Ship Date</p>
                     {isEditing ? (
                       <input 
                         type="date" 
@@ -804,7 +804,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                     )}
                   </div>
                   <div>
-                    <p className="text-slate-500 mb-1 font-medium">Origin / Zone</p>
+                    <p className="text-[#5A305A] mb-1 font-medium">Origin / Zone</p>
                     {isEditing ? (
                        <div className="flex gap-2 items-center">
                          <input 
@@ -815,14 +815,14 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                             placeholder="CC"
                             maxLength={2}
                           />
-                          <span className="text-xs text-slate-500">(Zone {data.cv_zone || '-'})</span>
+                          <span className="text-xs text-[#5A305A]">(Zone {data.cv_zone || '-'})</span>
                        </div>
                     ) : (
                       <p className="font-semibold">{data.cv_origin_country_code || '-'} (Zone {data.cv_zone || '-'})</p>
                     )}
                   </div>
                   <div>
-                    <p className="text-slate-500 mb-1 font-medium">Chargeable Weight</p>
+                    <p className="text-[#5A305A] mb-1 font-medium">Chargeable Weight</p>
                     {isEditing ? (
                         <div className="flex items-center gap-1">
                           <input 
@@ -831,14 +831,14 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                             onChange={(e) => handleFieldChange('cv_chargeable_kg', Number(e.target.value))}
                             className="w-full border border-slate-300 rounded px-2 py-1 text-xs"
                           />
-                          <span className="text-xs font-semibold text-slate-500">kg</span>
+                          <span className="text-xs font-semibold text-[#5A305A]">kg</span>
                         </div>
                     ) : (
                       <p className="font-semibold">{data.cv_chargeable_kg ? `${data.cv_chargeable_kg} kg` : '-'}</p>
                     )}
                   </div>
                   <div>
-                    <p className="text-slate-500 mb-1 font-medium">Service</p>
+                    <p className="text-[#5A305A] mb-1 font-medium">Service</p>
                     <p className="font-semibold">{data.cv_service_type || '-'}</p>
                   </div>
                 </div>
@@ -846,9 +846,9 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
 
               {/* Freight Validation Table */}
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6 overflow-x-auto">
-                <h2 className="text-lg font-bold mb-4 text-slate-900 border-b pb-2">Invoice Freight Validation</h2>
+                <h2 className="text-lg font-bold mb-4 text-[#5A305A] border-b pb-2">Invoice Freight Validation</h2>
                 <table className="w-full text-sm text-left">
-                  <thead className="text-xs text-slate-500 bg-slate-50 uppercase border-b border-slate-200">
+                  <thead className="text-xs text-[#5A305A] bg-slate-50 uppercase border-b border-slate-200">
                     <tr>
                       <th className="px-4 py-3 font-semibold rounded-tl-lg">Validasi</th>
                       <th className="px-4 py-3 font-semibold">Expected</th>
@@ -860,7 +860,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                   <tbody className="divide-y divide-slate-100">
                     {(isEditing || isRowVisible(data.cv_freight_status, data.cv_freight_expected, data.cv_freight_actual)) && (
                       <tr>
-                        <td className="px-4 py-3 text-slate-700 font-medium bg-white align-top">
+                        <td className="px-4 py-3 text-[#5A305A] font-medium bg-white align-top">
                           <div className="flex flex-col gap-2">
                              <span>Freight Charge</span>
                              {(Number(data?.cv_cn_freight_total) > 0 && Number(data?.cv_cn_freight_subtotal) > 0) && !isEditing && Number(data.cv_freight_actual) > 0 && (
@@ -883,15 +883,15 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                              )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 bg-white text-slate-600 align-top">{formatRp(isEditing ? editForm.cv_freight_expected : data.cv_freight_expected)}</td>
+                        <td className="px-4 py-3 bg-white text-[#5A305A] align-top">{formatRp(isEditing ? editForm.cv_freight_expected : data.cv_freight_expected)}</td>
                         <td className="px-4 py-3 bg-white align-top"><ActualInlineInput initialValue={isEditing ? editForm.cv_freight_actual : data.cv_freight_actual} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_freight_actual', val)} /></td>
-                        {!isEditing && <td className="px-4 py-3 text-slate-500 bg-white align-top">{formatRp(data.cv_freight_selisih)}</td>}
+                        {!isEditing && <td className="px-4 py-3 text-[#5A305A] bg-white align-top">{formatRp(data.cv_freight_selisih)}</td>}
                         <td className="px-4 py-3 bg-white align-top"><FreightStatusDropdown field="cv_freight_status" /></td>
                       </tr>
                     )}
                     {(isEditing || isRowVisible(data.cv_fuel_status, data.cv_fuel_expected, data.cv_fuel_actual)) && (
                       <tr>
-                        <td className="px-4 py-3 text-slate-700 font-medium bg-white align-top">
+                        <td className="px-4 py-3 text-[#5A305A] font-medium bg-white align-top">
                           <div className="flex flex-col gap-2">
                              <span>Fuel Surcharge ({data.cv_fuel_rate_pct ? data.cv_fuel_rate_pct + '%' : ''})</span>
                              {(Number(data?.cv_cn_freight_total) > 0 && Number(data?.cv_cn_freight_subtotal) > 0) && !isEditing && Number(data.cv_fuel_actual) > 0 && (
@@ -914,16 +914,16 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                              )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 bg-white text-slate-600 align-top">{formatRp(isEditing ? editForm.cv_fuel_expected : data.cv_fuel_expected)}</td>
+                        <td className="px-4 py-3 bg-white text-[#5A305A] align-top">{formatRp(isEditing ? editForm.cv_fuel_expected : data.cv_fuel_expected)}</td>
                         <td className="px-4 py-3 bg-white align-top"><ActualInlineInput initialValue={isEditing ? editForm.cv_fuel_actual : data.cv_fuel_actual} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_fuel_actual', val)} /></td>
-                        {!isEditing && <td className="px-4 py-3 text-slate-500 bg-white align-top">{formatRp(data.cv_fuel_selisih)}</td>}
+                        {!isEditing && <td className="px-4 py-3 text-[#5A305A] bg-white align-top">{formatRp(data.cv_fuel_selisih)}</td>}
                         <td className="px-4 py-3 bg-white align-top"><FreightStatusDropdown field="cv_fuel_status" /></td>
                       </tr>
                     )}
                     {renderOtherChargesRows(data.cv_other_charges_freight, 'freight')}
                     {(isEditing || isRowVisible(data.cv_vat_freight_status, data.cv_vat_freight_expected, data.cv_vat_freight_actual_net)) && (
                       <tr>
-                        <td className="px-4 py-3 text-slate-700 font-medium bg-white align-top">
+                        <td className="px-4 py-3 text-[#5A305A] font-medium bg-white align-top">
                           <div className="flex flex-col gap-2">
                              <span>VAT ({data.cv_vat_freight_pct ? data.cv_vat_freight_pct + '%' : ''})</span>
                              {(Number(data?.cv_cn_freight_total) > 0 && Number(data?.cv_cn_freight_vat) > 0) && !isEditing && Number(data.cv_vat_freight_actual_net || data.cv_vat_freight_actual) > 0 && (
@@ -946,9 +946,9 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                              )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 bg-white text-slate-600 align-top">{formatRp(isEditing ? editForm.cv_vat_freight_expected : data.cv_vat_freight_expected)}</td>
+                        <td className="px-4 py-3 bg-white text-[#5A305A] align-top">{formatRp(isEditing ? editForm.cv_vat_freight_expected : data.cv_vat_freight_expected)}</td>
                         <td className="px-4 py-3 bg-white align-top"><ActualInlineInput initialValue={isEditing ? editForm.cv_vat_freight_actual_net : data.cv_vat_freight_actual_net} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_vat_freight_actual_net', val)} /></td>
-                        {!isEditing && <td className="px-4 py-3 text-slate-500 bg-white align-top">{formatRp(data.cv_vat_freight_selisih)}</td>}
+                        {!isEditing && <td className="px-4 py-3 text-[#5A305A] bg-white align-top">{formatRp(data.cv_vat_freight_selisih)}</td>}
                         <td className="px-4 py-3 bg-white align-top"><FreightStatusDropdown field="cv_vat_freight_status" /></td>
                       </tr>
                     )}
@@ -978,16 +978,16 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
 
                       return (
                         <tr className="bg-slate-50 font-bold border-t-2 border-slate-200">
-                          <td className="px-4 py-3 text-slate-800">TOTAL</td>
-                          <td className="px-4 py-3 text-slate-800">{formatRp(data.cv_total_freight_expected)}</td>
-                          <td className="px-4 py-3 text-slate-800">{formatRp(totalActualNum)}</td>
-                          {!isEditing && <td className="px-4 py-3 text-slate-800">{formatRp(totalSelisihNum)}</td>}
+                          <td className="px-4 py-3 text-[#5A305A]">TOTAL</td>
+                          <td className="px-4 py-3 text-[#5A305A]">{formatRp(data.cv_total_freight_expected)}</td>
+                          <td className="px-4 py-3 text-[#5A305A]">{formatRp(totalActualNum)}</td>
+                          {!isEditing && <td className="px-4 py-3 text-[#5A305A]">{formatRp(totalSelisihNum)}</td>}
                           <td className="px-4 py-3 text-center">
                              <span className={`inline-flex items-center rounded-md font-bold border whitespace-nowrap uppercase ${
                                totalStatusStr === 'OK' ? 'px-2.5 py-1 text-[11px] bg-emerald-50 text-emerald-700 border-emerald-200' :
                                totalStatusStr === 'UNDERCHARGE' ? 'px-3 py-1.5 text-[14px] bg-blue-100 text-blue-700 border-blue-300 shadow-sm' :
                                totalStatusStr === 'OVERCHARGE' ? 'px-3 py-1.5 text-[14px] bg-red-100 text-red-700 border-red-300 shadow-sm' :
-                               (!totalStatusStr || totalStatusStr === 'N/A') ? 'px-2.5 py-1 text-[11px] bg-slate-100 text-slate-500 border-slate-200' :
+                               (!totalStatusStr || totalStatusStr === 'N/A') ? 'px-2.5 py-1 text-[11px] bg-slate-100 text-[#5A305A] border-slate-200' :
                                'px-2.5 py-1 text-[11px] bg-rose-50 text-rose-700 border-rose-200'
                              }`}>
                                <span className="mr-1">{totalStatusStr === 'OK' ? '✅' : (!totalStatusStr || totalStatusStr === 'N/A') ? '⬜' : '⚠️'}</span> {totalStatusStr}
@@ -1046,9 +1046,9 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
 
               {/* Duty Validation Table */}
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6 overflow-x-auto">
-                <h2 className="text-lg font-bold mb-4 text-slate-900 border-b pb-2">Invoice Duty Validation</h2>
+                <h2 className="text-lg font-bold mb-4 text-[#5A305A] border-b pb-2">Invoice Duty Validation</h2>
                 <table className="w-full text-sm text-left mb-4">
-                  <thead className="text-xs text-slate-500 bg-slate-50 uppercase border-b border-slate-200">
+                  <thead className="text-xs text-[#5A305A] bg-slate-50 uppercase border-b border-slate-200">
                     <tr>
                       <th className="px-4 py-3 font-semibold rounded-tl-lg">Validasi</th>
                       <th className="px-4 py-3 font-semibold w-40">Expected</th>
@@ -1061,16 +1061,16 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                     {/* IMPORT EXPORT DUTIES / DUTY & TAX INFO ROW */}
                     {(isEditing || data.cv_import_export_duties !== null || data.cv_duties_expected !== null) && (
                       <tr className="bg-slate-50 border-b border-slate-100">
-                        <td className="px-4 py-3 text-slate-700 font-medium">
+                        <td className="px-4 py-3 text-[#5A305A] font-medium">
                           {(data.cv_courier || '').toUpperCase() === 'DHL' ? 'IMPORT EXPORT DUTIES' : 'DUTY & TAX'}
                         </td>
-                        <td className="px-4 py-3 text-slate-600">
+                        <td className="px-4 py-3 text-[#5A305A]">
                           {isEditing 
                             ? formatRp(editForm.cv_duties_expected) 
                             : (Number(data.cv_duties_expected) > 0 ? formatRp(data.cv_duties_expected) : '-')}
                         </td>
-                        <td className="px-4 py-3 text-slate-600"><ActualInlineInput initialValue={isEditing ? editForm.cv_import_export_duties : data.cv_import_export_duties} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_import_export_duties', val)} /></td>
-                        {!isEditing && <td className="px-4 py-3 text-slate-500">{formatRp(data.cv_duties_selisih)}</td>}
+                        <td className="px-4 py-3 text-[#5A305A]"><ActualInlineInput initialValue={isEditing ? editForm.cv_import_export_duties : data.cv_import_export_duties} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_import_export_duties', val)} /></td>
+                        {!isEditing && <td className="px-4 py-3 text-[#5A305A]">{formatRp(data.cv_duties_selisih)}</td>}
                         <td className="px-4 py-3">
                           <DutyStatusDropdown field="cv_duties_status" /> 
                         </td>
@@ -1078,42 +1078,42 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                     )}
                     {(isEditing || isRowVisible(data.cv_nonroutine_status, data.cv_nonroutine_expected, data.cv_nonroutine_actual)) && (jenisDokumen || data.jenis_dokumen || '').toUpperCase() === 'PIB' && (
                       <tr>
-                        <td className="px-4 py-3 text-slate-700 font-medium bg-white">Non-Routine Entry</td>
-                        <td className="px-4 py-3 bg-white text-slate-600">{formatRp(isEditing ? editForm.cv_nonroutine_expected : data.cv_nonroutine_expected)}</td>
+                        <td className="px-4 py-3 text-[#5A305A] font-medium bg-white">Non-Routine Entry</td>
+                        <td className="px-4 py-3 bg-white text-[#5A305A]">{formatRp(isEditing ? editForm.cv_nonroutine_expected : data.cv_nonroutine_expected)}</td>
                         <td className="px-4 py-3 bg-white"><ActualInlineInput initialValue={isEditing ? editForm.cv_nonroutine_actual : data.cv_nonroutine_actual} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_nonroutine_actual', val)} /></td>
-                        {!isEditing && <td className="px-4 py-3 text-slate-500 bg-white">{formatRp(data.cv_nonroutine_selisih)}</td>}
+                        {!isEditing && <td className="px-4 py-3 text-[#5A305A] bg-white">{formatRp(data.cv_nonroutine_selisih)}</td>}
                         <td className="px-4 py-3 bg-white"><DutyStatusDropdown field="cv_nonroutine_status" /></td>
                       </tr>
                     )}
                     {(isEditing || data.cv_disbursement_actual != null || isRowVisible(data.cv_disbursement_status, data.cv_disbursement_expected, data.cv_disbursement_actual)) && (
                       <tr>
-                        <td className="px-4 py-3 text-slate-700 font-medium bg-white">Disbursement</td>
-                        <td className="px-4 py-3 bg-white text-slate-600">{formatRp(isEditing ? editForm.cv_disbursement_expected : data.cv_disbursement_expected)}</td>
+                        <td className="px-4 py-3 text-[#5A305A] font-medium bg-white">Disbursement</td>
+                        <td className="px-4 py-3 bg-white text-[#5A305A]">{formatRp(isEditing ? editForm.cv_disbursement_expected : data.cv_disbursement_expected)}</td>
                         <td className="px-4 py-3 bg-white"><ActualInlineInput initialValue={isEditing ? editForm.cv_disbursement_actual : data.cv_disbursement_actual} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_disbursement_actual', val)} /></td>
-                        {!isEditing && <td className="px-4 py-3 text-slate-500 bg-white">{formatRp(data.cv_disbursement_selisih)}</td>}
+                        {!isEditing && <td className="px-4 py-3 text-[#5A305A] bg-white">{formatRp(data.cv_disbursement_selisih)}</td>}
                         <td className="px-4 py-3 bg-white"><DutyStatusDropdown field="cv_disbursement_status" /></td>
                       </tr>
                     )}
                     {(isEditing || data.cv_processing_fee_actual != null || isRowVisible(data.cv_processing_fee_status, data.cv_processing_fee_expected, data.cv_processing_fee_actual)) && (
                       <tr>
-                        <td className="px-4 py-3 text-slate-700 font-medium bg-white">Processing Fee</td>
-                        <td className="px-4 py-3 bg-white text-slate-600">{formatRp(isEditing ? editForm.cv_processing_fee_expected : data.cv_processing_fee_expected)}</td>
+                        <td className="px-4 py-3 text-[#5A305A] font-medium bg-white">Processing Fee</td>
+                        <td className="px-4 py-3 bg-white text-[#5A305A]">{formatRp(isEditing ? editForm.cv_processing_fee_expected : data.cv_processing_fee_expected)}</td>
                         <td className="px-4 py-3 bg-white"><ActualInlineInput initialValue={isEditing ? editForm.cv_processing_fee_actual : data.cv_processing_fee_actual} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_processing_fee_actual', val)} /></td>
-                        {!isEditing && <td className="px-4 py-3 text-slate-500 bg-white">{formatRp(data.cv_processing_fee_selisih)}</td>}
+                        {!isEditing && <td className="px-4 py-3 text-[#5A305A] bg-white">{formatRp(data.cv_processing_fee_selisih)}</td>}
                         <td className="px-4 py-3 bg-white"><DutyStatusDropdown field="cv_processing_fee_status" /></td>
                       </tr>
                     )}
                     {(isEditing || data.cv_storage_actual !== null || data.cv_storage_status === 'MANUAL') && (
                       <tr>
-                        <td className="px-4 py-3 text-slate-700 font-medium bg-white">
+                        <td className="px-4 py-3 text-[#5A305A] font-medium bg-white">
                           Bonded Storage
                           {!isEditing && data.cv_storage_input_manual && (
-                            <span className="text-xs text-slate-500 font-normal ml-1">
+                            <span className="text-xs text-[#5A305A] font-normal ml-1">
                               ({data.cv_storage_days} hari)
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3 bg-white text-slate-600">
+                        <td className="px-4 py-3 bg-white text-[#5A305A]">
                            {isEditing ? (
                                <input 
                                  type="number" 
@@ -1124,7 +1124,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                            ) : formatRp(data.cv_storage_expected)}
                         </td>
                         <td className="px-4 py-3 bg-white"><ActualInlineInput initialValue={isEditing ? editForm.cv_storage_actual : data.cv_storage_actual} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_storage_actual', val)} /></td>
-                        {!isEditing && <td className="px-4 py-3 text-slate-500 bg-white">{formatRp(data.cv_storage_selisih)}</td>}
+                        {!isEditing && <td className="px-4 py-3 text-[#5A305A] bg-white">{formatRp(data.cv_storage_selisih)}</td>}
                         <td className="px-4 py-3 bg-white">
                           <div className="flex items-center gap-2">
                              <DutyStatusDropdown field="cv_storage_status" />
@@ -1143,10 +1143,10 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                     {renderOtherChargesRows(data.cv_other_charges_duty, 'duty')}
                     {(isEditing || isRowVisible(data.cv_vat_duty_status, data.cv_vat_duty_expected, data.cv_vat_duty_actual_net)) && (
                       <tr>
-                        <td className="px-4 py-3 text-slate-700 font-medium bg-white">VAT Duty ({data.cv_vat_duty_pct ? data.cv_vat_duty_pct + '%' : ''})</td>
-                        <td className="px-4 py-3 bg-white text-slate-600">{formatRp(isEditing ? editForm.cv_vat_duty_expected : data.cv_vat_duty_expected)}</td>
+                        <td className="px-4 py-3 text-[#5A305A] font-medium bg-white">VAT Duty ({data.cv_vat_duty_pct ? data.cv_vat_duty_pct + '%' : ''})</td>
+                        <td className="px-4 py-3 bg-white text-[#5A305A]">{formatRp(isEditing ? editForm.cv_vat_duty_expected : data.cv_vat_duty_expected)}</td>
                         <td className="px-4 py-3 bg-white"><ActualInlineInput initialValue={isEditing ? editForm.cv_vat_duty_actual_net : data.cv_vat_duty_actual_net} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_vat_duty_actual_net', val)} /></td>
-                        {!isEditing && <td className="px-4 py-3 text-slate-500 bg-white">{formatRp(data.cv_vat_duty_selisih)}</td>}
+                        {!isEditing && <td className="px-4 py-3 text-[#5A305A] bg-white">{formatRp(data.cv_vat_duty_selisih)}</td>}
                         <td className="px-4 py-3 bg-white"><DutyStatusDropdown field="cv_vat_duty_status" /></td>
                       </tr>
                     )}
@@ -1182,16 +1182,16 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
 
                       return (
                         <tr className="bg-slate-50 font-bold border-t-2 border-slate-200">
-                          <td className="px-4 py-3 text-slate-800">TOTAL</td>
-                          <td className="px-4 py-3 text-slate-800">{formatRp(dutyExpectedNum)}</td>
-                          <td className="px-4 py-3 text-slate-800">{formatRp(dutyActualNum)}</td>
-                          {!isEditing && <td className="px-4 py-3 text-slate-800">{formatRp(dutySelisihNum)}</td>}
+                          <td className="px-4 py-3 text-[#5A305A]">TOTAL</td>
+                          <td className="px-4 py-3 text-[#5A305A]">{formatRp(dutyExpectedNum)}</td>
+                          <td className="px-4 py-3 text-[#5A305A]">{formatRp(dutyActualNum)}</td>
+                          {!isEditing && <td className="px-4 py-3 text-[#5A305A]">{formatRp(dutySelisihNum)}</td>}
                           <td className="px-4 py-3 text-center">
                              <span className={`inline-flex items-center rounded-md font-bold border whitespace-nowrap uppercase ${
                                dutyStatusStr === 'OK' ? 'px-2.5 py-1 text-[11px] bg-emerald-50 text-emerald-700 border-emerald-200' :
                                dutyStatusStr === 'UNDERCHARGE' ? 'px-3 py-1.5 text-[14px] bg-blue-100 text-blue-700 border-blue-300 shadow-sm' :
                                dutyStatusStr === 'OVERCHARGE' ? 'px-3 py-1.5 text-[14px] bg-red-100 text-red-700 border-red-300 shadow-sm' :
-                               dutyStatusStr === 'N/A' ? 'px-2.5 py-1 text-[11px] bg-slate-100 text-slate-500 border-slate-200' :
+                               dutyStatusStr === 'N/A' ? 'px-2.5 py-1 text-[11px] bg-slate-100 text-[#5A305A] border-slate-200' :
                                'px-2.5 py-1 text-[11px] bg-rose-50 text-rose-700 border-rose-200'
                              }`}>
                                <span className="mr-1">{dutyStatusStr === 'OK' ? '✅' : dutyStatusStr === 'N/A' ? '⬜' : '⚠️'}</span> {dutyStatusStr}
@@ -1385,7 +1385,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                 
                 {isEditing ? (
                   <div className="mt-6 border-t border-slate-100 pt-6">
-                     <label className="block text-sm font-bold text-slate-700 mb-2">Catatan Perubahan Manual:</label>
+                     <label className="block text-sm font-bold text-[#5A305A] mb-2">Catatan Perubahan Manual:</label>
                      <textarea 
                        value={editForm.catatan || ''} 
                        onChange={e => handleFieldChange('catatan', e.target.value)}
@@ -1395,8 +1395,8 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                   </div>
                 ) : data.catatan ? (
                   <div className="mt-6 border-t border-slate-100 pt-6">
-                     <label className="block text-sm font-bold text-slate-700 mb-2">Catatan Perubahan Manual:</label>
-                     <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm text-slate-800 whitespace-pre-wrap">
+                     <label className="block text-sm font-bold text-[#5A305A] mb-2">Catatan Perubahan Manual:</label>
+                     <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm text-[#5A305A] whitespace-pre-wrap">
                        {data.catatan}
                      </div>
                   </div>
@@ -1408,46 +1408,46 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                        {/* This is the existing storage estimation manual component */}
                       <h3 className="font-bold text-orange-800 text-sm">📦 Hitung Ulang Estimasi Bonded Storage</h3>
                       {data.cv_storage_input_manual && (
-                        <button onClick={() => setEditStorageManual(false)} className="text-xs text-slate-500 hover:text-slate-700 font-bold">Batal</button>
+                        <button onClick={() => setEditStorageManual(false)} className="text-xs text-[#5A305A] hover:text-[#5A305A] font-bold">Batal</button>
                       )}
                     </div>
                     
-                    <div className="mb-4 text-sm text-slate-700 bg-white/50 p-3 rounded-lg border border-orange-100 grid grid-cols-2">
+                    <div className="mb-4 text-sm text-[#5A305A] bg-white/50 p-3 rounded-lg border border-orange-100 grid grid-cols-2">
                       <div>
-                        <p className="text-xs text-slate-500 mb-0.5">Storage Actual</p>
+                        <p className="text-xs text-[#5A305A] mb-0.5">Storage Actual</p>
                         <p className="font-semibold">{formatRp(data.cv_storage_actual)}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-slate-500 mb-0.5">Storage Weight</p>
+                        <p className="text-xs text-[#5A305A] mb-0.5">Storage Weight</p>
                         <p className="font-semibold">{(Number(data.cv_storage_weight_kg) || Number(data.cv_chargeable_kg)) ? `${Number(data.cv_storage_weight_kg) || Number(data.cv_chargeable_kg)} kg` : '-'}</p>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 items-end mb-4 text-sm">
                       <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">ETA Date</label>
+                        <label className="block text-xs font-semibold text-[#5A305A] mb-1">ETA Date</label>
                         <input type="date" value={etaDate} onChange={e => setEtaDate(e.target.value)} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 focus:ring focus:ring-orange-200 bg-white" />
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">Release Date</label>
+                        <label className="block text-xs font-semibold text-[#5A305A] mb-1">Release Date</label>
                         <input type="date" value={releaseDate} onChange={e => setReleaseDate(e.target.value)} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 focus:ring focus:ring-orange-200 bg-white" />
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">Actual Days</label>
-                        <div className="bg-slate-100 border border-slate-200 rounded-lg px-2 py-1.5 text-slate-600 text-center font-bold">
+                        <label className="block text-xs font-semibold text-[#5A305A] mb-1">Actual Days</label>
+                        <div className="bg-slate-100 border border-slate-200 rounded-lg px-2 py-1.5 text-[#5A305A] text-center font-bold">
                            {etaDate && releaseDate ? getActualDays() : '-'}
                         </div>
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">Billing Days</label>
-                        <div className="bg-slate-100 border border-slate-200 rounded-lg px-2 py-1.5 text-slate-600 text-center font-bold">
+                        <label className="block text-xs font-semibold text-[#5A305A] mb-1">Billing Days</label>
+                        <div className="bg-slate-100 border border-slate-200 rounded-lg px-2 py-1.5 text-[#5A305A] text-center font-bold">
                            {etaDate && releaseDate && storageExpectedResult ? storageExpectedResult.billing_days : '-'}
                         </div>
                       </div>
                     </div>
 
-                    <div className="bg-white/50 p-3 rounded-lg mb-4 text-xs text-slate-600 border border-orange-100">
-                      <p className="font-bold mb-1 text-slate-700">Formula Billing Days:</p>
+                    <div className="bg-white/50 p-3 rounded-lg mb-4 text-xs text-[#5A305A] border border-orange-100">
+                      <p className="font-bold mb-1 text-[#5A305A]">Formula Billing Days:</p>
                       <ul className="list-disc pl-4 space-y-1">
                         <li>Dihitung oleh sistem berdasarkan aturan courier</li>
                       </ul>
@@ -1455,8 +1455,8 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
 
                     <div className="flex items-center justify-between border-t border-orange-200 pt-4 mt-2">
                       <div>
-                        <span className="text-xs font-semibold text-slate-600 block mb-0.5">Expected Storage Calculated</span>
-                        <span className="font-bold text-lg text-slate-800">
+                        <span className="text-xs font-semibold text-[#5A305A] block mb-0.5">Expected Storage Calculated</span>
+                        <span className="font-bold text-lg text-[#5A305A]">
                           {storageExpectedResult ? formatRp(storageExpectedResult.expected_idr) : 'Rp 0'}
                         </span>
                         {debugError && <p className="text-xs text-red-600 mt-1 font-bold">{debugError}</p>}
@@ -1478,13 +1478,13 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col gap-4 text-sm mt-4">
                    <div className="flex justify-between items-center pb-4 border-b border-slate-100">
                      <div className="flex gap-4">
-                       <span className="font-semibold text-slate-600">Total Validable: {data.total_cost_cek || 0}</span>
+                       <span className="font-semibold text-[#5A305A]">Total Validable: {data.total_cost_cek || 0}</span>
                        <span className="text-emerald-600 font-semibold">{data.total_ok || 0} OK</span>
                        <span className="text-red-600 font-semibold">{data.total_selisih || 0} SELISIH</span>
-                       <span className="text-slate-500 font-semibold">{data.total_na || 0} N/A</span>
+                       <span className="text-[#5A305A] font-semibold">{data.total_na || 0} N/A</span>
                      </div>
                      <div className="flex items-center gap-2">
-                       <span className="font-bold text-slate-700">STATUS:</span>
+                       <span className="font-bold text-[#5A305A]">STATUS:</span>
                        {formatStatus(data.status_cost)}
                      </div>
                    </div>
@@ -1492,7 +1492,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                    <div className="flex justify-end gap-6">
                      {(data.cv_other_charges_freight_status === 'OK' || data.cv_other_charges_freight_status === 'ADA SELISIH') && (
                        <div className="flex flex-col items-end gap-1">
-                         <span className="text-[10px] font-bold text-slate-400 tracking-wider uppercase">Other Charges Freight</span>
+                         <span className="text-[10px] font-bold text-[#5A305A] tracking-wider uppercase">Other Charges Freight</span>
                          <span className={`px-2 py-0.5 rounded font-bold text-xs ${data.cv_other_charges_freight_status === 'OK' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
                            {data.cv_other_charges_freight_status === 'OK' ? '✅ OK' : '⚠️ ADA SELISIH'}
                          </span>
@@ -1500,7 +1500,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                      )}
                      {(data.cv_other_charges_duty_status === 'OK' || data.cv_other_charges_duty_status === 'ADA SELISIH') && (
                        <div className="flex flex-col items-end gap-1">
-                         <span className="text-[10px] font-bold text-slate-400 tracking-wider uppercase">Other Charges Duty</span>
+                         <span className="text-[10px] font-bold text-[#5A305A] tracking-wider uppercase">Other Charges Duty</span>
                          <span className={`px-2 py-0.5 rounded font-bold text-xs ${data.cv_other_charges_duty_status === 'OK' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
                            {data.cv_other_charges_duty_status === 'OK' ? '✅ OK' : '⚠️ ADA SELISIH'}
                          </span>

@@ -85,7 +85,7 @@ export default function ProcessingQueue({ onOpenDetail, type }: { onOpenDetail?:
         <div className="mb-6">
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center gap-2 px-4 py-2 bg-white/70 backdrop-blur-md border border-white/60 rounded-xl text-sm font-bold text-slate-700 hover:bg-white/90 transition-all shadow-sm relative"
+                className="flex items-center gap-2 px-4 py-2 bg-white/70 backdrop-blur-md border border-white/60 rounded-xl text-sm font-bold text-[#5A305A] hover:bg-white/90 transition-all shadow-sm relative"
             >
                 <Clock size={15} className="text-[#5A305A]" /> Antrian Proses
                 {unreadCount > 0 && (
@@ -99,7 +99,7 @@ export default function ProcessingQueue({ onOpenDetail, type }: { onOpenDetail?:
                 <div className="mt-3 bg-white/70 backdrop-blur-md border border-white/60 rounded-xl p-4 shadow-sm">
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-3">
-                            <h2 className="text-sm font-bold text-slate-800">Antrian Proses Dokumen</h2>
+                            <h2 className="text-sm font-bold text-[#5A305A]">Antrian Proses Dokumen</h2>
                             {queue.some(i => i.status === 'SUCCESS' || i.status === 'FAILED') && (
                                 <button 
                                     onClick={async () => {
@@ -120,17 +120,17 @@ export default function ProcessingQueue({ onOpenDetail, type }: { onOpenDetail?:
                                             }
                                         }
                                     }}
-                                    className="text-[10px] text-slate-500 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded"
+                                    className="text-[10px] text-[#5A305A] hover:text-[#5A305A] bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded"
                                 >
                                     ✕ Bersihkan Selesai/Gagal
                                 </button>
                             )}
                         </div>
-                        <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-slate-600 p-1"><X size={16} /></button>
+                        <button onClick={() => setIsOpen(false)} className="text-[#5A305A] hover:text-[#5A305A] p-1"><X size={16} /></button>
                     </div>
                     
                     {queue.length === 0 ? (
-                        <p className="text-xs text-slate-500 italic text-center py-4">Tidak ada antrian dokumen.</p>
+                        <p className="text-xs text-[#5A305A] italic text-center py-4">Tidak ada antrian dokumen.</p>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                             {queue.map(item => {

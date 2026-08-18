@@ -115,7 +115,7 @@ function StatusBadge({ st, isEditMode, onClick }: { st: string, isEditMode?: boo
     );
   }
   return (
-    <div className={`text-center text-slate-300 font-bold ${baseClasses}`} onClick={onClick} title={isEditMode ? "Klik untuk merubah status manual" : undefined}>-</div>
+    <div className={`text-center text-[#5A305A] font-bold ${baseClasses}`} onClick={onClick} title={isEditMode ? "Klik untuk merubah status manual" : undefined}>-</div>
   );
 }
 
@@ -131,7 +131,7 @@ function VInput({ value, onChange, placeholder, width, className }: { value: any
       value={value === null || value === undefined ? "" : value}
       onChange={handleChange}
       placeholder={placeholder}
-      className={`w-full p-2 border border-slate-200 rounded-md bg-white text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all placeholder-slate-400 ${className || "text-xs font-medium"}`}
+      className={`w-full p-2 border border-slate-200 rounded-md bg-white text-[#5A305A] focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all placeholder-slate-400 ${className || "text-xs font-medium"}`}
       style={{ width: width || "100%" }}
     />
   );
@@ -459,7 +459,7 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
           <div className="w-12 h-12 bg-[#5A305A] text-white rounded-xl shadow-inner flex items-center justify-center shrink-0">
              <Percent size={24} />
           </div>
-          <div className="text-center font-bold text-slate-800 text-[11px] tracking-wider uppercase">
+          <div className="text-center font-bold text-[#5A305A] text-[11px] tracking-wider uppercase">
             {title}
           </div>
         </div>
@@ -467,12 +467,12 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
         <table className="w-full text-left border-collapse">
           <thead>
             <tr>
-              <th className="p-3 bg-slate-100 border-b border-r border-slate-200 text-[11px] font-bold text-slate-800 uppercase tracking-wide whitespace-nowrap w-[1%] sticky left-0 z-10 shadow-[1px_0_0_0_#e2e8f0]">FIELD</th>
+              <th className="p-3 bg-slate-100 border-b border-r border-slate-200 text-[11px] font-bold text-[#5A305A] uppercase tracking-wide whitespace-nowrap w-[1%] sticky left-0 z-10 shadow-[1px_0_0_0_#e2e8f0]">FIELD</th>
               <th className="p-3 border-b border-r border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center bg-blue-50 text-blue-800 w-[12%]">AKTUAL</th>
               <th className="p-3 border-b border-r border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center bg-emerald-50 text-emerald-800 w-[12%]">EXPECTED</th>
               <th className="p-3 border-b border-r border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center bg-amber-50 text-amber-800 w-[12%]">SELISIH</th>
-              <th className="p-3 border-b border-r border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center bg-slate-50 text-slate-800 w-[20%]">CARA PERHITUNGAN</th>
-              <th className="p-3 border-b border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center bg-slate-50 text-slate-800 w-[12%]">STATUS</th>
+              <th className="p-3 border-b border-r border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center bg-slate-50 text-[#5A305A] w-[20%]">CARA PERHITUNGAN</th>
+              <th className="p-3 border-b border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center bg-slate-50 text-[#5A305A] w-[12%]">STATUS</th>
             </tr>
           </thead>
           <tbody>
@@ -493,19 +493,19 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
 
               return (
                 <tr key={row.id} className="border-b border-slate-200 last:border-b-0 hover:bg-slate-50/50 transition-colors">
-                  <td className="p-3 border-r border-slate-200 text-xs font-bold text-slate-800 bg-white whitespace-nowrap w-[1%] sticky left-0 z-10 align-middle shadow-[1px_0_0_0_#e2e8f0]">
+                  <td className="p-3 border-r border-slate-200 text-xs font-bold text-[#5A305A] bg-white whitespace-nowrap w-[1%] sticky left-0 z-10 align-middle shadow-[1px_0_0_0_#e2e8f0]">
                     {row.label}
                   </td>
                   <td className="p-3 border-r border-slate-200 text-center align-middle bg-slate-50/30">
                     {row.isText ? (
-                      <div className="text-[14px] font-bold text-slate-800">{row.ak}</div>
+                      <div className="text-[14px] font-bold text-[#5A305A]">{row.ak}</div>
                     ) : isEditMode ? (
                       <VInput value={row.ak} onChange={row.setAk} placeholder="Dari dokumen" className="text-[14px] font-bold" />
                     ) : (
-                      <div className="text-[14px] font-bold text-slate-800">{row.ak || "—"}</div>
+                      <div className="text-[14px] font-bold text-[#5A305A]">{row.ak || "—"}</div>
                     )}
                   </td>
-                  <td className="p-3 border-r border-slate-200 text-center font-bold text-slate-800 align-middle">
+                  <td className="p-3 border-r border-slate-200 text-center font-bold text-[#5A305A] align-middle">
                     {row.fmt(row.expected)}
                   </td>
                   <td className="p-3 border-r border-slate-200 text-center font-bold align-middle">
@@ -514,15 +514,15 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
                         {selisih > 0 ? "+" : ""}{row.fmt(selisih)}
                       </span>
                     ) : (
-                      <span className="text-slate-400">—</span>
+                      <span className="text-[#5A305A]">—</span>
                     )}
                   </td>
-                  <td className="p-3 border-r border-slate-200 text-[11px] text-slate-500 align-middle max-w-[200px]">
+                  <td className="p-3 border-r border-slate-200 text-[11px] text-[#5A305A] align-middle max-w-[200px]">
                     {row.formula}
                   </td>
                   <td className="p-3 border-slate-200 text-center align-middle">
                     {['bm', 'ppn', 'pph', 'freight'].includes(row.id) || (isSPPBMCP && row.id === 'ndpbmXnilai') ? (
-                      <span className="text-slate-400">—</span>
+                      <span className="text-[#5A305A]">—</span>
                     ) : (
                       <StatusBadge st={st} isEditMode={isEditMode} onClick={() => toggleManualStatus(row.id, st)} />
                     )}
@@ -554,9 +554,9 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
               }}
             >
               {showItemDetail ? (
-                <ChevronDown size={18} className="text-slate-300 shrink-0" />
+                <ChevronDown size={18} className="text-[#5A305A] shrink-0" />
               ) : (
-                <ChevronRight size={18} className="text-slate-300 shrink-0" />
+                <ChevronRight size={18} className="text-[#5A305A] shrink-0" />
               )}
               <span className="font-bold text-xs md:text-sm tracking-wide uppercase">
                 Rincian Item Pabean (Halaman Lanjutan)
@@ -565,7 +565,7 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
                 ({items.length} item)
               </span>
             </button>
-            <p className="text-[11px] text-slate-300 mt-1 pl-6">
+            <p className="text-[11px] text-[#5A305A] mt-1 pl-6">
               Diekstrak otomatis dari dokumen {jnsUpper === 'CN' ? 'SPPBMCP' : 'PIB'} — dapat diedit manual melalui form di bawah jika ada koreksi
             </p>
           </div>
@@ -576,7 +576,7 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
               </div>
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="bg-slate-100 text-slate-800 border-b border-slate-200">
+                  <tr className="bg-slate-100 text-[#5A305A] border-b border-slate-200">
                     <th className="p-3 border-r border-slate-200 text-center font-bold uppercase tracking-wider w-12">No</th>
                     <th className="p-3 border-r border-slate-200 text-right font-bold uppercase tracking-wider">Nilai Pabean</th>
                     <th className="p-3 border-r border-slate-200 text-center font-bold uppercase tracking-wider">% BM</th>
@@ -605,27 +605,27 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
 
                     return (
                       <tr key={it.id || idx} className="border-b border-slate-200 hover:bg-slate-50/50 transition-colors">
-                        <td className="p-3 border-r border-slate-200 text-center font-medium text-slate-600">{idx + 1}</td>
-                        <td className="p-3 border-r border-slate-200 text-right font-medium text-slate-800">{fmtNum(fc)}</td>
-                        <td className="p-3 border-r border-slate-200 text-center font-medium text-slate-800">{bmDisplay}</td>
-                        <td className="p-3 border-r border-slate-200 text-right font-medium text-slate-800">{fmtIDR(bmItemRp)}</td>
-                        <td className="p-3 border-r border-slate-200 text-center font-medium text-slate-800">11%</td>
-                        <td className="p-3 border-r border-slate-200 text-right font-medium text-slate-800">{fmtIDR(ppnItemRp)}</td>
-                        <td className="p-3 border-r border-slate-200 text-center font-medium text-slate-800">{pphDisplay}</td>
-                        <td className="p-3 text-right font-medium text-slate-800">{fmtIDR(pphItemRp)}</td>
+                        <td className="p-3 border-r border-slate-200 text-center font-medium text-[#5A305A]">{idx + 1}</td>
+                        <td className="p-3 border-r border-slate-200 text-right font-medium text-[#5A305A]">{fmtNum(fc)}</td>
+                        <td className="p-3 border-r border-slate-200 text-center font-medium text-[#5A305A]">{bmDisplay}</td>
+                        <td className="p-3 border-r border-slate-200 text-right font-medium text-[#5A305A]">{fmtIDR(bmItemRp)}</td>
+                        <td className="p-3 border-r border-slate-200 text-center font-medium text-[#5A305A]">11%</td>
+                        <td className="p-3 border-r border-slate-200 text-right font-medium text-[#5A305A]">{fmtIDR(ppnItemRp)}</td>
+                        <td className="p-3 border-r border-slate-200 text-center font-medium text-[#5A305A]">{pphDisplay}</td>
+                        <td className="p-3 text-right font-medium text-[#5A305A]">{fmtIDR(pphItemRp)}</td>
                       </tr>
                     );
                   })}
                 </tbody>
                 <tfoot>
-                  <tr className="bg-slate-100 font-bold text-slate-900 border-t-2 border-slate-300">
+                  <tr className="bg-slate-100 font-bold text-[#5A305A] border-t-2 border-slate-300">
                     <td className="p-3 border-r border-slate-200 text-center">TOTAL</td>
                     <td className="p-3 border-r border-slate-200 text-right">{fmtNum(calc.totalNilaiPabean)}</td>
-                    <td className="p-3 border-r border-slate-200 text-center text-slate-400">—</td>
+                    <td className="p-3 border-r border-slate-200 text-center text-[#5A305A]">—</td>
                     <td className="p-3 border-r border-slate-200 text-right">{fmtIDR(calc.totalBM)}</td>
-                    <td className="p-3 border-r border-slate-200 text-center text-slate-400">—</td>
+                    <td className="p-3 border-r border-slate-200 text-center text-[#5A305A]">—</td>
                     <td className="p-3 border-r border-slate-200 text-right">{fmtIDR(calc.totalPPN)}</td>
-                    <td className="p-3 border-r border-slate-200 text-center text-slate-400">—</td>
+                    <td className="p-3 border-r border-slate-200 text-center text-[#5A305A]">—</td>
                     <td className="p-3 text-right">{fmtIDR(calc.totalPPH)}</td>
                   </tr>
                 </tfoot>

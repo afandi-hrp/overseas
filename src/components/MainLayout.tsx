@@ -155,7 +155,7 @@ export default function MainLayout() {
                     onClick={() => navigate(t.path)}
                     className={`flex items-center justify-between px-2.5 py-2.5 rounded-xl border transition-all ${
                       isActive
-                        ? 'text-white bg-white/10 backdrop-blur-md border-white/20 shadow-lg shadow-black/10'
+                        ? 'text-white bg-white/10 backdrop-blur-md border-white/20 shadow-lg shadow-[#5A305A]/10'
                         : 'text-[#a394a8] border-transparent hover:bg-white/5 hover:text-white'
                     }`}
                     title={!isSidebarOpen ? text : undefined}

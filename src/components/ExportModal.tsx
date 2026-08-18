@@ -169,26 +169,26 @@ export default function ExportModal({
       <div className="bg-white rounded-2xl w-full max-w-6xl overflow-hidden shadow-2xl flex flex-col h-[80vh]">
         <div className="px-6 py-5 border-b border-slate-100 flex flex-wrap justify-between items-center bg-slate-50 gap-4">
           <div>
-            <h3 className="text-lg font-bold text-slate-800">Preview Export - {title}</h3>
-            {data.length > 0 && <p className="text-sm text-slate-500 mt-1">Total {data.length} row(s) akan di-export</p>}
+            <h3 className="text-lg font-bold text-[#5A305A]">Preview Export - {title}</h3>
+            {data.length > 0 && <p className="text-sm text-[#5A305A] mt-1">Total {data.length} row(s) akan di-export</p>}
           </div>
           
           <div className="flex flex-wrap items-center gap-3 bg-white p-2 border border-slate-200 rounded-lg">
-            {dateFieldLabel && <span className="text-xs font-semibold text-slate-500 ml-2">{dateFieldLabel}:</span>}
+            {dateFieldLabel && <span className="text-xs font-semibold text-[#5A305A] ml-2">{dateFieldLabel}:</span>}
             <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="border border-slate-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500" />
-            <span className="text-slate-400 text-sm">s/d</span>
+            <span className="text-[#5A305A] text-sm">s/d</span>
             <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="border border-slate-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500" />
             <button onClick={load} className="bg-[#4a3552] hover:bg-[#5A305A] text-white text-sm px-4 py-1.5 rounded transition-colors font-medium">Terapkan Filter</button>
           </div>
 
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors ml-auto">
+          <button onClick={onClose} className="text-[#5A305A] hover:text-[#5A305A] transition-colors ml-auto">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
           </button>
         </div>
         
         <div className="flex-1 overflow-auto p-0 bg-slate-50/50 relative">
           {loading ? (
-             <div className="flex flex-col items-center justify-center h-full text-slate-400">
+             <div className="flex flex-col items-center justify-center h-full text-[#5A305A]">
                <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mr-3 mb-4" />
                <span className="text-sm font-medium">Memuat data untuk preview...</span>
              </div>
@@ -202,7 +202,7 @@ export default function ExportModal({
             <div className="overflow-auto h-full p-6">
               <div className="min-w-max border rounded-xl overflow-hidden shadow-sm bg-white">
                 <table className="w-full text-sm text-left">
-                  <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 z-10 shadow-sm border-b border-slate-200">
+                  <thead className="bg-slate-100 text-[#5A305A] font-bold sticky top-0 z-10 shadow-sm border-b border-slate-200">
                     <tr>
                       <th className="px-4 py-3 whitespace-nowrap bg-slate-100">No.</th>
                       {exportCols.map(c => (
@@ -213,7 +213,7 @@ export default function ExportModal({
                   <tbody>
                     {data.slice(0, 10).map((row, idx) => (
                       <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/50">
-                        <td className="px-4 py-2 font-mono text-xs text-slate-400 text-center">{idx + 1}</td>
+                        <td className="px-4 py-2 font-mono text-xs text-[#5A305A] text-center">{idx + 1}</td>
                         {exportCols.map(c => {
                           let val = row[c.key]
                           
@@ -227,7 +227,7 @@ export default function ExportModal({
                           let display = formatValue(val, c.type || '', c.key);
                           
                           return (
-                            <td key={c.key} className={`px-4 py-2 whitespace-nowrap text-xs text-slate-600 max-w-[200px] truncate ${(c.type === 'num' || c.type === 'pct') ? 'text-right font-mono' : c.type === 'bool' ? 'text-center font-bold' : ''}`}>
+                            <td key={c.key} className={`px-4 py-2 whitespace-nowrap text-xs text-[#5A305A] max-w-[200px] truncate ${(c.type === 'num' || c.type === 'pct') ? 'text-right font-mono' : c.type === 'bool' ? 'text-center font-bold' : ''}`}>
                               {display}
                             </td>
                           )
@@ -238,7 +238,7 @@ export default function ExportModal({
                 </table>
               </div>
               {data.length > 10 && (
-                <div className="text-center py-4 text-xs text-slate-500 font-medium">
+                <div className="text-center py-4 text-xs text-[#5A305A] font-medium">
                   Menampilkan 10 baris pertama sebagai preview. Sisa {data.length - 10} baris akan ikut ter-export.
                 </div>
               )}
@@ -249,7 +249,7 @@ export default function ExportModal({
         <div className="flex gap-3 px-6 py-5 border-t border-slate-100 bg-white">
           <button 
             onClick={onClose} 
-            className="flex-1 py-3 rounded-xl border border-slate-200 text-slate-600 font-semibold text-sm hover:bg-slate-50 transition-all"
+            className="flex-1 py-3 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all"
           >
             Batal
           </button>

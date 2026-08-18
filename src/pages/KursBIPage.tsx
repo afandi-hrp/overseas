@@ -83,19 +83,19 @@ export default function KursBIPage() {
         
         {/* Header & Back Button */}
         <div className="flex flex-col md:flex-row md:items-center gap-4 mb-8">
-          <Link to="/settings" className="w-10 h-10 flex items-center justify-center rounded-full bg-white/60 hover:bg-white shadow-sm text-slate-700 transition-all">
+          <Link to="/settings" className="w-10 h-10 flex items-center justify-center rounded-full bg-white/60 hover:bg-white shadow-sm text-[#5A305A] transition-all">
             <ArrowLeft size={20} />
           </Link>
           <div>
-            <h1 className="font-bold text-2xl text-slate-900 leading-tight">Kurs BI Harian</h1>
-            <p className="text-slate-700 text-sm mt-1">Kelola data nilai tukar mata uang Bank Indonesia (BI).</p>
+            <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Kurs BI Harian</h1>
+            <p className="text-[#5A305A] text-sm mt-1">Kelola data nilai tukar mata uang Bank Indonesia (BI).</p>
           </div>
         </div>
 
         {/* Form Panel */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-6">
           <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-            <h2 className="font-semibold text-slate-800">Form Input Kurs</h2>
+            <h2 className="font-semibold text-[#5A305A]">Form Input Kurs</h2>
             {toast && (
               <span className={`text-xs px-3 py-1 rounded-full font-medium ${toast.type === 'success' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
                 {toast.message}
@@ -105,7 +105,7 @@ export default function KursBIPage() {
           <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Mata Uang</label>
+                <label className="block text-xs font-semibold text-[#5A305A] mb-1">Mata Uang</label>
                 <select 
                   value={mataUang}
                   onChange={(e) => setMataUang(e.target.value)}
@@ -119,7 +119,7 @@ export default function KursBIPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Tanggal</label>
+                <label className="block text-xs font-semibold text-[#5A305A] mb-1">Tanggal</label>
                 <input 
                   type="date"
                   value={tanggal}
@@ -128,7 +128,7 @@ export default function KursBIPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Kurs Jual</label>
+                <label className="block text-xs font-semibold text-[#5A305A] mb-1">Kurs Jual</label>
                 <input 
                   type="number"
                   placeholder="Contoh: 16500"
@@ -138,7 +138,7 @@ export default function KursBIPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Kurs Tengah</label>
+                <label className="block text-xs font-semibold text-[#5A305A] mb-1">Kurs Tengah</label>
                 <input 
                   type="number"
                   placeholder="Contoh: 16400"
@@ -150,7 +150,7 @@ export default function KursBIPage() {
             </div>
             
             <div className="mb-5">
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Catatan (Opsional)</label>
+              <label className="block text-xs font-semibold text-[#5A305A] mb-1">Catatan (Opsional)</label>
               <textarea 
                 rows={2}
                 value={catatan}
@@ -180,58 +180,58 @@ export default function KursBIPage() {
         {/* History Table */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="p-5 border-b border-slate-100 bg-slate-50/50">
-            <h2 className="font-semibold text-slate-800">Riwayat Kurs BI (30 Terakhir)</h2>
+            <h2 className="font-semibold text-[#5A305A]">Riwayat Kurs BI (30 Terakhir)</h2>
           </div>
           
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200">
-                  <th className="px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Tanggal</th>
-                  <th className="px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Mata Uang</th>
-                  <th className="px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Kurs Jual</th>
-                  <th className="px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Kurs Tengah</th>
-                  <th className="px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Catatan</th>
-                  <th className="px-5 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider text-center">Aksi</th>
+                  <th className="px-5 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider">Tanggal</th>
+                  <th className="px-5 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider">Mata Uang</th>
+                  <th className="px-5 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider text-right">Kurs Jual</th>
+                  <th className="px-5 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider text-right">Kurs Tengah</th>
+                  <th className="px-5 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider">Catatan</th>
+                  <th className="px-5 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider text-center">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-5 py-8 text-center text-sm text-slate-500">
+                    <td colSpan={6} className="px-5 py-8 text-center text-sm text-[#5A305A]">
                       Memuat data...
                     </td>
                   </tr>
                 ) : history.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-5 py-8 text-center text-sm text-slate-500">
+                    <td colSpan={6} className="px-5 py-8 text-center text-sm text-[#5A305A]">
                       Belum ada data kurs.
                     </td>
                   </tr>
                 ) : (
                   history.map((rec) => (
                     <tr key={rec.id} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="px-5 py-3 text-sm text-slate-700 font-medium whitespace-nowrap">
+                      <td className="px-5 py-3 text-sm text-[#5A305A] font-medium whitespace-nowrap">
                         {rec.tanggal}
                       </td>
                       <td className="px-5 py-3 text-sm">
-                        <span className="bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded text-xs border border-slate-200">
+                        <span className="bg-slate-100 text-[#5A305A] font-bold px-2 py-0.5 rounded text-xs border border-slate-200">
                           {rec.mata_uang}
                         </span>
                       </td>
-                      <td className="px-5 py-3 text-sm font-mono text-slate-700 text-right">
+                      <td className="px-5 py-3 text-sm font-mono text-[#5A305A] text-right">
                         {rec.kurs_jual ? rec.kurs_jual.toLocaleString('id-ID') : '-'}
                       </td>
-                      <td className="px-5 py-3 text-sm font-mono text-slate-600 text-right">
+                      <td className="px-5 py-3 text-sm font-mono text-[#5A305A] text-right">
                         {rec.kurs_tengah ? rec.kurs_tengah.toLocaleString('id-ID') : '-'}
                       </td>
-                      <td className="px-5 py-3 text-xs text-slate-500 max-w-xs truncate">
+                      <td className="px-5 py-3 text-xs text-[#5A305A] max-w-xs truncate">
                         {rec.catatan || '-'}
                       </td>
                       <td className="px-5 py-3 text-center">
                         <button 
                           onClick={() => handleEdit(rec)}
-                          className="text-xs bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 hover:text-blue-600 font-medium px-3 py-1.5 rounded transition-colors shadow-sm"
+                          className="text-xs bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] hover:text-blue-600 font-medium px-3 py-1.5 rounded transition-colors shadow-sm"
                         >
                           Edit
                         </button>

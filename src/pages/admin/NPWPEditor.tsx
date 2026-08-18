@@ -89,7 +89,7 @@ export default function NPWPEditor() {
       <div className="p-4 border-b border-slate-200 flex flex-wrap gap-4 items-end justify-between bg-slate-50 rounded-t-xl shrink-0">
         <div className="flex flex-wrap gap-4 w-full md:w-auto">
           <div className="w-full md:w-64">
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Cari NPWP / Nama</label>
+            <label className="block text-xs font-semibold text-[#5A305A] mb-1">Cari NPWP / Nama</label>
             <input 
               type="text" 
               value={search}
@@ -100,7 +100,7 @@ export default function NPWPEditor() {
           </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => fetchData()} className="bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 px-4 py-1.5 rounded-lg text-sm font-semibold transition-all">
+          <button onClick={() => fetchData()} className="bg-white border border-slate-300 text-[#5A305A] hover:bg-slate-50 px-4 py-1.5 rounded-lg text-sm font-semibold transition-all">
             Refresh
           </button>
           <button onClick={() => handleOpenModal()} className="bg-[#5A305A] text-white hover:bg-[#73507B] px-4 py-1.5 rounded-lg text-sm font-semibold transition-all">
@@ -118,7 +118,7 @@ export default function NPWPEditor() {
           <div className="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
-                <thead className="bg-[#1e293b] text-slate-100 uppercase text-xs">
+                <thead className="bg-[#1e293b] text-[#5A305A] uppercase text-xs">
                   <tr>
                     <th className="px-4 py-3 border-b border-r border-[#334155] whitespace-nowrap w-24">Aksi</th>
                     <th className="px-4 py-3 border-b border-r border-[#334155] whitespace-nowrap">No. NPWP</th>
@@ -129,7 +129,7 @@ export default function NPWPEditor() {
                 <tbody>
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                      <td colSpan={4} className="px-4 py-8 text-center text-[#5A305A]">
                         Tidak ada data yang ditemukan.
                       </td>
                     </tr>
@@ -144,16 +144,16 @@ export default function NPWPEditor() {
                             Del
                           </button>
                         </td>
-                        <td className="px-4 py-2 border-b border-slate-200 whitespace-nowrap font-medium text-slate-800">{row.npwp}</td>
-                        <td className="px-4 py-2 border-b border-slate-200 font-medium text-slate-800">{row.nama}</td>
-                        <td className="px-4 py-2 border-b border-slate-200 text-slate-600">{row.alamat}</td>
+                        <td className="px-4 py-2 border-b border-slate-200 whitespace-nowrap font-medium text-[#5A305A]">{row.npwp}</td>
+                        <td className="px-4 py-2 border-b border-slate-200 font-medium text-[#5A305A]">{row.nama}</td>
+                        <td className="px-4 py-2 border-b border-slate-200 text-[#5A305A]">{row.alamat}</td>
                       </tr>
                     ))
                   )}
                 </tbody>
               </table>
             </div>
-            <div className="bg-slate-50 p-3 text-xs text-slate-500 border-t border-slate-200 font-medium">
+            <div className="bg-slate-50 p-3 text-xs text-[#5A305A] border-t border-slate-200 font-medium">
                Total: {filtered.length} perusahaan
             </div>
           </div>
@@ -164,12 +164,12 @@ export default function NPWPEditor() {
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center p-4">
           <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl flex flex-col">
             <div className="flex justify-between items-center p-5 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-800">
+              <h2 className="text-lg font-bold text-[#5A305A]">
                 {editRecord ? 'Edit Master NPWP' : 'Tambah Master NPWP'}
               </h2>
               <button 
                 onClick={() => setShowModal(false)}
-                className="p-1.5 hover:bg-slate-100 rounded-full text-slate-400 transition-colors"
+                className="p-1.5 hover:bg-slate-100 rounded-full text-[#5A305A] transition-colors"
                 disabled={saving}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>
@@ -178,7 +178,7 @@ export default function NPWPEditor() {
             
             <form onSubmit={handleSave} className="p-5 flex flex-col gap-4 bg-slate-50">
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">No. NPWP *</label>
+                <label className="block text-xs font-semibold text-[#5A305A] mb-1">No. NPWP *</label>
                 <input 
                   type="text" 
                   required
@@ -190,7 +190,7 @@ export default function NPWPEditor() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Nama Perusahaan *</label>
+                <label className="block text-xs font-semibold text-[#5A305A] mb-1">Nama Perusahaan *</label>
                 <input 
                   type="text" 
                   required
@@ -202,7 +202,7 @@ export default function NPWPEditor() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Alamat</label>
+                <label className="block text-xs font-semibold text-[#5A305A] mb-1">Alamat</label>
                 <textarea 
                   value={form.alamat || ''}
                   onChange={(e) => setForm({...form, alamat: e.target.value})}
@@ -215,7 +215,7 @@ export default function NPWPEditor() {
                 <button 
                   type="button" 
                   onClick={() => setShowModal(false)}
-                  className="px-5 py-2 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-200 bg-slate-100 transition-colors"
+                  className="px-5 py-2 rounded-lg text-sm font-semibold text-[#5A305A] hover:bg-slate-200 bg-slate-100 transition-colors"
                   disabled={saving}
                 >
                   Batal

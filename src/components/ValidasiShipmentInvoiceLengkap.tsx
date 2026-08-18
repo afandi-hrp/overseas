@@ -58,7 +58,7 @@ const StatusBadge = ({ status }: { status: string | null }) => {
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold whitespace-nowrap bg-slate-100 text-slate-500">
+    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold whitespace-nowrap bg-slate-100 text-[#5A305A]">
       <Clock size={12} /> Belum Lengkap
     </span>
   );
@@ -103,7 +103,7 @@ const ShipmentEditableField = ({ recordId, field, initialValue, onSave, onUpdate
   
   return (
     <span 
-      className={`font-semibold text-slate-800 ${className} ${isEditMode && !saving ? 'cursor-pointer hover:bg-slate-200 ring-1 ring-slate-200 bg-white rounded px-1 -mx-1' : ''}`}
+      className={`font-semibold text-[#5A305A] ${className} ${isEditMode && !saving ? 'cursor-pointer hover:bg-slate-200 ring-1 ring-slate-200 bg-white rounded px-1 -mx-1' : ''}`}
       onClick={() => { 
          if (isEditMode && !saving) {
           setTempVal(initialValue || ''); 
@@ -111,7 +111,7 @@ const ShipmentEditableField = ({ recordId, field, initialValue, onSave, onUpdate
          }
       }}
     >
-      {initialValue ? (type === 'date' ? formatDateDisplay(initialValue) : initialValue) : (isEditMode ? <span className="text-slate-400 italic font-normal">{placeholder}</span> : '—')}
+      {initialValue ? (type === 'date' ? formatDateDisplay(initialValue) : initialValue) : (isEditMode ? <span className="text-[#5A305A] italic font-normal">{placeholder}</span> : '—')}
     </span>
   );
 };
@@ -148,7 +148,7 @@ const EditableIDR = ({ val, onSave, isUSD, isKurs }: any) => {
         {val != null && val !== '' ? (
           (isKurs ? Number(val).toLocaleString('id-ID') : (isUSD ? fmtUSD(val) : fmtIDR(val)))
         ) : (
-          isEditMode ? <span className="text-slate-400 italic text-xs">Klik isi</span> : <span className="text-slate-300">—</span>
+          isEditMode ? <span className="text-[#5A305A] italic text-xs">Klik isi</span> : <span className="text-[#5A305A]">—</span>
         )}
       </div>
     </div>
@@ -189,7 +189,7 @@ const ValidationTable = ({ title, rows, updateCheck }: { title: string, rows: an
   return (
     <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6 overflow-x-auto">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 border-b pb-2">
-        <h2 className="text-lg font-bold text-slate-900">{title}</h2>
+        <h2 className="text-lg font-bold text-[#5A305A]">{title}</h2>
         
         {hasJalurMerahOption && (
           <div className="flex flex-col items-end">
@@ -199,7 +199,7 @@ const ValidationTable = ({ title, rows, updateCheck }: { title: string, rows: an
                 className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider rounded-md transition-all ${
                   !isJalurMerah 
                     ? 'bg-white text-emerald-700 shadow-sm' 
-                    : 'text-slate-500 hover:text-slate-700'
+                    : 'text-[#5A305A] hover:text-[#5A305A]'
                 }`}
               >
                 Jalur Hijau
@@ -209,20 +209,20 @@ const ValidationTable = ({ title, rows, updateCheck }: { title: string, rows: an
                 className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider rounded-md transition-all ${
                   isJalurMerah 
                     ? 'bg-rose-50 text-rose-700 shadow-sm ring-1 ring-rose-200' 
-                    : 'text-slate-500 hover:text-slate-700'
+                    : 'text-[#5A305A] hover:text-[#5A305A]'
                 }`}
               >
                 Jalur Merah
               </button>
             </div>
-            <p className="text-[10px] text-slate-400 italic mt-1 max-w-[250px] text-right">
+            <p className="text-[10px] text-[#5A305A] italic mt-1 max-w-[250px] text-right">
               Jalur Merah jarang dipakai -- hanya pilih kalau memang shipment ini pakai Jalur Merah
             </p>
           </div>
         )}
       </div>
       <table className="w-full text-sm text-left">
-          <thead className="text-xs text-slate-500 bg-slate-50 uppercase border-b border-slate-200 sticky top-0 z-10 shadow-sm">
+          <thead className="text-xs text-[#5A305A] bg-slate-50 uppercase border-b border-slate-200 sticky top-0 z-10 shadow-sm">
             <tr>
               <th className="px-4 py-3 font-semibold rounded-tl-lg w-1/3">Validasi</th>
               <th className="px-4 py-3 font-semibold text-right">Expected {hasJalurMerahOption && isJalurMerah && <span className="text-rose-600 ml-1">(Merah)</span>}</th>
@@ -234,7 +234,7 @@ const ValidationTable = ({ title, rows, updateCheck }: { title: string, rows: an
           <tbody className="divide-y divide-slate-100">
             {displayRows.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-6 text-center text-sm text-slate-400 italic bg-slate-50/50">
+                <td colSpan={5} className="px-4 py-6 text-center text-sm text-[#5A305A] italic bg-slate-50/50">
                   Tidak ada data untuk {title}.
                 </td>
               </tr>
@@ -252,14 +252,14 @@ const ValidationTable = ({ title, rows, updateCheck }: { title: string, rows: an
               else if (isPpn) rowBg = 'bg-slate-50/70';
 
               let fontStyle = 'font-medium';
-              if (isTotalKeseluruhan) fontStyle = 'font-bold uppercase text-slate-800';
-              else if (isTotal) fontStyle = 'font-bold text-slate-800';
+              if (isTotalKeseluruhan) fontStyle = 'font-bold uppercase text-[#5A305A]';
+              else if (isTotal) fontStyle = 'font-bold text-[#5A305A]';
               else if (isPpn) fontStyle = 'font-bold italic';
 
               return (
               <React.Fragment key={idx}>
                 <tr className={`hover:bg-slate-50 transition-colors group ${isSummary ? 'border-t-2 border-slate-300' : isPpn ? 'border-t border-slate-200' : ''}`}>
-                  <td className={`px-4 py-3 text-sm text-slate-700 ${rowBg} ${fontStyle}`}>
+                  <td className={`px-4 py-3 text-sm text-[#5A305A] ${rowBg} ${fontStyle}`}>
                     <div className="flex flex-col gap-0.5">
                       {(() => {
                         const text = row.row || '';
@@ -273,7 +273,7 @@ const ValidationTable = ({ title, rows, updateCheck }: { title: string, rows: an
                                   <Edit3 size={12} className="text-amber-500 shrink-0" title="Diedit manual" />
                                 )}
                               </div>
-                              <span className="text-[10px] text-slate-500 font-medium leading-tight">{match[2]}</span>
+                              <span className="text-[10px] text-[#5A305A] font-medium leading-tight">{match[2]}</span>
                             </div>
                           );
                         }
@@ -286,17 +286,17 @@ const ValidationTable = ({ title, rows, updateCheck }: { title: string, rows: an
                               )}
                             </div>
                             {row.vendor_name && (
-                              <span className="text-[10px] text-slate-500 font-medium leading-tight">({row.vendor_name})</span>
+                              <span className="text-[10px] text-[#5A305A] font-medium leading-tight">({row.vendor_name})</span>
                             )}
                           </div>
                         );
                       })()}
                     </div>
                   </td>
-                  <td className={`px-4 py-3 text-sm text-right ${row.isAlt ? 'text-rose-800' : ''} ${isSummary ? 'font-bold text-slate-800' : isPpn ? 'text-slate-700 italic' : 'text-slate-700'} ${rowBg}`}>
+                  <td className={`px-4 py-3 text-sm text-right ${row.isAlt ? 'text-rose-800' : ''} ${isSummary ? 'font-bold text-[#5A305A]' : isPpn ? 'text-[#5A305A] italic' : 'text-[#5A305A]'} ${rowBg}`}>
                     <EditableIDR isKurs={row.row === 'KURS BI'} isUSD={row.mata_uang === 'USD'} val={row.expected} onSave={(v: any) => updateCheck(row.section, row.row, row.vendor_name, row.isAlt ? 'expected_alt.nilai' : 'expected', v)} />
                   </td>
-                  <td className={`px-4 py-3 text-sm text-right ${isSummary ? 'font-bold text-slate-900' : isPpn ? 'text-slate-700 italic font-medium' : 'text-slate-700 font-medium'} ${rowBg}`}>
+                  <td className={`px-4 py-3 text-sm text-right ${isSummary ? 'font-bold text-[#5A305A]' : isPpn ? 'text-[#5A305A] italic font-medium' : 'text-[#5A305A] font-medium'} ${rowBg}`}>
                     <EditableIDR isKurs={row.row === 'KURS BI'} isUSD={row.mata_uang === 'USD'} val={row.actual} onSave={(v: any) => updateCheck(row.section, row.row, row.vendor_name, 'actual', v)} />
                   </td>
                   <td className={`px-4 py-3 text-sm text-right ${rowBg}`}>
@@ -319,7 +319,7 @@ const ValidationTable = ({ title, rows, updateCheck }: { title: string, rows: an
                     <td colSpan={5} className="px-4 py-2 border-t-0">
                       <div className="flex items-start gap-1.5">
                         <Info size={14} className="text-amber-500 mt-0.5 shrink-0" />
-                        <span className="text-[11px] text-slate-600 italic leading-tight">
+                        <span className="text-[11px] text-[#5A305A] italic leading-tight">
                           {row.catatan}
                         </span>
                       </div>
@@ -553,7 +553,7 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
       <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center h-full w-full">
         <div className="bg-white p-6 rounded-2xl shadow-xl">
            <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
-           <p className="text-slate-600 font-medium">Memuat data validasi cost...</p>
+           <p className="text-[#5A305A] font-medium">Memuat data validasi cost...</p>
         </div>
       </div>
     );
@@ -567,23 +567,23 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
           {/* Header */}
           <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-slate-200 bg-white shrink-0 print:hidden">
             <div>
-              <h2 className="text-lg font-bold tracking-tight text-slate-800">Cost Validasi Shipment & Invoice</h2>
-              <p className="text-sm text-slate-500">Review dan koreksi data cost Sea & Air ({record.no_master_awb_bl || record.awb || (record.seaair_id || record.id)})</p>
+              <h2 className="text-lg font-bold tracking-tight text-[#5A305A]">Cost Validasi Shipment & Invoice</h2>
+              <p className="text-sm text-[#5A305A]">Review dan koreksi data cost Sea & Air ({record.no_master_awb_bl || record.awb || (record.seaair_id || record.id)})</p>
             </div>
             <div className="flex items-center gap-2">
               <button
                  onClick={() => window.print()}
-                 className="px-3 py-1.5 text-sm font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md flex items-center gap-2 transition-colors"
+                 className="px-3 py-1.5 text-sm font-medium bg-slate-100 hover:bg-slate-200 text-[#5A305A] rounded-md flex items-center gap-2 transition-colors"
               >
                  <Printer size={16} /> Print
               </button>
               <button
                  onClick={() => setIsEditMode(!isEditMode)}
-                 className={`px-3 py-1.5 text-sm font-medium rounded-md flex items-center gap-2 transition-colors ${isEditMode ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}
+                 className={`px-3 py-1.5 text-sm font-medium rounded-md flex items-center gap-2 transition-colors ${isEditMode ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-100 hover:bg-slate-200 text-[#5A305A]'}`}
               >
                  <Edit3 size={16} /> {isEditMode ? 'Mode Edit Aktif' : 'Mode Edit'}
               </button>
-              <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors">
+              <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-[#5A305A] hover:text-[#5A305A] transition-colors">
                 <X size={20} />
               </button>
             </div>
@@ -606,7 +606,7 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
                 <div className="px-4 md:px-6 pt-6 mb-2">
                   <div className="bg-transparent">
                     <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-lg font-bold text-slate-900">Shipment Info</h2>
+                      <h2 className="text-lg font-bold text-[#5A305A]">Shipment Info</h2>
                       {shipmentInfoError && (
                         <span className="text-xs text-rose-500 font-medium bg-rose-50 px-2 py-1 rounded" title={shipmentInfoError}>
                           {shipmentInfoError}
@@ -615,51 +615,51 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-4 text-sm bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                       <div>
-                        <p className="text-slate-500 mb-1 font-medium">AWB</p>
-                        <p className="font-semibold text-slate-800">{shipmentInfo?.awb || '—'}</p>
+                        <p className="text-[#5A305A] mb-1 font-medium">AWB</p>
+                        <p className="font-semibold text-[#5A305A]">{shipmentInfo?.awb || '—'}</p>
                       </div>
                       <div>
-                        <p className="text-slate-500 mb-1 font-medium">Vendor</p>
-                        <p className="font-semibold text-slate-800 truncate block w-full" title={shipmentInfo?.vendor || ''}>{shipmentInfo?.vendor || '—'}</p>
+                        <p className="text-[#5A305A] mb-1 font-medium">Vendor</p>
+                        <p className="font-semibold text-[#5A305A] truncate block w-full" title={shipmentInfo?.vendor || ''}>{shipmentInfo?.vendor || '—'}</p>
                       </div>
                       <div>
-                        <p className="text-slate-500 mb-1 font-medium">Shipment Mode</p>
-                        <p className="font-semibold text-slate-800">{shipmentInfo?.via || '—'}</p>
+                        <p className="text-[#5A305A] mb-1 font-medium">Shipment Mode</p>
+                        <p className="font-semibold text-[#5A305A]">{shipmentInfo?.via || '—'}</p>
                       </div>
                       <div>
-                        <p className="text-slate-500 mb-1 font-medium">Weight / Volume</p>
-                        <p className="font-semibold text-slate-800">
-                          {shipmentInfo?.kg != null ? `${shipmentInfo.kg} Kg` : '—'} <span className="text-slate-400 font-semibold mx-1">/</span> {shipmentInfo?.cbm != null ? `${Number(shipmentInfo.cbm).toFixed(2)} M3` : '—'}
+                        <p className="text-[#5A305A] mb-1 font-medium">Weight / Volume</p>
+                        <p className="font-semibold text-[#5A305A]">
+                          {shipmentInfo?.kg != null ? `${shipmentInfo.kg} Kg` : '—'} <span className="text-[#5A305A] font-semibold mx-1">/</span> {shipmentInfo?.cbm != null ? `${Number(shipmentInfo.cbm).toFixed(2)} M3` : '—'}
                         </p>
                       </div>
                       <div>
-                        <p className="text-slate-500 mb-1 font-medium">ETD / ETA</p>
-                        <div className="flex items-center gap-1 font-semibold text-slate-800">
+                        <p className="text-[#5A305A] mb-1 font-medium">ETD / ETA</p>
+                        <div className="flex items-center gap-1 font-semibold text-[#5A305A]">
                           <ShipmentEditableField toastHandler={(data: any) => showToast(data.msg, data.type)} recordId={(record.seaair_id || record.id)} field="etd" type="date" initialValue={shipmentInfo?.etd} onSave={(v) => { if (shipmentInfo) setShipmentInfo({...shipmentInfo, etd: v}) }} />
                           <span>/</span>
                           <ShipmentEditableField toastHandler={(data: any) => showToast(data.msg, data.type)} recordId={(record.seaair_id || record.id)} field="eta" type="date" initialValue={shipmentInfo?.eta} onSave={(v) => { if (shipmentInfo) setShipmentInfo({...shipmentInfo, eta: v}) }} />
                         </div>
                       </div>
                       <div>
-                        <p className="text-slate-500 mb-1 font-medium">ATD / ATA</p>
-                        <div className="flex items-center gap-1 font-semibold text-slate-800">
+                        <p className="text-[#5A305A] mb-1 font-medium">ATD / ATA</p>
+                        <div className="flex items-center gap-1 font-semibold text-[#5A305A]">
                           <ShipmentEditableField toastHandler={(data: any) => showToast(data.msg, data.type)} recordId={(record.seaair_id || record.id)} field="atd" type="date" initialValue={shipmentInfo?.atd} onSave={(v) => { if (shipmentInfo) setShipmentInfo({...shipmentInfo, atd: v}) }} />
                           <span>/</span>
                           <ShipmentEditableField toastHandler={(data: any) => showToast(data.msg, data.type)} recordId={(record.seaair_id || record.id)} field="ata" type="date" initialValue={shipmentInfo?.ata} onSave={(v) => { if (shipmentInfo) setShipmentInfo({...shipmentInfo, ata: v}) }} />
                         </div>
                       </div>
                       <div>
-                        <p className="text-slate-500 mb-1 font-medium">Origin - Dest</p>
-                        <div className="flex items-center gap-1 font-semibold text-slate-800">
+                        <p className="text-[#5A305A] mb-1 font-medium">Origin - Dest</p>
+                        <div className="flex items-center gap-1 font-semibold text-[#5A305A]">
                           <ShipmentEditableField toastHandler={(data: any) => showToast(data.msg, data.type)} recordId={(record.seaair_id || record.id)} field="origin" type="text" placeholder="Origin" initialValue={shipmentInfo?.origin} onSave={(v) => { if (shipmentInfo) setShipmentInfo({...shipmentInfo, origin: v}) }} />
                           <span>-</span>
                           <ShipmentEditableField toastHandler={(data: any) => showToast(data.msg, data.type)} recordId={(record.seaair_id || record.id)} field="destination" type="text" placeholder="Destination" initialValue={shipmentInfo?.destination} onSave={(v) => { if (shipmentInfo) setShipmentInfo({...shipmentInfo, destination: v}) }} />
                         </div>
                       </div>
                       <div className="col-span-2 md:col-span-4 mt-2">
-                        <p className="text-slate-500 mb-1 font-medium">Notes</p>
+                        <p className="text-[#5A305A] mb-1 font-medium">Notes</p>
                         <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 min-h-[60px]">
-                          <ShipmentEditableField toastHandler={(data: any) => showToast(data.msg, data.type)} className="text-slate-700 w-full inline-block" recordId={(record.seaair_id || record.id)} field="notes" type="text" placeholder="Tambahkan notes terkait shipment ini..." initialValue={shipmentInfo?.notes} onSave={(v) => { if (shipmentInfo) setShipmentInfo({...shipmentInfo, notes: v}) }} />
+                          <ShipmentEditableField toastHandler={(data: any) => showToast(data.msg, data.type)} className="text-[#5A305A] w-full inline-block" recordId={(record.seaair_id || record.id)} field="notes" type="text" placeholder="Tambahkan notes terkait shipment ini..." initialValue={shipmentInfo?.notes} onSave={(v) => { if (shipmentInfo) setShipmentInfo({...shipmentInfo, notes: v}) }} />
                         </div>
                       </div>
                     </div>
@@ -670,10 +670,10 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
                   {/* STATUS BAR */}
                   <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-6 p-4 rounded-xl border border-slate-200 bg-white shadow-sm">
                   <div>
-                    <p className="text-sm font-bold text-slate-800">
+                    <p className="text-sm font-bold text-[#5A305A]">
                       Ringkasan Validasi Cost
                     </p>
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <p className="text-xs text-[#5A305A] mt-0.5">
                       Keseluruhan akurasi cost vs actual invoice
                     </p>
                   </div>
@@ -746,8 +746,8 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
                  <Info size={20} />
                </div>
                <div>
-                  <p className="text-sm font-bold text-slate-800 leading-none">Perubahan belum disimpan</p>
-                  <p className="text-[10px] text-slate-500 mt-1">Klik simpan untuk memperbarui ke database</p>
+                  <p className="text-sm font-bold text-[#5A305A] leading-none">Perubahan belum disimpan</p>
+                  <p className="text-[10px] text-[#5A305A] mt-1">Klik simpan untuk memperbarui ke database</p>
                </div>
                <button
                   onClick={handleSave}

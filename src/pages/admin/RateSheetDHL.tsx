@@ -96,25 +96,25 @@ export default function RateSheetDHL() {
       <div className="p-4 border-b border-slate-200 flex flex-wrap gap-4 items-end justify-between bg-slate-50 rounded-t-xl">
         <div className="flex gap-4 flex-wrap items-end">
           <div>
-            <label className="block tracking-wider text-[10px] font-bold text-slate-500 uppercase mb-1">Direction</label>
+            <label className="block tracking-wider text-[10px] font-bold text-[#5A305A] uppercase mb-1">Direction</label>
             <select className="border border-slate-300 rounded px-2 py-1 text-sm bg-white" value={fDirection} onChange={e => setFDirection(e.target.value)}>
               <option value="Semua">Semua</option><option value="EXPORT">EXPORT</option><option value="IMPORT">IMPORT</option>
             </select>
           </div>
           <div>
-            <label className="block tracking-wider text-[10px] font-bold text-slate-500 uppercase mb-1">Shipment Type</label>
+            <label className="block tracking-wider text-[10px] font-bold text-[#5A305A] uppercase mb-1">Shipment Type</label>
             <select className="border border-slate-300 rounded px-2 py-1 text-sm bg-white" value={fShipmentMode} onChange={e => setFShipmentMode(e.target.value)}>
               <option value="Semua">Semua</option><option value="DOCUMENT">DOCUMENT</option><option value="NON_DOCUMENT">NON_DOCUMENT</option>
             </select>
           </div>
           <div>
-            <label className="block tracking-wider text-[10px] font-bold text-slate-500 uppercase mb-1">Rate Type</label>
+            <label className="block tracking-wider text-[10px] font-bold text-[#5A305A] uppercase mb-1">Rate Type</label>
             <select className="border border-slate-300 rounded px-2 py-1 text-sm bg-white" value={fRateType} onChange={e => setFRateType(e.target.value)}>
               <option value="Semua">Semua</option><option value="FIXED">FIXED</option><option value="MULTIPLIER">MULTIPLIER</option>
             </select>
           </div>
           <div>
-            <label className="block tracking-wider text-[10px] font-bold text-slate-500 uppercase mb-1">Zone</label>
+            <label className="block tracking-wider text-[10px] font-bold text-[#5A305A] uppercase mb-1">Zone</label>
             <select className="border border-slate-300 rounded px-2 py-1 text-sm bg-white" value={fZone} onChange={e => setFZone(e.target.value)}>
               <option value="Semua">Semua</option>
               {[...Array(13)].map((_, i) => <option key={i+1} value={i+1}>{i+1}</option>)}
@@ -137,7 +137,7 @@ export default function RateSheetDHL() {
       
       <div className="overflow-x-auto">
         <table className="w-full text-sm text-left">
-          <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase tracking-wider">
+          <thead className="bg-slate-50 text-[#5A305A] text-[10px] uppercase tracking-wider">
             <tr>
               <th className="px-4 py-3">Direction</th>
               <th className="px-4 py-3">Shipment Type</th>
@@ -152,9 +152,9 @@ export default function RateSheetDHL() {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td colSpan={9} className="text-center py-10 text-slate-400">Loading...</td></tr>
+              <tr><td colSpan={9} className="text-center py-10 text-[#5A305A]">Loading...</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={9} className="text-center py-10 text-slate-400">Data tidak ditemukan</td></tr>
+              <tr><td colSpan={9} className="text-center py-10 text-[#5A305A]">Data tidak ditemukan</td></tr>
             ) : (
               filtered.map(row => {
                 const isActive = !row.effective_to || new Date(row.effective_to) > new Date();
@@ -168,10 +168,10 @@ export default function RateSheetDHL() {
                     <td className="px-4 py-2 font-mono font-bold text-blue-700">Rp {Number(row.rate_idr).toLocaleString('id-ID')}</td>
                     <td className="px-4 py-2 text-xs">
                       {row.effective_from}<br/>
-                      <span className="text-slate-400">s.d {row.effective_to || 'Seterusnya'}</span>
+                      <span className="text-[#5A305A]">s.d {row.effective_to || 'Seterusnya'}</span>
                     </td>
                     <td className="px-4 py-2">
-                       {isActive ? <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded font-bold">AKTIF</span> : <span className="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-bold">NONAKTIF</span>}
+                       {isActive ? <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded font-bold">AKTIF</span> : <span className="text-[10px] bg-slate-200 text-[#5A305A] px-2 py-0.5 rounded font-bold">NONAKTIF</span>}
                     </td>
                     <td className="px-4 py-2 text-right">
                       <div className="flex justify-end gap-2">
@@ -189,75 +189,75 @@ export default function RateSheetDHL() {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#5A305A]/50 p-4">
           <form onSubmit={handleSave} className="bg-white rounded-xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
-              <h3 className="font-bold text-lg text-slate-800">{editRecord ? 'Edit Rate DHL' : 'Tambah Rate DHL'}</h3>
-              <button type="button" onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+              <h3 className="font-bold text-lg text-[#5A305A]">{editRecord ? 'Edit Rate DHL' : 'Tambah Rate DHL'}</h3>
+              <button type="button" onClick={() => setShowModal(false)} className="text-[#5A305A] hover:text-[#5A305A]">✕</button>
             </div>
             <div className="p-5 overflow-y-auto space-y-4 flex-1">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Direction</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">Direction</label>
                     <select className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.direction || ''} onChange={e => setForm({...form, direction: e.target.value})} required>
                       <option value="EXPORT">EXPORT</option>
                       <option value="IMPORT">IMPORT</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Shipment Type</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">Shipment Type</label>
                     <select className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.shipment_type || ''} onChange={e => setForm({...form, shipment_type: e.target.value})} required>
                       <option value="DOCUMENT">DOCUMENT</option>
                       <option value="NON_DOCUMENT">NON_DOCUMENT</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Rate Type</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">Rate Type</label>
                     <select className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.rate_type || ''} onChange={e => setForm({...form, rate_type: e.target.value})} required>
                       <option value="FIXED">FIXED</option>
                       <option value="MULTIPLIER">MULTIPLIER</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Zone Number</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">Zone Number</label>
                     <input type="number" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.zone || ''} onChange={e => setForm({...form, zone: Number(e.target.value)})} required />
                   </div>
 
                   {form.rate_type === 'FIXED' ? (
                     <div className="col-span-2">
-                      <label className="block text-xs font-bold text-slate-700 mb-1">Weight (kg)</label>
+                      <label className="block text-xs font-bold text-[#5A305A] mb-1">Weight (kg)</label>
                       <input type="number" step="any" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.weight_kg ?? ''} onChange={e => setForm({...form, weight_kg: Number(e.target.value)})} required />
                     </div>
                   ) : (
                     <>
                       <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">Weight From</label>
+                        <label className="block text-xs font-bold text-[#5A305A] mb-1">Weight From</label>
                         <input type="number" step="any" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.weight_from ?? ''} onChange={e => setForm({...form, weight_from: Number(e.target.value)})} required />
                       </div>
                       <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">Weight To</label>
+                        <label className="block text-xs font-bold text-[#5A305A] mb-1">Weight To</label>
                         <input type="number" step="any" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.weight_to ?? ''} onChange={e => setForm({...form, weight_to: Number(e.target.value)})} required />
                       </div>
                     </>
                   )}
 
                   <div className="col-span-2">
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Rate (IDR)</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">Rate (IDR)</label>
                     <input type="number" className="w-full border border-slate-300 rounded px-3 py-2 text-sm font-mono" value={form.rate_idr || ''} onChange={e => setForm({...form, rate_idr: Number(e.target.value)})} required />
                   </div>
                   
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Effective From</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">Effective From</label>
                     <input type="date" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.effective_from || ''} onChange={e => setForm({...form, effective_from: e.target.value})} required />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Effective To (optional)</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">Effective To (optional)</label>
                     <input type="date" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.effective_to || ''} onChange={e => setForm({...form, effective_to: e.target.value})} />
                   </div>
                 </div>
               </div>
               <div className="p-5 border-t border-slate-100 flex justify-end gap-3 bg-slate-50 shrink-0">
-                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 rounded-lg text-slate-600 text-sm font-bold hover:bg-slate-200 transition-colors">Batal</button>
+                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 rounded-lg text-[#5A305A] text-sm font-bold hover:bg-slate-200 transition-colors">Batal</button>
                 <button type="submit" disabled={saving} className="px-4 py-2 rounded-lg bg-[#5A305A] text-white text-sm font-bold hover:bg-[#73507B] disabled:opacity-50 transition-colors">
                   {saving ? 'Menyimpan...' : 'Simpan'}
                 </button>

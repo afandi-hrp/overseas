@@ -70,7 +70,7 @@ export default function FuelSurchargePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FFF5C5] to-[#F58C77] font-sans text-slate-800">
+    <div className="min-h-screen bg-gradient-to-br from-[#FFF5C5] to-[#F58C77] font-sans text-[#5A305A]">
       <header className="bg-gradient-to-r from-[#5A305A] to-[#73507B] text-white sticky top-0 z-10 shadow-lg">
         <div className="max-w-4xl mx-auto px-5 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -90,25 +90,25 @@ export default function FuelSurchargePage() {
 
       <main className="max-w-4xl mx-auto px-4 py-8">
         <div className="bg-white/70 backdrop-blur-md p-6 rounded-2xl shadow-sm border border-white/60 mb-6">
-          <h2 className="text-base font-bold text-slate-800 mb-4">Tambah Rate</h2>
+          <h2 className="text-base font-bold text-[#5A305A] mb-4">Tambah Rate</h2>
           <form onSubmit={handleAdd} className="flex flex-wrap gap-4 items-end">
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Courier</label>
+              <label className="block text-xs font-semibold text-[#5A305A] mb-1">Courier</label>
               <select value={courier} onChange={e => setCourier(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-32 bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A]">
                 <option value="DHL">DHL</option>
                 <option value="FEDEX">FEDEX</option>
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Week Start (Monday)</label>
+              <label className="block text-xs font-semibold text-[#5A305A] mb-1">Week Start (Monday)</label>
               <input type="date" value={weekStart} onChange={e => setWeekStart(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-40 bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A]" />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Week End (Sunday)</label>
+              <label className="block text-xs font-semibold text-[#5A305A] mb-1">Week End (Sunday)</label>
               <input type="date" value={weekEnd} onChange={e => setWeekEnd(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-40 bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A]" />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Fuel Surcharge (%)</label>
+              <label className="block text-xs font-semibold text-[#5A305A] mb-1">Fuel Surcharge (%)</label>
               <input type="number" step="0.01" min="0" max="100" placeholder="e.g. 24.50" value={fuelPct} onChange={e => setFuelPct(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-32 bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A]" />
             </div>
             <button type="submit" disabled={saving} className="bg-[#5A305A] hover:bg-[#73507B] text-white font-bold text-sm px-5 py-1.5 rounded-lg disabled:opacity-50 h-[34px] transition-colors shadow-sm">
@@ -119,11 +119,11 @@ export default function FuelSurchargePage() {
         </div>
 
         <div className="bg-white/70 backdrop-blur-md p-6 rounded-2xl shadow-sm border border-white/60">
-          <h2 className="text-base font-bold text-slate-800 mb-4 border-b border-slate-100 pb-3">Riwayat Rate</h2>
+          <h2 className="text-base font-bold text-[#5A305A] mb-4 border-b border-slate-100 pb-3">Riwayat Rate</h2>
           {loading ? (
-            <p className="text-slate-500 text-sm">Loading rates...</p>
+            <p className="text-[#5A305A] text-sm">Loading rates...</p>
           ) : rates.length === 0 ? (
-            <p className="text-slate-500 text-sm">Belum ada data fuel surcharge.</p>
+            <p className="text-[#5A305A] text-sm">Belum ada data fuel surcharge.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
@@ -139,7 +139,7 @@ export default function FuelSurchargePage() {
                 <tbody className="divide-y divide-slate-100">
                   {rates.map(rate => (
                     <tr key={rate.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-4 py-3 font-bold text-slate-700">{rate.courier}</td>
+                      <td className="px-4 py-3 font-bold text-[#5A305A]">{rate.courier}</td>
                       <td className="px-4 py-3">{new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(rate.week_start))}</td>
                       <td className="px-4 py-3">{new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(rate.week_end))}</td>
                       <td className="px-4 py-3 font-semibold">{rate.fuel_pct}%</td>

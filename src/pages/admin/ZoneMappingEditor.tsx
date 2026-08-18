@@ -100,7 +100,7 @@ export default function ZoneMappingEditor() {
       <div className="p-4 border-b border-slate-200 flex flex-wrap gap-4 items-end justify-between bg-slate-50 rounded-t-xl shrink-0">
         <div className="flex gap-4 flex-wrap items-end w-full sm:w-auto">
           <div>
-            <h2 className="font-bold text-lg text-slate-800 mb-2">Zone Mapping</h2>
+            <h2 className="font-bold text-lg text-[#5A305A] mb-2">Zone Mapping</h2>
             <div className="flex gap-3">
               <div>
                 <select className="border border-slate-300 rounded px-2 py-1.5 text-sm bg-white" value={fCourier} onChange={e => setFCourier(e.target.value)}>
@@ -135,7 +135,7 @@ export default function ZoneMappingEditor() {
       
       <div className="overflow-auto flex-1 p-0 m-0">
         <table className="w-full text-sm text-left">
-          <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase tracking-wider sticky top-0 z-10 shadow-sm">
+          <thead className="bg-slate-50 text-[#5A305A] text-[10px] uppercase tracking-wider sticky top-0 z-10 shadow-sm">
             <tr>
               <th className="px-3 py-3">Negara</th>
               <th className="px-3 py-3">Courier</th>
@@ -149,16 +149,16 @@ export default function ZoneMappingEditor() {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td colSpan={8} className="text-center py-10 text-slate-400">Loading...</td></tr>
+              <tr><td colSpan={8} className="text-center py-10 text-[#5A305A]">Loading...</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={8} className="text-center py-10 text-slate-400">Data tidak ditemukan</td></tr>
+              <tr><td colSpan={8} className="text-center py-10 text-[#5A305A]">Data tidak ditemukan</td></tr>
             ) : (
               filtered.map(row => {
                 return (
                   <tr key={row.id} className="hover:bg-slate-50/50">
                     <td className="px-3 py-2">
-                       <span className="font-bold text-slate-700">{row.country_name}</span>
-                       <span className="text-[10px] ml-1 bg-slate-200 text-slate-600 px-1 rounded">{row.country_code}</span>
+                       <span className="font-bold text-[#5A305A]">{row.country_name}</span>
+                       <span className="text-[10px] ml-1 bg-slate-200 text-[#5A305A] px-1 rounded">{row.country_code}</span>
                     </td>
                     <td className="px-3 py-2 text-xs font-semibold">{row.courier}</td>
                     <td className="px-3 py-2 text-center font-mono text-xs">{row.dhl_zone_number || '-'}</td>
@@ -181,24 +181,24 @@ export default function ZoneMappingEditor() {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#5A305A]/50 p-4">
           <form onSubmit={handleSave} className="bg-white rounded-xl w-full max-w-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
             <div className="p-5 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
-              <h3 className="font-bold text-lg text-slate-800">{editRecord ? 'Edit Zone Mapping' : 'Tambah Zone Mapping'}</h3>
-              <button type="button" onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+              <h3 className="font-bold text-lg text-[#5A305A]">{editRecord ? 'Edit Zone Mapping' : 'Tambah Zone Mapping'}</h3>
+              <button type="button" onClick={() => setShowModal(false)} className="text-[#5A305A] hover:text-[#5A305A]">✕</button>
             </div>
             <div className="p-5 overflow-y-auto space-y-4 flex-1">
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Country Name</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">Country Name</label>
                     <input type="text" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.country_name || ''} onChange={e => setForm({...form, country_name: e.target.value})} required />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Country Code (2-letter)</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">Country Code (2-letter)</label>
                     <input type="text" maxLength={2} className="w-full border border-slate-300 rounded px-3 py-2 text-sm uppercase" value={form.country_code || ''} onChange={e => setForm({...form, country_code: e.target.value.toUpperCase()})} required />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Courier</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">Courier</label>
                     <select className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.courier || ''} onChange={e => setForm({...form, courier: e.target.value})} required>
                       <option value="DHL">DHL</option>
                       <option value="FEDEX">FedEx</option>
@@ -207,58 +207,58 @@ export default function ZoneMappingEditor() {
                   </div>
                   
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Direction</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">Direction</label>
                     <select className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.direction || ''} onChange={e => setForm({...form, direction: e.target.value})} required>
                       <option value="EXPORT">EXPORT</option>
                       <option value="IMPORT">IMPORT</option>
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Region Note</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">Region Note</label>
                     <input type="text" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.region_note || ''} onChange={e => setForm({...form, region_note: e.target.value})} />
                   </div>
                   
                   <div className="col-span-2 md:col-span-3 border-t pt-3 mt-1">
-                    <h4 className="font-bold text-sm text-slate-800 mb-3">Zone Numbers</h4>
+                    <h4 className="font-bold text-sm text-[#5A305A] mb-3">Zone Numbers</h4>
                   </div>
                   
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">DHL Zone</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">DHL Zone</label>
                     <input type="number" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.dhl_zone_number ?? ''} onChange={e => setForm({...form, dhl_zone_number: e.target.value ? Number(e.target.value) : null})} />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">FedEx Zone (IP)</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">FedEx Zone (IP)</label>
                     <input type="text" className="w-full border border-slate-300 rounded px-3 py-2 text-sm uppercase" value={form.fedex_zone_ip || ''} onChange={e => setForm({...form, fedex_zone_ip: e.target.value.toUpperCase()})} />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">FedEx Zone (IE)</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">FedEx Zone (IE)</label>
                     <input type="text" className="w-full border border-slate-300 rounded px-3 py-2 text-sm uppercase" value={form.fedex_zone_ie || ''} onChange={e => setForm({...form, fedex_zone_ie: e.target.value.toUpperCase()})} />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">FedEx Zone (IPF)</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">FedEx Zone (IPF)</label>
                     <input type="text" className="w-full border border-slate-300 rounded px-3 py-2 text-sm uppercase" value={form.fedex_zone_ipf || ''} onChange={e => setForm({...form, fedex_zone_ipf: e.target.value.toUpperCase()})} />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">FedEx Zone (IEF)</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">FedEx Zone (IEF)</label>
                     <input type="text" className="w-full border border-slate-300 rounded px-3 py-2 text-sm uppercase" value={form.fedex_zone_ief || ''} onChange={e => setForm({...form, fedex_zone_ief: e.target.value.toUpperCase()})} />
                   </div>
 
                   <div className="col-span-2 md:col-span-3 border-t pt-3 mt-1">
-                    <h4 className="font-bold text-sm text-slate-800 mb-3">Validity</h4>
+                    <h4 className="font-bold text-sm text-[#5A305A] mb-3">Validity</h4>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Effective From</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">Effective From</label>
                     <input type="date" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.effective_from || ''} onChange={e => setForm({...form, effective_from: e.target.value})} required />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">Effective To</label>
+                    <label className="block text-xs font-bold text-[#5A305A] mb-1">Effective To</label>
                     <input type="date" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.effective_to || ''} onChange={e => setForm({...form, effective_to: e.target.value})} />
                   </div>
                 </div>
               </div>
               <div className="p-5 border-t border-slate-100 flex justify-end gap-3 bg-slate-50 shrink-0">
-                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 rounded-lg text-slate-600 text-sm font-bold hover:bg-slate-200 transition-colors">Batal</button>
+                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 rounded-lg text-[#5A305A] text-sm font-bold hover:bg-slate-200 transition-colors">Batal</button>
                 <button type="submit" disabled={saving} className="px-4 py-2 rounded-lg bg-[#5A305A] text-white text-sm font-bold hover:bg-[#73507B] disabled:opacity-50 transition-colors">
                   {saving ? 'Menyimpan...' : 'Simpan'}
                 </button>

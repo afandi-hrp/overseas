@@ -15,7 +15,7 @@ function StatusBadge({ status }: { status: string }) {
     'ADA KETIDAKSESUAIAN': 'bg-red-100 text-red-700',
   }
   return (
-    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${map[status] || 'bg-slate-100 text-slate-500'}`}>
+    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${map[status] || 'bg-slate-100 text-[#5A305A]'}`}>
       {status || '—'}
     </span>
   )
@@ -46,7 +46,7 @@ export default function SeaAirChecklistModal({ record, onClose }: { record: any,
       <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center h-full w-full">
         <div className="bg-white p-6 rounded-2xl shadow-xl">
            <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
-           <p className="text-slate-600 font-medium">Memuat checklist...</p>
+           <p className="text-[#5A305A] font-medium">Memuat checklist...</p>
         </div>
       </div>
     );
@@ -83,8 +83,8 @@ export default function SeaAirChecklistModal({ record, onClose }: { record: any,
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl flex flex-col overflow-hidden max-h-[90vh]">
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-          <h2 className="text-lg font-bold text-slate-800">Cek Checklist Sea & Air</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+          <h2 className="text-lg font-bold text-[#5A305A]">Cek Checklist Sea & Air</h2>
+          <button onClick={onClose} className="text-[#5A305A] hover:text-[#5A305A] transition-colors">
             <X size={20} />
           </button>
         </div>
@@ -93,12 +93,12 @@ export default function SeaAirChecklistModal({ record, onClose }: { record: any,
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 mb-6">
             <div className="flex justify-between items-center mb-4">
               <div>
-                <p className="text-sm text-slate-500 mb-1">Status Kelengkapan</p>
+                <p className="text-sm text-[#5A305A] mb-1">Status Kelengkapan</p>
                 <StatusBadge status={status} />
               </div>
               <div className="text-right">
-                <p className="text-sm text-slate-500 mb-1">Persentase</p>
-                <span className="text-2xl font-bold text-slate-800">{pct}%</span>
+                <p className="text-sm text-[#5A305A] mb-1">Persentase</p>
+                <span className="text-2xl font-bold text-[#5A305A]">{pct}%</span>
               </div>
             </div>
             
@@ -123,51 +123,51 @@ export default function SeaAirChecklistModal({ record, onClose }: { record: any,
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
             <div className="col-span-full mb-2">
-              <h3 className="text-sm font-bold text-slate-700 border-b border-slate-200 pb-2">Dokumen Wajib</h3>
+              <h3 className="text-sm font-bold text-[#5A305A] border-b border-slate-200 pb-2">Dokumen Wajib</h3>
             </div>
             {mandatoryFields.map(field => {
               const val = data?.[field.key];
               return (
                 <div key={field.key} className="flex justify-between items-center p-3 bg-white border border-slate-100 rounded-lg shadow-sm">
-                  <span className="text-sm font-medium text-slate-700">{field.label}</span>
+                  <span className="text-sm font-medium text-[#5A305A]">{field.label}</span>
                   {val === true ? (
                     <CheckCircle2 size={20} className="text-emerald-500" />
                   ) : val === false ? (
                     <XCircle size={20} className="text-red-500" />
                   ) : (
-                    <span className="text-xs text-slate-400 font-medium bg-slate-100 px-2 py-0.5 rounded-full">—</span>
+                    <span className="text-xs text-[#5A305A] font-medium bg-slate-100 px-2 py-0.5 rounded-full">—</span>
                   )}
                 </div>
               );
             })}
 
             <div className="col-span-full mb-2 mt-6">
-              <h3 className="text-sm font-bold text-slate-700 border-b border-slate-200 pb-2">Dokumen Opsional</h3>
+              <h3 className="text-sm font-bold text-[#5A305A] border-b border-slate-200 pb-2">Dokumen Opsional</h3>
             </div>
             {(() => {
               const adaSurveyor = data?.ada_invoice_surveyor === true || data?.ada_laporan_surveyor === true;
               return (
                 <>
                   <div className="flex justify-between items-center p-3 bg-white border border-slate-100 rounded-lg shadow-sm">
-                    <span className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                    <span className="text-sm font-medium text-[#5A305A] flex items-center gap-2">
                       Surveyor
-                      <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-semibold">(Opsional)</span>
+                      <span className="text-[10px] bg-slate-100 text-[#5A305A] px-1.5 py-0.5 rounded font-semibold">(Opsional)</span>
                     </span>
                     {adaSurveyor ? (
                       <CheckCircle2 size={20} className="text-emerald-500" />
                     ) : (
-                      <span className="text-xs text-slate-400 font-medium bg-slate-100 px-2 py-0.5 rounded-full">—</span>
+                      <span className="text-xs text-[#5A305A] font-medium bg-slate-100 px-2 py-0.5 rounded-full">—</span>
                     )}
                   </div>
                   <div className="flex justify-between items-center p-3 bg-white border border-slate-100 rounded-lg shadow-sm">
-                    <span className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                    <span className="text-sm font-medium text-[#5A305A] flex items-center gap-2">
                       Insurance
-                      <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-semibold">(Opsional)</span>
+                      <span className="text-[10px] bg-slate-100 text-[#5A305A] px-1.5 py-0.5 rounded font-semibold">(Opsional)</span>
                     </span>
                     {data?.ada_insurance === true ? (
                       <CheckCircle2 size={20} className="text-emerald-500" />
                     ) : (
-                      <span className="text-xs text-slate-400 font-medium bg-slate-100 px-2 py-0.5 rounded-full">—</span>
+                      <span className="text-xs text-[#5A305A] font-medium bg-slate-100 px-2 py-0.5 rounded-full">—</span>
                     )}
                   </div>
                 </>
@@ -177,16 +177,16 @@ export default function SeaAirChecklistModal({ record, onClose }: { record: any,
               const val = data?.[field.key];
               return (
                 <div key={field.key} className="flex justify-between items-center p-3 bg-white border border-slate-100 rounded-lg shadow-sm">
-                  <span className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                  <span className="text-sm font-medium text-[#5A305A] flex items-center gap-2">
                     {field.label}
-                    <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-semibold">(Opsional)</span>
+                    <span className="text-[10px] bg-slate-100 text-[#5A305A] px-1.5 py-0.5 rounded font-semibold">(Opsional)</span>
                   </span>
                   {val === true ? (
                     <CheckCircle2 size={20} className="text-emerald-500" />
                   ) : val === false ? (
                     <XCircle size={20} className="text-red-500" />
                   ) : (
-                    <span className="text-xs text-slate-400 font-medium bg-slate-100 px-2 py-0.5 rounded-full">—</span>
+                    <span className="text-xs text-[#5A305A] font-medium bg-slate-100 px-2 py-0.5 rounded-full">—</span>
                   )}
                 </div>
               );

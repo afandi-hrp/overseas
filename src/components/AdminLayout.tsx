@@ -27,7 +27,7 @@ export default function AdminLayout({ children }: { children?: React.ReactNode }
                   <Link
                     to={m.path}
                     className={`flex items-center px-5 py-3 text-sm font-medium transition-colors ${
-                      active ? 'bg-[#5A305A] text-white' : 'text-slate-300 hover:bg-navy-800 hover:text-white'
+                      active ? 'bg-[#5A305A] text-white' : 'text-[#5A305A] hover:bg-navy-800 hover:text-white'
                     }`}
                   >
                     <span className="mr-3">{m.icon}</span>

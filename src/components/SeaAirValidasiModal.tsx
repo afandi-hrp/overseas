@@ -346,7 +346,7 @@ function StatusBadge({ match, tooltip, onClick, manual }: { match: boolean | nul
     );
   } else {
     content = (
-      <span title={tooltip || "Data tidak tersedia di salah satu dokumen"} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium whitespace-nowrap bg-slate-100 text-slate-500 transition-colors ${clickable ? 'cursor-pointer hover:bg-slate-200' : ''}`}>
+      <span title={tooltip || "Data tidak tersedia di salah satu dokumen"} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium whitespace-nowrap bg-slate-100 text-[#5A305A] transition-colors ${clickable ? 'cursor-pointer hover:bg-slate-200' : ''}`}>
         <Clock size={12} /> Belum dicek {manual && <Edit3 size={10} className="ml-1 text-amber-500 inline" title="Status ini sudah diedit manual oleh user" />}
       </span>
     );
@@ -361,7 +361,7 @@ function SectionWrap({ title, icon, children }: { title: string, icon?: React.Re
         <div className="w-12 h-12 bg-[#5A305A] text-white rounded-xl shadow-inner flex items-center justify-center shrink-0">
           {icon || <FileText size={24} />}
         </div>
-        <div className="text-center font-bold text-slate-800 text-[11px] tracking-wider uppercase">
+        <div className="text-center font-bold text-[#5A305A] text-[11px] tracking-wider uppercase">
           {title}
         </div>
       </div>
@@ -381,14 +381,28 @@ function VInput({ type = "text", value, onChange, placeholder, width, disabled }
       onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
       disabled={disabled}
-      className={`text-xs px-2 py-1 border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 ${disabled ? 'bg-slate-100 text-slate-500' : 'bg-white text-slate-800'}`}
+      className={`text-xs px-2 py-1 border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 ${disabled ? 'bg-slate-100 text-[#5A305A]' : 'bg-white text-[#5A305A]'}`}
       style={{ width: width || "100%" }}
     />
   );
 }
 
+// Sistem lebar kolom bersama -- MURNI PERSEN, tidak ada satupun kolom yang pakai pixel tetap.
+// PENTING: jangan campur pixel+persen dalam 1 tabel table-layout:fixed -- begitu totalnya
+// melebihi 100% (karena ada kolom pixel tetap), browser menghitung ulang semua persen
+// terhadap basis yang berbeda per tabel, jadinya kolom label/data malah TIDAK sejajar
+// antar section (ini penyebab bug sebelumnya). Setiap tabel "6 kolom" (Faktur Pajak,
+// 2 belahan PIB) = label 16% + 6 x 14% = 100%. Tabel dengan kolom lebih sedikit
+// (Vessel/Duty/EMKL/Actual) melebarkan kolomnya sendiri (kelipatan 14%) supaya total
+// lebar area datanya tetap setara, tapi tetap 100% murni persen, tanpa campur pixel.
+// INVOICE jadi pengecualian: label dikecilkan jadi 8% (bukan 16%) khusus di tabel itu,
+// supaya 6 kolom yang dibagi bareng FAKTUR PAJAK tetap presis 14% masing-masing walau
+// INVOICE punya 1 kolom Status ekstra yang tidak dimiliki FAKTUR PAJAK.
+const LABEL_COL_PCT = '16%';
+const UNIT_PCT = '14%';
+
 const thClass = "p-3 border-b border-r last:border-r-0 border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center";
-const thRowLabelClass = "p-3 bg-slate-100 border-b border-r border-slate-200 text-[11px] font-bold text-slate-800 uppercase tracking-wide whitespace-nowrap sticky left-0 z-10 shadow-[1px_0_0_0_#e2e8f0]";
+const thRowLabelClass = "p-3 bg-slate-100 border-b border-r border-slate-200 text-[11px] font-bold text-[#5A305A] uppercase tracking-wide whitespace-nowrap sticky left-0 z-10 shadow-[1px_0_0_0_#e2e8f0]";
 const tdClass = "p-2 text-[12px] border-b border-r border-slate-200 align-middle text-center break-words max-w-[200px]";
 const tdLabelClass = "p-2 text-[12px] font-medium border-b border-r border-slate-200 align-middle text-left bg-white sticky left-0 z-10 shadow-[1px_0_0_0_#e2e8f0]";
 
@@ -402,18 +416,23 @@ function InvoiceFCLTable({ checks, onToggleRow, onUpdate }: { checks: any[], onT
   const getCheck = (row: string, col: string) => checks.find(c => c.row === row && c.col === col);
   
   if (checks.length === 0) {
-     return <div className="p-6 text-center text-slate-500 text-sm italic">Dokumen tidak diupload / tidak relevan</div>;
+     return <div className="p-6 text-center text-[#5A305A] text-sm italic">Dokumen tidak diupload / tidak relevan</div>;
   }
   
   const dataCols = INVOICE_FCL_COLS.filter(c => c !== "Status");
 
+  // INVOICE dulu punya 1 kolom lebih banyak (Status) daripada FAKTUR PAJAK -- itu bikin
+  // susah disejajarkan (mepet 100%/overflow sama-sama bikin tampilan jelek). Solusinya:
+  // badge Status dipindah ke DALAM kolom Validasi (nempel di baris label), bukan jadi
+  // kolom sendiri. Jadi tabel ini strukturnya SAMA PERSIS dengan FAKTUR PAJAK (label + 6
+  // kolom data) -- otomatis sejajar sempurna, tanpa perlu scroll atau trik CSS apapun.
   return (
     <SectionWrap title="INVOICE" icon={<Receipt size={24} />}>
-      <table className="w-full text-left border-collapse min-w-[760px]">
+      <table className="w-full text-left border-collapse" style={{ tableLayout: 'fixed' }}>
         <thead>
           <tr>
-            <th className={thRowLabelClass} style={{ width: 140 }}>Validasi</th>
-            {INVOICE_FCL_COLS.map(c => <th key={c} className={thClass} style={{ backgroundColor: getHeaderColor(c).bg, color: getHeaderColor(c).text }}>{c}</th>)}
+            <th className={thRowLabelClass} style={{ width: LABEL_COL_PCT }}>Validasi</th>
+            {dataCols.map(c => <th key={c} className={thClass} style={{ width: UNIT_PCT, backgroundColor: getHeaderColor(c).bg, color: getHeaderColor(c).text }}>{c}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -428,25 +447,22 @@ function InvoiceFCLTable({ checks, onToggleRow, onUpdate }: { checks: any[], onT
 
             return (
               <tr key={row} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50"}>
-                <td className={tdLabelClass}>{row}</td>
-                {INVOICE_FCL_COLS.map(col => {
-                  if (col === "Status") {
-                     return (
-                       <td key={col} className={tdClass}>
-                         <StatusBadge match={rowStatusMatch} onClick={() => onToggleRow(row)} manual={rowChecks.some(c => c.manual)} />
-                       </td>
-                     );
-                  }
-                  
+                <td className={tdLabelClass}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span>{row}</span>
+                    <StatusBadge match={rowStatusMatch} onClick={() => onToggleRow(row)} manual={rowChecks.some(c => c.manual)} />
+                  </div>
+                </td>
+                {dataCols.map(col => {
                   const check = getCheck(row, col);
                   let text: any = "—";
                   if (check && check.values && check.values.doc !== undefined && check.values.doc !== null && check.values.doc !== "") {
                      text = check.values.doc;
                   }
-                  
+
                   return (
                     <td key={col} className={tdClass}>
-                       <div className="font-medium text-slate-800">
+                       <div className="font-medium text-[#5A305A]">
                           <EditableCell value={text} onUpdate={(v) => onUpdate(row, col, v)} isCurrency={row === "Nominal"} manual={check?.manual} />
                        </div>
                     </td>
@@ -471,16 +487,16 @@ function FakturPajakFCLTable({ checks, onToggle, onUpdate }: { checks: any[], on
   const getCheck = (row: string, col: string) => checks.find(c => c.row === row && c.col === col);
   
   if (checks.length === 0) {
-     return <div className="p-6 text-center text-slate-500 text-sm italic">Dokumen tidak diupload / tidak relevan</div>;
+     return <div className="p-6 text-center text-[#5A305A] text-sm italic">Dokumen tidak diupload / tidak relevan</div>;
   }
   
   return (
     <SectionWrap title="FAKTUR PAJAK" icon={<Percent size={24} />}>
-      <table className="w-full text-left border-collapse min-w-[900px]">
+      <table className="w-full text-left border-collapse" style={{ tableLayout: 'fixed' }}>
         <thead>
           <tr>
-            <th className={thRowLabelClass} style={{ width: 160 }}>Validasi</th>
-            {FP_FCL_COLS.map(c => <th key={c} className={thClass} style={{ backgroundColor: getHeaderColor(c).bg, color: getHeaderColor(c).text }}>{c}</th>)}
+            <th className={thRowLabelClass} style={{ width: LABEL_COL_PCT }}>Validasi</th>
+            {FP_FCL_COLS.map(c => <th key={c} className={thClass} style={{ width: UNIT_PCT, backgroundColor: getHeaderColor(c).bg, color: getHeaderColor(c).text }}>{c}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -502,7 +518,7 @@ function FakturPajakFCLTable({ checks, onToggle, onUpdate }: { checks: any[], on
                     return (
                       <td key={col} className={tdClass}>
                          <div className="flex flex-col gap-1 items-center">
-                            <div className="text-[11px] font-medium text-slate-800 text-center break-words max-w-full leading-tight">
+                            <div className="text-[11px] font-medium text-[#5A305A] text-center break-words max-w-full leading-tight">
                                <EditableCell value={text} onUpdate={(v) => onUpdate(row, col, v)} manual={check?.manual} />
                             </div>
                          </div>
@@ -511,7 +527,7 @@ function FakturPajakFCLTable({ checks, onToggle, onUpdate }: { checks: any[], on
                   }
 
                   if (!check) {
-                    return <td key={col} className={tdClass + " text-slate-300 bg-slate-50/50"}>—</td>;
+                    return <td key={col} className={tdClass + " text-[#5A305A] bg-slate-50/50"}>—</td>;
                   }
 
                   let fpRefText = "—";
@@ -526,11 +542,11 @@ function FakturPajakFCLTable({ checks, onToggle, onUpdate }: { checks: any[], on
                     <td key={col} className={tdClass}>
                        <div className="flex flex-col gap-1 items-center">
                           <StatusBadge match={check.match} onClick={() => onToggle(row, col)} manual={check.manual} />
-                          <div className="text-[11px] font-medium text-slate-800 text-center break-words max-w-full leading-tight">
+                          <div className="text-[11px] font-medium text-[#5A305A] text-center break-words max-w-full leading-tight">
                              <EditableCell value={text} onUpdate={(v) => onUpdate(row, col, v)} isCurrency={row === "Nominal"} manual={check.manual} />
                           </div>
                           {fpRefText !== "—" && (
-                            <div className="text-[9px] text-slate-400 text-center break-words max-w-full leading-tight" title="Nilai Referensi">
+                            <div className="text-[9px] text-[#5A305A] text-center break-words max-w-full leading-tight" title="Nilai Referensi">
                                ({fpRefText})
                             </div>
                           )}
@@ -555,6 +571,10 @@ const PIB_COLS = [
   "Laporan Surveyor (opsional)", "Billing DJBC", "BPN", "CIPL", "PO",
   "Final Invoice", "Bukti TF"
 ];
+// Dibelah 2 x 6 kolom supaya sejajar dengan tabel INVOICE/FAKTUR PAJAK di atasnya --
+// baris tetap sama persis (dirender di kedua tabel), referensi & data tidak berubah.
+const PIB_COLS_A = PIB_COLS.slice(0, 6);
+const PIB_COLS_B = PIB_COLS.slice(6);
 const PIB_ROWS = [
   { label: "NO PIB", dbRow: "NO PIB (No Pengajuan)",       required: ["SPPB", "Billing DJBC", "BPN"] },
   { label: "NAMA PT", dbRow: "NAMA PT (PIB No. 2,3)",       required: ["SPPB","AWB","ME/AK/IJEPA (opsional)","ECOO (opsional)","Laporan Surveyor (opsional)","Billing DJBC","BPN","CIPL","PO","Final Invoice","Bukti TF"] },
@@ -580,16 +600,16 @@ function VesselTable({ checks, onUpdate }: { checks: any[], onUpdate: (r: string
   const getCheck = (row: string, col: string) => checks.find(c => c.row === row && c.col === col);
   
   if (checks.length === 0) {
-     return <div className="p-6 text-center text-slate-500 text-sm italic">Dokumen tidak diupload / tidak relevan</div>;
+     return <div className="p-6 text-center text-[#5A305A] text-sm italic">Dokumen tidak diupload / tidak relevan</div>;
   }
   
   return (
     <SectionWrap title="VESSEL" icon={<Ship size={24} />}>
-      <table className="w-full text-left border-collapse min-w-[600px]">
+      <table className="w-full text-left border-collapse" style={{ tableLayout: 'fixed' }}>
         <thead>
           <tr>
-            <th className={thRowLabelClass} style={{ width: 160 }}>Validasi</th>
-            {VESSEL_COLS.map(c => <th key={c} className={thClass} style={{ backgroundColor: getHeaderColor(c).bg, color: getHeaderColor(c).text }}>{c}</th>)}
+            <th className={thRowLabelClass} style={{ width: LABEL_COL_PCT }}>Validasi</th>
+            {VESSEL_COLS.map(c => <th key={c} className={thClass} style={{ width: '28%', backgroundColor: getHeaderColor(c).bg, color: getHeaderColor(c).text }}>{c}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -607,13 +627,13 @@ function VesselTable({ checks, onUpdate }: { checks: any[], onUpdate: (r: string
                   return (
                     <td key={col} className={tdClass}>
                        <div className="flex flex-col items-center justify-center gap-1">
-                          <div className="font-medium text-slate-800">
+                          <div className="font-medium text-[#5A305A]">
                              <EditableCell value={text !== null ? text : "—"} onUpdate={(v) => onUpdate(row, col, v)} manual={check?.manual} />
                           </div>
                           {text !== null ? (
                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700">Ada Data</span>
                           ) : (
-                             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-slate-100 text-slate-500">Kosong</span>
+                             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-slate-100 text-[#5A305A]">Kosong</span>
                           )}
                        </div>
                     </td>
@@ -632,7 +652,7 @@ function PIBMatrixTable({ checks, onToggle, onUpdate }: { checks: any[], onToggl
   const getCheck = (row: string, col: string) => checks.find(c => c.row === row && c.col === col);
   
   if (checks.length === 0) {
-     return <div className="p-6 text-center text-slate-500 text-sm italic">Dokumen tidak diupload / tidak relevan</div>;
+     return <div className="p-6 text-center text-[#5A305A] text-sm italic">Dokumen tidak diupload / tidak relevan</div>;
   }
   
   const summary = useMemo(() => {
@@ -650,127 +670,133 @@ function PIBMatrixTable({ checks, onToggle, onUpdate }: { checks: any[], onToggl
     return { total, match, mismatch };
   }, [checks]);
 
+  const renderCell = (row: typeof PIB_ROWS[number], col: string, pibRefText: string, pibRefNum: number | null) => {
+    if (col === "PIB") {
+       const isManual = row.required.some(reqCol => {
+          const c = getCheck(row.dbRow, reqCol);
+          return c?.manual;
+       });
+       // Nilai gabungan (mis. beberapa No. PO disambung "+") -- tampilkan satu per baris,
+       // sama seperti kolom CIPL/PO/Final Invoice, supaya seragam dan mudah dibaca.
+       const pibListItems = row.dbRow === "NO PO" && pibRefText !== "—"
+          ? pibRefText.split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean)
+          : [];
+       return (
+         <td key={col} className={tdClass + " font-medium text-[#5A305A] bg-slate-100"}>
+           <div className="relative flex flex-col items-center justify-center w-full max-w-full pr-3 group gap-1">
+             {pibListItems.length > 1
+                ? pibListItems.map((item, i) => <span key={i} className="break-all leading-snug">{item}{i < pibListItems.length - 1 ? ' +' : ''}</span>)
+                : <span className="break-all leading-snug">{pibRefText}</span>}
+             {isManual && (
+                <span className="absolute right-0 -top-1 text-amber-500 p-0.5" title="Nilai ini sudah diedit manual oleh user"><Edit3 size={10} /></span>
+             )}
+           </div>
+         </td>
+       );
+    }
+
+    const isRequired = row.required.includes(col);
+    if (!isRequired) {
+      return <td key={col} className={tdClass + " text-[#5A305A] bg-slate-50/50"}>—</td>;
+    }
+
+    const check = getCheck(row.dbRow, col);
+    if (!check) {
+      return <td key={col} className={tdClass + " text-[#5A305A] bg-slate-50/50"}>—</td>;
+    }
+
+    let text: any = "—";
+    if (check.values && check.values.doc !== undefined && check.values.doc !== null && check.values.doc !== "") {
+       text = check.values.doc;
+    }
+
+    // Bukti TF di baris TOTAL CIPL bisa berisi beberapa nilai gabungan (mis. "USD 14.070 + USD 6.030")
+    // -- totalkan dulu, baru validasi terhadap angka TOTAL CIPL di kolom PIB.
+    let cellMatch = check.match;
+    let buktiTfSum: number | null = null;
+    if (row.dbRow === "TOTAL CIPL (PIB No. 23)" && col === "Bukti TF" && text !== "—") {
+       const parts = String(text).split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean);
+       buktiTfSum = parts.reduce((acc, p) => acc + toNum(p), 0);
+       if (!check.manual && pibRefNum !== null) {
+          cellMatch = Math.abs(buktiTfSum - pibRefNum) <= 1;
+       }
+    }
+
+    return (
+      <td key={col} className={tdClass}>
+        <div className="flex flex-col gap-1 items-center">
+          <StatusBadge match={cellMatch} onClick={() => onToggle(row.dbRow, col)} manual={check.manual} />
+          <div className="text-[11px] font-medium text-[#5A305A] text-center break-words max-w-full leading-tight">
+             <EditableCell value={text} onUpdate={(v) => onUpdate(row.dbRow, col, v)} isCurrency={row.dbRow === "TOTAL DUTY (PIB No. 44)"} isForeignCurrency={row.dbRow === "TOTAL CIPL (PIB No. 23)" && col !== "Bukti TF"} manual={check.manual} formatList={row.dbRow === "NO PO" || (row.dbRow === "TOTAL CIPL (PIB No. 23)" && col === "Bukti TF")} />
+          </div>
+          {buktiTfSum !== null && (
+            <div className="text-[10px] text-[#5A305A] italic text-center break-words max-w-full leading-tight">
+              Total {buktiTfSum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+          )}
+          {row.dbRow === "TOTAL CIPL (PIB No. 23)" && check.note && (
+            <div className="text-[10px] text-[#5A305A] text-center break-words max-w-full leading-tight">
+              {check.note}
+            </div>
+          )}
+        </div>
+      </td>
+    );
+  };
+
+  const renderHalf = (colsForHalf: string[], key: string) => (
+    <table key={key} className="w-full text-left border-collapse mb-3 last:mb-0" style={{ tableLayout: 'fixed' }}>
+      <thead>
+        <tr>
+          <th className={thRowLabelClass} style={{ width: LABEL_COL_PCT }}>Validasi</th>
+          {colsForHalf.map(c => <th key={c} className={thClass} style={{ width: UNIT_PCT, backgroundColor: getHeaderColor(c).bg, color: getHeaderColor(c).text }}>{c}</th>)}
+        </tr>
+      </thead>
+      <tbody>
+        {PIB_ROWS.map((row, idx) => {
+           let pibRefText = "—";
+           for (const reqCol of row.required) {
+              const c = getCheck(row.dbRow, reqCol);
+              if (c && c.values && c.values.ref !== undefined && c.values.ref !== null && String(c.values.ref) !== "") {
+                 pibRefText = String(c.values.ref);
+                 break;
+              }
+           }
+           const pibRefNum = pibRefText !== "—" ? toNum(pibRefText) : null;
+           if (pibRefText !== "—") {
+              if (row.dbRow === "TOTAL DUTY (PIB No. 44)") {
+                 pibRefText = fmtIDR(toNum(pibRefText));
+              } else if (row.dbRow === "TOTAL CIPL (PIB No. 23)") {
+                 const num = toNum(pibRefText);
+                 pibRefText = isNaN(num) ? pibRefText : num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              }
+           }
+
+           return (
+            <tr key={row.dbRow} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50"}>
+              <td className={tdLabelClass}>{row.label}</td>
+              {colsForHalf.map(col => renderCell(row, col, pibRefText, pibRefNum))}
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+
   return (
     <SectionWrap title="PIB" icon={<Landmark size={24} />}>
       <div className="px-3 py-2 bg-slate-50 flex items-center justify-between border-b border-slate-200">
-        <span className="text-[11px] text-slate-500">
+        <span className="text-[11px] text-[#5A305A]">
           Status validasi otomatis dari sistem berdasarkan perbandingan data dokumen.
         </span>
         <div className="flex gap-3">
-          <div className="flex items-center gap-1"><StatusBadge match={true} /> <span className="text-[11px] text-slate-500 ml-1">{summary.match}</span></div>
-          <div className="flex items-center gap-1"><StatusBadge match={false} /> <span className="text-[11px] text-slate-500 ml-1">{summary.mismatch}</span></div>
-          <div className="flex items-center gap-1"><StatusBadge match={null} /> <span className="text-[11px] text-slate-500 ml-1">{summary.total - summary.match - summary.mismatch}</span></div>
+          <div className="flex items-center gap-1"><StatusBadge match={true} /> <span className="text-[11px] text-[#5A305A] ml-1">{summary.match}</span></div>
+          <div className="flex items-center gap-1"><StatusBadge match={false} /> <span className="text-[11px] text-[#5A305A] ml-1">{summary.mismatch}</span></div>
+          <div className="flex items-center gap-1"><StatusBadge match={null} /> <span className="text-[11px] text-[#5A305A] ml-1">{summary.total - summary.match - summary.mismatch}</span></div>
         </div>
       </div>
-      <table className="w-full text-left border-collapse min-w-[1400px]">
-        <thead>
-          <tr>
-            <th className={thRowLabelClass} style={{ width: 210 }}>Validasi</th>
-            {PIB_COLS.map(c => <th key={c} className={thClass} style={{ minWidth: 120, backgroundColor: getHeaderColor(c).bg, color: getHeaderColor(c).text }}>{c}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {PIB_ROWS.map((row, idx) => {
-             let pibRefText = "—";
-             for (const reqCol of row.required) {
-                const c = getCheck(row.dbRow, reqCol);
-                if (c && c.values && c.values.ref !== undefined && c.values.ref !== null && String(c.values.ref) !== "") {
-                   pibRefText = String(c.values.ref);
-                   break;
-                }
-             }
-             const pibRefNum = pibRefText !== "—" ? toNum(pibRefText) : null;
-             if (pibRefText !== "—") {
-                if (row.dbRow === "TOTAL DUTY (PIB No. 44)") {
-                   pibRefText = fmtIDR(toNum(pibRefText));
-                } else if (row.dbRow === "TOTAL CIPL (PIB No. 23)") {
-                   const num = toNum(pibRefText);
-                   pibRefText = isNaN(num) ? pibRefText : num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                }
-             }
-
-
-             return (
-              <tr key={row.dbRow} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50"}>
-                <td className={tdLabelClass}>{row.label}</td>
-                {PIB_COLS.map(col => {
-                  if (col === "PIB") {
-                     const isManual = row.required.some(reqCol => {
-                        const c = getCheck(row.dbRow, reqCol);
-                        return c?.manual;
-                     });
-                     // Nilai gabungan (mis. beberapa No. PO disambung "+") -- tampilkan satu per baris,
-                     // sama seperti kolom CIPL/PO/Final Invoice, supaya seragam dan mudah dibaca.
-                     const pibListItems = row.dbRow === "NO PO" && pibRefText !== "—"
-                        ? pibRefText.split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean)
-                        : [];
-                     return (
-                       <td key={col} className={tdClass + " font-medium text-slate-700 bg-slate-100"}>
-                         <div className="relative inline-flex flex-col items-center justify-center pr-3 group gap-1">
-                           {pibListItems.length > 1
-                              ? pibListItems.map((item, i) => <span key={i} className="break-all leading-snug">{item}{i < pibListItems.length - 1 ? ' +' : ''}</span>)
-                              : pibRefText}
-                           {isManual && (
-                              <span className="absolute right-0 -top-1 text-amber-500 p-0.5" title="Nilai ini sudah diedit manual oleh user"><Edit3 size={10} /></span>
-                           )}
-                         </div>
-                       </td>
-                     );
-                  }
-
-                  const isRequired = row.required.includes(col);
-                  if (!isRequired) {
-                    return <td key={col} className={tdClass + " text-slate-300 bg-slate-50/50"}>—</td>;
-                  }
-                  
-                  const check = getCheck(row.dbRow, col);
-                  if (!check) {
-                    return <td key={col} className={tdClass + " text-slate-300 bg-slate-50/50"}>—</td>;
-                  }
-                  
-                  let text: any = "—";
-                  if (check.values && check.values.doc !== undefined && check.values.doc !== null && check.values.doc !== "") {
-                     text = check.values.doc;
-                  }
-
-                  // Bukti TF di baris TOTAL CIPL bisa berisi beberapa nilai gabungan (mis. "USD 14.070 + USD 6.030")
-                  // -- totalkan dulu, baru validasi terhadap angka TOTAL CIPL di kolom PIB.
-                  let cellMatch = check.match;
-                  let buktiTfSum: number | null = null;
-                  if (row.dbRow === "TOTAL CIPL (PIB No. 23)" && col === "Bukti TF" && text !== "—") {
-                     const parts = String(text).split(/\s*\+\s*/).map(s => s.trim()).filter(Boolean);
-                     buktiTfSum = parts.reduce((acc, p) => acc + toNum(p), 0);
-                     if (!check.manual && pibRefNum !== null) {
-                        cellMatch = Math.abs(buktiTfSum - pibRefNum) <= 1;
-                     }
-                  }
-
-                  return (
-                    <td key={col} className={tdClass}>
-                      <div className="flex flex-col gap-1 items-center">
-                        <StatusBadge match={cellMatch} onClick={() => onToggle(row.dbRow, col)} manual={check.manual} />
-                        <div className="text-[11px] font-medium text-slate-800 text-center break-words max-w-full leading-tight">
-                           <EditableCell value={text} onUpdate={(v) => onUpdate(row.dbRow, col, v)} isCurrency={row.dbRow === "TOTAL DUTY (PIB No. 44)"} isForeignCurrency={row.dbRow === "TOTAL CIPL (PIB No. 23)" && col !== "Bukti TF"} manual={check.manual} formatList={row.dbRow === "NO PO" || (row.dbRow === "TOTAL CIPL (PIB No. 23)" && col === "Bukti TF")} />
-                        </div>
-                        {buktiTfSum !== null && (
-                          <div className="text-[10px] text-slate-500 italic text-center break-words max-w-full leading-tight">
-                            Total {buktiTfSum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </div>
-                        )}
-                        {row.dbRow === "TOTAL CIPL (PIB No. 23)" && check.note && (
-                          <div className="text-[10px] text-slate-400 text-center break-words max-w-full leading-tight">
-                            {check.note}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                  );
-                })}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      {renderHalf(PIB_COLS_A, "a")}
+      {renderHalf(PIB_COLS_B, "b")}
     </SectionWrap>
   );
 }
@@ -819,13 +845,13 @@ function DutyTable({ ndpbm, setNdpbm, items, addItem, removeItem, setItem, aktua
     <SectionWrap title="DUTY" icon={<FileText size={24} />}>
       <div className="p-3 bg-slate-50 flex items-center gap-4 flex-wrap border-b border-slate-200">
         <div className="flex items-center gap-2">
-          <span className="text-[11px] text-slate-500 font-medium">NDPBM (22)</span>
+          <span className="text-[11px] text-[#5A305A] font-medium">NDPBM (22)</span>
           <VInput type="number" value={ndpbm} onChange={setNdpbm} placeholder="16922" width={100} />
         </div>
         <div className="flex items-start gap-2 flex-col w-full mt-2">
           <div className="flex items-center gap-3">
-             <span className="text-[11px] text-slate-500 font-medium">Item pabean ({items.length} item):</span>
-             <button onClick={() => setShowItems(!showItems)} className="text-[10px] px-2 py-1 rounded border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 shadow-sm transition-colors">
+             <span className="text-[11px] text-[#5A305A] font-medium">Item pabean ({items.length} item):</span>
+             <button onClick={() => setShowItems(!showItems)} className="text-[10px] px-2 py-1 rounded border border-slate-300 bg-white text-[#5A305A] hover:bg-slate-50 shadow-sm transition-colors">
                 {showItems ? "Sembunyikan" : "Tampilkan"}
              </button>
           </div>
@@ -834,7 +860,7 @@ function DutyTable({ ndpbm, setNdpbm, items, addItem, removeItem, setItem, aktua
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
-                    <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
+                    <tr className="bg-slate-100 text-[#5A305A] border-b border-slate-200">
                       <th className="p-2 border-r border-slate-200 text-center font-bold uppercase tracking-wider w-10">No</th>
                       <th className="p-2 border-r border-slate-200 text-left font-bold uppercase tracking-wider">Nilai Pabean</th>
                       <th className="p-2 border-r border-slate-200 text-center font-bold uppercase tracking-wider">% BM</th>
@@ -846,7 +872,7 @@ function DutyTable({ ndpbm, setNdpbm, items, addItem, removeItem, setItem, aktua
                   <tbody>
                     {items.map((it: any, i: number) => (
                       <tr key={it.id} className="border-b border-slate-200 hover:bg-slate-50/50 transition-colors">
-                        <td className="p-2 border-r border-slate-200 text-center text-slate-400 font-medium">{i + 1}</td>
+                        <td className="p-2 border-r border-slate-200 text-center text-[#5A305A] font-medium">{i + 1}</td>
                         <td className="p-2 border-r border-slate-200">
                           <VInput type="number" value={it.nilaiPabean} onChange={v => setItem(it.id, "nilaiPabean", v)} placeholder="Nilai Pabean" width={110} />
                         </td>
@@ -861,7 +887,7 @@ function DutyTable({ ndpbm, setNdpbm, items, addItem, removeItem, setItem, aktua
                         </td>
                         {isEditMode && (
                           <td className="p-2 border-l border-slate-200 text-center">
-                            <button onClick={() => removeItem(it.id)} className="p-1 text-slate-400 hover:text-red-500 transition-colors" title="Hapus item">
+                            <button onClick={() => removeItem(it.id)} className="p-1 text-[#5A305A] hover:text-red-500 transition-colors" title="Hapus item">
                               <Trash2 size={12} />
                             </button>
                           </td>
@@ -882,13 +908,13 @@ function DutyTable({ ndpbm, setNdpbm, items, addItem, removeItem, setItem, aktua
           )}
         </div>
       </div>
-      <table className="w-full text-left border-collapse min-w-[900px]">
+      <table className="w-full text-left border-collapse" style={{ tableLayout: 'fixed' }}>
         <thead>
           <tr>
-            <th className={thRowLabelClass} style={{ width: 180 }}>Validasi</th>
-            <th className={thClass} style={{ width: 130, backgroundColor: getHeaderColor("Aktual (PIB)").bg, color: getHeaderColor("Aktual (PIB)").text }}>Aktual (PIB)</th>
-            <th className={thClass} style={{ backgroundColor: getHeaderColor("Expected (Kalkulasi)").bg, color: getHeaderColor("Expected (Kalkulasi)").text }}>Expected (Kalkulasi)</th>
-            <th className={thClass} style={{ width: 120, backgroundColor: getHeaderColor("Status").bg, color: getHeaderColor("Status").text }}>Status</th>
+            <th className={thRowLabelClass} style={{ width: LABEL_COL_PCT }}>Validasi</th>
+            <th className={thClass} style={{ width: '35%', backgroundColor: getHeaderColor("Aktual (PIB)").bg, color: getHeaderColor("Aktual (PIB)").text }}>Aktual (PIB)</th>
+            <th className={thClass} style={{ width: '35%', backgroundColor: getHeaderColor("Expected (Kalkulasi)").bg, color: getHeaderColor("Expected (Kalkulasi)").text }}>Expected (Kalkulasi)</th>
+            <th className={thClass} style={{ width: UNIT_PCT, backgroundColor: getHeaderColor("Status").bg, color: getHeaderColor("Status").text }}>Status</th>
           </tr>
         </thead>
         <tbody>
@@ -900,7 +926,7 @@ function DutyTable({ ndpbm, setNdpbm, items, addItem, removeItem, setItem, aktua
                 <td className={tdClass}>
                   <div className="flex flex-col gap-1 items-center justify-center">
                     {aktual[r.key] ? (
-                      <div className="text-[10px] text-slate-500 font-mono">
+                      <div className="text-[10px] text-[#5A305A] font-mono">
                         {fmtIDR(toNum(aktual[r.key]))}
                       </div>
                     ) : null}
@@ -915,8 +941,8 @@ function DutyTable({ ndpbm, setNdpbm, items, addItem, removeItem, setItem, aktua
                   </div>
                 </td>
                 <td className={tdClass + " !text-left"}>
-                  <div className="font-semibold text-slate-800 mb-0.5">{fmtIDR(r.expected)}</div>
-                  <div className="text-[10px] text-slate-500 italic">{r.formula}</div>
+                  <div className="font-semibold text-[#5A305A] mb-0.5">{fmtIDR(r.expected)}</div>
+                  <div className="text-[10px] text-[#5A305A] italic">{r.formula}</div>
                 </td>
                 <td className={tdClass}><StatusBadge match={st} /></td>
               </tr>
@@ -938,16 +964,16 @@ function EmklTable({ checks, onToggleRow, onUpdate }: { checks: any[], onToggleR
   const getCheck = (row: string, col: string) => checks.find(c => c.row === row && c.col === col);
   
   if (checks.length === 0) {
-     return <div className="p-6 text-center text-slate-500 text-sm italic">Dokumen tidak diupload / tidak relevan</div>;
+     return <div className="p-6 text-center text-[#5A305A] text-sm italic">Dokumen tidak diupload / tidak relevan</div>;
   }
 
   return (
     <SectionWrap title="EMKL" icon={<Ship size={24} />}>
-      <table className="w-full text-left border-collapse min-w-[480px]">
+      <table className="w-full text-left border-collapse" style={{ tableLayout: 'fixed' }}>
         <thead>
           <tr>
-            <th className={thRowLabelClass} style={{ width: 140 }}>Validasi</th>
-            {EMKL_COLS.map(c => <th key={c} className={thClass} style={{ backgroundColor: getHeaderColor(c).bg, color: getHeaderColor(c).text }}>{c}</th>)}
+            <th className={thRowLabelClass} style={{ width: LABEL_COL_PCT }}>Validasi</th>
+            {EMKL_COLS.map(c => <th key={c} className={thClass} style={{ width: c === "Status" ? UNIT_PCT : '35%', backgroundColor: getHeaderColor(c).bg, color: getHeaderColor(c).text }}>{c}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -964,8 +990,8 @@ function EmklTable({ checks, onToggleRow, onUpdate }: { checks: any[], onToggleR
             return (
               <tr key={row} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50"}>
                 <td className={tdLabelClass}>{row}</td>
-                <td className={tdClass + " font-medium text-slate-800"}><EditableCell value={docText} onUpdate={(v) => onUpdate(row, "Invoice EMKL", v)} manual={check?.manual} /></td>
-                <td className={tdClass + " text-slate-600"}>
+                <td className={tdClass + " font-medium text-[#5A305A]"}><EditableCell value={docText} onUpdate={(v) => onUpdate(row, "Invoice EMKL", v)} manual={check?.manual} /></td>
+                <td className={tdClass + " text-[#5A305A]"}>
                   <div className="relative inline-flex items-center justify-center pr-3 group">
                      {pibRef}
                      {check?.manual && (
@@ -989,24 +1015,34 @@ function EmklTable({ checks, onToggleRow, onUpdate }: { checks: any[], onToggleR
 // 6. ACTUAL
 // ============================================================================
 const ACTUAL_COLS = ["Inv. Freight", "PIB", "Inv. Storage", "Status"];
+// Murni persen, TIDAK dicampur pixel tetap -- mencampur pixel+persen di 1 tabel table-layout:fixed
+// bikin persennya dihitung ulang terhadap basis yang beda2 antar tabel (itu penyebab kolom
+// VALIDASI dulu tidak sejajar). "Inv. Freight"/"Inv. Storage" 2 unit (nilai, butuh ruang lebih),
+// "PIB"/"Status" 1 unit. 28+14+28+14=84%, + label 16% = 100%.
+const ACTUAL_COL_WIDTHS: Record<string, string> = {
+  "Inv. Freight": '28%',
+  "PIB": UNIT_PCT,
+  "Inv. Storage": '28%',
+  "Status": UNIT_PCT,
+};
 const ACTUAL_ROWS = ["AWB No", "QTY", "KG", "CBM", "Origin", "Destination"];
 
 function ActualTable({ checks, onToggleRow, onUpdate }: { checks: any[], onToggleRow: (r: string) => void, onUpdate: (r: string, c: string, v: string) => void }) {
   const getCheck = (row: string, col: string) => checks.find(c => c.row === row && c.col === col);
   
   if (checks.length === 0) {
-     return <div className="p-6 text-center text-slate-500 text-sm italic">Dokumen tidak diupload / tidak relevan</div>;
+     return <div className="p-6 text-center text-[#5A305A] text-sm italic">Dokumen tidak diupload / tidak relevan</div>;
   }
   
   const dataCols = ["Inv. Freight", "Inv. Storage"];
 
   return (
     <SectionWrap title="ACTUAL" icon={<ClipboardList size={24} />}>
-      <table className="w-full text-left border-collapse min-w-[620px]">
+      <table className="w-full text-left border-collapse" style={{ tableLayout: 'fixed' }}>
         <thead>
           <tr>
-            <th className={thRowLabelClass} style={{ width: 140 }}>Validasi</th>
-            {ACTUAL_COLS.map(c => <th key={c} className={thClass} style={{ backgroundColor: getHeaderColor(c).bg, color: getHeaderColor(c).text }}>{c}</th>)}
+            <th className={thRowLabelClass} style={{ width: LABEL_COL_PCT }}>Validasi</th>
+            {ACTUAL_COLS.map(c => <th key={c} className={thClass} style={{ width: ACTUAL_COL_WIDTHS[c], backgroundColor: getHeaderColor(c).bg, color: getHeaderColor(c).text }}>{c}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -1041,7 +1077,7 @@ function ActualTable({ checks, onToggleRow, onUpdate }: { checks: any[], onToggl
                     const isNumericRow = row === "KG" || row === "CBM" || row === "QTY";
                     const displayRef = isNumericRow && pibRef !== "—" ? fmtNum(pibRef) : pibRef;
                     return (
-                      <td key={col} className={`${tdClass} text-slate-600`}>
+                      <td key={col} className={`${tdClass} text-[#5A305A]`}>
                         <div className="relative inline-flex items-center justify-center pr-3 group">
                            <span className={isNumericRow ? "font-mono" : ""}>{displayRef}</span>
                            {rowChecks.some(c => c.manual) && (
@@ -1059,7 +1095,7 @@ function ActualTable({ checks, onToggleRow, onUpdate }: { checks: any[], onToggl
                   }
                   
                   return (
-                     <td key={col} className={tdClass + " font-medium text-slate-800"}>
+                     <td key={col} className={tdClass + " font-medium text-[#5A305A]"}>
                        <EditableCell value={text} onUpdate={(v) => onUpdate(row, col, v)} isNumber={row === "KG" || row === "CBM" || row === "QTY"} manual={check?.manual} />
                      </td>
                   );
@@ -1332,7 +1368,7 @@ export default function SeaAirValidasiModal({ record, onClose }: { record: any, 
       <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center h-full w-full">
         <div className="bg-white p-6 rounded-2xl shadow-xl">
            <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
-           <p className="text-slate-600 font-medium">Memuat validasi Sea & Air...</p>
+           <p className="text-[#5A305A] font-medium">Memuat validasi Sea & Air...</p>
         </div>
       </div>
     );
@@ -1346,23 +1382,23 @@ export default function SeaAirValidasiModal({ record, onClose }: { record: any, 
         {/* Header */}
         <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-slate-200 bg-white shrink-0 print:hidden">
           <div>
-            <h2 className="text-lg font-bold tracking-tight text-slate-800">Validasi Dokumen Sea & Air</h2>
-            <p className="text-sm text-slate-500">Hasil perbandingan dokumen shipment secara otomatis</p>
+            <h2 className="text-lg font-bold tracking-tight text-[#5A305A]">Validasi Dokumen Sea & Air</h2>
+            <p className="text-sm text-[#5A305A]">Hasil perbandingan dokumen shipment secara otomatis</p>
           </div>
           <div className="flex items-center gap-2">
             <button 
                onClick={() => window.print()}
-               className="px-3 py-1.5 text-sm font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md flex items-center gap-2 transition-colors"
+               className="px-3 py-1.5 text-sm font-medium bg-slate-100 hover:bg-slate-200 text-[#5A305A] rounded-md flex items-center gap-2 transition-colors"
             >
                <Printer size={16} /> Print
             </button>
             <button 
                onClick={() => setIsEditMode(!isEditMode)}
-               className={`px-3 py-1.5 text-sm font-medium rounded-md flex items-center gap-2 transition-colors ${isEditMode ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}
+               className={`px-3 py-1.5 text-sm font-medium rounded-md flex items-center gap-2 transition-colors ${isEditMode ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-100 hover:bg-slate-200 text-[#5A305A]'}`}
             >
                <Edit3 size={16} /> {isEditMode ? 'Mode Edit Aktif' : 'Mode Edit'}
             </button>
-            <button onClick={handleClose} className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors">
+            <button onClick={handleClose} className="p-2 hover:bg-slate-100 rounded-full text-[#5A305A] hover:text-[#5A305A] transition-colors">
               <X size={20} />
             </button>
           </div>
@@ -1373,8 +1409,8 @@ export default function SeaAirValidasiModal({ record, onClose }: { record: any, 
           
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 p-4 rounded-xl border border-slate-200 bg-white shadow-sm">
             <div>
-              <p className="text-sm font-bold text-slate-800">Statistik Global (Seluruh Matriks)</p>
-              <p className="text-xs text-slate-500 mt-0.5">Total perbandingan yang berhasil tervalidasi</p>
+              <p className="text-sm font-bold text-[#5A305A]">Statistik Global (Seluruh Matriks)</p>
+              <p className="text-xs text-[#5A305A] mt-0.5">Total perbandingan yang berhasil tervalidasi</p>
             </div>
             <div className="flex gap-4 items-center flex-wrap">
               <div className="bg-emerald-50 text-emerald-700 rounded-lg px-4 py-2 text-center min-w-[80px] border border-emerald-100">
@@ -1387,8 +1423,8 @@ export default function SeaAirValidasiModal({ record, onClose }: { record: any, 
               </div>
               <div className="min-w-[160px] pl-2">
                 <div className="flex justify-between mb-1.5">
-                  <span className="text-[11px] text-slate-500 font-medium">Akurasi Keseluruhan</span>
-                  <span className="text-[11px] font-bold text-slate-700">{globalStats.pct}%</span>
+                  <span className="text-[11px] text-[#5A305A] font-medium">Akurasi Keseluruhan</span>
+                  <span className="text-[11px] font-bold text-[#5A305A]">{globalStats.pct}%</span>
                 </div>
                 <div className="h-2 rounded-full bg-slate-100 overflow-hidden shadow-inner">
                   <div className={`h-full ${barColor} transition-all duration-500`} style={{ width: `${globalStats.pct}%` }} />
@@ -1411,7 +1447,7 @@ export default function SeaAirValidasiModal({ record, onClose }: { record: any, 
           <VesselTable checks={getSectionChecks("VESSEL")} onUpdate={(r, c, v) => updateCheckValue("VESSEL", r, c, v)} />
           <ActualTable checks={getSectionChecks("ACTUAL")} onToggleRow={(r) => toggleRowStatus("ACTUAL", r)} onUpdate={(r, c, v) => updateCheckValue("ACTUAL", r, c, v)} />
           
-          <p className="text-[11px] text-slate-500 mt-4 flex items-center gap-1.5">
+          <p className="text-[11px] text-[#5A305A] mt-4 flex items-center gap-1.5">
             <Info size={14} className="text-blue-500" />
             Sel bertanda "—" pada matriks PIB berarti kombinasi field–dokumen tersebut TIDAK wajib divalidasi.
           </p>
@@ -1422,8 +1458,8 @@ export default function SeaAirValidasiModal({ record, onClose }: { record: any, 
                <Info size={20} />
              </div>
              <div>
-                <p className="text-sm font-bold text-slate-800 leading-none">Perubahan belum disimpan</p>
-                <p className="text-[10px] text-slate-500 mt-1">Klik simpan untuk memperbarui ke database</p>
+                <p className="text-sm font-bold text-[#5A305A] leading-none">Perubahan belum disimpan</p>
+                <p className="text-[10px] text-[#5A305A] mt-1">Klik simpan untuk memperbarui ke database</p>
              </div>
              <button 
                 onClick={saveChanges}
