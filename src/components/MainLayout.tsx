@@ -28,6 +28,7 @@ const MAIN_TABS = [
     subTabs: [
       { id: 'sea_air_audit',   label: 'Audit', path: '/sea-air/audit' },
       { id: 'sea_air_rekapan', label: 'Rekapan', path: '/sea-air/rekapan' },
+      { id: 'sea_air_far_overseas_air', label: 'FAR Overseas Air', path: '/sea-air/far-overseas-air' },
       { id: 'sea_air_upload', label: 'Upload', path: '/sea-air/upload' },
     ]
   },

@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import ExcelJS from 'exceljs'
+import { supabase } from '../lib/supabase'
+import { useAuth } from '../lib/AuthContext'
 
 const formatNoAju = (v: any) => {
   if (!v) return '—'
@@ -68,6 +70,45 @@ const formatValue = (v: any, type: string, key: string) => {
   return String(v);
 }
 
+// Konfirmasi password sebelum file Excel benar-benar dibuat & diunduh -- verifikasi dengan
+// re-login (signInWithPassword) pakai email user yang sedang login, TANPA mengubah sesi kalau
+// gagal (Supabase menolak & sesi lama tetap berlaku).
+function ExportPasswordConfirmModal({ email, onConfirmed, onClose, verifying, error }: {
+  email: string | null; onConfirmed: (password: string) => void; onClose: () => void; verifying: boolean; error: string | null;
+}) {
+  const [password, setPassword] = useState('')
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
+        <h3 className="font-bold text-[#5A305A] mb-1">Konfirmasi Password</h3>
+        <p className="text-xs text-[#5A305A] mb-4">Masukkan password akun ({email || 'akun Anda'}) untuk melanjutkan export Excel.</p>
+        <input
+          type="password"
+          autoFocus
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && password && !verifying) onConfirmed(password) }}
+          placeholder="Password login"
+          className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A]"
+        />
+        {error && <p className="text-xs text-rose-600 mb-3">{error}</p>}
+        <div className={`grid grid-cols-2 gap-2 ${error ? '' : 'mt-3'}`}>
+          <button onClick={onClose} disabled={verifying} className="py-2.5 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all disabled:opacity-50">
+            Batal
+          </button>
+          <button
+            onClick={() => onConfirmed(password)}
+            disabled={verifying || !password}
+            className="py-2.5 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-sm transition-all disabled:opacity-50"
+          >
+            {verifying ? 'Memeriksa...' : 'Konfirmasi & Download'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function ExportModal({
   title,
   cols,
@@ -81,12 +122,16 @@ export default function ExportModal({
   fetchData: (start?: string, end?: string) => Promise<any[]>
   dateFieldLabel?: string
 }) {
+  const { user } = useAuth()
   const [data, setData] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
+  const [showPasswordConfirm, setShowPasswordConfirm] = useState(false)
+  const [verifyingPassword, setVerifyingPassword] = useState(false)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
 
   const exportCols = cols.filter(c => c.key !== 'index' && c.key !== 'action')
 
@@ -106,6 +151,25 @@ export default function ExportModal({
   useEffect(() => {
     load()
   }, [])
+
+  // Verifikasi password lewat re-login (signInWithPassword) sebelum file benar-benar dibuat --
+  // kalau password salah, Supabase menolak dan sesi user yang sedang login TIDAK berubah.
+  const handlePasswordConfirmed = async (password: string) => {
+    if (!user?.email) {
+      setPasswordError('Tidak bisa memverifikasi -- email akun tidak ditemukan.')
+      return
+    }
+    setVerifyingPassword(true)
+    setPasswordError(null)
+    const { error } = await supabase.auth.signInWithPassword({ email: user.email, password })
+    setVerifyingPassword(false)
+    if (error) {
+      setPasswordError('Password salah. Silakan coba lagi.')
+      return
+    }
+    setShowPasswordConfirm(false)
+    await handleExport()
+  }
 
   const handleExport = async () => {
     try {
@@ -272,9 +336,9 @@ export default function ExportModal({
           >
             Batal
           </button>
-          <button 
-            onClick={handleExport} 
-            disabled={loading || !!err || exporting || data.length === 0} 
+          <button
+            onClick={() => { setPasswordError(null); setShowPasswordConfirm(true) }}
+            disabled={loading || !!err || exporting || data.length === 0}
             className="flex-[2] flex justify-center items-center py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm disabled:opacity-50 transition-all"
           >
             {exporting ? (
@@ -286,6 +350,16 @@ export default function ExportModal({
           </button>
         </div>
       </div>
+
+      {showPasswordConfirm && (
+        <ExportPasswordConfirmModal
+          email={user?.email || null}
+          verifying={verifyingPassword}
+          error={passwordError}
+          onClose={() => setShowPasswordConfirm(false)}
+          onConfirmed={handlePasswordConfirmed}
+        />
+      )}
     </div>
   )
 }

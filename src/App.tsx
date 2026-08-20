@@ -11,6 +11,7 @@ import FuelSurchargePage from './pages/FuelSurchargePage';
 import KursBIPage from './pages/KursBIPage';
 import KursRuleVendorPage from './pages/KursRuleVendorPage';
 import TarifKontrakPage from './pages/TarifKontrakPage';
+import FarOverseasVendorTarifPage from './pages/FarOverseasVendorTarifPage';
 import RateTablesAdmin from './pages/RateTablesAdmin';
 import MainLayout from './components/MainLayout';
 import AdminLayout from './components/AdminLayout';
@@ -24,6 +25,7 @@ import CourierValidasiPage from './pages/courier/CourierValidasiPage';
 import SeaAirAuditPage from './pages/sea-air/SeaAirAuditPage';
 import SeaAirRekapanPage from './pages/sea-air/SeaAirRekapanPage';
 import AuditTrailPage from './pages/audit-trail/AuditTrailPage';
+import FarOverseasAirPage from './pages/FarOverseasAirPage';
 
 function ProtectedRoute() {
   const { session, loading } = useAuth();
@@ -65,6 +67,9 @@ export default function App() {
               <Route path="/sea-air/audit" element={<SeaAirAuditPage />} />
               <Route path="/sea-air/rekapan" element={<SeaAirRekapanPage />} />
 
+              <Route path="/sea-air/far-overseas-air" element={<FarOverseasAirPage />} />
+              <Route path="/sea-air/far-overseas-air/:id" element={<FarOverseasAirPage />} />
+
               <Route path="/audit-trail" element={<AuditTrailPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
@@ -78,6 +83,7 @@ export default function App() {
             <Route path="/settings/kurs-bi" element={<KursBIPage />} />
             <Route path="/settings/kurs-rule-vendor" element={<KursRuleVendorPage />} />
             <Route path="/settings/tarif-kontrak" element={<TarifKontrakPage />} />
+            <Route path="/settings/tarif-far-overseas-vendor" element={<FarOverseasVendorTarifPage />} />
           </Route>
         </Routes>
       </AuthProvider>

@@ -13,7 +13,9 @@ const upload = multer({ storage: multer.memoryStorage() });
 app.post('/api/n8n-proxy-start', upload.any(), async (req, res) => {
   try {
     const webhookType = req.headers['x-webhook-type'] || 'courier';
-    const defaultWebhookUrl = webhookType === 'sea_air' ? process.env.VITE_N8N_SEAAIR_WEBHOOK_URL : process.env.VITE_N8N_WEBHOOK_URL;
+    const defaultWebhookUrl = webhookType === 'sea_air' ? process.env.VITE_N8N_SEAAIR_WEBHOOK_URL
+      : webhookType === 'far_overseas_air' ? process.env.VITE_N8N_FAR_OVERSEAS_AIR_WEBHOOK_URL
+      : process.env.VITE_N8N_WEBHOOK_URL;
     const webhookUrl = req.headers['x-webhook-url'] || defaultWebhookUrl;
     
     if (!webhookUrl || typeof webhookUrl !== 'string') {
