@@ -288,7 +288,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
               <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
                 <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
                   <h3 className="text-sm font-bold text-[#5A305A]">Document Validation</h3>
-                  <p className="text-[11px] text-[#5A305A]/70 mt-0.5">Breakdown per PO — kelengkapan dokumen & kecocokan nama PT</p>
+                  <p className="text-[11px] font-light text-[#5A305A]/70 mt-0.5">Breakdown per PO — kelengkapan dokumen & kecocokan nama PT</p>
                 </div>
                 {docValidation.length === 0 ? (
                   <p className="text-xs text-[#5A305A] italic text-center py-6">Belum ada data document validation (PO belum diproses).</p>
@@ -354,7 +354,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
               <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
                 <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
                   <h3 className="text-sm font-bold text-[#5A305A]">Cost Validation</h3>
-                  <p className="text-[11px] text-[#5A305A]/70 mt-0.5">Actual = 100% isi yang ditagihkan di invoice</p>
+                  <p className="text-[11px] font-light text-[#5A305A]/70 mt-0.5">Actual = 100% isi yang ditagihkan di invoice</p>
                 </div>
                 {orderedCostRows.length === 0 ? (
                   <p className="text-xs text-[#5A305A] italic text-center py-6">Belum ada data cost validation.</p>

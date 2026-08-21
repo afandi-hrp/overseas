@@ -161,7 +161,7 @@ export default function LoginPage() {
             </div>
           </form>
 
-          <p className="text-center text-xs font-bold text-[#5A305A] mt-6">Powered by Waruna Group</p>
+          <p className="text-center text-xs font-light text-[#5A305A] mt-6">Powered by Waruna Group</p>
         </div>
       </div>
     </div>

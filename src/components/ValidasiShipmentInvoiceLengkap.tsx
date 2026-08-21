@@ -673,7 +673,7 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
                     <p className="text-sm font-bold text-[#5A305A]">
                       Ringkasan Validasi Cost
                     </p>
-                    <p className="text-xs text-[#5A305A] mt-0.5">
+                    <p className="text-xs font-light text-[#5A305A] mt-0.5">
                       Keseluruhan akurasi cost vs actual invoice
                     </p>
                   </div>

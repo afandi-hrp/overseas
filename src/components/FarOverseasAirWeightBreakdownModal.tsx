@@ -48,7 +48,7 @@ export default function FarOverseasAirWeightBreakdownModal({ record, onClose, on
         <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-slate-200 shrink-0">
           <div>
             <h2 className="text-base font-bold text-[#5A305A]">Breakdown Berat per PO</h2>
-            <p className="text-xs text-[#5A305A]/70 mt-0.5">Isi manual — dokumen PO tidak pernah punya info berat.</p>
+            <p className="text-xs font-light text-[#5A305A]/70 mt-0.5">Isi manual — dokumen PO tidak pernah punya info berat.</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-[#5A305A] transition-colors">
             <X size={20} />

@@ -26,6 +26,7 @@ import SeaAirAuditPage from './pages/sea-air/SeaAirAuditPage';
 import SeaAirRekapanPage from './pages/sea-air/SeaAirRekapanPage';
 import AuditTrailPage from './pages/audit-trail/AuditTrailPage';
 import FarOverseasAirPage from './pages/FarOverseasAirPage';
+import BunkerPage from './pages/BunkerPage';
 
 function ProtectedRoute() {
   const { session, loading } = useAuth();
@@ -67,8 +68,10 @@ export default function App() {
               <Route path="/sea-air/audit" element={<SeaAirAuditPage />} />
               <Route path="/sea-air/rekapan" element={<SeaAirRekapanPage />} />
 
-              <Route path="/sea-air/far-overseas-air" element={<FarOverseasAirPage />} />
-              <Route path="/sea-air/far-overseas-air/:id" element={<FarOverseasAirPage />} />
+              <Route path="/direct-loading" element={<FarOverseasAirPage />} />
+              <Route path="/direct-loading/:id" element={<FarOverseasAirPage />} />
+
+              <Route path="/bunker" element={<BunkerPage />} />
 
               <Route path="/audit-trail" element={<AuditTrailPage />} />
               <Route path="/settings" element={<SettingsPage />} />

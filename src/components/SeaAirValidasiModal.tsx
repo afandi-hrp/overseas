@@ -316,7 +316,7 @@ function EditableCell({ value, onUpdate, isCurrency, isNumber, isForeignCurrency
       className={`${isEditMode ? "cursor-text hover:bg-slate-100" : ""} rounded px-1 min-h-[24px] flex items-center justify-center relative group min-w-[30px]`}
       onClick={() => isEditMode && setEditing(true)}
     >
-      <span className={(isCurrency || isNumber) && value && value !== "—" ? "font-mono break-all" : "break-all"}>{displayText}</span>
+      <span className="break-all">{displayText}</span>
       {manual && (
         <span className="absolute right-0 -top-1 text-amber-500 p-0.5" title="Nilai ini sudah diedit manual oleh user">
           <Edit3 size={10} />
@@ -926,7 +926,7 @@ function DutyTable({ ndpbm, setNdpbm, items, addItem, removeItem, setItem, aktua
                 <td className={tdClass}>
                   <div className="flex flex-col gap-1 items-center justify-center">
                     {aktual[r.key] ? (
-                      <div className="text-[10px] text-[#5A305A] font-mono">
+                      <div className="text-[12px] font-semibold text-[#5A305A]">
                         {fmtIDR(toNum(aktual[r.key]))}
                       </div>
                     ) : null}
@@ -1079,7 +1079,7 @@ function ActualTable({ checks, onToggleRow, onUpdate }: { checks: any[], onToggl
                     return (
                       <td key={col} className={`${tdClass} text-[#5A305A]`}>
                         <div className="relative inline-flex items-center justify-center pr-3 group">
-                           <span className={isNumericRow ? "font-mono" : ""}>{displayRef}</span>
+                           <span>{displayRef}</span>
                            {rowChecks.some(c => c.manual) && (
                               <span className="absolute right-0 -top-1 text-amber-500 p-0.5" title="Nilai ini sudah diedit manual oleh user"><Edit3 size={10} /></span>
                            )}
@@ -1139,10 +1139,20 @@ export default function SeaAirValidasiModal({ record, onClose }: { record: any, 
     setHasUnsavedChanges(true);
   };
 
+  // Toggle 2-arah (bukan 3-arah lagi): klik pada badge apa pun yang belum "Sesuai"
+  // (baik "Tidak Sesuai" MAUPUN "Belum Dicek") langsung jadi "Sesuai" dalam SATU klik,
+  // klik lagi jadi "Tidak Sesuai". Sebelumnya urutannya null -> true -> false -> null,
+  // artinya klik pertama pada badge MERAH ("Tidak Sesuai") cuma membawanya ke "Belum
+  // Dicek" (abu-abu), BUKAN langsung ke "Sesuai" -- perlu 2x klik. Ini penyebab kenapa
+  // setelah user klik semua badge merah sekali, masih ada sisa yang belum benar-benar
+  // "Sesuai" (nyangkut di "Belum Dicek", atau malah balik "Tidak Sesuai" lagi kalau
+  // sempat ke-klik 3x). Kalkulasi toleransi Rp3000 di DUTY sendiri sudah benar dan
+  // TIDAK terhitung di statistik global ini (badge DUTY memang read-only, lihat
+  // StatusBadge) -- jadi bukan itu sumber sisa "Tidak Sesuai"-nya.
   const toggleCheckStatus = (section: string, row: string, col: string) => {
     setChecks(prev => prev.map(c => {
       if (c.section === section && c.row === row && c.col === col) {
-        const nextMatch = c.match === null ? true : c.match === true ? false : null;
+        const nextMatch = c.match === true ? false : true;
         return { ...c, match: nextMatch, manual: true };
       }
       return c;
@@ -1155,18 +1165,19 @@ export default function SeaAirValidasiModal({ record, onClose }: { record: any, 
       const rowChecks = prev.filter(c => c.section === section && c.row === row);
       if (rowChecks.length === 0) return prev;
 
-      // Badge status baris adalah gabungan beberapa cek (lihat rowStatusMatch di
-      // InvoiceFCLTable/ActualTable): null jika semua kosong, false jika ADA yang
-      // tidak sesuai, else true. Toggle harus mengikuti status gabungan yang sama
-      // ini -- kalau tiap cek diputar sendiri-sendiri berdasar nilai lamanya
-      // masing-masing, hasilnya bisa jadi campur aduk dan badge-nya "macet"
-      // walau nilai di baliknya sudah berubah (persentase ikut berubah diam-diam).
+      // Badge status baris adalah gabungan beberapa cek (rumus PERSIS sama dengan
+      // rowStatusMatch yang dipakai utk menampilkan badge-nya di InvoiceFCLTable/
+      // ActualTable): null jika semua kosong, false jika ADA yang tidak sesuai, else
+      // true. Toggle harus mengikuti status gabungan yang SAMA PERSIS ini -- kalau
+      // tiap cek diputar sendiri-sendiri berdasar nilai lamanya masing-masing,
+      // hasilnya bisa jadi campur aduk dan badge-nya "macet" walau nilai di baliknya
+      // sudah berubah (persentase ikut berubah diam-diam).
       let currentMatch: boolean | null;
       if (rowChecks.every(c => c.match === null)) currentMatch = null;
       else if (rowChecks.some(c => c.match === false)) currentMatch = false;
       else currentMatch = true;
 
-      const nextMatch = currentMatch === null ? true : currentMatch === true ? false : null;
+      const nextMatch = currentMatch === true ? false : true;
 
       return prev.map(c => {
         if (c.section === section && c.row === row) {
@@ -1410,7 +1421,7 @@ export default function SeaAirValidasiModal({ record, onClose }: { record: any, 
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 p-4 rounded-xl border border-slate-200 bg-white shadow-sm">
             <div>
               <p className="text-sm font-bold text-[#5A305A]">Statistik Global (Seluruh Matriks)</p>
-              <p className="text-xs text-[#5A305A] mt-0.5">Total perbandingan yang berhasil tervalidasi</p>
+              <p className="text-xs font-light text-[#5A305A] mt-0.5">Total perbandingan yang berhasil tervalidasi</p>
             </div>
             <div className="flex gap-4 items-center flex-wrap">
               <div className="bg-emerald-50 text-emerald-700 rounded-lg px-4 py-2 text-center min-w-[80px] border border-emerald-100">

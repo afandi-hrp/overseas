@@ -127,7 +127,7 @@ export default function KursRuleVendorPage() {
             </Link>
             <div>
               <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Aturan Kurs Vendor (Sea & Air)</h1>
-              <p className="text-[#5A305A] text-sm mt-1">Kelola aturan khusus jenis kurs dan adjustment (selisih) per vendor freight.</p>
+              <p className="text-[#5A305A] font-light text-sm mt-1">Kelola aturan khusus jenis kurs dan adjustment (selisih) per vendor freight.</p>
             </div>
           </div>
           {!showForm && (

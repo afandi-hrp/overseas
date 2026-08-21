@@ -72,7 +72,7 @@ export default function AccountPage() {
           </button>
           <div>
             <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Akun Saya</h1>
-            <p className="text-[#5A305A] text-sm mt-1">Kelola info profil dan password login lae.</p>
+            <p className="text-[#5A305A] font-light text-sm mt-1">Kelola info profil dan password login lae.</p>
           </div>
         </div>
 

@@ -88,7 +88,7 @@ export default function KursBIPage() {
           </Link>
           <div>
             <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Kurs BI Harian</h1>
-            <p className="text-[#5A305A] text-sm mt-1">Kelola data nilai tukar mata uang Bank Indonesia (BI).</p>
+            <p className="text-[#5A305A] font-light text-sm mt-1">Kelola data nilai tukar mata uang Bank Indonesia (BI).</p>
           </div>
         </div>
 

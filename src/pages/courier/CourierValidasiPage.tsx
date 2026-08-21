@@ -393,7 +393,7 @@ export default function CourierValidasiPage() {
       <div className="p-4 md:px-6 md:py-5 border-b border-slate-200 bg-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0">
         <div>
           <h1 className="text-xl font-bold text-[#5A305A]">Validasi Courier</h1>
-          <p className="text-sm text-[#5A305A] mt-1">Daftar rekapan validasi dokumen</p>
+          <p className="text-sm font-light text-[#5A305A] mt-1">Daftar rekapan validasi dokumen</p>
     
     </div>
         

@@ -46,3 +46,31 @@
 /* Sembunyikan scrollbar (khusus elemen ber-class ini) -- scroll tetap jalan, cuma bar-nya disembunyikan */
 .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Dipakai modul Bunker (Compare Doc) -- backend mengirim HTML mentah berisi <span> berwarna
+   pakai variable ini untuk menandai valid/tidak-valid/perlu-cek-manual di dalam tabel
+   perbandingan antar dokumen, dan .page-ref untuk penanda nomor halaman sumber data. */
+:root {
+  --success: #059669;
+  --error: #dc2626;
+  --warning-color: #d97706;
+  --c-acuan: #fef9c3;
+}
+.page-ref { font-size: 11px; opacity: 0.7; }
+
+/* Backend Bunker mewarnai teks "normal" (tidak match/error/warning) pakai warna gelap sendiri
+   (hitam/abu tua), bukan var(--success)/var(--error)/var(--warning-color) -- bentrok dgn
+   palet app. Paksa semua teks di dalam HTML mentah itu (dibungkus class "bunker-html-value"
+   di HtmlValue, BunkerCompareDocModal.tsx) pakai #5A305A, KECUALI span yang backend sendiri
+   warnai pakai salah satu dari 3 CSS variable semantik di atas -- attribute selector
+   [style*="..."] mendeteksinya lewat isi atribut style, lalu menang karena spesifisitasnya
+   lebih tinggi dari selector "* " biasa (keduanya !important). Ruang lingkupnya sengaja
+   dibatasi ke class ini saja -- TIDAK menyentuh header tabel, badge status, atau tombol lain
+   di halaman yang sama. */
+.bunker-html-value,
+.bunker-html-value * {
+  color: #5A305A !important;
+}
+.bunker-html-value [style*="--success"] { color: var(--success) !important; }
+.bunker-html-value [style*="--error"] { color: var(--error) !important; }
+.bunker-html-value [style*="--warning-color"] { color: var(--warning-color) !important; }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plane, Ship, ScrollText, Settings, ChevronUp, ChevronDown, LogOut, UserCircle } from 'lucide-react';
+import { Plane, Ship, ScrollText, Settings, ChevronUp, ChevronDown, LogOut, UserCircle, FileCheck2, Fuel } from 'lucide-react';
 import shipmentIcon from '../assets/shipment-icon-white.png';
 import { useAuth } from '../lib/AuthContext';
 
@@ -28,9 +28,22 @@ const MAIN_TABS = [
     subTabs: [
       { id: 'sea_air_audit',   label: 'Audit', path: '/sea-air/audit' },
       { id: 'sea_air_rekapan', label: 'Rekapan', path: '/sea-air/rekapan' },
-      { id: 'sea_air_far_overseas_air', label: 'FAR Overseas Air', path: '/sea-air/far-overseas-air' },
       { id: 'sea_air_upload', label: 'Upload', path: '/sea-air/upload' },
     ]
+  },
+  {
+    id: 'direct_loading',
+    label: 'Direct Loading',
+    icon: FileCheck2,
+    path: '/direct-loading',
+    basePath: '/direct-loading'
+  },
+  {
+    id: 'bunker',
+    label: 'Bunker',
+    icon: Fuel,
+    path: '/bunker',
+    basePath: '/bunker'
   },
   {
     id: 'trail',
@@ -68,7 +81,7 @@ export default function MainLayout() {
     <div className="flex flex-col md:flex-row h-screen overflow-hidden bg-gradient-to-br from-[#FFF5C5] to-[#F58C77] md:p-4 md:gap-4">
       
       {/* ── Mobile Top Navigation ── */}
-      <div className="md:hidden flex flex-col shrink-0 bg-gradient-to-b from-[#5A305A] to-[#73507B] text-white z-50 shadow-md rounded-b-[1.5rem]">
+      <div className="md:hidden flex flex-col shrink-0 bg-[#5A305A] text-white z-50 shadow-md rounded-b-[1.5rem]">
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
            <div className="flex items-center gap-2.5">
              <img src={shipmentIcon} alt="Shipment" className="h-7 w-7 object-contain shrink-0" />
@@ -87,7 +100,7 @@ export default function MainLayout() {
            </div>
         </div>
 
-        <div className="flex overflow-x-auto hide-scrollbar px-3 py-3 gap-2">
+        <div className="flex overflow-x-auto no-scrollbar px-3 py-3 gap-2">
           {MAIN_TABS.map(t => {
             const isActive = activeMainTab === t.id;
             const Icon = t.icon;
@@ -108,7 +121,7 @@ export default function MainLayout() {
 
         {/* Subtabs horizontal list if they exist */}
         {MAIN_TABS.find(t => t.id === activeMainTab)?.subTabs && (
-          <div className="flex overflow-x-auto hide-scrollbar px-3 pb-3 gap-2">
+          <div className="flex overflow-x-auto no-scrollbar px-3 pb-3 gap-2">
             {MAIN_TABS.find(t => t.id === activeMainTab)?.subTabs?.map(sub => {
               const isSubActive = activeSubTabPath === sub.path;
               return (
@@ -132,7 +145,7 @@ export default function MainLayout() {
       {/* ── Desktop Sidebar Navigation ── */}
       <div className="hidden md:block relative shrink-0 w-[5rem] z-50">
         <div
-          className={`absolute left-0 top-0 bottom-0 bg-gradient-to-b from-[#5A305A] to-[#73507B] transition-all duration-300 shadow-2xl flex flex-col overflow-hidden rounded-[1.5rem] ring-1 ring-white/[0.06] ${
+          className={`absolute left-0 top-0 bottom-0 bg-[#5A305A] transition-all duration-300 shadow-2xl flex flex-col overflow-hidden rounded-[1.5rem] ring-1 ring-white/[0.06] ${
             isSidebarOpen ? 'w-[17rem]' : 'w-[5rem]'
           }`}
           onMouseEnter={() => setIsSidebarOpen(true)}
@@ -145,7 +158,7 @@ export default function MainLayout() {
             </span>
           </div>
 
-          <div className="flex-1 flex flex-col py-4 gap-0.5 px-2.5 overflow-y-auto mt-2 hide-scrollbar">
+          <div className="flex-1 flex flex-col py-4 gap-0.5 px-2.5 overflow-y-auto mt-2 no-scrollbar">
             {MAIN_TABS.map(t => {
               const isActive = activeMainTab === t.id;
               const Icon = t.icon;

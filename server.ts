@@ -15,6 +15,7 @@ app.post('/api/n8n-proxy-start', upload.any(), async (req, res) => {
     const webhookType = req.headers['x-webhook-type'] || 'courier';
     const defaultWebhookUrl = webhookType === 'sea_air' ? process.env.VITE_N8N_SEAAIR_WEBHOOK_URL
       : webhookType === 'far_overseas_air' ? process.env.VITE_N8N_FAR_OVERSEAS_AIR_WEBHOOK_URL
+      : webhookType === 'bunker' ? process.env.VITE_N8N_BUNKER_WEBHOOK_URL
       : process.env.VITE_N8N_WEBHOOK_URL;
     const webhookUrl = req.headers['x-webhook-url'] || defaultWebhookUrl;
     
@@ -34,6 +35,8 @@ app.post('/api/n8n-proxy-start', upload.any(), async (req, res) => {
           formData.append(`file_${i}`, blob, file.originalname);
         });
       }
+      const noPoHint = req.body?.no_po_hint;
+      if (noPoHint) formData.append('no_po_hint', noPoHint);
     }
 
     const response = await fetch(webhookUrl, {

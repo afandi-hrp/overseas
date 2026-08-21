@@ -42,10 +42,15 @@ const FileRow: React.FC<{ file: File; index: number; onRemove: (i: number) => vo
   );
 };
 
-export default function FarOverseasAirUploadModal({ onClose, onJobStarted, onSentNoJob }: {
+// Dipakai di 2 tempat: (1) tombol "Upload Dokumen" di halaman utama Bunker -- noPoHint kosong,
+// sistem coba baca No PO dari isi dokumen; (2) tombol "Upload dokumen susulan" di dalam modal
+// Kelengkapan Dokumen -- noPoHint WAJIB diisi (no_po baris itu) supaya dokumen yang tidak selalu
+// mencantumkan No PO di dalamnya sendiri (mis. Kwitansi) tetap bisa digabung ke baris yang benar.
+export default function BunkerUploadModal({ onClose, onJobStarted, onSentNoJob, noPoHint }: {
   onClose: () => void;
   onJobStarted: (jobId: string) => void;
   onSentNoJob: (message: string, isWarning: boolean) => void;
+  noPoHint?: string;
 }) {
   const [files, setFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -73,9 +78,10 @@ export default function FarOverseasAirUploadModal({ onClose, onJobStarted, onSen
     setUploading(true);
     const formData = new FormData();
     files.forEach((file, i) => formData.append('file_' + i, file));
+    if (noPoHint) formData.append('no_po_hint', noPoHint);
     try {
-      const customWebhook = localStorage.getItem('n8n_far_overseas_air_webhook_url');
-      const headers: HeadersInit = { 'X-Webhook-Type': 'far_overseas_air' };
+      const customWebhook = localStorage.getItem('n8n_bunker_webhook_url');
+      const headers: HeadersInit = { 'X-Webhook-Type': 'bunker' };
       if (customWebhook) headers['X-Webhook-Url'] = customWebhook;
 
       const res = await fetch('/api/n8n-proxy-start', { method: 'POST', body: formData, headers });
@@ -99,13 +105,13 @@ export default function FarOverseasAirUploadModal({ onClose, onJobStarted, onSen
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[70] flex justify-center items-center p-2 sm:p-4">
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex justify-center items-center p-2 sm:p-4">
       <div className="bg-white w-full max-w-lg max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
 
         <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-slate-200 shrink-0">
           <div>
-            <h2 className="text-base font-bold tracking-tight text-[#5A305A]">Upload Dokumen — FAR Overseas Air</h2>
-            <p className="text-xs font-light text-[#5A305A] mt-0.5">Invoice freight, PO (boleh banyak), foto pendukung</p>
+            <h2 className="text-base font-bold tracking-tight text-[#5A305A]">Upload Dokumen — Bunker</h2>
+            <p className="text-xs font-light text-[#5A305A] mt-0.5">PO, Invoice, Faktur Pajak, Kwitansi, Bunker Receipt, Tank Sounding, Stock In, Berita Acara, Hasil Lab, Credit Note</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-[#5A305A] transition-colors">
             <X size={20} />
@@ -113,6 +119,16 @@ export default function FarOverseasAirUploadModal({ onClose, onJobStarted, onSen
         </div>
 
         <div className="flex-1 overflow-y-auto p-5">
+          {noPoHint ? (
+            <div className="mb-4 p-3 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-800">
+              Dokumen ini akan otomatis digabung ke <span className="font-bold">No PO: {noPoHint}</span>, walau dokumennya sendiri tidak menyebut No PO (mis. Kwitansi).
+            </div>
+          ) : (
+            <div className="mb-4 p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-[#5A305A]">
+              Dokumen untuk No PO yang sama akan otomatis digabung ke data yang sudah ada, tidak perlu diinput ulang. Boleh upload sebagian dokumen dulu, sisanya menyusul kapan saja.
+            </div>
+          )}
+
           <div className="flex items-center justify-between mb-3">
             <p className="text-[10px] font-bold text-[#5A305A] uppercase tracking-widest">Langkah 1 — Pilih File</p>
             {files.length > 0 && (
@@ -141,7 +157,7 @@ export default function FarOverseasAirUploadModal({ onClose, onJobStarted, onSen
               {dragging ? 'Lepaskan file di sini...' : files.length === 0 ? 'Klik atau drag & drop file (PDF, JPG, PNG)' : 'Klik untuk tambah file lagi'}
             </p>
             <p className="text-xs text-[#5A305A] mt-1">
-              Semua boleh digabung atau terpisah, AI akan memilah otomatis.
+              Boleh upload sebagian jenis dokumen saja, tidak harus lengkap sekaligus.
             </p>
           </div>
 

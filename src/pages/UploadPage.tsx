@@ -39,7 +39,7 @@ function UploadErrorModal({ friendly, raw, onClose, onRetry }: { friendly: strin
           </div>
           <div>
             <h3 className="font-bold text-[#5A305A] leading-tight">Gagal Mengirim Dokumen</h3>
-            <p className="text-xs text-[#5A305A] mt-0.5">File tidak terkirim ke server otomasi</p>
+            <p className="text-xs font-light text-[#5A305A] mt-0.5">File tidak terkirim ke server otomasi</p>
           </div>
         </div>
         <p className="text-sm text-[#5A305A] leading-relaxed mb-4">{friendly}</p>
@@ -357,7 +357,7 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
                 <h1 className="font-bold text-[#5A305A] text-base leading-tight">
                   Upload Dokumen {fixedType === 'sea_air' ? 'Sea & Air' : 'Courier'}
                 </h1>
-                <p className="text-xs text-[#5A305A] mt-0.5">
+                <p className="text-xs font-light text-[#5A305A] mt-0.5">
                   {fixedType === 'sea_air' ? 'AI akan membaca & mengarsipkan dokumen sea & air secara otomatis' : 'AI akan membaca & mengarsipkan dokumen DHL/FedEx secara otomatis'}
                 </p>
               </div>

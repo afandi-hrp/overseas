@@ -248,7 +248,7 @@ setDoubleChargeMultiplier('2');
             </Link>
             <div>
               <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Tarif Kontrak Vendor</h1>
-              <p className="text-[#5A305A] text-sm mt-1">Kelola master tarif dari vendor (Sea & Air).</p>
+              <p className="text-[#5A305A] font-light text-sm mt-1">Kelola master tarif dari vendor (Sea & Air).</p>
             </div>
           </div>
           <button 

@@ -212,7 +212,7 @@ export default function FarOverseasVendorTarifPage() {
             </Link>
             <div>
               <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Tarif Vendor FAR Overseas Air</h1>
-              <p className="text-[#5A305A] text-sm mt-1">Kelola rate card Octagon Logistic & PT. Jianqiao Logistics Indonesia.</p>
+              <p className="text-[#5A305A] font-light text-sm mt-1">Kelola rate card Octagon Logistic & PT. Jianqiao Logistics Indonesia.</p>
             </div>
           </div>
           <button

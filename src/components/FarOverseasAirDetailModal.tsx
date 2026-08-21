@@ -210,7 +210,7 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
         <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-slate-200 bg-white shrink-0 print:hidden">
           <div>
             <h2 className="text-lg font-bold tracking-tight text-[#5A305A]">Memo Approval — FAR Overseas Air</h2>
-            <p className="text-xs text-[#5A305A] mt-0.5">{rec.memo_title || '-'}</p>
+            <p className="text-xs font-light text-[#5A305A] mt-0.5">{rec.memo_title || '-'}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
             <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${statusMeta.badgeClass}`}>{statusMeta.label}</span>

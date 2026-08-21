@@ -68,7 +68,7 @@ function DeleteConfirmModal({ record, onConfirm, onClose, deleting, error }: {
           </div>
           <div className="min-w-0">
             <h3 className="font-bold text-[#5A305A] leading-tight">Hapus Memo Ini?</h3>
-            <p className="text-xs text-[#5A305A]/70 mt-0.5 truncate">{record.po_ori || record.id}</p>
+            <p className="text-xs font-light text-[#5A305A]/70 mt-0.5 truncate">{record.po_ori || record.id}</p>
           </div>
         </div>
         <p className="text-sm text-[#5A305A] leading-relaxed mb-1">
@@ -262,9 +262,9 @@ const FAR_EXPORT_COLS = [
 export default function FarOverseasAirPage() {
   useEffect(() => { document.title = 'FAR Overseas Air · Shipment'; }, []);
 
-  // Link langsung ke satu memo: /sea-air/far-overseas-air/:id -- buka detail modal otomatis
-  // begitu halaman dimuat, tanpa perlu cari-cari di daftar. Lihat handleCopyLink di
-  // FarOverseasAirDetailModal.tsx untuk cara link ini dibuat/disalin.
+  // Link langsung ke satu memo: /direct-loading/:id -- buka detail modal otomatis begitu
+  // halaman dimuat, tanpa perlu cari-cari di daftar (URL berubah otomatis saat tombol
+  // "Approval" di kolom AKSI diklik).
   const { id: deepLinkId } = useParams<{ id?: string }>();
   const navigate = useNavigate();
 
@@ -420,8 +420,8 @@ export default function FarOverseasAirPage() {
     }
   }, []);
 
-  // Kalau halaman dibuka lewat link langsung (/sea-air/far-overseas-air/:id), langsung ambil
-  // baris itu dan buka detail modal-nya -- tidak perlu tunggu daftar penuh selesai dimuat.
+  // Kalau halaman dibuka lewat link langsung (/direct-loading/:id), langsung ambil baris itu
+  // dan buka detail modal-nya -- tidak perlu tunggu daftar penuh selesai dimuat.
   useEffect(() => {
     if (!deepLinkId) return;
     const loadDeepLink = async () => {
@@ -429,7 +429,7 @@ export default function FarOverseasAirPage() {
       if (error || !data) {
         setToastMessage('⚠️ Memo dengan link ini tidak ditemukan.');
         setTimeout(() => setToastMessage(null), 6000);
-        navigate('/sea-air/far-overseas-air', { replace: true });
+        navigate('/direct-loading', { replace: true });
         return;
       }
       setSelected(data);
@@ -532,17 +532,17 @@ export default function FarOverseasAirPage() {
         </div>
       )}
 
-      <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10 no-scrollbar">
-        <main className="px-6 py-4 space-y-5">
+      <div className="flex-1 h-full overflow-hidden min-w-0 flex flex-col">
+        <main className="px-6 py-4 flex-1 flex flex-col overflow-hidden gap-5">
 
-          <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center justify-between gap-3 flex-wrap shrink-0">
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0 shadow-sm">
                 <FileCheck2 size={20} />
               </div>
               <div>
                 <h1 className="font-bold text-[#5A305A] text-base leading-tight">FAR Overseas Air</h1>
-                <p className="text-xs text-[#5A305A] mt-0.5">Memo approval freight informal gabungan PO</p>
+                <p className="text-xs font-light text-[#5A305A] mt-0.5">Memo approval freight informal gabungan PO</p>
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -582,7 +582,7 @@ export default function FarOverseasAirPage() {
 
           {/* Banner job aktif */}
           {activeJobId && activeJobStatus === 'PENDING' && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3">
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3 shrink-0">
               <div className="w-9 h-9 rounded-full border-2 border-amber-400 border-t-transparent animate-spin shrink-0" />
               <div>
                 <p className="text-sm font-bold text-amber-800">Dokumen sedang diproses AI...</p>
@@ -591,7 +591,7 @@ export default function FarOverseasAirPage() {
             </div>
           )}
           {activeJobId && activeJobStatus === 'SUCCESS' && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between gap-3">
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-3">
                 <CheckCircle2 size={22} className="text-emerald-600 shrink-0" />
                 <p className="text-sm font-bold text-emerald-800">Dokumen berhasil diproses dan sudah muncul di daftar.</p>
@@ -600,7 +600,7 @@ export default function FarOverseasAirPage() {
             </div>
           )}
           {activeJobId && activeJobStatus === 'FAILED' && (
-            <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-center justify-between gap-3">
+            <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-3">
                 <AlertTriangle size={20} className="text-rose-600 shrink-0" />
                 <div>
@@ -614,7 +614,7 @@ export default function FarOverseasAirPage() {
 
           {/* Antrian proses (PENDING/FAILED global) -- cuma tampil kalau tab "Antrian Proses" diklik */}
           {showQueuePanel && (
-            <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 p-4 shadow-sm">
+            <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 p-4 shadow-sm shrink-0">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <Clock size={15} className="text-[#5A305A]" />
@@ -632,9 +632,11 @@ export default function FarOverseasAirPage() {
             </div>
           )}
 
-          {/* List */}
-          <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 shadow-sm overflow-hidden">
-            <div className="px-5 py-4 border-b border-white/60 flex items-center justify-between gap-3 flex-wrap">
+          {/* List -- flex-1 min-h-0 supaya kartu ini yang mengisi sisa tinggi layar, dan HANYA
+              area tabel di dalamnya yang scroll (pola sama seperti SharedDataTable.tsx di
+              halaman Audit Sea & Air / Courier) -- bukan seluruh halaman yang discroll panjang. */}
+          <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
+            <div className="px-5 py-4 border-b border-white/60 flex items-center justify-between gap-3 flex-wrap shrink-0">
               <h2 className="text-sm font-bold text-[#5A305A]">Daftar Memo FAR Overseas Air</h2>
               <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white">
                 <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">Items</span>
@@ -650,17 +652,17 @@ export default function FarOverseasAirPage() {
                 </select>
               </div>
             </div>
-            <div ref={topScrollRef} onScroll={handleTopScroll} className="overflow-x-auto w-full">
+            <div ref={topScrollRef} onScroll={handleTopScroll} className="overflow-x-auto w-full shrink-0">
               <div style={{ width: tableWidth, height: '1px' }} />
             </div>
-            <div ref={bottomScrollRef} onScroll={handleBottomScroll} className="overflow-x-auto">
+            <div ref={bottomScrollRef} onScroll={handleBottomScroll} className="flex-1 min-h-0 overflow-x-auto overflow-y-auto">
               <table ref={tableRef} className="w-full text-[11px] bg-white">
-                <thead>
-                  <tr className="text-[10px] text-[#5A305A]/70 uppercase bg-slate-50">
+                <thead className="sticky top-0 z-20">
+                  <tr className="text-[10px] text-[#5A305A]/70 uppercase bg-slate-50 shadow-sm">
                     {LIST_COLUMNS.map((col, i) => (
-                      <th key={i} className={`font-semibold px-3 py-2.5 whitespace-nowrap ${col.align === 'right' ? 'text-right' : 'text-left'}`}>{col.header}</th>
+                      <th key={i} className={`font-bold tracking-wider px-4 py-3 whitespace-nowrap ${col.align === 'right' ? 'text-right' : 'text-left'}`}>{col.header}</th>
                     ))}
-                    <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap sticky right-0 top-0 bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-20 border-l border-slate-200">AKSI</th>
+                    <th className="text-left font-bold tracking-wider px-4 py-3 whitespace-nowrap sticky right-0 top-0 bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-20 border-l border-slate-200">AKSI</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -678,7 +680,7 @@ export default function FarOverseasAirPage() {
                           {LIST_COLUMNS.map((col, i) => {
                             if (col.render) {
                               return (
-                                <td key={i} className={`px-3 py-3 align-top text-[#5A305A] ${col.align === 'right' ? 'text-right' : 'text-left'}`}>
+                                <td key={i} className={`px-4 py-3 align-top text-[#5A305A] ${col.align === 'right' ? 'text-right' : 'text-left'}`}>
                                   {col.render(r, idx, costStatus, ctx)}
                                 </td>
                               );
@@ -687,7 +689,7 @@ export default function FarOverseasAirPage() {
                             const val = getVal(r, field);
                             const edited = Array.isArray(r.edited_fields) && r.edited_fields.includes(field);
                             return (
-                              <td key={i} className={`px-3 py-3 align-top text-[#5A305A] ${col.align === 'right' ? 'text-right' : 'text-left'}`}>
+                              <td key={i} className={`px-4 py-3 align-top text-[#5A305A] ${col.align === 'right' ? 'text-right' : 'text-left'}`}>
                                 <EditableCell
                                   value={val}
                                   displayValue={col.format ? col.format(val, r) : undefined}
@@ -701,10 +703,10 @@ export default function FarOverseasAirPage() {
                               </td>
                             );
                           })}
-                          <td className="px-2 py-3 align-top sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-10 border-l border-slate-200 transition-colors">
+                          <td className="px-4 py-3 align-top sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-10 border-l border-slate-200 transition-colors">
                             <div className="flex flex-col gap-1 w-[104px]">
                               <button
-                                onClick={() => navigate(`/sea-air/far-overseas-air/${r.id}`)}
+                                onClick={() => navigate(`/direct-loading/${r.id}`)}
                                 title="Approval"
                                 className="w-full flex flex-col items-start gap-0.5 px-1.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors"
                               >
@@ -745,7 +747,7 @@ export default function FarOverseasAirPage() {
 
             {/* Footer Pagination -- pola sama seperti SharedDataTable.tsx (halaman Audit Sea & Air) */}
             {rows.length > 0 && (
-              <div className="flex max-sm:flex-col justify-between items-center px-5 py-3 border-t border-slate-200 bg-slate-50 gap-3">
+              <div className="flex max-sm:flex-col justify-between items-center px-5 py-3 border-t border-slate-200 bg-slate-50 gap-3 shrink-0">
                 <div className="text-xs text-[#5A305A]">
                   Menampilkan <span className="font-semibold text-[#5A305A]">{listStartIndex + 1}-{Math.min(listStartIndex + pageSize, totalRecords)}</span> dari <span className="font-semibold text-[#5A305A]">{totalRecords}</span> record
                 </div>
@@ -803,7 +805,7 @@ export default function FarOverseasAirPage() {
       {selected && (
         <FarOverseasAirDetailModal
           record={selected}
-          onClose={() => { setSelected(null); if (deepLinkId) navigate('/sea-air/far-overseas-air', { replace: true }); }}
+          onClose={() => { setSelected(null); if (deepLinkId) navigate('/direct-loading', { replace: true }); }}
           onChanged={fetchList}
         />
       )}

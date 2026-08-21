@@ -5,6 +5,7 @@ export default function SettingsPage() {
   const [webhookUrl, setWebhookUrl] = useState('');
   const [seaAirWebhookUrl, setSeaAirWebhookUrl] = useState('');
   const [farOverseasAirWebhookUrl, setFarOverseasAirWebhookUrl] = useState('');
+  const [bunkerWebhookUrl, setBunkerWebhookUrl] = useState('');
   const [testResult, setTestResult] = useState<{ type: 'sukses' | 'gagal', message: string, target?: string } | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
   const [isSaved, setIsSaved] = useState(false);
@@ -22,6 +23,10 @@ export default function SettingsPage() {
     const savedFarOverseasAir = localStorage.getItem('n8n_far_overseas_air_webhook_url');
     if (savedFarOverseasAir) {
       setFarOverseasAirWebhookUrl(savedFarOverseasAir);
+    }
+    const savedBunker = localStorage.getItem('n8n_bunker_webhook_url');
+    if (savedBunker) {
+      setBunkerWebhookUrl(savedBunker);
     }
   }, []);
 
@@ -44,16 +49,22 @@ export default function SettingsPage() {
       localStorage.setItem('n8n_far_overseas_air_webhook_url', farOverseasAirWebhookUrl.trim());
     }
 
+    if (bunkerWebhookUrl.trim() === '') {
+      localStorage.removeItem('n8n_bunker_webhook_url');
+    } else {
+      localStorage.setItem('n8n_bunker_webhook_url', bunkerWebhookUrl.trim());
+    }
+
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
   };
 
-  const handleTest = async (type: 'courier' | 'sea_air' | 'far_overseas_air') => {
+  const handleTest = async (type: 'courier' | 'sea_air' | 'far_overseas_air' | 'bunker') => {
     setLoading(type);
     setTestResult(null);
     try {
       const headers: HeadersInit = { 'X-Webhook-Test': 'true' };
-      const urlToTest = type === 'courier' ? webhookUrl : type === 'sea_air' ? seaAirWebhookUrl : farOverseasAirWebhookUrl;
+      const urlToTest = type === 'courier' ? webhookUrl : type === 'sea_air' ? seaAirWebhookUrl : type === 'far_overseas_air' ? farOverseasAirWebhookUrl : bunkerWebhookUrl;
 
       if (urlToTest.trim()) {
         headers['X-Webhook-Url'] = urlToTest.trim();
@@ -83,7 +94,7 @@ export default function SettingsPage() {
       <main className="max-w-2xl mx-auto px-4 py-8">
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
           <h2 className="text-lg font-bold text-[#5A305A] mb-2">Konfigurasi Webhook Otomasi</h2>
-          <p className="text-sm text-[#5A305A] mb-6">Ubah URL webhook yang digunakan untuk mengirim dokumen impor ke sistem otomasi.</p>
+          <p className="text-sm font-light text-[#5A305A] mb-6">Ubah URL webhook yang digunakan untuk mengirim dokumen impor ke sistem otomasi.</p>
           
           <div className="space-y-6">
             <div>
@@ -149,6 +160,27 @@ export default function SettingsPage() {
               </div>
             </div>
 
+            <div>
+              <label className="block text-sm font-semibold text-[#5A305A] mb-1">Webhook URL (Bunker)</label>
+              <input
+                type="text"
+                value={bunkerWebhookUrl}
+                onChange={(e) => setBunkerWebhookUrl(e.target.value)}
+                placeholder="https://automation.waruna-group.co.id/webhook/..."
+                className="w-full border border-slate-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-mono"
+              />
+              <div className="flex justify-between items-center mt-2">
+                <p className="text-xs text-[#5A305A]">Biarkan kosong untuk menggunakan `.env`.</p>
+                <button
+                  onClick={() => handleTest('bunker')}
+                  disabled={loading !== null}
+                  className="text-xs text-blue-600 font-semibold hover:text-blue-800 disabled:opacity-50"
+                >
+                  {loading === 'bunker' ? 'Menguji...' : 'Test Bunker'}
+                </button>
+              </div>
+            </div>
+
             <div className="flex items-center gap-3 pt-4 border-t border-slate-100">
               <button
                 onClick={handleSave}
@@ -169,7 +201,7 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <h4 className="font-bold text-sm mb-0.5">
-                    {testResult.type === 'sukses' ? 'Test Berhasil' : 'Test Gagal'} ({testResult.target === 'courier' ? 'Courier' : testResult.target === 'sea_air' ? 'Sea & Air' : 'FAR Overseas Air'})
+                    {testResult.type === 'sukses' ? 'Test Berhasil' : 'Test Gagal'} ({testResult.target === 'courier' ? 'Courier' : testResult.target === 'sea_air' ? 'Sea & Air' : testResult.target === 'far_overseas_air' ? 'FAR Overseas Air' : 'Bunker'})
                   </h4>
                   <p className="text-sm opacity-90">{testResult.message}</p>
                 </div>
@@ -182,7 +214,7 @@ export default function SettingsPage() {
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 mt-6 flex justify-between items-center">
           <div>
             <h2 className="text-lg font-bold text-[#5A305A] mb-1">Rate Tables & PPJK</h2>
-            <p className="text-sm text-[#5A305A]">Kelola master data ongkos kirim dan surcharge lainnya selain Fuel.</p>
+            <p className="text-sm font-light text-[#5A305A]">Kelola master data ongkos kirim dan surcharge lainnya selain Fuel.</p>
           </div>
           <Link to="/admin/rates" className="bg-slate-100 font-semibold px-4 py-2 rounded-lg text-sm text-[#5A305A] hover:bg-slate-200 transition-colors whitespace-nowrap ml-4">
             Kelola Rates
@@ -192,7 +224,7 @@ export default function SettingsPage() {
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 mt-6 flex justify-between items-center">
           <div>
             <h2 className="text-lg font-bold text-[#5A305A] mb-1">Fuel Surcharge</h2>
-            <p className="text-sm text-[#5A305A]">Atur persentase fuel surcharge mingguan untuk DHL dan FedEx.</p>
+            <p className="text-sm font-light text-[#5A305A]">Atur persentase fuel surcharge mingguan untuk DHL dan FedEx.</p>
           </div>
           <Link to="/settings/fuel-surcharge" className="bg-slate-100 font-semibold px-4 py-2 rounded-lg text-sm text-[#5A305A] hover:bg-slate-200 transition-colors whitespace-nowrap ml-4">
             Kelola Rate
@@ -202,7 +234,7 @@ export default function SettingsPage() {
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 mt-6 flex justify-between items-center">
           <div>
             <h2 className="text-lg font-bold text-[#5A305A] mb-1">Kurs BI Harian</h2>
-            <p className="text-sm text-[#5A305A]">Kelola data nilai tukar mata uang Bank Indonesia (BI).</p>
+            <p className="text-sm font-light text-[#5A305A]">Kelola data nilai tukar mata uang Bank Indonesia (BI).</p>
           </div>
           <Link to="/settings/kurs-bi" className="bg-slate-100 font-semibold px-4 py-2 rounded-lg text-sm text-[#5A305A] hover:bg-slate-200 transition-colors whitespace-nowrap ml-4">
             Kelola Kurs
@@ -212,7 +244,7 @@ export default function SettingsPage() {
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 mt-6 flex justify-between items-center">
           <div>
             <h2 className="text-lg font-bold text-[#5A305A] mb-1">Aturan Kurs Vendor</h2>
-            <p className="text-sm text-[#5A305A]">Kelola aturan khusus jenis kurs dan adjustment per vendor freight (Sea & Air).</p>
+            <p className="text-sm font-light text-[#5A305A]">Kelola aturan khusus jenis kurs dan adjustment per vendor freight (Sea & Air).</p>
           </div>
           <Link to="/settings/kurs-rule-vendor" className="bg-slate-100 font-semibold px-4 py-2 rounded-lg text-sm text-[#5A305A] hover:bg-slate-200 transition-colors whitespace-nowrap ml-4">
             Kelola Aturan
@@ -222,7 +254,7 @@ export default function SettingsPage() {
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 mt-6 flex justify-between items-center">
           <div>
             <h2 className="text-lg font-bold text-[#5A305A] mb-1">Tarif Kontrak Vendor</h2>
-            <p className="text-sm text-[#5A305A]">Kelola master tarif dari vendor (Sea & Air).</p>
+            <p className="text-sm font-light text-[#5A305A]">Kelola master tarif dari vendor (Sea & Air).</p>
           </div>
           <Link to="/settings/tarif-kontrak" className="bg-slate-100 font-semibold px-4 py-2 rounded-lg text-sm text-[#5A305A] hover:bg-slate-200 transition-colors whitespace-nowrap ml-4">
             Kelola Tarif
@@ -232,7 +264,7 @@ export default function SettingsPage() {
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 mt-6 flex justify-between items-center">
           <div>
             <h2 className="text-lg font-bold text-[#5A305A] mb-1">Tarif Vendor FAR Overseas Air</h2>
-            <p className="text-sm text-[#5A305A]">Kelola rate card Octagon Logistic & PT. Jianqiao Logistics Indonesia.</p>
+            <p className="text-sm font-light text-[#5A305A]">Kelola rate card Octagon Logistic & PT. Jianqiao Logistics Indonesia.</p>
           </div>
           <Link to="/settings/tarif-far-overseas-vendor" className="bg-slate-100 font-semibold px-4 py-2 rounded-lg text-sm text-[#5A305A] hover:bg-slate-200 transition-colors whitespace-nowrap ml-4">
             Kelola Tarif
