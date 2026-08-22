@@ -652,7 +652,7 @@ export default function FarOverseasAirPage() {
                 </select>
               </div>
             </div>
-            <div ref={topScrollRef} onScroll={handleTopScroll} className="overflow-x-auto w-full shrink-0">
+            <div ref={topScrollRef} onScroll={handleTopScroll} className="overflow-x-auto w-full shrink-0 scrollbar-visible">
               <div style={{ width: tableWidth, height: '1px' }} />
             </div>
             <div ref={bottomScrollRef} onScroll={handleBottomScroll} className="flex-1 min-h-0 overflow-x-auto overflow-y-auto">

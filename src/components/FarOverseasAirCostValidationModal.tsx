@@ -1,10 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { X, Info, Pencil, Edit3, Save, CheckCircle2, AlertTriangle, HelpCircle, ChevronDown, ChevronUp } from 'lucide-react';
-import { looseNameMatch, COST_STATUS_META, parseJsonField } from '../utils/FarOverseasAirHelpers';
+import { X, Info, Pencil, Edit3, Save, CheckCircle2, AlertTriangle, HelpCircle, ChevronDown, ChevronUp, CheckCircle } from 'lucide-react';
+import {
+  looseNameMatch, COST_STATUS_META, parseJsonField, formatMoney,
+  computeExpectedFromRate, computeCostStatus, type RateRow,
+} from '../utils/FarOverseasAirHelpers';
 
 type DocValRow = { po_no?: string | null; company_code?: string | null; po_document_ditemukan?: boolean | null; edited?: boolean };
 type CostValRow = { row_key: string; expected?: any; actual?: any; notes?: string | null; edited?: boolean };
+type PoListEntryLite = { po_no_raw?: string | null; weight_kg?: number | null };
 
 const COST_ROW_LABELS: Record<string, string> = {
   KG: 'KG',
@@ -74,6 +78,43 @@ const RateRowCard: React.FC<{ row: Record<string, any> }> = ({ row }) => {
   );
 };
 
+// Kandidat tarif yang bisa DIKLIK, dipakai saat rate_row_used ambigu (array beberapa tarif
+// sama-sama cocok) -- ringkasan origin/tujuan/jenis layanan/harga/estimasi, mirip pola pilih
+// tarif Cost Validation Sea&Air (tidak ditemukan komponen Sea&Air yang persis sama utk ditiru
+// langsung, jadi dibangun baru mengikuti pola visual RateRowCard yang sudah ada di modal ini).
+const RateCandidateCard: React.FC<{ rate: RateRow; onSelect: () => void; selecting: boolean }> = ({ rate, onSelect, selecting }) => {
+  const hargaLabel = rate.harga_per_cbm_min != null && rate.harga_per_cbm_max != null
+    ? `${formatMoney(rate.harga_per_cbm_min, rate.mata_uang)} – ${formatMoney(rate.harga_per_cbm_max, rate.mata_uang)} / CBM`
+    : rate.harga_per_kg != null
+      ? `${formatMoney(rate.harga_per_kg, rate.mata_uang)} / KG`
+      : rate.harga_per_cbm != null
+        ? `${formatMoney(rate.harga_per_cbm, rate.mata_uang)} / CBM`
+        : '-';
+  return (
+    <div className="border border-slate-200 rounded-lg p-3 bg-slate-50 flex flex-col gap-2">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+        <span className="text-[#5A305A]/70">Origin</span>
+        <span className="font-semibold text-[#5A305A] text-right truncate">{rate.origin || '-'}</span>
+        <span className="text-[#5A305A]/70">Tujuan</span>
+        <span className="font-semibold text-[#5A305A] text-right truncate">{rate.tujuan || '-'}</span>
+        <span className="text-[#5A305A]/70">Jenis Layanan</span>
+        <span className="font-semibold text-[#5A305A] text-right truncate">{rate.jenis_layanan || '-'}</span>
+        <span className="text-[#5A305A]/70">Harga</span>
+        <span className="font-semibold text-[#5A305A] text-right truncate">{hargaLabel}</span>
+        <span className="text-[#5A305A]/70">Estimasi Waktu</span>
+        <span className="font-semibold text-[#5A305A] text-right truncate">{rate.estimasi_waktu || '-'}</span>
+      </div>
+      <button
+        onClick={onSelect}
+        disabled={selecting}
+        className="w-full py-1.5 rounded-lg bg-[#5A305A] hover:bg-[#73507B] text-white text-[11px] font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
+      >
+        <CheckCircle size={12} /> {selecting ? 'Memilih...' : 'Pilih Tarif Ini'}
+      </button>
+    </div>
+  );
+};
+
 export default function FarOverseasAirCostValidationModal({ farOverseasId, onClose }: { farOverseasId: string | number; onClose: () => void }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -92,21 +133,31 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saving, setSaving] = useState(false);
   const [signerMap, setSignerMap] = useState<Record<string, string>>({});
+  const [poList, setPoList] = useState<PoListEntryLite[]>([]);
+  const [dominantCompanyCode, setDominantCompanyCode] = useState<string | null>(null);
+  const [selectingRate, setSelectingRate] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       setLoadError('');
-      const [cvRes, signerRes] = await Promise.all([
+      const [cvRes, signerRes, rekapanRes] = await Promise.all([
         supabase.from('cost_validasi_far_overseas_air').select('*').eq('far_overseas_id', farOverseasId).maybeSingle(),
         supabase.from('far_overseas_signer_config').select('company_code, company_name_full'),
+        supabase.from('rekapan_far_overseas_air').select('po_list, dominant_company_code').eq('id', farOverseasId).maybeSingle(),
       ]);
 
       if (signerRes.data) {
         const map: Record<string, string> = {};
         signerRes.data.forEach((s: any) => { map[s.company_code] = s.company_name_full; });
         setSignerMap(map);
+      }
+
+      if (rekapanRes.data) {
+        const parsedPoList = parseJsonField(rekapanRes.data.po_list);
+        setPoList(Array.isArray(parsedPoList) ? parsedPoList : []);
+        setDominantCompanyCode(rekapanRes.data.dominant_company_code ?? null);
       }
 
       if (cvRes.error) {
@@ -183,13 +234,66 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
     setHasUnsavedChanges(false);
   };
 
+  // User pilih 1 kandidat tarif saat rate_row_used ambigu (array) -- hitung ulang KG/Unit
+  // Price/Total pakai logic yang MIRROR n8n (computeExpectedFromRate), lalu simpan LANGSUNG
+  // (bukan lewat bar "Simpan Perubahan" -- aksi ini menulis ke DB seketika saat dipilih).
+  const handleSelectRate = async (rate: RateRow) => {
+    if (!cvId) return;
+    setSelectingRate(true);
+    const kgRow = costValidation.find(r => r.row_key === 'KG');
+    const unitPriceRow = costValidation.find(r => r.row_key === 'UNIT_PRICE_DARI_DESCRIPTION');
+    const totalRow = costValidation.find(r => r.row_key === 'TOTAL');
+    const qty = kgRow?.actual != null && kgRow.actual !== '' ? Number(kgRow.actual) : null;
+    const actualUnitPrice = unitPriceRow?.actual != null && unitPriceRow.actual !== '' ? Number(unitPriceRow.actual) : null;
+    const actualTotal = totalRow?.actual != null && totalRow.actual !== '' ? Number(totalRow.actual) : null;
+
+    const { unitPriceExpected, unitPriceNotes, kgExpected, totalExpected } = computeExpectedFromRate(rate, qty, actualUnitPrice);
+    const newStatus = computeCostStatus(totalExpected, actualTotal) ?? overallStatus;
+
+    const updatedCostValidation = costValidation.map(row => {
+      if (row.row_key === 'KG') return { ...row, expected: kgExpected, edited: true };
+      if (row.row_key === 'UNIT_PRICE_DARI_DESCRIPTION') return { ...row, expected: unitPriceExpected, notes: unitPriceNotes, edited: true };
+      if (row.row_key === 'TOTAL') return { ...row, expected: totalExpected, edited: true };
+      return row;
+    });
+
+    const { error } = await supabase.rpc('update_cost_validasi_far_overseas_manual', {
+      p_id: cvId,
+      p_cost_validation: updatedCostValidation,
+      p_status: newStatus,
+      p_rate_row_used: rate,
+    });
+    setSelectingRate(false);
+    if (error) {
+      showToast('Gagal memilih tarif: ' + error.message, 'error');
+    } else {
+      setCostValidation(updatedCostValidation);
+      setSavedCostValidation(updatedCostValidation);
+      setRateRowUsed(rate);
+      setOverallStatus(newStatus);
+      setShowRateDetail(false);
+      showToast('Tarif dipilih, Expected sudah dihitung ulang.', 'success');
+    }
+  };
+
   const orderedCostRows = COST_ROW_ORDER
     .map(key => costValidation.find(r => r.row_key === key))
     .filter((r): r is CostValRow => !!r)
     .concat(costValidation.filter(r => !COST_ROW_ORDER.includes(r.row_key)));
 
   const rateRows: any[] = rateRowUsed == null ? [] : Array.isArray(rateRowUsed) ? rateRowUsed : [rateRowUsed];
+  const rateIsAmbiguous = Array.isArray(rateRowUsed) && rateRowUsed.length > 1;
   const statusMeta = overallStatus ? COST_STATUS_META[overallStatus] : null;
+
+  // Lookup berat per PO (dari po_list milik rekapan_far_overseas_air) & nama PT lengkap dari
+  // dominant_company_code -- dipakai baris CONCLUSION di tabel Document Validation.
+  const weightForPo = (poNo: string | null | undefined): number | null => {
+    if (!poNo) return null;
+    const entry = poList.find(p => p.po_no_raw && p.po_no_raw.trim() === poNo.trim());
+    return entry?.weight_kg ?? null;
+  };
+  const dominantPtName = dominantCompanyCode ? (signerMap[dominantCompanyCode] || null) : null;
+  const conclusionMatch = looseNameMatch(invoicePtName, dominantPtName);
 
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[70] flex justify-center items-center p-2 sm:p-4 md:p-6">
@@ -263,7 +367,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                     className="w-full flex items-center justify-between gap-2 text-left"
                   >
                     <p className="text-[10px] font-bold text-[#5A305A] uppercase tracking-wider">
-                      Tarif yang Dipakai {rateRows.length > 1 && <span className="text-amber-600 normal-case font-semibold ml-1">(ambigu — {rateRows.length} tarif cocok)</span>}
+                      Tarif yang Dipakai {rateIsAmbiguous && <span className="text-amber-600 normal-case font-semibold ml-1">(ambigu — {rateRows.length} tarif cocok, silakan pilih salah satu)</span>}
                     </p>
                     {rateRows.length > 0 && (showRateDetail ? <ChevronUp size={14} className="text-[#5A305A] shrink-0" /> : <ChevronDown size={14} className="text-[#5A305A] shrink-0" />)}
                   </button>
@@ -271,7 +375,11 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                     <p className="text-xs text-[#5A305A] italic mt-1.5">Belum ada tarif yang teridentifikasi.</p>
                   ) : showRateDetail ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1.5">
-                      {rateRows.map((row, i) => <RateRowCard key={i} row={row} />)}
+                      {rateIsAmbiguous
+                        ? rateRows.map((row, i) => (
+                            <RateCandidateCard key={i} rate={row} selecting={selectingRate} onSelect={() => handleSelectRate(row)} />
+                          ))
+                        : rateRows.map((row, i) => <RateRowCard key={i} row={row} />)}
                     </div>
                   ) : null}
                 </div>
@@ -284,7 +392,10 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                 )}
               </div>
 
-              {/* DOCUMENT VALIDATION */}
+              {/* DOCUMENT VALIDATION -- layout PERSIS: 2 baris per PO (NAMA PT / NO PO), TANPA
+                  indikator match/tidak-match per baris. Satu-satunya status ada di baris
+                  CONCLUSION paling bawah (bandingkan invoice_pt_name vs nama PT dari
+                  dominant_company_code). */}
               <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
                 <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
                   <h3 className="text-sm font-bold text-[#5A305A]">Document Validation</h3>
@@ -293,59 +404,57 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                 {docValidation.length === 0 ? (
                   <p className="text-xs text-[#5A305A] italic text-center py-6">Belum ada data document validation (PO belum diproses).</p>
                 ) : (
-                  <div className="divide-y divide-slate-100">
-                    {docValidation.map((row, idx) => {
-                      const ptFromPo = row.company_code ? (signerMap[row.company_code] || null) : null;
-                      const namesMismatch = invoicePtName && ptFromPo && !looseNameMatch(invoicePtName, ptFromPo);
-                      return (
-                        <div key={idx} className="p-3">
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className="text-[10px] font-bold text-[#5A305A]/60 uppercase tracking-wider">PO #{idx + 1}</span>
-                            {row.edited && <EditedMark />}
-                          </div>
-                          <table className="w-full text-xs">
-                            <thead>
-                              <tr className="text-[10px] text-[#5A305A]/70 uppercase">
-                                <th className="text-left font-semibold w-1/5 pb-1">Label</th>
-                                <th className="text-left font-semibold w-[30%] pb-1">Invoice</th>
-                                <th className="text-left font-semibold w-[30%] pb-1">PO</th>
-                                <th className="text-left font-semibold w-1/5 pb-1">Status</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-50">
-                              <tr>
-                                <td className="py-1.5 font-semibold text-[#5A305A] align-top">Nama PT</td>
-                                <td className="py-1.5 align-top">
-                                  <span className="text-[#5A305A]">{invoicePtName || '-'}</span>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs border-collapse">
+                      <thead>
+                        <tr className="text-[10px] text-[#5A305A]/70 uppercase bg-slate-50/50">
+                          <th className="text-left font-semibold px-3 py-2 w-1/5"></th>
+                          <th className="text-left font-semibold px-3 py-2 w-[30%]">Invoice</th>
+                          <th className="text-left font-semibold px-3 py-2 w-[30%]">PO</th>
+                          <th className="text-left font-semibold px-3 py-2">KG</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {docValidation.map((row, idx) => {
+                          const ptFromPo = row.company_code ? (signerMap[row.company_code] || null) : null;
+                          const weight = weightForPo(row.po_no);
+                          return (
+                            <React.Fragment key={idx}>
+                              <tr className="border-t border-slate-100">
+                                <td className="px-3 py-1.5 font-semibold text-[#5A305A] align-top">NAMA PT</td>
+                                <td className="px-3 py-1.5 align-top text-slate-300">—</td>
+                                <td className="px-3 py-1.5 align-top">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[#5A305A]">{ptFromPo || '(kode perusahaan tidak dikenal)'}</span>
+                                    {row.edited && <EditedMark />}
+                                  </div>
                                 </td>
-                                <td className="py-1.5 align-top">
-                                  <span className={namesMismatch ? 'text-rose-600 font-semibold' : 'text-[#5A305A]'}>{ptFromPo || '(kode perusahaan tidak dikenal)'}</span>
-                                </td>
-                                <td className="py-1.5 align-top">
-                                  {namesMismatch && (
-                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 whitespace-nowrap">⚠ Beda</span>
-                                  )}
-                                </td>
+                                <td className="px-3 py-1.5 align-top text-[#5A305A]">{weight != null ? `${weight} KG` : '-'}</td>
                               </tr>
                               <tr>
-                                <td className="py-1.5 font-semibold text-[#5A305A] align-top">No PO</td>
-                                <td className="py-1.5 text-slate-300 align-top">—</td>
-                                <td className="py-1.5 align-top">
+                                <td className="px-3 py-1.5 font-semibold text-[#5A305A] align-top">NO PO</td>
+                                <td className="px-3 py-1.5 align-top text-slate-300">—</td>
+                                <td className="px-3 py-1.5 align-top">
                                   <EditableCell align="left" editable={isEditMode} value={row.po_no} onChange={(v) => updateDocField(idx, 'po_no', v)} />
                                 </td>
-                                <td className="py-1.5 align-top">
-                                  {row.po_document_ditemukan ? (
-                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 whitespace-nowrap inline-flex items-center gap-1"><CheckCircle2 size={11} /> Dokumen Lengkap</span>
-                                  ) : (
-                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 whitespace-nowrap" title="PO ini hanya disebut di catatan/remark invoice, tanpa dokumen PO utuh">Hanya Disebut di Invoice</span>
-                                  )}
-                                </td>
+                                <td className="px-3 py-1.5 align-top text-slate-300">—</td>
                               </tr>
-                            </tbody>
-                          </table>
-                        </div>
-                      );
-                    })}
+                              <tr aria-hidden="true"><td colSpan={4} className="h-2 bg-slate-50" /></tr>
+                            </React.Fragment>
+                          );
+                        })}
+                        <tr className="border-t-2 border-slate-200 bg-slate-50/70">
+                          <td className="px-3 py-2.5 font-bold text-[#5A305A] align-top whitespace-nowrap">CONCLUSION :</td>
+                          <td className="px-3 py-2.5 align-top font-semibold text-[#5A305A]">{invoicePtName || '-'}</td>
+                          <td className="px-3 py-2.5 align-top font-semibold text-[#5A305A]">{dominantPtName || '-'}</td>
+                          <td className="px-3 py-2.5 align-top">
+                            <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap inline-flex items-center gap-1 ${conclusionMatch ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                              {conclusionMatch ? <CheckCircle2 size={11} /> : <AlertTriangle size={11} />} {conclusionMatch ? 'SESUAI' : 'TIDAK SESUAI'}
+                            </span>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
                 )}
               </div>

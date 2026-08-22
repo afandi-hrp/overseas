@@ -122,7 +122,11 @@ export function buildWeightBreakdownDisplay(poList: PoListEntry[]): string | nul
 }
 
 // Hitung ulang dominant_company_code -- menang berdasarkan jumlah PO, tie-break pakai total
-// berat (SUM weight_kg) kalau ada seri jumlah PO. Urutan logika HARUS persis seperti ini.
+// berat (SUM weight_kg) kalau ada seri jumlah PO, lalu tie-break TERAKHIR: kalau jumlah PO
+// SAMA dan total berat JUGA sama (atau tidak ada data berat sama sekali), otomatis menangkan
+// WNS (PT. Waruna Nusa Sentana) -- TAPI hanya kalau WNS termasuk salah satu yang lagi seri.
+// Kalau WNS tidak ada di antara yang seri, mundur ke urutan kemunculan pertama. Urutan logika
+// HARUS persis seperti ini.
 export function recomputeDominantCompany(poList: PoListEntry[]): string | null {
   const counts: Record<string, number> = {};
   poList.forEach(po => {
@@ -134,9 +138,9 @@ export function recomputeDominantCompany(poList: PoListEntry[]): string | null {
 
   const maxCount = Math.max(...codes.map(c => counts[c]));
   const topCodes = codes.filter(c => counts[c] === maxCount);
+  if (topCodes.length === 1) return topCodes[0]; // tidak ada seri jumlah PO
 
-  if (topCodes.length === 1) return topCodes[0];
-
+  // Seri jumlah PO -- tie-break pakai TOTAL BERAT (SUM weight_kg) per perusahaan yang seri
   const weights: Record<string, number> = {};
   let hasAnyWeight = false;
   topCodes.forEach(code => {
@@ -148,15 +152,69 @@ export function recomputeDominantCompany(poList: PoListEntry[]): string | null {
       }, 0);
   });
 
-  if (!hasAnyWeight) {
-    return topCodes[0];
+  if (hasAnyWeight) {
+    const maxWeight = Math.max(...topCodes.map(c => weights[c]));
+    const topByWeight = topCodes.filter(c => weights[c] === maxWeight);
+    if (topByWeight.length === 1) return topByWeight[0]; // menang di berat
+    // kalau masih seri di berat juga, lanjut ke aturan WNS di bawah
   }
 
-  let winner = topCodes[0];
-  topCodes.forEach(code => {
-    if (weights[code] > weights[winner]) winner = code;
-  });
-  return winner;
+  // Masih seri (jumlah PO sama DAN berat sama/tidak ada data berat) -- default WNS
+  // kalau WNS ada di antara yang seri, kalau tidak mundur ke urutan pertama.
+  if (topCodes.indexOf('WNS') !== -1) return 'WNS';
+  return topCodes[0];
+}
+
+export type RateRow = {
+  origin?: string | null;
+  tujuan?: string | null;
+  jenis_layanan?: string | null;
+  mata_uang?: string | null;
+  harga_per_kg?: number | null;
+  harga_per_cbm?: number | null;
+  harga_per_cbm_min?: number | null;
+  harga_per_cbm_max?: number | null;
+  minimal_berat?: number | null;
+  berat_min?: number | null;
+  estimasi_waktu?: string | null;
+  [key: string]: any;
+};
+
+// Hitung ulang expected KG/Unit Price/Total dari 1 tarif (rate) yang dipilih user, saat
+// rate_row_used ambigu (array beberapa tarif sama-sama cocok). Logic ini MIRROR PERSIS dari
+// logic n8n supaya hasilnya konsisten baik dihitung otomatis maupun manual dipilih user --
+// JANGAN diubah tanpa menyamakan juga di sisi n8n.
+export function computeExpectedFromRate(rate: RateRow, qty: number | null, actualUnitPrice: number | null) {
+  let unitPriceExpected: number | null = null;
+  let unitPriceNotes: string | null = null;
+
+  if (rate.harga_per_cbm_min != null && rate.harga_per_cbm_max != null) {
+    // Tarif berbentuk RENTANG (cth REGULER ITEM Jianqiao Sea)
+    if (actualUnitPrice != null && actualUnitPrice >= rate.harga_per_cbm_min && actualUnitPrice <= rate.harga_per_cbm_max) {
+      unitPriceExpected = actualUnitPrice; // di dalam rentang -- dianggap sesuai
+    } else if (actualUnitPrice != null) {
+      unitPriceExpected = (actualUnitPrice < rate.harga_per_cbm_min) ? rate.harga_per_cbm_min : rate.harga_per_cbm_max;
+    }
+    unitPriceNotes = `Tarif rentang ${rate.harga_per_cbm_min}-${rate.harga_per_cbm_max} ${rate.mata_uang}/CBM.`;
+  } else {
+    unitPriceExpected = rate.harga_per_kg ?? rate.harga_per_cbm ?? null;
+    unitPriceNotes = `${rate.jenis_layanan} -- origin: ${rate.origin || '-'}, tujuan: ${rate.tujuan || '-'}.`;
+  }
+
+  const kgExpected = rate.minimal_berat ?? rate.berat_min ?? null;
+  const totalExpected = (unitPriceExpected != null && qty != null)
+    ? Math.round(unitPriceExpected * qty * 100) / 100
+    : null;
+
+  return { unitPriceExpected, unitPriceNotes, kgExpected, totalExpected };
+}
+
+// Status ringkasan Cost Validation dari selisih TOTAL actual vs expected -- toleransi 3%.
+export function computeCostStatus(totalExpected: number | null, totalActual: number | null): string | null {
+  if (totalExpected == null || totalActual == null || totalExpected === 0) return null;
+  const diffPct = Math.abs(totalActual - totalExpected) / Math.abs(totalExpected);
+  if (diffPct <= 0.03) return 'MATCH';
+  return totalActual > totalExpected ? 'OVERCHARGE' : 'UNDERCHARGE';
 }
 
 // company_code -> logo perusahaan (dari folder "3. FULL LOGO WARUNA GROUP", disalin ke

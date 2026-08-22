@@ -16,7 +16,10 @@ import RateTablesAdmin from './pages/RateTablesAdmin';
 import MainLayout from './components/MainLayout';
 import AdminLayout from './components/AdminLayout';
 import LoginPage from './pages/LoginPage';
+import RoleManagementPage from './pages/RoleManagementPage';
+import RequirePageAccess from './components/RequirePageAccess';
 import { AuthProvider, useAuth } from './lib/AuthContext';
+import { getDefaultLandingPath } from './lib/permissions';
 
 // New Pages
 import CourierAuditPage from './pages/courier/CourierAuditPage';
@@ -47,6 +50,14 @@ function ProtectedRoute() {
   return <Outlet />;
 }
 
+// "/" dan "/dashboard" dulu redirect hardcode ke halaman Courier -- sekarang app dipakai lintas
+// divisi (role menentukan halaman apa yang boleh diakses tiap user), jadi tujuannya dihitung
+// dinamis dari akses user yang sedang login, bukan hardcode.
+function DefaultLandingRedirect() {
+  const { allowedPageKeys, isAdmin } = useAuth();
+  return <Navigate to={getDefaultLandingPath(allowedPageKeys, isAdmin)} replace />;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -57,36 +68,37 @@ export default function App() {
           <Route element={<ProtectedRoute />}>
             {/* Main Application with Sidebar */}
             <Route element={<MainLayout />}>
-              <Route path="/" element={<Navigate to="/courier/upload" replace />} />
-              <Route path="/dashboard" element={<Navigate to="/courier/audit" replace />} />
-              <Route path="/courier/upload" element={<UploadPage fixedType="courier" />} />
-              <Route path="/courier/audit" element={<CourierAuditPage />} />
-              <Route path="/courier/rekapan" element={<CourierRekapanPage />} />
-              <Route path="/courier/validasi" element={<CourierValidasiPage />} />
+              <Route path="/" element={<DefaultLandingRedirect />} />
+              <Route path="/dashboard" element={<DefaultLandingRedirect />} />
+              <Route path="/courier/upload" element={<RequirePageAccess pageKey="courier_upload"><UploadPage fixedType="courier" /></RequirePageAccess>} />
+              <Route path="/courier/audit" element={<RequirePageAccess pageKey="courier_audit"><CourierAuditPage /></RequirePageAccess>} />
+              <Route path="/courier/rekapan" element={<RequirePageAccess pageKey="courier_rekapan"><CourierRekapanPage /></RequirePageAccess>} />
+              <Route path="/courier/validasi" element={<RequirePageAccess pageKey="courier_validasi"><CourierValidasiPage /></RequirePageAccess>} />
 
-              <Route path="/sea-air/upload" element={<UploadPage fixedType="sea_air" />} />
-              <Route path="/sea-air/audit" element={<SeaAirAuditPage />} />
-              <Route path="/sea-air/rekapan" element={<SeaAirRekapanPage />} />
+              <Route path="/sea-air/upload" element={<RequirePageAccess pageKey="sea_air_upload"><UploadPage fixedType="sea_air" /></RequirePageAccess>} />
+              <Route path="/sea-air/audit" element={<RequirePageAccess pageKey="sea_air_audit"><SeaAirAuditPage /></RequirePageAccess>} />
+              <Route path="/sea-air/rekapan" element={<RequirePageAccess pageKey="sea_air_rekapan"><SeaAirRekapanPage /></RequirePageAccess>} />
 
-              <Route path="/direct-loading" element={<FarOverseasAirPage />} />
-              <Route path="/direct-loading/:id" element={<FarOverseasAirPage />} />
+              <Route path="/direct-loading" element={<RequirePageAccess pageKey="direct_loading"><FarOverseasAirPage /></RequirePageAccess>} />
+              <Route path="/direct-loading/:id" element={<RequirePageAccess pageKey="direct_loading"><FarOverseasAirPage /></RequirePageAccess>} />
 
-              <Route path="/bunker" element={<BunkerPage />} />
+              <Route path="/bunker" element={<RequirePageAccess pageKey="bunker"><BunkerPage /></RequirePageAccess>} />
 
-              <Route path="/audit-trail" element={<AuditTrailPage />} />
+              <Route path="/audit-trail" element={<RequirePageAccess pageKey="audit_trail"><AuditTrailPage /></RequirePageAccess>} />
               <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/settings/roles" element={<RequirePageAccess adminOnly><RoleManagementPage /></RequirePageAccess>} />
             </Route>
 
             {/* Admin Routes with nested or wrapped layout */}
-            <Route path="/admin/rates" element={<RateTablesAdmin />} />
+            <Route path="/admin/rates" element={<RequirePageAccess pageKey="admin_rates"><RateTablesAdmin /></RequirePageAccess>} />
 
             {/* Route to Fuel Surcharge page */}
             <Route path="/account" element={<AccountPage />} />
-            <Route path="/settings/fuel-surcharge" element={<FuelSurchargePage />} />
-            <Route path="/settings/kurs-bi" element={<KursBIPage />} />
-            <Route path="/settings/kurs-rule-vendor" element={<KursRuleVendorPage />} />
-            <Route path="/settings/tarif-kontrak" element={<TarifKontrakPage />} />
-            <Route path="/settings/tarif-far-overseas-vendor" element={<FarOverseasVendorTarifPage />} />
+            <Route path="/settings/fuel-surcharge" element={<RequirePageAccess pageKey="settings_fuel_surcharge"><FuelSurchargePage /></RequirePageAccess>} />
+            <Route path="/settings/kurs-bi" element={<RequirePageAccess pageKey="settings_kurs_bi"><KursBIPage /></RequirePageAccess>} />
+            <Route path="/settings/kurs-rule-vendor" element={<RequirePageAccess pageKey="settings_kurs_rule_vendor"><KursRuleVendorPage /></RequirePageAccess>} />
+            <Route path="/settings/tarif-kontrak" element={<RequirePageAccess pageKey="settings_tarif_kontrak"><TarifKontrakPage /></RequirePageAccess>} />
+            <Route path="/settings/tarif-far-overseas-vendor" element={<RequirePageAccess pageKey="settings_tarif_far_overseas_vendor"><FarOverseasVendorTarifPage /></RequirePageAccess>} />
           </Route>
         </Routes>
       </AuthProvider>

@@ -3540,7 +3540,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 {/* Custom top scrollbar */}
                 <div 
                   ref={topScrollRef}
-                  className="overflow-x-auto w-full custom-scrollbar"
+                  className="overflow-x-auto w-full scrollbar-visible"
                   onScroll={handleTopScroll}
                 >
                   <div style={{ width: tableWidth, height: '1px' }}></div>

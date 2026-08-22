@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Plane, Ship, ScrollText, Settings, ChevronUp, ChevronDown, LogOut, UserCircle, FileCheck2, Fuel } from 'lucide-react';
@@ -13,10 +13,10 @@ const MAIN_TABS = [
     path: '/courier/audit',
     basePath: '/courier',
     subTabs: [
-      { id: 'courier_audit', label: 'Audit', path: '/courier/audit' },
-      { id: 'courier_rekapan', label: 'Rekapan Invoice', path: '/courier/rekapan' },
-      { id: 'courier_validasi', label: 'Validasi', path: '/courier/validasi' },
-      { id: 'courier_upload', label: 'Upload', path: '/courier/upload' },
+      { id: 'courier_audit', label: 'Audit', path: '/courier/audit', pageKey: 'courier_audit' },
+      { id: 'courier_rekapan', label: 'Rekapan Invoice', path: '/courier/rekapan', pageKey: 'courier_rekapan' },
+      { id: 'courier_validasi', label: 'Validasi', path: '/courier/validasi', pageKey: 'courier_validasi' },
+      { id: 'courier_upload', label: 'Upload', path: '/courier/upload', pageKey: 'courier_upload' },
     ]
   },
   {
@@ -26,9 +26,9 @@ const MAIN_TABS = [
     path: '/sea-air/audit',
     basePath: '/sea-air',
     subTabs: [
-      { id: 'sea_air_audit',   label: 'Audit', path: '/sea-air/audit' },
-      { id: 'sea_air_rekapan', label: 'Rekapan', path: '/sea-air/rekapan' },
-      { id: 'sea_air_upload', label: 'Upload', path: '/sea-air/upload' },
+      { id: 'sea_air_audit',   label: 'Audit', path: '/sea-air/audit', pageKey: 'sea_air_audit' },
+      { id: 'sea_air_rekapan', label: 'Rekapan', path: '/sea-air/rekapan', pageKey: 'sea_air_rekapan' },
+      { id: 'sea_air_upload', label: 'Upload', path: '/sea-air/upload', pageKey: 'sea_air_upload' },
     ]
   },
   {
@@ -36,21 +36,24 @@ const MAIN_TABS = [
     label: 'Direct Loading',
     icon: FileCheck2,
     path: '/direct-loading',
-    basePath: '/direct-loading'
+    basePath: '/direct-loading',
+    pageKey: 'direct_loading',
   },
   {
     id: 'bunker',
     label: 'Bunker',
     icon: Fuel,
     path: '/bunker',
-    basePath: '/bunker'
+    basePath: '/bunker',
+    pageKey: 'bunker',
   },
   {
     id: 'trail',
     label: 'Audit Trail',
     icon: ScrollText,
     path: '/audit-trail',
-    basePath: '/audit-trail'
+    basePath: '/audit-trail',
+    pageKey: 'audit_trail',
   },
 ];
 
@@ -59,15 +62,29 @@ export default function MainLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const { signOut } = useAuth();
+  const { signOut, allowedPageKeys, isAdmin } = useAuth();
 
   const handleLogout = async () => {
     await signOut();
     navigate('/login', { replace: true });
   };
 
+  // Sidebar cuma nampilin menu yang role user boleh akses (lihat src/lib/permissions.ts) --
+  // tab dengan subTabs (Courier, Sea & Air) tetap tampil kalau MINIMAL 1 subtab-nya diizinkan,
+  // subtab yang tidak diizinkan disembunyikan satu-satu. Admin selalu lihat semua.
+  const visibleTabs = useMemo(() => {
+    return MAIN_TABS.map(t => {
+      if (t.subTabs) {
+        const visibleSub = isAdmin ? t.subTabs : t.subTabs.filter(s => allowedPageKeys.has(s.pageKey));
+        return visibleSub.length > 0 ? { ...t, subTabs: visibleSub } : null;
+      }
+      const allowed = isAdmin || (t.pageKey ? allowedPageKeys.has(t.pageKey) : false);
+      return allowed ? t : null;
+    }).filter((t): t is NonNullable<typeof t> => t !== null);
+  }, [allowedPageKeys, isAdmin]);
+
   // Determine active main tab
-  const activeMainTab = MAIN_TABS.find(t => location.pathname.startsWith(t.basePath))?.id || 'courier';
+  const activeMainTab = MAIN_TABS.find(t => location.pathname.startsWith(t.basePath))?.id || visibleTabs[0]?.id || 'courier';
   const activeSubTabPath = location.pathname;
 
   // Submenu terbuka/tertutup independen dari section aktif -- supaya bisa ditutup manual
@@ -101,7 +118,7 @@ export default function MainLayout() {
         </div>
 
         <div className="flex overflow-x-auto no-scrollbar px-3 py-3 gap-2">
-          {MAIN_TABS.map(t => {
+          {visibleTabs.map(t => {
             const isActive = activeMainTab === t.id;
             const Icon = t.icon;
             return (
@@ -120,9 +137,9 @@ export default function MainLayout() {
         </div>
 
         {/* Subtabs horizontal list if they exist */}
-        {MAIN_TABS.find(t => t.id === activeMainTab)?.subTabs && (
+        {visibleTabs.find(t => t.id === activeMainTab)?.subTabs && (
           <div className="flex overflow-x-auto no-scrollbar px-3 pb-3 gap-2">
-            {MAIN_TABS.find(t => t.id === activeMainTab)?.subTabs?.map(sub => {
+            {visibleTabs.find(t => t.id === activeMainTab)?.subTabs?.map(sub => {
               const isSubActive = activeSubTabPath === sub.path;
               return (
                 <Link
@@ -159,7 +176,7 @@ export default function MainLayout() {
           </div>
 
           <div className="flex-1 flex flex-col py-4 gap-0.5 px-2.5 overflow-y-auto mt-2 no-scrollbar">
-            {MAIN_TABS.map(t => {
+            {visibleTabs.map(t => {
               const isActive = activeMainTab === t.id;
               const Icon = t.icon;
               const text = t.label;

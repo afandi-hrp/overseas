@@ -37,13 +37,37 @@
 .animate-spin-slow { animation: spin-slow 1s linear infinite; }
 .animate-pulse-dot { animation: pulse-dot 1.4s ease infinite; }
 
-/* Scrollbar tipis */
-::-webkit-scrollbar       { width: 8px; height: 14px; }
-::-webkit-scrollbar-track { background: #F1F5F9; }
-::-webkit-scrollbar-thumb { background: #94A3B8; border-radius: 99px; border: 3px solid #F1F5F9; }
-::-webkit-scrollbar-thumb:hover { background: #64748B; }
+/* Scrollbar disembunyikan secara DEFAULT di seluruh app (request eksplisit: tidak boleh ada
+   bar scroll yang kelihatan di halaman manapun, soalnya bikin tampilan jelek -- terutama
+   kelihatan jelas di browser yang tidak baca ::-webkit-scrollbar, mis. Firefox, yang tadinya
+   jatuh balik ke scrollbar bawaan OS yang tebal/putih). Scroll tetap berfungsi normal, cuma
+   indikator visualnya yang dihilangkan. */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
 
-/* Sembunyikan scrollbar (khusus elemen ber-class ini) -- scroll tetap jalan, cuma bar-nya disembunyikan */
+/* Pengecualian sengaja: scrollbar horizontal "drag handle" di ATAS tabel lebar (FAR Overseas
+   Air / SharedDataTable, lihat topScrollRef di kedua file itu) HARUS tetap kelihatan supaya
+   user bisa geser tabel lebar langsung tanpa perlu scroll ke bawah dulu. */
+.scrollbar-visible {
+  scrollbar-width: thin;
+  -ms-overflow-style: auto;
+}
+.scrollbar-visible::-webkit-scrollbar {
+  display: block;
+  width: 8px;
+  height: 14px;
+}
+.scrollbar-visible::-webkit-scrollbar-track { background: #F1F5F9; }
+.scrollbar-visible::-webkit-scrollbar-thumb { background: #94A3B8; border-radius: 99px; border: 3px solid #F1F5F9; }
+.scrollbar-visible::-webkit-scrollbar-thumb:hover { background: #64748B; }
+
+/* Class lama -- sekarang redundan (scrollbar sudah hidden by default di atas) tapi dibiarkan
+   ada supaya semua pemakaian existing di kode tetap valid tanpa perlu disentuh satu-satu. */
 .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 

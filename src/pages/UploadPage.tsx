@@ -488,10 +488,6 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
 
 
         </main>
-
-        <footer className="text-center py-8 text-xs text-[#5A305A]">
-          IMI Import System · Powered by n8n + Gemini + Supabase
-        </footer>
       </div>
     </>
   )

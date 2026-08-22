@@ -13,6 +13,11 @@ type AuthContextValue = {
   user: User | null;
   profile: Profile | null;
   loading: boolean;
+  // Role & akses halaman (lihat src/lib/permissions.ts) -- diisi dari RPC get_my_access() sekali
+  // per login. Perubahan role oleh PIC baru berlaku efektif setelah user refresh/login ulang,
+  // bukan real-time push ke sesi yang sedang aktif (konsisten dengan pola refreshProfile()).
+  allowedPageKeys: Set<string>;
+  isAdmin: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 };
@@ -30,6 +35,8 @@ const ACTIVITY_EVENTS: (keyof WindowEventMap)[] = ['mousemove', 'mousedown', 'ke
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [allowedPageKeys, setAllowedPageKeys] = useState<Set<string>>(new Set());
+  const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const isAuthed = !!session;
 
@@ -38,19 +45,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfile(data || null);
   };
 
+  const fetchAccess = async () => {
+    const { data, error } = await supabase.rpc('get_my_access');
+    if (error || !data) {
+      // RPC belum ada / gagal -- jangan diam-diam anggap admin, cuma kosongkan akses supaya
+      // route guard menutup semua halaman gated (fail-closed, bukan fail-open).
+      setAllowedPageKeys(new Set());
+      setIsAdmin(false);
+      return;
+    }
+    setAllowedPageKeys(new Set(Array.isArray(data.page_keys) ? data.page_keys : []));
+    setIsAdmin(!!data.is_admin);
+  };
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setLoading(false);
-      if (data.session?.user) fetchProfile(data.session.user.id);
+      if (data.session?.user) {
+        fetchProfile(data.session.user.id);
+        fetchAccess();
+      }
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession);
       if (newSession?.user) {
         fetchProfile(newSession.user.id);
+        fetchAccess();
       } else {
         setProfile(null);
+        setAllowedPageKeys(new Set());
+        setIsAdmin(false);
       }
     });
 
@@ -95,11 +121,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refreshProfile = async () => {
-    if (session?.user) await fetchProfile(session.user.id);
+    if (session?.user) {
+      await fetchProfile(session.user.id);
+      await fetchAccess();
+    }
   };
 
   return (
-    <AuthContext.Provider value={{ session, user: session?.user ?? null, profile, loading, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{ session, user: session?.user ?? null, profile, allowedPageKeys, isAdmin, loading, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
