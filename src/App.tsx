@@ -87,13 +87,13 @@ export default function App() {
               <Route path="/audit-trail" element={<RequirePageAccess pageKey="audit_trail"><AuditTrailPage /></RequirePageAccess>} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/settings/roles" element={<RequirePageAccess adminOnly><RoleManagementPage /></RequirePageAccess>} />
+              <Route path="/account" element={<AccountPage />} />
             </Route>
 
             {/* Admin Routes with nested or wrapped layout */}
             <Route path="/admin/rates" element={<RequirePageAccess pageKey="admin_rates"><RateTablesAdmin /></RequirePageAccess>} />
 
             {/* Route to Fuel Surcharge page */}
-            <Route path="/account" element={<AccountPage />} />
             <Route path="/settings/fuel-surcharge" element={<RequirePageAccess pageKey="settings_fuel_surcharge"><FuelSurchargePage /></RequirePageAccess>} />
             <Route path="/settings/kurs-bi" element={<RequirePageAccess pageKey="settings_kurs_bi"><KursBIPage /></RequirePageAccess>} />
             <Route path="/settings/kurs-rule-vendor" element={<RequirePageAccess pageKey="settings_kurs_rule_vendor"><KursRuleVendorPage /></RequirePageAccess>} />

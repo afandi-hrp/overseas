@@ -22,6 +22,7 @@ type AuthContextValue = {
   refreshProfile: () => Promise<void>;
 };
 
+
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 // Auto logout setelah tidak ada aktivitas -- timestamp disimpan di localStorage
@@ -37,7 +38,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [allowedPageKeys, setAllowedPageKeys] = useState<Set<string>>(new Set());
   const [isAdmin, setIsAdmin] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [sessionLoading, setSessionLoading] = useState(true);
+  // Loading akses (get_my_access) DIPISAH dari loading sesi -- kalau digabung jadi satu flag
+  // yang selesai begitu sesi ke-cek, ProtectedRoute/DefaultLandingRedirect sempat render
+  // duluan dengan allowedPageKeys masih kosong (default state), lalu getDefaultLandingPath()
+  // salah kesimpulan "user ini belum punya akses" dan redirect ke /account -- padahal RPC
+  // get_my_access() aslinya baru mau selesai sepersekian detik kemudian. Loading gabungan di
+  // bawah (`loading`) baru false setelah KEDUANYA beres.
+  const [accessLoading, setAccessLoading] = useState(true);
+  const loading = sessionLoading || accessLoading;
   const isAuthed = !!session;
 
   const fetchProfile = async (userId: string) => {
@@ -61,10 +70,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
-      setLoading(false);
+      setSessionLoading(false);
       if (data.session?.user) {
         fetchProfile(data.session.user.id);
-        fetchAccess();
+        fetchAccess().finally(() => setAccessLoading(false));
+      } else {
+        setAccessLoading(false);
       }
     });
 
@@ -72,11 +83,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(newSession);
       if (newSession?.user) {
         fetchProfile(newSession.user.id);
-        fetchAccess();
+        setAccessLoading(true);
+        fetchAccess().finally(() => setAccessLoading(false));
       } else {
         setProfile(null);
         setAllowedPageKeys(new Set());
         setIsAdmin(false);
+        setAccessLoading(false);
       }
     });
 

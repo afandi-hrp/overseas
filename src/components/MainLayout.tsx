@@ -33,7 +33,7 @@ const MAIN_TABS = [
   },
   {
     id: 'direct_loading',
-    label: 'Direct Loading',
+    label: 'FAR Overseas',
     icon: FileCheck2,
     path: '/direct-loading',
     basePath: '/direct-loading',
@@ -62,7 +62,9 @@ export default function MainLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const { signOut, allowedPageKeys, isAdmin } = useAuth();
+  const { signOut, allowedPageKeys, isAdmin, profile, user } = useAuth();
+  const accountName = profile?.nama || user?.email?.split('@')[0] || 'Pengguna';
+  const accountInitial = accountName.charAt(0).toUpperCase();
 
   const handleLogout = async () => {
     await signOut();
@@ -168,14 +170,14 @@ export default function MainLayout() {
           onMouseEnter={() => setIsSidebarOpen(true)}
           onMouseLeave={() => { setIsSidebarOpen(false); setExpandedTab(activeMainTab); }}
         >
-          <div className={`flex items-center h-20 shrink-0 mt-4 transition-all duration-300 ${isSidebarOpen ? 'px-6 gap-3' : 'justify-center'}`}>
+          <div className={`flex items-center h-12 shrink-0 mt-2 transition-all duration-300 ${isSidebarOpen ? 'px-6 gap-3' : 'justify-center'}`}>
             <img src={shipmentIcon} alt="Shipment" className="h-9 w-9 object-contain shrink-0 drop-shadow-sm" />
             <span className={`text-white font-bold text-lg tracking-wide whitespace-nowrap transition-opacity duration-300 ${isSidebarOpen ? 'opacity-100' : 'opacity-0 hidden'}`}>
               Shipment
             </span>
           </div>
 
-          <div className="flex-1 flex flex-col py-4 gap-0.5 px-2.5 overflow-y-auto mt-2 no-scrollbar">
+          <div className="flex-1 flex flex-col py-1 gap-0.5 px-2.5 overflow-y-auto no-scrollbar">
             {visibleTabs.map(t => {
               const isActive = activeMainTab === t.id;
               const Icon = t.icon;
@@ -241,11 +243,11 @@ export default function MainLayout() {
           </div>
 
           {/* Footer -- dipin di bawah, tidak ikut scroll/kegencet oleh daftar menu di atas */}
-          <div className="shrink-0 px-2.5 pb-4">
-            <hr className="border-white/10 my-2 mx-1" />
+          <div className="shrink-0 px-2.5 pb-3">
+            <hr className="border-white/10 my-1 mx-1" />
             <Link
               to="/account"
-              className={`flex items-center gap-3 px-2.5 py-2.5 rounded-xl transition-all whitespace-nowrap overflow-hidden ${
+              className={`flex items-center gap-3 px-2.5 py-1.5 rounded-xl transition-all whitespace-nowrap overflow-hidden ${
                 location.pathname === '/account' ? 'text-white bg-white/10' : 'text-[#a394a8] hover:bg-white/5 hover:text-white'
               }`}
               title={!isSidebarOpen ? "Akun Saya" : undefined}
@@ -261,7 +263,7 @@ export default function MainLayout() {
             </Link>
             <Link
               to="/settings"
-              className={`flex items-center gap-3 px-2.5 py-2.5 rounded-xl transition-all whitespace-nowrap overflow-hidden text-[#a394a8] hover:bg-white/5 hover:text-white`}
+              className={`flex items-center gap-3 px-2.5 py-1.5 rounded-xl transition-all whitespace-nowrap overflow-hidden text-[#a394a8] hover:bg-white/5 hover:text-white`}
               title={!isSidebarOpen ? "Pengaturan" : undefined}
             >
               <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-white/5">
@@ -273,9 +275,25 @@ export default function MainLayout() {
                 Pengaturan
               </span>
             </Link>
+
+            {/* Nama akun yang sedang login -- tepat di atas tombol Keluar */}
+            <div
+              className="flex items-center gap-3 px-2.5 py-1.5 rounded-xl whitespace-nowrap overflow-hidden text-[#a394a8]"
+              title={!isSidebarOpen ? accountName : undefined}
+            >
+              <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-white/10 text-white text-xs font-bold">
+                {accountInitial}
+              </span>
+              <span className={`text-[13px] font-semibold text-white/90 truncate transition-opacity duration-300 ${
+                isSidebarOpen ? 'opacity-100' : 'opacity-0'
+              }`}>
+                {accountName}
+              </span>
+            </div>
+
             <button
               onClick={handleLogout}
-              className="flex items-center gap-3 px-2.5 py-2.5 rounded-xl transition-all whitespace-nowrap overflow-hidden text-[#a394a8] hover:bg-white/5 hover:text-white w-full"
+              className="flex items-center gap-3 px-2.5 py-1.5 rounded-xl transition-all whitespace-nowrap overflow-hidden text-[#a394a8] hover:bg-white/5 hover:text-white w-full"
               title={!isSidebarOpen ? "Keluar" : undefined}
             >
               <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-white/5">

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { CheckCircle2, XCircle, X, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays } from 'lucide-react'
+import { CheckCircle2, XCircle, X, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays, Sunrise, Sun, Sunset, Moon } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../lib/AuthContext'
 import ExportModal from '../components/ExportModal'
 import ValidasiModal from '../components/ValidasiModal'
 import CostValidationModal from '../components/CostValidationModal'
@@ -2272,7 +2273,20 @@ const toolbarPillClass = (isActive: boolean) => `${TOOLBAR_PILL_BASE} ${isActive
 // Kapsul kaca untuk elemen non-pill di toolbar (search, date range, refresh, dropdown)
 const TOOLBAR_GLASS = 'bg-white/70 backdrop-blur-md border-slate-200/80 shadow-sm'
 
+// Sapaan + ikon waktu -- cuma dipasang di 4 halaman spesifik (audit/rekapan Courier & Sea & Air,
+// lihat GREETING_SUBTABS di bawah), BUKAN di semua tab yang lewat SharedDataTable ini (mis.
+// Audit Trail sengaja tidak ikut, itu bukan permintaan).
+const GREETING_SUBTABS = new Set(['courier_audit', 'courier_rekapan', 'sea_air_audit', 'sea_air_rekapan']);
+function getGreetingMeta(date: Date) {
+  const hour = date.getHours();
+  if (hour >= 4 && hour < 11) return { text: 'Selamat pagi', Icon: Sunrise };
+  if (hour >= 11 && hour < 15) return { text: 'Selamat siang', Icon: Sun };
+  if (hour >= 15 && hour < 18) return { text: 'Selamat sore', Icon: Sunset };
+  return { text: 'Selamat malam', Icon: Moon };
+}
+
 export default function SharedDataTable({ defaultMainTab = 'courier', defaultSubTab = 'courier_audit' }: { defaultMainTab?: string, defaultSubTab?: string }) {
+  const { profile, user } = useAuth();
   const [activeMainTab, setActiveMainTab] = useState(defaultMainTab)
   const [activeSubTab,  setActiveSubTab]  = useState(defaultSubTab)
 
@@ -3247,17 +3261,34 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       {/* ── Main Content ── */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
         
-        <header className="px-6 pt-5 pb-2 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <h1 className="font-bold text-xl text-[#5A305A] leading-tight">
-              {tab?.label || mainTabObj?.label || 'Dashboard'}
-            </h1>
-            {mainTabObj?.label && tab?.label !== mainTabObj?.label && (
-              <div className="flex items-center gap-2 text-sm text-[#5A305A]">
-                <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
-                <span>{mainTabObj.label}</span>
-              </div>
-            )}
+        <header className="px-6 pt-1 pb-2 shrink-0">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <h1 className="font-bold text-xl text-[#5A305A] leading-tight">
+                {tab?.label || mainTabObj?.label || 'Dashboard'}
+              </h1>
+              {mainTabObj?.label && tab?.label !== mainTabObj?.label && (
+                <div className="flex items-center gap-2 text-sm text-[#5A305A]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+                  <span>{mainTabObj.label}</span>
+                </div>
+              )}
+            </div>
+            {GREETING_SUBTABS.has(activeSubTab) && (() => {
+              const now = new Date();
+              const { text, Icon } = getGreetingMeta(now);
+              const displayName = profile?.nama || user?.email?.split('@')[0] || '';
+              const dayDate = now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+              return (
+                <div className="text-right shrink-0">
+                  <div className="flex items-center justify-end gap-2">
+                    <p className="font-bold text-lg text-[#5A305A] leading-tight">{text}{displayName ? `, ${displayName}` : ''}</p>
+                    <Icon size={19} className="text-amber-500 shrink-0" />
+                  </div>
+                  <p className="text-xs font-light text-[#5A305A]/70 mt-0.5">{dayDate}</p>
+                </div>
+              );
+            })()}
           </div>
         </header>
 

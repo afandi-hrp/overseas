@@ -1,11 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
 
 export default function AccountPage() {
-  const navigate = useNavigate();
   const { user, profile, refreshProfile } = useAuth();
   const [nama, setNama] = useState('');
   const [savingNama, setSavingNama] = useState(false);
@@ -59,20 +56,14 @@ export default function AccountPage() {
   };
 
   return (
-    <div className="flex-1 h-full min-h-screen overflow-y-auto pb-10 bg-gradient-to-br from-[#FFF5C5] to-[#F58C77]">
+    <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
       <main className="max-w-2xl mx-auto px-4 py-8">
 
-        {/* Header & Back Button */}
-        <div className="flex flex-col md:flex-row md:items-center gap-4 mb-8">
-          <button
-            onClick={() => navigate(-1)}
-            className="w-10 h-10 flex items-center justify-center rounded-full bg-white/60 hover:bg-white shadow-sm text-[#5A305A] transition-all shrink-0"
-          >
-            <ArrowLeft size={20} />
-          </button>
+        {/* Header */}
+        <div className="flex items-center gap-4 mb-8">
           <div>
             <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Akun Saya</h1>
-            <p className="text-[#5A305A] font-light text-sm mt-1">Kelola info profil dan password login lae.</p>
+            <p className="text-[#5A305A] font-light text-sm mt-1">Kelola info profil dan password login.</p>
           </div>
         </div>
 

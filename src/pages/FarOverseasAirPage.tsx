@@ -260,7 +260,7 @@ const FAR_EXPORT_COLS = [
 ];
 
 export default function FarOverseasAirPage() {
-  useEffect(() => { document.title = 'FAR Overseas Air · Shipment'; }, []);
+  useEffect(() => { document.title = 'FAR Overseas · Shipment'; }, []);
 
   // Link langsung ke satu memo: /direct-loading/:id -- buka detail modal otomatis begitu
   // halaman dimuat, tanpa perlu cari-cari di daftar (URL berubah otomatis saat tombol
@@ -541,7 +541,7 @@ export default function FarOverseasAirPage() {
                 <FileCheck2 size={20} />
               </div>
               <div>
-                <h1 className="font-bold text-[#5A305A] text-base leading-tight">FAR Overseas Air</h1>
+                <h1 className="font-bold text-[#5A305A] text-base leading-tight">FAR Overseas</h1>
                 <p className="text-xs font-light text-[#5A305A] mt-0.5">Memo approval freight informal gabungan PO</p>
               </div>
             </div>
@@ -637,7 +637,7 @@ export default function FarOverseasAirPage() {
               halaman Audit Sea & Air / Courier) -- bukan seluruh halaman yang discroll panjang. */}
           <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
             <div className="px-5 py-4 border-b border-white/60 flex items-center justify-between gap-3 flex-wrap shrink-0">
-              <h2 className="text-sm font-bold text-[#5A305A]">Daftar Memo FAR Overseas Air</h2>
+              <h2 className="text-sm font-bold text-[#5A305A]">List Memo FAR Overseas</h2>
               <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white">
                 <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">Items</span>
                 <select
@@ -669,7 +669,7 @@ export default function FarOverseasAirPage() {
                   {loadingList ? (
                     <tr><td colSpan={LIST_COLUMNS.length + 1} className="text-center py-10 text-[#5A305A] text-sm">Memuat data...</td></tr>
                   ) : rows.length === 0 ? (
-                    <tr><td colSpan={LIST_COLUMNS.length + 1} className="text-center py-10 text-[#5A305A] text-sm italic">Belum ada data FAR Overseas Air. Klik "Upload Dokumen" untuk memulai.</td></tr>
+                    <tr><td colSpan={LIST_COLUMNS.length + 1} className="text-center py-10 text-[#5A305A] text-sm italic">Belum ada data FAR Overseas. Klik "Upload Dokumen" untuk memulai.</td></tr>
                   ) : (
                     rows.map((r, idx) => {
                       const costStatus = costStatusMap[r.id];
@@ -842,7 +842,7 @@ export default function FarOverseasAirPage() {
 
       {showExportModal && (
         <ExportModal
-          title="FAR Overseas Air"
+          title="FAR Overseas"
           cols={FAR_EXPORT_COLS}
           fetchData={getExportData}
           dateFieldLabel="Filter Tgl. Invoice"
