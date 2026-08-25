@@ -8,6 +8,7 @@ import SurchargeFedEx from './admin/SurchargeFedEx';
 import ZoneMappingEditor from './admin/ZoneMappingEditor';
 import NPWPEditor from './admin/NPWPEditor';
 import PPJKCostRule from './admin/PPJKCostRule';
+import SurchargeCIPLRule from './admin/SurchargeCIPLRule';
 
 export default function RateTablesAdmin() {
   const [activeTab, setActiveTab] = useState('dhl_rate');
@@ -20,6 +21,7 @@ export default function RateTablesAdmin() {
     { id: 'zone_mapping', label: 'Zone Mapping' },
     { id: 'master_npwp', label: 'Master NPWP' },
     { id: 'ppjk', label: 'PPJK Cost Rule' },
+    { id: 'surcharge_cipl', label: 'Surcharge CIPL' },
   ];
 
   return (
@@ -68,6 +70,7 @@ export default function RateTablesAdmin() {
           {activeTab === 'zone_mapping' && <ZoneMappingEditor />}
           {activeTab === 'master_npwp' && <NPWPEditor />}
           {activeTab === 'ppjk' && <PPJKCostRule />}
+          {activeTab === 'surcharge_cipl' && <SurchargeCIPLRule />}
         </div>
       </main>
     </div>

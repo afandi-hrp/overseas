@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
 import { X, Printer, Stamp, Ban, ChevronDown, ChevronUp } from 'lucide-react';
@@ -202,9 +203,14 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
   const poList: any[] = Array.isArray(parsedPoList) ? parsedPoList : [];
   const showIdrHint = rec.total_amount_currency && rec.total_amount_currency !== 'IDR' && rec.total_amount_idr != null;
 
-  return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[60] flex justify-center items-center p-2 sm:p-4 md:p-6 print:bg-white print:p-0">
-      <div className="bg-slate-50 w-full max-w-4xl h-[92vh] max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden print:shadow-none print:w-full print:m-0 print:rounded-none">
+  // Portal langsung ke document.body: kalau modal ini dirender inline di dalam tree halaman
+  // (bukan portal), print CSS #far-overseas-print-area jadi berpotensi ke-posisi relatif ke
+  // ancestor "relative" milik halaman itu sendiri (bukan ke halaman cetak), dan ancestor itu
+  // masih ikut terdorong ruang kosong dari konten lain yang cuma visibility:hidden. Portal ke
+  // body menghilangkan ambiguitas itu sepenuhnya -- tidak ada ancestor apapun selain <body>.
+  return createPortal(
+    <div id="far-overseas-print-area" className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[60] flex justify-center items-center p-2 sm:p-4 md:p-6 print:static print:bg-white print:p-0 print:block">
+      <div className="bg-slate-50 w-full max-w-4xl h-[92vh] max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden print:shadow-none print:w-full print:m-0 print:rounded-none print:h-auto print:max-h-none print:overflow-visible print:block">
 
         {/* Toolbar */}
         <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-slate-200 bg-white shrink-0 print:hidden">
@@ -230,7 +236,7 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
         )}
 
         <div className="flex-1 overflow-y-auto custom-scrollbar print:overflow-visible">
-          <div className="p-4 md:p-8 print:p-6">
+          <div className="p-4 md:p-8 print:p-0">
 
             {/* ── Memo cetak (replika dokumen asli) ── */}
             <div className="bg-white border-2 border-[#FFF5C5] text-[#5A305A] font-sans print:border-[#FFF5C5]">
@@ -247,13 +253,13 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
 
               {/* Field baris */}
               <div className="p-4 space-y-2 text-sm">
-                <div className="flex flex-col md:flex-row md:items-start gap-1 md:gap-6">
+                <div className="flex flex-col md:flex-row print:flex-row md:items-start print:items-start gap-1 md:gap-6 print:gap-6">
                   <div className="flex-1"><MemoField label="PO. No." value={rec.po_ori || '-'} /></div>
-                  <div className="md:w-56"><MemoField label="Inv. No" labelWidth="w-16" value={rec.no_invoice || '-'} /></div>
+                  <div className="md:w-56 print:w-56"><MemoField label="Inv. No" labelWidth="w-20" value={rec.no_invoice || '-'} /></div>
                 </div>
-                <div className="flex flex-col md:flex-row md:items-start gap-1 md:gap-6">
+                <div className="flex flex-col md:flex-row print:flex-row md:items-start print:items-start gap-1 md:gap-6 print:gap-6">
                   <div className="flex-1"><MemoField label="Supplier" value={rec.vendor || '-'} /></div>
-                  <div className="md:w-56"><MemoField label="Date" labelWidth="w-16" value={formatDateMemo(rec.created_at)} /></div>
+                  <div className="md:w-56 print:w-56"><MemoField label="Date" labelWidth="w-20" value={formatDateMemo(rec.created_at)} /></div>
                 </div>
                 <MemoField label="Ship Via" value={rec.ship_via || '-'} bold />
                 <MemoField label="Buyer" value={rec.buyer_name || '-'} />
@@ -383,6 +389,7 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
       {showReject && (
         <RejectModal submitting={submitting} onClose={() => setShowReject(false)} onConfirm={handleReject} />
       )}
-    </div>
+    </div>,
+    document.body
   );
 }

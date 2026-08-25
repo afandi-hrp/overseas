@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { CheckCircle2, FileCheck2, UploadCloud, X, AlertTriangle, Clock, ClipboardCheck, ClipboardList, Edit3, Save, Scale, Trash2, RefreshCw } from 'lucide-react';
+import { CheckCircle2, FileCheck2, UploadCloud, X, AlertTriangle, Clock, ClipboardCheck, ClipboardList, Edit3, Save, Scale, Trash2, RefreshCw, ChevronDown } from 'lucide-react';
 import { formatMoney, formatDateID, APPROVAL_STATUS_META, COST_STATUS_META, REKAPAN_EDITABLE_FIELDS, updateRekapanFarOverseasAir } from '../utils/FarOverseasAirHelpers';
 import { EditableCell } from '../components/FarOverseasAirEditableField';
 import FarOverseasAirDetailModal from '../components/FarOverseasAirDetailModal';
@@ -288,6 +288,7 @@ export default function FarOverseasAirPage() {
   const [weightModalRow, setWeightModalRow] = useState<any | null>(null);
 
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
+  const [openActionsRowId, setOpenActionsRowId] = useState<string | null>(null);
   const [pendingEdits, setPendingEdits] = useState<Record<string, Record<string, any>>>({});
   const [savingEdits, setSavingEdits] = useState(false);
   const [expandedPoRows, setExpandedPoRows] = useState<Set<string>>(new Set());
@@ -704,37 +705,52 @@ export default function FarOverseasAirPage() {
                             );
                           })}
                           <td className="px-4 py-3 align-top sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-10 border-l border-slate-200 transition-colors">
-                            <div className="flex flex-col gap-1 w-[104px]">
+                            <div className="flex flex-col items-center gap-1.5 w-[104px]">
                               <button
-                                onClick={() => navigate(`/direct-loading/${r.id}`)}
-                                title="Approval"
-                                className="w-full flex flex-col items-start gap-0.5 px-1.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors"
+                                onClick={() => setOpenActionsRowId(openActionsRowId === r.id ? null : r.id)}
+                                className={`w-full flex items-center justify-center gap-1 text-[10px] font-bold px-2 py-2 rounded-lg border transition-all ${
+                                  openActionsRowId === r.id
+                                    ? 'bg-[#5A305A] text-white border-[#5A305A] shadow-md'
+                                    : 'bg-white text-[#5A305A] border-slate-200 shadow-sm hover:border-[#5A305A] hover:bg-[#5A305A]/5'
+                                }`}
                               >
-                                <span className="flex items-center gap-1 text-[9px] font-semibold text-[#5A305A]"><ClipboardCheck size={10} /> Approval</span>
-                                <ApprovalBadge status={r.approval_status} compact />
+                                Aksi
+                                <ChevronDown size={13} className={`transition-transform duration-200 ${openActionsRowId === r.id ? 'rotate-180' : ''}`} />
                               </button>
-                              <button
-                                onClick={() => setCostModalRow(r)}
-                                title="Cost Validation"
-                                className="w-full flex flex-col items-start gap-0.5 px-1.5 py-1 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors"
-                              >
-                                <span className="flex items-center gap-1 text-[9px] font-semibold text-[#5A305A]"><ClipboardList size={10} /> Cost</span>
-                                <CostBadge status={costStatus} compact />
-                              </button>
-                              <button
-                                onClick={() => toggleEditRow(r.id)}
-                                title="Edit baris ini"
-                                className={`w-full flex items-center gap-1 px-1.5 py-1 rounded-lg border text-[9px] font-semibold transition-colors ${editingThisRow ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700' : 'border-slate-200 text-[#5A305A] hover:bg-slate-100'}`}
-                              >
-                                <Edit3 size={10} /> {editingThisRow ? 'Edit Aktif' : 'Edit'}
-                              </button>
-                              <button
-                                onClick={() => openDeleteConfirm(r)}
-                                title="Hapus memo ini"
-                                className="w-full flex items-center gap-1 px-1.5 py-1 rounded-lg border border-rose-200 bg-rose-50 text-[9px] font-semibold text-rose-600 hover:bg-rose-100 hover:border-rose-300 transition-colors"
-                              >
-                                <Trash2 size={10} /> Hapus
-                              </button>
+                              {openActionsRowId === r.id && (
+                                <div className="flex flex-col gap-1.5 items-stretch w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
+                                  <button
+                                    onClick={() => { navigate(`/direct-loading/${r.id}`); setOpenActionsRowId(null); }}
+                                    title="Approval"
+                                    className="w-full flex flex-col items-start gap-0.5 px-1.5 py-1 rounded-md border border-slate-200 bg-white hover:bg-slate-100 transition-colors"
+                                  >
+                                    <span className="flex items-center gap-1 text-[9px] font-semibold text-[#5A305A]"><ClipboardCheck size={10} /> Approval</span>
+                                    <ApprovalBadge status={r.approval_status} compact />
+                                  </button>
+                                  <button
+                                    onClick={() => { setCostModalRow(r); setOpenActionsRowId(null); }}
+                                    title="Cost Validation"
+                                    className="w-full flex flex-col items-start gap-0.5 px-1.5 py-1 rounded-md border border-slate-200 bg-white hover:bg-slate-100 transition-colors"
+                                  >
+                                    <span className="flex items-center gap-1 text-[9px] font-semibold text-[#5A305A]"><ClipboardList size={10} /> Cost</span>
+                                    <CostBadge status={costStatus} compact />
+                                  </button>
+                                  <button
+                                    onClick={() => { toggleEditRow(r.id); setOpenActionsRowId(null); }}
+                                    title="Edit baris ini"
+                                    className={`w-full flex items-center gap-1 px-1.5 py-1 rounded-md border text-[9px] font-semibold transition-colors ${editingThisRow ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700' : 'border-slate-200 bg-white text-[#5A305A] hover:bg-slate-100'}`}
+                                  >
+                                    <Edit3 size={10} /> {editingThisRow ? 'Edit Aktif' : 'Edit'}
+                                  </button>
+                                  <button
+                                    onClick={() => { openDeleteConfirm(r); setOpenActionsRowId(null); }}
+                                    title="Hapus memo ini"
+                                    className="w-full flex items-center gap-1 px-1.5 py-1 rounded-md border border-rose-200 bg-rose-50 text-[9px] font-semibold text-rose-600 hover:bg-rose-100 hover:border-rose-300 transition-colors"
+                                  >
+                                    <Trash2 size={10} /> Hapus
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           </td>
                         </tr>

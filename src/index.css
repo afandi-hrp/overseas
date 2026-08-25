@@ -66,6 +66,25 @@
 .scrollbar-visible::-webkit-scrollbar-thumb { background: #94A3B8; border-radius: 99px; border: 3px solid #F1F5F9; }
 .scrollbar-visible::-webkit-scrollbar-thumb:hover { background: #64748B; }
 
+/* Sama seperti .scrollbar-visible di atas, TAPI cuma untuk bar horizontal -- dipakai di
+   container tabel Audit/Rekapan Courier & Sea/Air (SharedDataTable.tsx, bottomScrollRef) yang
+   overflow-x DAN overflow-y sekaligus. Sebelumnya container ini pakai class "custom-scrollbar"
+   yang ternyata sudah tidak punya definisi CSS apapun (dead class) -- jadi ikut kena aturan
+   default "sembunyikan semua scrollbar" di atas, bikin scrollbar geser di BAWAH tabel hilang
+   total (cuma yang di ATAS/topScrollRef yang kelihatan). Bar vertikal-nya SENGAJA tetap
+   disembunyikan (pakai ::-webkit-scrollbar:vertical) supaya konsisten dengan konvensi app ini
+   (scrollbar vertikal disembunyikan di mana-mana), cuma horizontalnya yang perlu selalu
+   kelihatan karena tabelnya lebar. */
+.scrollbar-x-visible {
+  scrollbar-width: thin;
+  -ms-overflow-style: auto;
+}
+.scrollbar-x-visible::-webkit-scrollbar { display: block; height: 14px; }
+.scrollbar-x-visible::-webkit-scrollbar:vertical { display: none; width: 0; }
+.scrollbar-x-visible::-webkit-scrollbar-track { background: #F1F5F9; }
+.scrollbar-x-visible::-webkit-scrollbar-thumb { background: #94A3B8; border-radius: 99px; border: 3px solid #F1F5F9; }
+.scrollbar-x-visible::-webkit-scrollbar-thumb:hover { background: #64748B; }
+
 /* Class lama -- sekarang redundan (scrollbar sudah hidden by default di atas) tapi dibiarkan
    ada supaya semua pemakaian existing di kode tetap valid tanpa perlu disentuh satu-satu. */
 .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
@@ -98,3 +117,82 @@
 .bunker-html-value [style*="--success"] { color: var(--success) !important; }
 .bunker-html-value [style*="--error"] { color: var(--error) !important; }
 .bunker-html-value [style*="--warning-color"] { color: var(--warning-color) !important; }
+
+/* Print modal "Perbandingan Dokumen — Bunker" (BunkerCompareDocModal) apa adanya, full-page.
+   Modal ini normalnya "fixed inset-0" (layar penuh) supaya browser cuma nyetak apa yang
+   kebetulan kelihatan di satu viewport (persis potongan kecil di screenshot bug report),
+   dan konten di belakangnya (sidebar/tab/list halaman Bunker) ikut tercetak juga karena
+   tidak ada yang menyembunyikannya. Fix: sembunyikan SEMUA elemen body lain saat print,
+   cuma tampilkan #bunker-print-area (di-set jadi position:static di komponen lewat
+   print:static supaya bisa mengalir penuh ke bawah, bukan terpotong 1 layar), dan hilangkan
+   margin kiri-kanan @page supaya kontennya fit dari tepi kiri ke tepi kanan kertas. */
+@media print {
+  @page {
+    margin: 8mm;
+  }
+  body * {
+    visibility: hidden;
+  }
+  #bunker-print-area,
+  #bunker-print-area * {
+    visibility: visible;
+  }
+  #bunker-print-area {
+    /* absolute (BUKAN static/fixed): static tetap ikut alur dokumen jadi terdorong ke bawah
+       oleh ruang kosong bekas konten lain yang cuma disembunyikan visibility:hidden (elemen
+       visibility:hidden TETAP memakan tempat, beda dengan display:none) -- itu penyebab jarak
+       kosong besar di atas & tabel kepotong. absolute keluar dari alur dokumen sepenuhnya
+       (posisi relatif ke page box), tapi tetap bisa mengalir/pecah ke banyak halaman saat
+       print (beda dengan fixed yang dulu bikin hasil cetak putih kosong). */
+    position: absolute !important;
+    inset: auto !important;
+    left: 0 !important;
+    top: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+
+  /* Tabel "2. Perbandingan Antar Dokumen" -- tanpa ini baris tabel bisa kepotong persis di
+     batas pindah halaman PDF (setengah baris kebawa ke halaman berikutnya, ninggalin
+     tampilan seperti kepotong / rowbaris kelihatan hilang), dan header kolom (thead) cuma
+     nongol di halaman pertama padahal tabelnya beberapa halaman. */
+  #bunker-print-area table {
+    page-break-inside: auto;
+  }
+  #bunker-print-area thead {
+    display: table-header-group;
+  }
+  #bunker-print-area tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
+
+/* Print modal "Memo Approval — FAR Overseas Air" (FarOverseasAirDetailModal) -- akar masalah
+   sama persis dengan #bunker-print-area di atas: modal ini "fixed inset-0" + tinggi dibatasi
+   "h-[92vh]" + "overflow-hidden" (scroll internal), dan sebelumnya TIDAK ada aturan print yang
+   memaksanya keluar dari mode fixed/terpotong itu -- makanya browser (Chrome) mencetak halaman
+   kosong/putih sama sekali alih-alih isi memonya. Fix: sama seperti Bunker, sembunyikan semua
+   elemen body lain, tampilkan cuma #far-overseas-print-area, dan paksa jadi position:static
+   (lewat print:static di komponen) supaya kontennya mengalir apa adanya ke kertas.  */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #far-overseas-print-area,
+  #far-overseas-print-area * {
+    visibility: visible;
+  }
+  #far-overseas-print-area {
+    /* Alasan absolute (bukan static): lihat komentar #bunker-print-area di atas -- kasusnya
+       sama persis. */
+    position: absolute !important;
+    inset: auto !important;
+    left: 0 !important;
+    top: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+}

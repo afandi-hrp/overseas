@@ -10,7 +10,10 @@
 export type PageEntry = {
   key: string;
   label: string;
-  path: string;
+  // path kosong = bukan halaman/route tersendiri, cuma "fitur" (tombol aksi modal) di dalam
+  // halaman lain -- lihat courier_cost_validation dkk di bawah. Tidak ikut route guard
+  // (RequirePageAccess), cuma dipakai SharedDataTable.tsx utk sembunyikan/tampilkan tombol.
+  path?: string;
   group: 'Courier' | 'Sea & Air' | 'Direct Loading' | 'Bunker' | 'General' | 'Settings';
 };
 
@@ -19,10 +22,20 @@ export const PAGE_REGISTRY: PageEntry[] = [
   { key: 'courier_audit', label: 'Audit (Courier)', path: '/courier/audit', group: 'Courier' },
   { key: 'courier_rekapan', label: 'Rekapan Invoice (Courier)', path: '/courier/rekapan', group: 'Courier' },
   { key: 'courier_validasi', label: 'Validasi (Courier)', path: '/courier/validasi', group: 'Courier' },
+  // Tombol aksi di dalam Audit (Courier) -- bukan halaman/route tersendiri (lihat catatan path
+  // di PageEntry di atas), jadi kalau di-uncheck di matrix role, tombolnya hilang dari dropdown
+  // "Aksi" tapi halaman Audit (Courier) itu sendiri tetap bisa diakses seperti biasa.
+  { key: 'courier_cost_validation', label: 'Cost Validation (Courier)', group: 'Courier' },
+  { key: 'courier_dokumen_validation', label: 'Dokumen Validation (Courier)', group: 'Courier' },
+  { key: 'courier_checklist_dokumen', label: 'Checklist Dokumen (Courier)', group: 'Courier' },
 
   { key: 'sea_air_upload', label: 'Upload (Sea & Air)', path: '/sea-air/upload', group: 'Sea & Air' },
   { key: 'sea_air_audit', label: 'Audit (Sea & Air)', path: '/sea-air/audit', group: 'Sea & Air' },
   { key: 'sea_air_rekapan', label: 'Rekapan (Sea & Air)', path: '/sea-air/rekapan', group: 'Sea & Air' },
+  // Tombol aksi di dalam Rekapan (Sea & Air) -- sama seperti Courier di atas, bukan route sendiri.
+  { key: 'sea_air_cost_validation', label: 'Cost Validation (Sea & Air)', group: 'Sea & Air' },
+  { key: 'sea_air_dokumen_validation', label: 'Dokumen Validation (Sea & Air)', group: 'Sea & Air' },
+  { key: 'sea_air_checklist_validation', label: 'Checklist Validation (Sea & Air)', group: 'Sea & Air' },
 
   { key: 'direct_loading', label: 'Direct Loading', path: '/direct-loading', group: 'Direct Loading' },
 
@@ -53,7 +66,8 @@ export function pageLabel(key: string): string {
 // (baru dibuat, belum di-assign role oleh PIC), arahkan ke /account -- bukan halaman kosong
 // atau nyangkut di layar "tidak ada akses".
 export function getDefaultLandingPath(allowedPageKeys: Set<string>, isAdmin: boolean): string {
-  if (isAdmin) return PAGE_REGISTRY[0].path;
-  const firstAllowed = PAGE_REGISTRY.find(p => allowedPageKeys.has(p.key));
-  return firstAllowed ? firstAllowed.path : '/account';
+  const routedPages = PAGE_REGISTRY.filter(p => !!p.path);
+  if (isAdmin) return routedPages[0].path!;
+  const firstAllowed = routedPages.find(p => allowedPageKeys.has(p.key));
+  return firstAllowed ? firstAllowed.path! : '/account';
 }

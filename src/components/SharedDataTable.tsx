@@ -33,6 +33,15 @@ const MAIN_TABS = [
   { id: 'trail',   label: '📜 Audit Trail',     table: 'v_audit_trail', realTable: 'audit_trail' },
 ]
 
+// Daftar nama tabel sumber per kategori "jenis aksi" di Audit Trail -- dipetakan ke kolom
+// "tabel" pada v_audit_trail. BUNKER memakai nama tabel real modul Bunker (bunker_dokumen,
+// bunker_processing_queue), pola sama dengan COURIER/SEA_AIR yang sudah ada sebelumnya.
+const TRAIL_TABLES: Record<string, string[]> = {
+  COURIER: ['tabel_audit_pib', 'tabel_audit_cn', 'rekapan_courier', 'tabel_checklist_validasi', 'tabel_cost_validasi'],
+  SEA_AIR: ['tabel_audit_seaair', 'rekapan_seaair', 'dokumen_validasi_matriks_seaair', 'cost_validasi_seaair'],
+  BUNKER: ['bunker_dokumen'],
+}
+
 // ─── Field AI (disabled) dan Manual (editable) per tipe ───────
 
 const MANUAL_FIELDS = {
@@ -2286,7 +2295,8 @@ function getGreetingMeta(date: Date) {
 }
 
 export default function SharedDataTable({ defaultMainTab = 'courier', defaultSubTab = 'courier_audit' }: { defaultMainTab?: string, defaultSubTab?: string }) {
-  const { profile, user } = useAuth();
+  const { profile, user, allowedPageKeys, isAdmin } = useAuth();
+  const canSee = (pageKey: string) => isAdmin || allowedPageKeys.has(pageKey);
   const [activeMainTab, setActiveMainTab] = useState(defaultMainTab)
   const [activeSubTab,  setActiveSubTab]  = useState(defaultSubTab)
 
@@ -2298,7 +2308,9 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
   const [courierAuditType, setCourierAuditType] = useState('archive')
   const [seaAirAuditType, setSeaAirAuditType] = useState('audit')
-  const [activeTrailFilter, setActiveTrailFilter] = useState('COURIER')
+  const [activeTrailFilter, setActiveTrailFilter] = useState('ALL')
+  const [activeTrailUserFilter, setActiveTrailUserFilter] = useState('Semua')
+  const [trailUserTabs, setTrailUserTabs] = useState<string[]>(['Semua'])
   const [activePpjkFilter, setActivePpjkFilter] = useState('All')
   const [activeShipmentTypeFilter, setActiveShipmentTypeFilter] = useState('Semua')
   const [activeAnFilter, setActiveAnFilter] = useState('Semua')
@@ -2386,6 +2398,18 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       setCourierImporAnTabs(['Semua', ...unique.sort()]);
     };
     fetchCourierImporAns();
+  }, []);
+
+  useEffect(() => {
+    const fetchTrailUsers = async () => {
+      // Fetch distinct user (buat filter "peruser" di Audit Trail)
+      const { data } = await supabase.from('v_audit_trail').select('user_email').neq('user_email', null).order('created_at', { ascending: false }).limit(2000);
+      if (data) {
+        const unique = Array.from(new Set(data.map((d: any) => d.user_email && String(d.user_email).trim()).filter(Boolean))) as string[];
+        setTrailUserTabs(['Semua', ...unique.sort()]);
+      }
+    };
+    fetchTrailUsers();
   }, []);
 
   useEffect(() => {
@@ -2565,10 +2589,14 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       query = seaAirAuditType === 'draft' ? query.eq('status', 'ARCHIVED') : query.neq('status', 'ARCHIVED');
     }
 
-    // Apply Filter by Trail -- dipisah Courier vs Sea & Air
+    // Apply Filter by Trail -- jenis aksi (Courier / Sea & Air / Bunker / Semua)
     if (activeMainTab === 'trail') {
-      if (activeTrailFilter === 'COURIER') query = query.in('tabel', ['tabel_audit_pib', 'tabel_audit_cn', 'rekapan_courier', 'tabel_checklist_validasi', 'tabel_cost_validasi']);
-      if (activeTrailFilter === 'SEA_AIR') query = query.in('tabel', ['tabel_audit_seaair', 'rekapan_seaair', 'dokumen_validasi_matriks_seaair', 'cost_validasi_seaair']);
+      if (activeTrailFilter !== 'ALL' && TRAIL_TABLES[activeTrailFilter]) {
+        query = query.in('tabel', TRAIL_TABLES[activeTrailFilter]);
+      }
+      if (activeTrailUserFilter !== 'Semua') {
+        query = query.eq('user_email', activeTrailUserFilter);
+      }
     }
 
     // Apply Filter by PPJK
@@ -2607,6 +2635,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       else if ((activeMainTab === 'courier' && activeSubTab === 'courier_audit')) query = query.gte('tgl_ppjk', filterStartDate);
       else if ((activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit')) query = query.gte('tgl_ppjk', filterStartDate);
       else if ((activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan')) query = query.gte('tgl', filterStartDate);
+      else if (activeMainTab === 'trail') query = query.gte('created_at', filterStartDate);
     }
     if (filterEndDate) {
       const endOfDay = `${filterEndDate} 23:59:59`;
@@ -2614,6 +2643,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       else if ((activeMainTab === 'courier' && activeSubTab === 'courier_audit')) query = query.lte('tgl_ppjk', endOfDay);
       else if ((activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit')) query = query.lte('tgl_ppjk', endOfDay);
       else if ((activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan')) query = query.lte('tgl', endOfDay);
+      else if (activeMainTab === 'trail') query = query.lte('created_at', endOfDay);
     }
 
     // Apply Search
@@ -2749,7 +2779,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       setFetchError(error.message);
     }
     setLoading(false)
-  }, [tab, activeMainTab, activeSubTab, courierAuditType, seaAirAuditType, activeTrailFilter, activePpjkFilter, activeShipmentTypeFilter, activeAnFilter, activeImporAnFilter, activeCourierAnFilter, activeCourierImporAnFilter, debouncedSearch, sortColumn, sortDirection, page, pageSize, filterStartDate, filterEndDate])
+  }, [tab, activeMainTab, activeSubTab, courierAuditType, seaAirAuditType, activeTrailFilter, activeTrailUserFilter, activePpjkFilter, activeShipmentTypeFilter, activeAnFilter, activeImporAnFilter, activeCourierAnFilter, activeCourierImporAnFilter, debouncedSearch, sortColumn, sortDirection, page, pageSize, filterStartDate, filterEndDate])
 
   const getExportData = async (startDate?: string, endDate?: string) => {
     if (!tab) return []
@@ -2817,6 +2847,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       else if ((activeMainTab === 'courier' && activeSubTab === 'courier_audit')) query = query.gte('tgl_ppjk', startDate);
       else if ((activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit')) query = query.gte('tgl_ppjk', startDate);
       else if ((activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan')) query = query.gte('tgl', startDate);
+      else if (activeMainTab === 'trail') query = query.gte('created_at', startDate);
     }
     if (endDate) {
       const endOfDay = `${endDate} 23:59:59`;
@@ -2824,6 +2855,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       else if ((activeMainTab === 'courier' && activeSubTab === 'courier_audit')) query = query.lte('tgl_ppjk', endOfDay);
       else if ((activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit')) query = query.lte('tgl_ppjk', endOfDay);
       else if ((activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan')) query = query.lte('tgl', endOfDay);
+      else if (activeMainTab === 'trail') query = query.lte('created_at', endOfDay);
     }
 
     // Apply Archive Filter
@@ -2836,10 +2868,14 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       query = seaAirAuditType === 'draft' ? query.eq('status', 'ARCHIVED') : query.neq('status', 'ARCHIVED');
     }
 
-    // Apply Filter by Trail -- dipisah Courier vs Sea & Air
+    // Apply Filter by Trail -- jenis aksi (Courier / Sea & Air / Bunker / Semua)
     if (activeMainTab === 'trail') {
-      if (activeTrailFilter === 'COURIER') query = query.in('tabel', ['tabel_audit_pib', 'tabel_audit_cn', 'rekapan_courier', 'tabel_checklist_validasi', 'tabel_cost_validasi']);
-      if (activeTrailFilter === 'SEA_AIR') query = query.in('tabel', ['tabel_audit_seaair', 'rekapan_seaair', 'dokumen_validasi_matriks_seaair', 'cost_validasi_seaair']);
+      if (activeTrailFilter !== 'ALL' && TRAIL_TABLES[activeTrailFilter]) {
+        query = query.in('tabel', TRAIL_TABLES[activeTrailFilter]);
+      }
+      if (activeTrailUserFilter !== 'Semua') {
+        query = query.eq('user_email', activeTrailUserFilter);
+      }
     }
 
     // Apply Filter by PPJK
@@ -3298,12 +3334,14 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
             <div className="flex flex-col gap-4 mb-4">
               <div className={`flex flex-nowrap justify-between items-center gap-2 rounded-2xl px-3 py-3 border overflow-x-auto ${TOOLBAR_GLASS}`}>
                 <div className="flex-1 flex gap-2 items-center flex-wrap">
-                  {/* Trail Filter -- dipisah Courier vs Sea & Air */}
+                  {/* Trail Filter -- jenis aksi: Semua / Courier / Sea & Air / Bunker */}
                   {activeMainTab === 'trail' && (
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 items-center pb-1 overflow-x-auto max-w-[60vw]">
                       {[
+                        { id: 'ALL', label: 'Semua' },
                         { id: 'COURIER', label: 'Courier' },
-                        { id: 'SEA_AIR', label: 'Sea & Air' }
+                        { id: 'SEA_AIR', label: 'Sea & Air' },
+                        { id: 'BUNKER', label: 'Bunker' },
                       ].map(t => (
                         <button
                           key={t.id}
@@ -3314,6 +3352,18 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         </button>
                       ))}
                     </div>
+                  )}
+                  {/* Trail Filter -- per user */}
+                  {activeMainTab === 'trail' && (
+                    <select
+                      value={activeTrailUserFilter}
+                      onChange={e => { setActiveTrailUserFilter(e.target.value); setPage(1); }}
+                      className={`rounded-full px-3 py-2 text-xs font-semibold focus:outline-none border max-w-[180px] ${TOOLBAR_GLASS}`}
+                    >
+                      {trailUserTabs.map(u => (
+                        <option key={u} value={u}>{u === 'Semua' ? 'Semua User' : u}</option>
+                      ))}
+                    </select>
                   )}
                   {/* PPJK Filter for Courier */}
                   {(activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') && (
@@ -3376,7 +3426,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   )}
                 </div>
                 <div className="flex gap-1.5 items-center flex-wrap justify-end">
-                {['sea_air_audit', 'sea_air_rekapan'].includes(activeSubTab) && (
+                {(['sea_air_audit', 'sea_air_rekapan'].includes(activeSubTab) || activeMainTab === 'trail') && (
                   <div className={`flex gap-1.5 items-center rounded-full pl-2.5 pr-1.5 py-1 h-[38px] border shrink-0 ${TOOLBAR_GLASS}`}>
                     <CalendarDays size={13} className="text-[#5A305A] shrink-0" />
                     <input
@@ -3579,7 +3629,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 {/* Table container */}
                 <div 
                   ref={bottomScrollRef}
-                  className="flex-1 overflow-x-auto overflow-y-auto w-full custom-scrollbar"
+                  className="flex-1 overflow-x-auto overflow-y-auto w-full scrollbar-x-visible"
                   onScroll={handleBottomScroll}
                 >
                   <table ref={tableRef} className="w-full text-sm min-w-max relative border-collapse">
@@ -3645,9 +3695,9 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                             rec={rec}
                             index={startIndex + index}
                             cols={activeCols}
-                            onChecklist={setSeaAirChecklistRecord}
-                            onValidasi={setSeaAirValidasiRecord}
-                            onCostValidasi={setSeaAirCostValidasiRecord}
+                            onChecklist={canSee('sea_air_checklist_validation') ? setSeaAirChecklistRecord : undefined}
+                            onValidasi={canSee('sea_air_dokumen_validation') ? setSeaAirValidasiRecord : undefined}
+                            onCostValidasi={canSee('sea_air_cost_validation') ? setSeaAirCostValidasiRecord : undefined}
                             onDelete={handleDelete}
                             onDraft={handleDraftSeaAir}
                             onUndraft={handleUndraftSeaAir}
@@ -3664,9 +3714,9 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                             index={startIndex + index}
                             cols={activeCols}
                             onEdit={setEditRecord}
-                            onChecklist={setChkRecord}
-                            onValidasi={setValidasiRecord}
-                            onCostValidasi={(r) => setCostValidasiRecord(r)}
+                            onChecklist={canSee('courier_checklist_dokumen') ? setChkRecord : undefined}
+                            onValidasi={canSee('courier_dokumen_validation') ? setValidasiRecord : undefined}
+                            onCostValidasi={canSee('courier_cost_validation') ? (r) => setCostValidasiRecord(r) : undefined}
                             onArchive={courierAuditType !== 'archive' ? handleArchive : undefined}
                             onUndraft={courierAuditType === 'archive' ? handleUndraft : undefined}
                             onDelete={handleDelete}

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, AlertTriangle, ListChecks, ClipboardList, Save, ShieldCheck, CheckCircle2, XCircle, RotateCcw, Printer } from 'lucide-react';
 import {
   parseJsonField, getMatrixColumns, resolveAcuanColumnKey, summaryStatusMeta,
@@ -241,9 +242,13 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged }: {
     }
   };
 
-  return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[70] flex justify-center items-center p-2 sm:p-4 md:p-6 w-full h-full print:relative print:inset-auto print:bg-white print:p-0 print:block">
-      <div className="bg-slate-50 w-full h-full rounded-2xl shadow-2xl flex flex-col overflow-hidden print:h-auto print:max-h-none print:shadow-none print:rounded-none print:w-full">
+  // Portal langsung ke document.body -- lihat komentar sama di FarOverseasAirDetailModal.tsx:
+  // menghindari #bunker-print-area ke-posisi relatif ke ancestor "relative" milik halaman ini
+  // sendiri saat print, yang masih ikut terdorong ruang kosong konten lain (visibility:hidden
+  // tetap memakan tempat).
+  return createPortal(
+    <div id="bunker-print-area" className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[70] flex justify-center items-center p-2 sm:p-4 md:p-6 w-full h-full print:static print:bg-white print:p-0 print:block print:w-auto print:h-auto">
+      <div className="bg-slate-50 w-full h-full rounded-2xl shadow-2xl flex flex-col overflow-hidden print:h-auto print:max-h-none print:shadow-none print:rounded-none print:w-full print:overflow-visible print:block">
 
         <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-slate-200 bg-white shrink-0 print:border-b-2">
           <div className="min-w-0">
@@ -267,8 +272,8 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged }: {
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto custom-scrollbar print:overflow-visible">
-          <div className="p-4 md:p-6 space-y-5">
+        <div className="flex-1 overflow-y-auto custom-scrollbar print:overflow-visible print:block print:h-auto">
+          <div className="p-4 md:p-6 space-y-5 print:p-0">
 
             {/* Summary */}
             <div className={`rounded-xl border p-4 ${statusMeta.bannerClass}`}>
@@ -342,7 +347,7 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged }: {
             </div>
 
             {/* 2. PERBANDINGAN ANTAR DOKUMEN */}
-            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="bg-white rounded-xl border border-slate-200 overflow-hidden print:overflow-visible">
               <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
                 <h3 className="text-sm font-bold text-[#5A305A]">2. Perbandingan Antar Dokumen</h3>
               </div>
@@ -358,8 +363,13 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged }: {
                     <colgroup>
                       <col style={{ width: '14%' }} />
                       {matrixColumns.map(c => <col key={c.key} style={{ width: `${68 / matrixColumns.length}%` }} />)}
-                      <col style={{ width: '9%' }} />
-                      <col style={{ width: '9%' }} />
+                      {/* Kolom Status lebar normalnya 9%, tapi saat print melebar jadi 18% --
+                          mengambil alih jatah kolom Konfirmasi yang di-print:hidden di bawah
+                          ini, supaya total tetap 100% dan tidak menyisakan ruang kosong di
+                          kanan tabel saat dicetak (col dgn display:none TIDAK otomatis
+                          membebaskan lebarnya ke kolom lain di table-layout:fixed). */}
+                      <col className="w-[9%] print:w-[18%]" />
+                      <col className="w-[9%] print:hidden" />
                     </colgroup>
                     <thead>
                       <tr className="text-[9.5px] text-white uppercase bg-[#5A305A]">
@@ -478,6 +488,7 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged }: {
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

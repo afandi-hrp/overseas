@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 
@@ -67,10 +67,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsAdmin(!!data.is_admin);
   };
 
+  // Lacak user id terakhir yang diketahui -- dipakai buat bedakan "login/ganti user
+  // sungguhan" vs "sesi cuma di-reaffirm Supabase" (lihat komentar di bawah). TIDAK bisa
+  // mengandalkan nama event ('SIGNED_IN'/'TOKEN_REFRESHED') karena supabase-js ternyata
+  // memancarkan ULANG event 'SIGNED_IN' (bukan cuma 'TOKEN_REFRESHED') setiap kali tab
+  // browser kembali fokus dan sesi belum mendekati kedaluwarsa -- lihat
+  // node_modules/@supabase/auth-js GoTrueClient#_recoverAndRefresh(), cabang terakhirnya
+  // manggil _notifyAllSubscribers('SIGNED_IN', currentSession) tiap _onVisibilityChanged.
+  const lastUserIdRef = useRef<string | null>(null);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setSessionLoading(false);
+      lastUserIdRef.current = data.session?.user?.id ?? null;
       if (data.session?.user) {
         fetchProfile(data.session.user.id);
         fetchAccess().finally(() => setAccessLoading(false));
@@ -81,10 +91,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession);
+      const newUserId = newSession?.user?.id ?? null;
+      const isRealUserChange = newUserId !== lastUserIdRef.current;
+      lastUserIdRef.current = newUserId;
+
       if (newSession?.user) {
         fetchProfile(newSession.user.id);
-        setAccessLoading(true);
-        fetchAccess().finally(() => setAccessLoading(false));
+        if (isRealUserChange) {
+          setAccessLoading(true);
+          fetchAccess().finally(() => setAccessLoading(false));
+        } else {
+          // User yang sama seperti sebelumnya -- sesi cuma di-reaffirm/refresh otomatis
+          // (mis. Supabase mengulang event ini tiap tab browser kembali fokus). Refresh data
+          // akses di BACKGROUND saja, JANGAN nyalakan accessLoading/loading global -- kalau
+          // tidak, RequirePageAccess/ProtectedRoute me-render ulang jadi spinner, meng-unmount
+          // SELURUH halaman (termasuk modal yang lagi terbuka) cuma gara-gara pindah tab.
+          fetchAccess();
+        }
       } else {
         setProfile(null);
         setAllowedPageKeys(new Set());
