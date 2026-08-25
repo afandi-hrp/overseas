@@ -101,6 +101,44 @@ const comparePoSet = (refVal: any, docVal: any): boolean => {
   return a.every((v, i) => v === b[i]);
 };
 
+// Untuk baris ORIGIN/DESTINATION -- fuzzyMatch (perbandingan teks murni) tidak cukup di sini
+// karena dua alasan: (1) satu dokumen kadang nulis nama pelabuhan lama pakai notasi "(EX ...)"
+// (mis. "BUSAN (EX PUSAN)") yang harus diabaikan saat dibanding versi tanpa keterangan itu
+// (mis. "BUSAN, KOREA"), dan (2) satu dokumen nulis nama pelabuhan (mis. "TANJUNG PRIOK")
+// sementara dokumen lain nulis kota+negara administratifnya (mis. "JAKARTA, INDONESIA") --
+// keduanya sama-sama benar & merujuk lokasi yang sama, cuma beda level detail, dan fuzzyMatch
+// teks tidak akan pernah menganggap dua kata yang beda total itu mirip. Tambahkan pelabuhan
+// lain ke peta ini kalau nanti muncul kasus serupa.
+const PORT_TO_CITY_COUNTRY: Record<string, string[]> = {
+  'TANJUNG PRIOK': ['JAKARTA', 'INDONESIA'],
+  'TANJUNG PERAK': ['SURABAYA', 'INDONESIA'],
+  'TANJUNG EMAS': ['SEMARANG', 'INDONESIA'],
+  'BELAWAN': ['MEDAN', 'INDONESIA'],
+};
+
+const stripPortNotes = (s: string) => s.replace(/\(ex[^)]*\)/gi, '').trim();
+
+const locationParts = (val: any): string[] => {
+  const cleaned = stripPortNotes(String(val ?? '')).toLowerCase();
+  return cleaned.split(',').map(p => p.trim().replace(/[^a-z0-9 ]/g, '').trim()).filter(Boolean);
+};
+
+const matchLocation = (val1: any, val2: any): boolean => {
+  if (val1 === null || val2 === null || val1 === undefined || val2 === undefined) return false;
+  const parts1 = locationParts(val1);
+  const parts2 = locationParts(val2);
+  if (parts1.length === 0 || parts2.length === 0) return false;
+
+  // Cocok kalau ada bagian yang identik (nama kota/pelabuhan/negara persis sama, mis. "busan")
+  if (parts1.some(p1 => parts2.includes(p1))) return true;
+
+  // Cocok lewat pemetaan pelabuhan -> kota+negara (mis. "TANJUNG PRIOK" == "JAKARTA, INDONESIA")
+  const expandPorts = (parts: string[]) => parts.flatMap(p => PORT_TO_CITY_COUNTRY[p.toUpperCase()]?.map(m => m.toLowerCase()) || []);
+  const expanded1 = [...parts1, ...expandPorts(parts1)];
+  const expanded2 = [...parts2, ...expandPorts(parts2)];
+  return expanded1.some(p => expanded2.includes(p));
+};
+
 const fuzzyMatch = (val1: any, val2: any): boolean => {
   if (val1 === null || val2 === null || val1 === undefined || val2 === undefined) return false;
   
@@ -1314,6 +1352,8 @@ export default function SeaAirValidasiModal({ record, onClose }: { record: any, 
                            c.match = strictAlnumMatch(effectiveRef, c.values.doc);
                        } else if (c.row === "NO PO") {
                            c.match = comparePoSet(effectiveRef, c.values.doc);
+                       } else if (["ORIGIN", "DESTINATION", "Origin", "Destination"].includes(c.row)) {
+                           c.match = matchLocation(effectiveRef, c.values.doc);
                        } else {
                            c.match = fuzzyMatch(effectiveRef, c.values.doc);
                        }
