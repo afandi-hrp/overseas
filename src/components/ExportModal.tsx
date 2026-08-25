@@ -48,8 +48,51 @@ const fmtDate = (v: any) => {
   return new Date(v).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
+// Kolom yang punya nilai BERBEDA per PO (dibaca dari po_detail) di tampilan Rekapan Sea & Air
+// (lihat repeatingCols di SeaAirRekapanRowGroup, SharedDataTable.tsx) -- dipakai export Excel
+// utk tahu kolom mana yang harus jadi baris terpisah per PO vs kolom mana yang harus di-merge
+// jadi satu sel (karena nilainya sama utk semua PO dalam 1 shipment).
+const SEA_AIR_SPLIT_REPEATING_COLS = ['po_no', 'vessel', 'emkl_split', 'split_biaya_origin', 'split_biaya_destination', 'pbm_split', 'lift_off_split', 'inspeksi_split', 'handling_split', 'other_split', 'duty_split', 'bm_split', 'ppn_split', 'pph_split'];
+
+// Sama seperti di atas, tapi utk Rekapan Courier (lihat repeatingCols di CourierRekapanRowGroup,
+// SharedDataTable.tsx) -- strukturnya beda dari Sea & Air: PO & vessel di sini BUKAN array JSON
+// po_detail, melainkan 2 kolom teks terpisah (po_pt_imi, vessel) yang masing-masing berisi
+// beberapa nilai digabung "+"/"," dan dipasangkan berdasarkan urutan (index ke-i sama-sama).
+const COURIER_REKAPAN_SPLIT_REPEATING_COLS = ['po_pt_imi', 'vessel', 'breakdown_courier_adm_vessel', 'breakdown_duty_vessel', 'breakdown_freight_vessel', 'breakdown_bm_vessel', 'breakdown_ppnpph_vessel'];
+
 const isNumType = (type: string, key: string) => key === 'cek_selisih' || type.startsWith('num')
 const isPctType = (type: string) => type.startsWith('pct')
+
+// Parsing po_detail sama persis dgn SeaAirRekapanRowGroup (SharedDataTable.tsx) -- kalau kosong
+// atau gagal parse, anggap 1 PO "kosong" supaya tetap ada 1 baris (bukan 0 baris).
+const parsePoDetail = (item: any): any[] => {
+  try {
+    if (Array.isArray(item?.po_detail) && item.po_detail.length > 0) return item.po_detail
+    if (typeof item?.po_detail === 'string') {
+      const parsed = JSON.parse(item.po_detail)
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed
+    }
+  } catch (e) { /* fall through */ }
+  return [{ po_no: '', vessel: '' }]
+}
+
+// Parsing po_pt_imi/vessel sama persis dgn CourierRekapanRowGroup (SharedDataTable.tsx).
+const parseCourierPoVesselPairs = (item: any): { po: string, vessel: string }[] => {
+  let pairs: { po: string, vessel: string }[] = []
+  if (typeof item?.po_pt_imi === 'string') {
+    const pos = item.po_pt_imi.split(/[+,]+/).map((s: string) => s.trim()).filter(Boolean)
+    const vessels = typeof item?.vessel === 'string' ? item.vessel.split(/[+,]+/).map((s: string) => s.trim()).filter(Boolean) : []
+    const maxLen = Math.max(pos.length, vessels.length)
+    for (let i = 0; i < maxLen; i++) {
+      pairs.push({
+        po: pos[i] || (pos.length === 1 ? pos[0] : ''),
+        vessel: vessels[i] || (vessels.length === 1 ? vessels[0] : '')
+      })
+    }
+  }
+  if (pairs.length === 0) pairs = [{ po: '', vessel: '' }]
+  return pairs
+}
 
 const formatValue = (v: any, type: string, key: string) => {
   if (v === null || v === undefined) return '—';
@@ -114,13 +157,21 @@ export default function ExportModal({
   cols,
   onClose,
   fetchData,
-  dateFieldLabel
+  dateFieldLabel,
+  splitByPoDetail
 }: {
   title: string
   cols: any[]
   onClose: () => void
   fetchData: (start?: string, end?: string) => Promise<any[]>
   dateFieldLabel?: string
+  // Khusus Rekapan Sea & Air / Rekapan Courier: 1 shipment bisa punya beberapa PO. Kalau diisi,
+  // tiap PO jadi baris Excel terpisah (kolom po/vessel/dst ikut per-PO), sementara kolom lain
+  // yang nilainya sama utk semua PO di-merge jadi 1 sel supaya kelihatan sebagai satu kesatuan.
+  // 'sea_air_rekapan' baca dari po_detail (array JSON), 'courier_rekapan' baca dari po_pt_imi +
+  // vessel (2 kolom teks digabung "+"/",", dipasangkan per-index) -- lihat parsePoDetail /
+  // parseCourierPoVesselPairs di atas.
+  splitByPoDetail?: 'sea_air_rekapan' | 'courier_rekapan'
 }) {
   const { user } = useAuth()
   const [data, setData] = useState<any[]>([])
@@ -183,29 +234,30 @@ export default function ExportModal({
         ...exportCols.map(c => ({ header: c.label, key: c.key, width: 18 }))
       ]
 
-      data.forEach((item, idx) => {
-        const rowValues: any = { __no: idx + 1 }
-        exportCols.forEach(c => {
-          let val = item[c.key]
+      // Hitung nilai 1 sel siap-tulis (dipakai baik utk baris normal maupun baris hasil split
+      // per-PO) -- overrideVal (kalau ada) menang atas item[c.key], dan fallback po_detail-join
+      // (utk po_no/vessel yg field aslinya kosong) DIMATIKAN saat splitByPoDetail karena di mode
+      // itu po_no/vessel per baris sudah pasti diisi langsung dari po object masing-masing PO.
+      const buildCellValue = (item: any, c: any, overrideVal: any, skipPoFallback: boolean) => {
+        let val = overrideVal !== undefined ? overrideVal : item[c.key]
 
-          if ((c.key === 'po_no' || c.key === 'vessel') && (val === null || val === undefined || val === '') && item.po_detail) {
-            val = extractPoDetailField(item, c.key) || null;
-          } else if (c.key === 'hs_code' && typeof val === 'string') {
-            const parts = val.split(/[+,]+/).map((s: string) => s.trim()).filter(Boolean);
-            val = Array.from(new Set(parts)).join(', ');
-          } else if (c.key === 'no_aju' || c.key === 'no_pib') {
-            val = formatNoAju(val);
-          }
+        if (!skipPoFallback && (c.key === 'po_no' || c.key === 'vessel') && (val === null || val === undefined || val === '') && item.po_detail) {
+          val = extractPoDetailField(item, c.key) || null;
+        } else if (c.key === 'hs_code' && typeof val === 'string') {
+          const parts = val.split(/[+,]+/).map((s: string) => s.trim()).filter(Boolean);
+          val = Array.from(new Set(parts)).join(', ');
+        } else if (c.key === 'no_aju' || c.key === 'no_pib') {
+          val = formatNoAju(val);
+        }
 
-          const type = c.type || ''
-          const numericVal = Number(val)
-          const isRealNumber = (isNumType(type, c.key) || isPctType(type)) && val !== null && val !== undefined && val !== '' && !isNaN(numericVal)
+        const type = c.type || ''
+        const numericVal = Number(val)
+        const isRealNumber = (isNumType(type, c.key) || isPctType(type)) && val !== null && val !== undefined && val !== '' && !isNaN(numericVal)
 
-          rowValues[c.key] = isRealNumber ? numericVal : formatValue(val, type, c.key)
-        })
+        return isRealNumber ? numericVal : formatValue(val, type, c.key)
+      }
 
-        const row = worksheet.addRow(rowValues)
-
+      const applyNumberFormat = (row: any) => {
         exportCols.forEach(c => {
           const type = c.type || ''
           const cell = row.getCell(c.key)
@@ -214,6 +266,61 @@ export default function ExportModal({
             cell.alignment = { horizontal: 'right' }
           }
         })
+      }
+
+      // Bangun daftar override per baris-split + kolom mana yang "ikut per-PO" (repeating),
+      // tergantung mode-nya -- lihat parsePoDetail (Sea & Air) vs parseCourierPoVesselPairs
+      // (Courier) di atas. Return null kalau splitByPoDetail tidak aktif utk mode ini.
+      const getSplitRows = (item: any): { overrides: Record<string, any> }[] | null => {
+        if (splitByPoDetail === 'sea_air_rekapan') {
+          return parsePoDetail(item).map((po: any) => ({ overrides: { po_no: po.po_no ?? '', vessel: po.vessel ?? '' } }))
+        }
+        if (splitByPoDetail === 'courier_rekapan') {
+          return parseCourierPoVesselPairs(item).map(p => ({ overrides: { po_pt_imi: p.po, vessel: p.vessel } }))
+        }
+        return null
+      }
+      const splitRepeatingCols = splitByPoDetail === 'courier_rekapan' ? COURIER_REKAPAN_SPLIT_REPEATING_COLS : SEA_AIR_SPLIT_REPEATING_COLS
+
+      data.forEach((item, idx) => {
+        const splitRows = getSplitRows(item)
+        if (splitRows) {
+          const firstExcelRow = worksheet.rowCount + 1
+
+          splitRows.forEach(({ overrides }) => {
+            const rowValues: any = { __no: idx + 1 }
+            exportCols.forEach(c => {
+              const isSplitCol = splitRepeatingCols.includes(c.key)
+              const overrideVal = c.key in overrides ? overrides[c.key] : undefined
+              rowValues[c.key] = buildCellValue(item, c, overrideVal, isSplitCol)
+            })
+            const row = worksheet.addRow(rowValues)
+            applyNumberFormat(row)
+          })
+
+          const lastExcelRow = worksheet.rowCount
+          if (lastExcelRow > firstExcelRow) {
+            // Merge kolom "No." + semua kolom yang BUKAN per-PO jadi 1 sel, supaya kelihatan
+            // sebagai satu kesatuan shipment (bukan diulang-ulang tiap baris PO).
+            worksheet.mergeCells(firstExcelRow, 1, lastExcelRow, 1)
+            worksheet.getCell(firstExcelRow, 1).alignment = { vertical: 'middle', horizontal: 'center' }
+            exportCols.forEach((c, colIdx) => {
+              if (splitRepeatingCols.includes(c.key)) return
+              const excelCol = colIdx + 2
+              worksheet.mergeCells(firstExcelRow, excelCol, lastExcelRow, excelCol)
+              const mergedCell = worksheet.getCell(firstExcelRow, excelCol)
+              mergedCell.alignment = { ...(mergedCell.alignment || {}), vertical: 'middle' }
+            })
+          }
+          return
+        }
+
+        const rowValues: any = { __no: idx + 1 }
+        exportCols.forEach(c => {
+          rowValues[c.key] = buildCellValue(item, c, undefined, false)
+        })
+        const row = worksheet.addRow(rowValues)
+        applyNumberFormat(row)
       })
 
       // Header -- warna beda dari isi list-nya

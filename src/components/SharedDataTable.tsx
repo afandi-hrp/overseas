@@ -2438,7 +2438,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   const [sortColumn,    setSortColumn]    = useState('created_at')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   
-  const [exportModalState, setExportModalState] = useState<{title: string, cols: any[], dateFieldLabel?: string} | null>(null)
+  const [exportModalState, setExportModalState] = useState<{title: string, cols: any[], dateFieldLabel?: string, splitByPoDetail?: 'sea_air_rekapan' | 'courier_rekapan'} | null>(null)
 
   // Scroll sync refs
   const topScrollRef = useRef<HTMLDivElement>(null)
@@ -3248,6 +3248,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           title={exportModalState.title}
           cols={exportModalState.cols}
           dateFieldLabel={exportModalState.dateFieldLabel}
+          splitByPoDetail={exportModalState.splitByPoDetail}
           onClose={() => setExportModalState(null)}
           fetchData={getExportData}
         />
@@ -3490,7 +3491,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                       else if ((activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit')) dateFieldLabel = 'Filter Tgl. PPJK';
                       else if ((activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan')) dateFieldLabel = 'Filter Tgl.';
 
-                      setExportModalState({ title, cols: activeCols, dateFieldLabel })
+                      const splitByPoDetail =
+                        (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan') ? 'sea_air_rekapan' :
+                        (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') ? 'courier_rekapan' :
+                        undefined;
+                      setExportModalState({ title, cols: activeCols, dateFieldLabel, splitByPoDetail })
                     }}
                     className="px-3 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold border border-emerald-700 transition-all h-[38px] flex justify-center items-center gap-1.5 shadow-sm shrink-0"
                   >

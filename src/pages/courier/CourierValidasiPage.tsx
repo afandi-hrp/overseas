@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import ExportModal from '../../components/ExportModal';
 
-import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, RefreshCw, Download, X, FileCheck2 } from 'lucide-react';
 import { SECTIONS, computeStatus } from '../../utils/ValidasiHelper';
 import { generateValues } from '../../utils/ValidasiFill';
 import { calculatePibStats } from '../../utils/ValidasiPibHelper';
@@ -306,257 +306,171 @@ export default function CourierValidasiPage() {
 
   const totalPages = Math.ceil(totalRecords / pageSize);
 
-  const S = {
-    card: {
-      background: "#fff",
-      border: "1px solid #e2e8f0",
-      borderRadius: "12px",
-      padding: "16px",
-      display: "flex",
-      flexDirection: "row" as const,
-      justifyContent: "space-between",
-      alignItems: "center",
-      boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-      gap: "16px"
-    },
-    metaRow: {
-      display: "flex",
-      gap: "32px",
-      flexWrap: "wrap" as const
-    },
-    metaCol: {
-      display: "flex",
-      flexDirection: "column" as const,
-      gap: "4px"
-    },
-    label: {
-      fontSize: "11px",
-      color: "#64748b",
-      fontWeight: 500,
-      textTransform: "uppercase" as const,
-      letterSpacing: "0.5px"
-    },
-    value: {
-      fontSize: "14px",
-      fontWeight: 600,
-      color: "#0f172a"
-    },
-    scoreWrap: {
-      display: "flex",
-      gap: "8px",
-      flexShrink: 0
-    },
-    scoreCard: (bg: string, c: string) => ({
-      background: bg,
-      color: c,
-      borderRadius: "8px",
-      padding: "6px 12px",
-      textAlign: "center" as const,
-      minWidth: "64px"
-    }),
-    scoreNum: {
-      fontSize: "18px",
-      fontWeight: 600,
-      display: "block",
-      lineHeight: 1.1
-    },
-    scoreLabel: {
-      fontSize: "11px",
-      fontWeight: 500,
-      display: "block",
-      marginTop: "4px"
-    },
-    progressWrap: {
-      height: "6px",
-      borderRadius: "3px",
-      background: "#e2e8f0",
-      marginTop: "8px",
-      overflow: "hidden"
-    },
-    progressBar: (pct: number) => ({
-      height: "100%",
-      width: pct + "%",
-      background: pct >= 90 ? "#3B6D11" : pct >= 60 ? "#BA7517" : "#A32D2D",
-      transition: "width .4s"
-    })
-  };
+  // Toolbar/panel "kaca" senada dengan halaman Audit/Rekapan Courier & Sea/Air (SharedDataTable.tsx).
+  const TOOLBAR_GLASS = 'bg-white/70 backdrop-blur-md border-slate-200/80 shadow-sm';
 
-  const bgSuccess = "#ecfccb";
-  const txtSuccess = "#3f6212";
-  const bgDanger = "#ffe4e6";
-  const txtDanger = "#9f1239";
-  const bgSec = "#f1f5f9";
-  const txtSec = "#475569";
+  const progressBarColor = (pct: number) =>
+    pct >= 90 ? 'bg-emerald-600' : pct >= 60 ? 'bg-amber-500' : 'bg-rose-600';
 
   return (
-    <div className="flex-1 flex flex-col h-screen overflow-hidden bg-slate-50 relative">
-      <div className="p-4 md:px-6 md:py-5 border-b border-slate-200 bg-white flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0">
-        <div>
-          <h1 className="text-xl font-bold text-[#5A305A]">Validasi Courier</h1>
-          <p className="text-sm font-light text-[#5A305A] mt-1">Daftar rekapan validasi dokumen</p>
-    
-    </div>
-        
-        <div className="flex items-center gap-2">
-          <button
-            onClick={fetchRecords}
-            className="px-4 py-2 rounded-xl bg-white border border-slate-200 text-[#5A305A] text-xs font-semibold hover:border-slate-300 transition-all h-[38px]"
-          >
-            ↻ Refresh
-          </button>
-          <button
-            onClick={() => setExportModalState({ title: 'Validasi Dokumen', cols: VALIDASI_COLS, dateFieldLabel: 'Filter Tgl. Validasi' })}
-            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold border border-emerald-700 transition-all h-[38px] flex justify-center items-center gap-1.5"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
-            Export
-          </button>
-    
-    </div>
+    <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
+      <header className="px-6 pt-1 pb-2 shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
+            <FileCheck2 size={17} />
+          </div>
+          <div>
+            <h1 className="font-bold text-xl text-[#5A305A] leading-tight">Validasi Courier</h1>
+            <p className="text-xs font-light text-[#5A305A]/70 mt-0.5">Daftar rekapan validasi dokumen</p>
+          </div>
+        </div>
+      </header>
 
-        <div className="relative w-full md:w-72">
-          <input
-            type="text"
-            placeholder="Cari AWB, Jenis Dokumen..."
-            className="w-full pl-9 pr-4 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <Search className="w-4 h-4 text-[#5A305A] absolute left-3 top-2.5" />
-    
-    </div>
-  
-    </div>
+      <main className="px-6 py-4 flex-1 flex flex-col overflow-hidden">
+        {/* ── Toolbar: search + aksi ── */}
+        <div className={`flex flex-nowrap justify-between items-center gap-2 rounded-2xl px-3 py-3 border overflow-x-auto mb-4 shrink-0 ${TOOLBAR_GLASS}`}>
+          <div className="relative shrink-0">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A305A] pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Cari AWB, Jenis Dokumen..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className={`w-40 rounded-full pl-8 pr-7 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A] focus:bg-white/90 focus:w-56 transition-all border ${TOOLBAR_GLASS}`}
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#5A305A] hover:text-[#5A305A] focus:outline-none"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={fetchRecords}
+              className="px-3.5 py-2 rounded-full bg-white text-[#5A305A] text-xs font-semibold hover:border-[#5A305A] transition-all h-[38px] flex items-center gap-1.5 border border-slate-200"
+            >
+              <RefreshCw size={13} /> Refresh
+            </button>
+            <button
+              onClick={() => setExportModalState({ title: 'Validasi Dokumen', cols: VALIDASI_COLS, dateFieldLabel: 'Filter Tgl. Validasi' })}
+              className="px-3.5 py-2 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white text-xs font-semibold transition-all h-[38px] flex items-center gap-1.5"
+            >
+              <Download size={13} /> Export
+            </button>
+          </div>
+        </div>
 
-      <div className="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar">
-        {loading ? (
-          <div className="flex justify-center items-center h-40">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      
-    </div>
-        ) : records.length === 0 ? (
-          <div className="text-center py-12 text-[#5A305A] bg-white rounded-xl border border-slate-200">
-            Tidak ada data validasi ditemukan.
-      
-    </div>
-        ) : (
-          <div className="flex flex-col gap-4 max-w-6xl mx-auto">
-            {records.map((record) => {
-              const docType = record.jenis_dokumen || "—";
-              const awbNo = record.awb || "—";
-              const noPib = record.tabel_audit_pib?.no_pib || record.tabel_audit_cn?.no_sppbmcp || "—";
-              const vendor = record.tabel_audit_pib?.vendor || record.tabel_audit_cn?.vendor || "—";
-              
-              const match = record.total_lulus || 0;
-              const mismatch = record.total_gagal || 0;
-              const total = record.total_validasi || (match + mismatch);
-              
-              // We just subtract match and mismatch to get the remaining "Belum diisi" equivalent
-              const empty = Math.max(0, total - match - mismatch);
-              
-              // Total checked is just match + mismatch + partial, but for UI pct we can use match/total
-              const checked = match + mismatch;
-              const pct = checked === 0 ? 0 : Math.round((match / checked) * 100);
+        {/* ── Daftar record ── */}
+        <div className="flex-1 overflow-y-auto">
+          {loading ? (
+            <div className="flex justify-center items-center h-40">
+              <div className="w-8 h-8 border-4 border-[#5A305A] border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : records.length === 0 ? (
+            <div className={`text-center py-12 text-[#5A305A]/70 text-sm italic rounded-2xl border ${TOOLBAR_GLASS}`}>
+              Tidak ada data validasi ditemukan.
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3 max-w-6xl mx-auto">
+              {records.map((record) => {
+                const docType = record.jenis_dokumen || "—";
+                const awbNo = record.awb || "—";
+                const noPib = record.tabel_audit_pib?.no_pib || record.tabel_audit_cn?.no_sppbmcp || "—";
+                const vendor = record.tabel_audit_pib?.vendor || record.tabel_audit_cn?.vendor || "—";
 
-              return (
-                <div key={record.id} style={S.card} className="flex-col md:flex-row">
-                  <div style={S.metaRow} className="flex-1 w-full md:w-auto">
-                    <div style={{...S.metaCol, minWidth: '100px'}}>
-                      <span style={S.label}>Jenis Dokumen</span>
-                      <span style={S.value}>{docType}</span>
-                
-    </div>
-                    <div style={{...S.metaCol, minWidth: '180px'}}>
-                      <span style={S.label}>No. PIB</span>
-                      <span style={S.value} className="break-all">{noPib}</span>
-                
-    </div>
-                    <div style={{...S.metaCol, minWidth: '180px', flex: 1}}>
-                      <span style={S.label}>Vendor</span>
-                      <span style={S.value} className="line-clamp-2" title={vendor}>{vendor}</span>
-                
-    </div>
-                    <div style={{...S.metaCol, minWidth: '140px'}}>
-                      <span style={S.label}>No. AWB</span>
-                      <span style={S.value}>{awbNo}</span>
-                
-    </div>
-              
-    </div>
+                const match = record.total_lulus || 0;
+                const mismatch = record.total_gagal || 0;
+                const total = record.total_validasi || (match + mismatch);
 
-                  <div className="flex flex-col items-end gap-2 w-full md:w-auto mt-4 md:mt-0 shrink-0">
-                    <div style={S.scoreWrap}>
-                      <div style={S.scoreCard(bgSuccess, txtSuccess)}>
-                        <span style={S.scoreNum}>{match}</span>
-                        <span style={S.scoreLabel}>Sesuai</span>
-                  
-    </div>
-                      <div style={S.scoreCard(bgDanger, txtDanger)}>
-                        <span style={S.scoreNum}>{mismatch}</span>
-                        <span style={S.scoreLabel}>Tidak sesuai</span>
-                  
-    </div>
-                      <div style={S.scoreCard(bgSec, txtSec)}>
-                        <span style={S.scoreNum}>{empty}</span>
-                        <span style={S.scoreLabel}>Belum diisi</span>
-                  
-    </div>
-                
-    </div>
-                    
-                    <div style={{ width: "100%", minWidth: "220px", marginTop: "4px" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2px" }}>
-                        <span style={{ fontSize: "12px", color: txtSec }}>Akurasi validasi</span>
-                        <span style={{ fontSize: "12px", fontWeight: 600, color: "#0f172a" }}>
-                          {match}/{checked} ({pct}%)
-                        </span>
-                  
-    </div>
-                      <div style={S.progressWrap}>
-                        <div style={S.progressBar(pct)} />
-                  
-    </div>
-                
-    </div>
-              
-    </div>
-            
-    </div>
-              );
-            })}
-      
-    </div>
+                // We just subtract match and mismatch to get the remaining "Belum diisi" equivalent
+                const empty = Math.max(0, total - match - mismatch);
+
+                // Total checked is just match + mismatch + partial, but for UI pct we can use match/total
+                const checked = match + mismatch;
+                const pct = checked === 0 ? 0 : Math.round((match / checked) * 100);
+
+                return (
+                  <div key={record.id} className={`rounded-2xl border p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 ${TOOLBAR_GLASS}`}>
+                    <div className="flex gap-6 flex-wrap flex-1 w-full md:w-auto">
+                      <div className="flex flex-col gap-1 min-w-[100px]">
+                        <span className="text-[10px] font-bold text-[#5A305A]/50 uppercase tracking-wider">Jenis Dokumen</span>
+                        <span className="text-sm font-semibold text-[#5A305A]">{docType}</span>
+                      </div>
+                      <div className="flex flex-col gap-1 min-w-[180px]">
+                        <span className="text-[10px] font-bold text-[#5A305A]/50 uppercase tracking-wider">No. PIB</span>
+                        <span className="text-sm font-semibold text-[#5A305A] break-all">{noPib}</span>
+                      </div>
+                      <div className="flex flex-col gap-1 min-w-[180px] flex-1">
+                        <span className="text-[10px] font-bold text-[#5A305A]/50 uppercase tracking-wider">Vendor</span>
+                        <span className="text-sm font-semibold text-[#5A305A] line-clamp-2" title={vendor}>{vendor}</span>
+                      </div>
+                      <div className="flex flex-col gap-1 min-w-[140px]">
+                        <span className="text-[10px] font-bold text-[#5A305A]/50 uppercase tracking-wider">No. AWB</span>
+                        <span className="text-sm font-semibold text-[#5A305A]">{awbNo}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col items-end gap-2 w-full md:w-auto mt-2 md:mt-0 shrink-0">
+                      <div className="flex gap-2 shrink-0">
+                        <div className="bg-emerald-50 text-emerald-700 rounded-lg px-3 py-1.5 text-center min-w-[64px]">
+                          <span className="text-lg font-bold block leading-tight">{match}</span>
+                          <span className="text-[10px] font-semibold block mt-0.5">Sesuai</span>
+                        </div>
+                        <div className="bg-rose-50 text-rose-700 rounded-lg px-3 py-1.5 text-center min-w-[64px]">
+                          <span className="text-lg font-bold block leading-tight">{mismatch}</span>
+                          <span className="text-[10px] font-semibold block mt-0.5">Tidak sesuai</span>
+                        </div>
+                        <div className="bg-slate-100 text-[#5A305A]/70 rounded-lg px-3 py-1.5 text-center min-w-[64px]">
+                          <span className="text-lg font-bold block leading-tight">{empty}</span>
+                          <span className="text-[10px] font-semibold block mt-0.5">Belum diisi</span>
+                        </div>
+                      </div>
+
+                      <div className="w-full min-w-[220px] mt-1">
+                        <div className="flex justify-between mb-1">
+                          <span className="text-[11px] text-[#5A305A]/60">Akurasi validasi</span>
+                          <span className="text-[11px] font-bold text-[#5A305A]">{match}/{checked} ({pct}%)</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                          <div className={`h-full rounded-full transition-all ${progressBarColor(pct)}`} style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Pagination Footer */}
+        {!loading && totalPages > 1 && (
+          <div className={`mt-4 px-4 py-3 rounded-2xl border flex items-center justify-between shrink-0 ${TOOLBAR_GLASS}`}>
+            <div className="text-xs text-[#5A305A]">
+              Menampilkan <span className="font-bold">{((page - 1) * pageSize) + 1}</span> hingga <span className="font-bold">{Math.min(page * pageSize, totalRecords)}</span> dari <span className="font-bold">{totalRecords}</span> dokumen
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="p-1.5 rounded-lg border border-slate-200 text-[#5A305A] disabled:opacity-40 hover:bg-slate-50 transition-colors"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <button
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="p-1.5 rounded-lg border border-slate-200 text-[#5A305A] disabled:opacity-40 hover:bg-slate-50 transition-colors"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
         )}
-  
-    </div>
-      
-      {/* Pagination Footer */}
-      {!loading && totalPages > 1 && (
-        <div className="px-4 py-3 border-t border-slate-200 bg-white flex items-center justify-between shrink-0">
-          <div className="text-sm text-[#5A305A]">
-            Menampilkan <span className="font-medium text-[#5A305A]">{((page - 1) * pageSize) + 1}</span> hingga <span className="font-medium text-[#5A305A]">{Math.min(page * pageSize, totalRecords)}</span> dari <span className="font-medium text-[#5A305A]">{totalRecords}</span> dokumen
-      
-    </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="p-1.5 rounded border border-slate-300 text-[#5A305A] disabled:opacity-50 hover:bg-slate-50"
-            >
-              <ChevronLeft size={18} />
-            </button>
-            <button
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-              className="p-1.5 rounded border border-slate-300 text-[#5A305A] disabled:opacity-50 hover:bg-slate-50"
-            >
-              <ChevronRight size={18} />
-            </button>
-      
-    </div>
-    
-    </div>
-      )}
+      </main>
 
       {exportModalState && (
         <ExportModal
@@ -568,8 +482,5 @@ export default function CourierValidasiPage() {
         />
       )}
     </div>
-
-
-
   );
 }
