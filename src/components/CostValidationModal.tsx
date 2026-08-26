@@ -191,7 +191,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
         })
         .eq('id', data.id);
         
-      const { data: updatedRow, error } = await supabase.rpc('fn_save_storage_estimate', {
+      const { error } = await supabase.rpc('fn_save_storage_estimate', {
         p_cv_id: data.id,
         p_actual_days: actualDays,
         p_billing_days: storageExpectedResult.billing_days || 0,
@@ -201,10 +201,21 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
       });
       
       if (error) throw error;
-      
-      const cvData = Array.isArray(updatedRow) ? updatedRow[0] : updatedRow;
-      if (cvData) {
-        await enrichAndSetData(cvData);
+
+      // Ambil ulang PERSIS baris yang sedang diedit lewat `id` (data.id) -- BUKAN fetchData()
+      // yang query berdasar awb/docId + "order by created_at desc limit 1". Kalau dokumen ini
+      // kebetulan punya lebih dari 1 baris tabel_cost_validasi (mis. riwayat lama), fetchData()
+      // bisa saja menarik baris LAIN (bukan yang baru diedit), yang kalau kebetulan lebih
+      // "kosong" akan terlihat seperti "semua data cost validation hilang" -- padahal datanya
+      // sendiri sebenarnya aman (fn_save_storage_estimate -> fn_recompute_totals sudah
+      // dikonfirmasi RETURN to_jsonb(SELECT * ...), seluruh kolom, bukan sebagian).
+      const { data: freshRow, error: refetchError } = await supabase
+        .from('tabel_cost_validasi')
+        .select('*')
+        .eq('id', data.id)
+        .single();
+      if (!refetchError && freshRow) {
+        await enrichAndSetData(freshRow);
       } else {
         await fetchData();
       }

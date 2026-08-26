@@ -498,6 +498,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
   const [awbNo, setAwbNo] = useState("");
   const [tanggal, setTanggal] = useState("");
   const [namaChecker, setNamaChecker] = useState("");
+  const [catatanManual, setCatatanManual] = useState("");
   const [loading, setLoading] = useState(true);
   const [npwps, setNpwps] = useState<any[]>([]);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -594,6 +595,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
            if (cl.values_json) setValues(cl.values_json);
            if (cl.tanggal_cek) setTanggal(cl.tanggal_cek);
            if (cl.nama_checker) setNamaChecker(cl.nama_checker);
+           if (cl.catatan_manual) setCatatanManual(cl.catatan_manual);
            setAwbNo(cl.awb || rAwb || "");
            skipNextAutosaveRef.current = true;
            setLoading(false);
@@ -991,6 +993,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
        
        const payload: any = {
           pib_id, cn_id, awb: awbNo, tanggal_cek: tanggal, nama_checker: namaChecker,
+          catatan_manual: catatanManual,
           values_json: values, total_match: match, total_mismatch: mismatch,
           total_empty: empty + partial, status_checklist, updated_at: new Date().toISOString()
        };
@@ -1002,7 +1005,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
        }
     }, 2000);
     return () => clearTimeout(tid);
-  }, [values, awbNo, tanggal, namaChecker, loading, mainTab, subTab, record]);
+  }, [values, awbNo, tanggal, namaChecker, catatanManual, loading, mainTab, subTab, record]);
 
   const hasNpwpError = (id: string, val: string) => {
      if (!val) return false;
@@ -1234,7 +1237,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
             )}
             {!isEditMode ? (
               <button style={{ ...S.printBtn, color: '#0369a1', borderColor: '#bae6fd', background: '#f0f9ff' }} onClick={() => {
-                  setSnapshotValues({ values: JSON.parse(JSON.stringify(values)), awbNo, tanggal, namaChecker });
+                  setSnapshotValues({ values: JSON.parse(JSON.stringify(values)), awbNo, tanggal, namaChecker, catatanManual });
                   setIsEditMode(true);
                 }}>
                 <Edit3 size={14} />
@@ -1252,6 +1255,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                     setAwbNo(snapshotValues.awbNo);
                     setTanggal(snapshotValues.tanggal);
                     setNamaChecker(snapshotValues.namaChecker);
+                    setCatatanManual(snapshotValues.catatanManual ?? "");
                   }
                   setIsEditMode(false);
                 }}>
@@ -1322,6 +1326,26 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                       {isEditMode ? <input style={S.metaInput} value={namaChecker || ""} onChange={e => setNamaChecker(e.target.value)} placeholder="Nama pemeriksa" /> : <div className="text-[13px] font-semibold text-[#5A305A] leading-tight">{namaChecker || "—"}</div>}
                     </div>
                   </div>
+                </div>
+
+                {/* Catatan Perubahan Manual -- disimpan bareng checklist di tabel_checklist_validasi
+                    (kolom catatan_manual), autosave sama seperti field header lain. SELALU
+                    ditampilkan (bahkan kalau masih kosong), tidak ikut nyetak. */}
+                <div className="mt-2.5 print:hidden">
+                  <label className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-1 block">Catatan Perubahan Manual</label>
+                  {isEditMode ? (
+                    <textarea
+                      value={catatanManual}
+                      onChange={e => setCatatanManual(e.target.value)}
+                      placeholder="Masukkan alasan atau catatan jika ada perubahan nilai secara manual..."
+                      rows={2}
+                      className="w-full border border-purple-100 bg-white/70 rounded-lg px-3 py-2 text-[13px] text-[#5A305A] focus:outline-none focus:ring-2 focus:ring-purple-200 resize-none"
+                    />
+                  ) : (
+                    <div className="bg-white/70 border border-purple-100 rounded-lg px-3 py-2 text-[13px] text-[#5A305A] whitespace-pre-wrap">
+                      {catatanManual || <span className="italic text-[#5A305A]/50">Belum ada catatan.</span>}
+                    </div>
+                  )}
                 </div>
               </div>
 
