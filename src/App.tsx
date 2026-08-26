@@ -88,17 +88,18 @@ export default function App() {
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/settings/roles" element={<RequirePageAccess adminOnly><RoleManagementPage /></RequirePageAccess>} />
               <Route path="/account" element={<AccountPage />} />
+
+              {/* Halaman-halaman modul Pengaturan -- sebelumnya dirender DI LUAR MainLayout jadi
+                  sidebar navigasi tidak muncul sama sekali (gap arsitektur lama, pola sama
+                  seperti bug /account yang sudah diperbaiki sebelumnya). Dipindah ke dalam sini
+                  supaya sidebar tetap tampil di semua halaman Pengaturan. */}
+              <Route path="/admin/rates" element={<RequirePageAccess pageKey="admin_rates"><RateTablesAdmin /></RequirePageAccess>} />
+              <Route path="/settings/fuel-surcharge" element={<RequirePageAccess pageKey="settings_fuel_surcharge"><FuelSurchargePage /></RequirePageAccess>} />
+              <Route path="/settings/kurs-bi" element={<RequirePageAccess pageKey="settings_kurs_bi"><KursBIPage /></RequirePageAccess>} />
+              <Route path="/settings/kurs-rule-vendor" element={<RequirePageAccess pageKey="settings_kurs_rule_vendor"><KursRuleVendorPage /></RequirePageAccess>} />
+              <Route path="/settings/tarif-kontrak" element={<RequirePageAccess pageKey="settings_tarif_kontrak"><TarifKontrakPage /></RequirePageAccess>} />
+              <Route path="/settings/tarif-far-overseas-vendor" element={<RequirePageAccess pageKey="settings_tarif_far_overseas_vendor"><FarOverseasVendorTarifPage /></RequirePageAccess>} />
             </Route>
-
-            {/* Admin Routes with nested or wrapped layout */}
-            <Route path="/admin/rates" element={<RequirePageAccess pageKey="admin_rates"><RateTablesAdmin /></RequirePageAccess>} />
-
-            {/* Route to Fuel Surcharge page */}
-            <Route path="/settings/fuel-surcharge" element={<RequirePageAccess pageKey="settings_fuel_surcharge"><FuelSurchargePage /></RequirePageAccess>} />
-            <Route path="/settings/kurs-bi" element={<RequirePageAccess pageKey="settings_kurs_bi"><KursBIPage /></RequirePageAccess>} />
-            <Route path="/settings/kurs-rule-vendor" element={<RequirePageAccess pageKey="settings_kurs_rule_vendor"><KursRuleVendorPage /></RequirePageAccess>} />
-            <Route path="/settings/tarif-kontrak" element={<RequirePageAccess pageKey="settings_tarif_kontrak"><TarifKontrakPage /></RequirePageAccess>} />
-            <Route path="/settings/tarif-far-overseas-vendor" element={<RequirePageAccess pageKey="settings_tarif_far_overseas_vendor"><FarOverseasVendorTarifPage /></RequirePageAccess>} />
           </Route>
         </Routes>
       </AuthProvider>

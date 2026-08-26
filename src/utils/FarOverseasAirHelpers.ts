@@ -95,7 +95,7 @@ export const REKAPAN_EDITABLE_FIELDS = new Set([
   'total_amount_currency', 'kurs_used', 'total_amount_idr', 'route_note', 'shipment_mode',
   'origin_country', 'destination_city', 'item_description', 'status_note', 'other_note',
   'memo_title', 'expected_payment_date', 'vessel_internal_note', 'notes', 'buyer_name',
-  'weight_breakdown',
+  'weight_breakdown', 'departure_date',
 ]);
 
 export async function updateRekapanFarOverseasAir(id: string | number, updates: Record<string, any>) {

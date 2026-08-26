@@ -17,10 +17,19 @@ export default function FarOverseasAirWeightBreakdownModal({ record, onClose, on
   const [error, setError] = useState('');
 
   const updateWeight = (idx: number, val: string) => {
-    setPoList(prev => prev.map((po, i) => i === idx ? { ...po, weight_kg: val === '' ? null : Number(val) } : po));
+    // Berat tidak mungkin negatif -- clamp ke 0 kalau user ketik/paste angka minus, jangan
+    // dibiarkan tersimpan sebagai -1 dsb (attribute min="0" di <input> cuma cegah panah spinner,
+    // tidak mencegah ketik manual atau paste).
+    const num = val === '' ? null : Number(val);
+    const clamped = num !== null && !isNaN(num) && num < 0 ? 0 : num;
+    setPoList(prev => prev.map((po, i) => i === idx ? { ...po, weight_kg: clamped } : po));
   };
 
   const handleSave = async () => {
+    if (poList.some(po => po.weight_kg != null && po.weight_kg < 0)) {
+      setError('Weight tidak boleh minus.');
+      return;
+    }
     setSaving(true);
     setError('');
     // dominant_company_code WAJIB dihitung ulang tiap kali breakdown berat berubah -- lihat
@@ -78,6 +87,7 @@ export default function FarOverseasAirWeightBreakdownModal({ record, onClose, on
                       <input
                         type="number"
                         step="any"
+                        min="0"
                         value={po.weight_kg ?? ''}
                         onChange={e => updateWeight(idx, e.target.value)}
                         className="w-full border border-slate-300 rounded px-2 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-blue-500"

@@ -265,7 +265,7 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
                 <MemoField label="Buyer" value={rec.buyer_name || '-'} />
                 <MemoField label="Weight" value={rec.qty != null ? <>{rec.qty}<span className="ml-6">{rec.weight_unit || ''}</span></> : '-'} />
                 <MemoField label="Price /Kg" value={formatMoney(rec.unit_price, rec.unit_price_currency)} />
-                <MemoField label="Departure Date" value={formatDateMemo(rec.invoice_date)} />
+                <MemoField label="Departure Date" value={formatDateMemo(rec.departure_date)} />
                 <MemoField
                   label="TOTAL AMOUNT"
                   bold

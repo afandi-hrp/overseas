@@ -143,6 +143,17 @@ const fmtTotalAmount = (v: any, r: any) => {
   );
 };
 
+// Lebar PIKSEL TETAP (bukan persen) per kolom field -- lihat catatan panjang di render <td>
+// di bawah: lebar persen ("w-full") pada <input> di dalam tabel "table-layout: auto" tidak
+// bisa dihitung andal, jadi SEMUA kolom field (bukan cuma yang wide) butuh lebar tetap eksplisit
+// supaya inputnya selalu tampil besar & teks yang diedit selalu kebaca saat mode edit.
+const colWidthClass = (col: ListColumn): string => {
+  if (col.wide) return 'w-[300px]';
+  if (col.inputType === 'date') return 'w-[130px]';
+  if (col.inputType === 'number') return 'w-[120px]';
+  return 'w-[150px]';
+};
+
 const LIST_COLUMNS: ListColumn[] = [
     { header: 'NO', render: (_r, idx) => idx + 1 },
     {
@@ -192,6 +203,10 @@ const LIST_COLUMNS: ListColumn[] = [
     { header: 'SHIP VIA', field: 'ship_via' },
     { header: 'INVOICE NO', field: 'no_invoice' },
     { header: 'INVOICE DATE', field: 'invoice_date', inputType: 'date', format: v => formatDateID(v) },
+    // departure_date SELALU kosong dari hasil ekstraksi otomatis (Gemini tidak pernah isi ini) --
+    // wajib diisi manual oleh user di sini. Dipakai sebagai field "Departure Date" di memo cetak
+    // (FarOverseasAirDetailModal.tsx), TERPISAH dari invoice_date.
+    { header: 'DEPARTURE DATE', field: 'departure_date', inputType: 'date', format: v => formatDateID(v) },
     { header: 'QTY', field: 'qty', inputType: 'number', align: 'right' },
     { header: 'WEIGHT', field: 'weight_unit' },
     {
@@ -239,6 +254,7 @@ const FAR_EXPORT_COLS = [
   { key: 'ship_via', label: 'SHIP VIA' },
   { key: 'no_invoice', label: 'INVOICE NO' },
   { key: 'invoice_date', label: 'INVOICE DATE', type: 'date' },
+  { key: 'departure_date', label: 'DEPARTURE DATE', type: 'date' },
   { key: 'qty', label: 'QTY', type: 'num' },
   { key: 'weight_unit', label: 'WEIGHT' },
   { key: 'weight_breakdown', label: 'WEIGHT BREAKDOWN' },
@@ -656,7 +672,7 @@ export default function FarOverseasAirPage() {
             <div ref={topScrollRef} onScroll={handleTopScroll} className="overflow-x-auto w-full shrink-0 scrollbar-visible">
               <div style={{ width: tableWidth, height: '1px' }} />
             </div>
-            <div ref={bottomScrollRef} onScroll={handleBottomScroll} className="flex-1 min-h-0 overflow-x-auto overflow-y-auto">
+            <div ref={bottomScrollRef} onScroll={handleBottomScroll} className="flex-1 min-h-0 overflow-x-auto overflow-y-auto scrollbar-x-visible">
               <table ref={tableRef} className="w-full text-[11px] bg-white">
                 <thead className="sticky top-0 z-20">
                   <tr className="text-[10px] text-[#5A305A]/70 uppercase bg-slate-50 shadow-sm">
@@ -689,8 +705,17 @@ export default function FarOverseasAirPage() {
                             const field = col.field as string;
                             const val = getVal(r, field);
                             const edited = Array.isArray(r.edited_fields) && r.edited_fields.includes(field);
+                            const widthClass = colWidthClass(col);
                             return (
-                              <td key={i} className={`px-4 py-3 align-top text-[#5A305A] ${col.align === 'right' ? 'text-right' : 'text-left'}`}>
+                              // SEMUA kolom field (bukan cuma yang wide) dikasih lebar PIKSEL TETAP,
+                              // dipasang di <td> ITU SENDIRI sebagai hint lebar kolom, DAN di
+                              // EditableCell (lewat className, lihat FarOverseasAirEditableField.tsx)
+                              // sebagai lebar tetap pada input-nya saat mode edit -- lebar persen
+                              // ("w-full") pada <input> di dalam tabel "table-layout: auto" tidak bisa
+                              // dihitung andal (lebar <td>-nya sendiri belum pasti saat browser
+                              // menghitung ukuran kolom), jadi kalau dibiarkan persen, input malah
+                              // menyusut ke ukuran instrinsik kecil bawaan browser.
+                              <td key={i} className={`px-4 py-3 align-top text-[#5A305A] ${col.align === 'right' ? 'text-right' : 'text-left'} ${widthClass}`}>
                                 <EditableCell
                                   value={val}
                                   displayValue={col.format ? col.format(val, r) : undefined}
@@ -698,7 +723,7 @@ export default function FarOverseasAirPage() {
                                   edited={edited}
                                   type={col.inputType || 'text'}
                                   align={col.align === 'right' ? 'right' : 'left'}
-                                  className={col.wide ? 'w-[300px] whitespace-normal break-words' : ''}
+                                  className={`${widthClass} ${col.wide ? 'whitespace-normal break-words' : ''}`}
                                   onChange={(v) => setVal(r, field, col.inputType === 'number' ? (v === null ? null : Number(v)) : v)}
                                 />
                               </td>

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowLeft, Fuel } from 'lucide-react';
+import { Fuel } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 export default function FuelSurchargePage() {
   const [rates, setRates] = useState<any[]>([]);
@@ -70,25 +69,20 @@ export default function FuelSurchargePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FFF5C5] to-[#F58C77] font-sans text-[#5A305A]">
-      <header className="bg-gradient-to-r from-[#5A305A] to-[#73507B] text-white sticky top-0 z-10 shadow-lg">
-        <div className="max-w-4xl mx-auto px-5 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
-              <Fuel size={17} />
-            </div>
-            <div>
-              <h1 className="font-bold text-base leading-tight">Fuel Surcharge</h1>
-              <p className="text-[11px] text-white/50 mt-0.5">Persentase fuel surcharge mingguan DHL & FedEx</p>
-            </div>
+    <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
+      <header className="px-6 pt-1 pb-2">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
+            <Fuel size={17} />
           </div>
-          <Link to="/settings" className="text-xs flex items-center gap-1.5 font-semibold text-white/70 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1.5 rounded-lg transition-all">
-            <ArrowLeft size={13} /> Pengaturan
-          </Link>
+          <div>
+            <h1 className="font-bold text-xl text-[#5A305A] leading-tight">Fuel Surcharge</h1>
+            <p className="text-xs font-light text-[#5A305A]/70 mt-0.5">Persentase fuel surcharge mingguan DHL & FedEx</p>
+          </div>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-8">
+      <main className="px-6 py-4">
         <div className="bg-white/70 backdrop-blur-md p-6 rounded-2xl shadow-sm border border-white/60 mb-6">
           <h2 className="text-base font-bold text-[#5A305A] mb-4">Tambah Rate</h2>
           <form onSubmit={handleAdd} className="flex flex-wrap gap-4 items-end">

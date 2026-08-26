@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowLeft, Table2 } from 'lucide-react';
+import { Table2 } from 'lucide-react';
 import RateSheetDHL from './admin/RateSheetDHL';
 import RateSheetFedEx from './admin/RateSheetFedEx';
 import SurchargeDHL from './admin/SurchargeDHL';
@@ -25,27 +24,30 @@ export default function RateTablesAdmin() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#FFF5C5] to-[#F58C77] font-sans text-[#5A305A] flex flex-col">
-      <header className="bg-gradient-to-r from-[#5A305A] to-[#73507B] text-white sticky top-0 z-30 shadow-lg">
-        <div className="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
-              <Table2 size={17} />
-            </div>
-            <div>
-              <h1 className="font-bold text-base leading-tight">Rate Tables & PPJK</h1>
-              <p className="text-[11px] text-white/50 mt-0.5">Master data ongkos kirim, surcharge & PPJK</p>
-            </div>
+    <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+      <header className="px-6 pt-1 pb-2 shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
+            <Table2 size={17} />
           </div>
-          <Link to="/settings" className="text-xs flex items-center gap-1.5 font-semibold text-white/70 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 px-3 py-1.5 rounded-lg transition-all">
-            <ArrowLeft size={13} /> Pengaturan
-          </Link>
+          <div>
+            <h1 className="font-bold text-xl text-[#5A305A] leading-tight">Rate Tables & PPJK</h1>
+            <p className="text-xs font-light text-[#5A305A]/70 mt-0.5">Master data ongkos kirim, surcharge & PPJK</p>
+          </div>
         </div>
       </header>
 
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-8 flex flex-col">
-        <div className="bg-white/70 backdrop-blur-md rounded-2xl shadow-sm border border-white/60 px-2 py-1.5">
-          <div className="flex gap-1.5 overflow-x-auto px-2">
+      <main className="px-6 py-4 flex-1 flex flex-col overflow-hidden">
+        <div className="bg-white/70 backdrop-blur-md rounded-2xl shadow-sm border border-slate-200/80 px-2 py-1.5 shrink-0">
+          {/* Selalu 1 baris (overflow-x-auto, BUKAN flex-wrap) -- di layar sempit (mis. 14")
+              yang tidak muat semua tab, baris ini scroll ke samping (scrollbar-visible supaya
+              user sadar bisa di-scroll, beda dari scrollbar default app yang disembunyikan).
+              [justify-content:safe_center] -- di layar lebar (mis. 24") yang muat semua tab
+              tanpa overflow, baris ini rata tengah ("safe" penting: kalau dipaksa "center" biasa
+              & kontennya ternyata overflow di layar sempit, tab paling kiri malah ke-clip di
+              luar layar sebelum sempat di-scroll -- "safe" otomatis jatuh balik ke rata kiri
+              begitu overflow supaya semua tab tetap bisa dijangkau lewat scroll). */}
+          <div className="flex gap-1.5 overflow-x-auto scrollbar-visible px-2 pb-1 [justify-content:safe_center]">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -62,7 +64,7 @@ export default function RateTablesAdmin() {
           </div>
         </div>
 
-        <div className="bg-transparent flex-1 pt-5">
+        <div className="flex-1 overflow-y-auto pt-4 -mx-1 px-1">
           {activeTab === 'dhl_rate' && <RateSheetDHL />}
           {activeTab === 'fedex_rate' && <RateSheetFedEx />}
           {activeTab === 'dhl_surcharge' && <SurchargeDHL />}

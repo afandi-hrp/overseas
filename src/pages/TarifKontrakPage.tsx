@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { Link } from 'react-router-dom';
-import { Clock, ArrowUp, Tag, ChevronDown, ChevronUp, ArrowLeft } from 'lucide-react';
+import { Clock, ArrowUp, Tag, ChevronDown, ChevronUp, FileText } from 'lucide-react';
 
 const KATEGORI_OPTIONS = ['PPJK', 'FREIGHT', 'STORAGE', 'SURVEYOR', 'LOLO'];
 const SHIPMENT_TYPE_OPTIONS = ['', 'FCL', 'LCL', 'AIR', 'ALL'];
@@ -237,15 +236,14 @@ setDoubleChargeMultiplier('2');
   const isNominalHidden = ['PERCENTAGE', 'AT_COST', 'VARIABLE'].includes(tarifType);
 
   return (
-    <div className="flex-1 h-full min-h-screen overflow-y-auto pb-10 bg-gradient-to-br from-[#FFF5C5] to-[#F58C77]">
+    <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
       <main className="max-w-7xl mx-auto px-4 py-8">
-        
-        {/* Header & Back Button */}
+
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-          <div className="flex items-center gap-4">
-            <Link to="/settings" className="w-10 h-10 flex items-center justify-center rounded-full bg-white/60 hover:bg-white shadow-sm text-[#5A305A] transition-all">
-              <ArrowLeft size={20} />
-            </Link>
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
+              <FileText size={17} />
+            </div>
             <div>
               <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Tarif Kontrak Vendor</h1>
               <p className="text-[#5A305A] font-light text-sm mt-1">Kelola master tarif dari vendor (Sea & Air).</p>

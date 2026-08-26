@@ -33,6 +33,13 @@ export function EditableCell({
   };
 
   if (editing) {
+    // "w-full" (persen) TIDAK dipakai kalau caller sudah kasih class lebar sendiri (mis.
+    // "w-[300px]" utk kolom wide) -- lebar persen pada anak <input> (replaced element) di
+    // dalam <td> tabel "table-layout: auto" tidak bisa dihitung andal (lebar <td> itu sendiri
+    // belum pasti saat browser menghitung ukuran kolom), jadi input malah menyusut ke ukuran
+    // instrinsik kecil bawaan browser. Lebar PIKSEL TETAP (w-[300px]) tidak kena masalah ini
+    // sama sekali karena tidak bergantung pada hasil perhitungan tabel.
+    const hasOwnWidth = /(^|\s)w-/.test(className);
     return (
       <input
         autoFocus
@@ -41,7 +48,7 @@ export function EditableCell({
         onChange={e => setTemp(e.target.value)}
         onBlur={commit}
         onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); else if (e.key === 'Escape') setEditing(false); }}
-        className={`border border-blue-400 rounded px-2 py-1 text-xs outline-none bg-white shadow-inner w-full ${align === 'right' ? 'text-right' : 'text-left'} ${className}`}
+        className={`border border-blue-400 rounded px-2 py-1 text-xs outline-none bg-white shadow-inner ${hasOwnWidth ? '' : 'w-full'} ${align === 'right' ? 'text-right' : 'text-left'} ${className}`}
       />
     );
   }

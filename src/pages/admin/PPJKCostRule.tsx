@@ -83,6 +83,15 @@ export default function PPJKCostRule() {
     }
   };
 
+  // Kebalikan dari handleDeactivate -- kosongkan effective_to supaya currentActive() lagi-lagi
+  // menganggap rule ini aktif tanpa batas (lihat definisi currentActive di atas).
+  const handleActivate = async (id: string) => {
+    if (confirm('Aktifkan kembali rule ini?')) {
+      await supabase.from('tabel_ppjk_cost_rule').update({ effective_to: null }).eq('id', id);
+      fetchData();
+    }
+  };
+
 
   const filtered = data.filter(d => 
     !search || 
@@ -184,7 +193,11 @@ export default function PPJKCostRule() {
                     <td className="px-4 py-2 text-right">
                       <div className="flex justify-end gap-2">
                         <button onClick={() => handleOpenModal(row)} className="text-blue-600 p-1 rounded" title="Edit">✏️</button>
-                        <button onClick={() => handleDeactivate(row.id)} className="text-orange-600 p-1 rounded" title="Nonaktifkan">🔒</button>
+                        {currentActive(row) ? (
+                          <button onClick={() => handleDeactivate(row.id)} className="text-orange-600 p-1 rounded" title="Nonaktifkan">🔒</button>
+                        ) : (
+                          <button onClick={() => handleActivate(row.id)} className="text-emerald-600 p-1 rounded" title="Aktifkan">🔓</button>
+                        )}
                         <button onClick={() => handleDelete(row.id)} className="text-red-600 p-1 rounded" title="Hapus">🗑️</button>
                       </div>
                     </td>
@@ -287,7 +300,20 @@ export default function PPJKCostRule() {
                     <label className="block text-xs font-bold text-[#5A305A] mb-1">Products Applicable</label>
                     <input type="text" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.products_applicable || ''} onChange={e => setForm({...form, products_applicable: e.target.value})} placeholder="e.g. ALL" />
                   </div>
-                  
+
+                  <div className="col-span-2 p-3 bg-slate-50 rounded border border-slate-200">
+                    <label
+                      className="flex items-center gap-2 text-sm font-bold text-emerald-700 cursor-pointer"
+                      title="Jika aktif, expected akan selalu dianggap 0 berapapun formula price_mechanism yang dipilih."
+                    >
+                      <input type="checkbox" checked={form.is_waived || false} onChange={e => setForm({...form, is_waived: e.target.checked})} className="rounded text-emerald-600" />
+                      Is Waived (Dibebaskan/Gratis)
+                    </label>
+                    <p className="text-xs text-[#5A305A]/60 mt-1">
+                      Jika aktif, expected akan selalu dianggap 0 berapapun formula price_mechanism yang dipilih.
+                    </p>
+                  </div>
+
                   <div>
                     <label className="block text-xs font-bold text-[#5A305A] mb-1">Effective From</label>
                     <input type="date" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.effective_from || ''} onChange={e => setForm({...form, effective_from: e.target.value})} required />
