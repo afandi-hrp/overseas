@@ -1187,7 +1187,14 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                         </td>
                       </tr>
                     )}
-                    {(isEditing || isRowVisible(data.cv_nonroutine_status, data.cv_nonroutine_expected, data.cv_nonroutine_actual)) && (jenisDokumen || data.jenis_dokumen || '').toUpperCase() === 'PIB' && (
+                    {/* Gating "&& jenisDokumen === 'PIB'" sengaja DIHAPUS -- backend (n8n) sudah
+                        otomatis mengisi cv_nonroutine_actual/expected NULL untuk jalur CN, jadi
+                        isRowVisible() saja sudah cukup buat sembunyikan baris ini otomatis di CN
+                        tanpa syarat tambahan. Syarat jenisDokumen yang lama itu justru sumber bug
+                        (prop jenisDokumen kadang salah resolve, beda dari kolom data.jenis_dokumen
+                        yang selalu benar -- lihat baris 887 yang urutannya kebalik & tidak kena
+                        bug ini). */}
+                    {(isEditing || isRowVisible(data.cv_nonroutine_status, data.cv_nonroutine_expected, data.cv_nonroutine_actual)) && (
                       <tr>
                         <td className="px-4 py-3 text-[#5A305A] font-medium bg-white">Non-Routine Entry</td>
                         <td className="px-4 py-3 bg-white text-[#5A305A]">{formatRp(isEditing ? editForm.cv_nonroutine_expected : data.cv_nonroutine_expected)}</td>

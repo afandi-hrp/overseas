@@ -39,11 +39,11 @@ function DualScrollTable({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex-1 min-w-0 flex flex-col">
       {contentWidth > 0 && (
-        <div ref={topRef} onScroll={onTopScroll} className="overflow-x-auto overflow-y-hidden" style={{ height: 14 }}>
+        <div ref={topRef} onScroll={onTopScroll} className="overflow-x-auto overflow-y-hidden scrollbar-visible" style={{ height: 14 }}>
           <div style={{ width: contentWidth, height: 1 }} />
         </div>
       )}
-      <div ref={bottomRef} onScroll={onBottomScroll} className="overflow-x-auto">
+      <div ref={bottomRef} onScroll={onBottomScroll} className="overflow-x-auto scrollbar-x-visible">
         <div ref={measureRef}>{children}</div>
       </div>
     </div>
