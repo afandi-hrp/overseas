@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from '../lib/supabase';
-import { Receipt, FileText, Landmark, Ship, Sailboat, FileCheck2, FileDigit, IdCard, Scale, ClipboardList, Edit3, CheckCircle2, XCircle, Clock, Building2, Plane, CalendarDays, UserCheck } from 'lucide-react';
+import { Receipt, FileText, Landmark, Ship, Sailboat, FileCheck2, FileDigit, IdCard, Scale, ClipboardList, Edit3, CheckCircle2, XCircle, Clock, Building2, Plane, CalendarDays, UserCheck, ChevronDown, ChevronUp } from 'lucide-react';
 import ValidasiPerhitunganPIB from './ValidasiPerhitunganPIB';
 
 // Tabel lebar dengan scrollbar horizontal ganda (atas & bawah) yang disinkronkan,
@@ -501,6 +501,10 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
   const [loading, setLoading] = useState(true);
   const [npwps, setNpwps] = useState<any[]>([]);
   const [isEditMode, setIsEditMode] = useState(false);
+  // Panel header (meta info AWB/Vendor/dst + Catatan Manual) sengaja freeze/tidak ikut scroll --
+  // tapi itu artinya makan tempat permanen di layar. Kasih opsi ciutkan (default terbuka) supaya
+  // user bisa kecilkan ke cuma judul saja kalau tabelnya perlu ruang lebih pas di layar pendek.
+  const [showHeaderDetail, setShowHeaderDetail] = useState(true);
   const [snapshotValues, setSnapshotValues] = useState<any>(null);
   const [pibStats, setPibStats] = useState({ match: 0, mismatch: 0, empty: 0 });
 
@@ -1265,83 +1269,100 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
           </div>
         </div>
         
-        <div className="bg-gradient-to-r from-[#FFF5C5]/55 to-[#F58C77]/35 px-3 md:px-4 pt-3 md:pt-4 pb-3 border-b border-[#5A305A]/15 shrink-0 z-10 print:p-0 print:bg-white">
+        <div className="bg-gradient-to-r from-[#FFF5C5]/55 to-[#F58C77]/35 px-3 md:px-4 pt-2 md:pt-2.5 pb-2 border-b border-[#5A305A]/15 shrink-0 z-10 print:p-0 print:bg-white">
           <div style={S.page}>
             <div style={{...S.header, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', gap: '10px'}}>
               <div style={{ flex: 1 }}>
                 <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-[#5A305A]/10 flex items-center justify-center shrink-0 print:hidden">
-                    <ClipboardList size={14} className="text-[#5A305A]" />
+                  <div className="w-6 h-6 rounded-lg bg-[#5A305A]/10 flex items-center justify-center shrink-0 print:hidden">
+                    <ClipboardList size={12} className="text-[#5A305A]" />
                   </div>
-                  <p style={{...S.title, fontSize: "16px"}}>Tabel Validasi Dokumen Import</p>
+                  <p style={{...S.title, fontSize: "14px"}}>Tabel Validasi Dokumen Import</p>
+                  {/* Toggle ciutkan/lebarkan panel meta info -- header ini freeze (tidak ikut
+                      scroll), jadi kalau selalu full terbuka bisa makan banyak ruang layar
+                      terutama di laptop yang tingginya pendek. Default terbuka, tidak ikut cetak. */}
+                  <button
+                    type="button"
+                    onClick={() => setShowHeaderDetail(v => !v)}
+                    className="print:hidden ml-1 flex items-center gap-0.5 text-[10px] font-semibold text-[#5A305A]/70 hover:text-[#5A305A] bg-white/60 hover:bg-white/90 border border-[#5A305A]/15 rounded-full px-2 py-0.5 transition-colors"
+                  >
+                    {showHeaderDetail ? <>Ciutkan <ChevronUp size={11} /></> : <>Lebarkan <ChevronDown size={11} /></>}
+                  </button>
                 </div>
+                {showHeaderDetail && (
                 <p style={{...S.subtitle, marginTop: "2px", fontSize: "11px", marginLeft: "0" }} className="print:ml-0">PT Indo Mulia Indah — isi nilai dari masing-masing dokumen, status sesuai/tidak sesuai akan tampil otomatis</p>
-                <div style={{...S.metaRow, marginTop: "10px", gap: "8px"}}>
-                  <div className="flex items-center gap-2 bg-white/90 border border-[#5A305A]/15 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
-                    <FileText size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
+                )}
+                {showHeaderDetail && (
+                <div style={{...S.metaRow, marginTop: "6px", gap: "6px"}}>
+                  <div className="flex items-center gap-1.5 bg-white/90 border border-[#5A305A]/15 rounded-lg px-2.5 py-1 print:bg-transparent print:border-0 print:px-0 print:py-0">
+                    <FileText size={12} className="text-[#8b5fa8] shrink-0 print:hidden" />
                     <div>
-                      <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Jenis Dokumen</div>
-                      <div className="text-[13px] font-semibold text-[#5A305A] leading-tight">{record?.jenis_dokumen || docType || "—"}</div>
+                      <div className="text-[9px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Jenis Dokumen</div>
+                      <div className="text-[12px] font-semibold text-[#5A305A] leading-tight">{record?.jenis_dokumen || docType || "—"}</div>
                     </div>
                   </div>
                   {(record?.no_pib || record?.nomor_pib) && (
-                    <div className="flex items-center gap-2 bg-white/90 border border-[#5A305A]/15 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
-                      <FileDigit size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
+                    <div className="flex items-center gap-1.5 bg-white/90 border border-[#5A305A]/15 rounded-lg px-2.5 py-1 print:bg-transparent print:border-0 print:px-0 print:py-0">
+                      <FileDigit size={12} className="text-[#8b5fa8] shrink-0 print:hidden" />
                       <div>
-                        <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">No. PIB</div>
-                        <div className="text-[13px] font-semibold text-[#5A305A] leading-tight">{record?.no_pib || record?.nomor_pib}</div>
+                        <div className="text-[9px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">No. PIB</div>
+                        <div className="text-[12px] font-semibold text-[#5A305A] leading-tight">{record?.no_pib || record?.nomor_pib}</div>
                       </div>
                     </div>
                   )}
-                  <div className="flex items-center gap-2 bg-white/90 border border-[#5A305A]/15 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
-                    <Building2 size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
+                  <div className="flex items-center gap-1.5 bg-white/90 border border-[#5A305A]/15 rounded-lg px-2.5 py-1 print:bg-transparent print:border-0 print:px-0 print:py-0">
+                    <Building2 size={12} className="text-[#8b5fa8] shrink-0 print:hidden" />
                     <div>
-                      <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Vendor</div>
-                      <div className="text-[13px] font-semibold text-[#5A305A] leading-tight">{record?.vendor || record?.nama_vendor || "—"}</div>
+                      <div className="text-[9px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Vendor</div>
+                      <div className="text-[12px] font-semibold text-[#5A305A] leading-tight">{record?.vendor || record?.nama_vendor || "—"}</div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 bg-white/90 border border-[#5A305A]/15 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
-                    <Plane size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
+                  <div className="flex items-center gap-1.5 bg-white/90 border border-[#5A305A]/15 rounded-lg px-2.5 py-1 print:bg-transparent print:border-0 print:px-0 print:py-0">
+                    <Plane size={12} className="text-[#8b5fa8] shrink-0 print:hidden" />
                     <div>
-                      <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">No. AWB</div>
-                      {isEditMode ? <input style={S.metaInput} value={awbNo || ""} onChange={e => setAwbNo(e.target.value)} placeholder="Misal: 1234567890" /> : <div className="text-[13px] font-semibold text-[#5A305A] leading-tight">{awbNo || "—"}</div>}
+                      <div className="text-[9px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">No. AWB</div>
+                      {isEditMode ? <input style={S.metaInput} value={awbNo || ""} onChange={e => setAwbNo(e.target.value)} placeholder="Misal: 1234567890" /> : <div className="text-[12px] font-semibold text-[#5A305A] leading-tight">{awbNo || "—"}</div>}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 bg-white/90 border border-[#5A305A]/15 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
-                    <CalendarDays size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
+                  <div className="flex items-center gap-1.5 bg-white/90 border border-[#5A305A]/15 rounded-lg px-2.5 py-1 print:bg-transparent print:border-0 print:px-0 print:py-0">
+                    <CalendarDays size={12} className="text-[#8b5fa8] shrink-0 print:hidden" />
                     <div>
-                      <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Tanggal cek</div>
-                      {isEditMode ? <input type="date" style={S.metaInput} value={tanggal || ""} onChange={e => setTanggal(e.target.value)} /> : <div className="text-[13px] font-semibold text-[#5A305A] leading-tight">{tanggal ? new Date(tanggal).toLocaleDateString('id-ID') : "—"}</div>}
+                      <div className="text-[9px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Tanggal cek</div>
+                      {isEditMode ? <input type="date" style={S.metaInput} value={tanggal || ""} onChange={e => setTanggal(e.target.value)} /> : <div className="text-[12px] font-semibold text-[#5A305A] leading-tight">{tanggal ? new Date(tanggal).toLocaleDateString('id-ID') : "—"}</div>}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 bg-white/90 border border-[#5A305A]/15 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
-                    <UserCheck size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
+                  <div className="flex items-center gap-1.5 bg-white/90 border border-[#5A305A]/15 rounded-lg px-2.5 py-1 print:bg-transparent print:border-0 print:px-0 print:py-0">
+                    <UserCheck size={12} className="text-[#8b5fa8] shrink-0 print:hidden" />
                     <div>
-                      <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Diperiksa oleh</div>
-                      {isEditMode ? <input style={S.metaInput} value={namaChecker || ""} onChange={e => setNamaChecker(e.target.value)} placeholder="Nama pemeriksa" /> : <div className="text-[13px] font-semibold text-[#5A305A] leading-tight">{namaChecker || "—"}</div>}
+                      <div className="text-[9px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Diperiksa oleh</div>
+                      {isEditMode ? <input style={S.metaInput} value={namaChecker || ""} onChange={e => setNamaChecker(e.target.value)} placeholder="Nama pemeriksa" /> : <div className="text-[12px] font-semibold text-[#5A305A] leading-tight">{namaChecker || "—"}</div>}
                     </div>
                   </div>
                 </div>
+                )}
 
                 {/* Catatan Perubahan Manual -- disimpan bareng checklist di tabel_checklist_validasi
                     (kolom catatan_manual), autosave sama seperti field header lain. SELALU
-                    ditampilkan (bahkan kalau masih kosong), tidak ikut nyetak. */}
-                <div className="mt-2.5 print:hidden max-w-xl">
-                  <label className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-1 block">Catatan Perubahan Manual</label>
+                    ditampilkan (bahkan kalau masih kosong) SELAMA panel tidak diciutkan, tidak
+                    ikut nyetak. */}
+                {showHeaderDetail && (
+                <div className="mt-1.5 print:hidden max-w-xl">
+                  <label className="text-[9px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5 block">Catatan Perubahan Manual</label>
                   {isEditMode ? (
                     <textarea
                       value={catatanManual}
                       onChange={e => setCatatanManual(e.target.value)}
                       placeholder="Masukkan alasan atau catatan jika ada perubahan nilai secara manual..."
-                      rows={2}
-                      className="w-full border border-purple-100 bg-white/70 rounded-lg px-3 py-2 text-[13px] text-[#5A305A] focus:outline-none focus:ring-2 focus:ring-purple-200 resize-none"
+                      rows={1}
+                      className="w-full border border-purple-100 bg-white/70 rounded-lg px-2.5 py-1.5 text-[12px] text-[#5A305A] focus:outline-none focus:ring-2 focus:ring-purple-200 resize-none"
                     />
                   ) : (
-                    <div className="bg-white/90 border border-[#5A305A]/15 rounded-lg px-3 py-2 text-[13px] text-[#5A305A] whitespace-pre-wrap">
+                    <div className="bg-white/90 border border-[#5A305A]/15 rounded-lg px-2.5 py-1.5 text-[12px] text-[#5A305A] whitespace-pre-wrap">
                       {catatanManual || <span className="italic text-[#5A305A]/50">Belum ada catatan.</span>}
                     </div>
                   )}
                 </div>
+                )}
               </div>
 
               <div className="print:hidden" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "8px" }}>
