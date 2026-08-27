@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from '../lib/supabase';
-import { Receipt, FileText, Landmark, Ship, FileDigit, ClipboardList, ShoppingCart, Edit3, CheckCircle2, XCircle, Clock, Building2, Plane, CalendarDays, UserCheck } from 'lucide-react';
+import { Receipt, FileText, Landmark, Ship, Sailboat, FileCheck2, FileDigit, IdCard, Scale, ClipboardList, Edit3, CheckCircle2, XCircle, Clock, Building2, Plane, CalendarDays, UserCheck } from 'lucide-react';
 import ValidasiPerhitunganPIB from './ValidasiPerhitunganPIB';
 
 // Tabel lebar dengan scrollbar horizontal ganda (atas & bawah) yang disinkronkan,
@@ -50,15 +50,18 @@ function DualScrollTable({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Ikon per section -- masing-masing sengaja dibuat BEDA & merepresentasikan jenis dokumennya
+// (sebelumnya "s_pib"/"s_tabel_npwp"/"s_sptnp" bertiga sama-sama pakai Landmark, jadi sekilas
+// tidak bisa dibedakan satu sama lain saat scroll cepat).
 const sectionIcons: Record<string, React.ReactNode> = {
-  "s_inv_freight_duty": <Receipt size={24} />,
-  "s_tabel_npwp": <Landmark size={24} />,
-  "s_pib": <Landmark size={24} />,
-  "s_sppbmcp": <Ship size={24} />,
-  "s_billing": <FileDigit size={24} />,
-  "s_cipl": <ClipboardList size={24} />,
-  "s_no_vessel_imo": <ShoppingCart size={24} />,
-  "s_sptnp": <Landmark size={24} />,
+  "s_inv_freight_duty": <Receipt size={24} />,      // Invoice Freight & Duty -- dokumen tagihan/invoice
+  "s_pib": <FileCheck2 size={24} />,                // PIB -- dokumen deklarasi pabean yang sudah disetujui
+  "s_sppbmcp": <Ship size={24} />,                  // SPPBMCP -- surat persetujuan pengeluaran barang/kapal
+  "s_billing": <Landmark size={24} />,               // Billing DJBC -- tagihan resmi dari instansi bea cukai
+  "s_cipl": <ClipboardList size={24} />,             // CIPL -- Commercial Invoice & Packing List
+  "s_no_vessel_imo": <Sailboat size={24} />,         // Cek nama vessel & nomor IMO
+  "s_sptnp": <Scale size={24} />,                    // SPTNP -- Surat Penetapan Tarif & Nilai Pabean (penilaian/tarif)
+  "s_tabel_npwp": <IdCard size={24} />,              // Tabel NPWP -- identitas/nomor pokok wajib pajak
 };
 
 const headerColors: Record<string, { bg: string, text: string }> = {
@@ -246,10 +249,6 @@ const SECTIONS: SectionConfig[] = [
       { id: "sptnp01_b", compareDoc: "BPN SPTNP", field: "Nomor Dokumen" },
       { id: "sptnp02_a", compareDoc: "Billing SPTNP", field: "Total" },
       { id: "sptnp02_b", compareDoc: "BPN SPTNP", field: "Total" },
-      { id: "sptnp03_a", compareDoc: "Billing SPTNP", field: "No. NPWP" },
-      { id: "sptnp03_b", compareDoc: "BPN SPTNP", field: "No. NPWP" },
-      { id: "sptnp04_a", compareDoc: "Billing SPTNP", field: "Nama NPWP" },
-      { id: "sptnp04_b", compareDoc: "BPN SPTNP", field: "Nama NPWP" },
     ]
   },
   {
@@ -754,10 +753,10 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
         fill("bt_vendor_nama_npwp", btVendorV.nama_pt || "", findNpwpWithFallback(btVendorV.npwp, btVendorV.nama_pt)?.nama || "");
 
         // BILLING DJBC
-        fill("bdjbc01", bpnV.nomor_aju || "", pibV.no_pengajuan || "");
-        fill("bdjbc02", bdjbc || "", pibV.total_bayar || "");
-        fill("bdjbc03", bpnV.nomor_aju || "", bpnV.nomor_dokumen || "");
-        fill("bdjbc04", bdjbc || "", bpnV.total || "");
+        fill("bdjbc01", pibV.no_pengajuan || "", raw.billing_djbc_nomor_aju || "");
+        fill("bdjbc02", pibV.total_bayar || "", bdjbc || "");
+        fill("bdjbc03", pibV.no_pengajuan || "", bpnV.nomor_dokumen || "");
+        fill("bdjbc04", pibV.total_bayar || "", bpnV.total || "");
 
         // CIPL
         fill("cipl01", ciplV.total_value || "", raw.po_total_value || "");
@@ -841,10 +840,6 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
            fill("sptnp01_b", sptnpV.no_dokumen, bpnSptnp.no_dokumen);
            fill("sptnp02_a", sptnpV.total, billingSptnp.total);
            fill("sptnp02_b", sptnpV.total, bpnSptnp.total);
-           fill("sptnp03_a", sptnpV.npwp, billingSptnp.npwp);
-           fill("sptnp03_b", sptnpV.npwp, bpnSptnp.npwp);
-           fill("sptnp04_a", sptnpV.nama_pt, billingSptnp.nama_pt);
-           fill("sptnp04_b", sptnpV.nama_pt, bpnSptnp.nama_pt);
 
            // SPTNP / Billing SPTNP / BPN SPTNP NPWP Lookup (vs Master NPWP)
            const sptnpMasterNpwp = findNpwp(sptnpV.npwp);
@@ -859,7 +854,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
            fill("bpn_sptnp_no_npwp", bpnSptnp.npwp || "", bpnSptnpMasterNpwp?.npwp || "");
            fill("bpn_sptnp_nama_npwp", bpnSptnp.nama_pt || "", findNpwpWithFallback(bpnSptnp.npwp, bpnSptnp.nama_pt)?.nama || "");
         } else {
-           const ids = ["sptnp01_a", "sptnp01_b", "sptnp02_a", "sptnp02_b", "sptnp03_a", "sptnp03_b", "sptnp04_a", "sptnp04_b", "sptnp_no_npwp", "sptnp_nama_npwp", "billing_sptnp_no_npwp", "billing_sptnp_nama_npwp", "bpn_sptnp_no_npwp", "bpn_sptnp_nama_npwp"];
+           const ids = ["sptnp01_a", "sptnp01_b", "sptnp02_a", "sptnp02_b", "sptnp_no_npwp", "sptnp_nama_npwp", "billing_sptnp_no_npwp", "billing_sptnp_nama_npwp", "bpn_sptnp_no_npwp", "bpn_sptnp_nama_npwp"];
            ids.forEach(id => fill(id, null, null));
         }
 
@@ -1270,7 +1265,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
           </div>
         </div>
         
-        <div className="bg-gradient-to-r from-purple-50 via-purple-50/60 to-white px-3 md:px-4 pt-3 md:pt-4 pb-3 border-b border-purple-100 shrink-0 z-10 print:p-0 print:bg-white">
+        <div className="bg-gradient-to-r from-[#FFF5C5]/55 to-[#F58C77]/35 px-3 md:px-4 pt-3 md:pt-4 pb-3 border-b border-[#5A305A]/15 shrink-0 z-10 print:p-0 print:bg-white">
           <div style={S.page}>
             <div style={{...S.header, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', gap: '10px'}}>
               <div style={{ flex: 1 }}>
@@ -1282,7 +1277,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                 </div>
                 <p style={{...S.subtitle, marginTop: "2px", fontSize: "11px", marginLeft: "0" }} className="print:ml-0">PT Indo Mulia Indah — isi nilai dari masing-masing dokumen, status sesuai/tidak sesuai akan tampil otomatis</p>
                 <div style={{...S.metaRow, marginTop: "10px", gap: "8px"}}>
-                  <div className="flex items-center gap-2 bg-white/70 border border-purple-100 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
+                  <div className="flex items-center gap-2 bg-white/90 border border-[#5A305A]/15 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
                     <FileText size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
                     <div>
                       <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Jenis Dokumen</div>
@@ -1290,7 +1285,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                     </div>
                   </div>
                   {(record?.no_pib || record?.nomor_pib) && (
-                    <div className="flex items-center gap-2 bg-white/70 border border-purple-100 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
+                    <div className="flex items-center gap-2 bg-white/90 border border-[#5A305A]/15 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
                       <FileDigit size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
                       <div>
                         <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">No. PIB</div>
@@ -1298,28 +1293,28 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                       </div>
                     </div>
                   )}
-                  <div className="flex items-center gap-2 bg-white/70 border border-purple-100 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
+                  <div className="flex items-center gap-2 bg-white/90 border border-[#5A305A]/15 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
                     <Building2 size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
                     <div>
                       <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Vendor</div>
                       <div className="text-[13px] font-semibold text-[#5A305A] leading-tight">{record?.vendor || record?.nama_vendor || "—"}</div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 bg-white/70 border border-purple-100 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
+                  <div className="flex items-center gap-2 bg-white/90 border border-[#5A305A]/15 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
                     <Plane size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
                     <div>
                       <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">No. AWB</div>
                       {isEditMode ? <input style={S.metaInput} value={awbNo || ""} onChange={e => setAwbNo(e.target.value)} placeholder="Misal: 1234567890" /> : <div className="text-[13px] font-semibold text-[#5A305A] leading-tight">{awbNo || "—"}</div>}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 bg-white/70 border border-purple-100 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
+                  <div className="flex items-center gap-2 bg-white/90 border border-[#5A305A]/15 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
                     <CalendarDays size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
                     <div>
                       <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Tanggal cek</div>
                       {isEditMode ? <input type="date" style={S.metaInput} value={tanggal || ""} onChange={e => setTanggal(e.target.value)} /> : <div className="text-[13px] font-semibold text-[#5A305A] leading-tight">{tanggal ? new Date(tanggal).toLocaleDateString('id-ID') : "—"}</div>}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 bg-white/70 border border-purple-100 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
+                  <div className="flex items-center gap-2 bg-white/90 border border-[#5A305A]/15 rounded-lg px-3 py-1.5 print:bg-transparent print:border-0 print:px-0 print:py-0">
                     <UserCheck size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
                     <div>
                       <div className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Diperiksa oleh</div>
@@ -1331,7 +1326,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                 {/* Catatan Perubahan Manual -- disimpan bareng checklist di tabel_checklist_validasi
                     (kolom catatan_manual), autosave sama seperti field header lain. SELALU
                     ditampilkan (bahkan kalau masih kosong), tidak ikut nyetak. */}
-                <div className="mt-2.5 print:hidden">
+                <div className="mt-2.5 print:hidden max-w-xl">
                   <label className="text-[10px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-1 block">Catatan Perubahan Manual</label>
                   {isEditMode ? (
                     <textarea
@@ -1342,7 +1337,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                       className="w-full border border-purple-100 bg-white/70 rounded-lg px-3 py-2 text-[13px] text-[#5A305A] focus:outline-none focus:ring-2 focus:ring-purple-200 resize-none"
                     />
                   ) : (
-                    <div className="bg-white/70 border border-purple-100 rounded-lg px-3 py-2 text-[13px] text-[#5A305A] whitespace-pre-wrap">
+                    <div className="bg-white/90 border border-[#5A305A]/15 rounded-lg px-3 py-2 text-[13px] text-[#5A305A] whitespace-pre-wrap">
                       {catatanManual || <span className="italic text-[#5A305A]/50">Belum ada catatan.</span>}
                     </div>
                   )}
@@ -1407,7 +1402,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                          <div className="text-[9px] mt-1 text-[#5A305A] normal-case tracking-normal">jika ada — khusus jalur PIB</div>
                       )}
                     </div>
-                    <div className="md:mt-auto ml-auto md:ml-0 flex items-center justify-center">
+                    <div className="ml-auto md:ml-0 flex items-center justify-center">
                        <span style={S.sectionBadge(ss.match, ss.mismatch)} className="text-[10px] whitespace-nowrap shadow-sm">
                           {ss.match === ss.total && ss.total > 0
                             ? `${ss.total}/${ss.total} sesuai`

@@ -4,6 +4,11 @@ import { Landmark, X, Trash2, Search, ChevronLeft, ChevronRight } from 'lucide-r
 
 const BULAN_ID = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 
+const MATA_UANG_OPTIONS = [
+  'AED', 'AUD', 'BND', 'CAD', 'CHF', 'CNH', 'RMB', 'DKK', 'EUR', 'GBP', 'HKD', 'JPY', 'KRW',
+  'KWD', 'LAK', 'MYR', 'NOK', 'NZD', 'PGK', 'PHP', 'SAR', 'SEK', 'SGD', 'THB', 'USD', 'VND',
+];
+
 // Format DD-MMMM-YYYY (mis. "27-Agustus-2026") -- kolom "tanggal" tersimpan sbg string
 // "YYYY-MM-DD" (date murni, tanpa jam), jadi diparse manual dari string, BUKAN via
 // `new Date(val)`, supaya tidak ikut kena geser timezone (date-only string diinterpretasi
@@ -21,6 +26,11 @@ function formatTanggalID(val: string | null | undefined): string {
 export default function KursBIPage() {
 
   const [mataUang, setMataUang] = useState('USD');
+  // Mode manual -- toggle antara <select> (klik dari daftar) vs text input bebas (buat mata
+  // uang yang belum ada di daftar). Default mode select supaya "pilih dari daftar" bekerja
+  // beneran (sebelumnya pakai <input list="..."> / datalist, yang di beberapa browser tidak
+  // jelas terlihat sebagai daftar yang bisa diklik).
+  const [mataUangManual, setMataUangManual] = useState(false);
   const [tanggal, setTanggal] = useState(new Date().toISOString().substring(0, 10));
   const [kursJual, setKursJual] = useState('');
   const [kursTengah, setKursTengah] = useState('');
@@ -174,6 +184,10 @@ export default function KursBIPage() {
   const handleEdit = (rec: any) => {
     setEditingId(rec.id);
     setMataUang(rec.mata_uang);
+    // Kalau mata uang baris ini tidak ada di daftar (mis. sudah dihapus dari daftar, atau
+    // memang diinput manual sebelumnya), otomatis buka mode manual supaya nilainya tidak
+    // diam-diam ke-reset ke pilihan pertama daftar begitu <select> dirender.
+    setMataUangManual(!MATA_UANG_OPTIONS.includes(rec.mata_uang));
     setTanggal(rec.tanggal);
     setKursJual(rec.kurs_jual?.toString() || '');
     setKursTengah(rec.kurs_tengah?.toString() || '');
@@ -184,6 +198,7 @@ export default function KursBIPage() {
   const handleCancelEdit = () => {
     setEditingId(null);
     setMataUang('USD');
+    setMataUangManual(false);
     setTanggal(new Date().toISOString().substring(0, 10));
     setKursJual('');
     setKursTengah('');
@@ -244,18 +259,35 @@ export default function KursBIPage() {
           <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
               <div>
-                <label className="block text-xs font-semibold text-[#5A305A] mb-1">Mata Uang</label>
-                <select 
-                  value={mataUang}
-                  onChange={(e) => setMataUang(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="USD">USD</option>
-                  <option value="SGD">SGD</option>
-                  <option value="EUR">EUR</option>
-                  <option value="JPY">JPY</option>
-                  <option value="RMB">RMB</option>
-                </select>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-[#5A305A]">Mata Uang</label>
+                  <button
+                    type="button"
+                    onClick={() => setMataUangManual(m => !m)}
+                    className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 underline"
+                  >
+                    {mataUangManual ? 'Pilih dari daftar' : '+ Input manual'}
+                  </button>
+                </div>
+                {mataUangManual ? (
+                  <input
+                    type="text"
+                    autoFocus
+                    value={mataUang}
+                    onChange={(e) => setMataUang(e.target.value.toUpperCase())}
+                    placeholder="Contoh: IDR"
+                    maxLength={10}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase"
+                  />
+                ) : (
+                  <select
+                    value={mataUang}
+                    onChange={(e) => setMataUang(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    {MATA_UANG_OPTIONS.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-semibold text-[#5A305A] mb-1">Tanggal</label>

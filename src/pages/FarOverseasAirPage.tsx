@@ -739,7 +739,7 @@ export default function FarOverseasAirPage() {
                                     : 'bg-white text-[#5A305A] border-slate-200 shadow-sm hover:border-[#5A305A] hover:bg-[#5A305A]/5'
                                 }`}
                               >
-                                Aksi
+                                Action
                                 <ChevronDown size={13} className={`transition-transform duration-200 ${openActionsRowId === r.id ? 'rotate-180' : ''}`} />
                               </button>
                               {openActionsRowId === r.id && (

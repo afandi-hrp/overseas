@@ -1389,7 +1389,7 @@ const SeaAirAuditRowGroup: React.FC<{
                             : 'bg-white text-[#5A305A] border-slate-200 shadow-sm hover:border-[#5A305A] hover:bg-[#5A305A]/5'
                         }`}
                       >
-                        Aksi
+                        Action
                         <ChevronDown size={13} className={`transition-transform duration-200 ${showActions ? 'rotate-180' : ''}`} />
                       </button>
                       {showActions && (
@@ -1449,11 +1449,12 @@ const CourierAuditRowGroup: React.FC<{
   onInlineSaveRow?: (id: number, payload: any) => Promise<boolean>
 }> = ({ rec, index, cols, onEdit, onChecklist, onValidasi, onCostValidasi, onArchive, onUndraft, onDelete, onInlineSaveRow }) => {
   const repeatingCols = ['po_ori', 'vendor_inv_no', 'po_harga_detail'];
-  
+
   const [isEditing, setIsEditing] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [showActions, setShowActions] = useState(false);
 
   const handleStartEdit = () => {
     if (onInlineSaveRow) {
@@ -1580,40 +1581,55 @@ const CourierAuditRowGroup: React.FC<{
                     </>
                   ) : (
                     <>
-                      {(onEdit || onInlineSaveRow) && rec.status !== 'LENGKAP' && (
-                        <button onClick={handleStartEdit} className="w-[80px] bg-white border border-slate-200 text-[#5A305A] hover:border-slate-300 hover:bg-slate-50 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
-                          ✏️ Edit
-                        </button>
-                      )}
-                      {onChecklist && rec.status !== 'LENGKAP' && (
-                        <button onClick={() => onChecklist(rec)} className="w-[80px] bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 hover:border-amber-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
-                          📋 Checklist
-                        </button>
-                      )}
-                      {onValidasi && rec.status !== 'LENGKAP' && (
-                        <button onClick={() => onValidasi(rec)} className="w-[80px] bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
-                          🔍 Doc Validation
-                        </button>
-                      )}
-                      {onCostValidasi && rec.status !== 'LENGKAP' && (
-                        <button onClick={() => onCostValidasi(rec)} className="w-[80px] bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100 hover:border-purple-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
-                          💲 Cost. Validation
-                        </button>
-                      )}
-                      {onArchive && (
-                        <button onClick={() => onArchive(rec)} className="w-[80px] bg-orange-50 text-orange-600 hover:bg-orange-100 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all border border-orange-200 shadow-sm">
-                          {rec.status === 'LENGKAP' ? '📦 Unarchived' : '🗄️ Draft'}
-                        </button>
-                      )}
-                      {onUndraft && (
-                        <button onClick={() => onUndraft(rec)} className="w-[80px] bg-emerald-50 border border-emerald-200 text-emerald-600 hover:bg-emerald-100 hover:border-emerald-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
-                          🗄️ Undraft
-                        </button>
-                      )}
-                      {onDelete && rec.status !== 'LENGKAP' && (
-                        <button onClick={() => onDelete(rec)} className="w-[80px] bg-white border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
-                          🗑️ Hapus
-                        </button>
+                      <button
+                        onClick={() => setShowActions(!showActions)}
+                        className={`w-[80px] flex items-center justify-center gap-1 text-[10px] font-bold px-2 py-2 rounded-lg border transition-all ${
+                          showActions
+                            ? 'bg-[#5A305A] text-white border-[#5A305A] shadow-md'
+                            : 'bg-white text-[#5A305A] border-slate-200 shadow-sm hover:border-[#5A305A] hover:bg-[#5A305A]/5'
+                        }`}
+                      >
+                        Action
+                        <ChevronDown size={13} className={`transition-transform duration-200 ${showActions ? 'rotate-180' : ''}`} />
+                      </button>
+                      {showActions && (
+                        <div className="flex flex-col gap-1.5 items-center bg-slate-50 border border-slate-200 rounded-lg p-1.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
+                          {(onEdit || onInlineSaveRow) && rec.status !== 'LENGKAP' && (
+                            <button onClick={() => { handleStartEdit(); setShowActions(false); }} className="w-[80px] bg-white border border-slate-200 text-[#5A305A] hover:border-slate-300 hover:bg-slate-50 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
+                              ✏️ Edit
+                            </button>
+                          )}
+                          {onChecklist && rec.status !== 'LENGKAP' && (
+                            <button onClick={() => { onChecklist(rec); setShowActions(false); }} className="w-[80px] bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 hover:border-amber-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
+                              📋 Checklist
+                            </button>
+                          )}
+                          {onValidasi && rec.status !== 'LENGKAP' && (
+                            <button onClick={() => { onValidasi(rec); setShowActions(false); }} className="w-[80px] bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
+                              🔍 Doc Validation
+                            </button>
+                          )}
+                          {onCostValidasi && rec.status !== 'LENGKAP' && (
+                            <button onClick={() => { onCostValidasi(rec); setShowActions(false); }} className="w-[80px] bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100 hover:border-purple-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
+                              💲 Cost. Validation
+                            </button>
+                          )}
+                          {onArchive && (
+                            <button onClick={() => { onArchive(rec); setShowActions(false); }} className="w-[80px] bg-orange-50 text-orange-600 hover:bg-orange-100 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all border border-orange-200 shadow-sm">
+                              {rec.status === 'LENGKAP' ? '📦 Unarchived' : '🗄️ Draft'}
+                            </button>
+                          )}
+                          {onUndraft && (
+                            <button onClick={() => { onUndraft(rec); setShowActions(false); }} className="w-[80px] bg-emerald-50 border border-emerald-200 text-emerald-600 hover:bg-emerald-100 hover:border-emerald-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
+                              🗄️ Undraft
+                            </button>
+                          )}
+                          {onDelete && rec.status !== 'LENGKAP' && (
+                            <button onClick={() => { onDelete(rec); setShowActions(false); }} className="w-[80px] bg-white border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
+                              🗑️ Hapus
+                            </button>
+                          )}
+                        </div>
                       )}
                     </>
                   )}
@@ -1635,11 +1651,12 @@ const CourierRekapanRowGroup: React.FC<{
   onInlineSaveRow?: (id: number, payload: any) => Promise<boolean>
 }> = ({ rec, index, cols, onEdit, onDelete, onInlineSaveRow }) => {
   const repeatingCols = ['po_pt_imi', 'vessel', 'breakdown_courier_adm_vessel', 'breakdown_duty_vessel', 'breakdown_freight_vessel', 'breakdown_bm_vessel', 'breakdown_ppnpph_vessel'];
-  
+
   const [isEditing, setIsEditing] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [showActions, setShowActions] = useState(false);
 
   const handleStartEdit = () => {
     if (onInlineSaveRow) {
@@ -1781,15 +1798,30 @@ const CourierRekapanRowGroup: React.FC<{
                     </>
                   ) : (
                     <>
-                      {(onEdit || onInlineSaveRow) && rec.status !== 'LENGKAP' && (
-                        <button onClick={handleStartEdit} className="w-[80px] bg-white border border-slate-200 text-[#5A305A] hover:border-slate-300 hover:bg-slate-50 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
-                          ✏️ Edit
-                        </button>
-                      )}
-                      {onDelete && (
-                        <button onClick={() => onDelete(rec)} className="w-[80px] bg-white border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
-                          🗑️ Hapus
-                        </button>
+                      <button
+                        onClick={() => setShowActions(!showActions)}
+                        className={`w-[80px] flex items-center justify-center gap-1 text-[10px] font-bold px-2 py-2 rounded-lg border transition-all ${
+                          showActions
+                            ? 'bg-[#5A305A] text-white border-[#5A305A] shadow-md'
+                            : 'bg-white text-[#5A305A] border-slate-200 shadow-sm hover:border-[#5A305A] hover:bg-[#5A305A]/5'
+                        }`}
+                      >
+                        Action
+                        <ChevronDown size={13} className={`transition-transform duration-200 ${showActions ? 'rotate-180' : ''}`} />
+                      </button>
+                      {showActions && (
+                        <div className="flex flex-col gap-1.5 items-center bg-slate-50 border border-slate-200 rounded-lg p-1.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
+                          {(onEdit || onInlineSaveRow) && rec.status !== 'LENGKAP' && (
+                            <button onClick={() => { handleStartEdit(); setShowActions(false); }} className="w-[80px] bg-white border border-slate-200 text-[#5A305A] hover:border-slate-300 hover:bg-slate-50 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
+                              ✏️ Edit
+                            </button>
+                          )}
+                          {onDelete && (
+                            <button onClick={() => { onDelete(rec); setShowActions(false); }} className="w-[80px] bg-white border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
+                              🗑️ Hapus
+                            </button>
+                          )}
+                        </div>
                       )}
                     </>
                   )}
@@ -2017,7 +2049,7 @@ const SeaAirRekapanRowGroup: React.FC<{
                             : 'bg-white text-[#5A305A] border-slate-200 shadow-sm hover:border-[#5A305A] hover:bg-[#5A305A]/5'
                         }`}
                       >
-                        Aksi
+                        Action
                         <ChevronDown size={13} className={`transition-transform duration-200 ${showActions ? 'rotate-180' : ''}`} />
                       </button>
                       {showActions && (
