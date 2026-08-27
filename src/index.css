@@ -118,6 +118,12 @@
 .bunker-html-value [style*="--error"] { color: var(--error) !important; }
 .bunker-html-value [style*="--warning-color"] { color: var(--warning-color) !important; }
 
+/* Penanda "⚙️ Calc:" (nilai hasil kalkulasi otomatis, ditandai lewat highlightCalcMarker() di
+   BunkerCompareDocModal.tsx) -- dibedakan warnanya dari teks lain di sel yang sama. Class
+   ganda (.bunker-html-value .bunker-calc-marker) sengaja dipakai supaya spesifisitasnya
+   menang dari aturan ".bunker-html-value *" di atas walau sama-sama !important. */
+.bunker-html-value .bunker-calc-marker { color: #F58C77 !important; }
+
 /* Print modal "Perbandingan Dokumen — Bunker" (BunkerCompareDocModal) apa adanya, full-page.
    Modal ini normalnya "fixed inset-0" (layar penuh) supaya browser cuma nyetak apa yang
    kebetulan kelihatan di satu viewport (persis potongan kecil di screenshot bug report),

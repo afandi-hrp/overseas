@@ -19,12 +19,22 @@ type MatrixRow = {
 // mentah (span berwarna pakai var(--success)/var(--error)/var(--warning-color), .page-ref, dst)
 // dari backend sendiri (bukan input user bebas) -- WAJIB dirender apa adanya, jangan di-escape,
 // atau yang muncul di layar cuma teks tag <span> mentah.
+// Tandai literal "⚙️ Calc: <angka>" (penanda nilai hasil kalkulasi otomatis, bukan dari
+// dokumen asli) jadi warna beda (#F58C77) + baris baru di antara label & angkanya, supaya
+// kelihatan jelas bedanya dari teks lain di sel yang sama. Angka ikut diwarnai sama (bukan
+// cuma labelnya) -- ditempel pakai class (bukan style inline) jadi TIDAK ketiban aturan
+// .bunker-html-value di index.css yang memaksa warna default #5A305A.
+function highlightCalcMarker(html: string): string {
+  return html.replace(/⚙️\s*Calc:\s*([\d.,]+)/g, (_m, num: string) =>
+    `<span class="bunker-calc-marker">⚙️ Calc:</span><br/><span class="bunker-calc-marker">${num}</span>`);
+}
+
 function HtmlValue({ html }: { html: string | null | undefined }) {
   if (html == null || html === '') return <span className="italic text-slate-400">-</span>;
   // class "bunker-html-value" (lihat index.css) memaksa semua teks di dalam HTML mentah ini
   // pakai #5A305A -- KECUALI span yang backend sendiri warnai pakai var(--success)/
   // var(--error)/var(--warning-color), supaya badge hijau/merah/kuningnya tetap kebaca.
-  return <span className="bunker-html-value" dangerouslySetInnerHTML={{ __html: html }} />;
+  return <span className="bunker-html-value" dangerouslySetInnerHTML={{ __html: highlightCalcMarker(html) }} />;
 }
 
 // Deteksi mismatch yang secara eksplisit memperingatkan kemungkinan dokumen ke-upload ke baris
@@ -40,11 +50,11 @@ function StatusBadgeCell({ row }: { row: MatrixRow }) {
   const meta = rowStatusMeta(row.row_status);
   return (
     <div className="flex flex-col items-start gap-0.5">
-      <span className={`inline-flex items-center gap-0.5 text-[8px] font-bold px-1 py-0.5 rounded-full whitespace-nowrap ${meta.badgeClass}`}>
-        {row.row_status === 'Match' ? <CheckCircle2 size={9} /> : row.row_status === 'Mismatch' ? <XCircle size={9} /> : row.row_status === 'Warning' ? <AlertTriangle size={9} /> : null}
+      <span className={`inline-flex items-center gap-1 text-[11px] xl:text-[13px] font-bold px-1.5 py-1 rounded-full whitespace-nowrap ${meta.badgeClass}`}>
+        {row.row_status === 'Match' ? <CheckCircle2 size={12} /> : row.row_status === 'Mismatch' ? <XCircle size={12} /> : row.row_status === 'Warning' ? <AlertTriangle size={12} /> : null}
         {meta.label}
       </span>
-      {row.row_reason && <p className="text-[8px] text-[#5A305A]/60 break-words leading-snug" title={row.row_reason}>{row.row_reason}</p>}
+      {row.row_reason && <p className="text-[10px] xl:text-[12px] text-[#5A305A]/60 break-words leading-snug" title={row.row_reason}>{row.row_reason}</p>}
     </div>
   );
 }
@@ -131,7 +141,7 @@ function ConfirmMatchCell({ row, bunkerId, statusManualRaw, onConfirmed }: {
   const [saving, setSaving] = useState(false);
 
   const canConfirm = row.row_status === 'Mismatch' || row.row_status === 'Warning';
-  if (!canConfirm) return <span className="text-[9px] text-slate-300">-</span>;
+  if (!canConfirm) return <span className="text-[11px] xl:text-[13px] text-slate-300">-</span>;
 
   const statusManual = parseJsonField(statusManualRaw) || {};
   const entry = statusManual[row.field];
@@ -172,13 +182,13 @@ function ConfirmMatchCell({ row, bunkerId, statusManualRaw, onConfirmed }: {
     const badgeMeta = rowStatusMeta(entry.manual_status);
     return (
       <div className="flex flex-col items-start gap-0.5">
-        <span className={`inline-flex items-center gap-0.5 text-[8px] font-bold px-1 py-0.5 rounded-full whitespace-nowrap ${badgeMeta.badgeClass}`}>
-          <ShieldCheck size={9} /> Manual{entry.manual_status ? `: ${entry.manual_status}` : ''}
+        <span className={`inline-flex items-center gap-1 text-[11px] xl:text-[13px] font-bold px-1.5 py-1 rounded-full whitespace-nowrap ${badgeMeta.badgeClass}`}>
+          <ShieldCheck size={12} /> Manual{entry.manual_status ? `: ${entry.manual_status}` : ''}
         </span>
-        {entry.catatan && <p className="text-[8px] text-[#5A305A]/70 break-words leading-snug italic">"{entry.catatan}"</p>}
-        {entry.confirmed_at && <p className="text-[7.5px] text-[#5A305A]/50 leading-snug">{formatDateTimeID(entry.confirmed_at)}</p>}
-        <button onClick={cancel} disabled={saving} className="text-[8px] font-semibold text-[#5A305A]/60 hover:text-rose-600 underline disabled:opacity-50 flex items-center gap-0.5">
-          <RotateCcw size={8} /> Batalkan
+        {entry.catatan && <p className="text-[10px] xl:text-[12px] text-[#5A305A]/70 break-words leading-snug italic">"{entry.catatan}"</p>}
+        {entry.confirmed_at && <p className="text-[9.5px] xl:text-[11px] text-[#5A305A]/50 leading-snug">{formatDateTimeID(entry.confirmed_at)}</p>}
+        <button onClick={cancel} disabled={saving} className="text-[10px] xl:text-[12px] font-semibold text-[#5A305A]/60 hover:text-rose-600 underline disabled:opacity-50 flex items-center gap-0.5">
+          <RotateCcw size={10} /> Batalkan
         </button>
       </div>
     );
@@ -186,7 +196,7 @@ function ConfirmMatchCell({ row, bunkerId, statusManualRaw, onConfirmed }: {
 
   return (
     <>
-      <button onClick={() => setShowPopup(true)} className="text-[8px] font-bold text-blue-600 hover:text-blue-800 underline whitespace-nowrap">
+      <button onClick={() => setShowPopup(true)} className="text-[11px] xl:text-[13px] font-bold text-blue-600 hover:text-blue-800 underline whitespace-nowrap">
         Konfirmasi
       </button>
       {showPopup && (
@@ -253,10 +263,10 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged }: {
         <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-slate-200 bg-white shrink-0 print:border-b-2">
           <div className="min-w-0">
             <h2 className="text-lg font-bold tracking-tight text-[#5A305A]">Perbandingan Dokumen — Bunker</h2>
-            <p className="text-xs font-light text-[#5A305A] mt-0.5 truncate">No PO: {rec.no_po || '-'} · {rec.vendor || '-'} · {rec.kapal || '-'}</p>
+            <p className="text-xs xl:text-sm font-light text-[#5A305A] mt-0.5 truncate">No PO: {rec.no_po || '-'} · {rec.vendor || '-'} · {rec.kapal || '-'}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full whitespace-nowrap ${statusMeta.badgeClass}`}>{statusMeta.label}</span>
+            <span className={`text-[11px] xl:text-sm font-bold px-2.5 py-1 rounded-full whitespace-nowrap ${statusMeta.badgeClass}`}>{statusMeta.label}</span>
             <button onClick={() => window.print()} className="px-3 py-1.5 text-sm font-medium bg-slate-100 hover:bg-slate-200 text-[#5A305A] rounded-md flex items-center gap-2 transition-colors print:hidden">
               <Printer size={16} /> Print
             </button>
@@ -287,7 +297,7 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged }: {
                   <p className="text-sm font-black text-rose-800">Kemungkinan Salah Upload ke Baris Ini</p>
                 </div>
                 <ul className="space-y-1 list-disc list-inside">
-                  {wrongRowWarnings.map((m, i) => <li key={i} className="text-xs text-rose-800 font-medium">{m}</li>)}
+                  {wrongRowWarnings.map((m, i) => <li key={i} className="text-xs xl:text-sm text-rose-800 font-medium">{m}</li>)}
                 </ul>
               </div>
             )}
@@ -301,7 +311,7 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged }: {
                       <p className="text-xs font-bold text-[#5A305A] uppercase tracking-wider">Mismatches</p>
                     </div>
                     <ul className="space-y-1 list-disc list-inside">
-                      {normalMismatches.map((m, i) => <li key={i} className="text-xs text-[#5A305A]">{m}</li>)}
+                      {normalMismatches.map((m, i) => <li key={i} className="text-xs xl:text-sm text-[#5A305A]">{m}</li>)}
                     </ul>
                   </div>
                 )}
@@ -312,7 +322,7 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged }: {
                       <p className="text-xs font-bold text-[#5A305A] uppercase tracking-wider">Actions</p>
                     </div>
                     <ul className="space-y-1 list-disc list-inside">
-                      {actions.map((a, i) => <li key={i} className="text-xs text-[#5A305A]">{a}</li>)}
+                      {actions.map((a, i) => <li key={i} className="text-xs xl:text-sm text-[#5A305A]">{a}</li>)}
                     </ul>
                   </div>
                 )}
@@ -322,7 +332,7 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged }: {
             {/* 1. DATA UTAMA DOKUMEN */}
             <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
               <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
-                <h3 className="text-sm font-bold text-[#5A305A]">1. Data Utama Dokumen</h3>
+                <h3 className="text-sm xl:text-base font-bold text-[#5A305A]">1. Data Utama Dokumen</h3>
               </div>
               {groups.length === 0 ? (
                 <p className="text-xs text-[#5A305A] italic text-center py-6">Belum ada data.</p>
@@ -330,11 +340,11 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged }: {
                 <div className="divide-y divide-slate-100">
                   {groups.map((g, gi) => (
                     <div key={gi} className="p-4">
-                      <p className="text-[11px] font-black text-[#5A305A] uppercase tracking-wider mb-2">{g.group}</p>
+                      <p className="text-[11px] xl:text-sm font-black text-[#5A305A] uppercase tracking-wider mb-2">{g.group}</p>
                       {/* Semua field berjejer ke bawah (1 kolom), tidak ada yang berdampingan */}
                       <div className="flex flex-col gap-1.5">
                         {(g.items || []).map((it, ii) => (
-                          <div key={ii} className="flex items-start gap-2 text-xs">
+                          <div key={ii} className="flex items-start gap-2 text-xs xl:text-sm">
                             <span className="text-[#5A305A]/60 w-40 shrink-0">{it.label}</span>
                             <span className="text-[#5A305A] font-medium break-words"><HtmlValue html={it.val} /></span>
                           </div>
@@ -359,7 +369,7 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged }: {
                 // monitor 24" -- teks panjang turun ke baris baru (break-words) alih-alih
                 // memaksa kolom melebar / overflow.
                 <div className="overflow-x-auto print:overflow-visible">
-                  <table className="w-full text-[11px] border-collapse table-fixed min-w-[1050px] print:min-w-0">
+                  <table className="w-full text-[11px] xl:text-[13px] border-collapse table-fixed min-w-[1050px] print:min-w-0">
                     <colgroup>
                       <col style={{ width: '14%' }} />
                       {matrixColumns.map(c => <col key={c.key} style={{ width: `${68 / matrixColumns.length}%` }} />)}
@@ -372,7 +382,7 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged }: {
                       <col className="w-[9%] print:hidden" />
                     </colgroup>
                     <thead>
-                      <tr className="text-[9.5px] text-white uppercase bg-[#5A305A]">
+                      <tr className="text-[9.5px] xl:text-[11px] text-white uppercase bg-[#5A305A]">
                         <th className="text-left font-semibold px-2.5 py-2 align-bottom break-words">Field</th>
                         {matrixColumns.map(c => (
                           <th key={c.key} className="text-left font-semibold px-2.5 py-2 align-bottom break-words leading-tight">{c.label}</th>
@@ -388,7 +398,7 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged }: {
                           <tr key={ri} className={rowStatusClass(row.row_status)}>
                             <td className="px-2.5 py-2 align-top border-r border-slate-200 bg-[#F58C77]">
                               <p className="font-bold text-[#5A305A] break-words leading-tight">{row.field}</p>
-                              {row.acuan_label && <p className="text-[9.5px] text-[#5A305A]/70 break-words mt-0.5">Acuan: {row.acuan_label}</p>}
+                              {row.acuan_label && <p className="text-[9.5px] xl:text-[11px] text-[#5A305A]/70 break-words mt-0.5">Acuan: {row.acuan_label}</p>}
                             </td>
                             {matrixColumns.map(c => (
                               <td
