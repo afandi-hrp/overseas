@@ -100,7 +100,7 @@ export default function FarOverseasAirUploadModal({ onClose, onJobStarted, onSen
 
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[70] flex justify-center items-center p-2 sm:p-4">
-      <div className="bg-white w-full max-w-lg max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+      <div className="bg-white w-[70vw] max-w-3xl max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
 
         <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-slate-200 shrink-0">
           <div>
@@ -125,7 +125,7 @@ export default function FarOverseasAirUploadModal({ onClose, onJobStarted, onSen
             onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
             onDragLeave={() => setDragging(false)}
             onClick={() => inputRef.current?.click()}
-            className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${
+            className={`border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer transition-all ${
               dragging ? 'border-[#5A305A] bg-[#5A305A]/5' :
               files.length > 0 ? 'border-emerald-300 bg-emerald-50/50 hover:border-emerald-400' :
               'border-slate-200 bg-slate-50 hover:border-[#5A305A]/40 hover:bg-[#5A305A]/5'

@@ -37,6 +37,14 @@ function HtmlValue({ html }: { html: string | null | undefined }) {
   return <span className="bunker-html-value" dangerouslySetInnerHTML={{ __html: highlightCalcMarker(html) }} />;
 }
 
+// no_po/vendor/kapal di bunker_dokumen kadang ikut membawa suffix "(Hal N)" -- referensi nomor
+// halaman dokumen sumber tempat AI mengambil nilai itu, dari hasil ekstraksi backend. Berguna
+// di tabel perbandingan (page-ref), tapi cuma bikin ramai di header modal -- dibuang di sini saja.
+function stripPageRef(v: string | null | undefined): string {
+  if (!v) return '-';
+  return v.replace(/\s*\(Hal\s*\d+\)\s*/gi, ' ').trim() || '-';
+}
+
 // Deteksi mismatch yang secara eksplisit memperingatkan kemungkinan dokumen ke-upload ke baris
 // No PO yang salah (lihat kontrak no_po_hint) -- ini harus lebih mencolok dari mismatch biasa.
 function isWrongRowMismatch(msg: string): boolean {
@@ -196,7 +204,7 @@ function ConfirmMatchCell({ row, bunkerId, statusManualRaw, onConfirmed }: {
 
   return (
     <>
-      <button onClick={() => setShowPopup(true)} className="text-[11px] xl:text-[13px] font-bold text-blue-600 hover:text-blue-800 underline whitespace-nowrap">
+      <button onClick={() => setShowPopup(true)} className="text-[11px] xl:text-[13px] font-bold text-blue-600 hover:text-white hover:bg-blue-600 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-full whitespace-nowrap transition-all">
         Konfirmasi
       </button>
       {showPopup && (
@@ -263,7 +271,11 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged }: {
         <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-slate-200 bg-white shrink-0 print:border-b-2">
           <div className="min-w-0">
             <h2 className="text-lg font-bold tracking-tight text-[#5A305A]">Perbandingan Dokumen — Bunker</h2>
-            <p className="text-xs xl:text-sm font-light text-[#5A305A] mt-0.5 truncate">No PO: {rec.no_po || '-'} · {rec.vendor || '-'} · {rec.kapal || '-'}</p>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 mt-1">
+              <p className="text-xs xl:text-sm text-[#5A305A] truncate"><span className="font-semibold">No PO:</span> {stripPageRef(rec.no_po)}</p>
+              <p className="text-xs xl:text-sm text-[#5A305A] truncate"><span className="font-semibold">Vendor:</span> {stripPageRef(rec.vendor)}</p>
+              <p className="text-xs xl:text-sm text-[#5A305A] truncate"><span className="font-semibold">Kapal:</span> {stripPageRef(rec.kapal)}</p>
+            </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <span className={`text-[11px] xl:text-sm font-bold px-2.5 py-1 rounded-full whitespace-nowrap ${statusMeta.badgeClass}`}>{statusMeta.label}</span>

@@ -33,36 +33,36 @@ const QueueCard: React.FC<{ item: any; onDismiss: (id: string) => void }> = ({ i
 
   if (item.status === 'PENDING' || item.status === 'PROCESSING') {
     return (
-      <div className="relative bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs flex flex-col gap-1.5 shadow-sm">
-        <div className="font-bold text-amber-800 flex items-center gap-1.5">
-          <span className="relative flex h-2 w-2">
+      <div className="relative bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm flex flex-col gap-2 shadow-sm">
+        <div className="font-bold text-amber-800 flex items-center gap-2">
+          <span className="relative flex h-2.5 w-2.5">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
           </span>
           Sedang diproses...
         </div>
         <div className="text-amber-900 truncate" title={filesStr}>File: {filesStr || '-'}</div>
-        <div className="text-amber-700/70 text-[10px]">Dikirim: {time}</div>
+        <div className="text-amber-700/70 text-xs">Dikirim: {time}</div>
       </div>
     );
   }
 
   if (item.status === 'FAILED') {
     return (
-      <div className="relative bg-rose-50 border border-rose-200 rounded-lg p-3 text-xs flex flex-col gap-1.5 shadow-sm pr-6">
-        <button onClick={() => onDismiss(item.id)} className="absolute top-2 right-2 text-rose-400 hover:text-rose-600 font-bold">&times;</button>
-        <div className="font-bold text-rose-800 flex items-center gap-1.5">❌ Gagal diproses</div>
+      <div className="relative bg-rose-50 border border-rose-200 rounded-xl p-4 text-sm flex flex-col gap-2 shadow-sm pr-8">
+        <button onClick={() => onDismiss(item.id)} className="absolute top-2.5 right-3 text-rose-400 hover:text-rose-600 font-bold text-lg leading-none">&times;</button>
+        <div className="font-bold text-rose-800 flex items-center gap-2">❌ Gagal diproses</div>
         <div className="text-rose-900 truncate" title={filesStr}>File: {filesStr || '-'}</div>
-        <div className="text-rose-700/80 text-[10px] break-words">Error: {item.error_message || '-'}{item.error_step ? ` (${item.error_step})` : ''}</div>
+        <div className="text-rose-700/80 text-xs break-words">Error: {item.error_message || '-'}{item.error_step ? ` (${item.error_step})` : ''}</div>
       </div>
     );
   }
 
   // SUCCESS unread
   return (
-    <div className="relative bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-xs flex flex-col gap-1.5 shadow-sm pr-6">
-      <button onClick={() => onDismiss(item.id)} className="absolute top-2 right-2 text-emerald-500 hover:text-emerald-700 font-bold">&times;</button>
-      <div className="font-bold text-emerald-800 flex items-center gap-1.5">✅ Berhasil diproses</div>
+    <div className="relative bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm flex flex-col gap-2 shadow-sm pr-8">
+      <button onClick={() => onDismiss(item.id)} className="absolute top-2.5 right-3 text-emerald-500 hover:text-emerald-700 font-bold text-lg leading-none">&times;</button>
+      <div className="font-bold text-emerald-800 flex items-center gap-2">✅ Berhasil diproses</div>
       <div className="text-emerald-900 truncate" title={filesStr}>File: {filesStr || '-'}</div>
     </div>
   );
@@ -997,19 +997,19 @@ export default function FarOverseasAirPage() {
           munculnya selalu konsisten di tengah layar (bukan "menggantung" di atas tombolnya). */}
       {showQueuePanel && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b border-slate-100 shrink-0">
-              <div className="flex items-center gap-2">
-                <Clock size={15} className="text-[#5A305A]" />
-                <h2 className="text-sm font-bold text-[#5A305A]">Antrian Proses</h2>
+          <div className="bg-white rounded-2xl shadow-2xl w-[85vw] max-w-6xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <Clock size={19} className="text-[#5A305A]" />
+                <h2 className="text-lg font-bold text-[#5A305A]">Antrian Proses</h2>
               </div>
-              <button onClick={() => setShowQueuePanel(false)} className="text-[#5A305A] hover:text-[#5A305A] p-1"><X size={16} /></button>
+              <button onClick={() => setShowQueuePanel(false)} className="text-[#5A305A] hover:text-[#5A305A] p-1"><X size={20} /></button>
             </div>
-            <div className="p-4 overflow-y-auto">
+            <div className="p-5 overflow-y-auto">
               {queue.length === 0 ? (
-                <p className="text-xs text-[#5A305A] italic text-center py-4">Tidak ada antrian dokumen.</p>
+                <p className="text-sm text-[#5A305A] italic text-center py-8">Tidak ada antrian dokumen.</p>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                   {queue.map(item => <QueueCard key={item.id} item={item} onDismiss={dismissQueueItem} />)}
                 </div>
               )}

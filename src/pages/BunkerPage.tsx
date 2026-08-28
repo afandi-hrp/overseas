@@ -1,12 +1,24 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Fuel, UploadCloud, Clock, X, CheckCircle2, AlertTriangle, ClipboardList, FileCheck2, Trash2, Search, RefreshCw } from 'lucide-react';
+import { Fuel, UploadCloud, Clock, X, CheckCircle2, AlertTriangle, ClipboardList, FileCheck2, Trash2, Search, RefreshCw, Sunrise, Sun, Sunset, Moon } from 'lucide-react';
 import {
   formatDateTimeID, summaryStatusMeta, STATUS_WORKFLOW_OPTIONS, workflowMeta, updateBunkerDokumen,
 } from '../utils/BunkerHelpers';
 import BunkerUploadModal from '../components/BunkerUploadModal';
 import BunkerKelengkapanModal from '../components/BunkerKelengkapanModal';
 import BunkerCompareDocModal from '../components/BunkerCompareDocModal';
+import { useAuth } from '../lib/AuthContext';
+
+// Sapaan + ikon waktu -- pola sama seperti halaman Audit/Rekapan Courier & Sea & Air dan FAR
+// Overseas (getGreetingMeta), dipasang di sini karena tombol aksi header pindah posisi ke
+// sebelah filter/Items pada kartu daftar dokumen.
+function getGreetingMeta(date: Date) {
+  const hour = date.getHours();
+  if (hour >= 4 && hour < 11) return { text: 'Selamat pagi', Icon: Sunrise };
+  if (hour >= 11 && hour < 15) return { text: 'Selamat siang', Icon: Sun };
+  if (hour >= 15 && hour < 18) return { text: 'Selamat sore', Icon: Sunset };
+  return { text: 'Selamat malam', Icon: Moon };
+}
 
 // ── Kontrak data (Supabase, sudah dibuat backend n8n -- lihat BunkerHelpers.ts) ──
 // bunker_dokumen (1 baris = 1 No PO): no_po, no_po_key(unik, internal), vendor, kapal, lokasi,
@@ -26,27 +38,27 @@ const QueueCard: React.FC<{ item: any; onDismiss: (id: string) => void; onOpenCo
 
   if (item.status === 'PENDING') {
     return (
-      <div className="relative bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs flex flex-col gap-1.5 shadow-sm">
-        <div className="font-bold text-amber-800 flex items-center gap-1.5">
-          <span className="relative flex h-2 w-2">
+      <div className="relative bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm flex flex-col gap-2 shadow-sm">
+        <div className="font-bold text-amber-800 flex items-center gap-2">
+          <span className="relative flex h-2.5 w-2.5">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
           </span>
           Sedang diproses...
         </div>
         <div className="text-amber-900 truncate" title={filesStr}>File: {filesStr || '-'}</div>
-        <div className="text-amber-700/70 text-[10px]">Dikirim: {time}</div>
+        <div className="text-amber-700/70 text-xs">Dikirim: {time}</div>
       </div>
     );
   }
 
   if (item.status === 'FAILED') {
     return (
-      <div className="relative bg-rose-50 border border-rose-200 rounded-lg p-3 text-xs flex flex-col gap-1.5 shadow-sm pr-6">
-        <button onClick={() => onDismiss(item.id)} className="absolute top-2 right-2 text-rose-400 hover:text-rose-600 font-bold">&times;</button>
-        <div className="font-bold text-rose-800 flex items-center gap-1.5">❌ Gagal diproses</div>
+      <div className="relative bg-rose-50 border border-rose-200 rounded-xl p-4 text-sm flex flex-col gap-2 shadow-sm pr-8">
+        <button onClick={() => onDismiss(item.id)} className="absolute top-2.5 right-3 text-rose-400 hover:text-rose-600 font-bold text-lg leading-none">&times;</button>
+        <div className="font-bold text-rose-800 flex items-center gap-2">❌ Gagal diproses</div>
         <div className="text-rose-900 truncate" title={filesStr}>File: {filesStr || '-'}</div>
-        <div className="text-rose-700/80 text-[10px] break-words">Error: {item.error_message || '-'}</div>
+        <div className="text-rose-700/80 text-xs break-words">Error: {item.error_message || '-'}</div>
       </div>
     );
   }
@@ -55,10 +67,10 @@ const QueueCard: React.FC<{ item: any; onDismiss: (id: string) => void; onOpenCo
   return (
     <button
       onClick={() => item.bunker_dokumen_id && onOpenCompare(item.bunker_dokumen_id)}
-      className="relative bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-xs flex flex-col gap-1.5 shadow-sm pr-6 text-left w-full hover:bg-emerald-100 transition-colors"
+      className="relative bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm flex flex-col gap-2 shadow-sm pr-8 text-left w-full hover:bg-emerald-100 transition-colors"
     >
-      <span onClick={(e) => { e.stopPropagation(); onDismiss(item.id); }} className="absolute top-2 right-2 text-emerald-500 hover:text-emerald-700 font-bold cursor-pointer">&times;</span>
-      <div className="font-bold text-emerald-800 flex items-center gap-1.5">✅ Berhasil diproses{item.status_summary ? ` — ${item.status_summary}` : ''}</div>
+      <span onClick={(e) => { e.stopPropagation(); onDismiss(item.id); }} className="absolute top-2.5 right-3 text-emerald-500 hover:text-emerald-700 font-bold text-lg leading-none cursor-pointer">&times;</span>
+      <div className="font-bold text-emerald-800 flex items-center gap-2">✅ Berhasil diproses{item.status_summary ? ` — ${item.status_summary}` : ''}</div>
       <div className="text-emerald-900 truncate" title={filesStr}>File: {filesStr || '-'}</div>
     </button>
   );
@@ -132,6 +144,7 @@ function WorkflowSelect({ row, onChanged }: { row: any; onChanged: () => void })
 
 export default function BunkerPage() {
   useEffect(() => { document.title = 'Bunker · Shipment'; }, []);
+  const { profile, user } = useAuth();
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
@@ -286,35 +299,24 @@ export default function BunkerPage() {
               </div>
               <div>
                 <h1 className="font-bold text-[#5A305A] text-base leading-tight">Bunker</h1>
-                <p className="text-xs font-light text-[#5A305A] mt-0.5">Verifikasi dokumen BBM kapal</p>
+                <p className="text-xs font-light text-[#5A305A] mt-0.5">Verifikasi dokumen Bunker</p>
               </div>
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={() => { fetchList(); fetchQueue(); }}
-                disabled={loadingList}
-                className="px-4 py-2.5 rounded-xl bg-white/70 backdrop-blur-md border border-white/60 hover:bg-white/90 text-[#5A305A] font-semibold text-sm transition-all shadow-sm flex items-center gap-2 shrink-0 disabled:opacity-50"
-              >
-                <RefreshCw size={16} className={loadingList ? 'animate-spin' : ''} /> Refresh
-              </button>
-              <button
-                onClick={() => setShowQueuePanel(o => !o)}
-                className="relative px-4 py-2.5 rounded-xl bg-white/70 backdrop-blur-md border border-white/60 hover:bg-white/90 text-[#5A305A] font-semibold text-sm transition-all shadow-sm flex items-center gap-2 shrink-0"
-              >
-                <Clock size={16} /> Antrian Proses
-                {queue.length > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
-                    {queue.length}
-                  </span>
-                )}
-              </button>
-              <button
-                onClick={() => setShowUploadModal(true)}
-                className="px-4 py-2.5 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-sm transition-all shadow-sm flex items-center gap-2 shrink-0"
-              >
-                <UploadCloud size={16} /> Upload Dokumen
-              </button>
-            </div>
+            {(() => {
+              const now = new Date();
+              const { text, Icon } = getGreetingMeta(now);
+              const displayName = profile?.nama || user?.email?.split('@')[0] || '';
+              const dayDate = now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+              return (
+                <div className="text-right shrink-0">
+                  <div className="flex items-center justify-end gap-2">
+                    <p className="font-bold text-lg text-[#5A305A] leading-tight">{text}{displayName ? `, ${displayName}` : ''}</p>
+                    <Icon size={19} className="text-amber-500 shrink-0" />
+                  </div>
+                  <p className="text-xs font-light text-[#5A305A]/70 mt-0.5">{dayDate}</p>
+                </div>
+              );
+            })()}
           </div>
 
           {activeJobId && activeJobStatus === 'PENDING' && (
@@ -348,49 +350,54 @@ export default function BunkerPage() {
             </div>
           )}
 
-          {showQueuePanel && (
-            <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 p-4 shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Clock size={15} className="text-[#5A305A]" />
-                  <h2 className="text-sm font-bold text-[#5A305A]">Antrian Proses</h2>
-                </div>
-                <button onClick={() => setShowQueuePanel(false)} className="text-[#5A305A] hover:text-[#5A305A] p-1"><X size={16} /></button>
-              </div>
-              {queue.length === 0 ? (
-                <p className="text-xs text-[#5A305A] italic text-center py-4">Tidak ada antrian dokumen.</p>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {queue.map(item => <QueueCard key={item.id} item={item} onDismiss={dismissQueueItem} onOpenCompare={openCompareFromQueue} />)}
-                </div>
-              )}
-            </div>
-          )}
-
           {/* List */}
           <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 shadow-sm overflow-hidden">
             <div className="px-5 py-4 border-b border-white/60 flex items-center justify-between gap-3 flex-wrap">
-              <h2 className="text-sm font-bold text-[#5A305A]">Daftar Dokumen Bunker</h2>
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="flex items-center gap-2 rounded-full pl-3.5 pr-3 py-1.5 border border-slate-200 bg-white">
-                  <Search size={13} className="text-[#5A305A]/50" />
+              <h2 className="text-sm font-bold text-[#5A305A] shrink-0">Daftar Dokumen Bunker</h2>
+              <div className="flex items-center gap-2 flex-nowrap overflow-x-auto">
+                <div className="flex items-center gap-2 rounded-full pl-3.5 pr-3 py-1.5 border border-slate-200 bg-white shrink-0">
+                  <Search size={13} className="text-[#5A305A]/50 shrink-0" />
                   <input
                     value={search}
                     onChange={e => { setSearch(e.target.value); setPage(1); }}
                     placeholder="Cari No PO / Vendor / Kapal..."
-                    className="border-0 bg-transparent text-xs text-[#5A305A] focus:outline-none w-48"
+                    className="border-0 bg-transparent text-xs text-[#5A305A] focus:outline-none w-36"
                   />
                 </div>
                 <select
                   value={statusFilter}
                   onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
-                  className="rounded-full px-3 py-2 border border-slate-200 bg-white text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer"
+                  className="rounded-full px-3 py-2 border border-slate-200 bg-white text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer shrink-0"
                 >
                   <option value="">Semua Status</option>
                   <option value="LOLOS VERIFIKASI">Lolos Verifikasi</option>
                   <option value="BUTUH REVIEW">Butuh Review</option>
                 </select>
-                <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white">
+                <button
+                  onClick={() => { fetchList(); fetchQueue(); }}
+                  disabled={loadingList}
+                  className="px-3 py-2 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] font-semibold text-xs transition-all flex items-center gap-1.5 shrink-0 disabled:opacity-50 h-[34px]"
+                >
+                  <RefreshCw size={14} className={loadingList ? 'animate-spin' : ''} /> Refresh
+                </button>
+                <button
+                  onClick={() => setShowQueuePanel(o => !o)}
+                  className="relative px-3 py-2 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] font-semibold text-xs transition-all flex items-center gap-1.5 shrink-0 h-[34px]"
+                >
+                  <Clock size={14} /> Antrian Proses
+                  {queue.length > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
+                      {queue.length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setShowUploadModal(true)}
+                  className="px-3 py-2 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-xs transition-all flex items-center gap-1.5 shrink-0 h-[34px]"
+                >
+                  <UploadCloud size={14} /> Upload Dokumen
+                </button>
+                <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0">
                   <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">Items</span>
                   <select
                     value={pageSize}
@@ -521,6 +528,31 @@ export default function BunkerPage() {
           onJobStarted={handleJobStarted}
           onSentNoJob={handleSentNoJob}
         />
+      )}
+
+      {/* Antrian proses -- modal, bukan panel inline, supaya posisi munculnya selalu konsisten
+          di tengah layar (pola sama seperti halaman FAR Overseas). */}
+      {showQueuePanel && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-[85vw] max-w-6xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <Clock size={19} className="text-[#5A305A]" />
+                <h2 className="text-lg font-bold text-[#5A305A]">Antrian Proses</h2>
+              </div>
+              <button onClick={() => setShowQueuePanel(false)} className="text-[#5A305A] hover:text-[#5A305A] p-1"><X size={20} /></button>
+            </div>
+            <div className="p-5 overflow-y-auto">
+              {queue.length === 0 ? (
+                <p className="text-sm text-[#5A305A] italic text-center py-8">Tidak ada antrian dokumen.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {queue.map(item => <QueueCard key={item.id} item={item} onDismiss={dismissQueueItem} onOpenCompare={openCompareFromQueue} />)}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </>
   );
