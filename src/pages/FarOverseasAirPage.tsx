@@ -1,14 +1,26 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { CheckCircle2, FileCheck2, UploadCloud, X, AlertTriangle, Clock, ClipboardCheck, ClipboardList, Edit3, Save, Scale, Trash2, RefreshCw, ChevronDown } from 'lucide-react';
-import { formatMoney, formatDateID, APPROVAL_STATUS_META, COST_STATUS_META, REKAPAN_EDITABLE_FIELDS, updateRekapanFarOverseasAir } from '../utils/FarOverseasAirHelpers';
+import { CheckCircle2, FileCheck2, UploadCloud, X, AlertTriangle, Clock, ClipboardCheck, ClipboardList, Edit3, Save, Scale, Trash2, RefreshCw, ChevronDown, Sunrise, Sun, Sunset, Moon } from 'lucide-react';
+import { formatMoney, formatDateID, APPROVAL_STATUS_META, COST_STATUS_META, REKAPAN_EDITABLE_FIELDS, updateRekapanFarOverseasAir, parseRouteNote, matchOctagonTarif, computeExpectedFromRate, computeCostStatus } from '../utils/FarOverseasAirHelpers';
+import { useAuth } from '../lib/AuthContext';
 import { EditableCell } from '../components/FarOverseasAirEditableField';
 import FarOverseasAirDetailModal from '../components/FarOverseasAirDetailModal';
 import FarOverseasAirCostValidationModal from '../components/FarOverseasAirCostValidationModal';
 import FarOverseasAirWeightBreakdownModal from '../components/FarOverseasAirWeightBreakdownModal';
 import FarOverseasAirUploadModal from '../components/FarOverseasAirUploadModal';
 import ExportModal from '../components/ExportModal';
+
+// Sapaan + ikon waktu -- pola sama seperti halaman Audit/Rekapan Courier & Sea & Air
+// (SharedDataTable.tsx, getGreetingMeta), disamakan di sini karena tombol aksi header pindah
+// posisi ke sebelah "Items" pada kartu List Memo.
+function getGreetingMeta(date: Date) {
+  const hour = date.getHours();
+  if (hour >= 4 && hour < 11) return { text: 'Selamat pagi', Icon: Sunrise };
+  if (hour >= 11 && hour < 15) return { text: 'Selamat siang', Icon: Sun };
+  if (hour >= 15 && hour < 18) return { text: 'Selamat sore', Icon: Sunset };
+  return { text: 'Selamat malam', Icon: Moon };
+}
 
 const QueueCard: React.FC<{ item: any; onDismiss: (id: string) => void }> = ({ item, onDismiss }) => {
   let filenames: string[] = [];
@@ -283,6 +295,7 @@ export default function FarOverseasAirPage() {
   // "Approval" di kolom AKSI diklik).
   const { id: deepLinkId } = useParams<{ id?: string }>();
   const navigate = useNavigate();
+  const { profile, user } = useAuth();
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
@@ -477,13 +490,107 @@ export default function FarOverseasAirPage() {
   const changedRowIds = Object.keys(pendingEdits).filter(id => Object.keys(pendingEdits[id]).length > 0);
   const hasUnsavedChanges = changedRowIds.length > 0;
 
+  // Dipanggil HANYA saat NOTE 1 (route_note) diedit & di-save, dan HANYA berlaku untuk vendor
+  // OCTAGON LOGISTIC (Jianqiao rutenya selalu tetap China-Jakarta, tidak perlu re-matching).
+  // Parse ulang kota asal/tujuan hasil koreksi manual user -> cocokkan ulang tarif -> hitung ulang
+  // cost validation. HARUS pakai matchOctagonTarif/computeExpectedFromRate apa adanya (replika
+  // persis logic n8n) -- jangan diubah sendirian di sini.
+  const reMatchOctagonAfterRouteNoteEdit = async (rekapanId: string, newRouteNote: string) => {
+    const parsed = parseRouteNote(newRouteNote);
+    if (!parsed) return { skipped: true as const, reason: 'format_tidak_dikenali' as const };
+
+    const { data: cvRow, error: cvErr } = await supabase
+      .from('cost_validasi_far_overseas_air')
+      .select('id, vendor_matched, cost_validation, rate_row_used, status')
+      .eq('far_overseas_id', rekapanId)
+      .maybeSingle();
+    if (cvErr || !cvRow) return { skipped: true as const, reason: 'no_cost_validasi' as const };
+    if (cvRow.vendor_matched !== 'OCTAGON LOGISTIC') return { skipped: true as const, reason: 'bukan_octagon' as const };
+
+    const costValidation: any[] = Array.isArray(cvRow.cost_validation)
+      ? cvRow.cost_validation
+      : (typeof cvRow.cost_validation === 'string' ? (JSON.parse(cvRow.cost_validation || '[]') || []) : []);
+
+    const rateRowRaw = cvRow.rate_row_used;
+    const existingRate = Array.isArray(rateRowRaw) ? rateRowRaw[0] : rateRowRaw;
+    const jenisLayananLama = existingRate?.jenis_layanan ?? null;
+
+    const kgRow = costValidation.find(r => r.row_key === 'KG');
+    const unitPriceRow = costValidation.find(r => r.row_key === 'UNIT_PRICE_DARI_DESCRIPTION');
+    const totalRow = costValidation.find(r => r.row_key === 'TOTAL');
+    const qty = kgRow?.actual != null && kgRow.actual !== '' ? Number(kgRow.actual) : null;
+    const actualUnitPrice = unitPriceRow?.actual != null && unitPriceRow.actual !== '' ? Number(unitPriceRow.actual) : null;
+    const actualTotal = totalRow?.actual != null && totalRow.actual !== '' ? Number(totalRow.actual) : null;
+
+    const { data: tarifRows, error: tarifErr } = await supabase
+      .from('far_overseas_tarif_vendor')
+      .select('*')
+      .eq('vendor_name', 'OCTAGON LOGISTIC');
+    if (tarifErr) return { skipped: true as const, reason: 'gagal_ambil_tarif' as const };
+
+    const candidates = matchOctagonTarif(tarifRows || [], jenisLayananLama, parsed.origin, parsed.destination, qty);
+
+    let newCostValidation = costValidation;
+    let newRateRowUsed: any = null;
+    let newStatus = cvRow.status;
+    let newCatatan: string | null = null;
+
+    if (candidates.length === 0) {
+      newCostValidation = costValidation.map((row: any) => (
+        row.row_key === 'KG' || row.row_key === 'UNIT_PRICE_DARI_DESCRIPTION' || row.row_key === 'TOTAL'
+          ? { ...row, expected: null, edited: true }
+          : row
+      ));
+      newRateRowUsed = null;
+      newStatus = 'BELUM_LENGKAP';
+      newCatatan = 'Tidak ditemukan tarif untuk kota asal/tujuan hasil koreksi manual -- mohon cek manual.';
+    } else if (candidates.length === 1) {
+      const rate = candidates[0];
+      const { unitPriceExpected, unitPriceNotes, kgExpected, totalExpected } = computeExpectedFromRate(rate, qty, actualUnitPrice);
+      newStatus = computeCostStatus(totalExpected, actualTotal) ?? cvRow.status;
+      newCostValidation = costValidation.map((row: any) => {
+        if (row.row_key === 'KG') return { ...row, expected: kgExpected, edited: true };
+        if (row.row_key === 'UNIT_PRICE_DARI_DESCRIPTION') return { ...row, expected: unitPriceExpected, notes: unitPriceNotes, edited: true };
+        if (row.row_key === 'TOTAL') return { ...row, expected: totalExpected, edited: true };
+        return row;
+      });
+      newRateRowUsed = rate;
+    } else {
+      newRateRowUsed = candidates;
+      newStatus = 'BELUM_LENGKAP';
+    }
+
+    const { error: saveErr } = await supabase.rpc('update_cost_validasi_far_overseas_manual', {
+      p_id: cvRow.id,
+      p_cost_validation: newCostValidation,
+      p_rate_row_used: newRateRowUsed,
+      p_status: newStatus,
+      p_catatan: newCatatan,
+    });
+    if (saveErr) return { skipped: false as const, error: saveErr.message };
+    return { skipped: false as const, candidateCount: candidates.length };
+  };
+
   const handleSaveAllEdits = async () => {
     setSavingEdits(true);
     const results = await Promise.all(changedRowIds.map(id => updateRekapanFarOverseasAir(id, pendingEdits[id])));
+
+    const routeNoteChangedIds = changedRowIds.filter(id => 'route_note' in pendingEdits[id]);
+    let formatWarningCount = 0;
+    if (routeNoteChangedIds.length > 0) {
+      const rematchResults = await Promise.all(
+        routeNoteChangedIds.map(id => reMatchOctagonAfterRouteNoteEdit(id, pendingEdits[id].route_note))
+      );
+      formatWarningCount = rematchResults.filter(r => r.skipped && r.reason === 'format_tidak_dikenali').length;
+    }
+
     setSavingEdits(false);
     const firstError = results.find(r => r.error);
     if (firstError?.error) {
       setToastMessage('⚠️ Gagal menyimpan sebagian perubahan: ' + firstError.error.message);
+      setTimeout(() => setToastMessage(null), 8000);
+    } else if (formatWarningCount > 0) {
+      setToastMessage(`Perubahan tersimpan. ${formatWarningCount} NOTE 1 formatnya tidak dikenali -- cost validation tidak diperbarui otomatis untuk baris itu.`);
       setTimeout(() => setToastMessage(null), 8000);
     } else {
       setToastMessage('Perubahan berhasil disimpan.');
@@ -562,39 +669,21 @@ export default function FarOverseasAirPage() {
                 <p className="text-xs font-light text-[#5A305A] mt-0.5">Memo approval freight informal gabungan PO</p>
               </div>
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <button
-                onClick={() => { fetchList(); fetchQueue(); }}
-                disabled={loadingList}
-                className="px-4 py-2.5 rounded-xl bg-white/70 backdrop-blur-md border border-white/60 hover:bg-white/90 text-[#5A305A] font-semibold text-sm transition-all shadow-sm flex items-center gap-2 shrink-0 disabled:opacity-50"
-              >
-                <RefreshCw size={16} className={loadingList ? 'animate-spin' : ''} /> Refresh
-              </button>
-              <button
-                onClick={() => setShowExportModal(true)}
-                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold border border-emerald-700 transition-all shadow-sm flex items-center gap-2 shrink-0"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
-                Export
-              </button>
-              <button
-                onClick={() => setShowQueuePanel(o => !o)}
-                className="relative px-4 py-2.5 rounded-xl bg-white/70 backdrop-blur-md border border-white/60 hover:bg-white/90 text-[#5A305A] font-semibold text-sm transition-all shadow-sm flex items-center gap-2 shrink-0"
-              >
-                <Clock size={16} /> Antrian Proses
-                {queue.length > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
-                    {queue.length}
-                  </span>
-                )}
-              </button>
-              <button
-                onClick={() => setShowUploadModal(true)}
-                className="px-4 py-2.5 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-sm transition-all shadow-sm flex items-center gap-2 shrink-0"
-              >
-                <UploadCloud size={16} /> Upload Dokumen
-              </button>
-            </div>
+            {(() => {
+              const now = new Date();
+              const { text, Icon } = getGreetingMeta(now);
+              const displayName = profile?.nama || user?.email?.split('@')[0] || '';
+              const dayDate = now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+              return (
+                <div className="text-right shrink-0">
+                  <div className="flex items-center justify-end gap-2">
+                    <p className="font-bold text-lg text-[#5A305A] leading-tight">{text}{displayName ? `, ${displayName}` : ''}</p>
+                    <Icon size={19} className="text-amber-500 shrink-0" />
+                  </div>
+                  <p className="text-xs font-light text-[#5A305A]/70 mt-0.5">{dayDate}</p>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Banner job aktif */}
@@ -629,44 +718,57 @@ export default function FarOverseasAirPage() {
             </div>
           )}
 
-          {/* Antrian proses (PENDING/FAILED global) -- cuma tampil kalau tab "Antrian Proses" diklik */}
-          {showQueuePanel && (
-            <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 p-4 shadow-sm shrink-0">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Clock size={15} className="text-[#5A305A]" />
-                  <h2 className="text-sm font-bold text-[#5A305A]">Antrian Proses</h2>
-                </div>
-                <button onClick={() => setShowQueuePanel(false)} className="text-[#5A305A] hover:text-[#5A305A] p-1"><X size={16} /></button>
-              </div>
-              {queue.length === 0 ? (
-                <p className="text-xs text-[#5A305A] italic text-center py-4">Tidak ada antrian dokumen.</p>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {queue.map(item => <QueueCard key={item.id} item={item} onDismiss={dismissQueueItem} />)}
-                </div>
-              )}
-            </div>
-          )}
-
           {/* List -- flex-1 min-h-0 supaya kartu ini yang mengisi sisa tinggi layar, dan HANYA
               area tabel di dalamnya yang scroll (pola sama seperti SharedDataTable.tsx di
               halaman Audit Sea & Air / Courier) -- bukan seluruh halaman yang discroll panjang. */}
           <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
             <div className="px-5 py-4 border-b border-white/60 flex items-center justify-between gap-3 flex-wrap shrink-0">
               <h2 className="text-sm font-bold text-[#5A305A]">List Memo FAR Overseas</h2>
-              <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white">
-                <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">Items</span>
-                <select
-                  value={pageSize}
-                  onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
-                  className="border-0 bg-transparent text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer"
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => { fetchList(); fetchQueue(); }}
+                  disabled={loadingList}
+                  className="px-3 py-2 rounded-full bg-white/70 backdrop-blur-md border border-white/60 hover:bg-white/90 text-[#5A305A] font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5 shrink-0 disabled:opacity-50 h-[34px]"
                 >
-                  <option value={10}>10</option>
-                  <option value={20}>20</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
-                </select>
+                  <RefreshCw size={14} className={loadingList ? 'animate-spin' : ''} /> Refresh
+                </button>
+                <button
+                  onClick={() => setShowExportModal(true)}
+                  className="px-3 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold border border-emerald-700 transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px]"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+                  Export
+                </button>
+                <button
+                  onClick={() => setShowQueuePanel(o => !o)}
+                  className="relative px-3 py-2 rounded-full bg-white/70 backdrop-blur-md border border-white/60 hover:bg-white/90 text-[#5A305A] font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px]"
+                >
+                  <Clock size={14} /> Antrian Proses
+                  {queue.length > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
+                      {queue.length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setShowUploadModal(true)}
+                  className="px-3 py-2 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px]"
+                >
+                  <UploadCloud size={14} /> Upload Dokumen
+                </button>
+                <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0">
+                  <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">Items</span>
+                  <select
+                    value={pageSize}
+                    onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
+                    className="border-0 bg-transparent text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer"
+                  >
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </div>
               </div>
             </div>
             <div ref={topScrollRef} onScroll={handleTopScroll} className="overflow-x-auto w-full shrink-0 scrollbar-visible">
@@ -889,6 +991,31 @@ export default function FarOverseasAirPage() {
           dateFieldLabel="Filter Tgl. Invoice"
           onClose={() => setShowExportModal(false)}
         />
+      )}
+
+      {/* Antrian proses (PENDING/FAILED global) -- modal, bukan panel inline, supaya posisi
+          munculnya selalu konsisten di tengah layar (bukan "menggantung" di atas tombolnya). */}
+      {showQueuePanel && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-2">
+                <Clock size={15} className="text-[#5A305A]" />
+                <h2 className="text-sm font-bold text-[#5A305A]">Antrian Proses</h2>
+              </div>
+              <button onClick={() => setShowQueuePanel(false)} className="text-[#5A305A] hover:text-[#5A305A] p-1"><X size={16} /></button>
+            </div>
+            <div className="p-4 overflow-y-auto">
+              {queue.length === 0 ? (
+                <p className="text-xs text-[#5A305A] italic text-center py-4">Tidak ada antrian dokumen.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {queue.map(item => <QueueCard key={item.id} item={item} onDismiss={dismissQueueItem} />)}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

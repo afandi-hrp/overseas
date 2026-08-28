@@ -3365,38 +3365,40 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
                               {/* ── Tabs & Search ── */}
             <div className="flex flex-col gap-4 mb-4">
-              <div className={`flex flex-nowrap justify-between items-center gap-2 rounded-2xl px-3 py-3 border overflow-x-auto ${TOOLBAR_GLASS}`}>
+              <div className={`flex flex-wrap items-center gap-2 rounded-2xl px-3 py-3 border ${TOOLBAR_GLASS}`}>
                 <div className="flex-1 flex gap-2 items-center flex-wrap">
-                  {/* Trail Filter -- jenis aksi: Semua / Courier / Sea & Air / Bunker */}
+                  {/* Trail Filter -- jenis aksi/modul: Semua / Courier / Sea & Air / Bunker / dst.
+                      Pakai 1 dropdown (bukan tombol pill per modul) supaya rapi & gampang nambah
+                      modul baru ke depannya tanpa toolbar makin penuh. */}
                   {activeMainTab === 'trail' && (
-                    <div className="flex gap-2 items-center pb-1 overflow-x-auto max-w-[60vw]">
-                      {[
-                        { id: 'ALL', label: 'Semua' },
-                        { id: 'COURIER', label: 'Courier' },
-                        { id: 'SEA_AIR', label: 'Sea & Air' },
-                        { id: 'BUNKER', label: 'Bunker' },
-                      ].map(t => (
-                        <button
-                          key={t.id}
-                          onClick={() => { setActiveTrailFilter(t.id); setPage(1); }}
-                          className={toolbarPillClass(activeTrailFilter === t.id)}
-                        >
-                          {t.label}
-                        </button>
-                      ))}
+                    <div className={`flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[38px] border shrink-0 ${TOOLBAR_GLASS}`}>
+                      <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">Modul</span>
+                      <select
+                        value={activeTrailFilter}
+                        onChange={e => { setActiveTrailFilter(e.target.value); setPage(1); }}
+                        className="border-0 bg-transparent text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer max-w-[130px]"
+                      >
+                        <option value="ALL">Semua</option>
+                        <option value="COURIER">Courier</option>
+                        <option value="SEA_AIR">Sea & Air</option>
+                        <option value="BUNKER">Bunker</option>
+                      </select>
                     </div>
                   )}
                   {/* Trail Filter -- per user */}
                   {activeMainTab === 'trail' && (
-                    <select
-                      value={activeTrailUserFilter}
-                      onChange={e => { setActiveTrailUserFilter(e.target.value); setPage(1); }}
-                      className={`rounded-full px-3 py-2 text-xs font-semibold focus:outline-none border max-w-[180px] ${TOOLBAR_GLASS}`}
-                    >
-                      {trailUserTabs.map(u => (
-                        <option key={u} value={u}>{u === 'Semua' ? 'Semua User' : u}</option>
-                      ))}
-                    </select>
+                    <div className={`flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[38px] border shrink-0 ${TOOLBAR_GLASS}`}>
+                      <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">User</span>
+                      <select
+                        value={activeTrailUserFilter}
+                        onChange={e => { setActiveTrailUserFilter(e.target.value); setPage(1); }}
+                        className="border-0 bg-transparent text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer max-w-[140px]"
+                      >
+                        {trailUserTabs.map(u => (
+                          <option key={u} value={u}>{u === 'Semua' ? 'Semua User' : u}</option>
+                        ))}
+                      </select>
+                    </div>
                   )}
                   {/* PPJK Filter for Courier */}
                   {(activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') && (

@@ -209,6 +209,59 @@ export function computeExpectedFromRate(rate: RateRow, qty: number | null, actua
   return { unitPriceExpected, unitPriceNotes, kgExpected, totalExpected };
 }
 
+// Parse NOTE 1 (route_note) yang sudah dikoreksi manual user -- format persis
+// "PENGIRIMAN DARI {asal} KE {tujuan} ({mode})". Kalau formatnya tidak cocok pola ini
+// (mis. user tulis catatan bebas lain), return null -- pemanggil TIDAK boleh trigger
+// re-kalkulasi cost validation kalau hasilnya null.
+export function parseRouteNote(routeNoteText: string | null | undefined): { origin: string; destination: string; mode: string } | null {
+  if (!routeNoteText) return null;
+  const m = routeNoteText.match(/^PENGIRIMAN DARI (.+) KE (.+) \((.+)\)$/i);
+  if (!m) return null;
+  return { origin: m[1].trim(), destination: m[2].trim(), mode: m[3].trim().toUpperCase() };
+}
+
+// Cocokkan ulang tarif Octagon Logistic berdasarkan kota asal/tujuan hasil koreksi manual NOTE 1
+// -- REPLIKA PERSIS alur filter n8n (jenis layanan -> kota asal -> kota tujuan -> berat, SEMUA
+// "lunak": kalau hasil filter di satu tahap kosong, batalkan filter itu & lanjut pakai daftar
+// sebelumnya). HARUS selalu sinkron dengan logic n8n -- jangan diubah sendirian di sini saja.
+// Return array kandidat: 0 = tidak ketemu, 1 = pasti, >1 = ambigu (user pilih manual).
+export function matchOctagonTarif(
+  tarifRows: RateRow[],
+  jenisLayanan: string | null | undefined,
+  originCity: string | null | undefined,
+  destCity: string | null | undefined,
+  qty: number | null
+): RateRow[] {
+  let candidates = tarifRows.filter(t => t.vendor_name === 'OCTAGON LOGISTIC' && t.aktif !== false);
+
+  if (jenisLayanan) {
+    const byJenis = candidates.filter(t => t.jenis_layanan === jenisLayanan);
+    if (byJenis.length > 0) candidates = byJenis;
+  }
+
+  if (originCity) {
+    const byOrigin = candidates.filter(t => t.origin && t.origin.toUpperCase() === originCity.toUpperCase());
+    if (byOrigin.length > 0) candidates = byOrigin;
+  }
+
+  if (destCity) {
+    const byTujuan = candidates.filter(t => !t.tujuan || t.tujuan.toUpperCase() === destCity.toUpperCase());
+    if (byTujuan.length > 0) candidates = byTujuan;
+  }
+
+  if (qty != null) {
+    const byWeight = candidates.filter(t => {
+      if (t.berat_min == null && t.berat_max == null) return true;
+      if (t.berat_min != null && qty < t.berat_min) return false;
+      if (t.berat_max != null && qty > t.berat_max) return false;
+      return true;
+    });
+    if (byWeight.length > 0) candidates = byWeight;
+  }
+
+  return candidates;
+}
+
 // Status ringkasan Cost Validation dari selisih TOTAL actual vs expected -- toleransi 3%.
 export function computeCostStatus(totalExpected: number | null, totalActual: number | null): string | null {
   if (totalExpected == null || totalActual == null || totalExpected === 0) return null;
