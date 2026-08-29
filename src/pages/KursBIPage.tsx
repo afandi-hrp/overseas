@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { Landmark, X, Trash2, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import Greeting from '../components/Greeting';
 
 const BULAN_ID = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 
@@ -223,17 +224,22 @@ export default function KursBIPage() {
 
   return (
     <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
-      <main className="max-w-7xl mx-auto px-4 py-8">
-
-        <div className="flex items-center gap-3 mb-8">
-          <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
-            <Landmark size={17} />
+      <header className="px-6 pt-1 pb-2">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
+              <Landmark size={17} />
+            </div>
+            <div>
+              <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Kurs BI Harian</h1>
+              <p className="text-[#5A305A] font-light text-sm mt-1">Kelola data nilai tukar mata uang Bank Indonesia (BI).</p>
+            </div>
           </div>
-          <div>
-            <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Kurs BI Harian</h1>
-            <p className="text-[#5A305A] font-light text-sm mt-1">Kelola data nilai tukar mata uang Bank Indonesia (BI).</p>
-          </div>
+          <Greeting />
         </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 pt-3 pb-8">
 
         {/* Form Panel */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-6">
@@ -338,9 +344,9 @@ export default function KursBIPage() {
                   <strong>Kurs Efektif</strong> = Kurs Jual (jika diisi), atau Kurs Tengah + Rp200 (jika Kurs Jual kosong).
                 </p>
               </div>
-              <button 
+              <button
                 onClick={handleSave}
-                className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-6 py-2 rounded-lg transition-colors shadow-sm whitespace-nowrap ml-4"
+                className="bg-[#5A305A] hover:bg-[#73507B] text-white text-sm font-semibold px-6 py-2 rounded-lg transition-colors shadow-sm whitespace-nowrap ml-4"
               >
                 {editingId ? 'Update' : 'Simpan'}
               </button>

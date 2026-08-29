@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { CheckCircle2, XCircle, X, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays, Sunrise, Sun, Sunset, Moon } from 'lucide-react'
+import { CheckCircle2, XCircle, X, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
+import Greeting from './Greeting'
 import ExportModal from '../components/ExportModal'
 import ValidasiModal from '../components/ValidasiModal'
 import CostValidationModal from '../components/CostValidationModal'
@@ -2314,20 +2315,8 @@ const toolbarPillClass = (isActive: boolean) => `${TOOLBAR_PILL_BASE} ${isActive
 // Kapsul kaca untuk elemen non-pill di toolbar (search, date range, refresh, dropdown)
 const TOOLBAR_GLASS = 'bg-white/70 backdrop-blur-md border-slate-200/80 shadow-sm'
 
-// Sapaan + ikon waktu -- cuma dipasang di 4 halaman spesifik (audit/rekapan Courier & Sea & Air,
-// lihat GREETING_SUBTABS di bawah), BUKAN di semua tab yang lewat SharedDataTable ini (mis.
-// Audit Trail sengaja tidak ikut, itu bukan permintaan).
-const GREETING_SUBTABS = new Set(['courier_audit', 'courier_rekapan', 'sea_air_audit', 'sea_air_rekapan']);
-function getGreetingMeta(date: Date) {
-  const hour = date.getHours();
-  if (hour >= 4 && hour < 11) return { text: 'Selamat pagi', Icon: Sunrise };
-  if (hour >= 11 && hour < 15) return { text: 'Selamat siang', Icon: Sun };
-  if (hour >= 15 && hour < 18) return { text: 'Selamat sore', Icon: Sunset };
-  return { text: 'Selamat malam', Icon: Moon };
-}
-
 export default function SharedDataTable({ defaultMainTab = 'courier', defaultSubTab = 'courier_audit' }: { defaultMainTab?: string, defaultSubTab?: string }) {
-  const { profile, user, allowedPageKeys, isAdmin } = useAuth();
+  const { allowedPageKeys, isAdmin } = useAuth();
   const canSee = (pageKey: string) => isAdmin || allowedPageKeys.has(pageKey);
   const [activeMainTab, setActiveMainTab] = useState(defaultMainTab)
   const [activeSubTab,  setActiveSubTab]  = useState(defaultSubTab)
@@ -3343,21 +3332,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 </div>
               )}
             </div>
-            {GREETING_SUBTABS.has(activeSubTab) && (() => {
-              const now = new Date();
-              const { text, Icon } = getGreetingMeta(now);
-              const displayName = profile?.nama || user?.email?.split('@')[0] || '';
-              const dayDate = now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-              return (
-                <div className="text-right shrink-0">
-                  <div className="flex items-center justify-end gap-2">
-                    <p className="font-bold text-lg text-[#5A305A] leading-tight">{text}{displayName ? `, ${displayName}` : ''}</p>
-                    <Icon size={19} className="text-amber-500 shrink-0" />
-                  </div>
-                  <p className="text-xs font-light text-[#5A305A]/70 mt-0.5">{dayDate}</p>
-                </div>
-              );
-            })()}
+            <Greeting />
           </div>
         </header>
 

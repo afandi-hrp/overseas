@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
 import { PAGE_REGISTRY, PAGE_GROUPS } from '../lib/permissions';
 import { Plus, Trash2, ShieldCheck, Users, LayoutGrid, X, Check } from 'lucide-react';
+import Greeting from '../components/Greeting';
 
 type Role = { id: string; name: string; description: string | null; is_protected: boolean };
 type ProfileRow = { id: string; email: string | null; nama: string | null };
@@ -148,12 +149,17 @@ export default function RoleManagementPage() {
 
   return (
     <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
-      <main className="max-w-5xl mx-auto px-4 py-8 space-y-6">
-
-        <div>
-          <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Kelola Role & Akses</h1>
-          <p className="text-[#5A305A] font-light text-sm mt-1">Atur role, halaman yang boleh diakses tiap role, dan role user satu per satu.</p>
+      <header className="px-6 pt-1 pb-2">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Kelola Role & Akses</h1>
+            <p className="text-[#5A305A] font-light text-sm mt-1">Atur role, halaman yang boleh diakses tiap role, dan role user satu per satu.</p>
+          </div>
+          <Greeting />
         </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 pt-3 pb-8 space-y-6">
 
         {toast && (
           <div className={`p-3 rounded-xl border text-sm font-medium ${toast.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'}`}>

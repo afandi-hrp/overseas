@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { UploadCloud, FolderOpen, CheckCircle2, FileText, Sparkles, Plane, Ship, X, AlertTriangle, RotateCcw } from 'lucide-react'
 import ProcessingQueue from '../components/ProcessingQueue'
+import Greeting from '../components/Greeting'
 
 // ─── Terjemahkan error teknis jadi pesan yang mudah dipahami ──
 function humanizeUploadError(raw: string): string {
@@ -347,23 +348,28 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
       )}
 
       <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
-        <main className="max-w-xl mx-auto px-4 py-6 space-y-4">
-          {fixedType && (
-            <div className="flex items-center gap-3 mb-1">
-              <div className="w-11 h-11 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0 shadow-sm">
-                {fixedType === 'sea_air' ? <Ship size={20} /> : <Plane size={20} />}
+        {fixedType && (
+          <header className="px-6 pt-1 pb-2">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0 shadow-sm">
+                  {fixedType === 'sea_air' ? <Ship size={20} /> : <Plane size={20} />}
+                </div>
+                <div>
+                  <h1 className="font-bold text-[#5A305A] text-base leading-tight">
+                    Upload Dokumen {fixedType === 'sea_air' ? 'Sea & Air' : 'Courier'}
+                  </h1>
+                  <p className="text-xs font-light text-[#5A305A] mt-0.5">
+                    {fixedType === 'sea_air' ? 'AI akan membaca & mengarsipkan dokumen sea & air secara otomatis' : 'AI akan membaca & mengarsipkan dokumen DHL/FedEx secara otomatis'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h1 className="font-bold text-[#5A305A] text-base leading-tight">
-                  Upload Dokumen {fixedType === 'sea_air' ? 'Sea & Air' : 'Courier'}
-                </h1>
-                <p className="text-xs font-light text-[#5A305A] mt-0.5">
-                  {fixedType === 'sea_air' ? 'AI akan membaca & mengarsipkan dokumen sea & air secara otomatis' : 'AI akan membaca & mengarsipkan dokumen DHL/FedEx secara otomatis'}
-                </p>
-              </div>
+              <Greeting />
             </div>
-          )}
+          </header>
+        )}
 
+        <main className="max-w-xl mx-auto px-4 py-6 space-y-4">
           <ProcessingQueue type={webhookType} />
 
           {/* Webhook Selector — disembunyikan jika halaman sudah spesifik Courier/Sea & Air */}

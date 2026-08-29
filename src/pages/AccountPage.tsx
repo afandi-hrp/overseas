@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
+import Greeting from '../components/Greeting';
 
 export default function AccountPage() {
   const { user, profile, refreshProfile } = useAuth();
@@ -57,15 +58,17 @@ export default function AccountPage() {
 
   return (
     <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
-      <main className="max-w-2xl mx-auto px-4 py-8">
-
-        {/* Header */}
-        <div className="flex items-center gap-4 mb-8">
+      <header className="px-6 pt-1 pb-2">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Akun Saya</h1>
             <p className="text-[#5A305A] font-light text-sm mt-1">Kelola info profil dan password login.</p>
           </div>
+          <Greeting />
         </div>
+      </header>
+
+      <main className="max-w-2xl mx-auto px-4 py-8">
 
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
           <div className="space-y-4 mb-6">

@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { Plus, Edit3, Trash2, Info, SlidersHorizontal } from 'lucide-react';
+import { Plus, Edit3, Trash2, Info, SlidersHorizontal, Search } from 'lucide-react';
+import Greeting from '../components/Greeting';
 
 export default function KursRuleVendorPage() {
   const [rules, setRules] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  
+  const [search, setSearch] = useState('');
+
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   
@@ -115,11 +117,16 @@ export default function KursRuleVendorPage() {
     }
   };
 
+  const filteredRules = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return rules;
+    return rules.filter(r => (r.vendor_name || '').toLowerCase().includes(q));
+  }, [rules, search]);
+
   return (
     <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
-      <main className="max-w-5xl mx-auto px-4 py-8">
-
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+      <header className="px-6 pt-1 pb-2">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
               <SlidersHorizontal size={17} />
@@ -129,21 +136,42 @@ export default function KursRuleVendorPage() {
               <p className="text-[#5A305A] font-light text-sm mt-1">Kelola aturan khusus jenis kurs dan adjustment (selisih) per vendor freight.</p>
             </div>
           </div>
-          {!showForm && (
-            <button
-              onClick={() => handleOpenForm()}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-xl flex items-center gap-2 transition-colors shadow-sm shrink-0"
-            >
-              <Plus size={18} /> Tambah Aturan Baru
-            </button>
-          )}
+          <Greeting />
         </div>
+      </header>
+
+      <main className="max-w-5xl mx-auto px-4 pt-3 pb-8">
 
         {toast && (
           <div className={`mb-6 p-4 rounded-xl border font-medium flex items-center gap-3 animate-in fade-in slide-in-from-top-4 ${toast.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'}`}>
             <Info size={18} /> {toast.msg}
           </div>
         )}
+
+        {/* Filter */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex-1 md:max-w-xs w-full relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A305A]/50 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Cari nama vendor..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full border border-slate-300 rounded-lg pl-8 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A]"
+            />
+          </div>
+          <div className="flex items-center gap-4 shrink-0">
+            <div className="text-sm text-[#5A305A] font-medium whitespace-nowrap">Total: {filteredRules.length} aturan</div>
+            {!showForm && (
+              <button
+                onClick={() => handleOpenForm()}
+                className="bg-[#5A305A] hover:bg-[#73507B] text-white font-bold py-2 px-4 rounded-xl flex items-center gap-2 transition-colors shadow-sm shrink-0"
+              >
+                <Plus size={18} /> Tambah Aturan Baru
+              </button>
+            )}
+          </div>
+        </div>
 
         {showForm && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-8 animate-in fade-in slide-in-from-top-4">
@@ -239,12 +267,14 @@ export default function KursRuleVendorPage() {
                   <tr>
                     <td colSpan={5} className="px-6 py-12 text-center text-[#5A305A]">Memuat data...</td>
                   </tr>
-                ) : rules.length === 0 ? (
+                ) : filteredRules.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center text-[#5A305A]">Belum ada aturan khusus vendor.</td>
+                    <td colSpan={5} className="px-6 py-12 text-center text-[#5A305A]">
+                      {search ? 'Tidak ada vendor yang cocok dengan pencarian.' : 'Belum ada aturan khusus vendor.'}
+                    </td>
                   </tr>
                 ) : (
-                  rules.map((rule) => (
+                  filteredRules.map((rule) => (
                     <tr key={rule.id} className="hover:bg-slate-50 transition-colors group">
                       <td className="px-6 py-4">
                         <div className="font-semibold text-[#5A305A]">{rule.vendor_name}</div>

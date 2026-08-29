@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { Clock, ArrowUp, Tag, ChevronDown, ChevronUp, FileText } from 'lucide-react';
+import { Clock, ArrowUp, Tag, ChevronDown, ChevronUp, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
+import Greeting from '../components/Greeting';
 
 const KATEGORI_OPTIONS = ['PPJK', 'FREIGHT', 'STORAGE', 'SURVEYOR', 'LOLO'];
 const SHIPMENT_TYPE_OPTIONS = ['', 'FCL', 'LCL', 'AIR', 'ALL'];
@@ -16,6 +17,10 @@ export default function TarifKontrakPage() {
   // Filter states
   const [filterKategori, setFilterKategori] = useState('semua');
   const [filterSearch, setFilterSearch] = useState('');
+
+  // Pagination (client-side -- data sudah di-fetch semua sekaligus)
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -84,11 +89,24 @@ const [doubleChargeMultiplier, setDoubleChargeMultiplier] = useState('2');
   const filteredData = useMemo(() => {
     return data.filter(item => {
       const matchKat = filterKategori === 'semua' || item.kategori === filterKategori;
-      const matchSearch = item.vendor_name?.toLowerCase().includes(filterSearch.toLowerCase()) || 
+      const matchSearch = item.vendor_name?.toLowerCase().includes(filterSearch.toLowerCase()) ||
                           item.nama_jasa?.toLowerCase().includes(filterSearch.toLowerCase());
       return matchKat && matchSearch;
     });
   }, [data, filterKategori, filterSearch]);
+
+  // Reset ke halaman 1 setiap kali filter berubah -- kalau tidak, bisa nyangkut di halaman
+  // kosong (mis. sedang di hal. 3, lalu filter dipersempit sampai cuma 1 halaman hasil).
+  useEffect(() => {
+    setPage(1);
+  }, [filterKategori, filterSearch]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredData.length / pageSize));
+  const validPage = Math.min(page, totalPages);
+  const paginatedData = useMemo(() => {
+    const start = (validPage - 1) * pageSize;
+    return filteredData.slice(start, start + pageSize);
+  }, [filteredData, validPage]);
 
   const openModal = (record?: any) => {
     if (record) {
@@ -237,9 +255,8 @@ setDoubleChargeMultiplier('2');
 
   return (
     <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
-      <main className="max-w-7xl mx-auto px-4 py-8">
-
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+      <header className="px-6 pt-1 pb-2">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
               <FileText size={17} />
@@ -249,13 +266,11 @@ setDoubleChargeMultiplier('2');
               <p className="text-[#5A305A] font-light text-sm mt-1">Kelola master tarif dari vendor (Sea & Air).</p>
             </div>
           </div>
-          <button 
-            onClick={() => openModal()}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-4 rounded-xl transition-all shadow-sm flex items-center gap-2 shrink-0"
-          >
-            <span>+</span> Tambah Tarif Baru
-          </button>
+          <Greeting />
         </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 pt-3 pb-8">
 
         {toast && (
           <div className={`mb-4 p-3 rounded-lg border font-medium text-sm flex items-center ${
@@ -270,7 +285,7 @@ setDoubleChargeMultiplier('2');
           <div className="flex items-center gap-4 w-full md:w-auto">
             <div className="flex-1 md:w-48">
               <label className="block text-xs font-semibold text-[#5A305A] mb-1">Kategori</label>
-              <select 
+              <select
                 value={filterKategori}
                 onChange={(e) => setFilterKategori(e.target.value)}
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50"
@@ -281,7 +296,7 @@ setDoubleChargeMultiplier('2');
             </div>
             <div className="flex-1 md:w-64">
               <label className="block text-xs font-semibold text-[#5A305A] mb-1">Cari Vendor / Jasa</label>
-              <input 
+              <input
                 type="text"
                 placeholder="Ketik nama vendor..."
                 value={filterSearch}
@@ -290,8 +305,16 @@ setDoubleChargeMultiplier('2');
               />
             </div>
           </div>
-          <div className="text-sm text-[#5A305A] font-medium">
-            Total: {filteredData.length} tarif
+          <div className="flex items-center gap-4 shrink-0">
+            <div className="text-sm text-[#5A305A] font-medium whitespace-nowrap">
+              Total: {filteredData.length} tarif
+            </div>
+            <button
+              onClick={() => openModal()}
+              className="bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold py-2.5 px-4 rounded-xl transition-all shadow-sm flex items-center gap-2 shrink-0"
+            >
+              <span>+</span> Tambah Tarif Baru
+            </button>
           </div>
         </div>
 
@@ -326,7 +349,7 @@ setDoubleChargeMultiplier('2');
                     </td>
                   </tr>
                 ) : (
-                  filteredData.map((rec) => (
+                  paginatedData.map((rec) => (
                     <tr key={rec.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-4 py-3 text-sm text-[#5A305A] font-semibold">{rec.vendor_name}</td>
                       <td className="px-4 py-3 text-sm">
@@ -379,6 +402,33 @@ setDoubleChargeMultiplier('2');
               </tbody>
             </table>
           </div>
+
+          {!loading && filteredData.length > 0 && (
+            <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between gap-3 flex-wrap">
+              <div className="text-xs text-[#5A305A]">
+                Menampilkan <span className="font-bold">{(validPage - 1) * pageSize + 1}</span>–<span className="font-bold">{Math.min(validPage * pageSize, filteredData.length)}</span> dari <span className="font-bold">{filteredData.length}</span> tarif
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={validPage === 1}
+                  className="p-1.5 rounded-lg border border-slate-200 text-[#5A305A] disabled:opacity-40 hover:bg-slate-50 transition-colors"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <span className="text-xs text-[#5A305A] font-semibold">Hal. {validPage} / {totalPages}</span>
+                <button
+                  type="button"
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={validPage === totalPages}
+                  className="p-1.5 rounded-lg border border-slate-200 text-[#5A305A] disabled:opacity-40 hover:bg-slate-50 transition-colors"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
       </main>

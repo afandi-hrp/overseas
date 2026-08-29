@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Fuel } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import Greeting from '../components/Greeting';
 export default function FuelSurchargePage() {
   const [rates, setRates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,42 +72,44 @@ export default function FuelSurchargePage() {
   return (
     <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
       <header className="px-6 pt-1 pb-2">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
-            <Fuel size={17} />
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
+              <Fuel size={17} />
+            </div>
+            <div>
+              <h1 className="font-bold text-xl text-[#5A305A] leading-tight">Fuel Surcharge</h1>
+              <p className="text-xs font-light text-[#5A305A]/70 mt-0.5">Persentase fuel surcharge mingguan DHL & FedEx</p>
+            </div>
           </div>
-          <div>
-            <h1 className="font-bold text-xl text-[#5A305A] leading-tight">Fuel Surcharge</h1>
-            <p className="text-xs font-light text-[#5A305A]/70 mt-0.5">Persentase fuel surcharge mingguan DHL & FedEx</p>
-          </div>
+          <Greeting />
         </div>
       </header>
 
       <main className="px-6 py-4">
-        <div className="bg-white/70 backdrop-blur-md p-6 rounded-2xl shadow-sm border border-white/60 mb-6">
-          <h2 className="text-base font-bold text-[#5A305A] mb-4">Tambah Rate</h2>
-          <form onSubmit={handleAdd} className="flex flex-wrap gap-4 items-end">
-            <div>
+        <div className="bg-white/70 backdrop-blur-md p-3.5 rounded-2xl shadow-sm border border-white/60 mb-6">
+          <form onSubmit={handleAdd} className="flex flex-nowrap overflow-x-auto gap-4 items-end justify-center">
+            <div className="shrink-0">
               <label className="block text-xs font-semibold text-[#5A305A] mb-1">Courier</label>
               <select value={courier} onChange={e => setCourier(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-32 bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A]">
                 <option value="DHL">DHL</option>
                 <option value="FEDEX">FEDEX</option>
               </select>
             </div>
-            <div>
+            <div className="shrink-0">
               <label className="block text-xs font-semibold text-[#5A305A] mb-1">Week Start (Monday)</label>
               <input type="date" value={weekStart} onChange={e => setWeekStart(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-40 bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A]" />
             </div>
-            <div>
+            <div className="shrink-0">
               <label className="block text-xs font-semibold text-[#5A305A] mb-1">Week End (Sunday)</label>
               <input type="date" value={weekEnd} onChange={e => setWeekEnd(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-40 bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A]" />
             </div>
-            <div>
+            <div className="shrink-0">
               <label className="block text-xs font-semibold text-[#5A305A] mb-1">Fuel Surcharge (%)</label>
               <input type="number" step="0.01" min="0" max="100" placeholder="e.g. 24.50" value={fuelPct} onChange={e => setFuelPct(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-32 bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A]" />
             </div>
-            <button type="submit" disabled={saving} className="bg-[#5A305A] hover:bg-[#73507B] text-white font-bold text-sm px-5 py-1.5 rounded-lg disabled:opacity-50 h-[34px] transition-colors shadow-sm">
-              {saving ? 'Menyimpan...' : 'Tambah'}
+            <button type="submit" disabled={saving} className="shrink-0 bg-[#5A305A] hover:bg-[#73507B] text-white font-bold text-sm px-5 py-1.5 rounded-lg disabled:opacity-50 h-[34px] transition-colors shadow-sm">
+              {saving ? 'Menyimpan...' : 'Tambah Rate'}
             </button>
           </form>
           {err && <p className="text-red-500 text-xs font-bold mt-3">{err}</p>}

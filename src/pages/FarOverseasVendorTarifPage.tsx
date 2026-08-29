@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { PlaneTakeoff } from 'lucide-react';
+import { PlaneTakeoff, ChevronLeft, ChevronRight } from 'lucide-react';
+import Greeting from '../components/Greeting';
 
 const VENDOR_OPTIONS = ['OCTAGON LOGISTIC', 'PT. JIANQIAO LOGISTICS INDONESIA'];
 const JENIS_LAYANAN_OPTIONS = ['Air Freight', 'Sea Freight', 'Reguler Freight', 'Door to Door (Pick Up)', 'Port to Door (Drop Warehouse)'];
@@ -16,6 +17,10 @@ export default function FarOverseasVendorTarifPage() {
   const [filterVendor, setFilterVendor] = useState('semua');
   const [filterSearch, setFilterSearch] = useState('');
   const [showInactive, setShowInactive] = useState(false);
+
+  // Pagination (client-side -- data sudah di-fetch semua sekaligus)
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
 
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -83,6 +88,19 @@ export default function FarOverseasVendorTarifPage() {
       return matchVendor && matchSearch;
     });
   }, [data, filterVendor, filterSearch]);
+
+  // Reset ke halaman 1 setiap kali filter berubah -- kalau tidak, bisa nyangkut di halaman
+  // kosong (mis. sedang di hal. 3, lalu filter dipersempit sampai cuma 1 halaman hasil).
+  useEffect(() => {
+    setPage(1);
+  }, [filterVendor, filterSearch, showInactive]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredData.length / pageSize));
+  const validPage = Math.min(page, totalPages);
+  const paginatedData = useMemo(() => {
+    const start = (validPage - 1) * pageSize;
+    return filteredData.slice(start, start + pageSize);
+  }, [filteredData, validPage]);
 
   const resetForm = () => {
     setEditingId(null);
@@ -201,9 +219,8 @@ export default function FarOverseasVendorTarifPage() {
 
   return (
     <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
-      <main className="max-w-7xl mx-auto px-4 py-8">
-
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+      <header className="px-6 pt-1 pb-2">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
               <PlaneTakeoff size={17} />
@@ -213,13 +230,11 @@ export default function FarOverseasVendorTarifPage() {
               <p className="text-[#5A305A] font-light text-sm mt-1">Kelola rate card Octagon Logistic & PT. Jianqiao Logistics Indonesia.</p>
             </div>
           </div>
-          <button
-            onClick={() => openModal()}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-4 rounded-xl transition-all shadow-sm flex items-center gap-2 shrink-0"
-          >
-            <span>+</span> Tambah Tarif Baru
-          </button>
+          <Greeting />
         </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 pt-3 pb-8">
 
         {toast && (
           <div className={`mb-4 p-3 rounded-lg border font-medium text-sm flex items-center ${
@@ -230,41 +245,35 @@ export default function FarOverseasVendorTarifPage() {
         )}
 
         {/* Filter */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-6 flex flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-2">
-            {[{ id: 'semua', label: 'Semua Vendor' }, ...VENDOR_OPTIONS.map(v => ({ id: v, label: v }))].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setFilterVendor(tab.id)}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border ${
-                  filterVendor === tab.id ? 'bg-[#5A305A] text-white border-[#5A305A]' : 'bg-white text-[#5A305A] border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-6 flex flex-nowrap items-center gap-3 overflow-x-auto">
+          <select
+            value={filterVendor}
+            onChange={(e) => setFilterVendor(e.target.value)}
+            className="shrink-0 border border-slate-300 rounded-lg px-3 py-2 text-sm font-semibold text-[#5A305A] bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A] w-56"
+          >
+            <option value="semua">Semua Vendor</option>
+            {VENDOR_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
+          </select>
+          <input
+            type="text"
+            placeholder="Cari Origin / Jenis Layanan / Kategori Barang..."
+            value={filterSearch}
+            onChange={(e) => setFilterSearch(e.target.value)}
+            className="shrink-0 w-64 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A]"
+          />
+          <label className="shrink-0 flex items-center gap-2 cursor-pointer text-sm text-[#5A305A] font-medium whitespace-nowrap">
+            <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="w-4 h-4 rounded text-[#5A305A] focus:ring-[#5A305A]" />
+            Tampilkan yang nonaktif juga
+          </label>
+          <div className="shrink-0 text-sm text-[#5A305A] font-medium whitespace-nowrap">
+            Total: {filteredData.length} tarif
           </div>
-          <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-            <div className="flex-1 md:max-w-xs w-full">
-              <label className="block text-xs font-semibold text-[#5A305A] mb-1">Cari Origin / Jenis Layanan / Kategori Barang</label>
-              <input
-                type="text"
-                placeholder="Ketik kata kunci..."
-                value={filterSearch}
-                onChange={(e) => setFilterSearch(e.target.value)}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2 cursor-pointer text-sm text-[#5A305A] font-medium">
-                <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500" />
-                Tampilkan yang nonaktif juga
-              </label>
-              <div className="text-sm text-[#5A305A] font-medium whitespace-nowrap">
-                Total: {filteredData.length} tarif
-              </div>
-            </div>
-          </div>
+          <button
+            onClick={() => openModal()}
+            className="shrink-0 ml-auto bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold py-2.5 px-4 rounded-xl transition-all shadow-sm flex items-center gap-2"
+          >
+            <span>+</span> Tambah Tarif Baru
+          </button>
         </div>
 
         {/* Table */}
@@ -303,7 +312,7 @@ export default function FarOverseasVendorTarifPage() {
                     </td>
                   </tr>
                 ) : (
-                  filteredData.map((rec) => (
+                  paginatedData.map((rec) => (
                     <tr key={rec.id} className={`hover:bg-slate-50/50 transition-colors ${!rec.aktif ? 'opacity-50' : ''}`}>
                       <td className="px-4 py-3 text-sm text-[#5A305A] font-semibold whitespace-nowrap">{rec.vendor_name}</td>
                       <td className="px-4 py-3 text-sm text-[#5A305A]">{rec.origin || '-'}</td>
@@ -352,6 +361,33 @@ export default function FarOverseasVendorTarifPage() {
               </tbody>
             </table>
           </div>
+
+          {!loading && filteredData.length > 0 && (
+            <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between gap-3 flex-wrap">
+              <div className="text-xs text-[#5A305A]">
+                Menampilkan <span className="font-bold">{(validPage - 1) * pageSize + 1}</span>–<span className="font-bold">{Math.min(validPage * pageSize, filteredData.length)}</span> dari <span className="font-bold">{filteredData.length}</span> tarif
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={validPage === 1}
+                  className="p-1.5 rounded-lg border border-slate-200 text-[#5A305A] disabled:opacity-40 hover:bg-slate-50 transition-colors"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <span className="text-xs text-[#5A305A] font-semibold">Hal. {validPage} / {totalPages}</span>
+                <button
+                  type="button"
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={validPage === totalPages}
+                  className="p-1.5 rounded-lg border border-slate-200 text-[#5A305A] disabled:opacity-40 hover:bg-slate-50 transition-colors"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
       </main>

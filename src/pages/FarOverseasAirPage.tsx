@@ -1,26 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { CheckCircle2, FileCheck2, UploadCloud, X, AlertTriangle, Clock, ClipboardCheck, ClipboardList, Edit3, Save, Scale, Trash2, RefreshCw, ChevronDown, Sunrise, Sun, Sunset, Moon } from 'lucide-react';
+import { CheckCircle2, FileCheck2, UploadCloud, X, AlertTriangle, Clock, ClipboardCheck, ClipboardList, Edit3, Save, Scale, Trash2, RefreshCw, ChevronDown } from 'lucide-react';
 import { formatMoney, formatDateID, APPROVAL_STATUS_META, COST_STATUS_META, REKAPAN_EDITABLE_FIELDS, updateRekapanFarOverseasAir, parseRouteNote, matchOctagonTarif, computeExpectedFromRate, computeCostStatus } from '../utils/FarOverseasAirHelpers';
-import { useAuth } from '../lib/AuthContext';
 import { EditableCell } from '../components/FarOverseasAirEditableField';
 import FarOverseasAirDetailModal from '../components/FarOverseasAirDetailModal';
 import FarOverseasAirCostValidationModal from '../components/FarOverseasAirCostValidationModal';
 import FarOverseasAirWeightBreakdownModal from '../components/FarOverseasAirWeightBreakdownModal';
 import FarOverseasAirUploadModal from '../components/FarOverseasAirUploadModal';
 import ExportModal from '../components/ExportModal';
-
-// Sapaan + ikon waktu -- pola sama seperti halaman Audit/Rekapan Courier & Sea & Air
-// (SharedDataTable.tsx, getGreetingMeta), disamakan di sini karena tombol aksi header pindah
-// posisi ke sebelah "Items" pada kartu List Memo.
-function getGreetingMeta(date: Date) {
-  const hour = date.getHours();
-  if (hour >= 4 && hour < 11) return { text: 'Selamat pagi', Icon: Sunrise };
-  if (hour >= 11 && hour < 15) return { text: 'Selamat siang', Icon: Sun };
-  if (hour >= 15 && hour < 18) return { text: 'Selamat sore', Icon: Sunset };
-  return { text: 'Selamat malam', Icon: Moon };
-}
+import Greeting from '../components/Greeting';
 
 const QueueCard: React.FC<{ item: any; onDismiss: (id: string) => void }> = ({ item, onDismiss }) => {
   let filenames: string[] = [];
@@ -295,7 +284,6 @@ export default function FarOverseasAirPage() {
   // "Approval" di kolom AKSI diklik).
   const { id: deepLinkId } = useParams<{ id?: string }>();
   const navigate = useNavigate();
-  const { profile, user } = useAuth();
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
@@ -657,9 +645,8 @@ export default function FarOverseasAirPage() {
       )}
 
       <div className="flex-1 h-full overflow-hidden min-w-0 flex flex-col">
-        <main className="px-6 py-4 flex-1 flex flex-col overflow-hidden gap-5">
-
-          <div className="flex items-center justify-between gap-3 flex-wrap shrink-0">
+        <header className="px-6 pt-1 pb-2 shrink-0">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0 shadow-sm">
                 <FileCheck2 size={20} />
@@ -669,22 +656,11 @@ export default function FarOverseasAirPage() {
                 <p className="text-xs font-light text-[#5A305A] mt-0.5">Memo approval freight informal gabungan PO</p>
               </div>
             </div>
-            {(() => {
-              const now = new Date();
-              const { text, Icon } = getGreetingMeta(now);
-              const displayName = profile?.nama || user?.email?.split('@')[0] || '';
-              const dayDate = now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-              return (
-                <div className="text-right shrink-0">
-                  <div className="flex items-center justify-end gap-2">
-                    <p className="font-bold text-lg text-[#5A305A] leading-tight">{text}{displayName ? `, ${displayName}` : ''}</p>
-                    <Icon size={19} className="text-amber-500 shrink-0" />
-                  </div>
-                  <p className="text-xs font-light text-[#5A305A]/70 mt-0.5">{dayDate}</p>
-                </div>
-              );
-            })()}
+            <Greeting />
           </div>
+        </header>
+
+        <main className="px-6 py-4 flex-1 flex flex-col overflow-hidden gap-5">
 
           {/* Banner job aktif */}
           {activeJobId && activeJobStatus === 'PENDING' && (

@@ -1,24 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Fuel, UploadCloud, Clock, X, CheckCircle2, AlertTriangle, ClipboardList, FileCheck2, Trash2, Search, RefreshCw, Sunrise, Sun, Sunset, Moon } from 'lucide-react';
+import { Fuel, UploadCloud, Clock, X, CheckCircle2, AlertTriangle, ClipboardList, FileCheck2, Trash2, Search, RefreshCw } from 'lucide-react';
 import {
   formatDateTimeID, summaryStatusMeta, STATUS_WORKFLOW_OPTIONS, workflowMeta, updateBunkerDokumen,
 } from '../utils/BunkerHelpers';
 import BunkerUploadModal from '../components/BunkerUploadModal';
 import BunkerKelengkapanModal from '../components/BunkerKelengkapanModal';
 import BunkerCompareDocModal from '../components/BunkerCompareDocModal';
-import { useAuth } from '../lib/AuthContext';
-
-// Sapaan + ikon waktu -- pola sama seperti halaman Audit/Rekapan Courier & Sea & Air dan FAR
-// Overseas (getGreetingMeta), dipasang di sini karena tombol aksi header pindah posisi ke
-// sebelah filter/Items pada kartu daftar dokumen.
-function getGreetingMeta(date: Date) {
-  const hour = date.getHours();
-  if (hour >= 4 && hour < 11) return { text: 'Selamat pagi', Icon: Sunrise };
-  if (hour >= 11 && hour < 15) return { text: 'Selamat siang', Icon: Sun };
-  if (hour >= 15 && hour < 18) return { text: 'Selamat sore', Icon: Sunset };
-  return { text: 'Selamat malam', Icon: Moon };
-}
+import Greeting from '../components/Greeting';
 
 // ── Kontrak data (Supabase, sudah dibuat backend n8n -- lihat BunkerHelpers.ts) ──
 // bunker_dokumen (1 baris = 1 No PO): no_po, no_po_key(unik, internal), vendor, kapal, lokasi,
@@ -144,7 +133,6 @@ function WorkflowSelect({ row, onChanged }: { row: any; onChanged: () => void })
 
 export default function BunkerPage() {
   useEffect(() => { document.title = 'Bunker · Shipment'; }, []);
-  const { profile, user } = useAuth();
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
@@ -290,8 +278,7 @@ export default function BunkerPage() {
       )}
 
       <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10 no-scrollbar">
-        <main className="px-6 py-4 space-y-5">
-
+        <header className="px-6 pt-1 pb-2">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0 shadow-sm">
@@ -302,22 +289,11 @@ export default function BunkerPage() {
                 <p className="text-xs font-light text-[#5A305A] mt-0.5">Verifikasi dokumen Bunker</p>
               </div>
             </div>
-            {(() => {
-              const now = new Date();
-              const { text, Icon } = getGreetingMeta(now);
-              const displayName = profile?.nama || user?.email?.split('@')[0] || '';
-              const dayDate = now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-              return (
-                <div className="text-right shrink-0">
-                  <div className="flex items-center justify-end gap-2">
-                    <p className="font-bold text-lg text-[#5A305A] leading-tight">{text}{displayName ? `, ${displayName}` : ''}</p>
-                    <Icon size={19} className="text-amber-500 shrink-0" />
-                  </div>
-                  <p className="text-xs font-light text-[#5A305A]/70 mt-0.5">{dayDate}</p>
-                </div>
-              );
-            })()}
+            <Greeting />
           </div>
+        </header>
+
+        <main className="px-6 py-4 space-y-5">
 
           {activeJobId && activeJobStatus === 'PENDING' && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3">

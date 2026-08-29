@@ -5,6 +5,7 @@ import {
   Settings as SettingsIcon, Plane, Ship, FileCheck2, Fuel, Table2, Flame, Landmark,
   SlidersHorizontal, FileText, ShieldCheck, CheckCircle2, XCircle, ArrowRight,
 } from 'lucide-react';
+import Greeting from '../components/Greeting';
 
 type WebhookType = 'courier' | 'sea_air' | 'far_overseas_air' | 'bunker';
 
@@ -174,17 +175,22 @@ export default function SettingsPage() {
 
   return (
     <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-6">
-
-        <div className="flex items-center gap-3">
-          <div className="w-11 h-11 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0 shadow-sm">
-            <SettingsIcon size={20} />
+      <header className="px-6 pt-1 pb-2">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0 shadow-sm">
+              <SettingsIcon size={20} />
+            </div>
+            <div>
+              <h1 className="font-bold text-[#5A305A] text-base leading-tight">Pengaturan</h1>
+              <p className="text-xs font-light text-[#5A305A] mt-0.5">Konfigurasi webhook otomasi dan kelola modul aplikasi</p>
+            </div>
           </div>
-          <div>
-            <h1 className="font-bold text-[#5A305A] text-base leading-tight">Pengaturan</h1>
-            <p className="text-xs font-light text-[#5A305A] mt-0.5">Konfigurasi webhook otomasi dan kelola modul aplikasi</p>
-          </div>
+          <Greeting />
         </div>
+      </header>
+
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-6">
 
         {/* Konfigurasi Webhook */}
         <div className="relative bg-white/40 backdrop-blur-xl rounded-2xl border border-[#5A305A]/25 shadow-[0_4px_24px_rgba(90,48,90,0.08)] p-5 sm:p-6 overflow-hidden">

@@ -6,6 +6,7 @@ import { Search, ChevronLeft, ChevronRight, RefreshCw, Download, X, FileCheck2 }
 import { SECTIONS, computeStatus } from '../../utils/ValidasiHelper';
 import { generateValues } from '../../utils/ValidasiFill';
 import { calculatePibStats } from '../../utils/ValidasiPibHelper';
+import Greeting from '../../components/Greeting';
 
 function useDebounce(value: string, delay: number) {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -315,14 +316,17 @@ export default function CourierValidasiPage() {
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
       <header className="px-6 pt-1 pb-2 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
-            <FileCheck2 size={17} />
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
+              <FileCheck2 size={17} />
+            </div>
+            <div>
+              <h1 className="font-bold text-xl text-[#5A305A] leading-tight">Validasi Courier</h1>
+              <p className="text-xs font-light text-[#5A305A]/70 mt-0.5">Daftar rekapan validasi dokumen</p>
+            </div>
           </div>
-          <div>
-            <h1 className="font-bold text-xl text-[#5A305A] leading-tight">Validasi Courier</h1>
-            <p className="text-xs font-light text-[#5A305A]/70 mt-0.5">Daftar rekapan validasi dokumen</p>
-          </div>
+          <Greeting />
         </div>
       </header>
 

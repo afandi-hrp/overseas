@@ -8,6 +8,7 @@ import ZoneMappingEditor from './admin/ZoneMappingEditor';
 import NPWPEditor from './admin/NPWPEditor';
 import PPJKCostRule from './admin/PPJKCostRule';
 import SurchargeCIPLRule from './admin/SurchargeCIPLRule';
+import Greeting from '../components/Greeting';
 
 export default function RateTablesAdmin() {
   const [activeTab, setActiveTab] = useState('dhl_rate');
@@ -26,14 +27,17 @@ export default function RateTablesAdmin() {
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
       <header className="px-6 pt-1 pb-2 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
-            <Table2 size={17} />
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
+              <Table2 size={17} />
+            </div>
+            <div>
+              <h1 className="font-bold text-xl text-[#5A305A] leading-tight">Rate Tables & PPJK</h1>
+              <p className="text-xs font-light text-[#5A305A]/70 mt-0.5">Master data ongkos kirim, surcharge & PPJK</p>
+            </div>
           </div>
-          <div>
-            <h1 className="font-bold text-xl text-[#5A305A] leading-tight">Rate Tables & PPJK</h1>
-            <p className="text-xs font-light text-[#5A305A]/70 mt-0.5">Master data ongkos kirim, surcharge & PPJK</p>
-          </div>
+          <Greeting />
         </div>
       </header>
 
