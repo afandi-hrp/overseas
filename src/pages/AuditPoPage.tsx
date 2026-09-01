@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../lib/AuthContext';
 import { ClipboardCheck, Search, RefreshCw, FileDown, FileText, Check, ChevronDown, Pencil, Trash2, X, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import {
   formatDateTimeID, statusAuditMeta, updateAuditPoKategori, updateAuditPoRow, deleteAuditPoRow,
@@ -137,7 +138,7 @@ function KategoriPicker({ value, onSelect, disabled, buttonLabel, widthClass = '
 
 // Sel tabel Kategori -- auto-save ke DB per pilih (beda dari picker di modal Edit yang cuma
 // disimpan barengan field lain saat klik "Simpan").
-function KategoriCell({ row, onChanged }: { row: AuditPoRow; onChanged: (id: string, kategori: string | null) => void }) {
+function KategoriCell({ row, onChanged, canEdit }: { row: AuditPoRow; onChanged: (id: string, kategori: string | null) => void; canEdit: boolean }) {
   const [saving, setSaving] = useState(false);
 
   const handleSelect = async (val: string) => {
@@ -146,6 +147,10 @@ function KategoriCell({ row, onChanged }: { row: AuditPoRow; onChanged: (id: str
     setSaving(false);
     if (!error) onChanged(row.id, val);
   };
+
+  if (!canEdit) {
+    return <span className="text-[10px] font-semibold text-[#5A305A] truncate block">{row.kategori || '-'}</span>;
+  }
 
   return (
     <KategoriPicker
@@ -310,6 +315,8 @@ function DeleteAuditPoModal({ record, onConfirm, onClose, deleting, error }: {
 
 export default function AuditPoPage() {
   useEffect(() => { document.title = 'Audit AP Local · Shipment'; }, []);
+  const { canEdit } = useAuth();
+  const canEditAuditPo = canEdit('audit_po');
 
   const [rows, setRows] = useState<AuditPoRow[]>([]);
   const [loadingList, setLoadingList] = useState(true);
@@ -549,7 +556,7 @@ export default function AuditPoPage() {
                       <td className="px-3 py-3 align-top text-[#5A305A] font-semibold break-words">{r.nomor_po || '-'}</td>
                       <td className="px-3 py-3 align-top text-[#5A305A] truncate" title={r.vendor_name || undefined}>{r.vendor_name || '-'}</td>
                       <td className="px-3 py-3 align-top"><StatusBadge status={r.status_audit} /></td>
-                      <td className="px-3 py-3 align-top"><KategoriCell row={r} onChanged={handleKategoriChanged} /></td>
+                      <td className="px-3 py-3 align-top"><KategoriCell row={r} onChanged={handleKategoriChanged} canEdit={canEditAuditPo} /></td>
                       <td className="px-3 py-3 align-top text-[#5A305A] truncate" title={r.durasi_text || undefined}>{r.durasi_text || '-'}</td>
                       <td className="px-2 py-3 align-top sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-10 border-l border-slate-200 transition-colors">
                         <div className="flex flex-col items-center gap-1.5 w-[92px]">
@@ -566,20 +573,24 @@ export default function AuditPoPage() {
                           </button>
                           {openActionsRowId === r.id && (
                             <div className="flex flex-col gap-1.5 items-stretch w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
-                              <button
-                                onClick={() => { setEditRow(r); setOpenActionsRowId(null); }}
-                                title="Edit"
-                                className="w-full flex items-center gap-1 px-1.5 py-1 rounded-md border border-slate-200 bg-white text-[9px] font-semibold text-[#5A305A] hover:bg-slate-100 transition-colors"
-                              >
-                                <Pencil size={10} /> Edit
-                              </button>
-                              <button
-                                onClick={() => { openDeleteConfirm(r); setOpenActionsRowId(null); }}
-                                title="Hapus"
-                                className="w-full flex items-center gap-1 px-1.5 py-1 rounded-md border border-rose-200 bg-rose-50 text-[9px] font-semibold text-rose-600 hover:bg-rose-100 hover:border-rose-300 transition-colors"
-                              >
-                                <Trash2 size={10} /> Hapus
-                              </button>
+                              {canEditAuditPo && (
+                                <button
+                                  onClick={() => { setEditRow(r); setOpenActionsRowId(null); }}
+                                  title="Edit"
+                                  className="w-full flex items-center gap-1 px-1.5 py-1 rounded-md border border-slate-200 bg-white text-[9px] font-semibold text-[#5A305A] hover:bg-slate-100 transition-colors"
+                                >
+                                  <Pencil size={10} /> Edit
+                                </button>
+                              )}
+                              {canEditAuditPo && (
+                                <button
+                                  onClick={() => { openDeleteConfirm(r); setOpenActionsRowId(null); }}
+                                  title="Hapus"
+                                  className="w-full flex items-center gap-1 px-1.5 py-1 rounded-md border border-rose-200 bg-rose-50 text-[9px] font-semibold text-rose-600 hover:bg-rose-100 hover:border-rose-300 transition-colors"
+                                >
+                                  <Trash2 size={10} /> Hapus
+                                </button>
+                              )}
                               {r.url_pdf ? (
                                 <a
                                   href={r.url_pdf}

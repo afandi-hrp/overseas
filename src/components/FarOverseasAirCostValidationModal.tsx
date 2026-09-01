@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../lib/AuthContext';
 import { X, Info, Pencil, Edit3, Save, CheckCircle2, AlertTriangle, HelpCircle, ChevronDown, ChevronUp, CheckCircle } from 'lucide-react';
 import {
   looseNameMatch, COST_STATUS_META, parseJsonField, formatMoney,
@@ -116,6 +117,8 @@ const RateCandidateCard: React.FC<{ rate: RateRow; onSelect: () => void; selecti
 };
 
 export default function FarOverseasAirCostValidationModal({ farOverseasId, onClose }: { farOverseasId: string | number; onClose: () => void }) {
+  const { canEdit } = useAuth();
+  const canEditDirectLoading = canEdit('direct_loading');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [cvId, setCvId] = useState<string | number | null>(null);
@@ -308,12 +311,14 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
             {statusMeta && (
               <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${statusMeta.badgeClass}`}>{statusMeta.label}</span>
             )}
-            <button
-              onClick={() => setIsEditMode(m => !m)}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md flex items-center gap-2 transition-colors ${isEditMode ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-100 hover:bg-slate-200 text-[#5A305A]'}`}
-            >
-              <Edit3 size={16} /> {isEditMode ? 'Mode Edit Aktif' : 'Edit'}
-            </button>
+            {canEditDirectLoading && (
+              <button
+                onClick={() => setIsEditMode(m => !m)}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md flex items-center gap-2 transition-colors ${isEditMode ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-100 hover:bg-slate-200 text-[#5A305A]'}`}
+              >
+                <Edit3 size={16} /> {isEditMode ? 'Mode Edit Aktif' : 'Edit'}
+              </button>
+            )}
             <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-[#5A305A] transition-colors">
               <X size={20} />
             </button>
@@ -375,7 +380,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                     <p className="text-xs text-[#5A305A] italic mt-1.5">Belum ada tarif yang teridentifikasi.</p>
                   ) : showRateDetail ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1.5">
-                      {rateIsAmbiguous
+                      {rateIsAmbiguous && canEditDirectLoading
                         ? rateRows.map((row, i) => (
                             <RateCandidateCard key={i} rate={row} selecting={selectingRate} onSelect={() => handleSelectRate(row)} />
                           ))

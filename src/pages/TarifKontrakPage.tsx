@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../lib/AuthContext';
 import { Clock, ArrowUp, Tag, ChevronDown, ChevronUp, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
 import Greeting from '../components/Greeting';
 
@@ -10,6 +11,8 @@ const MATA_UANG_OPTIONS = ['IDR', 'USD', 'SGD', 'EUR', 'JPY'];
 const PPN_STATUS_OPTIONS = ['BELUM_TERMASUK', 'SUDAH_TERMASUK', 'TIDAK_DISEBUTKAN'];
 
 export default function TarifKontrakPage() {
+  const { canEdit } = useAuth();
+  const canEditTarifKontrak = canEdit('settings_tarif_kontrak');
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
@@ -309,12 +312,14 @@ setDoubleChargeMultiplier('2');
             <div className="text-sm text-[#5A305A] font-medium whitespace-nowrap">
               Total: {filteredData.length} tarif
             </div>
-            <button
-              onClick={() => openModal()}
-              className="bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold py-2.5 px-4 rounded-xl transition-all shadow-sm flex items-center gap-2 shrink-0"
-            >
-              <span>+</span> Tambah Tarif Baru
-            </button>
+            {canEditTarifKontrak && (
+              <button
+                onClick={() => openModal()}
+                className="bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold py-2.5 px-4 rounded-xl transition-all shadow-sm flex items-center gap-2 shrink-0"
+              >
+                <span>+</span> Tambah Tarif Baru
+              </button>
+            )}
           </div>
         </div>
 
@@ -381,20 +386,22 @@ setDoubleChargeMultiplier('2');
                       </td>
                       <td className="px-4 py-3 text-[10px] text-[#5A305A] text-center uppercase">{rec.ppn_status.replace('_', ' ')}</td>
                       <td className="px-4 py-3 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          <button 
-                            onClick={() => openModal(rec)}
-                            className="text-xs bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] hover:text-blue-600 font-medium px-2 py-1 rounded transition-colors shadow-sm"
-                          >
-                            Edit
-                          </button>
-                          <button 
-                            onClick={() => handleNonaktifkan(rec.id)}
-                            className="text-xs bg-white border border-slate-200 hover:bg-red-50 text-[#5A305A] hover:text-red-600 font-medium px-2 py-1 rounded transition-colors shadow-sm"
-                          >
-                            Nonaktifkan
-                          </button>
-                        </div>
+                        {canEditTarifKontrak ? (
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => openModal(rec)}
+                              className="text-xs bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] hover:text-blue-600 font-medium px-2 py-1 rounded transition-colors shadow-sm"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleNonaktifkan(rec.id)}
+                              className="text-xs bg-white border border-slate-200 hover:bg-red-50 text-[#5A305A] hover:text-red-600 font-medium px-2 py-1 rounded transition-colors shadow-sm"
+                            >
+                              Nonaktifkan
+                            </button>
+                          </div>
+                        ) : '—'}
                       </td>
                     </tr>
                   ))

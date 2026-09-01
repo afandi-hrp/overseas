@@ -21,11 +21,16 @@ export function formatMoney(amount: number | null | undefined, currency: string 
   return currency + ' ' + formatted;
 }
 
+// Format tanggal seragam di seluruh aplikasi: DD-MMMM-YYYY, nama bulan Bahasa Inggris.
+// (Beda dengan formatDateMemo di bawah, yang sengaja tetap format singkat "14-Jul-26" karena
+// replika persis dokumen memo cetak asli -- jangan disamakan.)
+const MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 export function formatDateID(val: string | null | undefined): string {
   if (!val) return '-';
   const d = new Date(val);
   if (isNaN(d.getTime())) return String(val);
-  return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${day}-${MONTHS_EN[d.getMonth()]}-${d.getFullYear()}`;
 }
 
 const MEMO_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -45,7 +50,8 @@ export function formatDateTimeID(val: string | null | undefined): string {
   if (!val) return '-';
   const d = new Date(val);
   if (isNaN(d.getTime())) return String(val);
-  return d.toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const time = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${formatDateID(val)}, ${time}`;
 }
 
 // Bandingkan longgar (case-insensitive + trim) -- dipakai untuk cek NAMA PT di invoice vs PO tidak cocok.

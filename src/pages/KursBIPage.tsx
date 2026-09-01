@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../lib/AuthContext';
 import { Landmark, X, Trash2, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import Greeting from '../components/Greeting';
 
@@ -25,6 +26,8 @@ function formatTanggalID(val: string | null | undefined): string {
 }
 
 export default function KursBIPage() {
+  const { canEdit } = useAuth();
+  const canEditKursBI = canEdit('settings_kurs_bi');
 
   const [mataUang, setMataUang] = useState('USD');
   // Mode manual -- toggle antara <select> (klik dari daftar) vs text input bebas (buat mata
@@ -242,6 +245,7 @@ export default function KursBIPage() {
       <main className="max-w-7xl mx-auto px-4 pt-3 pb-8">
 
         {/* Form Panel */}
+        {canEditKursBI && (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-6">
           <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
             <h2 className="font-semibold text-[#5A305A]">Form Input Kurs</h2>
@@ -353,6 +357,7 @@ export default function KursBIPage() {
             </div>
           </div>
         </div>
+        )}
 
         {/* History Table */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
@@ -468,23 +473,25 @@ export default function KursBIPage() {
                             {rec.catatan || '-'}
                           </td>
                           <td className="px-5 py-3 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => handleEdit(rec)}
-                                className="text-xs bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] hover:text-blue-600 font-medium px-3 py-1.5 rounded transition-colors shadow-sm"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDelete(rec)}
-                                disabled={deletingId === rec.id}
-                                className="text-xs bg-white border border-rose-200 hover:bg-rose-50 text-rose-600 font-medium px-3 py-1.5 rounded transition-colors shadow-sm disabled:opacity-50 flex items-center gap-1"
-                              >
-                                <Trash2 size={12} /> {deletingId === rec.id ? '...' : 'Hapus'}
-                              </button>
-                            </div>
+                            {canEditKursBI ? (
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleEdit(rec)}
+                                  className="text-xs bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] hover:text-blue-600 font-medium px-3 py-1.5 rounded transition-colors shadow-sm"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDelete(rec)}
+                                  disabled={deletingId === rec.id}
+                                  className="text-xs bg-white border border-rose-200 hover:bg-rose-50 text-rose-600 font-medium px-3 py-1.5 rounded transition-colors shadow-sm disabled:opacity-50 flex items-center gap-1"
+                                >
+                                  <Trash2 size={12} /> {deletingId === rec.id ? '...' : 'Hapus'}
+                                </button>
+                              </div>
+                            ) : '—'}
                           </td>
                         </tr>
                       ))}

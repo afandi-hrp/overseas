@@ -335,7 +335,7 @@ const ValidationTable = ({ title, rows, updateCheck }: { title: string, rows: an
   );
 };
 
-export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { record: any, onClose: () => void }) {
+export default function ValidasiShipmentInvoiceLengkap({ record, onClose, canEdit = true }: { record: any, onClose: () => void, canEdit?: boolean }) {
   const [checks, setChecks] = useState<any[]>([]);
   const [costValidasiId, setCostValidasiId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -577,12 +577,14 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose }: { re
               >
                  <Printer size={16} /> Print
               </button>
-              <button
-                 onClick={() => setIsEditMode(!isEditMode)}
-                 className={`px-3 py-1.5 text-sm font-medium rounded-md flex items-center gap-2 transition-colors ${isEditMode ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-100 hover:bg-slate-200 text-[#5A305A]'}`}
-              >
-                 <Edit3 size={16} /> {isEditMode ? 'Mode Edit Aktif' : 'Mode Edit'}
-              </button>
+              {canEdit && (
+                <button
+                   onClick={() => setIsEditMode(!isEditMode)}
+                   className={`px-3 py-1.5 text-sm font-medium rounded-md flex items-center gap-2 transition-colors ${isEditMode ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-100 hover:bg-slate-200 text-[#5A305A]'}`}
+                >
+                   <Edit3 size={16} /> {isEditMode ? 'Mode Edit Aktif' : 'Mode Edit'}
+                </button>
+              )}
               <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-[#5A305A] hover:text-[#5A305A] transition-colors">
                 <X size={20} />
               </button>

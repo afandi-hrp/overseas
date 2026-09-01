@@ -90,9 +90,22 @@ const fmtPct = (v: any) => {
   return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(num) + ' %'
 }
 
+// Format tanggal seragam di seluruh aplikasi: DD-MMMM-YYYY, nama bulan Bahasa Inggris
+// (mis. "31-August-2026"). Dipakai lintas tabel (Courier, Sea & Air, Audit Trail, dll).
+const MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const fmtDate = (v: any) => {
   if (!v) return '—'
-  return new Date(v).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+  const d = new Date(v)
+  if (isNaN(d.getTime())) return '—'
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${day}-${MONTHS_EN[d.getMonth()]}-${d.getFullYear()}`
+}
+const fmtDateTime = (v: any) => {
+  if (!v) return '—'
+  const d = new Date(v)
+  if (isNaN(d.getTime())) return '—'
+  const time = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+  return `${fmtDate(v)}, ${time}`
 }
 
 // ─── Status Badge ─────────────────────────────────────────────
@@ -138,7 +151,7 @@ const NumberInput = ({ value, onChange, placeholder, className, isPct }: { value
 }
 
 // ─── Edit Modal ───────────────────────────────────────────────
-function EditModal({ record, tab, cols, onClose, onSaved, isCreate }: { record: any, tab: any, cols: any[], onClose: () => void, onSaved: () => void, isCreate?: boolean }) {
+function EditModal({ record, tab, cols, onClose, onSaved, isCreate, createDefaults }: { record: any, tab: any, cols: any[], onClose: () => void, onSaved: () => void, isCreate?: boolean, createDefaults?: Record<string, any> }) {
   const [form, setForm] = useState<Record<string, any>>(() => {
     const init: Record<string, any> = {}
     cols.forEach(f => {
@@ -281,10 +294,35 @@ function EditModal({ record, tab, cols, onClose, onSaved, isCreate }: { record: 
 
       EXCLUDED_COLS.forEach(k => delete payload[k]);
 
+      // created_at biasanya punya default now() di DB -- jangan kirim null eksplisit saat create
+      // supaya default-nya tetap kepakai (bukan mengosongkan kolom).
+      if (isCreate && !payload.created_at) delete payload.created_at;
+
+      // Field seperti "status" (mis. ARCHIVED saat tambah dari tab Draft) tidak selalu ada di
+      // `cols` yang dirender, jadi tidak ke-set lewat form -- dipaksa masuk di sini.
+      if (isCreate && createDefaults) Object.assign(payload, createDefaults);
+
       if (isCreate) {
         if (tab.table === 'tabel_audit_seaair') {
           const { error: rpcErr } = await supabase.rpc('insert_seaair_row', { p_data: payload });
           if (rpcErr) throw rpcErr;
+          onSaved()
+          onClose()
+          return;
+        }
+        if (tab.id === 'courier_audit') {
+          const jenisDokumen = String(payload.jenis_dokumen || '').trim().toUpperCase() === 'CN' ? 'CN' : 'PIB';
+          payload.jenis_dokumen = jenisDokumen;
+          const targetTableCreate = jenisDokumen === 'CN' ? 'tabel_audit_cn' : 'tabel_audit_pib';
+          const { error: insErr } = await supabase.from(targetTableCreate).insert(payload);
+          if (insErr) throw insErr;
+          onSaved()
+          onClose()
+          return;
+        }
+        if (tab.table === 'rekapan_courier') {
+          const { error: insErr } = await supabase.from('rekapan_courier').insert(payload);
+          if (insErr) throw insErr;
           onSaved()
           onClose()
           return;
@@ -577,7 +615,7 @@ const PIB_COLS = [
   { key: 'via', label: 'Via' },
   { key: 'delivery_term', label: 'Delivery Term' },
   { key: 'awb', label: 'AWB' },
-  { key: 'no_pib', label: 'No. PIB' },
+  { key: 'no_pib', label: 'No. PIB', type: 'no_aju_format' },
   { key: 'no_sptnp', label: 'No. SPTNP' },
   { key: 'total_inv_freight', label: 'Total Inv Freight', type: 'num' },
   { key: 'total_inv_duty', label: 'Total Inv Duty', type: 'num' },
@@ -595,19 +633,19 @@ const PIB_COLS = [
   { key: 'hs_code', label: 'HS Code' },
   { key: 'tgl_ppjk', label: 'Tgl PPJK', type: 'date' },
   { key: 'tgl_sptnp', label: 'Tgl SPTNP', type: 'date' },
+  { key: 'status_kelengkapan', label: 'Status Kelengkapan', type: 'status' },
+  { key: 'dokumen_kurang', label: 'Dokumen Kurang' },
+  { key: 'pct_kelengkapan', label: 'Persen (%)', type: 'pct' },
+  { key: 'jenis_source', label: 'Jenis Source' },
+  { key: 'created_at', label: 'Created At', type: 'date' },
+  { key: 'validasi_jalur', label: 'Validasi Jalur' },
+  { key: 'catatan_jalur', label: 'Catatan Jalur' },
   { key: 'notes', label: 'Notes' },
-  { key: 'doc_acceptance', label: 'Doc Acceptance' },
+  { key: 'doc_acceptance', label: 'Doc Acceptance', type: 'date' },
   { key: 'tgl_submit_nas', label: 'Tgl Submit NAS', type: 'date' },
   { key: 'marking', label: 'Marking' },
   { key: 'cek_selisih', label: 'Cek Selisih (Rp)', type: 'num' },
   { key: 'jenis_dokumen', label: 'Jenis Dokumen' },
-  { key: 'created_at', label: 'Created At', type: 'date' },
-  { key: 'jenis_source', label: 'Jenis Source' },
-  { key: 'validasi_jalur', label: 'Validasi Jalur' },
-  { key: 'catatan_jalur', label: 'Catatan Jalur' },
-  { key: 'status_kelengkapan', label: 'Status Kelengkapan', type: 'status' },
-  { key: 'dokumen_kurang', label: 'Dokumen Kurang' },
-  { key: 'pct_kelengkapan', label: 'Persen (%)', type: 'pct' },
 ]
 
 const CN_COLS = [
@@ -644,19 +682,19 @@ const CN_COLS = [
   { key: 'hs_code', label: 'HS Code' },
   { key: 'tgl_ppjk', label: 'Tgl PPJK', type: 'date' },
   { key: 'tgl_sptnp', label: 'Tgl SPTNP', type: 'date' },
+  { key: 'status_kelengkapan', label: 'Status Kelengkapan', type: 'status' },
+  { key: 'dokumen_kurang', label: 'Dokumen Kurang' },
+  { key: 'pct_kelengkapan', label: 'Persen (%)', type: 'pct' },
+  { key: 'jenis_source', label: 'Jenis Source' },
+  { key: 'created_at', label: 'Created At', type: 'date' },
+  { key: 'validasi_jalur', label: 'Validasi Jalur' },
+  { key: 'catatan_jalur', label: 'Catatan Jalur' },
   { key: 'notes', label: 'Notes' },
-  { key: 'doc_acceptance', label: 'Doc Acceptance' },
+  { key: 'doc_acceptance', label: 'Doc Acceptance', type: 'date' },
   { key: 'tgl_submit_nas', label: 'Tgl Submit NAS', type: 'date' },
   { key: 'marking', label: 'Marking' },
   { key: 'cek_selisih', label: 'Cek Selisih (Rp)', type: 'num' },
   { key: 'jenis_dokumen', label: 'Jenis Dokumen' },
-  { key: 'created_at', label: 'Created At', type: 'date' },
-  { key: 'jenis_source', label: 'Jenis Source' },
-  { key: 'validasi_jalur', label: 'Validasi Jalur' },
-  { key: 'catatan_jalur', label: 'Catatan Jalur' },
-  { key: 'status_kelengkapan', label: 'Status Kelengkapan', type: 'status' },
-  { key: 'dokumen_kurang', label: 'Dokumen Kurang' },
-  { key: 'pct_kelengkapan', label: 'Persen (%)', type: 'pct' },
 ]
 
 const COURIER_COLS = [
@@ -777,7 +815,46 @@ const CHECKLIST_FIELDS = [
   { key: 'ada_bpn_sptnp', label: 'BPN SPTNP', mand: [], scope: ['pib', 'cn'] },
 ]
 
-function ChecklistModal({ record, tab, onClose, onSaved }: { record: any, tab: any, onClose: () => void, onSaved?: () => void }) {
+// Kolom dokumen_checklist yang dulunya di-join lewat view v_pib_lengkap/v_cn_lengkap.
+// Sejak view dihilangkan (2026-09), kolom-kolom ini di-merge manual di sini dari tabel dokumen_checklist.
+const CHECKLIST_MERGE_FIELDS = [
+  'status_kelengkapan', 'dokumen_kurang', 'pct_kelengkapan', 'total_mandatory', 'total_mandatory_ada',
+  ...CHECKLIST_FIELDS.map(f => f.key),
+]
+
+async function mergeChecklistData(records: any[], docTypeHint?: 'pib' | 'cn') {
+  if (!records || records.length === 0) return records
+  const isPibRec = (r: any) => r.jenis_dokumen === 'PIB' || docTypeHint === 'pib'
+  const isCnRec = (r: any) => r.jenis_dokumen === 'CN' || docTypeHint === 'cn'
+  const pibIds = records.filter(isPibRec).map(r => r.id).filter(Boolean)
+  const cnIds = records.filter(isCnRec).map(r => r.id).filter(Boolean)
+
+  const checklistByPibId: Record<string, any> = {}
+  const checklistByCnId: Record<string, any> = {}
+  const chunkSize = 50
+
+  const fetchChunked = async (idKey: 'pib_id' | 'cn_id', ids: any[], target: Record<string, any>) => {
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunkIds = ids.slice(i, i + chunkSize)
+      const { data } = await supabase.from('dokumen_checklist').select('*').in(idKey, chunkIds)
+      if (data) data.forEach((c: any) => { target[c[idKey]] = c })
+    }
+  }
+
+  if (pibIds.length > 0) await fetchChunked('pib_id', pibIds, checklistByPibId)
+  if (cnIds.length > 0) await fetchChunked('cn_id', cnIds, checklistByCnId)
+
+  records.forEach(r => {
+    const c = isPibRec(r) ? checklistByPibId[r.id] : (isCnRec(r) ? checklistByCnId[r.id] : undefined)
+    CHECKLIST_MERGE_FIELDS.forEach(key => {
+      r[key] = c ? c[key] : null
+    })
+  })
+
+  return records
+}
+
+function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true }: { record: any, tab: any, onClose: () => void, onSaved?: () => void, canEdit?: boolean }) {
   const [form, setForm] = useState<Record<string, boolean>>({})
   const [existingId, setExistingId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
@@ -943,7 +1020,7 @@ function ChecklistModal({ record, tab, onClose, onSaved }: { record: any, tab: a
             {mandatoryFields.map(field => {
               const val = form[field.key];
               return (
-                <div key={field.key} onClick={() => toggle(field.key)} className="flex justify-between items-center p-3 bg-white border border-slate-200 hover:border-slate-300 rounded-lg shadow-sm cursor-pointer transition-colors group">
+                <div key={field.key} onClick={canEdit ? () => toggle(field.key) : undefined} className={`flex justify-between items-center p-3 bg-white border border-slate-200 rounded-lg shadow-sm transition-colors group ${canEdit ? 'hover:border-slate-300 cursor-pointer' : ''}`}>
                   <span className="text-sm font-medium text-[#5A305A]">{field.label}</span>
                   {val ? (
                     <CheckCircle2 size={20} className="text-emerald-500" />
@@ -953,7 +1030,7 @@ function ChecklistModal({ record, tab, onClose, onSaved }: { record: any, tab: a
                 </div>
               );
             })}
-            
+
             {optionalFields.length > 0 && (
               <>
                 <div className="col-span-full mb-2 mt-6">
@@ -962,7 +1039,7 @@ function ChecklistModal({ record, tab, onClose, onSaved }: { record: any, tab: a
                 {optionalFields.map(field => {
                   const val = form[field.key];
                   return (
-                    <div key={field.key} onClick={() => toggle(field.key)} className="flex justify-between items-center p-3 bg-white border border-slate-200 hover:border-slate-300 rounded-lg shadow-sm cursor-pointer transition-colors group">
+                    <div key={field.key} onClick={canEdit ? () => toggle(field.key) : undefined} className={`flex justify-between items-center p-3 bg-white border border-slate-200 rounded-lg shadow-sm transition-colors group ${canEdit ? 'hover:border-slate-300 cursor-pointer' : ''}`}>
                       <span className="text-sm font-medium text-[#5A305A] flex items-center gap-2">
                         {field.label}
                         <span className="text-[10px] bg-slate-100 text-[#5A305A] px-1.5 py-0.5 rounded font-semibold">(Opsional)</span>
@@ -988,19 +1065,30 @@ function ChecklistModal({ record, tab, onClose, onSaved }: { record: any, tab: a
         
         {/* Footer Modal */}
         <div className="flex gap-3 px-6 py-5 border-t border-slate-100 bg-slate-50">
-          <button
-            onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl border border-slate-200 bg-white text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all"
-          >
-            Batal
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm disabled:opacity-50 transition-all"
-          >
-            {saving ? 'Menyimpan...' : 'Simpan Checklist'}
-          </button>
+          {canEdit ? (
+            <>
+              <button
+                onClick={onClose}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 bg-white text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm disabled:opacity-50 transition-all"
+              >
+                {saving ? 'Menyimpan...' : 'Simpan Checklist'}
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={onClose}
+              className="flex-1 py-2.5 rounded-xl border border-slate-200 bg-white text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all"
+            >
+              Tutup
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -1134,7 +1222,7 @@ const getCellData = (c: any, rec: any, index: number) => {
     content = fmtDate(rec[c.key]);
     alignClass = 'text-[#5A305A] whitespace-nowrap';
   } else if (c.type === 'datetime') {
-    content = rec[c.key] ? new Date(rec[c.key]).toLocaleString('id-ID') : '—';
+    content = fmtDateTime(rec[c.key]);
     alignClass = 'text-[#5A305A] whitespace-nowrap';
   } else if (c.type === 'json') {
     content = rec[c.key] ? JSON.stringify(rec[c.key], null, 2) : '—';
@@ -1199,7 +1287,7 @@ const getCellData = (c: any, rec: any, index: number) => {
     );
     alignClass = 'whitespace-nowrap';
   } else if (c.type === 'no_aju_format') {
-    let val = rec.no_aju;
+    let val = rec[c.key];
     val = formatNoAju(val);
     content = <span className="block max-w-[300px] whitespace-normal break-words leading-relaxed">{val || '—'}</span>;
   } else if (!c.type) {
@@ -1218,8 +1306,8 @@ const getCellData = (c: any, rec: any, index: number) => {
 
 
 const isInlineEditable = (colKey: string) => {
-   // status_kelengkapan/dokumen_kurang/pct_kelengkapan berasal dari view v_pib_lengkap/v_cn_lengkap
-   // (join ke dokumen_checklist), bukan kolom asli tabel_audit_pib/tabel_audit_cn -- kalau diedit di
+   // status_kelengkapan/dokumen_kurang/pct_kelengkapan di-merge manual dari tabel dokumen_checklist
+   // (lihat mergeChecklistData), bukan kolom asli tabel_audit_pib/tabel_audit_cn -- kalau diedit di
    // sini, penyimpanannya akan gagal karena kolom itu tidak ada di tabel tujuan.
    return !['id', 'created_at', 'seaair_id', 'po_detail', 'index', 'cek_selisih', 'action', 'emkl_vendor', 'status_kelengkapan', 'dokumen_kurang', 'pct_kelengkapan'].includes(colKey);
 };
@@ -1845,7 +1933,7 @@ const SeaAirRekapanRowGroup: React.FC<{
   onDelete?: (r: any) => void,
   onDraft?: (r: any) => void,
   onUndraft?: (r: any) => void,
-  onVesselChange: (recId: number, poNo: string, newVal: string) => void,
+  onVesselChange?: (recId: number, poNo: string, newVal: string) => void,
   onInlineSaveRow?: (id: number, payload: any) => Promise<boolean>
 }> = ({ rec, index, cols, onEdit, onChecklist, onValidasi, onCostValidasi, onDelete, onDraft, onUndraft, onVesselChange, onInlineSaveRow }) => {
   const repeatingCols = ['po_no', 'vessel', 'emkl_split', 'split_biaya_origin', 'split_biaya_destination', 'pbm_split', 'lift_off_split', 'inspeksi_split', 'handling_split', 'other_split', 'duty_split', 'bm_split', 'ppn_split', 'pph_split'];
@@ -2316,7 +2404,7 @@ const toolbarPillClass = (isActive: boolean) => `${TOOLBAR_PILL_BASE} ${isActive
 const TOOLBAR_GLASS = 'bg-white/70 backdrop-blur-md border-slate-200/80 shadow-sm'
 
 export default function SharedDataTable({ defaultMainTab = 'courier', defaultSubTab = 'courier_audit' }: { defaultMainTab?: string, defaultSubTab?: string }) {
-  const { allowedPageKeys, isAdmin } = useAuth();
+  const { allowedPageKeys, isAdmin, canEdit } = useAuth();
   const canSee = (pageKey: string) => isAdmin || allowedPageKeys.has(pageKey);
   const [activeMainTab, setActiveMainTab] = useState(defaultMainTab)
   const [activeSubTab,  setActiveSubTab]  = useState(defaultSubTab)
@@ -2443,7 +2531,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
   // Remove debouncedPpjkFilter logic
   const [editRecord,    setEditRecord]    = useState<any>(null)
-  const [showAddSeaAirModal, setShowAddSeaAirModal] = useState(false)
+  const [showAddRowModal, setShowAddRowModal] = useState(false)
   const [chkRecord,     setChkRecord]     = useState<any>(null)
   const [seaAirChecklistRecord, setSeaAirChecklistRecord] = useState<any>(null)
   const [deleteRecord,  setDeleteRecord]  = useState<any>(null)
@@ -2527,9 +2615,9 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     if ((activeMainTab === 'courier' && activeSubTab === 'courier_audit') && (courierAuditType === 'archive')) {
       try {
         // Fetch PIB
-        let queryPib = supabase.from('v_pib_lengkap').select('*').eq('status', 'ARCHIVED')
+        let queryPib = supabase.from('tabel_audit_pib').select('*').eq('status', 'ARCHIVED')
         // Fetch CN
-        let queryCn = supabase.from('v_cn_lengkap').select('*').eq('status', 'ARCHIVED')
+        let queryCn = supabase.from('tabel_audit_cn').select('*').eq('status', 'ARCHIVED')
 
         if (activeCourierImporAnFilter !== 'Semua') {
           queryPib = queryPib.eq('impor_an', activeCourierImporAnFilter);
@@ -2569,6 +2657,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           });
         }
 
+        await mergeChecklistData(combined);
+
         // Apply Ordering locally
         if (sortColumn) {
           combined.sort((a, b) => {
@@ -2596,7 +2686,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
     let fetchTarget = (tab as any).view || tab.table
     if (activeMainTab === 'courier' && activeSubTab === 'courier_audit') {
-      fetchTarget = courierAuditType === 'pib' ? 'v_pib_lengkap' : 'v_cn_lengkap';
+      fetchTarget = courierAuditType === 'pib' ? 'tabel_audit_pib' : 'tabel_audit_cn';
     }
     let query = supabase.from(fetchTarget).select('*', { count: 'exact' })
 
@@ -2737,6 +2827,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
             }
           });
         }
+        await mergeChecklistData(data, courierAuditType === 'pib' ? 'pib' : (courierAuditType === 'cn' ? 'cn' : undefined));
       }
 
       let seaAirAuditStatusMap: Record<string, string> = {};
@@ -2802,13 +2893,77 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     setLoading(false)
   }, [tab, activeMainTab, activeSubTab, courierAuditType, seaAirAuditType, activeTrailFilter, activeTrailUserFilter, activePpjkFilter, activeShipmentTypeFilter, activeAnFilter, activeImporAnFilter, activeCourierAnFilter, activeCourierImporAnFilter, debouncedSearch, sortColumn, sortDirection, page, pageSize, filterStartDate, filterEndDate])
 
+  // ── Indikator "Outstanding" (badge angka di pojok tab) ──────────────────────
+  // Rekapan Courier: jumlah baris per-tab PPJK yang Submit Date-nya masih kosong (key 'All' =
+  // total gabungan, dipakai di tab "Semua PPJK"). Audit Courier: jumlah baris (PIB+CN, status
+  // ARCHIVED) yang Tgl Submit Nas-nya masih kosong, badge-nya nempel cuma di tab Draft.
+  // Dihitung terpisah dari `records` karena tabel dipaginasi -- `records` cuma berisi 1 halaman,
+  // tidak merepresentasikan total keseluruhan.
+  const [ppjkOutstandingMap, setPpjkOutstandingMap] = useState<Record<string, number>>({})
+  const [draftOutstandingCount, setDraftOutstandingCount] = useState<number | null>(null)
+
+  const fetchOutstandingCount = useCallback(async () => {
+    if (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') {
+      let query = supabase.from('rekapan_courier').select('ppjk').is('submit_date', null).limit(20000)
+      if (activeCourierAnFilter !== 'Semua') {
+        query = query.eq('an', activeCourierAnFilter);
+      }
+      if (filterStartDate) query = query.gte('tgl_terima_email', filterStartDate);
+      if (filterEndDate) query = query.lte('tgl_terima_email', `${filterEndDate} 23:59:59`);
+      if (debouncedSearch) {
+        const searchCols = ['awb', 'no_invoice', 'vendor', 'po_pt_imi', 'ppjk'];
+        query = query.or(searchCols.map(col => `${col}.ilike.%${debouncedSearch}%`).join(','));
+      }
+      const { data, error } = await query;
+      if (error || !data) {
+        setPpjkOutstandingMap({});
+        return;
+      }
+      const map: Record<string, number> = { All: data.length };
+      data.forEach((r: any) => {
+        let ppjk = r.ppjk && String(r.ppjk).trim().toUpperCase();
+        if (ppjk && ppjk.startsWith('OWN ')) ppjk = ppjk.substring(4);
+        if (ppjk) map[ppjk] = (map[ppjk] || 0) + 1;
+      });
+      setPpjkOutstandingMap(map);
+      return;
+    }
+    setPpjkOutstandingMap({});
+
+    if (activeMainTab === 'courier' && activeSubTab === 'courier_audit') {
+      const buildQuery = (table: string, searchCols: string[]) => {
+        let q = supabase.from(table).select('id', { count: 'exact', head: true }).eq('status', 'ARCHIVED').is('tgl_submit_nas', null)
+        if (activeCourierImporAnFilter !== 'Semua') q = q.eq('impor_an', activeCourierImporAnFilter);
+        if (debouncedSearch) {
+          q = q.or(searchCols.map(col => `${col}.ilike.%${debouncedSearch}%`).join(','));
+        }
+        return q;
+      }
+      const [pibRes, cnRes] = await Promise.all([
+        buildQuery('tabel_audit_pib', ['awb', 'vendor_inv_no', 'no_pib', 'po_ori', 'vendor']),
+        buildQuery('tabel_audit_cn', ['awb', 'vendor_inv_no', 'po_ori', 'vendor']),
+      ]);
+      if (pibRes.error || cnRes.error) {
+        setDraftOutstandingCount(null);
+      } else {
+        setDraftOutstandingCount((pibRes.count ?? 0) + (cnRes.count ?? 0));
+      }
+      return;
+    }
+    setDraftOutstandingCount(null);
+  }, [activeMainTab, activeSubTab, activeCourierAnFilter, activeCourierImporAnFilter, filterStartDate, filterEndDate, debouncedSearch])
+
+  useEffect(() => {
+    fetchOutstandingCount()
+  }, [fetchOutstandingCount])
+
   const getExportData = async (startDate?: string, endDate?: string) => {
     if (!tab) return []
     if (!(activeMainTab === 'courier' && activeSubTab === 'courier_audit') && !tab.table) return []
 
     if ((activeMainTab === 'courier' && activeSubTab === 'courier_audit') && (courierAuditType === 'archive')) {
-      let queryPib = supabase.from('v_pib_lengkap').select('*').eq('status', 'ARCHIVED').limit(25000);
-      let queryCn = supabase.from('v_cn_lengkap').select('*').eq('status', 'ARCHIVED').limit(25000);
+      let queryPib = supabase.from('tabel_audit_pib').select('*').eq('status', 'ARCHIVED').limit(25000);
+      let queryCn = supabase.from('tabel_audit_cn').select('*').eq('status', 'ARCHIVED').limit(25000);
 
       if (activeCourierImporAnFilter !== 'Semua') {
         queryPib = queryPib.eq('impor_an', activeCourierImporAnFilter);
@@ -2854,12 +3009,13 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           }
         });
       }
+      await mergeChecklistData(combined);
       return combined;
     }
 
     let fetchTarget = (tab as any).view || tab.table
     if (activeMainTab === 'courier' && activeSubTab === 'courier_audit') {
-      fetchTarget = courierAuditType === 'pib' ? 'v_pib_lengkap' : 'v_cn_lengkap';
+      fetchTarget = courierAuditType === 'pib' ? 'tabel_audit_pib' : 'tabel_audit_cn';
     }
     let query = supabase.from(fetchTarget).select('*').limit(50000)
 
@@ -2982,6 +3138,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           }
         });
       }
+      await mergeChecklistData(data, courierAuditType === 'pib' ? 'pib' : (courierAuditType === 'cn' ? 'cn' : undefined));
     }
 
     return (data || []).map(r => {
@@ -3229,13 +3386,14 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         />
       )}
 
-      {showAddSeaAirModal && tab && (
+      {showAddRowModal && tab && (
         <EditModal
-          record={{}}
+          record={(activeMainTab === 'courier' && activeSubTab === 'courier_audit') ? { jenis_dokumen: courierAuditType === 'cn' ? 'CN' : 'PIB' } : {}}
           tab={tab}
           cols={activeCols}
           isCreate
-          onClose={() => setShowAddSeaAirModal(false)}
+          createDefaults={(activeMainTab === 'courier' && activeSubTab === 'courier_audit' && courierAuditType === 'archive') ? { status: 'ARCHIVED' } : undefined}
+          onClose={() => setShowAddRowModal(false)}
           onSaved={fetchRecords}
         />
       )}
@@ -3246,6 +3404,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           tab={tab}
           onClose={() => setChkRecord(null)}
           onSaved={fetchRecords}
+          canEdit={canEdit('courier_checklist_dokumen')}
         />
       )}
 
@@ -3281,6 +3440,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           mainTab={activeMainTab}
           subTab={activeSubTab}
           onClose={() => setValidasiRecord(null)}
+          canEdit={canEdit('courier_dokumen_validation')}
         />
       )}
       
@@ -3296,13 +3456,15 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         <ValidasiShipmentInvoiceLengkap
           record={seaAirCostValidasiRecord}
           onClose={() => setSeaAirCostValidasiRecord(null)}
+          canEdit={canEdit('sea_air_cost_validation')}
         />
       )}
-      
+
       {seaAirValidasiRecord && (
         <SeaAirValidasiModal
           record={seaAirValidasiRecord}
           onClose={() => setSeaAirValidasiRecord(null)}
+          canEdit={canEdit('sea_air_dokumen_validation')}
         />
       )}
 
@@ -3313,6 +3475,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           docId={costValidasiRecord.id}
           rawRecord={costValidasiRecord}
           onClose={() => setCostValidasiRecord(null)}
+          canEdit={canEdit('courier_cost_validation')}
         />
       )}
 
@@ -3340,8 +3503,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
                               {/* ── Tabs & Search ── */}
             <div className="flex flex-col gap-4 mb-4">
-              <div className={`flex flex-wrap items-center gap-2 rounded-2xl px-3 py-3 border ${TOOLBAR_GLASS}`}>
-                <div className="flex-1 flex gap-2 items-center flex-wrap">
+              <div className={`flex flex-nowrap items-center gap-2 rounded-2xl px-3 py-3 border overflow-x-auto ${TOOLBAR_GLASS}`}>
+                <div className="flex-1 flex gap-2 items-center flex-nowrap min-w-0">
                   {/* Trail Filter -- jenis aksi/modul: Semua / Courier / Sea & Air / Bunker / dst.
                       Pakai 1 dropdown (bukan tombol pill per modul) supaya rapi & gampang nambah
                       modul baru ke depannya tanpa toolbar makin penuh. */}
@@ -3377,34 +3540,55 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   )}
                   {/* PPJK Filter for Courier */}
                   {(activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') && (
-                    <div className="flex gap-2 items-center pb-1 overflow-x-auto max-w-[60vw]">
-                      {ppjkTabs.map(ppjk => (
-                        <button
-                          key={ppjk}
-                          onClick={() => { setActivePpjkFilter(ppjk); setPage(1); }}
-                          className={toolbarPillClass(activePpjkFilter === ppjk)}
-                        >
-                          {ppjk === 'All' ? 'Semua PPJK' : ppjk}
-                        </button>
-                      ))}
+                    <div className="flex gap-1 items-center pb-1 pt-1.5 pr-3 overflow-x-auto max-w-[60vw]">
+                      {ppjkTabs.map(ppjk => {
+                        const badgeCount = ppjkOutstandingMap[ppjk];
+                        return (
+                          <span key={ppjk} className="relative inline-flex shrink-0">
+                            <button
+                              onClick={() => { setActivePpjkFilter(ppjk); setPage(1); }}
+                              className={toolbarPillClass(activePpjkFilter === ppjk)}
+                            >
+                              {ppjk === 'All' ? 'Semua PPJK' : ppjk}
+                            </button>
+                            {!!badgeCount && (
+                              <span
+                                title="Jumlah baris dengan Submit Date masih kosong"
+                                className="absolute -top-1.5 -right-1.5 z-10 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center shadow-sm border-2 border-white"
+                              >
+                                {badgeCount > 99 ? '99+' : badgeCount}
+                              </span>
+                            )}
+                          </span>
+                        );
+                      })}
                     </div>
                   )}
-                  
+
                   {/* Courier Audit Type Filter */}
                   {(activeMainTab === 'courier' && activeSubTab === 'courier_audit') && (
-                    <div className="flex gap-2 items-center pb-1 overflow-x-auto max-w-[60vw]">
+                    <div className="flex gap-1 items-center pb-1 pt-1.5 pr-3 overflow-x-auto max-w-[60vw]">
                       {[{id: 'archive', label: '🗄️ Draft'}, {id: 'pib', label: 'PIB'}, {id: 'cn', label: 'CN'}].map(type => (
-                        <button
-                          key={type.id}
-                          onClick={() => { setCourierAuditType(type.id); setPage(1); }}
-                          className={toolbarPillClass(courierAuditType === type.id)}
-                        >
-                          {type.label}
-                        </button>
+                        <span key={type.id} className="relative inline-flex shrink-0">
+                          <button
+                            onClick={() => { setCourierAuditType(type.id); setPage(1); }}
+                            className={toolbarPillClass(courierAuditType === type.id)}
+                          >
+                            {type.label}
+                          </button>
+                          {type.id === 'archive' && !!draftOutstandingCount && (
+                            <span
+                              title="Jumlah baris dengan Tgl Submit Nas masih kosong"
+                              className="absolute -top-1.5 -right-1.5 z-10 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center shadow-sm border-2 border-white"
+                            >
+                              {draftOutstandingCount > 99 ? '99+' : draftOutstandingCount}
+                            </span>
+                          )}
+                        </span>
                       ))}
                     </div>
                   )}
-                  
+
                   {/* Sea & Air Audit Type Filter (Audit / Draft) */}
                   {activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit' && (
                     <div className="flex gap-2 items-center pb-1 overflow-x-auto max-w-[60vw]">
@@ -3435,8 +3619,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                     </div>
                   )}
                 </div>
-                <div className="flex gap-1.5 items-center flex-wrap justify-end">
-                {(['sea_air_audit', 'sea_air_rekapan'].includes(activeSubTab) || activeMainTab === 'trail') && (
+                <div className="flex gap-1.5 items-center flex-nowrap justify-end shrink-0">
+                {(['sea_air_audit', 'sea_air_rekapan', 'courier_audit', 'courier_rekapan'].includes(activeSubTab) || activeMainTab === 'trail') && (
                   <div className={`flex gap-1.5 items-center rounded-full pl-2.5 pr-1.5 py-1 h-[38px] border shrink-0 ${TOOLBAR_GLASS}`}>
                     <CalendarDays size={13} className="text-[#5A305A] shrink-0" />
                     <input
@@ -3480,10 +3664,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
                 <button
                   onClick={fetchRecords}
-                  className={`px-3 py-2 rounded-full text-[#5A305A] text-xs font-semibold hover:border-[#5A305A]/30 hover:text-[#5A305A] hover:bg-white/90 transition-all h-[38px] flex items-center gap-1.5 border shrink-0 ${TOOLBAR_GLASS}`}
+                  title="Refresh"
+                  aria-label="Refresh"
+                  className={`w-[38px] p-0 rounded-full text-[#5A305A] hover:border-[#5A305A]/30 hover:text-[#5A305A] hover:bg-white/90 transition-all h-[38px] flex items-center justify-center border shrink-0 ${TOOLBAR_GLASS}`}
                 >
-                  <RefreshCw size={13} />
-                  Refresh
+                  <RefreshCw size={14} />
                 </button>
                 {((activeMainTab === 'courier' && activeSubTab === 'courier_audit') || (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') || (activeMainTab === 'courier' && activeSubTab === 'courier_validasi') || (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit') || (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan')) && (
                   <button
@@ -3513,9 +3698,13 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   </button>
                 )}
 
-                {activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit' && (
+                {(
+                  (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit' && canEdit('sea_air_audit')) ||
+                  (activeMainTab === 'courier' && activeSubTab === 'courier_audit' && canEdit('courier_audit')) ||
+                  (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan' && canEdit('courier_rekapan'))
+                ) && (
                   <button
-                    onClick={() => setShowAddSeaAirModal(true)}
+                    onClick={() => setShowAddRowModal(true)}
                     className="px-3 py-2 rounded-full bg-[#5A305A] hover:bg-[#4a2749] text-white text-xs font-semibold border border-[#5A305A] transition-all h-[38px] flex justify-center items-center gap-1.5 shadow-sm shrink-0"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -3607,7 +3796,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 <p className="text-4xl mb-3">⚠️</p>
                 <p className="font-semibold">Terjadi Kesalahan</p>
                 <p className="text-sm mt-1 max-w-lg mx-auto bg-red-50 p-4 rounded-lg break-words">{fetchError}</p>
-                <p className="text-xs text-[#5A305A] mt-4">Tip: Jika Anda baru saja menghapus kolom (seperti no_cn), pastikan View (v_cn_lengkap/v_pib_lengkap) di Supabase sudah di-update.</p>
+                <p className="text-xs text-[#5A305A] mt-4">Tip: Jika Anda baru saja menghapus/mengubah nama kolom di tabel Supabase, pastikan kode yang mereferensikan kolom tersebut sudah disesuaikan.</p>
               </div>
             ) : records.length === 0 ? (
               <div className="text-center py-24 text-[#5A305A]">
@@ -3690,19 +3879,21 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   <tbody>
                     {records.map((rec, index) => {
                       if (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit') {
+                        const canEditSeaAirAudit = canEdit('sea_air_audit');
                         return (
                           <SeaAirAuditRowGroup
                             key={rec.id}
                             rec={rec}
                             index={startIndex + index}
                             cols={activeCols}
-                            onEdit={setEditRecord}
-                            onDelete={handleDelete}
-                            onInlineSaveRow={handleInlineSaveRow}
+                            onEdit={canEditSeaAirAudit ? setEditRecord : undefined}
+                            onDelete={canEditSeaAirAudit ? handleDelete : undefined}
+                            onInlineSaveRow={canEditSeaAirAudit ? handleInlineSaveRow : undefined}
                           />
                         );
                       }
                       if (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan') {
+                        const canEditSeaAirRekapan = canEdit('sea_air_rekapan');
                         return (
                           <SeaAirRekapanRowGroup
                             key={rec.id}
@@ -3712,42 +3903,44 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                             onChecklist={canSee('sea_air_checklist_validation') ? setSeaAirChecklistRecord : undefined}
                             onValidasi={canSee('sea_air_dokumen_validation') ? setSeaAirValidasiRecord : undefined}
                             onCostValidasi={canSee('sea_air_cost_validation') ? setSeaAirCostValidasiRecord : undefined}
-                            onDelete={handleDelete}
-                            onDraft={handleDraftSeaAir}
-                            onUndraft={handleUndraftSeaAir}
-                            onVesselChange={handleUpdateVessel}
-                            onInlineSaveRow={handleInlineSaveRow}
+                            onDelete={canEditSeaAirRekapan ? handleDelete : undefined}
+                            onDraft={canEditSeaAirRekapan ? handleDraftSeaAir : undefined}
+                            onUndraft={canEditSeaAirRekapan ? handleUndraftSeaAir : undefined}
+                            onVesselChange={canEditSeaAirRekapan ? handleUpdateVessel : undefined}
+                            onInlineSaveRow={canEditSeaAirRekapan ? handleInlineSaveRow : undefined}
                           />
                         );
                       }
                       if (activeMainTab === 'courier' && activeSubTab === 'courier_audit') {
+                        const canEditCourierAudit = canEdit('courier_audit');
                         return (
                           <CourierAuditRowGroup
                             key={rec.id}
                             rec={rec}
                             index={startIndex + index}
                             cols={activeCols}
-                            onEdit={setEditRecord}
+                            onEdit={canEditCourierAudit ? setEditRecord : undefined}
                             onChecklist={canSee('courier_checklist_dokumen') ? setChkRecord : undefined}
                             onValidasi={canSee('courier_dokumen_validation') ? setValidasiRecord : undefined}
                             onCostValidasi={canSee('courier_cost_validation') ? (r) => setCostValidasiRecord(r) : undefined}
-                            onArchive={courierAuditType !== 'archive' ? handleArchive : undefined}
-                            onUndraft={courierAuditType === 'archive' ? handleUndraft : undefined}
-                            onDelete={handleDelete}
-                            onInlineSaveRow={handleInlineSaveRow}
+                            onArchive={canEditCourierAudit && courierAuditType !== 'archive' ? handleArchive : undefined}
+                            onUndraft={canEditCourierAudit && courierAuditType === 'archive' ? handleUndraft : undefined}
+                            onDelete={canEditCourierAudit ? handleDelete : undefined}
+                            onInlineSaveRow={canEditCourierAudit ? handleInlineSaveRow : undefined}
                           />
                         );
                       }
                       if (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') {
+                        const canEditCourierRekapan = canEdit('courier_rekapan');
                         return (
                           <CourierRekapanRowGroup
                             key={rec.id}
                             rec={rec}
                             index={startIndex + index}
                             cols={activeCols}
-                            onEdit={setEditRecord}
-                            onDelete={handleDelete}
-                            onInlineSaveRow={handleInlineSaveRow}
+                            onEdit={canEditCourierRekapan ? setEditRecord : undefined}
+                            onDelete={canEditCourierRekapan ? handleDelete : undefined}
+                            onInlineSaveRow={canEditCourierRekapan ? handleInlineSaveRow : undefined}
                           />
                         );
                       }

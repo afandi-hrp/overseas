@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../lib/AuthContext';
 import { Fuel, UploadCloud, Clock, X, CheckCircle2, AlertTriangle, ClipboardList, FileCheck2, Trash2, Search, RefreshCw } from 'lucide-react';
 import {
   formatDateTimeID, summaryStatusMeta, STATUS_WORKFLOW_OPTIONS, workflowMeta, updateBunkerDokumen,
@@ -106,7 +107,7 @@ function StatusBadge({ status }: { status: string | null }) {
   return <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${meta.badgeClass}`}>{meta.label}</span>;
 }
 
-function WorkflowSelect({ row, onChanged }: { row: any; onChanged: () => void }) {
+function WorkflowSelect({ row, onChanged, canEdit }: { row: any; onChanged: () => void; canEdit: boolean }) {
   const [saving, setSaving] = useState(false);
   const meta = workflowMeta(row.status_workflow);
 
@@ -116,6 +117,10 @@ function WorkflowSelect({ row, onChanged }: { row: any; onChanged: () => void })
     setSaving(false);
     onChanged();
   };
+
+  if (!canEdit) {
+    return <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${meta.badgeClass}`}>{meta.label}</span>;
+  }
 
   return (
     <select
@@ -133,6 +138,8 @@ function WorkflowSelect({ row, onChanged }: { row: any; onChanged: () => void })
 
 export default function BunkerPage() {
   useEffect(() => { document.title = 'Bunker · Shipment'; }, []);
+  const { canEdit: canEditPage } = useAuth();
+  const canEditBunker = canEditPage('bunker');
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
@@ -367,12 +374,14 @@ export default function BunkerPage() {
                     </span>
                   )}
                 </button>
-                <button
-                  onClick={() => setShowUploadModal(true)}
-                  className="px-3 py-2 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-xs transition-all flex items-center gap-1.5 shrink-0 h-[34px]"
-                >
-                  <UploadCloud size={14} /> Upload Dokumen
-                </button>
+                {canEditBunker && (
+                  <button
+                    onClick={() => setShowUploadModal(true)}
+                    className="px-3 py-2 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-xs transition-all flex items-center gap-1.5 shrink-0 h-[34px]"
+                  >
+                    <UploadCloud size={14} /> Upload Dokumen
+                  </button>
+                )}
                 <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0">
                   <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">Items</span>
                   <select
@@ -416,7 +425,7 @@ export default function BunkerPage() {
                         <td className="px-3 py-3 align-top text-[#5A305A]">{r.kapal || '-'}</td>
                         <td className="px-3 py-3 align-top text-[#5A305A]">{r.lokasi || '-'}</td>
                         <td className="px-3 py-3 align-top"><StatusBadge status={r.status} /></td>
-                        <td className="px-3 py-3 align-top"><WorkflowSelect row={r} onChanged={fetchList} /></td>
+                        <td className="px-3 py-3 align-top"><WorkflowSelect row={r} onChanged={fetchList} canEdit={canEditBunker} /></td>
                         <td className="px-3 py-3 align-top text-[#5A305A] whitespace-nowrap">{formatDateTimeID(r.updated_at)}</td>
                         <td className="px-2 py-3 align-top sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-10 border-l border-slate-200 transition-colors">
                           <div className="flex flex-col gap-1 w-[110px]">
@@ -434,13 +443,15 @@ export default function BunkerPage() {
                             >
                               <ClipboardList size={10} /> Compare Doc
                             </button>
-                            <button
-                              onClick={() => openDeleteConfirm(r)}
-                              title="Hapus"
-                              className="w-full flex items-center gap-1 px-1.5 py-1 rounded-lg border border-rose-200 bg-rose-50 text-[9px] font-semibold text-rose-600 hover:bg-rose-100 hover:border-rose-300 transition-colors"
-                            >
-                              <Trash2 size={10} /> Hapus
-                            </button>
+                            {canEditBunker && (
+                              <button
+                                onClick={() => openDeleteConfirm(r)}
+                                title="Hapus"
+                                className="w-full flex items-center gap-1 px-1.5 py-1 rounded-lg border border-rose-200 bg-rose-50 text-[9px] font-semibold text-rose-600 hover:bg-rose-100 hover:border-rose-300 transition-colors"
+                              >
+                                <Trash2 size={10} /> Hapus
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -481,11 +492,11 @@ export default function BunkerPage() {
       </div>
 
       {kelengkapanRow && (
-        <BunkerKelengkapanModal record={kelengkapanRow} onClose={() => setKelengkapanRow(null)} onChanged={fetchList} />
+        <BunkerKelengkapanModal record={kelengkapanRow} onClose={() => setKelengkapanRow(null)} onChanged={fetchList} canEdit={canEditBunker} />
       )}
 
       {compareRow && (
-        <BunkerCompareDocModal record={compareRow} onClose={() => setCompareRow(null)} onChanged={fetchList} />
+        <BunkerCompareDocModal record={compareRow} onClose={() => setCompareRow(null)} onChanged={fetchList} canEdit={canEditBunker} />
       )}
 
       {deleteConfirmRow && (

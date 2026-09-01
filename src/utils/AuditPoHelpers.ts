@@ -23,11 +23,15 @@ export type AuditPoRow = {
   kategori: string | null;
 };
 
+// Format tanggal seragam di seluruh aplikasi: DD-MMMM-YYYY, nama bulan Bahasa Inggris.
+const MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 export function formatDateTimeID(val: string | null | undefined): string {
   if (!val) return '-';
   const d = new Date(val);
   if (isNaN(d.getTime())) return String(val);
-  return d.toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const day = String(d.getDate()).padStart(2, '0');
+  const time = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${day}-${MONTHS_EN[d.getMonth()]}-${d.getFullYear()}, ${time}`;
 }
 
 export const STATUS_AUDIT_META: Record<string, { label: string; badgeClass: string }> = {

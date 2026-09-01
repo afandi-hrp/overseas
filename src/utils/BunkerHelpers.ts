@@ -15,18 +15,23 @@ export function parseJsonField(val: unknown): any {
   return val;
 }
 
+// Format tanggal seragam di seluruh aplikasi: DD-MMMM-YYYY, nama bulan Bahasa Inggris.
+const MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
 export function formatDateID(val: string | null | undefined): string {
   if (!val) return '-';
   const d = new Date(val);
   if (isNaN(d.getTime())) return String(val);
-  return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${day}-${MONTHS_EN[d.getMonth()]}-${d.getFullYear()}`;
 }
 
 export function formatDateTimeID(val: string | null | undefined): string {
   if (!val) return '-';
   const d = new Date(val);
   if (isNaN(d.getTime())) return String(val);
-  return d.toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const time = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${formatDateID(val)}, ${time}`;
 }
 
 // Label tampilan untuk key di `kelengkapan_status` (modal Kelengkapan Dokumen).

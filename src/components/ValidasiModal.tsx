@@ -3,6 +3,16 @@ import { supabase } from '../lib/supabase';
 import { Receipt, FileText, Landmark, Ship, Sailboat, FileCheck2, FileDigit, IdCard, Scale, ClipboardList, Edit3, CheckCircle2, XCircle, Clock, Building2, Plane, CalendarDays, UserCheck, ChevronDown, ChevronUp } from 'lucide-react';
 import ValidasiPerhitunganPIB from './ValidasiPerhitunganPIB';
 
+// Format tanggal seragam di seluruh aplikasi: DD-MMMM-YYYY, nama bulan Bahasa Inggris.
+const MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const fmtDateEN = (v: any): string => {
+  if (!v) return '—';
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return '—';
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${day}-${MONTHS_EN[d.getMonth()]}-${d.getFullYear()}`;
+};
+
 // Tabel lebar dengan scrollbar horizontal ganda (atas & bawah) yang disinkronkan,
 // supaya baris tabel yang panjang ke bawah tidak perlu discroll dulu sampai bawah untuk geser kiri-kanan.
 function DualScrollTable({ children }: { children: React.ReactNode }) {
@@ -462,7 +472,7 @@ const STATUS_CONFIG: any = {
   mismatch: { label: "Tidak sesuai",  bg: "var(--color-background-danger)",    color: "var(--color-text-danger)",   icon: "ti-x" },
 };
 
-export default function ValidasiModal({ record, mainTab, subTab, onClose }: { record: any, mainTab: string, subTab?: string, onClose: () => void }) {
+export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdit = true }: { record: any, mainTab: string, subTab?: string, onClose: () => void, canEdit?: boolean }) {
   const [docType, setDocType] = useState<'PIB'|'CN'|null>(null);
   const [debugData, setDebugData] = useState<any>({ raw: {}, doc: {} });
 
@@ -1235,13 +1245,15 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
               </button>
             )}
             {!isEditMode ? (
-              <button style={{ ...S.printBtn, color: '#0369a1', borderColor: '#bae6fd', background: '#f0f9ff' }} onClick={() => {
-                  setSnapshotValues({ values: JSON.parse(JSON.stringify(values)), awbNo, tanggal, namaChecker, catatanManual });
-                  setIsEditMode(true);
-                }}>
-                <Edit3 size={14} />
-                <span className="hidden sm:inline">Edit</span>
-              </button>
+              canEdit && (
+                <button style={{ ...S.printBtn, color: '#0369a1', borderColor: '#bae6fd', background: '#f0f9ff' }} onClick={() => {
+                    setSnapshotValues({ values: JSON.parse(JSON.stringify(values)), awbNo, tanggal, namaChecker, catatanManual });
+                    setIsEditMode(true);
+                  }}>
+                  <Edit3 size={14} />
+                  <span className="hidden sm:inline">Edit</span>
+                </button>
+              )
             ) : (
               <>
                 <button style={{ ...S.printBtn, color: '#15803d', borderColor: '#bbf7d0', background: '#f0fdf4' }} onClick={() => setIsEditMode(false)}>
@@ -1328,7 +1340,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                     <CalendarDays size={12} className="text-[#8b5fa8] shrink-0 print:hidden" />
                     <div>
                       <div className="text-[9px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Tanggal cek</div>
-                      {isEditMode ? <input type="date" style={S.metaInput} value={tanggal || ""} onChange={e => setTanggal(e.target.value)} /> : <div className="text-[12px] font-semibold text-[#5A305A] leading-tight">{tanggal ? new Date(tanggal).toLocaleDateString('id-ID') : "—"}</div>}
+                      {isEditMode ? <input type="date" style={S.metaInput} value={tanggal || ""} onChange={e => setTanggal(e.target.value)} /> : <div className="text-[12px] font-semibold text-[#5A305A] leading-tight">{fmtDateEN(tanggal)}</div>}
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 bg-white/90 border border-[#5A305A]/15 rounded-lg px-2.5 py-1 print:bg-transparent print:border-0 print:px-0 print:py-0">
@@ -1577,7 +1589,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose }: { re
                   </p>
                 </div>
                 <div style={{ textAlign: "right", fontSize: "11px", color: txtSec }}>
-                  {tanggal && <div>Tanggal: {new Date(tanggal).toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" })}</div>}
+                  {tanggal && <div>Tanggal: {fmtDateEN(tanggal)}</div>}
                   {namaChecker && <div>Pemeriksa: {namaChecker}</div>}
                   {awbNo && <div>AWB: {awbNo}</div>}
                 </div>

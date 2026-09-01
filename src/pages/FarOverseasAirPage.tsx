@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../lib/AuthContext';
 import { CheckCircle2, FileCheck2, UploadCloud, X, AlertTriangle, Clock, ClipboardCheck, ClipboardList, Edit3, Save, Scale, Trash2, RefreshCw, ChevronDown } from 'lucide-react';
 import { formatMoney, formatDateID, APPROVAL_STATUS_META, COST_STATUS_META, REKAPAN_EDITABLE_FIELDS, updateRekapanFarOverseasAir, parseRouteNote, matchOctagonTarif, computeExpectedFromRate, computeCostStatus, parseJsonField, type PoListEntry } from '../utils/FarOverseasAirHelpers';
 import { EditableCell } from '../components/FarOverseasAirEditableField';
@@ -336,6 +337,8 @@ export default function FarOverseasAirPage() {
   // "Approval" di kolom AKSI diklik).
   const { id: deepLinkId } = useParams<{ id?: string }>();
   const navigate = useNavigate();
+  const { canEdit: canEditPage } = useAuth();
+  const canEditDirectLoading = canEditPage('direct_loading');
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
@@ -778,12 +781,14 @@ export default function FarOverseasAirPage() {
                     </span>
                   )}
                 </button>
-                <button
-                  onClick={() => setShowUploadModal(true)}
-                  className="px-3 py-2 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px]"
-                >
-                  <UploadCloud size={14} /> Upload Dokumen
-                </button>
+                {canEditDirectLoading && (
+                  <button
+                    onClick={() => setShowUploadModal(true)}
+                    className="px-3 py-2 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px]"
+                  >
+                    <UploadCloud size={14} /> Upload Dokumen
+                  </button>
+                )}
                 <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0">
                   <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">Items</span>
                   <select
@@ -890,20 +895,24 @@ export default function FarOverseasAirPage() {
                                     <span className="flex items-center gap-1 text-[9px] font-semibold text-[#5A305A]"><ClipboardList size={10} /> Cost</span>
                                     <CostBadge status={costStatus} compact />
                                   </button>
-                                  <button
-                                    onClick={() => { toggleEditRow(r.id); setOpenActionsRowId(null); }}
-                                    title="Edit baris ini"
-                                    className={`w-full flex items-center gap-1 px-1.5 py-1 rounded-md border text-[9px] font-semibold transition-colors ${editingThisRow ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700' : 'border-slate-200 bg-white text-[#5A305A] hover:bg-slate-100'}`}
-                                  >
-                                    <Edit3 size={10} /> {editingThisRow ? 'Edit Aktif' : 'Edit'}
-                                  </button>
-                                  <button
-                                    onClick={() => { openDeleteConfirm(r); setOpenActionsRowId(null); }}
-                                    title="Hapus memo ini"
-                                    className="w-full flex items-center gap-1 px-1.5 py-1 rounded-md border border-rose-200 bg-rose-50 text-[9px] font-semibold text-rose-600 hover:bg-rose-100 hover:border-rose-300 transition-colors"
-                                  >
-                                    <Trash2 size={10} /> Hapus
-                                  </button>
+                                  {canEditDirectLoading && (
+                                    <button
+                                      onClick={() => { toggleEditRow(r.id); setOpenActionsRowId(null); }}
+                                      title="Edit baris ini"
+                                      className={`w-full flex items-center gap-1 px-1.5 py-1 rounded-md border text-[9px] font-semibold transition-colors ${editingThisRow ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700' : 'border-slate-200 bg-white text-[#5A305A] hover:bg-slate-100'}`}
+                                    >
+                                      <Edit3 size={10} /> {editingThisRow ? 'Edit Aktif' : 'Edit'}
+                                    </button>
+                                  )}
+                                  {canEditDirectLoading && (
+                                    <button
+                                      onClick={() => { openDeleteConfirm(r); setOpenActionsRowId(null); }}
+                                      title="Hapus memo ini"
+                                      className="w-full flex items-center gap-1 px-1.5 py-1 rounded-md border border-rose-200 bg-rose-50 text-[9px] font-semibold text-rose-600 hover:bg-rose-100 hover:border-rose-300 transition-colors"
+                                    >
+                                      <Trash2 size={10} /> Hapus
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </div>

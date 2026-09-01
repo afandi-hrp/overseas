@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../lib/AuthContext';
 import { Plus, Edit3, Trash2, Info, SlidersHorizontal, Search } from 'lucide-react';
 import Greeting from '../components/Greeting';
 
 export default function KursRuleVendorPage() {
+  const { canEdit } = useAuth();
+  const canEditKursRuleVendor = canEdit('settings_kurs_rule_vendor');
   const [rules, setRules] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -162,7 +165,7 @@ export default function KursRuleVendorPage() {
           </div>
           <div className="flex items-center gap-4 shrink-0">
             <div className="text-sm text-[#5A305A] font-medium whitespace-nowrap">Total: {filteredRules.length} aturan</div>
-            {!showForm && (
+            {!showForm && canEditKursRuleVendor && (
               <button
                 onClick={() => handleOpenForm()}
                 className="bg-[#5A305A] hover:bg-[#73507B] text-white font-bold py-2 px-4 rounded-xl flex items-center gap-2 transition-colors shadow-sm shrink-0"
@@ -293,22 +296,24 @@ export default function KursRuleVendorPage() {
                         <span className="text-sm text-[#5A305A]">{rule.catatan || '-'}</span>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => handleOpenForm(rule)}
-                            className="p-2 text-[#5A305A] hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="Edit"
-                          >
-                            <Edit3 size={16} />
-                          </button>
-                          <button
-                            onClick={() => handleDeactivate(rule.id)}
-                            className="p-2 text-[#5A305A] hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                            title="Nonaktifkan"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
+                        {canEditKursRuleVendor && (
+                          <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => handleOpenForm(rule)}
+                              className="p-2 text-[#5A305A] hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="Edit"
+                            >
+                              <Edit3 size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleDeactivate(rule.id)}
+                              className="p-2 text-[#5A305A] hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                              title="Nonaktifkan"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))

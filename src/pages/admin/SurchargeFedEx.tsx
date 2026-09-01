@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/AuthContext';
 
 export default function SurchargeFedEx() {
+  const { canEdit } = useAuth();
+  const canEditRates = canEdit('admin_rates');
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -119,9 +122,11 @@ export default function SurchargeFedEx() {
               </div>
             </div>
           </div>
-          <div>
-            <button onClick={() => handleOpenModal()} className="bg-[#5A305A] hover:bg-[#73507B] text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-sm">+ Tambah Surcharge</button>
-          </div>
+          {canEditRates && (
+            <div>
+              <button onClick={() => handleOpenModal()} className="bg-[#5A305A] hover:bg-[#73507B] text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-sm">+ Tambah Surcharge</button>
+            </div>
+          )}
         </div>
         
         <div className="overflow-x-auto">
@@ -161,8 +166,8 @@ export default function SurchargeFedEx() {
                     </td>
                     <td className="px-4 py-2 text-right">
                       <div className="flex justify-end gap-2">
-                        <button onClick={() => handleOpenModal(row)} className="text-blue-600 p-1 rounded" title="Edit">✏️</button>
-                        <button onClick={() => handleDelete(row.id)} className="text-red-600 p-1 rounded" title="Hapus">🗑️</button>
+                        {canEditRates && <button onClick={() => handleOpenModal(row)} className="text-blue-600 p-1 rounded" title="Edit">✏️</button>}
+                        {canEditRates && <button onClick={() => handleDelete(row.id)} className="text-red-600 p-1 rounded" title="Hapus">🗑️</button>}
                       </div>
                     </td>
                   </tr>

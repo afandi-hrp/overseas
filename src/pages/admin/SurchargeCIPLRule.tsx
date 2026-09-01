@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Pencil, Ban, Trash2, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/AuthContext';
 
 const CATEGORY_OPTIONS = [
   'handling_dimension', 'handling_weight', 'handling_packaging',
@@ -46,6 +47,8 @@ const emptyForm = () => ({
 });
 
 export default function SurchargeCIPLRule() {
+  const { canEdit } = useAuth();
+  const canEditRates = canEdit('admin_rates');
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [fCourier, setFCourier] = useState<'Semua' | 'FEDEX' | 'DHL'>('Semua');
@@ -176,9 +179,11 @@ export default function SurchargeCIPLRule() {
             </button>
           ))}
         </div>
-        <button onClick={() => handleOpenModal()} className="bg-[#5A305A] hover:bg-[#73507B] text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-sm">
-          + Tambah Rule
-        </button>
+        {canEditRates && (
+          <button onClick={() => handleOpenModal()} className="bg-[#5A305A] hover:bg-[#73507B] text-white px-4 py-1.5 rounded-lg text-sm font-bold shadow-sm">
+            + Tambah Rule
+          </button>
+        )}
       </div>
 
       <div className="overflow-x-auto">
@@ -213,24 +218,32 @@ export default function SurchargeCIPLRule() {
                   <td className="px-4 py-2 font-semibold text-blue-700 text-xs">{formatRupiah(row.flat_idr)}</td>
                   <td className="px-4 py-2 text-center">{row.priority ?? 0}</td>
                   <td className="px-4 py-2 text-center">
-                    <button
-                      onClick={() => handleToggleActive(row)}
-                      title="Klik untuk toggle aktif/nonaktif"
-                      className={`relative inline-flex items-center h-5 w-9 rounded-full transition-colors ${row.is_active ? 'bg-emerald-500' : 'bg-slate-300'}`}
-                    >
-                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${row.is_active ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                    </button>
+                    {canEditRates ? (
+                      <button
+                        onClick={() => handleToggleActive(row)}
+                        title="Klik untuk toggle aktif/nonaktif"
+                        className={`relative inline-flex items-center h-5 w-9 rounded-full transition-colors ${row.is_active ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                      >
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${row.is_active ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                      </button>
+                    ) : (
+                      <span className={`inline-flex items-center h-5 w-9 rounded-full ${row.is_active ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${row.is_active ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-2 text-xs text-[#5A305A]/70 max-w-[160px] truncate" title={row.notes || ''}>{row.notes || '-'}</td>
                   <td className="px-4 py-2 text-right">
-                    <div className="flex justify-end gap-1.5">
-                      <button onClick={() => handleOpenModal(row)} title="Edit" className="p-1.5 rounded-md border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors">
-                        <Pencil size={13} />
-                      </button>
-                      <button onClick={() => setDeleteTarget(row)} title="Hapus" className="p-1.5 rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50 transition-colors">
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
+                    {canEditRates && (
+                      <div className="flex justify-end gap-1.5">
+                        <button onClick={() => handleOpenModal(row)} title="Edit" className="p-1.5 rounded-md border border-blue-200 text-blue-600 hover:bg-blue-50 transition-colors">
+                          <Pencil size={13} />
+                        </button>
+                        <button onClick={() => setDeleteTarget(row)} title="Hapus" className="p-1.5 rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50 transition-colors">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))

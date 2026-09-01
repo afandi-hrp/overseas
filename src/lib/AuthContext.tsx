@@ -17,6 +17,13 @@ type AuthContextValue = {
   // per login. Perubahan role oleh PIC baru berlaku efektif setelah user refresh/login ulang,
   // bukan real-time push ke sesi yang sedang aktif (konsisten dengan pola refreshProfile()).
   allowedPageKeys: Set<string>;
+  // page_key yang boleh DIEDIT (bukan cuma dilihat) -- subset dari allowedPageKeys. Role bisa
+  // punya akses lihat suatu halaman (ada di allowedPageKeys) tapi tidak boleh edit (tidak ada di
+  // editPageKeys) -- lihat kolom can_edit di tabel role_page_access & function has_edit_access()
+  // di Supabase. BELUM semua halaman/tabel menegakkan ini lewat RLS -- baru pilot di Courier Audit
+  // & Rekapan (2026-09), lihat catatan RBAC di CLAUDE.md.
+  editPageKeys: Set<string>;
+  canEdit: (pageKey: string) => boolean;
   isAdmin: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -37,6 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [allowedPageKeys, setAllowedPageKeys] = useState<Set<string>>(new Set());
+  const [editPageKeys, setEditPageKeys] = useState<Set<string>>(new Set());
   const [isAdmin, setIsAdmin] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(true);
   // Loading akses (get_my_access) DIPISAH dari loading sesi -- kalau digabung jadi satu flag
@@ -60,10 +68,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // RPC belum ada / gagal -- jangan diam-diam anggap admin, cuma kosongkan akses supaya
       // route guard menutup semua halaman gated (fail-closed, bukan fail-open).
       setAllowedPageKeys(new Set());
+      setEditPageKeys(new Set());
       setIsAdmin(false);
       return;
     }
     setAllowedPageKeys(new Set(Array.isArray(data.page_keys) ? data.page_keys : []));
+    // edit_page_keys baru ada di get_my_access() sejak migration can_edit (2026-09) -- kalau RPC
+    // di Supabase belum di-update (belum re-run migration-nya), field ini undefined, treat sbg
+    // kosong (fail-closed: dianggap belum boleh edit, bukan diam-diam boleh semua).
+    setEditPageKeys(new Set(Array.isArray(data.edit_page_keys) ? data.edit_page_keys : []));
     setIsAdmin(!!data.is_admin);
   };
 
@@ -111,6 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setProfile(null);
         setAllowedPageKeys(new Set());
+        setEditPageKeys(new Set());
         setIsAdmin(false);
         setAccessLoading(false);
       }
@@ -163,8 +177,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const canEdit = (pageKey: string) => isAdmin || editPageKeys.has(pageKey);
+
   return (
-    <AuthContext.Provider value={{ session, user: session?.user ?? null, profile, allowedPageKeys, isAdmin, loading, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{ session, user: session?.user ?? null, profile, allowedPageKeys, editPageKeys, canEdit, isAdmin, loading, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

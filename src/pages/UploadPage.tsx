@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { UploadCloud, FolderOpen, CheckCircle2, FileText, Sparkles, Plane, Ship, X, AlertTriangle, RotateCcw } from 'lucide-react'
 import ProcessingQueue from '../components/ProcessingQueue'
 import Greeting from '../components/Greeting'
+import { useAuth } from '../lib/AuthContext'
 
 // ─── Terjemahkan error teknis jadi pesan yang mudah dipahami ──
 function humanizeUploadError(raw: string): string {
@@ -249,6 +250,7 @@ function ResultError({ data, onReset }: { data: any, onReset: () => void }) {
 
 // ─── Halaman Utama ────────────────────────────────────────────
 export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea_air' } = {}) {
+  const { canEdit } = useAuth()
   const [jenis,   setJenis]   = useState('PIB')
   const [webhookType, setWebhookType] = useState<'courier' | 'sea_air'>(fixedType || 'courier')
   const [files,   setFiles]   = useState<File[]>([])
@@ -264,7 +266,8 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
   }, [fixedType])
 
   const panduan   = PANDUAN[jenis]
-  const canSubmit = files.length >= 4 && !loading
+  const canEditUpload = canEdit(webhookType === 'sea_air' ? 'sea_air_upload' : 'courier_upload')
+  const canSubmit = files.length >= 4 && !loading && canEditUpload
 
   const addFiles = useCallback((newFiles: FileList | null) => {
     if(!newFiles) return
@@ -479,9 +482,11 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
               }`}>
               {loading
                 ? 'Mengirim dokumen...'
-                : files.length < 4
-                  ? 'Tambahkan ' + (4 - files.length) + ' file lagi untuk melanjutkan'
-                  : <><Sparkles size={15} /> Proses {files.length} Dokumen dengan AI</>
+                : !canEditUpload
+                  ? 'Anda tidak punya akses untuk upload di halaman ini (view-only)'
+                  : files.length < 4
+                    ? 'Tambahkan ' + (4 - files.length) + ' file lagi untuk melanjutkan'
+                    : <><Sparkles size={15} /> Proses {files.length} Dokumen dengan AI</>
               }
             </button>
             {files.length >= 4 && (

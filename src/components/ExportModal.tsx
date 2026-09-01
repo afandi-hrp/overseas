@@ -43,9 +43,21 @@ const fmtPct = (v: any) => {
   return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(num) + ' %'
 }
 
+// Format tanggal seragam dengan tampilan tabel di layar: DD-MMMM-YYYY, bulan Bahasa Inggris.
+const MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 const fmtDate = (v: any) => {
   if (!v) return '—'
-  return new Date(v).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+  const d = new Date(v)
+  if (isNaN(d.getTime())) return '—'
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${day}-${MONTHS_EN[d.getMonth()]}-${d.getFullYear()}`
+}
+const fmtDateTime = (v: any) => {
+  if (!v) return '—'
+  const d = new Date(v)
+  if (isNaN(d.getTime())) return '—'
+  const time = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+  return `${fmtDate(v)}, ${time}`
 }
 
 // Kolom yang punya nilai BERBEDA per PO (dibaca dari po_detail) di tampilan Rekapan Sea & Air
@@ -100,8 +112,7 @@ const formatValue = (v: any, type: string, key: string) => {
   if (isPctType(type)) return fmtPct(v);
   if (type === 'date') return fmtDate(v);
   if (type === 'datetime') {
-    if (!v) return '—';
-    return new Date(v).toLocaleString('id-ID');
+    return fmtDateTime(v);
   }
   if (type === 'bool') {
     if (v === true) return '✅ LULUS';

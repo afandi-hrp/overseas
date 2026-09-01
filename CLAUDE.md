@@ -58,9 +58,63 @@ Sudah diimplementasikan (lihat `sql/001_rbac_and_bunker_rls.sql`, `sql/002_direc
   sidebar, route guard, halaman Kelola Role & Akses). Tambah halaman baru → daftarkan di sini.
 - `src/components/RequirePageAccess.tsx` — route guard, prop `pageKey` atau `adminOnly`.
 - `AuthContext` panggil RPC `get_my_access()` sekali saat login → `{is_admin, page_keys}`.
-- RLS baru HANYA diterapkan ke tabel yang sebelumnya belum ada RLS (terutama Bunker & FAR
-  Overseas/Direct Loading) — tabel lama Courier/Sea & Air TIDAK di-retrofit (di luar scope waktu
-  itu).
+- **Akses view-only vs edit (2026-09, SELESAI untuk semua halaman yang punya konsep edit)**:
+  `role_page_access` punya kolom `can_edit boolean default true` (nambah 1 dimensi di atas akses
+  lihat halaman yang sudah ada). Function `has_edit_access(p_page_key)` (pola sama
+  `has_page_access`, syarat tambahan `can_edit=true`). RPC `get_my_access()` balikin juga
+  `edit_page_keys` (subset dari `page_keys`). `AuthContext` expose `editPageKeys` (Set) + helper
+  `canEdit(pageKey)`. UI matrix di `RoleManagementPage.tsx` — begitu suatu page_key dicentang utk 1
+  role, muncul badge kecil `EDIT`/`VIEW` di sebelah checkbox-nya (klik utk toggle `can_edit`), lewat
+  `toggleRoleCanEdit()`.
+  **Keputusan desain (dikonfirmasi user 2026-09)**: granularitas TETAP per page_key terpisah, TIDAK
+  digabung — halaman yang punya fitur tambahan dengan page_key sendiri di PAGE_REGISTRY (mis.
+  Audit Courier punya Checklist/Doc Validation/Cost Validation) sengaja TIDAK ikut otomatis
+  ter-cover oleh toggle Edit halaman utamanya; PIC atur satu-satu.
+  **Cakupan final — 20 dari 23 page_key yang punya konsep "edit"** (dicek tuntas via query
+  `pg_class.relrowsecurity`+`pg_policy`, SEMUA 32 tabel `policy_count=4`, SEMUA 15 RPC penulis
+  data — 14 unik + 1 overload — punya guard `has_edit_access` & `SECURITY DEFINER`):
+  `courier_audit`, `courier_rekapan`, `courier_validasi`, `courier_checklist_dokumen`,
+  `courier_dokumen_validation`, `courier_cost_validation`, `sea_air_audit`, `sea_air_rekapan`,
+  `sea_air_checklist_validation`, `sea_air_dokumen_validation`, `sea_air_cost_validation`,
+  `bunker`, `direct_loading`, `audit_po`, `admin_rates`, `settings_fuel_surcharge`,
+  `settings_kurs_bi`, `settings_kurs_rule_vendor`, `settings_tarif_kontrak`,
+  `settings_tarif_far_overseas_vendor`. File/komponen terkait per modul: `SharedDataTable.tsx`
+  (Courier+Sea&Air, termasuk `ChecklistModal`/`ValidasiModal`/`CostValidationModal`/
+  `SeaAirChecklistModal`/`SeaAirValidasiModal`/`ValidasiShipmentInvoiceLengkap`),
+  `BunkerPage.tsx`+modalnya, `FarOverseasAirPage.tsx`+modalnya, `AuditPoPage.tsx`,
+  8 file `src/pages/admin/*`, `FuelSurchargePage.tsx`, `KursBIPage.tsx`,
+  `KursRuleVendorPage.tsx`, `TarifKontrakPage.tsx`, `FarOverseasVendorTarifPage.tsx`.
+  **3 page_key TIDAK ikut** (sengaja, bukan halaman "punya data yang bisa diedit" biasa):
+  `courier_upload`+`sea_air_upload` (`UploadPage.tsx`) — tombol submit sudah di-gate `canEdit(...)`
+  di UI, TAPI upload-nya lewat proxy Express (`/api/n8n-proxy-start`) ke n8n, BUKAN langsung ke
+  Supabase, jadi TIDAK BISA diproteksi RLS — proteksinya cuma di level UI, bisa di-bypass kalau
+  seseorang panggil endpoint proxy itu langsung; `audit_trail` — murni log baca-saja, tidak ada
+  aksi edit; `settings_roles` — sudah admin-only lewat `isAdmin()`, bukan lewat matrix page_key.
+  **Temuan penting (2026-09) soal RPC `SECURITY DEFINER`**: banyak RPC penulis data di app ini
+  (`upsert_kurs_bi`, `update_seaair_row`, `insert_seaair_row`, `update_rekapan_far_overseas_manual`,
+  `update_cost_validasi_far_overseas_manual`, `upsert_tarif_far_overseas_vendor`,
+  `nonaktifkan_tarif_far_overseas_vendor`, `nonaktifkan_tarif_kontrak`, `upsert_kurs_rule_vendor`,
+  `update_rekapan_po_vessel`, `update_validasi_matriks_manual`, `fn_delete_far_overseas_air`,
+  `fn_delete_pib`, `fn_delete_cn`) adalah **`SECURITY DEFINER`** — jalan dengan hak akses pemilik
+  function, BYPASS RLS tabel sepenuhnya. Kalau cuma split RLS tabel tanpa sadar ini, view-only
+  tetap bisa nulis lewat RPC itu walau tombol UI-nya disembunyikan. FIX yang sudah diterapkan:
+  tiap RPC itu ditambah `IF NOT public.has_edit_access('<page_key>') THEN RAISE EXCEPTION ...`
+  di baris pertama body-nya (dikonfirmasi via `pg_get_functiondef(...) ilike '%has_edit_access%'`).
+  **Kalau nanti nambah RPC baru yang menulis ke tabel ber-RLS, WAJIB cek dulu apakah
+  `SECURITY DEFINER` — kalau ya, WAJIB tambah guard `has_edit_access` manual di dalamnya, RLS
+  tabel saja TIDAK CUKUP.** RPC yang `SECURITY INVOKER` (mis. `fn_hitung_storage`,
+  `fn_save_storage_estimate`, `fn_update_actual_value`, `fn_apply_credit_note`,
+  `fn_recompute_totals`, `fn_revise_credit_note`, `fn_archive_pib`, `fn_archive_cn`) sudah otomatis
+  ikut RLS tabel yang disentuhnya, tidak perlu guard tambahan. `get_kurs_efektif` sengaja TIDAK
+  diberi guard — murni fungsi baca/hitung, tidak menulis apa pun.
+  SQL migration-nya TIDAK disimpan sbg file di `sql/` (dijalankan user langsung lewat chat, sesuai
+  preferensi) — kalau perlu reproduce, tulis ulang dari pola select/has_page_access +
+  insert-update-delete/has_edit_access, lihat contoh lengkap di `sql/002_direct_loading_rls.sql`.
+- **Status RLS 2 tabel yang DULU bolong total** (`audit_po_ap_comp`, `tabel_surcharge_rule`) —
+  bisa diakses siapa saja termasuk tanpa login. Sudah DITUTUP (2026-09), sekarang bagian dari
+  cakupan `admin_rates`/`audit_po` di atas (`policy_count=4`, dikonfirmasi).
+  Catatan tersisa: `audit_po_ap_comp` diisi otomasi n8n tiap 30 menit — BELUM diverifikasi eksplisit
+  apakah otomasi itu tetap jalan normal setelah RLS aktif (perlu proses itu pakai service role key).
 
 ## Pola UI yang harus diikuti (dikonsolidasi sepanjang sesi-sesi sebelumnya)
 
@@ -199,7 +253,15 @@ user) — panel filter langsung jadi header card, `justify-end`.
 
 **Courier**: `rekapan_courier`, `tabel_audit_pib`, `tabel_audit_cn`, `tabel_cost_validasi`,
 `dokumen_checklist`, `dokumen_validasi`, `tabel_checklist_validasi`, `tabel_npwp`,
-`tabel_processing_queue`, view `v_pib_lengkap`, `v_cn_lengkap`.
+`tabel_processing_queue`. View `v_pib_lengkap`/`v_cn_lengkap` (join `tabel_audit_pib`/`tabel_audit_cn`
+↔ `dokumen_checklist`) MASIH ADA di Supabase tapi TIDAK DIPAKAI LAGI di frontend sejak 2026-09 —
+halaman Courier Audit sekarang query langsung ke `tabel_audit_pib`/`tabel_audit_cn`, lalu kolom
+`status_kelengkapan`/`dokumen_kurang`/`pct_kelengkapan`/`total_mandatory*`/`ada_*` di-merge manual
+di JS dari `dokumen_checklist` lewat helper `mergeChecklistData()` (`SharedDataTable.tsx`, dipakai di
+`fetchRecords` & `getExportData`). Merge ini cocokkan `pib_id`/`cn_id` = `id` (cabang fallback lama
+`awb`-only di view sudah dead code, sudah dicek 0 baris `dokumen_checklist` dengan `pib_id`/`cn_id`
+NULL per 2026-09) — kalau suatu saat ada baris `dokumen_checklist` yang `pib_id`/`cn_id`-nya NULL
+lagi, `mergeChecklistData` TIDAK akan menemukannya (beda dari behavior lama view).
 
 **Sea & Air**: `rekapan_seaair`, `tabel_audit_seaair`, `cost_validasi_seaair`,
 `dokumen_checklist_seaair`, `dokumen_validasi_seaair`, `dokumen_validasi_matriks_seaair`,

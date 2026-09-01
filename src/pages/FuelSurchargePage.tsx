@@ -1,8 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { Fuel } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../lib/AuthContext';
 import Greeting from '../components/Greeting';
+
+// Format tanggal seragam di seluruh aplikasi: DD-MMMM-YYYY, nama bulan Bahasa Inggris.
+const MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const fmtDateEN = (v: any): string => {
+  if (!v) return '-';
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return '-';
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${day}-${MONTHS_EN[d.getMonth()]}-${d.getFullYear()}`;
+};
+
 export default function FuelSurchargePage() {
+  const { canEdit } = useAuth();
+  const canEditFuelSurcharge = canEdit('settings_fuel_surcharge');
   const [rates, setRates] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -87,33 +101,35 @@ export default function FuelSurchargePage() {
       </header>
 
       <main className="px-6 py-4">
-        <div className="bg-white/70 backdrop-blur-md p-3.5 rounded-2xl shadow-sm border border-white/60 mb-6">
-          <form onSubmit={handleAdd} className="flex flex-nowrap overflow-x-auto gap-4 items-end justify-center">
-            <div className="shrink-0">
-              <label className="block text-xs font-semibold text-[#5A305A] mb-1">Courier</label>
-              <select value={courier} onChange={e => setCourier(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-32 bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A]">
-                <option value="DHL">DHL</option>
-                <option value="FEDEX">FEDEX</option>
-              </select>
-            </div>
-            <div className="shrink-0">
-              <label className="block text-xs font-semibold text-[#5A305A] mb-1">Week Start (Monday)</label>
-              <input type="date" value={weekStart} onChange={e => setWeekStart(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-40 bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A]" />
-            </div>
-            <div className="shrink-0">
-              <label className="block text-xs font-semibold text-[#5A305A] mb-1">Week End (Sunday)</label>
-              <input type="date" value={weekEnd} onChange={e => setWeekEnd(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-40 bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A]" />
-            </div>
-            <div className="shrink-0">
-              <label className="block text-xs font-semibold text-[#5A305A] mb-1">Fuel Surcharge (%)</label>
-              <input type="number" step="0.01" min="0" max="100" placeholder="e.g. 24.50" value={fuelPct} onChange={e => setFuelPct(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-32 bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A]" />
-            </div>
-            <button type="submit" disabled={saving} className="shrink-0 bg-[#5A305A] hover:bg-[#73507B] text-white font-bold text-sm px-5 py-1.5 rounded-lg disabled:opacity-50 h-[34px] transition-colors shadow-sm">
-              {saving ? 'Menyimpan...' : 'Tambah Rate'}
-            </button>
-          </form>
-          {err && <p className="text-red-500 text-xs font-bold mt-3">{err}</p>}
-        </div>
+        {canEditFuelSurcharge && (
+          <div className="bg-white/70 backdrop-blur-md p-3.5 rounded-2xl shadow-sm border border-white/60 mb-6">
+            <form onSubmit={handleAdd} className="flex flex-nowrap overflow-x-auto gap-4 items-end justify-center">
+              <div className="shrink-0">
+                <label className="block text-xs font-semibold text-[#5A305A] mb-1">Courier</label>
+                <select value={courier} onChange={e => setCourier(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-32 bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A]">
+                  <option value="DHL">DHL</option>
+                  <option value="FEDEX">FEDEX</option>
+                </select>
+              </div>
+              <div className="shrink-0">
+                <label className="block text-xs font-semibold text-[#5A305A] mb-1">Week Start (Monday)</label>
+                <input type="date" value={weekStart} onChange={e => setWeekStart(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-40 bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A]" />
+              </div>
+              <div className="shrink-0">
+                <label className="block text-xs font-semibold text-[#5A305A] mb-1">Week End (Sunday)</label>
+                <input type="date" value={weekEnd} onChange={e => setWeekEnd(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-40 bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A]" />
+              </div>
+              <div className="shrink-0">
+                <label className="block text-xs font-semibold text-[#5A305A] mb-1">Fuel Surcharge (%)</label>
+                <input type="number" step="0.01" min="0" max="100" placeholder="e.g. 24.50" value={fuelPct} onChange={e => setFuelPct(e.target.value)} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 w-32 bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A]" />
+              </div>
+              <button type="submit" disabled={saving} className="shrink-0 bg-[#5A305A] hover:bg-[#73507B] text-white font-bold text-sm px-5 py-1.5 rounded-lg disabled:opacity-50 h-[34px] transition-colors shadow-sm">
+                {saving ? 'Menyimpan...' : 'Tambah Rate'}
+              </button>
+            </form>
+            {err && <p className="text-red-500 text-xs font-bold mt-3">{err}</p>}
+          </div>
+        )}
 
         <div className="bg-white/70 backdrop-blur-md p-6 rounded-2xl shadow-sm border border-white/60">
           <h2 className="text-base font-bold text-[#5A305A] mb-4 border-b border-slate-100 pb-3">Riwayat Rate</h2>
@@ -137,13 +153,15 @@ export default function FuelSurchargePage() {
                   {rates.map(rate => (
                     <tr key={rate.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-4 py-3 font-bold text-[#5A305A]">{rate.courier}</td>
-                      <td className="px-4 py-3">{new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(rate.week_start))}</td>
-                      <td className="px-4 py-3">{new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(rate.week_end))}</td>
+                      <td className="px-4 py-3">{fmtDateEN(rate.week_start)}</td>
+                      <td className="px-4 py-3">{fmtDateEN(rate.week_end)}</td>
                       <td className="px-4 py-3 font-semibold">{rate.fuel_pct}%</td>
                       <td className="px-4 py-3 text-center">
-                        <button onClick={() => handleDelete(rate.id)} className="text-red-600 hover:text-red-800 text-xs font-bold bg-red-50 hover:bg-red-100 px-3 py-1 rounded-full transition-colors">
-                          Hapus
-                        </button>
+                        {canEditFuelSurcharge ? (
+                          <button onClick={() => handleDelete(rate.id)} className="text-red-600 hover:text-red-800 text-xs font-bold bg-red-50 hover:bg-red-100 px-3 py-1 rounded-full transition-colors">
+                            Hapus
+                          </button>
+                        ) : '—'}
                       </td>
                     </tr>
                   ))}

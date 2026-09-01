@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import { useAuth } from '../../lib/AuthContext';
 
 export default function NPWPEditor() {
+  const { canEdit } = useAuth();
+  const canEditRates = canEdit('admin_rates');
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -103,9 +106,11 @@ export default function NPWPEditor() {
           <button onClick={() => fetchData()} className="bg-white border border-slate-300 text-[#5A305A] hover:bg-slate-50 px-4 py-1.5 rounded-lg text-sm font-semibold transition-all">
             Refresh
           </button>
-          <button onClick={() => handleOpenModal()} className="bg-[#5A305A] text-white hover:bg-[#73507B] px-4 py-1.5 rounded-lg text-sm font-semibold transition-all">
-            + Tambah NPWP
-          </button>
+          {canEditRates && (
+            <button onClick={() => handleOpenModal()} className="bg-[#5A305A] text-white hover:bg-[#73507B] px-4 py-1.5 rounded-lg text-sm font-semibold transition-all">
+              + Tambah NPWP
+            </button>
+          )}
         </div>
       </div>
 
@@ -137,12 +142,16 @@ export default function NPWPEditor() {
                     filtered.map((row, idx) => (
                       <tr key={row.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'} hover:bg-blue-50/50 transition-colors`}>
                         <td className="px-4 py-2 border-b border-slate-200 whitespace-nowrap">
-                          <button onClick={() => handleOpenModal(row)} className="text-blue-600 hover:text-blue-800 tracking-wide font-medium text-xs bg-blue-100 hover:bg-blue-200 px-2 py-1 rounded transition-colors mr-2">
-                            Edit
-                          </button>
-                          <button onClick={() => handleDelete(row.id)} className="text-red-600 hover:text-red-800 tracking-wide font-medium text-xs bg-red-100 hover:bg-red-200 px-2 py-1 rounded transition-colors">
-                            Del
-                          </button>
+                          {canEditRates ? (
+                            <>
+                              <button onClick={() => handleOpenModal(row)} className="text-blue-600 hover:text-blue-800 tracking-wide font-medium text-xs bg-blue-100 hover:bg-blue-200 px-2 py-1 rounded transition-colors mr-2">
+                                Edit
+                              </button>
+                              <button onClick={() => handleDelete(row.id)} className="text-red-600 hover:text-red-800 tracking-wide font-medium text-xs bg-red-100 hover:bg-red-200 px-2 py-1 rounded transition-colors">
+                                Del
+                              </button>
+                            </>
+                          ) : '—'}
                         </td>
                         <td className="px-4 py-2 border-b border-slate-200 whitespace-nowrap font-medium text-[#5A305A]">{row.npwp}</td>
                         <td className="px-4 py-2 border-b border-slate-200 font-medium text-[#5A305A]">{row.nama}</td>

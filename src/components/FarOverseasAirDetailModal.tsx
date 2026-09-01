@@ -126,7 +126,8 @@ function RejectModal({ onConfirm, onClose, submitting }: { onConfirm: (reason: s
 }
 
 export default function FarOverseasAirDetailModal({ record, onClose, onChanged }: { record: any; onClose: () => void; onChanged?: () => void }) {
-  const { user, profile } = useAuth();
+  const { user, profile, canEdit } = useAuth();
+  const canEditDirectLoading = canEdit('direct_loading');
   const [rec, setRec] = useState(record);
   const [signer, setSigner] = useState<SignerConfig | null>(null);
   const [showPoDetail, setShowPoDetail] = useState(false);
@@ -353,7 +354,7 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
             )}
 
             {/* ── Aksi persetujuan ── */}
-            {rec.approval_status !== 'APPROVED' && rec.approval_status !== 'REJECTED' && (
+            {canEditDirectLoading && rec.approval_status !== 'APPROVED' && rec.approval_status !== 'REJECTED' && (
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white rounded-xl border border-slate-200 mt-5 p-4 print:hidden">
                 <p className="text-xs text-[#5A305A]">
                   {nextTier != null ? `Menunggu persetujuan Tahap ${nextTier}.` : 'Tidak ada aksi tersedia.'}

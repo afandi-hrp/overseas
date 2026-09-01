@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../lib/AuthContext';
 import { PlaneTakeoff, ChevronLeft, ChevronRight } from 'lucide-react';
 import Greeting from '../components/Greeting';
 
@@ -9,6 +10,8 @@ const MATA_UANG_OPTIONS = ['IDR', 'RMB'];
 const KATEGORI_BARANG_OPTIONS = ['BATTERY', 'SHAMPOO (CAIRAN LIQUID)', 'REGULER ITEM'];
 
 export default function FarOverseasVendorTarifPage() {
+  const { canEdit } = useAuth();
+  const canEditVendorTarif = canEdit('settings_tarif_far_overseas_vendor');
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
@@ -268,12 +271,14 @@ export default function FarOverseasVendorTarifPage() {
           <div className="shrink-0 text-sm text-[#5A305A] font-medium whitespace-nowrap">
             Total: {filteredData.length} tarif
           </div>
-          <button
-            onClick={() => openModal()}
-            className="shrink-0 ml-auto bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold py-2.5 px-4 rounded-xl transition-all shadow-sm flex items-center gap-2"
-          >
-            <span>+</span> Tambah Tarif Baru
-          </button>
+          {canEditVendorTarif && (
+            <button
+              onClick={() => openModal()}
+              className="shrink-0 ml-auto bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold py-2.5 px-4 rounded-xl transition-all shadow-sm flex items-center gap-2"
+            >
+              <span>+</span> Tambah Tarif Baru
+            </button>
+          )}
         </div>
 
         {/* Table */}
@@ -338,22 +343,24 @@ export default function FarOverseasVendorTarifPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          <button
-                            onClick={() => openModal(rec)}
-                            className="text-xs bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] hover:text-blue-600 font-medium px-2 py-1 rounded transition-colors shadow-sm"
-                          >
-                            Edit
-                          </button>
-                          {rec.aktif && (
+                        {canEditVendorTarif ? (
+                          <div className="flex items-center justify-center gap-2">
                             <button
-                              onClick={() => handleNonaktifkan(rec.id)}
-                              className="text-xs bg-white border border-slate-200 hover:bg-red-50 text-[#5A305A] hover:text-red-600 font-medium px-2 py-1 rounded transition-colors shadow-sm"
+                              onClick={() => openModal(rec)}
+                              className="text-xs bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] hover:text-blue-600 font-medium px-2 py-1 rounded transition-colors shadow-sm"
                             >
-                              Nonaktifkan
+                              Edit
                             </button>
-                          )}
-                        </div>
+                            {rec.aktif && (
+                              <button
+                                onClick={() => handleNonaktifkan(rec.id)}
+                                className="text-xs bg-white border border-slate-200 hover:bg-red-50 text-[#5A305A] hover:text-red-600 font-medium px-2 py-1 rounded transition-colors shadow-sm"
+                              >
+                                Nonaktifkan
+                              </button>
+                            )}
+                          </div>
+                        ) : '—'}
                       </td>
                     </tr>
                   ))

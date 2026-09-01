@@ -3,6 +3,22 @@ import { supabase } from '../lib/supabase';
 
 const formatRp = (num: any) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(Number(num) || 0);
 
+// Format tanggal+waktu seragam di seluruh aplikasi: DD-MMMM-YYYY, HH:mm (bulan Bahasa Inggris).
+const MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const fmtDateEN = (v: any): string => {
+  if (!v) return '-';
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return '-';
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${day}-${MONTHS_EN[d.getMonth()]}-${d.getFullYear()}`;
+};
+const fmtDateTimeEN = (v: any): string => {
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return '—';
+  const time = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return `${fmtDateEN(v)}, ${time}`;
+};
+
 const ActualInlineInput = ({
   initialValue,
   isEditing,
@@ -48,7 +64,7 @@ const ActualInlineInput = ({
 };
 
 
-export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecord, onClose }: { awb: string, jenisDokumen: string, docId?: string, rawRecord?: any, onClose: () => void }) {
+export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecord, onClose, canEdit = true }: { awb: string, jenisDokumen: string, docId?: string, rawRecord?: any, onClose: () => void, canEdit?: boolean }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
@@ -865,9 +881,9 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
             <p className="text-xs text-[#5A305A] mt-0.5">AWB: {awb}</p>
           </div>
           <div className="flex items-center gap-3">
-            {data && !isEditing && (
-              <button 
-                onClick={handleEditClick} 
+            {data && !isEditing && canEdit && (
+              <button
+                onClick={handleEditClick}
                 className="bg-[#5A305A] hover:bg-[#73507B] text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition-colors"
                >
                  <span>✏️</span> Edit Cost Validasi
@@ -950,7 +966,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                         className="w-full border border-slate-300 rounded px-2 py-1 text-xs"
                       />
                     ) : (
-                      <p className="font-semibold">{data.cv_ship_date ? new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(data.cv_ship_date)) : '-'}</p>
+                      <p className="font-semibold">{fmtDateEN(data.cv_ship_date)}</p>
                     )}
                   </div>
                   <div>
@@ -1181,7 +1197,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                           <h4 className="text-xs font-bold text-orange-900 mb-2">Riwayat Pemotongan CN:</h4>
                           <ul className="text-xs text-orange-800 space-y-1">
                             {data.cv_cn_freight_log.map((log: any, idx: number) => {
-                              const dateStr = new Date(log.at || log.created_at).toLocaleString('id-ID', {day: '2-digit', month: '2-digit', year:'numeric', hour: '2-digit', minute:'2-digit'});
+                              const dateStr = fmtDateTimeEN(log.at || log.created_at);
                               return (
                                 <li key={idx} className="flex items-center justify-between group">
                                   <span>✅ Rp {formatRp(log.amount).replace('Rp', '').trim()} dipotong dari {log.target}{log.index != null ? ' #'+log.index : ''} pada {dateStr}</span>
@@ -1529,7 +1545,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                         <h4 className="text-xs font-bold text-orange-900 mb-2">Riwayat Pemotongan CN:</h4>
                         <ul className="text-xs text-orange-800 space-y-1">
                           {data.cv_cn_duty_log.map((log: any, idx: number) => {
-                            const dateStr = new Date(log.at || log.created_at).toLocaleString('id-ID', {day: '2-digit', month: '2-digit', year:'numeric', hour: '2-digit', minute:'2-digit'});
+                            const dateStr = fmtDateTimeEN(log.at || log.created_at);
                             return (
                               <li key={idx} className="flex items-center justify-between group">
                                 <span>✅ Rp {formatRp(log.amount).replace('Rp', '').trim()} dipotong dari {log.target}{log.index != null ? ' #'+log.index : ''} pada {dateStr}</span>

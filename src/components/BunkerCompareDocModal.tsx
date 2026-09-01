@@ -219,10 +219,11 @@ function ConfirmMatchCell({ row, bunkerId, statusManualRaw, onConfirmed }: {
   );
 }
 
-export default function BunkerCompareDocModal({ record, onClose, onChanged }: {
+export default function BunkerCompareDocModal({ record, onClose, onChanged, canEdit = true }: {
   record: any;
   onClose: () => void;
   onChanged?: () => void;
+  canEdit?: boolean;
 }) {
   const [rec, setRec] = useState(record);
   const [statusWorkflow, setStatusWorkflow] = useState<string>(rec.status_workflow || 'BARU');
@@ -425,18 +426,20 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged }: {
                               <StatusBadgeCell row={row} />
                             </td>
                             <td className="px-1.5 py-2 align-top border-l border-slate-100 print:hidden">
-                              <ConfirmMatchCell
-                                row={row}
-                                bunkerId={rec.id}
-                                statusManualRaw={rec.status_manual}
-                                onConfirmed={(merged, type, message) => {
-                                  if (merged) {
-                                    setRec((prev: any) => ({ ...prev, status_manual: merged }));
-                                    onChanged?.();
-                                  }
-                                  showToast(message, type);
-                                }}
-                              />
+                              {canEdit && (
+                                <ConfirmMatchCell
+                                  row={row}
+                                  bunkerId={rec.id}
+                                  statusManualRaw={rec.status_manual}
+                                  onConfirmed={(merged, type, message) => {
+                                    if (merged) {
+                                      setRec((prev: any) => ({ ...prev, status_manual: merged }));
+                                      onChanged?.();
+                                    }
+                                    showToast(message, type);
+                                  }}
+                                />
+                              )}
                             </td>
                           </tr>
                         );
@@ -455,40 +458,48 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged }: {
               </div>
               <div>
                 <label className="block text-xs font-semibold text-[#5A305A] mb-1.5">Status Workflow</label>
-                <div className="flex flex-wrap gap-2">
-                  {STATUS_WORKFLOW_OPTIONS.map(opt => {
-                    const meta = workflowMeta(opt);
-                    const active = statusWorkflow === opt;
-                    return (
-                      <button
-                        key={opt}
-                        onClick={() => setStatusWorkflow(opt)}
-                        className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-all ${
-                          active ? `${meta.badgeClass} border-transparent ring-2 ring-[#5A305A]/30` : 'bg-white border-slate-200 text-[#5A305A]/60 hover:bg-slate-50'
-                        }`}
-                      >
-                        {meta.label}
-                      </button>
-                    );
-                  })}
-                </div>
+                {canEdit ? (
+                  <div className="flex flex-wrap gap-2">
+                    {STATUS_WORKFLOW_OPTIONS.map(opt => {
+                      const meta = workflowMeta(opt);
+                      const active = statusWorkflow === opt;
+                      return (
+                        <button
+                          key={opt}
+                          onClick={() => setStatusWorkflow(opt)}
+                          className={`text-xs font-bold px-3 py-1.5 rounded-full border transition-all ${
+                            active ? `${meta.badgeClass} border-transparent ring-2 ring-[#5A305A]/30` : 'bg-white border-slate-200 text-[#5A305A]/60 hover:bg-slate-50'
+                          }`}
+                        >
+                          {meta.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <span className={`text-xs font-bold px-3 py-1.5 rounded-full inline-block ${workflowMeta(statusWorkflow).badgeClass}`}>{workflowMeta(statusWorkflow).label}</span>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-semibold text-[#5A305A] mb-1.5">Catatan Manual</label>
-                <textarea
-                  value={catatanManual}
-                  onChange={e => setCatatanManual(e.target.value)}
-                  rows={3}
-                  placeholder="Koreksi manual atau catatan bebas staff..."
-                  className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A]"
-                />
+                {canEdit ? (
+                  <textarea
+                    value={catatanManual}
+                    onChange={e => setCatatanManual(e.target.value)}
+                    rows={3}
+                    placeholder="Koreksi manual atau catatan bebas staff..."
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A]"
+                  />
+                ) : (
+                  <p className="w-full border border-slate-200 bg-slate-50 rounded-xl px-3 py-2 text-sm text-[#5A305A] min-h-[4.5rem] whitespace-pre-wrap">{catatanManual || '-'}</p>
+                )}
               </div>
             </div>
 
           </div>
         </div>
 
-        {hasUnsaved && (
+        {canEdit && hasUnsaved && (
           <div className="shrink-0 border-t border-amber-200 bg-amber-50 px-4 sm:px-6 py-3 flex items-center justify-between gap-3 print:hidden">
             <p className="text-xs font-medium text-amber-800">Ada perubahan status kerja / catatan yang belum disimpan.</p>
             <div className="flex items-center gap-2">

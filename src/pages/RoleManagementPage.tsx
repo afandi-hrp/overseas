@@ -15,6 +15,10 @@ export default function RoleManagementPage() {
   const [loading, setLoading] = useState(true);
   const [roles, setRoles] = useState<Role[]>([]);
   const [rolePageAccess, setRolePageAccess] = useState<Record<string, Set<string>>>({});
+  // Subset dari rolePageAccess -- page_key yang boleh DIEDIT (bukan cuma dilihat) per role.
+  // Kolom can_edit di role_page_access -- lihat has_edit_access() di Supabase & canEdit() di
+  // AuthContext. BELUM semua tabel menegakkan ini lewat RLS, baru pilot Courier Audit & Rekapan.
+  const [rolePageCanEdit, setRolePageCanEdit] = useState<Record<string, Set<string>>>({});
   const [profiles, setProfiles] = useState<ProfileRow[]>([]);
   const [userRoles, setUserRoles] = useState<Record<string, Set<string>>>({});
   const [newRoleName, setNewRoleName] = useState('');
@@ -31,7 +35,7 @@ export default function RoleManagementPage() {
     setLoading(true);
     const [rolesRes, accessRes, profilesRes, userRolesRes] = await Promise.all([
       supabase.from('roles').select('id, name, description, is_protected').order('is_protected', { ascending: false }).order('name'),
-      supabase.from('role_page_access').select('role_id, page_key'),
+      supabase.from('role_page_access').select('role_id, page_key, can_edit'),
       supabase.from('profiles').select('id, email, nama').order('nama'),
       supabase.from('user_roles').select('user_id, role_id'),
     ]);
@@ -43,11 +47,20 @@ export default function RoleManagementPage() {
     setRoles(rolesRes.data || []);
 
     const accessMap: Record<string, Set<string>> = {};
+    const canEditMap: Record<string, Set<string>> = {};
     (accessRes.data || []).forEach((r: any) => {
       if (!accessMap[r.role_id]) accessMap[r.role_id] = new Set();
       accessMap[r.role_id].add(r.page_key);
+      // Kolom can_edit baru ada setelah migration -- kalau belum di-run, field ini undefined dari
+      // Supabase; treat sbg true supaya tampilan matrix tidak keliru nunjukin semua VIEW-only
+      // padahal migration-nya memang belum dijalankan (bukan karena PIC sengaja set view-only).
+      if (r.can_edit !== false) {
+        if (!canEditMap[r.role_id]) canEditMap[r.role_id] = new Set();
+        canEditMap[r.role_id].add(r.page_key);
+      }
     });
     setRolePageAccess(accessMap);
+    setRolePageCanEdit(canEditMap);
 
     setProfiles(profilesRes.data || []);
 
@@ -110,6 +123,30 @@ export default function RoleManagementPage() {
       const next = { ...prev };
       const set = new Set(next[role.id] || []);
       if (has) set.delete(pageKey); else set.add(pageKey);
+      next[role.id] = set;
+      return next;
+    });
+    // Cabut akses -> can_edit ikut tercabut (baris role_page_access-nya terhapus). Kasih akses
+    // baru -> default can_edit dari kolom DB adalah true, samakan di state lokal.
+    setRolePageCanEdit(prev => {
+      const next = { ...prev };
+      const set = new Set(next[role.id] || []);
+      if (has) set.delete(pageKey); else set.add(pageKey);
+      next[role.id] = set;
+      return next;
+    });
+  };
+
+  const toggleRoleCanEdit = async (role: Role, pageKey: string) => {
+    if (role.is_protected) return; // Admin selalu akses penuh, tidak bisa diubah lewat matrix
+    if (!rolePageAccess[role.id]?.has(pageKey)) return; // Belum punya akses halaman -- edit tidak relevan
+    const canEditNow = rolePageCanEdit[role.id]?.has(pageKey) ?? true;
+    const { error } = await supabase.from('role_page_access').update({ can_edit: !canEditNow }).eq('role_id', role.id).eq('page_key', pageKey);
+    if (error) { showToast('Gagal menyimpan: ' + error.message, 'error'); return; }
+    setRolePageCanEdit(prev => {
+      const next = { ...prev };
+      const set = new Set(next[role.id] || []);
+      if (canEditNow) set.delete(pageKey); else set.add(pageKey);
       next[role.id] = set;
       return next;
     });
@@ -219,7 +256,6 @@ export default function RoleManagementPage() {
                 <LayoutGrid size={17} className="text-[#5A305A]" />
                 <h2 className="font-bold text-[#5A305A]">Akses Halaman per Role</h2>
               </div>
-              <p className="relative text-xs font-light text-[#5A305A]/70 mb-4">Role "Admin" selalu akses penuh (tidak bisa diubah). Centang kotak untuk role lain.</p>
               <div className="relative rounded-xl border border-[#5A305A]/12 bg-white/85 backdrop-blur-md shadow-inner overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs border-collapse min-w-[500px]">
@@ -242,19 +278,37 @@ export default function RoleManagementPage() {
                               <td className="px-4 py-2 text-[#5A305A] sticky left-0 bg-white group-hover/row:bg-[#FAF7F5] transition-colors border-b border-slate-100">{page.label}</td>
                               {roles.map(role => {
                                 const checked = role.is_protected || !!rolePageAccess[role.id]?.has(page.key);
+                                const canEditPage = role.is_protected || !!rolePageCanEdit[role.id]?.has(page.key);
                                 return (
                                   <td key={role.id} className="px-4 py-2 text-center border-b border-slate-100">
-                                    <button
-                                      onClick={() => toggleRolePageAccess(role, page.key)}
-                                      disabled={role.is_protected}
-                                      className={`w-6 h-6 rounded-lg border inline-flex items-center justify-center transition-all ${
-                                        checked
-                                          ? 'bg-emerald-500 border-emerald-500 text-white shadow-sm'
-                                          : 'bg-white border-slate-300'
-                                      } ${role.is_protected ? 'cursor-default opacity-70' : 'hover:border-emerald-400 hover:bg-emerald-50 cursor-pointer'}`}
-                                    >
-                                      {checked && <Check size={13} strokeWidth={3} />}
-                                    </button>
+                                    <div className="inline-flex items-center gap-1">
+                                      <button
+                                        onClick={() => toggleRolePageAccess(role, page.key)}
+                                        disabled={role.is_protected}
+                                        title="Akses halaman (boleh dilihat)"
+                                        className={`w-6 h-6 rounded-lg border inline-flex items-center justify-center transition-all ${
+                                          checked
+                                            ? 'bg-emerald-500 border-emerald-500 text-white shadow-sm'
+                                            : 'bg-white border-slate-300'
+                                        } ${role.is_protected ? 'cursor-default opacity-70' : 'hover:border-emerald-400 hover:bg-emerald-50 cursor-pointer'}`}
+                                      >
+                                        {checked && <Check size={13} strokeWidth={3} />}
+                                      </button>
+                                      {checked && (
+                                        <button
+                                          onClick={() => toggleRoleCanEdit(role, page.key)}
+                                          disabled={role.is_protected}
+                                          title={canEditPage ? 'Boleh edit -- klik untuk jadikan view-only' : 'View-only -- klik untuk izinkan edit'}
+                                          className={`text-[9px] font-bold px-1.5 h-6 rounded-md border inline-flex items-center justify-center transition-all whitespace-nowrap ${
+                                            canEditPage
+                                              ? 'bg-amber-500 border-amber-500 text-white shadow-sm'
+                                              : 'bg-slate-100 border-slate-300 text-slate-500'
+                                          } ${role.is_protected ? 'cursor-default opacity-70' : 'hover:opacity-90 cursor-pointer'}`}
+                                        >
+                                          {canEditPage ? 'EDIT' : 'VIEW'}
+                                        </button>
+                                      )}
+                                    </div>
                                   </td>
                                 );
                               })}

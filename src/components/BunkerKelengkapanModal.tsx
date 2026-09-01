@@ -6,10 +6,11 @@ import BunkerUploadModal from './BunkerUploadModal';
 
 type SourceFile = { filename: string; uploaded_at: string; job_id: string };
 
-export default function BunkerKelengkapanModal({ record, onClose, onChanged }: {
+export default function BunkerKelengkapanModal({ record, onClose, onChanged, canEdit = true }: {
   record: any;
   onClose: () => void;
   onChanged?: () => void;
+  canEdit?: boolean;
 }) {
   const [rec, setRec] = useState(record);
   const [showUpload, setShowUpload] = useState(false);
@@ -127,12 +128,14 @@ export default function BunkerKelengkapanModal({ record, onClose, onChanged }: {
             )}
           </div>
 
-          <button
-            onClick={() => setShowUpload(true)}
-            className="w-full py-3 rounded-xl border-2 border-dashed border-[#5A305A]/30 hover:border-[#5A305A]/50 hover:bg-[#5A305A]/5 text-[#5A305A] font-semibold text-sm transition-all flex items-center justify-center gap-2"
-          >
-            <UploadCloud size={16} /> Upload Dokumen Susulan
-          </button>
+          {canEdit && (
+            <button
+              onClick={() => setShowUpload(true)}
+              className="w-full py-3 rounded-xl border-2 border-dashed border-[#5A305A]/30 hover:border-[#5A305A]/50 hover:bg-[#5A305A]/5 text-[#5A305A] font-semibold text-sm transition-all flex items-center justify-center gap-2"
+            >
+              <UploadCloud size={16} /> Upload Dokumen Susulan
+            </button>
+          )}
         </div>
       </div>
 
