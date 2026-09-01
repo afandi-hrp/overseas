@@ -30,6 +30,7 @@ import SeaAirRekapanPage from './pages/sea-air/SeaAirRekapanPage';
 import AuditTrailPage from './pages/audit-trail/AuditTrailPage';
 import FarOverseasAirPage from './pages/FarOverseasAirPage';
 import BunkerPage from './pages/BunkerPage';
+import AuditPoPage from './pages/AuditPoPage';
 
 function ProtectedRoute() {
   const { session, loading } = useAuth();
@@ -83,6 +84,8 @@ export default function App() {
               <Route path="/direct-loading/:id" element={<RequirePageAccess pageKey="direct_loading"><FarOverseasAirPage /></RequirePageAccess>} />
 
               <Route path="/bunker" element={<RequirePageAccess pageKey="bunker"><BunkerPage /></RequirePageAccess>} />
+
+              <Route path="/audit-po" element={<RequirePageAccess pageKey="audit_po"><AuditPoPage /></RequirePageAccess>} />
 
               <Route path="/audit-trail" element={<RequirePageAccess pageKey="audit_trail"><AuditTrailPage /></RequirePageAccess>} />
               <Route path="/settings" element={<SettingsPage />} />

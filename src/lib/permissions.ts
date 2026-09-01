@@ -14,7 +14,7 @@ export type PageEntry = {
   // halaman lain -- lihat courier_cost_validation dkk di bawah. Tidak ikut route guard
   // (RequirePageAccess), cuma dipakai SharedDataTable.tsx utk sembunyikan/tampilkan tombol.
   path?: string;
-  group: 'Courier' | 'Sea & Air' | 'Direct Loading' | 'Bunker' | 'General' | 'Settings';
+  group: 'Courier' | 'Sea & Air' | 'Direct Loading' | 'Bunker' | 'Audit AP Local' | 'General' | 'Settings';
 };
 
 export const PAGE_REGISTRY: PageEntry[] = [
@@ -41,6 +41,8 @@ export const PAGE_REGISTRY: PageEntry[] = [
 
   { key: 'bunker', label: 'Bunker', path: '/bunker', group: 'Bunker' },
 
+  { key: 'audit_po', label: 'Audit AP Local', path: '/audit-po', group: 'Audit AP Local' },
+
   { key: 'audit_trail', label: 'Audit Trail', path: '/audit-trail', group: 'General' },
 
   { key: 'admin_rates', label: 'Rate Tables & PPJK', path: '/admin/rates', group: 'Settings' },
@@ -55,7 +57,7 @@ export const PAGE_REGISTRY: PageEntry[] = [
   { key: 'settings_roles', label: 'Kelola Role & Akses', path: '/settings/roles', group: 'Settings' },
 ];
 
-export const PAGE_GROUPS: PageEntry['group'][] = ['Courier', 'Sea & Air', 'Direct Loading', 'Bunker', 'General', 'Settings'];
+export const PAGE_GROUPS: PageEntry['group'][] = ['Courier', 'Sea & Air', 'Direct Loading', 'Bunker', 'Audit AP Local', 'General', 'Settings'];
 
 export function pageLabel(key: string): string {
   return PAGE_REGISTRY.find(p => p.key === key)?.label || key;

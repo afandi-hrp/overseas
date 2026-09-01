@@ -104,6 +104,7 @@ export async function updateRekapanFarOverseasAir(id: string | number, updates: 
 
 export type PoListEntry = {
   po_no_raw?: string | null;
+  vessel_raw?: string | null;
   company_code?: string | null;
   vendor_name?: string | null;
   item_summary?: string | null;

@@ -330,7 +330,7 @@ export default function BunkerPage() {
           <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 shadow-sm overflow-hidden">
             <div className="px-5 py-4 border-b border-white/60 flex items-center justify-between gap-3 flex-wrap">
               <h2 className="text-sm font-bold text-[#5A305A] shrink-0">Daftar Dokumen Bunker</h2>
-              <div className="flex items-center gap-2 flex-nowrap overflow-x-auto">
+              <div className="flex items-center gap-2 flex-wrap">
                 <div className="flex items-center gap-2 rounded-full pl-3.5 pr-3 py-1.5 border border-slate-200 bg-white shrink-0">
                   <Search size={13} className="text-[#5A305A]/50 shrink-0" />
                   <input

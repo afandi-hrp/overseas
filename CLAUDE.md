@@ -31,6 +31,7 @@ Semua route (kecuali `/login`) dibungkus `<ProtectedRoute>` → `<MainLayout>` (
 | `/sea-air/audit`, `/sea-air/rekapan` | → `SharedDataTable` | |
 | `/direct-loading`, `/direct-loading/:id` | `FarOverseasAirPage` | modul "FAR Overseas" di sidebar |
 | `/bunker` | `BunkerPage` | |
+| `/audit-po` | `AuditPoPage` | read-only, label menu "Audit AP Local", lihat bagian "Audit AP Local" di bawah |
 | `/audit-trail` | `AuditTrailPage` → `SharedDataTable` (tab `trail`) | |
 | `/settings` | `SettingsPage` | hub: webhook config + kartu-kartu modul admin |
 | `/settings/roles` | `RoleManagementPage` | admin-only |
@@ -131,6 +132,66 @@ Sudah diimplementasikan (lihat `sql/001_rbac_and_bunker_rls.sql`, `sql/002_direc
   cost validation dihitung ulang otomatis (lihat `reMatchOctagonAfterRouteNoteEdit` di
   `FarOverseasAirPage.tsx`). Vendor **Jianqiao**: rute selalu tetap China→Jakarta, tidak perlu
   re-matching origin/tujuan.
+- Kolom `po_list` (jsonb array di `rekapan_far_overseas_air`, tipe `PoListEntry` di
+  `FarOverseasAirHelpers.ts`) tiap entry punya `po_no_raw` & `vessel_raw` — ini SATU-SATUNYA
+  sumber pasangan PO↔Vessel yang presisi baris-per-baris. `vessel_internal_note` cuma string
+  ringkas nama-nama kapal (digabung " + "), TIDAK ada info nomor PO di teks itu lagi — JANGAN
+  di-parse buat breakdown. Di List Memo (`FarOverseasAirPage.tsx`), kolom **NO PO** & **VESSEL**
+  berbagi 1 state expand (`expandedPoRows`/`togglePoExpanded`, tombol toggle ada di kolom NO PO
+  saja) — saat expanded, keduanya render baris-per-baris dari `po_list` (bukan
+  `vessel_internal_note`), sejajar per index, baris dengan `vessel_raw` null tampil `"-"` (tidak
+  di-skip, supaya urutan tetap 1:1 dengan No PO).
+
+## Audit AP Local — halaman laporan otomasi + koreksi manual terbatas (`src/pages/AuditPoPage.tsx`)
+
+Nama file/route/`page_key` tetap `AuditPoPage`/`/audit-po`/`audit_po` (nama teknis dari saat
+dibuat), tapi label yang tampil ke user di sidebar & judul halaman adalah **"Audit AP Local"**.
+Halaman ini TIDAK punya judul card ("Daftar Hasil Audit..." sengaja dihapus atas permintaan
+user) — panel filter langsung jadi header card, `justify-end`.
+
+- Tabel `audit_po_ap_comp` (1 baris = 1 hasil audit PO/vendor) diisi OTOMASI BACKEND tiap 30
+  menit — pola dasar sama seperti `BunkerPage.tsx` tapi lebih sederhana (tidak ada
+  upload/modal-antrian). 5 kolom (`nama_pt`, `nomor_po`, `vendor_name`, `status_audit`,
+  `kategori`) BOLEH dikoreksi manual lewat modal Edit, dan barisnya BOLEH dihapus permanen lewat
+  modal Hapus — semua kolom lain (`durasi_text`, `durasi_detik`, `url_pdf`, `url_html`,
+  `drive_file_id_*`) tetap read-only murni karena dihasilkan otomatis dari file asli oleh backend.
+- Kolom **Aksi** — di-*group* jadi 1 tombol toggle "Aksi" per baris (state `openActionsRowId`),
+  BUKAN beberapa tombol terpisah sekaligus. Pola diambil PERSIS dari kolom AKSI di
+  `FarOverseasAirPage.tsx` (List Memo, baris ~862-910): klik toggle → panel kecil di bawahnya
+  (non-floating, reflow row, bukan `position: absolute`) berisi Edit/Hapus/Download PDF/Hasil
+  Audit, tiap klik item menutup panel lagi (`setOpenActionsRowId(null)`). Kalau nambah aksi baru
+  di kolom ini, ikuti pola ini juga, jangan balik ke tombol terpisah.
+- Tabel pakai `table-fixed` + `<colgroup>` (lebar eksplisit per kolom) — BUKAN auto layout —
+  supaya lebar kolom (terutama Durasi) tidak "digencet" gara-gara sticky Aksi (quirk browser saat
+  sticky column dikombinasi table auto-layout). Kolom Kategori & Aksi sengaja dibuat sempit,
+  teks kategori panjang di-truncate (`...`) via class `truncate` pada tombol combobox-nya.
+  - `EditAuditPoModal` (`AuditPoPage.tsx`) — form Nama PT/Nomor PO/Vendor/Status Audit/Kategori,
+    disimpan sekaligus lewat `updateAuditPoRow(id, updates)`.
+  - `DeleteAuditPoModal` — pola sama persis `DeleteConfirmModal` di `BunkerPage.tsx`, konfirmasi
+    dulu sebelum `deleteAuditPoRow(id)` (hard delete permanen).
+- Pagination **server-side** (`.select('*', { count: 'exact' }).range(...)`) karena tabel terus
+  bertambah — beda dari kebanyakan halaman admin lain di app ini yang client-side paginated.
+  Filter: search (debounced 400ms) ke `nomor_po`/`vendor_name` via `.ilike`, dropdown `nama_pt`
+  (single-select, opsi hardcode: AMT/GMI/TTP/MJS/WSI/WNS/GENERAL — cek ulang ke DB kalau ada PT
+  baru), dropdown `status_audit` (2 nilai tetap: "Selesai Diproses"/"Doc tidak terbaca"), rentang
+  tanggal `created_at`.
+- Kolom `url_pdf`/`url_html` dirender sebagai `<a target="_blank">` biasa (link download
+  langsung dari backend, tidak ada logic tambahan di frontend).
+- Kolom **Kategori** (`kategori`, text, nullable) — dipilih lewat combobox searchable terkontrol
+  `KategoriPicker` (`AuditPoPage.tsx`, dipakai 2 tempat: `KategoriCell` di kolom tabel = auto-save
+  per pilih via `updateAuditPoKategori`; form di `EditAuditPoModal` = disimpan barengan field lain
+  saat klik "Simpan"): ketik untuk filter, klik untuk pilih dari daftar tetap `KATEGORI_OPTIONS`
+  (`src/utils/AuditPoHelpers.ts`) — BUKAN free text bebas. Kolom ini perlu di-provision dulu lewat
+  `alter table public.audit_po_ap_comp add column if not exists kategori text;` (dijalankan
+  manual oleh user langsung di Supabase SQL editor, tidak disimpan sbg file migrasi di `sql/`) —
+  **belum terverifikasi sudah dijalankan di Supabase production**, cek dulu sebelum mengandalkan
+  behavior update/edit/hapus kalau ada laporan gagal simpan.
+- `src/utils/AuditPoHelpers.ts` — tipe `AuditPoRow`, `AuditPoEditableFields`, `statusAuditMeta`
+  (badge hijau/merah), `KATEGORI_OPTIONS`, `updateAuditPoKategori`, `updateAuditPoRow`,
+  `deleteAuditPoRow`.
+- Didaftarkan di `PAGE_REGISTRY` (`src/lib/permissions.ts`, key `audit_po`, group baru
+  `'Audit AP Local'`) dan `MAIN_TABS` (`src/components/MainLayout.tsx`, icon `ClipboardCheck`)
+  sebagai menu top-level sendiri (bukan submenu Courier/Sea & Air).
 
 ## Peta tabel Supabase (per modul, dari grep `.from(...)` di seluruh `src/`)
 
@@ -149,6 +210,8 @@ Sudah diimplementasikan (lihat `sql/001_rbac_and_bunker_rls.sql`, `sql/002_direc
 `far_overseas_air_processing_queue`.
 
 **Bunker**: `bunker_dokumen`, `bunker_processing_queue`.
+
+**Audit AP Local**: `audit_po_ap_comp` (read-only dari app ini, diisi otomasi backend).
 
 **Admin/rate master (Courier)**: `tabel_rate_sheet_dhl`, `tabel_rate_sheet_fedex`,
 `tabel_surcharge_dhl`, `tabel_surcharge_fedex`, `tabel_surcharge_rule` (CIPL),

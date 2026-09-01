@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plane, Ship, ScrollText, Settings, ChevronUp, ChevronDown, LogOut, UserCircle, FileCheck2, Fuel } from 'lucide-react';
+import { Plane, Ship, ScrollText, Settings, ChevronUp, ChevronDown, LogOut, UserCircle, FileCheck2, Fuel, ClipboardCheck } from 'lucide-react';
 import shipmentIcon from '../assets/shipment-icon-white.png';
 import { useAuth } from '../lib/AuthContext';
 
@@ -46,6 +46,14 @@ const MAIN_TABS = [
     path: '/bunker',
     basePath: '/bunker',
     pageKey: 'bunker',
+  },
+  {
+    id: 'audit_po',
+    label: 'Audit AP Local',
+    icon: ClipboardCheck,
+    path: '/audit-po',
+    basePath: '/audit-po',
+    pageKey: 'audit_po',
   },
   {
     id: 'trail',

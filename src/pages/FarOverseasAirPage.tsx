@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { CheckCircle2, FileCheck2, UploadCloud, X, AlertTriangle, Clock, ClipboardCheck, ClipboardList, Edit3, Save, Scale, Trash2, RefreshCw, ChevronDown } from 'lucide-react';
-import { formatMoney, formatDateID, APPROVAL_STATUS_META, COST_STATUS_META, REKAPAN_EDITABLE_FIELDS, updateRekapanFarOverseasAir, parseRouteNote, matchOctagonTarif, computeExpectedFromRate, computeCostStatus } from '../utils/FarOverseasAirHelpers';
+import { formatMoney, formatDateID, APPROVAL_STATUS_META, COST_STATUS_META, REKAPAN_EDITABLE_FIELDS, updateRekapanFarOverseasAir, parseRouteNote, matchOctagonTarif, computeExpectedFromRate, computeCostStatus, parseJsonField, type PoListEntry } from '../utils/FarOverseasAirHelpers';
 import { EditableCell } from '../components/FarOverseasAirEditableField';
 import FarOverseasAirDetailModal from '../components/FarOverseasAirDetailModal';
 import FarOverseasAirCostValidationModal from '../components/FarOverseasAirCostValidationModal';
@@ -132,6 +132,14 @@ type ListColumn = {
   render?: (r: any, idx: number, costStatus: string | undefined, ctx: ListRenderCtx) => React.ReactNode;
 };
 
+// po_list (array po_no_raw/vessel_raw per PO) adalah SATU-SATUNYA sumber pasangan PO<->Vessel
+// yang presisi -- vessel_internal_note cuma string ringkas nama kapal (sejak formatnya berubah,
+// TIDAK ada lagi info nomor PO di teks itu), jadi tidak bisa dipakai untuk breakdown baris-per-baris.
+const getPoListEntries = (r: any): PoListEntry[] => {
+  const parsed = parseJsonField(r.po_list);
+  return Array.isArray(parsed) ? parsed : [];
+};
+
 const fmtWithCurrency = (currencyField: string) => (v: any, r: any) => formatMoney(v, r[currencyField]);
 
 const fmtTotalAmount = (v: any, r: any) => {
@@ -182,10 +190,17 @@ const LIST_COLUMNS: ListColumn[] = [
           return <span className="italic text-slate-400 text-xs">-</span>;
         }
         const isExpanded = ctx.expandedPoRows.has(r.id);
+        const poListEntries = getPoListEntries(r);
         return (
           <div className="w-[260px] flex items-start gap-1.5">
             <div className="whitespace-normal break-words leading-snug flex-1">
-              {isExpanded ? parts.join(' + ') : parts[0]}
+              {isExpanded
+                ? (poListEntries.length > 0
+                    ? poListEntries.map((po, i) => (
+                        <div key={i} className={i > 0 ? 'mt-1' : ''}>{po.po_no_raw || '-'}</div>
+                      ))
+                    : parts.join(' + '))
+                : parts[0]}
             </div>
             {parts.length > 1 && (
               <button
@@ -239,7 +254,44 @@ const LIST_COLUMNS: ListColumn[] = [
     { header: 'NOTE 4', field: 'other_note', wide: true },
     { header: 'JUDUL MEMO', field: 'memo_title' },
     { header: 'EXPECTED PAYMENT DATE', field: 'expected_payment_date', inputType: 'date', format: v => formatDateID(v) },
-    { header: 'VESSEL', field: 'vessel_internal_note', wide: true },
+    {
+      header: 'VESSEL',
+      wide: true,
+      render: (r, _idx, _costStatus, ctx) => {
+        const editing = ctx.editingRowId === r.id;
+        const val = ctx.getVal(r, 'vessel_internal_note');
+        const edited = Array.isArray(r.edited_fields) && r.edited_fields.includes('vessel_internal_note');
+        if (editing) {
+          return (
+            <EditableCell
+              value={val}
+              editable
+              edited={edited}
+              className="w-[300px] whitespace-normal break-words"
+              onChange={(v) => ctx.setVal(r, 'vessel_internal_note', v)}
+            />
+          );
+        }
+        const isExpanded = ctx.expandedPoRows.has(r.id);
+        const poListEntries = getPoListEntries(r);
+        if (isExpanded && poListEntries.length > 0) {
+          return (
+            <div className="w-[260px] whitespace-normal break-words leading-snug">
+              {poListEntries.map((po, i) => (
+                <div key={i} className={i > 0 ? 'mt-1' : ''}>{po.vessel_raw || '-'}</div>
+              ))}
+              {edited && <Edit3 size={11} className="text-amber-500 shrink-0 mt-0.5 inline-block ml-1" />}
+            </div>
+          );
+        }
+        return (
+          <div className="w-[260px] flex items-start gap-1.5">
+            <span className="whitespace-normal break-words leading-snug flex-1">{val || <span className="italic text-slate-400">-</span>}</span>
+            {edited && <Edit3 size={11} className="text-amber-500 shrink-0 mt-0.5" />}
+          </div>
+        );
+      }
+    },
     { header: 'STATUS APPROVAL', render: r => <ApprovalBadge status={r.approval_status} /> },
     { header: 'STATUS COST', render: (_r, _idx, costStatus) => <CostBadge status={costStatus} /> },
 ];
