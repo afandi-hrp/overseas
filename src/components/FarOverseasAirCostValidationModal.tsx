@@ -423,6 +423,10 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                         {docValidation.map((row, idx) => {
                           const ptFromPo = row.company_code ? (signerMap[row.company_code] || null) : null;
                           const weight = weightForPo(row.po_no);
+                          // Tandai baris NAMA PT yang jadi kontributor CONCLUSION (dominantPtName,
+                          // hasil recomputeDominantCompany) dengan centang hijau -- biar user tau
+                          // PO mana saja yang "menang" jadi nama PT dominan di kolom PO CONCLUSION.
+                          const isDominantContributor = !!ptFromPo && !!dominantPtName && looseNameMatch(ptFromPo, dominantPtName);
                           return (
                             <React.Fragment key={idx}>
                               <tr className="border-t border-slate-100">
@@ -431,6 +435,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                                 <td className="px-3 py-1.5 align-top">
                                   <div className="flex items-center gap-1.5">
                                     <span className="text-[#5A305A]">{ptFromPo || '(kode perusahaan tidak dikenal)'}</span>
+                                    {isDominantContributor && <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />}
                                     {row.edited && <EditedMark />}
                                   </div>
                                 </td>

@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
 import { CheckCircle2, FileCheck2, UploadCloud, X, AlertTriangle, Clock, ClipboardCheck, ClipboardList, Edit3, Save, Scale, Trash2, RefreshCw, ChevronDown } from 'lucide-react';
-import { formatMoney, formatDateID, APPROVAL_STATUS_META, COST_STATUS_META, REKAPAN_EDITABLE_FIELDS, updateRekapanFarOverseasAir, parseRouteNote, matchOctagonTarif, computeExpectedFromRate, computeCostStatus, parseJsonField, type PoListEntry } from '../utils/FarOverseasAirHelpers';
+import { formatMoney, formatDateID, APPROVAL_STATUS_META, COST_STATUS_META, REKAPAN_EDITABLE_FIELDS, updateRekapanFarOverseasAir, parseRouteNote, rematchTarif, mapModeToJenisLayanan, computeExpectedFromRate, computeCostStatus, parseJsonField, type PoListEntry } from '../utils/FarOverseasAirHelpers';
 import { EditableCell } from '../components/FarOverseasAirEditableField';
 import FarOverseasAirDetailModal from '../components/FarOverseasAirDetailModal';
 import FarOverseasAirCostValidationModal from '../components/FarOverseasAirCostValidationModal';
@@ -128,6 +128,7 @@ type ListColumn = {
   align?: 'left' | 'right';
   field?: string;
   inputType?: 'text' | 'number' | 'date';
+  inputPlaceholder?: string;
   wide?: boolean;
   format?: (v: any, r: any) => React.ReactNode;
   render?: (r: any, idx: number, costStatus: string | undefined, ctx: ListRenderCtx) => React.ReactNode;
@@ -249,11 +250,13 @@ const LIST_COLUMNS: ListColumn[] = [
     { header: 'OTHER', field: 'other_amount', inputType: 'number', align: 'right', format: fmtWithCurrency('total_amount_currency') },
     { header: 'AMOUNT', field: 'clearance_other_total', inputType: 'number', align: 'right', format: fmtWithCurrency('total_amount_currency') },
     { header: 'TOTAL AMOUNT', field: 'total_amount', inputType: 'number', align: 'right', format: fmtTotalAmount },
-    { header: 'NOTE 1', field: 'route_note', wide: true },
+    { header: 'NOTE 1', field: 'route_note', wide: true, inputPlaceholder: 'PENGIRIMAN DARI {ASAL} KE {TUJUAN} (AIR/SEA/REG/EXPRESS/ECONOMY)' },
     { header: 'NOTE 2', field: 'item_description', wide: true },
     { header: 'NOTE 3', field: 'status_note', wide: true },
     { header: 'NOTE 4', field: 'other_note', wide: true },
     { header: 'JUDUL MEMO', field: 'memo_title' },
+    { header: 'PIC', field: 'pic_name' },
+    { header: 'BUYER', field: 'buyer_name' },
     { header: 'EXPECTED PAYMENT DATE', field: 'expected_payment_date', inputType: 'date', format: v => formatDateID(v) },
     {
       header: 'VESSEL',
@@ -323,6 +326,8 @@ const FAR_EXPORT_COLS = [
   { key: 'status_note', label: 'NOTE 3' },
   { key: 'other_note', label: 'NOTE 4' },
   { key: 'memo_title', label: 'JUDUL MEMO' },
+  { key: 'pic_name', label: 'PIC' },
+  { key: 'buyer_name', label: 'BUYER' },
   { key: 'expected_payment_date', label: 'EXPECTED PAYMENT DATE', type: 'date' },
   { key: 'vessel_internal_note', label: 'VESSEL' },
   { key: 'approval_status_display', label: 'STATUS APPROVAL' },
@@ -533,45 +538,57 @@ export default function FarOverseasAirPage() {
   const changedRowIds = Object.keys(pendingEdits).filter(id => Object.keys(pendingEdits[id]).length > 0);
   const hasUnsavedChanges = changedRowIds.length > 0;
 
-  // Dipanggil HANYA saat NOTE 1 (route_note) diedit & di-save, dan HANYA berlaku untuk vendor
-  // OCTAGON LOGISTIC (Jianqiao rutenya selalu tetap China-Jakarta, tidak perlu re-matching).
+  // Dipanggil HANYA saat NOTE 1 (route_note) diedit & di-save -- berlaku generik utk KEDUA
+  // vendor (Octagon maupun Jianqiao, vendor ditentukan dari `ship_via` di dalam `rematchTarif`).
   // Parse ulang kota asal/tujuan hasil koreksi manual user -> cocokkan ulang tarif -> hitung ulang
-  // cost validation. HARUS pakai matchOctagonTarif/computeExpectedFromRate apa adanya (replika
-  // persis logic n8n) -- jangan diubah sendirian di sini.
-  const reMatchOctagonAfterRouteNoteEdit = async (rekapanId: string, newRouteNote: string) => {
+  // cost validation. HARUS pakai rematchTarif/computeExpectedFromRate apa adanya (SATU-SATUNYA
+  // fungsi pencocokan tarif di app ini, replika persis logic n8n) -- jangan diubah sendirian di sini.
+  const reMatchAfterRouteNoteEdit = async (rekapanId: string, newRouteNote: string) => {
     const parsed = parseRouteNote(newRouteNote);
     if (!parsed) return { skipped: true as const, reason: 'format_tidak_dikenali' as const };
 
+    const rekapanRow = rows.find(r => r.id === rekapanId);
+    const shipVia = rekapanRow?.ship_via ?? null;
+    const qtyRaw = pendingEdits[rekapanId]?.qty ?? rekapanRow?.qty;
+    const qty = qtyRaw != null && qtyRaw !== '' ? Number(qtyRaw) : null;
+
     const { data: cvRow, error: cvErr } = await supabase
       .from('cost_validasi_far_overseas_air')
-      .select('id, vendor_matched, cost_validation, rate_row_used, status')
+      .select('id, cost_validation, rate_row_used, status')
       .eq('far_overseas_id', rekapanId)
       .maybeSingle();
     if (cvErr || !cvRow) return { skipped: true as const, reason: 'no_cost_validasi' as const };
-    if (cvRow.vendor_matched !== 'OCTAGON LOGISTIC') return { skipped: true as const, reason: 'bukan_octagon' as const };
 
     const costValidation: any[] = Array.isArray(cvRow.cost_validation)
       ? cvRow.cost_validation
       : (typeof cvRow.cost_validation === 'string' ? (JSON.parse(cvRow.cost_validation || '[]') || []) : []);
 
     const rateRowRaw = cvRow.rate_row_used;
-    const existingRate = Array.isArray(rateRowRaw) ? rateRowRaw[0] : rateRowRaw;
-    const jenisLayananLama = existingRate?.jenis_layanan ?? null;
+    const existingRate = Array.isArray(rateRowRaw) ? null : rateRowRaw;
+    // Kata kunci mode di NOTE 1 (bagian dalam kurung) bisa dikoreksi user juga -- PRIORITASKAN
+    // hasil parsing NOTE 1 yang baru; kalau kata kuncinya tidak dikenali, fallback ke jenis_layanan
+    // yang sudah tersimpan sebelumnya (object tunggal, bukan array/ambigu).
+    const jenisDariNote = mapModeToJenisLayanan(parsed.mode);
+    const jenisLayananSaatIni = jenisDariNote ?? (existingRate?.jenis_layanan ?? null);
 
-    const kgRow = costValidation.find(r => r.row_key === 'KG');
     const unitPriceRow = costValidation.find(r => r.row_key === 'UNIT_PRICE_DARI_DESCRIPTION');
     const totalRow = costValidation.find(r => r.row_key === 'TOTAL');
-    const qty = kgRow?.actual != null && kgRow.actual !== '' ? Number(kgRow.actual) : null;
     const actualUnitPrice = unitPriceRow?.actual != null && unitPriceRow.actual !== '' ? Number(unitPriceRow.actual) : null;
     const actualTotal = totalRow?.actual != null && totalRow.actual !== '' ? Number(totalRow.actual) : null;
 
     const { data: tarifRows, error: tarifErr } = await supabase
       .from('far_overseas_tarif_vendor')
-      .select('*')
-      .eq('vendor_name', 'OCTAGON LOGISTIC');
+      .select('*');
     if (tarifErr) return { skipped: true as const, reason: 'gagal_ambil_tarif' as const };
 
-    const candidates = matchOctagonTarif(tarifRows || [], jenisLayananLama, parsed.origin, parsed.destination, qty);
+    const candidates = rematchTarif({
+      vendorRows: tarifRows || [],
+      shipVia,
+      jenisLayananSaatIni,
+      origin: parsed.origin,
+      tujuan: parsed.destination,
+      qty,
+    });
 
     let newCostValidation = costValidation;
     let newRateRowUsed: any = null;
@@ -586,7 +603,7 @@ export default function FarOverseasAirPage() {
       ));
       newRateRowUsed = null;
       newStatus = 'BELUM_LENGKAP';
-      newCatatan = 'Tidak ditemukan tarif untuk kota asal/tujuan hasil koreksi manual -- mohon cek manual.';
+      newCatatan = 'Tidak ditemukan tarif yang cocok setelah NOTE 1 diubah -- mohon cek manual.';
     } else if (candidates.length === 1) {
       const rate = candidates[0];
       const { unitPriceExpected, unitPriceNotes, kgExpected, totalExpected } = computeExpectedFromRate(rate, qty, actualUnitPrice);
@@ -601,6 +618,7 @@ export default function FarOverseasAirPage() {
     } else {
       newRateRowUsed = candidates;
       newStatus = 'BELUM_LENGKAP';
+      newCatatan = 'Ada beberapa tarif yang cocok setelah NOTE 1 diubah -- mohon pilih manual.';
     }
 
     const { error: saveErr } = await supabase.rpc('update_cost_validasi_far_overseas_manual', {
@@ -622,7 +640,7 @@ export default function FarOverseasAirPage() {
     let formatWarningCount = 0;
     if (routeNoteChangedIds.length > 0) {
       const rematchResults = await Promise.all(
-        routeNoteChangedIds.map(id => reMatchOctagonAfterRouteNoteEdit(id, pendingEdits[id].route_note))
+        routeNoteChangedIds.map(id => reMatchAfterRouteNoteEdit(id, pendingEdits[id].route_note))
       );
       formatWarningCount = rematchResults.filter(r => r.skipped && r.reason === 'format_tidak_dikenali').length;
     }
@@ -635,6 +653,9 @@ export default function FarOverseasAirPage() {
     } else if (formatWarningCount > 0) {
       setToastMessage(`Perubahan tersimpan. ${formatWarningCount} NOTE 1 formatnya tidak dikenali -- cost validation tidak diperbarui otomatis untuk baris itu.`);
       setTimeout(() => setToastMessage(null), 8000);
+    } else if (routeNoteChangedIds.length > 0) {
+      setToastMessage('Perubahan tersimpan. Cost validation sudah dihitung ulang mengikuti NOTE 1 yang baru.');
+      setTimeout(() => setToastMessage(null), 6000);
     } else {
       setToastMessage('Perubahan berhasil disimpan.');
       setTimeout(() => setToastMessage(null), 4000);
@@ -858,6 +879,7 @@ export default function FarOverseasAirPage() {
                                   edited={edited}
                                   type={col.inputType || 'text'}
                                   align={col.align === 'right' ? 'right' : 'left'}
+                                  inputPlaceholder={col.inputPlaceholder}
                                   className={`${widthClass} ${col.wide ? 'whitespace-normal break-words' : ''}`}
                                   onChange={(v) => setVal(r, field, col.inputType === 'number' ? (v === null ? null : Number(v)) : v)}
                                 />

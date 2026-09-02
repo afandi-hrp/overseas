@@ -16,10 +16,12 @@ type SignerConfig = {
   tier3_role: string | null;
 };
 
-type ApprovalEntry = { tier: number; nama: string; jabatan: string; approved_at: string; user_email?: string | null };
+type ApprovalTier = number | 'PIC';
+type ApprovalEntry = { tier: ApprovalTier; nama: string; jabatan: string; approved_at: string; user_email?: string | null };
 
 const TIER_NEXT_STATUS: Record<number, string> = { 1: 'TIER1_DONE', 2: 'TIER2_DONE', 3: 'APPROVED' };
 const TIER_ACTION_LABEL: Record<number, string> = { 1: 'Setujui — Disiapkan Oleh', 2: 'Setujui — Diperiksa Oleh (Tahap 1)', 3: 'Setujui — Diperiksa Oleh (Tahap 2)' };
+const PIC_ACTION_LABEL = 'Setujui — PIC';
 
 function CompanyLogo({ signer }: { signer: SignerConfig | null }) {
   const asset = signer?.company_code ? LOGO_ASSETS[signer.company_code] : null;
@@ -45,8 +47,8 @@ function MemoField({ label, value, bold, labelWidth = 'w-32' }: { label: string;
   );
 }
 
-function SignatureColumn({ label, role, entry, defaultNama }: { label: string; role: string | null; entry?: ApprovalEntry; defaultNama?: string | null }) {
-  const nama = entry?.nama || defaultNama || null;
+function SignatureColumn({ label, role, entry, defaultNama, nameOverride }: { label: string; role: string | null; entry?: ApprovalEntry; defaultNama?: string | null; nameOverride?: string | null }) {
+  const nama = nameOverride !== undefined ? nameOverride : (entry?.nama || defaultNama || null);
   return (
     <div className="flex-1 text-center px-3">
       <p className="text-xs text-[#5A305A] mb-14">{label}</p>
@@ -61,13 +63,13 @@ function SignatureColumn({ label, role, entry, defaultNama }: { label: string; r
 }
 
 function ApprovalConfirmModal({ tier, role, defaultNama, onConfirm, onClose, submitting }: {
-  tier: number; role: string; defaultNama: string; onConfirm: (nama: string) => void; onClose: () => void; submitting: boolean;
+  tier: ApprovalTier; role: string; defaultNama: string; onConfirm: (nama: string) => void; onClose: () => void; submitting: boolean;
 }) {
   const [nama, setNama] = useState(defaultNama);
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
-        <h3 className="font-bold text-[#5A305A] mb-1">Konfirmasi Persetujuan — Tahap {tier}</h3>
+        <h3 className="font-bold text-[#5A305A] mb-1">Konfirmasi Persetujuan — {tier === 'PIC' ? 'PIC' : `Tahap ${tier}`}</h3>
         <p className="text-xs text-[#5A305A] mb-4">Jabatan: <span className="font-semibold">{role || '-'}</span></p>
         <label className="block text-xs font-semibold text-[#5A305A] mb-1">Nama Penyetuju</label>
         <input
@@ -131,7 +133,7 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
   const [rec, setRec] = useState(record);
   const [signer, setSigner] = useState<SignerConfig | null>(null);
   const [showPoDetail, setShowPoDetail] = useState(false);
-  const [confirmTier, setConfirmTier] = useState<number | null>(null);
+  const [confirmTier, setConfirmTier] = useState<ApprovalTier | null>(null);
   const [showReject, setShowReject] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
@@ -151,8 +153,17 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
   };
 
   const approvals: ApprovalEntry[] = Array.isArray(rec.approvals) ? rec.approvals : [];
-  const entryFor = (tier: number) => approvals.find(a => a.tier === tier);
+  const entryFor = (tier: ApprovalTier) => approvals.find(a => a.tier === tier);
+  const picEntry = entryFor('PIC');
   const statusMeta = APPROVAL_STATUS_META[rec.approval_status] || APPROVAL_STATUS_META.PENDING;
+
+  // Kolom "Disiapkan Oleh" tampilkan nama Exim Officer (approval tahap 1) DAN nama PIC
+  // berdampingan format "exim/pic" -- nama PIC ambil dari approval PIC (kalau sudah approve,
+  // sama pola dengan tier1/2/3: nama approver menggantikan default), fallback ke `pic_name`
+  // manual selama belum ada yang approve. Kalau salah satunya belum ada, tampilkan yang ada saja.
+  const eximName = entryFor(1)?.nama || null;
+  const picDisplayName = picEntry?.nama || rec.pic_name || null;
+  const disiapkanNama = eximName && picDisplayName ? `${eximName}/${picDisplayName}` : (eximName || picDisplayName || null);
 
   const nextTier: number | null =
     rec.approval_status === 'PENDING' ? 1 :
@@ -161,27 +172,32 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
     null;
 
   const roleForTier = (tier: number) => tier === 1 ? signer?.tier1_role : tier === 2 ? signer?.tier2_role : signer?.tier3_role;
-  const defaultNamaForTier = (tier: number) => tier === 1 ? (profile?.nama || user?.email || '') : tier === 2 ? (signer?.tier2_name || '') : (signer?.tier3_name || '');
+  const defaultNamaForTier = (tier: ApprovalTier) => tier === 1 || tier === 'PIC' ? (profile?.nama || user?.email || '') : tier === 2 ? (signer?.tier2_name || '') : (signer?.tier3_name || '');
 
-  const handleApprove = async (tier: number, nama: string) => {
+  // Persetujuan PIC INDEPENDEN dari alur tier1->tier2->tier3 -- bisa dilakukan kapan saja, tidak
+  // menghalangi & tidak dihalangi tahapan itu, jadi TIDAK mengubah `approval_status` sama sekali,
+  // hanya menambah 1 entry bertier 'PIC' ke array `approvals` (untuk sementara: approver = user
+  // yang login, sama seperti default tier1).
+  const handleApprove = async (tier: ApprovalTier, nama: string) => {
     setSubmitting(true);
     const entry: ApprovalEntry = {
       tier,
       nama,
-      jabatan: roleForTier(tier) || '-',
+      jabatan: tier === 'PIC' ? 'PIC' : (roleForTier(tier) || '-'),
       approved_at: new Date().toISOString(),
       user_email: user?.email || null,
     };
     const newApprovals = [...approvals.filter(a => a.tier !== tier), entry];
-    const newStatus = TIER_NEXT_STATUS[tier];
-    const { error } = await supabase.from('rekapan_far_overseas_air').update({ approval_status: newStatus, approvals: newApprovals }).eq('id', rec.id);
+    const updates: Record<string, any> = { approvals: newApprovals };
+    if (tier !== 'PIC') updates.approval_status = TIER_NEXT_STATUS[tier];
+    const { error } = await supabase.from('rekapan_far_overseas_air').update(updates).eq('id', rec.id);
     setSubmitting(false);
     if (error) {
       showToast('Gagal menyimpan persetujuan: ' + error.message, 'error');
     } else {
-      setRec({ ...rec, approval_status: newStatus, approvals: newApprovals });
+      setRec({ ...rec, ...updates });
       setConfirmTier(null);
-      showToast('Persetujuan tahap ' + tier + ' berhasil disimpan.', 'success');
+      showToast((tier === 'PIC' ? 'Persetujuan PIC' : 'Persetujuan tahap ' + tier) + ' berhasil disimpan.', 'success');
       onChanged?.();
     }
   };
@@ -252,15 +268,15 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
                 </div>
               </div>
 
-              {/* Field baris */}
+              {/* Field baris -- PO.No/Supplier (kiri) & Inv.No/Date (kanan) SENGAJA dipisah jadi
+                  2 kolom independen (bukan 2 baris flex-row PO.No+Inv.No lalu Supplier+Date)
+                  supaya Inv.No & Date tetap rapat berdekatan walau PO.No isinya panjang/wrap
+                  banyak baris (mis. gabungan banyak PO) -- kalau digabung 1 baris, tinggi baris
+                  itu ikut ketarik setinggi PO.No, jadi Date jadi jauh dari Inv.No di baris bawah. */}
               <div className="p-4 space-y-2 text-sm">
                 <div className="flex flex-col md:flex-row print:flex-row md:items-start print:items-start gap-1 md:gap-6 print:gap-6">
-                  <div className="flex-1"><MemoField label="PO. No." value={rec.po_ori || '-'} /></div>
-                  <div className="md:w-56 print:w-56"><MemoField label="Inv. No" labelWidth="w-20" value={rec.no_invoice || '-'} /></div>
-                </div>
-                <div className="flex flex-col md:flex-row print:flex-row md:items-start print:items-start gap-1 md:gap-6 print:gap-6">
-                  <div className="flex-1"><MemoField label="Supplier" value={rec.vendor || '-'} /></div>
-                  <div className="md:w-56 print:w-56"><MemoField label="Date" labelWidth="w-20" value={formatDateMemo(rec.created_at)} /></div>
+                  <div className="flex-1 space-y-2"><MemoField label="PO. No." value={rec.po_ori || '-'} /><MemoField label="Supplier" value={rec.vendor || '-'} /></div>
+                  <div className="md:w-56 print:w-56 space-y-2"><MemoField label="Inv. No" labelWidth="w-20" value={rec.no_invoice || '-'} /><MemoField label="Date" labelWidth="w-20" value={formatDateMemo(rec.created_at)} /></div>
                 </div>
                 <MemoField label="Ship Via" value={rec.ship_via || '-'} bold />
                 <MemoField label="Buyer" value={rec.buyer_name || '-'} />
@@ -279,39 +295,38 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
                 />
               </div>
 
-              {/* NOTE */}
+              {/* NOTE -- NOTE 1 (route_note) & NOTE 2 (item_description) datang dari ekstraksi
+                  otomatis, NOTE 3 (status_note) & NOTE 4 (other_note) diisi manual dari List Memo.
+                  Baris NOTE 3/4 HANYA muncul kalau diisi (bukan tampil kosong/"-") -- baris yang
+                  null sama sekali tidak dirender. */}
               <div className="border-t-2 border-[#FFF5C5] p-4 text-sm flex gap-2">
                 <span className="underline font-semibold shrink-0">NOTE :</span>
                 <div className="space-y-1">
                   {rec.route_note && <p>{rec.route_note}</p>}
                   {rec.item_description && <p>{rec.item_description}</p>}
-                  {!rec.route_note && !rec.item_description && <p className="text-[#5A305A]/50 italic">-</p>}
+                  {rec.status_note && <p>{rec.status_note}</p>}
+                  {rec.other_note && <p>{rec.other_note}</p>}
+                  {!rec.route_note && !rec.item_description && !rec.status_note && !rec.other_note && <p className="text-[#5A305A]/50 italic">-</p>}
                 </div>
               </div>
 
-              {/* Signature table */}
+              {/* Signature table -- PIC (nama manual `pic_name`, jabatan tetap "PIC") ditaruh
+                  bersebelahan dengan "Disiapkan Oleh" -- persetujuannya INDEPENDEN dari tahap
+                  1/2/3, lihat tombol "Setujui — PIC" terpisah di bawah. */}
               <div className="flex border-t-2 border-[#FFF5C5] pt-6 pb-4 px-4">
-                <SignatureColumn label="Disiapkan Oleh," role={signer?.tier1_role || null} entry={entryFor(1)} defaultNama={null} />
+                <SignatureColumn label="Disiapkan Oleh," role={signer?.tier1_role || null} entry={entryFor(1)} nameOverride={disiapkanNama} />
                 <SignatureColumn label="Diperiksa Oleh," role={signer?.tier2_role || null} entry={entryFor(2)} defaultNama={signer?.tier2_name} />
                 <SignatureColumn label="Diperiksa Oleh," role={signer?.tier3_role || null} entry={entryFor(3)} defaultNama={signer?.tier3_name} />
               </div>
             </div>
 
-            {/* ── Catatan tambahan sistem (di luar replika cetak resmi) ── */}
-            {(rec.status_note || rec.other_note) && (
-              <div className="mt-5 space-y-3 print:hidden">
-                {rec.status_note && (
-                  <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                    <span className="text-sm text-[#5A305A]">{rec.status_note}</span>
-                  </div>
-                )}
-                {rec.other_note && (
-                  <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                    <span className="text-sm text-[#5A305A]">{rec.other_note}</span>
-                  </div>
-                )}
-              </div>
-            )}
+            {/* Note pembayaran -- DI LUAR tabel/kotak memo (bukan bagian replika resmi), tapi
+                TETAP ikut tercetak (bukan print:hidden) & tampil di modal. Sengaja teks kecil. */}
+            <p className="text-[11px] text-[#5A305A] mt-2 px-1">
+              Note:
+              <br />
+              MOHON DIBANTU BAYARKAN PADA TANGGAL : <span className="font-semibold">{formatDateMemo(rec.expected_payment_date)}</span>
+            </p>
 
             {/* ── Rincian PO (opsional, tidak masuk memo cetak) ── */}
             {poList.length > 0 && (
@@ -337,14 +352,10 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
               </div>
             )}
 
-            {/* ── Catatan internal (TIDAK tercetak di memo) ── */}
-            {(rec.vessel_internal_note || rec.expected_payment_date) && (
-              <div className="bg-slate-100 border border-slate-300 rounded-xl mt-5 p-4 print:hidden">
-                <p className="text-[10px] font-bold text-[#5A305A] uppercase tracking-wider mb-1.5">Catatan Internal (tidak tercetak di memo)</p>
-                {rec.vessel_internal_note && <p className="text-sm text-[#5A305A]">{rec.vessel_internal_note}</p>}
-                {rec.expected_payment_date && <p className="text-xs text-[#5A305A]/70 mt-2">Expected Payment Date: {formatDateID(rec.expected_payment_date)}</p>}
-              </div>
-            )}
+            {/* Catatan: vessel_internal_note SENGAJA TIDAK pernah dirender di sini atau di
+                manapun pada memo cetak, field itu HANYA boleh tampil di kolom VESSEL tabel List
+                Memo. Expected Payment Date sekarang sudah tercetak lewat note "MOHON DIBANTU
+                BAYARKAN..." di atas, tidak perlu blok "Catatan Internal" terpisah lagi. */}
 
             {rec.approval_status === 'REJECTED' && rec.notes && (
               <div className="bg-rose-50 border border-rose-200 rounded-xl mt-5 p-4 print:hidden">
@@ -372,6 +383,19 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
               </div>
             )}
 
+            {/* ── Persetujuan PIC -- INDEPENDEN dari alur Tahap 1/2/3 di atas: tidak menghalangi
+                dan tidak dihalangi tahapan itu, PIC bisa approve kapan saja selama belum approve.
+                Nama yang tersimpan tampil digabung di kolom "Disiapkan Oleh" (lihat disiapkanNama
+                di atas), TIDAK ada kolom tanda tangan terpisah untuk PIC. ── */}
+            {canEditDirectLoading && !picEntry && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white rounded-xl border border-slate-200 mt-5 p-4 print:hidden">
+                <p className="text-xs text-[#5A305A]">Persetujuan PIC — terpisah dari tahapan Disiapkan/Diperiksa di atas, tampil bersebelahan nama Exim Officer.</p>
+                <button onClick={() => setConfirmTier('PIC')} className="px-4 py-2 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-sm transition-all flex items-center gap-1.5">
+                  <Stamp size={15} /> {PIC_ACTION_LABEL}
+                </button>
+              </div>
+            )}
+
           </div>
         </div>
       </div>
@@ -379,7 +403,7 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
       {confirmTier != null && (
         <ApprovalConfirmModal
           tier={confirmTier}
-          role={roleForTier(confirmTier) || '-'}
+          role={confirmTier === 'PIC' ? 'PIC' : (roleForTier(confirmTier) || '-')}
           defaultNama={defaultNamaForTier(confirmTier)}
           submitting={submitting}
           onClose={() => setConfirmTier(null)}

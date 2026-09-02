@@ -101,7 +101,7 @@ export const REKAPAN_EDITABLE_FIELDS = new Set([
   'total_amount_currency', 'kurs_used', 'total_amount_idr', 'route_note', 'shipment_mode',
   'origin_country', 'destination_city', 'item_description', 'status_note', 'other_note',
   'memo_title', 'expected_payment_date', 'vessel_internal_note', 'notes', 'buyer_name',
-  'weight_breakdown', 'departure_date',
+  'weight_breakdown', 'departure_date', 'pic_name',
 ]);
 
 export async function updateRekapanFarOverseasAir(id: string | number, updates: Record<string, any>) {
@@ -227,32 +227,58 @@ export function parseRouteNote(routeNoteText: string | null | undefined): { orig
   return { origin: m[1].trim(), destination: m[2].trim(), mode: m[3].trim().toUpperCase() };
 }
 
-// Cocokkan ulang tarif Octagon Logistic berdasarkan kota asal/tujuan hasil koreksi manual NOTE 1
-// -- REPLIKA PERSIS alur filter n8n (jenis layanan -> kota asal -> kota tujuan -> berat, SEMUA
-// "lunak": kalau hasil filter di satu tahap kosong, batalkan filter itu & lanjut pakai daftar
-// sebelumnya). HARUS selalu sinkron dengan logic n8n -- jangan diubah sendirian di sini saja.
-// Return array kandidat: 0 = tidak ketemu, 1 = pasti, >1 = ambigu (user pilih manual).
-export function matchOctagonTarif(
-  tarifRows: RateRow[],
-  jenisLayanan: string | null | undefined,
-  originCity: string | null | undefined,
-  destCity: string | null | undefined,
-  qty: number | null
-): RateRow[] {
-  let candidates = tarifRows.filter(t => t.vendor_name === 'OCTAGON LOGISTIC' && t.aktif !== false);
+// Terjemahkan kata kunci mode/jenis di NOTE 1 (bagian dalam kurung, cth "AIR"/"SEA"/"REG") ke
+// nilai jenis_layanan PERSIS yang dipakai di far_overseas_tarif_vendor. User BISA mengoreksi kata
+// ini juga (bukan cuma kota asal/tujuan) saat edit NOTE 1 -- kalau tidak dikenali, return null
+// (JANGAN menebak), pemanggil lalu fallback ke jenis_layanan yang sudah tersimpan sebelumnya.
+export function mapModeToJenisLayanan(modeText: string | null | undefined): string | null {
+  if (!modeText) return null;
+  const upper = modeText.trim().toUpperCase();
+  if (upper.includes('REGULER') || upper === 'REG') return 'Reguler Freight';
+  if (upper.includes('ECONOMY')) return 'Economy';
+  if (upper.includes('EXPRESS')) return 'Express';
+  if (upper.includes('SEA')) return 'Sea Freight';
+  if (upper.includes('AIR')) return 'Air Freight';
+  return null;
+}
 
-  if (jenisLayanan) {
-    const byJenis = candidates.filter(t => t.jenis_layanan === jenisLayanan);
+// Cocokkan ulang tarif (Octagon Logistic ATAU Jianqiao, ditentukan dari `shipVia`) berdasarkan
+// kota asal/tujuan hasil koreksi manual NOTE 1 -- REPLIKA PERSIS alur filter n8n (jenis layanan
+// -> kota asal -> kota tujuan -> berat, SEMUA "lunak": kalau hasil filter di satu tahap kosong,
+// batalkan filter itu & lanjut pakai daftar sebelumnya). HARUS selalu sinkron dengan logic n8n --
+// jangan diubah sendirian di sini saja. SATU-SATUNYA fungsi pencocokan tarif di app ini -- dipakai
+// baik oleh alur re-kalkulasi otomatis setelah edit NOTE 1 (`FarOverseasAirPage.tsx`) maupun
+// (kalau nanti dibutuhkan) fitur pilih-rate-manual, supaya logic-nya tidak pernah pecah jadi 2
+// salinan berbeda. Return array kandidat: 0 = tidak ketemu, 1 = pasti, >1 = ambigu (user pilih manual).
+export function rematchTarif({ vendorRows, shipVia, jenisLayananSaatIni, origin, tujuan, qty }: {
+  vendorRows: RateRow[];
+  shipVia: string | null | undefined;
+  jenisLayananSaatIni: string | null | undefined;
+  origin: string | null | undefined;
+  tujuan: string | null | undefined;
+  qty: number | null;
+}): RateRow[] {
+  const shipViaUpper = (shipVia || '').toUpperCase();
+  let vendorTarget: string | null = null;
+  if (shipViaUpper.includes('OCTAGON')) vendorTarget = 'OCTAGON LOGISTIC';
+  else if (shipViaUpper.includes('JIANQIAO')) vendorTarget = 'PT. JIANQIAO LOGISTICS INDONESIA';
+
+  let candidates = vendorRows.filter(t => t.vendor_name === vendorTarget && t.aktif !== false);
+
+  if (jenisLayananSaatIni) {
+    const byJenis = candidates.filter(t => t.jenis_layanan === jenisLayananSaatIni);
     if (byJenis.length > 0) candidates = byJenis;
   }
 
-  if (originCity) {
-    const byOrigin = candidates.filter(t => t.origin && t.origin.toUpperCase() === originCity.toUpperCase());
+  if (origin) {
+    const originUpper = origin.toUpperCase();
+    const byOrigin = candidates.filter(t => t.origin && t.origin.toUpperCase() === originUpper);
     if (byOrigin.length > 0) candidates = byOrigin;
   }
 
-  if (destCity) {
-    const byTujuan = candidates.filter(t => !t.tujuan || t.tujuan.toUpperCase() === destCity.toUpperCase());
+  if (tujuan) {
+    const tujuanUpper = tujuan.toUpperCase();
+    const byTujuan = candidates.filter(t => !t.tujuan || t.tujuan.toUpperCase() === tujuanUpper);
     if (byTujuan.length > 0) candidates = byTujuan;
   }
 

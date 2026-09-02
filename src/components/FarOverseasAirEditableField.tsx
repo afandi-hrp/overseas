@@ -11,7 +11,7 @@ export function EditedMark({ className = '' }: { className?: string }) {
 // oleh toggle "Mode Edit" di halaman/modal pemanggil). Perubahan TIDAK langsung tersimpan ke DB;
 // pemanggil menerima nilai baru lewat onChange dan menampungnya sampai tombol "Simpan" diklik.
 export function EditableCell({
-  value, displayValue, onChange, editable = false, edited = false, type = 'text', align = 'left', placeholder = '-', className = '',
+  value, displayValue, onChange, editable = false, edited = false, type = 'text', align = 'left', placeholder = '-', inputPlaceholder, className = '',
 }: {
   value: any;
   displayValue?: React.ReactNode;
@@ -21,6 +21,7 @@ export function EditableCell({
   type?: 'text' | 'number' | 'date';
   align?: 'left' | 'right';
   placeholder?: string;
+  inputPlaceholder?: string;
   className?: string;
 }) {
   const [editing, setEditing] = useState(false);
@@ -45,6 +46,7 @@ export function EditableCell({
         autoFocus
         type={type}
         value={temp}
+        placeholder={inputPlaceholder}
         onChange={e => setTemp(e.target.value)}
         onBlur={commit}
         onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); else if (e.key === 'Escape') setEditing(false); }}

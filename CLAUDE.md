@@ -172,6 +172,10 @@ Sudah diimplementasikan (lihat `sql/001_rbac_and_bunker_rls.sql`, `sql/002_direc
   {tujuan} ({mode})") ↔ 1:1 via `far_overseas_id` FK ↔ `cost_validasi_far_overseas_air`
   (`vendor_matched`, `rate_row_used` jsonb, `status`, `catatan`, `cost_validation` jsonb array
   `{row_key, expected, actual, notes, edited}`).
+- **Document Validation** (`FarOverseasAirCostValidationModal.tsx`) — baris NAMA PT tiap PO yang
+  namanya cocok (`looseNameMatch`) dengan `dominantPtName` (nama PT dari `dominant_company_code`,
+  yang juga tampil di kolom PO baris CONCLUSION) dikasih centang hijau (`CheckCircle2`), supaya
+  user langsung tau PO mana saja yang jadi kontributor nama PT dominan di CONCLUSION (2026-09).
 - **RPC-only mutation** — JANGAN pernah `.update()`/`.insert()` mentah ke 2 tabel ini. Selalu
   lewat `update_rekapan_far_overseas_manual(p_id, p_updates)` dan
   `update_cost_validasi_far_overseas_manual(p_id, p_document_validation?, p_cost_validation?,
@@ -179,13 +183,30 @@ Sudah diimplementasikan (lihat `sql/001_rbac_and_bunker_rls.sql`, `sql/002_direc
   fungsi Postgres-nya** (ditambahkan sisi frontend, belum ada akses DB langsung untuk konfirmasi
   — cek dulu sebelum mengandalkan behavior ini di production).
 - `src/utils/FarOverseasAirHelpers.ts` — `computeExpectedFromRate`, `computeCostStatus`,
-  `parseRouteNote`, `matchOctagonTarif` (REPLIKA PERSIS logic matching tarif n8n — filter
-  berjenjang jenis layanan→origin→tujuan→berat, "lunak" — kalau diubah, HARUS tetap sinkron
-  dengan n8n, jangan diubah sepihak di frontend saja).
-- Vendor **OCTAGON LOGISTIC**: origin/tujuan bisa dikoreksi manual via edit `route_note`, lalu
-  cost validation dihitung ulang otomatis (lihat `reMatchOctagonAfterRouteNoteEdit` di
-  `FarOverseasAirPage.tsx`). Vendor **Jianqiao**: rute selalu tetap China→Jakarta, tidak perlu
-  re-matching origin/tujuan.
+  `parseRouteNote`, `mapModeToJenisLayanan`, `rematchTarif` (REPLIKA PERSIS logic matching tarif
+  n8n — filter berjenjang jenis layanan→origin→tujuan→berat, "lunak" — kalau diubah, HARUS tetap
+  sinkron dengan n8n, jangan diubah sepihak di frontend saja). `rematchTarif` SATU-SATUNYA fungsi
+  pencocokan tarif di app ini (dulu bernama `matchOctagonTarif`, Octagon-only — sudah
+  digeneralisasi 2026-09, vendor Octagon/Jianqiao ditentukan dari `ship_via`, JANGAN bikin
+  salinan/versi kedua lagi).
+- **Edit NOTE 1 (`route_note`) memicu re-kalkulasi Cost Validation otomatis** (2026-09, VERSI
+  FINAL — pernah ada 2 versi berbeda sebelumnya, versi lama SUDAH DIGANTI total, jangan
+  reintroduce logic lama itu): berlaku generik utk vendor Octagon MAUPUN Jianqiao. Fungsi
+  `reMatchAfterRouteNoteEdit` di `FarOverseasAirPage.tsx`, dipanggil dari `handleSaveAllEdits`
+  setiap kali `route_note` termasuk field yang diubah saat "Simpan Semua". Alur: parse
+  `route_note` baru (`parseRouteNote`, format wajib
+  `"PENGIRIMAN DARI {asal} KE {tujuan} ({mode})"`, kalau tidak match → skip + toast peringatan
+  format) → ambil `ship_via`/`qty` dari baris terkait → tentukan `jenisLayananSaatIni`:
+  PRIORITASKAN hasil `mapModeToJenisLayanan(mode)` dari NOTE 1 yang baru (user BISA mengoreksi
+  kata mode-nya juga, bukan cuma kota — kata kunci valid: AIR/SEA/REG atau REGULER/EXPRESS/
+  ECONOMY, map ke `jenis_layanan` PERSIS di `far_overseas_tarif_vendor`), kalau kata kuncinya
+  tidak dikenali baru fallback ke `jenis_layanan` dari `rate_row_used` YANG SEDANG TERSIMPAN
+  (null kalau masih array/ambigu) → `rematchTarif(...)` → 0 kandidat = `rate_row_used=null` +
+  status `BELUM_LENGKAP`, 1 kandidat = hitung ulang expected via `computeExpectedFromRate` +
+  simpan, >1 kandidat = `rate_row_used` jadi array (UI munculkan pilihan manual) + status
+  `BELUM_LENGKAP` → semua disimpan lewat `update_cost_validasi_far_overseas_manual`. Input
+  `route_note` di List Memo dikasih `inputPlaceholder` (lihat `EditableCell`/
+  `ListColumn.inputPlaceholder`) berisi hint format + kata kunci mode yang valid.
 - Kolom `po_list` (jsonb array di `rekapan_far_overseas_air`, tipe `PoListEntry` di
   `FarOverseasAirHelpers.ts`) tiap entry punya `po_no_raw` & `vessel_raw` — ini SATU-SATUNYA
   sumber pasangan PO↔Vessel yang presisi baris-per-baris. `vessel_internal_note` cuma string
@@ -195,6 +216,41 @@ Sudah diimplementasikan (lihat `sql/001_rbac_and_bunker_rls.sql`, `sql/002_direc
   saja) — saat expanded, keduanya render baris-per-baris dari `po_list` (bukan
   `vessel_internal_note`), sejajar per index, baris dengan `vessel_raw` null tampil `"-"` (tidak
   di-skip, supaya urutan tetap 1:1 dengan No PO).
+- **Memo cetak** (`FarOverseasAirDetailModal.tsx`) — `vessel_internal_note` SENGAJA TIDAK PERNAH
+  dirender di modal ini sama sekali (bukan cuma `print:hidden`) — field itu HANYA boleh tampil di
+  kolom VESSEL tabel List Memo. NOTE 3 (`status_note`) & NOTE 4 (`other_note`) SEKARANG ikut masuk
+  ke baris "NOTE :" di memo cetak (bareng NOTE 1/NOTE 2), tapi HANYA render barisnya kalau isinya
+  tidak null/kosong (baris yang kosong tidak dirender sama sekali, bukan tampil "-").
+- **PIC** (2026-09, versi final — sempat dicoba 2 pendekatan berbeda sebelum ini: kolom tanda
+  tangan terpisah dengan approval terpisah, lalu dicoba tanpa approval sama sekali; keduanya
+  SUDAH DIGANTI dengan versi di bawah ini, JANGAN reintroduce versi lama): kolom manual
+  `pic_name` (text, mirip `buyer_name`, ada di `REKAPAN_EDITABLE_FIELDS` & editable inline di
+  List Memo lewat kolom "PIC") TETAP ADA sebagai fallback nama sebelum di-approve. TIDAK ADA
+  kolom tanda tangan terpisah untuk PIC di memo cetak — nama PIC digabung bersebelahan dengan
+  nama Exim Officer (approval tahap 1) di kolom "Disiapkan Oleh" YANG SAMA, format
+  `"{nama exim}/{nama PIC}"` (kalau salah satu belum ada, tampilkan yang ada saja) — lihat
+  `disiapkanNama`/`picDisplayName` & `SignatureColumn.nameOverride` di
+  `FarOverseasAirDetailModal.tsx`. TAPI approval PIC-nya TETAP ADA sebagai aksi terpisah &
+  INDEPENDEN dari alur tier1→tier2→tier3 (tombol "Setujui — PIC", tidak menghalangi/dihalangi
+  status tahap manapun, TIDAK PERNAH mengubah `approval_status`) — untuk sementara approver-nya
+  = user yang login (`profile?.nama || user?.email`, sama seperti default tier1), append 1 entry
+  `{tier: 'PIC', nama, jabatan: 'PIC', approved_at, user_email}` ke array `approvals`; begitu ada
+  entry ini, nama approver itulah yang tampil di "Disiapkan Oleh" (menggantikan `pic_name`
+  manual), sama pola dengan tier1/2/3. `ApprovalEntry.tier` bertipe `number | 'PIC'`
+  (`ApprovalTier`). Kolom **BUYER** (`buyer_name`) ditambahkan di List Memo bersebelahan dengan
+  PIC (2026-09) — sebelumnya `buyer_name` cuma tampil di memo cetak, sekarang juga editable
+  inline di List Memo (sudah ada di `REKAPAN_EDITABLE_FIELDS` dari awal).
+- **Field baris header memo cetak** (PO.No/Supplier kiri, Inv.No/Date kanan) — kedua kolom
+  SENGAJA dipisah jadi 2 blok independen (bukan 2 baris flex-row PO.No+Inv.No lalu
+  Supplier+Date) supaya Inv.No & Date tetap rapat berdekatan walau PO.No isinya panjang/wrap
+  banyak baris (mis. gabungan banyak PO) — kalau digabung 1 baris flex, tinggi baris itu ikut
+  ketarik setinggi PO.No, jadi Date jadi jauh dari Inv.No.
+- **Note pembayaran** (2026-09): 1 baris teks kecil `"Note: MOHON DIBANTU BAYARKAN PADA TANGGAL :
+  {expected_payment_date}"` (format `formatDateMemo`) ditaruh DI LUAR kotak/tabel memo (di bawah
+  signature table), TAPI TETAP ikut tercetak di mode print (bukan `print:hidden`) — beda dari
+  field lain di luar kotak memo yang defaultnya `print:hidden`. Karena field ini sekarang sudah
+  tercetak lewat note ini, blok "Catatan Internal (tidak tercetak di memo)" yang dulu menampilkan
+  Expected Payment Date terpisah SUDAH DIHAPUS (redundant).
 
 ## Audit AP Local — halaman laporan otomasi + koreksi manual terbatas (`src/pages/AuditPoPage.tsx`)
 
