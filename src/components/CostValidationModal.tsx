@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { computeLiveCostSummary, isRowVisible } from '../utils/CostValidationHelpers';
 
 const formatRp = (num: any) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(Number(num) || 0);
 
@@ -495,121 +496,12 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
     return <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded font-bold text-xs">⚠️ {finalStatus}</span>;
   };
 
-  const isRowVisible = (status: string | undefined, expected: any, actual?: any) => {
-    const isNa = !status || status.toUpperCase() === 'N/A';
-    
-    // Hanya tampilkan baris jika: 1. status != N/A
-    if (!isNa) return true;
-    
-    // 2. actual tidak null dan tidak undefined (boleh 0)
-    if (actual !== null && actual !== undefined && actual !== '') return true;
-
-    // Jika status = N/A DAN expected = null DAN actual = null -> sembunyikan baris
-    const isEmptyEx = expected === null || expected === undefined || expected === '';
-    const isEmptyAc = actual === null || actual === undefined || actual === '';
-    
-    return !(isEmptyEx && isEmptyAc);
-  };
-
-  // Ringkasan footer (Total Validable/OK/SELISIH/N/A + badge Other Charges Freight/Duty) --
-  // dihitung ULANG di sini dari status & visibilitas baris yang BENERAN tampil di tabel
-  // Invoice Freight Validation & Invoice Duty Validation, bukan dibaca langsung dari kolom
-  // tersimpan (total_cost_cek/total_na/cv_other_charges_*_status). Kolom2 itu cuma diisi
-  // oleh proses n8n waktu data pertama kali dibuat dan tidak ikut ter-update saat user edit
-  // manual -- itu sebabnya bisa nyeleneh/tidak sinkron dari yang kelihatan di layar.
-  const liveSummary = useMemo(() => {
-    if (!data) return { total_cost_cek: 0, total_ok: 0, total_selisih: 0, total_na: 0, status_cost: 'N/A' };
-
-    // Status individual per-baris tersimpan generik "SELISIH" di DB -- arah OVERCHARGE/
-    // UNDERCHARGE-nya cuma ditentukan pas ditampilkan (lihat formatStatus di atas), dari
-    // nilai selisih. Supaya konsisten dengan STATUS besar (UNDERCHARGE dianggap aman),
-    // classify di sini juga menghitung ulang arahnya pakai selisih, baru tentukan bucket.
-    const classify = (status: any, selisih?: number): 'OK' | 'SELISIH' | 'NA' => {
-      const s = (status || '').toString().toUpperCase();
-      if (s === 'OK') return 'OK';
-      if (['SELISIH', 'OVERCHARGE', 'UNDERCHARGE'].includes(s)) {
-        let direction = s;
-        if (direction === 'SELISIH' && selisih !== undefined && selisih !== null && !isNaN(selisih)) {
-          if (selisih > 1000) direction = 'OVERCHARGE';
-          else if (selisih < -1000) direction = 'UNDERCHARGE';
-        }
-        return direction === 'UNDERCHARGE' ? 'OK' : 'SELISIH';
-      }
-      return 'NA';
-    };
-
-    const isPib = (jenisDokumen || data.jenis_dokumen || '').toUpperCase() === 'PIB';
-
-    // Persis 9 baris komponen yang muncul di tabel Freight Validation & Duty Validation,
-    // dengan syarat tampil (visible) yang sama persis dengan yang dipakai tiap baris di JSX.
-    const mainFields = [
-      { visible: isRowVisible(data.cv_freight_status, data.cv_freight_expected, data.cv_freight_actual), status: data.cv_freight_status, selisih: Number(data.cv_freight_selisih) },
-      { visible: isRowVisible(data.cv_fuel_status, data.cv_fuel_expected, data.cv_fuel_actual), status: data.cv_fuel_status, selisih: Number(data.cv_fuel_selisih) },
-      { visible: isRowVisible(data.cv_vat_freight_status, data.cv_vat_freight_expected, data.cv_vat_freight_actual_net), status: data.cv_vat_freight_status, selisih: Number(data.cv_vat_freight_selisih) },
-      { visible: data.cv_import_export_duties !== null || data.cv_duties_expected !== null, status: data.cv_duties_status, selisih: Number(data.cv_duties_selisih) },
-      { visible: isPib && isRowVisible(data.cv_nonroutine_status, data.cv_nonroutine_expected, data.cv_nonroutine_actual), status: data.cv_nonroutine_status, selisih: Number(data.cv_nonroutine_selisih) },
-      { visible: data.cv_disbursement_actual != null || isRowVisible(data.cv_disbursement_status, data.cv_disbursement_expected, data.cv_disbursement_actual), status: data.cv_disbursement_status, selisih: Number(data.cv_disbursement_selisih) },
-      { visible: data.cv_processing_fee_actual != null || isRowVisible(data.cv_processing_fee_status, data.cv_processing_fee_expected, data.cv_processing_fee_actual), status: data.cv_processing_fee_status, selisih: Number(data.cv_processing_fee_selisih) },
-      { visible: data.cv_storage_actual !== null || data.cv_storage_status === 'MANUAL', status: data.cv_storage_status, selisih: Number(data.cv_storage_selisih) },
-      { visible: isRowVisible(data.cv_vat_duty_status, data.cv_vat_duty_expected, data.cv_vat_duty_actual_net), status: data.cv_vat_duty_status, selisih: Number(data.cv_vat_duty_selisih) },
-    ];
-
-    let total_ok = 0, total_selisih = 0, total_na = 0;
-    mainFields.forEach(f => {
-      if (!f.visible) return;
-      const cls = classify(f.status, f.selisih);
-      if (cls === 'OK') total_ok++;
-      else if (cls === 'SELISIH') total_selisih++;
-      else total_na++;
-    });
-
-    const sumAdjustments = (raw: any): number => {
-      let arr: any[] = [];
-      if (typeof raw === 'string') { try { arr = JSON.parse(raw) || []; } catch (e) {} }
-      else if (Array.isArray(raw)) { arr = raw; }
-      else if (raw !== null && typeof raw === 'object') { arr = Object.values(raw); }
-      return arr.reduce((acc: number, curr: any) => acc + (Number(curr) || 0), 0);
-    };
-
-    // Status "TOTAL" baris paling bawah tabel Freight Validation -- persis rumus yang
-    // sama dipakai buat baris TOTAL di tabel itu sendiri, supaya badge di footer selalu
-    // sama dengan yang kelihatan di baris TOTAL-nya.
-    let invoiceFreightStatus = data.cv_total_freight_status || 'N/A';
-    if (invoiceFreightStatus === 'SELISIH') {
-      const totalSelisihNum = (Number(data.cv_total_freight_selisih) || 0) - sumAdjustments(data.cv_other_freight_adjustments);
-      if (totalSelisihNum > 1000) invoiceFreightStatus = 'OVERCHARGE';
-      else if (totalSelisihNum < -1000) invoiceFreightStatus = 'UNDERCHARGE';
-    }
-
-    // Status "TOTAL" baris paling bawah tabel Duty Validation -- rumus sama dengan baris
-    // TOTAL Duty (toleransi 2% dari expected).
-    const dutyExpectedNum = Number(data.cv_total_duty_expected || 0);
-    let invoiceDutyStatus = 'N/A';
-    if (dutyExpectedNum !== 0) {
-      let dutyActualNum = Number(data.cv_total_duty_actual || 0) - sumAdjustments(data.cv_other_duty_adjustments);
-      const dutySelisihNum = dutyActualNum - dutyExpectedNum;
-      if (Math.abs(dutySelisihNum) <= dutyExpectedNum * 0.02) invoiceDutyStatus = 'OK';
-      else if (dutyActualNum > dutyExpectedNum) invoiceDutyStatus = 'OVERCHARGE';
-      else invoiceDutyStatus = 'UNDERCHARGE';
-    }
-
-    // STATUS keseluruhan (badge besar) -- HANYA lihat status TOTAL Invoice Freight & Invoice
-    // Duty (bukan dari 9 baris komponen). UNDERCHARGE/OK dianggap aman (tetap OK), cuma
-    // OVERCHARGE (atau SELISIH yang tidak jelas arahnya) di salah satu yang bikin jadi
-    // "ADA SELISIH" -- sesuai aturan yang diminta lae.
-    const isOverchargeLike = (s: string) => s === 'OVERCHARGE' || s === 'SELISIH';
-    const overallStatusCost = (isOverchargeLike(invoiceFreightStatus) || isOverchargeLike(invoiceDutyStatus)) ? 'ADA SELISIH' : 'OK';
-
-    return {
-      total_cost_cek: total_ok + total_selisih,
-      total_ok,
-      total_selisih,
-      total_na,
-      status_cost: overallStatusCost,
-      invoice_freight_status: classify(invoiceFreightStatus) === 'NA' ? 'N/A' : (classify(invoiceFreightStatus) === 'OK' ? 'OK' : 'ADA SELISIH'),
-      invoice_duty_status: classify(invoiceDutyStatus) === 'NA' ? 'N/A' : (classify(invoiceDutyStatus) === 'OK' ? 'OK' : 'ADA SELISIH'),
-    };
-  }, [data, jenisDokumen]);
+  // Ringkasan footer (Total Validable/OK/SELISIH/N/A + persentase + badge Other Charges
+  // Freight/Duty) -- logic-nya dipindah ke src/utils/CostValidationHelpers.ts
+  // (`computeLiveCostSummary`) supaya SATU-SATUNYA sumber kebenaran, dipakai juga oleh badge
+  // persentase di tombol "Cost Validation" halaman Audit Courier (SharedDataTable.tsx). JANGAN
+  // duplikat logic ini lagi di sini -- ubah di CostValidationHelpers.ts kalau perlu.
+  const liveSummary = useMemo(() => computeLiveCostSummary(data, jenisDokumen), [data, jenisDokumen]);
 
   const renderOtherChargesRows = (dataArrayRaw: any, type: 'freight' | 'duty') => {
     const arrField = type === 'freight' ? 'cv_other_charges_freight' : 'cv_other_charges_duty';
@@ -1662,6 +1554,21 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                      <div className="flex items-center gap-2">
                        <span className="font-bold text-[#5A305A]">STATUS:</span>
                        {formatStatus(liveSummary.status_cost)}
+                     </div>
+                   </div>
+
+                   <div className="flex justify-end">
+                     <div className="min-w-[220px]">
+                       <div className="flex justify-between mb-1.5">
+                         <span className="text-[11px] text-[#5A305A] font-medium">Overall Accuracy</span>
+                         <span className="text-[11px] font-bold text-[#5A305A]">{liveSummary.pct}%</span>
+                       </div>
+                       <div className="h-2 rounded-full bg-slate-100 overflow-hidden shadow-inner">
+                         <div
+                           className={`h-full transition-all duration-500 ${liveSummary.pct >= 90 ? 'bg-emerald-600' : liveSummary.pct >= 60 ? 'bg-amber-500' : 'bg-red-600'}`}
+                           style={{ width: `${liveSummary.pct}%` }}
+                         />
+                       </div>
                      </div>
                    </div>
 

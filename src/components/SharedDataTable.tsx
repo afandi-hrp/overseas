@@ -10,6 +10,7 @@ import CostValidationModal from '../components/CostValidationModal'
 import SeaAirChecklistModal from '../components/SeaAirChecklistModal'
 import SeaAirValidasiModal from '../components/SeaAirValidasiModal'
 import ValidasiShipmentInvoiceLengkap from '../components/ValidasiShipmentInvoiceLengkap'
+import { computeLiveCostSummary } from '../utils/CostValidationHelpers'
 
 // ─── Konfigurasi Tab ──────────────────────────────────────────
 
@@ -914,6 +915,55 @@ async function mergeChecklistData(records: any[], docTypeHint?: 'pib' | 'cn') {
   return records
 }
 
+// Badge persentase Doc Validation/Cost Validation Courier Audit (dipakai di dalam tombol Action
+// tiap baris) -- SATU-SATUNYA tempat kalkulasinya, dipanggil dari 2 jalur fetch berbeda di
+// fetchRecords (jalur normal PIB-only/CN-only, DAN jalur khusus tab Draft/archive yang gabung
+// PIB+CN dari 2 query terpisah) supaya badge-nya selalu muncul di mana pun tombolnya dirender,
+// bukan cuma di 1 jalur. Doc Validation dari tabel_checklist_validasi (persentase = match/
+// (match+mismatch), SAMA PERSIS formula CourierValidasiPage.tsx). Cost Validation pakai
+// computeLiveCostSummary() (src/utils/CostValidationHelpers.ts) yang sama dipakai
+// CostValidationModal.tsx -- JANGAN duplikat formula di tempat lain.
+async function fetchCourierValidationBadgePct(rows: any[]): Promise<{ docPctMap: Record<string, number>, costPctMap: Record<string, number> }> {
+  const docPctMap: Record<string, number> = {};
+  const costPctMap: Record<string, number> = {};
+  if (!rows || rows.length === 0) return { docPctMap, costPctMap };
+
+  const pibIds = rows.filter(r => r.jenis_dokumen === 'PIB').map(r => r.id).filter(Boolean);
+  const cnIds = rows.filter(r => r.jenis_dokumen === 'CN').map(r => r.id).filter(Boolean);
+  const chunkSize = 50;
+
+  const fetchChecklistPct = async (idKey: 'pib_id' | 'cn_id', ids: any[], keyPrefix: string) => {
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const { data: chk } = await supabase.from('tabel_checklist_validasi').select(`${idKey}, total_match, total_mismatch`).in(idKey, chunk);
+      (chk || []).forEach((c: any) => {
+        const checked = (c.total_match || 0) + (c.total_mismatch || 0);
+        docPctMap[`${keyPrefix}${c[idKey]}`] = checked > 0 ? Math.round((c.total_match / checked) * 100) : 0;
+      });
+    }
+  };
+  const fetchCostPct = async (idKey: 'pib_id' | 'cn_id', ids: any[], keyPrefix: string, jenisDok: 'PIB' | 'CN') => {
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const { data: cvRows } = await supabase.from('tabel_cost_validasi').select('*').in(idKey, chunk).order('created_at', { ascending: false });
+      (cvRows || []).forEach((cv: any) => {
+        const mapKey = `${keyPrefix}${cv[idKey]}`;
+        if (costPctMap[mapKey] !== undefined) return; // sudah ada baris LEBIH BARU (order desc), skip
+        costPctMap[mapKey] = computeLiveCostSummary(cv, jenisDok).pct;
+      });
+    }
+  };
+
+  await Promise.all([
+    fetchChecklistPct('pib_id', pibIds, 'pib_'),
+    fetchChecklistPct('cn_id', cnIds, 'cn_'),
+    fetchCostPct('pib_id', pibIds, 'pib_', 'PIB'),
+    fetchCostPct('cn_id', cnIds, 'cn_', 'CN'),
+  ]);
+
+  return { docPctMap, costPctMap };
+}
+
 function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true }: { record: any, tab: any, onClose: () => void, onSaved?: () => void, canEdit?: boolean }) {
   const [form, setForm] = useState<Record<string, boolean>>({})
   const [existingId, setExistingId] = useState<number | null>(null)
@@ -1757,19 +1807,49 @@ const CourierAuditRowGroup: React.FC<{
                             </button>
                           )}
                           {onChecklist && rec.status !== 'LENGKAP' && (
-                            <button onClick={() => { onChecklist(rec); setShowActions(false); }} className="w-[80px] bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 hover:border-amber-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
-                              📋 Checklist
-                            </button>
+                            <span className="relative inline-flex shrink-0">
+                              <button onClick={() => { onChecklist(rec); setShowActions(false); }} className="w-[80px] bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 hover:border-amber-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
+                                📋 Checklist
+                              </button>
+                              {(() => {
+                                const pct = Number(rec.pct_kelengkapan) || 0;
+                                return (
+                                  <span className={`absolute -top-1.5 -right-1.5 z-10 min-w-[26px] h-[15px] px-1 rounded-full text-[9px] font-bold flex items-center justify-center shadow-sm border-2 border-white ${
+                                    pct >= 90 ? 'bg-emerald-500 text-white' : pct >= 60 ? 'bg-amber-500 text-white' : 'bg-red-500 text-white'
+                                  }`}>
+                                    {pct}%
+                                  </span>
+                                );
+                              })()}
+                            </span>
                           )}
                           {onValidasi && rec.status !== 'LENGKAP' && (
-                            <button onClick={() => { onValidasi(rec); setShowActions(false); }} className="w-[80px] bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
-                              🔍 Doc Validation
-                            </button>
+                            <span className="relative inline-flex shrink-0">
+                              <button onClick={() => { onValidasi(rec); setShowActions(false); }} className="w-[80px] bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
+                                🔍 Doc Validation
+                              </button>
+                              {rec.doc_validation_pct !== null && rec.doc_validation_pct !== undefined && (
+                                <span className={`absolute -top-1.5 -right-1.5 z-10 min-w-[26px] h-[15px] px-1 rounded-full text-[9px] font-bold flex items-center justify-center shadow-sm border-2 border-white ${
+                                  rec.doc_validation_pct >= 90 ? 'bg-emerald-500 text-white' : rec.doc_validation_pct >= 60 ? 'bg-amber-500 text-white' : 'bg-red-500 text-white'
+                                }`}>
+                                  {rec.doc_validation_pct}%
+                                </span>
+                              )}
+                            </span>
                           )}
                           {onCostValidasi && rec.status !== 'LENGKAP' && (
-                            <button onClick={() => { onCostValidasi(rec); setShowActions(false); }} className="w-[80px] bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100 hover:border-purple-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
-                              💲 Cost. Validation
-                            </button>
+                            <span className="relative inline-flex shrink-0">
+                              <button onClick={() => { onCostValidasi(rec); setShowActions(false); }} className="w-[80px] bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100 hover:border-purple-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
+                                💲 Cost. Validation
+                              </button>
+                              {rec.cost_validation_pct !== null && rec.cost_validation_pct !== undefined && (
+                                <span className={`absolute -top-1.5 -right-1.5 z-10 min-w-[26px] h-[15px] px-1 rounded-full text-[9px] font-bold flex items-center justify-center shadow-sm border-2 border-white ${
+                                  rec.cost_validation_pct >= 90 ? 'bg-emerald-500 text-white' : rec.cost_validation_pct >= 60 ? 'bg-amber-500 text-white' : 'bg-red-500 text-white'
+                                }`}>
+                                  {rec.cost_validation_pct}%
+                                </span>
+                              )}
+                            </span>
                           )}
                           {onArchive && (
                             <button onClick={() => { onArchive(rec); setShowActions(false); }} className="w-[80px] bg-orange-50 text-orange-600 hover:bg-orange-100 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all border border-orange-200 shadow-sm">
@@ -2226,26 +2306,53 @@ const SeaAirRekapanRowGroup: React.FC<{
                             </button>
                           )}
                           {onValidasi && (
-                            <button onClick={() => onValidasi(rec)} className="w-[80px] bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
-                              🔎 Doc Validation
-                            </button>
+                            <span className="relative inline-flex shrink-0">
+                              <button onClick={() => onValidasi(rec)} className="w-[80px] bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
+                                🔎 Doc Validation
+                              </button>
+                              {rec.doc_validation_pct !== null && rec.doc_validation_pct !== undefined && (
+                                <span className={`absolute -top-1.5 -right-1.5 z-10 min-w-[26px] h-[15px] px-1 rounded-full text-[9px] font-bold flex items-center justify-center shadow-sm border-2 border-white ${
+                                  rec.doc_validation_pct >= 90 ? 'bg-emerald-500 text-white' : rec.doc_validation_pct >= 60 ? 'bg-amber-500 text-white' : 'bg-red-500 text-white'
+                                }`}>
+                                  {rec.doc_validation_pct}%
+                                </span>
+                              )}
+                            </span>
                           )}
                           {onCostValidasi && (
-                            <button onClick={() => onCostValidasi(rec)} className="w-[80px] bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100 hover:border-purple-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
-                              💲 Cost Validation
-                            </button>
+                            <span className="relative inline-flex shrink-0">
+                              <button onClick={() => onCostValidasi(rec)} className="w-[80px] bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100 hover:border-purple-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
+                                💲 Cost Validation
+                              </button>
+                              {rec.cost_validation_pct !== null && rec.cost_validation_pct !== undefined && (
+                                <span className={`absolute -top-1.5 -right-1.5 z-10 min-w-[26px] h-[15px] px-1 rounded-full text-[9px] font-bold flex items-center justify-center shadow-sm border-2 border-white ${
+                                  rec.cost_validation_pct >= 90 ? 'bg-emerald-500 text-white' : rec.cost_validation_pct >= 60 ? 'bg-amber-500 text-white' : 'bg-red-500 text-white'
+                                }`}>
+                                  {rec.cost_validation_pct}%
+                                </span>
+                              )}
+                            </span>
                           )}
                           {onChecklist && (
-                            <button
-                              onClick={() => onChecklist(rec)}
-                              className={`w-[80px] border text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm ${
-                                rec.status_kelengkapan === 'LENGKAP'
-                                  ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
-                                  : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
-                              }`}
-                            >
-                              ✓ Checklist
-                            </button>
+                            <span className="relative inline-flex shrink-0">
+                              <button
+                                onClick={() => onChecklist(rec)}
+                                className={`w-[80px] border text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm ${
+                                  rec.status_kelengkapan === 'LENGKAP'
+                                    ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
+                                    : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+                                }`}
+                              >
+                                ✓ Checklist
+                              </button>
+                              {rec.checklist_pct !== null && rec.checklist_pct !== undefined && (
+                                <span className={`absolute -top-1.5 -right-1.5 z-10 min-w-[26px] h-[15px] px-1 rounded-full text-[9px] font-bold flex items-center justify-center shadow-sm border-2 border-white ${
+                                  rec.checklist_pct >= 90 ? 'bg-emerald-500 text-white' : rec.checklist_pct >= 60 ? 'bg-amber-500 text-white' : 'bg-red-500 text-white'
+                                }`}>
+                                  {rec.checklist_pct}%
+                                </span>
+                              )}
+                            </span>
                           )}
                           {rec.audit_status === 'ARCHIVED'
                             ? (onUndraft && (
@@ -2733,6 +2840,13 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
         await mergeChecklistData(combined);
 
+        const { docPctMap: draftDocPctMap, costPctMap: draftCostPctMap } = await fetchCourierValidationBadgePct(combined);
+        combined.forEach(r => {
+          const badgeKey = r.jenis_dokumen === 'CN' ? `cn_${r.id}` : `pib_${r.id}`;
+          r.doc_validation_pct = draftDocPctMap[badgeKey] ?? 0;
+          r.cost_validation_pct = draftCostPctMap[badgeKey] ?? 0;
+        });
+
         // Apply Ordering locally
         if (sortColumn) {
           combined.sort((a, b) => {
@@ -2904,24 +3018,83 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         await mergeChecklistData(data, courierAuditType === 'pib' ? 'pib' : (courierAuditType === 'cn' ? 'cn' : undefined));
       }
 
+      // Badge persentase di tombol "Doc Validation"/"Cost. Validation" halaman Audit Courier --
+      // lihat fetchCourierValidationBadgePct() (~baris 918) utk detail formula & alasan
+      // dipisah jadi fungsi module-level (dipanggil dari jalur ini DAN jalur khusus tab
+      // Draft/archive di atas, supaya badge-nya konsisten muncul di kedua jalur fetch).
+      let courierDocValidationPctMap: Record<string, number> = {};
+      let courierCostValidationPctMap: Record<string, number> = {};
+      if ((activeMainTab === 'courier' && activeSubTab === 'courier_audit') && data && data.length > 0) {
+        const taggedRows = data.map(r => ({ ...r, jenis_dokumen: r.jenis_dokumen || (courierAuditType === 'pib' ? 'PIB' : courierAuditType === 'cn' ? 'CN' : r.jenis_dokumen) }));
+        const badgeResult = await fetchCourierValidationBadgePct(taggedRows);
+        courierDocValidationPctMap = badgeResult.docPctMap;
+        courierCostValidationPctMap = badgeResult.costPctMap;
+      }
+
       let seaAirAuditStatusMap: Record<string, string> = {};
+      let seaAirDocValidationPctMap: Record<string, number | null> = {};
+      let seaAirCostValidationPctMap: Record<string, number | null> = {};
+      let seaAirChecklistPctMap: Record<string, number | null> = {};
       if ((activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan') && data && data.length > 0) {
         const seaairIds = Array.from(new Set(data.map(r => r.seaair_id).filter(Boolean)));
         if (seaairIds.length > 0) {
           const chunkSize = 50;
           let allStatusData: any[] = [];
+          let allMatriksData: any[] = [];
+          let allCostValidasiData: any[] = [];
+          let allChecklistData: any[] = [];
           for (let i = 0; i < seaairIds.length; i += chunkSize) {
             const chunkIds = seaairIds.slice(i, i + chunkSize);
             const { data: statusChunk } = await supabase.from('tabel_audit_seaair').select('id, status').in('id', chunkIds);
             if (statusChunk) allStatusData = [...allStatusData, ...statusChunk];
+            const { data: matriksChunk } = await supabase.from('dokumen_validasi_matriks_seaair').select('seaair_id, checks').in('seaair_id', chunkIds);
+            if (matriksChunk) allMatriksData = [...allMatriksData, ...matriksChunk];
+            const { data: costChunk } = await supabase.from('cost_validasi_seaair').select('seaair_id, checks').in('seaair_id', chunkIds);
+            if (costChunk) allCostValidasiData = [...allCostValidasiData, ...costChunk];
+            const { data: checklistChunk } = await supabase.from('dokumen_checklist_seaair').select('seaair_id, pct_kelengkapan').in('seaair_id', chunkIds);
+            if (checklistChunk) allChecklistData = [...allChecklistData, ...checklistChunk];
           }
           seaAirAuditStatusMap = Object.fromEntries(allStatusData.map(r => [r.id, r.status]));
+
+          // Persentase badge tombol Checklist -- langsung dari kolom tersimpan pct_kelengkapan
+          // (bukan hasil hitung ulang, beda dari Doc/Cost Validation di atas), diisi lewat
+          // ChecklistModal/SeaAirChecklistModal saat checklist disimpan. Lihat juga
+          // rec.pct_kelengkapan di CourierAuditRowGroup yang dapat nilai sama tapi dari
+          // mergeChecklistData() (tabel dokumen_checklist, courier).
+          seaAirChecklistPctMap = Object.fromEntries(allChecklistData.map(c => [c.seaair_id, Number(c.pct_kelengkapan) || 0]));
+
+          // Persentase akurasi Doc Validation -- replika PERSIS formula globalStats di
+          // SeaAirValidasiModal.tsx: cuma hitung check yang sudah punya nilai match (true/false),
+          // "Belum dicek" (match null) tidak masuk total.
+          seaAirDocValidationPctMap = Object.fromEntries(allMatriksData.map(m => {
+            const checks = Array.isArray(m.checks) ? m.checks : [];
+            let total = 0, match = 0;
+            checks.forEach((c: any) => {
+              if (c.match !== null && c.match !== undefined) {
+                total++;
+                if (c.match === true) match++;
+              }
+            });
+            return [m.seaair_id, total > 0 ? Math.round((match / total) * 100) : 0];
+          }));
+
+          // Persentase akurasi Cost Validation -- replika PERSIS formula globalStats di
+          // ValidasiShipmentInvoiceLengkap.tsx: baris tabel INVOICE SURVEYOR (OPSIONAL)
+          // dikecualikan dari total (lihat catatan CLAUDE.md soal ini).
+          seaAirCostValidationPctMap = Object.fromEntries(allCostValidasiData.map(cv => {
+            const checks = (Array.isArray(cv.checks) ? cv.checks : []).filter((c: any) => c.section !== 'SURVEYOR');
+            const match = checks.filter((c: any) => c.status === 'MATCH').length;
+            return [cv.seaair_id, checks.length > 0 ? Math.round((match / checks.length) * 100) : 0];
+          }));
         }
       }
 
       const enrichedData = (data || []).map(r => {
         if ((activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan')) {
           r.audit_status = r.seaair_id ? (seaAirAuditStatusMap[r.seaair_id] ?? null) : null;
+          r.doc_validation_pct = r.seaair_id ? (seaAirDocValidationPctMap[r.seaair_id] ?? 0) : 0;
+          r.cost_validation_pct = r.seaair_id ? (seaAirCostValidationPctMap[r.seaair_id] ?? 0) : 0;
+          r.checklist_pct = r.seaair_id ? (seaAirChecklistPctMap[r.seaair_id] ?? 0) : 0;
         }
         if ((activeMainTab === 'courier' && activeSubTab === 'courier_rekapan')) {
           const cv = costValidations.find(c => c.awb === r.awb);
@@ -2956,6 +3129,22 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           if ((courierAuditType === 'cn')) {
              r.cek_selisih = Number((totalNilaiPabean - (totalInvFreight + actualItemPriceIdr)).toFixed(2));
           }
+
+          const badgeKey = (r.jenis_dokumen === 'CN' || courierAuditType === 'cn') ? `cn_${r.id}` : `pib_${r.id}`;
+          r.doc_validation_pct = courierDocValidationPctMap[badgeKey] ?? 0;
+          r.cost_validation_pct = courierCostValidationPctMap[badgeKey] ?? 0;
+        } else if ((activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit')) {
+          // BALANCE/ASURANSI dihitung ulang di sini juga (bukan cuma saat inline-edit/create)
+          // supaya kolomnya langsung menampilkan hasil kalkulasi dari data yang sudah ada,
+          // tanpa user harus mengedit salah satu dari 4 kolom sumbernya dulu -- sebelumnya
+          // rumus ini CUMA jalan saat trigger edit, jadi baris yang belum pernah diedit selalu
+          // tampil "-" walau datanya lengkap.
+          const valasDpp = Number(r.valas_dpp) || 0;
+          const kursNdpbm = Number(r.kurs_ndpbm) || 0;
+          const totalInvFreight = Number(r.total_inv_freight) || 0;
+          const itemPriceIdr = Number(r.item_price_idr) || 0;
+          r.balance = Number((valasDpp * kursNdpbm - (totalInvFreight + itemPriceIdr)).toFixed(2));
+          r.asuransi = Number(((totalInvFreight + itemPriceIdr) * 0.005).toFixed(2));
         }
         return r;
       });
@@ -3246,6 +3435,13 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         if ((courierAuditType === 'cn')) {
            r.cek_selisih = Number((totalNilaiPabean - (totalInvFreight + actualItemPriceIdr)).toFixed(2));
         }
+      } else if ((activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit')) {
+        const valasDpp = Number(r.valas_dpp) || 0;
+        const kursNdpbm = Number(r.kurs_ndpbm) || 0;
+        const totalInvFreight = Number(r.total_inv_freight) || 0;
+        const itemPriceIdr = Number(r.item_price_idr) || 0;
+        r.balance = Number((valasDpp * kursNdpbm - (totalInvFreight + itemPriceIdr)).toFixed(2));
+        r.asuransi = Number(((totalInvFreight + itemPriceIdr) * 0.005).toFixed(2));
       }
       return r;
     });

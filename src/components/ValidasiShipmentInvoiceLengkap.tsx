@@ -536,8 +536,12 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose, canEdi
   };
 
   const globalStats = useMemo(() => {
-    let match = 0, overcharge = 0, undercharge = 0, total = checks.length;
-    checks.forEach(c => {
+    // Tabel INVOICE SURVEYOR (OPSIONAL) dikecualikan dari statistik -- opsional, jadi tidak
+    // ikut menentukan persentase akurasi keseluruhan (baris SURVEYOR yang kosong/belum diisi
+    // seharusnya tidak menurunkan skor validasi cost yang wajib).
+    const countedChecks = checks.filter(c => c.section !== 'SURVEYOR');
+    let match = 0, overcharge = 0, undercharge = 0, total = countedChecks.length;
+    countedChecks.forEach(c => {
       if (c.status === "MATCH") match++;
       else if (c.status === "OVERCHARGE") overcharge++;
       else if (c.status === "UNDERCHARGE") undercharge++;
@@ -691,6 +695,18 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose, canEdi
                     <div className="bg-amber-50 text-amber-700 border border-amber-100 rounded-lg px-4 py-2 text-center min-w-[60px]">
                       <span className="block text-xl font-bold leading-none">{globalStats.undercharge}</span>
                       <span className="block text-[10px] uppercase font-bold mt-1 tracking-wide">Under</span>
+                    </div>
+                    <div className="min-w-[160px] pl-2">
+                      <div className="flex justify-between mb-1.5">
+                        <span className="text-[11px] text-[#5A305A] font-medium">Overall Accuracy</span>
+                        <span className="text-[11px] font-bold text-[#5A305A]">{globalStats.pct}%</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-slate-100 overflow-hidden shadow-inner">
+                        <div
+                          className={`h-full transition-all duration-500 ${globalStats.pct >= 90 ? 'bg-emerald-600' : globalStats.pct >= 60 ? 'bg-amber-500' : 'bg-red-600'}`}
+                          style={{ width: `${globalStats.pct}%` }}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>

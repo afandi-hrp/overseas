@@ -278,14 +278,26 @@ dan bagian `CourierValidasiPage.tsx` yang merender label dari `SECTIONS`).
     `SharedDataTable.tsx` (~baris 3904, muncul saat tabel Audit/Rekapan kosong & belum ada
     filter search) diterjemahkan ke "Upload now →" SEKALIGUS di-restyle jadi tombol solid
     `bg-[#5A305A]` (sebelumnya cuma teks link biru underline) sesuai permintaan user.
-  - **`ValidasiShipmentInvoiceLengkap.tsx`** (modal Cost Validation Sea & Air, dipanggil dari
-    `SharedDataTable.tsx`, BELUM diaudit menyeluruh — baru 2 baris statis yang diperbaiki atas
-    screenshot user 2026-09): "Ringkasan Validasi Cost"→"Cost Validation Summary", "Keseluruhan
-    akurasi cost vs actual invoice"→"Overall cost accuracy vs actual invoice" (~baris 675-680,
-    di STATUS BAR bagian atas modal). File ini belum dicek apakah punya pola SECTIONS/row-col
-    lookup serupa `SeaAirValidasiModal.tsx` — kalau ada permintaan translate lanjutan di file
-    ini, cek dulu pola `checks.find(...)`/`field` dipakai sbg matching key sebelum translate
-    row/col apa pun.
+  - **`ValidasiShipmentInvoiceLengkap.tsx`** (modal Cost Validation Sea & Air "Cost Validasi
+    Shipment & Invoice", dipanggil dari `SharedDataTable.tsx`, BELUM diaudit menyeluruh — baru
+    beberapa bagian yang disentuh atas permintaan user 2026-09): "Ringkasan Validasi Cost"→"Cost
+    Validation Summary", "Keseluruhan akurasi cost vs actual invoice"→"Overall cost accuracy vs
+    actual invoice" (~baris 675-680, panel STATUS BAR bagian atas modal). File ini belum dicek
+    apakah punya pola SECTIONS/row-col lookup serupa `SeaAirValidasiModal.tsx` — kalau ada
+    permintaan translate lanjutan di file ini, cek dulu pola `checks.find(...)`/`field` dipakai
+    sbg matching key sebelum translate row/col apa pun.
+    **`globalStats`** (~baris 538, dipakai panel "Cost Validation Summary"): tambah persentase
+    "Overall Accuracy" + progress bar (2026-09, replika persis pola `globalStats`/bar warna di
+    `SeaAirValidasiModal.tsx` ~baris 1414/1478-1486 — hijau `>=90%`, kuning `>=60%`, merah di
+    bawahnya). Formula: `pct = round(match / total * 100)`, `total` = jumlah SEMUA baris
+    `checks` (bukan cuma yang statusnya match/mismatch — baris kosong/belum dicek tetap masuk
+    `total`, cuma tidak masuk `match`), `match` = baris berstatus `"MATCH"`. **Baris dari tabel
+    "INVOICE SURVEYOR (OPSIONAL)"** (`section === 'SURVEYOR'`, lihat `getRowsFor("SURVEYOR")`
+    ~baris 747) DIKECUALIKAN dari `globalStats` sama sekali (difilter sebelum hitung
+    match/total) — dikonfirmasi user 2026-09, karena tabel itu opsional, baris SURVEYOR yang
+    kosong/belum diisi TIDAK BOLEH ikut menurunkan skor akurasi cost yang wajib. Kalau nanti ada
+    section lain yang sifatnya opsional serupa, tambahkan `section` value-nya ke filter yang
+    sama.
 - ✅ FAR Overseas / Direct Loading — SELESAI (2026-09), dengan 1 pengecualian permanen yang
   dikonfirmasi user (memo cetak, lihat di bawah).
   - `src/utils/FarOverseasAirHelpers.ts`: `APPROVAL_STATUS_META`/`COST_STATUS_META` (pola
@@ -489,12 +501,7 @@ lihat catatan lama di bawah soal ini):
 - `BALANCE = VALAS_DPP * KURS_NDPBM - (TOTAL_INV_FREIGHT + ITEM_PRICE_IDR)`
 - `ASURANSI = 0.5% * (TOTAL_INV_FREIGHT + ITEM_PRICE_IDR)`
 
-Auto-recalculate HANYA saat salah satu dari 4 kolom sumbernya (`valas_dpp`, `kurs_ndpbm`,
-`total_inv_freight`, `item_price_idr`) diubah lewat aksi edit user — TIDAK dipaksa recompute
-tiap fetch/tampil (beda dari `cek_selisih` di Courier Audit yang selalu dihitung ulang di
-`fetchRecords`'s `enrichedData`) — supaya nilai asli hasil ekstraksi n8n tetap tampil apa
-adanya sampai user benar-benar mengedit salah satu field sumbernya. Diimplementasi di 2 tempat
-terpisah (Sea & Air Audit editing-nya INLINE per baris, bukan modal, lihat
+Diimplementasi di 3 tempat (Sea & Air Audit editing-nya INLINE per baris, bukan modal, lihat
 `SeaAirAuditRowGroup`/`isInlineEditable` — modal `EditModal` cuma dipakai utk flow "Tambah
 Data"):
 1. `EditModal` (~baris 218+, `useEffect` khusus `tab.id === 'sea_air_audit'`) — pola sama
@@ -503,11 +510,128 @@ Data"):
 2. `handleInlineSaveRow` (~baris 3277) — inline edit cuma kirim field yang BERUBAH (diff), jadi
    kalau salah satu dari 4 kolom sumber ikut berubah, balance/asuransi dihitung ulang dari
    gabungan `record` lama + `cleanedPayload` baru, lalu disisipkan ke payload sebelum dikirim
-   ke RPC `update_seaair_row`.
+   ke RPC `update_seaair_row` (jadi ikut TERSIMPAN ke DB).
+3. **`fetchRecords`'s `enrichedData` DAN `getExportData`** (2026-09, FIX bug — awalnya SENGAJA
+   tidak dipasang di sini, niatnya biar nilai asli n8n tetap tampil apa adanya sampai user edit,
+   analog `item_price_idr`. Ternyata ini bikin baris yang belum PERNAH diedit manual — yaitu
+   HAMPIR SEMUA baris, karena n8n memang tidak pernah isi `balance`/`asuransi` — selalu tampil
+   "-" walau ke-4 data sumbernya lengkap, user lapor "hasil kalkulasi tidak muncul". Fix: hitung
+   ulang `r.balance`/`r.asuransi` dari 4 field sumber di SETIAP baris hasil fetch/export, sama
+   persis formula di poin 1/2 — idempoten dengan hasil edit-triggered karena formulanya sama,
+   jadi tidak konflik. Sekarang kolom ini SELALU live-computed dari data yang ada, bukan
+   menunggu user mengedit dulu.
 
 `balance`/`asuransi` DIKELUARKAN dari `isInlineEditable()` (~baris 1316) — tidak bisa diketik
 manual lagi lewat inline edit, murni hasil formula (sama perlakuan dengan `cek_selisih`). Kalau
-formula perlu diubah lagi nanti, HARUS disinkronkan di kedua tempat itu.
+formula perlu diubah lagi nanti, HARUS disinkronkan di SEMUA 4 tempat ini (EditModal,
+handleInlineSaveRow, fetchRecords enrichedData, getExportData).
+
+## Sea & Air — Rekapan, badge persentase di tombol Doc/Cost Validation (2026-09)
+
+Di halaman **Rekapan Sea & Air**, tombol "🔎 Doc Validation" & "💲 Cost Validation" pada panel
+Action tiap baris (`SeaAirRekapanRowGroup`, ~baris 2228-2249) sekarang punya BADGE PERSENTASE
+kecil di pojok kanan-atas tombolnya (bulat, hijau `>=90%` / kuning `>=60%` / merah di bawahnya),
+supaya user langsung tahu skor akurasi validasi tanpa buka modalnya dulu. Badge SELALU tampil
+(dikonfirmasi user 2026-09) — termasuk saat 0% atau belum ada data validasi sama sekali untuk
+shipment itu (fallback `total === 0` / tidak ketemu record matriks|cost validasi → `0`, BUKAN
+`null` seperti percobaan awal yang bikin badge-nya malah hilang).
+
+Dihitung di `fetchRecords` (~baris 2907-2946, bareng `seaAirAuditStatusMap` yang sudah ada
+lebih dulu) lewat 2 batch query tambahan (chunk 50, sejalan dengan pola `tabel_audit_seaair`
+yang sudah ada), lalu disimpan ke `r.doc_validation_pct`/`r.cost_validation_pct` per baris di
+`enrichedData` — **BUKAN dihitung ulang di komponen row**, supaya query-nya batch sekali per
+halaman (bukan N+1 query per baris):
+- **Doc Validation** — dari `dokumen_validasi_matriks_seaair.checks` (jsonb array, join
+  `seaair_id`). Formula REPLIKA PERSIS `globalStats` di `SeaAirValidasiModal.tsx` (~baris 1402):
+  cuma hitung `checks` yang `match` sudah terisi (`true`/`false`, BUKAN `null` = "Belum dicek")
+  sebagai `total`, `match === true` sebagai pembilang.
+- **Cost Validation** — dari `cost_validasi_seaair.checks` (jsonb array, join `seaair_id`).
+  Formula REPLIKA PERSIS `globalStats` di `ValidasiShipmentInvoiceLengkap.tsx` (~baris 538,
+  SUDAH termasuk fix exclude SURVEYOR 2026-09): `checks` dengan `section === 'SURVEYOR'`
+  DIKECUALIKAN dulu sebelum hitung `total`/`status === 'MATCH'`.
+
+**Kalau formula persentase di salah satu modal itu diubah lagi nanti, WAJIB disinkronkan juga
+di sini** (3 tempat: `SeaAirValidasiModal.tsx` `globalStats`, `ValidasiShipmentInvoiceLengkap.tsx`
+`globalStats`, `SharedDataTable.tsx` `fetchRecords` map di atas) — kalau tidak, badge di List
+Rekapan bisa beda angka dengan yang ditampilkan di dalam modalnya sendiri.
+
+## Courier — Audit, badge persentase di tombol Doc/Cost Validation + footer % Cost Validation (2026-09)
+
+Pola yang sama dengan badge Sea & Air Rekapan di atas, diterapkan juga ke tombol "🔍 Doc
+Validation" & "💲 Cost. Validation" di panel Action tiap baris **Audit Courier**
+(`CourierAuditRowGroup`, ~baris 1764-1789) — badge SELALU tampil (termasuk 0%, sama kebijakan
+dgn Sea & Air).
+
+- **`src/utils/CostValidationHelpers.ts`** (FILE BARU) — `isRowVisible()` & `computeLiveCostSummary()`
+  DIPINDAHKAN ke sini dari `CostValidationModal.tsx` (logic aslinya SAMA PERSIS, cuma
+  dipindah/di-export, bukan ditulis ulang) supaya jadi SATU-SATUNYA sumber kebenaran ringkasan
+  Cost Validation Courier (visibilitas 9 baris komponen Freight/Duty + klasifikasi OK/SELISIH/NA
+  + status TOTAL Freight & TOTAL Duty). Dipakai oleh 2 tempat: `CostValidationModal.tsx` (detail
+  per shipment, lewat `liveSummary = useMemo(() => computeLiveCostSummary(data, jenisDokumen))`)
+  DAN `SharedDataTable.tsx` `fetchRecords` (badge, panggil langsung per baris `tabel_cost_validasi`
+  yang di-fetch). **Kalau aturan visibilitas/klasifikasi baris cost validation berubah, WAJIB
+  diubah di file ini SAJA** — jangan pernah tulis ulang logic yang sama di `CostValidationModal.tsx`
+  atau di `SharedDataTable.tsx` lagi.
+  `computeLiveCostSummary()` sekarang juga mengembalikan `pct` (`total_ok / total_cost_cek * 100`,
+  dibulatkan, `0` kalau `total_cost_cek` 0) — dipakai baik utk badge maupun panel "Overall
+  Accuracy" baru di footer modal (lihat di bawah).
+- **`CostValidationModal.tsx`** — footer "Summary Footer" (sebelumnya cuma Total Validable/OK/
+  SELISIH/N/A + badge STATUS besar + badge Invoice Freight/Duty, TANPA persentase sama sekali)
+  SEKARANG ditambah panel "Overall Accuracy" + progress bar (~setelah baris STATUS, sebelum
+  badge Invoice Freight/Duty), replika visual PERSIS pola `SeaAirValidasiModal.tsx`/
+  `ValidasiShipmentInvoiceLengkap.tsx` (hijau `>=90%`, kuning `>=60%`, merah di bawahnya).
+- **`SharedDataTable.tsx` `fetchRecords`** (courier_audit branch, ~setelah `mergeChecklistData`)
+  — 2 batch query TAMBAHAN (paralel via `Promise.all`, chunk 50, per pib_id/cn_id):
+  1. **Doc Validation** — dari `tabel_checklist_validasi` (`total_match`/`total_mismatch`),
+     formula SAMA PERSIS `CourierValidasiPage.tsx`: `pct = checked>0 ? match/checked*100 : 0`
+     (`checked = total_match+total_mismatch`, `total_empty`/"belum diisi" TIDAK masuk penyebut).
+     **TIDAK pakai fallback live-calc** (SECTIONS/`computeStatus`/`generateValues`/
+     `calculatePibStats`, yang dipakai `CourierValidasiPage.tsx` kalau baris
+     `tabel_checklist_validasi`-nya belum ada) — demi performa list (badge cuma baca 1 tabel
+     kecil per baris, bukan live-compute puluhan field per baris x N baris per halaman). Kalau
+     baris `tabel_checklist_validasi`-nya belum pernah dibuat (belum pernah dibuka di modal Doc
+     Validation), badge-nya tampil `0%`, BUKAN disembunyikan (kebijakan sama dgn Sea & Air).
+  2. **Cost Validation** — dari `tabel_cost_validasi` (`select('*')`, order `created_at` desc,
+     ambil baris PALING BARU per pib_id/cn_id kalau ada >1, sama pola dgn `costValidations` utk
+     Rekapan Courier yang sudah ada duluan), lalu panggil `computeLiveCostSummary()` yang sama
+     dipakai modalnya sendiri — TIDAK ada duplikasi formula.
+  Kedua map di-attach ke `r.doc_validation_pct`/`r.cost_validation_pct` per baris di
+  `enrichedData` (branch `courier_audit`, bareng `cek_selisih`), key `pib_${id}`/`cn_${id}`
+  ditentukan dari `r.jenis_dokumen` (fallback `courierAuditType` utk baris di tab PIB/CN murni).
+
+  **PENTING (fix susulan 2026-09, dari laporan user "badge belum ada" di tab Draft)**: `fetchRecords`
+  punya **2 JALUR FETCH TERPISAH** utk `courier_audit` — jalur normal (query `tabel_audit_pib`
+  ATAU `tabel_audit_cn` sendiri-sendiri, tergantung `courierAuditType` 'pib'/'cn') DAN jalur
+  KHUSUS tab Draft/`courierAuditType === 'archive'` (~baris 2726, query PIB+CN SEKALIGUS lalu
+  di-`combine`, `return` lebih awal SEBELUM sampai ke jalur normal — beda `setRecords()` call
+  sendiri). Badge yang tadinya cuma dipasang di jalur normal TIDAK PERNAH kena di tab Draft
+  karena early-return itu. Fix: logic batch-query badge dipindah jadi fungsi module-level
+  **`fetchCourierValidationBadgePct(rows)`** (~baris 918, tepat setelah `mergeChecklistData`),
+  dipanggil dari KEDUA jalur (jalur Draft ~baris 2822, jalur normal ~baris 3068) supaya badge-nya
+  konsisten muncul di semua tab (PIB/CN/Draft). **Kalau nanti nambah jalur fetch baru lagi utk
+  `courier_audit`, WAJIB panggil `fetchCourierValidationBadgePct()` juga di situ** — jangan tulis
+  ulang batch query-nya.
+
+## Badge persentase tombol Checklist — Audit Courier & Rekapan Sea & Air (2026-09)
+
+Pola sama dgn badge Doc/Cost Validation di atas, tapi lebih sederhana karena persentasenya
+SUDAH TERSIMPAN LANGSUNG di database (kolom `pct_kelengkapan`, diisi `ChecklistModal.tsx`/
+`SeaAirChecklistModal.tsx` saat checklist disimpan) — TIDAK perlu dihitung ulang di frontend
+sama sekali, beda dari Doc/Cost Validation yang harus live-compute dari `checks`.
+
+- **Audit Courier** (`CourierAuditRowGroup`, tombol "📋 Checklist") — TIDAK perlu query
+  tambahan apa pun. `rec.pct_kelengkapan` SUDAH otomatis ke-merge ke tiap baris lewat
+  `mergeChecklistData()` (dipanggil di KEDUA jalur fetch `courier_audit`, termasuk jalur
+  Draft/archive) — `CHECKLIST_MERGE_FIELDS` (~baris 882) sudah dari awal mencakup
+  `pct_kelengkapan`. Badge langsung baca `Number(rec.pct_kelengkapan) || 0`.
+- **Rekapan Sea & Air** (`SeaAirRekapanRowGroup`, tombol "✓ Checklist") — badge baru
+  `rec.checklist_pct`, diisi dari batch query TAMBAHAN ke `dokumen_checklist_seaair`
+  (`seaair_id, pct_kelengkapan`) di `fetchRecords`, dalam blok yang sama dengan
+  `seaAirAuditStatusMap`/Doc/Cost Validation pct map (biar cuma 1 batch round-trip per
+  kolom per halaman, bukan nambah round-trip terpisah).
+
+Kedua badge pakai kebijakan sama dengan Doc/Cost Validation: SELALU tampil termasuk `0%`
+(fallback `?? 0`, bukan `null`/hilang).
 
 ## Sea & Air — Dokumen Validasi (`src/components/SeaAirValidasiModal.tsx`)
 
