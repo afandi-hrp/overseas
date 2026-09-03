@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plane, Ship, ScrollText, Settings, ChevronUp, ChevronDown, LogOut, UserCircle, FileCheck2, Fuel, ClipboardCheck } from 'lucide-react';
+import { Plane, Ship, ScrollText, Settings, ChevronUp, ChevronDown, LogOut, UserCircle, FileCheck2, GitCompare } from 'lucide-react';
 import shipmentIcon from '../assets/beehive-icon.png';
 import { useAuth } from '../lib/AuthContext';
 
@@ -40,20 +40,22 @@ const MAIN_TABS = [
     pageKey: 'direct_loading',
   },
   {
-    id: 'bunker',
-    label: 'Bunker',
-    icon: Fuel,
+    // Menu gabungan (2026-09, permintaan user) -- Bunker, Audit AP Local, Audit AP Overseas
+    // dulunya 3 tab top-level terpisah, sekarang jadi submenu di bawah 1 menu "Compare Doc".
+    // `basePath` sengaja diisi path dummy yang tidak match route manapun ('/compare-doc') karena
+    // ke-3 subtab-nya punya prefix path yang TIDAK senada (beda dari Courier/Sea & Air yang
+    // semua subtab-nya berbagi 1 basePath) -- deteksi tab aktif utk grup ini murni dari cocokan
+    // path masing-masing subtab, lihat helper `pathBelongs` & `activeMainTab` di bawah.
+    id: 'compare_doc',
+    label: 'Compare Doc',
+    icon: GitCompare,
     path: '/bunker',
-    basePath: '/bunker',
-    pageKey: 'bunker',
-  },
-  {
-    id: 'audit_po',
-    label: 'Audit AP Local',
-    icon: ClipboardCheck,
-    path: '/audit-po',
-    basePath: '/audit-po',
-    pageKey: 'audit_po',
+    basePath: '/compare-doc',
+    subTabs: [
+      { id: 'bunker', label: 'Bunker', path: '/bunker', pageKey: 'bunker' },
+      { id: 'audit_po', label: 'Audit AP Local', path: '/audit-po', pageKey: 'audit_po' },
+      { id: 'audit_po_overseas', label: 'Audit AP Overseas', path: '/audit-po-overseas', pageKey: 'audit_po_overseas' },
+    ]
   },
   {
     id: 'trail',
@@ -93,8 +95,19 @@ export default function MainLayout() {
     }).filter((t): t is NonNullable<typeof t> => t !== null);
   }, [allowedPageKeys, isAdmin]);
 
-  // Determine active main tab
-  const activeMainTab = MAIN_TABS.find(t => location.pathname.startsWith(t.basePath))?.id || visibleTabs[0]?.id || 'courier';
+  // Cocokkan path dengan batas segmen yang benar (exact match atau diikuti "/"), BUKAN
+  // startsWith polos: mis. basePath '/audit-po' adalah prefix string dari '/audit-po-overseas',
+  // startsWith polos bakal salah cocok.
+  const pathBelongs = (pathname: string, base: string) => pathname === base || pathname.startsWith(`${base}/`);
+
+  // Determine active main tab -- cek basePath tab itu sendiri DULU, lalu (kalau ada subTabs)
+  // cek path masing-masing subtab satu-satu. Perlu utk grup "Compare Doc": subtab-nya
+  // (Bunker/Audit AP Local/Audit AP Overseas) punya prefix path yang TIDAK senada satu sama
+  // lain, beda dari Courier/Sea & Air yang semua subtab-nya berbagi 1 basePath -- jadi tidak
+  // cukup dicek lewat basePath induk saja.
+  const activeMainTab = MAIN_TABS.find(t =>
+    pathBelongs(location.pathname, t.basePath) || t.subTabs?.some(s => pathBelongs(location.pathname, s.path))
+  )?.id || visibleTabs[0]?.id || 'courier';
   const activeSubTabPath = location.pathname;
 
   // Submenu terbuka/tertutup independen dari section aktif -- supaya bisa ditutup manual

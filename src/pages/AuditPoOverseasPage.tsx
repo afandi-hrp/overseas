@@ -1,20 +1,21 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
-import { ClipboardCheck, Search, RefreshCw, FileDown, FileText, Check, ChevronDown, Pencil, Trash2, X, ArrowUp, ArrowDown, ArrowUpDown, LayoutDashboard, CalendarDays, Download } from 'lucide-react';
+import { Globe2, Search, RefreshCw, FileDown, FileText, Check, ChevronDown, Pencil, Trash2, X, ArrowUp, ArrowDown, ArrowUpDown, LayoutDashboard, CalendarDays, Download } from 'lucide-react';
 import {
-  formatDateTimeID, statusAuditMeta, updateAuditPoKategori, updateAuditPoRow, deleteAuditPoRow,
-  KATEGORI_OPTIONS, type AuditPoRow,
-} from '../utils/AuditPoHelpers';
+  formatDateTimeID, statusAuditMeta, updateAuditPoOverseasKategori, updateAuditPoOverseasRow, deleteAuditPoOverseasRow,
+  KATEGORI_OPTIONS, type AuditPoOverseasRow,
+} from '../utils/AuditPoOverseasHelpers';
 import Greeting from '../components/Greeting';
 
-// ── Kontrak data (Supabase, diisi otomasi backend tiap 30 menit) ──
-// audit_po_ap_comp (1 baris = 1 hasil audit PO/vendor): id, created_at, nama_pt, nomor_po,
-//   vendor_name, status_audit ("Selesai Diproses" | "Doc tidak terbaca"), durasi_text,
+// ── Kontrak data (Supabase, diisi otomasi backend) ──
+// audit_po_apovs_comp (1 baris = 1 hasil audit PO/vendor Overseas): id, created_at, nama_pt,
+//   nomor_po, vendor_name, status_audit ("Selesai Diproses" | "Doc tidak terbaca"), durasi_text,
 //   durasi_detik, url_pdf, url_html, drive_file_id_pdf, drive_file_id_html, kategori. Kolom
 //   nama_pt/nomor_po/vendor_name/status_audit/kategori boleh dikoreksi manual (modal Edit) &
 //   barisnya boleh dihapus (modal Hapus) -- kolom lain murni hasil otomasi backend, read-only.
-//   Lihat src/utils/AuditPoHelpers.ts untuk tipe & helper.
+//   DUPLIKASI PERSIS dari AuditPoPage.tsx (Audit AP Local), cuma tabel/page_key/label diganti --
+//   lihat src/utils/AuditPoOverseasHelpers.ts untuk tipe & helper.
 
 const PT_OPTIONS = ['AMT', 'GMI', 'TTP', 'MJS', 'WSI', 'WNS', 'GENERAL'];
 const STATUS_AUDIT_OPTIONS = ['Selesai Diproses', 'Doc tidak terbaca'];
@@ -138,12 +139,12 @@ function KategoriPicker({ value, onSelect, disabled, buttonLabel, widthClass = '
 
 // Sel tabel Kategori -- auto-save ke DB per pilih (beda dari picker di modal Edit yang cuma
 // disimpan barengan field lain saat klik "Simpan").
-function KategoriCell({ row, onChanged, canEdit }: { row: AuditPoRow; onChanged: (id: string, kategori: string | null) => void; canEdit: boolean }) {
+function KategoriCell({ row, onChanged, canEdit }: { row: AuditPoOverseasRow; onChanged: (id: string, kategori: string | null) => void; canEdit: boolean }) {
   const [saving, setSaving] = useState(false);
 
   const handleSelect = async (val: string) => {
     setSaving(true);
-    const { error } = await updateAuditPoKategori(row.id, val);
+    const { error } = await updateAuditPoOverseasKategori(row.id, val);
     setSaving(false);
     if (!error) onChanged(row.id, val);
   };
@@ -163,7 +164,7 @@ function KategoriCell({ row, onChanged, canEdit }: { row: AuditPoRow; onChanged:
   );
 }
 
-function EditAuditPoModal({ record, onClose, onSaved }: { record: AuditPoRow; onClose: () => void; onSaved: (row: AuditPoRow) => void }) {
+function EditAuditPoOverseasModal({ record, onClose, onSaved }: { record: AuditPoOverseasRow; onClose: () => void; onSaved: (row: AuditPoOverseasRow) => void }) {
   const [namaPt, setNamaPt] = useState(record.nama_pt || '');
   const [nomorPo, setNomorPo] = useState(record.nomor_po || '');
   const [vendorName, setVendorName] = useState(record.vendor_name || '');
@@ -182,7 +183,7 @@ function EditAuditPoModal({ record, onClose, onSaved }: { record: AuditPoRow; on
       status_audit: statusAudit || null,
       kategori: kategori || null,
     };
-    const { error: err } = await updateAuditPoRow(record.id, updates);
+    const { error: err } = await updateAuditPoOverseasRow(record.id, updates);
     setSaving(false);
     if (err) {
       setError(err.message);
@@ -242,11 +243,11 @@ function EditAuditPoModal({ record, onClose, onSaved }: { record: AuditPoRow; on
             <input
               value={statusAudit}
               onChange={e => setStatusAudit(e.target.value)}
-              list="status-audit-suggestions"
+              list="status-audit-suggestions-overseas"
               placeholder="Pilih dari saran atau ketik catatan manual (mis. keterangan error)..."
               className="w-full rounded-xl px-3 py-2 border border-slate-200 bg-white text-sm text-[#5A305A] focus:outline-none focus:ring-1 focus:ring-[#5A305A]/30"
             />
-            <datalist id="status-audit-suggestions">
+            <datalist id="status-audit-suggestions-overseas">
               {STATUS_AUDIT_OPTIONS.map(s => <option key={s} value={s} />)}
             </datalist>
             <p className="text-[10px] text-[#5A305A]/60 mt-1">Bisa pilih dari saran, atau ketik bebas untuk catatan internal (mis. jenis error).</p>
@@ -274,8 +275,8 @@ function EditAuditPoModal({ record, onClose, onSaved }: { record: AuditPoRow; on
   );
 }
 
-function DeleteAuditPoModal({ record, onConfirm, onClose, deleting, error }: {
-  record: AuditPoRow; onConfirm: () => void; onClose: () => void; deleting: boolean; error: string | null;
+function DeleteAuditPoOverseasModal({ record, onConfirm, onClose, deleting, error }: {
+  record: AuditPoOverseasRow; onConfirm: () => void; onClose: () => void; deleting: boolean; error: string | null;
 }) {
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
@@ -463,11 +464,11 @@ function buildPieSlicePath(cx: number, cy: number, r: number, startAngle: number
   return `M ${cx} ${cy} L ${p1.x.toFixed(2)} ${p1.y.toFixed(2)} A ${r} ${r} 0 ${largeArc} 1 ${p2.x.toFixed(2)} ${p2.y.toFixed(2)} Z`;
 }
 
-// Modal "Dashboard" -- ringkasan poin AP PO Local dalam rentang tanggal terpilih (created_at),
+// Modal "Dashboard" -- ringkasan poin AP PO Overseas dalam rentang tanggal terpilih (created_at),
 // pola mirip slide "Document Test Overview" yang dipakai tim Cost Controller. Total Running AI =
-// jumlah baris dalam rentang; Total Bermasalah = baris dgn status_audit TIDAK null dalam rentang
-// (lihat catatan poin 3 di CLAUDE.md soal reset status_audit ke null); Total Sesuai = selisihnya.
-// Fetch count-only (head: true) langsung ke Supabase, TIDAK menarik seluruh baris ke client.
+// jumlah baris dalam rentang; Total Bermasalah = baris dgn status_audit TIDAK null dalam rentang;
+// Total Sesuai = selisihnya. Fetch count-only (head: true) langsung ke Supabase, TIDAK menarik
+// seluruh baris ke client.
 function DashboardModal({ onClose }: { onClose: () => void }) {
   const [dateFrom, setDateFrom] = useState(isoDaysAgo(6));
   const [dateTo, setDateTo] = useState(todayIso());
@@ -480,9 +481,9 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
   const fetchStats = useCallback(async (from: string, to: string) => {
     setLoading(true);
     setError(null);
-    const totalQuery = supabase.from('audit_po_ap_comp').select('*', { count: 'exact', head: true })
+    const totalQuery = supabase.from('audit_po_apovs_comp').select('*', { count: 'exact', head: true })
       .gte('created_at', `${from}T00:00:00`).lte('created_at', `${to}T23:59:59`);
-    const bermasalahQuery = supabase.from('audit_po_ap_comp').select('*', { count: 'exact', head: true })
+    const bermasalahQuery = supabase.from('audit_po_apovs_comp').select('*', { count: 'exact', head: true })
       .not('status_audit', 'is', null)
       .gte('created_at', `${from}T00:00:00`).lte('created_at', `${to}T23:59:59`);
 
@@ -554,7 +555,7 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
                 <span className="text-rose-500">*</span>
               </h3>
               <h4 className="font-semibold text-slate-800 text-lg mt-1 pb-1 border-b-2 border-slate-800 inline-block">
-                Audit AP Local
+                Audit AP Overseas
               </h4>
             </div>
             <button onClick={onClose} className="text-[#5A305A]/60 hover:text-[#5A305A] p-1 shrink-0"><X size={18} /></button>
@@ -594,7 +595,7 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
           ) : stats ? (
             <div className="flex max-lg:flex-col items-center gap-10 pl-8">
               <div className="shrink-0 space-y-3">
-                <h4 className="font-bold text-slate-800 text-base whitespace-nowrap"># AP PO Local</h4>
+                <h4 className="font-bold text-slate-800 text-base whitespace-nowrap"># AP PO Overseas</h4>
                 <ul className="space-y-2.5 text-sm text-slate-700">
                   <li className="whitespace-nowrap">
                     <span>Total PO Running AI : </span>
@@ -667,12 +668,12 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-export default function AuditPoPage() {
-  useEffect(() => { document.title = 'Audit AP Local · Shipment'; }, []);
+export default function AuditPoOverseasPage() {
+  useEffect(() => { document.title = 'Audit AP Overseas · Shipment'; }, []);
   const { canEdit } = useAuth();
-  const canEditAuditPo = canEdit('audit_po');
+  const canEditAuditPoOverseas = canEdit('audit_po_overseas');
 
-  const [rows, setRows] = useState<AuditPoRow[]>([]);
+  const [rows, setRows] = useState<AuditPoOverseasRow[]>([]);
   const [loadingList, setLoadingList] = useState(true);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -700,8 +701,8 @@ export default function AuditPoPage() {
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [previewTarget, setPreviewTarget] = useState<PreviewTarget | null>(null);
   const [openActionsRowId, setOpenActionsRowId] = useState<string | null>(null);
-  const [editRow, setEditRow] = useState<AuditPoRow | null>(null);
-  const [deleteConfirmRow, setDeleteConfirmRow] = useState<AuditPoRow | null>(null);
+  const [editRow, setEditRow] = useState<AuditPoOverseasRow | null>(null);
+  const [deleteConfirmRow, setDeleteConfirmRow] = useState<AuditPoOverseasRow | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -712,7 +713,7 @@ export default function AuditPoPage() {
   };
 
   // Debounce search text (Nomor PO / Vendor) -- tidak ada preseden di BunkerPage, ditambahkan
-  // khusus di sini karena tabel ini besar & terus bertambah tiap 30 menit dari automasi.
+  // khusus di sini karena tabel ini besar & terus bertambah dari automasi.
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -726,7 +727,7 @@ export default function AuditPoPage() {
   const fetchList = useCallback(async () => {
     setLoadingList(true);
     const startIndex = (page - 1) * pageSize;
-    let query = supabase.from('audit_po_ap_comp').select('*', { count: 'exact' }).order(sortBy, { ascending: sortDir === 'asc' });
+    let query = supabase.from('audit_po_apovs_comp').select('*', { count: 'exact' }).order(sortBy, { ascending: sortDir === 'asc' });
     if (search.trim()) {
       const s = search.trim().replace(/[%,]/g, '');
       query = query.or(`nomor_po.ilike.%${s}%,vendor_name.ilike.%${s}%`);
@@ -737,7 +738,7 @@ export default function AuditPoPage() {
     if (dateTo) query = query.lte('created_at', `${dateTo}T23:59:59`);
     const { data, error, count } = await query.range(startIndex, startIndex + pageSize - 1);
     if (!error && data) {
-      setRows(data as AuditPoRow[]);
+      setRows(data as AuditPoOverseasRow[]);
       setTotalRecords(count || 0);
     }
     setLoadingList(false);
@@ -751,18 +752,18 @@ export default function AuditPoPage() {
     setRows(prev => prev.map(r => r.id === id ? { ...r, kategori } : r));
   };
 
-  const handleRowSaved = (updated: AuditPoRow) => {
+  const handleRowSaved = (updated: AuditPoOverseasRow) => {
     setRows(prev => prev.map(r => r.id === updated.id ? updated : r));
     showToast('Perubahan berhasil disimpan.');
   };
 
-  const openDeleteConfirm = (r: AuditPoRow) => { setDeleteConfirmRow(r); setDeleteError(null); };
+  const openDeleteConfirm = (r: AuditPoOverseasRow) => { setDeleteConfirmRow(r); setDeleteError(null); };
 
   const confirmDelete = async () => {
     if (!deleteConfirmRow) return;
     setDeleting(true);
     setDeleteError(null);
-    const { error } = await deleteAuditPoRow(deleteConfirmRow.id);
+    const { error } = await deleteAuditPoOverseasRow(deleteConfirmRow.id);
     setDeleting(false);
     if (error) {
       setDeleteError(error.message);
@@ -794,10 +795,10 @@ export default function AuditPoPage() {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0 shadow-sm">
-              <ClipboardCheck size={20} />
+              <Globe2 size={20} />
             </div>
             <div>
-              <h1 className="font-bold text-[#5A305A] text-base leading-tight">Audit AP Local</h1>
+              <h1 className="font-bold text-[#5A305A] text-base leading-tight">Audit AP Overseas</h1>
               <p className="text-xs font-light text-[#5A305A] mt-0.5">Hasil audit PO/vendor otomatis</p>
             </div>
           </div>
@@ -915,7 +916,7 @@ export default function AuditPoPage() {
                 {loadingList ? (
                   <tr><td colSpan={8} className="text-center py-10 text-[#5A305A] text-sm">Memuat data...</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={8} className="text-center py-10 text-[#5A305A] text-sm italic">Belum ada data Audit AP Local.</td></tr>
+                  <tr><td colSpan={8} className="text-center py-10 text-[#5A305A] text-sm italic">Belum ada data Audit AP Overseas.</td></tr>
                 ) : (
                   rows.map(r => (
                     <tr key={r.id} className="group bg-white hover:bg-slate-50 transition-colors">
@@ -924,7 +925,7 @@ export default function AuditPoPage() {
                       <td className="px-3 py-3 align-top text-[#5A305A] font-semibold break-words">{r.nomor_po || '-'}</td>
                       <td className="px-3 py-3 align-top text-[#5A305A] truncate" title={r.vendor_name || undefined}>{r.vendor_name || '-'}</td>
                       <td className="px-3 py-3 align-top"><StatusBadge status={r.status_audit} /></td>
-                      <td className="px-3 py-3 align-top"><KategoriCell row={r} onChanged={handleKategoriChanged} canEdit={canEditAuditPo} /></td>
+                      <td className="px-3 py-3 align-top"><KategoriCell row={r} onChanged={handleKategoriChanged} canEdit={canEditAuditPoOverseas} /></td>
                       <td className="px-3 py-3 align-top text-[#5A305A] truncate" title={r.durasi_text || undefined}>{r.durasi_text || '-'}</td>
                       <td className="px-2 py-3 align-top sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-10 border-l border-slate-200 transition-colors">
                         <div className="flex flex-col items-center gap-1.5 w-[92px]">
@@ -941,7 +942,7 @@ export default function AuditPoPage() {
                           </button>
                           {openActionsRowId === r.id && (
                             <div className="flex flex-col gap-1.5 items-stretch w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
-                              {canEditAuditPo && (
+                              {canEditAuditPoOverseas && (
                                 <button
                                   onClick={() => { setEditRow(r); setOpenActionsRowId(null); }}
                                   title="Edit"
@@ -950,7 +951,7 @@ export default function AuditPoPage() {
                                   <Pencil size={10} /> Edit
                                 </button>
                               )}
-                              {canEditAuditPo && (
+                              {canEditAuditPoOverseas && (
                                 <button
                                   onClick={() => { openDeleteConfirm(r); setOpenActionsRowId(null); }}
                                   title="Hapus"
@@ -1043,11 +1044,11 @@ export default function AuditPoPage() {
     )}
 
     {editRow && (
-      <EditAuditPoModal record={editRow} onClose={() => setEditRow(null)} onSaved={handleRowSaved} />
+      <EditAuditPoOverseasModal record={editRow} onClose={() => setEditRow(null)} onSaved={handleRowSaved} />
     )}
 
     {deleteConfirmRow && (
-      <DeleteAuditPoModal
+      <DeleteAuditPoOverseasModal
         record={deleteConfirmRow}
         deleting={deleting}
         error={deleteError}

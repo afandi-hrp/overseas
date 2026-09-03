@@ -359,6 +359,13 @@ export default function FarOverseasAirPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [totalRecords, setTotalRecords] = useState(0);
+  // Filter approval per level -- ALL = tanpa filter, TIER1/TIER2/TIER3 map ke `approval_status`
+  // (kolom biasa, bisa difilter server-side via .eq()), PIC independen dari approval_status
+  // (cek array jsonb `approvals` tidak punya entry {tier:'PIC'}) jadi TIDAK bisa server-side
+  // filter simpel -- lihat fetchList di bawah, request PIC di-fetch semua lalu difilter+paginate
+  // di JS supaya tidak bergantung sintaks containment PostgREST yang belum sempat diverifikasi.
+  const [approvalFilter, setApprovalFilter] = useState<'ALL' | 'PIC' | 'TIER1' | 'TIER2' | 'TIER3'>('ALL');
+  const [approvalCounts, setApprovalCounts] = useState({ pic: 0, tier1: 0, tier2: 0, tier3: 0 });
   const [queue, setQueue] = useState<any[]>([]);
   const [selected, setSelected] = useState<any | null>(null);
   const [costModalRow, setCostModalRow] = useState<any | null>(null);
@@ -424,32 +431,90 @@ export default function FarOverseasAirPage() {
     setToastMessage('Memo deleted successfully.');
     setTimeout(() => setToastMessage(null), 4000);
     setDeleteConfirmRow(null);
-    fetchList();
+    refreshList();
   };
+
+  const fetchCostStatusMap = useCallback(async (ids: string[]) => {
+    if (!ids.length) { setCostStatusMap({}); return; }
+    const { data: cvData } = await supabase.from('cost_validasi_far_overseas_air').select('far_overseas_id, status').in('far_overseas_id', ids);
+    const map: Record<string, string> = {};
+    (cvData || []).forEach((c: any) => { map[c.far_overseas_id] = c.status; });
+    setCostStatusMap(map);
+  }, []);
 
   const fetchList = useCallback(async () => {
     setLoadingList(true);
     const startIndex = (page - 1) * pageSize;
-    const { data, error, count } = await supabase
-      .from('rekapan_far_overseas_air')
-      .select('*', { count: 'exact' })
+
+    if (approvalFilter === 'PIC') {
+      // Persetujuan PIC INDEPENDEN dari `approval_status` (lihat approvals jsonb array) --
+      // TIDAK bisa difilter server-side pakai .eq() biasa, dan sengaja tidak pakai containment
+      // operator PostgREST (`cs`/`not.cs`) karena belum ada akses DB langsung utk verifikasi
+      // sintaksnya persis benar -- ambil SEMUA baris (bukan REJECTED), filter+paginate di JS.
+      const { data, error } = await supabase
+        .from('rekapan_far_overseas_air')
+        .select('*')
+        .neq('approval_status', 'REJECTED')
+        .order('created_at', { ascending: false });
+      if (!error && data) {
+        const filtered = data.filter((r: any) => {
+          const approvals = Array.isArray(r.approvals) ? r.approvals : [];
+          return !approvals.some((a: any) => a.tier === 'PIC');
+        });
+        setTotalRecords(filtered.length);
+        const pageRows = filtered.slice(startIndex, startIndex + pageSize);
+        setRows(pageRows);
+        await fetchCostStatusMap(pageRows.map((r: any) => r.id).filter(Boolean));
+      }
+      setLoadingList(false);
+      return;
+    }
+
+    let query = supabase.from('rekapan_far_overseas_air').select('*', { count: 'exact' });
+    if (approvalFilter === 'TIER1') query = query.eq('approval_status', 'PENDING');
+    else if (approvalFilter === 'TIER2') query = query.eq('approval_status', 'TIER1_DONE');
+    else if (approvalFilter === 'TIER3') query = query.eq('approval_status', 'TIER2_DONE');
+
+    const { data, error, count } = await query
       .order('created_at', { ascending: false })
       .range(startIndex, startIndex + pageSize - 1);
     if (!error && data) {
       setRows(data);
       setTotalRecords(count || 0);
-      const ids = data.map((r: any) => r.id).filter(Boolean);
-      if (ids.length) {
-        const { data: cvData } = await supabase.from('cost_validasi_far_overseas_air').select('far_overseas_id, status').in('far_overseas_id', ids);
-        const map: Record<string, string> = {};
-        (cvData || []).forEach((c: any) => { map[c.far_overseas_id] = c.status; });
-        setCostStatusMap(map);
-      } else {
-        setCostStatusMap({});
-      }
+      await fetchCostStatusMap(data.map((r: any) => r.id).filter(Boolean));
     }
     setLoadingList(false);
-  }, [page, pageSize]);
+  }, [page, pageSize, approvalFilter, fetchCostStatusMap]);
+
+  // Hitung berapa memo yang pending di masing-masing level approval -- dipanggil sekali di awal
+  // & tiap kali ada aksi yang mungkin mengubah status approval (lihat refreshList). Tier1/2/3
+  // pakai count server-side (`head: true`, murah), PIC harus ambil datanya (bukan cuma count)
+  // krn perlu dicek isi array `approvals`-nya satu-satu.
+  const fetchApprovalCounts = useCallback(async () => {
+    const [tier1Res, tier2Res, tier3Res, picRes] = await Promise.all([
+      supabase.from('rekapan_far_overseas_air').select('id', { count: 'exact', head: true }).eq('approval_status', 'PENDING'),
+      supabase.from('rekapan_far_overseas_air').select('id', { count: 'exact', head: true }).eq('approval_status', 'TIER1_DONE'),
+      supabase.from('rekapan_far_overseas_air').select('id', { count: 'exact', head: true }).eq('approval_status', 'TIER2_DONE'),
+      supabase.from('rekapan_far_overseas_air').select('approvals').neq('approval_status', 'REJECTED'),
+    ]);
+    const picPending = Array.isArray(picRes.data)
+      ? picRes.data.filter((r: any) => {
+          const approvals = Array.isArray(r.approvals) ? r.approvals : [];
+          return !approvals.some((a: any) => a.tier === 'PIC');
+        }).length
+      : 0;
+    setApprovalCounts({
+      tier1: tier1Res.count || 0,
+      tier2: tier2Res.count || 0,
+      tier3: tier3Res.count || 0,
+      pic: picPending,
+    });
+  }, []);
+
+  const refreshList = useCallback(() => {
+    fetchList();
+    fetchApprovalCounts();
+  }, [fetchList, fetchApprovalCounts]);
 
   // Data untuk Export Excel -- ambil SEMUA baris yang cocok filter tanggal (bukan cuma
   // halaman yang lagi ditampilkan), lalu format kolom gabungan (harga+mata uang, dst) jadi
@@ -521,6 +586,8 @@ export default function FarOverseasAirPage() {
     const iv = setInterval(fetchQueue, 5000);
     return () => clearInterval(iv);
   }, [fetchList, fetchQueue]);
+
+  useEffect(() => { fetchApprovalCounts(); }, [fetchApprovalCounts]);
 
   // Nilai efektif sebuah field: kalau ada edit lokal yang belum disimpan, pakai itu -- kalau
   // tidak, pakai nilai dari server. Perubahan HANYA disimpan ke DB saat "Simpan Semua" diklik.
@@ -606,7 +673,7 @@ export default function FarOverseasAirPage() {
       newCatatan = 'No matching rate found after NOTE 1 was changed -- please check manually.';
     } else if (candidates.length === 1) {
       const rate = candidates[0];
-      const { unitPriceExpected, unitPriceNotes, kgExpected, totalExpected } = computeExpectedFromRate(rate, qty, actualUnitPrice);
+      const { unitPriceExpected, unitPriceNotes, kgExpected, totalExpected } = computeExpectedFromRate(rate, qty, actualUnitPrice, parsed.origin, parsed.destination);
       newStatus = computeCostStatus(totalExpected, actualTotal) ?? cvRow.status;
       newCostValidation = costValidation.map((row: any) => {
         if (row.row_key === 'KG') return { ...row, expected: kgExpected, edited: true };
@@ -774,26 +841,41 @@ export default function FarOverseasAirPage() {
               area tabel di dalamnya yang scroll (pola sama seperti SharedDataTable.tsx di
               halaman Audit Sea & Air / Courier) -- bukan seluruh halaman yang discroll panjang. */}
           <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
-            <div className="px-5 py-4 border-b border-white/60 flex items-center justify-between gap-3 flex-wrap shrink-0">
-              <h2 className="text-sm font-bold text-[#5A305A]">FAR Overseas Memo List</h2>
-              <div className="flex items-center gap-2 flex-wrap">
+            <div className="px-5 py-2 border-b border-white/60 flex items-center justify-between gap-3 flex-nowrap shrink-0">
+              <h2 className="text-sm font-bold text-[#5A305A] shrink-0">FAR Overseas Memo List</h2>
+              <div className="flex items-center gap-2 flex-nowrap overflow-x-auto py-2 min-w-0 flex-1">
+                <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0">
+                  <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide whitespace-nowrap">Approval</span>
+                  <select
+                    value={approvalFilter}
+                    onChange={e => { setApprovalFilter(e.target.value as typeof approvalFilter); setPage(1); }}
+                    className="border-0 bg-transparent text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer"
+                  >
+                    <option value="ALL">All Statuses</option>
+                    <option value="TIER1">Pending Prepared By ({approvalCounts.tier1})</option>
+                    <option value="PIC">Pending PIC ({approvalCounts.pic})</option>
+                    <option value="TIER2">Pending SPV ({approvalCounts.tier2})</option>
+                    <option value="TIER3">Pending Director ({approvalCounts.tier3})</option>
+                  </select>
+                </div>
                 <button
-                  onClick={() => { fetchList(); fetchQueue(); }}
+                  onClick={() => { fetchList(); fetchQueue(); fetchApprovalCounts(); }}
                   disabled={loadingList}
-                  className="px-3 py-2 rounded-full bg-white/70 backdrop-blur-md border border-white/60 hover:bg-white/90 text-[#5A305A] font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5 shrink-0 disabled:opacity-50 h-[34px]"
+                  title="Refresh"
+                  className="p-2 rounded-full bg-white/70 backdrop-blur-md border border-white/60 hover:bg-white/90 text-[#5A305A] transition-all shadow-sm flex items-center justify-center shrink-0 disabled:opacity-50 h-[34px] w-[34px]"
                 >
-                  <RefreshCw size={14} className={loadingList ? 'animate-spin' : ''} /> Refresh
+                  <RefreshCw size={14} className={loadingList ? 'animate-spin' : ''} />
                 </button>
                 <button
                   onClick={() => setShowExportModal(true)}
-                  className="px-3 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold border border-emerald-700 transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px]"
+                  className="px-3 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold border border-emerald-700 transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px] whitespace-nowrap"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
                   Export
                 </button>
                 <button
                   onClick={() => setShowQueuePanel(o => !o)}
-                  className="relative px-3 py-2 rounded-full bg-white/70 backdrop-blur-md border border-white/60 hover:bg-white/90 text-[#5A305A] font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px]"
+                  className="relative px-3 py-2 rounded-full bg-white/70 backdrop-blur-md border border-white/60 hover:bg-white/90 text-[#5A305A] font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px] whitespace-nowrap"
                 >
                   <Clock size={14} /> Processing Queue
                   {queue.length > 0 && (
@@ -805,7 +887,7 @@ export default function FarOverseasAirPage() {
                 {canEditDirectLoading && (
                   <button
                     onClick={() => setShowUploadModal(true)}
-                    className="px-3 py-2 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px]"
+                    className="px-3 py-2 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px] whitespace-nowrap"
                   >
                     <UploadCloud size={14} /> Upload Document
                   </button>
@@ -1008,7 +1090,7 @@ export default function FarOverseasAirPage() {
         <FarOverseasAirDetailModal
           record={selected}
           onClose={() => { setSelected(null); if (deepLinkId) navigate('/direct-loading', { replace: true }); }}
-          onChanged={fetchList}
+          onChanged={refreshList}
         />
       )}
 

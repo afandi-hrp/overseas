@@ -190,8 +190,28 @@ export type RateRow = {
 // Hitung ulang expected KG/Unit Price/Total dari 1 tarif (rate) yang dipilih user, saat
 // rate_row_used ambigu (array beberapa tarif sama-sama cocok). Logic ini MIRROR PERSIS dari
 // logic n8n supaya hasilnya konsisten baik dihitung otomatis maupun manual dipilih user --
-// JANGAN diubah tanpa menyamakan juga di sisi n8n.
-export function computeExpectedFromRate(rate: RateRow, qty: number | null, actualUnitPrice: number | null) {
+// JANGAN diubah tanpa menyamakan juga di sisi n8n. (nilai unitPriceExpected/kgExpected/
+// totalExpected TIDAK PERNAH dipengaruhi oleh displayOrigin/displayTujuan di bawah -- 2 param
+// itu MURNI kosmetik teks `unitPriceNotes`.)
+//
+// `displayOrigin`/`displayTujuan` (opsional) -- dipakai HANYA untuk teks `unitPriceNotes`,
+// menimpa `rate.origin`/`rate.tujuan`. Dibutuhkan karena filter origin/tujuan di `rematchTarif`
+// "lunak" (soft): kalau kota yang diketik user tidak ketemu persis di tabel
+// `far_overseas_tarif_vendor`, filter itu di-skip dan tarif SEBELUMNYA (belum tentu kota yang
+// baru diketik) tetap dipakai -- terutama kentara utk vendor yang cuma py 1 baris tarif generik
+// per jenis layanan (mis. Jianqiao "China->Jakarta" tetap). Tanpa override ini, notes akan
+// menampilkan kota dari baris tarif yang match (bisa beda dari yang baru diketik user di NOTE 1)
+// -- pemanggil dari alur re-kalkulasi NOTE 1 (`reMatchAfterRouteNoteEdit`) WAJIB isi param ini
+// dengan origin/tujuan hasil parse NOTE 1 yang baru, supaya notes SELALU sinkron dengan NOTE 1.
+// Pemanggil dari fitur "pilih rate manual" (`handleSelectRate`) TIDAK isi param ini (biarkan
+// default ke `rate.origin`/`rate.tujuan`) karena di situ tidak ada "kota yang baru diketik".
+export function computeExpectedFromRate(
+  rate: RateRow,
+  qty: number | null,
+  actualUnitPrice: number | null,
+  displayOrigin?: string | null,
+  displayTujuan?: string | null,
+) {
   let unitPriceExpected: number | null = null;
   let unitPriceNotes: string | null = null;
 
@@ -205,7 +225,7 @@ export function computeExpectedFromRate(rate: RateRow, qty: number | null, actua
     unitPriceNotes = `Rate range ${rate.harga_per_cbm_min}-${rate.harga_per_cbm_max} ${rate.mata_uang}/CBM.`;
   } else {
     unitPriceExpected = rate.harga_per_kg ?? rate.harga_per_cbm ?? null;
-    unitPriceNotes = `${rate.jenis_layanan} -- origin: ${rate.origin || '-'}, destination: ${rate.tujuan || '-'}.`;
+    unitPriceNotes = `${rate.jenis_layanan} -- origin: ${displayOrigin ?? rate.origin ?? '-'}, destination: ${displayTujuan ?? rate.tujuan ?? '-'}.`;
   }
 
   const kgExpected = rate.minimal_berat ?? rate.berat_min ?? null;

@@ -219,6 +219,10 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
   const parsedPoList = parseJsonField(rec.po_list);
   const poList: any[] = Array.isArray(parsedPoList) ? parsedPoList : [];
   const showIdrHint = rec.total_amount_currency && rec.total_amount_currency !== 'IDR' && rec.total_amount_idr != null;
+  // Kurs implisit = total_amount_idr / total_amount (bukan field tersimpan terpisah -- `kurs_used`
+  // ada di tabel tapi TIDAK SELALU sinkron dgn rasio total_amount_idr/total_amount aktual yang
+  // tercetak, jadi dihitung ulang langsung dari 2 angka yang sama-sama tampil di baris ini).
+  const kursValue = showIdrHint && rec.total_amount ? Number(rec.total_amount_idr) / Number(rec.total_amount) : null;
 
   // Portal langsung ke document.body: kalau modal ini dirender inline di dalam tree halaman
   // (bukan portal), print CSS #far-overseas-print-area jadi berpotensi ke-posisi relatif ke
@@ -290,6 +294,7 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
                     <>
                       {formatMoney(rec.total_amount, rec.total_amount_currency)}
                       {showIdrHint && <span className="font-normal text-xs ml-2">(≈ Rp {Number(rec.total_amount_idr).toLocaleString('id-ID')})</span>}
+                      {kursValue != null && <span className="font-normal italic text-[10px] text-[#5A305A]/70 ml-2">(Kurs: {kursValue.toLocaleString('id-ID', { maximumFractionDigits: 2 })})</span>}
                     </>
                   }
                 />
