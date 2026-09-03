@@ -49,6 +49,22 @@ menangani Courier Audit/Rekapan, Sea & Air Audit/Rekapan, dan Audit Trail — di
 `defaultMainTab`/`defaultSubTab`. Hati-hati kalau edit — banyak logic bercabang berdasar
 `activeMainTab`/`activeSubTab`.
 
+- **`CourierRekapanRowGroup`** (~baris 1736): pasangan PO↔Vessel utk kolom NO PO/VESSEL yang
+  bisa di-split banyak baris dibangun dari `rec.po_pt_imi`/`rec.vessel` (dipisah `+`/`,`).
+  Pairing-nya jalan kalau SALAH SATU dari kedua field itu ada isinya (bukan cuma po_pt_imi) —
+  dulu ada bug: kalau po_pt_imi kosong (baris ditambah manual tanpa PO tapi Vessel diisi), nilai
+  vessel-nya hilang total dari tampilan tabel meski tetap tersimpan normal di `rec.vessel`
+  (makanya masih muncul benar di form Edit inline & export Excel, yang baca `rec.vessel`
+  langsung tanpa lewat pairing ini). SUDAH DIPERBAIKI (2026-09) — jangan reintroduce kondisi
+  `if (typeof rec.po_pt_imi === 'string')` doang di awal blok ini.
+- **Formatting display-only di `getCellData()`** (kolom tanpa `type`, ~baris 1293): kolom `ppjk`
+  strip prefix `"OWN "` (mis. hasil extract Gemini "OWN DHL" → tampil "DHL" saja, konsisten
+  dengan `ppjkTabs` filter yang sudah lebih dulu strip prefix ini) dan kolom `awb` strip prefix
+  carrier `"DHL NO."`/`"FEDEX No."` (mis. "DHL NO. 1234567890" → tampil "1234567890" saja) —
+  murni tampilan, DATA MENTAH DI SUPABASE TIDAK BERUBAH (masih ada prefix-nya). Kalau butuh raw
+  value lagi (mis. utk search/filter), tetap pakai `rec.ppjk`/`rec.awb` asli, bukan hasil display
+  ini.
+
 ## RBAC (role & akses per halaman)
 
 Sudah diimplementasikan (lihat `sql/001_rbac_and_bunker_rls.sql`, `sql/002_direct_loading_rls.sql`):
@@ -251,6 +267,16 @@ Sudah diimplementasikan (lihat `sql/001_rbac_and_bunker_rls.sql`, `sql/002_direc
   field lain di luar kotak memo yang defaultnya `print:hidden`. Karena field ini sekarang sudah
   tercetak lewat note ini, blok "Catatan Internal (tidak tercetak di memo)" yang dulu menampilkan
   Expected Payment Date terpisah SUDAH DIHAPUS (redundant).
+
+## Sea & Air — Dokumen Validasi (`src/components/SeaAirValidasiModal.tsx`)
+
+Tabel-tabel di modal ini (INVOICE FCL, FAKTUR PAJAK FCL, PIB Matrix, dll) render kolom "data
+check" (PPJK/Freight Origin/Freight Destination/Storage/Laporan Surveyor/LOLO/Trucking/dst)
+lewat **daftar kolom yang di-HARDCODE**, BUKAN otomatis mengikuti field apa saja yang ada di
+data — `INVOICE_FCL_COLS` & `FP_FCL_COLS` (~baris 450/521). Kalau n8n/backend menambah jenis
+data check baru di kolom-kolom ini, kolom itu TIDAK akan muncul di tabel sampai ditambahkan
+manual ke daftar tsb + entry warna di `headerColors` (~baris 10). Kolom "Trucking" sudah
+ditambahkan (2026-09) ke `INVOICE_FCL_COLS`, `FP_FCL_COLS`, dan `headerColors`.
 
 ## Audit AP Local — halaman laporan otomasi + koreksi manual terbatas (`src/pages/AuditPoPage.tsx`)
 

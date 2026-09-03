@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Login Background — AI Audit Dokumen v9</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --cream:#FFF5C5; --coral:#F58C77; --purple-dark:#5A305A; --purple-mid:#73507B;
+    --ink:#4A2750; --gold:#B5842E; --teal:#4E7A72; --rose:#D9705C;
+
+    /* ---- pita kosong untuk teks aplikasi ---- */
+    --band-top:33%;      /* batas atas ruang teks */
+    --band-height:34%;   /* tinggi ruang teks     */
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{
+    width:100%; height:100%; overflow:hidden;
+    font-family:'Space Grotesk', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+    text-rendering:optimizeLegibility;
+  }
+
+  /* latar menyeluruh 100vw — panel login kiri memakai latar yang sama */
+  .stage{ position:relative; width:100vw; height:100vh; display:flex; overflow:hidden;
+    background:
+      radial-gradient(110% 85% at 88% 44%, rgba(245,140,119,.48) 0%, transparent 60%),
+      radial-gradient(85% 70% at 6% 12%, rgba(255,255,255,.45) 0%, transparent 55%),
+      linear-gradient(118deg, var(--cream) 0%, #FFEFB8 24%, #FBC59C 60%, var(--coral) 100%); }
+
+  .bg-layer{ position:absolute; inset:0; pointer-events:none; }
+  .bg-grain{ z-index:9; }
+
+  .blob{ position:absolute; border-radius:50%; filter:blur(90px); animation:drift 16s ease-in-out infinite; will-change:transform; }
+  .blob-a{ width:520px; height:520px; background:var(--purple-mid); opacity:.14; top:-150px; right:-120px; }
+  .blob-b{ width:420px; height:420px; background:var(--cream); opacity:.4;  bottom:-140px; left:-90px; animation-delay:-5s; }
+  .blob-c{ width:300px; height:300px; background:var(--purple-dark); opacity:.08; bottom:14%; right:3%; animation-delay:-9s; }
+  .blob-d{ width:380px; height:380px; background:#FFD98A; opacity:.28; top:26%; left:28%; animation-delay:-3s; }
+  .blob-e{ width:340px; height:340px; background:#FFE9A8; opacity:.34; top:8%;  left:4%;  animation-delay:-12s; }
+  .blob-f{ width:260px; height:260px; background:var(--coral); opacity:.15; bottom:4%; left:14%; animation-delay:-7s; }
+  @keyframes drift{ 0%,100%{ transform:translate(0,0) scale(1); } 50%{ transform:translate(-24px,24px) scale(1.08); } }
+
+  .bg-grid{ background-image:radial-gradient(var(--purple-dark) 1px, transparent 1.4px);
+    background-size:30px 30px; opacity:.07; }
+
+  .bg-grain{ opacity:.14; mix-blend-mode:multiply;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E"); }
+
+  .login-space{ position:relative; width:30%; height:100%; flex-shrink:0; z-index:2; }
+  .scene{ position:relative; width:70%; height:100%; z-index:2; }
+
+  /* ============================================================
+     RUANG TEKS — pita kosong melintang di tengah.
+     Murni ruang kosong: tanpa warna, wash, atau lapisan apa pun,
+     supaya latar mengalir utuh dari atas ke bawah.
+     Tugasnya hanya menahan kartu, chip, dan titik agar tidak masuk.
+     ============================================================ */
+
+  /* ---------- jaringan ---------- */
+  svg.links{ position:absolute; inset:0; width:100%; height:100%; z-index:1; }
+  svg.links path{ fill:none; stroke:var(--purple-dark); stroke-width:.35; stroke-dasharray:1.8 1.8; opacity:.24; vector-effect:non-scaling-stroke; }
+  svg.links circle.particle{ fill:var(--purple-mid); }
+
+  .node{ position:absolute; transform:translate(-50%,-50%); }
+  .node .dot{ position:absolute; inset:0; margin:auto; border-radius:50%; background:var(--purple-dark); }
+  .node .ring{ position:absolute; inset:0; border-radius:50%; border:1.5px solid var(--purple-dark); opacity:0; animation:pulse-ring 1.8s ease-out infinite; }
+  .node .ring.r2{ animation-delay:.6s; } .node .ring.r3{ animation-delay:1.2s; }
+  @keyframes pulse-ring{ 0%{ transform:scale(.4); opacity:.55; } 100%{ transform:scale(2.6); opacity:0; } }
+
+  /* otak AI berdiri di tepi kanan, di luar pita teks */
+  .hub{ position:absolute; left:90%; top:46%; width:24%; height:30%; transform:translate(-50%,-50%); z-index:7; pointer-events:none; }
+  .hub-halo{ position:absolute; inset:0; border-radius:50%;
+    background:radial-gradient(circle, rgba(255,248,214,.76) 0%, rgba(255,245,197,.32) 42%, transparent 74%);
+    animation:haloPulse 5s ease-in-out infinite; }
+  @keyframes haloPulse{ 0%,100%{ transform:scale(.94); opacity:.72; } 50%{ transform:scale(1.07); opacity:1; } }
+  .brain-icon{ position:absolute; left:50%; top:50%; width:142px; height:108px; transform:translate(-50%,-50%);
+    animation:brainGlow 3.6s ease-in-out infinite; }
+  @keyframes brainGlow{ 0%,100%{ opacity:.68; } 50%{ opacity:1; } }
+  .core{ left:50%; top:50%; width:64px; height:64px; }
+  .core .dot{ width:18px; height:18px; box-shadow:0 0 26px 7px rgba(90,48,90,.5); }
+
+  .agent{ width:32px; height:32px; z-index:3; }
+  .agent .dot{ width:10px; height:10px; box-shadow:0 0 10px 2px rgba(90,48,90,.45); }
+  .agent1{ left:84%; top:22%; } .agent2{ left:84%; top:72%; }
+
+  .icon-obj{ position:absolute; z-index:1; opacity:.85; }
+  .monitor-icon{ left:78%; top:7%; width:88px; height:64px; }
+  .server-icon{ left:87%; top:78%; width:52px; height:74px; }
+  .led{ animation:blink 1.8s ease-in-out infinite; }
+  @keyframes blink{ 0%,100%{ opacity:.25; } 50%{ opacity:1; } }
+
+  /* ---------- kartu dokumen ---------- */
+  .card-wrap{ position:absolute; animation:bob 8s ease-in-out infinite; will-change:transform; }
+  @keyframes bob{ 0%,100%{ transform:translateY(0); } 50%{ transform:translateY(-8px); } }
+
+  .sheet{ position:absolute; inset:0; border-radius:18px;
+    background:linear-gradient(150deg, rgba(255,255,255,.42), rgba(255,250,235,.22));
+    border:1px solid rgba(255,255,255,.4);
+    box-shadow:0 10px 22px -10px rgba(90,48,90,.24);
+    backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); }
+
+  .card{ position:relative; width:100%; height:100%; border-radius:18px; overflow:hidden; opacity:0;
+    background:linear-gradient(148deg, rgba(255,255,255,.62) 0%, rgba(255,255,255,.28) 44%, rgba(255,246,222,.34) 100%);
+    border:1px solid rgba(255,255,255,.55);
+    backdrop-filter:blur(18px) saturate(1.7); -webkit-backdrop-filter:blur(18px) saturate(1.7);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,.9),
+      inset 0 -1px 0 rgba(255,255,255,.28),
+      inset 0 0 32px rgba(255,255,255,.22),
+      0 2px 4px rgba(90,48,90,.06),
+      0 14px 28px -12px rgba(90,48,90,.24),
+      0 40px 72px -28px rgba(90,48,90,.34);
+    transform:translateY(22px) rotate(var(--rot)) scale(var(--sc));
+    animation:cardEnter .95s cubic-bezier(.2,.8,.2,1) forwards; animation-delay:var(--enter-delay);
+    will-change:transform, opacity; }
+  @keyframes cardEnter{ to{ opacity:var(--op); transform:translateY(0) rotate(var(--rot)) scale(var(--sc)); } }
+
+  .gloss{ position:absolute; top:-60%; left:-40%; width:70%; height:220%; z-index:4; pointer-events:none;
+    background:linear-gradient(100deg, transparent, rgba(255,255,255,.5) 42%, rgba(255,255,255,.72) 50%, rgba(255,255,255,.4) 58%, transparent);
+    transform:rotate(14deg); opacity:.55; mix-blend-mode:screen;
+    animation:sweep 9s ease-in-out infinite; animation-delay:var(--gloss-delay); }
+  @keyframes sweep{ 0%{ left:-45%; opacity:0; } 12%{ opacity:.55; } 46%{ left:105%; opacity:.35; } 55%,100%{ left:105%; opacity:0; } }
+
+  .rim{ position:absolute; inset:0; border-radius:18px; z-index:5; pointer-events:none;
+    background:linear-gradient(145deg, rgba(255,255,255,.85), transparent 34%, transparent 66%, rgba(255,255,255,.35));
+    -webkit-mask:linear-gradient(#000,#000) content-box, linear-gradient(#000,#000);
+    -webkit-mask-composite:xor; mask-composite:exclude; padding:1px; }
+
+  .tier-back  { --sc:.95; --op:.7;  --blur:4px;   filter:blur(.5px); }
+  .tier-mid   { --sc:.98; --op:.92; --blur:3.4px; }
+  .tier-front { --sc:1;   --op:1;   --blur:2.8px; }
+  .z-back{ z-index:2; } .z-mid{ z-index:4; } .z-front{ z-index:6; }
+
+  .accent{ position:absolute; left:0; right:0; top:0; height:4px; z-index:6; opacity:.92; }
+  .a-ppjk     { background:linear-gradient(90deg, var(--coral), rgba(245,140,119,.15)); }
+  .a-import   { background:linear-gradient(90deg, var(--purple-dark), rgba(90,48,90,.15)); }
+  .a-support  { background:linear-gradient(90deg, var(--purple-mid), rgba(115,80,123,.15)); }
+  .a-purchase { background:linear-gradient(90deg, var(--rose), rgba(217,112,92,.15)); }
+  .a-tax      { background:linear-gradient(90deg, #8E5AA0, rgba(142,90,160,.15)); }
+  .a-receipt  { background:linear-gradient(90deg, var(--gold), rgba(181,132,46,.15)); }
+  .a-cert     { background:linear-gradient(90deg, var(--teal), rgba(78,122,114,.15)); }
+  .a-vessel   { background:linear-gradient(90deg, #3E6E8C, rgba(62,110,140,.15)); }
+
+  /* ---------- panel kapal tanker sedang sandar ---------- */
+  .ship-art{ position:absolute; inset:0; padding:10% 8% 24%; z-index:2; display:flex; align-items:center; justify-content:center; }
+  .ship-art svg{ width:100%; height:100%; overflow:visible; }
+  .rock{ animation:rock 8s ease-in-out infinite alternate; transform-origin:50% 72%; }
+  @keyframes rock{ from{ transform:rotate(-.75deg) translateY(0); } to{ transform:rotate(.75deg) translateY(1.6px); } }
+  .wave{ animation:waveShift 7.5s ease-in-out infinite alternate; }
+  @keyframes waveShift{ from{ transform:translateX(-5px); } to{ transform:translateX(5px); } }
+  .wave.w2{ animation-duration:9.5s; animation-direction:alternate-reverse; }
+  .wave.w3{ animation-duration:11s; }
+
+  .scanbar{ position:absolute; left:0; right:0; height:24%; z-index:3; pointer-events:none;
+    background:linear-gradient(180deg, transparent, rgba(115,80,123,.32) 52%, rgba(255,250,220,.8) 92%, transparent);
+    box-shadow:0 0 26px rgba(115,80,123,.34);
+    opacity:0; animation:scanCycle var(--cycle) ease-in-out infinite; animation-delay:var(--scan-delay); }
+  @keyframes scanCycle{ 0%{ top:-24%; opacity:0; } 6%{ opacity:1; } 46%{ top:100%; opacity:1; } 52%{ opacity:0; } 100%{ opacity:0; top:-24%; } }
+
+  .badge{ position:absolute; right:-11px; top:-11px; width:27px; height:27px; border-radius:50%; background:var(--purple-dark);
+    display:flex; align-items:center; justify-content:center; opacity:0; transform:scale(.4); z-index:8;
+    animation:checkPop var(--cycle) ease-in-out infinite; animation-delay:var(--scan-delay);
+    box-shadow:0 6px 16px rgba(90,48,90,.42), 0 0 0 2.5px rgba(255,248,214,.62); }
+  .badge svg{ width:14px; height:14px; }
+  @keyframes checkPop{ 0%,45%{ opacity:0; transform:scale(.4);} 50%{ opacity:1; transform:scale(1.2);} 55%{ opacity:1; transform:scale(1);}
+    88%{ opacity:1; transform:scale(1);} 96%{ opacity:0; transform:scale(.8);} 100%{ opacity:0; transform:scale(.4);} }
+
+  .doc{ position:absolute; inset:0; padding:9% 9% 22%; display:flex; flex-direction:column; z-index:2; }
+  .doc-head{ display:flex; align-items:center; gap:7px; }
+  .doc-head svg{ width:clamp(13px,.9vw,21px); height:clamp(13px,.9vw,21px); flex-shrink:0; opacity:.74; }
+  .doc-title{ font-weight:600; font-size:clamp(11px,.8vw,19px); color:var(--ink); line-height:1.2; letter-spacing:-.004em; }
+  .doc-count{ font-size:clamp(8px,.5vw,12px); color:var(--ink); opacity:.5; margin-top:5px; }
+  .doc-rule{ height:1px; background:linear-gradient(90deg, rgba(90,48,90,.22), rgba(90,48,90,.04)); margin:7% 0 6%; }
+  .doc-body{ filter:blur(var(--blur)); display:flex; flex-direction:column; gap:6px; color:var(--ink); opacity:.72; }
+  .doc-line{ height:clamp(5px,.42vw,9px); border-radius:3px; background:currentColor; opacity:.5; }
+  .doc-line.w1{ width:82%; } .doc-line.w2{ width:56%; }
+
+  .status{ position:absolute; left:9%; bottom:8%; font-size:clamp(8.5px,.52vw,13px); color:var(--ink); z-index:6; }
+  .status .a, .status .b{ position:absolute; left:0; top:0; white-space:nowrap;
+    animation-duration:var(--cycle); animation-iteration-count:infinite; animation-delay:var(--scan-delay); }
+  .status .a{ animation-name:swapOut; } .status .b{ animation-name:swapIn; font-weight:500; }
+  @keyframes swapOut{ 0%,45%{opacity:.6;} 50%,100%{opacity:0;} }
+  @keyframes swapIn{ 0%,45%{opacity:0;} 50%,88%{opacity:.88;} 96%,100%{opacity:0;} }
+
+  .pbar{ position:absolute; left:9%; right:9%; bottom:18%; height:3.5px; border-radius:2px;
+    background:rgba(90,48,90,.14); overflow:hidden; z-index:6; }
+  .pbar i{ position:absolute; inset:0 auto 0 0; width:0%; border-radius:2px;
+    background:linear-gradient(90deg, var(--purple-mid), var(--coral));
+    animation:fillbar var(--cycle) ease-in-out infinite; animation-delay:var(--scan-delay); }
+  @keyframes fillbar{ 0%{ width:0%; } 46%{ width:100%; } 55%{ width:100%; } 100%{ width:0%; } }
+
+  .status-field{ position:absolute; inset:0; pointer-events:none; z-index:1; }
+  .stat-dot{ position:absolute; width:4px; height:4px; border-radius:50%; background:var(--purple-dark); opacity:.2;
+    animation:blinkdot 2.4s ease-in-out infinite; }
+  @keyframes blinkdot{ 0%,100%{ opacity:.1; transform:scale(1); } 50%{ opacity:.6; transform:scale(1.8); } }
+
+  .chip{ position:absolute; padding:5px 12px; border-radius:20px;
+    background:rgba(90,48,90,.86); color:#FFF8D6; backdrop-filter:blur(6px);
+    font-size:clamp(9.5px,.56vw,13px); font-weight:500; white-space:nowrap; opacity:0; pointer-events:none; z-index:8;
+    animation:chipFloat 4s ease-out forwards; box-shadow:0 8px 20px rgba(90,48,90,.34); }
+  @keyframes chipFloat{ 0%{ opacity:0; transform:translateY(12px) scale(.9); } 12%{ opacity:1; transform:translateY(0) scale(1); }
+    82%{ opacity:1; } 100%{ opacity:0; transform:translateY(-30px) scale(.96); } }
+
+  @media (max-width:900px){ .login-space{ width:100%; } .scene{ display:none; } }
+  @media (prefers-reduced-motion:reduce){
+    .blob,.card-wrap,.scanbar,.badge,.pbar i,.status .a,.status .b,.node .ring,.led,.chip,.stat-dot,.hub-halo,.brain-icon,.gloss,.rock,.wave{ animation:none !important; }
+    .card{ opacity:var(--op); transform:rotate(var(--rot)) scale(var(--sc)); animation:none; }
+    .status .a{ opacity:.6; } .status .b{ opacity:0; }
+  }
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <div class="bg-layer bg-grid"></div>
+  <div class="bg-layer">
+    <div class="blob blob-a"></div><div class="blob blob-b"></div><div class="blob blob-c"></div>
+    <div class="blob blob-d"></div><div class="blob blob-e"></div><div class="blob blob-f"></div>
+  </div>
+
+  <div class="login-space"></div>
+
+  <div class="scene" id="scene">
+    <div class="status-field" id="statusField"></div>
+
+    <svg class="links" id="links" viewBox="0 0 100 100" preserveAspectRatio="none">
+      <g id="linkPaths"></g>
+      <g id="particles"></g>
+    </svg>
+
+    <div class="icon-obj monitor-icon">
+      <svg viewBox="0 0 90 66" width="100%" height="100%">
+        <rect x="4" y="2" width="82" height="47" rx="7" fill="rgba(255,255,255,.42)" stroke="#5A305A" stroke-opacity=".28"/>
+        <rect x="10" y="8" width="70" height="33" rx="3" fill="rgba(90,48,90,.08)"/>
+        <rect x="16" y="15" width="37" height="3" rx="1.5" fill="rgba(90,48,90,.3)"/>
+        <rect x="16" y="22" width="25" height="3" rx="1.5" fill="rgba(90,48,90,.21)"/>
+        <rect x="16" y="29" width="31" height="3" rx="1.5" fill="rgba(90,48,90,.15)"/>
+        <circle class="led" cx="72" cy="16" r="2.4" fill="#73507B" style="animation-delay:.3s"/>
+        <rect x="39" y="50" width="12" height="6" fill="rgba(90,48,90,.24)"/>
+        <rect x="28" y="56" width="34" height="4" rx="2" fill="rgba(90,48,90,.28)"/>
+      </svg>
+    </div>
+
+    <div class="icon-obj server-icon">
+      <svg viewBox="0 0 52 74" width="100%" height="100%">
+        <rect x="2" y="2" width="48" height="70" rx="8" fill="rgba(255,255,255,.4)" stroke="#5A305A" stroke-opacity=".28"/>
+        <rect x="7" y="9" width="38" height="16" rx="4" fill="rgba(90,48,90,.08)"/>
+        <circle class="led" cx="14" cy="17" r="2.8" fill="#5A305A" style="animation-delay:0s"/>
+        <rect x="22" y="14" width="19" height="2" rx="1" fill="rgba(90,48,90,.24)"/>
+        <rect x="22" y="18.5" width="13" height="2" rx="1" fill="rgba(90,48,90,.17)"/>
+        <rect x="7" y="29" width="38" height="16" rx="4" fill="rgba(90,48,90,.08)"/>
+        <circle class="led" cx="14" cy="37" r="2.8" fill="#5A305A" style="animation-delay:.5s"/>
+        <rect x="22" y="34" width="19" height="2" rx="1" fill="rgba(90,48,90,.24)"/>
+        <rect x="22" y="38.5" width="13" height="2" rx="1" fill="rgba(90,48,90,.17)"/>
+        <rect x="7" y="49" width="38" height="16" rx="4" fill="rgba(90,48,90,.08)"/>
+        <circle class="led" cx="14" cy="57" r="2.8" fill="#F58C77" style="animation-delay:1s"/>
+        <rect x="22" y="54" width="19" height="2" rx="1" fill="rgba(90,48,90,.24)"/>
+        <rect x="22" y="58.5" width="13" height="2" rx="1" fill="rgba(90,48,90,.17)"/>
+      </svg>
+    </div>
+
+    <div class="node agent agent1"><div class="ring r1"></div><div class="ring r2"></div><div class="dot"></div></div>
+    <div class="node agent agent2"><div class="ring r1"></div><div class="ring r2"></div><div class="dot"></div></div>
+
+    <div id="cards"></div>
+
+    <!-- ============================================================
+         Kapal tanker sedang sandar — memakai material kaca, sapuan
+         cahaya, rim, dan garis pindai yang sama dengan kartu dokumen.
+         Diletakkan di samping kanan dokumen ketiga, di pita bawah.
+         ============================================================ -->
+    <div class="card-wrap z-mid" id="vesselPanel"
+         style="left:64.5%; top:71%; width:15%; height:21.5%; --rot:-2.4deg;
+                animation-duration:8.6s; animation-delay:-2.4s;">
+      <div class="sheet" style="transform:rotate(calc(var(--rot) + 3.4deg)) translate(1.8%, 2.6%); opacity:.85;"></div>
+      <div class="card tier-mid" style="--enter-delay:.42s; --scan-delay:2.1s; --cycle:5.2s; --gloss-delay:3.4s;">
+        <div class="accent a-vessel"></div>
+
+        <div class="ship-art">
+          <svg viewBox="0 0 240 200" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+            <!-- pantulan lambung di air -->
+            <path d="M16,132 L196,132 L196,152 L32,152 C22,149 16,140 16,132 Z"
+                  fill="#5A305A" fill-opacity=".07"/>
+
+            <!-- dermaga -->
+            <g stroke="#5A305A" stroke-opacity=".42" stroke-linecap="round">
+              <rect x="198" y="110" width="44" height="7" rx="2" fill="rgba(90,48,90,.14)" stroke-width="1.2"/>
+              <line x1="205" y1="117" x2="205" y2="160" stroke-width="2.6"/>
+              <line x1="220" y1="117" x2="220" y2="162" stroke-width="2.6"/>
+              <line x1="235" y1="117" x2="235" y2="160" stroke-width="2.6"/>
+              <line x1="205" y1="132" x2="235" y2="140" stroke-width="1"/>
+              <line x1="205" y1="142" x2="235" y2="132" stroke-width="1"/>
+              <rect x="200" y="103" width="7" height="7" rx="1.5" fill="rgba(90,48,90,.2)" stroke-width="1"/>
+            </g>
+
+            <!-- fender antara lambung dan dermaga -->
+            <circle cx="199" cy="114" r="4.2" fill="none" stroke="#5A305A" stroke-opacity=".38" stroke-width="1.3"/>
+            <circle cx="199" cy="124" r="4.2" fill="none" stroke="#5A305A" stroke-opacity=".38" stroke-width="1.3"/>
+
+            <!-- kapal -->
+            <g class="rock">
+              <!-- lambung -->
+              <path d="M16,102 L196,102 L196,130 L32,130 C22,127 16,114 16,102 Z"
+                    fill="rgba(255,255,255,.4)" stroke="#5A305A" stroke-opacity=".45" stroke-width="1.5" stroke-linejoin="round"/>
+              <!-- garis air / boot topping -->
+              <path d="M18,123 L196,123 L196,130 L32,130 C25,128.5 20,126 18,123 Z"
+                    fill="#F58C77" fill-opacity=".32"/>
+              <!-- geladak -->
+              <line x1="16" y1="102" x2="196" y2="102" stroke="#5A305A" stroke-opacity=".4" stroke-width="1.2"/>
+
+              <!-- tiang haluan + lampu navigasi -->
+              <line x1="44" y1="102" x2="44" y2="70" stroke="#5A305A" stroke-opacity=".42" stroke-width="1.4"/>
+              <line x1="38" y1="78" x2="50" y2="78" stroke="#5A305A" stroke-opacity=".32" stroke-width="1"/>
+              <circle class="led" cx="44" cy="68" r="2.6" fill="#F58C77" style="animation-delay:.2s"/>
+
+              <!-- pipa geladak + palka tangki -->
+              <line x1="56" y1="96" x2="180" y2="96" stroke="#5A305A" stroke-opacity=".34" stroke-width="1.8"/>
+              <g fill="rgba(255,255,255,.5)" stroke="#5A305A" stroke-opacity=".38" stroke-width="1.1">
+                <circle cx="62"  cy="99" r="4"/>
+                <circle cx="86"  cy="99" r="4"/>
+                <circle cx="110" cy="99" r="4"/>
+                <circle cx="134" cy="99" r="4"/>
+              </g>
+
+              <!-- bangunan atas / anjungan -->
+              <rect x="142" y="74" width="30" height="28" rx="2"
+                    fill="rgba(255,255,255,.52)" stroke="#5A305A" stroke-opacity=".45" stroke-width="1.3"/>
+              <rect x="149" y="64" width="17" height="10" rx="2"
+                    fill="rgba(255,255,255,.46)" stroke="#5A305A" stroke-opacity=".4" stroke-width="1.1"/>
+              <g fill="#5A305A" fill-opacity=".26">
+                <rect x="146" y="80" width="6" height="4" rx="1"/>
+                <rect x="155" y="80" width="6" height="4" rx="1"/>
+                <rect x="164" y="80" width="6" height="4" rx="1"/>
+                <rect x="146" y="89" width="6" height="4" rx="1"/>
+                <rect x="155" y="89" width="6" height="4" rx="1"/>
+              </g>
+
+              <!-- cerobong -->
+              <rect x="154" y="48" width="10" height="16" rx="2"
+                    fill="rgba(255,255,255,.5)" stroke="#5A305A" stroke-opacity=".42" stroke-width="1.2"/>
+              <rect x="154" y="51" width="10" height="4" fill="#F58C77" fill-opacity=".45"/>
+              <circle class="led" cx="159" cy="44" r="2.2" fill="#73507B" style="animation-delay:.9s"/>
+
+              <!-- manifold muat -->
+              <line x1="186" y1="102" x2="186" y2="90" stroke="#5A305A" stroke-opacity=".42" stroke-width="1.6"/>
+            </g>
+
+            <!-- lengan muat dari dermaga ke manifold kapal -->
+            <g stroke="#5A305A" stroke-opacity=".45" stroke-width="2" stroke-linecap="round" fill="none">
+              <line x1="208" y1="110" x2="208" y2="72"/>
+              <line x1="208" y1="72" x2="186" y2="88"/>
+            </g>
+            <circle cx="208" cy="72" r="3" fill="rgba(255,255,255,.6)" stroke="#5A305A" stroke-opacity=".45" stroke-width="1.2"/>
+            <circle cx="186" cy="88" r="2.6" fill="rgba(255,255,255,.6)" stroke="#5A305A" stroke-opacity=".45" stroke-width="1.2"/>
+
+            <!-- tali tambat -->
+            <g stroke="#5A305A" stroke-opacity=".34" stroke-width="1.1" fill="none">
+              <path d="M190,102 Q197,106 203,109"/>
+              <path d="M176,102 Q190,109 201,112"/>
+            </g>
+
+            <!-- air -->
+            <line x1="0" y1="130" x2="240" y2="130" stroke="#5A305A" stroke-opacity=".22" stroke-width="1.2"/>
+            <g stroke="#5A305A" fill="none" stroke-linecap="round">
+              <path class="wave"    d="M6,142 q14,-4 28,0 t28,0 t28,0 t28,0 t28,0 t28,0 t28,0" stroke-opacity=".2"  stroke-width="1.4"/>
+              <path class="wave w2" d="M0,153 q16,-4 32,0 t32,0 t32,0 t32,0 t32,0 t32,0" stroke-opacity=".15" stroke-width="1.3"/>
+              <path class="wave w3" d="M8,164 q18,-4 36,0 t36,0 t36,0 t36,0 t36,0" stroke-opacity=".11" stroke-width="1.2"/>
+            </g>
+          </svg>
+        </div>
+
+        <div class="scanbar"></div>
+        <div class="gloss"></div>
+        <div class="rim"></div>
+        <div class="status"><span class="a">memantau proses sandar…</span><span class="b">kapal tersandar ✓</span></div>
+        <div class="badge"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke="#FFF8D6" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      </div>
+    </div>
+
+    <div class="hub">
+      <div class="hub-halo"></div>
+      <div class="brain-icon">
+        <svg viewBox="0 0 112 84" width="100%" height="100%">
+          <path d="M22,44 C8,24 26,4 50,11 C56,1 74,1 80,11 C102,9 107,35 91,48 C103,61 89,80 69,74 C65,83 43,83 39,74 C17,80 6,60 22,44 Z"
+            fill="none" stroke="#5A305A" stroke-opacity=".45" stroke-width="1.6"/>
+          <g stroke="#5A305A" stroke-opacity=".3" stroke-width=".85">
+            <line x1="40" y1="34" x2="56" y2="42"/><line x1="56" y1="42" x2="74" y2="30"/>
+            <line x1="56" y1="42" x2="70" y2="54"/><line x1="56" y1="42" x2="42" y2="56"/>
+            <line x1="40" y1="34" x2="42" y2="56"/><line x1="74" y1="30" x2="70" y2="54"/>
+          </g>
+          <g fill="#5A305A" fill-opacity=".58">
+            <circle cx="40" cy="34" r="2.6"/><circle cx="74" cy="30" r="2.6"/>
+            <circle cx="70" cy="54" r="2.6"/><circle cx="42" cy="56" r="2.6"/>
+          </g>
+        </svg>
+      </div>
+      <div class="node core"><div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div><div class="dot"></div></div>
+    </div>
+  </div>
+
+  <div class="bg-layer bg-grain"></div>
+</div>
+
+<script>
+/* ============================================================
+   Dokumen hanya menempati pita ATAS (y 2–29%) dan
+   pita BAWAH (y 70–96%). Bagian tengah dibiarkan kosong
+   untuk teks yang dirender aplikasi.
+   Ubah --band-top / --band-height di :root kalau ruang teks
+   perlu digeser atau diperlebar.
+   ============================================================ */
+const BAND = { top:33, height:34 };   /* samakan dengan :root */
+
+const DOCS = [
+  /* ---------- pita atas ---------- */
+  { title:"PPJK Invoices",        cat:"ppjk",     count:"8 berkas",  lines:2, sheets:2, link:1, bar:1,
+    label:"membaca invoice PPJK…", done:"tervalidasi",
+    x:2,    y:4,  w:17,   h:24, rot:-5, tier:"front" },
+
+  { title:"Import Documents",     cat:"import",   count:"12 berkas", lines:2, sheets:2, link:1,
+    label:"ekstraksi dokumen impor…", done:"tervalidasi",
+    x:22,   y:2,  w:16.5, h:26, rot:4,  tier:"mid" },
+
+  { title:"Sertifikasi",          cat:"cert",     count:"3 berkas",  lines:1, sheets:1,
+    label:"periksa sertifikat…", done:"sah",
+    x:42,   y:5,  w:15,   h:22, rot:-3, tier:"back" },
+
+  { title:"Faktur Pajak",         cat:"tax",      count:"9 berkas",  lines:2, sheets:1, link:1,
+    label:"cocokkan faktur…", done:"cocok",
+    x:60.5, y:3,  w:15,   h:23, rot:6,  tier:"mid" },
+
+  /* ---------- pita bawah ---------- */
+  { title:"Kwitansi",             cat:"receipt",  count:"5 berkas",  lines:1, sheets:2,
+    label:"membaca kwitansi…", done:"tervalidasi",
+    x:3,    y:71, w:15.5, h:23, rot:4,  tier:"mid" },
+
+  { title:"Invoice Pembelian",    cat:"purchase", count:"7 berkas",  lines:2, sheets:1, link:1, bar:1,
+    label:"bandingkan dengan PO…", done:"selisih dicatat",
+    x:23,   y:70, w:17.5, h:25, rot:-4, tier:"front" },
+
+  { title:"Supporting Documents", cat:"support",  count:"11 berkas", lines:2, sheets:2, link:1,
+    label:"menyusun rekap…", done:"lengkap",
+    x:44,   y:72, w:17,   h:22, rot:3,  tier:"back" }
+];
+
+const ICONS = {
+  ppjk:'<svg viewBox="0 0 24 24" fill="none" stroke="#5A305A" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.4-.2c.4-.3.6-.7.5-1.2z"/></svg>',
+  import:'<svg viewBox="0 0 24 24" fill="none" stroke="#5A305A" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V10M9 21V10M15 21V10M19 21V10M2 10h20L12 3z"/></svg>',
+  support:'<svg viewBox="0 0 24 24" fill="none" stroke="#5A305A" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h9l3 3h4v13H4z"/><path d="M8 13h8M8 17h5"/></svg>',
+  purchase:'<svg viewBox="0 0 24 24" fill="none" stroke="#5A305A" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>',
+  tax:'<svg viewBox="0 0 24 24" fill="none" stroke="#5A305A" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>',
+  receipt:'<svg viewBox="0 0 24 24" fill="none" stroke="#5A305A" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v18l2.5-1.6L10 21l2-1.6L14 21l2.5-1.6L19 21V3z"/><path d="M9 8h6M9 12h6"/></svg>',
+  cert:'<svg viewBox="0 0 24 24" fill="none" stroke="#5A305A" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="9" r="6"/><path d="M8.2 14.3 7 22l5-2.6L17 22l-1.2-7.7"/></svg>'
+};
+const CHECK = '<svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke="#FFF8D6" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+const rand = (a, b) => a + Math.random() * (b - a);
+const cardsHost = document.getElementById("cards");
+
+DOCS.forEach((d, i) => {
+  const cycle = (4.4 + i * 0.34).toFixed(2) + "s";
+  const scanDelay = ((i * 0.68) % 4.6).toFixed(2) + "s";
+
+  /* goyangan acak, tapi dikunci supaya tidak pernah masuk pita teks */
+  const jx = rand(-0.9, 0.9);
+  let jy = rand(-1, 1);
+  if (d.y < BAND.top && d.y + d.h + jy > BAND.top - 2) jy = -Math.abs(jy);
+  if (d.y > BAND.top && d.y + jy < BAND.top + BAND.height + 2) jy = Math.abs(jy);
+  const jr = rand(-1.6, 1.6);
+
+  const wrap = document.createElement("div");
+  wrap.className = "card-wrap z-" + d.tier;
+  wrap.style.cssText =
+    `left:${(d.x + jx).toFixed(2)}%; top:${(d.y + jy).toFixed(2)}%; width:${d.w}%; height:${d.h}%;` +
+    `--rot:${(d.rot + jr).toFixed(2)}deg;` +
+    `animation-duration:${rand(6.8, 9.4).toFixed(1)}s; animation-delay:-${(i * 0.61).toFixed(2)}s;`;
+
+  let sheets = "";
+  for (let s = 0; s < (d.sheets || 0); s++) {
+    const sr = rand(2.4, 5.2) * (s % 2 ? -1 : 1);
+    const dx = rand(-2.6, 2.6), dy = rand(1.4, 3.8);
+    sheets += `<div class="sheet" style="transform:rotate(calc(var(--rot) + ${sr.toFixed(2)}deg)) translate(${dx.toFixed(1)}%, ${dy.toFixed(1)}%); opacity:${(0.9 - s * 0.22).toFixed(2)};"></div>`;
+  }
+
+  const lines = d.lines === 1
+    ? '<div class="doc-line w1"></div>'
+    : '<div class="doc-line w1"></div><div class="doc-line w2"></div>';
+
+  wrap.innerHTML = `
+    ${sheets}
+    <div class="card tier-${d.tier}" style="--enter-delay:${(i * 0.1).toFixed(2)}s; --scan-delay:${scanDelay}; --cycle:${cycle}; --gloss-delay:${rand(0, 8).toFixed(2)}s;">
+      <div class="accent a-${d.cat}"></div>
+      <div class="doc">
+        <div class="doc-head">${ICONS[d.cat]}<div class="doc-title">${d.title}</div></div>
+        <div class="doc-count">${d.count}</div>
+        <div class="doc-rule"></div>
+        <div class="doc-body">${lines}</div>
+      </div>
+      <div class="scanbar"></div>
+      <div class="gloss"></div>
+      <div class="rim"></div>
+      ${d.bar ? '<div class="pbar"><i></i></div>' : ""}
+      <div class="status"><span class="a">${d.label}</span><span class="b">${d.done} ✓</span></div>
+      <div class="badge">${CHECK}</div>
+    </div>`;
+  cardsHost.appendChild(wrap);
+  d._el = wrap;
+});
+
+/* ---------- jaringan: kartu atas ke agen atas, kartu bawah ke agen bawah,
+   jadi tidak ada garis yang memotong pita teks ---------- */
+const SVGNS = "http://www.w3.org/2000/svg";
+const scene = document.getElementById("scene");
+const pathHost = document.getElementById("linkPaths");
+const particleGroup = document.getElementById("particles");
+const AGENTS = [{ x:84, y:22 }, { x:84, y:72 }];
+const CORE = { x:90, y:46 };
+
+function buildNetwork(){
+  pathHost.innerHTML = "";
+  particleGroup.innerHTML = "";
+  const box = scene.getBoundingClientRect();
+  const ids = [];
+
+  DOCS.filter(d => d.link).forEach((d, n) => {
+    const r = d._el.getBoundingClientRect();
+    const cx = ((r.left + r.width / 2 - box.left) / box.width) * 100;
+    const cy = ((r.top + r.height / 2 - box.top) / box.height) * 100;
+    const a = cy < 50 ? AGENTS[0] : AGENTS[1];
+    const p = document.createElementNS(SVGNS, "path");
+    const id = "ln" + n;
+    p.setAttribute("id", id);
+    p.setAttribute("d", `M ${cx.toFixed(1)} ${cy.toFixed(1)} L ${a.x} ${a.y}`);
+    pathHost.appendChild(p);
+    ids.push(id);
+  });
+
+  /* panel kapal ikut tersambung ke agen bawah */
+  const vessel = document.getElementById("vesselPanel");
+  if (vessel) {
+    const r = vessel.getBoundingClientRect();
+    const cx = ((r.left + r.width / 2 - box.left) / box.width) * 100;
+    const cy = ((r.top + r.height / 2 - box.top) / box.height) * 100;
+    const p = document.createElementNS(SVGNS, "path");
+    p.setAttribute("id", "lnV");
+    p.setAttribute("d", `M ${cx.toFixed(1)} ${cy.toFixed(1)} L ${AGENTS[1].x} ${AGENTS[1].y}`);
+    pathHost.appendChild(p);
+    ids.push("lnV");
+  }
+
+  AGENTS.forEach((a, n) => {
+    const p = document.createElementNS(SVGNS, "path");
+    const id = "lnA" + n;
+    p.setAttribute("id", id);
+    p.setAttribute("d", `M ${a.x} ${a.y} L ${CORE.x} ${CORE.y}`);
+    pathHost.appendChild(p);
+    ids.push(id);
+  });
+
+  ids.forEach(id => {
+    const count = 2 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < count; i++) {
+      const dur = (3.4 + Math.random() * 1.8).toFixed(2) + "s";
+      const begin = (Math.random() * 4.2).toFixed(2) + "s";
+      const circle = document.createElementNS(SVGNS, "circle");
+      circle.setAttribute("class", "particle");
+      circle.setAttribute("r", "0.95");
+
+      const motion = document.createElementNS(SVGNS, "animateMotion");
+      motion.setAttribute("dur", dur);
+      motion.setAttribute("begin", begin);
+      motion.setAttribute("repeatCount", "indefinite");
+      motion.setAttribute("keyPoints", "0;0;1;1");
+      motion.setAttribute("keyTimes", "0;0.5;0.62;1");
+      motion.setAttribute("calcMode", "linear");
+      const mpath = document.createElementNS(SVGNS, "mpath");
+      mpath.setAttributeNS("http://www.w3.org/1999/xlink", "href", "#" + id);
+      motion.appendChild(mpath);
+
+      const fade = document.createElementNS(SVGNS, "animate");
+      fade.setAttribute("attributeName", "opacity");
+      fade.setAttribute("values", "0;0;1;1;0;0");
+      fade.setAttribute("keyTimes", "0;0.49;0.5;0.62;0.63;1");
+      fade.setAttribute("dur", dur);
+      fade.setAttribute("begin", begin);
+      fade.setAttribute("repeatCount", "indefinite");
+
+      circle.appendChild(motion);
+      circle.appendChild(fade);
+      particleGroup.appendChild(circle);
+    }
+  });
+}
+requestAnimationFrame(buildNetwork);
+
+let resizeTimer;
+addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(buildNetwork, 240);
+});
+
+/* ---------- titik ambient, melewati pita teks ---------- */
+const statusField = document.getElementById("statusField");
+for (let i = 0; i < 26; i++) {
+  let y;
+  do { y = Math.random() * 94 + 3; }
+  while (y > BAND.top - 1 && y < BAND.top + BAND.height + 1);
+  const dot = document.createElement("div");
+  dot.className = "stat-dot";
+  dot.style.left = (Math.random() * 96 + 2) + "%";
+  dot.style.top = y + "%";
+  dot.style.animationDelay = (Math.random() * 2.4).toFixed(2) + "s";
+  dot.style.animationDuration = (1.8 + Math.random() * 1.4).toFixed(2) + "s";
+  statusField.appendChild(dot);
+}
+
+/* ---------- label melayang: hanya di pita atas & bawah ---------- */
+const chipLabels = ["OCR","PIB","SPPBMCP","Billing DJBC","BPN","AWB","Faktur Pajak","Kwitansi",
+  "Sertifikasi","Invoice","CIPL","Ekstraksi","Validasi","Cek Selisih","Jalur CN","Jalur PIB",
+  "98,4%","Duplikasi","Parsing","PPJK"];
+function spawnChip(){
+  if (document.hidden) return;
+  const atas = Math.random() < 0.5;
+  const y = atas ? rand(4, BAND.top - 6) : rand(BAND.top + BAND.height + 3, 92);
+  let x, guard = 0;
+  do { x = rand(3, 77); guard++; }
+  while (guard < 10 && x > 72 && !atas);
+
+  const chip = document.createElement("div");
+  chip.className = "chip";
+  chip.textContent = chipLabels[Math.floor(Math.random() * chipLabels.length)];
+  chip.style.left = x.toFixed(1) + "%";
+  chip.style.top = y.toFixed(1) + "%";
+  scene.appendChild(chip);
+  setTimeout(() => chip.remove(), 4200);
+}
+setInterval(spawnChip, 1000);
+spawnChip();
+</script>
+
+</body>
+</html>

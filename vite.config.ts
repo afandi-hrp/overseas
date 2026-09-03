@@ -11,6 +11,6 @@ export default defineConfig({
     },
   },
   server: {
-    watch: {ignored: ['**/*.pdf', '**/*.mp4', '**/*.mov', '**/*.psd', '**/4. MOTION LOGO/**', '**/3. FULL LOGO WARUNA GROUP/**']},
+    watch: {ignored: ['**/*.pdf', '**/*.mp4', '**/*.mov', '**/*.psd', '**/*.jpg', '**/*.jpeg', '**/*.png', '/login-bg-ai-scan-v*.html', '**/4. MOTION LOGO/**', '**/3. FULL LOGO WARUNA GROUP/**']},
   },
 });

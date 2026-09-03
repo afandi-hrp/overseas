@@ -14,6 +14,7 @@ const headerColors: Record<string, { bg: string, text: string }> = {
   "Storage": { bg: "#e9d5ff", text: "#6b21a8" },
   "Laporan Surveyor (opsional)": { bg: "#bbf7d0", text: "#166534" },
   "LOLO": { bg: "#fef08a", text: "#854d0e" },
+  "Trucking": { bg: "#fed7aa", text: "#9a3412" },
   "Status": { bg: "#f1f5f9", text: "#475569" },
   "PIB": { bg: "#fef08a", text: "#854d0e" },
   "SPPB": { bg: "#fef08a", text: "#854d0e" },
@@ -447,7 +448,7 @@ const tdLabelClass = "p-2 text-[12px] font-medium border-b border-r border-slate
 // ============================================================================
 // 1. INVOICE FCL
 // ============================================================================
-const INVOICE_FCL_COLS = ["PPJK", "Freight Origin", "Freight Destination", "Storage", "Laporan Surveyor (opsional)", "LOLO", "Status"];
+const INVOICE_FCL_COLS = ["PPJK", "Freight Origin", "Freight Destination", "Storage", "Laporan Surveyor (opsional)", "LOLO", "Trucking", "Status"];
 const INVOICE_FCL_ROWS = ["Nama PT", "Nama Vendor", "Nominal"];
 
 function InvoiceFCLTable({ checks, onToggleRow, onUpdate }: { checks: any[], onToggleRow: (r: string) => void, onUpdate: (r: string, c: string, v: string) => void }) {
@@ -518,7 +519,7 @@ function InvoiceFCLTable({ checks, onToggleRow, onUpdate }: { checks: any[], onT
 // ============================================================================
 // 2. FAKTUR PAJAK FCL
 // ============================================================================
-const FP_FCL_COLS = ["PPJK", "Freight Origin", "Freight Destination", "Storage", "Laporan Surveyor (opsional)", "LOLO"];
+const FP_FCL_COLS = ["PPJK", "Freight Origin", "Freight Destination", "Storage", "Laporan Surveyor (opsional)", "LOLO", "Trucking"];
 const FP_FCL_ROWS = ["Nama Vendor", "Nama PT", "Nominal", "Nama Barang Kena Pajak"];
 
 function FakturPajakFCLTable({ checks, onToggle, onUpdate }: { checks: any[], onToggle: (r: string, c: string) => void, onUpdate: (r: string, c: string, v: string) => void }) {

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Plane, Ship, ScrollText, Settings, ChevronUp, ChevronDown, LogOut, UserCircle, FileCheck2, Fuel, ClipboardCheck } from 'lucide-react';
-import shipmentIcon from '../assets/shipment-icon-white.png';
+import shipmentIcon from '../assets/beehive-icon.png';
 import { useAuth } from '../lib/AuthContext';
 
 const MAIN_TABS = [
@@ -111,8 +111,8 @@ export default function MainLayout() {
       <div className="md:hidden flex flex-col shrink-0 bg-[#5A305A] text-white z-50 shadow-md rounded-b-[1.5rem]">
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
            <div className="flex items-center gap-2.5">
-             <img src={shipmentIcon} alt="Shipment" className="h-7 w-7 object-contain shrink-0" />
-             <div className="font-bold text-xl tracking-wide">Shipment</div>
+             <img src={shipmentIcon} alt="BeeHive" className="h-7 w-7 object-contain shrink-0" />
+             <div className="font-bold text-xl tracking-wide">BeeHive</div>
            </div>
            <div className="flex gap-2">
              <Link to="/account" className="w-9 h-9 rounded-lg flex items-center justify-center bg-white/5 text-[#a394a8] hover:bg-white/10 hover:text-white transition-colors">
@@ -179,9 +179,9 @@ export default function MainLayout() {
           onMouseLeave={() => { setIsSidebarOpen(false); setExpandedTab(activeMainTab); }}
         >
           <div className={`flex items-center h-12 shrink-0 mt-2 transition-all duration-300 ${isSidebarOpen ? 'px-6 gap-3' : 'justify-center'}`}>
-            <img src={shipmentIcon} alt="Shipment" className="h-9 w-9 object-contain shrink-0 drop-shadow-sm" />
+            <img src={shipmentIcon} alt="BeeHive" className="h-9 w-9 object-contain shrink-0 drop-shadow-sm" />
             <span className={`text-white font-bold text-lg tracking-wide whitespace-nowrap transition-opacity duration-300 ${isSidebarOpen ? 'opacity-100' : 'opacity-0 hidden'}`}>
-              Shipment
+              BeeHive
             </span>
           </div>
 

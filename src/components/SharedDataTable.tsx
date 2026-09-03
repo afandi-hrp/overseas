@@ -1297,6 +1297,14 @@ const getCellData = (c: any, rec: any, index: number) => {
       val = Array.from(new Set(parts)).join(', ');
     } else if (c.key === 'no_aju') {
       val = formatNoAju(val);
+    } else if (c.key === 'ppjk' && typeof val === 'string') {
+      // Gemini extract PPJK "OWN" jadi "OWN <nama>" (mis. "OWN DHL") -- prefix "OWN"-nya cuma
+      // metadata internal, tidak perlu ditampilkan ke user, cukup nama PPJK-nya saja.
+      val = val.replace(/^OWN\s+/i, '').trim();
+    } else if (c.key === 'awb' && typeof val === 'string') {
+      // Gemini extract AWB dg prefix carrier "DHL NO."/"FEDEX No." -- prefix-nya redundant
+      // (courier-nya sudah kebaca dari kolom lain), user cuma mau lihat nomornya saja.
+      val = val.replace(/^(DHL|FEDEX)\s*NO\.?\s*:?\s*/i, '').trim();
     }
     content = <span className="block max-w-[300px] whitespace-normal break-words leading-relaxed">{val || '—'}</span>;
   }
@@ -1774,10 +1782,16 @@ const CourierRekapanRowGroup: React.FC<{
   };
 
   let poVesselPairs: { po: string, vessel: string }[] = [];
-  if (typeof rec.po_pt_imi === 'string') {
-    const pos = rec.po_pt_imi.split(/[+,]+/).map((s: string) => s.trim()).filter(Boolean);
-    const vessels = typeof rec.vessel === 'string' ? rec.vessel.split(/[+,]+/).map((s: string) => s.trim()).filter(Boolean) : [];
-    
+  // Dulu blok ini cuma jalan kalau po_pt_imi ada isinya -- akibatnya baris yang ditambah manual
+  // dengan PO kosong tapi Vessel diisi, nilai vessel-nya hilang dari tampilan tabel (walau tetap
+  // tersimpan normal di rec.vessel, makanya masih muncul di form Edit & export Excel). Sekarang
+  // jalan kalau SALAH SATU po_pt_imi ATAU vessel ada isinya.
+  const poStr = typeof rec.po_pt_imi === 'string' ? rec.po_pt_imi : '';
+  const vesselStr = typeof rec.vessel === 'string' ? rec.vessel : '';
+  if (poStr || vesselStr) {
+    const pos = poStr.split(/[+,]+/).map((s: string) => s.trim()).filter(Boolean);
+    const vessels = vesselStr.split(/[+,]+/).map((s: string) => s.trim()).filter(Boolean);
+
     // Create pairs up to the max length of pos or vessels
     const maxLen = Math.max(pos.length, vessels.length);
     for (let i = 0; i < maxLen; i++) {
