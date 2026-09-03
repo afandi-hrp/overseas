@@ -335,7 +335,7 @@ const FAR_EXPORT_COLS = [
 ];
 
 export default function FarOverseasAirPage() {
-  useEffect(() => { document.title = 'FAR Overseas · Shipment'; }, []);
+  useEffect(() => { document.title = 'FAR Overseas · BeeHive'; }, []);
 
   // Link langsung ke satu memo: /direct-loading/:id -- buka detail modal otomatis begitu
   // halaman dimuat, tanpa perlu cari-cari di daftar (URL berubah otomatis saat tombol

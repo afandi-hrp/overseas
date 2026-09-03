@@ -3627,7 +3627,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   };
 
   useEffect(() => {
-    document.title = 'Dashboard · IMI Import System'
+    document.title = 'Dashboard · BeeHive'
     // Jangan reset search, dll di sini secara lgsg kecuali kalau pindah tab beneran
   }, [])
   

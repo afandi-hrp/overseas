@@ -669,7 +669,7 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
 }
 
 export default function AuditPoOverseasPage() {
-  useEffect(() => { document.title = 'Audit AP Overseas · Shipment'; }, []);
+  useEffect(() => { document.title = 'Audit AP Overseas · BeeHive'; }, []);
   const { canEdit } = useAuth();
   const canEditAuditPoOverseas = canEdit('audit_po_overseas');
 

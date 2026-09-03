@@ -22,6 +22,14 @@ approval-nya.
   akan kepakai (gejalanya membingungkan: request ke endpoint itu jatuh ke SPA fallback & balikin
   `index.html` biasa, bukan 404 tegas).
 - Verifikasi standar setelah edit: `npx tsc --noEmit` (harus bersih, tidak ada error).
+- **Browser tab title = "BeeHive"** (2026-09, distandarkan — sebelumnya CAMPUR ANTARA 3 brand
+  berbeda: `index.html` default "Shipment", sebagian halaman set `document.title = '... ·
+  Shipment'` via `useEffect`, TAPI `UploadPage.tsx` & dashboard `SharedDataTable.tsx` malah pakai
+  sisa brand lama "IMI Import System" — semua DISERAGAMKAN ke suffix `· BeeHive`, sesuai nama
+  yang sudah dipakai di logo sidebar `MainLayout.tsx`). `index.html` `<title>` (dipakai halaman
+  yg TIDAK override `document.title`, mis. `/login`) juga diganti dari "Shipment" → "BeeHive".
+  Kalau nambah halaman baru yang set `document.title` sendiri, ikuti pola `'<Judul Halaman> ·
+  BeeHive'`, JANGAN pakai "Shipment"/"IMI Import System" lagi.
 
 ## Struktur routing & halaman (`src/App.tsx`)
 
@@ -903,7 +911,16 @@ harus di-porting manual ke file satunya (dan sebaliknya).
 - `src/utils/AuditPoOverseasHelpers.ts` — duplikasi PERSIS `AuditPoHelpers.ts`, fungsi diberi
   suffix `Overseas` (`updateAuditPoOverseasKategori`, `updateAuditPoOverseasRow`,
   `deleteAuditPoOverseasRow`, type `AuditPoOverseasRow`/`AuditPoOverseasEditableFields`).
-  `KATEGORI_OPTIONS` & `PT_OPTIONS` (di halaman) SAMA PERSIS dgn AP Local (dikonfirmasi user).
+  `PT_OPTIONS` (di halaman) SAMA PERSIS dgn AP Local (dikonfirmasi user). `KATEGORI_OPTIONS`
+  SEMPAT sama persis dgn AP Local juga, TAPI **DIGANTI TOTAL (2026-09, permintaan eksplisit
+  user)** — daftar kategori Overseas BEDA dari AP Local (istilah bahasa Inggris/Impor: "DOKUMEN
+  STOCK IN/PI", "IMPORT CALCULATION/LOGISTIC", "DESTINATION INDONESIA", "CUSTOMER NAME",
+  "CURRENCY", "PN NUMBER", dst — bukan sekadar variasi kecil, daftar lengkapnya beda total dari
+  AP Local yg masih Bahasa Indonesia/istilah lokal). **Sejak sini `KATEGORI_OPTIONS` TIDAK BOLEH
+  disamakan otomatis lagi antara AuditPoHelpers.ts & AuditPoOverseasHelpers.ts** — dulu (sebelum
+  2026-09 ini) kalau ada perubahan `KATEGORI_OPTIONS` di salah satu, wajar diporting ke yg lain
+  krn memang sama; SEKARANG JANGAN, keduanya sudah sengaja berbeda isi kategori-nya, cuma pola
+  UI-nya (combobox searchable, dst) yg tetap sama.
 - Tombol Dashboard + `DashboardModal` (SVG pie callout dkk) — duplikasi PERSIS versi final AP
   Local per saat halaman ini dibuat, cuma judul sub-heading "Audit AP Overseas" & "# AP PO
   Overseas", query ke `audit_po_apovs_comp`. Kalau geometri pie/ukuran modal AP Local diubah

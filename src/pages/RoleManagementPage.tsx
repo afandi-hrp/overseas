@@ -9,7 +9,7 @@ type Role = { id: string; name: string; description: string | null; is_protected
 type ProfileRow = { id: string; email: string | null; nama: string | null };
 
 export default function RoleManagementPage() {
-  useEffect(() => { document.title = 'Kelola Role & Akses · Shipment'; }, []);
+  useEffect(() => { document.title = 'Kelola Role & Akses · BeeHive'; }, []);
   const { user: currentUser } = useAuth();
 
   const [loading, setLoading] = useState(true);

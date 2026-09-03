@@ -668,7 +668,7 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
 }
 
 export default function AuditPoPage() {
-  useEffect(() => { document.title = 'Audit AP Local · Shipment'; }, []);
+  useEffect(() => { document.title = 'Audit AP Local · BeeHive'; }, []);
   const { canEdit } = useAuth();
   const canEditAuditPo = canEdit('audit_po');
 

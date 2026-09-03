@@ -137,7 +137,7 @@ function WorkflowSelect({ row, onChanged, canEdit }: { row: any; onChanged: () =
 }
 
 export default function BunkerPage() {
-  useEffect(() => { document.title = 'Bunker · Shipment'; }, []);
+  useEffect(() => { document.title = 'Bunker · BeeHive'; }, []);
   const { canEdit: canEditPage } = useAuth();
   const canEditBunker = canEditPage('bunker');
 

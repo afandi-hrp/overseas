@@ -262,7 +262,7 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    document.title = (fixedType === 'sea_air' ? 'Sea & Air Document Upload' : fixedType === 'courier' ? 'Courier Document Upload' : 'Document Upload') + ' · IMI Import System'
+    document.title = (fixedType === 'sea_air' ? 'Sea & Air Document Upload' : fixedType === 'courier' ? 'Courier Document Upload' : 'Document Upload') + ' · BeeHive'
   }, [fixedType])
 
   const panduan   = PANDUAN[jenis]
