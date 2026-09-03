@@ -14,8 +14,8 @@ const MAIN_TABS = [
     basePath: '/courier',
     subTabs: [
       { id: 'courier_audit', label: 'Audit', path: '/courier/audit', pageKey: 'courier_audit' },
-      { id: 'courier_rekapan', label: 'Rekapan Invoice', path: '/courier/rekapan', pageKey: 'courier_rekapan' },
-      { id: 'courier_validasi', label: 'Validasi', path: '/courier/validasi', pageKey: 'courier_validasi' },
+      { id: 'courier_rekapan', label: 'Invoice Recap', path: '/courier/rekapan', pageKey: 'courier_rekapan' },
+      { id: 'courier_validasi', label: 'Validation', path: '/courier/validasi', pageKey: 'courier_validasi' },
       { id: 'courier_upload', label: 'Upload', path: '/courier/upload', pageKey: 'courier_upload' },
     ]
   },
@@ -27,7 +27,7 @@ const MAIN_TABS = [
     basePath: '/sea-air',
     subTabs: [
       { id: 'sea_air_audit',   label: 'Audit', path: '/sea-air/audit', pageKey: 'sea_air_audit' },
-      { id: 'sea_air_rekapan', label: 'Rekapan', path: '/sea-air/rekapan', pageKey: 'sea_air_rekapan' },
+      { id: 'sea_air_rekapan', label: 'Recap', path: '/sea-air/rekapan', pageKey: 'sea_air_rekapan' },
       { id: 'sea_air_upload', label: 'Upload', path: '/sea-air/upload', pageKey: 'sea_air_upload' },
     ]
   },
@@ -71,7 +71,7 @@ export default function MainLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { signOut, allowedPageKeys, isAdmin, profile, user } = useAuth();
-  const accountName = profile?.nama || user?.email?.split('@')[0] || 'Pengguna';
+  const accountName = profile?.nama || user?.email?.split('@')[0] || 'User';
   const accountInitial = accountName.charAt(0).toUpperCase();
 
   const handleLogout = async () => {
@@ -258,7 +258,7 @@ export default function MainLayout() {
               className={`flex items-center gap-3 px-2.5 py-1.5 rounded-xl transition-all whitespace-nowrap overflow-hidden ${
                 location.pathname === '/account' ? 'text-white bg-white/10' : 'text-[#a394a8] hover:bg-white/5 hover:text-white'
               }`}
-              title={!isSidebarOpen ? "Akun Saya" : undefined}
+              title={!isSidebarOpen ? "My Account" : undefined}
             >
               <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-white/5">
                 <UserCircle size={16} strokeWidth={2.25} />
@@ -266,13 +266,13 @@ export default function MainLayout() {
               <span className={`text-[15px] font-semibold tracking-wide transition-opacity duration-300 ${
                 isSidebarOpen ? 'opacity-100' : 'opacity-0'
               }`}>
-                Akun Saya
+                My Account
               </span>
             </Link>
             <Link
               to="/settings"
               className={`flex items-center gap-3 px-2.5 py-1.5 rounded-xl transition-all whitespace-nowrap overflow-hidden text-[#a394a8] hover:bg-white/5 hover:text-white`}
-              title={!isSidebarOpen ? "Pengaturan" : undefined}
+              title={!isSidebarOpen ? "Settings" : undefined}
             >
               <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-white/5">
                 <Settings size={16} strokeWidth={2.25} />
@@ -280,7 +280,7 @@ export default function MainLayout() {
               <span className={`text-[15px] font-semibold tracking-wide transition-opacity duration-300 ${
                 isSidebarOpen ? 'opacity-100' : 'opacity-0'
               }`}>
-                Pengaturan
+                Settings
               </span>
             </Link>
 
@@ -302,7 +302,7 @@ export default function MainLayout() {
             <button
               onClick={handleLogout}
               className="flex items-center gap-3 px-2.5 py-1.5 rounded-xl transition-all whitespace-nowrap overflow-hidden text-[#a394a8] hover:bg-white/5 hover:text-white w-full"
-              title={!isSidebarOpen ? "Keluar" : undefined}
+              title={!isSidebarOpen ? "Logout" : undefined}
             >
               <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-white/5">
                 <LogOut size={16} strokeWidth={2.25} />
@@ -310,7 +310,7 @@ export default function MainLayout() {
               <span className={`text-[15px] font-semibold tracking-wide transition-opacity duration-300 ${
                 isSidebarOpen ? 'opacity-100' : 'opacity-0'
               }`}>
-                Keluar
+                Logout
               </span>
             </button>
           </div>

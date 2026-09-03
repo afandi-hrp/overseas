@@ -69,9 +69,9 @@ function ApprovalConfirmModal({ tier, role, defaultNama, onConfirm, onClose, sub
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
-        <h3 className="font-bold text-[#5A305A] mb-1">Konfirmasi Persetujuan — {tier === 'PIC' ? 'PIC' : `Tahap ${tier}`}</h3>
-        <p className="text-xs text-[#5A305A] mb-4">Jabatan: <span className="font-semibold">{role || '-'}</span></p>
-        <label className="block text-xs font-semibold text-[#5A305A] mb-1">Nama Penyetuju</label>
+        <h3 className="font-bold text-[#5A305A] mb-1">Confirm Approval — {tier === 'PIC' ? 'PIC' : `Step ${tier}`}</h3>
+        <p className="text-xs text-[#5A305A] mb-4">Role: <span className="font-semibold">{role || '-'}</span></p>
+        <label className="block text-xs font-semibold text-[#5A305A] mb-1">Approver Name</label>
         <input
           value={nama}
           onChange={e => setNama(e.target.value)}
@@ -80,14 +80,14 @@ function ApprovalConfirmModal({ tier, role, defaultNama, onConfirm, onClose, sub
         />
         <div className="grid grid-cols-2 gap-2">
           <button onClick={onClose} disabled={submitting} className="py-2.5 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all disabled:opacity-50">
-            Batal
+            Cancel
           </button>
           <button
             onClick={() => onConfirm(nama.trim())}
             disabled={submitting || !nama.trim()}
             className="py-2.5 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-sm transition-all disabled:opacity-50"
           >
-            {submitting ? 'Menyimpan...' : 'Konfirmasi'}
+            {submitting ? 'Saving...' : 'Confirm'}
           </button>
         </div>
       </div>
@@ -100,26 +100,26 @@ function RejectModal({ onConfirm, onClose, submitting }: { onConfirm: (reason: s
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
-        <h3 className="font-bold text-[#5A305A] mb-1">Tolak Memo</h3>
-        <p className="text-xs text-[#5A305A] mb-4">Alasan penolakan akan tersimpan di catatan memo.</p>
+        <h3 className="font-bold text-[#5A305A] mb-1">Reject Memo</h3>
+        <p className="text-xs text-[#5A305A] mb-4">The rejection reason will be saved in the memo notes.</p>
         <textarea
           value={reason}
           onChange={e => setReason(e.target.value)}
           autoFocus
           rows={3}
-          placeholder="Jelaskan alasan penolakan..."
+          placeholder="Explain the reason for rejection..."
           className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm mb-5 focus:outline-none focus:ring-2 focus:ring-rose-200 focus:border-rose-400"
         />
         <div className="grid grid-cols-2 gap-2">
           <button onClick={onClose} disabled={submitting} className="py-2.5 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all disabled:opacity-50">
-            Batal
+            Cancel
           </button>
           <button
             onClick={() => onConfirm(reason.trim())}
             disabled={submitting || !reason.trim()}
             className="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-sm transition-all disabled:opacity-50"
           >
-            {submitting ? 'Menyimpan...' : 'Tolak'}
+            {submitting ? 'Saving...' : 'Reject'}
           </button>
         </div>
       </div>
@@ -193,11 +193,11 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
     const { error } = await supabase.from('rekapan_far_overseas_air').update(updates).eq('id', rec.id);
     setSubmitting(false);
     if (error) {
-      showToast('Gagal menyimpan persetujuan: ' + error.message, 'error');
+      showToast('Failed to save approval: ' + error.message, 'error');
     } else {
       setRec({ ...rec, ...updates });
       setConfirmTier(null);
-      showToast((tier === 'PIC' ? 'Persetujuan PIC' : 'Persetujuan tahap ' + tier) + ' berhasil disimpan.', 'success');
+      showToast((tier === 'PIC' ? 'PIC approval' : 'Step ' + tier + ' approval') + ' saved successfully.', 'success');
       onChanged?.();
     }
   };
@@ -207,11 +207,11 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
     const { error } = await supabase.from('rekapan_far_overseas_air').update({ approval_status: 'REJECTED', notes: reason }).eq('id', rec.id);
     setSubmitting(false);
     if (error) {
-      showToast('Gagal menolak memo: ' + error.message, 'error');
+      showToast('Failed to reject memo: ' + error.message, 'error');
     } else {
       setRec({ ...rec, approval_status: 'REJECTED', notes: reason });
       setShowReject(false);
-      showToast('Memo ditolak.', 'success');
+      showToast('Memo rejected.', 'success');
       onChanged?.();
     }
   };
@@ -232,7 +232,7 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
         {/* Toolbar */}
         <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-slate-200 bg-white shrink-0 print:hidden">
           <div>
-            <h2 className="text-lg font-bold tracking-tight text-[#5A305A]">Memo Approval — FAR Overseas Air</h2>
+            <h2 className="text-lg font-bold tracking-tight text-[#5A305A]">Approval Memo — FAR Overseas Air</h2>
             <p className="text-xs font-light text-[#5A305A] mt-0.5">{rec.memo_title || '-'}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -332,7 +332,7 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
             {poList.length > 0 && (
               <div className="bg-white rounded-xl border border-slate-200 mt-5 overflow-hidden print:hidden">
                 <button onClick={() => setShowPoDetail(s => !s)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors">
-                  <span className="text-sm font-bold text-[#5A305A]">Rincian PO ({poList.length})</span>
+                  <span className="text-sm font-bold text-[#5A305A]">PO Details ({poList.length})</span>
                   {showPoDetail ? <ChevronUp size={16} className="text-[#5A305A]" /> : <ChevronDown size={16} className="text-[#5A305A]" />}
                 </button>
                 {showPoDetail && (
@@ -340,9 +340,9 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
                     {poList.map((po, i) => (
                       <div key={i} className="px-4 py-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
                         <div><p className="text-[#5A305A]/60">PO No.</p><p className="font-semibold text-[#5A305A]">{po.po_no_raw || '-'}</p></div>
-                        <div><p className="text-[#5A305A]/60">Perusahaan</p><p className="font-semibold text-[#5A305A]">{po.company_code || '-'}</p></div>
+                        <div><p className="text-[#5A305A]/60">Company</p><p className="font-semibold text-[#5A305A]">{po.company_code || '-'}</p></div>
                         <div><p className="text-[#5A305A]/60">Vendor</p><p className="font-semibold text-[#5A305A]">{po.vendor_name || '-'}</p></div>
-                        <div><p className="text-[#5A305A]/60">Nilai</p><p className="font-semibold text-[#5A305A]">{formatMoney(po.total_value, po.currency)}</p></div>
+                        <div><p className="text-[#5A305A]/60">Value</p><p className="font-semibold text-[#5A305A]">{formatMoney(po.total_value, po.currency)}</p></div>
                         <div><p className="text-[#5A305A]/60">Weight</p><p className="font-semibold text-[#5A305A]">{po.weight_kg != null ? `${po.weight_kg} KG` : '-'}</p></div>
                         {po.item_summary && <div className="col-span-2 md:col-span-4"><p className="text-[#5A305A]/60">Item</p><p className="text-[#5A305A]">{po.item_summary}</p></div>}
                       </div>
@@ -359,7 +359,7 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
 
             {rec.approval_status === 'REJECTED' && rec.notes && (
               <div className="bg-rose-50 border border-rose-200 rounded-xl mt-5 p-4 print:hidden">
-                <p className="text-[10px] font-bold text-rose-700 uppercase tracking-wider mb-1.5">Alasan Penolakan</p>
+                <p className="text-[10px] font-bold text-rose-700 uppercase tracking-wider mb-1.5">Rejection Reason</p>
                 <p className="text-sm text-rose-800">{rec.notes}</p>
               </div>
             )}
@@ -368,11 +368,11 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
             {canEditDirectLoading && rec.approval_status !== 'APPROVED' && rec.approval_status !== 'REJECTED' && (
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white rounded-xl border border-slate-200 mt-5 p-4 print:hidden">
                 <p className="text-xs text-[#5A305A]">
-                  {nextTier != null ? `Menunggu persetujuan Tahap ${nextTier}.` : 'Tidak ada aksi tersedia.'}
+                  {nextTier != null ? `Awaiting Step ${nextTier} approval.` : 'No action available.'}
                 </p>
                 <div className="flex items-center gap-2">
                   <button onClick={() => setShowReject(true)} className="px-4 py-2 rounded-xl border border-rose-300 text-rose-600 font-semibold text-sm hover:bg-rose-50 transition-all flex items-center gap-1.5">
-                    <Ban size={15} /> Tolak
+                    <Ban size={15} /> Reject
                   </button>
                   {nextTier != null && (
                     <button onClick={() => setConfirmTier(nextTier)} className="px-4 py-2 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-sm transition-all flex items-center gap-1.5">

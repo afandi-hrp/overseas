@@ -673,10 +673,10 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose, canEdi
                   <div className="flex flex-col md:flex-row items-center justify-between gap-4 mb-6 p-4 rounded-xl border border-slate-200 bg-white shadow-sm">
                   <div>
                     <p className="text-sm font-bold text-[#5A305A]">
-                      Ringkasan Validasi Cost
+                      Cost Validation Summary
                     </p>
                     <p className="text-xs font-light text-[#5A305A] mt-0.5">
-                      Keseluruhan akurasi cost vs actual invoice
+                      Overall cost accuracy vs actual invoice
                     </p>
                   </div>
                   <div className="flex items-center gap-3">

@@ -27,8 +27,8 @@ const headerColors: Record<string, { bg: string, text: string }> = {
   "PO": { bg: "#fef08a", text: "#854d0e" },
   "Final Invoice": { bg: "#e9d5ff", text: "#6b21a8" },
   "Bukti TF": { bg: "#bbf7d0", text: "#166534" },
-  "Aktual (PIB)": { bg: "#fef08a", text: "#854d0e" },
-  "Expected (Kalkulasi)": { bg: "#bae6fd", text: "#0369a1" },
+  "Actual (PIB)": { bg: "#fef08a", text: "#854d0e" },
+  "Expected (Calculation)": { bg: "#bae6fd", text: "#0369a1" },
   "Invoice EMKL": { bg: "#e9d5ff", text: "#6b21a8" },
   "Inv. Freight": { bg: "#bae6fd", text: "#0369a1" },
   "Inv. Storage": { bg: "#e9d5ff", text: "#6b21a8" }
@@ -342,7 +342,7 @@ function EditableCell({ value, onUpdate, isCurrency, isNumber, isForeignCurrency
           <span key={i} className="break-all leading-snug">{item}{i < listItems.length - 1 ? ' +' : ''}</span>
         ))}
         {manual && (
-          <span className="absolute right-0 -top-1 text-amber-500 p-0.5" title="Nilai ini sudah diedit manual oleh user">
+          <span className="absolute right-0 -top-1 text-amber-500 p-0.5" title="This value has been manually edited by the user">
             <Edit3 size={10} />
           </span>
         )}
@@ -357,7 +357,7 @@ function EditableCell({ value, onUpdate, isCurrency, isNumber, isForeignCurrency
     >
       <span className="break-all">{displayText}</span>
       {manual && (
-        <span className="absolute right-0 -top-1 text-amber-500 p-0.5" title="Nilai ini sudah diedit manual oleh user">
+        <span className="absolute right-0 -top-1 text-amber-500 p-0.5" title="This value has been manually edited by the user">
           <Edit3 size={10} />
         </span>
       )}
@@ -374,19 +374,19 @@ function StatusBadge({ match, tooltip, onClick, manual }: { match: boolean | nul
   if (match === true) {
     content = (
       <span title={tooltip || undefined} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium whitespace-nowrap bg-emerald-100 text-emerald-700 transition-colors ${clickable ? 'cursor-pointer hover:bg-emerald-200' : ''}`}>
-        <CheckCircle2 size={12} /> Sesuai {manual && <Edit3 size={10} className="ml-1 text-amber-500 inline" title="Status ini sudah diedit manual oleh user" />}
+        <CheckCircle2 size={12} /> Match {manual && <Edit3 size={10} className="ml-1 text-amber-500 inline" title="This status has been manually edited by the user" />}
       </span>
     );
   } else if (match === false) {
     content = (
       <span title={tooltip || undefined} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium whitespace-nowrap bg-red-100 text-red-700 transition-colors ${clickable ? 'cursor-pointer hover:bg-red-200' : ''}`}>
-        <XCircle size={12} /> Tidak sesuai {manual && <Edit3 size={10} className="ml-1 text-amber-500 inline" title="Status ini sudah diedit manual oleh user" />}
+        <XCircle size={12} /> Mismatch {manual && <Edit3 size={10} className="ml-1 text-amber-500 inline" title="This status has been manually edited by the user" />}
       </span>
     );
   } else {
     content = (
-      <span title={tooltip || "Data tidak tersedia di salah satu dokumen"} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium whitespace-nowrap bg-slate-100 text-[#5A305A] transition-colors ${clickable ? 'cursor-pointer hover:bg-slate-200' : ''}`}>
-        <Clock size={12} /> Belum dicek {manual && <Edit3 size={10} className="ml-1 text-amber-500 inline" title="Status ini sudah diedit manual oleh user" />}
+      <span title={tooltip || "Data is not available in one of the documents"} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium whitespace-nowrap bg-slate-100 text-[#5A305A] transition-colors ${clickable ? 'cursor-pointer hover:bg-slate-200' : ''}`}>
+        <Clock size={12} /> Not checked yet {manual && <Edit3 size={10} className="ml-1 text-amber-500 inline" title="This status has been manually edited by the user" />}
       </span>
     );
   }
@@ -455,7 +455,7 @@ function InvoiceFCLTable({ checks, onToggleRow, onUpdate }: { checks: any[], onT
   const getCheck = (row: string, col: string) => checks.find(c => c.row === row && c.col === col);
   
   if (checks.length === 0) {
-     return <div className="p-6 text-center text-[#5A305A] text-sm italic">Dokumen tidak diupload / tidak relevan</div>;
+     return <div className="p-6 text-center text-[#5A305A] text-sm italic">Document not uploaded / not relevant</div>;
   }
   
   const dataCols = INVOICE_FCL_COLS.filter(c => c !== "Status");
@@ -470,7 +470,7 @@ function InvoiceFCLTable({ checks, onToggleRow, onUpdate }: { checks: any[], onT
       <table className="w-full text-left border-collapse" style={{ tableLayout: 'fixed' }}>
         <thead>
           <tr>
-            <th className={thRowLabelClass} style={{ width: LABEL_COL_PCT }}>Validasi</th>
+            <th className={thRowLabelClass} style={{ width: LABEL_COL_PCT }}>Validation</th>
             {dataCols.map(c => <th key={c} className={thClass} style={{ width: UNIT_PCT, backgroundColor: getHeaderColor(c).bg, color: getHeaderColor(c).text }}>{c}</th>)}
           </tr>
         </thead>
@@ -526,7 +526,7 @@ function FakturPajakFCLTable({ checks, onToggle, onUpdate }: { checks: any[], on
   const getCheck = (row: string, col: string) => checks.find(c => c.row === row && c.col === col);
   
   if (checks.length === 0) {
-     return <div className="p-6 text-center text-[#5A305A] text-sm italic">Dokumen tidak diupload / tidak relevan</div>;
+     return <div className="p-6 text-center text-[#5A305A] text-sm italic">Document not uploaded / not relevant</div>;
   }
   
   return (
@@ -534,7 +534,7 @@ function FakturPajakFCLTable({ checks, onToggle, onUpdate }: { checks: any[], on
       <table className="w-full text-left border-collapse" style={{ tableLayout: 'fixed' }}>
         <thead>
           <tr>
-            <th className={thRowLabelClass} style={{ width: LABEL_COL_PCT }}>Validasi</th>
+            <th className={thRowLabelClass} style={{ width: LABEL_COL_PCT }}>Validation</th>
             {FP_FCL_COLS.map(c => <th key={c} className={thClass} style={{ width: UNIT_PCT, backgroundColor: getHeaderColor(c).bg, color: getHeaderColor(c).text }}>{c}</th>)}
           </tr>
         </thead>
@@ -585,7 +585,7 @@ function FakturPajakFCLTable({ checks, onToggle, onUpdate }: { checks: any[], on
                              <EditableCell value={text} onUpdate={(v) => onUpdate(row, col, v)} isCurrency={row === "Nominal"} manual={check.manual} />
                           </div>
                           {fpRefText !== "—" && (
-                            <div className="text-[9px] text-[#5A305A] text-center break-words max-w-full leading-tight" title="Nilai Referensi">
+                            <div className="text-[9px] text-[#5A305A] text-center break-words max-w-full leading-tight" title="Reference Value">
                                ({fpRefText})
                             </div>
                           )}
@@ -639,7 +639,7 @@ function VesselTable({ checks, onUpdate }: { checks: any[], onUpdate: (r: string
   const getCheck = (row: string, col: string) => checks.find(c => c.row === row && c.col === col);
   
   if (checks.length === 0) {
-     return <div className="p-6 text-center text-[#5A305A] text-sm italic">Dokumen tidak diupload / tidak relevan</div>;
+     return <div className="p-6 text-center text-[#5A305A] text-sm italic">Document not uploaded / not relevant</div>;
   }
   
   return (
@@ -647,7 +647,7 @@ function VesselTable({ checks, onUpdate }: { checks: any[], onUpdate: (r: string
       <table className="w-full text-left border-collapse" style={{ tableLayout: 'fixed' }}>
         <thead>
           <tr>
-            <th className={thRowLabelClass} style={{ width: LABEL_COL_PCT }}>Validasi</th>
+            <th className={thRowLabelClass} style={{ width: LABEL_COL_PCT }}>Validation</th>
             {VESSEL_COLS.map(c => <th key={c} className={thClass} style={{ width: '28%', backgroundColor: getHeaderColor(c).bg, color: getHeaderColor(c).text }}>{c}</th>)}
           </tr>
         </thead>
@@ -672,7 +672,7 @@ function VesselTable({ checks, onUpdate }: { checks: any[], onUpdate: (r: string
                           {text !== null ? (
                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700">Ada Data</span>
                           ) : (
-                             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-slate-100 text-[#5A305A]">Kosong</span>
+                             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-slate-100 text-[#5A305A]">Empty</span>
                           )}
                        </div>
                     </td>
@@ -691,7 +691,7 @@ function PIBMatrixTable({ checks, onToggle, onUpdate }: { checks: any[], onToggl
   const getCheck = (row: string, col: string) => checks.find(c => c.row === row && c.col === col);
   
   if (checks.length === 0) {
-     return <div className="p-6 text-center text-[#5A305A] text-sm italic">Dokumen tidak diupload / tidak relevan</div>;
+     return <div className="p-6 text-center text-[#5A305A] text-sm italic">Document not uploaded / not relevant</div>;
   }
   
   const summary = useMemo(() => {
@@ -727,7 +727,7 @@ function PIBMatrixTable({ checks, onToggle, onUpdate }: { checks: any[], onToggl
                 ? pibListItems.map((item, i) => <span key={i} className="break-all leading-snug">{item}{i < pibListItems.length - 1 ? ' +' : ''}</span>)
                 : <span className="break-all leading-snug">{pibRefText}</span>}
              {isManual && (
-                <span className="absolute right-0 -top-1 text-amber-500 p-0.5" title="Nilai ini sudah diedit manual oleh user"><Edit3 size={10} /></span>
+                <span className="absolute right-0 -top-1 text-amber-500 p-0.5" title="This value has been manually edited by the user"><Edit3 size={10} /></span>
              )}
            </div>
          </td>
@@ -787,7 +787,7 @@ function PIBMatrixTable({ checks, onToggle, onUpdate }: { checks: any[], onToggl
     <table key={key} className="w-full text-left border-collapse mb-3 last:mb-0" style={{ tableLayout: 'fixed' }}>
       <thead>
         <tr>
-          <th className={thRowLabelClass} style={{ width: LABEL_COL_PCT }}>Validasi</th>
+          <th className={thRowLabelClass} style={{ width: LABEL_COL_PCT }}>Validation</th>
           {colsForHalf.map(c => <th key={c} className={thClass} style={{ width: UNIT_PCT, backgroundColor: getHeaderColor(c).bg, color: getHeaderColor(c).text }}>{c}</th>)}
         </tr>
       </thead>
@@ -826,7 +826,7 @@ function PIBMatrixTable({ checks, onToggle, onUpdate }: { checks: any[], onToggl
     <SectionWrap title="PIB" icon={<Landmark size={24} />}>
       <div className="px-3 py-2 bg-slate-50 flex items-center justify-between border-b border-slate-200">
         <span className="text-[11px] text-[#5A305A]">
-          Status validasi otomatis dari sistem berdasarkan perbandingan data dokumen.
+          Automatic validation status from the system based on document data comparison.
         </span>
         <div className="flex gap-3">
           <div className="flex items-center gap-1"><StatusBadge match={true} /> <span className="text-[11px] text-[#5A305A] ml-1">{summary.match}</span></div>
@@ -868,9 +868,9 @@ function DutyTable({ ndpbm, setNdpbm, items, addItem, removeItem, setItem, aktua
   }, [ndpbm, items]);
 
   const rows = [
-    { key: "bm",  label: "BM (PIB No. 37)",  expected: calc.totalBM,  formula: DUTY_FORMULA.bm },
-    { key: "ppn", label: "PPN (PIB No. 41)", expected: calc.totalPPN, formula: DUTY_FORMULA.ppn },
-    { key: "pph", label: "PPH (PIB No. 43)", expected: calc.totalPPH, formula: DUTY_FORMULA.pph },
+    { key: "bm",  label: "BM",  expected: calc.totalBM,  formula: DUTY_FORMULA.bm },
+    { key: "ppn", label: "PPN", expected: calc.totalPPN, formula: DUTY_FORMULA.ppn },
+    { key: "pph", label: "PPH", expected: calc.totalPPH, formula: DUTY_FORMULA.pph },
     { key: "total", label: "Total Duty",     expected: calc.totalDuty, formula: DUTY_FORMULA.total },
   ];
 
@@ -889,9 +889,9 @@ function DutyTable({ ndpbm, setNdpbm, items, addItem, removeItem, setItem, aktua
         </div>
         <div className="flex items-start gap-2 flex-col w-full mt-2">
           <div className="flex items-center gap-3">
-             <span className="text-[11px] text-[#5A305A] font-medium">Item pabean ({items.length} item):</span>
+             <span className="text-[11px] text-[#5A305A] font-medium">Customs items ({items.length} item{items.length === 1 ? '' : 's'}):</span>
              <button onClick={() => setShowItems(!showItems)} className="text-[10px] px-2 py-1 rounded border border-slate-300 bg-white text-[#5A305A] hover:bg-slate-50 shadow-sm transition-colors">
-                {showItems ? "Sembunyikan" : "Tampilkan"}
+                {showItems ? "Hide" : "Show"}
              </button>
           </div>
           {showItems && (
@@ -901,7 +901,7 @@ function DutyTable({ ndpbm, setNdpbm, items, addItem, removeItem, setItem, aktua
                   <thead>
                     <tr className="bg-slate-100 text-[#5A305A] border-b border-slate-200">
                       <th className="p-2 border-r border-slate-200 text-center font-bold uppercase tracking-wider w-10">No</th>
-                      <th className="p-2 border-r border-slate-200 text-left font-bold uppercase tracking-wider">Nilai Pabean</th>
+                      <th className="p-2 border-r border-slate-200 text-left font-bold uppercase tracking-wider">Customs Value</th>
                       <th className="p-2 border-r border-slate-200 text-center font-bold uppercase tracking-wider">% BM</th>
                       <th className="p-2 border-r border-slate-200 text-center font-bold uppercase tracking-wider">% PPN</th>
                       <th className="p-2 text-center font-bold uppercase tracking-wider">% PPH</th>
@@ -913,7 +913,7 @@ function DutyTable({ ndpbm, setNdpbm, items, addItem, removeItem, setItem, aktua
                       <tr key={it.id} className="border-b border-slate-200 hover:bg-slate-50/50 transition-colors">
                         <td className="p-2 border-r border-slate-200 text-center text-[#5A305A] font-medium">{i + 1}</td>
                         <td className="p-2 border-r border-slate-200">
-                          <VInput type="number" value={it.nilaiPabean} onChange={v => setItem(it.id, "nilaiPabean", v)} placeholder="Nilai Pabean" width={110} />
+                          <VInput type="number" value={it.nilaiPabean} onChange={v => setItem(it.id, "nilaiPabean", v)} placeholder="Customs Value" width={110} />
                         </td>
                         <td className="p-2 border-r border-slate-200 text-center">
                           <VInput type="number" value={it.bmPct} onChange={v => setItem(it.id, "bmPct", v)} placeholder="%BM" width={55} />
@@ -926,7 +926,7 @@ function DutyTable({ ndpbm, setNdpbm, items, addItem, removeItem, setItem, aktua
                         </td>
                         {isEditMode && (
                           <td className="p-2 border-l border-slate-200 text-center">
-                            <button onClick={() => removeItem(it.id)} className="p-1 text-[#5A305A] hover:text-red-500 transition-colors" title="Hapus item">
+                            <button onClick={() => removeItem(it.id)} className="p-1 text-[#5A305A] hover:text-red-500 transition-colors" title="Delete item">
                               <Trash2 size={12} />
                             </button>
                           </td>
@@ -950,9 +950,9 @@ function DutyTable({ ndpbm, setNdpbm, items, addItem, removeItem, setItem, aktua
       <table className="w-full text-left border-collapse" style={{ tableLayout: 'fixed' }}>
         <thead>
           <tr>
-            <th className={thRowLabelClass} style={{ width: LABEL_COL_PCT }}>Validasi</th>
-            <th className={thClass} style={{ width: '35%', backgroundColor: getHeaderColor("Aktual (PIB)").bg, color: getHeaderColor("Aktual (PIB)").text }}>Aktual (PIB)</th>
-            <th className={thClass} style={{ width: '35%', backgroundColor: getHeaderColor("Expected (Kalkulasi)").bg, color: getHeaderColor("Expected (Kalkulasi)").text }}>Expected (Kalkulasi)</th>
+            <th className={thRowLabelClass} style={{ width: LABEL_COL_PCT }}>Validation</th>
+            <th className={thClass} style={{ width: '35%', backgroundColor: getHeaderColor("Actual (PIB)").bg, color: getHeaderColor("Actual (PIB)").text }}>Actual (PIB)</th>
+            <th className={thClass} style={{ width: '35%', backgroundColor: getHeaderColor("Expected (Calculation)").bg, color: getHeaderColor("Expected (Calculation)").text }}>Expected (Calculation)</th>
             <th className={thClass} style={{ width: UNIT_PCT, backgroundColor: getHeaderColor("Status").bg, color: getHeaderColor("Status").text }}>Status</th>
           </tr>
         </thead>
@@ -973,7 +973,7 @@ function DutyTable({ ndpbm, setNdpbm, items, addItem, removeItem, setItem, aktua
                       <VInput 
                         value={aktual[r.key] || ""} 
                         onChange={v => setAktual(r.key, v)} 
-                        placeholder="Aktual" 
+                        placeholder="Actual"
                         width={100} 
                       />
                     ) : null}
@@ -1003,7 +1003,7 @@ function EmklTable({ checks, onToggleRow, onUpdate }: { checks: any[], onToggleR
   const getCheck = (row: string, col: string) => checks.find(c => c.row === row && c.col === col);
   
   if (checks.length === 0) {
-     return <div className="p-6 text-center text-[#5A305A] text-sm italic">Dokumen tidak diupload / tidak relevan</div>;
+     return <div className="p-6 text-center text-[#5A305A] text-sm italic">Document not uploaded / not relevant</div>;
   }
 
   return (
@@ -1011,7 +1011,7 @@ function EmklTable({ checks, onToggleRow, onUpdate }: { checks: any[], onToggleR
       <table className="w-full text-left border-collapse" style={{ tableLayout: 'fixed' }}>
         <thead>
           <tr>
-            <th className={thRowLabelClass} style={{ width: LABEL_COL_PCT }}>Validasi</th>
+            <th className={thRowLabelClass} style={{ width: LABEL_COL_PCT }}>Validation</th>
             {EMKL_COLS.map(c => <th key={c} className={thClass} style={{ width: c === "Status" ? UNIT_PCT : '35%', backgroundColor: getHeaderColor(c).bg, color: getHeaderColor(c).text }}>{c}</th>)}
           </tr>
         </thead>
@@ -1034,7 +1034,7 @@ function EmklTable({ checks, onToggleRow, onUpdate }: { checks: any[], onToggleR
                   <div className="relative inline-flex items-center justify-center pr-3 group">
                      {pibRef}
                      {check?.manual && (
-                        <span className="absolute right-0 -top-1 text-amber-500 p-0.5" title="Nilai ini sudah diedit manual oleh user"><Edit3 size={10} /></span>
+                        <span className="absolute right-0 -top-1 text-amber-500 p-0.5" title="This value has been manually edited by the user"><Edit3 size={10} /></span>
                      )}
                   </div>
                 </td>
@@ -1070,7 +1070,7 @@ function ActualTable({ checks, onToggleRow, onUpdate }: { checks: any[], onToggl
   const getCheck = (row: string, col: string) => checks.find(c => c.row === row && c.col === col);
   
   if (checks.length === 0) {
-     return <div className="p-6 text-center text-[#5A305A] text-sm italic">Dokumen tidak diupload / tidak relevan</div>;
+     return <div className="p-6 text-center text-[#5A305A] text-sm italic">Document not uploaded / not relevant</div>;
   }
   
   const dataCols = ["Inv. Freight", "Inv. Storage"];
@@ -1080,7 +1080,7 @@ function ActualTable({ checks, onToggleRow, onUpdate }: { checks: any[], onToggl
       <table className="w-full text-left border-collapse" style={{ tableLayout: 'fixed' }}>
         <thead>
           <tr>
-            <th className={thRowLabelClass} style={{ width: LABEL_COL_PCT }}>Validasi</th>
+            <th className={thRowLabelClass} style={{ width: LABEL_COL_PCT }}>Validation</th>
             {ACTUAL_COLS.map(c => <th key={c} className={thClass} style={{ width: ACTUAL_COL_WIDTHS[c], backgroundColor: getHeaderColor(c).bg, color: getHeaderColor(c).text }}>{c}</th>)}
           </tr>
         </thead>
@@ -1120,7 +1120,7 @@ function ActualTable({ checks, onToggleRow, onUpdate }: { checks: any[], onToggl
                         <div className="relative inline-flex items-center justify-center pr-3 group">
                            <span>{displayRef}</span>
                            {rowChecks.some(c => c.manual) && (
-                              <span className="absolute right-0 -top-1 text-amber-500 p-0.5" title="Nilai ini sudah diedit manual oleh user"><Edit3 size={10} /></span>
+                              <span className="absolute right-0 -top-1 text-amber-500 p-0.5" title="This value has been manually edited by the user"><Edit3 size={10} /></span>
                            )}
                         </div>
                       </td>
@@ -1161,7 +1161,7 @@ export default function SeaAirValidasiModal({ record, onClose, canEdit = true }:
 
   const handleClose = () => {
     if (hasUnsavedChanges) {
-      if (!window.confirm("Ada perubahan yang belum disimpan. Yakin ingin keluar?")) {
+      if (!window.confirm("There are unsaved changes. Are you sure you want to exit?")) {
         return;
       }
     }
@@ -1230,7 +1230,7 @@ export default function SeaAirValidasiModal({ record, onClose, canEdit = true }:
 
   const saveChanges = async () => {
     if (!matriksId) {
-       alert("Data matriks tidak ditemukan, silakan muat ulang halaman.");
+       alert("Matrix data not found, please reload the page.");
        return;
     }
     setSaving(true);
@@ -1269,7 +1269,7 @@ export default function SeaAirValidasiModal({ record, onClose, canEdit = true }:
        
        if (error) {
          console.error('Gagal simpan (RPC Error):', error);
-         alert("Gagal menyimpan: " + error.message);
+         alert("Failed to save: " + error.message);
          return; // JANGAN reset hasUnsavedChanges
        }
        
@@ -1282,7 +1282,7 @@ export default function SeaAirValidasiModal({ record, onClose, canEdit = true }:
          
        if (verifError) {
          console.error('Gagal verifikasi:', verifError);
-         alert("Perubahan dikirim, tetapi verifikasi gagal.");
+         alert("Changes were sent, but verification failed.");
          return;
        }
        
@@ -1290,15 +1290,15 @@ export default function SeaAirValidasiModal({ record, onClose, canEdit = true }:
        const isSaved = verifData && verifData.checks && (verifData.checks.length === checks.length);
        if (!isSaved) {
          console.warn("Verifikasi gagal: checks tidak sama / tidak berubah.", verifData);
-         alert("Perubahan mungkin belum tersimpan, coba lagi");
+         alert("Changes may not have been saved, please try again");
          return;
        }
        
        setHasUnsavedChanges(false);
-       alert("Perubahan tersimpan");
+       alert("Changes saved");
     } catch (e: any) {
        console.error("Gagal menyimpan (Catch):", e);
-       alert("Gagal menyimpan: " + e.message);
+       alert("Failed to save: " + e.message);
     } finally {
        setSaving(false);
     }
@@ -1434,8 +1434,8 @@ export default function SeaAirValidasiModal({ record, onClose, canEdit = true }:
         {/* Header */}
         <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-slate-200 bg-white shrink-0 print:hidden">
           <div>
-            <h2 className="text-lg font-bold tracking-tight text-[#5A305A]">Validasi Dokumen Sea & Air</h2>
-            <p className="text-sm text-[#5A305A]">Hasil perbandingan dokumen shipment secara otomatis</p>
+            <h2 className="text-lg font-bold tracking-tight text-[#5A305A]">Sea & Air Document Validation</h2>
+            <p className="text-sm text-[#5A305A]">Automatic shipment document comparison results</p>
           </div>
           <div className="flex items-center gap-2">
             <button 
@@ -1449,7 +1449,7 @@ export default function SeaAirValidasiModal({ record, onClose, canEdit = true }:
                  onClick={() => setIsEditMode(!isEditMode)}
                  className={`px-3 py-1.5 text-sm font-medium rounded-md flex items-center gap-2 transition-colors ${isEditMode ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-100 hover:bg-slate-200 text-[#5A305A]'}`}
               >
-                 <Edit3 size={16} /> {isEditMode ? 'Mode Edit Aktif' : 'Mode Edit'}
+                 <Edit3 size={16} /> {isEditMode ? 'Edit Mode Active' : 'Edit Mode'}
               </button>
             )}
             <button onClick={handleClose} className="p-2 hover:bg-slate-100 rounded-full text-[#5A305A] hover:text-[#5A305A] transition-colors">
@@ -1463,21 +1463,21 @@ export default function SeaAirValidasiModal({ record, onClose, canEdit = true }:
           
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6 p-4 rounded-xl border border-slate-200 bg-white shadow-sm">
             <div>
-              <p className="text-sm font-bold text-[#5A305A]">Statistik Global (Seluruh Matriks)</p>
-              <p className="text-xs font-light text-[#5A305A] mt-0.5">Total perbandingan yang berhasil tervalidasi</p>
+              <p className="text-sm font-bold text-[#5A305A]">Global Statistics (Entire Matrix)</p>
+              <p className="text-xs font-light text-[#5A305A] mt-0.5">Total successfully validated comparisons</p>
             </div>
             <div className="flex gap-4 items-center flex-wrap">
               <div className="bg-emerald-50 text-emerald-700 rounded-lg px-4 py-2 text-center min-w-[80px] border border-emerald-100">
                 <span className="block text-xl font-bold leading-none">{globalStats.match}</span>
-                <span className="block text-[10px] mt-1 font-medium uppercase tracking-wide">Sesuai</span>
+                <span className="block text-[10px] mt-1 font-medium uppercase tracking-wide">Match</span>
               </div>
               <div className="bg-red-50 text-red-700 rounded-lg px-4 py-2 text-center min-w-[80px] border border-red-100">
                 <span className="block text-xl font-bold leading-none">{globalStats.mismatch}</span>
-                <span className="block text-[10px] mt-1 font-medium uppercase tracking-wide">Tidak Sesuai</span>
+                <span className="block text-[10px] mt-1 font-medium uppercase tracking-wide">Mismatch</span>
               </div>
               <div className="min-w-[160px] pl-2">
                 <div className="flex justify-between mb-1.5">
-                  <span className="text-[11px] text-[#5A305A] font-medium">Akurasi Keseluruhan</span>
+                  <span className="text-[11px] text-[#5A305A] font-medium">Overall Accuracy</span>
                   <span className="text-[11px] font-bold text-[#5A305A]">{globalStats.pct}%</span>
                 </div>
                 <div className="h-2 rounded-full bg-slate-100 overflow-hidden shadow-inner">
@@ -1503,7 +1503,7 @@ export default function SeaAirValidasiModal({ record, onClose, canEdit = true }:
           
           <p className="text-[11px] text-[#5A305A] mt-4 flex items-center gap-1.5">
             <Info size={14} className="text-blue-500" />
-            Sel bertanda "—" pada matriks PIB berarti kombinasi field–dokumen tersebut TIDAK wajib divalidasi.
+            A cell marked "—" in the PIB matrix means that field–document combination does NOT need to be validated.
           </p>
         
         {hasUnsavedChanges && (
@@ -1512,15 +1512,15 @@ export default function SeaAirValidasiModal({ record, onClose, canEdit = true }:
                <Info size={20} />
              </div>
              <div>
-                <p className="text-sm font-bold text-[#5A305A] leading-none">Perubahan belum disimpan</p>
-                <p className="text-[10px] text-[#5A305A] mt-1">Klik simpan untuk memperbarui ke database</p>
+                <p className="text-sm font-bold text-[#5A305A] leading-none">Unsaved changes</p>
+                <p className="text-[10px] text-[#5A305A] mt-1">Click save to update the database</p>
              </div>
              <button 
                 onClick={saveChanges}
                 disabled={saving}
                 className="ml-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full text-sm font-bold transition-colors disabled:opacity-50 flex items-center gap-2"
              >
-                {saving ? "Menyimpan..." : "Simpan Perubahan"}
+                {saving ? "Saving..." : "Save Changes"}
              </button>
           </div>
         )}

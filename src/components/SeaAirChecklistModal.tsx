@@ -2,6 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { CheckCircle2, XCircle, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
+// Nilai `status` APA ADANYA dari database -- JANGAN diubah. STATUS_LABELS cuma lapisan
+// translasi tampilan (Indonesia -> Inggris), murni kosmetik, tidak menyentuh nilai yang
+// dikirim balik ke Supabase. Lihat catatan "Translasi UI ke Bahasa Inggris" di CLAUDE.md.
+const STATUS_LABELS: Record<string, string> = {
+  LENGKAP: 'Complete',
+  PROSES: 'In Process',
+  PENDING: 'Pending',
+  REVISI: 'Revision',
+  'TIDAK LENGKAP': 'Incomplete',
+  'BELUM LENGKAP': 'Not Complete Yet',
+  LULUS: 'Passed',
+  'PERLU REVIEW': 'Needs Review',
+  'ADA KETIDAKSESUAIAN': 'Mismatch Found',
+}
+const getStatusLabel = (status: string) => STATUS_LABELS[status] || status
+
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
     LENGKAP: 'bg-emerald-100 text-emerald-700',
@@ -16,7 +32,7 @@ function StatusBadge({ status }: { status: string }) {
   }
   return (
     <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${map[status] || 'bg-slate-100 text-[#5A305A]'}`}>
-      {status || '—'}
+      {getStatusLabel(status) || '—'}
     </span>
   )
 }
@@ -46,7 +62,7 @@ export default function SeaAirChecklistModal({ record, onClose }: { record: any,
       <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center h-full w-full">
         <div className="bg-white p-6 rounded-2xl shadow-xl">
            <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
-           <p className="text-[#5A305A] font-medium">Memuat checklist...</p>
+           <p className="text-[#5A305A] font-medium">Loading checklist...</p>
         </div>
       </div>
     );
@@ -83,7 +99,7 @@ export default function SeaAirChecklistModal({ record, onClose }: { record: any,
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl flex flex-col overflow-hidden max-h-[90vh]">
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-          <h2 className="text-lg font-bold text-[#5A305A]">Cek Checklist Sea & Air</h2>
+          <h2 className="text-lg font-bold text-[#5A305A]">Sea & Air Checklist Review</h2>
           <button onClick={onClose} className="text-[#5A305A] hover:text-[#5A305A] transition-colors">
             <X size={20} />
           </button>
@@ -93,11 +109,11 @@ export default function SeaAirChecklistModal({ record, onClose }: { record: any,
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 mb-6">
             <div className="flex justify-between items-center mb-4">
               <div>
-                <p className="text-sm text-[#5A305A] mb-1">Status Kelengkapan</p>
+                <p className="text-sm text-[#5A305A] mb-1">Completeness Status</p>
                 <StatusBadge status={status} />
               </div>
               <div className="text-right">
-                <p className="text-sm text-[#5A305A] mb-1">Persentase</p>
+                <p className="text-sm text-[#5A305A] mb-1">Percentage</p>
                 <span className="text-2xl font-bold text-[#5A305A]">{pct}%</span>
               </div>
             </div>
@@ -111,7 +127,7 @@ export default function SeaAirChecklistModal({ record, onClose }: { record: any,
 
             {missingDocs.length > 0 && (
               <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-lg">
-                <p className="text-xs font-bold text-red-800 mb-2">Dokumen Kurang:</p>
+                <p className="text-xs font-bold text-red-800 mb-2">Missing Documents:</p>
                 <ul className="list-disc pl-4 text-xs text-red-700">
                   {missingDocs.map((d: string, i: number) => (
                     <li key={i}>{d}</li>
@@ -123,7 +139,7 @@ export default function SeaAirChecklistModal({ record, onClose }: { record: any,
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
             <div className="col-span-full mb-2">
-              <h3 className="text-sm font-bold text-[#5A305A] border-b border-slate-200 pb-2">Dokumen Wajib</h3>
+              <h3 className="text-sm font-bold text-[#5A305A] border-b border-slate-200 pb-2">Required Documents</h3>
             </div>
             {mandatoryFields.map(field => {
               const val = data?.[field.key];
@@ -142,7 +158,7 @@ export default function SeaAirChecklistModal({ record, onClose }: { record: any,
             })}
 
             <div className="col-span-full mb-2 mt-6">
-              <h3 className="text-sm font-bold text-[#5A305A] border-b border-slate-200 pb-2">Dokumen Opsional</h3>
+              <h3 className="text-sm font-bold text-[#5A305A] border-b border-slate-200 pb-2">Optional Documents</h3>
             </div>
             {(() => {
               const adaSurveyor = data?.ada_invoice_surveyor === true || data?.ada_laporan_surveyor === true;
@@ -151,7 +167,7 @@ export default function SeaAirChecklistModal({ record, onClose }: { record: any,
                   <div className="flex justify-between items-center p-3 bg-white border border-slate-100 rounded-lg shadow-sm">
                     <span className="text-sm font-medium text-[#5A305A] flex items-center gap-2">
                       Surveyor
-                      <span className="text-[10px] bg-slate-100 text-[#5A305A] px-1.5 py-0.5 rounded font-semibold">(Opsional)</span>
+                      <span className="text-[10px] bg-slate-100 text-[#5A305A] px-1.5 py-0.5 rounded font-semibold">(Optional)</span>
                     </span>
                     {adaSurveyor ? (
                       <CheckCircle2 size={20} className="text-emerald-500" />
@@ -162,7 +178,7 @@ export default function SeaAirChecklistModal({ record, onClose }: { record: any,
                   <div className="flex justify-between items-center p-3 bg-white border border-slate-100 rounded-lg shadow-sm">
                     <span className="text-sm font-medium text-[#5A305A] flex items-center gap-2">
                       Insurance
-                      <span className="text-[10px] bg-slate-100 text-[#5A305A] px-1.5 py-0.5 rounded font-semibold">(Opsional)</span>
+                      <span className="text-[10px] bg-slate-100 text-[#5A305A] px-1.5 py-0.5 rounded font-semibold">(Optional)</span>
                     </span>
                     {data?.ada_insurance === true ? (
                       <CheckCircle2 size={20} className="text-emerald-500" />
@@ -179,7 +195,7 @@ export default function SeaAirChecklistModal({ record, onClose }: { record: any,
                 <div key={field.key} className="flex justify-between items-center p-3 bg-white border border-slate-100 rounded-lg shadow-sm">
                   <span className="text-sm font-medium text-[#5A305A] flex items-center gap-2">
                     {field.label}
-                    <span className="text-[10px] bg-slate-100 text-[#5A305A] px-1.5 py-0.5 rounded font-semibold">(Opsional)</span>
+                    <span className="text-[10px] bg-slate-100 text-[#5A305A] px-1.5 py-0.5 rounded font-semibold">(Optional)</span>
                   </span>
                   {val === true ? (
                     <CheckCircle2 size={20} className="text-emerald-500" />

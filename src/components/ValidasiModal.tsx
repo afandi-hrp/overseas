@@ -466,10 +466,10 @@ function computeStatus(srcVal: any, cmpVal: any, isFormat: boolean | undefined, 
 }
 
 const STATUS_CONFIG: any = {
-  empty:    { label: "—",             bg: "var(--color-background-secondary)", color: "var(--color-text-tertiary)", icon: "ti-minus" },
-  partial:  { label: "Belum lengkap", bg: "var(--color-background-warning)",   color: "var(--color-text-warning)",  icon: "ti-clock" },
-  match:    { label: "Sesuai",        bg: "var(--color-background-success)",   color: "var(--color-text-success)",  icon: "ti-check" },
-  mismatch: { label: "Tidak sesuai",  bg: "var(--color-background-danger)",    color: "var(--color-text-danger)",   icon: "ti-x" },
+  empty:    { label: "—",           bg: "var(--color-background-secondary)", color: "var(--color-text-tertiary)", icon: "ti-minus" },
+  partial:  { label: "Incomplete",  bg: "var(--color-background-warning)",   color: "var(--color-text-warning)",  icon: "ti-clock" },
+  match:    { label: "Match",       bg: "var(--color-background-success)",   color: "var(--color-text-success)",  icon: "ti-check" },
+  mismatch: { label: "Mismatch",    bg: "var(--color-background-danger)",    color: "var(--color-text-danger)",   icon: "ti-x" },
 };
 
 export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdit = true }: { record: any, mainTab: string, subTab?: string, onClose: () => void, canEdit?: boolean }) {
@@ -1223,9 +1223,9 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   const txtWarn = "#92400e";
 
   const getCfg = (st: string) => {
-    if (st === 'match') return { label: "Sesuai", bg: bgSuccess, color: txtSuccess, icon: "ti-check" };
-    if (st === 'mismatch') return { label: "Tidak sesuai", bg: bgDanger, color: txtDanger, icon: "ti-x" };
-    if (st === 'partial') return { label: "Belum lengkap", bg: bgWarning, color: txtWarn, icon: "ti-clock" };
+    if (st === 'match') return { label: "Match", bg: bgSuccess, color: txtSuccess, icon: "ti-check" };
+    if (st === 'mismatch') return { label: "Mismatch", bg: bgDanger, color: txtDanger, icon: "ti-x" };
+    if (st === 'partial') return { label: "Incomplete", bg: bgWarning, color: txtWarn, icon: "ti-clock" };
     return { label: "—", bg: bgSec, color: txtSec, icon: "ti-minus" };
   }
 
@@ -1235,13 +1235,13 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
         
         <div className="flex justify-between items-center p-3 sm:px-4 sm:py-2.5 border-b border-slate-100 shrink-0 print:hidden">
           <div>
-            <h2 className="text-lg font-bold tracking-tight text-[#5A305A]">Validasi Dokumen <span className="text-sm font-normal text-[#5A305A] ml-2 hidden sm:inline-block">Hasil validasi dokumen terkait</span></h2>
+            <h2 className="text-lg font-bold tracking-tight text-[#5A305A]">Document Validation <span className="text-sm font-normal text-[#5A305A] ml-2 hidden sm:inline-block">Validation results for the related document</span></h2>
           </div>
           <div className="flex items-center gap-2">
             {!isEditMode && (
               <button style={S.printBtn} onClick={() => window.print()}>
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
-                <span className="hidden sm:inline">Cetak</span>
+                <span className="hidden sm:inline">Print</span>
               </button>
             )}
             {!isEditMode ? (
@@ -1258,7 +1258,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
               <>
                 <button style={{ ...S.printBtn, color: '#15803d', borderColor: '#bbf7d0', background: '#f0fdf4' }} onClick={() => setIsEditMode(false)}>
                   <CheckCircle2 size={14} />
-                  <span className="hidden sm:inline">Simpan</span>
+                  <span className="hidden sm:inline">Save</span>
                 </button>
                 <button style={{ ...S.printBtn, color: '#b91c1c', borderColor: '#fecaca', background: '#fef2f2' }} onClick={() => {
                   if (snapshotValues) {
@@ -1271,7 +1271,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                   setIsEditMode(false);
                 }}>
                   <XCircle size={14} />
-                  <span className="hidden sm:inline">Batal</span>
+                  <span className="hidden sm:inline">Cancel</span>
                 </button>
               </>
             )}
@@ -1289,7 +1289,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                   <div className="w-6 h-6 rounded-lg bg-[#5A305A]/10 flex items-center justify-center shrink-0 print:hidden">
                     <ClipboardList size={12} className="text-[#5A305A]" />
                   </div>
-                  <p style={{...S.title, fontSize: "14px"}}>Tabel Validasi Dokumen Import</p>
+                  <p style={{...S.title, fontSize: "14px"}}>Import Document Validation Table</p>
                   {/* Toggle ciutkan/lebarkan panel meta info -- header ini freeze (tidak ikut
                       scroll), jadi kalau selalu full terbuka bisa makan banyak ruang layar
                       terutama di laptop yang tingginya pendek. Default terbuka, tidak ikut cetak. */}
@@ -1298,18 +1298,18 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                     onClick={() => setShowHeaderDetail(v => !v)}
                     className="print:hidden ml-1 flex items-center gap-0.5 text-[10px] font-semibold text-[#5A305A]/70 hover:text-[#5A305A] bg-white/60 hover:bg-white/90 border border-[#5A305A]/15 rounded-full px-2 py-0.5 transition-colors"
                   >
-                    {showHeaderDetail ? <>Ciutkan <ChevronUp size={11} /></> : <>Lebarkan <ChevronDown size={11} /></>}
+                    {showHeaderDetail ? <>Collapse <ChevronUp size={11} /></> : <>Expand <ChevronDown size={11} /></>}
                   </button>
                 </div>
                 {showHeaderDetail && (
-                <p style={{...S.subtitle, marginTop: "2px", fontSize: "11px", marginLeft: "0" }} className="print:ml-0">PT Indo Mulia Indah — isi nilai dari masing-masing dokumen, status sesuai/tidak sesuai akan tampil otomatis</p>
+                <p style={{...S.subtitle, marginTop: "2px", fontSize: "11px", marginLeft: "0" }} className="print:ml-0">PT Indo Mulia Indah — enter the value from each document, match/mismatch status will show automatically</p>
                 )}
                 {showHeaderDetail && (
                 <div style={{...S.metaRow, marginTop: "6px", gap: "6px"}}>
                   <div className="flex items-center gap-1.5 bg-white/90 border border-[#5A305A]/15 rounded-lg px-2.5 py-1 print:bg-transparent print:border-0 print:px-0 print:py-0">
                     <FileText size={12} className="text-[#8b5fa8] shrink-0 print:hidden" />
                     <div>
-                      <div className="text-[9px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Jenis Dokumen</div>
+                      <div className="text-[9px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Document Type</div>
                       <div className="text-[12px] font-semibold text-[#5A305A] leading-tight">{record?.jenis_dokumen || docType || "—"}</div>
                     </div>
                   </div>
@@ -1333,21 +1333,21 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                     <Plane size={12} className="text-[#8b5fa8] shrink-0 print:hidden" />
                     <div>
                       <div className="text-[9px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">No. AWB</div>
-                      {isEditMode ? <input style={S.metaInput} value={awbNo || ""} onChange={e => setAwbNo(e.target.value)} placeholder="Misal: 1234567890" /> : <div className="text-[12px] font-semibold text-[#5A305A] leading-tight">{awbNo || "—"}</div>}
+                      {isEditMode ? <input style={S.metaInput} value={awbNo || ""} onChange={e => setAwbNo(e.target.value)} placeholder="e.g. 1234567890" /> : <div className="text-[12px] font-semibold text-[#5A305A] leading-tight">{awbNo || "—"}</div>}
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 bg-white/90 border border-[#5A305A]/15 rounded-lg px-2.5 py-1 print:bg-transparent print:border-0 print:px-0 print:py-0">
                     <CalendarDays size={12} className="text-[#8b5fa8] shrink-0 print:hidden" />
                     <div>
-                      <div className="text-[9px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Tanggal cek</div>
+                      <div className="text-[9px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Check date</div>
                       {isEditMode ? <input type="date" style={S.metaInput} value={tanggal || ""} onChange={e => setTanggal(e.target.value)} /> : <div className="text-[12px] font-semibold text-[#5A305A] leading-tight">{fmtDateEN(tanggal)}</div>}
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 bg-white/90 border border-[#5A305A]/15 rounded-lg px-2.5 py-1 print:bg-transparent print:border-0 print:px-0 print:py-0">
                     <UserCheck size={12} className="text-[#8b5fa8] shrink-0 print:hidden" />
                     <div>
-                      <div className="text-[9px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Diperiksa oleh</div>
-                      {isEditMode ? <input style={S.metaInput} value={namaChecker || ""} onChange={e => setNamaChecker(e.target.value)} placeholder="Nama pemeriksa" /> : <div className="text-[12px] font-semibold text-[#5A305A] leading-tight">{namaChecker || "—"}</div>}
+                      <div className="text-[9px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Checked by</div>
+                      {isEditMode ? <input style={S.metaInput} value={namaChecker || ""} onChange={e => setNamaChecker(e.target.value)} placeholder="Checker's name" /> : <div className="text-[12px] font-semibold text-[#5A305A] leading-tight">{namaChecker || "—"}</div>}
                     </div>
                   </div>
                 </div>
@@ -1359,18 +1359,18 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                     ikut nyetak. */}
                 {showHeaderDetail && (
                 <div className="mt-1.5 print:hidden max-w-xl">
-                  <label className="text-[9px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5 block">Catatan Perubahan Manual</label>
+                  <label className="text-[9px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5 block">Manual Change Notes</label>
                   {isEditMode ? (
                     <textarea
                       value={catatanManual}
                       onChange={e => setCatatanManual(e.target.value)}
-                      placeholder="Masukkan alasan atau catatan jika ada perubahan nilai secara manual..."
+                      placeholder="Enter the reason or notes for any manually changed values..."
                       rows={1}
                       className="w-full border border-purple-100 bg-white/70 rounded-lg px-2.5 py-1.5 text-[12px] text-[#5A305A] focus:outline-none focus:ring-2 focus:ring-purple-200 resize-none"
                     />
                   ) : (
                     <div className="bg-white/90 border border-[#5A305A]/15 rounded-lg px-2.5 py-1.5 text-[12px] text-[#5A305A] whitespace-pre-wrap">
-                      {catatanManual || <span className="italic text-[#5A305A]/50">Belum ada catatan.</span>}
+                      {catatanManual || <span className="italic text-[#5A305A]/50">No notes yet.</span>}
                     </div>
                   )}
                 </div>
@@ -1381,20 +1381,20 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                 <div style={S.scoreWrap}>
                   <div style={S.scoreCard(bgSuccess, txtSuccess)}>
                     <span style={S.scoreNum}>{stats.match}</span>
-                    <span style={S.scoreLabel}>Sesuai</span>
+                    <span style={S.scoreLabel}>Match</span>
                   </div>
                   <div style={S.scoreCard(bgDanger, txtDanger)}>
                     <span style={S.scoreNum}>{stats.mismatch}</span>
-                    <span style={S.scoreLabel}>Tidak sesuai</span>
+                    <span style={S.scoreLabel}>Mismatch</span>
                   </div>
                   <div style={S.scoreCard(bgSec, txtSec)}>
                     <span style={S.scoreNum}>{stats.empty + stats.partial}</span>
-                    <span style={S.scoreLabel}>Belum diisi</span>
+                    <span style={S.scoreLabel}>Not filled yet</span>
                   </div>
                 </div>
                 <div style={{ width: "100%", minWidth: "192px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
-                    <span style={{ fontSize: "11px", color: txtSec }}>Akurasi validasi</span>
+                    <span style={{ fontSize: "11px", color: txtSec }}>Validation accuracy</span>
                     <span style={{ fontSize: "11px", fontWeight: 500, color: "#0f172a" }}>
                       {stats.match}/{stats.checked} ({stats.pct}%)
                     </span>
@@ -1432,16 +1432,16 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                     <div className="text-center font-bold text-[#5A305A] text-[11px] tracking-wider uppercase">
                       {section.label}
                       {section.id === "s_sptnp" && (
-                         <div className="text-[9px] mt-1 text-[#5A305A] normal-case tracking-normal">jika ada — khusus jalur PIB</div>
+                         <div className="text-[9px] mt-1 text-[#5A305A] normal-case tracking-normal">if applicable — PIB path only</div>
                       )}
                     </div>
                     <div className="ml-auto md:ml-0 flex items-center justify-center">
                        <span style={S.sectionBadge(ss.match, ss.mismatch)} className="text-[10px] whitespace-nowrap shadow-sm">
                           {ss.match === ss.total && ss.total > 0
-                            ? `${ss.total}/${ss.total} sesuai`
+                            ? `${ss.total}/${ss.total} match`
                             : ss.mismatch > 0
-                            ? `${ss.mismatch} tidak sesuai`
-                            : `${ss.match}/${ss.total} sesuai`}
+                            ? `${ss.mismatch} mismatch`
+                            : `${ss.match}/${ss.total} match`}
                        </span>
                     </div>
                   </div>

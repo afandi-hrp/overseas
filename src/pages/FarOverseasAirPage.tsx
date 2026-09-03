@@ -19,7 +19,7 @@ const QueueCard: React.FC<{ item: any; onDismiss: (id: string) => void }> = ({ i
     else if (Array.isArray(item.file_names)) filenames = item.file_names;
   } catch { /* ignore */ }
   const filesStr = filenames.join(', ');
-  const time = new Date(item.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  const time = new Date(item.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
   if (item.status === 'PENDING' || item.status === 'PROCESSING') {
     return (
@@ -29,10 +29,10 @@ const QueueCard: React.FC<{ item: any; onDismiss: (id: string) => void }> = ({ i
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
             <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
           </span>
-          Sedang diproses...
+          Processing...
         </div>
         <div className="text-amber-900 truncate" title={filesStr}>File: {filesStr || '-'}</div>
-        <div className="text-amber-700/70 text-xs">Dikirim: {time}</div>
+        <div className="text-amber-700/70 text-xs">Sent: {time}</div>
       </div>
     );
   }
@@ -41,7 +41,7 @@ const QueueCard: React.FC<{ item: any; onDismiss: (id: string) => void }> = ({ i
     return (
       <div className="relative bg-rose-50 border border-rose-200 rounded-xl p-4 text-sm flex flex-col gap-2 shadow-sm pr-8">
         <button onClick={() => onDismiss(item.id)} className="absolute top-2.5 right-3 text-rose-400 hover:text-rose-600 font-bold text-lg leading-none">&times;</button>
-        <div className="font-bold text-rose-800 flex items-center gap-2">❌ Gagal diproses</div>
+        <div className="font-bold text-rose-800 flex items-center gap-2">❌ Processing failed</div>
         <div className="text-rose-900 truncate" title={filesStr}>File: {filesStr || '-'}</div>
         <div className="text-rose-700/80 text-xs break-words">Error: {item.error_message || '-'}{item.error_step ? ` (${item.error_step})` : ''}</div>
       </div>
@@ -52,7 +52,7 @@ const QueueCard: React.FC<{ item: any; onDismiss: (id: string) => void }> = ({ i
   return (
     <div className="relative bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm flex flex-col gap-2 shadow-sm pr-8">
       <button onClick={() => onDismiss(item.id)} className="absolute top-2.5 right-3 text-emerald-500 hover:text-emerald-700 font-bold text-lg leading-none">&times;</button>
-      <div className="font-bold text-emerald-800 flex items-center gap-2">✅ Berhasil diproses</div>
+      <div className="font-bold text-emerald-800 flex items-center gap-2">✅ Processed successfully</div>
       <div className="text-emerald-900 truncate" title={filesStr}>File: {filesStr || '-'}</div>
     </div>
   );
@@ -69,27 +69,27 @@ function DeleteConfirmModal({ record, onConfirm, onClose, deleting, error }: {
             <Trash2 size={20} />
           </div>
           <div className="min-w-0">
-            <h3 className="font-bold text-[#5A305A] leading-tight">Hapus Memo Ini?</h3>
+            <h3 className="font-bold text-[#5A305A] leading-tight">Delete This Memo?</h3>
             <p className="text-xs font-light text-[#5A305A]/70 mt-0.5 truncate">{record.po_ori || record.id}</p>
           </div>
         </div>
         <p className="text-sm text-[#5A305A] leading-relaxed mb-1">
-          Menghapus memo ini akan menghapus juga data cost validation terkait.
+          Deleting this memo will also delete its related cost validation data.
         </p>
-        <p className="text-sm font-bold text-rose-600 mb-4">Tindakan ini tidak bisa dibatalkan.</p>
+        <p className="text-sm font-bold text-rose-600 mb-4">This action cannot be undone.</p>
         {error && (
           <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 break-words">{error}</div>
         )}
         <div className="grid grid-cols-2 gap-2">
           <button onClick={onClose} disabled={deleting} className="py-2.5 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all disabled:opacity-50">
-            Batal
+            Cancel
           </button>
           <button
             onClick={onConfirm}
             disabled={deleting}
             className="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
           >
-            <Trash2 size={14} /> {deleting ? 'Menghapus...' : 'Ya, Hapus'}
+            <Trash2 size={14} /> {deleting ? 'Deleting...' : 'Yes, Delete'}
           </button>
         </div>
       </div>
@@ -105,7 +105,7 @@ function ApprovalBadge({ status, compact }: { status: string | null; compact?: b
 
 function CostBadge({ status, compact }: { status: string | null | undefined; compact?: boolean }) {
   const cls = compact ? 'text-[8.5px] font-bold px-1.5 py-0.5 rounded-full leading-tight' : 'text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap';
-  if (!status) return <span className={`${cls} bg-slate-100 text-[#5A305A]`}>Belum Ada Data</span>;
+  if (!status) return <span className={`${cls} bg-slate-100 text-[#5A305A]`}>No Data Yet</span>;
   const meta = COST_STATUS_META[status];
   if (!meta) return <span className={`${cls} bg-slate-100 text-[#5A305A]`}>{status}</span>;
   return <span className={`${cls} ${meta.badgeClass}`}>{meta.label}</span>;
@@ -234,11 +234,11 @@ const LIST_COLUMNS: ListColumn[] = [
         return (
           <div className="w-[260px] flex flex-col gap-1.5">
             <div className="whitespace-normal break-words leading-snug flex items-start gap-1">
-              <span>{r.weight_breakdown || <span className="italic text-slate-400">Belum diisi</span>}</span>
+              <span>{r.weight_breakdown || <span className="italic text-slate-400">Not filled in yet</span>}</span>
               {edited && <span className="shrink-0"><Edit3 size={11} className="text-amber-500 inline-block" /></span>}
             </div>
             <button onClick={() => ctx.onOpenWeightModal(r)} className="self-start text-[10px] font-semibold text-blue-600 hover:text-blue-800 underline flex items-center gap-1">
-              <Scale size={11} /> {r.weight_breakdown ? 'Edit Breakdown' : 'Isi Breakdown'}
+              <Scale size={11} /> {r.weight_breakdown ? 'Edit Breakdown' : 'Fill In Breakdown'}
             </button>
           </div>
         );
@@ -254,7 +254,7 @@ const LIST_COLUMNS: ListColumn[] = [
     { header: 'NOTE 2', field: 'item_description', wide: true },
     { header: 'NOTE 3', field: 'status_note', wide: true },
     { header: 'NOTE 4', field: 'other_note', wide: true },
-    { header: 'JUDUL MEMO', field: 'memo_title' },
+    { header: 'MEMO TITLE', field: 'memo_title' },
     { header: 'PIC', field: 'pic_name' },
     { header: 'BUYER', field: 'buyer_name' },
     { header: 'EXPECTED PAYMENT DATE', field: 'expected_payment_date', inputType: 'date', format: v => formatDateID(v) },
@@ -296,8 +296,8 @@ const LIST_COLUMNS: ListColumn[] = [
         );
       }
     },
-    { header: 'STATUS APPROVAL', render: r => <ApprovalBadge status={r.approval_status} /> },
-    { header: 'STATUS COST', render: (_r, _idx, costStatus) => <CostBadge status={costStatus} /> },
+    { header: 'APPROVAL STATUS', render: r => <ApprovalBadge status={r.approval_status} /> },
+    { header: 'COST STATUS', render: (_r, _idx, costStatus) => <CostBadge status={costStatus} /> },
 ];
 
 // Kolom export Excel -- 1:1 dengan LIST_COLUMNS di atas (semua kolom yang tampil di tabel list
@@ -421,7 +421,7 @@ export default function FarOverseasAirPage() {
       return;
     }
     setRows(prev => prev.filter(row => row.id !== deleteConfirmRow.id));
-    setToastMessage('Memo berhasil dihapus.');
+    setToastMessage('Memo deleted successfully.');
     setTimeout(() => setToastMessage(null), 4000);
     setDeleteConfirmRow(null);
     fetchList();
@@ -472,7 +472,7 @@ export default function FarOverseasAirPage() {
     return exportRows.map((r: any) => {
       const showIdrHint = r.total_amount_currency && r.total_amount_currency !== 'IDR' && r.total_amount_idr != null;
       const costStatus = costMap[r.id];
-      const costMeta = costStatus ? (COST_STATUS_META[costStatus]?.label || costStatus) : 'Belum Ada Data';
+      const costMeta = costStatus ? (COST_STATUS_META[costStatus]?.label || costStatus) : 'No Data Yet';
       return {
         ...r,
         unit_price_display: formatMoney(r.unit_price, r.unit_price_currency),
@@ -505,7 +505,7 @@ export default function FarOverseasAirPage() {
     const loadDeepLink = async () => {
       const { data, error } = await supabase.from('rekapan_far_overseas_air').select('*').eq('id', deepLinkId).maybeSingle();
       if (error || !data) {
-        setToastMessage('⚠️ Memo dengan link ini tidak ditemukan.');
+        setToastMessage('⚠️ No memo found for this link.');
         setTimeout(() => setToastMessage(null), 6000);
         navigate('/direct-loading', { replace: true });
         return;
@@ -603,7 +603,7 @@ export default function FarOverseasAirPage() {
       ));
       newRateRowUsed = null;
       newStatus = 'BELUM_LENGKAP';
-      newCatatan = 'Tidak ditemukan tarif yang cocok setelah NOTE 1 diubah -- mohon cek manual.';
+      newCatatan = 'No matching rate found after NOTE 1 was changed -- please check manually.';
     } else if (candidates.length === 1) {
       const rate = candidates[0];
       const { unitPriceExpected, unitPriceNotes, kgExpected, totalExpected } = computeExpectedFromRate(rate, qty, actualUnitPrice);
@@ -618,7 +618,7 @@ export default function FarOverseasAirPage() {
     } else {
       newRateRowUsed = candidates;
       newStatus = 'BELUM_LENGKAP';
-      newCatatan = 'Ada beberapa tarif yang cocok setelah NOTE 1 diubah -- mohon pilih manual.';
+      newCatatan = 'Several matching rates found after NOTE 1 was changed -- please select manually.';
     }
 
     const { error: saveErr } = await supabase.rpc('update_cost_validasi_far_overseas_manual', {
@@ -648,16 +648,16 @@ export default function FarOverseasAirPage() {
     setSavingEdits(false);
     const firstError = results.find(r => r.error);
     if (firstError?.error) {
-      setToastMessage('⚠️ Gagal menyimpan sebagian perubahan: ' + firstError.error.message);
+      setToastMessage('⚠️ Failed to save some changes: ' + firstError.error.message);
       setTimeout(() => setToastMessage(null), 8000);
     } else if (formatWarningCount > 0) {
-      setToastMessage(`Perubahan tersimpan. ${formatWarningCount} NOTE 1 formatnya tidak dikenali -- cost validation tidak diperbarui otomatis untuk baris itu.`);
+      setToastMessage(`Changes saved. ${formatWarningCount} NOTE 1 field(s) had an unrecognized format -- cost validation was not automatically updated for those rows.`);
       setTimeout(() => setToastMessage(null), 8000);
     } else if (routeNoteChangedIds.length > 0) {
-      setToastMessage('Perubahan tersimpan. Cost validation sudah dihitung ulang mengikuti NOTE 1 yang baru.');
+      setToastMessage('Changes saved. Cost validation has been recalculated following the new NOTE 1.');
       setTimeout(() => setToastMessage(null), 6000);
     } else {
-      setToastMessage('Perubahan berhasil disimpan.');
+      setToastMessage('Changes saved successfully.');
       setTimeout(() => setToastMessage(null), 4000);
     }
     setPendingEdits({});
@@ -678,7 +678,7 @@ export default function FarOverseasAirPage() {
           fetchQueue();
         } else if (data.status === 'FAILED') {
           setActiveJobStatus('FAILED');
-          setActiveJobError(data.error_message || 'Gagal memproses dokumen.');
+          setActiveJobError(data.error_message || 'Failed to process document.');
           fetchQueue();
         }
       }
@@ -729,7 +729,7 @@ export default function FarOverseasAirPage() {
               </div>
               <div>
                 <h1 className="font-bold text-[#5A305A] text-base leading-tight">FAR Overseas</h1>
-                <p className="text-xs font-light text-[#5A305A] mt-0.5">Memo approval freight informal gabungan PO</p>
+                <p className="text-xs font-light text-[#5A305A] mt-0.5">Combined PO informal freight approval memo</p>
               </div>
             </div>
             <Greeting />
@@ -743,8 +743,8 @@ export default function FarOverseasAirPage() {
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3 shrink-0">
               <div className="w-9 h-9 rounded-full border-2 border-amber-400 border-t-transparent animate-spin shrink-0" />
               <div>
-                <p className="text-sm font-bold text-amber-800">Dokumen sedang diproses AI...</p>
-                <p className="text-xs text-amber-700 mt-0.5">Halaman ini akan otomatis memperbarui daftar begitu selesai.</p>
+                <p className="text-sm font-bold text-amber-800">AI is processing the document...</p>
+                <p className="text-xs text-amber-700 mt-0.5">This page will automatically refresh the list once it's done.</p>
               </div>
             </div>
           )}
@@ -752,7 +752,7 @@ export default function FarOverseasAirPage() {
             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-3">
                 <CheckCircle2 size={22} className="text-emerald-600 shrink-0" />
-                <p className="text-sm font-bold text-emerald-800">Dokumen berhasil diproses dan sudah muncul di daftar.</p>
+                <p className="text-sm font-bold text-emerald-800">Document processed successfully and now appears in the list.</p>
               </div>
               <button onClick={() => { setActiveJobId(null); setActiveJobStatus(null); }} className="text-emerald-600 hover:text-emerald-800"><X size={16} /></button>
             </div>
@@ -762,7 +762,7 @@ export default function FarOverseasAirPage() {
               <div className="flex items-center gap-3">
                 <AlertTriangle size={20} className="text-rose-600 shrink-0" />
                 <div>
-                  <p className="text-sm font-bold text-rose-800">Gagal memproses dokumen.</p>
+                  <p className="text-sm font-bold text-rose-800">Failed to process document.</p>
                   <p className="text-xs text-rose-700 mt-0.5">{activeJobError}</p>
                 </div>
               </div>
@@ -775,7 +775,7 @@ export default function FarOverseasAirPage() {
               halaman Audit Sea & Air / Courier) -- bukan seluruh halaman yang discroll panjang. */}
           <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
             <div className="px-5 py-4 border-b border-white/60 flex items-center justify-between gap-3 flex-wrap shrink-0">
-              <h2 className="text-sm font-bold text-[#5A305A]">List Memo FAR Overseas</h2>
+              <h2 className="text-sm font-bold text-[#5A305A]">FAR Overseas Memo List</h2>
               <div className="flex items-center gap-2 flex-wrap">
                 <button
                   onClick={() => { fetchList(); fetchQueue(); }}
@@ -795,7 +795,7 @@ export default function FarOverseasAirPage() {
                   onClick={() => setShowQueuePanel(o => !o)}
                   className="relative px-3 py-2 rounded-full bg-white/70 backdrop-blur-md border border-white/60 hover:bg-white/90 text-[#5A305A] font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px]"
                 >
-                  <Clock size={14} /> Antrian Proses
+                  <Clock size={14} /> Processing Queue
                   {queue.length > 0 && (
                     <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
                       {queue.length}
@@ -807,7 +807,7 @@ export default function FarOverseasAirPage() {
                     onClick={() => setShowUploadModal(true)}
                     className="px-3 py-2 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px]"
                   >
-                    <UploadCloud size={14} /> Upload Dokumen
+                    <UploadCloud size={14} /> Upload Document
                   </button>
                 )}
                 <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0">
@@ -840,9 +840,9 @@ export default function FarOverseasAirPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {loadingList ? (
-                    <tr><td colSpan={LIST_COLUMNS.length + 1} className="text-center py-10 text-[#5A305A] text-sm">Memuat data...</td></tr>
+                    <tr><td colSpan={LIST_COLUMNS.length + 1} className="text-center py-10 text-[#5A305A] text-sm">Loading data...</td></tr>
                   ) : rows.length === 0 ? (
-                    <tr><td colSpan={LIST_COLUMNS.length + 1} className="text-center py-10 text-[#5A305A] text-sm italic">Belum ada data FAR Overseas. Klik "Upload Dokumen" untuk memulai.</td></tr>
+                    <tr><td colSpan={LIST_COLUMNS.length + 1} className="text-center py-10 text-[#5A305A] text-sm italic">No FAR Overseas data yet. Click "Upload Document" to get started.</td></tr>
                   ) : (
                     rows.map((r, idx) => {
                       const costStatus = costStatusMap[r.id];
@@ -923,16 +923,16 @@ export default function FarOverseasAirPage() {
                                       title="Edit baris ini"
                                       className={`w-full flex items-center gap-1 px-1.5 py-1 rounded-md border text-[9px] font-semibold transition-colors ${editingThisRow ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700' : 'border-slate-200 bg-white text-[#5A305A] hover:bg-slate-100'}`}
                                     >
-                                      <Edit3 size={10} /> {editingThisRow ? 'Edit Aktif' : 'Edit'}
+                                      <Edit3 size={10} /> {editingThisRow ? 'Editing' : 'Edit'}
                                     </button>
                                   )}
                                   {canEditDirectLoading && (
                                     <button
                                       onClick={() => { openDeleteConfirm(r); setOpenActionsRowId(null); }}
-                                      title="Hapus memo ini"
+                                      title="Delete this memo"
                                       className="w-full flex items-center gap-1 px-1.5 py-1 rounded-md border border-rose-200 bg-rose-50 text-[9px] font-semibold text-rose-600 hover:bg-rose-100 hover:border-rose-300 transition-colors"
                                     >
-                                      <Trash2 size={10} /> Hapus
+                                      <Trash2 size={10} /> Delete
                                     </button>
                                   )}
                                 </div>
@@ -984,22 +984,22 @@ export default function FarOverseasAirPage() {
             <AlertTriangle size={18} />
           </div>
           <div>
-            <p className="text-sm font-bold text-[#5A305A] leading-none">{changedRowIds.length} baris punya perubahan belum disimpan</p>
-            <p className="text-[10px] text-[#5A305A]/70 mt-1">Klik simpan untuk memperbarui ke database</p>
+            <p className="text-sm font-bold text-[#5A305A] leading-none">{changedRowIds.length} row(s) have unsaved changes</p>
+            <p className="text-[10px] text-[#5A305A]/70 mt-1">Click save to update the database</p>
           </div>
           <button
             onClick={handleDiscardAllEdits}
             disabled={savingEdits}
             className="ml-2 px-3 py-2 rounded-full border border-slate-200 text-[#5A305A] text-xs font-semibold hover:bg-slate-50 disabled:opacity-50 transition-all"
           >
-            Batal
+            Cancel
           </button>
           <button
             onClick={handleSaveAllEdits}
             disabled={savingEdits}
             className="px-4 py-2 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white text-xs font-bold disabled:opacity-50 transition-all flex items-center gap-1.5"
           >
-            <Save size={14} /> {savingEdits ? 'Menyimpan...' : 'Simpan Semua'}
+            <Save size={14} /> {savingEdits ? 'Saving...' : 'Save All'}
           </button>
         </div>
       )}
@@ -1060,13 +1060,13 @@ export default function FarOverseasAirPage() {
             <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0">
               <div className="flex items-center gap-2.5">
                 <Clock size={19} className="text-[#5A305A]" />
-                <h2 className="text-lg font-bold text-[#5A305A]">Antrian Proses</h2>
+                <h2 className="text-lg font-bold text-[#5A305A]">Processing Queue</h2>
               </div>
               <button onClick={() => setShowQueuePanel(false)} className="text-[#5A305A] hover:text-[#5A305A] p-1"><X size={20} /></button>
             </div>
             <div className="p-5 overflow-y-auto">
               {queue.length === 0 ? (
-                <p className="text-sm text-[#5A305A] italic text-center py-8">Tidak ada antrian dokumen.</p>
+                <p className="text-sm text-[#5A305A] italic text-center py-8">No documents in the queue.</p>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                   {queue.map(item => <QueueCard key={item.id} item={item} onDismiss={dismissQueueItem} />)}

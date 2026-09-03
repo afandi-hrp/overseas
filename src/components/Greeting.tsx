@@ -7,10 +7,10 @@ import { useAuth } from '../lib/AuthContext';
 // ini per halaman lagi.
 function getGreetingMeta(date: Date) {
   const hour = date.getHours();
-  if (hour >= 4 && hour < 11) return { text: 'Selamat pagi', Icon: Sunrise };
-  if (hour >= 11 && hour < 15) return { text: 'Selamat siang', Icon: Sun };
-  if (hour >= 15 && hour < 18) return { text: 'Selamat sore', Icon: Sunset };
-  return { text: 'Selamat malam', Icon: Moon };
+  if (hour >= 4 && hour < 11) return { text: 'Good morning', Icon: Sunrise };
+  if (hour >= 11 && hour < 15) return { text: 'Good afternoon', Icon: Sun };
+  if (hour >= 15 && hour < 18) return { text: 'Good evening', Icon: Sunset };
+  return { text: 'Good night', Icon: Moon };
 }
 
 export default function Greeting() {
@@ -18,7 +18,7 @@ export default function Greeting() {
   const now = new Date();
   const { text, Icon } = getGreetingMeta(now);
   const displayName = profile?.nama || user?.email?.split('@')[0] || '';
-  const dayDate = now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const dayDate = now.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   return (
     <div className="text-right shrink-0">
       <div className="flex items-center justify-end gap-2">

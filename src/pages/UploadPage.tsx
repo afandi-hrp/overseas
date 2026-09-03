@@ -9,24 +9,24 @@ import { useAuth } from '../lib/AuthContext'
 function humanizeUploadError(raw: string): string {
   const msg = (raw || '').toLowerCase();
   if (msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('load failed')) {
-    return 'Tidak dapat terhubung ke server. Periksa koneksi internet Anda, lalu coba lagi.';
+    return 'Could not connect to the server. Check your internet connection, then try again.';
   }
   if (msg.includes('webhook url tidak dikonfigurasi')) {
-    return 'URL webhook belum diatur di server. Hubungi admin untuk mengatur konfigurasinya.';
+    return 'The webhook URL has not been configured on the server. Contact an admin to set it up.';
   }
   if (msg.includes('timeout') || msg.includes('timed out') || msg.includes('aborted')) {
-    return 'Server otomasi tidak merespon dalam waktu yang wajar (timeout). Dokumen mungkin masih diproses di belakang layar — cek "Antrian Proses" beberapa saat lagi sebelum mencoba ulang.';
+    return 'The automation server did not respond in time (timeout). The document may still be processing in the background — check "Processing Queue" again in a moment before retrying.';
   }
   if (msg.includes('502') || msg.includes('503') || msg.includes('504') || msg.includes('bad gateway') || msg.includes('unavailable') || msg.includes('econnrefused')) {
-    return 'Server otomasi sedang tidak dapat dihubungi (kemungkinan sedang sibuk atau maintenance). Coba lagi dalam beberapa menit.';
+    return 'The automation server is currently unreachable (likely busy or under maintenance). Try again in a few minutes.';
   }
   if (msg.includes('401') || msg.includes('403') || msg.includes('unauthorized') || msg.includes('forbidden')) {
-    return 'Akses ke server otomasi ditolak. Hubungi admin untuk memeriksa kredensial/izin akses.';
+    return 'Access to the automation server was denied. Contact an admin to check the credentials/access permissions.';
   }
   if (msg.includes('413') || msg.includes('too large') || msg.includes('payload')) {
-    return 'Ukuran file terlalu besar untuk dikirim. Coba kompres file atau kirim dalam beberapa kali upload.';
+    return 'The file size is too large to send. Try compressing the file or uploading in multiple batches.';
   }
-  return 'Terjadi kesalahan saat mengirim dokumen ke server otomasi. Silakan coba lagi, atau hubungi admin jika masalah terus berulang.';
+  return 'An error occurred while sending the document to the automation server. Please try again, or contact an admin if the problem keeps happening.';
 }
 
 // ─── Modal Notifikasi Gagal Kirim ──────────────────────────────
@@ -40,15 +40,15 @@ function UploadErrorModal({ friendly, raw, onClose, onRetry }: { friendly: strin
             <AlertTriangle size={22} />
           </div>
           <div>
-            <h3 className="font-bold text-[#5A305A] leading-tight">Gagal Mengirim Dokumen</h3>
-            <p className="text-xs font-light text-[#5A305A] mt-0.5">File tidak terkirim ke server otomasi</p>
+            <h3 className="font-bold text-[#5A305A] leading-tight">Failed to Send Document</h3>
+            <p className="text-xs font-light text-[#5A305A] mt-0.5">File was not sent to the automation server</p>
           </div>
         </div>
         <p className="text-sm text-[#5A305A] leading-relaxed mb-4">{friendly}</p>
         {raw && (
           <div className="mb-5">
             <button onClick={() => setShowDetail(s => !s)} className="text-xs text-[#5A305A] hover:text-[#5A305A] font-semibold underline">
-              {showDetail ? 'Sembunyikan detail teknis' : 'Lihat detail teknis'}
+              {showDetail ? 'Hide technical details' : 'View technical details'}
             </button>
             {showDetail && (
               <div className="mt-2 bg-slate-50 border border-slate-200 rounded-lg p-3 text-[11px] font-mono text-[#5A305A] break-words max-h-32 overflow-y-auto">{raw}</div>
@@ -57,10 +57,10 @@ function UploadErrorModal({ friendly, raw, onClose, onRetry }: { friendly: strin
         )}
         <div className="grid grid-cols-2 gap-2">
           <button onClick={onClose} className="py-2.5 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all">
-            Tutup
+            Close
           </button>
           <button onClick={onRetry} className="py-2.5 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-sm transition-all flex items-center justify-center gap-1.5">
-            <RotateCcw size={14} /> Coba Lagi
+            <RotateCcw size={14} /> Try Again
           </button>
         </div>
       </div>
@@ -71,20 +71,20 @@ function UploadErrorModal({ friendly, raw, onClose, onRetry }: { friendly: strin
 // ─── Panduan dokumen per jenis ────────────────────────────────
 const PANDUAN: Record<string, {label: string, wajib: boolean, icon: string}[]> = {
   PIB: [
-    { label: 'Dokumen PIB (BC 2.0)',           wajib: true,  icon: '🏛️' },
-    { label: 'Invoice Duty DHL/FedEx (FINAL)', wajib: true,  icon: '💰' },
-    { label: 'Invoice Freight DHL/FedEx',      wajib: true,  icon: '✈️' },
-    { label: 'BPN (Bukti Penerimaan Negara)',  wajib: true,  icon: '🏦' },
+    { label: 'PIB Document (BC 2.0)',           wajib: true,  icon: '🏛️' },
+    { label: 'DHL/FedEx Duty Invoice (FINAL)', wajib: true,  icon: '💰' },
+    { label: 'DHL/FedEx Freight Invoice',      wajib: true,  icon: '✈️' },
+    { label: 'BPN (State Receipt Proof)',  wajib: true,  icon: '🏦' },
     { label: 'Vendor Invoice / CIPL',          wajib: false, icon: '📄' },
-    { label: 'Dokumen lain boleh disertakan — AI akan abaikan yang tidak relevan', wajib: false, icon: 'ℹ️' },
+    { label: 'Other documents may be included — AI will ignore anything irrelevant', wajib: false, icon: 'ℹ️' },
   ],
   CN: [
-    { label: 'Dokumen SPPBMCP',                wajib: true,  icon: '🏛️' },
-    { label: 'Invoice Duty DHL/FedEx',         wajib: true,  icon: '💰' },
-    { label: 'Invoice Freight DHL/FedEx',      wajib: true,  icon: '✈️' },
-    { label: 'History Tracking Bea Cukai',     wajib: true,  icon: '🔍' },
+    { label: 'SPPBMCP Document',                wajib: true,  icon: '🏛️' },
+    { label: 'DHL/FedEx Duty Invoice',         wajib: true,  icon: '💰' },
+    { label: 'DHL/FedEx Freight Invoice',      wajib: true,  icon: '✈️' },
+    { label: 'Customs Tracking History',     wajib: true,  icon: '🔍' },
     { label: 'Vendor Invoice / CIPL',          wajib: false, icon: '📄' },
-    { label: 'Dokumen lain boleh disertakan — AI akan abaikan yang tidak relevan', wajib: false, icon: 'ℹ️' },
+    { label: 'Other documents may be included — AI will ignore anything irrelevant', wajib: false, icon: 'ℹ️' },
   ],
 }
 
@@ -92,14 +92,14 @@ const PANDUAN: Record<string, {label: string, wajib: boolean, icon: string}[]> =
 function LoadingOverlay({ jenis, count }: { jenis: string, count: number }) {
   const [step, setStep] = useState(0)
   const steps = [
-    'Mengirim ' + count + ' file ke n8n...',
-    'AI memproses setiap PDF satu per satu...',
-    'Mengidentifikasi jenis setiap dokumen...',
-    'Mengekstrak data kepabeanan...',
-    'Mengekstrak data courier & BPN...',
-    'Membaca vendor invoice untuk PO & item price...',
-    'Menghitung & memvalidasi angka...',
-    'Menyimpan ke Supabase...',
+    'Sending ' + count + ' file(s) to n8n...',
+    'AI is processing each PDF one by one...',
+    'Identifying each document type...',
+    'Extracting customs data...',
+    'Extracting courier & BPN data...',
+    'Reading vendor invoice for PO & item price...',
+    'Calculating & validating figures...',
+    'Saving to Supabase...',
   ]
 
   useEffect(() => {
@@ -119,9 +119,9 @@ function LoadingOverlay({ jenis, count }: { jenis: string, count: number }) {
             {jenis === 'PIB' ? '📋' : '📦'}
           </div>
         </div>
-        <h3 className="font-bold text-[#5A305A] text-lg mb-1">AI Sedang Membaca Dokumen</h3>
+        <h3 className="font-bold text-[#5A305A] text-lg mb-1">AI is Reading the Document</h3>
         <p className="text-[#5A305A] text-xs mb-5">
-          {count} file · Menunggu respons n8n (maksimal 5 menit)
+          {count} file(s) · Waiting for n8n response (max 5 minutes)
         </p>
         <div className="bg-slate-50 rounded-xl p-4 text-left space-y-1">
           {steps.map((s, i) => (
@@ -172,12 +172,12 @@ function ResultSuccess({ data, onReset }: { data: any, onReset: () => void }) {
       <div className="flex items-center gap-3 mb-4">
         <div className="w-11 h-11 rounded-xl bg-emerald-500 flex items-center justify-center text-white text-lg">✓</div>
         <div>
-          <p className="font-bold text-emerald-800">Dokumen Berhasil Diarsipkan</p>
+          <p className="font-bold text-emerald-800">Document Successfully Archived</p>
           <p className="text-xs text-emerald-600 mt-0.5">{data.pesan}</p>
         </div>
       </div>
       <div className="bg-white rounded-xl p-4 border border-emerald-200 space-y-2 mb-3">
-        {[['Jenis', data.jenis], ['No. Dokumen', data.no_dokumen], ['AWB', data.awb], ['Vendor', data.vendor], ['PO ORI', data.po_ori]].map(([label, val]) => (
+        {[['Type', data.jenis], ['Doc No.', data.no_dokumen], ['AWB', data.awb], ['Vendor', data.vendor], ['PO ORI', data.po_ori]].map(([label, val]) => (
           <div key={label} className="flex justify-between items-start gap-4">
             <span className="text-xs text-[#5A305A] flex-shrink-0">{label}</span>
             <span className="text-xs font-semibold text-[#5A305A] text-right font-mono truncate max-w-[220px]">{val || '—'}</span>
@@ -186,7 +186,7 @@ function ResultSuccess({ data, onReset }: { data: any, onReset: () => void }) {
       </div>
       {klasifikasi.length > 0 && (
         <div className="bg-white rounded-xl p-4 border border-emerald-200 mb-4">
-          <p className="text-[10px] font-bold text-[#5A305A] uppercase tracking-widest mb-2">Hasil Identifikasi AI</p>
+          <p className="text-[10px] font-bold text-[#5A305A] uppercase tracking-widest mb-2">AI Identification Result</p>
           <div className="space-y-1.5">
             {klasifikasi.map((k: any, i: number) => (
               <div key={i} className="flex items-center justify-between gap-2">
@@ -206,10 +206,10 @@ function ResultSuccess({ data, onReset }: { data: any, onReset: () => void }) {
       )}
       <div className="grid grid-cols-2 gap-2">
         <button onClick={onReset} className="py-3 rounded-xl border border-emerald-300 text-emerald-700 font-semibold text-sm hover:bg-emerald-100 transition-all">
-          Upload Lagi
+          Upload Again
         </button>
         <Link to="/dashboard" className="py-3 flex items-center justify-center rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm text-center transition-all">
-          Lihat Dashboard →
+          View Dashboard →
         </Link>
       </div>
     </div>
@@ -223,7 +223,7 @@ function ResultError({ data, onReset }: { data: any, onReset: () => void }) {
       <div className="flex items-center gap-3 mb-4">
         <div className="w-11 h-11 rounded-xl bg-red-500 flex items-center justify-center text-white text-lg">✕</div>
         <div>
-          <p className="font-bold text-red-800">Gagal Memproses Dokumen</p>
+          <p className="font-bold text-red-800">Failed to Process Document</p>
           {data.node_gagal && data.node_gagal !== '-' && (
             <p className="text-xs text-red-500 mt-0.5 font-mono">Node: {data.node_gagal}</p>
           )}
@@ -231,18 +231,18 @@ function ResultError({ data, onReset }: { data: any, onReset: () => void }) {
       </div>
       <div className="bg-white rounded-xl p-4 border border-red-200 space-y-3 mb-4">
         <div>
-          <p className="text-[10px] font-semibold text-[#5A305A] uppercase tracking-wider mb-1">Pesan Error</p>
-          <p className="text-sm text-red-700">{data.pesan || 'Terjadi kesalahan tidak diketahui'}</p>
+          <p className="text-[10px] font-semibold text-[#5A305A] uppercase tracking-wider mb-1">Error Message</p>
+          <p className="text-sm text-red-700">{data.pesan || 'An unknown error occurred'}</p>
         </div>
         {data.saran && data.saran !== data.pesan && (
           <div>
-            <p className="text-[10px] font-semibold text-[#5A305A] uppercase tracking-wider mb-1">💡 Saran</p>
+            <p className="text-[10px] font-semibold text-[#5A305A] uppercase tracking-wider mb-1">💡 Suggestion</p>
             <p className="text-sm text-[#5A305A]">{data.saran}</p>
           </div>
         )}
       </div>
       <button onClick={onReset} className="w-full py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-all">
-        Coba Lagi
+        Try Again
       </button>
     </div>
   )
@@ -262,7 +262,7 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    document.title = (fixedType === 'sea_air' ? 'Upload Dokumen Sea & Air' : fixedType === 'courier' ? 'Upload Dokumen Courier' : 'Upload Dokumen') + ' · IMI Import System'
+    document.title = (fixedType === 'sea_air' ? 'Sea & Air Document Upload' : fixedType === 'courier' ? 'Courier Document Upload' : 'Document Upload') + ' · IMI Import System'
   }, [fixedType])
 
   const panduan   = PANDUAN[jenis]
@@ -271,14 +271,14 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
 
   const addFiles = useCallback((newFiles: FileList | null) => {
     if(!newFiles) return
-    const allowed = Array.from(newFiles).filter(f => 
-      f.type === 'application/pdf' || 
-      f.type === 'image/jpeg' || 
+    const allowed = Array.from(newFiles).filter(f =>
+      f.type === 'application/pdf' ||
+      f.type === 'image/jpeg' ||
       f.type === 'image/png' ||
       f.type === 'image/jpg'
     )
     if (!allowed.length) return
-    
+
     setFiles(prev => {
       const existing = new Set(prev.map(f => f.name + '_' + f.size))
       return [...prev, ...allowed.filter(f => !existing.has(f.name + '_' + f.size))]
@@ -306,17 +306,17 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
       if (customWebhook) {
         headers['X-Webhook-Url'] = customWebhook;
       }
-      
+
       const res  = await fetch('/api/n8n-proxy-start', { method: 'POST', body: formData, headers })
       const data = await res.json()
-      
-      if (!res.ok) throw new Error(data.pesan || 'Gagal memulai proses ke server otomasi.')
+
+      if (!res.ok) throw new Error(data.pesan || 'Failed to start the process on the automation server.')
 
       // Success quick response
       if (data.status === 'warning') {
         setToastMessage('⚠️ ' + data.pesan);
       } else {
-        setToastMessage('Dokumen berhasil dikirim ke antrian proses.');
+        setToastMessage('Document successfully sent to the processing queue.');
       }
       setTimeout(() => setToastMessage(null), 8000);
       setFiles([]);
@@ -360,10 +360,10 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
                 </div>
                 <div>
                   <h1 className="font-bold text-[#5A305A] text-base leading-tight">
-                    Upload Dokumen {fixedType === 'sea_air' ? 'Sea & Air' : 'Courier'}
+                    {fixedType === 'sea_air' ? 'Sea & Air' : 'Courier'} Document Upload
                   </h1>
                   <p className="text-xs font-light text-[#5A305A] mt-0.5">
-                    {fixedType === 'sea_air' ? 'AI akan membaca & mengarsipkan dokumen sea & air secara otomatis' : 'AI akan membaca & mengarsipkan dokumen DHL/FedEx secara otomatis'}
+                    {fixedType === 'sea_air' ? 'AI will automatically read & archive sea & air documents' : 'AI will automatically read & archive DHL/FedEx documents'}
                   </p>
                 </div>
               </div>
@@ -400,7 +400,7 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
           {/* Step 1 */}
           <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 p-5 shadow-sm">
             <div className="flex items-center justify-between mb-3">
-              <p className="text-[10px] font-bold text-[#5A305A] uppercase tracking-widest">Langkah 1 — Upload Semua PDF</p>
+              <p className="text-[10px] font-bold text-[#5A305A] uppercase tracking-widest">Step 1 — Upload All PDFs</p>
               {files.length > 0 && (
                 <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
                   files.length >= 4 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
@@ -428,14 +428,14 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
                 {dragging ? <FolderOpen size={22} strokeWidth={1.75} /> : files.length >= 4 ? <CheckCircle2 size={22} strokeWidth={1.75} /> : <UploadCloud size={22} strokeWidth={1.75} />}
               </div>
               <p className="font-semibold text-sm text-[#5A305A]">
-                {dragging ? 'Lepaskan file di sini...' :
-                 files.length === 0 ? 'Klik atau drag & drop file (PDF, JPG, PNG)' :
-                 'Klik untuk tambah file lagi'}
+                {dragging ? 'Drop files here...' :
+                 files.length === 0 ? 'Click or drag & drop files (PDF, JPG, PNG)' :
+                 'Click to add more files'}
               </p>
               <p className="text-xs text-[#5A305A] mt-1">
-                {files.length === 0 ? 'AI akan mengenali jenis setiap dokumen secara otomatis' :
-                 files.length < 4 ? 'Tambahkan ' + (4 - files.length) + ' file lagi (minimal 4 wajib)' :
-                 'Sudah cukup — boleh tambah vendor invoice jika ada'}
+                {files.length === 0 ? 'AI will automatically recognize each document type' :
+                 files.length < 4 ? 'Add ' + (4 - files.length) + ' more file(s) (minimum 4 required)' :
+                 'That is enough — you may add a vendor invoice if you have one'}
               </p>
             </div>
 
@@ -447,7 +447,7 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
                 ))}
                 <button onClick={() => setFiles([])}
                   className="w-full py-2 text-xs text-[#5A305A] hover:text-red-500 border border-dashed border-slate-200 hover:border-red-300 rounded-xl transition-all">
-                  Hapus semua file
+                  Remove all files
                 </button>
               </div>
             )}
@@ -455,7 +455,7 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
             {/* Panduan */}
             <div className="mt-4 bg-[#5A305A]/5 rounded-xl p-4 border border-[#5A305A]/10">
               <p className="text-[10px] font-bold text-[#5A305A] uppercase tracking-widest mb-2">
-                Dokumen yang dibutuhkan
+                Required Documents
               </p>
               <div className="space-y-1.5">
                 {panduan.map((item, i) => (
@@ -468,30 +468,30 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
                   </div>
                 ))}
               </div>
-              <p className="text-[10px] text-[#5A305A] mt-2"><span className="text-red-500">*</span> Wajib</p>
+              <p className="text-[10px] text-[#5A305A] mt-2"><span className="text-red-500">*</span> Required</p>
             </div>
           </div>
 
           {/* Step 2 */}
           <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 p-5 shadow-sm">
-            <p className="text-[10px] font-bold text-[#5A305A] uppercase tracking-widest mb-3">Langkah 2 — Proses & Arsipkan</p>
+            <p className="text-[10px] font-bold text-[#5A305A] uppercase tracking-widest mb-3">Step 2 — Process & Archive</p>
             <button onClick={handleSubmit} disabled={!canSubmit || loading}
               className={`w-full py-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${
                 (canSubmit && !loading) ? 'bg-[#5A305A] hover:bg-[#73507B] text-white shadow-md active:scale-[0.98]'
                           : 'bg-slate-100 text-[#5A305A] cursor-not-allowed'
               }`}>
               {loading
-                ? 'Mengirim dokumen...'
+                ? 'Sending documents...'
                 : !canEditUpload
-                  ? 'Anda tidak punya akses untuk upload di halaman ini (view-only)'
+                  ? 'You do not have access to upload on this page (view-only)'
                   : files.length < 4
-                    ? 'Tambahkan ' + (4 - files.length) + ' file lagi untuk melanjutkan'
-                    : <><Sparkles size={15} /> Proses {files.length} Dokumen dengan AI</>
+                    ? 'Add ' + (4 - files.length) + ' more file(s) to continue'
+                    : <><Sparkles size={15} /> Process {files.length} Document(s) with AI</>
               }
             </button>
             {files.length >= 4 && (
               <p className="text-center text-xs text-[#5A305A] mt-2">
-                AI mengidentifikasi dan mengekstrak data setiap PDF secara otomatis
+                AI automatically identifies and extracts data from each PDF
               </p>
             )}
           </div>

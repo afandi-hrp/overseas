@@ -132,6 +132,217 @@ Sudah diimplementasikan (lihat `sql/001_rbac_and_bunker_rls.sql`, `sql/002_direc
   Catatan tersisa: `audit_po_ap_comp` diisi otomasi n8n tiap 30 menit — BELUM diverifikasi eksplisit
   apakah otomasi itu tetap jalan normal setelah RLS aktif (perlu proses itu pakai service role key).
 
+## Translasi UI ke Bahasa Inggris (IN PROGRESS, dimulai 2026-09)
+
+Atas permintaan user, SELURUH teks yang tampil ke user di aplikasi ini sedang ditranslasi dari
+Bahasa Indonesia ke Bahasa Inggris, dikerjakan BERTAHAP per modul (bukan sekaligus) supaya tiap
+tahap bisa diverifikasi `npx tsc --noEmit` + cek visual dulu sebelum lanjut. **Keputusan
+cakupan yang sudah dikonfirmasi user**:
+1. **Nilai status di database TIDAK diubah** (mis. `LENGKAP`/`PROSES`/`PENDING`/`REVISI`/
+   `TIDAK LENGKAP`/`BELUM LENGKAP`/`PERLU REVIEW`/`ARCHIVED` di kolom `status` — ditulis oleh
+   otomasi n8n, dibaca balik oleh logic frontend). `StatusBadge` (`SharedDataTable.tsx` ~baris
+   112) SAAT INI merender nilai `status` mentah langsung tanpa lapisan mapping tampilan — kalau
+   badge status mau ditranslasi ke Inggris juga nanti, WAJIB lewat lapisan mapping
+   Indonesia→Inggris di level render SAJA, JANGAN pernah ubah nilai `status` yang dikirim ke
+   Supabase (akan langsung tidak match dengan apa yang ditulis n8n).
+2. **Istilah domain customs/logistik dibiarkan apa adanya**: PPJK, AWB, PIB, BM, DPP, SPTNP,
+   NDPBM, CIPL, BPN, HS Code, dll — ini singkatan resmi dokumen kepabeanan Indonesia, tidak
+   punya padanan baku dalam Bahasa Inggris yang dipakai industri. Hanya teks di SEKITAR
+   istilah ini (label kolom seperti "Nomor"→"Number", "Tanggal"→"Date") yang ditranslasi.
+3. Nama kolom/tabel database (mis. `nama_pt`, `jenis_dokumen`, `rekapan_seaair`) TIDAK diubah —
+   itu identifier teknis, bukan teks tampilan; mengubahnya butuh migrasi skema + koordinasi
+   ulang n8n, di luar cakupan task ini.
+
+**TEMUAN PENTING (2026-09) — jangan asal translate string yang terlihat seperti label**: di
+`src/utils/ValidasiHelper.ts` (dipakai `ValidasiModal.tsx`/`ValidasiPerhitunganPIB.tsx`/
+`CourierValidasiPage.tsx`, sistem matrix Doc Validation Courier), field `field`/`rowLabel` di
+tiap baris array `SECTIONS` BUKAN cuma teks tampilan — `computeStatus()` (baris ~253) melakukan
+SUBSTRING MATCHING terhadap nilai `field` ini buat menentukan cara membandingkan 2 nilai (mis.
+`fieldName.includes("DPP (")`, `.includes("Referensi (")`, `.includes("Cek Master NPWP")`,
+`lowerField.includes("alamat")`/`"nama pt"`/`"nama npwp"`/`"npwp"`/`"harga"`/`"berat"`/`"awb"`/
+`"invoice"`/`"value"`/`"total"`). `field`/`rowLabel` JUGA dipakai sebagai `groupKey` pengelompokan
+baris di UI (`ValidasiModal.tsx` baris ~1418). Jadi string ini SEKALIGUS logic key & display
+text — analog dengan peringatan "jangan ganti nama baris" dari user, tapi lebih dalam karena
+nyambung ke keyword-matching di logic, bukan cuma dipakai sebagai object key lookup. **JANGAN
+translate `field`/`rowLabel`/`compareDoc`/`label`/`srcLabel` di `SECTIONS` tanpa refactor
+`computeStatus()` dulu supaya keyword-matching-nya tidak lagi bergantung ke teks Indonesia ini**
+(mis. pindah ke matching berbasis `id` yang stabil). Modul Courier Validasi (SharedDataTable
+`VALIDASI_COLS`/`COURIER_COLS` sendiri sudah aman ditranslate — sudah dilakukan; yang BELUM &
+BERISIKO adalah isi `ValidasiModal.tsx`, `CostValidationModal.tsx`,
+`ValidasiPerhitunganPIB.tsx`, `ValidasiHelper.ts`, `ValidasiPibHelper.ts`, `ValidasiFill.ts`,
+dan bagian `CourierValidasiPage.tsx` yang merender label dari `SECTIONS`).
+
+**Progress per modul** (update daftar ini tiap modul baru selesai ditranslasi):
+- ✅ Sidebar/menu utama (`src/components/MainLayout.tsx`) — label submenu Courier/Sea & Air
+  ("Rekapan Invoice"→"Invoice Recap", "Validasi"→"Validation", "Rekapan"→"Recap"), fallback
+  nama akun ("Pengguna"→"User"), tombol/tooltip footer sidebar ("Akun Saya"→"My Account",
+  "Pengaturan"→"Settings", "Keluar"→"Logout"). Label lain (Courier, Sea & Air, Audit, Upload,
+  FAR Overseas, Bunker, Audit AP Local, Audit Trail) sudah Inggris dari awal, tidak disentuh.
+- ✅ `src/components/Greeting.tsx` — sapaan waktu ("Selamat pagi/siang/sore/malam"→"Good
+  morning/afternoon/evening/night"), format tanggal `toLocaleDateString` diganti locale
+  `'id-ID'`→`'en-US'`.
+- 🟡 Courier Upload — SELESAI. `src/pages/UploadPage.tsx` (dipakai bareng Sea & Air Upload lewat
+  `fixedType`, jadi Sea & Air Upload OTOMATIS ikut selesai juga) + `src/components/
+  ProcessingQueue.tsx` (dipakai kedua modul Upload) ditranslate penuh, termasuk toast/error
+  message, step loading overlay, panduan dokumen wajib/opsional.
+- 🟡 Courier Audit & Rekapan — SEBAGIAN BESAR selesai di `SharedDataTable.tsx` (dipakai bareng
+  Sea & Air Audit/Rekapan, jadi banyak yang otomatis ikut kena juga): kolom `COURIER_COLS`/
+  `PIB_COLS`/`CN_COLS`/`CHECKLIST_FIELDS`, `ChecklistModal`, `EditModal` (form Tambah/Edit +
+  status select), `DeleteModal`, toolbar (search/filter/export/tambah data), tombol aksi inline
+  per baris (Edit/Save/Cancel/Delete/Checklist), empty state & error state. Ditambah lapisan
+  translasi tampilan `STATUS_LABELS`/`getStatusLabel()` (~baris 112) dipakai di badge status +
+  select status — nilai DB tetap Indonesia, cuma tampilannya Inggris (lihat poin 1 di atas).
+  Sentinel filter internal `'Semua'` diganti `'All'` di seluruh file (bukan nilai DB, aman).
+  Susulan (2026-09, dari screenshot user): header kolom sticky "Aksi"→"Action", kolom sintetis
+  `{ key: 'jenis_dokumen', label: 'Jenis' }` di tabel gabungan PIB+CN (tab Draft)→"Type", footer
+  pagination "Menampilkan X-Y dari Z record"→"Showing X-Y of Z records".
+  `SEA_AIR_AUDIT_COLS`/`SEA_AIR_REKAPAN_COLS` (kolom Sea & Air spesifik) ditranslate belakangan
+  di modul Sea & Air, lihat poin di bawah.
+- 🟡 Courier Validasi (`ValidasiModal.tsx`) — **HANYA UI chrome statis** yang ditranslate
+  (dikonfirmasi eksplisit oleh user via screenshot 2026-09: "yang dirubah hanya kata-kata...
+  untuk nama kolom nama baris dan nama tabel tidak perlu dirubah"): judul modal ("Validasi
+  Dokumen"→"Document Validation" + subjudul), tombol (Cetak/Simpan/Batal/Ciutkan/Lebarkan →
+  Print/Save/Cancel/Collapse/Expand), label field meta (Jenis Dokumen/Tanggal cek/Diperiksa oleh/
+  Catatan Perubahan Manual → Document Type/Check date/Checked by/Manual Change Notes + 2
+  placeholder input-nya), panel statistik (Sesuai/Tidak sesuai/Belum diisi/Akurasi validasi →
+  Match/Mismatch/Not filled yet/Validation accuracy — via 2 mapping `STATUS_CONFIG` ~baris 468
+  & `getCfg()` ~baris 1225, KEDUANYA cuma mapping status→label tampilan, key internalnya
+  `match`/`mismatch`/`partial`/`empty` TIDAK diubah, aman). **TIDAK DISENTUH SAMA SEKALI**: array
+  `SECTIONS` lokal di file ini (field/compareDoc/rowLabel/label/hint per baris matrix) — ini
+  SAMA PERSIS risikonya dengan `ValidasiHelper.ts` (lihat "TEMUAN PENTING" di atas), file ini
+  ternyata punya SECTIONS sendiri (bukan import dari ValidasiHelper.ts) dengan pola sama:
+  `field` dipakai `computeStatus()` utk keyword-matching cara banding 2 nilai, bukan cuma teks
+  tampilan.
+  Susulan (2026-09, dari screenshot user, konfirmasi ulang cakupan "hanya kata-kata... nama
+  kolom/baris/tabel tidak perlu dirubah"): badge status per-section "X/Y sesuai"/"X tidak
+  sesuai" (~baris 1441-1444, teks statis di luar `section.label`, aman) → "match"/"mismatch";
+  teks "jika ada — khusus jalur PIB" → "if applicable — PIB path only".
+  **`ValidasiPerhitunganPIB.tsx`** (komponen kalkulasi PIB terpisah, dirender di dalam
+  `ValidasiModal.tsx`) — HANYA UI chrome yang ditranslate: `StatusBadge` lokal-nya sendiri
+  (~baris 100, "Sesuai"/"Tidak Sesuai"→"Match"/"Mismatch", key internal `match`/`mismatch`/
+  `empty` tidak diubah, sama pola aman dengan `STATUS_CONFIG`), header tabel kalkulasi
+  (AKTUAL/SELISIH/CARA PERHITUNGAN → ACTUAL/DIFFERENCE/CALCULATION METHOD, FIELD/EXPECTED/STATUS
+  sudah Inggris), judul collapsible "Rincian Item Pabean (Halaman Lanjutan)"→"Customs Item
+  Details (Continued Page)" + subjudulnya (warna teksnya juga diganti ke `#FFF5C5` sesuai
+  permintaan user, ~baris 568). **TIDAK DISENTUH**: `FORMULA` (teks rumus statis, ~baris 5-15),
+  label tiap baris kalkulasi (mis. "Freight (25)"/"Asuransi (24)"/"Nilai Pabean (26)" — row
+  identifier, bukan cuma display), `status_checklist` (`'BELUM LENGKAP'`/`'ADA KETIDAKSESUAIAN'`/
+  `'LULUS'` di `ValidasiModal.tsx` ~baris 971-973 — INI NILAI YANG DISIMPAN KE DB, sama kategori
+  bahaya dengan `status` LENGKAP/PROSES/dst, JANGAN diubah).
+  `CostValidationModal.tsx`, `ValidasiHelper.ts`, `ValidasiPibHelper.ts`, `ValidasiFill.ts`, dan
+  `CourierValidasiPage.tsx` (list-nya, `VALIDASI_COLS` lokal) BELUM disentuh sama sekali.
+- 🟡 Sea & Air — SELESAI (2026-09, dikonfirmasi user pola sama dengan Courier Validasi: "jangan
+  rubah nama kolom, tabel dan baris"). Upload sudah otomatis selesai dari sesi Courier (file
+  sama). Rincian:
+  - `SharedDataTable.tsx`: label Indonesia tersisa di `SEA_AIR_AUDIT_COLS`/`SEA_AIR_REKAPAN_COLS`
+    ditranslate (`Asuransi`→`Insurance`, `NILAI PABEAN`/`NILAI IMPOR`→`CUSTOMS VALUE`/`IMPORT
+    VALUE`, `Tanggal`→`Date`, `Total Keseluruhan`→`Grand Total`, `Tgl Submit Finance`→`Finance
+    Submit Date`, `Type Container`→`Container Type`, dan semua label `Biaya X`/`Vendor
+    Inspeksi`/`Vendor Lainnya` dkk di breakdown cost EMKL/Freight/PBM/Lift Off/Inspeksi/
+    Handling/Lainnya → `X Cost`/`Inspection Vendor`/`Other Vendor` dst). Select status
+    LENGKAP/ARCHIVED di `SeaAirAuditRowGroup`/`SeaAirRekapanRowGroup` dibungkus `getStatusLabel()`
+    (sebelumnya cuma dilakukan utk Courier). Tombol "💲 Cost Validasi"→"Cost Validation", badge
+    boolean `type: 'bool'` (kolom V1-V14 di `VALIDASI_COLS`) "✅ LULUS"/"❌ GAGAL"→"✅ PASS"/
+    "❌ FAIL" (murni turunan boolean, bukan nilai DB, aman).
+  - `SeaAirChecklistModal.tsx` (read-only checklist viewer) — ditambah `STATUS_LABELS`/
+    `getStatusLabel()` versi lokal (sama pola dgn `SharedDataTable.tsx`, termasuk status
+    `'ADA KETIDAKSESUAIAN'`→"Mismatch Found" krn dipakai juga di modul ini), judul/label/empty
+    state ditranslate penuh.
+  - **`SeaAirValidasiModal.tsx`** — TERKONFIRMASI file ini punya SECTIONS-style data sendiri
+    (`headerColors`, `INVOICE_FCL_COLS`/`FP_FCL_COLS`/`PIB_COLS`/dst, row/col dipakai sbg key
+    lookup `checks.find(c => c.row === row && c.col === col)`) — SAMA RISIKONYA dgn
+    `ValidasiHelper.ts`, TIDAK DISENTUH SAMA SEKALI. Yang ditranslate HANYA UI chrome: judul
+    modal + subjudul, tombol (Mode Edit/Print/Simpan Perubahan), `StatusBadge` lokal (match/
+    mismatch/null → "Match"/"Mismatch"/"Not checked yet", tooltip manual-edit), panel Statistik
+    Global, empty state "Dokumen tidak diupload / tidak relevan"→"Document not uploaded / not
+    relevant", badge "Kosong"→"Empty" (VesselTable), placeholder input DUTY table, semua
+    `alert()`/`confirm()` dialog. Header kolom sticky "Validasi" (leftmost label column di semua
+    tabel matrix ini) DITRANSLATE ke "Validation" — dikonfirmasi ini BUKAN key lookup (cuma
+    literal JSX text di 7 tempat, grep `'Validasi'`/`"Validasi"` sbg string literal = 0 match),
+    beda dari `headerColors`/`INVOICE_FCL_COLS` dkk yang memang dipakai sbg key. `SectionWrap`
+    title prop (INVOICE/FAKTUR PAJAK/VESSEL/PIB/DUTY/EMKL/ACTUAL) TIDAK disentuh (nama section/
+    tabel). `console.error`/comment dev tetap Indonesia (bukan scope).
+    Susulan (2026-09, dari screenshot user, tabel DUTY): `headerColors` key `"Aktual (PIB)"` /
+    `"Expected (Kalkulasi)"` (dipakai jadi key lookup WARNA saja, bukan matching data — beda
+    dari `INVOICE_FCL_COLS` dkk — dicek aman, diganti bareng ke-2 pemakaiannya sekaligus)
+    →`"Actual (PIB)"`/`"Expected (Calculation)"`. Row label tabel DUTY (`rows` array lokal di
+    `DutyTable`, KUNCI lookup-nya `key: "bm"/"ppn"/"pph"/"total"` — BEDA dari `label` yang
+    murni display, jadi aman diubah): **atas permintaan eksplisit user**, `label` "BM (PIB No.
+    37)"/"PPN (PIB No. 41)"/"PPH (PIB No. 43)" disederhanakan jadi "BM"/"PPN"/"PPH" (lebar kolom
+    dipertahankan, tidak berubah krn `LABEL_COL_PCT` persen tetap, bukan berdasar isi teks).
+    "Item pabean (N item):"→"Customs items (N item(s)):", tombol "Sembunyikan"/"Tampilkan"→
+    "Hide"/"Show", header sub-tabel item "Nilai Pabean"→"Customs Value", teks status PIB
+    "Status validasi otomatis dari sistem berdasarkan perbandingan data dokumen."→"Automatic
+    validation status from the system based on document data comparison."
+    Susulan lain (screenshot user, halaman kosong "No data yet"): tombol "Upload sekarang →" di
+    `SharedDataTable.tsx` (~baris 3904, muncul saat tabel Audit/Rekapan kosong & belum ada
+    filter search) diterjemahkan ke "Upload now →" SEKALIGUS di-restyle jadi tombol solid
+    `bg-[#5A305A]` (sebelumnya cuma teks link biru underline) sesuai permintaan user.
+  - **`ValidasiShipmentInvoiceLengkap.tsx`** (modal Cost Validation Sea & Air, dipanggil dari
+    `SharedDataTable.tsx`, BELUM diaudit menyeluruh — baru 2 baris statis yang diperbaiki atas
+    screenshot user 2026-09): "Ringkasan Validasi Cost"→"Cost Validation Summary", "Keseluruhan
+    akurasi cost vs actual invoice"→"Overall cost accuracy vs actual invoice" (~baris 675-680,
+    di STATUS BAR bagian atas modal). File ini belum dicek apakah punya pola SECTIONS/row-col
+    lookup serupa `SeaAirValidasiModal.tsx` — kalau ada permintaan translate lanjutan di file
+    ini, cek dulu pola `checks.find(...)`/`field` dipakai sbg matching key sebelum translate
+    row/col apa pun.
+- ✅ FAR Overseas / Direct Loading — SELESAI (2026-09), dengan 1 pengecualian permanen yang
+  dikonfirmasi user (memo cetak, lihat di bawah).
+  - `src/utils/FarOverseasAirHelpers.ts`: `APPROVAL_STATUS_META`/`COST_STATUS_META` (pola
+    display-only sama dgn `STATUS_LABELS`, key `PENDING`/`TIER1_DONE`/`TIER2_DONE`/`APPROVED`/
+    `REJECTED`/`MATCH`/`BELUM_LENGKAP`/`OVERCHARGE`/`UNDERCHARGE` TIDAK diubah, cuma `.label`)
+    ditranslate penuh. Notes template di `computeExpectedFromRate` ("Tarif rentang..."/"origin:
+    ..., tujuan: ...") ditranslate SEBAGIAN — teks scaffolding-nya saja, `rate.jenis_layanan`/
+    `rate.mata_uang` (nilai asli dari `far_overseas_tarif_vendor`) TIDAK disentuh.
+    **JANGAN SENTUH** `mapModeToJenisLayanan()` — mapping keyword (REGULER/SEA/AIR/dst) ke
+    STRING INDONESIA `'Reguler Freight'/'Economy'/'Express'/'Sea Freight'/'Air Freight'` yang
+    harus PERSIS SAMA dengan nilai kolom `jenis_layanan` di tabel `far_overseas_tarif_vendor`
+    (dibaca `rematchTarif()`) — ini data-matching, bukan teks tampilan, translate akan
+    memutus pencocokan tarif otomatis sepenuhnya.
+  - `FarOverseasAirPage.tsx`: List Memo (toolbar/header/toast/confirm delete/empty state/
+    "Simpan Semua"/Antrian Proses) ditranslate penuh, termasuk `header:` kolom tabel ("JUDUL
+    MEMO"→"MEMO TITLE", "STATUS APPROVAL"→"APPROVAL STATUS", "STATUS COST"→"COST STATUS").
+    **JANGAN SENTUH** `inputPlaceholder: 'PENGIRIMAN DARI {ASAL} KE {TUJUAN} (AIR/SEA/REG/
+    EXPRESS/ECONOMY)'` (kolom NOTE 1/`route_note`) — ini BUKAN cuma hint UI, `parseRouteNote()`
+    di `FarOverseasAirHelpers.ts` pakai regex `/^PENGIRIMAN DARI (.+) KE (.+) \((.+)\)$/i` yang
+    WAJIB user ikuti literal (Bahasa Indonesia) saat isi field ini secara manual — translate
+    hint-nya ke Inggris tanpa translate regex-nya akan bikin user salah format & re-kalkulasi
+    cost validation gagal diam-diam (`parseRouteNote` return null).
+  - `FarOverseasAirUploadModal.tsx`, `FarOverseasAirWeightBreakdownModal.tsx` — ditranslate
+    penuh (murni UI chrome, tidak ada memo cetak/matching logic).
+  - `FarOverseasAirCostValidationModal.tsx` — ditranslate penuh: `COST_ROW_LABELS` (key
+    `KG`/`UNIT_PRICE_DARI_DESCRIPTION`/`OTHER_CHARGES`/`TOTAL` tidak diubah, cuma label),
+    `RateCandidateCard` labels (Origin/Tujuan/Jenis Layanan/Harga/Estimasi Waktu →
+    Origin/Destination/Service Type/Price/Estimated Time — LABEL saja, `rate.jenis_layanan` dkk
+    values tidak disentuh), badge SESUAI/TIDAK SESUAI→MATCH/MISMATCH, semua toast/error/empty
+    state. **`RateRowCard`** (render `Object.entries(row)` mentah dari `RateRow`) SENGAJA TIDAK
+    disentuh — itu literal nama kolom database (`jenis_layanan`, `harga_per_kg`, dst) yang
+    dirender langsung sebagai label debug, bukan UI label yang di-desain, jadi tidak bisa/tidak
+    perlu ditranslate.
+  - **`FarOverseasAirDetailModal.tsx`** (modal memo approval + REPLIKA MEMO CETAK) — UI chrome
+    non-print (toolbar, toast, `ApprovalConfirmModal`, `RejectModal`, "PO Details", "Rejection
+    Reason", tombol "Reject") SUDAH ditranslate. **KEPUTUSAN FINAL (dikonfirmasi user 2026-09,
+    JANGAN diubah lagi tanpa ditanya ulang)**: istilah yang tercetak di badan memo resmi
+    (bagian dalam kotak border `#FFF5C5`, replika dokumen fisik asli) SENGAJA DIBIARKAN Bahasa
+    Indonesia — label tanda tangan "Disiapkan Oleh,"/"Diperiksa Oleh," (`SignatureColumn`
+    ~baris 317-319), "Tanggal:" di kolom approval (~baris 60), blok "NOTE :" & catatan
+    pembayaran "MOHON DIBANTU BAYARKAN PADA TANGGAL :" (~baris 303/325-328), karena ini dokumen
+    resmi yang mungkin dicetak/dikirim ke pihak eksternal (vendor/perusahaan) — beda risikonya
+    dari teks UI aplikasi biasa. Konsisten dengan itu, `TIER_ACTION_LABEL`/`PIC_ACTION_LABEL`
+    (tombol "Setujui — Disiapkan Oleh"/dst, MERUJUK istilah yang sama) dan teks PIC "Persetujuan
+    PIC — terpisah dari tahapan Disiapkan/Diperiksa di atas..." JUGA SENGAJA DIBIARKAN Indonesia
+    biar konsisten dengan istilah cetaknya. Ini SATU-SATUNYA bagian UI yang sengaja TIDAK ikut
+    program translasi keseluruhan aplikasi — pengecualian permanen, bukan item yang belum
+    dikerjakan.
+- ⬜ Bunker (`BunkerPage.tsx`) — belum.
+- ⬜ Audit AP Local (`AuditPoPage.tsx`) — belum.
+- ⬜ Audit Trail, Settings hub, halaman admin (`src/pages/admin/*`, RoleManagementPage,
+  FuelSurchargePage, KursBIPage, KursRuleVendorPage, TarifKontrakPage,
+  FarOverseasVendorTarifPage), AccountPage, LoginPage — belum.
+
+Komentar kode & isi CLAUDE.md ini SENGAJA TETAP Bahasa Indonesia (bukan bagian dari scope
+"teks yang tampil ke user").
+
 ## Pola UI yang harus diikuti (dikonsolidasi sepanjang sesi-sesi sebelumnya)
 
 - **Warna brand**: ungu `#5A305A` (hover `#73507B`) untuk tombol aksi utama & ikon header.
@@ -163,9 +374,11 @@ Sudah diimplementasikan (lihat `sql/001_rbac_and_bunker_rls.sql`, `sql/002_direc
   `<Greeting />` kepental ke bawah judul di layar sempit/nama panjang. `main` pakai `pt-3` (bukan
   `py-8`) di sisi atas supaya jaraknya rapat ke header, `max-w-7xl` untuk halaman dengan tabel
   lebar, `max-w-2xl`/`max-w-5xl` untuk form sempit.
-- **`<Greeting />`** (`src/components/Greeting.tsx`) — sapaan "Selamat pagi/siang/sore/malam,
-  {nama}" + ikon waktu + tanggal. Satu sumber kebenaran, dipasang di HAMPIR SEMUA halaman
-  (kecuali `/login`). Jangan duplikat logic `getGreetingMeta` lagi di file lain.
+- **`<Greeting />`** (`src/components/Greeting.tsx`) — sapaan "Good morning/afternoon/evening/
+  night, {nama}" + ikon waktu + tanggal (format `en-US`, sejak translasi UI ke Inggris 2026-09,
+  lihat bagian "Translasi UI ke Bahasa Inggris" di bawah). Satu sumber kebenaran, dipasang di
+  HAMPIR SEMUA halaman (kecuali `/login`). Jangan duplikat logic `getGreetingMeta` lagi di file
+  lain.
 - **Panel filter tabel**: 1 kartu putih (`bg-white rounded-2xl shadow-sm border border-slate-200
   p-4`) berisi search/dropdown/checkbox/total/tombol "Tambah X" — SEMUA dalam **1 baris**
   (`flex flex-nowrap items-center gap-3 overflow-x-auto`, bukan `flex-wrap`) supaya tidak pecah
@@ -267,6 +480,34 @@ Sudah diimplementasikan (lihat `sql/001_rbac_and_bunker_rls.sql`, `sql/002_direc
   field lain di luar kotak memo yang defaultnya `print:hidden`. Karena field ini sekarang sudah
   tercetak lewat note ini, blok "Catatan Internal (tidak tercetak di memo)" yang dulu menampilkan
   Expected Payment Date terpisah SUDAH DIHAPUS (redundant).
+
+## Sea & Air — Audit, kolom Balance & Asuransi (`src/components/SharedDataTable.tsx`, 2026-09)
+
+Kolom `balance` & `asuransi` di tabel `tabel_audit_seaair` (halaman Audit Sea & Air) SEKARANG
+punya formula hardcode di frontend (sebelumnya murni field pass-through hasil ekstraksi n8n,
+lihat catatan lama di bawah soal ini):
+- `BALANCE = VALAS_DPP * KURS_NDPBM - (TOTAL_INV_FREIGHT + ITEM_PRICE_IDR)`
+- `ASURANSI = 0.5% * (TOTAL_INV_FREIGHT + ITEM_PRICE_IDR)`
+
+Auto-recalculate HANYA saat salah satu dari 4 kolom sumbernya (`valas_dpp`, `kurs_ndpbm`,
+`total_inv_freight`, `item_price_idr`) diubah lewat aksi edit user — TIDAK dipaksa recompute
+tiap fetch/tampil (beda dari `cek_selisih` di Courier Audit yang selalu dihitung ulang di
+`fetchRecords`'s `enrichedData`) — supaya nilai asli hasil ekstraksi n8n tetap tampil apa
+adanya sampai user benar-benar mengedit salah satu field sumbernya. Diimplementasi di 2 tempat
+terpisah (Sea & Air Audit editing-nya INLINE per baris, bukan modal, lihat
+`SeaAirAuditRowGroup`/`isInlineEditable` — modal `EditModal` cuma dipakai utk flow "Tambah
+Data"):
+1. `EditModal` (~baris 218+, `useEffect` khusus `tab.id === 'sea_air_audit'`) — pola sama
+   persis dengan auto-calc `item_price_idr`/`cek_selisih` milik `courier_audit` yang sudah ada
+   duluan di atasnya, dipakai saat create record baru.
+2. `handleInlineSaveRow` (~baris 3277) — inline edit cuma kirim field yang BERUBAH (diff), jadi
+   kalau salah satu dari 4 kolom sumber ikut berubah, balance/asuransi dihitung ulang dari
+   gabungan `record` lama + `cleanedPayload` baru, lalu disisipkan ke payload sebelum dikirim
+   ke RPC `update_seaair_row`.
+
+`balance`/`asuransi` DIKELUARKAN dari `isInlineEditable()` (~baris 1316) — tidak bisa diketik
+manual lagi lewat inline edit, murni hasil formula (sama perlakuan dengan `cek_selisih`). Kalau
+formula perlu diubah lagi nanti, HARUS disinkronkan di kedua tempat itu.
 
 ## Sea & Air — Dokumen Validasi (`src/components/SeaAirValidasiModal.tsx`)
 

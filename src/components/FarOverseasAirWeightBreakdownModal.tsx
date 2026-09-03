@@ -27,7 +27,7 @@ export default function FarOverseasAirWeightBreakdownModal({ record, onClose, on
 
   const handleSave = async () => {
     if (poList.some(po => po.weight_kg != null && po.weight_kg < 0)) {
-      setError('Weight tidak boleh minus.');
+      setError('Weight cannot be negative.');
       return;
     }
     setSaving(true);
@@ -44,7 +44,7 @@ export default function FarOverseasAirWeightBreakdownModal({ record, onClose, on
     });
     setSaving(false);
     if (rpcError) {
-      setError('Gagal menyimpan: ' + rpcError.message);
+      setError('Failed to save: ' + rpcError.message);
       return;
     }
     onSaved({ po_list: poList, weight_breakdown: weightBreakdown, dominant_company_code: dominantCompanyCode });
@@ -56,8 +56,8 @@ export default function FarOverseasAirWeightBreakdownModal({ record, onClose, on
       <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
         <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-slate-200 shrink-0">
           <div>
-            <h2 className="text-base font-bold text-[#5A305A]">Breakdown Berat per PO</h2>
-            <p className="text-xs font-light text-[#5A305A]/70 mt-0.5">Isi manual — dokumen PO tidak pernah punya info berat.</p>
+            <h2 className="text-base font-bold text-[#5A305A]">Weight Breakdown per PO</h2>
+            <p className="text-xs font-light text-[#5A305A]/70 mt-0.5">Manual entry — PO documents never include weight information.</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-[#5A305A] transition-colors">
             <X size={20} />
@@ -66,13 +66,13 @@ export default function FarOverseasAirWeightBreakdownModal({ record, onClose, on
 
         <div className="flex-1 overflow-y-auto p-4">
           {poList.length === 0 ? (
-            <p className="text-sm text-[#5A305A] italic text-center py-6">Tidak ada data PO pada shipment ini.</p>
+            <p className="text-sm text-[#5A305A] italic text-center py-6">No PO data for this shipment.</p>
           ) : (
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-[10px] text-[#5A305A]/70 uppercase">
                   <th className="text-left font-semibold pb-2">PO No.</th>
-                  <th className="text-left font-semibold pb-2">Perusahaan</th>
+                  <th className="text-left font-semibold pb-2">Company</th>
                   <th className="text-left font-semibold pb-2">Vendor</th>
                   <th className="text-right font-semibold pb-2 w-28">Weight (KG)</th>
                 </tr>
@@ -105,10 +105,10 @@ export default function FarOverseasAirWeightBreakdownModal({ record, onClose, on
 
         <div className="flex justify-end gap-2 p-4 border-t border-slate-200 shrink-0">
           <button onClick={onClose} disabled={saving} className="px-4 py-2 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all disabled:opacity-50">
-            Batal
+            Cancel
           </button>
           <button onClick={handleSave} disabled={saving || poList.length === 0} className="px-4 py-2 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-sm transition-all disabled:opacity-50 flex items-center gap-1.5">
-            <Save size={14} /> {saving ? 'Menyimpan...' : 'Simpan Breakdown'}
+            <Save size={14} /> {saving ? 'Saving...' : 'Save Breakdown'}
           </button>
         </div>
       </div>

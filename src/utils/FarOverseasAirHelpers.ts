@@ -61,16 +61,16 @@ export function looseNameMatch(a: string | null | undefined, b: string | null | 
 }
 
 export const APPROVAL_STATUS_META: Record<string, { label: string; badgeClass: string }> = {
-  PENDING:      { label: 'Menunggu Persetujuan', badgeClass: 'bg-amber-100 text-amber-700' },
-  TIER1_DONE:   { label: 'Tahap 1 Selesai',      badgeClass: 'bg-blue-100 text-blue-700' },
-  TIER2_DONE:   { label: 'Tahap 2 Selesai',      badgeClass: 'bg-blue-100 text-blue-700' },
-  APPROVED:     { label: 'Disetujui',            badgeClass: 'bg-emerald-100 text-emerald-700' },
-  REJECTED:     { label: 'Ditolak',               badgeClass: 'bg-rose-100 text-rose-700' },
+  PENDING:      { label: 'Awaiting Approval', badgeClass: 'bg-amber-100 text-amber-700' },
+  TIER1_DONE:   { label: 'Step 1 Complete',   badgeClass: 'bg-blue-100 text-blue-700' },
+  TIER2_DONE:   { label: 'Step 2 Complete',   badgeClass: 'bg-blue-100 text-blue-700' },
+  APPROVED:     { label: 'Approved',          badgeClass: 'bg-emerald-100 text-emerald-700' },
+  REJECTED:     { label: 'Rejected',          badgeClass: 'bg-rose-100 text-rose-700' },
 };
 
 export const COST_STATUS_META: Record<string, { label: string; badgeClass: string }> = {
   MATCH:          { label: 'Match',          badgeClass: 'bg-emerald-100 text-emerald-700' },
-  BELUM_LENGKAP:  { label: 'Belum Lengkap',  badgeClass: 'bg-amber-100 text-amber-700' },
+  BELUM_LENGKAP:  { label: 'Incomplete',     badgeClass: 'bg-amber-100 text-amber-700' },
   OVERCHARGE:     { label: 'Overcharge',     badgeClass: 'bg-rose-100 text-rose-700' },
   UNDERCHARGE:    { label: 'Undercharge',    badgeClass: 'bg-rose-100 text-rose-700' },
 };
@@ -202,10 +202,10 @@ export function computeExpectedFromRate(rate: RateRow, qty: number | null, actua
     } else if (actualUnitPrice != null) {
       unitPriceExpected = (actualUnitPrice < rate.harga_per_cbm_min) ? rate.harga_per_cbm_min : rate.harga_per_cbm_max;
     }
-    unitPriceNotes = `Tarif rentang ${rate.harga_per_cbm_min}-${rate.harga_per_cbm_max} ${rate.mata_uang}/CBM.`;
+    unitPriceNotes = `Rate range ${rate.harga_per_cbm_min}-${rate.harga_per_cbm_max} ${rate.mata_uang}/CBM.`;
   } else {
     unitPriceExpected = rate.harga_per_kg ?? rate.harga_per_cbm ?? null;
-    unitPriceNotes = `${rate.jenis_layanan} -- origin: ${rate.origin || '-'}, tujuan: ${rate.tujuan || '-'}.`;
+    unitPriceNotes = `${rate.jenis_layanan} -- origin: ${rate.origin || '-'}, destination: ${rate.tujuan || '-'}.`;
   }
 
   const kgExpected = rate.minimal_berat ?? rate.berat_min ?? null;

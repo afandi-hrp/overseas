@@ -13,7 +13,7 @@ type PoListEntryLite = { po_no_raw?: string | null; weight_kg?: number | null };
 
 const COST_ROW_LABELS: Record<string, string> = {
   KG: 'KG',
-  UNIT_PRICE_DARI_DESCRIPTION: 'Unit Price (dari Description)',
+  UNIT_PRICE_DARI_DESCRIPTION: 'Unit Price (from Description)',
   OTHER_CHARGES: 'Other Charges',
   TOTAL: 'TOTAL',
 };
@@ -96,13 +96,13 @@ const RateCandidateCard: React.FC<{ rate: RateRow; onSelect: () => void; selecti
       <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
         <span className="text-[#5A305A]/70">Origin</span>
         <span className="font-semibold text-[#5A305A] text-right truncate">{rate.origin || '-'}</span>
-        <span className="text-[#5A305A]/70">Tujuan</span>
+        <span className="text-[#5A305A]/70">Destination</span>
         <span className="font-semibold text-[#5A305A] text-right truncate">{rate.tujuan || '-'}</span>
-        <span className="text-[#5A305A]/70">Jenis Layanan</span>
+        <span className="text-[#5A305A]/70">Service Type</span>
         <span className="font-semibold text-[#5A305A] text-right truncate">{rate.jenis_layanan || '-'}</span>
-        <span className="text-[#5A305A]/70">Harga</span>
+        <span className="text-[#5A305A]/70">Price</span>
         <span className="font-semibold text-[#5A305A] text-right truncate">{hargaLabel}</span>
-        <span className="text-[#5A305A]/70">Estimasi Waktu</span>
+        <span className="text-[#5A305A]/70">Estimated Time</span>
         <span className="font-semibold text-[#5A305A] text-right truncate">{rate.estimasi_waktu || '-'}</span>
       </div>
       <button
@@ -110,7 +110,7 @@ const RateCandidateCard: React.FC<{ rate: RateRow; onSelect: () => void; selecti
         disabled={selecting}
         className="w-full py-1.5 rounded-lg bg-[#5A305A] hover:bg-[#73507B] text-white text-[11px] font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
       >
-        <CheckCircle size={12} /> {selecting ? 'Memilih...' : 'Pilih Tarif Ini'}
+        <CheckCircle size={12} /> {selecting ? 'Selecting...' : 'Select This Rate'}
       </button>
     </div>
   );
@@ -164,9 +164,9 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
       }
 
       if (cvRes.error) {
-        setLoadError('Gagal mengambil data cost validation: ' + cvRes.error.message);
+        setLoadError('Failed to fetch cost validation data: ' + cvRes.error.message);
       } else if (!cvRes.data) {
-        setLoadError('Data cost validation belum tersedia untuk shipment ini (belum diproses lengkap oleh sistem).');
+        setLoadError('Cost validation data is not yet available for this shipment (not fully processed by the system yet).');
       } else {
         // eslint-disable-next-line no-console
         console.log('[FarOverseasAirCostValidationModal] raw cost_validasi_far_overseas_air row:', cvRes.data);
@@ -222,12 +222,12 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
     });
     setSaving(false);
     if (error) {
-      showToast('Gagal menyimpan perubahan: ' + error.message, 'error');
+      showToast('Failed to save changes: ' + error.message, 'error');
     } else {
       setSavedDocValidation(docValidation);
       setSavedCostValidation(costValidation);
       setHasUnsavedChanges(false);
-      showToast('Perubahan tersimpan.', 'success');
+      showToast('Changes saved.', 'success');
     }
   };
 
@@ -268,14 +268,14 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
     });
     setSelectingRate(false);
     if (error) {
-      showToast('Gagal memilih tarif: ' + error.message, 'error');
+      showToast('Failed to select rate: ' + error.message, 'error');
     } else {
       setCostValidation(updatedCostValidation);
       setSavedCostValidation(updatedCostValidation);
       setRateRowUsed(rate);
       setOverallStatus(newStatus);
       setShowRateDetail(false);
-      showToast('Tarif dipilih, Expected sudah dihitung ulang.', 'success');
+      showToast('Rate selected, Expected has been recalculated.', 'success');
     }
   };
 
@@ -316,7 +316,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                 onClick={() => setIsEditMode(m => !m)}
                 className={`px-3 py-1.5 text-sm font-medium rounded-md flex items-center gap-2 transition-colors ${isEditMode ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-slate-100 hover:bg-slate-200 text-[#5A305A]'}`}
               >
-                <Edit3 size={16} /> {isEditMode ? 'Mode Edit Aktif' : 'Edit'}
+                <Edit3 size={16} /> {isEditMode ? 'Edit Mode Active' : 'Edit'}
               </button>
             )}
             <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-[#5A305A] transition-colors">
@@ -335,7 +335,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
           {loading ? (
             <div className="flex flex-col items-center justify-center h-full py-20">
               <div className="animate-spin h-8 w-8 border-4 border-[#5A305A] border-t-transparent rounded-full mb-4" />
-              <p className="text-[#5A305A] text-sm">Memuat data cost validation...</p>
+              <p className="text-[#5A305A] text-sm">Loading cost validation data...</p>
             </div>
           ) : loadError ? (
             <div className="p-6">
@@ -356,12 +356,12 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                       <p className="text-sm font-semibold text-[#5A305A]">{vendorMatched}</p>
                     ) : (
                       <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5 inline-flex items-center gap-1.5">
-                        <HelpCircle size={13} /> Vendor freight belum dikenali sistem
+                        <HelpCircle size={13} /> Freight vendor not yet recognized by the system
                       </p>
                     )}
                   </div>
                   <div>
-                    <p className="text-[10px] font-bold text-[#5A305A] uppercase tracking-wider mb-1">Nama PT di Invoice</p>
+                    <p className="text-[10px] font-bold text-[#5A305A] uppercase tracking-wider mb-1">PT Name on Invoice</p>
                     <p className="text-sm font-semibold text-[#5A305A]">{invoicePtName || '-'}</p>
                   </div>
                 </div>
@@ -372,12 +372,12 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                     className="w-full flex items-center justify-between gap-2 text-left"
                   >
                     <p className="text-[10px] font-bold text-[#5A305A] uppercase tracking-wider">
-                      Tarif yang Dipakai {rateIsAmbiguous && <span className="text-amber-600 normal-case font-semibold ml-1">(ambigu — {rateRows.length} tarif cocok, silakan pilih salah satu)</span>}
+                      Rate Used {rateIsAmbiguous && <span className="text-amber-600 normal-case font-semibold ml-1">(ambiguous — {rateRows.length} matching rates, please select one)</span>}
                     </p>
                     {rateRows.length > 0 && (showRateDetail ? <ChevronUp size={14} className="text-[#5A305A] shrink-0" /> : <ChevronDown size={14} className="text-[#5A305A] shrink-0" />)}
                   </button>
                   {rateRows.length === 0 ? (
-                    <p className="text-xs text-[#5A305A] italic mt-1.5">Belum ada tarif yang teridentifikasi.</p>
+                    <p className="text-xs text-[#5A305A] italic mt-1.5">No rate identified yet.</p>
                   ) : showRateDetail ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1.5">
                       {rateIsAmbiguous && canEditDirectLoading
@@ -404,10 +404,10 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
               <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
                 <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
                   <h3 className="text-sm font-bold text-[#5A305A]">Document Validation</h3>
-                  <p className="text-[11px] font-light text-[#5A305A]/70 mt-0.5">Breakdown per PO — kelengkapan dokumen & kecocokan nama PT</p>
+                  <p className="text-[11px] font-light text-[#5A305A]/70 mt-0.5">Breakdown per PO — document completeness & PT name match</p>
                 </div>
                 {docValidation.length === 0 ? (
-                  <p className="text-xs text-[#5A305A] italic text-center py-6">Belum ada data document validation (PO belum diproses).</p>
+                  <p className="text-xs text-[#5A305A] italic text-center py-6">No document validation data yet (PO not processed yet).</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs border-collapse">
@@ -430,11 +430,11 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                           return (
                             <React.Fragment key={idx}>
                               <tr className="border-t border-slate-100">
-                                <td className="px-3 py-1.5 font-semibold text-[#5A305A] align-top">NAMA PT</td>
+                                <td className="px-3 py-1.5 font-semibold text-[#5A305A] align-top">PT NAME</td>
                                 <td className="px-3 py-1.5 align-top text-slate-300">—</td>
                                 <td className="px-3 py-1.5 align-top">
                                   <div className="flex items-center gap-1.5">
-                                    <span className="text-[#5A305A]">{ptFromPo || '(kode perusahaan tidak dikenal)'}</span>
+                                    <span className="text-[#5A305A]">{ptFromPo || '(unrecognized company code)'}</span>
                                     {isDominantContributor && <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />}
                                     {row.edited && <EditedMark />}
                                   </div>
@@ -442,7 +442,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                                 <td className="px-3 py-1.5 align-top text-[#5A305A]">{weight != null ? `${weight} KG` : '-'}</td>
                               </tr>
                               <tr>
-                                <td className="px-3 py-1.5 font-semibold text-[#5A305A] align-top">NO PO</td>
+                                <td className="px-3 py-1.5 font-semibold text-[#5A305A] align-top">PO NUMBER</td>
                                 <td className="px-3 py-1.5 align-top text-slate-300">—</td>
                                 <td className="px-3 py-1.5 align-top">
                                   <EditableCell align="left" editable={isEditMode} value={row.po_no} onChange={(v) => updateDocField(idx, 'po_no', v)} />
@@ -459,7 +459,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                           <td className="px-3 py-2.5 align-top font-semibold text-[#5A305A]">{dominantPtName || '-'}</td>
                           <td className="px-3 py-2.5 align-top">
                             <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap inline-flex items-center gap-1 ${conclusionMatch ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                              {conclusionMatch ? <CheckCircle2 size={11} /> : <AlertTriangle size={11} />} {conclusionMatch ? 'SESUAI' : 'TIDAK SESUAI'}
+                              {conclusionMatch ? <CheckCircle2 size={11} /> : <AlertTriangle size={11} />} {conclusionMatch ? 'MATCH' : 'MISMATCH'}
                             </span>
                           </td>
                         </tr>
@@ -473,10 +473,10 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
               <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
                 <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
                   <h3 className="text-sm font-bold text-[#5A305A]">Cost Validation</h3>
-                  <p className="text-[11px] font-light text-[#5A305A]/70 mt-0.5">Actual = 100% isi yang ditagihkan di invoice</p>
+                  <p className="text-[11px] font-light text-[#5A305A]/70 mt-0.5">Actual = 100% of what is billed on the invoice</p>
                 </div>
                 {orderedCostRows.length === 0 ? (
-                  <p className="text-xs text-[#5A305A] italic text-center py-6">Belum ada data cost validation.</p>
+                  <p className="text-xs text-[#5A305A] italic text-center py-6">No cost validation data yet.</p>
                 ) : (
                   <table className="w-full text-xs">
                     <thead>
@@ -514,7 +514,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                                 value={row.notes}
                                 onChange={(v) => updateCostField(row.row_key, 'notes', v)}
                                 warn={notesRequiredButMissing}
-                                placeholder={notesRequiredButMissing ? 'Wajib diisi — jelaskan Other Charges' : '-'}
+                                placeholder={notesRequiredButMissing ? 'Required — explain the Other Charges' : '-'}
                               />
                             </td>
                           </tr>
@@ -530,21 +530,21 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
 
         {hasUnsavedChanges && (
           <div className="shrink-0 border-t border-amber-200 bg-amber-50 px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
-            <p className="text-xs font-medium text-amber-800">Ada perubahan yang belum disimpan.</p>
+            <p className="text-xs font-medium text-amber-800">There are unsaved changes.</p>
             <div className="flex items-center gap-2">
               <button
                 onClick={handleDiscardChanges}
                 disabled={saving}
                 className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[#5A305A] font-semibold text-xs hover:bg-slate-50 transition-all disabled:opacity-50"
               >
-                Batal
+                Cancel
               </button>
               <button
                 onClick={handleSaveChanges}
                 disabled={saving}
                 className="px-3 py-1.5 rounded-lg bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-xs transition-all disabled:opacity-50 flex items-center gap-1.5"
               >
-                <Save size={13} /> {saving ? 'Menyimpan...' : 'Simpan Perubahan'}
+                <Save size={13} /> {saving ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </div>

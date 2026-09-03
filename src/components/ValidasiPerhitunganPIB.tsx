@@ -101,21 +101,21 @@ function StatusBadge({ st, isEditMode, onClick }: { st: string, isEditMode?: boo
   const baseClasses = isEditMode ? "cursor-pointer hover:opacity-75 transition-opacity" : "";
   if (st === "match") {
     return (
-      <div className={`flex items-center justify-center text-emerald-600 font-bold ${baseClasses}`} onClick={onClick} title={isEditMode ? "Klik untuk merubah status manual" : undefined}>
+      <div className={`flex items-center justify-center text-emerald-600 font-bold ${baseClasses}`} onClick={onClick} title={isEditMode ? "Click to change the status manually" : undefined}>
         <CheckCircle2 size={16} className="mr-1" />
-        Sesuai
+        Match
       </div>
     );
   } else if (st === "mismatch") {
     return (
-      <div className={`flex items-center justify-center text-rose-600 font-bold ${baseClasses}`} onClick={onClick} title={isEditMode ? "Klik untuk merubah status manual" : undefined}>
+      <div className={`flex items-center justify-center text-rose-600 font-bold ${baseClasses}`} onClick={onClick} title={isEditMode ? "Click to change the status manually" : undefined}>
         <XCircle size={16} className="mr-1" />
-        Tidak Sesuai
+        Mismatch
       </div>
     );
   }
   return (
-    <div className={`text-center text-[#5A305A] font-bold ${baseClasses}`} onClick={onClick} title={isEditMode ? "Klik untuk merubah status manual" : undefined}>-</div>
+    <div className={`text-center text-[#5A305A] font-bold ${baseClasses}`} onClick={onClick} title={isEditMode ? "Click to change the status manually" : undefined}>-</div>
   );
 }
 
@@ -468,10 +468,10 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
           <thead>
             <tr>
               <th className="p-3 bg-slate-100 border-b border-r border-slate-200 text-[11px] font-bold text-[#5A305A] uppercase tracking-wide whitespace-nowrap w-[1%] sticky left-0 z-10 shadow-[1px_0_0_0_#e2e8f0]">FIELD</th>
-              <th className="p-3 border-b border-r border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center bg-blue-50 text-blue-800 w-[12%]">AKTUAL</th>
+              <th className="p-3 border-b border-r border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center bg-blue-50 text-blue-800 w-[12%]">ACTUAL</th>
               <th className="p-3 border-b border-r border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center bg-emerald-50 text-emerald-800 w-[12%]">EXPECTED</th>
-              <th className="p-3 border-b border-r border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center bg-amber-50 text-amber-800 w-[12%]">SELISIH</th>
-              <th className="p-3 border-b border-r border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center bg-slate-50 text-[#5A305A] w-[20%]">CARA PERHITUNGAN</th>
+              <th className="p-3 border-b border-r border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center bg-amber-50 text-amber-800 w-[12%]">DIFFERENCE</th>
+              <th className="p-3 border-b border-r border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center bg-slate-50 text-[#5A305A] w-[20%]">CALCULATION METHOD</th>
               <th className="p-3 border-b border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center bg-slate-50 text-[#5A305A] w-[12%]">STATUS</th>
             </tr>
           </thead>
@@ -559,14 +559,14 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
                 <ChevronRight size={18} className="text-[#5A305A] shrink-0" />
               )}
               <span className="font-bold text-xs md:text-sm tracking-wide uppercase">
-                Rincian Item Pabean (Halaman Lanjutan)
+                Customs Item Details (Continued Page)
               </span>
               <span style={{ fontSize: 11, opacity: 0.6 }}>
                 ({items.length} item)
               </span>
             </button>
-            <p className="text-[11px] text-[#5A305A] mt-1 pl-6">
-              Diekstrak otomatis dari dokumen {jnsUpper === 'CN' ? 'SPPBMCP' : 'PIB'} — dapat diedit manual melalui form di bawah jika ada koreksi
+            <p className="text-[11px] text-[#FFF5C5] mt-1 pl-6">
+              Automatically extracted from the {jnsUpper === 'CN' ? 'SPPBMCP' : 'PIB'} document — can be manually edited via the form below if corrections are needed
             </p>
           </div>
           {showItemDetail && (
