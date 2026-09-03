@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { CheckCircle2, XCircle, X, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays } from 'lucide-react'
+import { CheckCircle2, XCircle, X, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays, AlertTriangle, Save } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
@@ -11,6 +11,9 @@ import SeaAirChecklistModal from '../components/SeaAirChecklistModal'
 import SeaAirValidasiModal from '../components/SeaAirValidasiModal'
 import ValidasiShipmentInvoiceLengkap from '../components/ValidasiShipmentInvoiceLengkap'
 import { computeLiveCostSummary } from '../utils/CostValidationHelpers'
+import { SECTIONS, computeStatus } from '../utils/ValidasiHelper'
+import { generateValues } from '../utils/ValidasiFill'
+import { calculatePibStats } from '../utils/ValidasiPibHelper'
 
 // ─── Konfigurasi Tab ──────────────────────────────────────────
 
@@ -961,6 +964,71 @@ async function fetchCourierValidationBadgePct(rows: any[]): Promise<{ docPctMap:
     fetchCostPct('cn_id', cnIds, 'cn_', 'CN'),
   ]);
 
+  // FALLBACK live-calc utk Doc Validation -- tabel_checklist_validasi CUMA keisi kalau
+  // seseorang pernah buka ValidasiModal (Doc Validation) dan klik Simpan (lihat ValidasiModal.tsx
+  // ~baris 1001-1013, INSERT/UPDATE manual, BUKAN diisi n8n otomatis). Jadi mayoritas baris yang
+  // belum pernah dibuka modalnya TIDAK punya baris di situ -- sebelumnya badge-nya jadi 0% terus
+  // (bukan krn nilainya beneran 0%, tapi krn datanya belum ada), tidak sinkron sama sekali dgn
+  // yang kelihatan begitu user buka modal Doc Validation-nya. Fix: baris yang belum ada di
+  // docPctMap dihitung ulang live di sini, REPLIKA PERSIS fallback yang sama dipakai
+  // CourierValidasiPage.tsx (SECTIONS/computeStatus/generateValues/calculatePibStats) --
+  // JANGAN duplikat/tulis ulang formula ini lagi di tempat lain, lihat file itu kalau perlu diubah.
+  const missingPibIds = pibIds.filter(id => docPctMap[`pib_${id}`] === undefined);
+  const missingCnIds = cnIds.filter(id => docPctMap[`cn_${id}`] === undefined);
+  if (missingPibIds.length > 0 || missingCnIds.length > 0) {
+    let allDokumenValidasi: any[] = [];
+    for (let i = 0; i < missingPibIds.length; i += chunkSize) {
+      const chunk = missingPibIds.slice(i, i + chunkSize);
+      const { data: dv } = await supabase.from('dokumen_validasi').select('pib_id, cn_id, jenis_dokumen, awb, data_validasi_raw').in('pib_id', chunk);
+      if (dv) allDokumenValidasi = [...allDokumenValidasi, ...dv];
+    }
+    for (let i = 0; i < missingCnIds.length; i += chunkSize) {
+      const chunk = missingCnIds.slice(i, i + chunkSize);
+      const { data: dv } = await supabase.from('dokumen_validasi').select('pib_id, cn_id, jenis_dokumen, awb, data_validasi_raw').in('cn_id', chunk);
+      if (dv) allDokumenValidasi = [...allDokumenValidasi, ...dv];
+    }
+
+    if (allDokumenValidasi.length > 0) {
+      const { data: npwpData } = await supabase.from('tabel_npwp').select('*');
+      const localNpwps = npwpData || [];
+
+      allDokumenValidasi.forEach((r: any) => {
+        let raw: any = {};
+        try {
+          raw = typeof r.data_validasi_raw === 'string' ? JSON.parse(r.data_validasi_raw) : (r.data_validasi_raw || {});
+        } catch (e) {}
+
+        const docType = r.jenis_dokumen || (r.pib_id ? 'PIB' : 'CN');
+        const activeSections = SECTIONS.filter(section => {
+          if (docType === 'CN' && section.id === 's_pib') return false;
+          if (docType === 'CN' && section.id === 's_sptnp') return false;
+          if (docType === 'PIB' && section.id === 's_cipl') return false;
+          if (docType === 'PIB' && section.id === 's_sppbmcp') return false;
+          if (docType === 'PIB' && section.id === 's_billing') return false;
+          return true;
+        });
+
+        const values = generateValues(raw, r.awb || '', localNpwps);
+        let match = 0, mismatch = 0;
+        activeSections.forEach(s => s.rows.forEach(row => {
+          const v = values[row.id] || { src: '', cmp: '' };
+          const st = computeStatus(v.src, v.cmp, (row as any).isFormat, row.field, raw?.is_po_non_imi);
+          if (st === 'match') match++;
+          else if (st === 'mismatch') mismatch++;
+        }));
+
+        const pibStats = calculatePibStats(raw, docType);
+        match += pibStats.match;
+        mismatch += pibStats.mismatch;
+
+        const checked = match + mismatch;
+        const pct = checked > 0 ? Math.round((match / checked) * 100) : 0;
+        if (r.pib_id) docPctMap[`pib_${r.pib_id}`] = pct;
+        if (r.cn_id) docPctMap[`cn_${r.cn_id}`] = pct;
+      });
+    }
+  }
+
   return { docPctMap, costPctMap };
 }
 
@@ -1644,50 +1712,25 @@ const SeaAirAuditRowGroup: React.FC<{
 };
 
 
-const CourierAuditRowGroup: React.FC<{ 
-  rec: any, index: number, cols: any[], 
-  onEdit?: (r: any) => void,
+const CourierAuditRowGroup: React.FC<{
+  rec: any, index: number, cols: any[],
   onChecklist?: (r: any) => void,
   onValidasi?: (r: any) => void,
   onCostValidasi?: (r: any) => void,
   onArchive?: (r: any) => void,
   onUndraft?: (r: any) => void,
   onDelete?: (r: any) => void,
-  onInlineSaveRow?: (id: number, payload: any) => Promise<boolean>
-}> = ({ rec, index, cols, onEdit, onChecklist, onValidasi, onCostValidasi, onArchive, onUndraft, onDelete, onInlineSaveRow }) => {
+  editMode?: boolean,
+  getVal?: (r: any, field: string) => any,
+  setVal?: (r: any, field: string, value: any) => void,
+}> = ({ rec, index, cols, onChecklist, onValidasi, onCostValidasi, onArchive, onUndraft, onDelete, editMode, getVal, setVal }) => {
   const repeatingCols = ['po_ori', 'vendor_inv_no', 'po_harga_detail'];
 
-  const [isEditing, setIsEditing] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [editForm, setEditForm] = useState<any>({});
-  const [isSaving, setIsSaving] = useState(false);
   const [showActions, setShowActions] = useState(false);
 
-  const handleStartEdit = () => {
-    if (onInlineSaveRow) {
-      setEditForm(rec);
-      setIsEditing(true);
-    } else if (onEdit) {
-      onEdit(rec);
-    }
-  };
-
-  const handleSave = async () => {
-    if (!onInlineSaveRow) return;
-    setIsSaving(true);
-    const changes: any = {};
-    Object.keys(editForm).forEach(k => {
-      if (editForm[k] !== rec[k]) changes[k] = editForm[k];
-    });
-    if (Object.keys(changes).length === 0) {
-      setIsEditing(false);
-      setIsSaving(false);
-      return;
-    }
-    const success = await onInlineSaveRow(rec.id, changes);
-    setIsSaving(false);
-    if (success) setIsEditing(false);
-  };
+  const canBulkEdit = !!(getVal && setVal);
+  const editingThisRow = !!editMode && canBulkEdit && rec.status !== 'LENGKAP';
 
   let splittedData: { po: string, inv: string, harga: string }[] = [];
   const pos = typeof rec.po_ori === 'string' ? rec.po_ori.split(/\s*\+\s*|,\s+/).map((s: string) => s.trim()).filter(Boolean) : [];
@@ -1707,26 +1750,32 @@ const CourierAuditRowGroup: React.FC<{
   const rowCount = splittedData.length;
   const displayData = isExpanded ? splittedData : [splittedData[0]];
 
+  // Kalau baris ini punya pending edit belum disimpan (lihat courierEdit* di parent), tampilan
+  // read-only-nya ikut pakai nilai hasil edit itu (bukan nilai lama dari server) -- supaya user
+  // tetap lihat perubahannya walau lagi tidak "aktif" mengedit baris ini (bisa sambil edit baris
+  // lain, baru "Simpan Semua" belakangan). Sama pola dengan getVal() di FarOverseasAirPage.tsx.
+  const effectiveRec = canBulkEdit ? cols.reduce((acc: any, c: any) => { acc[c.key] = getVal!(rec, c.key); return acc; }, { ...rec }) : rec;
+
   return (
     <>
       {displayData.map((data, i: number) => {
         const isFirst = i === 0;
         return (
-          <tr key={`${rec.id}-${i}`} className={`transition-colors group ${(isExpanded ? i === rowCount - 1 : true) ? 'border-b-[3px] border-slate-300' : 'border-b border-slate-100'} ${!isFirst ? 'border-t-0 bg-slate-50/40' : ''} ${isEditing ? 'bg-blue-50/50 hover:bg-blue-50/60' : 'hover:bg-blue-50/30'}`}>
+          <tr key={`${rec.id}-${i}`} className={`transition-colors group ${(isExpanded ? i === rowCount - 1 : true) ? 'border-b-[3px] border-slate-300' : 'border-b border-slate-100'} ${!isFirst ? 'border-t-0 bg-slate-50/40' : ''} ${editingThisRow ? 'bg-blue-50/50 hover:bg-blue-50/60' : 'hover:bg-blue-50/30'}`}>
             {cols.map(c => {
               const isRepeating = repeatingCols.includes(c.key);
               if (!isRepeating && !isFirst) return null;
-              
-              let { content, alignClass } = getCellData(c, rec, index);
-              
+
+              let { content, alignClass } = getCellData(c, effectiveRec, index);
+
               if (c.key === 'po_ori' || c.key === 'vendor_inv_no' || c.key === 'po_harga_detail') {
                 const val = c.key === 'po_ori' ? data.po : c.key === 'vendor_inv_no' ? data.inv : data.harga;
                 content = (
                   <div className="flex items-center gap-2 justify-between">
                     <span>{val || '—'}</span>
                     {isFirst && rowCount > 1 && (
-                      <button 
-                        onClick={() => setIsExpanded(!isExpanded)} 
+                      <button
+                        onClick={() => setIsExpanded(!isExpanded)}
                         className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-200 hover:bg-blue-100 font-bold ml-2 whitespace-nowrap"
                         title="Toggle Data Splits"
                       >
@@ -1736,20 +1785,21 @@ const CourierAuditRowGroup: React.FC<{
                   </div>
                 );
                 alignClass = 'text-left font-mono text-[#5A305A]';
-              }  
-              
+              }
+
               const additionalClasses = !isRepeating && isFirst && rowCount > 1 && isExpanded ? 'border-r border-slate-200 bg-white group-hover:bg-blue-50/30' : '';
-              
-              if (isEditing && isInlineEditable(c.key) && (!isRepeating || isFirst) && c.key !== 'po_no' && c.key !== 'vessel') {
+
+              if (editingThisRow && canBulkEdit && isInlineEditable(c.key) && (!isRepeating || isFirst) && c.key !== 'po_no' && c.key !== 'vessel') {
+                const cellVal = getVal!(rec, c.key);
                 let inputEl;
                 if (c.type === 'date' || c.type === 'date_dash_if_null' || c.type === 'datetime' || c.type === 'date_badge_if_null') {
-                  const val = editForm[c.key] ? String(editForm[c.key]).substring(0, 10) : '';
-                  inputEl = <input type="date" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={val} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
+                  const val = cellVal ? String(cellVal).substring(0, 10) : '';
+                  inputEl = <input type="date" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={val} onChange={e => setVal!(rec, c.key, e.target.value)} />;
                 } else if (c.type === 'num' || c.type === 'num_dash_null' || c.type === 'num_dash_null_2dec' || c.type === 'num_dash_if_null' || c.type === 'num_bold' || c.type === 'num_highlight') {
-                  inputEl = <input type="number" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A] text-right" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: Number(e.target.value)})} />;
+                  inputEl = <input type="number" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A] text-right" value={cellVal ?? ''} onChange={e => setVal!(rec, c.key, Number(e.target.value))} />;
                 } else if (c.key === 'status') {
                   inputEl = (
-                    <select className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})}>
+                    <select className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={cellVal ?? ''} onChange={e => setVal!(rec, c.key, e.target.value)}>
                       <option value="LENGKAP">{getStatusLabel('LENGKAP')}</option>
                       <option value="PROSES">{getStatusLabel('PROSES')}</option>
                       <option value="PENDING">{getStatusLabel('PENDING')}</option>
@@ -1758,7 +1808,7 @@ const CourierAuditRowGroup: React.FC<{
                     </select>
                   );
                 } else {
-                  inputEl = <input type="text" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
+                  inputEl = <input type="text" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={cellVal ?? ''} onChange={e => setVal!(rec, c.key, e.target.value)} />;
                 }
                 return (
                   <td key={c.key} className={`px-2 py-2 align-top ${additionalClasses}`} rowSpan={isRepeating ? 1 : (isExpanded ? rowCount : 1)}>
@@ -1777,35 +1827,20 @@ const CourierAuditRowGroup: React.FC<{
             {isFirst && (
               <td className="px-4 py-3 text-center sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.03)] z-10 transition-colors border-l border-slate-100" rowSpan={isExpanded ? rowCount : 1}>
                 <div className="flex flex-col items-center gap-1.5">
-                  {isEditing ? (
-                    <>
-                      <button onClick={handleSave} disabled={isSaving} className="w-[80px] bg-green-600 text-white hover:bg-green-700 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all disabled:opacity-50">
-                        {isSaving ? 'Saving...' : 'Save'}
-                      </button>
-                      <button onClick={() => setIsEditing(false)} disabled={isSaving} className="w-[80px] bg-slate-200 text-[#5A305A] hover:bg-slate-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all disabled:opacity-50">
-                        Cancel
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => setShowActions(!showActions)}
-                        className={`w-[80px] flex items-center justify-center gap-1 text-[10px] font-bold px-2 py-2 rounded-lg border transition-all ${
-                          showActions
-                            ? 'bg-[#5A305A] text-white border-[#5A305A] shadow-md'
-                            : 'bg-white text-[#5A305A] border-slate-200 shadow-sm hover:border-[#5A305A] hover:bg-[#5A305A]/5'
-                        }`}
-                      >
-                        Action
-                        <ChevronDown size={13} className={`transition-transform duration-200 ${showActions ? 'rotate-180' : ''}`} />
-                      </button>
-                      {showActions && (
-                        <div className="flex flex-col gap-1.5 items-center bg-slate-50 border border-slate-200 rounded-lg p-1.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
-                          {(onEdit || onInlineSaveRow) && rec.status !== 'LENGKAP' && (
-                            <button onClick={() => { handleStartEdit(); setShowActions(false); }} className="w-[80px] bg-white border border-slate-200 text-[#5A305A] hover:border-slate-300 hover:bg-slate-50 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
-                              ✏️ Edit
-                            </button>
-                          )}
+                  <>
+                    <button
+                      onClick={() => setShowActions(!showActions)}
+                      className={`w-[80px] flex items-center justify-center gap-1 text-[10px] font-bold px-2 py-2 rounded-lg border transition-all ${
+                        showActions
+                          ? 'bg-[#5A305A] text-white border-[#5A305A] shadow-md'
+                          : 'bg-white text-[#5A305A] border-slate-200 shadow-sm hover:border-[#5A305A] hover:bg-[#5A305A]/5'
+                      }`}
+                    >
+                      Action
+                      <ChevronDown size={13} className={`transition-transform duration-200 ${showActions ? 'rotate-180' : ''}`} />
+                    </button>
+                    {showActions && (
+                      <div className="flex flex-col gap-1.5 items-center bg-slate-50 border border-slate-200 rounded-lg p-1.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
                           {onChecklist && rec.status !== 'LENGKAP' && (
                             <span className="relative inline-flex shrink-0">
                               <button onClick={() => { onChecklist(rec); setShowActions(false); }} className="w-[80px] bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 hover:border-amber-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
@@ -1868,8 +1903,7 @@ const CourierAuditRowGroup: React.FC<{
                           )}
                         </div>
                       )}
-                    </>
-                  )}
+                  </>
                 </div>
               </td>
             )}
@@ -1882,44 +1916,19 @@ const CourierAuditRowGroup: React.FC<{
 
 
 const CourierRekapanRowGroup: React.FC<{
-  rec: any, index: number, cols: any[], 
-  onEdit?: (r: any) => void,
+  rec: any, index: number, cols: any[],
   onDelete?: (r: any) => void,
-  onInlineSaveRow?: (id: number, payload: any) => Promise<boolean>
-}> = ({ rec, index, cols, onEdit, onDelete, onInlineSaveRow }) => {
+  editMode?: boolean,
+  getVal?: (r: any, field: string) => any,
+  setVal?: (r: any, field: string, value: any) => void,
+}> = ({ rec, index, cols, onDelete, editMode, getVal, setVal }) => {
   const repeatingCols = ['po_pt_imi', 'vessel', 'breakdown_courier_adm_vessel', 'breakdown_duty_vessel', 'breakdown_freight_vessel', 'breakdown_bm_vessel', 'breakdown_ppnpph_vessel'];
 
-  const [isEditing, setIsEditing] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [editForm, setEditForm] = useState<any>({});
-  const [isSaving, setIsSaving] = useState(false);
   const [showActions, setShowActions] = useState(false);
 
-  const handleStartEdit = () => {
-    if (onInlineSaveRow) {
-      setEditForm(rec);
-      setIsEditing(true);
-    } else if (onEdit) {
-      onEdit(rec);
-    }
-  };
-
-  const handleSave = async () => {
-    if (!onInlineSaveRow) return;
-    setIsSaving(true);
-    const changes: any = {};
-    Object.keys(editForm).forEach(k => {
-      if (editForm[k] !== rec[k]) changes[k] = editForm[k];
-    });
-    if (Object.keys(changes).length === 0) {
-      setIsEditing(false);
-      setIsSaving(false);
-      return;
-    }
-    const success = await onInlineSaveRow(rec.id, changes);
-    setIsSaving(false);
-    if (success) setIsEditing(false);
-  };
+  const canBulkEdit = !!(getVal && setVal);
+  const editingThisRow = !!editMode && canBulkEdit;
 
   let poVesselPairs: { po: string, vessel: string }[] = [];
   // Dulu blok ini cuma jalan kalau po_pt_imi ada isinya -- akibatnya baris yang ditambah manual
@@ -1946,25 +1955,30 @@ const CourierRekapanRowGroup: React.FC<{
   const rowCount = poVesselPairs.length;
   const displayPairs = isExpanded ? poVesselPairs : [poVesselPairs[0]];
 
+  // Sama pola dengan CourierAuditRowGroup -- tampilan read-only ikut nilai pending edit yang
+  // belum disimpan, biar user tetap lihat perubahannya walau sedang tidak "aktif" mengedit
+  // baris ini.
+  const effectiveRec = canBulkEdit ? cols.reduce((acc: any, c: any) => { acc[c.key] = getVal!(rec, c.key); return acc; }, { ...rec }) : rec;
+
   return (
     <>
       {displayPairs.map((pair, i: number) => {
         const isFirst = i === 0;
         return (
-          <tr key={`${rec.id}-${i}`} className={`transition-colors group ${(isExpanded ? i === rowCount - 1 : true) ? 'border-b-[3px] border-slate-300' : 'border-b border-slate-100'} ${!isFirst ? 'border-t-0 bg-slate-50/40' : ''} ${isEditing ? 'bg-blue-50/50 hover:bg-blue-50/60' : 'hover:bg-blue-50/30'}`}>
+          <tr key={`${rec.id}-${i}`} className={`transition-colors group ${(isExpanded ? i === rowCount - 1 : true) ? 'border-b-[3px] border-slate-300' : 'border-b border-slate-100'} ${!isFirst ? 'border-t-0 bg-slate-50/40' : ''} ${editingThisRow ? 'bg-blue-50/50 hover:bg-blue-50/60' : 'hover:bg-blue-50/30'}`}>
             {cols.map(c => {
               const isRepeating = repeatingCols.includes(c.key);
               if (!isRepeating && !isFirst) return null;
-              
-              let { content, alignClass } = getCellData(c, rec, index);
-              
+
+              let { content, alignClass } = getCellData(c, effectiveRec, index);
+
               if (c.key === 'po_pt_imi') {
                 content = (
                   <div className="flex items-center gap-2 justify-between">
                     <span>{pair.po || '—'}</span>
                     {isFirst && rowCount > 1 && (
-                      <button 
-                        onClick={() => setIsExpanded(!isExpanded)} 
+                      <button
+                        onClick={() => setIsExpanded(!isExpanded)}
                         className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-200 hover:bg-blue-100 font-bold ml-2 whitespace-nowrap"
                         title="Toggle PO Splits"
                       >
@@ -1975,14 +1989,14 @@ const CourierRekapanRowGroup: React.FC<{
                 );
                 alignClass = 'text-left font-mono text-[#5A305A]';
               } else if (c.key === 'vessel') {
-                if (isEditing) {
+                if (editingThisRow && canBulkEdit) {
                   if (isFirst) {
                     content = (
-                      <input 
+                      <input
                         type="text"
                         className="w-full min-w-[120px] text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A] bg-white"
-                        value={editForm.vessel ?? ''}
-                        onChange={e => setEditForm({ ...editForm, vessel: e.target.value })}
+                        value={getVal!(rec, 'vessel') ?? ''}
+                        onChange={e => setVal!(rec, 'vessel', e.target.value)}
                       />
                     );
                   } else {
@@ -1996,22 +2010,23 @@ const CourierRekapanRowGroup: React.FC<{
               
               const additionalClasses = !isRepeating && isFirst && rowCount > 1 && isExpanded ? 'border-r border-slate-200 bg-white group-hover:bg-blue-50/30' : '';
               
-              if (isEditing && isInlineEditable(c.key) && (!isRepeating || isFirst) && c.key !== 'po_no' && c.key !== 'vessel' && c.key !== 'po_ori' && c.key !== 'vendor_inv_no' && c.key !== 'po_harga_detail') {
+              if (editingThisRow && canBulkEdit && isInlineEditable(c.key) && (!isRepeating || isFirst) && c.key !== 'po_no' && c.key !== 'vessel' && c.key !== 'po_ori' && c.key !== 'vendor_inv_no' && c.key !== 'po_harga_detail') {
+                const cellVal = getVal!(rec, c.key);
                 let inputEl;
                 if (c.type === 'date' || c.type === 'date_dash_if_null' || c.type === 'datetime' || c.type === 'date_badge_if_null') {
-                  const val = editForm[c.key] ? String(editForm[c.key]).substring(0, 10) : '';
-                  inputEl = <input type="date" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={val} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
+                  const val = cellVal ? String(cellVal).substring(0, 10) : '';
+                  inputEl = <input type="date" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={val} onChange={e => setVal!(rec, c.key, e.target.value)} />;
                 } else if (c.type === 'num' || c.type === 'num_dash_null' || c.type === 'num_dash_null_2dec' || c.type === 'num_dash_if_null' || c.type === 'num_bold' || c.type === 'num_highlight') {
-                  inputEl = <input type="number" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A] text-right" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: Number(e.target.value)})} />;
+                  inputEl = <input type="number" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A] text-right" value={cellVal ?? ''} onChange={e => setVal!(rec, c.key, Number(e.target.value))} />;
                 } else if (c.key === 'status') {
                   inputEl = (
-                    <select className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})}>
+                    <select className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={cellVal ?? ''} onChange={e => setVal!(rec, c.key, e.target.value)}>
                       <option value="LENGKAP">{getStatusLabel('LENGKAP')}</option>
                       <option value="ARCHIVED">{getStatusLabel('ARCHIVED')}</option>
                     </select>
                   );
                 } else {
-                  inputEl = <input type="text" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={editForm[c.key] ?? ''} onChange={e => setEditForm({...editForm, [c.key]: e.target.value})} />;
+                  inputEl = <input type="text" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={cellVal ?? ''} onChange={e => setVal!(rec, c.key, e.target.value)} />;
                 }
                 return (
                   <td key={c.key} className={`px-2 py-2 align-top ${additionalClasses}`} rowSpan={isRepeating ? 1 : (isExpanded ? rowCount : 1)}>
@@ -2030,35 +2045,20 @@ const CourierRekapanRowGroup: React.FC<{
             {isFirst && (
               <td className="px-4 py-3 text-center sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.03)] z-10 transition-colors border-l border-slate-100" rowSpan={isExpanded ? rowCount : 1}>
                 <div className="flex flex-col items-center gap-1.5">
-                  {isEditing ? (
-                    <>
-                      <button onClick={handleSave} disabled={isSaving} className="w-[80px] bg-green-600 text-white hover:bg-green-700 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all disabled:opacity-50">
-                        {isSaving ? 'Saving...' : 'Save'}
-                      </button>
-                      <button onClick={() => setIsEditing(false)} disabled={isSaving} className="w-[80px] bg-slate-200 text-[#5A305A] hover:bg-slate-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all disabled:opacity-50">
-                        Cancel
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => setShowActions(!showActions)}
-                        className={`w-[80px] flex items-center justify-center gap-1 text-[10px] font-bold px-2 py-2 rounded-lg border transition-all ${
-                          showActions
-                            ? 'bg-[#5A305A] text-white border-[#5A305A] shadow-md'
-                            : 'bg-white text-[#5A305A] border-slate-200 shadow-sm hover:border-[#5A305A] hover:bg-[#5A305A]/5'
-                        }`}
-                      >
-                        Action
-                        <ChevronDown size={13} className={`transition-transform duration-200 ${showActions ? 'rotate-180' : ''}`} />
-                      </button>
-                      {showActions && (
-                        <div className="flex flex-col gap-1.5 items-center bg-slate-50 border border-slate-200 rounded-lg p-1.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
-                          {(onEdit || onInlineSaveRow) && rec.status !== 'LENGKAP' && (
-                            <button onClick={() => { handleStartEdit(); setShowActions(false); }} className="w-[80px] bg-white border border-slate-200 text-[#5A305A] hover:border-slate-300 hover:bg-slate-50 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
-                              ✏️ Edit
-                            </button>
-                          )}
+                  <>
+                    <button
+                      onClick={() => setShowActions(!showActions)}
+                      className={`w-[80px] flex items-center justify-center gap-1 text-[10px] font-bold px-2 py-2 rounded-lg border transition-all ${
+                        showActions
+                          ? 'bg-[#5A305A] text-white border-[#5A305A] shadow-md'
+                          : 'bg-white text-[#5A305A] border-slate-200 shadow-sm hover:border-[#5A305A] hover:bg-[#5A305A]/5'
+                      }`}
+                    >
+                      Action
+                      <ChevronDown size={13} className={`transition-transform duration-200 ${showActions ? 'rotate-180' : ''}`} />
+                    </button>
+                    {showActions && (
+                      <div className="flex flex-col gap-1.5 items-center bg-slate-50 border border-slate-200 rounded-lg p-1.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
                           {onDelete && (
                             <button onClick={() => { onDelete(rec); setShowActions(false); }} className="w-[80px] bg-white border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
                               🗑️ Delete
@@ -2067,7 +2067,6 @@ const CourierRekapanRowGroup: React.FC<{
                         </div>
                       )}
                     </>
-                  )}
                 </div>
               </td>
             )}
@@ -2721,10 +2720,34 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   const [seaAirCostValidasiRecord, setSeaAirCostValidasiRecord] = useState<any>(null)
   const [costValidasiRecord, setCostValidasiRecord] = useState<any>(null)
 
+  // Edit massal (Audit Courier & Rekapan Courier) -- 1 tombol "Edit Mode" di toolbar membuka
+  // mode input di SEMUA baris yang lagi tampil sekaligus (bukan toggle per baris), tiap baris/
+  // kolom bisa diisi nilai beda-beda, ditampung di pendingEdits keyed by row id, baru disimpan
+  // sekaligus lewat "Save All". Dikonfirmasi user 2026-09: "saya mau klik satu tombol edit" --
+  // bukan pola per-baris ala FarOverseasAirPage.tsx (List Memo) lagi (versi awal fitur ini SEMPAT
+  // pakai pola itu, sudah diganti total ke toggle global di sini).
+  const [courierAuditEditMode, setCourierAuditEditMode] = useState(false)
+  const [courierAuditPendingEdits, setCourierAuditPendingEdits] = useState<Record<number, Record<string, any>>>({})
+  const [savingCourierAuditEdits, setSavingCourierAuditEdits] = useState(false)
+
+  const [courierRekapanEditMode, setCourierRekapanEditMode] = useState(false)
+  const [courierRekapanPendingEdits, setCourierRekapanPendingEdits] = useState<Record<number, Record<string, any>>>({})
+  const [savingCourierRekapanEdits, setSavingCourierRekapanEdits] = useState(false)
+
 
   // Pagination
   const [page,          setPage]          = useState(1)
   const [pageSize,      setPageSize]      = useState(10)
+
+  // Buang pending edits massal & matikan Edit Mode kalau user pindah tab/tipe Draft-PIB-CN --
+  // SENGAJA TIDAK ikut ke-reset saat pindah HALAMAN (page) -- Edit Mode global dimaksudkan
+  // supaya user bisa edit banyak baris LINTAS HALAMAN dulu, baru "Save All" sekaligus di akhir.
+  useEffect(() => {
+    setCourierAuditPendingEdits({});
+    setCourierAuditEditMode(false);
+    setCourierRekapanPendingEdits({});
+    setCourierRekapanEditMode(false);
+  }, [activeMainTab, activeSubTab, courierAuditType]);
   const [sortColumn,    setSortColumn]    = useState('created_at')
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc')
   
@@ -3467,7 +3490,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   };
 
     
-  const handleInlineSaveRow = async (id: number, payload: any) => {
+  const handleInlineSaveRow = async (id: number, payload: any, silent?: boolean) => {
     try {
       const cleanedPayload = { ...payload };
       Object.keys(cleanedPayload).forEach(key => {
@@ -3556,9 +3579,74 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       setRecords(prev => prev.map(r => r.id === id ? { ...r, ...cleanedPayload } : r));
       return true;
     } catch (err: any) {
-      alert('Failed to save: ' + err.message);
+      if (!silent) alert('Failed to save: ' + err.message);
       return false;
     }
+  };
+
+  // ── Edit massal Audit Courier & Rekapan Courier ──────────────────────────
+  // getVal/setVal: nilai efektif sebuah field pakai pending edit kalau ada, kalau tidak pakai
+  // nilai dari server. Simpan HANYA saat "Save All" diklik -- reuse handleInlineSaveRow per
+  // baris (SATU-SATUNYA tempat resolusi target tabel PIB/CN & coercion angka, jangan tulis
+  // ulang di sini) lewat Promise.all supaya paralel. Edit Mode (on/off) diatur TERPISAH dari
+  // pending edits/save -- toggle 1 tombol di toolbar (lihat toolbarEditButton di render), TIDAK
+  // otomatis mati setelah Save All supaya user bisa lanjut edit baris lain tanpa klik toggle lagi.
+  const getCourierAuditVal = (r: any, field: string) => {
+    const rowEdits = courierAuditPendingEdits[r.id];
+    if (rowEdits && field in rowEdits) return rowEdits[field];
+    return r[field];
+  };
+  const setCourierAuditVal = (r: any, field: string, value: any) => {
+    setCourierAuditPendingEdits(prev => ({ ...prev, [r.id]: { ...(prev[r.id] || {}), [field]: value } }));
+  };
+  const courierAuditChangedRowIds = Object.keys(courierAuditPendingEdits).map(Number).filter(id => Object.keys(courierAuditPendingEdits[id]).length > 0);
+
+  const handleSaveAllCourierAuditEdits = async () => {
+    setSavingCourierAuditEdits(true);
+    const ids = courierAuditChangedRowIds;
+    const results = await Promise.all(ids.map(async id => ({ id, ok: await handleInlineSaveRow(id, courierAuditPendingEdits[id], true) })));
+    setSavingCourierAuditEdits(false);
+    const failedIds = results.filter(r => !r.ok).map(r => r.id);
+    setCourierAuditPendingEdits(prev => {
+      const next = { ...prev };
+      results.filter(r => r.ok).forEach(r => delete next[r.id]);
+      return next;
+    });
+    if (failedIds.length > 0) {
+      alert(`Failed to save ${failedIds.length} of ${ids.length} row(s). Please check and try again.`);
+    }
+  };
+  const handleDiscardAllCourierAuditEdits = () => {
+    setCourierAuditPendingEdits({});
+  };
+
+  const getCourierRekapanVal = (r: any, field: string) => {
+    const rowEdits = courierRekapanPendingEdits[r.id];
+    if (rowEdits && field in rowEdits) return rowEdits[field];
+    return r[field];
+  };
+  const setCourierRekapanVal = (r: any, field: string, value: any) => {
+    setCourierRekapanPendingEdits(prev => ({ ...prev, [r.id]: { ...(prev[r.id] || {}), [field]: value } }));
+  };
+  const courierRekapanChangedRowIds = Object.keys(courierRekapanPendingEdits).map(Number).filter(id => Object.keys(courierRekapanPendingEdits[id]).length > 0);
+
+  const handleSaveAllCourierRekapanEdits = async () => {
+    setSavingCourierRekapanEdits(true);
+    const ids = courierRekapanChangedRowIds;
+    const results = await Promise.all(ids.map(async id => ({ id, ok: await handleInlineSaveRow(id, courierRekapanPendingEdits[id], true) })));
+    setSavingCourierRekapanEdits(false);
+    const failedIds = results.filter(r => !r.ok).map(r => r.id);
+    setCourierRekapanPendingEdits(prev => {
+      const next = { ...prev };
+      results.filter(r => r.ok).forEach(r => delete next[r.id]);
+      return next;
+    });
+    if (failedIds.length > 0) {
+      alert(`Failed to save ${failedIds.length} of ${ids.length} row(s). Please check and try again.`);
+    }
+  };
+  const handleDiscardAllCourierRekapanEdits = () => {
+    setCourierRekapanPendingEdits({});
   };
 
   const handleUpdateVessel = async (rekapanId: number, poNo: string, newVessel: string) => {
@@ -3773,7 +3861,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       {/* ── Main Content ── */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
         
-        <header className="px-6 pt-1 pb-2 shrink-0">
+        <header className="px-3 pt-1 pb-2 shrink-0">
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-3">
               <h1 className="font-bold text-xl text-[#5A305A] leading-tight">
@@ -3790,7 +3878,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           </div>
         </header>
 
-        <main className="px-6 py-4 flex-1 flex flex-col overflow-hidden">
+        <main className="px-3 py-4 flex-1 flex flex-col overflow-hidden">
 
                               {/* ── Tabs & Search ── */}
             <div className="flex flex-col gap-4 mb-4">
@@ -3918,14 +4006,14 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                       type="date"
                       value={filterStartDate}
                       onChange={e => setFilterStartDate(e.target.value)}
-                      className="w-[100px] text-[11px] bg-transparent focus:outline-none text-[#5A305A] cursor-pointer"
+                      className="w-[82px] text-[11px] bg-transparent focus:outline-none text-[#5A305A] cursor-pointer"
                     />
                     <span className="text-[#5A305A] text-xs">–</span>
                     <input
                       type="date"
                       value={filterEndDate}
                       onChange={e => setFilterEndDate(e.target.value)}
-                      className="w-[100px] text-[11px] bg-transparent focus:outline-none text-[#5A305A] cursor-pointer"
+                      className="w-[82px] text-[11px] bg-transparent focus:outline-none text-[#5A305A] cursor-pointer"
                     />
                     {(filterStartDate || filterEndDate) && (
                       <button onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }} className="text-[#5A305A] hover:text-[#5A305A] ml-0.5 shrink-0">
@@ -4003,6 +4091,30 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   </button>
                 )}
 
+                {activeMainTab === 'courier' && activeSubTab === 'courier_audit' && canEdit('courier_audit') && (
+                  <button
+                    onClick={() => setCourierAuditEditMode(v => !v)}
+                    title="Toggle Edit Mode for all rows"
+                    className={`px-3 py-2 rounded-full text-xs font-semibold border transition-all h-[38px] flex justify-center items-center gap-1.5 shadow-sm shrink-0 ${
+                      courierAuditEditMode ? 'bg-blue-600 hover:bg-blue-700 text-white border-blue-700' : 'bg-white text-[#5A305A] border-slate-200 hover:border-[#5A305A] hover:bg-[#5A305A]/5'
+                    }`}
+                  >
+                    ✏️ {courierAuditEditMode ? 'Editing All Rows' : 'Edit Mode'}
+                  </button>
+                )}
+
+                {activeMainTab === 'courier' && activeSubTab === 'courier_rekapan' && canEdit('courier_rekapan') && (
+                  <button
+                    onClick={() => setCourierRekapanEditMode(v => !v)}
+                    title="Toggle Edit Mode for all rows"
+                    className={`px-3 py-2 rounded-full text-xs font-semibold border transition-all h-[38px] flex justify-center items-center gap-1.5 shadow-sm shrink-0 ${
+                      courierRekapanEditMode ? 'bg-blue-600 hover:bg-blue-700 text-white border-blue-700' : 'bg-white text-[#5A305A] border-slate-200 hover:border-[#5A305A] hover:bg-[#5A305A]/5'
+                    }`}
+                  >
+                    ✏️ {courierRekapanEditMode ? 'Editing All Rows' : 'Edit Mode'}
+                  </button>
+                )}
+
                 {activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan' ? (
                   <div className={`flex items-center gap-1.5 rounded-full pl-2.5 pr-1.5 py-1 h-[38px] border shrink-0 ${TOOLBAR_GLASS}`}>
                     <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">Company</span>
@@ -4043,12 +4155,12 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                     </select>
                   </div>
                 ) : activeMainTab === 'courier' && activeSubTab === 'courier_audit' ? (
-                  <div className={`flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[38px] border ${TOOLBAR_GLASS}`}>
+                  <div className={`flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[38px] border shrink-0 ${TOOLBAR_GLASS}`}>
                     <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">Company</span>
                     <select
                       value={activeCourierImporAnFilter}
                       onChange={e => { setActiveCourierImporAnFilter(e.target.value); setPage(1); }}
-                      className="border-0 bg-transparent text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer max-w-[160px]"
+                      className="border-0 bg-transparent text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer w-[48px] truncate"
                     >
                       {courierImporAnTabs.map(an => (
                         <option key={an} value={an}>{an}</option>
@@ -4210,14 +4322,15 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                             rec={rec}
                             index={startIndex + index}
                             cols={activeCols}
-                            onEdit={canEditCourierAudit ? setEditRecord : undefined}
                             onChecklist={canSee('courier_checklist_dokumen') ? setChkRecord : undefined}
                             onValidasi={canSee('courier_dokumen_validation') ? setValidasiRecord : undefined}
                             onCostValidasi={canSee('courier_cost_validation') ? (r) => setCostValidasiRecord(r) : undefined}
                             onArchive={canEditCourierAudit && courierAuditType !== 'archive' ? handleArchive : undefined}
                             onUndraft={canEditCourierAudit && courierAuditType === 'archive' ? handleUndraft : undefined}
                             onDelete={canEditCourierAudit ? handleDelete : undefined}
-                            onInlineSaveRow={canEditCourierAudit ? handleInlineSaveRow : undefined}
+                            editMode={canEditCourierAudit ? courierAuditEditMode : undefined}
+                            getVal={canEditCourierAudit ? getCourierAuditVal : undefined}
+                            setVal={canEditCourierAudit ? setCourierAuditVal : undefined}
                           />
                         );
                       }
@@ -4229,9 +4342,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                             rec={rec}
                             index={startIndex + index}
                             cols={activeCols}
-                            onEdit={canEditCourierRekapan ? setEditRecord : undefined}
                             onDelete={canEditCourierRekapan ? handleDelete : undefined}
-                            onInlineSaveRow={canEditCourierRekapan ? handleInlineSaveRow : undefined}
+                            editMode={canEditCourierRekapan ? courierRekapanEditMode : undefined}
+                            getVal={canEditCourierRekapan ? getCourierRekapanVal : undefined}
+                            setVal={canEditCourierRekapan ? setCourierRekapanVal : undefined}
                           />
                         );
                       }
@@ -4293,6 +4407,61 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           </div>
         </main>
       </div>
+
+      {/* Bar "Simpan Semua"/"Batal Semua" edit massal Audit Courier -- muncul kalau ada baris
+          punya perubahan belum disimpan (lihat courierAuditPendingEdits di atas). Replika
+          persis pola yang sama di FarOverseasAirPage.tsx List Memo. */}
+      {activeMainTab === 'courier' && activeSubTab === 'courier_audit' && courierAuditChangedRowIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-white rounded-full shadow-[0_8px_30px_rgba(0,0,0,0.12)] border border-slate-200 p-2 flex items-center gap-3 pr-4">
+          <div className="w-10 h-10 rounded-full bg-amber-100 flex justify-center items-center text-amber-600 shrink-0">
+            <AlertTriangle size={18} />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-[#5A305A] leading-none">{courierAuditChangedRowIds.length} row(s) have unsaved changes</p>
+            <p className="text-[10px] text-[#5A305A]/70 mt-1">Click save to update the database</p>
+          </div>
+          <button
+            onClick={handleDiscardAllCourierAuditEdits}
+            disabled={savingCourierAuditEdits}
+            className="ml-2 px-3 py-2 rounded-full border border-slate-200 text-[#5A305A] text-xs font-semibold hover:bg-slate-50 disabled:opacity-50 transition-all"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSaveAllCourierAuditEdits}
+            disabled={savingCourierAuditEdits}
+            className="px-4 py-2 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white text-xs font-bold disabled:opacity-50 transition-all flex items-center gap-1.5"
+          >
+            <Save size={14} /> {savingCourierAuditEdits ? 'Saving...' : 'Save All'}
+          </button>
+        </div>
+      )}
+
+      {activeMainTab === 'courier' && activeSubTab === 'courier_rekapan' && courierRekapanChangedRowIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-white rounded-full shadow-[0_8px_30px_rgba(0,0,0,0.12)] border border-slate-200 p-2 flex items-center gap-3 pr-4">
+          <div className="w-10 h-10 rounded-full bg-amber-100 flex justify-center items-center text-amber-600 shrink-0">
+            <AlertTriangle size={18} />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-[#5A305A] leading-none">{courierRekapanChangedRowIds.length} row(s) have unsaved changes</p>
+            <p className="text-[10px] text-[#5A305A]/70 mt-1">Click save to update the database</p>
+          </div>
+          <button
+            onClick={handleDiscardAllCourierRekapanEdits}
+            disabled={savingCourierRekapanEdits}
+            className="ml-2 px-3 py-2 rounded-full border border-slate-200 text-[#5A305A] text-xs font-semibold hover:bg-slate-50 disabled:opacity-50 transition-all"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSaveAllCourierRekapanEdits}
+            disabled={savingCourierRekapanEdits}
+            className="px-4 py-2 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white text-xs font-bold disabled:opacity-50 transition-all flex items-center gap-1.5"
+          >
+            <Save size={14} /> {savingCourierRekapanEdits ? 'Saving...' : 'Save All'}
+          </button>
+        </div>
+      )}
     </>
   )
 }

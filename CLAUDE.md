@@ -64,6 +64,24 @@ menangani Courier Audit/Rekapan, Sea & Air Audit/Rekapan, dan Audit Trail — di
 `defaultMainTab`/`defaultSubTab`. Hati-hati kalau edit — banyak logic bercabang berdasar
 `activeMainTab`/`activeSubTab`.
 
+- **Padding halaman `<header>`/`<main>`** (~baris 3864/3881, 2026-09) — dikecilkan dari `px-6` ke
+  `px-3` (kiri-kanan simetris karena `px-*` = padding kedua sisi) atas laporan user: di laptop
+  14", panel filter toolbar (`overflow-x-auto`) Audit Courier kepotong sampai tab **CN** (kadang
+  **PIB**) tidak kelihatan tanpa scroll horizontal — dropdown Company sudah dikecilkan duluan
+  (lihat poin di bawah) tapi masih kurang, jadi margin kiri (jarak ke sidebar)/kanan halaman ikut
+  dipersempit juga. Berlaku ke SEMUA tab yang dirender lewat komponen ini (Courier/Sea & Air/Audit
+  Trail), bukan cuma Audit Courier — kalau nanti ada laporan halaman lain jadi kurang lega,
+  pertimbangkan trade-off ini.
+- **Dropdown Company Audit Courier** (`activeCourierImporAnFilter`, ~baris 4158) — lebar
+  dikecilkan dari `max-w-[160px]` ke `w-[70px]` lalu ke **`w-[48px]`** (2026-09, laporan sama
+  seperti di atas, dipersempit 2x krn tab CN masih kepotong di iterasi pertama) + `truncate` —
+  nama company panjang otomatis terpotong `...`, isi `<option>` tetap lengkap (cuma tampilan
+  trigger-nya yang dipotong).
+- **Input tanggal panel filter** (`filterStartDate`/`filterEndDate`, ~baris 4007/4014, dipakai
+  Courier/Sea & Air Audit/Rekapan + Audit Trail) — lebar tiap input dikecilkan dari `w-[100px]`
+  ke `w-[82px]` (2026-09, bagian dari iterasi kedua pelebaran ruang toolbar Audit Courier) — ikut
+  ke SEMUA tab yang pakai filter tanggal ini (bukan cuma Audit Courier), karena satu style class
+  yang sama dipakai berulang di tempat itu.
 - **`CourierRekapanRowGroup`** (~baris 1736): pasangan PO↔Vessel utk kolom NO PO/VESSEL yang
   bisa di-split banyak baris dibangun dari `rec.po_pt_imi`/`rec.vessel` (dipisah `+`/`,`).
   Pairing-nya jalan kalau SALAH SATU dari kedua field itu ada isinya (bukan cuma po_pt_imi) —
@@ -637,12 +655,22 @@ dgn Sea & Air).
   1. **Doc Validation** — dari `tabel_checklist_validasi` (`total_match`/`total_mismatch`),
      formula SAMA PERSIS `CourierValidasiPage.tsx`: `pct = checked>0 ? match/checked*100 : 0`
      (`checked = total_match+total_mismatch`, `total_empty`/"belum diisi" TIDAK masuk penyebut).
-     **TIDAK pakai fallback live-calc** (SECTIONS/`computeStatus`/`generateValues`/
-     `calculatePibStats`, yang dipakai `CourierValidasiPage.tsx` kalau baris
-     `tabel_checklist_validasi`-nya belum ada) — demi performa list (badge cuma baca 1 tabel
-     kecil per baris, bukan live-compute puluhan field per baris x N baris per halaman). Kalau
-     baris `tabel_checklist_validasi`-nya belum pernah dibuat (belum pernah dibuka di modal Doc
-     Validation), badge-nya tampil `0%`, BUKAN disembunyikan (kebijakan sama dgn Sea & Air).
+     **FIX (2026-09, laporan user "badge Doc Validation 0% semua, tidak sinkron dgn halaman
+     Dokumen Validasi")**: `tabel_checklist_validasi` CUMA keisi kalau seseorang PERNAH buka
+     `ValidasiModal.tsx` (Doc Validation) dan klik Simpan (insert/update manual di
+     `handleSaveValidasi`, ~baris 1001-1013 — BUKAN diisi otomatis oleh n8n). Jadi mayoritas baris
+     yang belum pernah dibuka modalnya TIDAK punya baris sama sekali di situ — awalnya badge-nya
+     selalu 0% BUKAN karena skornya beneran 0%, tapi karena datanya belum pernah dihitung. Fix:
+     ditambah FALLBACK live-calc di `fetchCourierValidationBadgePct()` (~baris 929) utk pib_id/
+     cn_id yang tidak ketemu di `tabel_checklist_validasi` — REPLIKA PERSIS logic fallback yang
+     sudah lebih dulu ada di `CourierValidasiPage.tsx` (fetch `dokumen_validasi.data_validasi_raw`
+     per pib_id/cn_id yang hilang, lalu `SECTIONS`/`computeStatus`/`generateValues`/
+     `calculatePibStats`, sama seperti `needsCalculation` branch di halaman itu). **JANGAN tulis
+     ulang formula fallback ini lagi di tempat ketiga** — kalau perlu diubah, cek dulu apakah
+     `CourierValidasiPage.tsx` juga perlu diubah bareng biar tetap sinkron.
+     Badge tampil `0%` (bukan disembunyikan) HANYA kalau setelah fallback pun tetap tidak ada
+     data sama sekali (baris `dokumen_validasi` jenis itu juga tidak ketemu) — kebijakan sama
+     dgn Sea & Air.
   2. **Cost Validation** — dari `tabel_cost_validasi` (`select('*')`, order `created_at` desc,
      ambil baris PALING BARU per pib_id/cn_id kalau ada >1, sama pola dgn `costValidations` utk
      Rekapan Courier yang sudah ada duluan), lalu panggil `computeLiveCostSummary()` yang sama
@@ -990,6 +1018,70 @@ apa adanya.
   Kelola Role & Akses) SENGAJA TIDAK ikut digabung — itu concern terpisah dari struktur visual
   submenu sidebar ini, biar PIC tetap bisa lihat & atur akses per modul dgn jelas di halaman
   Kelola Role & Akses walau tampilannya di sidebar sekarang nested.
+
+## Edit Massal — Audit Courier & Rekapan Courier (`src/components/SharedDataTable.tsx`, 2026-09)
+
+Fitur baru: banyak baris bisa punya perubahan (kolom BEDA-BEDA per baris) yang belum disimpan
+sekaligus, disimpan bareng lewat 1 tombol "Save All". Arsitektur `pendingEdits`/`getVal`/`setVal`
+DIREPLIKA dari List Memo FAR Overseas (`FarOverseasAirPage.tsx`), TAPI toggle mode editnya SUDAH
+DIUBAH dari per-baris jadi GLOBAL (lihat di bawah) — beda dari FAR Overseas yang masih per-baris
+— kalau nanti modul lain butuh fitur serupa, contoh yang lebih relevan adalah versi Courier ini,
+bukan FAR Overseas.
+
+**Konsep inti (VERSI FINAL, 2026-09 — direvisi dari desain awal yang per-baris)**: awalnya dibuat
+1 tombol "Edit" per baris (replika persis pola FAR Overseas) — user MENOLAK desain ini ("lae
+berarti harus tetap klik edit di tiap baris yang ada? itu namanya bukan edit masal lae, saya mau
+klik satu tombol edit lae"). Diganti jadi **SATU tombol toggle global "Edit Mode" di toolbar**
+(sebelah tombol "Add Data", muncul kalau `canEdit('courier_audit')`/`canEdit('courier_rekapan')`)
+— `courierAuditEditMode`/`courierRekapanEditMode` (`boolean`, BUKAN `editingRowId: number|null`
+lagi). Sekali diklik ON, SEMUA baris yang sedang tampil (lintas halaman/pagination — lihat catatan
+`page` di bawah) langsung masuk mode input sekaligus, tidak perlu klik per baris. Perubahan
+tetap disimpan di `pendingEdits` (keyed by row `id`), dipakai baik saat mode input aktif maupun
+buat `effectiveRec` read-only merge (`getCellData()`), sampai user klik "Save All" (commit semua
+ke DB via `handleInlineSaveRow` per baris, `Promise.all` paralel) atau "Cancel" (buang SEMUA
+pending edit). Mode edit TIDAK otomatis mati setelah "Save All" — sengaja dibiarkan ON supaya user
+bisa lanjut edit baris lain tanpa klik toggle lagi.
+
+**Implementasi** (state di komponen induk `SharedDataTable`, ~baris 2737-2758):
+- `courierAudit{EditMode,PendingEdits}` + `courierRekapan{EditMode,PendingEdits}` — state
+  TERPISAH per sub-tab (bukan digabung), supaya tidak ada state nyasar antar tab.
+- `getCourierAuditVal`/`setCourierAuditVal`/`courierAuditChangedRowIds` (dan pasangan
+  Rekapan-nya) — helper murni. TIDAK ADA `toggleCourierAuditEditRow` lagi (fungsi toggle per-baris
+  sudah dihapus total) — toggle sekarang langsung `setCourierAuditEditMode(v => !v)` dari tombol
+  toolbar.
+- `CourierAuditRowGroup`/`CourierRekapanRowGroup` terima prop `editMode?: boolean` (BUKAN
+  `editingRowId`/`onToggleEdit` lagi) — `editingThisRow = !!editMode && canBulkEdit` (Audit masih
+  ada gate tambahan `rec.status !== 'LENGKAP'`). Kedua row-group TIDAK PUNYA tombol "Edit" lagi
+  di panel Action-nya (sudah dihapus) — panel Action sekarang isinya cuma
+  Checklist/Validasi/Cost/Archive/Undraft/Delete.
+- **`handleInlineSaveRow` DIPAKAI ULANG untuk commit** (parameter ke-3 `silent?: boolean` supaya
+  bulk-save tidak memicu N `alert()` terpisah kalau beberapa baris gagal — cukup 1 alert
+  ringkasan di akhir) — SATU-SATUNYA tempat resolusi tabel tujuan (PIB vs CN vs
+  `rekapan_courier`) & coercion tipe angka, JANGAN duplikat logic ini lagi di handler bulk-save.
+  Baris yang GAGAL disimpan TETAP ada di `pendingEdits` (supaya user bisa retry "Save All" lagi),
+  baris yang BERHASIL langsung dibuang dari situ.
+- Bar mengambang "N row(s) have unsaved changes" + Cancel/Save All (~sebelum penutup return
+  utama SharedDataTable) — 2 blok terpisah (Audit vs Rekapan), muncul HANYA kalau
+  `activeSubTab` yang cocok & ada `changedRowIds`. Direset otomatis (dibuang, bukan disimpan) kalau
+  user pindah `activeMainTab`/`activeSubTab`/`courierAuditType` — TAPI SENGAJA TIDAK direset saat
+  pindah `page` (dikeluarkan dari dependency array `useEffect` reset), supaya user bisa mengedit
+  banyak baris LINTAS HALAMAN pagination dulu, baru "Save All" sekaligus di akhir — konsekuensi
+  dari mode edit yang sekarang global, bukan per-baris.
+
+**RESIKO YANG SUDAH DIKETAHUI, BUKAN BUG BARU** (pre-existing dari `handleInlineSaveRow`, sudah
+ada SEBELUM fitur edit massal ini, edit massal cuma memperbesar kemungkinan kejadiannya karena
+sekarang bisa banyak baris pending sekaligus): di tab **Draft** Audit Courier, baris PIB dan CN
+digabung dari 2 tabel terpisah (`tabel_audit_pib`/`tabel_audit_cn`) yang masing-masing punya
+sequence id sendiri-sendiri — SECARA TEORI bisa collision (PIB id=5 dan CN id=5 sama-sama ada).
+`pendingEdits` di sini di-key oleh `rec.id` MENTAH (tanpa prefix `pib_`/`cn_` seperti yang
+dipakai badge persentase di `fetchCourierValidationBadgePct`), dan `handleInlineSaveRow` resolve
+tabel tujuan lewat `records.find(r => r.id === id)` (ambil match PERTAMA di array, bukan
+berdasar jenis dokumen eksplisit). Kalau collision itu benar-benar terjadi, edit pada 1 baris
+bisa salah nyasar ke baris lain yang id-nya sama tapi beda jenis dokumen. BELUM diperbaiki
+(butuh redesain key jadi composite `pib_${id}`/`cn_${id}` di `handleInlineSaveRow` DAN
+`pendingEdits` DAN `editingRowId` sekaligus, cakupannya lebih luas dari sekadar fitur edit
+massal ini) — kalau ada laporan user "data record lain ikut berubah" di tab Draft, ini
+kemungkinan besar penyebabnya, cek dulu ke sini.
 
 ## Peta tabel Supabase (per modul, dari grep `.from(...)` di seluruh `src/`)
 
