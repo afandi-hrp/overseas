@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { CheckCircle2, XCircle, X, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays, AlertTriangle, Save, SlidersHorizontal, RotateCcw } from 'lucide-react'
+import { CheckCircle2, XCircle, X, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays, AlertTriangle, Save, SlidersHorizontal, RotateCcw, SquareX } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
@@ -1452,6 +1452,12 @@ const CustomizeViewModal: React.FC<{
             className="flex items-center gap-1.5 py-2.5 px-3 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-xs hover:bg-slate-50 transition-all"
           >
             <RotateCcw size={13} /> Reset to Default
+          </button>
+          <button
+            onClick={() => setPendingHidden(new Set(allCols.map(c => c.key)))}
+            className="flex items-center gap-1.5 py-2.5 px-3 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-xs hover:bg-slate-50 transition-all"
+          >
+            <SquareX size={13} /> Uncheck All
           </button>
           <div className="flex-1" />
           <button onClick={onCancel} className="py-2.5 px-4 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all">Cancel</button>

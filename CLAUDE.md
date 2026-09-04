@@ -1258,7 +1258,10 @@ Courier (Sea & Air, Validasi, Audit Trail TIDAK ikut cakupan ini).
   "Reset to Default" cuma mengosongkan `pendingHidden` (= semua tercentang) di dalam modal, TETAP
   butuh klik "Save" sesudahnya utk benar-benar ter-apply & tersimpan (bukan auto-save). Search
   bar filter list berdasar `label` (case-insensitive substring), tidak mempengaruhi apa yang
-  sudah tercentang/tidak.
+  sudah tercentang/tidak. Tombol "Uncheck All" (2026-09, di footer sebelah "Reset to Default",
+  SEMPAT dicoba jadi link kecil di bawah search bar dulu — dipindah atas permintaan user) —
+  meng-uncheck SEMUA kolom di `allCols` (bukan cuma hasil filter search saat ini), berguna utk
+  mulai dari kosong lalu user tinggal cari & centang beberapa kolom yang diinginkan saja.
 - **Penerapan ke tabel**: `activeCols` (variable existing yang menentukan daftar kolom aktif per
   tab) **TETAP UTUH/tidak difilter** — masih dipakai apa adanya utk `EditModal`/`AddRowModal`/
   Export (`ExportModal`), supaya field yang disembunyikan dari TAMPILAN TABEL tetap bisa diedit
