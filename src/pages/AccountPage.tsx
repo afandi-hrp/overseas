@@ -25,9 +25,9 @@ export default function AccountPage() {
     const { error } = await supabase.from('profiles').update({ nama: nama.trim(), updated_at: new Date().toISOString() }).eq('id', user.id);
     setSavingNama(false);
     if (error) {
-      setNamaMsg({ type: 'gagal', text: 'Gagal menyimpan nama: ' + error.message });
+      setNamaMsg({ type: 'gagal', text: 'Failed to save name: ' + error.message });
     } else {
-      setNamaMsg({ type: 'sukses', text: 'Nama berhasil disimpan.' });
+      setNamaMsg({ type: 'sukses', text: 'Name saved successfully.' });
       await refreshProfile();
       setTimeout(() => setNamaMsg(null), 3000);
     }
@@ -36,20 +36,20 @@ export default function AccountPage() {
   const handleChangePassword = async () => {
     setPwMsg(null);
     if (pw1.length < 6) {
-      setPwMsg({ type: 'gagal', text: 'Password minimal 6 karakter.' });
+      setPwMsg({ type: 'gagal', text: 'Password must be at least 6 characters.' });
       return;
     }
     if (pw1 !== pw2) {
-      setPwMsg({ type: 'gagal', text: 'Konfirmasi password tidak cocok.' });
+      setPwMsg({ type: 'gagal', text: 'Password confirmation does not match.' });
       return;
     }
     setSavingPw(true);
     const { error } = await supabase.auth.updateUser({ password: pw1 });
     setSavingPw(false);
     if (error) {
-      setPwMsg({ type: 'gagal', text: 'Gagal mengubah password: ' + error.message });
+      setPwMsg({ type: 'gagal', text: 'Failed to change password: ' + error.message });
     } else {
-      setPwMsg({ type: 'sukses', text: 'Password berhasil diubah.' });
+      setPwMsg({ type: 'sukses', text: 'Password changed successfully.' });
       setPw1('');
       setPw2('');
       setTimeout(() => setPwMsg(null), 3000);
@@ -61,8 +61,8 @@ export default function AccountPage() {
       <header className="px-6 pt-1 pb-2">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Akun Saya</h1>
-            <p className="text-[#5A305A] font-light text-sm mt-1">Kelola info profil dan password login.</p>
+            <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">My Account</h1>
+            <p className="text-[#5A305A] font-light text-sm mt-1">Manage your profile info and login password.</p>
           </div>
           <Greeting />
         </div>
@@ -77,13 +77,13 @@ export default function AccountPage() {
               <input type="text" value={user?.email || ''} disabled className="w-full border border-slate-200 bg-slate-50 rounded-xl px-4 py-2.5 text-sm text-[#5A305A]" />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-[#5A305A] mb-1">Nama</label>
+              <label className="block text-sm font-semibold text-[#5A305A] mb-1">Name</label>
               <div className="flex gap-2">
                 <input
                   type="text"
                   value={nama}
                   onChange={e => setNama(e.target.value)}
-                  placeholder="Nama lengkap"
+                  placeholder="Full name"
                   className="flex-1 border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A] transition-all"
                 />
                 <button
@@ -91,7 +91,7 @@ export default function AccountPage() {
                   disabled={savingNama}
                   className="bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold px-5 rounded-xl transition-all disabled:opacity-50 shrink-0"
                 >
-                  {savingNama ? 'Menyimpan...' : 'Simpan'}
+                  {savingNama ? 'Saving...' : 'Save'}
                 </button>
               </div>
               {namaMsg && (
@@ -101,25 +101,25 @@ export default function AccountPage() {
           </div>
 
           <div className="pt-5 border-t border-slate-100">
-            <h3 className="text-sm font-bold text-[#5A305A] mb-3">Ganti Password</h3>
+            <h3 className="text-sm font-bold text-[#5A305A] mb-3">Change Password</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-[#5A305A] mb-1">Password Baru</label>
+                <label className="block text-xs font-semibold text-[#5A305A] mb-1">New Password</label>
                 <input
                   type="password"
                   value={pw1}
                   onChange={e => setPw1(e.target.value)}
-                  placeholder="Minimal 6 karakter"
+                  placeholder="At least 6 characters"
                   className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A] transition-all"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-[#5A305A] mb-1">Konfirmasi Password Baru</label>
+                <label className="block text-xs font-semibold text-[#5A305A] mb-1">Confirm New Password</label>
                 <input
                   type="password"
                   value={pw2}
                   onChange={e => setPw2(e.target.value)}
-                  placeholder="Ulangi password baru"
+                  placeholder="Repeat new password"
                   className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A] transition-all"
                 />
               </div>
@@ -132,7 +132,7 @@ export default function AccountPage() {
               disabled={savingPw || !pw1 || !pw2}
               className="mt-3 bg-slate-100 hover:bg-slate-200 text-[#5A305A] font-semibold px-5 py-2.5 rounded-xl transition-all disabled:opacity-50 text-sm"
             >
-              {savingPw ? 'Memproses...' : 'Ubah Password'}
+              {savingPw ? 'Processing...' : 'Change Password'}
             </button>
           </div>
         </div>

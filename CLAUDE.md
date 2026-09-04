@@ -200,17 +200,50 @@ Sudah diimplementasikan (lihat `sql/001_rbac_and_bunker_rls.sql`, `sql/002_direc
   cakupan `admin_rates`/`audit_po` di atas (`policy_count=4`, dikonfirmasi).
   Catatan tersisa: `audit_po_ap_comp` diisi otomasi n8n tiap 30 menit — BELUM diverifikasi eksplisit
   apakah otomasi itu tetap jalan normal setelah RLS aktif (perlu proses itu pakai service role key).
-- **"Jabatan approval" per role (2026-09, dipakai FAR Overseas Air, lihat bagian FAR Overseas Air
-  di bawah utk detail alurnya)** — kolom BARU `roles.approval_tier` (text, nullable, salah satu
-  dari `'TIER1'`/`'PIC'`/`'TIER2'`/`'TIER3'`, `NULL` = role ini bukan approver) menentukan tahap
-  approval mana yang boleh diklik user dengan role itu. **BELUM DIJALANKAN ke Supabase production
-  — WAJIB dijalankan manual dulu di SQL editor sebelum fitur approval bisa dipakai sama sekali**
-  (tanpa ini, `roles.select('..., approval_tier')` di `RoleManagementPage.tsx` akan error kolom
-  tidak ada, dan RPC `get_my_approval_tiers()` di bawah juga belum ada):
+- **"Jabatan approval" per USER, PER HALAMAN (2026-09, VERSI FINAL #2 — dipakai FAR Overseas Air
+  sekarang, dirancang generik utk modul approval lain di masa depan, lihat bagian FAR Overseas
+  Air di bawah utk detail alur Direct Loading-nya)** — riwayat desain (SEMUA versi sebelumnya
+  SUDAH DIGANTI, jangan reintroduce yang manapun): (1) `roles.approval_tier` per-role — salah
+  paham dari maksud user; (2) `profiles.approval_tier` per-user tapi 1 kolom GLOBAL (cuma cukup
+  utk 1 modul approval) — user lalu bilang ke depan bakal ada approval berjenjang di halaman lain
+  dgn jabatan beda (mis. "SPV" di Direct Loading tapi "Manager" di Bunker), jadi 1 kolom global
+  tidak cukup. **Desain final**: tabel `user_approval_tiers` (`user_id`, `page_key`, `tier`, PK
+  gabungan `(user_id, page_key)` — 1 user MAKSIMAL 1 jabatan PER HALAMAN, tapi BEBAS beda-beda
+  jabatan di halaman berbeda) NEMPEL LANGSUNG di user, TERPISAH TOTAL dari role RBAC manapun —
+  jabatan di halaman X baru **"berfungsi"** kalau user itu JUGA punya role (role apa saja) yang
+  kasih akses edit ke halaman X (2 syarat INDEPENDEN per halaman, harus sama-sama terpenuhi:
+  gating ganda `canEdit(pageKey) && canApproveTier(pageKey, step)`, lihat `AuthContext.tsx` &
+  `FarOverseasAirDetailModal.tsx`). Daftar tier & label yang VALID per halaman (vocab BEBAS beda
+  per halaman, tidak perlu sama kayak TIER1/PIC/TIER2/TIER3-nya Direct Loading) SATU SUMBER
+  KEBENARANNYA `PAGE_REGISTRY[].approvalTiers` (`src/lib/permissions.ts`) — halaman baru yang mau
+  punya approval berjenjang TINGGAL isi field `approvalTiers` di entry `PAGE_REGISTRY`-nya,
+  `RoleManagementPage.tsx` OTOMATIS nambah 1 dropdown baru utk halaman itu tanpa perlu ubah kode
+  di file itu (lihat `APPROVAL_TIER_PAGES` export). **BELUM DIJALANKAN ke Supabase production —
+  WAJIB dijalankan manual dulu di SQL editor sebelum fitur approval bisa dipakai sama sekali**
+  (tanpa ini, query `user_approval_tiers` di `RoleManagementPage.tsx` akan error tabel tidak ada,
+  dan RPC `get_my_approval_tiers()` di bawah juga belum ada):
   ```sql
-  alter table public.roles
-    add column if not exists approval_tier text
-    check (approval_tier is null or approval_tier in ('TIER1', 'PIC', 'TIER2', 'TIER3'));
+  create table if not exists public.user_approval_tiers (
+    user_id uuid not null references public.profiles(id) on delete cascade,
+    page_key text not null,
+    tier text not null,
+    primary key (user_id, page_key)
+  );
+  alter table public.user_approval_tiers enable row level security;
+  -- FIX (2026-09) -- versi PERTAMA lupa bikin policy sama sekali, akibatnya RLS nolak SEMUA
+  -- akses langsung ke tabel ini (termasuk dari RoleManagementPage.tsx yang pakai
+  -- .from('user_approval_tiers') langsung, BUKAN lewat RPC, utk select/upsert/delete) -- dropdown
+  -- "Jabatan Approval" kelihatan tapi gagal tersimpan. Policy ini WAJIB ada: admin boleh
+  -- select/insert/update/delete BEBAS (dipakai RoleManagementPage.tsx), user biasa boleh SELECT
+  -- baris miliknya sendiri saja (jaga-jaga kalau nanti ada UI non-admin yang perlu baca
+  -- langsung -- SAAT INI baca normal tetap lewat RPC get_my_approval_tiers, bukan lewat ini).
+  create policy "Admins manage user_approval_tiers" on public.user_approval_tiers
+    for all
+    using (public.is_admin())
+    with check (public.is_admin());
+  create policy "Users read own approval tiers" on public.user_approval_tiers
+    for select
+    using (auth.uid() = user_id);
 
   create or replace function public.get_my_approval_tiers()
   returns jsonb
@@ -218,34 +251,44 @@ Sudah diimplementasikan (lihat `sql/001_rbac_and_bunker_rls.sql`, `sql/002_direc
   security definer
   stable
   as $$
-    select coalesce(jsonb_agg(distinct r.approval_tier), '[]'::jsonb)
-    from public.user_roles ur
-    join public.roles r on r.id = ur.role_id
-    where ur.user_id = auth.uid() and r.approval_tier is not null;
+    select coalesce(jsonb_object_agg(uat.page_key, uat.tier), '{}'::jsonb)
+    from public.user_approval_tiers uat
+    where uat.user_id = auth.uid();
   $$;
 
   grant execute on function public.get_my_approval_tiers() to authenticated;
   ```
+  (Kalau sempat menjalankan versi `roles.approval_tier` atau `profiles.approval_tier` dari
+  iterasi sebelumnya, kolom itu aman dibiarkan nganggur/di-drop manual — tidak dipakai lagi di
+  kode manapun.)
   SENGAJA dibuat sebagai RPC **BARU/TERPISAH** (`get_my_approval_tiers()`), BUKAN nambah field ke
   `get_my_access()` yang sudah ada — supaya tidak perlu menulis ulang body `get_my_access()` yang
   sudah kritikal & battle-tested tanpa akses DB langsung utk verifikasi isi aslinya (resikonya
   kalau salah tebak logic-nya, bisa lock-out semua user dari semua halaman).
   - `src/lib/AuthContext.tsx` — panggil RPC ini di `fetchAccess()` (paralel dgn `get_my_access()`),
-    expose `approvalTiers: Set<string>` + helper `canApproveTier(tier)` (`isAdmin` selalu lolos,
-    role Admin approve semua tahap tanpa perlu `approval_tier` di-set). Fail-closed kalau RPC
-    belum ada di Supabase (Set kosong, BUKAN diam-diam boleh semua) — TAPI karena `fetchAccess`
-    tidak return-early lagi kalau panggilan `get_my_access()` gagal (lihat kode), akses halaman
-    biasa tetap jalan normal meski RPC approval_tiers ini belum ada, cuma fitur approve-nya yg
-    nonaktif (tombol tidak pernah muncul kecuali Admin).
-  - `src/pages/RoleManagementPage.tsx` — dropdown kecil "Jabatan approval" di tiap chip role
-    (panel "Daftar Role"), `APPROVAL_TIER_OPTIONS`, handler `updateRoleApprovalTier` (langsung
-    `.update()` ke tabel `roles`, BUKAN lewat RPC — tabel `roles` sejauh ini dikelola langsung
-    dari halaman ini tanpa RPC wrapper, konsisten dgn `handleAddRole`/`handleDeleteRole` yg sudah
-    ada). Role Admin (`is_protected`) tidak dikasih dropdown ini (selalu bisa approve semua tahap
-    via `isAdmin` bypass).
-  - 1 user BISA punya lebih dari 1 role (`user_roles`) — `approval_tiers` di-agregasi dari SEMUA
-    role user itu (union, bukan cuma role pertama), jadi kalau salah satu role-nya match tahap
-    yang diminta, user itu eligible approve tahap itu.
+    expose `approvalTiersByPage: Record<string, string>` (`page_key` → `tier`, BUKAN `Set<string>`
+    datar lagi seperti versi 1-kolom-global) + helper `canApproveTier(pageKey, tier)` (`isAdmin`
+    selalu lolos di semua halaman tanpa perlu baris `user_approval_tiers`). Fail-closed kalau RPC
+    belum ada di Supabase (objek kosong `{}`, BUKAN diam-diam boleh semua) — TAPI karena
+    `fetchAccess` tidak return-early lagi kalau panggilan `get_my_access()` gagal (lihat kode),
+    akses halaman biasa tetap jalan normal meski RPC approval_tiers ini belum ada, cuma fitur
+    approve-nya yg nonaktif (tombol tidak pernah muncul kecuali Admin).
+  - `src/lib/permissions.ts` — `PageEntry.approvalTiers?: {value, label}[]` (opsional, array =
+    urutan rantai approval dari awal ke akhir), `APPROVAL_TIER_PAGES` (filter `PAGE_REGISTRY` yang
+    py `approvalTiers` terisi, dipakai `RoleManagementPage.tsx` render dropdown-nya).
+  - `src/pages/RoleManagementPage.tsx` — 1 dropdown kecil "Jabatan Approval" PER HALAMAN di
+    `APPROVAL_TIER_PAGES` untuk TIAP BARIS USER (panel "Role per User", BUKAN di panel "Daftar
+    Role") — kalau baru 1 halaman (`direct_loading`) yang py `approvalTiers`, cuma 1 dropdown yang
+    tampil; nanti nambah otomatis begitu ada halaman lain didaftarkan. Handler
+    `updateUserApprovalTier(profile, pageKey, tier)` — `tier` kosong (opsi "—") berarti `.delete()`
+    baris `user_approval_tiers` user itu utk halaman itu, `tier` terisi berarti `.upsert()`
+    (`onConflict: 'user_id,page_key'`). TIDAK ADA pengecualian khusus utk Admin di sini — dropdown
+    tetap muncul & BERPENGARUH di baris user manapun termasuk yang py role Admin, KARENA
+    `canApproveTier` SENGAJA tidak punya bypass `isAdmin` (2026-09, permintaan eksplisit user:
+    "admin tidak bisa bebas melakukan approval") — user Admin TETAP HARUS di-assign jabatan
+    approval-nya sendiri lewat dropdown ini kalau mau bisa approve tahap manapun. Ini beda dari
+    `canEdit`/akses halaman biasa yang Admin TETAP selalu bypass (`is_admin()` hardcode akses
+    penuh, tidak berubah) — HANYA gating approval-tier yang tidak lagi otomatis lolos utk Admin.
   - **Enforcement server-side (2026-09) — RPC `approve_far_overseas_air`**: approval SEKARANG
     lewat RPC ini (`SECURITY DEFINER`), BUKAN lagi `.update()` langsung ke
     `rekapan_far_overseas_air` (versi sebelumnya cuma gating frontend, itu jadi RIWAYAT — sudah
@@ -281,10 +324,18 @@ Sudah diimplementasikan (lihat `sql/001_rbac_and_bunker_rls.sql`, `sql/002_direc
         raise exception 'Invalid approval step: %', p_step;
       end if;
 
-      if not public.is_admin() and not exists (
-        select 1 from public.user_roles ur
-        join public.roles r on r.id = ur.role_id
-        where ur.user_id = auth.uid() and r.approval_tier = p_step
+      -- Jabatan approval NEMPEL DI USER PER HALAMAN (user_approval_tiers), BUKAN di role &
+      -- BUKAN 1 kolom global -- lihat catatan "Jabatan approval per USER, PER HALAMAN" di atas.
+      -- 'direct_loading' hardcode di sini krn RPC ini KHUSUS utk modul FAR Overseas Air -- RPC
+      -- approval modul lain (kalau nanti dibuat) filter page_key masing-masing. Guard
+      -- has_edit_access di atas SUDAH menangani syarat "user ini punya role dgn akses edit ke
+      -- halaman" (syarat ke-2). SENGAJA TIDAK ADA bypass `is_admin()` di sini (2026-09,
+      -- permintaan eksplisit user) -- Admin TETAP harus punya baris user_approval_tiers yang
+      -- cocok utk bisa approve, sama kayak user lain. JANGAN tambahkan lagi
+      -- `not public.is_admin() and` di depan exists ini.
+      if not exists (
+        select 1 from public.user_approval_tiers uat
+        where uat.user_id = auth.uid() and uat.page_key = 'direct_loading' and uat.tier = p_step
       ) then
         raise exception 'You do not have the % approval role', p_step;
       end if;
@@ -345,8 +396,9 @@ Sudah diimplementasikan (lihat `sql/001_rbac_and_bunker_rls.sql`, `sql/002_direc
 
     grant execute on function public.approve_far_overseas_air(uuid, text, text, text) to authenticated;
     ```
-    Guard 3-lapis di dalamnya: (1) `has_edit_access('direct_loading')`, (2) role user (atau
-    `is_admin()`) harus punya `approval_tier = p_step`, (3) `approval_status` SAAT INI harus PERSIS
+    Guard 3-lapis di dalamnya: (1) `has_edit_access('direct_loading')`, (2) user (atau
+    `is_admin()`) harus punya baris `user_approval_tiers` dgn `page_key='direct_loading'` &
+    `tier = p_step`, (3) `approval_status` SAAT INI harus PERSIS
     status "menunggu tahap ini" (`v_expected_status`, dgn `for update` row lock supaya 2 approval
     bersamaan tidak balapan) — kalau salah satu gagal, function `raise exception` (client terima di
     `error.message`). Function ini yang MENENTUKAN `approval_status`/`approvals` baru (bukan
@@ -356,7 +408,7 @@ Sudah diimplementasikan (lihat `sql/001_rbac_and_bunker_rls.sql`, `sql/002_direc
     (teks role utk tampilan tanda tangan, mis. "Manager Finance") & `nama` masih dikirim dari
     client (bukan divalidasi/di-derive ulang di RPC) — ini AMAN karena keduanya murni teks
     kosmetik utk memo cetak, bukan bagian keputusan otorisasi (yang divalidasi adalah `p_step`
-    lewat `approval_tier`, bukan `p_nama`/`p_jabatan`).
+    lewat `user_approval_tiers`, bukan `p_nama`/`p_jabatan`).
 
 ## Translasi UI ke Bahasa Inggris (IN PROGRESS, dimulai 2026-09)
 
@@ -407,6 +459,74 @@ dan bagian `CourierValidasiPage.tsx` yang merender label dari `SECTIONS`).
 - ✅ `src/components/Greeting.tsx` — sapaan waktu ("Selamat pagi/siang/sore/malam"→"Good
   morning/afternoon/evening/night"), format tanggal `toLocaleDateString` diganti locale
   `'id-ID'`→`'en-US'`.
+- ✅ **Bunker** (`src/pages/BunkerPage.tsx` + `src/components/BunkerUploadModal.tsx`/
+  `BunkerKelengkapanModal.tsx`/`BunkerCompareDocModal.tsx`/`BunkerAuditLogModal.tsx` +
+  `src/utils/BunkerHelpers.ts`) — SELESAI penuh (2026-09). Termasuk semua toast/error message,
+  judul modal, tombol, placeholder, label field, header tabel (Kapal→Vessel, Lokasi→Location,
+  Aksi→Action, dst), pesan error upload (`humanizeUploadError`), `friendlyDbError`. Label
+  tampilan (BUKAN key/value DB) juga ditranslate: `SUMMARY_STATUS_META`/`STATUS_WORKFLOW_META`
+  (`summaryStatusMeta`/`workflowMeta` di `BunkerHelpers.ts` — KEY jsonb/DB seperti
+  `'LOLOS VERIFIKASI'`/`'BUTUH REVIEW'`/`'BARU'`/`'DIPROSES'`/`'DISETUJUI'`/`'DIBAYAR'` TIDAK
+  diubah, cuma `label`-nya: Lolos Verifikasi→Passed Verification, Butuh Review→Needs Review,
+  Baru→New, Diproses→In Progress, Disetujui→Approved, Dibayar→Paid), `KELENGKAPAN_LABELS`/
+  `MATRIX_COLUMN_LABELS` (Faktur Pajak→Tax Invoice, Kwitansi→Receipt, Berita Acara→Official
+  Report, Hasil Lab→Lab Results — istilah dokumen bisnis umum, BUKAN singkatan resmi kepabeanan
+  spesifik semacam PPJK/PIB yang dipertahankan apa adanya per aturan translasi poin 2 di atas).
+  **SENGAJA TIDAK disentuh** (data/matching logic yang baca teks dari database/backend, bukan
+  label tampilan statis): `resolveAcuanColumnKey()` (cocokkan `acuan_label` dari backend, masih
+  Indonesia), `isWrongRowMismatch()` di `BunkerCompareDocModal.tsx` (regex cocokkan teks
+  `summary.mismatches` dari backend), dan format `"{field} — Lama: X → Baru: Y"` yang ditulis
+  `logBunkerAudit()`/dibaca `splitAuditCatatan()` (`BunkerAuditLogModal.tsx`) — ini format
+  PERSISTEN yang sudah kepakai di data historis `audit_trail`, ubah kata "Lama"/"Baru"-nya
+  butuh migrasi data + sinkron ulang regex parser-nya, DI LUAR cakupan translasi UI murni (kalau
+  nanti mau diubah, lakukan sengaja & terpisah, bukan collateral dari task translasi lain).
+  `field_label` yang DIKIRIM ke `logBunkerAudit()` (mis. "Manual Confirmation: ...", "Manual
+  Notes") sudah Inggris utk entri BARU — entri lama tetap Indonesia (riwayat, tidak diubah).
+- ✅ `src/pages/AccountPage.tsx` (Akun Saya) — SELESAI penuh (2026-09): judul halaman "Akun
+  Saya"→"My Account" + subjudul, label field (Nama→Name), placeholder input (Nama
+  lengkap→Full name, Minimal 6 karakter→At least 6 characters, Ulangi password baru→Repeat new
+  password), tombol (Simpan→Save, Menyimpan...→Saving..., Ganti Password→Change Password,
+  Ubah Password→Change Password, Memproses...→Processing...), label Password Baru/Konfirmasi
+  Password Baru→New Password/Confirm New Password, semua pesan sukses/error inline. Key internal
+  `'sukses'`/`'gagal'` pada state message TIDAK diubah (cuma dipakai utk pilih warna teks, bukan
+  teks tampilan).
+- ✅ `src/pages/RoleManagementPage.tsx` (Kelola Role & Akses) — SELESAI penuh (2026-09): judul
+  halaman + subjudul, judul 3 panel ("Daftar Role"→"Role List", "Akses Halaman per
+  Role"→"Page Access per Role", "Role per User"→"Roles per User"), tombol/label (Tambah
+  Role→Add Role, Bentangkan/Ciutkan Semua→Expand/Collapse All, Bawaan→Built-in, kolom
+  Halaman→Page), placeholder input, semua toast sukses/error, confirm dialog hapus role, tooltip
+  checkbox akses/EDIT-VIEW & dropdown jabatan approval, empty state "Tidak ada user
+  ditemukan"→"No users found", "(tanpa nama)"→"(no name)".
+  Label jabatan approval Direct Loading di `PAGE_REGISTRY` (`permissions.ts`) disamakan
+  Inggris-nya dgn `STEP_LABEL` di `FarOverseasAirDetailModal.tsx` ("Exim (Disiapkan
+  Oleh)"→"Prepared By (Exim)", "Direktur"→"Director"). Susulan (2026-09, permintaan user): grup
+  di matrix "Akses Halaman per Role" defaultnya CIUTKAN semua (`collapsedGroups` init
+  `new Set(PAGE_GROUPS)`, sebelumnya default terbentang semua), tinggi baris matrix & baris grup
+  diperbesar sedikit (`py-2`→`py-3.5`/`py-3`).
+  **Panel "Roles per User" dirombak jadi tabel matrix (2026-09, permintaan user "mempercantik
+  panel ini")** — SEBELUMNYA layout 1 baris per user berisi pill button per role (klik toggle) +
+  dropdown jabatan approval di sebelahnya, TIDAK KONSISTEN visual dgn panel "Page Access per
+  Role" di atasnya. SEKARANG pola tabelnya PERSIS sama dgn panel itu: sticky kolom pertama (nama
+  + email user), header sticky, checkbox bulat emerald per kolom role (`toggleUserRole`
+  tidak berubah logic-nya, cuma pembungkus visualnya jadi `<td>`/tombol checkbox, bukan pill).
+  Kolom dropdown jabatan approval (`APPROVAL_TIER_PAGES`, kalau ada) ditaruh SEBELUM kolom-kolom
+  role, tetap `<select>` (bukan checkbox, krn nilainya bukan boolean) — value dropdown sekarang
+  cukup label tier-nya saja (`opt.label`) tanpa prefix nama halaman lagi (dulu
+  `"{page.label}: {opt.label}"`) krn sudah ada di header kolom (`{page.label} Approval`), jadi
+  tidak perlu diulang. Badge "No role assigned" (dulu muncul di baris user tanpa role) DIHAPUS --
+  di tabel matrix, user tanpa role cukup kelihatan dari semua kolom role-nya kosong (unchecked),
+  tidak perlu badge terpisah lagi.
+- **Entry `direct_loading` di `PAGE_REGISTRY` — `label` & `group` diganti ke "FAR Overseas"
+  (2026-09, koreksi user: nama tampilnya di RBAC selama ini masih "Direct Loading", padahal
+  halamannya sendiri sudah "FAR Overseas" di sidebar & semua tempat lain)** — sebelumnya
+  `label: 'Direct Loading', group: 'Direct Loading'`. `key` (`'direct_loading'`) & `path`
+  (`/direct-loading`) TETAP TIDAK DIUBAH (identifier teknis/route, dipakai di kode & RLS/RPC
+  Supabase — mengubahnya butuh migrasi lebih luas, di luar cakupan koreksi nama tampil ini) — pola
+  sama seperti `AuditPoPage`/`audit_po` yang nama teknisnya beda dari label yang ditampilkan
+  ("Audit AP Local"). `PageEntry['group']` (union type) & `PAGE_GROUPS` array ikut diganti
+  `'Direct Loading'`→`'FAR Overseas'` supaya header grup collapsible di matrix "Page Access per
+  Role" juga ikut konsisten. Efeknya otomatis nyebar ke: matrix akses (nama grup & label baris),
+  dropdown "Jabatan Approval" panel "Roles per User" (header kolom jadi "FAR Overseas Approval").
 - 🟡 Courier Upload — SELESAI. `src/pages/UploadPage.tsx` (dipakai bareng Sea & Air Upload lewat
   `fixedType`, jadi Sea & Air Upload OTOMATIS ikut selesai juga) + `src/components/
   ProcessingQueue.tsx` (dipakai kedua modul Upload) ditranslate penuh, termasuk toast/error
@@ -671,10 +791,12 @@ Komentar kode & isi CLAUDE.md ini SENGAJA TETAP Bahasa Indonesia (bukan bagian d
   signature table tidak perlu berubah). Kolom tanda tangan cetak TETAP cuma 3 (Disiapkan Oleh /
   Diperiksa Oleh x2) — nama PIC TETAP digabung ke kolom "Disiapkan Oleh" bareng nama Exim
   (`disiapkanNama`, format `"{exim}/{pic}"`), TIDAK PERNAH jadi kolom tanda tangan sendiri.
-  **Gating siapa yang boleh approve tahap yang sedang aktif**: 2 syarat — `canEditDirectLoading`
-  (akses edit halaman, RBAC biasa) DAN `canApproveTier(step)` dari `useAuth()` (role user harus
-  py "jabatan approval" yang PERSIS cocok tahap itu, lihat subbagian "Jabatan approval per role"
-  di bagian RBAC atas — governance/skema datanya didokumentasikan di sana, bukan di sini). Kalau
+  **Gating siapa yang boleh approve tahap yang sedang aktif**: 2 syarat INDEPENDEN — `canEditDirectLoading`
+  (akses edit halaman, dari role RBAC manapun) DAN `canApproveTier('direct_loading', step)` dari
+  `useAuth()` (user itu SENDIRI — bukan role-nya — harus py baris `user_approval_tiers` utk
+  halaman `direct_loading` yang tier-nya PERSIS cocok tahap itu, lihat subbagian "Jabatan
+  approval per USER, PER HALAMAN" di bagian RBAC atas — governance/skema datanya
+  didokumentasikan di sana, bukan di sini). Kalau
   user py akses edit tapi jabatannya tidak cocok, tombol approve TIDAK muncul, diganti pesan
   penjelas "You don't have the '{tahap}' approval role for this step." (bukan disembunyikan
   total tanpa penjelasan). **Data lama (sebelum fitur ini) berpotensi tidak konsisten** — memo
@@ -682,6 +804,14 @@ Komentar kode & isi CLAUDE.md ini SENGAJA TETAP Bahasa Indonesia (bukan bagian d
   otomatis punya entry PIC di `approvals`-nya (tidak ada migrasi data retroaktif), jadi kolom
   "Disiapkan Oleh" utk memo lama itu cuma nampilin nama Exim tanpa PIC — ini WAJAR utk data lama,
   bukan bug.
+  **Nama approver tahap PIC TIDAK BISA diketik manual** (2026-09, permintaan user) — di
+  `ApprovalConfirmModal`, field "Approver Name" untuk step `'PIC'` dirender READ-ONLY (teks
+  statis, bukan `<input>`), SELALU ikut `defaultNamaForStep('PIC')` (= `profile?.nama ||
+  user?.email`, nama user yang sedang login) — beda dari tahap TIER1/TIER2/TIER3 yang tetap
+  boleh diedit bebas (approver-nya bisa beda dari yang login, mis. admin approve atas nama orang
+  di `signer_config`). Kalau nanti nambah tahap approval baru (di modul manapun) yang juga mau
+  perilaku "auto dari nama login, tidak bisa diketik", ikuti pola `nameEditable` di
+  `ApprovalConfirmModal` ini.
 - **Document Validation** (`FarOverseasAirCostValidationModal.tsx`) — baris NAMA PT tiap PO yang
   namanya cocok (`looseNameMatch`) dengan `dominantPtName` (nama PT dari `dominant_company_code`,
   yang juga tampil di kolom PO baris CONCLUSION) dikasih centang hijau (`CheckCircle2`), supaya

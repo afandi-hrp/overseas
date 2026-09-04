@@ -29,7 +29,7 @@ export default function BunkerAuditLogModal({ record, onClose }: {
       const { data, error } = await fetchBunkerAuditLog(record.no_po);
       if (cancelled) return;
       if (error) {
-        setError('Gagal memuat riwayat: ' + error.message);
+        setError('Failed to load history: ' + error.message);
       } else {
         setEntries(data);
       }
@@ -44,7 +44,7 @@ export default function BunkerAuditLogModal({ record, onClose }: {
         <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-slate-200 shrink-0">
           <div className="min-w-0">
             <h2 className="text-lg font-bold tracking-tight text-[#5A305A] flex items-center gap-2">
-              <History size={18} /> Riwayat Perubahan
+              <History size={18} /> Change History
             </h2>
             <p className="text-xs font-light text-[#5A305A] mt-0.5 truncate">No PO: {record.no_po || '-'} · {record.vendor || '-'} · {record.kapal || '-'}</p>
           </div>
@@ -55,11 +55,11 @@ export default function BunkerAuditLogModal({ record, onClose }: {
 
         <div className="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-6">
           {loading ? (
-            <p className="text-xs text-[#5A305A]/70 italic text-center py-8">Memuat riwayat...</p>
+            <p className="text-xs text-[#5A305A]/70 italic text-center py-8">Loading history...</p>
           ) : error ? (
             <p className="text-xs text-rose-600 text-center py-8">{error}</p>
           ) : entries.length === 0 ? (
-            <p className="text-xs text-[#5A305A]/70 italic text-center py-8">Belum ada perubahan manual tercatat untuk baris ini.</p>
+            <p className="text-xs text-[#5A305A]/70 italic text-center py-8">No manual changes recorded for this row yet.</p>
           ) : (
             <ol className="space-y-3">
               {entries.map(e => {
@@ -71,7 +71,7 @@ export default function BunkerAuditLogModal({ record, onClose }: {
                       <span className="text-[10px] text-[#5A305A]/60">{formatDateTimeID(e.created_at)}</span>
                     </div>
                     <p className="text-xs text-[#5A305A]/70 mb-1.5">
-                      Oleh: <span className="font-semibold text-[#5A305A]">{e.user_email || 'Tidak diketahui'}</span>
+                      By: <span className="font-semibold text-[#5A305A]">{e.user_email || 'Unknown'}</span>
                     </p>
                     {diff ? (
                       <div className="flex items-center gap-2 text-xs">

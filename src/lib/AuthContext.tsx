@@ -24,15 +24,23 @@ type AuthContextValue = {
   // & Rekapan (2026-09), lihat catatan RBAC di CLAUDE.md.
   editPageKeys: Set<string>;
   canEdit: (pageKey: string) => boolean;
-  // "Jabatan approval" (TIER1/PIC/TIER2/TIER3) dari role yang di-assign ke user ini -- dipakai
-  // gating tombol approval berjenjang FAR Overseas Air (lihat FarOverseasAirDetailModal.tsx).
-  // Diisi dari RPC TERPISAH `get_my_approval_tiers()` (BUKAN bagian dari get_my_access()) supaya
-  // tidak perlu sentuh function get_my_access() yang sudah kritikal & battle-tested. Fail-closed
-  // sama seperti allowedPageKeys/editPageKeys -- kalau RPC-nya belum ada di Supabase (migration
-  // belum dijalankan), Set ini kosong & isAdmin-lah satu-satunya yang tetap bisa approve semua
-  // tahap (lihat canApproveTier).
-  approvalTiers: Set<string>;
-  canApproveTier: (tier: string) => boolean;
+  // "Jabatan approval" NEMPEL LANGSUNG di user ini, PER HALAMAN (tabel `user_approval_tiers`:
+  // user_id, page_key, tier -- diatur di RoleManagementPage.tsx panel "Role per User"), TERPISAH
+  // TOTAL dari role RBAC. 1 user BISA punya jabatan beda di halaman beda (mis. SPV di Direct
+  // Loading, Manager di Bunker) -- makanya map-nya di-key per `page_key`, BUKAN Set datar seperti
+  // versi sebelumnya (yang cuma menganggap FAR Overseas Air satu-satunya modul approval).
+  // Dipakai gating tombol approval berjenjang (lihat FarOverseasAirDetailModal.tsx & modul
+  // approval lain di masa depan) BARENGAN `canEdit(pageKey)` -- jabatan approval baru "berfungsi"
+  // kalau user itu JUGA punya role apa saja yang kasih akses edit ke halaman itu (2 syarat
+  // independen, keduanya harus terpenuhi). Diisi dari RPC TERPISAH `get_my_approval_tiers()`
+  // (BUKAN bagian dari get_my_access()) supaya tidak perlu sentuh function get_my_access() yang
+  // sudah kritikal & battle-tested. Fail-closed sama seperti allowedPageKeys/editPageKeys --
+  // kalau RPC-nya belum ada di Supabase (migration belum dijalankan), map ini kosong & TIDAK ADA
+  // yang bisa approve (termasuk Admin -- lihat catatan `canApproveTier` di bawah, SENGAJA tidak
+  // ada bypass isAdmin). Daftar tier yang VALID per halaman ada di `PAGE_REGISTRY[].approvalTiers`
+  // (src/lib/permissions.ts), bukan di sini -- di sini cuma nyimpen jabatan user apa adanya.
+  approvalTiersByPage: Record<string, string>;
+  canApproveTier: (pageKey: string, tier: string) => boolean;
   isAdmin: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -54,7 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [allowedPageKeys, setAllowedPageKeys] = useState<Set<string>>(new Set());
   const [editPageKeys, setEditPageKeys] = useState<Set<string>>(new Set());
-  const [approvalTiers, setApprovalTiers] = useState<Set<string>>(new Set());
+  const [approvalTiersByPage, setApprovalTiersByPage] = useState<Record<string, string>>({});
   const [isAdmin, setIsAdmin] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(true);
   // Loading akses (get_my_access) DIPISAH dari loading sesi -- kalau digabung jadi satu flag
@@ -89,10 +97,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsAdmin(!!data.is_admin);
     }
 
-    // RPC TERPISAH (bukan bagian get_my_access()) -- lihat komentar approvalTiers di atas.
-    // Gagal/belum ada = fail-closed (Set kosong), TIDAK menggagalkan fetchAccess keseluruhan.
+    // RPC TERPISAH (bukan bagian get_my_access()) -- lihat komentar approvalTiersByPage di atas.
+    // Balikin objek {page_key: tier}. Gagal/belum ada = fail-closed (objek kosong), TIDAK
+    // menggagalkan fetchAccess keseluruhan.
     const { data: tierData, error: tierError } = await supabase.rpc('get_my_approval_tiers');
-    setApprovalTiers(!tierError && Array.isArray(tierData) ? new Set(tierData) : new Set());
+    setApprovalTiersByPage(!tierError && tierData && typeof tierData === 'object' && !Array.isArray(tierData) ? tierData : {});
   };
 
   // Lacak user id terakhir yang diketahui -- dipakai buat bedakan "login/ganti user
@@ -140,7 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(null);
         setAllowedPageKeys(new Set());
         setEditPageKeys(new Set());
-        setApprovalTiers(new Set());
+        setApprovalTiersByPage({});
         setIsAdmin(false);
         setAccessLoading(false);
       }
@@ -194,10 +203,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const canEdit = (pageKey: string) => isAdmin || editPageKeys.has(pageKey);
-  const canApproveTier = (tier: string) => isAdmin || approvalTiers.has(tier);
+  // SENGAJA TIDAK ada bypass `isAdmin` di sini (beda dari canEdit di atas) -- atas permintaan
+  // eksplisit user: Admin TIDAK otomatis boleh approve semua tahap, harus tetap di-assign jabatan
+  // approval-nya sendiri (baris user_approval_tiers) sama seperti user lain, per halaman.
+  const canApproveTier = (pageKey: string, tier: string) => approvalTiersByPage[pageKey] === tier;
 
   return (
-    <AuthContext.Provider value={{ session, user: session?.user ?? null, profile, allowedPageKeys, editPageKeys, canEdit, approvalTiers, canApproveTier, isAdmin, loading, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{ session, user: session?.user ?? null, profile, allowedPageKeys, editPageKeys, canEdit, approvalTiersByPage, canApproveTier, isAdmin, loading, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

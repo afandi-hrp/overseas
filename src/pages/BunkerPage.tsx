@@ -26,7 +26,7 @@ const QueueCard: React.FC<{ item: any; onDismiss: (id: string) => void; onOpenCo
     else if (Array.isArray(item.file_names)) filenames = item.file_names;
   } catch { /* ignore */ }
   const filesStr = filenames.join(', ');
-  const time = new Date(item.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+  const time = new Date(item.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
   if (item.status === 'PENDING') {
     return (
@@ -36,10 +36,10 @@ const QueueCard: React.FC<{ item: any; onDismiss: (id: string) => void; onOpenCo
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
             <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500" />
           </span>
-          Sedang diproses...
+          Processing...
         </div>
         <div className="text-amber-900 truncate" title={filesStr}>File: {filesStr || '-'}</div>
-        <div className="text-amber-700/70 text-xs">Dikirim: {time}</div>
+        <div className="text-amber-700/70 text-xs">Submitted: {time}</div>
       </div>
     );
   }
@@ -48,7 +48,7 @@ const QueueCard: React.FC<{ item: any; onDismiss: (id: string) => void; onOpenCo
     return (
       <div className="relative bg-rose-50 border border-rose-200 rounded-xl p-4 text-sm flex flex-col gap-2 shadow-sm pr-8">
         <button onClick={() => onDismiss(item.id)} className="absolute top-2.5 right-3 text-rose-400 hover:text-rose-600 font-bold text-lg leading-none">&times;</button>
-        <div className="font-bold text-rose-800 flex items-center gap-2">❌ Gagal diproses</div>
+        <div className="font-bold text-rose-800 flex items-center gap-2">❌ Processing failed</div>
         <div className="text-rose-900 truncate" title={filesStr}>File: {filesStr || '-'}</div>
         <div className="text-rose-700/80 text-xs break-words">Error: {item.error_message || '-'}</div>
       </div>
@@ -62,7 +62,7 @@ const QueueCard: React.FC<{ item: any; onDismiss: (id: string) => void; onOpenCo
       className="relative bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm flex flex-col gap-2 shadow-sm pr-8 text-left w-full hover:bg-emerald-100 transition-colors"
     >
       <span onClick={(e) => { e.stopPropagation(); onDismiss(item.id); }} className="absolute top-2.5 right-3 text-emerald-500 hover:text-emerald-700 font-bold text-lg leading-none cursor-pointer">&times;</span>
-      <div className="font-bold text-emerald-800 flex items-center gap-2">✅ Berhasil diproses{item.status_summary ? ` — ${item.status_summary}` : ''}</div>
+      <div className="font-bold text-emerald-800 flex items-center gap-2">✅ Processed successfully{item.status_summary ? ` — ${item.status_summary}` : ''}</div>
       <div className="text-emerald-900 truncate" title={filesStr}>File: {filesStr || '-'}</div>
     </button>
   );
@@ -79,24 +79,24 @@ function DeleteConfirmModal({ record, onConfirm, onClose, deleting, error }: {
             <Trash2 size={20} />
           </div>
           <div className="min-w-0">
-            <h3 className="font-bold text-[#5A305A] leading-tight">Hapus Data No PO Ini?</h3>
+            <h3 className="font-bold text-[#5A305A] leading-tight">Delete This No PO's Data?</h3>
             <p className="text-xs text-[#5A305A]/70 mt-0.5 truncate">{record.no_po || record.id}</p>
           </div>
         </div>
-        <p className="text-sm font-bold text-rose-600 mb-4">Tindakan ini tidak bisa dibatalkan.</p>
+        <p className="text-sm font-bold text-rose-600 mb-4">This action cannot be undone.</p>
         {error && (
           <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 break-words">{error}</div>
         )}
         <div className="grid grid-cols-2 gap-2">
           <button onClick={onClose} disabled={deleting} className="py-2.5 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all disabled:opacity-50">
-            Batal
+            Cancel
           </button>
           <button
             onClick={onConfirm}
             disabled={deleting}
             className="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
           >
-            <Trash2 size={14} /> {deleting ? 'Menghapus...' : 'Ya, Hapus'}
+            <Trash2 size={14} /> {deleting ? 'Deleting...' : 'Yes, Delete'}
           </button>
         </div>
       </div>
@@ -218,7 +218,7 @@ export default function BunkerPage() {
           fetchQueue();
         } else if (data.status === 'FAILED') {
           setActiveJobStatus('FAILED');
-          setActiveJobError(data.error_message || 'Gagal memproses dokumen.');
+          setActiveJobError(data.error_message || 'Failed to process document.');
           fetchQueue();
         }
       }
@@ -247,7 +247,7 @@ export default function BunkerPage() {
   const openCompareFromQueue = async (bunkerDokumenId: string) => {
     const { data } = await supabase.from('bunker_dokumen').select('*').eq('id', bunkerDokumenId).maybeSingle();
     if (data) setCompareRow(data);
-    else setToastMessage('⚠️ Data dokumen untuk antrian ini tidak ditemukan.');
+    else setToastMessage('⚠️ Document data for this queue item was not found.');
   };
 
   const openDeleteConfirm = (r: any) => { setDeleteConfirmRow(r); setDeleteError(null); };
@@ -265,7 +265,7 @@ export default function BunkerPage() {
       return;
     }
     setRows(prev => prev.filter(row => row.id !== deleteConfirmRow.id));
-    setToastMessage('Data berhasil dihapus.');
+    setToastMessage('Data deleted successfully.');
     setTimeout(() => setToastMessage(null), 4000);
     setDeleteConfirmRow(null);
     fetchList();
@@ -296,7 +296,7 @@ export default function BunkerPage() {
               </div>
               <div>
                 <h1 className="font-bold text-[#5A305A] text-base leading-tight">Bunker</h1>
-                <p className="text-xs font-light text-[#5A305A] mt-0.5">Verifikasi dokumen Bunker</p>
+                <p className="text-xs font-light text-[#5A305A] mt-0.5">Bunker document verification</p>
               </div>
             </div>
             <Greeting />
@@ -309,8 +309,8 @@ export default function BunkerPage() {
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3">
               <div className="w-9 h-9 rounded-full border-2 border-amber-400 border-t-transparent animate-spin shrink-0" />
               <div>
-                <p className="text-sm font-bold text-amber-800">Dokumen sedang diproses AI...</p>
-                <p className="text-xs text-amber-700 mt-0.5">Halaman ini akan otomatis memperbarui daftar begitu selesai.</p>
+                <p className="text-sm font-bold text-amber-800">AI is processing the document...</p>
+                <p className="text-xs text-amber-700 mt-0.5">This page will automatically refresh the list once it's done.</p>
               </div>
             </div>
           )}
@@ -318,7 +318,7 @@ export default function BunkerPage() {
             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <CheckCircle2 size={22} className="text-emerald-600 shrink-0" />
-                <p className="text-sm font-bold text-emerald-800">Dokumen berhasil diproses dan sudah muncul di daftar.</p>
+                <p className="text-sm font-bold text-emerald-800">Document processed successfully and now appears in the list.</p>
               </div>
               <button onClick={() => { setActiveJobId(null); setActiveJobStatus(null); }} className="text-emerald-600 hover:text-emerald-800"><X size={16} /></button>
             </div>
@@ -328,7 +328,7 @@ export default function BunkerPage() {
               <div className="flex items-center gap-3">
                 <AlertTriangle size={20} className="text-rose-600 shrink-0" />
                 <div>
-                  <p className="text-sm font-bold text-rose-800">Gagal memproses dokumen.</p>
+                  <p className="text-sm font-bold text-rose-800">Failed to process document.</p>
                   <p className="text-xs text-rose-700 mt-0.5">{activeJobError}</p>
                 </div>
               </div>
@@ -339,14 +339,14 @@ export default function BunkerPage() {
           {/* List */}
           <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 shadow-sm overflow-hidden">
             <div className="px-5 py-4 border-b border-white/60 flex items-center justify-between gap-3 flex-wrap">
-              <h2 className="text-sm font-bold text-[#5A305A] shrink-0">Daftar Dokumen Bunker</h2>
+              <h2 className="text-sm font-bold text-[#5A305A] shrink-0">Bunker Document List</h2>
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="flex items-center gap-2 rounded-full pl-3.5 pr-3 py-1.5 border border-slate-200 bg-white shrink-0">
                   <Search size={13} className="text-[#5A305A]/50 shrink-0" />
                   <input
                     value={search}
                     onChange={e => { setSearch(e.target.value); setPage(1); }}
-                    placeholder="Cari No PO / Vendor / Kapal..."
+                    placeholder="Search No PO / Vendor / Vessel..."
                     className="border-0 bg-transparent text-xs text-[#5A305A] focus:outline-none w-36"
                   />
                 </div>
@@ -355,22 +355,23 @@ export default function BunkerPage() {
                   onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
                   className="rounded-full px-3 py-2 border border-slate-200 bg-white text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer shrink-0"
                 >
-                  <option value="">Semua Status</option>
-                  <option value="LOLOS VERIFIKASI">Lolos Verifikasi</option>
-                  <option value="BUTUH REVIEW">Butuh Review</option>
+                  <option value="">All Statuses</option>
+                  <option value="LOLOS VERIFIKASI">Passed Verification</option>
+                  <option value="BUTUH REVIEW">Needs Review</option>
                 </select>
                 <button
                   onClick={() => { fetchList(); fetchQueue(); }}
                   disabled={loadingList}
-                  className="px-3 py-2 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] font-semibold text-xs transition-all flex items-center gap-1.5 shrink-0 disabled:opacity-50 h-[34px]"
+                  title="Refresh"
+                  className="p-2 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] transition-all flex items-center justify-center shrink-0 disabled:opacity-50 h-[34px] w-[34px]"
                 >
-                  <RefreshCw size={14} className={loadingList ? 'animate-spin' : ''} /> Refresh
+                  <RefreshCw size={14} className={loadingList ? 'animate-spin' : ''} />
                 </button>
                 <button
                   onClick={() => setShowQueuePanel(o => !o)}
                   className="relative px-3 py-2 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] font-semibold text-xs transition-all flex items-center gap-1.5 shrink-0 h-[34px]"
                 >
-                  <Clock size={14} /> Antrian Proses
+                  <Clock size={14} /> Processing Queue
                   {queue.length > 0 && (
                     <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
                       {queue.length}
@@ -382,7 +383,7 @@ export default function BunkerPage() {
                     onClick={() => setShowUploadModal(true)}
                     className="px-3 py-2 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-xs transition-all flex items-center gap-1.5 shrink-0 h-[34px]"
                   >
-                    <UploadCloud size={14} /> Upload Dokumen
+                    <UploadCloud size={14} /> Upload Document
                   </button>
                 )}
                 <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0">
@@ -407,19 +408,19 @@ export default function BunkerPage() {
                   <tr className="text-[10px] text-[#5A305A]/70 uppercase bg-slate-50">
                     <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">No PO</th>
                     <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Vendor</th>
-                    <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Kapal</th>
-                    <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Lokasi</th>
+                    <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Vessel</th>
+                    <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Location</th>
                     <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Status</th>
-                    <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Status Workflow</th>
-                    <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Terakhir Diupdate</th>
-                    <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap sticky right-0 top-0 bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-20 border-l border-slate-200">Aksi</th>
+                    <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Workflow Status</th>
+                    <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Last Updated</th>
+                    <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap sticky right-0 top-0 bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-20 border-l border-slate-200">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {loadingList ? (
-                    <tr><td colSpan={8} className="text-center py-10 text-[#5A305A] text-sm">Memuat data...</td></tr>
+                    <tr><td colSpan={8} className="text-center py-10 text-[#5A305A] text-sm">Loading data...</td></tr>
                   ) : rows.length === 0 ? (
-                    <tr><td colSpan={8} className="text-center py-10 text-[#5A305A] text-sm italic">Belum ada data Bunker. Klik "Upload Dokumen" untuk memulai.</td></tr>
+                    <tr><td colSpan={8} className="text-center py-10 text-[#5A305A] text-sm italic">No Bunker data yet. Click "Upload Document" to get started.</td></tr>
                   ) : (
                     rows.map(r => {
                     const matchStats = computeMatrixMatchStats(r.matrix_perbandingan);
@@ -436,10 +437,10 @@ export default function BunkerPage() {
                           <div className="flex flex-col gap-1 w-[110px]">
                             <button
                               onClick={() => setKelengkapanRow(r)}
-                              title="Kelengkapan Dokumen"
+                              title="Document Completeness"
                               className="w-full flex items-center gap-1 px-1.5 py-1 rounded-lg border border-slate-200 text-[9px] font-semibold text-[#5A305A] hover:bg-slate-100 transition-colors"
                             >
-                              <FileCheck2 size={10} /> Kelengkapan
+                              <FileCheck2 size={10} /> Completeness
                             </button>
                             <button
                               onClick={() => setCompareRow(r)}
@@ -455,18 +456,18 @@ export default function BunkerPage() {
                             </button>
                             <button
                               onClick={() => setAuditLogRow(r)}
-                              title="Riwayat Perubahan"
+                              title="Change History"
                               className="w-full flex items-center gap-1 px-1.5 py-1 rounded-lg border border-slate-200 text-[9px] font-semibold text-[#5A305A] hover:bg-slate-100 transition-colors"
                             >
-                              <History size={10} /> Riwayat
+                              <History size={10} /> History
                             </button>
                             {canEditBunker && (
                               <button
                                 onClick={() => openDeleteConfirm(r)}
-                                title="Hapus"
+                                title="Delete"
                                 className="w-full flex items-center gap-1 px-1.5 py-1 rounded-lg border border-rose-200 bg-rose-50 text-[9px] font-semibold text-rose-600 hover:bg-rose-100 hover:border-rose-300 transition-colors"
                               >
-                                <Trash2 size={10} /> Hapus
+                                <Trash2 size={10} /> Delete
                               </button>
                             )}
                           </div>
@@ -482,7 +483,7 @@ export default function BunkerPage() {
             {rows.length > 0 && (
               <div className="flex max-sm:flex-col justify-between items-center px-5 py-3 border-t border-slate-200 bg-slate-50 gap-3">
                 <div className="text-xs text-[#5A305A]">
-                  Menampilkan <span className="font-semibold text-[#5A305A]">{listStartIndex + 1}-{Math.min(listStartIndex + pageSize, totalRecords)}</span> dari <span className="font-semibold text-[#5A305A]">{totalRecords}</span> record
+                  Showing <span className="font-semibold text-[#5A305A]">{listStartIndex + 1}-{Math.min(listStartIndex + pageSize, totalRecords)}</span> of <span className="font-semibold text-[#5A305A]">{totalRecords}</span> records
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -547,13 +548,13 @@ export default function BunkerPage() {
             <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0">
               <div className="flex items-center gap-2.5">
                 <Clock size={19} className="text-[#5A305A]" />
-                <h2 className="text-lg font-bold text-[#5A305A]">Antrian Proses</h2>
+                <h2 className="text-lg font-bold text-[#5A305A]">Processing Queue</h2>
               </div>
               <button onClick={() => setShowQueuePanel(false)} className="text-[#5A305A] hover:text-[#5A305A] p-1"><X size={20} /></button>
             </div>
             <div className="p-5 overflow-y-auto">
               {queue.length === 0 ? (
-                <p className="text-sm text-[#5A305A] italic text-center py-8">Tidak ada antrian dokumen.</p>
+                <p className="text-sm text-[#5A305A] italic text-center py-8">No documents in the queue.</p>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                   {queue.map(item => <QueueCard key={item.id} item={item} onDismiss={dismissQueueItem} onOpenCompare={openCompareFromQueue} />)}

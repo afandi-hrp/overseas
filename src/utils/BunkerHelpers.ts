@@ -38,13 +38,13 @@ export function formatDateTimeID(val: string | null | undefined): string {
 export const KELENGKAPAN_LABELS: Record<string, string> = {
   po: 'Purchase Order',
   invoice: 'Invoice',
-  fp: 'Faktur Pajak',
-  kwi: 'Kwitansi',
+  fp: 'Tax Invoice',
+  kwi: 'Receipt',
   br: 'Bunker Receipt',
   ts: 'Tank Sounding',
   si: 'Stock In',
-  ba: 'Berita Acara',
-  lab: 'Hasil Lab',
+  ba: 'Official Report',
+  lab: 'Lab Results',
   cn: 'Credit Note',
 };
 
@@ -54,9 +54,9 @@ export const KELENGKAPAN_ORDER = ['po', 'invoice', 'fp', 'kwi', 'br', 'ts', 'si'
 // KELENGKAPAN_LABELS (mis. "inv" bukan "invoice").
 export const MATRIX_COLUMN_LABELS: Record<string, string> = {
   si: 'STOCK IN',
-  kwi: 'KWITANSI',
+  kwi: 'RECEIPT',
   inv: 'INVOICE',
-  fp: 'FAKTUR PAJAK',
+  fp: 'TAX INVOICE',
   po: 'PO',
   br: 'BUNKER RECEIPT',
   ts: 'TANK SOUNDING',
@@ -96,23 +96,27 @@ export function resolveAcuanColumnKey(acuanLabel: string | null | undefined): st
   return null;
 }
 
+// KEY jsonb/db ("LOLOS VERIFIKASI"/"BUTUH REVIEW", ditulis n8n) TIDAK diubah -- HANYA `label`
+// (teks tampilan) yang ditranslate ke Inggris (2026-09).
 export const SUMMARY_STATUS_META: Record<string, { label: string; badgeClass: string; bannerClass: string }> = {
-  'LOLOS VERIFIKASI': { label: 'Lolos Verifikasi', badgeClass: 'bg-emerald-100 text-emerald-700', bannerClass: 'bg-emerald-50 border-emerald-200 text-emerald-800' },
-  'BUTUH REVIEW': { label: 'Butuh Review', badgeClass: 'bg-amber-100 text-amber-700', bannerClass: 'bg-amber-50 border-amber-200 text-amber-800' },
+  'LOLOS VERIFIKASI': { label: 'Passed Verification', badgeClass: 'bg-emerald-100 text-emerald-700', bannerClass: 'bg-emerald-50 border-emerald-200 text-emerald-800' },
+  'BUTUH REVIEW': { label: 'Needs Review', badgeClass: 'bg-amber-100 text-amber-700', bannerClass: 'bg-amber-50 border-amber-200 text-amber-800' },
 };
 
 export function summaryStatusMeta(status: string | null | undefined) {
-  return (status && SUMMARY_STATUS_META[status]) || { label: status || 'Belum Ada Data', badgeClass: 'bg-slate-100 text-[#5A305A]', bannerClass: 'bg-slate-50 border-slate-200 text-[#5A305A]' };
+  return (status && SUMMARY_STATUS_META[status]) || { label: status || 'No Data Yet', badgeClass: 'bg-slate-100 text-[#5A305A]', bannerClass: 'bg-slate-50 border-slate-200 text-[#5A305A]' };
 }
 
-// status_workflow BEBAS diedit dari aplikasi -- n8n tidak pernah menyentuh kolom ini.
+// status_workflow BEBAS diedit dari aplikasi -- n8n tidak pernah menyentuh kolom ini. Nilai
+// (KEY) di `STATUS_WORKFLOW_OPTIONS` TIDAK diubah (tersimpan apa adanya di DB) -- HANYA `label`
+// tampilan di `STATUS_WORKFLOW_META` yang ditranslate (2026-09).
 export const STATUS_WORKFLOW_OPTIONS = ['BARU', 'DIPROSES', 'DISETUJUI', 'DIBAYAR'];
 
 export const STATUS_WORKFLOW_META: Record<string, { label: string; badgeClass: string }> = {
-  BARU: { label: 'Baru', badgeClass: 'bg-slate-100 text-[#5A305A]' },
-  DIPROSES: { label: 'Diproses', badgeClass: 'bg-blue-100 text-blue-700' },
-  DISETUJUI: { label: 'Disetujui', badgeClass: 'bg-emerald-100 text-emerald-700' },
-  DIBAYAR: { label: 'Dibayar', badgeClass: 'bg-violet-100 text-violet-700' },
+  BARU: { label: 'New', badgeClass: 'bg-slate-100 text-[#5A305A]' },
+  DIPROSES: { label: 'In Progress', badgeClass: 'bg-blue-100 text-blue-700' },
+  DISETUJUI: { label: 'Approved', badgeClass: 'bg-emerald-100 text-emerald-700' },
+  DIBAYAR: { label: 'Paid', badgeClass: 'bg-violet-100 text-violet-700' },
 };
 
 export function workflowMeta(status: string | null | undefined) {
@@ -255,7 +259,7 @@ export async function fetchBunkerAuditLog(noPo: string | null | undefined): Prom
 // utk staff, bukan pesan teknis mentah.
 export function friendlyDbError(raw: string): string {
   if (/schema cache/i.test(raw) || /could not find the .* column/i.test(raw)) {
-    return 'Kolom yang dibutuhkan belum ada di database (migrasi SQL terbaru belum dijalankan di Supabase). Hubungi admin untuk menjalankan bunker_ddl.sql terbaru. Detail teknis: ' + raw;
+    return 'A required column does not exist in the database yet (the latest SQL migration hasn\'t been run in Supabase). Contact an admin to run the latest bunker_ddl.sql. Technical detail: ' + raw;
   }
   return raw;
 }

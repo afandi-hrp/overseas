@@ -14,7 +14,17 @@ export type PageEntry = {
   // halaman lain -- lihat courier_cost_validation dkk di bawah. Tidak ikut route guard
   // (RequirePageAccess), cuma dipakai SharedDataTable.tsx utk sembunyikan/tampilkan tombol.
   path?: string;
-  group: 'Courier' | 'Sea & Air' | 'Direct Loading' | 'Bunker' | 'Audit AP Local' | 'Audit AP Overseas' | 'PI Local' | 'General' | 'Settings';
+  group: 'Courier' | 'Sea & Air' | 'FAR Overseas' | 'Bunker' | 'Audit AP Local' | 'Audit AP Overseas' | 'PI Local' | 'General' | 'Settings';
+  // Daftar "jabatan approval" yang berlaku KHUSUS utk halaman ini (opsional -- cuma diisi utk
+  // halaman yang punya alur approval berjenjang, mis. Direct Loading/FAR Overseas Air:
+  // Exim -> PIC -> SPV -> Direktur). Kosongkan/hilangkan field ini utk halaman yang belum py
+  // approval berjenjang. Vocab tier BEBAS beda-beda per halaman (tidak perlu sama dgn halaman
+  // lain) -- disimpan per user PER HALAMAN di tabel `user_approval_tiers` (user_id, page_key,
+  // tier), SATU sumber kebenaran daftar tier & label-nya ada di sini supaya dropdown "Jabatan
+  // Approval" di RoleManagementPage.tsx otomatis nambah kolom baru begitu suatu halaman dikasih
+  // `approvalTiers` -- TIDAK perlu ubah RoleManagementPage.tsx tiap ada modul approval baru,
+  // cukup daftarkan tier-nya di sini. Urutan array = urutan rantai approval (dari awal ke akhir).
+  approvalTiers?: { value: string; label: string }[];
 };
 
 export const PAGE_REGISTRY: PageEntry[] = [
@@ -37,7 +47,15 @@ export const PAGE_REGISTRY: PageEntry[] = [
   { key: 'sea_air_dokumen_validation', label: 'Dokumen Validation (Sea & Air)', group: 'Sea & Air' },
   { key: 'sea_air_checklist_validation', label: 'Checklist Validation (Sea & Air)', group: 'Sea & Air' },
 
-  { key: 'direct_loading', label: 'Direct Loading', path: '/direct-loading', group: 'Direct Loading' },
+  {
+    key: 'direct_loading', label: 'FAR Overseas', path: '/direct-loading', group: 'FAR Overseas',
+    approvalTiers: [
+      { value: 'TIER1', label: 'Prepared By (Exim)' },
+      { value: 'PIC', label: 'PIC' },
+      { value: 'TIER2', label: 'SPV' },
+      { value: 'TIER3', label: 'Director' },
+    ],
+  },
 
   { key: 'bunker', label: 'Bunker', path: '/bunker', group: 'Bunker' },
 
@@ -61,11 +79,17 @@ export const PAGE_REGISTRY: PageEntry[] = [
   { key: 'settings_roles', label: 'Kelola Role & Akses', path: '/settings/roles', group: 'Settings' },
 ];
 
-export const PAGE_GROUPS: PageEntry['group'][] = ['Courier', 'Sea & Air', 'Direct Loading', 'Bunker', 'Audit AP Local', 'Audit AP Overseas', 'PI Local', 'General', 'Settings'];
+export const PAGE_GROUPS: PageEntry['group'][] = ['Courier', 'Sea & Air', 'FAR Overseas', 'Bunker', 'Audit AP Local', 'Audit AP Overseas', 'PI Local', 'General', 'Settings'];
 
 export function pageLabel(key: string): string {
   return PAGE_REGISTRY.find(p => p.key === key)?.label || key;
 }
+
+// Halaman-halaman yang punya alur approval berjenjang (py `approvalTiers` terisi) -- dipakai
+// RoleManagementPage.tsx utk merender 1 dropdown "Jabatan Approval" per halaman per user, dan
+// FarOverseasAirDetailModal.tsx (& modul approval lain di masa depan) utk validasi tier yang
+// valid utk halamannya masing-masing.
+export const APPROVAL_TIER_PAGES: PageEntry[] = PAGE_REGISTRY.filter(p => !!p.approvalTiers?.length);
 
 // Halaman tujuan default setelah login / buka "/" atau "/dashboard" -- prioritas mengikuti
 // urutan PAGE_REGISTRY (Courier duluan, dst). Kalau user belum punya akses ke halaman manapun

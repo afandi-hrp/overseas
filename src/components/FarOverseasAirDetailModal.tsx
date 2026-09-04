@@ -22,9 +22,11 @@ type ApprovalEntry = { tier: ApprovalTier; nama: string; jabatan: string; approv
 // Alur approval FAR Overseas Air (2026-09, VERSI FINAL) -- PIC SEKARANG BAGIAN dari rantai utama
 // & WAJIB berurutan: Prepared By (Exim) -> PIC -> SPV -> Director. Setiap tahap gating-nya
 // GANDA: (1) `canEditDirectLoading` (akses edit halaman ini, RBAC biasa) DAN (2)
-// `canApproveTier(step)` dari AuthContext -- role user harus punya "jabatan approval" yang
-// PERSIS cocok dgn tahap yang sedang menunggu (kolom `roles.approval_tier`, diatur di halaman
-// Kelola Role & Akses). Admin selalu lolos ke-2 gerbang itu. Gating ini ditegakkan DI DUA
+// `canApproveTier('direct_loading', step)` dari AuthContext -- user ITU SENDIRI (bukan role-nya)
+// harus punya baris `user_approval_tiers` utk halaman `direct_loading` yang tier-nya PERSIS
+// cocok dgn tahap yang sedang menunggu (diatur di halaman Kelola Role & Akses, panel "Role per
+// User"). Admin TIDAK otomatis lolos gerbang ke-2 ini (SENGAJA, atas permintaan user) -- Admin
+// tetap harus di-assign jabatan approval-nya sendiri kalau mau bisa approve. Gating ini ditegakkan DI DUA
 // TEMPAT: (a) frontend (tombolnya disembunyikan/diganti pesan kalau tidak eligible, lihat render
 // di bawah) DAN (b) server, lewat RPC `approve_far_overseas_air` (SECURITY DEFINER, cek jabatan +
 // urutan status di dalamnya) yang dipanggil `handleApprove` -- BUKAN `.update()` langsung lagi ke
@@ -79,9 +81,9 @@ function SignatureColumn({ label, role, entry, defaultNama, nameOverride }: { la
     <div className="flex-1 text-center px-3">
       <p className="text-xs text-[#5A305A] mb-14">{label}</p>
       <div className="border-b border-[#FFF5C5] mb-1 h-10 flex items-end justify-center pb-1">
-        <span className="text-sm font-semibold text-[#5A305A]">{nama || ''}</span>
+        <span className="text-sm font-semibold text-[#5A305A] uppercase">{nama || ''}</span>
       </div>
-      <p className="text-xs font-bold text-[#5A305A]">{nama || '( _______________ )'}</p>
+      <p className="text-xs font-bold text-[#5A305A] uppercase">{nama || '( _______________ )'}</p>
       <p className="text-[11px] text-[#5A305A]/70 mt-0.5">{role || '-'}</p>
       <p className="text-[10px] text-[#5A305A]/60 mt-2">Tanggal: {entry?.approved_at ? formatDateID(entry.approved_at) : '-'}</p>
     </div>
@@ -92,18 +94,27 @@ function ApprovalConfirmModal({ step, role, defaultNama, onConfirm, onClose, sub
   step: ApprovalStep; role: string; defaultNama: string; onConfirm: (nama: string) => void; onClose: () => void; submitting: boolean;
 }) {
   const [nama, setNama] = useState(defaultNama);
+  // PIC SENGAJA tidak boleh mengetik nama sendiri (permintaan user, 2026-09) -- nama SELALU ikut
+  // nama user yang login (defaultNama, dari profile?.nama||user?.email), murni ditampilkan sbg
+  // teks konfirmasi. Tahap lain (Exim/SPV/Direktur) tetap boleh diedit krn approver-nya bisa beda
+  // dari yang login (mis. admin approve atas nama signer_config).
+  const nameEditable = step !== 'PIC';
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
         <h3 className="font-bold text-[#5A305A] mb-1">Confirm Approval — {STEP_LABEL[step]}</h3>
         <p className="text-xs text-[#5A305A] mb-4">Role: <span className="font-semibold">{role || '-'}</span></p>
         <label className="block text-xs font-semibold text-[#5A305A] mb-1">Approver Name</label>
-        <input
-          value={nama}
-          onChange={e => setNama(e.target.value)}
-          autoFocus
-          className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm mb-5 focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A]"
-        />
+        {nameEditable ? (
+          <input
+            value={nama}
+            onChange={e => setNama(e.target.value)}
+            autoFocus
+            className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm mb-5 focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A]"
+          />
+        ) : (
+          <p className="w-full border border-slate-200 bg-slate-50 rounded-xl px-3 py-2 text-sm mb-5 text-[#5A305A] font-semibold">{nama || '-'}</p>
+        )}
         <div className="grid grid-cols-2 gap-2">
           <button onClick={onClose} disabled={submitting} className="py-2.5 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all disabled:opacity-50">
             Cancel
@@ -324,14 +335,16 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
               {/* NOTE -- NOTE 1 (route_note) & NOTE 2 (item_description) datang dari ekstraksi
                   otomatis, NOTE 3 (status_note) & NOTE 4 (other_note) diisi manual dari List Memo.
                   Baris NOTE 3/4 HANYA muncul kalau diisi (bukan tampil kosong/"-") -- baris yang
-                  null sama sekali tidak dirender. */}
+                  null sama sekali tidak dirender. Tiap baris dikasih nomor sumbernya (1/2/3/4,
+                  sesuai NOTE 1-4 di List Memo) di depan teksnya -- permintaan user supaya jelas
+                  baris mana berasal dari NOTE keberapa. */}
               <div className="border-t-2 border-[#FFF5C5] p-4 text-sm flex gap-2">
                 <span className="underline font-semibold shrink-0">NOTE :</span>
                 <div className="space-y-1">
-                  {rec.route_note && <p>{rec.route_note}</p>}
-                  {rec.item_description && <p>{rec.item_description}</p>}
-                  {rec.status_note && <p>{rec.status_note}</p>}
-                  {rec.other_note && <p>{rec.other_note}</p>}
+                  {rec.route_note && <p><span className="font-semibold">1.</span> {rec.route_note}</p>}
+                  {rec.item_description && <p><span className="font-semibold">2.</span> {rec.item_description}</p>}
+                  {rec.status_note && <p><span className="font-semibold">3.</span> {rec.status_note}</p>}
+                  {rec.other_note && <p><span className="font-semibold">4.</span> {rec.other_note}</p>}
                   {!rec.route_note && !rec.item_description && !rec.status_note && !rec.other_note && <p className="text-[#5A305A]/50 italic">-</p>}
                 </div>
               </div>
@@ -399,7 +412,7 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white rounded-xl border border-slate-200 mt-5 p-4 print:hidden">
                 <p className="text-xs text-[#5A305A]">
                   {nextStep != null ? `Awaiting ${STEP_LABEL[nextStep]} approval.` : 'No action available.'}
-                  {nextStep != null && !canApproveTier(nextStep) && (
+                  {nextStep != null && !canApproveTier('direct_loading', nextStep) && (
                     <span className="block text-[#5A305A]/60 italic mt-0.5">You don't have the "{STEP_LABEL[nextStep]}" approval role for this step.</span>
                   )}
                 </p>
@@ -407,7 +420,7 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
                   <button onClick={() => setShowReject(true)} className="px-4 py-2 rounded-xl border border-rose-300 text-rose-600 font-semibold text-sm hover:bg-rose-50 transition-all flex items-center gap-1.5">
                     <Ban size={15} /> Reject
                   </button>
-                  {nextStep != null && canApproveTier(nextStep) && (
+                  {nextStep != null && canApproveTier('direct_loading', nextStep) && (
                     <button onClick={() => setConfirmStep(nextStep)} className="px-4 py-2 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-sm transition-all flex items-center gap-1.5">
                       <Stamp size={15} /> {STEP_ACTION_LABEL[nextStep]}
                     </button>

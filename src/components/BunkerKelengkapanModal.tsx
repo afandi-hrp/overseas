@@ -40,7 +40,7 @@ export default function BunkerKelengkapanModal({ record, onClose, onChanged, can
           onChanged?.();
         } else if (data.status === 'FAILED') {
           setActiveJobStatus('FAILED');
-          setActiveJobError(data.error_message || 'Gagal memproses dokumen.');
+          setActiveJobError(data.error_message || 'Failed to process document.');
         }
       }
     }, 4000);
@@ -59,7 +59,7 @@ export default function BunkerKelengkapanModal({ record, onClose, onChanged, can
 
         <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-slate-200 shrink-0">
           <div className="min-w-0">
-            <h2 className="text-base font-bold tracking-tight text-[#5A305A]">Kelengkapan Dokumen</h2>
+            <h2 className="text-base font-bold tracking-tight text-[#5A305A]">Document Completeness</h2>
             <p className="text-xs font-light text-[#5A305A] mt-0.5 truncate">No PO: {rec.no_po || '-'}</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-[#5A305A] transition-colors shrink-0">
@@ -72,27 +72,27 @@ export default function BunkerKelengkapanModal({ record, onClose, onChanged, can
           {activeJobId && activeJobStatus === 'PENDING' && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center gap-2.5">
               <div className="w-7 h-7 rounded-full border-2 border-amber-400 border-t-transparent animate-spin shrink-0" />
-              <p className="text-xs font-semibold text-amber-800">Dokumen susulan sedang diproses AI...</p>
+              <p className="text-xs font-semibold text-amber-800">Additional document being processed by AI...</p>
             </div>
           )}
           {activeJobId && activeJobStatus === 'SUCCESS' && (
             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-2.5">
               <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
-              <p className="text-xs font-semibold text-emerald-800">Dokumen berhasil digabung ke PO ini.</p>
+              <p className="text-xs font-semibold text-emerald-800">Document merged into this PO successfully.</p>
             </div>
           )}
           {activeJobId && activeJobStatus === 'FAILED' && (
             <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 flex items-start gap-2.5">
               <AlertTriangle size={18} className="text-rose-600 shrink-0 mt-0.5" />
               <div>
-                <p className="text-xs font-semibold text-rose-800">Gagal memproses dokumen susulan.</p>
+                <p className="text-xs font-semibold text-rose-800">Failed to process the additional document.</p>
                 <p className="text-[11px] text-rose-700 mt-0.5">{activeJobError}</p>
               </div>
             </div>
           )}
 
           <div>
-            <p className="text-[10px] font-bold text-[#5A305A] uppercase tracking-widest mb-2.5">Status Dokumen</p>
+            <p className="text-[10px] font-bold text-[#5A305A] uppercase tracking-widest mb-2.5">Document Status</p>
             <div className="grid grid-cols-2 gap-2">
               {KELENGKAPAN_ORDER.map(key => {
                 const ok = !!kelengkapan[key];
@@ -112,9 +112,9 @@ export default function BunkerKelengkapanModal({ record, onClose, onChanged, can
           </div>
 
           <div>
-            <p className="text-[10px] font-bold text-[#5A305A] uppercase tracking-widest mb-2.5">Riwayat File Diupload</p>
+            <p className="text-[10px] font-bold text-[#5A305A] uppercase tracking-widest mb-2.5">Uploaded File History</p>
             {sortedFiles.length === 0 ? (
-              <p className="text-xs text-[#5A305A]/60 italic">Belum ada riwayat file.</p>
+              <p className="text-xs text-[#5A305A]/60 italic">No file history yet.</p>
             ) : (
               <div className="space-y-1.5">
                 {sortedFiles.map((f, i) => (
@@ -133,7 +133,7 @@ export default function BunkerKelengkapanModal({ record, onClose, onChanged, can
               onClick={() => setShowUpload(true)}
               className="w-full py-3 rounded-xl border-2 border-dashed border-[#5A305A]/30 hover:border-[#5A305A]/50 hover:bg-[#5A305A]/5 text-[#5A305A] font-semibold text-sm transition-all flex items-center justify-center gap-2"
             >
-              <UploadCloud size={16} /> Upload Dokumen Susulan
+              <UploadCloud size={16} /> Upload Additional Document
             </button>
           )}
         </div>

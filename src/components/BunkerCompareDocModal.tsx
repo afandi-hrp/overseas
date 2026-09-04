@@ -92,10 +92,10 @@ function ConfirmMatchPopup({ fieldName, onSubmit, onClose, saving }: {
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-5">
-        <h3 className="font-bold text-[#5A305A] leading-tight mb-1">Konfirmasi Manual</h3>
-        <p className="text-xs text-[#5A305A]/70 mb-4">Field: <span className="font-semibold">{fieldName}</span> — penilaian ini hanya jadi catatan, TIDAK mengubah status hasil sistem.</p>
+        <h3 className="font-bold text-[#5A305A] leading-tight mb-1">Manual Confirmation</h3>
+        <p className="text-xs text-[#5A305A]/70 mb-4">Field: <span className="font-semibold">{fieldName}</span> — this assessment is only a note, it does NOT change the system's result status.</p>
 
-        <label className="block text-xs font-semibold text-[#5A305A] mb-1.5">Penilaian Anda</label>
+        <label className="block text-xs font-semibold text-[#5A305A] mb-1.5">Your Assessment</label>
         <div className="flex gap-2 mb-4">
           {MANUAL_STATUS_OPTIONS.map(opt => (
             <button
@@ -108,26 +108,26 @@ function ConfirmMatchPopup({ fieldName, onSubmit, onClose, saving }: {
           ))}
         </div>
 
-        <label className="block text-xs font-semibold text-[#5A305A] mb-1.5">Catatan (opsional)</label>
+        <label className="block text-xs font-semibold text-[#5A305A] mb-1.5">Notes (optional)</label>
         <textarea
           value={catatan}
           onChange={e => setCatatan(e.target.value)}
           autoFocus
           rows={3}
-          placeholder="Jelaskan kenapa perbedaan ini dianggap sah..."
+          placeholder="Explain why this difference is considered valid..."
           className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm mb-5 focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A]"
         />
 
         <div className="grid grid-cols-2 gap-2">
           <button onClick={onClose} disabled={saving} className="py-2.5 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all disabled:opacity-50">
-            Batal
+            Cancel
           </button>
           <button
             onClick={() => manualStatus && onSubmit(manualStatus, catatan.trim())}
             disabled={saving || !manualStatus}
             className="py-2.5 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-sm transition-all disabled:opacity-50"
           >
-            {saving ? 'Menyimpan...' : 'Simpan'}
+            {saving ? 'Saving...' : 'Save'}
           </button>
         </div>
       </div>
@@ -169,12 +169,12 @@ function ConfirmMatchCell({ row, bunkerId, noPo, statusManualRaw, onConfirmed }:
     });
     setSaving(false);
     if (error) {
-      onConfirmed(null, 'error', friendlyDbError('Gagal menyimpan konfirmasi: ' + error.message));
+      onConfirmed(null, 'error', friendlyDbError('Failed to save confirmation: ' + error.message));
     } else {
-      onConfirmed(merged, 'success', 'Konfirmasi manual tersimpan.');
+      onConfirmed(merged, 'success', 'Manual confirmation saved.');
       setShowPopup(false);
       logBunkerAudit(noPo, user?.email, [{
-        field_label: `Konfirmasi Manual: ${row.field}`,
+        field_label: `Manual Confirmation: ${row.field}`,
         old_value: isConfirmed ? `${entry.manual_status}${entry.catatan ? ' - ' + entry.catatan : ''}` : null,
         new_value: `${manualStatus}${catatan ? ' - ' + catatan : ''}`,
       }]);
@@ -186,11 +186,11 @@ function ConfirmMatchCell({ row, bunkerId, noPo, statusManualRaw, onConfirmed }:
     const { error, merged } = await clearStatusManualEntry(bunkerId, statusManualRaw, row.field);
     setSaving(false);
     if (error) {
-      onConfirmed(null, 'error', friendlyDbError('Gagal membatalkan konfirmasi: ' + error.message));
+      onConfirmed(null, 'error', friendlyDbError('Failed to cancel confirmation: ' + error.message));
     } else {
-      onConfirmed(merged, 'success', 'Konfirmasi dibatalkan.');
+      onConfirmed(merged, 'success', 'Confirmation canceled.');
       logBunkerAudit(noPo, user?.email, [{
-        field_label: `Konfirmasi Manual: ${row.field}`,
+        field_label: `Manual Confirmation: ${row.field}`,
         old_value: `${entry?.manual_status || ''}${entry?.catatan ? ' - ' + entry.catatan : ''}`,
         new_value: null,
       }]);
@@ -210,7 +210,7 @@ function ConfirmMatchCell({ row, bunkerId, noPo, statusManualRaw, onConfirmed }:
         {entry.catatan && <p className="text-[10px] xl:text-[12px] text-[#5A305A]/70 break-words leading-snug italic">"{entry.catatan}"</p>}
         {entry.confirmed_at && <p className="text-[9.5px] xl:text-[11px] text-[#5A305A]/50 leading-snug">{formatDateTimeID(entry.confirmed_at)}</p>}
         <button onClick={cancel} disabled={saving} className="text-[10px] xl:text-[12px] font-semibold text-[#5A305A]/60 hover:text-rose-600 underline disabled:opacity-50 flex items-center gap-0.5">
-          <RotateCcw size={10} /> Batalkan
+          <RotateCcw size={10} /> Cancel
         </button>
       </div>
     );
@@ -219,7 +219,7 @@ function ConfirmMatchCell({ row, bunkerId, noPo, statusManualRaw, onConfirmed }:
   return (
     <>
       <button onClick={() => setShowPopup(true)} className="text-[11px] xl:text-[13px] font-bold text-blue-600 hover:text-white hover:bg-blue-600 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-full whitespace-nowrap transition-all">
-        Konfirmasi
+        Confirm
       </button>
       {showPopup && (
         <ConfirmMatchPopup
@@ -290,17 +290,17 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged, canE
     const { error } = await updateBunkerDokumen(rec.id, { status_workflow: statusWorkflow, catatan_manual: catatanManual });
     setSaving(false);
     if (error) {
-      showToast(friendlyDbError('Gagal menyimpan: ' + error.message), 'error');
+      showToast(friendlyDbError('Failed to save: ' + error.message), 'error');
     } else {
       setRec((prev: any) => ({ ...prev, status_workflow: statusWorkflow, catatan_manual: catatanManual }));
-      showToast('Perubahan tersimpan.', 'success');
+      showToast('Changes saved.', 'success');
       onChanged?.();
       const changes: { field_label: string; old_value: string | null; new_value: string | null }[] = [];
       if (statusWorkflow !== prevStatusWorkflow) {
         changes.push({ field_label: 'Status Workflow', old_value: prevStatusWorkflow, new_value: statusWorkflow });
       }
       if (catatanManual !== prevCatatanManual) {
-        changes.push({ field_label: 'Catatan Manual', old_value: prevCatatanManual || null, new_value: catatanManual || null });
+        changes.push({ field_label: 'Manual Notes', old_value: prevCatatanManual || null, new_value: catatanManual || null });
       }
       logBunkerAudit(rec.no_po, user?.email, changes);
     }
@@ -316,11 +316,11 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged, canE
 
         <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-slate-200 bg-white shrink-0 print:border-b-2">
           <div className="min-w-0">
-            <h2 className="text-lg font-bold tracking-tight text-[#5A305A]">Perbandingan Dokumen — Bunker</h2>
+            <h2 className="text-lg font-bold tracking-tight text-[#5A305A]">Document Comparison — Bunker</h2>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 mt-1">
               <p className="text-xs xl:text-sm text-[#5A305A] truncate"><span className="font-semibold">No PO:</span> {stripPageRef(rec.no_po)}</p>
               <p className="text-xs xl:text-sm text-[#5A305A] truncate"><span className="font-semibold">Vendor:</span> {stripPageRef(rec.vendor)}</p>
-              <p className="text-xs xl:text-sm text-[#5A305A] truncate"><span className="font-semibold">Kapal:</span> {stripPageRef(rec.kapal)}</p>
+              <p className="text-xs xl:text-sm text-[#5A305A] truncate"><span className="font-semibold">Vessel:</span> {stripPageRef(rec.kapal)}</p>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -363,7 +363,7 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged, canE
 
                   <div className="mt-2.5">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] xl:text-[11px] font-bold uppercase tracking-wider opacity-70">Persentase Match</span>
+                      <span className="text-[10px] xl:text-[11px] font-bold uppercase tracking-wider opacity-70">Match Percentage</span>
                       <span className={`text-xs xl:text-sm font-black ${matchPctTextClass}`}>{matchPct}%</span>
                     </div>
                     <div className="w-full h-2 rounded-full bg-white/60 overflow-hidden">
@@ -378,7 +378,7 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged, canE
               <div className="rounded-xl border-2 border-rose-400 bg-rose-50 p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <AlertTriangle size={18} className="text-rose-600 shrink-0" />
-                  <p className="text-sm font-black text-rose-800">Kemungkinan Salah Upload ke Baris Ini</p>
+                  <p className="text-sm font-black text-rose-800">Possibly Uploaded to the Wrong Row</p>
                 </div>
                 <ul className="space-y-1 list-disc list-inside">
                   {wrongRowWarnings.map((m, i) => <li key={i} className="text-xs xl:text-sm text-rose-800 font-medium">{m}</li>)}
@@ -416,10 +416,10 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged, canE
             {/* 1. DATA UTAMA DOKUMEN */}
             <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
               <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
-                <h3 className="text-sm xl:text-base font-bold text-[#5A305A]">1. Data Utama Dokumen</h3>
+                <h3 className="text-sm xl:text-base font-bold text-[#5A305A]">1. Main Document Data</h3>
               </div>
               {groups.length === 0 ? (
-                <p className="text-xs text-[#5A305A] italic text-center py-6">Belum ada data.</p>
+                <p className="text-xs text-[#5A305A] italic text-center py-6">No data yet.</p>
               ) : (
                 <div className="divide-y divide-slate-100">
                   {groups.map((g, gi) => (
@@ -443,10 +443,10 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged, canE
             {/* 2. PERBANDINGAN ANTAR DOKUMEN */}
             <div className="bg-white rounded-xl border border-slate-200 overflow-hidden print:overflow-visible">
               <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
-                <h3 className="text-sm font-bold text-[#5A305A]">2. Perbandingan Antar Dokumen</h3>
+                <h3 className="text-sm font-bold text-[#5A305A]">2. Document Comparison</h3>
               </div>
               {matrixRows.length === 0 ? (
-                <p className="text-xs text-[#5A305A] italic text-center py-6">Belum ada data perbandingan.</p>
+                <p className="text-xs text-[#5A305A] italic text-center py-6">No comparison data yet.</p>
               ) : (
                 // table-fixed + lebar kolom proporsional (persen) supaya seluruh tabel selalu
                 // muat dalam 1 layar penuh tanpa scroll horizontal, baik di laptop 14" maupun
@@ -472,7 +472,7 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged, canE
                           <th key={c.key} className="text-left font-semibold px-2.5 py-2 align-bottom break-words leading-tight">{c.label}</th>
                         ))}
                         <th className="text-left font-semibold px-1.5 py-2 align-bottom break-words leading-tight">Status</th>
-                        <th className="text-left font-semibold px-1.5 py-2 align-bottom break-words leading-tight print:hidden">Konfirmasi</th>
+                        <th className="text-left font-semibold px-1.5 py-2 align-bottom break-words leading-tight print:hidden">Confirmation</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -482,7 +482,7 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged, canE
                           <tr key={ri} className={rowStatusClass(row.row_status)}>
                             <td className="px-2.5 py-2 align-top border-r border-slate-200 bg-[#F58C77]">
                               <p className="font-bold text-[#5A305A] break-words leading-tight">{row.field}</p>
-                              {row.acuan_label && <p className="text-[9.5px] xl:text-[11px] text-[#5A305A]/70 break-words mt-0.5">Acuan: {row.acuan_label}</p>}
+                              {row.acuan_label && <p className="text-[9.5px] xl:text-[11px] text-[#5A305A]/70 break-words mt-0.5">Reference: {row.acuan_label}</p>}
                             </td>
                             {matrixColumns.map(c => (
                               <td
@@ -526,10 +526,10 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged, canE
             <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-4">
               <div className="flex items-center gap-2">
                 <ClipboardList size={15} className="text-[#5A305A]" />
-                <p className="text-xs font-bold text-[#5A305A] uppercase tracking-wider">Status Kerja & Catatan Manual</p>
+                <p className="text-xs font-bold text-[#5A305A] uppercase tracking-wider">Work Status & Manual Notes</p>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-[#5A305A] mb-1.5">Status Workflow</label>
+                <label className="block text-xs font-semibold text-[#5A305A] mb-1.5">Workflow Status</label>
                 {canEdit ? (
                   <div className="flex flex-wrap gap-2">
                     {STATUS_WORKFLOW_OPTIONS.map(opt => {
@@ -553,13 +553,13 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged, canE
                 )}
               </div>
               <div>
-                <label className="block text-xs font-semibold text-[#5A305A] mb-1.5">Catatan Manual</label>
+                <label className="block text-xs font-semibold text-[#5A305A] mb-1.5">Manual Notes</label>
                 {canEdit ? (
                   <textarea
                     value={catatanManual}
                     onChange={e => setCatatanManual(e.target.value)}
                     rows={3}
-                    placeholder="Koreksi manual atau catatan bebas staff..."
+                    placeholder="Manual correction or free-form staff notes..."
                     className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A]"
                   />
                 ) : (
@@ -573,21 +573,21 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged, canE
 
         {canEdit && hasUnsaved && (
           <div className="shrink-0 border-t border-amber-200 bg-amber-50 px-4 sm:px-6 py-3 flex items-center justify-between gap-3 print:hidden">
-            <p className="text-xs font-medium text-amber-800">Ada perubahan status kerja / catatan yang belum disimpan.</p>
+            <p className="text-xs font-medium text-amber-800">There are unsaved work status / notes changes.</p>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => { setStatusWorkflow(rec.status_workflow || 'BARU'); setCatatanManual(rec.catatan_manual || ''); }}
                 disabled={saving}
                 className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[#5A305A] font-semibold text-xs hover:bg-slate-50 transition-all disabled:opacity-50"
               >
-                Batal
+                Cancel
               </button>
               <button
                 onClick={handleSave}
                 disabled={saving}
                 className="px-3 py-1.5 rounded-lg bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-xs transition-all disabled:opacity-50 flex items-center gap-1.5"
               >
-                <Save size={13} /> {saving ? 'Menyimpan...' : 'Simpan Perubahan'}
+                <Save size={13} /> {saving ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </div>
