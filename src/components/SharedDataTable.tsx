@@ -1565,10 +1565,19 @@ const getCellData = (c: any, rec: any, index: number) => {
       : <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-100 text-amber-700">Not Submitted</span>;
     alignClass = 'text-[#5A305A] whitespace-nowrap';
   } else if (c.type === 'invType') {
+    // Badge warna per jenis invoice (2026-09, permintaan user): Freight = coral, Duty = kuning
+    // gelap, Credit Note (Duty/Freight) = ungu brand. Dicek via .toUpperCase()/.includes() biar
+    // tahan variasi casing dari data ("Credit Note Duty" vs "CREDIT NOTE DUTY", dst).
+    const invTypeVal = String(rec[c.key] ?? '').toUpperCase();
+    const invTypeBadgeClass = invTypeVal.includes('CREDIT NOTE')
+      ? 'bg-[#5A305A] text-white'
+      : invTypeVal === 'DUTY'
+      ? 'bg-[#F5E28F] text-[#5A305A]'
+      : invTypeVal === 'FREIGHT'
+      ? 'bg-[#F58C77] text-white'
+      : 'bg-sky-100 text-sky-700';
     content = (
-      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
-        rec[c.key] === 'DUTY' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'
-      }`}>
+      <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${invTypeBadgeClass}`}>
         {rec[c.key]}
       </span>
     );
@@ -2112,12 +2121,25 @@ const CourierRekapanRowGroup: React.FC<{
   // baris ini.
   const effectiveRec = canBulkEdit ? cols.reduce((acc: any, c: any) => { acc[c.key] = getVal!(rec, c.key); return acc; }, { ...rec }) : rec;
 
+  // Highlight baris Rekapan Courier yang `submit_date`-nya sudah terisi (lihat CLAUDE.md,
+  // "Highlight baris Submit Date -- Rekapan Courier"). Murni berdasar isi `effectiveRec` (ikut
+  // pending edit yang belum disimpan, sama seperti tampilan sel lain), bukan posisi baris --
+  // jadi tetap ikut baris pas sorting/filter/pagination/search.
+  const hasSubmitDate = !!String(effectiveRec.submit_date ?? '').trim();
+
   return (
     <>
       {displayPairs.map((pair, i: number) => {
         const isFirst = i === 0;
+        const rowBgClass = hasSubmitDate
+          ? 'bg-[#FFF5C5] hover:bg-[#F5E28F]'
+          : editingThisRow
+          ? 'bg-blue-50/50 hover:bg-blue-50/60'
+          : !isFirst
+          ? 'bg-slate-50/40 hover:bg-blue-50/30'
+          : 'hover:bg-blue-50/30';
         return (
-          <tr key={`${rec.id}-${i}`} className={`transition-colors group ${(isExpanded ? i === rowCount - 1 : true) ? 'border-b-[3px] border-slate-300' : 'border-b border-slate-100'} ${!isFirst ? 'border-t-0 bg-slate-50/40' : ''} ${editingThisRow ? 'bg-blue-50/50 hover:bg-blue-50/60' : 'hover:bg-blue-50/30'}`}>
+          <tr key={`${rec.id}-${i}`} className={`transition-colors group ${hasSubmitDate ? 'border-l-[3px] border-l-[#E6C25C]' : ''} ${(isExpanded ? i === rowCount - 1 : true) ? 'border-b-[3px] border-slate-300' : 'border-b border-slate-100'} ${!isFirst ? 'border-t-0' : ''} ${rowBgClass}`}>
             {cols.map(c => {
               const isRepeating = repeatingCols.includes(c.key);
               if (!isRepeating && !isFirst) return null;
@@ -2160,8 +2182,10 @@ const CourierRekapanRowGroup: React.FC<{
                 alignClass = 'text-left font-mono text-[#5A305A]';
               }
               
-              const additionalClasses = !isRepeating && isFirst && rowCount > 1 && isExpanded ? 'border-r border-slate-200 bg-white group-hover:bg-blue-50/30' : '';
-              
+              const additionalClasses = !isRepeating && isFirst && rowCount > 1 && isExpanded
+                ? `border-r border-slate-200 ${hasSubmitDate ? 'bg-[#FFF5C5] group-hover:bg-[#F5E28F]' : 'bg-white group-hover:bg-blue-50/30'}`
+                : '';
+
               if (editingThisRow && canBulkEdit && isInlineEditable(c.key) && (!isRepeating || isFirst) && c.key !== 'po_no' && c.key !== 'vessel' && c.key !== 'po_ori' && c.key !== 'vendor_inv_no' && c.key !== 'po_harga_detail') {
                 const cellVal = getVal!(rec, c.key);
                 let inputEl;
@@ -2186,16 +2210,16 @@ const CourierRekapanRowGroup: React.FC<{
                   </td>
                 );
               }
-              
+
               return (
                 <td key={c.key} className={`px-4 py-3 text-[11px] align-top ${alignClass} ${additionalClasses}`} rowSpan={isRepeating ? 1 : (isExpanded ? rowCount : 1)}>
                    {content}
                 </td>
               )
             })}
-            
+
             {isFirst && (
-              <td className="px-4 py-3 text-center sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.03)] z-10 transition-colors border-l border-slate-100" rowSpan={isExpanded ? rowCount : 1}>
+              <td className={`px-4 py-3 text-center sticky right-0 shadow-[-4px_0_10px_rgba(0,0,0,0.03)] z-10 transition-colors border-l border-slate-100 ${hasSubmitDate ? 'bg-[#FFF5C5] group-hover:bg-[#F5E28F]' : 'bg-white group-hover:bg-slate-50'}`} rowSpan={isExpanded ? rowCount : 1}>
                 <div className="flex flex-col items-center gap-1.5">
                   <>
                     <button

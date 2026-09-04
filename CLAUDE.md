@@ -1339,6 +1339,70 @@ Courier (Sea & Air, Validasi, Audit Trail TIDAK ikut cakupan ini).
   preferensi tampilan pribadi (bukan aksi mengubah data), semua role yang bisa lihat halaman ini
   boleh customize tampilannya sendiri.
 
+## Highlight baris Submit Date — Rekapan Courier (`CourierRekapanRowGroup`, 2026-09)
+
+Baris di tabel **Recap Courier** (SEMUA tab All PPJK/DHL/FEDEX & semua pilihan Company) diberi
+warna latar kalau kolom `submit_date`-nya terisi (tidak null/kosong) — murni penanda visual,
+TIDAK ada perubahan data, teks, label, ikon, bold, tooltip, atau notifikasi apa pun.
+
+- `hasSubmitDate = !!String(effectiveRec.submit_date ?? '').trim()` (dihitung dari `effectiveRec`
+  — record yang SUDAH digabung dengan pending edit yang belum disimpan, sama seperti tampilan sel
+  lain di komponen ini — jadi warnanya juga ikut update live kalau user sedang mengedit
+  `submit_date` di mode edit massal/per-baris, walau ini bonus di luar scope awal yang cuma minta
+  konsisten lintas sort/filter/pagination/search).
+- Style: `bg-[#FFF5C5]` (kuning muda) + `border-l-[3px] border-l-[#E6C25C]` (aksen emas, gelap
+  dari base) di `<tr>`. Hover jadi `hover:bg-[#F5E28F]` (sedikit lebih gelap, BUKAN hilang/ketutup
+  warna hover biru biasa `hover:bg-blue-50/30`) — kalau `hasSubmitDate` true, seluruh kombinasi
+  bg/hover lain (mode edit massal `bg-blue-50/50`, baris ke-2+ hasil split PO `bg-slate-50/40`)
+  DIABAIKAN, kuning SELALU menang (row-level ternary tunggal di `rowBgClass`, bukan menumpuk
+  banyak class bg sekaligus yg hasilnya tidak terprediksi krn cuma 1 declaration bg yg menang di
+  CSS). **Riwayat warna (2026-09, JANGAN reintroduce versi lama)**: ungu solid
+  (`#F1E7F1`/`#5A305A`) → coral solid (`#FBE4DD`/`#F3D0C4`/`#E0724E`) → gradient kuning→coral
+  (`linear-gradient(90deg,#FFF5C5_0%,#F58C77_100%)`) → **VERSI FINAL: kuning solid `#FFF5C5`**
+  (permintaan user berturut-turut, gradient-nya "tidak cocok"). `#FFF5C5`/`#F5E28F` KEBETULAN
+  sama persis dgn `auditHighlightClass` yang sudah lebih dulu ada di `SeaAirRekapanRowGroup`
+  (~baris 2286, penanda `audit_status === 'LENGKAP'`, fitur BEDA & TIDAK terkait) — hanya
+  kebetulan warna yang sama, bukan style yang di-share/reuse antar 2 fitur ini.
+- **2 tempat tambahan yang HARUS ikut disesuaikan warnanya, kalau tidak baris highlight akan
+  "bolong" putih di tengah/kanan**: (1) `additionalClasses` utk kolom pertama saat PO di-split &
+  expanded (`bg-white group-hover:bg-blue-50/30` → jadi `bg-[#FFF5C5] group-hover:bg-[#F5E28F]`
+  kalau `hasSubmitDate`); (2) kolom **Action** sticky kanan (`bg-white group-hover:bg-slate-50` →
+  jadi `bg-[#FFF5C5] group-hover:bg-[#F5E28F]` kalau `hasSubmitDate`) — keduanya render `<td>`
+  dgn bg eksplisit sendiri yg SECARA VISUAL menutupi bg `<tr>` di area itu kalau tidak ikut
+  disesuaikan.
+- Badge `INVOICE TYPE` (Freight/Duty/Credit Note, `type: 'invType'` di `getCellData()`) tetap
+  render span dgn warna badge sendiri di atas background kuning baris (badge invType SEKARANG
+  py warna per jenis sejak susulan 2026-09 di bawah, TIDAK lagi cuma amber/sky polos — tetap
+  konsisten kontras di atas background kuning highlight ini krn warnanya beda kategori).
+- **Cakupan SENGAJA cuma `CourierRekapanRowGroup`** — `CourierAuditRowGroup`/
+  `SeaAirAuditRowGroup`/`SeaAirRekapanRowGroup` (3 komponen lain yg py pola `additionalClasses`
+  sama persis, ditemukan lewat grep saat implementasi) TIDAK ikut disentuh, request-nya cuma utk
+  halaman Invoice Recap Courier.
+- **App ini TIDAK punya dark mode** (dicek: 0 pemakaian class `dark:` di seluruh `src/`) — jadi
+  warna solid `#FFF5C5`/`#E6C25C`/`#F5E28F` dipakai apa adanya tanpa varian `dark:`. Kalau nanti
+  app beneran nambah dark mode, style highlight ini WAJIB direvisit (kontras kuning muda di atas
+  background gelap kemungkinan besar tidak terbaca).
+
+### Badge warna per jenis Invoice Type (`getCellData()`, `type: 'invType'`, 2026-09 susulan)
+
+Sebelumnya badge kolom **INVOICE TYPE** cuma bedain 2 warna (`DUTY` = amber, SELAIN itu = sky
+biru polos — jadi Freight/Credit Note Duty/Credit Note Freight semuanya keliatan sama birunya).
+Diganti jadi warna per jenis (permintaan user, dari screenshot yang nunjukin badge biru itu
+ketimpa/kurang kontras di atas highlight baris kuning `#FFF5C5` di atas):
+- `FREIGHT` → `bg-[#F58C77] text-white` (coral)
+- `DUTY` → `bg-[#F5E28F] text-[#5A305A]` (kuning lebih gelap dari highlight baris `#FFF5C5`,
+  biar tetap ada beda kontras walau baris ybs juga lagi ke-highlight kuning)
+- `CREDIT NOTE DUTY` & `CREDIT NOTE FREIGHT` → `bg-[#5A305A] text-white` (ungu brand)
+- Value lain yang tidak dikenali (fallback) → tetap `bg-sky-100 text-sky-700` (perilaku lama)
+
+Deteksi jenis via `String(rec.invoice_type ?? '').toUpperCase()` lalu `.includes('CREDIT NOTE')`
+(dicek PALING DULU, sebelum cek `DUTY`/`FREIGHT` exact-match, supaya "CREDIT NOTE DUTY" tidak
+kepental ke cabang `DUTY` biasa) — case-insensitive, tahan variasi casing data dari Gemini/n8n.
+Ini kolom `getCellData()` generik (dipakai di banyak tempat lewat `COURIER_COLS`), TIDAK
+dibatasi cuma render di `CourierRekapanRowGroup` — tapi `invoice_type`/`type: 'invType'` sejauh
+ini CUMA ada di `COURIER_COLS` (Rekapan Courier), jadi secara praktis efeknya cuma kelihatan di
+situ.
+
 ## Edit Massal — Audit Courier & Rekapan Courier (`src/components/SharedDataTable.tsx`, 2026-09)
 
 Fitur baru: banyak baris bisa punya perubahan (kolom BEDA-BEDA per baris) yang belum disimpan
