@@ -823,18 +823,22 @@ Komentar kode & isi CLAUDE.md ini SENGAJA TETAP Bahasa Indonesia (bukan bagian d
   mana (identitas personal login vs jabatan resmi tetap) sebelum isi `defaultNamaForStep`-nya.
   Tombol Approve dikasih `disabled={submitting}` + label "Saving..." saat proses berjalan, jaga2
   dobel klik krn sekarang tidak ada lagi jeda modal konfirmasi sblm request terkirim.
-  **Reject dibatasi HANYA utk user yang punya jabatan approval APA SAJA** (2026-09, permintaan
-  user) — `canReject = !!approvalTiersByPage['direct_loading']` (lihat komponen utama), tombol
-  Reject SAMA SEKALI TIDAK dirender kalau user itu `canEditDirectLoading` tapi TIDAK punya baris
-  `user_approval_tiers` apa pun utk halaman ini (SENGAJA TIDAK PERLU tier yang PERSIS cocok
-  dgn tahap yang sedang berjalan seperti approve, cukup punya jabatan APAPUN di halaman ini).
-  TIDAK ADA bypass `isAdmin`, sama pola dgn `canApproveTier`.
+  **Reject dibatasi HANYA utk user yang eligible approve TAHAP YANG SEDANG AKTIF** (2026-09,
+  VERSI FINAL #2 — versi PERTAMA cukup "punya jabatan approval apa saja utk halaman ini"
+  (`!!approvalTiersByPage['direct_loading']`), TERNYATA itu bikin tombol Reject tetap kelihatan
+  buat user yang tahapnya SENDIRI sudah selesai, mis. PIC yang sudah approve masih lihat tombol
+  Reject pas memo sudah lanjut nunggu SPV — SUDAH DIGANTI, jangan reintroduce versi lama itu):
+  `canReject = nextStep != null && canApproveTier('direct_loading', nextStep)` (lihat komponen
+  utama) — PERSIS SAMA syaratnya dgn tombol Approve, jadi Reject & Approve SELALU muncul/hilang
+  bareng utk siapa pun yang buka memo ini. TIDAK ADA bypass `isAdmin`, sama pola dgn
+  `canApproveTier`.
   **Enforcement server-side (2026-09) — RPC `reject_far_overseas_air`**: reject SEKARANG lewat
   RPC ini (`SECURITY DEFINER`), BUKAN lagi `.update()` langsung ke `rekapan_far_overseas_air`
   (versi sebelumnya cuma gating frontend, itu jadi RIWAYAT — sudah DIGANTI, jangan reintroduce
   `.update()` langsung utk reject). RPC-nya **BELUM DIJALANKAN ke Supabase production — WAJIB
-  dijalankan manual dulu** (kalau belum, tombol Reject akan error "function does not exist"
-  begitu diklik):
+  dijalankan manual dulu** (kalau sempat menjalankan versi pertama RPC ini yang guard-nya cuma
+  "jabatan apa saja", timpa dgn `create or replace` versi final di bawah ini — aman, nama
+  function & param-nya sama):
   ```sql
   create or replace function public.reject_far_overseas_air(
     p_id uuid,          -- SESUAIKAN tipe ini kalau `rekapan_far_overseas_air.id` BUKAN uuid
@@ -846,18 +850,10 @@ Komentar kode & isi CLAUDE.md ini SENGAJA TETAP Bahasa Indonesia (bukan bagian d
   as $$
   declare
     v_current_status text;
+    v_next_step text;
   begin
     if not public.has_edit_access('direct_loading') then
       raise exception 'Not authorized to edit FAR Overseas Air memos';
-    end if;
-
-    -- Cukup punya jabatan approval APAPUN utk halaman ini (tidak perlu cocok tahap tertentu,
-    -- beda dari approve_far_overseas_air yang mensyaratkan tier PERSIS sesuai tahap berjalan).
-    if not exists (
-      select 1 from public.user_approval_tiers uat
-      where uat.user_id = auth.uid() and uat.page_key = 'direct_loading'
-    ) then
-      raise exception 'You do not have an approval role for this page';
     end if;
 
     if p_reason is null or btrim(p_reason) = '' then
@@ -877,6 +873,25 @@ Komentar kode & isi CLAUDE.md ini SENGAJA TETAP Bahasa Indonesia (bukan bagian d
       raise exception 'This memo cannot be rejected (current status: %)', v_current_status;
     end if;
 
+    -- Tahap yang sedang aktif/ditunggu -- REPLIKA PERSIS nextStepForStatus() di
+    -- FarOverseasAirDetailModal.tsx, WAJIB tetap sinkron kalau urutan tahapnya berubah lagi.
+    v_next_step := case coalesce(v_current_status, 'PENDING')
+      when 'PENDING' then 'TIER1'
+      when 'TIER1_DONE' then 'PIC'
+      when 'PIC_DONE' then 'TIER2'
+      when 'TIER2_DONE' then 'TIER3'
+    end;
+
+    -- Cuma user yang eligible approve TAHAP YANG SEDANG AKTIF ini yang boleh reject di titik
+    -- ini -- BUKAN siapa saja yang pernah py jabatan approval apapun (lihat catatan versi final
+    -- di atas). Sama persis syaratnya dgn guard tier di approve_far_overseas_air.
+    if not exists (
+      select 1 from public.user_approval_tiers uat
+      where uat.user_id = auth.uid() and uat.page_key = 'direct_loading' and uat.tier = v_next_step
+    ) then
+      raise exception 'You do not have the % approval role for this step', v_next_step;
+    end if;
+
     update public.rekapan_far_overseas_air
     set approval_status = 'REJECTED',
         notes = p_reason
@@ -888,10 +903,12 @@ Komentar kode & isi CLAUDE.md ini SENGAJA TETAP Bahasa Indonesia (bukan bagian d
 
   grant execute on function public.reject_far_overseas_air(uuid, text) to authenticated;
   ```
-  Guard 4-lapis: (1) `has_edit_access('direct_loading')`, (2) user harus punya baris
-  `user_approval_tiers` APAPUN utk `direct_loading` (bukan tier spesifik), (3) `p_reason` wajib
-  diisi (non-empty setelah trim), (4) `approval_status` SAAT INI tidak boleh sudah
-  `APPROVED`/`REJECTED` (`for update` row lock, sama pola dgn `approve_far_overseas_air`).
+  Guard 4-lapis: (1) `has_edit_access('direct_loading')`, (2) `p_reason` wajib diisi (non-empty
+  setelah trim), (3) `approval_status` SAAT INI tidak boleh sudah `APPROVED`/`REJECTED` (`for
+  update` row lock, sama pola dgn `approve_far_overseas_air`), (4) user harus punya baris
+  `user_approval_tiers` dgn tier PERSIS = tahap yang sedang aktif (`v_next_step`, dihitung ulang
+  dari `v_current_status` — BUKAN dari `p_step` krn RPC reject tidak terima param step, tahapnya
+  ditentukan dari status memo saat itu).
   `handleReject` di `FarOverseasAirDetailModal.tsx` pakai APA ADANYA hasil `returns jsonb`
   (`{approval_status, notes}`) buat update state lokal, TIDAK menghitung ulang sendiri.
 - **Document Validation** (`FarOverseasAirCostValidationModal.tsx`) — baris NAMA PT tiap PO yang

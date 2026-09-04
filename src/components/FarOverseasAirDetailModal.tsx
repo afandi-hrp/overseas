@@ -126,13 +126,8 @@ function RejectModal({ onConfirm, onClose, submitting }: { onConfirm: (reason: s
 }
 
 export default function FarOverseasAirDetailModal({ record, onClose, onChanged }: { record: any; onClose: () => void; onChanged?: () => void }) {
-  const { user, profile, canEdit, canApproveTier, approvalTiersByPage } = useAuth();
+  const { user, profile, canEdit, canApproveTier } = useAuth();
   const canEditDirectLoading = canEdit('direct_loading');
-  // Reject HANYA boleh dilakukan user yang punya jabatan approval APA SAJA utk halaman ini (2026-09,
-  // permintaan user) -- user yang cuma py akses edit halaman (canEditDirectLoading) tapi TIDAK
-  // punya baris `user_approval_tiers` sama sekali utk `direct_loading` tidak boleh reject. TIDAK
-  // ADA bypass isAdmin di sini, sama pola dgn `canApproveTier`.
-  const canReject = !!approvalTiersByPage['direct_loading'];
   const [rec, setRec] = useState(record);
   const [signer, setSigner] = useState<SignerConfig | null>(null);
   const [showPoDetail, setShowPoDetail] = useState(false);
@@ -168,6 +163,14 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
   const disiapkanNama = eximName && picDisplayName ? `${eximName}/${picDisplayName}` : (eximName || picDisplayName || null);
 
   const nextStep = nextStepForStatus(rec.approval_status);
+  // Reject HANYA boleh dilakukan user yang eligible approve TAHAP YANG SEDANG AKTIF saat ini
+  // (2026-09, VERSI FINAL -- SEBELUMNYA cukup "punya jabatan approval apa saja utk halaman ini",
+  // TERNYATA itu bikin tombol Reject tetap kelihatan buat user yang tahapnya sendiri SUDAH
+  // selesai, mis. PIC yang sudah approve masih lihat tombol Reject pas memo sudah lanjut nunggu
+  // SPV -- jangan reintroduce versi lama itu). Sama syaratnya dgn tombol Approve (`canApproveTier`
+  // utk `nextStep`), jadi Reject & Approve SELALU muncul/hilang bareng utk siapa pun yang buka
+  // memo ini -- kalau `nextStep` null (sudah APPROVED/REJECTED) otomatis false juga.
+  const canReject = nextStep != null && canApproveTier('direct_loading', nextStep);
 
   const roleForStep = (step: ApprovalStep) => step === 'TIER1' ? signer?.tier1_role : step === 'PIC' ? 'PIC' : step === 'TIER2' ? signer?.tier2_role : signer?.tier3_role;
   const defaultNamaForStep = (step: ApprovalStep) => step === 'TIER1' || step === 'PIC' ? (profile?.nama || user?.email || '') : step === 'TIER2' ? (signer?.tier2_name || '') : (signer?.tier3_name || '');
