@@ -5,7 +5,9 @@ import {
   parseJsonField, getMatrixColumns, resolveAcuanColumnKey, summaryStatusMeta,
   STATUS_WORKFLOW_OPTIONS, workflowMeta, rowStatusClass, rowStatusMeta, updateBunkerDokumen,
   setStatusManualEntry, clearStatusManualEntry, friendlyDbError, formatDateTimeID,
+  computeMatrixMatchStats, logBunkerAudit,
 } from '../utils/BunkerHelpers';
+import { useAuth } from '../lib/AuthContext';
 
 type TableKelengkapanGroup = { group: string; items: { label: string; val: string | null }[] };
 type RowStatus = 'Match' | 'Warning' | 'Mismatch';
@@ -139,14 +141,16 @@ function ConfirmMatchPopup({ fieldName, onSubmit, onClose, saving }: {
 // langsung oleh app, dan begitu tersimpan langsung tampil sbg badge "Dikonfirmasi Manual" di
 // state lokal (tidak perlu refetch/panggil apapun ke n8n). Kolom Status di sebelahnya TETAP
 // menampilkan row_status asli, tidak ikut berubah.
-function ConfirmMatchCell({ row, bunkerId, statusManualRaw, onConfirmed }: {
+function ConfirmMatchCell({ row, bunkerId, noPo, statusManualRaw, onConfirmed }: {
   row: MatrixRow;
   bunkerId: string;
+  noPo: string | null | undefined;
   statusManualRaw: unknown;
   onConfirmed: (merged: any, type: 'success' | 'error', message: string) => void;
 }) {
   const [showPopup, setShowPopup] = useState(false);
   const [saving, setSaving] = useState(false);
+  const { user } = useAuth();
 
   const canConfirm = row.row_status === 'Mismatch' || row.row_status === 'Warning';
   if (!canConfirm) return <span className="text-[11px] xl:text-[13px] text-slate-300">-</span>;
@@ -169,6 +173,11 @@ function ConfirmMatchCell({ row, bunkerId, statusManualRaw, onConfirmed }: {
     } else {
       onConfirmed(merged, 'success', 'Konfirmasi manual tersimpan.');
       setShowPopup(false);
+      logBunkerAudit(noPo, user?.email, [{
+        field_label: `Konfirmasi Manual: ${row.field}`,
+        old_value: isConfirmed ? `${entry.manual_status}${entry.catatan ? ' - ' + entry.catatan : ''}` : null,
+        new_value: `${manualStatus}${catatan ? ' - ' + catatan : ''}`,
+      }]);
     }
   };
 
@@ -180,6 +189,11 @@ function ConfirmMatchCell({ row, bunkerId, statusManualRaw, onConfirmed }: {
       onConfirmed(null, 'error', friendlyDbError('Gagal membatalkan konfirmasi: ' + error.message));
     } else {
       onConfirmed(merged, 'success', 'Konfirmasi dibatalkan.');
+      logBunkerAudit(noPo, user?.email, [{
+        field_label: `Konfirmasi Manual: ${row.field}`,
+        old_value: `${entry?.manual_status || ''}${entry?.catatan ? ' - ' + entry.catatan : ''}`,
+        new_value: null,
+      }]);
     }
   };
 
@@ -230,16 +244,37 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged, canE
   const [catatanManual, setCatatanManual] = useState<string>(rec.catatan_manual || '');
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  const { user } = useAuth();
 
   const groups: TableKelengkapanGroup[] = parseJsonField(rec.table_kelengkapan) || [];
   const matrixRows: MatrixRow[] = parseJsonField(rec.matrix_perbandingan) || [];
-  const matrixColumns = getMatrixColumns(rec.kolom_urutan);
+  const allMatrixColumns = getMatrixColumns(rec.kolom_urutan);
+  // Sembunyikan kolom KWITANSI (key "kwi") SAJA dari tabel "Perbandingan Antar Dokumen" kalau
+  // SEMUA baris kosong utk kolom itu -- kolom dokumen lain TETAP selalu tampil apa adanya walau
+  // kosong (dikonfirmasi user 2026-09, cakupannya sengaja dipersempit dari "semua kolom kosong"
+  // ke KWITANSI doang). value-nya HTML mentah dari backend (lihat HtmlValue), jadi tag di-strip
+  // dulu sebelum dicek supaya "<span></span>"/"-" ikut dianggap kosong juga, bukan cuma null/''.
+  const matrixColumns = allMatrixColumns.filter(c => {
+    if (c.key !== 'kwi') return true;
+    return matrixRows.some(r => {
+      const raw = (r as any)[c.key];
+      if (raw == null) return false;
+      const text = String(raw).replace(/<[^>]*>/g, '').trim();
+      return text !== '' && text !== '-';
+    });
+  });
   const summary = parseJsonField(rec.summary) || {};
   const mismatches: string[] = Array.isArray(summary.mismatches) ? summary.mismatches : [];
   const actions: string[] = Array.isArray(summary.actions) ? summary.actions : [];
   const wrongRowWarnings = mismatches.filter(isWrongRowMismatch);
   const normalMismatches = mismatches.filter(m => !isWrongRowMismatch(m));
   const statusMeta = summaryStatusMeta(summary.status);
+
+  // Ringkasan Match/Warning/Mismatch + persentase akurasi -- lihat computeMatrixMatchStats
+  // (BunkerHelpers.ts), dipakai juga oleh badge di tombol "Compare Doc" pada BunkerPage.tsx.
+  const { match: matchCount, warning: warningCount, mismatch: mismatchCount, pct: matchPct } = computeMatrixMatchStats(rec.matrix_perbandingan);
+  const matchPctBarClass = matchPct >= 90 ? 'bg-emerald-500' : matchPct >= 60 ? 'bg-amber-500' : 'bg-rose-500';
+  const matchPctTextClass = matchPct >= 90 ? 'text-emerald-700' : matchPct >= 60 ? 'text-amber-700' : 'text-rose-700';
 
   const hasUnsaved = statusWorkflow !== (rec.status_workflow || 'BARU') || catatanManual !== (rec.catatan_manual || '');
 
@@ -250,6 +285,8 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged, canE
 
   const handleSave = async () => {
     setSaving(true);
+    const prevStatusWorkflow = rec.status_workflow || 'BARU';
+    const prevCatatanManual = rec.catatan_manual || '';
     const { error } = await updateBunkerDokumen(rec.id, { status_workflow: statusWorkflow, catatan_manual: catatanManual });
     setSaving(false);
     if (error) {
@@ -258,6 +295,14 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged, canE
       setRec((prev: any) => ({ ...prev, status_workflow: statusWorkflow, catatan_manual: catatanManual }));
       showToast('Perubahan tersimpan.', 'success');
       onChanged?.();
+      const changes: { field_label: string; old_value: string | null; new_value: string | null }[] = [];
+      if (statusWorkflow !== prevStatusWorkflow) {
+        changes.push({ field_label: 'Status Workflow', old_value: prevStatusWorkflow, new_value: statusWorkflow });
+      }
+      if (catatanManual !== prevCatatanManual) {
+        changes.push({ field_label: 'Catatan Manual', old_value: prevCatatanManual || null, new_value: catatanManual || null });
+      }
+      logBunkerAudit(rec.no_po, user?.email, changes);
     }
   };
 
@@ -301,6 +346,32 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged, canE
             {/* Summary */}
             <div className={`rounded-xl border p-4 ${statusMeta.bannerClass}`}>
               <p className="text-base font-black">{statusMeta.label.toUpperCase()}</p>
+
+              {matrixRows.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-black/10">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs xl:text-sm font-semibold">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" /> Match: {matchCount}
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" /> Warning: {warningCount}
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" /> Mismatch: {mismatchCount}
+                    </span>
+                  </div>
+
+                  <div className="mt-2.5">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] xl:text-[11px] font-bold uppercase tracking-wider opacity-70">Persentase Match</span>
+                      <span className={`text-xs xl:text-sm font-black ${matchPctTextClass}`}>{matchPct}%</span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-white/60 overflow-hidden">
+                      <div className={`h-full rounded-full ${matchPctBarClass}`} style={{ width: `${matchPct}%` }} />
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {wrongRowWarnings.length > 0 && (
@@ -430,6 +501,7 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged, canE
                                 <ConfirmMatchCell
                                   row={row}
                                   bunkerId={rec.id}
+                                  noPo={rec.no_po}
                                   statusManualRaw={rec.status_manual}
                                   onConfirmed={(merged, type, message) => {
                                     if (merged) {

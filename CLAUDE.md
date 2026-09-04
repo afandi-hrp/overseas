@@ -921,6 +921,65 @@ sama sekali, beda dari Doc/Cost Validation yang harus live-compute dari `checks`
 Kedua badge pakai kebijakan sama dengan Doc/Cost Validation: SELALU tampil termasuk `0%`
 (fallback `?? 0`, bukan `null`/hilang).
 
+## Bunker — badge persentase Match & Riwayat Perubahan per baris (2026-09)
+
+- **Badge persentase "Match" di banner modal Compare Doc + badge di tombol "Compare Doc" list**
+  (`BunkerCompareDocModal.tsx`/`BunkerPage.tsx`) — `computeMatrixMatchStats()`
+  (`src/utils/BunkerHelpers.ts`) SATU-SATUNYA sumber kebenaran hitungan Match/Warning/Mismatch +
+  persentase, dari `row_status` tiap baris `matrix_perbandingan` (baris tanpa `row_status` tidak
+  ikut jadi penyebut, sama pola dgn "Overall Accuracy" Cost Validation Courier/Sea & Air). Dipakai
+  2 tempat: (1) banner ringkasan atas modal (jumlah Match/Warning/Mismatch + progress bar warna
+  hijau ≥90%/kuning ≥60%/merah di bawahnya), (2) badge bulat pojok kanan-atas tombol "Compare
+  Doc" di tiap baris List Bunker (`r.matrix_perbandingan` sudah ikut ke-fetch dari `select('*')`
+  yang sudah ada, TIDAK perlu query tambahan). Kalau formula/threshold warnanya diubah, ubah di
+  `computeMatrixMatchStats()` saja, JANGAN hitung ulang manual di 2 tempat itu.
+- **Riwayat Perubahan per baris** (tombol "Riwayat" baru di panel Aksi List Bunker,
+  `BunkerPage.tsx`, buka `BunkerAuditLogModal.tsx`) — mencatat SIAPA/KAPAN/APA YANG DIUBAH utk
+  3 titik edit yang ada di `BunkerCompareDocModal.tsx`: Status Workflow, Catatan Manual (via
+  `handleSave`), dan Konfirmasi Manual per field (`ConfirmMatchCell` submit/cancel). **SENGAJA
+  PAKAI ULANG tabel `audit_trail` yang sudah ada** (yang sama dibaca halaman "Audit Trail" global
+  lewat `v_audit_trail`, lihat `TRAIL_TABLES.BUNKER` di `SharedDataTable.tsx`) — dikonfirmasi user
+  2026-09, supaya TIDAK menambah tabel audit-trail baru lagi. **Kolom ASLI tabel `audit_trail`
+  (dikonfirmasi via `information_schema.columns` 2026-09): `id`, `created_at`, `tabel`, `action`,
+  `awb`, `no_dokumen`, `jenis`, `user_email`, `catatan` — TIDAK ADA kolom `deskripsi`/`old_value`/
+  `new_value` terpisah (percobaan pertama pakai kolom `deskripsi` GAGAL run-time, "column
+  audit_trail.deskripsi does not exist" — `deskripsi` cuma label kolom tampilan di `TRAIL_COLS`
+  utk halaman Audit Trail global via view `v_audit_trail`, BUKAN nama kolom fisik tabel
+  `audit_trail` aslinya).** Kolom yang dipakai: `tabel` (selalu `'bunker_dokumen'`), `jenis`
+  (`'BUNKER'`), `action` (`'UPDATE'`), `no_dokumen` (diisi `no_po` baris itu — **KUNCI filter
+  riwayat balik ke 1 baris**, karena tabel ini tidak punya kolom `record_id` eksplisit; valid krn
+  kontrak data "1 baris bunker_dokumen = 1 No PO" yang sudah ada dari awal), `user_email`, dan
+  `catatan` — SEMUA info (nama field + nilai lama/baru) digabung jadi SATU string di `catatan`
+  (satu-satunya kolom bebas yang ada), format tetap `"{field_label} — Lama: {old} → Baru:
+  {new}"`, di-parse balik oleh `splitAuditCatatan()` di `BunkerAuditLogModal.tsx` utk ditampilkan
+  terpisah (nama field jadi header, lama/baru jadi 2 kotak warna) — fallback tampil apa adanya
+  kalau formatnya tidak cocok. Dicatat LANGSUNG dari aplikasi (fungsi `logBunkerAudit()`/
+  `fetchBunkerAuditLog()` di `BunkerHelpers.ts`), BUKAN trigger DB — app yang paling tau nilai
+  lama & baru persis tanpa perlu logic diff di Postgres. Baris yang belum/tidak punya `no_po`
+  DILEWATI (tidak nulis log) drpd nyasar ke riwayat baris lain yang `no_po`-nya sama-sama null.
+  **BELUM DIJALANKAN ke Supabase production — WAJIB dijalankan manual dulu** (tanpa ini, insert
+  riwayat dari `logBunkerAudit()` akan gagal diam-diam kena RLS, dan/atau tombol "Riwayat" bisa
+  kosong utk user yang tidak punya akses halaman Audit Trail terpisah):
+  ```sql
+  -- Insert riwayat LANGSUNG dari browser (bukan service role n8n) -- scoped SUPAYA user cuma
+  -- bisa insert baris bertanda tabel='bunker_dokumen', tidak bisa menyuntik entri utk modul lain.
+  create policy "audit_trail_insert_bunker_app" on public.audit_trail
+    for insert
+    with check (tabel = 'bunker_dokumen' and public.has_edit_access('bunker'));
+
+  -- SELECT tambahan (permissive, di-OR dgn policy SELECT yang sudah ada) -- supaya user yang
+  -- PUNYA akses halaman Bunker TAPI TIDAK PUNYA akses halaman Audit Trail terpisah (page_key
+  -- berbeda) tetap bisa buka tombol "Riwayat" per baris di List Bunker.
+  create policy "audit_trail_select_bunker_app" on public.audit_trail
+    for select
+    using (tabel = 'bunker_dokumen' and public.has_page_access('bunker'));
+  ```
+  **BELUM TERVERIFIKASI**: definisi persis policy SELECT `audit_trail` yang sudah ada sebelumnya
+  (dibuat waktu modul Audit Trail global dulu dibangun) — belum ada akses DB langsung utk
+  konfirmasi apakah policy tambahan di atas akan tumpang tindih/duplikat scope dgn yang sudah ada
+  (Postgres OR-kan semua policy permissive utk command yang sama, jadi seharusnya aman ditambah,
+  tapi tetap cek dulu sebelum run kalau ragu).
+
 ## Sea & Air — Dokumen Validasi (`src/components/SeaAirValidasiModal.tsx`)
 
 Tabel-tabel di modal ini (INVOICE FCL, FAKTUR PAJAK FCL, PIB Matrix, dll) render kolom "data

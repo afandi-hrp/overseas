@@ -139,6 +139,22 @@ export function rowStatusMeta(status: string | null | undefined) {
   return (status && ROW_STATUS_META[status]) || { label: status || '-', badgeClass: 'bg-slate-100 text-[#5A305A]' };
 }
 
+// Ringkasan Match/Warning/Mismatch + persentase akurasi dari matrix_perbandingan (kolom jsonb
+// array di bunker_dokumen, tiap item punya row_status) -- SATU-SATUNYA sumber kebenaran hitungan
+// ini, dipakai baik oleh badge di tombol "Compare Doc" (BunkerPage.tsx, list) maupun banner
+// ringkasan di dalam modal (BunkerCompareDocModal.tsx). Baris tanpa row_status (belum ada hasil)
+// TIDAK ikut jadi penyebut, sama pola dgn "Overall Accuracy" di Cost Validation Courier/Sea & Air.
+export function computeMatrixMatchStats(rawMatrix: unknown): { match: number; warning: number; mismatch: number; checked: number; pct: number } {
+  const parsed = parseJsonField(rawMatrix);
+  const rows: any[] = Array.isArray(parsed) ? parsed : [];
+  const match = rows.filter(r => r?.row_status === 'Match').length;
+  const warning = rows.filter(r => r?.row_status === 'Warning').length;
+  const mismatch = rows.filter(r => r?.row_status === 'Mismatch').length;
+  const checked = match + warning + mismatch;
+  const pct = checked > 0 ? Math.round((match / checked) * 100) : 0;
+  return { match, warning, mismatch, checked, pct };
+}
+
 // Update langsung ke bunker_dokumen (BUKAN lewat n8n) -- dipakai untuk status_workflow,
 // catatan_manual, dan status_manual (konfirmasi match manual per baris), kolom-kolom yang
 // memang didesain bebas diedit dari aplikasi.
@@ -178,6 +194,60 @@ export async function clearStatusManualEntry(id: string, currentStatusManual: un
   delete merged[field];
   const { error } = await updateBunkerDokumen(id, { status_manual: merged });
   return { error, merged };
+}
+
+// Audit trail PER BARIS Bunker -- PAKAI ULANG tabel `audit_trail` yang sudah ada (sama yang
+// dibaca halaman "Audit Trail" global lewat view v_audit_trail, lihat TRAIL_TABLES.BUNKER =
+// ['bunker_dokumen'] di SharedDataTable.tsx), BUKAN tabel baru -- disepakati user 2026-09 supaya
+// tidak menambah tabel audit trail lagi. Kolom `no_dokumen` dipakai sbg KUNCI baris ("1 baris =
+// 1 No PO", lihat komentar kontrak data di BunkerPage.tsx) -- SATU-SATUNYA cara filter entri
+// riwayat balik ke 1 baris bunker_dokumen tertentu, karena tabel ini tidak punya kolom record_id
+// eksplisit. Entri ditulis LANGSUNG dari aplikasi (bukan trigger DB) tepat saat user berhasil
+// mengubah Status Workflow/Catatan Manual/Konfirmasi Manual lewat BunkerCompareDocModal --
+// app yang paling tau nilai lama & baru persis, tidak perlu logic diff di level Postgres.
+// **Kolom asli tabel `audit_trail` (dikonfirmasi via information_schema.columns 2026-09):
+// id, created_at, tabel, action, awb, no_dokumen, jenis, user_email, catatan -- TIDAK ADA
+// kolom `deskripsi`/`old_value`/`new_value` terpisah (percobaan pertama pakai `deskripsi`
+// GAGAL krn kolom itu tidak ada di tabel aslinya, cuma nama label di TRAIL_COLS/v_audit_trail
+// utk tampilan Audit Trail global, bukan kolom fisik tabel `audit_trail`).** Semua info (nama
+// field + nilai lama/baru) digabung jadi SATU string di `catatan`, format tetap:
+// `"{field_label} — Lama: {old} → Baru: {new}"`, di-parse balik oleh `splitAuditCatatan()` di
+// BunkerAuditLogModal.tsx utk ditampilkan terpisah.
+export type BunkerAuditLogEntry = {
+  id: string;
+  created_at: string;
+  user_email: string | null;
+  catatan: string | null;
+};
+
+// changes: array field yang BENAR-BENAR berubah (skip yang nilainya sama) -- dipanggil setelah
+// update ke bunker_dokumen/status_manual sukses, JANGAN dipanggil kalau update-nya sendiri gagal.
+// noPo WAJIB diisi (dipakai sbg kunci filter riwayat baris ini) -- kalau baris belum/tidak punya
+// no_po, log dilewati (return tanpa insert) drpd nyasar ke riwayat baris lain yang no_po-nya sama
+// null.
+export async function logBunkerAudit(noPo: string | null | undefined, userEmail: string | null | undefined, changes: { field_label: string; old_value: string | null; new_value: string | null }[]) {
+  if (!noPo || changes.length === 0) return { error: null };
+  const rows = changes.map(c => ({
+    tabel: 'bunker_dokumen',
+    jenis: 'BUNKER',
+    action: 'UPDATE',
+    no_dokumen: noPo,
+    user_email: userEmail || null,
+    catatan: `${c.field_label} — Lama: ${c.old_value || '(kosong)'} → Baru: ${c.new_value || '(kosong)'}`,
+  }));
+  const { error } = await supabase.from('audit_trail').insert(rows);
+  return { error };
+}
+
+export async function fetchBunkerAuditLog(noPo: string | null | undefined): Promise<{ data: BunkerAuditLogEntry[]; error: any }> {
+  if (!noPo) return { data: [], error: null };
+  const { data, error } = await supabase
+    .from('audit_trail')
+    .select('id, created_at, user_email, catatan')
+    .eq('tabel', 'bunker_dokumen')
+    .eq('no_dokumen', noPo)
+    .order('created_at', { ascending: false });
+  return { data: (data as BunkerAuditLogEntry[]) || [], error };
 }
 
 // PostgREST melempar pesan teknis kalau kolom yang dituju belum ada di skema DB (mis. migrasi

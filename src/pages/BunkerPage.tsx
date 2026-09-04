@@ -1,13 +1,15 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
-import { Fuel, UploadCloud, Clock, X, CheckCircle2, AlertTriangle, ClipboardList, FileCheck2, Trash2, Search, RefreshCw } from 'lucide-react';
+import { Fuel, UploadCloud, Clock, X, CheckCircle2, AlertTriangle, ClipboardList, FileCheck2, Trash2, Search, RefreshCw, History } from 'lucide-react';
 import {
   formatDateTimeID, summaryStatusMeta, STATUS_WORKFLOW_OPTIONS, workflowMeta, updateBunkerDokumen,
+  computeMatrixMatchStats,
 } from '../utils/BunkerHelpers';
 import BunkerUploadModal from '../components/BunkerUploadModal';
 import BunkerKelengkapanModal from '../components/BunkerKelengkapanModal';
 import BunkerCompareDocModal from '../components/BunkerCompareDocModal';
+import BunkerAuditLogModal from '../components/BunkerAuditLogModal';
 import Greeting from '../components/Greeting';
 
 // ── Kontrak data (Supabase, sudah dibuat backend n8n -- lihat BunkerHelpers.ts) ──
@@ -159,6 +161,7 @@ export default function BunkerPage() {
   const [queue, setQueue] = useState<any[]>([]);
   const [kelengkapanRow, setKelengkapanRow] = useState<any | null>(null);
   const [compareRow, setCompareRow] = useState<any | null>(null);
+  const [auditLogRow, setAuditLogRow] = useState<any | null>(null);
   const [deleteConfirmRow, setDeleteConfirmRow] = useState<any | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -418,7 +421,9 @@ export default function BunkerPage() {
                   ) : rows.length === 0 ? (
                     <tr><td colSpan={8} className="text-center py-10 text-[#5A305A] text-sm italic">Belum ada data Bunker. Klik "Upload Dokumen" untuk memulai.</td></tr>
                   ) : (
-                    rows.map(r => (
+                    rows.map(r => {
+                    const matchStats = computeMatrixMatchStats(r.matrix_perbandingan);
+                    return (
                       <tr key={r.id} className="group bg-white hover:bg-slate-50 transition-colors">
                         <td className="px-3 py-3 align-top text-[#5A305A] font-semibold whitespace-nowrap">{r.no_po || '-'}</td>
                         <td className="px-3 py-3 align-top text-[#5A305A]">{r.vendor || '-'}</td>
@@ -439,9 +444,21 @@ export default function BunkerPage() {
                             <button
                               onClick={() => setCompareRow(r)}
                               title="Compare Doc"
-                              className="w-full flex items-center gap-1 px-1.5 py-1 rounded-lg border border-slate-200 text-[9px] font-semibold text-[#5A305A] hover:bg-slate-100 transition-colors"
+                              className="relative w-full flex items-center gap-1 px-1.5 py-1 rounded-lg border border-slate-200 text-[9px] font-semibold text-[#5A305A] hover:bg-slate-100 transition-colors"
                             >
                               <ClipboardList size={10} /> Compare Doc
+                              <span className={`absolute -top-1.5 -right-1.5 z-10 min-w-[22px] h-[13px] px-1 rounded-full text-[8px] font-bold flex items-center justify-center shadow-sm border-2 border-white ${
+                                matchStats.pct >= 90 ? 'bg-emerald-500 text-white' : matchStats.pct >= 60 ? 'bg-amber-500 text-white' : 'bg-red-500 text-white'
+                              }`}>
+                                {matchStats.pct}%
+                              </span>
+                            </button>
+                            <button
+                              onClick={() => setAuditLogRow(r)}
+                              title="Riwayat Perubahan"
+                              className="w-full flex items-center gap-1 px-1.5 py-1 rounded-lg border border-slate-200 text-[9px] font-semibold text-[#5A305A] hover:bg-slate-100 transition-colors"
+                            >
+                              <History size={10} /> Riwayat
                             </button>
                             {canEditBunker && (
                               <button
@@ -455,7 +472,8 @@ export default function BunkerPage() {
                           </div>
                         </td>
                       </tr>
-                    ))
+                    );
+                  })
                   )}
                 </tbody>
               </table>
@@ -497,6 +515,10 @@ export default function BunkerPage() {
 
       {compareRow && (
         <BunkerCompareDocModal record={compareRow} onClose={() => setCompareRow(null)} onChanged={fetchList} canEdit={canEditBunker} />
+      )}
+
+      {auditLogRow && (
+        <BunkerAuditLogModal record={auditLogRow} onClose={() => setAuditLogRow(null)} />
       )}
 
       {deleteConfirmRow && (
