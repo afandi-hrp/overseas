@@ -804,10 +804,13 @@ Komentar kode & isi CLAUDE.md ini SENGAJA TETAP Bahasa Indonesia (bukan bagian d
   otomatis punya entry PIC di `approvals`-nya (tidak ada migrasi data retroaktif), jadi kolom
   "Disiapkan Oleh" utk memo lama itu cuma nampilin nama Exim tanpa PIC — ini WAJAR utk data lama,
   bukan bug.
-  **Nama approver TIDAK BISA diketik manual di SEMUA tahap** (2026-09, VERSI FINAL — sebelumnya
-  cuma berlaku utk PIC, sekarang diperluas ke semua tahap, jangan reintroduce input `<input>`
-  editable di `ApprovalConfirmModal` manapun) — field "Approver Name" di `ApprovalConfirmModal`
-  SELALU tampil sbg teks statis (bukan input), diisi apa adanya dari `defaultNamaForStep(step)`:
+  **Approve SEKARANG satu klik langsung, TIDAK ADA lagi modal konfirmasi nama** (2026-09, VERSI
+  FINAL #2 — sempat dibuat modal dgn field nama read-only dulu, TERNYATA user masih menganggap
+  itu "masih ada konfirmasi nama" krn modalnya sendiri tetap muncul; SUDAH DIHAPUS TOTAL,
+  `ApprovalConfirmModal` & state `confirmStep` tidak ada lagi di komponen ini, jangan
+  reintroduce). Tombol "Approve — {tahap}" di Aksi persetujuan sekarang langsung memanggil
+  `handleApprove(nextStep, defaultNamaForStep(nextStep))` saat diklik — TIDAK ADA popup apa pun
+  di antaranya, nama dikirim ke RPC apa adanya dari `defaultNamaForStep(step)`:
   - **TIER1 (Exim) & PIC**: `profile?.nama || user?.email` — nama USER YANG SEDANG LOGIN (identitas
     orang yang benar-benar klik approve).
   - **TIER2 (SPV) & TIER3 (Direktur)**: `signer?.tier2_name`/`signer?.tier3_name` dari
@@ -818,6 +821,8 @@ Komentar kode & isi CLAUDE.md ini SENGAJA TETAP Bahasa Indonesia (bukan bagian d
     approval, tetap apa adanya").
   Kalau nanti nambah tahap approval baru (di modul manapun), tentukan dulu termasuk kategori
   mana (identitas personal login vs jabatan resmi tetap) sebelum isi `defaultNamaForStep`-nya.
+  Tombol Approve dikasih `disabled={submitting}` + label "Saving..." saat proses berjalan, jaga2
+  dobel klik krn sekarang tidak ada lagi jeda modal konfirmasi sblm request terkirim.
   **Reject dibatasi HANYA utk user yang punya jabatan approval APA SAJA** (2026-09, permintaan
   user) — `canReject = !!approvalTiersByPage['direct_loading']` (lihat komponen utama), tombol
   Reject SAMA SEKALI TIDAK dirender kalau user itu `canEditDirectLoading` tapi TIDAK punya baris

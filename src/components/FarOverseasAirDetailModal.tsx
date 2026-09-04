@@ -31,7 +31,10 @@ type ApprovalEntry = { tier: ApprovalTier; nama: string; jabatan: string; approv
 // di bawah) DAN (b) server, lewat RPC `approve_far_overseas_air` (SECURITY DEFINER, cek jabatan +
 // urutan status di dalamnya) yang dipanggil `handleApprove` -- BUKAN `.update()` langsung lagi ke
 // `rekapan_far_overseas_air` (lihat CLAUDE.md utk SQL migration RPC ini, WAJIB dijalankan manual
-// dulu di Supabase sebelum approval bisa jalan sama sekali).
+// dulu di Supabase sebelum approval bisa jalan sama sekali). SATU KLIK LANGSUNG approve (2026-09,
+// permintaan user) -- TIDAK ADA lagi modal konfirmasi nama di tengah (`ApprovalConfirmModal`
+// DIHAPUS TOTAL, jangan reintroduce), nama diambil langsung dari `defaultNamaForStep(step)` saat
+// tombol diklik.
 type ApprovalStep = 'TIER1' | 'PIC' | 'TIER2' | 'TIER3';
 const STEP_LABEL: Record<ApprovalStep, string> = { TIER1: 'Prepared By (Exim)', PIC: 'PIC', TIER2: 'SPV', TIER3: 'Director' };
 const STEP_ACTION_LABEL: Record<ApprovalStep, string> = {
@@ -90,40 +93,6 @@ function SignatureColumn({ label, role, entry, defaultNama, nameOverride }: { la
   );
 }
 
-// Nama approver TIDAK PERNAH bisa diketik manual lagi di modal ini (2026-09, permintaan user) --
-// SELALU dipakai apa adanya dari `defaultNama` yang dikirim pemanggil: utk Exim/PIC itu nama user
-// yang sedang login (identitas orang yang benar-benar klik approve), utk SPV/Direktur itu TETAP
-// nama resmi dari `far_overseas_signer_config` (tier2_name/tier3_name) -- SENGAJA TIDAK ikut
-// berubah jadi nama user yang login, supaya tanda tangan SPV/Direktur di memo selalu konsisten
-// dgn identitas resmi jabatan itu di perusahaan, siapa pun staff yang memprosesnya. Lihat
-// `defaultNamaForStep` di komponen utama utk sumber nilainya masing-masing tahap.
-function ApprovalConfirmModal({ step, role, defaultNama, onConfirm, onClose, submitting }: {
-  step: ApprovalStep; role: string; defaultNama: string; onConfirm: (nama: string) => void; onClose: () => void; submitting: boolean;
-}) {
-  return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
-        <h3 className="font-bold text-[#5A305A] mb-1">Confirm Approval — {STEP_LABEL[step]}</h3>
-        <p className="text-xs text-[#5A305A] mb-4">Role: <span className="font-semibold">{role || '-'}</span></p>
-        <label className="block text-xs font-semibold text-[#5A305A] mb-1">Approver Name</label>
-        <p className="w-full border border-slate-200 bg-slate-50 rounded-xl px-3 py-2 text-sm mb-5 text-[#5A305A] font-semibold">{defaultNama || '-'}</p>
-        <div className="grid grid-cols-2 gap-2">
-          <button onClick={onClose} disabled={submitting} className="py-2.5 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all disabled:opacity-50">
-            Cancel
-          </button>
-          <button
-            onClick={() => onConfirm(defaultNama.trim())}
-            disabled={submitting || !defaultNama.trim()}
-            className="py-2.5 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-sm transition-all disabled:opacity-50"
-          >
-            {submitting ? 'Saving...' : 'Confirm'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function RejectModal({ onConfirm, onClose, submitting }: { onConfirm: (reason: string) => void; onClose: () => void; submitting: boolean }) {
   const [reason, setReason] = useState('');
   return (
@@ -167,7 +136,6 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
   const [rec, setRec] = useState(record);
   const [signer, setSigner] = useState<SignerConfig | null>(null);
   const [showPoDetail, setShowPoDetail] = useState(false);
-  const [confirmStep, setConfirmStep] = useState<ApprovalStep | null>(null);
   const [showReject, setShowReject] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
@@ -225,7 +193,6 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
       showToast('Failed to save approval: ' + (error?.message || 'unknown error'), 'error');
     } else {
       setRec({ ...rec, approval_status: data.approval_status, approvals: data.approvals });
-      setConfirmStep(null);
       showToast(STEP_LABEL[step] + ' approval saved successfully.', 'success');
       onChanged?.();
     }
@@ -424,8 +391,12 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
                     </button>
                   )}
                   {nextStep != null && canApproveTier('direct_loading', nextStep) && (
-                    <button onClick={() => setConfirmStep(nextStep)} className="px-4 py-2 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-sm transition-all flex items-center gap-1.5">
-                      <Stamp size={15} /> {STEP_ACTION_LABEL[nextStep]}
+                    <button
+                      onClick={() => handleApprove(nextStep, defaultNamaForStep(nextStep))}
+                      disabled={submitting}
+                      className="px-4 py-2 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-sm transition-all disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                      <Stamp size={15} /> {submitting ? 'Saving...' : STEP_ACTION_LABEL[nextStep]}
                     </button>
                   )}
                 </div>
@@ -435,17 +406,6 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
           </div>
         </div>
       </div>
-
-      {confirmStep != null && (
-        <ApprovalConfirmModal
-          step={confirmStep}
-          role={roleForStep(confirmStep) || '-'}
-          defaultNama={defaultNamaForStep(confirmStep)}
-          submitting={submitting}
-          onClose={() => setConfirmStep(null)}
-          onConfirm={(nama) => handleApprove(confirmStep, nama)}
-        />
-      )}
 
       {showReject && (
         <RejectModal submitting={submitting} onClose={() => setShowReject(false)} onConfirm={handleReject} />
