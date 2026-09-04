@@ -1723,14 +1723,20 @@ const CourierAuditRowGroup: React.FC<{
   editMode?: boolean,
   getVal?: (r: any, field: string) => any,
   setVal?: (r: any, field: string, value: any) => void,
-}> = ({ rec, index, cols, onChecklist, onValidasi, onCostValidasi, onArchive, onUndraft, onDelete, editMode, getVal, setVal }) => {
+  onSaveRow?: (id: number | string) => Promise<boolean>,
+}> = ({ rec, index, cols, onChecklist, onValidasi, onCostValidasi, onArchive, onUndraft, onDelete, editMode, getVal, setVal, onSaveRow }) => {
   const repeatingCols = ['po_ori', 'vendor_inv_no', 'po_harga_detail'];
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [showActions, setShowActions] = useState(false);
+  // Toggle edit per-baris (independen dari tombol "Edit Mode" global di toolbar) -- dikonfirmasi
+  // user 2026-09 masih perlu ada dua-duanya: klik satu tombol global utk edit SEMUA baris
+  // sekaligus, ATAU klik "Edit" di baris ini saja tanpa mengaktifkan mode global.
+  const [rowEditOn, setRowEditOn] = useState(false);
+  const [savingRow, setSavingRow] = useState(false);
 
   const canBulkEdit = !!(getVal && setVal);
-  const editingThisRow = !!editMode && canBulkEdit && rec.status !== 'LENGKAP';
+  const editingThisRow = (!!editMode || rowEditOn) && canBulkEdit && rec.status !== 'LENGKAP';
 
   let splittedData: { po: string, inv: string, harga: string }[] = [];
   const pos = typeof rec.po_ori === 'string' ? rec.po_ori.split(/\s*\+\s*|,\s+/).map((s: string) => s.trim()).filter(Boolean) : [];
@@ -1841,6 +1847,30 @@ const CourierAuditRowGroup: React.FC<{
                     </button>
                     {showActions && (
                       <div className="flex flex-col gap-1.5 items-center bg-slate-50 border border-slate-200 rounded-lg p-1.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
+                          {canBulkEdit && rec.status !== 'LENGKAP' && (
+                            <button
+                              onClick={() => setRowEditOn(v => !v)}
+                              className={`w-[80px] text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm border ${
+                                rowEditOn ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700' : 'bg-white border-slate-200 text-[#5A305A] hover:border-slate-300 hover:bg-slate-50'
+                              }`}
+                            >
+                              ✏️ {rowEditOn ? 'Editing' : 'Edit'}
+                            </button>
+                          )}
+                          {rowEditOn && onSaveRow && rec.status !== 'LENGKAP' && (
+                            <button
+                              disabled={savingRow}
+                              onClick={async () => {
+                                setSavingRow(true);
+                                const ok = await onSaveRow(rec.id);
+                                setSavingRow(false);
+                                if (ok) { setRowEditOn(false); setShowActions(false); }
+                              }}
+                              className="w-[80px] bg-emerald-600 border border-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm"
+                            >
+                              💾 {savingRow ? 'Saving...' : 'Save'}
+                            </button>
+                          )}
                           {onChecklist && rec.status !== 'LENGKAP' && (
                             <span className="relative inline-flex shrink-0">
                               <button onClick={() => { onChecklist(rec); setShowActions(false); }} className="w-[80px] bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 hover:border-amber-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
@@ -1921,14 +1951,18 @@ const CourierRekapanRowGroup: React.FC<{
   editMode?: boolean,
   getVal?: (r: any, field: string) => any,
   setVal?: (r: any, field: string, value: any) => void,
-}> = ({ rec, index, cols, onDelete, editMode, getVal, setVal }) => {
+  onSaveRow?: (id: number | string) => Promise<boolean>,
+}> = ({ rec, index, cols, onDelete, editMode, getVal, setVal, onSaveRow }) => {
   const repeatingCols = ['po_pt_imi', 'vessel', 'breakdown_courier_adm_vessel', 'breakdown_duty_vessel', 'breakdown_freight_vessel', 'breakdown_bm_vessel', 'breakdown_ppnpph_vessel'];
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [showActions, setShowActions] = useState(false);
+  // Sama pola dgn CourierAuditRowGroup -- edit per-baris tetap ada terpisah dari "Edit Mode" global.
+  const [rowEditOn, setRowEditOn] = useState(false);
+  const [savingRow, setSavingRow] = useState(false);
 
   const canBulkEdit = !!(getVal && setVal);
-  const editingThisRow = !!editMode && canBulkEdit;
+  const editingThisRow = (!!editMode || rowEditOn) && canBulkEdit;
 
   let poVesselPairs: { po: string, vessel: string }[] = [];
   // Dulu blok ini cuma jalan kalau po_pt_imi ada isinya -- akibatnya baris yang ditambah manual
@@ -2059,6 +2093,30 @@ const CourierRekapanRowGroup: React.FC<{
                     </button>
                     {showActions && (
                       <div className="flex flex-col gap-1.5 items-center bg-slate-50 border border-slate-200 rounded-lg p-1.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
+                          {canBulkEdit && (
+                            <button
+                              onClick={() => setRowEditOn(v => !v)}
+                              className={`w-[80px] text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm border ${
+                                rowEditOn ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700' : 'bg-white border-slate-200 text-[#5A305A] hover:border-slate-300 hover:bg-slate-50'
+                              }`}
+                            >
+                              ✏️ {rowEditOn ? 'Editing' : 'Edit'}
+                            </button>
+                          )}
+                          {rowEditOn && onSaveRow && (
+                            <button
+                              disabled={savingRow}
+                              onClick={async () => {
+                                setSavingRow(true);
+                                const ok = await onSaveRow(rec.id);
+                                setSavingRow(false);
+                                if (ok) { setRowEditOn(false); setShowActions(false); }
+                              }}
+                              className="w-[80px] bg-emerald-600 border border-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm"
+                            >
+                              💾 {savingRow ? 'Saving...' : 'Save'}
+                            </button>
+                          )}
                           {onDelete && (
                             <button onClick={() => { onDelete(rec); setShowActions(false); }} className="w-[80px] bg-white border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
                               🗑️ Delete
@@ -2727,11 +2785,16 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   // bukan pola per-baris ala FarOverseasAirPage.tsx (List Memo) lagi (versi awal fitur ini SEMPAT
   // pakai pola itu, sudah diganti total ke toggle global di sini).
   const [courierAuditEditMode, setCourierAuditEditMode] = useState(false)
-  const [courierAuditPendingEdits, setCourierAuditPendingEdits] = useState<Record<number, Record<string, any>>>({})
+  // Key object ini SENGAJA `string` (bukan `number`) -- `rec.id` kolom bigint/int8 di Postgres
+  // dikembalikan Supabase-js sbg STRING (bukan JS number, utk hindari presisi hilang di angka
+  // besar), sedangkan kolom int4 biasa dikembalikan sbg number. Kalau id di sini dipaksa lewat
+  // Number(...) lalu dibandingkan balik ke `r.id` pakai `===` (strict, beda tipe = selalu false),
+  // baris ketemu `undefined` & save diam-diam gagal -- lihat catatan di handleInlineSaveRow.
+  const [courierAuditPendingEdits, setCourierAuditPendingEdits] = useState<Record<string, Record<string, any>>>({})
   const [savingCourierAuditEdits, setSavingCourierAuditEdits] = useState(false)
 
   const [courierRekapanEditMode, setCourierRekapanEditMode] = useState(false)
-  const [courierRekapanPendingEdits, setCourierRekapanPendingEdits] = useState<Record<number, Record<string, any>>>({})
+  const [courierRekapanPendingEdits, setCourierRekapanPendingEdits] = useState<Record<string, Record<string, any>>>({})
   const [savingCourierRekapanEdits, setSavingCourierRekapanEdits] = useState(false)
 
 
@@ -3490,7 +3553,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   };
 
     
-  const handleInlineSaveRow = async (id: number, payload: any, silent?: boolean) => {
+  const handleInlineSaveRow = async (id: number | string, payload: any, silent?: boolean) => {
     try {
       const cleanedPayload = { ...payload };
       Object.keys(cleanedPayload).forEach(key => {
@@ -3518,7 +3581,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         // gabungan record lama + perubahan baru, lalu ikut disisipkan ke payload yang dikirim.
         const depKeys = ['valas_dpp', 'kurs_ndpbm', 'total_inv_freight', 'item_price_idr'];
         if (depKeys.some(k => k in cleanedPayload)) {
-          const record = records.find(r => r.id === id);
+          const record = records.find(r => String(r.id) === String(id));
           const getNum = (key: string) => {
             const v = key in cleanedPayload ? cleanedPayload[key] : record?.[key];
             return Number(v) || 0;
@@ -3535,7 +3598,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         const res = await supabase.rpc('update_seaair_row', { p_id: id, p_updates: cleanedPayload });
         error = res.error;
       } else if (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan') {
-        const record = records.find(r => r.id === id);
+        const record = records.find(r => String(r.id) === String(id));
         if (!record) return false;
         
         const rekapanPayload = { ...cleanedPayload };
@@ -3553,7 +3616,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           error = res.error;
         }
       } else if (activeMainTab === 'courier' && activeSubTab === 'courier_audit') {
-        const record = records.find(r => r.id === id);
+        const record = records.find(r => String(r.id) === String(id));
         if (!record) return false;
         
         let targetTable = '';
@@ -3576,9 +3639,14 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       
       if (error) throw error;
       
-      setRecords(prev => prev.map(r => r.id === id ? { ...r, ...cleanedPayload } : r));
+      setRecords(prev => prev.map(r => String(r.id) === String(id) ? { ...r, ...cleanedPayload } : r));
       return true;
     } catch (err: any) {
+      // Selalu log ke console (walau silent=true, dipakai Save All/Save per-baris) -- laporan
+      // user 2026-09 "Save All tidak berfungsi, tidak bisa simpan ke database" tapi TIDAK ada
+      // alert manapun yg kelihatan; console.error ini supaya error asli dari Supabase (RLS/kolom
+      // salah/dst) kelihatan di DevTools kalau kejadian lagi, bukan cuma "gagal diam-diam".
+      console.error('handleInlineSaveRow failed:', { id, payload, error: err });
       if (!silent) alert('Failed to save: ' + err.message);
       return false;
     }
@@ -3599,7 +3667,15 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   const setCourierAuditVal = (r: any, field: string, value: any) => {
     setCourierAuditPendingEdits(prev => ({ ...prev, [r.id]: { ...(prev[r.id] || {}), [field]: value } }));
   };
-  const courierAuditChangedRowIds = Object.keys(courierAuditPendingEdits).map(Number).filter(id => Object.keys(courierAuditPendingEdits[id]).length > 0);
+  // Id di sini SENGAJA dibiarkan string (key asli object, TIDAK di-Number()-kan) -- kolom
+  // bigint/int8 (mis. `tabel_audit_pib.id`) dikembalikan Supabase-js sbg string, sedangkan int4
+  // sbg number; handleInlineSaveRow membandingkannya balik ke `records` via String(r.id) ===
+  // String(id), jadi id yang diteruskan ke situ HARUS tetap representasi string yang identik
+  // dgn key aslinya di pendingEdits, bukan hasil re-parsing Number() yang bisa beda tipe dari
+  // `r.id` asli dan bikin `.find()` gagal cocok (root cause "Save All tidak tersimpan" 2026-09).
+  const courierAuditChangedRowIds = Object.entries(courierAuditPendingEdits)
+    .filter(([, edits]) => edits && Object.keys(edits).length > 0)
+    .map(([id]) => id);
 
   const handleSaveAllCourierAuditEdits = async () => {
     setSavingCourierAuditEdits(true);
@@ -3613,11 +3689,30 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       return next;
     });
     if (failedIds.length > 0) {
-      alert(`Failed to save ${failedIds.length} of ${ids.length} row(s). Please check and try again.`);
+      alert(`Failed to save ${failedIds.length} of ${ids.length} row(s). Please check the browser console (F12) for the exact error and try again.`);
     }
+    // Refetch supaya tabel benar-benar mencerminkan state DB terkini (bukan cuma patch optimis
+    // dari handleInlineSaveRow) -- laporan user 2026-09 "Save All tidak berfungsi, tidak bisa
+    // simpan ke database".
+    if (results.some(r => r.ok)) fetchRecords();
   };
   const handleDiscardAllCourierAuditEdits = () => {
     setCourierAuditPendingEdits({});
+  };
+  // Simpan 1 baris saja (dipakai tombol "Save" di panel Action tiap baris, terpisah dari
+  // "Save All" toolbar) -- dikonfirmasi user 2026-09: harus ada tombol simpan sendiri utk edit
+  // per-baris, bukan cuma "Save All" yang commit SEMUA baris pending sekaligus.
+  const handleSaveOneCourierAuditRow = async (id: number | string) => {
+    const payload = courierAuditPendingEdits[id];
+    if (!payload || Object.keys(payload).length === 0) return true;
+    const ok = await handleInlineSaveRow(id, payload, true);
+    if (ok) {
+      setCourierAuditPendingEdits(prev => { const next = { ...prev }; delete next[id]; return next; });
+      fetchRecords();
+    } else {
+      alert('Failed to save this row. Please check the browser console (F12) for the exact error and try again.');
+    }
+    return ok;
   };
 
   const getCourierRekapanVal = (r: any, field: string) => {
@@ -3628,7 +3723,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   const setCourierRekapanVal = (r: any, field: string, value: any) => {
     setCourierRekapanPendingEdits(prev => ({ ...prev, [r.id]: { ...(prev[r.id] || {}), [field]: value } }));
   };
-  const courierRekapanChangedRowIds = Object.keys(courierRekapanPendingEdits).map(Number).filter(id => Object.keys(courierRekapanPendingEdits[id]).length > 0);
+  // Sama alasan dgn courierAuditChangedRowIds di atas -- id dibiarkan string, jangan Number().
+  const courierRekapanChangedRowIds = Object.entries(courierRekapanPendingEdits)
+    .filter(([, edits]) => edits && Object.keys(edits).length > 0)
+    .map(([id]) => id);
 
   const handleSaveAllCourierRekapanEdits = async () => {
     setSavingCourierRekapanEdits(true);
@@ -3642,11 +3740,25 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       return next;
     });
     if (failedIds.length > 0) {
-      alert(`Failed to save ${failedIds.length} of ${ids.length} row(s). Please check and try again.`);
+      alert(`Failed to save ${failedIds.length} of ${ids.length} row(s). Please check the browser console (F12) for the exact error and try again.`);
     }
+    if (results.some(r => r.ok)) fetchRecords();
   };
   const handleDiscardAllCourierRekapanEdits = () => {
     setCourierRekapanPendingEdits({});
+  };
+  // Sama pola dgn handleSaveOneCourierAuditRow di atas -- tombol "Save" per-baris terpisah.
+  const handleSaveOneCourierRekapanRow = async (id: number | string) => {
+    const payload = courierRekapanPendingEdits[id];
+    if (!payload || Object.keys(payload).length === 0) return true;
+    const ok = await handleInlineSaveRow(id, payload, true);
+    if (ok) {
+      setCourierRekapanPendingEdits(prev => { const next = { ...prev }; delete next[id]; return next; });
+      fetchRecords();
+    } else {
+      alert('Failed to save this row. Please check the browser console (F12) for the exact error and try again.');
+    }
+    return ok;
   };
 
   const handleUpdateVessel = async (rekapanId: number, poNo: string, newVessel: string) => {
@@ -4331,6 +4443,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                             editMode={canEditCourierAudit ? courierAuditEditMode : undefined}
                             getVal={canEditCourierAudit ? getCourierAuditVal : undefined}
                             setVal={canEditCourierAudit ? setCourierAuditVal : undefined}
+                            onSaveRow={canEditCourierAudit ? handleSaveOneCourierAuditRow : undefined}
                           />
                         );
                       }
@@ -4346,6 +4459,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                             editMode={canEditCourierRekapan ? courierRekapanEditMode : undefined}
                             getVal={canEditCourierRekapan ? getCourierRekapanVal : undefined}
                             setVal={canEditCourierRekapan ? setCourierRekapanVal : undefined}
+                            onSaveRow={canEditCourierRekapan ? handleSaveOneCourierRekapanRow : undefined}
                           />
                         );
                       }
@@ -4411,7 +4525,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       {/* Bar "Simpan Semua"/"Batal Semua" edit massal Audit Courier -- muncul kalau ada baris
           punya perubahan belum disimpan (lihat courierAuditPendingEdits di atas). Replika
           persis pola yang sama di FarOverseasAirPage.tsx List Memo. */}
-      {activeMainTab === 'courier' && activeSubTab === 'courier_audit' && courierAuditChangedRowIds.length > 0 && (
+      {activeMainTab === 'courier' && activeSubTab === 'courier_audit' && courierAuditEditMode && courierAuditChangedRowIds.length > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-white rounded-full shadow-[0_8px_30px_rgba(0,0,0,0.12)] border border-slate-200 p-2 flex items-center gap-3 pr-4">
           <div className="w-10 h-10 rounded-full bg-amber-100 flex justify-center items-center text-amber-600 shrink-0">
             <AlertTriangle size={18} />
@@ -4437,7 +4551,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         </div>
       )}
 
-      {activeMainTab === 'courier' && activeSubTab === 'courier_rekapan' && courierRekapanChangedRowIds.length > 0 && (
+      {activeMainTab === 'courier' && activeSubTab === 'courier_rekapan' && courierRekapanEditMode && courierRekapanChangedRowIds.length > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-white rounded-full shadow-[0_8px_30px_rgba(0,0,0,0.12)] border border-slate-200 p-2 flex items-center gap-3 pr-4">
           <div className="w-10 h-10 rounded-full bg-amber-100 flex justify-center items-center text-amber-600 shrink-0">
             <AlertTriangle size={18} />

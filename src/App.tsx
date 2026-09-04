@@ -32,6 +32,7 @@ import FarOverseasAirPage from './pages/FarOverseasAirPage';
 import BunkerPage from './pages/BunkerPage';
 import AuditPoPage from './pages/AuditPoPage';
 import AuditPoOverseasPage from './pages/AuditPoOverseasPage';
+import PiLocalPage from './pages/PiLocalPage';
 
 function ProtectedRoute() {
   const { session, loading } = useAuth();
@@ -88,6 +89,7 @@ export default function App() {
 
               <Route path="/audit-po" element={<RequirePageAccess pageKey="audit_po"><AuditPoPage /></RequirePageAccess>} />
               <Route path="/audit-po-overseas" element={<RequirePageAccess pageKey="audit_po_overseas"><AuditPoOverseasPage /></RequirePageAccess>} />
+              <Route path="/pi-local" element={<RequirePageAccess pageKey="pi_local"><PiLocalPage /></RequirePageAccess>} />
 
               <Route path="/audit-trail" element={<RequirePageAccess pageKey="audit_trail"><AuditTrailPage /></RequirePageAccess>} />
               <Route path="/settings" element={<SettingsPage />} />

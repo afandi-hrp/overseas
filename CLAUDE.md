@@ -105,6 +105,23 @@ Sudah diimplementasikan (lihat `sql/001_rbac_and_bunker_rls.sql`, `sql/002_direc
   akses penuh, di-hardcode di function `is_admin()`, tidak lewat `role_page_access`.
 - `src/lib/permissions.ts` — `PAGE_REGISTRY` satu sumber kebenaran daftar `page_key` (dipakai
   sidebar, route guard, halaman Kelola Role & Akses). Tambah halaman baru → daftarkan di sini.
+- **Layout `RoleManagementPage.tsx` dirapikan (2026-09)** — makin banyak halaman/role/user
+  terdaftar, 2 panel (matrix akses & daftar user) bisa jadi sangat panjang ke bawah. Fix:
+  - **Matrix "Akses Halaman per Role"**: tiap grup (`PAGE_GROUPS`) sekarang bisa di-collapse
+    satu-satu (state `collapsedGroups: Set<string>`, tombol toggle di header grup + chevron),
+    plus tombol "Ciutkan Semua"/"Bentangkan Semua" di pojok kanan atas panel. Container tabelnya
+    dikasih `max-h-[520px] overflow-auto` + header (`<thead>`) `sticky top-0` (dobel sticky
+    dengan kolom pertama yg sudah `sticky left-0` dari awal) — jadi walau daftar halaman panjang,
+    tinggi panel di halaman TIDAK ikut membengkak tanpa batas, tinggal scroll di dalam kotaknya,
+    nama role tetap kelihatan pas scroll ke bawah.
+  - **"Role per User"**: list user dibungkus `max-h-[420px] overflow-y-auto` (sebelumnya scroll
+    ikut halaman penuh, bisa sangat panjang kalau user banyak) — search box yg sudah ada
+    (`userSearch`) TETAP di luar kotak scroll ini (selalu kelihatan). Counter kecil ditambah di
+    kedua panel ("N halaman · M grup", "N dari M user") supaya PIC langsung tau skala datanya
+    tanpa perlu scroll/hitung manual.
+  - Kalau nanti nambah lagi elemen yg berpotensi jadi panjang di halaman ini (mis. daftar role
+    kalau nanti jumlahnya banyak), ikuti pola yg sama: kotak dgn `max-h-*` + `overflow-y-auto`
+    + header/kolom kunci `sticky`, bukan biarkan mengalir bebas ke bawah halaman.
 - `src/components/RequirePageAccess.tsx` — route guard, prop `pageKey` atau `adminOnly`.
 - `AuthContext` panggil RPC `get_my_access()` sekali saat login → `{is_admin, page_keys}`.
 - **Akses view-only vs edit (2026-09, SELESAI untuk semua halaman yang punya konsep edit)**:
@@ -1042,18 +1059,127 @@ ke DB via `handleInlineSaveRow` per baris, `Promise.all` paralel) atau "Cancel" 
 pending edit). Mode edit TIDAK otomatis mati setelah "Save All" — sengaja dibiarkan ON supaya user
 bisa lanjut edit baris lain tanpa klik toggle lagi.
 
+**Tombol "Edit" per-baris DIKEMBALIKAN LAGI (2026-09, susulan)** — sempat dihapus total waktu
+toggle global ditambahkan (asumsi awal: toggle global menggantikan kebutuhan toggle per-baris),
+TERNYATA user masih butuh keduanya ("tombol edit perbaris nya jangan di hilangkan juga lae,
+karena perlu juga edit per baris tanpa edit masal lae") — kadang cuma mau koreksi 1 baris tanpa
+membuka mode edit di SEMUA baris sekaligus. Diimplementasikan sbg state LOKAL per-row-group
+(`rowEditOn`, `useState` di dalam `CourierAuditRowGroup`/`CourierRekapanRowGroup` sendiri, BUKAN
+diangkat ke parent seperti `pendingEdits`) — `editingThisRow = (!!editMode || rowEditOn) &&
+canBulkEdit && ...`. Tombol "✏️ Edit"/"Editing" di panel Action toggle `rowEditOn` murni lokal;
+TIDAK ADA `onToggleEdit` prop lagi (beda dari desain lama sebelum toggle global) — parent tidak
+perlu tahu baris mana yang lagi di-toggle manual, karena `pendingEdits` tetap 1 sumber kebenaran
+yang sama dipakai baik dari toggle global maupun toggle per-baris ini. Jadi SEKARANG ADA 2 CARA
+independen utk masuk mode input per baris: toggle global (semua baris) ATAU tombol Edit baris itu
+sendiri (cuma baris itu) — keduanya menulis ke `pendingEdits` yang sama, "Save All"/"Cancel" tetap
+berlaku ke SEMUA baris yang berubah dari cara manapun.
+
+**Tombol "Save" per-baris (2026-09, susulan lagi)** — laporan user: "setelah di coba tombol
+simpan nya tidak bisa lae, harusnya di bedakan tombol simpan edit masal dan tombol simpan edit
+per baris lae". Sebelum ini SATU-SATUNYA cara commit ke DB adalah bar mengambang "Save All" yang
+commit SEMUA baris di `pendingEdits` sekaligus — kalau user cuma edit 1 baris lewat tombol Edit
+per-baris (`rowEditOn`), tidak ada cara simpan CUMA baris itu tanpa ikut nge-commit baris lain
+yang mungkin belum selesai diedit. Fix: ditambah `handleSaveOneCourierAuditRow(id)`/
+`handleSaveOneCourierRekapanRow(id)` (~baris setelah `handleDiscardAll*Edits`) — ambil
+`pendingEdits[id]` doang, panggil `handleInlineSaveRow(id, payload, true)` (fungsi SAMA yang
+dipakai "Save All", TIDAK ada logic simpan baru), sukses → hapus entry itu SAJA dari
+`pendingEdits` (bukan `setPendingEdits({})` semua). Diteruskan ke row-group lewat prop baru
+`onSaveRow?: (id: number) => Promise<boolean>`. Tombol "💾 Save" (hijau) muncul di panel Action
+HANYA kalau `rowEditOn` true (state lokal row ini) — dengan kata lain **kalau baris masuk mode
+edit lewat toggle GLOBAL toolbar ("Edit Mode"), tombol Save per-baris TIDAK muncul** (memang
+disengaja — cara simpannya utk mode global tetap "Save All" bar, supaya jelas dipisah: edit
+massal → Save All, edit satu baris manual → tombol Save di baris itu sendiri). Klik Save sukses →
+`rowEditOn` di-set `false` lagi (keluar dari mode input baris itu otomatis), state loading lokal
+`savingRow` men-disable tombol selama proses & ganti teks jadi "Saving...".
+
+**2 bug susulan lagi (2026-09, laporan yang SAMA: "tombol save all pada edit masal seperti
+tidak berfungsi... tidak bisa simpan ke database", DAN "jika edit per baris kenapa tombol save
+all edit masal muncul juga lae? harusnya tidak muncul")**:
+1. **Bar "Save All" muncul walau lagi edit PER-BARIS (bukan edit massal)** — kondisi tampil bar
+   sebelumnya cuma `courierAuditChangedRowIds.length > 0` (ADA pending edit apa pun, dari toggle
+   global MAUPUN dari tombol Edit satu baris — keduanya nulis ke `pendingEdits` yang sama, lihat
+   poin di atas). FIX: tambah syarat `courierAuditEditMode`/`courierRekapanEditMode` (toggle
+   GLOBAL) di kondisi tampil bar (~baris sebelum `<AlertTriangle>`) — bar "Save All" SEKARANG
+   CUMA muncul kalau mode edit GLOBAL sedang aktif, bukan cuma krn ada 1 baris pending dari edit
+   manual per-baris (yang punya tombol Save sendiri, lihat poin di atas).
+2. **Save All "kelihatan tidak simpan ke DB"** — `handleInlineSaveRow` sebenarnya SUDAH patch
+   `records` state lokal secara optimis begitu sukses (`setRecords(prev => prev.map(...))`), tapi
+   TIDAK PERNAH panggil `fetchRecords()` (refetch penuh dari server) setelahnya — kalau ternyata
+   ada kasus dimana update Supabase "sukses" (tidak error) tapi sebenarnya 0 baris ke-update (mis.
+   RLS `USING` clause diam-diam memfilter baris tanpa melempar error — perilaku umum Postgres RLS
+   utk UPDATE), tampilan tetap kelihatan "berhasil" padahal DB tidak berubah, dan setelah
+   navigasi/refresh manual baru ketahuan datanya balik ke nilai lama. FIX (defensif, ROOT CAUSE
+   PASTI belum terverifikasi krn belum ada akses DB langsung/log Supabase dari sesi manapun):
+   (a) `handleSaveAllCourierAuditEdits`/`Rekapan` & `handleSaveOneCourierAuditRow`/`Rekapan`
+   SEKARANG panggil `fetchRecords()` setelah ada minimal 1 baris sukses disimpan, supaya tabel
+   selalu mencerminkan state DB SEBENARNYA, bukan cuma patch optimis; (b) `handleInlineSaveRow`
+   SEKARANG SELALU `console.error('handleInlineSaveRow failed:', { id, payload, error })` di
+   blok catch (sebelumnya kalau dipanggil dgn `silent=true` — SEMUA pemanggil bulk-edit pakai
+   `silent=true` — errornya benar-benar hilang tanpa jejak apa pun, termasuk di console).
+   Kalau user lapor lagi "tidak tersimpan" setelah fix ini, MINTA screenshot Console (F12) dulu —
+   sekarang harus ada log `handleInlineSaveRow failed: {...}` di sana yang nunjukin pesan error
+   asli dari Supabase (mis. kolom tidak ada di tabel tujuan — lihat RESIKO PIB/CN id collision di
+   atas — atau RLS) — JANGAN tebak-tebak lagi tanpa lihat pesan itu.
+
+**ROOT CAUSE Save All ketemu & diperbaiki (2026-09, susulan lagi)** — setelah user konfirmasi
+"edit perbaris sudah berhasil simpan" TAPI Save All (edit massal) masih gagal, bandingkan 2 jalur
+kode itu ketemu bedanya: **tipe data `id`**. Kolom `id` bertipe `bigint`/`int8` di Postgres
+(kemungkinan `tabel_audit_pib`/`tabel_audit_cn`, cek skema asli kalau perlu verifikasi)
+dikembalikan Supabase-js sbg **STRING** (bukan JS number, demi mencegah presisi hilang di angka
+besar) — sedangkan kolom `int4` biasa dikembalikan sbg number. Tombol Save PER-BARIS meneruskan
+`rec.id` APA ADANYA (tipe aslinya, entah string atau number) ke `handleInlineSaveRow`, jadi
+`records.find(r => r.id === id)` di dalamnya selalu cocok. TAPI `courierAuditChangedRowIds`/
+`courierRekapanChangedRowIds` (dipakai Save All) sebelumnya PAKSA `.map(([id]) => Number(id))` —
+kalau `id` aslinya string bigint, hasil `Number(id)` jadi tipe BEDA dari `r.id` yang masih
+string, jadi `r.id === id` (strict equality) SELALU `false` → `records.find(...)` selalu
+`undefined` → `if (!record) return false;` → gagal DIAM-DIAM (early return SEBELUM try/catch
+sempat jalan, jadi TIDAK ADA console.error/alert sama sekali, cocok dgn laporan user "modal
+konfirmasi/bar tidak hilang, tidak ada pesan apa pun"). FIX (2 sisi, HARUS bareng):
+1. `courierAuditPendingEdits`/`courierRekapanPendingEdits` diubah tipe dari `Record<number, ...>`
+   ke **`Record<string, ...>`** (state tetap JS object biasa jadi ini murni perbaikan tipe TS,
+   TIDAK ada perubahan runtime), dan `courierAuditChangedRowIds`/`courierRekapanChangedRowIds`
+   TIDAK LAGI `Number(id)` — dibiarkan string apa adanya (key asli dari `Object.entries`).
+2. `handleInlineSaveRow` (parameter `id` sekarang `number | string`) — SEMUA perbandingan
+   `r.id === id`/pencarian record via id (4 titik: `sea_air_audit` depKeys block, `sea_air_
+   rekapan`, `courier_audit`, plus `setRecords` optimistic patch di akhir) diganti jadi
+   `String(r.id) === String(id)` — perbandingan berbasis string SELALU konsisten apa pun tipe asli
+   `r.id` (number ATAU string), jadi imun dari mismatch tipe int4-vs-bigint ini. **Kalau nanti
+   nambah cabang baru di `handleInlineSaveRow` yang butuh cari record via id, WAJIB pakai pola
+   `String(r.id) === String(id)` ini juga, JANGAN `r.id === id` polos lagi.**
+
+**Tombol Action tetap terbuka saat Edit per-baris (2026-09, susulan)** — laporan user: "jika edit
+perbaris harusnya tombol aksi nya tetap muncul, supaya untuk simpan bisa mudah". Sebelumnya klik
+"Edit" ikut `setShowActions(false)` (menutup panel Action), jadi tombol "💾 Save" yang baru muncul
+langsung ikut tersembunyi juga — user harus buka lagi panel Action manual utk klik Save. FIX:
+tombol Edit SEKARANG cuma `setRowEditOn(v => !v)` TANPA menutup panel Action — panel tetap
+terbuka (`showActions` tidak disentuh) supaya tombol Save langsung kelihatan & bisa diklik tanpa
+buka-tutup panel lagi. Tombol Save & aksi lain (Checklist/Delete/dst) TETAP menutup panel setelah
+diklik seperti biasa (`setShowActions(false)` di situ tidak diubah) — cuma tombol Edit yang
+dikecualikan.
+
 **Implementasi** (state di komponen induk `SharedDataTable`, ~baris 2737-2758):
 - `courierAudit{EditMode,PendingEdits}` + `courierRekapan{EditMode,PendingEdits}` — state
   TERPISAH per sub-tab (bukan digabung), supaya tidak ada state nyasar antar tab.
 - `getCourierAuditVal`/`setCourierAuditVal`/`courierAuditChangedRowIds` (dan pasangan
-  Rekapan-nya) — helper murni. TIDAK ADA `toggleCourierAuditEditRow` lagi (fungsi toggle per-baris
-  sudah dihapus total) — toggle sekarang langsung `setCourierAuditEditMode(v => !v)` dari tombol
-  toolbar.
-- `CourierAuditRowGroup`/`CourierRekapanRowGroup` terima prop `editMode?: boolean` (BUKAN
-  `editingRowId`/`onToggleEdit` lagi) — `editingThisRow = !!editMode && canBulkEdit` (Audit masih
-  ada gate tambahan `rec.status !== 'LENGKAP'`). Kedua row-group TIDAK PUNYA tombol "Edit" lagi
-  di panel Action-nya (sudah dihapus) — panel Action sekarang isinya cuma
-  Checklist/Validasi/Cost/Archive/Undraft/Delete.
+  Rekapan-nya) — helper murni. TIDAK ADA `toggleCourierAuditEditRow` di level PARENT lagi (toggle
+  per-baris sekarang murni state lokal `rowEditOn` di dalam row-group masing-masing, lihat di
+  atas) — toggle GLOBAL tetap langsung `setCourierAuditEditMode(v => !v)` dari tombol toolbar.
+- `CourierAuditRowGroup`/`CourierRekapanRowGroup` terima prop `editMode?: boolean` (mode global
+  dari parent) DIGABUNG dengan state lokal `rowEditOn` (mode manual per-baris) —
+  `editingThisRow = (!!editMode || rowEditOn) && canBulkEdit` (Audit masih ada gate tambahan
+  `rec.status !== 'LENGKAP'`). Kedua row-group PUNYA tombol "Edit"/"Editing" lagi di panel Action
+  (paling atas, sebelum Checklist/Validasi/Cost/Archive/Undraft/Delete).
+- **Bug (ditemukan & diperbaiki 2026-09)**: `courierAuditChangedRowIds`/`courierRekapanChangedRowIds`
+  awalnya dihitung `Object.keys(pendingEdits).map(Number).filter(id =>
+  Object.keys(pendingEdits[id]).length > 0)` — pola ini RAWAN CRASH (`TypeError: Cannot convert
+  undefined or null to object` di `Object.keys`) kalau key asli di `pendingEdits` bukan string
+  numerik kanonik (mis. baris tanpa `id` valid, key jadi `"undefined"`, lalu `Number("undefined")`
+  = `NaN` dipakai sbg index balik `pendingEdits[NaN]` → dicoba akses properti `"NaN"` yang TIDAK
+  ADA → `undefined` → `Object.keys(undefined)` meledak). User lapor "layar putih" (React unmount
+  total, tidak ada error boundary) begitu ngedit sebuah field (mis. tanggal) di mode edit massal.
+  FIX: ganti ke `Object.entries(pendingEdits).filter(([, edits]) => edits &&
+  Object.keys(edits).length > 0).map(([id]) => Number(id))` — TIDAK PERNAH re-index balik ke
+  object pakai key yang sudah di-coerce, jadi aman dari mismatch key apa pun bentuknya.
 - **`handleInlineSaveRow` DIPAKAI ULANG untuk commit** (parameter ke-3 `silent?: boolean` supaya
   bulk-save tidak memicu N `alert()` terpisah kalau beberapa baris gagal — cukup 1 alert
   ringkasan di akhir) — SATU-SATUNYA tempat resolusi tabel tujuan (PIB vs CN vs

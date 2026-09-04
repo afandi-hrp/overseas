@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
 import { PAGE_REGISTRY, PAGE_GROUPS } from '../lib/permissions';
-import { Plus, Trash2, ShieldCheck, Users, LayoutGrid, X, Check } from 'lucide-react';
+import { Plus, Trash2, ShieldCheck, Users, LayoutGrid, X, Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 import Greeting from '../components/Greeting';
 
 type Role = { id: string; name: string; description: string | null; is_protected: boolean };
@@ -25,6 +25,17 @@ export default function RoleManagementPage() {
   const [savingNewRole, setSavingNewRole] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [userSearch, setUserSearch] = useState('');
+  // Grup halaman yang di-collapse di matrix akses -- makin banyak halaman & role, matrix bisa
+  // sangat panjang ke bawah, jadi tiap grup bisa diciutkan satu-satu (atau semua sekaligus lewat
+  // tombol Ciutkan/Bentangkan Semua) supaya halaman ini tetap ringkas & mudah dipindai.
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const toggleGroup = (group: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(group)) next.delete(group); else next.add(group);
+      return next;
+    });
+  };
 
   const showToast = (msg: string, type: 'success' | 'error') => {
     setToast({ msg, type });
@@ -252,28 +263,50 @@ export default function RoleManagementPage() {
             {/* Matrix akses halaman per role */}
             <div className="relative bg-white/40 backdrop-blur-xl rounded-2xl border border-[#5A305A]/25 shadow-[0_4px_24px_rgba(90,48,90,0.08)] p-6 overflow-hidden">
               <div className="absolute -bottom-24 -right-16 w-64 h-64 bg-gradient-to-tl from-[#73507B]/15 to-transparent rounded-full blur-3xl pointer-events-none" />
-              <div className="relative flex items-center gap-2 mb-1">
-                <LayoutGrid size={17} className="text-[#5A305A]" />
-                <h2 className="font-bold text-[#5A305A]">Akses Halaman per Role</h2>
+              <div className="relative flex items-center justify-between gap-3 mb-1 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <LayoutGrid size={17} className="text-[#5A305A]" />
+                  <h2 className="font-bold text-[#5A305A]">Akses Halaman per Role</h2>
+                  <span className="text-[11px] font-medium text-[#5A305A]/50">{PAGE_REGISTRY.length} halaman · {PAGE_GROUPS.length} grup</span>
+                </div>
+                <button
+                  onClick={() => setCollapsedGroups(prev => prev.size >= PAGE_GROUPS.length ? new Set() : new Set(PAGE_GROUPS))}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-[#5A305A]/20 bg-white/70 text-[#5A305A] text-[11px] font-semibold hover:bg-white transition-colors"
+                >
+                  {collapsedGroups.size >= PAGE_GROUPS.length ? <ChevronsUpDown size={12} /> : <ChevronsDownUp size={12} />}
+                  {collapsedGroups.size >= PAGE_GROUPS.length ? 'Bentangkan Semua' : 'Ciutkan Semua'}
+                </button>
               </div>
               <div className="relative rounded-xl border border-[#5A305A]/12 bg-white/85 backdrop-blur-md shadow-inner overflow-hidden">
-                <div className="overflow-x-auto">
+                <div className="overflow-auto max-h-[520px]">
                   <table className="w-full text-xs border-collapse min-w-[500px]">
                     <thead>
                       <tr className="text-[10px] text-[#5A305A]/80 uppercase tracking-wider">
-                        <th className="text-left font-bold px-4 py-3 sticky left-0 bg-[#FAF7F5] border-b border-[#5A305A]/12">Halaman</th>
+                        <th className="text-left font-bold px-4 py-3 sticky left-0 top-0 z-20 bg-[#FAF7F5] border-b border-[#5A305A]/12">Halaman</th>
                         {roles.map(role => (
-                          <th key={role.id} className="text-center font-bold px-4 py-3 whitespace-nowrap border-b border-[#5A305A]/12">{role.name}</th>
+                          <th key={role.id} className="text-center font-bold px-4 py-3 whitespace-nowrap sticky top-0 z-10 bg-[#FAF7F5] border-b border-[#5A305A]/12">{role.name}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {PAGE_GROUPS.map(group => (
+                      {PAGE_GROUPS.map(group => {
+                        const groupPages = PAGE_REGISTRY.filter(p => p.group === group);
+                        const isCollapsed = collapsedGroups.has(group);
+                        return (
                         <React.Fragment key={group}>
                           <tr>
-                            <td colSpan={roles.length + 1} className="px-4 py-2 text-[10px] font-bold text-[#5A305A]/80 uppercase tracking-widest bg-[#FFF5C5] border-b border-[#5A305A]/10">{group}</td>
+                            <td colSpan={roles.length + 1} className="p-0 sticky left-0 border-b border-[#5A305A]/10">
+                              <button
+                                onClick={() => toggleGroup(group)}
+                                className="w-full flex items-center gap-1.5 px-4 py-2 text-[10px] font-bold text-[#5A305A]/80 uppercase tracking-widest bg-[#FFF5C5] hover:bg-[#FFF0A8] transition-colors text-left"
+                              >
+                                {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                                {group}
+                                <span className="normal-case font-medium text-[#5A305A]/50 tracking-normal">({groupPages.length})</span>
+                              </button>
+                            </td>
                           </tr>
-                          {PAGE_REGISTRY.filter(p => p.group === group).map(page => (
+                          {!isCollapsed && groupPages.map(page => (
                             <tr key={page.key} className="group/row hover:bg-[#5A305A]/[0.04] transition-colors">
                               <td className="px-4 py-2 text-[#5A305A] sticky left-0 bg-white group-hover/row:bg-[#FAF7F5] transition-colors border-b border-slate-100">{page.label}</td>
                               {roles.map(role => {
@@ -315,7 +348,8 @@ export default function RoleManagementPage() {
                             </tr>
                           ))}
                         </React.Fragment>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -329,6 +363,9 @@ export default function RoleManagementPage() {
                 <div className="flex items-center gap-2">
                   <Users size={17} className="text-[#5A305A]" />
                   <h2 className="font-bold text-[#5A305A]">Role per User</h2>
+                  <span className="text-[11px] font-medium text-[#5A305A]/50">
+                    {filteredProfiles.length}{filteredProfiles.length !== profiles.length ? ` dari ${profiles.length}` : ''} user
+                  </span>
                 </div>
                 <input
                   value={userSearch}
@@ -337,7 +374,7 @@ export default function RoleManagementPage() {
                   className="border border-[#5A305A]/25 bg-white/70 backdrop-blur-sm rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A] w-56"
                 />
               </div>
-              <div className="relative divide-y divide-[#5A305A]/10">
+              <div className="relative rounded-xl border border-[#5A305A]/12 bg-white/60 backdrop-blur-md shadow-inner overflow-y-auto max-h-[420px] divide-y divide-[#5A305A]/10 px-4">
                 {filteredProfiles.length === 0 ? (
                   <p className="text-xs text-[#5A305A] italic text-center py-6">Tidak ada user ditemukan.</p>
                 ) : filteredProfiles.map(p => {

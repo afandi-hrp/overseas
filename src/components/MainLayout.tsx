@@ -55,6 +55,7 @@ const MAIN_TABS = [
       { id: 'bunker', label: 'Bunker', path: '/bunker', pageKey: 'bunker' },
       { id: 'audit_po', label: 'Audit AP Local', path: '/audit-po', pageKey: 'audit_po' },
       { id: 'audit_po_overseas', label: 'Audit AP Overseas', path: '/audit-po-overseas', pageKey: 'audit_po_overseas' },
+      { id: 'pi_local', label: 'PI Local', path: '/pi-local', pageKey: 'pi_local' },
     ]
   },
   {
