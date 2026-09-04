@@ -804,14 +804,91 @@ Komentar kode & isi CLAUDE.md ini SENGAJA TETAP Bahasa Indonesia (bukan bagian d
   otomatis punya entry PIC di `approvals`-nya (tidak ada migrasi data retroaktif), jadi kolom
   "Disiapkan Oleh" utk memo lama itu cuma nampilin nama Exim tanpa PIC — ini WAJAR utk data lama,
   bukan bug.
-  **Nama approver tahap PIC TIDAK BISA diketik manual** (2026-09, permintaan user) — di
-  `ApprovalConfirmModal`, field "Approver Name" untuk step `'PIC'` dirender READ-ONLY (teks
-  statis, bukan `<input>`), SELALU ikut `defaultNamaForStep('PIC')` (= `profile?.nama ||
-  user?.email`, nama user yang sedang login) — beda dari tahap TIER1/TIER2/TIER3 yang tetap
-  boleh diedit bebas (approver-nya bisa beda dari yang login, mis. admin approve atas nama orang
-  di `signer_config`). Kalau nanti nambah tahap approval baru (di modul manapun) yang juga mau
-  perilaku "auto dari nama login, tidak bisa diketik", ikuti pola `nameEditable` di
-  `ApprovalConfirmModal` ini.
+  **Nama approver TIDAK BISA diketik manual di SEMUA tahap** (2026-09, VERSI FINAL — sebelumnya
+  cuma berlaku utk PIC, sekarang diperluas ke semua tahap, jangan reintroduce input `<input>`
+  editable di `ApprovalConfirmModal` manapun) — field "Approver Name" di `ApprovalConfirmModal`
+  SELALU tampil sbg teks statis (bukan input), diisi apa adanya dari `defaultNamaForStep(step)`:
+  - **TIER1 (Exim) & PIC**: `profile?.nama || user?.email` — nama USER YANG SEDANG LOGIN (identitas
+    orang yang benar-benar klik approve).
+  - **TIER2 (SPV) & TIER3 (Direktur)**: `signer?.tier2_name`/`signer?.tier3_name` dari
+    `far_overseas_signer_config` — TETAP nama resmi jabatan itu per company, SENGAJA TIDAK
+    pernah ikut berubah jadi nama user yang login, supaya tanda tangan SPV/Direktur di memo
+    selalu konsisten dgn identitas resmi perusahaan siapa pun staff yang memprosesnya secara
+    teknis (permintaan eksplisit user 2026-09: "nama di memo tidak berubah jadi nama user
+    approval, tetap apa adanya").
+  Kalau nanti nambah tahap approval baru (di modul manapun), tentukan dulu termasuk kategori
+  mana (identitas personal login vs jabatan resmi tetap) sebelum isi `defaultNamaForStep`-nya.
+  **Reject dibatasi HANYA utk user yang punya jabatan approval APA SAJA** (2026-09, permintaan
+  user) — `canReject = !!approvalTiersByPage['direct_loading']` (lihat komponen utama), tombol
+  Reject SAMA SEKALI TIDAK dirender kalau user itu `canEditDirectLoading` tapi TIDAK punya baris
+  `user_approval_tiers` apa pun utk halaman ini (SENGAJA TIDAK PERLU tier yang PERSIS cocok
+  dgn tahap yang sedang berjalan seperti approve, cukup punya jabatan APAPUN di halaman ini).
+  TIDAK ADA bypass `isAdmin`, sama pola dgn `canApproveTier`.
+  **Enforcement server-side (2026-09) — RPC `reject_far_overseas_air`**: reject SEKARANG lewat
+  RPC ini (`SECURITY DEFINER`), BUKAN lagi `.update()` langsung ke `rekapan_far_overseas_air`
+  (versi sebelumnya cuma gating frontend, itu jadi RIWAYAT — sudah DIGANTI, jangan reintroduce
+  `.update()` langsung utk reject). RPC-nya **BELUM DIJALANKAN ke Supabase production — WAJIB
+  dijalankan manual dulu** (kalau belum, tombol Reject akan error "function does not exist"
+  begitu diklik):
+  ```sql
+  create or replace function public.reject_far_overseas_air(
+    p_id uuid,          -- SESUAIKAN tipe ini kalau `rekapan_far_overseas_air.id` BUKAN uuid
+    p_reason text
+  )
+  returns jsonb
+  language plpgsql
+  security definer
+  as $$
+  declare
+    v_current_status text;
+  begin
+    if not public.has_edit_access('direct_loading') then
+      raise exception 'Not authorized to edit FAR Overseas Air memos';
+    end if;
+
+    -- Cukup punya jabatan approval APAPUN utk halaman ini (tidak perlu cocok tahap tertentu,
+    -- beda dari approve_far_overseas_air yang mensyaratkan tier PERSIS sesuai tahap berjalan).
+    if not exists (
+      select 1 from public.user_approval_tiers uat
+      where uat.user_id = auth.uid() and uat.page_key = 'direct_loading'
+    ) then
+      raise exception 'You do not have an approval role for this page';
+    end if;
+
+    if p_reason is null or btrim(p_reason) = '' then
+      raise exception 'Rejection reason is required';
+    end if;
+
+    select approval_status into v_current_status
+    from public.rekapan_far_overseas_air
+    where id = p_id
+    for update;
+
+    if not found then
+      raise exception 'Memo not found: %', p_id;
+    end if;
+
+    if v_current_status in ('APPROVED', 'REJECTED') then
+      raise exception 'This memo cannot be rejected (current status: %)', v_current_status;
+    end if;
+
+    update public.rekapan_far_overseas_air
+    set approval_status = 'REJECTED',
+        notes = p_reason
+    where id = p_id;
+
+    return jsonb_build_object('approval_status', 'REJECTED', 'notes', p_reason);
+  end;
+  $$;
+
+  grant execute on function public.reject_far_overseas_air(uuid, text) to authenticated;
+  ```
+  Guard 4-lapis: (1) `has_edit_access('direct_loading')`, (2) user harus punya baris
+  `user_approval_tiers` APAPUN utk `direct_loading` (bukan tier spesifik), (3) `p_reason` wajib
+  diisi (non-empty setelah trim), (4) `approval_status` SAAT INI tidak boleh sudah
+  `APPROVED`/`REJECTED` (`for update` row lock, sama pola dgn `approve_far_overseas_air`).
+  `handleReject` di `FarOverseasAirDetailModal.tsx` pakai APA ADANYA hasil `returns jsonb`
+  (`{approval_status, notes}`) buat update state lokal, TIDAK menghitung ulang sendiri.
 - **Document Validation** (`FarOverseasAirCostValidationModal.tsx`) — baris NAMA PT tiap PO yang
   namanya cocok (`looseNameMatch`) dengan `dominantPtName` (nama PT dari `dominant_company_code`,
   yang juga tampil di kolom PO baris CONCLUSION) dikasih centang hijau (`CheckCircle2`), supaya

@@ -90,38 +90,30 @@ function SignatureColumn({ label, role, entry, defaultNama, nameOverride }: { la
   );
 }
 
+// Nama approver TIDAK PERNAH bisa diketik manual lagi di modal ini (2026-09, permintaan user) --
+// SELALU dipakai apa adanya dari `defaultNama` yang dikirim pemanggil: utk Exim/PIC itu nama user
+// yang sedang login (identitas orang yang benar-benar klik approve), utk SPV/Direktur itu TETAP
+// nama resmi dari `far_overseas_signer_config` (tier2_name/tier3_name) -- SENGAJA TIDAK ikut
+// berubah jadi nama user yang login, supaya tanda tangan SPV/Direktur di memo selalu konsisten
+// dgn identitas resmi jabatan itu di perusahaan, siapa pun staff yang memprosesnya. Lihat
+// `defaultNamaForStep` di komponen utama utk sumber nilainya masing-masing tahap.
 function ApprovalConfirmModal({ step, role, defaultNama, onConfirm, onClose, submitting }: {
   step: ApprovalStep; role: string; defaultNama: string; onConfirm: (nama: string) => void; onClose: () => void; submitting: boolean;
 }) {
-  const [nama, setNama] = useState(defaultNama);
-  // PIC SENGAJA tidak boleh mengetik nama sendiri (permintaan user, 2026-09) -- nama SELALU ikut
-  // nama user yang login (defaultNama, dari profile?.nama||user?.email), murni ditampilkan sbg
-  // teks konfirmasi. Tahap lain (Exim/SPV/Direktur) tetap boleh diedit krn approver-nya bisa beda
-  // dari yang login (mis. admin approve atas nama signer_config).
-  const nameEditable = step !== 'PIC';
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
         <h3 className="font-bold text-[#5A305A] mb-1">Confirm Approval — {STEP_LABEL[step]}</h3>
         <p className="text-xs text-[#5A305A] mb-4">Role: <span className="font-semibold">{role || '-'}</span></p>
         <label className="block text-xs font-semibold text-[#5A305A] mb-1">Approver Name</label>
-        {nameEditable ? (
-          <input
-            value={nama}
-            onChange={e => setNama(e.target.value)}
-            autoFocus
-            className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm mb-5 focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A]"
-          />
-        ) : (
-          <p className="w-full border border-slate-200 bg-slate-50 rounded-xl px-3 py-2 text-sm mb-5 text-[#5A305A] font-semibold">{nama || '-'}</p>
-        )}
+        <p className="w-full border border-slate-200 bg-slate-50 rounded-xl px-3 py-2 text-sm mb-5 text-[#5A305A] font-semibold">{defaultNama || '-'}</p>
         <div className="grid grid-cols-2 gap-2">
           <button onClick={onClose} disabled={submitting} className="py-2.5 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all disabled:opacity-50">
             Cancel
           </button>
           <button
-            onClick={() => onConfirm(nama.trim())}
-            disabled={submitting || !nama.trim()}
+            onClick={() => onConfirm(defaultNama.trim())}
+            disabled={submitting || !defaultNama.trim()}
             className="py-2.5 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-sm transition-all disabled:opacity-50"
           >
             {submitting ? 'Saving...' : 'Confirm'}
@@ -165,8 +157,13 @@ function RejectModal({ onConfirm, onClose, submitting }: { onConfirm: (reason: s
 }
 
 export default function FarOverseasAirDetailModal({ record, onClose, onChanged }: { record: any; onClose: () => void; onChanged?: () => void }) {
-  const { user, profile, canEdit, canApproveTier } = useAuth();
+  const { user, profile, canEdit, canApproveTier, approvalTiersByPage } = useAuth();
   const canEditDirectLoading = canEdit('direct_loading');
+  // Reject HANYA boleh dilakukan user yang punya jabatan approval APA SAJA utk halaman ini (2026-09,
+  // permintaan user) -- user yang cuma py akses edit halaman (canEditDirectLoading) tapi TIDAK
+  // punya baris `user_approval_tiers` sama sekali utk `direct_loading` tidak boleh reject. TIDAK
+  // ADA bypass isAdmin di sini, sama pola dgn `canApproveTier`.
+  const canReject = !!approvalTiersByPage['direct_loading'];
   const [rec, setRec] = useState(record);
   const [signer, setSigner] = useState<SignerConfig | null>(null);
   const [showPoDetail, setShowPoDetail] = useState(false);
@@ -234,14 +231,18 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
     }
   };
 
+  // Lewat RPC `reject_far_overseas_air` (SECURITY DEFINER, guard jabatan approval + status
+  // saat ini DI DALAM function-nya, lihat CLAUDE.md) -- BUKAN `.update()` langsung lagi, supaya
+  // batasan "cuma user berjabatan approval yang boleh reject" ditegakkan di server juga (bukan
+  // cuma sembunyikan tombol di frontend), sama pola dengan `handleApprove`.
   const handleReject = async (reason: string) => {
     setSubmitting(true);
-    const { error } = await supabase.from('rekapan_far_overseas_air').update({ approval_status: 'REJECTED', notes: reason }).eq('id', rec.id);
+    const { data, error } = await supabase.rpc('reject_far_overseas_air', { p_id: rec.id, p_reason: reason });
     setSubmitting(false);
-    if (error) {
-      showToast('Failed to reject memo: ' + error.message, 'error');
+    if (error || !data) {
+      showToast('Failed to reject memo: ' + (error?.message || 'unknown error'), 'error');
     } else {
-      setRec({ ...rec, approval_status: 'REJECTED', notes: reason });
+      setRec({ ...rec, approval_status: data.approval_status, notes: data.notes });
       setShowReject(false);
       showToast('Memo rejected.', 'success');
       onChanged?.();
@@ -417,9 +418,11 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
                   )}
                 </p>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => setShowReject(true)} className="px-4 py-2 rounded-xl border border-rose-300 text-rose-600 font-semibold text-sm hover:bg-rose-50 transition-all flex items-center gap-1.5">
-                    <Ban size={15} /> Reject
-                  </button>
+                  {canReject && (
+                    <button onClick={() => setShowReject(true)} className="px-4 py-2 rounded-xl border border-rose-300 text-rose-600 font-semibold text-sm hover:bg-rose-50 transition-all flex items-center gap-1.5">
+                      <Ban size={15} /> Reject
+                    </button>
+                  )}
                   {nextStep != null && canApproveTier('direct_loading', nextStep) && (
                     <button onClick={() => setConfirmStep(nextStep)} className="px-4 py-2 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-sm transition-all flex items-center gap-1.5">
                       <Stamp size={15} /> {STEP_ACTION_LABEL[nextStep]}
