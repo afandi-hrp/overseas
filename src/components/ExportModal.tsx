@@ -66,12 +66,6 @@ const fmtDateTime = (v: any) => {
 // jadi satu sel (karena nilainya sama utk semua PO dalam 1 shipment).
 const SEA_AIR_SPLIT_REPEATING_COLS = ['po_no', 'vessel', 'emkl_split', 'split_biaya_origin', 'split_biaya_destination', 'pbm_split', 'lift_off_split', 'inspeksi_split', 'handling_split', 'other_split', 'duty_split', 'bm_split', 'ppn_split', 'pph_split'];
 
-// Sama seperti di atas, tapi utk Rekapan Courier (lihat repeatingCols di CourierRekapanRowGroup,
-// SharedDataTable.tsx) -- strukturnya beda dari Sea & Air: PO & vessel di sini BUKAN array JSON
-// po_detail, melainkan 2 kolom teks terpisah (po_pt_imi, vessel) yang masing-masing berisi
-// beberapa nilai digabung "+"/"," dan dipasangkan berdasarkan urutan (index ke-i sama-sama).
-const COURIER_REKAPAN_SPLIT_REPEATING_COLS = ['po_pt_imi', 'vessel', 'breakdown_courier_adm_vessel', 'breakdown_duty_vessel', 'breakdown_freight_vessel', 'breakdown_bm_vessel', 'breakdown_ppnpph_vessel'];
-
 const isNumType = (type: string, key: string) => key === 'cek_selisih' || type.startsWith('num')
 const isPctType = (type: string) => type.startsWith('pct')
 
@@ -86,24 +80,6 @@ const parsePoDetail = (item: any): any[] => {
     }
   } catch (e) { /* fall through */ }
   return [{ po_no: '', vessel: '' }]
-}
-
-// Parsing po_pt_imi/vessel sama persis dgn CourierRekapanRowGroup (SharedDataTable.tsx).
-const parseCourierPoVesselPairs = (item: any): { po: string, vessel: string }[] => {
-  let pairs: { po: string, vessel: string }[] = []
-  if (typeof item?.po_pt_imi === 'string') {
-    const pos = item.po_pt_imi.split(/[+,]+/).map((s: string) => s.trim()).filter(Boolean)
-    const vessels = typeof item?.vessel === 'string' ? item.vessel.split(/[+,]+/).map((s: string) => s.trim()).filter(Boolean) : []
-    const maxLen = Math.max(pos.length, vessels.length)
-    for (let i = 0; i < maxLen; i++) {
-      pairs.push({
-        po: pos[i] || (pos.length === 1 ? pos[0] : ''),
-        vessel: vessels[i] || (vessels.length === 1 ? vessels[0] : '')
-      })
-    }
-  }
-  if (pairs.length === 0) pairs = [{ po: '', vessel: '' }]
-  return pairs
 }
 
 const formatValue = (v: any, type: string, key: string) => {
@@ -279,19 +255,35 @@ export default function ExportModal({
         })
       }
 
-      // Bangun daftar override per baris-split + kolom mana yang "ikut per-PO" (repeating),
-      // tergantung mode-nya -- lihat parsePoDetail (Sea & Air) vs parseCourierPoVesselPairs
-      // (Courier) di atas. Return null kalau splitByPoDetail tidak aktif utk mode ini.
+      // Highlight baris Rekapan Courier yang submit_date-nya terisi (2026-09, permintaan user)
+      // -- replika warna PERSIS highlight baris di tabel on-screen (`CourierRekapanRowGroup`,
+      // bg-[#FFF5C5], lihat CLAUDE.md "Highlight baris Submit Date -- Rekapan Courier"), supaya
+      // baris yang kuning di aplikasi tetap kuning di Excel, yang putih tetap putih. HANYA aktif
+      // utk export Rekapan Courier (`splitByPoDetail === 'courier_rekapan'`) -- Sea & Air/Audit/
+      // export lain TIDAK ikut ter-warnai krn tidak lewat cabang ini.
+      const applySubmitDateHighlight = (row: any, item: any) => {
+        if (splitByPoDetail !== 'courier_rekapan') return
+        if (!String(item?.submit_date ?? '').trim()) return
+        row.eachCell({ includeEmpty: true }, (cell: any) => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF5C5' } }
+        })
+      }
+
+      // Bangun daftar override per baris-split + kolom mana yang "ikut per-PO" (repeating) --
+      // SEKARANG cuma dipakai utk Sea & Air Rekapan (lihat parsePoDetail di atas). Return null
+      // kalau splitByPoDetail tidak aktif/tidak didukung lagi utk mode ini.
       const getSplitRows = (item: any): { overrides: Record<string, any> }[] | null => {
         if (splitByPoDetail === 'sea_air_rekapan') {
           return parsePoDetail(item).map((po: any) => ({ overrides: { po_no: po.po_no ?? '', vessel: po.vessel ?? '' } }))
         }
-        if (splitByPoDetail === 'courier_rekapan') {
-          return parseCourierPoVesselPairs(item).map(p => ({ overrides: { po_pt_imi: p.po, vessel: p.vessel } }))
-        }
+        // Rekapan Courier (2026-09, permintaan user): SEBELUMNYA di-split per PO jadi banyak
+        // baris Excel (sama pola dgn Sea & Air di atas), sekarang SENGAJA TIDAK di-split lagi --
+        // po_pt_imi/po_shipping/vessel/breakdown_* sudah tersimpan ter-gabung tanda "+" apa
+        // adanya di kolom aslinya, jadi cukup 1 baris per shipment, ditampilkan langsung lewat
+        // buildCellValue(item, c, undefined, false) di bawah (bukan lewat override per-PO).
         return null
       }
-      const splitRepeatingCols = splitByPoDetail === 'courier_rekapan' ? COURIER_REKAPAN_SPLIT_REPEATING_COLS : SEA_AIR_SPLIT_REPEATING_COLS
+      const splitRepeatingCols = SEA_AIR_SPLIT_REPEATING_COLS
 
       data.forEach((item, idx) => {
         const splitRows = getSplitRows(item)
@@ -332,6 +324,7 @@ export default function ExportModal({
         })
         const row = worksheet.addRow(rowValues)
         applyNumberFormat(row)
+        applySubmitDateHighlight(row, item)
       })
 
       // Header -- warna beda dari isi list-nya

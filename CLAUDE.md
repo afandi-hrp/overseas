@@ -1403,6 +1403,54 @@ dibatasi cuma render di `CourierRekapanRowGroup` — tapi `invoice_type`/`type: 
 ini CUMA ada di `COURIER_COLS` (Rekapan Courier), jadi secara praktis efeknya cuma kelihatan di
 situ.
 
+### Export Excel Rekapan Courier — PO PT IMI/PO Non IMI/Vessel TIDAK di-split lagi (`src/components/ExportModal.tsx`, 2026-09)
+
+Export Excel di halaman **Rekapan Courier** (Invoice Recap) SEBELUMNYA memecah 1 shipment jadi
+BANYAK baris Excel kalau `po_pt_imi`/`vessel` punya lebih dari 1 nilai (mis. 4 PO → 4 baris
+Excel, kolom lain di-merge/`mergeCells` supaya kelihatan 1 kesatuan) — pola ini REPLIKA dari
+split serupa yang sudah lebih dulu ada utk Rekapan Sea & Air (`po_detail`, array JSON per-PO).
+**Diganti (permintaan user, dikonfirmasi HANYA utk Rekapan Courier — TIDAK menyentuh Sea & Air
+Rekapan yang split-nya TETAP jalan seperti biasa)**: kolom `po_pt_imi`/`po_shipping`/`vessel`
+(& `breakdown_courier_adm_vessel`/`breakdown_duty_vessel`/`breakdown_freight_vessel`/
+`breakdown_bm_vessel`/`breakdown_ppnpph_vessel`) sekarang SELALU 1 baris per shipment di export,
+persis apa adanya nilai kolom di DB (yang MEMANG sudah tersimpan ter-gabung tanda `"+"`, mis.
+`"PO123 + PO456"` — beda dari Sea & Air yang PO/vessel-nya tidak ada sbg kolom teks langsung,
+cuma ada di `po_detail` JSON, jadi Sea & Air tetap butuh proses split/rebuild).
+- `getSplitRows()` di `ExportModal.tsx` — cabang `splitByPoDetail === 'courier_rekapan'`
+  DIHAPUS, sekarang SELALU `return null` kalau bukan `'sea_air_rekapan'`, jatuh ke jalur baris
+  normal (`buildCellValue(item, c, undefined, false)`, baca `item[c.key]` apa adanya).
+  `parseCourierPoVesselPairs()` & `COURIER_REKAPAN_SPLIT_REPEATING_COLS` (helper khusus split
+  Courier yg jadi dead code) DIHAPUS TOTAL, bukan cuma dibiarkan nganggur.
+- `SharedDataTable.tsx` masih mengirim prop `splitByPoDetail="courier_rekapan"` ke `ExportModal`
+  saat export dari tab Rekapan Courier (TIDAK diubah, sengaja dibiarkan) — value ini SEKARANG
+  cuma dipakai sbg penanda "bukan sea_air_rekapan" (selalu jatuh ke `return null`), tidak error
+  apa pun kalau dikirim, tapi kalau nanti mau bersih-bersih total boleh juga dihapus dari
+  pemanggilnya (di luar scope perubahan ini, sengaja tidak disentuh biar diff minimal).
+- Preview tabel di dalam modal (bagian atas `ExportModal.tsx`, `data.slice(0, 10)`) TIDAK
+  pernah melakukan split sama sekali (baca `row[c.key]` langsung) — jadi preview-nya dari awal
+  SUDAH selalu 1 baris per shipment, tidak ada perubahan tampilan preview krn fix ini.
+
+### Export Excel Rekapan Courier — highlight `submit_date` ikut ke Excel (`applySubmitDateHighlight`, 2026-09)
+
+Susulan dari fix split di atas: baris yang di aplikasi kelihatan kuning (highlight
+`submit_date` terisi, lihat bagian "Highlight baris Submit Date — Rekapan Courier" di atas)
+SEKARANG juga kuning di file Excel hasil export — baris yang putih di aplikasi tetap putih di
+Excel, TIDAK ada perubahan lain (angka/teks/format kolom tetap apa adanya).
+- `applySubmitDateHighlight(row, item)` di `ExportModal.tsx` (dekat `applyNumberFormat`) —
+  replika warna PERSIS dari highlight on-screen (`bg-[#FFF5C5]` → ARGB Excel `FFFFF5C5`), pakai
+  `row.eachCell({ includeEmpty: true }, cell => cell.fill = {...})` supaya SELURUH kolom di
+  baris itu ke-warnai (bukan cuma kolom yang kebetulan punya nilai).
+- Dipanggil di jalur baris normal (`data.forEach` di `handleExport`, setelah `applyNumberFormat`)
+  — cukup di situ SAJA krn jalur `splitRows` (dipakai Sea & Air Rekapan) sudah tidak pernah
+  aktif lagi utk `courier_rekapan` sejak fix split sebelumnya (lihat section di atas), jadi
+  SEMUA baris Rekapan Courier pasti lewat jalur normal ini.
+- Guard `splitByPoDetail !== 'courier_rekapan'` di baris pertama function — memastikan fitur ini
+  CUMA aktif utk export Rekapan Courier, TIDAK ikut mewarnai export Sea & Air Rekapan/Audit
+  Courier/lain-lain yang kebetulan lewat komponen `ExportModal` yang sama.
+- Kalau nanti warna highlight on-screen (`#FFF5C5`, lihat section "Highlight baris Submit Date")
+  diganti lagi, WAJIB disinkronkan ke sini juga (ganti literal ARGB `FFFFF5C5`) — supaya
+  aplikasi & hasil export tidak beda warna.
+
 ## Edit Massal — Audit Courier & Rekapan Courier (`src/components/SharedDataTable.tsx`, 2026-09)
 
 Fitur baru: banyak baris bisa punya perubahan (kolom BEDA-BEDA per baris) yang belum disimpan
