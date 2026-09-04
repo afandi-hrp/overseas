@@ -359,11 +359,9 @@ export default function FarOverseasAirPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [totalRecords, setTotalRecords] = useState(0);
-  // Filter approval per level -- ALL = tanpa filter, TIER1/TIER2/TIER3 map ke `approval_status`
-  // (kolom biasa, bisa difilter server-side via .eq()), PIC independen dari approval_status
-  // (cek array jsonb `approvals` tidak punya entry {tier:'PIC'}) jadi TIDAK bisa server-side
-  // filter simpel -- lihat fetchList di bawah, request PIC di-fetch semua lalu difilter+paginate
-  // di JS supaya tidak bergantung sintaks containment PostgREST yang belum sempat diverifikasi.
+  // Filter approval per level -- ALL = tanpa filter, TIER1/PIC/TIER2/TIER3 semuanya map ke
+  // `approval_status` biasa (rantai approval sekarang WAJIB berurutan Prepared By->PIC->SPV->
+  // Director, 2026-09) -- lihat APPROVAL_FILTER_STATUS di dekat fetchList.
   const [approvalFilter, setApprovalFilter] = useState<'ALL' | 'PIC' | 'TIER1' | 'TIER2' | 'TIER3'>('ALL');
   const [approvalCounts, setApprovalCounts] = useState({ pic: 0, tier1: 0, tier2: 0, tier3: 0 });
   const [queue, setQueue] = useState<any[]>([]);
@@ -442,38 +440,22 @@ export default function FarOverseasAirPage() {
     setCostStatusMap(map);
   }, []);
 
+  // Rantai approval WAJIB berurutan (2026-09): Prepared By(TIER1) -> PIC -> SPV(TIER2) ->
+  // Director(TIER3). PIC SEKARANG bagian `approval_status` biasa (bukan lagi independen di
+  // array `approvals`), jadi SEMUA level filter di bawah bisa server-side .eq() biasa --
+  // "Pending X" berarti `approval_status` masih di status SEBELUM X selesai:
+  // PENDING = pending TIER1, TIER1_DONE = pending PIC, PIC_DONE = pending TIER2 (SPV),
+  // TIER2_DONE = pending TIER3 (Director).
+  const APPROVAL_FILTER_STATUS: Record<'TIER1' | 'PIC' | 'TIER2' | 'TIER3', string> = {
+    TIER1: 'PENDING', PIC: 'TIER1_DONE', TIER2: 'PIC_DONE', TIER3: 'TIER2_DONE',
+  };
+
   const fetchList = useCallback(async () => {
     setLoadingList(true);
     const startIndex = (page - 1) * pageSize;
 
-    if (approvalFilter === 'PIC') {
-      // Persetujuan PIC INDEPENDEN dari `approval_status` (lihat approvals jsonb array) --
-      // TIDAK bisa difilter server-side pakai .eq() biasa, dan sengaja tidak pakai containment
-      // operator PostgREST (`cs`/`not.cs`) karena belum ada akses DB langsung utk verifikasi
-      // sintaksnya persis benar -- ambil SEMUA baris (bukan REJECTED), filter+paginate di JS.
-      const { data, error } = await supabase
-        .from('rekapan_far_overseas_air')
-        .select('*')
-        .neq('approval_status', 'REJECTED')
-        .order('created_at', { ascending: false });
-      if (!error && data) {
-        const filtered = data.filter((r: any) => {
-          const approvals = Array.isArray(r.approvals) ? r.approvals : [];
-          return !approvals.some((a: any) => a.tier === 'PIC');
-        });
-        setTotalRecords(filtered.length);
-        const pageRows = filtered.slice(startIndex, startIndex + pageSize);
-        setRows(pageRows);
-        await fetchCostStatusMap(pageRows.map((r: any) => r.id).filter(Boolean));
-      }
-      setLoadingList(false);
-      return;
-    }
-
     let query = supabase.from('rekapan_far_overseas_air').select('*', { count: 'exact' });
-    if (approvalFilter === 'TIER1') query = query.eq('approval_status', 'PENDING');
-    else if (approvalFilter === 'TIER2') query = query.eq('approval_status', 'TIER1_DONE');
-    else if (approvalFilter === 'TIER3') query = query.eq('approval_status', 'TIER2_DONE');
+    if (approvalFilter !== 'ALL') query = query.eq('approval_status', APPROVAL_FILTER_STATUS[approvalFilter]);
 
     const { data, error, count } = await query
       .order('created_at', { ascending: false })
@@ -487,27 +469,20 @@ export default function FarOverseasAirPage() {
   }, [page, pageSize, approvalFilter, fetchCostStatusMap]);
 
   // Hitung berapa memo yang pending di masing-masing level approval -- dipanggil sekali di awal
-  // & tiap kali ada aksi yang mungkin mengubah status approval (lihat refreshList). Tier1/2/3
-  // pakai count server-side (`head: true`, murah), PIC harus ambil datanya (bukan cuma count)
-  // krn perlu dicek isi array `approvals`-nya satu-satu.
+  // & tiap kali ada aksi yang mungkin mengubah status approval (lihat refreshList). Semua count
+  // server-side (`head: true`, murah) karena approval_status kolom biasa.
   const fetchApprovalCounts = useCallback(async () => {
-    const [tier1Res, tier2Res, tier3Res, picRes] = await Promise.all([
-      supabase.from('rekapan_far_overseas_air').select('id', { count: 'exact', head: true }).eq('approval_status', 'PENDING'),
-      supabase.from('rekapan_far_overseas_air').select('id', { count: 'exact', head: true }).eq('approval_status', 'TIER1_DONE'),
-      supabase.from('rekapan_far_overseas_air').select('id', { count: 'exact', head: true }).eq('approval_status', 'TIER2_DONE'),
-      supabase.from('rekapan_far_overseas_air').select('approvals').neq('approval_status', 'REJECTED'),
+    const [tier1Res, picRes, tier2Res, tier3Res] = await Promise.all([
+      supabase.from('rekapan_far_overseas_air').select('id', { count: 'exact', head: true }).eq('approval_status', APPROVAL_FILTER_STATUS.TIER1),
+      supabase.from('rekapan_far_overseas_air').select('id', { count: 'exact', head: true }).eq('approval_status', APPROVAL_FILTER_STATUS.PIC),
+      supabase.from('rekapan_far_overseas_air').select('id', { count: 'exact', head: true }).eq('approval_status', APPROVAL_FILTER_STATUS.TIER2),
+      supabase.from('rekapan_far_overseas_air').select('id', { count: 'exact', head: true }).eq('approval_status', APPROVAL_FILTER_STATUS.TIER3),
     ]);
-    const picPending = Array.isArray(picRes.data)
-      ? picRes.data.filter((r: any) => {
-          const approvals = Array.isArray(r.approvals) ? r.approvals : [];
-          return !approvals.some((a: any) => a.tier === 'PIC');
-        }).length
-      : 0;
     setApprovalCounts({
       tier1: tier1Res.count || 0,
+      pic: picRes.count || 0,
       tier2: tier2Res.count || 0,
       tier3: tier3Res.count || 0,
-      pic: picPending,
     });
   }, []);
 

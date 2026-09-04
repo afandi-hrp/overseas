@@ -24,6 +24,15 @@ type AuthContextValue = {
   // & Rekapan (2026-09), lihat catatan RBAC di CLAUDE.md.
   editPageKeys: Set<string>;
   canEdit: (pageKey: string) => boolean;
+  // "Jabatan approval" (TIER1/PIC/TIER2/TIER3) dari role yang di-assign ke user ini -- dipakai
+  // gating tombol approval berjenjang FAR Overseas Air (lihat FarOverseasAirDetailModal.tsx).
+  // Diisi dari RPC TERPISAH `get_my_approval_tiers()` (BUKAN bagian dari get_my_access()) supaya
+  // tidak perlu sentuh function get_my_access() yang sudah kritikal & battle-tested. Fail-closed
+  // sama seperti allowedPageKeys/editPageKeys -- kalau RPC-nya belum ada di Supabase (migration
+  // belum dijalankan), Set ini kosong & isAdmin-lah satu-satunya yang tetap bisa approve semua
+  // tahap (lihat canApproveTier).
+  approvalTiers: Set<string>;
+  canApproveTier: (tier: string) => boolean;
   isAdmin: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -45,6 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [allowedPageKeys, setAllowedPageKeys] = useState<Set<string>>(new Set());
   const [editPageKeys, setEditPageKeys] = useState<Set<string>>(new Set());
+  const [approvalTiers, setApprovalTiers] = useState<Set<string>>(new Set());
   const [isAdmin, setIsAdmin] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(true);
   // Loading akses (get_my_access) DIPISAH dari loading sesi -- kalau digabung jadi satu flag
@@ -70,14 +80,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setAllowedPageKeys(new Set());
       setEditPageKeys(new Set());
       setIsAdmin(false);
-      return;
+    } else {
+      setAllowedPageKeys(new Set(Array.isArray(data.page_keys) ? data.page_keys : []));
+      // edit_page_keys baru ada di get_my_access() sejak migration can_edit (2026-09) -- kalau RPC
+      // di Supabase belum di-update (belum re-run migration-nya), field ini undefined, treat sbg
+      // kosong (fail-closed: dianggap belum boleh edit, bukan diam-diam boleh semua).
+      setEditPageKeys(new Set(Array.isArray(data.edit_page_keys) ? data.edit_page_keys : []));
+      setIsAdmin(!!data.is_admin);
     }
-    setAllowedPageKeys(new Set(Array.isArray(data.page_keys) ? data.page_keys : []));
-    // edit_page_keys baru ada di get_my_access() sejak migration can_edit (2026-09) -- kalau RPC
-    // di Supabase belum di-update (belum re-run migration-nya), field ini undefined, treat sbg
-    // kosong (fail-closed: dianggap belum boleh edit, bukan diam-diam boleh semua).
-    setEditPageKeys(new Set(Array.isArray(data.edit_page_keys) ? data.edit_page_keys : []));
-    setIsAdmin(!!data.is_admin);
+
+    // RPC TERPISAH (bukan bagian get_my_access()) -- lihat komentar approvalTiers di atas.
+    // Gagal/belum ada = fail-closed (Set kosong), TIDAK menggagalkan fetchAccess keseluruhan.
+    const { data: tierData, error: tierError } = await supabase.rpc('get_my_approval_tiers');
+    setApprovalTiers(!tierError && Array.isArray(tierData) ? new Set(tierData) : new Set());
   };
 
   // Lacak user id terakhir yang diketahui -- dipakai buat bedakan "login/ganti user
@@ -125,6 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(null);
         setAllowedPageKeys(new Set());
         setEditPageKeys(new Set());
+        setApprovalTiers(new Set());
         setIsAdmin(false);
         setAccessLoading(false);
       }
@@ -178,9 +194,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const canEdit = (pageKey: string) => isAdmin || editPageKeys.has(pageKey);
+  const canApproveTier = (tier: string) => isAdmin || approvalTiers.has(tier);
 
   return (
-    <AuthContext.Provider value={{ session, user: session?.user ?? null, profile, allowedPageKeys, editPageKeys, canEdit, isAdmin, loading, signOut, refreshProfile }}>
+    <AuthContext.Provider value={{ session, user: session?.user ?? null, profile, allowedPageKeys, editPageKeys, canEdit, approvalTiers, canApproveTier, isAdmin, loading, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

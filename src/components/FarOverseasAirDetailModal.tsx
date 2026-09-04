@@ -19,9 +19,35 @@ type SignerConfig = {
 type ApprovalTier = number | 'PIC';
 type ApprovalEntry = { tier: ApprovalTier; nama: string; jabatan: string; approved_at: string; user_email?: string | null };
 
-const TIER_NEXT_STATUS: Record<number, string> = { 1: 'TIER1_DONE', 2: 'TIER2_DONE', 3: 'APPROVED' };
-const TIER_ACTION_LABEL: Record<number, string> = { 1: 'Setujui — Disiapkan Oleh', 2: 'Setujui — Diperiksa Oleh (Tahap 1)', 3: 'Setujui — Diperiksa Oleh (Tahap 2)' };
-const PIC_ACTION_LABEL = 'Setujui — PIC';
+// Alur approval FAR Overseas Air (2026-09, VERSI FINAL) -- PIC SEKARANG BAGIAN dari rantai utama
+// & WAJIB berurutan: Prepared By (Exim) -> PIC -> SPV -> Director. Setiap tahap gating-nya
+// GANDA: (1) `canEditDirectLoading` (akses edit halaman ini, RBAC biasa) DAN (2)
+// `canApproveTier(step)` dari AuthContext -- role user harus punya "jabatan approval" yang
+// PERSIS cocok dgn tahap yang sedang menunggu (kolom `roles.approval_tier`, diatur di halaman
+// Kelola Role & Akses). Admin selalu lolos ke-2 gerbang itu. Gating ini ditegakkan DI DUA
+// TEMPAT: (a) frontend (tombolnya disembunyikan/diganti pesan kalau tidak eligible, lihat render
+// di bawah) DAN (b) server, lewat RPC `approve_far_overseas_air` (SECURITY DEFINER, cek jabatan +
+// urutan status di dalamnya) yang dipanggil `handleApprove` -- BUKAN `.update()` langsung lagi ke
+// `rekapan_far_overseas_air` (lihat CLAUDE.md utk SQL migration RPC ini, WAJIB dijalankan manual
+// dulu di Supabase sebelum approval bisa jalan sama sekali).
+type ApprovalStep = 'TIER1' | 'PIC' | 'TIER2' | 'TIER3';
+const STEP_LABEL: Record<ApprovalStep, string> = { TIER1: 'Prepared By (Exim)', PIC: 'PIC', TIER2: 'SPV', TIER3: 'Director' };
+const STEP_ACTION_LABEL: Record<ApprovalStep, string> = {
+  TIER1: 'Approve — Prepared By',
+  PIC: 'Approve — PIC',
+  TIER2: 'Approve — SPV',
+  TIER3: 'Approve — Director',
+};
+
+// Status "menunggu tahap apa" -- lihat juga APPROVAL_STATUS_META (FarOverseasAirHelpers.ts) utk
+// label badge-nya. null = tidak ada tahap tersisa (APPROVED/REJECTED).
+function nextStepForStatus(status: string | null | undefined): ApprovalStep | null {
+  if (!status || status === 'PENDING') return 'TIER1';
+  if (status === 'TIER1_DONE') return 'PIC';
+  if (status === 'PIC_DONE') return 'TIER2';
+  if (status === 'TIER2_DONE') return 'TIER3';
+  return null;
+}
 
 function CompanyLogo({ signer }: { signer: SignerConfig | null }) {
   const asset = signer?.company_code ? LOGO_ASSETS[signer.company_code] : null;
@@ -62,14 +88,14 @@ function SignatureColumn({ label, role, entry, defaultNama, nameOverride }: { la
   );
 }
 
-function ApprovalConfirmModal({ tier, role, defaultNama, onConfirm, onClose, submitting }: {
-  tier: ApprovalTier; role: string; defaultNama: string; onConfirm: (nama: string) => void; onClose: () => void; submitting: boolean;
+function ApprovalConfirmModal({ step, role, defaultNama, onConfirm, onClose, submitting }: {
+  step: ApprovalStep; role: string; defaultNama: string; onConfirm: (nama: string) => void; onClose: () => void; submitting: boolean;
 }) {
   const [nama, setNama] = useState(defaultNama);
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
-        <h3 className="font-bold text-[#5A305A] mb-1">Confirm Approval — {tier === 'PIC' ? 'PIC' : `Step ${tier}`}</h3>
+        <h3 className="font-bold text-[#5A305A] mb-1">Confirm Approval — {STEP_LABEL[step]}</h3>
         <p className="text-xs text-[#5A305A] mb-4">Role: <span className="font-semibold">{role || '-'}</span></p>
         <label className="block text-xs font-semibold text-[#5A305A] mb-1">Approver Name</label>
         <input
@@ -128,12 +154,12 @@ function RejectModal({ onConfirm, onClose, submitting }: { onConfirm: (reason: s
 }
 
 export default function FarOverseasAirDetailModal({ record, onClose, onChanged }: { record: any; onClose: () => void; onChanged?: () => void }) {
-  const { user, profile, canEdit } = useAuth();
+  const { user, profile, canEdit, canApproveTier } = useAuth();
   const canEditDirectLoading = canEdit('direct_loading');
   const [rec, setRec] = useState(record);
   const [signer, setSigner] = useState<SignerConfig | null>(null);
   const [showPoDetail, setShowPoDetail] = useState(false);
-  const [confirmTier, setConfirmTier] = useState<ApprovalTier | null>(null);
+  const [confirmStep, setConfirmStep] = useState<ApprovalStep | null>(null);
   const [showReject, setShowReject] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
@@ -165,39 +191,34 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
   const picDisplayName = picEntry?.nama || rec.pic_name || null;
   const disiapkanNama = eximName && picDisplayName ? `${eximName}/${picDisplayName}` : (eximName || picDisplayName || null);
 
-  const nextTier: number | null =
-    rec.approval_status === 'PENDING' ? 1 :
-    rec.approval_status === 'TIER1_DONE' ? 2 :
-    rec.approval_status === 'TIER2_DONE' ? 3 :
-    null;
+  const nextStep = nextStepForStatus(rec.approval_status);
 
-  const roleForTier = (tier: number) => tier === 1 ? signer?.tier1_role : tier === 2 ? signer?.tier2_role : signer?.tier3_role;
-  const defaultNamaForTier = (tier: ApprovalTier) => tier === 1 || tier === 'PIC' ? (profile?.nama || user?.email || '') : tier === 2 ? (signer?.tier2_name || '') : (signer?.tier3_name || '');
+  const roleForStep = (step: ApprovalStep) => step === 'TIER1' ? signer?.tier1_role : step === 'PIC' ? 'PIC' : step === 'TIER2' ? signer?.tier2_role : signer?.tier3_role;
+  const defaultNamaForStep = (step: ApprovalStep) => step === 'TIER1' || step === 'PIC' ? (profile?.nama || user?.email || '') : step === 'TIER2' ? (signer?.tier2_name || '') : (signer?.tier3_name || '');
 
-  // Persetujuan PIC INDEPENDEN dari alur tier1->tier2->tier3 -- bisa dilakukan kapan saja, tidak
-  // menghalangi & tidak dihalangi tahapan itu, jadi TIDAK mengubah `approval_status` sama sekali,
-  // hanya menambah 1 entry bertier 'PIC' ke array `approvals` (untuk sementara: approver = user
-  // yang login, sama seperti default tier1).
-  const handleApprove = async (tier: ApprovalTier, nama: string) => {
+  // Rantai approval WAJIB berurutan Prepared By -> PIC -> SPV -> Director (2026-09) -- SETIAP
+  // tahap sekarang mengubah `approval_status` (beda dari versi lama, PIC dulu independen &
+  // TIDAK mengubah status). Lewat RPC `approve_far_overseas_air` (SECURITY DEFINER, guard jabatan
+  // + urutan status DI DALAM function-nya, lihat CLAUDE.md) -- BUKAN `.update()` langsung lagi,
+  // supaya gating jabatan approval ditegakkan di server juga (bukan cuma sembunyikan tombol di
+  // frontend). RPC ini balikin `{approval_status, approvals}` hasil akhir, dipakai APA ADANYA
+  // buat update state lokal (bukan dihitung ulang di client) supaya selalu sinkron persis dgn DB.
+  const handleApprove = async (step: ApprovalStep, nama: string) => {
     setSubmitting(true);
-    const entry: ApprovalEntry = {
-      tier,
-      nama,
-      jabatan: tier === 'PIC' ? 'PIC' : (roleForTier(tier) || '-'),
-      approved_at: new Date().toISOString(),
-      user_email: user?.email || null,
-    };
-    const newApprovals = [...approvals.filter(a => a.tier !== tier), entry];
-    const updates: Record<string, any> = { approvals: newApprovals };
-    if (tier !== 'PIC') updates.approval_status = TIER_NEXT_STATUS[tier];
-    const { error } = await supabase.from('rekapan_far_overseas_air').update(updates).eq('id', rec.id);
+    const jabatan = step === 'PIC' ? 'PIC' : (roleForStep(step) || '-');
+    const { data, error } = await supabase.rpc('approve_far_overseas_air', {
+      p_id: rec.id,
+      p_step: step,
+      p_nama: nama,
+      p_jabatan: jabatan,
+    });
     setSubmitting(false);
-    if (error) {
-      showToast('Failed to save approval: ' + error.message, 'error');
+    if (error || !data) {
+      showToast('Failed to save approval: ' + (error?.message || 'unknown error'), 'error');
     } else {
-      setRec({ ...rec, ...updates });
-      setConfirmTier(null);
-      showToast((tier === 'PIC' ? 'PIC approval' : 'Step ' + tier + ' approval') + ' saved successfully.', 'success');
+      setRec({ ...rec, approval_status: data.approval_status, approvals: data.approvals });
+      setConfirmStep(null);
+      showToast(STEP_LABEL[step] + ' approval saved successfully.', 'success');
       onChanged?.();
     }
   };
@@ -369,35 +390,29 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
               </div>
             )}
 
-            {/* ── Aksi persetujuan ── */}
+            {/* ── Aksi persetujuan -- rantai WAJIB berurutan Prepared By -> PIC -> SPV -> Director
+                (2026-09). Tombol approve tahap berjalan HANYA muncul kalau user-nya eligible
+                (`canApproveTier`, dari jabatan approval role-nya) -- kalau tidak eligible, tampil
+                pesan penjelas (bukan disembunyikan total, supaya user tahu kenapa tidak ada
+                tombol & tahap apa yang sedang ditunggu). ── */}
             {canEditDirectLoading && rec.approval_status !== 'APPROVED' && rec.approval_status !== 'REJECTED' && (
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white rounded-xl border border-slate-200 mt-5 p-4 print:hidden">
                 <p className="text-xs text-[#5A305A]">
-                  {nextTier != null ? `Awaiting Step ${nextTier} approval.` : 'No action available.'}
+                  {nextStep != null ? `Awaiting ${STEP_LABEL[nextStep]} approval.` : 'No action available.'}
+                  {nextStep != null && !canApproveTier(nextStep) && (
+                    <span className="block text-[#5A305A]/60 italic mt-0.5">You don't have the "{STEP_LABEL[nextStep]}" approval role for this step.</span>
+                  )}
                 </p>
                 <div className="flex items-center gap-2">
                   <button onClick={() => setShowReject(true)} className="px-4 py-2 rounded-xl border border-rose-300 text-rose-600 font-semibold text-sm hover:bg-rose-50 transition-all flex items-center gap-1.5">
                     <Ban size={15} /> Reject
                   </button>
-                  {nextTier != null && (
-                    <button onClick={() => setConfirmTier(nextTier)} className="px-4 py-2 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-sm transition-all flex items-center gap-1.5">
-                      <Stamp size={15} /> {TIER_ACTION_LABEL[nextTier]}
+                  {nextStep != null && canApproveTier(nextStep) && (
+                    <button onClick={() => setConfirmStep(nextStep)} className="px-4 py-2 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-sm transition-all flex items-center gap-1.5">
+                      <Stamp size={15} /> {STEP_ACTION_LABEL[nextStep]}
                     </button>
                   )}
                 </div>
-              </div>
-            )}
-
-            {/* ── Persetujuan PIC -- INDEPENDEN dari alur Tahap 1/2/3 di atas: tidak menghalangi
-                dan tidak dihalangi tahapan itu, PIC bisa approve kapan saja selama belum approve.
-                Nama yang tersimpan tampil digabung di kolom "Disiapkan Oleh" (lihat disiapkanNama
-                di atas), TIDAK ada kolom tanda tangan terpisah untuk PIC. ── */}
-            {canEditDirectLoading && !picEntry && (
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white rounded-xl border border-slate-200 mt-5 p-4 print:hidden">
-                <p className="text-xs text-[#5A305A]">Persetujuan PIC — terpisah dari tahapan Disiapkan/Diperiksa di atas, tampil bersebelahan nama Exim Officer.</p>
-                <button onClick={() => setConfirmTier('PIC')} className="px-4 py-2 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-sm transition-all flex items-center gap-1.5">
-                  <Stamp size={15} /> {PIC_ACTION_LABEL}
-                </button>
               </div>
             )}
 
@@ -405,14 +420,14 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
         </div>
       </div>
 
-      {confirmTier != null && (
+      {confirmStep != null && (
         <ApprovalConfirmModal
-          tier={confirmTier}
-          role={confirmTier === 'PIC' ? 'PIC' : (roleForTier(confirmTier) || '-')}
-          defaultNama={defaultNamaForTier(confirmTier)}
+          step={confirmStep}
+          role={roleForStep(confirmStep) || '-'}
+          defaultNama={defaultNamaForStep(confirmStep)}
           submitting={submitting}
-          onClose={() => setConfirmTier(null)}
-          onConfirm={(nama) => handleApprove(confirmTier, nama)}
+          onClose={() => setConfirmStep(null)}
+          onConfirm={(nama) => handleApprove(confirmStep, nama)}
         />
       )}
 

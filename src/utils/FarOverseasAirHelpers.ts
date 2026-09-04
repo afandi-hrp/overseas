@@ -60,12 +60,17 @@ export function looseNameMatch(a: string | null | undefined, b: string | null | 
   return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
+// Alur approval FAR Overseas Air (2026-09, VERSI FINAL -- PIC SEKARANG BAGIAN dari rantai utama,
+// bukan lagi approval independen): Prepared By (Exim, tier1) -> PIC -> SPV (tier2) -> Director
+// (tier3) -> APPROVED. Status jadi penanda "siapa berikutnya", bukan cuma "step ke-n selesai" --
+// lihat `nextApprovalStep` di FarOverseasAirDetailModal.tsx utk state machine lengkapnya.
 export const APPROVAL_STATUS_META: Record<string, { label: string; badgeClass: string }> = {
-  PENDING:      { label: 'Awaiting Approval', badgeClass: 'bg-amber-100 text-amber-700' },
-  TIER1_DONE:   { label: 'Step 1 Complete',   badgeClass: 'bg-blue-100 text-blue-700' },
-  TIER2_DONE:   { label: 'Step 2 Complete',   badgeClass: 'bg-blue-100 text-blue-700' },
-  APPROVED:     { label: 'Approved',          badgeClass: 'bg-emerald-100 text-emerald-700' },
-  REJECTED:     { label: 'Rejected',          badgeClass: 'bg-rose-100 text-rose-700' },
+  PENDING:      { label: 'Awaiting Prepared By', badgeClass: 'bg-amber-100 text-amber-700' },
+  TIER1_DONE:   { label: 'Awaiting PIC',         badgeClass: 'bg-blue-100 text-blue-700' },
+  PIC_DONE:     { label: 'Awaiting SPV',         badgeClass: 'bg-blue-100 text-blue-700' },
+  TIER2_DONE:   { label: 'Awaiting Director',    badgeClass: 'bg-blue-100 text-blue-700' },
+  APPROVED:     { label: 'Approved',             badgeClass: 'bg-emerald-100 text-emerald-700' },
+  REJECTED:     { label: 'Rejected',             badgeClass: 'bg-rose-100 text-rose-700' },
 };
 
 export const COST_STATUS_META: Record<string, { label: string; badgeClass: string }> = {

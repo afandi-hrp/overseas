@@ -64,6 +64,25 @@ menangani Courier Audit/Rekapan, Sea & Air Audit/Rekapan, dan Audit Trail — di
 `defaultMainTab`/`defaultSubTab`. Hati-hati kalau edit — banyak logic bercabang berdasar
 `activeMainTab`/`activeSubTab`.
 
+- **Kolom AWB — beda perilaku SENGAJA antara Audit Courier & Rekapan Courier** (2026-09,
+  dikonfirmasi user, JANGAN disatukan lagi jadi 1 perilaku):
+  - **Audit Courier** (`PIB_COLS`/`CN_COLS`, kolom `awb` TANPA `type` → masuk cabang `!c.type` di
+    `getCellData()`, ~baris 1364) — tampil **APA ADANYA** dari `tabel_audit_pib`/`tabel_audit_cn`,
+    termasuk prefix carrier ("DHL NO."/"FEDEX No.") kalau memang begitu tersimpan di database.
+  - **Rekapan Courier** (`COURIER_COLS`, kolom `awb` diberi `type: 'awb_strip_carrier'`, cabang
+    sendiri di `getCellData()`) — prefix carrier ("DHL NO."/"FEDEX No.") DIBUANG dari tampilan
+    (regex `.replace(/^(DHL|FEDEX)\s*NO\.?\s*:?\s*/i, '')`), cuma nomornya saja yang tampil. Mode
+    edit inline TETAP tampilkan/edit nilai mentah (tidak ikut di-strip) — stripping ini MURNI
+    kosmetik tampilan read-only, sama pola dengan `ppjk` (buang prefix "OWN").
+  - Filter/normalisasi serupa (`replace(/^(DHL|FEDEX).../)`) juga ADA & SENGAJA DIBIARKAN di
+    `ValidasiModal.tsx`/`ValidasiHelper.ts` — itu utk internal matching/lookup AWB ke
+    `tabel_audit_pib`, BUKAN utk display, jadi tidak termasuk cakupan 2 poin di atas.
+- **Filter tanggal Audit Courier (`filterStartDate`/`filterEndDate`)** — SUDAH berdasarkan kolom
+  `tgl_ppjk` (label kolom "PPJK Date") utk `courier_audit` (PIB maupun CN, lihat query ~baris
+  3017-3031 & export ~baris 3322-3329/3373-3382) — BUKAN `created_at`/kolom lain. Beda dgn
+  Courier Rekapan yang pakai `tgl_terima_email`. Kalau nanti ada laporan filter tanggal "salah
+  kolom" lagi di Audit Courier, cek dulu apa benar row yang dimaksud `tgl_ppjk`-nya kosong/beda
+  dari yang diharapkan user (data issue), bukan otomatis asumsi kode filternya yang salah.
 - **Padding halaman `<header>`/`<main>`** (~baris 3864/3881, 2026-09) — dikecilkan dari `px-6` ke
   `px-3` (kiri-kanan simetris karena `px-*` = padding kedua sisi) atas laporan user: di laptop
   14", panel filter toolbar (`overflow-x-auto`) Audit Courier kepotong sampai tab **CN** (kadang
@@ -181,6 +200,163 @@ Sudah diimplementasikan (lihat `sql/001_rbac_and_bunker_rls.sql`, `sql/002_direc
   cakupan `admin_rates`/`audit_po` di atas (`policy_count=4`, dikonfirmasi).
   Catatan tersisa: `audit_po_ap_comp` diisi otomasi n8n tiap 30 menit — BELUM diverifikasi eksplisit
   apakah otomasi itu tetap jalan normal setelah RLS aktif (perlu proses itu pakai service role key).
+- **"Jabatan approval" per role (2026-09, dipakai FAR Overseas Air, lihat bagian FAR Overseas Air
+  di bawah utk detail alurnya)** — kolom BARU `roles.approval_tier` (text, nullable, salah satu
+  dari `'TIER1'`/`'PIC'`/`'TIER2'`/`'TIER3'`, `NULL` = role ini bukan approver) menentukan tahap
+  approval mana yang boleh diklik user dengan role itu. **BELUM DIJALANKAN ke Supabase production
+  — WAJIB dijalankan manual dulu di SQL editor sebelum fitur approval bisa dipakai sama sekali**
+  (tanpa ini, `roles.select('..., approval_tier')` di `RoleManagementPage.tsx` akan error kolom
+  tidak ada, dan RPC `get_my_approval_tiers()` di bawah juga belum ada):
+  ```sql
+  alter table public.roles
+    add column if not exists approval_tier text
+    check (approval_tier is null or approval_tier in ('TIER1', 'PIC', 'TIER2', 'TIER3'));
+
+  create or replace function public.get_my_approval_tiers()
+  returns jsonb
+  language sql
+  security definer
+  stable
+  as $$
+    select coalesce(jsonb_agg(distinct r.approval_tier), '[]'::jsonb)
+    from public.user_roles ur
+    join public.roles r on r.id = ur.role_id
+    where ur.user_id = auth.uid() and r.approval_tier is not null;
+  $$;
+
+  grant execute on function public.get_my_approval_tiers() to authenticated;
+  ```
+  SENGAJA dibuat sebagai RPC **BARU/TERPISAH** (`get_my_approval_tiers()`), BUKAN nambah field ke
+  `get_my_access()` yang sudah ada — supaya tidak perlu menulis ulang body `get_my_access()` yang
+  sudah kritikal & battle-tested tanpa akses DB langsung utk verifikasi isi aslinya (resikonya
+  kalau salah tebak logic-nya, bisa lock-out semua user dari semua halaman).
+  - `src/lib/AuthContext.tsx` — panggil RPC ini di `fetchAccess()` (paralel dgn `get_my_access()`),
+    expose `approvalTiers: Set<string>` + helper `canApproveTier(tier)` (`isAdmin` selalu lolos,
+    role Admin approve semua tahap tanpa perlu `approval_tier` di-set). Fail-closed kalau RPC
+    belum ada di Supabase (Set kosong, BUKAN diam-diam boleh semua) — TAPI karena `fetchAccess`
+    tidak return-early lagi kalau panggilan `get_my_access()` gagal (lihat kode), akses halaman
+    biasa tetap jalan normal meski RPC approval_tiers ini belum ada, cuma fitur approve-nya yg
+    nonaktif (tombol tidak pernah muncul kecuali Admin).
+  - `src/pages/RoleManagementPage.tsx` — dropdown kecil "Jabatan approval" di tiap chip role
+    (panel "Daftar Role"), `APPROVAL_TIER_OPTIONS`, handler `updateRoleApprovalTier` (langsung
+    `.update()` ke tabel `roles`, BUKAN lewat RPC — tabel `roles` sejauh ini dikelola langsung
+    dari halaman ini tanpa RPC wrapper, konsisten dgn `handleAddRole`/`handleDeleteRole` yg sudah
+    ada). Role Admin (`is_protected`) tidak dikasih dropdown ini (selalu bisa approve semua tahap
+    via `isAdmin` bypass).
+  - 1 user BISA punya lebih dari 1 role (`user_roles`) — `approval_tiers` di-agregasi dari SEMUA
+    role user itu (union, bukan cuma role pertama), jadi kalau salah satu role-nya match tahap
+    yang diminta, user itu eligible approve tahap itu.
+  - **Enforcement server-side (2026-09) — RPC `approve_far_overseas_air`**: approval SEKARANG
+    lewat RPC ini (`SECURITY DEFINER`), BUKAN lagi `.update()` langsung ke
+    `rekapan_far_overseas_air` (versi sebelumnya cuma gating frontend, itu jadi RIWAYAT — sudah
+    DIGANTI, jangan reintroduce `.update()` langsung utk approval). RPC-nya **BELUM DIJALANKAN ke
+    Supabase production — WAJIB dijalankan manual dulu** (kalau belum, tombol approve akan error
+    "function does not exist" begitu diklik):
+    ```sql
+    create or replace function public.approve_far_overseas_air(
+      p_id uuid,          -- SESUAIKAN tipe ini kalau `rekapan_far_overseas_air.id` BUKAN uuid
+                           -- (cek dulu di Table Editor Supabase -- belum ada akses DB langsung
+                           -- utk konfirmasi tipe PK-nya, uuid dipilih krn paling umum di app ini)
+      p_step text,         -- 'TIER1' | 'PIC' | 'TIER2' | 'TIER3'
+      p_nama text,
+      p_jabatan text default null
+    )
+    returns jsonb
+    language plpgsql
+    security definer
+    as $$
+    declare
+      v_current_status text;
+      v_expected_status text;
+      v_new_status text;
+      v_entry_tier_text text;
+      v_entry jsonb;
+      v_new_approvals jsonb;
+    begin
+      if not public.has_edit_access('direct_loading') then
+        raise exception 'Not authorized to edit FAR Overseas Air memos';
+      end if;
+
+      if p_step not in ('TIER1', 'PIC', 'TIER2', 'TIER3') then
+        raise exception 'Invalid approval step: %', p_step;
+      end if;
+
+      if not public.is_admin() and not exists (
+        select 1 from public.user_roles ur
+        join public.roles r on r.id = ur.role_id
+        where ur.user_id = auth.uid() and r.approval_tier = p_step
+      ) then
+        raise exception 'You do not have the % approval role', p_step;
+      end if;
+
+      select approval_status into v_current_status
+      from public.rekapan_far_overseas_air
+      where id = p_id
+      for update;
+
+      if not found then
+        raise exception 'Memo not found: %', p_id;
+      end if;
+
+      v_expected_status := case p_step
+        when 'TIER1' then 'PENDING'
+        when 'PIC' then 'TIER1_DONE'
+        when 'TIER2' then 'PIC_DONE'
+        when 'TIER3' then 'TIER2_DONE'
+      end;
+
+      if v_current_status is distinct from v_expected_status then
+        raise exception 'This memo is not currently awaiting the % step (current status: %)', p_step, v_current_status;
+      end if;
+
+      v_new_status := case p_step
+        when 'TIER1' then 'TIER1_DONE'
+        when 'PIC' then 'PIC_DONE'
+        when 'TIER2' then 'TIER2_DONE'
+        when 'TIER3' then 'APPROVED'
+      end;
+
+      v_entry_tier_text := case p_step when 'PIC' then 'PIC' when 'TIER1' then '1' when 'TIER2' then '2' when 'TIER3' then '3' end;
+
+      v_entry := case p_step
+        when 'PIC' then jsonb_build_object('tier', 'PIC', 'nama', p_nama, 'jabatan', 'PIC', 'approved_at', now(), 'user_email', auth.email())
+        when 'TIER1' then jsonb_build_object('tier', 1, 'nama', p_nama, 'jabatan', coalesce(p_jabatan, '-'), 'approved_at', now(), 'user_email', auth.email())
+        when 'TIER2' then jsonb_build_object('tier', 2, 'nama', p_nama, 'jabatan', coalesce(p_jabatan, '-'), 'approved_at', now(), 'user_email', auth.email())
+        when 'TIER3' then jsonb_build_object('tier', 3, 'nama', p_nama, 'jabatan', coalesce(p_jabatan, '-'), 'approved_at', now(), 'user_email', auth.email())
+      end;
+
+      select coalesce(jsonb_agg(elem), '[]'::jsonb)
+      into v_new_approvals
+      from jsonb_array_elements(
+        coalesce((select approvals from public.rekapan_far_overseas_air where id = p_id), '[]'::jsonb)
+      ) elem
+      where (elem->>'tier') is distinct from v_entry_tier_text;
+
+      v_new_approvals := v_new_approvals || jsonb_build_array(v_entry);
+
+      update public.rekapan_far_overseas_air
+      set approval_status = v_new_status,
+          approvals = v_new_approvals
+      where id = p_id;
+
+      return jsonb_build_object('approval_status', v_new_status, 'approvals', v_new_approvals);
+    end;
+    $$;
+
+    grant execute on function public.approve_far_overseas_air(uuid, text, text, text) to authenticated;
+    ```
+    Guard 3-lapis di dalamnya: (1) `has_edit_access('direct_loading')`, (2) role user (atau
+    `is_admin()`) harus punya `approval_tier = p_step`, (3) `approval_status` SAAT INI harus PERSIS
+    status "menunggu tahap ini" (`v_expected_status`, dgn `for update` row lock supaya 2 approval
+    bersamaan tidak balapan) — kalau salah satu gagal, function `raise exception` (client terima di
+    `error.message`). Function ini yang MENENTUKAN `approval_status`/`approvals` baru (bukan
+    dihitung di client) — `handleApprove` di `FarOverseasAirDetailModal.tsx` pakai APA ADANYA hasil
+    `returns jsonb` dari RPC ini (`{approval_status, approvals}`) buat update state lokal, TIDAK
+    menghitung ulang sendiri, supaya client selalu sinkron persis dengan hasil di DB. `jabatan`
+    (teks role utk tampilan tanda tangan, mis. "Manager Finance") & `nama` masih dikirim dari
+    client (bukan divalidasi/di-derive ulang di RPC) — ini AMAN karena keduanya murni teks
+    kosmetik utk memo cetak, bukan bagian keputusan otorisasi (yang divalidasi adalah `p_step`
+    lewat `approval_tier`, bukan `p_nama`/`p_jabatan`).
 
 ## Translasi UI ke Bahasa Inggris (IN PROGRESS, dimulai 2026-09)
 
@@ -469,19 +645,43 @@ Komentar kode & isi CLAUDE.md ini SENGAJA TETAP Bahasa Indonesia (bukan bagian d
   (bukan baca field `kurs_used` yang tersimpan) — supaya selalu konsisten dgn 2 angka yang
   sama-sama tercetak di baris itu.
 - **Filter approval per level** (List Memo, `FarOverseasAirPage.tsx`, 2026-09) — dropdown
-  "Approval" (state `approvalFilter`: `ALL`/`PIC`/`TIER1`/`TIER2`/`TIER3`), tiap opsi selain ALL
-  nunjukin COUNT total memo yang pending di level itu (state `approvalCounts`, dihitung
-  `fetchApprovalCounts`). TIER1/TIER2/TIER3 map ke kolom biasa `approval_status`
-  (`PENDING`/`TIER1_DONE`/`TIER2_DONE`) — bisa difilter server-side via `.eq()` dalam `fetchList`.
-  PIC beda sendiri: approvalnya INDEPENDEN dari `approval_status` (lihat array jsonb
-  `approvals`), jadi TIDAK bisa `.eq()` biasa — SENGAJA tidak dipakaikan operator containment
-  PostgREST (`cs`/`not.cs`) karena belum ada akses DB langsung utk verifikasi sintaksnya persis
-  benar; sebagai gantinya `fetchList` ambil SEMUA baris (bukan REJECTED) lalu filter+paginate
-  manual di JS kalau `approvalFilter==='PIC'` — kalau suatu saat tabel ini jadi sangat besar,
-  pendekatan ini perlu diganti pakai containment operator (setelah sintaksnya diverifikasi ke DB
-  asli) atau kolom generated column terpisah. `fetchApprovalCounts` dipanggil sekali di awal +
-  lewat helper `refreshList` (dipanggil dari `onChanged` `FarOverseasAirDetailModal` & tombol
-  Refresh) supaya count-nya ikut update begitu ada approve/reject/delete.
+  "Approval" (state `approvalFilter`: `ALL`/`TIER1`/`PIC`/`TIER2`/`TIER3`, urutan dropdown SENGAJA
+  ikut urutan rantai approval), tiap opsi selain ALL nunjukin COUNT total memo yang pending di
+  level itu (state `approvalCounts`, dihitung `fetchApprovalCounts`). Karena rantai approval
+  sekarang WAJIB berurutan (lihat subbagian "Approval berjenjang" di bawah), SEMUA level filter
+  map ke `approval_status` kolom biasa lewat `APPROVAL_FILTER_STATUS` (`TIER1`→`PENDING`,
+  `PIC`→`TIER1_DONE`, `TIER2`→`PIC_DONE`, `TIER3`→`TIER2_DONE`) — server-side `.eq()` murni,
+  TIDAK ADA lagi filter/paginate manual di JS (versi sebelum PIC masuk rantai utama SEMPAT begitu,
+  karena PIC dulu independen dari `approval_status` — sudah tidak berlaku). `fetchApprovalCounts`
+  dipanggil sekali di awal + lewat helper `refreshList` (dipanggil dari `onChanged`
+  `FarOverseasAirDetailModal` & tombol Refresh) supaya count-nya ikut update begitu ada
+  approve/reject/delete.
+- **Approval berjenjang WAJIB berurutan: Prepared By (Exim) → PIC → SPV → Director** (2026-09,
+  VERSI FINAL — GANTI TOTAL dari 2 versi sebelumnya: pertama PIC independen tanpa gating jabatan,
+  lalu PIC independen TAPI dengan approval terpisah; keduanya SUDAH TIDAK BERLAKU, jangan
+  reintroduce). `approval_status` sekarang py 5 nilai berurutan: `PENDING` (nunggu Prepared
+  By) → `TIER1_DONE` (nunggu PIC) → `PIC_DONE` (nunggu SPV) → `TIER2_DONE` (nunggu Director) →
+  `APPROVED`. Semua logic state machine ada di `FarOverseasAirDetailModal.tsx`:
+  `nextStepForStatus(status)` (tentukan tahap berikutnya dari status saat ini),
+  `STEP_ENTRY_TIER`/`STEP_STATUS_AFTER`/`STEP_LABEL`/`STEP_ACTION_LABEL` (mapping per tahap).
+  `handleApprove(step, nama)` SELALU update `approval_status` (beda dari versi PIC-independen
+  lama yang skip update status utk tahap PIC) + append 1 entry `{tier, nama, jabatan,
+  approved_at, user_email}` ke `approvals` (tier utk PIC tetap string `'PIC'`, tier1/2/3 tetap
+  number, supaya `entryFor(1)`/`entryFor(2)`/`entryFor(3)`/`entryFor('PIC')` & tampilan
+  signature table tidak perlu berubah). Kolom tanda tangan cetak TETAP cuma 3 (Disiapkan Oleh /
+  Diperiksa Oleh x2) — nama PIC TETAP digabung ke kolom "Disiapkan Oleh" bareng nama Exim
+  (`disiapkanNama`, format `"{exim}/{pic}"`), TIDAK PERNAH jadi kolom tanda tangan sendiri.
+  **Gating siapa yang boleh approve tahap yang sedang aktif**: 2 syarat — `canEditDirectLoading`
+  (akses edit halaman, RBAC biasa) DAN `canApproveTier(step)` dari `useAuth()` (role user harus
+  py "jabatan approval" yang PERSIS cocok tahap itu, lihat subbagian "Jabatan approval per role"
+  di bagian RBAC atas — governance/skema datanya didokumentasikan di sana, bukan di sini). Kalau
+  user py akses edit tapi jabatannya tidak cocok, tombol approve TIDAK muncul, diganti pesan
+  penjelas "You don't have the '{tahap}' approval role for this step." (bukan disembunyikan
+  total tanpa penjelasan). **Data lama (sebelum fitur ini) berpotensi tidak konsisten** — memo
+  yang sudah `APPROVED`/lanjut ke tahap tinggi dari sebelum ada tahap PIC di rantai TIDAK
+  otomatis punya entry PIC di `approvals`-nya (tidak ada migrasi data retroaktif), jadi kolom
+  "Disiapkan Oleh" utk memo lama itu cuma nampilin nama Exim tanpa PIC — ini WAJAR utk data lama,
+  bukan bug.
 - **Document Validation** (`FarOverseasAirCostValidationModal.tsx`) — baris NAMA PT tiap PO yang
   namanya cocok (`looseNameMatch`) dengan `dominantPtName` (nama PT dari `dominant_company_code`,
   yang juga tampil di kolom PO baris CONCLUSION) dikasih centang hijau (`CheckCircle2`), supaya
@@ -549,25 +749,16 @@ Komentar kode & isi CLAUDE.md ini SENGAJA TETAP Bahasa Indonesia (bukan bagian d
   kolom VESSEL tabel List Memo. NOTE 3 (`status_note`) & NOTE 4 (`other_note`) SEKARANG ikut masuk
   ke baris "NOTE :" di memo cetak (bareng NOTE 1/NOTE 2), tapi HANYA render barisnya kalau isinya
   tidak null/kosong (baris yang kosong tidak dirender sama sekali, bukan tampil "-").
-- **PIC** (2026-09, versi final — sempat dicoba 2 pendekatan berbeda sebelum ini: kolom tanda
-  tangan terpisah dengan approval terpisah, lalu dicoba tanpa approval sama sekali; keduanya
-  SUDAH DIGANTI dengan versi di bawah ini, JANGAN reintroduce versi lama): kolom manual
-  `pic_name` (text, mirip `buyer_name`, ada di `REKAPAN_EDITABLE_FIELDS` & editable inline di
-  List Memo lewat kolom "PIC") TETAP ADA sebagai fallback nama sebelum di-approve. TIDAK ADA
-  kolom tanda tangan terpisah untuk PIC di memo cetak — nama PIC digabung bersebelahan dengan
-  nama Exim Officer (approval tahap 1) di kolom "Disiapkan Oleh" YANG SAMA, format
-  `"{nama exim}/{nama PIC}"` (kalau salah satu belum ada, tampilkan yang ada saja) — lihat
-  `disiapkanNama`/`picDisplayName` & `SignatureColumn.nameOverride` di
-  `FarOverseasAirDetailModal.tsx`. TAPI approval PIC-nya TETAP ADA sebagai aksi terpisah &
-  INDEPENDEN dari alur tier1→tier2→tier3 (tombol "Setujui — PIC", tidak menghalangi/dihalangi
-  status tahap manapun, TIDAK PERNAH mengubah `approval_status`) — untuk sementara approver-nya
-  = user yang login (`profile?.nama || user?.email`, sama seperti default tier1), append 1 entry
-  `{tier: 'PIC', nama, jabatan: 'PIC', approved_at, user_email}` ke array `approvals`; begitu ada
-  entry ini, nama approver itulah yang tampil di "Disiapkan Oleh" (menggantikan `pic_name`
-  manual), sama pola dengan tier1/2/3. `ApprovalEntry.tier` bertipe `number | 'PIC'`
-  (`ApprovalTier`). Kolom **BUYER** (`buyer_name`) ditambahkan di List Memo bersebelahan dengan
-  PIC (2026-09) — sebelumnya `buyer_name` cuma tampil di memo cetak, sekarang juga editable
-  inline di List Memo (sudah ada di `REKAPAN_EDITABLE_FIELDS` dari awal).
+- **PIC** — kolom manual `pic_name` (text, mirip `buyer_name`, ada di `REKAPAN_EDITABLE_FIELDS` &
+  editable inline di List Memo lewat kolom "PIC") TETAP ADA sebagai fallback nama sebelum
+  di-approve. Nama PIC ditampilkan digabung bersebelahan dengan nama Exim di kolom "Disiapkan
+  Oleh" (bukan kolom tanda tangan sendiri) — untuk alur approval PIC yang sebenarnya (sekarang
+  bagian rantai WAJIB berurutan Exim→PIC→SPV→Director, BUKAN lagi independen), lihat subbagian
+  **"Approval berjenjang WAJIB berurutan"** di atas (RBAC/`FarOverseasAirDetailModal.tsx`) — versi
+  ini SUDAH 2x diganti total dari pendekatan sebelumnya, jangan reintroduce versi lama manapun.
+  Kolom **BUYER** (`buyer_name`) ditambahkan di List Memo bersebelahan dengan PIC (2026-09) —
+  sebelumnya `buyer_name` cuma tampil di memo cetak, sekarang juga editable inline di List Memo
+  (sudah ada di `REKAPAN_EDITABLE_FIELDS` dari awal).
 - **Field baris header memo cetak** (PO.No/Supplier kiri, Inv.No/Date kanan) — kedua kolom
   SENGAJA dipisah jadi 2 blok independen (bukan 2 baris flex-row PO.No+Inv.No lalu
   Supplier+Date) supaya Inv.No & Date tetap rapat berdekatan walau PO.No isinya panjang/wrap
@@ -1035,6 +1226,56 @@ apa adanya.
   Kelola Role & Akses) SENGAJA TIDAK ikut digabung — itu concern terpisah dari struktur visual
   submenu sidebar ini, biar PIC tetap bisa lihat & atur akses per modul dgn jelas di halaman
   Kelola Role & Akses walau tampilannya di sidebar sekarang nested.
+
+## Customize View — Audit Courier & Rekapan Courier (`src/components/SharedDataTable.tsx`, 2026-09)
+
+Fitur pilih kolom mana yang tampil di tabel, TERPISAH untuk 2 menu: Audit Courier & Rekapan
+Courier (Sea & Air, Validasi, Audit Trail TIDAK ikut cakupan ini).
+
+- **Sumber daftar kolom** (SESUAI PRINSIP "pakai kolom yang sudah ada, jangan bikin daftar
+  baru"): `COURIER_AUDIT_CUSTOMIZABLE_COLS` (~setelah `COURIER_COLS`) = gabungan dedup-by-key
+  dari `PIB_COLS` + `CN_COLS` — 1 preferensi berlaku ke SEMUA sub-tipe tab Audit (PIB/CN/Draft),
+  kalau suatu kolom hasil hide tidak ada di sub-tipe yang aktif otomatis tidak berpengaruh
+  (aman, tidak perlu preferensi terpisah per sub-tipe). `COURIER_REKAPAN_CUSTOMIZABLE_COLS` =
+  langsung dari `COURIER_COLS`. Kolom `index` ("No.") dikeluarkan dari daftar — selalu tampil,
+  tidak bisa disembunyikan; kolom `Action` (sticky) juga tidak termasuk cakupan fitur ini.
+- **Penyimpanan preferensi**: localStorage (BUKAN tabel Supabase baru — ini murni preferensi
+  tampilan, bukan data bisnis, jadi disepakati tidak perlu migrasi SQL), key
+  `beehive_customize_view:${user.id}:courier_audit` / `:courier_rekapan` (per-user via `user.id`
+  dari `useAuth()`, per-menu via key terpisah). **Konsekuensi yang disadari**: preferensi TIDAK
+  sinkron lintas device/browser (khas localStorage) — kalau nanti user minta sinkron lintas
+  device, perlu upgrade ke tabel Supabase baru (belum diimplementasikan, sengaja localStorage
+  dulu krn lebih simpel & sudah memenuhi requirement "per-user per-menu" as-is).
+- **State**: `courierAuditHiddenCols`/`courierRekapanHiddenCols` (`Set<string>`, isi = kolom yang
+  DI-HIDE, kosong = default/semua tampil — ini definisi "kondisi default" karena SEBELUM fitur
+  ini semua kolom memang selalu tampil apa adanya, tidak ada konsep hidden-by-default di tabel
+  manapun di app ini). Di-init dari localStorage via `loadHiddenCols()`, di-reload ulang lewat
+  `useEffect` kalau `user?.id` berubah (ganti akun di browser yang sama).
+- **`CustomizeViewModal`** (komponen baru, ditaruh setelah `DeleteModal`) — modal generik terima
+  `title`/`allCols`/`hiddenKeys`/`onCancel`/`onSave`, dipakai bareng utk kedua menu (Audit &
+  Recap) lewat prop yang beda. State pending (`pendingHidden`) LOKAL di dalam modal — perubahan
+  checkbox TIDAK langsung ter-apply ke tabel, harus klik "Save" (App requirement #5). Tombol
+  "Reset to Default" cuma mengosongkan `pendingHidden` (= semua tercentang) di dalam modal, TETAP
+  butuh klik "Save" sesudahnya utk benar-benar ter-apply & tersimpan (bukan auto-save). Search
+  bar filter list berdasar `label` (case-insensitive substring), tidak mempengaruhi apa yang
+  sudah tercentang/tidak.
+- **Penerapan ke tabel**: `activeCols` (variable existing yang menentukan daftar kolom aktif per
+  tab) **TETAP UTUH/tidak difilter** — masih dipakai apa adanya utk `EditModal`/`AddRowModal`/
+  Export (`ExportModal`), supaya field yang disembunyikan dari TAMPILAN TABEL tetap bisa diedit
+  & tetap ikut ter-export. Variable BARU `visibleCols` (dihitung sesudah `activeCols`) = filter
+  `activeCols` buang key yang ada di hidden-set, HANYA saat `activeSubTab` adalah `courier_audit`/
+  `courier_rekapan` (tab lain `visibleCols === activeCols`, tidak berubah). `visibleCols` dipakai
+  GANTI `activeCols` di 3 tempat: `<thead>` (`activeCols.map` → `visibleCols.map`), prop
+  `cols={...}` di `CourierAuditRowGroup`, dan `cols={...}` di `CourierRekapanRowGroup` — supaya
+  header & isi baris tetap sejajar. Row-group lain (`SeaAirAuditRowGroup`/`SeaAirRekapanRowGroup`/
+  `DataRow` default) TIDAK disentuh, tetap pakai `activeCols` penuh.
+  **Kalau fitur ini nanti diperluas ke tab lain (mis. Sea & Air), WAJIB ikuti pola yang sama:
+  jangan filter `activeCols` itu sendiri (akan ikut memfilter Edit/Add/Export), buat
+  `visibleCols` terpisah dan cuma pasang di thead + row-group yang relevan.**
+- Tombol toolbar "Customize View" (icon `SlidersHorizontal`, dekat tombol Refresh) muncul kalau
+  `activeSubTab` courier_audit/courier_rekapan — SENGAJA TIDAK digate `canEdit()`, karena ini
+  preferensi tampilan pribadi (bukan aksi mengubah data), semua role yang bisa lihat halaman ini
+  boleh customize tampilannya sendiri.
 
 ## Edit Massal — Audit Courier & Rekapan Courier (`src/components/SharedDataTable.tsx`, 2026-09)
 

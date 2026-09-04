@@ -5,8 +5,20 @@ import { PAGE_REGISTRY, PAGE_GROUPS } from '../lib/permissions';
 import { Plus, Trash2, ShieldCheck, Users, LayoutGrid, X, Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 import Greeting from '../components/Greeting';
 
-type Role = { id: string; name: string; description: string | null; is_protected: boolean };
+type Role = { id: string; name: string; description: string | null; is_protected: boolean; approval_tier: string | null };
 type ProfileRow = { id: string; email: string | null; nama: string | null };
+
+// Jabatan approval berjenjang FAR Overseas Air (Exim -> PIC -> SPV -> Direktur) -- lihat
+// FarOverseasAirDetailModal.tsx. 1 role BOLEH cuma 1 jabatan (kolom `roles.approval_tier`);
+// kalau butuh field baru yang butuh migration Supabase manual, kolom ini WAJIB sudah ada
+// (`alter table roles add column approval_tier text`) -- lihat catatan di CLAUDE.md.
+const APPROVAL_TIER_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'Bukan approver' },
+  { value: 'TIER1', label: 'Exim (Disiapkan Oleh)' },
+  { value: 'PIC', label: 'PIC' },
+  { value: 'TIER2', label: 'SPV' },
+  { value: 'TIER3', label: 'Direktur' },
+];
 
 export default function RoleManagementPage() {
   useEffect(() => { document.title = 'Kelola Role & Akses · BeeHive'; }, []);
@@ -45,7 +57,7 @@ export default function RoleManagementPage() {
   const fetchAll = async () => {
     setLoading(true);
     const [rolesRes, accessRes, profilesRes, userRolesRes] = await Promise.all([
-      supabase.from('roles').select('id, name, description, is_protected').order('is_protected', { ascending: false }).order('name'),
+      supabase.from('roles').select('id, name, description, is_protected, approval_tier').order('is_protected', { ascending: false }).order('name'),
       supabase.from('role_page_access').select('role_id, page_key, can_edit'),
       supabase.from('profiles').select('id, email, nama').order('nama'),
       supabase.from('user_roles').select('user_id, role_id'),
@@ -118,6 +130,17 @@ export default function RoleManagementPage() {
       showToast(`Role "${role.name}" dihapus.`, 'success');
       fetchAll();
     }
+  };
+
+  // Kolom `approval_tier` butuh migration manual di Supabase (lihat catatan CLAUDE.md) -- kalau
+  // belum dijalankan, update ini akan gagal dgn error "column does not exist", ditampilkan apa
+  // adanya lewat toast supaya kelihatan jelas kalau migration-nya belum di-run.
+  const updateRoleApprovalTier = async (role: Role, tier: string) => {
+    if (role.is_protected) return; // Admin selalu bisa approve semua tahap, tidak lewat matrix ini
+    const value = tier || null;
+    const { error } = await supabase.from('roles').update({ approval_tier: value }).eq('id', role.id);
+    if (error) { showToast('Gagal menyimpan jabatan approval: ' + error.message, 'error'); return; }
+    setRoles(prev => prev.map(r => r.id === role.id ? { ...r, approval_tier: value } : r));
   };
 
   const toggleRolePageAccess = async (role: Role, pageKey: string) => {
@@ -233,15 +256,32 @@ export default function RoleManagementPage() {
                   <div key={role.id} className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm ${role.is_protected ? 'bg-[#5A305A] border-[#5A305A] text-white' : 'bg-white/70 border-[#5A305A]/25 text-[#5A305A]'}`}>
                     <span className="font-semibold">{role.name}</span>
                     {role.is_protected ? (
-                      <span className="text-[10px] uppercase tracking-wide opacity-80">Bawaan</span>
+                      <span className="text-[10px] uppercase tracking-wide opacity-80">Bawaan (approve semua tahap)</span>
                     ) : (
-                      <button onClick={() => handleDeleteRole(role)} title="Hapus role" className="text-rose-500 hover:text-rose-700">
-                        <Trash2 size={13} />
-                      </button>
+                      <>
+                        <select
+                          value={role.approval_tier || ''}
+                          onChange={e => updateRoleApprovalTier(role, e.target.value)}
+                          title="Jabatan approval FAR Overseas Air role ini"
+                          className="text-[10px] font-semibold bg-white border border-[#5A305A]/25 rounded-md px-1.5 py-1 focus:outline-none cursor-pointer"
+                        >
+                          {APPROVAL_TIER_OPTIONS.map(opt => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                        <button onClick={() => handleDeleteRole(role)} title="Hapus role" className="text-rose-500 hover:text-rose-700">
+                          <Trash2 size={13} />
+                        </button>
+                      </>
                     )}
                   </div>
                 ))}
               </div>
+              <p className="relative text-[11px] text-[#5A305A]/60 mb-4 -mt-2">
+                "Jabatan approval" (dropdown kecil di tiap role) menentukan tahap mana yang boleh
+                di-approve role itu di memo FAR Overseas Air (Exim → PIC → SPV → Direktur, harus
+                berurutan). Role Admin selalu bisa approve semua tahap.
+              </p>
               <div className="relative flex items-center gap-2">
                 <input
                   value={newRoleName}

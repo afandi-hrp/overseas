@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { CheckCircle2, XCircle, X, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays, AlertTriangle, Save } from 'lucide-react'
+import { CheckCircle2, XCircle, X, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays, AlertTriangle, Save, SlidersHorizontal, RotateCcw } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
@@ -778,7 +778,7 @@ const COURIER_COLS = [
   { key: 'ppn', label: 'PPN', type: 'num' },
   { key: 'pph', label: 'PPH', type: 'num' },
   { key: 'ntpn', label: 'NTPN' },
-  { key: 'awb', label: 'AWB' },
+  { key: 'awb', label: 'AWB', type: 'awb_strip_carrier' },
   { key: 'weight_kg', label: 'Weight (Kg)', type: 'num' },
   { key: 'an', label: 'A/N' },
   { key: 'po_pt_imi', label: 'PO PT IMI' },
@@ -795,6 +795,24 @@ const COURIER_COLS = [
   { key: 'keterangan', label: 'Internal Remarks' },
   { key: 'created_at', label: 'Created At', type: 'date' }
 ]
+
+// Sumber daftar kolom utk modal "Customize View" -- Audit gabungan (dedup by key) dari
+// PIB_COLS + CN_COLS krn Audit Courier punya sub-tipe PIB/CN/Draft yg kolomnya sedikit beda,
+// tapi 1 preferensi customize view berlaku ke semua sub-tipe (lihat CLAUDE.md). Kolom 'index'
+// dikeluarkan -- selalu tampil, tidak bisa disembunyikan.
+const COURIER_AUDIT_CUSTOMIZABLE_COLS: { key: string; label: string }[] = (() => {
+  const seen = new Set<string>();
+  const merged: { key: string; label: string }[] = [];
+  ;[...PIB_COLS, ...CN_COLS].forEach(c => {
+    if (c.type === 'index' || seen.has(c.key)) return;
+    seen.add(c.key);
+    merged.push({ key: c.key, label: c.label });
+  })
+  return merged;
+})();
+
+const COURIER_REKAPAN_CUSTOMIZABLE_COLS: { key: string; label: string }[] =
+  COURIER_COLS.filter(c => c.type !== 'index').map(c => ({ key: c.key, label: c.label }));
 
 const TRAIL_COLS = [
   { key: 'index', label: 'No.', type: 'index' },
@@ -1359,6 +1377,91 @@ const DeleteModal: React.FC<{ record: any | any[], tab: any, onClose: () => void
   );
 };
 
+// ─── Modal Customize View (pilih kolom yg tampil di tabel) ───────────────────
+const CustomizeViewModal: React.FC<{
+  title: string;
+  allCols: { key: string; label: string }[];
+  hiddenKeys: Set<string>;
+  onCancel: () => void;
+  onSave: (newHiddenKeys: Set<string>) => void;
+}> = ({ title, allCols, hiddenKeys, onCancel, onSave }) => {
+  const [pendingHidden, setPendingHidden] = useState<Set<string>>(new Set(hiddenKeys));
+  const [search, setSearch] = useState('');
+
+  const filteredCols = allCols.filter(c => c.label.toLowerCase().includes(search.toLowerCase()));
+
+  const toggle = (key: string) => {
+    setPendingHidden(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
+        <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
+          <div>
+            <h3 className="text-lg font-bold text-[#5A305A] flex items-center gap-2"><SlidersHorizontal size={17} /> {title}</h3>
+            <p className="text-xs text-[#5A305A]/70 mt-0.5">Choose which columns are shown in the table.</p>
+          </div>
+          <button onClick={onCancel} className="text-[#5A305A] hover:text-[#5A305A] transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="px-6 pt-4 shrink-0">
+          <div className="relative">
+            <SearchIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A305A]/50" />
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search columns..."
+              className="w-full pl-8 pr-3 py-2 rounded-lg border border-slate-200 text-sm text-[#5A305A] focus:outline-none focus:border-[#5A305A]/50"
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-6 py-3 min-h-[200px]">
+          {filteredCols.length === 0 ? (
+            <p className="text-xs text-[#5A305A]/60 text-center py-6">No matching columns.</p>
+          ) : (
+            <ul className="space-y-1">
+              {filteredCols.map(c => (
+                <li key={c.key}>
+                  <label className="flex items-center gap-2.5 py-1.5 px-2 rounded-lg hover:bg-slate-50 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!pendingHidden.has(c.key)}
+                      onChange={() => toggle(c.key)}
+                      className="w-4 h-4 rounded border-slate-300 text-[#5A305A] focus:ring-[#5A305A]/40"
+                    />
+                    <span className="text-sm text-[#5A305A]">{c.label}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3 px-6 py-5 border-t border-slate-100 shrink-0">
+          <button
+            onClick={() => setPendingHidden(new Set())}
+            className="flex items-center gap-1.5 py-2.5 px-3 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-xs hover:bg-slate-50 transition-all"
+          >
+            <RotateCcw size={13} /> Reset to Default
+          </button>
+          <div className="flex-1" />
+          <button onClick={onCancel} className="py-2.5 px-4 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all">Cancel</button>
+          <button onClick={() => onSave(pendingHidden)} className="py-2.5 px-5 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-bold text-sm transition-all">Save</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── Baris Tabel Universal ───────────────────────────────
 
 const getCellData = (c: any, rec: any, index: number) => {
@@ -1468,6 +1571,15 @@ const getCellData = (c: any, rec: any, index: number) => {
     let val = rec[c.key];
     val = formatNoAju(val);
     content = <span className="block max-w-[300px] whitespace-normal break-words leading-relaxed">{val || '—'}</span>;
+  } else if (c.type === 'awb_strip_carrier') {
+    // KHUSUS Courier Rekapan (COURIER_COLS) -- prefix carrier "DHL NO."/"FEDEX No." dibuang dari
+    // tampilan, cukup nomornya saja. SENGAJA beda dari Audit Courier (PIB_COLS/CN_COLS) yang
+    // kolom `awb`-nya TANPA `type` ini (masuk cabang `!c.type` di bawah) supaya tampil apa
+    // adanya dari database -- user eksplisit minta 2 halaman ini beda perilaku (2026-09):
+    // Audit = raw, Rekapan = di-strip. JANGAN disatukan lagi jadi 1 perilaku.
+    let val = rec[c.key];
+    if (typeof val === 'string') val = val.replace(/^(DHL|FEDEX)\s*NO\.?\s*:?\s*/i, '').trim();
+    content = <span className="block max-w-[300px] whitespace-normal break-words leading-relaxed">{val || '—'}</span>;
   } else if (!c.type) {
     let val = rec[c.key];
     if (c.key === 'hs_code' && typeof val === 'string') {
@@ -1479,11 +1591,11 @@ const getCellData = (c: any, rec: any, index: number) => {
       // Gemini extract PPJK "OWN" jadi "OWN <nama>" (mis. "OWN DHL") -- prefix "OWN"-nya cuma
       // metadata internal, tidak perlu ditampilkan ke user, cukup nama PPJK-nya saja.
       val = val.replace(/^OWN\s+/i, '').trim();
-    } else if (c.key === 'awb' && typeof val === 'string') {
-      // Gemini extract AWB dg prefix carrier "DHL NO."/"FEDEX No." -- prefix-nya redundant
-      // (courier-nya sudah kebaca dari kolom lain), user cuma mau lihat nomornya saja.
-      val = val.replace(/^(DHL|FEDEX)\s*NO\.?\s*:?\s*/i, '').trim();
     }
+    // Kolom 'awb' di Audit Courier (PIB_COLS/CN_COLS, masuk cabang `!c.type` ini) SENGAJA
+    // ditampilkan APA ADANYA dari database (2026-09) -- lihat cabang `awb_strip_carrier` di atas
+    // utk perilaku KHUSUS Courier Rekapan yang sebaliknya (prefix carrier di-strip). JANGAN
+    // tambahkan replace/strip apapun ke kolom `awb` di cabang `!c.type` ini.
     content = <span className="block max-w-[300px] whitespace-normal break-words leading-relaxed">{val || '—'}</span>;
   }
   
@@ -2642,10 +2754,42 @@ const toolbarPillClass = (isActive: boolean) => `${TOOLBAR_PILL_BASE} ${isActive
 const TOOLBAR_GLASS = 'bg-white/70 backdrop-blur-md border-slate-200/80 shadow-sm'
 
 export default function SharedDataTable({ defaultMainTab = 'courier', defaultSubTab = 'courier_audit' }: { defaultMainTab?: string, defaultSubTab?: string }) {
-  const { allowedPageKeys, isAdmin, canEdit } = useAuth();
+  const { allowedPageKeys, isAdmin, canEdit, user } = useAuth();
   const canSee = (pageKey: string) => isAdmin || allowedPageKeys.has(pageKey);
   const [activeMainTab, setActiveMainTab] = useState(defaultMainTab)
   const [activeSubTab,  setActiveSubTab]  = useState(defaultSubTab)
+
+  // ── Customize View (pilih kolom yg tampil) -- per-user & per-menu (Audit vs Recap), lihat CLAUDE.md ──
+  const customizeViewStorageKey = (menu: 'courier_audit' | 'courier_rekapan') => `beehive_customize_view:${user?.id || 'anon'}:${menu}`
+  const loadHiddenCols = (menu: 'courier_audit' | 'courier_rekapan'): Set<string> => {
+    try {
+      const raw = localStorage.getItem(customizeViewStorageKey(menu));
+      if (!raw) return new Set();
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? new Set(arr) : new Set();
+    } catch {
+      return new Set();
+    }
+  };
+  const [courierAuditHiddenCols, setCourierAuditHiddenCols] = useState<Set<string>>(() => loadHiddenCols('courier_audit'))
+  const [courierRekapanHiddenCols, setCourierRekapanHiddenCols] = useState<Set<string>>(() => loadHiddenCols('courier_rekapan'))
+  const [showCustomizeView, setShowCustomizeView] = useState<'courier_audit' | 'courier_rekapan' | null>(null)
+  // Reload dari localStorage begitu user (login) berubah -- state di-init sekali saja via useState initializer di atas
+  useEffect(() => {
+    setCourierAuditHiddenCols(loadHiddenCols('courier_audit'));
+    setCourierRekapanHiddenCols(loadHiddenCols('courier_rekapan'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id])
+  const saveHiddenCols = (menu: 'courier_audit' | 'courier_rekapan', hidden: Set<string>) => {
+    try {
+      localStorage.setItem(customizeViewStorageKey(menu), JSON.stringify(Array.from(hidden)));
+    } catch {
+      // localStorage bisa gagal (mode private/quota) -- preferensi tetap berlaku di sesi ini via state
+    }
+    if (menu === 'courier_audit') setCourierAuditHiddenCols(hidden);
+    else setCourierRekapanHiddenCols(hidden);
+    setShowCustomizeView(null);
+  };
 
   useEffect(() => {
     setActiveMainTab(defaultMainTab);
@@ -3861,12 +4005,39 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       })
     : activeTabId === 'trail'
     ? TRAIL_COLS 
-    : (activeMainTab === 'courier' && activeSubTab === 'courier_validasi') 
-    ? VALIDASI_COLS 
+    : (activeMainTab === 'courier' && activeSubTab === 'courier_validasi')
+    ? VALIDASI_COLS
     : COURIER_COLS
+
+  // Customize View -- filter kolom yg ditampilkan di tabel (thead + row), HANYA utk Audit Courier
+  // & Rekapan Courier. `activeCols` (di atas) TETAP UTUH -- masih dipakai apa adanya utk
+  // EditModal/AddRowModal/Export, supaya field yg disembunyikan dari tampilan tabel tetap bisa
+  // diedit/di-export.
+  const activeCourierCustomizeMenu: 'courier_audit' | 'courier_rekapan' | null =
+    activeMainTab === 'courier' && activeSubTab === 'courier_audit' ? 'courier_audit'
+    : activeMainTab === 'courier' && activeSubTab === 'courier_rekapan' ? 'courier_rekapan'
+    : null;
+  const activeCourierHiddenCols = activeCourierCustomizeMenu === 'courier_audit'
+    ? courierAuditHiddenCols
+    : activeCourierCustomizeMenu === 'courier_rekapan'
+    ? courierRekapanHiddenCols
+    : null;
+  const visibleCols = activeCourierHiddenCols
+    ? activeCols.filter(c => c.type === 'index' || !activeCourierHiddenCols.has(c.key))
+    : activeCols;
 
   return (
     <>
+      {showCustomizeView && (
+        <CustomizeViewModal
+          title="Customize View"
+          allCols={showCustomizeView === 'courier_audit' ? COURIER_AUDIT_CUSTOMIZABLE_COLS : COURIER_REKAPAN_CUSTOMIZABLE_COLS}
+          hiddenKeys={showCustomizeView === 'courier_audit' ? courierAuditHiddenCols : courierRekapanHiddenCols}
+          onCancel={() => setShowCustomizeView(null)}
+          onSave={(newHiddenKeys) => saveHiddenCols(showCustomizeView, newHiddenKeys)}
+        />
+      )}
+
       {editRecord && tab && (
         <EditModal
           record={editRecord}
@@ -4161,6 +4332,17 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 >
                   <RefreshCw size={14} />
                 </button>
+                {activeCourierCustomizeMenu && (
+                  <button
+                    onClick={() => setShowCustomizeView(activeCourierCustomizeMenu)}
+                    title="Customize View"
+                    className={`px-3 py-2 rounded-full text-xs font-semibold border transition-all h-[38px] flex justify-center items-center gap-1.5 shrink-0 ${
+                      activeCourierHiddenCols && activeCourierHiddenCols.size > 0 ? 'bg-[#5A305A]/10 text-[#5A305A] border-[#5A305A]/30' : `text-[#5A305A] hover:border-[#5A305A]/30 hover:bg-white/90 ${TOOLBAR_GLASS}`
+                    }`}
+                  >
+                    <SlidersHorizontal size={14} /> Customize View
+                  </button>
+                )}
                 {((activeMainTab === 'courier' && activeSubTab === 'courier_audit') || (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') || (activeMainTab === 'courier' && activeSubTab === 'courier_validasi') || (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit') || (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan')) && (
                   <button
                     onClick={() => {
@@ -4353,7 +4535,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   <table ref={tableRef} className="w-full text-sm min-w-max relative border-collapse">
                   <thead className="sticky top-0 z-20">
                     <tr className="bg-slate-50 shadow-sm border-b border-slate-200">
-                      {activeCols.map(col => (
+                      {visibleCols.map(col => (
                         <th
                           key={col.key}
                           onClick={() => {
@@ -4433,7 +4615,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                             key={rec.id}
                             rec={rec}
                             index={startIndex + index}
-                            cols={activeCols}
+                            cols={visibleCols}
                             onChecklist={canSee('courier_checklist_dokumen') ? setChkRecord : undefined}
                             onValidasi={canSee('courier_dokumen_validation') ? setValidasiRecord : undefined}
                             onCostValidasi={canSee('courier_cost_validation') ? (r) => setCostValidasiRecord(r) : undefined}
@@ -4454,7 +4636,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                             key={rec.id}
                             rec={rec}
                             index={startIndex + index}
-                            cols={activeCols}
+                            cols={visibleCols}
                             onDelete={canEditCourierRekapan ? handleDelete : undefined}
                             editMode={canEditCourierRekapan ? courierRekapanEditMode : undefined}
                             getVal={canEditCourierRekapan ? getCourierRekapanVal : undefined}
