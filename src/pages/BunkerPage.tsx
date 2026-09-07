@@ -244,6 +244,25 @@ export default function BunkerPage() {
     setQueue(prev => prev.filter(i => i.id !== id));
   };
 
+  // Clear massal (2026-09, permintaan user, replika persis pola yang sama di FAR Overseas Air) --
+  // hapus SEMUA item SUCCESS/FAILED sekaligus, biar tidak perlu klik "x" satu-satu per kartu.
+  // Item PENDING TIDAK ikut kehapus (masih berjalan).
+  const clearCompletedFailedQueue = async () => {
+    const idsToDismiss = queue.filter(i => i.status === 'SUCCESS' || i.status === 'FAILED').map(i => i.id);
+    if (idsToDismiss.length === 0) return;
+    if (!confirm('Clear all completed/failed queue items?')) return;
+    try {
+      const { error } = await supabase.from('bunker_processing_queue').delete().in('id', idsToDismiss);
+      if (error) throw error;
+      setQueue(prev => prev.filter(i => i.status !== 'SUCCESS' && i.status !== 'FAILED'));
+      setToastMessage('Queue cleared successfully.');
+      setTimeout(() => setToastMessage(null), 4000);
+    } catch (err: any) {
+      setToastMessage('⚠️ Failed to clear queue: ' + (err.message || String(err)));
+      setTimeout(() => setToastMessage(null), 6000);
+    }
+  };
+
   const openCompareFromQueue = async (bunkerDokumenId: string) => {
     const { data } = await supabase.from('bunker_dokumen').select('*').eq('id', bunkerDokumenId).maybeSingle();
     if (data) setCompareRow(data);
@@ -546,9 +565,19 @@ export default function BunkerPage() {
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-[85vw] max-w-6xl max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0">
-              <div className="flex items-center gap-2.5">
-                <Clock size={19} className="text-[#5A305A]" />
-                <h2 className="text-lg font-bold text-[#5A305A]">Processing Queue</h2>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2.5">
+                  <Clock size={19} className="text-[#5A305A]" />
+                  <h2 className="text-lg font-bold text-[#5A305A]">Processing Queue</h2>
+                </div>
+                {queue.some(i => i.status === 'SUCCESS' || i.status === 'FAILED') && (
+                  <button
+                    onClick={clearCompletedFailedQueue}
+                    className="text-[11px] font-semibold text-[#5A305A] hover:text-[#5A305A] bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-lg transition-colors"
+                  >
+                    ✕ Clear Completed/Failed
+                  </button>
+                )}
               </div>
               <button onClick={() => setShowQueuePanel(false)} className="text-[#5A305A] hover:text-[#5A305A] p-1"><X size={20} /></button>
             </div>

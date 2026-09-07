@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { CheckCircle2, XCircle, X, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays, AlertTriangle, Save, SlidersHorizontal, RotateCcw, SquareX } from 'lucide-react'
+import { CheckCircle2, XCircle, X, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays, AlertTriangle, Save, SlidersHorizontal, RotateCcw, SquareX, UploadCloud } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import Greeting from './Greeting'
 import ExportModal from '../components/ExportModal'
+import CourierUploadSusulanModal from '../components/CourierUploadSusulanModal'
 import ValidasiModal from '../components/ValidasiModal'
 import CostValidationModal from '../components/CostValidationModal'
 import SeaAirChecklistModal from '../components/SeaAirChecklistModal'
@@ -572,7 +573,7 @@ const SEA_AIR_AUDIT_COLS = [
   { key: 'impor_an', label: 'Import A/N' },
   { key: 'via', label: 'Via', type: 'badge_via' },
   { key: 'delivery_term', label: 'Delivery Term' },
-  { key: 'no_pib', label: 'No. PIB', type: 'no_aju_format' },
+  { key: 'no_aju', label: 'No. PIB', type: 'no_aju_format' },
   { key: 'awb', label: 'AWB/BL' },
   { key: 'total_pib', label: 'Total PIB', type: 'num_bold' },
   { key: 'total_inv_freight', label: 'Total Inv Freight', type: 'num' },
@@ -1057,8 +1058,67 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true }: { rec
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
+  // Upload dokumen susulan (2026-09) -- tombol "Upload Additional Doc" di footer modal ini,
+  // kirim ulang dokumen yang belum terupload saat upload pertama di halaman Upload Courier,
+  // dikunci ke AWB record ini (lihat CourierUploadSusulanModal.tsx). Status job-nya ditampilkan
+  // inline di sini, REPLIKA PERSIS pola polling per-job BunkerKelengkapanModal.tsx (bukan cuma
+  // mengandalkan widget ProcessingQueue generik yang tidak dirender di halaman Audit Courier).
+  const [showUploadSusulan, setShowUploadSusulan] = useState(false)
+  const [activeJobId, setActiveJobId] = useState<string | null>(null)
+  const [activeJobStatus, setActiveJobStatus] = useState<'PENDING' | 'SUCCESS' | 'FAILED' | 'SENT' | null>(null)
+  const [activeJobError, setActiveJobError] = useState<string | null>(null)
+
   const isPib = record.jenis_dokumen === 'PIB' || record.tabel === 'tabel_audit_pib' || tab.id === 'pib';
   const docType = isPib ? 'pib' : 'cn';
+
+  // Refetch checklist boolean fields dari dokumen_checklist setelah job upload susulan SUCCESS --
+  // supaya centang di modal ini ikut update tanpa perlu tutup-buka modal manual. TIDAK
+  // mempengaruhi/menimpa pending toggle checkbox yang belum di-Save (kalau ada), krn cuma
+  // di-trigger dari event job SUCCESS, bukan dipanggil terus-menerus.
+  const refetchChecklistAfterUpload = useCallback(async () => {
+    try {
+      const { data } = await supabase.from('dokumen_checklist').select('*').eq(isPib ? 'pib_id' : 'cn_id', record.id).maybeSingle()
+      if (data) {
+        const updated: Record<string, boolean> = {}
+        CHECKLIST_FIELDS.forEach(f => { updated[f.key] = !!data[f.key] })
+        setForm(updated)
+        setExistingId(data.id)
+      }
+    } catch (e) {
+      // Diamkan -- kalau gagal refresh otomatis, user masih bisa tutup & buka lagi modal ini manual.
+    }
+  }, [record.id, isPib])
+
+  useEffect(() => {
+    if (!activeJobId || activeJobStatus !== 'PENDING') return
+    const iv = setInterval(async () => {
+      const { data } = await supabase.from('tabel_processing_queue').select('*').eq('id', activeJobId).maybeSingle()
+      if (data) {
+        if (data.status === 'SUCCESS') {
+          setActiveJobStatus('SUCCESS')
+          refetchChecklistAfterUpload()
+          onSaved?.()
+        } else if (data.status === 'FAILED') {
+          setActiveJobStatus('FAILED')
+          setActiveJobError(data.error_message || 'Failed to process document.')
+        }
+      }
+    }, 4000)
+    return () => clearInterval(iv)
+  }, [activeJobId, activeJobStatus, refetchChecklistAfterUpload, onSaved])
+
+  const handleUploadJobStarted = (jobId: string) => {
+    setActiveJobId(jobId)
+    setActiveJobStatus('PENDING')
+    setActiveJobError(null)
+  }
+  const handleUploadSentNoJob = () => {
+    // n8n tidak mengembalikan job_id -- tidak bisa di-poll per-job spesifik, cukup kasih tau
+    // user dokumennya sudah terkirim & minta buka ulang checklist ini nanti utk lihat hasilnya.
+    setActiveJobId('sent-no-job')
+    setActiveJobStatus('SENT')
+    setActiveJobError(null)
+  }
 
   useEffect(() => {
     async function loadData() {
@@ -1177,6 +1237,34 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true }: { rec
         </div>
         
         <div className="flex-1 overflow-y-auto p-6">
+          {activeJobStatus === 'PENDING' && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-5 flex items-center gap-2.5">
+              <div className="w-6 h-6 rounded-full border-2 border-amber-400 border-t-transparent animate-spin shrink-0" />
+              <p className="text-xs font-semibold text-amber-800">Additional document being processed by AI...</p>
+            </div>
+          )}
+          {activeJobStatus === 'SUCCESS' && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 mb-5 flex items-center gap-2.5">
+              <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
+              <p className="text-xs font-semibold text-emerald-800">Additional document merged into this record successfully.</p>
+            </div>
+          )}
+          {activeJobStatus === 'FAILED' && (
+            <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 mb-5 flex items-start gap-2.5">
+              <AlertTriangle size={18} className="text-rose-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs font-semibold text-rose-800">Failed to process the additional document.</p>
+                <p className="text-[11px] text-rose-700 mt-0.5">{activeJobError}</p>
+              </div>
+            </div>
+          )}
+          {activeJobStatus === 'SENT' && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-5 flex items-start gap-2.5">
+              <UploadCloud size={18} className="text-blue-600 shrink-0 mt-0.5" />
+              <p className="text-xs font-semibold text-blue-800">Document sent to the processing queue. Reopen this checklist in a moment to see the update.</p>
+            </div>
+          )}
+
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 mb-6">
             <div className="flex justify-between items-center mb-4">
               <div>
@@ -1261,6 +1349,14 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true }: { rec
         
         {/* Footer Modal */}
         <div className="flex gap-3 px-6 py-5 border-t border-slate-100 bg-slate-50">
+          {canEdit && (
+            <button
+              onClick={() => setShowUploadSusulan(true)}
+              className="shrink-0 flex items-center gap-1.5 py-2.5 px-4 rounded-xl border border-[#5A305A]/30 bg-white text-[#5A305A] font-semibold text-sm hover:bg-[#5A305A]/5 transition-all"
+            >
+              <UploadCloud size={15} /> Upload Additional Doc
+            </button>
+          )}
           {canEdit ? (
             <>
               <button
@@ -1287,6 +1383,15 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true }: { rec
           )}
         </div>
       </div>
+
+      {showUploadSusulan && (
+        <CourierUploadSusulanModal
+          awbHint={record.awb || undefined}
+          onClose={() => setShowUploadSusulan(false)}
+          onJobStarted={handleUploadJobStarted}
+          onSentNoJob={handleUploadSentNoJob}
+        />
+      )}
     </div>
   )
 }

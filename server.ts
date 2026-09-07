@@ -38,6 +38,12 @@ app.post('/api/n8n-proxy-start', upload.any(), async (req, res) => {
       }
       const noPoHint = req.body?.no_po_hint;
       if (noPoHint) formData.append('no_po_hint', noPoHint);
+      // Dipakai tombol "Upload Additional Doc" di Document Completeness Checklist (Audit
+      // Courier, CourierUploadSusulanModal.tsx) -- supaya dokumen susulan yang tidak selalu
+      // mencantumkan AWB di dalamnya sendiri (mis. Credit Note) tetap bisa digabung n8n ke
+      // record PIB/CN yang benar berdasar AWB, bukan dianggap shipment baru.
+      const awbHint = req.body?.awb_hint;
+      if (awbHint) formData.append('awb_hint', awbHint);
     }
 
     const response = await fetch(webhookUrl, {

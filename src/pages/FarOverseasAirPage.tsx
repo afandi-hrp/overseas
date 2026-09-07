@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
 import { CheckCircle2, FileCheck2, UploadCloud, X, AlertTriangle, Clock, ClipboardCheck, ClipboardList, Edit3, Save, Scale, Trash2, RefreshCw, ChevronDown } from 'lucide-react';
-import { formatMoney, formatDateID, APPROVAL_STATUS_META, COST_STATUS_META, REKAPAN_EDITABLE_FIELDS, updateRekapanFarOverseasAir, parseRouteNote, rematchTarif, mapModeToJenisLayanan, computeExpectedFromRate, computeCostStatus, parseJsonField, type PoListEntry } from '../utils/FarOverseasAirHelpers';
+import { formatMoney, formatDateID, APPROVAL_STATUS_META, COST_STATUS_META, REKAPAN_EDITABLE_FIELDS, updateRekapanFarOverseasAir, parseRouteNote, rematchTarif, mapModeToJenisLayanan, computeExpectedFromRate, computeCostStatus, parseJsonField, fetchPicEligibleUsers, type PoListEntry, type PicEligibleUser } from '../utils/FarOverseasAirHelpers';
 import { EditableCell } from '../components/FarOverseasAirEditableField';
 import FarOverseasAirDetailModal from '../components/FarOverseasAirDetailModal';
 import FarOverseasAirCostValidationModal from '../components/FarOverseasAirCostValidationModal';
@@ -121,6 +121,7 @@ type ListRenderCtx = {
   setVal: (r: any, field: string, value: any) => void;
   expandedPoRows: Set<string>;
   togglePoExpanded: (id: string) => void;
+  picUsers: PicEligibleUser[];
 };
 
 type ListColumn = {
@@ -251,11 +252,89 @@ const LIST_COLUMNS: ListColumn[] = [
     { header: 'AMOUNT', field: 'clearance_other_total', inputType: 'number', align: 'right', format: fmtWithCurrency('total_amount_currency') },
     { header: 'TOTAL AMOUNT', field: 'total_amount', inputType: 'number', align: 'right', format: fmtTotalAmount },
     { header: 'NOTE 1', field: 'route_note', wide: true, inputPlaceholder: 'PENGIRIMAN DARI {ASAL} KE {TUJUAN} (AIR/SEA/REG/EXPRESS/ECONOMY)' },
-    { header: 'NOTE 2', field: 'item_description', wide: true },
+    // NOTE 2 dipecah 2 (2026-09, permintaan user): KIRI = item_description hasil ekstraksi
+    // otomatis n8n, SELAMANYA read-only (dikeluarkan dari REKAPAN_EDITABLE_FIELDS supaya tidak
+    // bisa lagi ketimpa lewat UI, beda dari sebelumnya yg 1 field ini langsung bisa diedit &
+    // menimpa nilai ekstraksi). KANAN = kolom BARU `item_description_manual`, murni catatan
+    // manual user, terikat ke pendingEdits/getVal/setVal spt kolom lain. Memo cetak
+    // (FarOverseasAirDetailModal.tsx) SENGAJA TIDAK ikut menampilkan `item_description_manual`
+    // -- baris "2." di NOTE memo cetak resmi TETAP hanya dari `item_description` DB, tidak
+    // berubah (dikonfirmasi user: catatan manual ini murni internal, tidak dicetak).
+    {
+      header: 'NOTE 2',
+      render: (r, _idx, _costStatus, ctx) => {
+        const editingThisRow = ctx.editingRowId === r.id;
+        const manualVal = ctx.getVal(r, 'item_description_manual');
+        const edited = Array.isArray(r.edited_fields) && r.edited_fields.includes('item_description_manual');
+        return (
+          <div className="w-[360px] flex items-start gap-2">
+            <div className="flex-1 min-w-0">
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wide mb-1">From Document</p>
+              <p className="whitespace-normal break-words leading-snug">
+                {r.item_description || <span className="italic text-slate-400">-</span>}
+              </p>
+            </div>
+            <div className="w-px self-stretch bg-slate-200 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wide mb-1">Manual Note</p>
+              <EditableCell
+                value={manualVal}
+                editable={editingThisRow}
+                edited={edited}
+                className="whitespace-normal break-words"
+                onChange={(v) => ctx.setVal(r, 'item_description_manual', v)}
+              />
+            </div>
+          </div>
+        );
+      }
+    },
     { header: 'NOTE 3', field: 'status_note', wide: true },
     { header: 'NOTE 4', field: 'other_note', wide: true },
     { header: 'MEMO TITLE', field: 'memo_title' },
-    { header: 'PIC', field: 'pic_name' },
+    // Kolom PIC (2026-09, GANTI dari free-text `pic_name` jadi dropdown user) -- admin/ops pilih
+    // SIAPA yang berhak approve tahap PIC utk memo ini, dibatasi ke user yg punya page access
+    // `direct_loading` (`ctx.picUsers`, dari RPC `get_users_with_page_access`). Field baru
+    // `pic_user_id` jadi SATU-SATUNYA sumber otorisasi tahap PIC (lihat
+    // `FarOverseasAirDetailModal.tsx` `isEligibleForStep` & CLAUDE.md) -- dropdown "Jabatan
+    // Approval PIC" di Kelola Role & Akses TIDAK LAGI dipakai utk tahap ini. `pic_name` (teks)
+    // TETAP disinkronkan otomatis dari nama user yang dipilih (lihat onChange di bawah) supaya
+    // memo cetak (`FarOverseasAirDetailModal.tsx`, kolom "Disiapkan Oleh") TIDAK PERLU diubah
+    // sama sekali -- tetap baca `rec.pic_name` seperti sebelumnya.
+    {
+      header: 'PIC',
+      render: (r, _idx, _costStatus, ctx) => {
+        const editingThisRow = ctx.editingRowId === r.id;
+        const picUserId = ctx.getVal(r, 'pic_user_id');
+        const edited = Array.isArray(r.edited_fields) && r.edited_fields.includes('pic_user_id');
+        if (editingThisRow) {
+          return (
+            <select
+              value={picUserId || ''}
+              onChange={(e) => {
+                const selectedId = e.target.value || null;
+                const selectedUser = ctx.picUsers.find(u => u.id === selectedId);
+                ctx.setVal(r, 'pic_user_id', selectedId);
+                ctx.setVal(r, 'pic_name', selectedUser ? (selectedUser.nama || selectedUser.email || '') : null);
+              }}
+              className="w-[170px] text-xs p-1.5 border border-blue-400 rounded outline-none text-[#5A305A] bg-white"
+            >
+              <option value="">— Not assigned —</option>
+              {ctx.picUsers.map(u => (
+                <option key={u.id} value={u.id}>{u.nama || u.email}</option>
+              ))}
+            </select>
+          );
+        }
+        const resolvedName = ctx.picUsers.find(u => u.id === picUserId)?.nama || r.pic_name;
+        return (
+          <div className="w-[150px] flex items-center gap-1">
+            {resolvedName ? <span>{resolvedName}</span> : <span className="italic text-slate-400">Not assigned</span>}
+            {edited && <Edit3 size={11} className="text-amber-500 shrink-0" />}
+          </div>
+        );
+      }
+    },
     { header: 'BUYER', field: 'buyer_name' },
     { header: 'EXPECTED PAYMENT DATE', field: 'expected_payment_date', inputType: 'date', format: v => formatDateID(v) },
     {
@@ -323,6 +402,7 @@ const FAR_EXPORT_COLS = [
   { key: 'total_amount_display', label: 'TOTAL AMOUNT' },
   { key: 'route_note', label: 'NOTE 1' },
   { key: 'item_description', label: 'NOTE 2' },
+  { key: 'item_description_manual', label: 'NOTE 2 (MANUAL)' },
   { key: 'status_note', label: 'NOTE 3' },
   { key: 'other_note', label: 'NOTE 4' },
   { key: 'memo_title', label: 'JUDUL MEMO' },
@@ -365,6 +445,7 @@ export default function FarOverseasAirPage() {
   const [approvalFilter, setApprovalFilter] = useState<'ALL' | 'PIC' | 'TIER1' | 'TIER2' | 'TIER3'>('ALL');
   const [approvalCounts, setApprovalCounts] = useState({ pic: 0, tier1: 0, tier2: 0, tier3: 0 });
   const [queue, setQueue] = useState<any[]>([]);
+  const [picUsers, setPicUsers] = useState<PicEligibleUser[]>([]);
   const [selected, setSelected] = useState<any | null>(null);
   const [costModalRow, setCostModalRow] = useState<any | null>(null);
   const [weightModalRow, setWeightModalRow] = useState<any | null>(null);
@@ -564,6 +645,10 @@ export default function FarOverseasAirPage() {
 
   useEffect(() => { fetchApprovalCounts(); }, [fetchApprovalCounts]);
 
+  // Daftar user yang boleh dipilih sbg PIC di kolom List Memo -- di-fetch sekali saat halaman
+  // dibuka (bukan tiap render), lihat CLAUDE.md "PIC per-memo assignment".
+  useEffect(() => { fetchPicEligibleUsers().then(setPicUsers); }, []);
+
   // Nilai efektif sebuah field: kalau ada edit lokal yang belum disimpan, pakai itu -- kalau
   // tidak, pakai nilai dari server. Perubahan HANYA disimpan ke DB saat "Simpan Semua" diklik.
   const getVal = useCallback((r: any, field: string) => {
@@ -746,6 +831,27 @@ export default function FarOverseasAirPage() {
     setQueue(prev => prev.filter(i => i.id !== id));
   };
 
+  // Clear massal (2026-09, permintaan user) -- hapus SEMUA item SUCCESS/FAILED sekaligus, biar
+  // tidak perlu klik "x" satu-satu per kartu. Item PENDING/PROCESSING TIDAK ikut kehapus (masih
+  // berjalan). Pola replika `ProcessingQueue.tsx` (`handleDismiss`/"Clear Completed/Failed"),
+  // komponen generik Courier/Sea & Air yang TIDAK dipakai di halaman ini (FAR Overseas punya
+  // modal antrian sendiri, `QueueCard`/`fetchQueue` di file ini).
+  const clearCompletedFailedQueue = async () => {
+    const idsToDismiss = queue.filter(i => i.status === 'SUCCESS' || i.status === 'FAILED').map(i => i.id);
+    if (idsToDismiss.length === 0) return;
+    if (!confirm('Clear all completed/failed queue items?')) return;
+    try {
+      const { error } = await supabase.from('far_overseas_air_processing_queue').delete().in('id', idsToDismiss);
+      if (error) throw error;
+      setQueue(prev => prev.filter(i => i.status !== 'SUCCESS' && i.status !== 'FAILED'));
+      setToastMessage('Queue cleared successfully.');
+      setTimeout(() => setToastMessage(null), 4000);
+    } catch (err: any) {
+      setToastMessage('⚠️ Failed to clear queue: ' + (err.message || String(err)));
+      setTimeout(() => setToastMessage(null), 6000);
+    }
+  };
+
   const totalPages = Math.ceil(totalRecords / pageSize) || 1;
   const validPage = Math.min(page, totalPages);
   const listStartIndex = (validPage - 1) * pageSize;
@@ -904,7 +1010,7 @@ export default function FarOverseasAirPage() {
                     rows.map((r, idx) => {
                       const costStatus = costStatusMap[r.id];
                       const editingThisRow = editingRowId === r.id;
-                      const ctx: ListRenderCtx = { onOpenWeightModal: setWeightModalRow, editingRowId, getVal, setVal, expandedPoRows, togglePoExpanded };
+                      const ctx: ListRenderCtx = { onOpenWeightModal: setWeightModalRow, editingRowId, getVal, setVal, expandedPoRows, togglePoExpanded, picUsers };
                       return (
                         <tr key={r.id} className="group bg-white hover:bg-slate-50 transition-colors">
                           {LIST_COLUMNS.map((col, i) => {
@@ -1115,9 +1221,19 @@ export default function FarOverseasAirPage() {
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-[85vw] max-w-6xl max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0">
-              <div className="flex items-center gap-2.5">
-                <Clock size={19} className="text-[#5A305A]" />
-                <h2 className="text-lg font-bold text-[#5A305A]">Processing Queue</h2>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2.5">
+                  <Clock size={19} className="text-[#5A305A]" />
+                  <h2 className="text-lg font-bold text-[#5A305A]">Processing Queue</h2>
+                </div>
+                {queue.some(i => i.status === 'SUCCESS' || i.status === 'FAILED') && (
+                  <button
+                    onClick={clearCompletedFailedQueue}
+                    className="text-[11px] font-semibold text-[#5A305A] hover:text-[#5A305A] bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-lg transition-colors"
+                  >
+                    ✕ Clear Completed/Failed
+                  </button>
+                )}
               </div>
               <button onClick={() => setShowQueuePanel(false)} className="text-[#5A305A] hover:text-[#5A305A] p-1"><X size={20} /></button>
             </div>

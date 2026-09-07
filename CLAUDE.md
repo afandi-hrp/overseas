@@ -753,6 +753,319 @@ Komentar kode & isi CLAUDE.md ini SENGAJA TETAP Bahasa Indonesia (bukan bagian d
   (`w-[70vw] max-w-3xl` / `w-[85vw] max-w-6xl`), bukan lebar tetap kecil — supaya proporsional
   di layar besar (24").
 
+## FAR Overseas Air — PIC per-memo assignment (2026-09, GANTI TOTAL dari `user_approval_tiers`)
+
+**Keputusan desain (dikonfirmasi user 2026-09)**: kolom **PIC** di List Memo, yang SEBELUMNYA
+cuma teks bebas (`pic_name`, TIDAK terhubung ke otorisasi approve sama sekali — siapa pun yang
+punya jabatan approval "PIC" di Kelola Role & Akses bisa approve tahap PIC memo MANAPUN), SEKARANG
+jadi **dropdown pilih user per-baris** — dan user yang dipilih itu jadi SATU-SATUNYA yang boleh
+approve tahap PIC memo tersebut. Ini BUKAN penambahan syarat di atas `user_approval_tiers`,
+tapi **PENGGANTIAN TOTAL mekanisme utk tahap PIC** — dropdown "Jabatan Approval FAR Overseas"
+di Kelola Role & Akses (panel "Roles per User") **TIDAK LAGI berpengaruh ke tahap PIC** (TETAP
+berlaku normal ke tahap TIER2/SPV & TIER3/Director, itu TIDAK berubah). Kalau baris belum
+di-assign PIC-nya sama sekali, TIDAK ADA SIAPA PUN yang eligible approve tahap itu (termasuk
+Admin) sampai di-assign lewat dropdown ini.
+
+- **Kolom baru** `rekapan_far_overseas_air.pic_user_id` (uuid, FK ke `profiles.id`) — SATU-SATUNYA
+  sumber otorisasi tahap PIC sekarang. Kolom lama `pic_name` (text) TETAP ADA, TIDAK dihapus, tapi
+  SEKARANG murni kosmetik/cetak — otomatis disinkronkan (nama user yg dipilih) tiap kali
+  `pic_user_id` diubah & disimpan (`FarOverseasAirPage.tsx`, handler `onChange` dropdown PIC set
+  `pic_user_id` DAN `pic_name` sekaligus ke `pendingEdits`) — supaya `FarOverseasAirDetailModal.tsx`
+  (kolom "Disiapkan Oleh" di memo cetak) **TIDAK PERLU disentuh sama sekali**, tetap baca
+  `rec.pic_name` apa adanya seperti sebelum perubahan ini.
+- **Dropdown pilihan user** (`ctx.picUsers`, di-fetch sekali saat halaman dibuka lewat
+  `fetchPicEligibleUsers()` → RPC `get_users_with_page_access('direct_loading')`) — berisi SEMUA
+  user yang punya **page access** (bukan cuma edit access) ke halaman `direct_loading`, sesuai
+  permintaan eksplisit user ("role akses utk halaman ini", BUKAN dibatasi ke akses edit). Bahwa
+  user itu BENERAN bisa approve tetap butuh `canEditDirectLoading` (gerbang lama, tidak berubah)
+  — jadi kalau admin assign PIC ke user yang cuma view-only, tombol approve tetap tidak akan
+  muncul buat dia sampai role-nya dikasih akses edit juga (2 syarat independen, sama pola dgn
+  gating approval lain di app ini).
+- **`FarOverseasAirHelpers.ts`** — `pic_user_id` ditambahkan ke `REKAPAN_EDITABLE_FIELDS`
+  (`pic_name` TETAP di situ juga, karena disinkron bareng). `fetchPicEligibleUsers()` fungsi baru,
+  wrapper RPC di atas.
+- **`FarOverseasAirDetailModal.tsx`** — helper baru `isEligibleForStep(step)`: utk `step==='PIC'`
+  cek `rec.pic_user_id === user?.id` (BUKAN lagi `canApproveTier('direct_loading','PIC')`), utk
+  step lain TETAP `canApproveTier(...)` seperti sebelumnya. Dipakai GANTI `canApproveTier(...)`
+  langsung di 3 tempat: `canReject`, kondisi tampil pesan "tidak eligible", kondisi tampil tombol
+  Approve. Pesan penjelas saat tidak eligible dibedakan utk PIC: "This memo doesn't have a PIC
+  assigned yet..." (kalau `pic_user_id` masih null) vs "You are not the PIC assigned to this
+  memo." (kalau sudah di-assign tapi ke user lain).
+- **BELUM DIJALANKAN ke Supabase production — WAJIB dijalankan manual dulu di SQL editor**
+  (tanpa ini, kolom PIC di List Memo akan gagal tersimpan — kolom `pic_user_id` belum ada — dan
+  RPC `get_users_with_page_access` akan error "function does not exist" begitu halaman dibuka):
+  ```sql
+  alter table public.rekapan_far_overseas_air
+    add column if not exists pic_user_id uuid references public.profiles(id);
+
+  -- RPC baru: daftar user yang py page access ke suatu page_key. SECURITY DEFINER krn user
+  -- biasa (non-admin) TIDAK punya akses SELECT langsung ke role_page_access/user_roles/profiles
+  -- (RLS admin-only, lihat halaman Kelola Role & Akses) -- tapi tetap perlu baca daftar ini utk
+  -- ngisi dropdown PIC. UNION dgn role is_protected (Admin) krn Admin SELALU akses penuh
+  -- (hardcode di is_admin(), tidak lewat role_page_access -- lihat catatan RBAC di atas).
+  create or replace function public.get_users_with_page_access(p_page_key text)
+  returns table (id uuid, nama text, email text)
+  language sql
+  security definer
+  stable
+  as $$
+    select distinct p.id, p.nama, p.email
+    from public.profiles p
+    join public.user_roles ur on ur.user_id = p.id
+    join public.roles r on r.id = ur.role_id
+    left join public.role_page_access rpa on rpa.role_id = r.id and rpa.page_key = p_page_key
+    where r.is_protected = true or rpa.page_key is not null
+    order by p.nama;
+  $$;
+
+  grant execute on function public.get_users_with_page_access(text) to authenticated;
+
+  -- Timpa guard tahap PIC di approve_far_overseas_air (TIER1/TIER2/TIER3 TIDAK berubah) --
+  -- create or replace, nama & param function-nya SAMA, aman ditimpa.
+  create or replace function public.approve_far_overseas_air(
+    p_id uuid,
+    p_step text,
+    p_nama text,
+    p_jabatan text default null
+  )
+  returns jsonb
+  language plpgsql
+  security definer
+  as $$
+  declare
+    v_current_status text;
+    v_expected_status text;
+    v_new_status text;
+    v_entry_tier_text text;
+    v_entry jsonb;
+    v_new_approvals jsonb;
+  begin
+    if not public.has_edit_access('direct_loading') then
+      raise exception 'Not authorized to edit FAR Overseas Air memos';
+    end if;
+
+    if p_step not in ('TIER1', 'PIC', 'TIER2', 'TIER3') then
+      raise exception 'Invalid approval step: %', p_step;
+    end if;
+
+    -- TAHAP PIC (2026-09, GANTI): otorisasi dari `pic_user_id` PER-MEMO (kolom PIC di List
+    -- Memo), BUKAN lagi dari user_approval_tiers. TIER1/TIER2/TIER3 TETAP lewat
+    -- user_approval_tiers seperti sebelumnya, TIDAK berubah.
+    if p_step = 'PIC' then
+      if not exists (
+        select 1 from public.rekapan_far_overseas_air
+        where id = p_id and pic_user_id = auth.uid()
+      ) then
+        raise exception 'You are not the assigned PIC for this memo';
+      end if;
+    else
+      if not exists (
+        select 1 from public.user_approval_tiers uat
+        where uat.user_id = auth.uid() and uat.page_key = 'direct_loading' and uat.tier = p_step
+      ) then
+        raise exception 'You do not have the % approval role', p_step;
+      end if;
+    end if;
+
+    select approval_status into v_current_status
+    from public.rekapan_far_overseas_air
+    where id = p_id
+    for update;
+
+    if not found then
+      raise exception 'Memo not found: %', p_id;
+    end if;
+
+    v_expected_status := case p_step
+      when 'TIER1' then 'PENDING'
+      when 'PIC' then 'TIER1_DONE'
+      when 'TIER2' then 'PIC_DONE'
+      when 'TIER3' then 'TIER2_DONE'
+    end;
+
+    if v_current_status is distinct from v_expected_status then
+      raise exception 'This memo is not currently awaiting the % step (current status: %)', p_step, v_current_status;
+    end if;
+
+    v_new_status := case p_step
+      when 'TIER1' then 'TIER1_DONE'
+      when 'PIC' then 'PIC_DONE'
+      when 'TIER2' then 'TIER2_DONE'
+      when 'TIER3' then 'APPROVED'
+    end;
+
+    v_entry_tier_text := case p_step when 'PIC' then 'PIC' when 'TIER1' then '1' when 'TIER2' then '2' when 'TIER3' then '3' end;
+
+    v_entry := case p_step
+      when 'PIC' then jsonb_build_object('tier', 'PIC', 'nama', p_nama, 'jabatan', 'PIC', 'approved_at', now(), 'user_email', auth.email())
+      when 'TIER1' then jsonb_build_object('tier', 1, 'nama', p_nama, 'jabatan', coalesce(p_jabatan, '-'), 'approved_at', now(), 'user_email', auth.email())
+      when 'TIER2' then jsonb_build_object('tier', 2, 'nama', p_nama, 'jabatan', coalesce(p_jabatan, '-'), 'approved_at', now(), 'user_email', auth.email())
+      when 'TIER3' then jsonb_build_object('tier', 3, 'nama', p_nama, 'jabatan', coalesce(p_jabatan, '-'), 'approved_at', now(), 'user_email', auth.email())
+    end;
+
+    select coalesce(jsonb_agg(elem), '[]'::jsonb)
+    into v_new_approvals
+    from jsonb_array_elements(
+      coalesce((select approvals from public.rekapan_far_overseas_air where id = p_id), '[]'::jsonb)
+    ) elem
+    where (elem->>'tier') is distinct from v_entry_tier_text;
+
+    v_new_approvals := v_new_approvals || jsonb_build_array(v_entry);
+
+    update public.rekapan_far_overseas_air
+    set approval_status = v_new_status,
+        approvals = v_new_approvals
+    where id = p_id;
+
+    return jsonb_build_object('approval_status', v_new_status, 'approvals', v_new_approvals);
+  end;
+  $$;
+
+  grant execute on function public.approve_far_overseas_air(uuid, text, text, text) to authenticated;
+
+  -- Timpa guard tahap PIC di reject_far_overseas_air (v_next_step dihitung dari status saat ini,
+  -- sama seperti sebelumnya) -- TIER1/TIER2/TIER3 TIDAK berubah.
+  create or replace function public.reject_far_overseas_air(
+    p_id uuid,
+    p_reason text
+  )
+  returns jsonb
+  language plpgsql
+  security definer
+  as $$
+  declare
+    v_current_status text;
+    v_next_step text;
+  begin
+    if not public.has_edit_access('direct_loading') then
+      raise exception 'Not authorized to edit FAR Overseas Air memos';
+    end if;
+
+    if p_reason is null or btrim(p_reason) = '' then
+      raise exception 'Rejection reason is required';
+    end if;
+
+    select approval_status into v_current_status
+    from public.rekapan_far_overseas_air
+    where id = p_id
+    for update;
+
+    if not found then
+      raise exception 'Memo not found: %', p_id;
+    end if;
+
+    if v_current_status in ('APPROVED', 'REJECTED') then
+      raise exception 'This memo cannot be rejected (current status: %)', v_current_status;
+    end if;
+
+    v_next_step := case coalesce(v_current_status, 'PENDING')
+      when 'PENDING' then 'TIER1'
+      when 'TIER1_DONE' then 'PIC'
+      when 'PIC_DONE' then 'TIER2'
+      when 'TIER2_DONE' then 'TIER3'
+    end;
+
+    -- TAHAP PIC (2026-09, GANTI): sama pola dgn approve_far_overseas_air di atas.
+    if v_next_step = 'PIC' then
+      if not exists (
+        select 1 from public.rekapan_far_overseas_air
+        where id = p_id and pic_user_id = auth.uid()
+      ) then
+        raise exception 'You are not the assigned PIC for this memo';
+      end if;
+    else
+      if not exists (
+        select 1 from public.user_approval_tiers uat
+        where uat.user_id = auth.uid() and uat.page_key = 'direct_loading' and uat.tier = v_next_step
+      ) then
+        raise exception 'You do not have the % approval role for this step', v_next_step;
+      end if;
+    end if;
+
+    update public.rekapan_far_overseas_air
+    set approval_status = 'REJECTED',
+        notes = p_reason
+    where id = p_id;
+
+    return jsonb_build_object('approval_status', 'REJECTED', 'notes', p_reason);
+  end;
+  $$;
+
+  grant execute on function public.reject_far_overseas_air(uuid, text) to authenticated;
+  ```
+  Kalau nanti menemukan versi lama function ini (guard PIC lewat `user_approval_tiers` polos utk
+  SEMUA tahap termasuk PIC) — itu VERSI LAMA, `create or replace` di atas otomatis menimpanya,
+  aman dijalankan ulang. **JANGAN reintroduce guard lama itu utk tahap PIC.**
+
+## FAR Overseas Air — Clear massal Processing Queue (`FarOverseasAirPage.tsx`, 2026-09)
+
+Modal "Processing Queue" (tombol jam di List Memo) — tombol **"✕ Clear Completed/Failed"** baru
+di header modal (sebelah judul, muncul HANYA kalau ada minimal 1 item `SUCCESS`/`FAILED` di
+`queue`), utk hapus SEMUA kartu selesai/gagal sekaligus dari `far_overseas_air_processing_queue`
+— sebelumnya cuma bisa satu-satu lewat tombol "×" per kartu (`dismissQueueItem`, TETAP ADA,
+tidak dihapus, utk dismiss 1 item spesifik). Item `PENDING`/`PROCESSING` TIDAK ikut kehapus
+(masih berjalan, tidak punya tombol dismiss sama sekali, individual maupun massal).
+- `clearCompletedFailedQueue()` — replika pola `handleDismiss`/"Clear Completed/Failed" milik
+  `src/components/ProcessingQueue.tsx` (komponen generik Courier/Sea & Air) — TAPI FAR Overseas
+  Air PUNYA modal antrian sendiri di file ini (`QueueCard`/`fetchQueue`/state `queue`), TIDAK
+  memakai `ProcessingQueue.tsx` sama sekali, jadi fungsi ini genuinely baru di file ini, bukan
+  reuse komponen. Native `confirm()` sebelum delete (sama persis pola `ProcessingQueue.tsx`) —
+  SATU-SATUNYA tempat di `FarOverseasAirPage.tsx` yang pakai `confirm()` browser native
+  (aksi destruktif lain di halaman ini, mis. Delete Memo, pakai `DeleteConfirmModal` custom) —
+  dipertahankan `confirm()` di sini krn risikonya rendah (cuma notifikasi antrian, bukan data
+  bisnis) & supaya konsisten dgn pola yang sudah established di `ProcessingQueue.tsx`.
+  Feedback sukses/gagal pakai `toastMessage` state yang SUDAH ADA di halaman ini (dipakai juga
+  oleh `handleSentNoJob`), bukan toast baru.
+
+## Bunker — Clear massal Processing Queue (`BunkerPage.tsx`, 2026-09)
+
+Sama persis pola & implementasi dgn "FAR Overseas Air — Clear massal Processing Queue" di atas
+(REPLIKA, ditambahkan susulan atas permintaan user utk halaman Bunker) — tombol **"✕ Clear
+Completed/Failed"** di header modal Processing Queue, muncul HANYA kalau ada minimal 1 item
+`SUCCESS`/`FAILED` di `queue`, hapus semua sekaligus dari `bunker_processing_queue`. Tombol "×"
+per-kartu (`dismissQueueItem`) TETAP ADA, tidak dihapus. Item `PENDING` (Bunker TIDAK punya
+status `PROCESSING` terpisah, beda dari FAR Overseas — lihat `fetchQueue` filter) TIDAK ikut
+kehapus. `clearCompletedFailedQueue()` pakai `confirm()` native (sama alasan/pola dgn versi FAR
+Overseas) & `toastMessage` state yang sudah ada di halaman ini. **Kalau nanti ada laporan bug di
+salah satu halaman (FAR Overseas/Bunker), cek juga apa halaman satunya kena bug yang sama** —
+2 implementasi ini independen (bukan komponen shared), jadi fix di satu tempat TIDAK otomatis
+ikut ke tempat lain.
+
+## FAR Overseas Air — NOTE 2 dipecah jadi "From Document" + "Manual Note" (`FarOverseasAirPage.tsx`, 2026-09)
+
+Kolom **NOTE 2** di List Memo tadinya 1 field tunggal `item_description` — diisi otomatis oleh
+ekstraksi n8n, TAPI juga langsung bisa diedit manual lewat UI (`REKAPAN_EDITABLE_FIELDS`) —
+akibatnya kalau user edit manual, **nilai hasil ekstraksi asli ikut TERTIMPA/HILANG** tanpa jejak.
+**Diganti (permintaan user)**: 1 sel kolom sekarang dibagi 2 bagian dgn garis pemisah vertikal:
+- **Kiri ("From Document")** — `item_description` apa adanya dari database, SELAMANYA read-only
+  (tidak ada mode edit sama sekali di bagian ini).
+- **Kanan ("Manual Note")** — kolom BARU `item_description_manual`, murni catatan tambahan user,
+  ikut pola `pendingEdits`/`getVal`/`setVal`/`EditableCell` yang sama dgn kolom lain di List Memo
+  (badge pensil kuning kalau berubah, disimpan bareng "Save All"/`update_rekapan_far_overseas_manual`).
+
+**BELUM DIJALANKAN ke Supabase production — WAJIB dijalankan manual dulu di SQL editor** (tanpa
+ini, kolom kanan akan selalu kosong & gagal tersimpan — RPC `update_rekapan_far_overseas_manual`
+akan error/diam2 skip field yg kolomnya belum ada di tabel):
+```sql
+alter table public.rekapan_far_overseas_air add column if not exists item_description_manual text;
+```
+- `REKAPAN_EDITABLE_FIELDS` (`FarOverseasAirHelpers.ts`) — `item_description` DIKELUARKAN dari
+  set ini (supaya nilai ekstraksi tidak bisa lagi ketimpa lewat form manapun), `item_description_manual`
+  DITAMBAHKAN.
+- `LIST_COLUMNS` entry "NOTE 2" (`FarOverseasAirPage.tsx`) diganti dari field biasa (`field:
+  'item_description', wide: true`) jadi custom `render` — pola sama dengan kolom WEIGHT
+  BREAKDOWN/VESSEL yang sudah lebih dulu pakai `ctx.getVal`/`ctx.setVal`/`ctx.editingRowId`.
+  Container `w-[360px]` (lebih lebar dari kolom wide biasa `w-[300px]` krn sekarang menampung
+  2 sub-panel + label + divider).
+- **Memo cetak (`FarOverseasAirDetailModal.tsx`) SENGAJA TIDAK diubah** — baris "2." di blok
+  NOTE cetak resmi TETAP HANYA dari `item_description` (nilai database/ekstraksi), TIDAK ikut
+  menampilkan `item_description_manual` sama sekali (dikonfirmasi eksplisit user: catatan manual
+  ini murni catatan internal, bukan bagian dokumen resmi yg dicetak/dikirim ke vendor).
+- `FAR_EXPORT_COLS` (export Excel List Memo) ditambah 1 baris `{ key: 'item_description_manual',
+  label: 'NOTE 2 (MANUAL)' }` tepat setelah `item_description` — tidak perlu ubah `getExportData`
+  krn sudah `...r` spread semua kolom mentah hasil `select('*')`, kolom baru otomatis ikut kebawa
+  begitu ada di database.
+
 ## FAR Overseas Air — arsitektur cost validation (kompleks, baca dulu sebelum ubah)
 
 - `rekapan_far_overseas_air` (1 baris = 1 memo, punya `route_note` = "PENGIRIMAN DARI {asal} KE
@@ -993,12 +1306,40 @@ Komentar kode & isi CLAUDE.md ini SENGAJA TETAP Bahasa Indonesia (bukan bagian d
   Supplier+Date) supaya Inv.No & Date tetap rapat berdekatan walau PO.No isinya panjang/wrap
   banyak baris (mis. gabungan banyak PO) — kalau digabung 1 baris flex, tinggi baris itu ikut
   ketarik setinggi PO.No, jadi Date jadi jauh dari Inv.No.
+- **Urutan baris field memo cetak (2026-09, permintaan user)** — PO.No/Supplier (blok kiri) &
+  Inv.No/Date (blok kanan) TIDAK berubah posisi (tetap di baris paling atas, lihat poin di atas).
+  Baris-baris DI BAWAHNYA diurutkan ulang jadi: **Buyer → Ship Via → Departure Date → Weight →
+  Price /Kg → TOTAL AMOUNT** (sebelumnya: Ship Via → Buyer → Weight → Price /Kg → Departure
+  Date → TOTAL AMOUNT). Cuma urutan JSX `<MemoField>` yang ditukar (~baris 288-292), tidak ada
+  field yang ditambah/dihapus/diganti sumber datanya.
 - **Note pembayaran** (2026-09): 1 baris teks kecil `"Note: MOHON DIBANTU BAYARKAN PADA TANGGAL :
   {expected_payment_date}"` (format `formatDateMemo`) ditaruh DI LUAR kotak/tabel memo (di bawah
   signature table), TAPI TETAP ikut tercetak di mode print (bukan `print:hidden`) — beda dari
   field lain di luar kotak memo yang defaultnya `print:hidden`. Karena field ini sekarang sudah
   tercetak lewat note ini, blok "Catatan Internal (tidak tercetak di memo)" yang dulu menampilkan
   Expected Payment Date terpisah SUDAH DIHAPUS (redundant).
+
+## Sea & Air — Audit, kolom "No. PIB" ambil dari `no_aju` (`SEA_AIR_AUDIT_COLS`, 2026-09)
+
+Kolom **No. PIB** di halaman Audit Sea & Air (`SharedDataTable.tsx` ~baris 576) SEKARANG baca dari
+`no_aju` (`{ key: 'no_aju', label: 'No. PIB', type: 'no_aju_format' }`), BUKAN lagi dari kolom
+`no_pib` — permintaan eksplisit user 2026-09, kedua kolom (`no_pib` & `no_aju`) SAMA-SAMA ada di
+tabel `tabel_audit_seaair`. **JANGAN disamakan dengan Courier** — `PIB_COLS` (Audit Courier,
+~baris 683) TETAP pakai `key: 'no_pib'`, TIDAK ikut diubah, karena user cuma minta perubahan ini
+utk Sea & Air.
+- Cukup ganti `key` di definisi kolom, `type: 'no_aju_format'`/label "No. PIB" TIDAK berubah —
+  `getCellData()` (formatter `no_aju_format`, ~baris 1690) generik baca `rec[c.key]` apa adanya,
+  jadi otomatis ikut baca `no_aju` tanpa perlu ubah logic formatter.
+- `isInlineEditable()` TIDAK mengecualikan `no_pib` MAUPUN `no_aju` dari daftar exclude-nya, jadi
+  kolom ini tetap bisa diedit inline seperti sebelumnya (form edit sekarang kirim/terima field
+  `no_aju`, bukan `no_pib`, lewat RPC `update_seaair_row`/`insert_seaair_row` yang generik
+  terima `p_data` apa adanya).
+- `searchCols` utk `sea_air_audit` (~baris 3319/3722) SUDAH dari awal mencakup KEDUA kolom
+  (`['no_aju', 'no_pib', 'awb', 'po_ori', 'vendor']`) — TIDAK diubah, jadi search tetap match ke
+  isi `no_pib` juga (superset, bukan mengurangi cakupan pencarian).
+- Kolom `no_pib` di `tabel_audit_seaair` TIDAK dihapus dari database, cuma tidak lagi ditampilkan
+  di kolom "No. PIB" tabel Audit — kalau nanti ada laporan "No. PIB kosong padahal ada datanya",
+  cek dulu apa datanya ada di `no_pib` (kolom lama) vs `no_aju` (kolom yang sekarang dipakai).
 
 ## Sea & Air — Audit, kolom Balance & Asuransi (`src/components/SharedDataTable.tsx`, 2026-09)
 
@@ -1128,6 +1469,65 @@ dgn Sea & Air).
   konsisten muncul di semua tab (PIB/CN/Draft). **Kalau nanti nambah jalur fetch baru lagi utk
   `courier_audit`, WAJIB panggil `fetchCourierValidationBadgePct()` juga di situ** — jangan tulis
   ulang batch query-nya.
+
+## Upload Dokumen Susulan dari Checklist — Audit Courier (`CourierUploadSusulanModal.tsx`, 2026-09)
+
+Tombol **"Upload Additional Doc"** di footer `ChecklistModal` (Document Completeness Checklist,
+`SharedDataTable.tsx`, sejajar Cancel/Save Checklist per permintaan user) — utk kirim ulang
+dokumen susulan yang belum ter-upload saat upload pertama di halaman Upload Courier (mis. lupa
+sertakan Credit Note/SPTNP/BPN SPTNP), TANPA harus bikin record shipment baru dari nol.
+
+- **Pola REPLIKA PERSIS** `BunkerUploadModal.tsx` + `BunkerKelengkapanModal.tsx` (uploader generik
+  + hint field + banner status job inline) — komponen baru `src/components/
+  CourierUploadSusulanModal.tsx` adalah duplikasi `BunkerUploadModal.tsx` dgn 1 perbedaan
+  fungsional: field hint yang dikirim adalah **`awb_hint`** (nomor AWB record yg checklist-nya
+  sedang dibuka), BUKAN `no_po_hint`. Webhook type tetap `'courier'` (SAMA dgn upload pertama di
+  `UploadPage.tsx`, localStorage key custom webhook juga sama `'n8n_webhook_url'`) — jalur n8n
+  yang dipakai MEMANG harus workflow Courier yang sama, bukan workflow terpisah.
+- **`server.ts`** (`/api/n8n-proxy-start`) — ditambah forward field `awb_hint` dari
+  `req.body?.awb_hint` ke FormData yg diteruskan ke n8n, REPLIKA PERSIS pola `no_po_hint` yang
+  sudah ada (baris sebelahnya). **WAJIB restart dev server manual setelah perubahan ini** —
+  `tsx` (dipakai `npm run dev`) TIDAK hot-reload `server.ts`, beda dari Vite HMR frontend (lihat
+  catatan "Tech stack" di atas) — tanpa restart, field baru ini tidak akan ke-forward walau kode
+  sudah berubah.
+- **Status job inline di `ChecklistModal`** (state `activeJobId`/`activeJobStatus`/
+  `activeJobError`, REPLIKA pola polling per-job `BunkerKelengkapanModal.tsx`, BUKAN mengandalkan
+  widget `ProcessingQueue` generik yang TIDAK dirender di halaman Audit Courier sama sekali):
+  - Kalau n8n mengembalikan `job_id` di response (`onJobStarted`) → poll `tabel_processing_queue`
+    tiap 4 detik lewat `.eq('id', jobId)` sampai `status` jadi `SUCCESS`/`FAILED`. Saat `SUCCESS`,
+    `refetchChecklistAfterUpload()` fetch ulang baris `dokumen_checklist` (by `pib_id`/`cn_id`)
+    dan update `form`/`existingId` checklist di modal ini SECARA LANGSUNG (centang ikut update
+    tanpa tutup-buka modal manual) + panggil `onSaved?.()` (refresh badge % di tabel List Audit).
+  - Kalau n8n TIDAK mengembalikan `job_id` (`onSentNoJob`) → tidak bisa di-poll spesifik, cukup
+    tampilkan banner biru "Document sent..." dan minta user buka ulang checklist-nya nanti.
+  - **BELUM TERVERIFIKASI apakah workflow n8n Courier saat ini benar-benar mengembalikan
+    `job_id`** di response webhook-nya (`UploadPage.tsx` yang sudah ada dari awal TIDAK PERNAH
+    membaca `data.job_id` sama sekali — cuma cek `data.status === 'warning'` — beda dari Bunker
+    yang `BunkerUploadModal.tsx` sudah lebih dulu terbukti membaca `data.job_id`). Kalau n8n
+    Courier ternyata tidak mengembalikan `job_id`, fitur ini TETAP JALAN (fallback ke jalur
+    `onSentNoJob`/banner "SENT"), cuma tidak dapat feedback real-time per-job seperti Bunker.
+- ⚠️ **KETERGANTUNGAN KRITIS DI LUAR REPO INI — workflow n8n Courier (eksternal, tidak ada
+  visibilitas dari sesi Claude Code manapun) HARUS diupdate supaya**: (1) menerima field
+  `awb_hint` dari form-data upload, (2) memakainya utk mencari `tabel_audit_pib`/
+  `tabel_audit_cn` yang `awb`-nya cocok, lalu MERGE hasil ekstraksi dokumen baru ke record itu
+  (update `dokumen_checklist` terkait, dst) — BUKAN membuat record PIB/CN baru dari nol seperti
+  upload pertama. **Tanpa perubahan di sisi n8n ini, tombol "Upload Additional Doc" akan
+  mengirim file dgn benar (sudah diverifikasi kode frontend+proxy), TAPI n8n kemungkinan besar
+  akan memprosesnya sbg shipment baru yang terpisah** (persis seperti upload biasa), bukan
+  digabung ke record yang sedang dibuka checklist-nya. Cek dgn tim n8n/otomasi sebelum
+  mengandalkan fitur ini di production — sama persis situasinya dgn `no_po_hint` Bunker yang
+  SUDAH terbukti jalan (karena `BunkerUploadModal.tsx` sudah lama dipakai & workflow n8n Bunker
+  sudah menangani hint itu), sementara `awb_hint` Courier ini BARU ditambahkan, belum ada
+  konfirmasi n8n Courier sudah bisa menanganinya.
+- Gate akses: tombol cuma muncul kalau `canEdit` true (prop yang sama yg sudah dipakai
+  `ChecklistModal`, diisi `canEdit('courier_checklist_dokumen')` dari pemanggilnya) — TIDAK ada
+  page_key/RBAC baru, ikut aturan existing "Akses view-only vs edit" di atas. Sama seperti
+  `courier_upload`/`sea_air_upload`, proteksi ini MURNI UI (upload lewat proxy Express ke n8n,
+  BUKAN langsung ke Supabase, jadi TIDAK BISA diproteksi RLS).
+- `awbHint` yang dikirim ke modal = `record.awb` (mentah, TERMASUK prefix carrier "DHL NO."/
+  "FEDEX No." kalau memang begitu tersimpan — Audit Courier TIDAK strip prefix ini, lihat aturan
+  AWB display di atas) — kalau `record.awb` kosong/null, modal tetap bisa dipakai tapi tampilkan
+  banner kuning bahwa dokumen akan diproses spt upload pertama biasa (tanpa hint merge).
 
 ## Badge persentase tombol Checklist — Audit Courier & Rekapan Sea & Air (2026-09)
 

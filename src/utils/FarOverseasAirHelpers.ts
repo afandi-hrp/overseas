@@ -104,13 +104,26 @@ export const REKAPAN_EDITABLE_FIELDS = new Set([
   'invoice_date', 'qty', 'weight_unit', 'unit_price', 'unit_price_currency', 'freight_amount',
   'clearance_amount', 'other_amount', 'clearance_other_total', 'total_amount',
   'total_amount_currency', 'kurs_used', 'total_amount_idr', 'route_note', 'shipment_mode',
-  'origin_country', 'destination_city', 'item_description', 'status_note', 'other_note',
+  'origin_country', 'destination_city', 'status_note', 'other_note',
   'memo_title', 'expected_payment_date', 'vessel_internal_note', 'notes', 'buyer_name',
-  'weight_breakdown', 'departure_date', 'pic_name',
+  'weight_breakdown', 'departure_date', 'pic_name', 'item_description_manual', 'pic_user_id',
 ]);
 
 export async function updateRekapanFarOverseasAir(id: string | number, updates: Record<string, any>) {
   return supabase.rpc('update_rekapan_far_overseas_manual', { p_id: id, p_updates: updates });
+}
+
+export type PicEligibleUser = { id: string; nama: string | null; email: string | null };
+
+// Daftar user yang boleh dipilih sbg PIC per-baris di List Memo FAR Overseas (2026-09) -- SIAPA
+// PUN yang punya page access ke `direct_loading` (lihat CLAUDE.md, "PIC per-memo assignment"),
+// BUKAN cuma admin. RLS `role_page_access`/`user_roles`/`profiles` TIDAK mengizinkan user biasa
+// query tabel itu langsung, jadi WAJIB lewat RPC SECURITY DEFINER ini (pola sama dgn
+// `get_my_access`/`get_my_approval_tiers`) -- JANGAN query tabel role/profiles langsung dari sini.
+export async function fetchPicEligibleUsers(): Promise<PicEligibleUser[]> {
+  const { data, error } = await supabase.rpc('get_users_with_page_access', { p_page_key: 'direct_loading' });
+  if (error) { console.error('fetchPicEligibleUsers failed:', error); return []; }
+  return Array.isArray(data) ? data : [];
 }
 
 export type PoListEntry = {

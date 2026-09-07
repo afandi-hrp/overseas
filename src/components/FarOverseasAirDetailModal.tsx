@@ -163,14 +163,29 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
   const disiapkanNama = eximName && picDisplayName ? `${eximName}/${picDisplayName}` : (eximName || picDisplayName || null);
 
   const nextStep = nextStepForStatus(rec.approval_status);
+
+  // Eligibility per tahap (2026-09, PIC digeser jadi assignment PER-MEMO): TIER1/TIER2/TIER3
+  // TETAP lewat `canApproveTier` (jabatan approval global dari Kelola Role & Akses, tidak
+  // berubah). TAHAP PIC SEKARANG BEDA MEKANISME TOTAL -- BUKAN lagi lewat `user_approval_tiers`
+  // sama sekali (dropdown "Jabatan Approval PIC" di Kelola Role & Akses TIDAK LAGI berpengaruh
+  // ke tahap ini, permintaan eksplisit user), cukup `auth.uid()` user yang login = `pic_user_id`
+  // yang DIPILIH ADMIN/OPS di kolom PIC List Memo (`FarOverseasAirPage.tsx`, dropdown terbatas ke
+  // user yang punya page access `direct_loading`, lihat CLAUDE.md). Kalau `pic_user_id` belum
+  // di-assign sama sekali, TIDAK ADA SIAPAPUN yang eligible utk tahap ini (termasuk Admin) sampai
+  // di-assign lewat List Memo. Guard yang sama DITEGAKKAN ULANG di server lewat RPC
+  // `approve_far_overseas_air`/`reject_far_overseas_air` (lihat CLAUDE.md) -- JANGAN cuma andalkan
+  // pengecekan di sini.
+  const isEligibleForStep = (step: ApprovalStep) =>
+    step === 'PIC' ? (!!rec.pic_user_id && rec.pic_user_id === user?.id) : canApproveTier('direct_loading', step);
+
   // Reject HANYA boleh dilakukan user yang eligible approve TAHAP YANG SEDANG AKTIF saat ini
   // (2026-09, VERSI FINAL -- SEBELUMNYA cukup "punya jabatan approval apa saja utk halaman ini",
   // TERNYATA itu bikin tombol Reject tetap kelihatan buat user yang tahapnya sendiri SUDAH
   // selesai, mis. PIC yang sudah approve masih lihat tombol Reject pas memo sudah lanjut nunggu
-  // SPV -- jangan reintroduce versi lama itu). Sama syaratnya dgn tombol Approve (`canApproveTier`
+  // SPV -- jangan reintroduce versi lama itu). Sama syaratnya dgn tombol Approve (`isEligibleForStep`
   // utk `nextStep`), jadi Reject & Approve SELALU muncul/hilang bareng utk siapa pun yang buka
   // memo ini -- kalau `nextStep` null (sudah APPROVED/REJECTED) otomatis false juga.
-  const canReject = nextStep != null && canApproveTier('direct_loading', nextStep);
+  const canReject = nextStep != null && isEligibleForStep(nextStep);
 
   const roleForStep = (step: ApprovalStep) => step === 'TIER1' ? signer?.tier1_role : step === 'PIC' ? 'PIC' : step === 'TIER2' ? signer?.tier2_role : signer?.tier3_role;
   const defaultNamaForStep = (step: ApprovalStep) => step === 'TIER1' || step === 'PIC' ? (profile?.nama || user?.email || '') : step === 'TIER2' ? (signer?.tier2_name || '') : (signer?.tier3_name || '');
@@ -285,11 +300,11 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
                   <div className="flex-1 space-y-2"><MemoField label="PO. No." value={rec.po_ori || '-'} /><MemoField label="Supplier" value={rec.vendor || '-'} /></div>
                   <div className="md:w-56 print:w-56 space-y-2"><MemoField label="Inv. No" labelWidth="w-20" value={rec.no_invoice || '-'} /><MemoField label="Date" labelWidth="w-20" value={formatDateMemo(rec.created_at)} /></div>
                 </div>
-                <MemoField label="Ship Via" value={rec.ship_via || '-'} bold />
                 <MemoField label="Buyer" value={rec.buyer_name || '-'} />
+                <MemoField label="Ship Via" value={rec.ship_via || '-'} bold />
+                <MemoField label="Departure Date" value={formatDateMemo(rec.departure_date)} />
                 <MemoField label="Weight" value={rec.qty != null ? <>{rec.qty}<span className="ml-6">{rec.weight_unit || ''}</span></> : '-'} />
                 <MemoField label="Price /Kg" value={formatMoney(rec.unit_price, rec.unit_price_currency)} />
-                <MemoField label="Departure Date" value={formatDateMemo(rec.departure_date)} />
                 <MemoField
                   label="TOTAL AMOUNT"
                   bold
@@ -383,8 +398,12 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white rounded-xl border border-slate-200 mt-5 p-4 print:hidden">
                 <p className="text-xs text-[#5A305A]">
                   {nextStep != null ? `Awaiting ${STEP_LABEL[nextStep]} approval.` : 'No action available.'}
-                  {nextStep != null && !canApproveTier('direct_loading', nextStep) && (
-                    <span className="block text-[#5A305A]/60 italic mt-0.5">You don't have the "{STEP_LABEL[nextStep]}" approval role for this step.</span>
+                  {nextStep != null && !isEligibleForStep(nextStep) && (
+                    <span className="block text-[#5A305A]/60 italic mt-0.5">
+                      {nextStep === 'PIC'
+                        ? (rec.pic_user_id ? "You are not the PIC assigned to this memo." : "This memo doesn't have a PIC assigned yet — set it in the PIC column on the List Memo page.")
+                        : `You don't have the "${STEP_LABEL[nextStep]}" approval role for this step.`}
+                    </span>
                   )}
                 </p>
                 <div className="flex items-center gap-2">
@@ -393,7 +412,7 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
                       <Ban size={15} /> Reject
                     </button>
                   )}
-                  {nextStep != null && canApproveTier('direct_loading', nextStep) && (
+                  {nextStep != null && isEligibleForStep(nextStep) && (
                     <button
                       onClick={() => handleApprove(nextStep, defaultNamaForStep(nextStep))}
                       disabled={submitting}
