@@ -1247,12 +1247,57 @@ alter table public.rekapan_far_overseas_air add column if not exists item_descri
   namanya cocok (`looseNameMatch`) dengan `dominantPtName` (nama PT dari `dominant_company_code`,
   yang juga tampil di kolom PO baris CONCLUSION) dikasih centang hijau (`CheckCircle2`), supaya
   user langsung tau PO mana saja yang jadi kontributor nama PT dominan di CONCLUSION (2026-09).
+  **PT Name & PO Number digabung jadi 1 baris (2026-09, permintaan user, 2 iterasi)** —
+  SEBELUMNYA 2 `<tr>` terpisah ("PT NAME" & "PO NUMBER", masing-masing baris sendiri). Iterasi
+  pertama digabung jadi 1 `<tr>` label "PT NAME / PO NO." TAPI nama PT & input PO Number masih
+  DITUMPUK 2 baris (`flex flex-col` implisit via 2 `<div>` bertumpuk) di dalam `<td>` PO yang
+  sama — user minta lebih lanjut supaya BENERAN sejajar horizontal, BUKAN cuma digabung
+  cell-nya. **Versi final**: nama PT + centang dominant + badge edited + separator "—" + input
+  `EditableCell` PO Number semua dalam SATU `<div className="flex items-center gap-2
+  flex-wrap">` — tampil 1 baris horizontal penuh, `EditableCell`-nya dibungkus
+  `flex-1 min-w-[140px]` supaya tetap py lebar wajar & bisa nge-klik utk edit meski PT name-nya
+  pendek. **Iterasi ketiga (susulan, `flex-wrap` TERNYATA masih bikin pecah 2 baris kalau nama PT
+  panjang, mis. "PT. PELAYARAN MULTI JAYA SAMUDERA")**: `flex-wrap` diganti `flex-nowrap`, span
+  nama PT & separator "—" dikasih `whitespace-nowrap`/`shrink-0`, wrapper `EditableCell` PO
+  Number juga `whitespace-nowrap` — SEKARANG PASTI 1 baris apa pun panjang nama PT-nya. Kolom PO
+  tabel ini TIDAK py `table-layout: fixed` (cuma `w-[30%]` di `<th>`, sifatnya preferensi bukan
+  batas keras), jadi kalau isinya tidak muat, tabel/kolom melebar sendiri melebihi 30% dan
+  wrapper `<div className="overflow-x-auto">` di luarnya yang menangani scroll horizontal —
+  BUKAN teks yang dipaksa wrap ke baris baru lagi. Spacer abu-abu antar PO (`<tr aria-hidden>`)
+  TETAP ADA, sekarang jadi pemisah antar 1-baris-per-PO (bukan lagi antar sepasang baris).
+- **Lebar modal** (2026-09, susulan) — `max-w-4xl` → `max-w-5xl`, permintaan user supaya baris
+  PT Name/PO Number gabungan (poin di atas) & tabel Cost Validation py lebih ruang, tidak sempit.
+- **Urutan ditukar jadi PO No. duluan, baru PT Name** (2026-09, susulan, "supaya rapi") — label
+  baris jadi "PO NO. / PT NAME" (sebelumnya "PT NAME / PO NO."), urutan elemen di dalam
+  `<div className="flex items-center gap-2 flex-nowrap">` ditukar: `EditableCell` PO Number
+  duluan, baru separator "—", nama PT, centang dominant, badge edited. Murni tukar urutan JSX,
+  tidak ada logic/data yang berubah.
 - **RPC-only mutation** — JANGAN pernah `.update()`/`.insert()` mentah ke 2 tabel ini. Selalu
   lewat `update_rekapan_far_overseas_manual(p_id, p_updates)` dan
   `update_cost_validasi_far_overseas_manual(p_id, p_document_validation?, p_cost_validation?,
   p_status?, p_rate_row_used?, p_catatan?)`. **`p_catatan` param BELUM terverifikasi ada di
   fungsi Postgres-nya** (ditambahkan sisi frontend, belum ada akses DB langsung untuk konfirmasi
   — cek dulu sebelum mengandalkan behavior ini di production).
+  **KONFIRMASI ISI ASLI `update_rekapan_far_overseas_manual` (2026-09, via
+  `pg_get_functiondef`)**: function ini PUNYA whitelist kolom sendiri yang DI-HARDCODE di
+  variable `v_allowed_columns` (array text literal di dalam PL/pgSQL) — TERPISAH TOTAL dari
+  `REKAPAN_EDITABLE_FIELDS` di frontend (`FarOverseasAirHelpers.ts`). Kalau suatu field ADA di
+  `REKAPAN_EDITABLE_FIELDS` (jadi bisa di-toggle edit di UI & terkirim ke RPC) TAPI TIDAK ADA di
+  `v_allowed_columns`, RPC-nya diam-diam SKIP field itu (`RAISE WARNING ... dilewati`, BUKAN
+  error) — hasilnya: toast frontend bilang "Changes saved successfully" (RPC tetap return OK
+  krn field lain yg valid tetap ke-update & row tetap ke-touch), TAPI nilai field itu TIDAK
+  PERNAH benar-benar tersimpan, balik ke nilai lama begitu di-refresh. **BUG PERSIS INI TERJADI**
+  (2026-09) waktu `item_description_manual` (fitur split NOTE 2) & `pic_user_id` (fitur PIC
+  per-memo) ditambahkan ke `REKAPAN_EDITABLE_FIELDS` TAPI lupa ditambahkan juga ke
+  `v_allowed_columns` di RPC-nya — root cause ditemukan via `pg_get_functiondef`, diperbaiki
+  dgn `create or replace function` yang nambah 2 nama kolom itu ke array (SQL lengkapnya
+  dijalankan user langsung, tidak disimpan sbg file). **ATURAN WAJIB ke depan: SETIAP kali
+  nambah field baru ke `REKAPAN_EDITABLE_FIELDS`, WAJIB juga minta user jalankan `create or
+  replace` utk nambah nama kolom yang sama ke `v_allowed_columns` di RPC ini — 2 tempat ini
+  HARUS selalu sinkron, TIDAK ADA mekanisme otomatis yang menjaga keduanya tetap sama.** Kalau
+  ada laporan "sudah Save tapi field X balik kosong lagi" utk field FAR Overseas manapun, WAJIB
+  cek dulu apakah field itu ada di `v_allowed_columns` (minta `pg_get_functiondef` kalau perlu)
+  SEBELUM curiga ke frontend.
 - `src/utils/FarOverseasAirHelpers.ts` — `computeExpectedFromRate`, `computeCostStatus`,
   `parseRouteNote`, `mapModeToJenisLayanan`, `rematchTarif` (REPLIKA PERSIS logic matching tarif
   n8n — filter berjenjang jenis layanan→origin→tujuan→berat, "lunak" — kalau diubah, HARUS tetap

@@ -300,7 +300,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
 
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[70] flex justify-center items-center p-2 sm:p-4 md:p-6">
-      <div className="bg-slate-50 w-full max-w-4xl h-[92vh] max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+      <div className="bg-slate-50 w-full max-w-5xl h-[92vh] max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
 
         {/* Header */}
         <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-slate-200 bg-white shrink-0">
@@ -397,9 +397,10 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                 )}
               </div>
 
-              {/* DOCUMENT VALIDATION -- layout PERSIS: 2 baris per PO (NAMA PT / NO PO), TANPA
-                  indikator match/tidak-match per baris. Satu-satunya status ada di baris
-                  CONCLUSION paling bawah (bandingkan invoice_pt_name vs nama PT dari
+              {/* DOCUMENT VALIDATION -- 1 baris per PO (NAMA PT & NO PO digabung 1 baris,
+                  2026-09, permintaan user -- sebelumnya 2 baris terpisah), TANPA indikator
+                  match/tidak-match per baris. Satu-satunya status ada di baris CONCLUSION
+                  paling bawah (bandingkan invoice_pt_name vs nama PT dari
                   dominant_company_code). */}
               <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
                 <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
@@ -429,25 +430,24 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                           const isDominantContributor = !!ptFromPo && !!dominantPtName && looseNameMatch(ptFromPo, dominantPtName);
                           return (
                             <React.Fragment key={idx}>
+                              {/* PT Name & PO Number digabung 1 baris (2026-09, permintaan user --
+                                  sebelumnya 2 baris terpisah, lalu sempat ditumpuk 2 baris dalam
+                                  1 <td>, SEKARANG beneran sejajar 1 baris horizontal dgn flex). */}
                               <tr className="border-t border-slate-100">
-                                <td className="px-3 py-1.5 font-semibold text-[#5A305A] align-top">PT NAME</td>
+                                <td className="px-3 py-1.5 font-semibold text-[#5A305A] align-top">PO NO. / PT NAME</td>
                                 <td className="px-3 py-1.5 align-top text-slate-300">—</td>
                                 <td className="px-3 py-1.5 align-top">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="text-[#5A305A]">{ptFromPo || '(unrecognized company code)'}</span>
+                                  <div className="flex items-center gap-2 flex-nowrap">
+                                    <div className="flex-1 min-w-[140px] whitespace-nowrap">
+                                      <EditableCell align="left" editable={isEditMode} value={row.po_no} onChange={(v) => updateDocField(idx, 'po_no', v)} />
+                                    </div>
+                                    <span className="text-slate-300 shrink-0">—</span>
+                                    <span className="text-[#5A305A] whitespace-nowrap">{ptFromPo || '(unrecognized company code)'}</span>
                                     {isDominantContributor && <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />}
                                     {row.edited && <EditedMark />}
                                   </div>
                                 </td>
                                 <td className="px-3 py-1.5 align-top text-[#5A305A]">{weight != null ? `${weight} KG` : '-'}</td>
-                              </tr>
-                              <tr>
-                                <td className="px-3 py-1.5 font-semibold text-[#5A305A] align-top">PO NUMBER</td>
-                                <td className="px-3 py-1.5 align-top text-slate-300">—</td>
-                                <td className="px-3 py-1.5 align-top">
-                                  <EditableCell align="left" editable={isEditMode} value={row.po_no} onChange={(v) => updateDocField(idx, 'po_no', v)} />
-                                </td>
-                                <td className="px-3 py-1.5 align-top text-slate-300">—</td>
                               </tr>
                               <tr aria-hidden="true"><td colSpan={4} className="h-2 bg-slate-50" /></tr>
                             </React.Fragment>
