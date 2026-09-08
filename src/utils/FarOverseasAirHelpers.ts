@@ -115,13 +115,21 @@ export async function updateRekapanFarOverseasAir(id: string | number, updates: 
 
 export type PicEligibleUser = { id: string; nama: string | null; email: string | null };
 
-// Daftar user yang boleh dipilih sbg PIC per-baris di List Memo FAR Overseas (2026-09) -- SIAPA
-// PUN yang punya page access ke `direct_loading` (lihat CLAUDE.md, "PIC per-memo assignment"),
-// BUKAN cuma admin. RLS `role_page_access`/`user_roles`/`profiles` TIDAK mengizinkan user biasa
-// query tabel itu langsung, jadi WAJIB lewat RPC SECURITY DEFINER ini (pola sama dgn
+// Daftar user yang boleh dipilih sbg PIC per-baris di List Memo FAR Overseas (2026-09, DIPERSEMPIT
+// susulan) -- SEBELUMNYA semua user yg punya page access ke `direct_loading` muncul di dropdown,
+// SEKARANG dipersempit ke user yang SUDAH py jabatan approval "PIC" di Kelola Role & Akses
+// (`user_approval_tiers`, page_key='direct_loading', tier='PIC') DAN masih punya page access ke
+// halaman ini (2 syarat, lihat RPC `get_users_with_approval_tier` di CLAUDE.md). PENTING -- ini
+// CUMA mempersempit PILIHAN di dropdown, BUKAN mengembalikan mekanisme otorisasi approve lama:
+// siapa yang BOLEH APPROVE tahap PIC suatu memo TETAP ditentukan oleh `pic_user_id` per-memo
+// (lihat "FAR Overseas Air -- PIC per-memo assignment" di CLAUDE.md), bukan tier ini lagi. Admin
+// TIDAK otomatis muncul di daftar ini (konsisten dgn aturan "Admin tidak bypass approval-tier
+// gate") -- kalau perlu, admin harus assign dirinya sendiri jabatan "PIC" dulu di Kelola Role &
+// Akses. RLS `user_approval_tiers`/`role_page_access`/`user_roles`/`profiles` TIDAK mengizinkan
+// user biasa query tabel itu langsung, jadi WAJIB lewat RPC SECURITY DEFINER ini (pola sama dgn
 // `get_my_access`/`get_my_approval_tiers`) -- JANGAN query tabel role/profiles langsung dari sini.
 export async function fetchPicEligibleUsers(): Promise<PicEligibleUser[]> {
-  const { data, error } = await supabase.rpc('get_users_with_page_access', { p_page_key: 'direct_loading' });
+  const { data, error } = await supabase.rpc('get_users_with_approval_tier', { p_page_key: 'direct_loading', p_tier: 'PIC' });
   if (error) { console.error('fetchPicEligibleUsers failed:', error); return []; }
   return Array.isArray(data) ? data : [];
 }

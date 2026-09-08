@@ -774,13 +774,23 @@ Admin) sampai di-assign lewat dropdown ini.
   (kolom "Disiapkan Oleh" di memo cetak) **TIDAK PERLU disentuh sama sekali**, tetap baca
   `rec.pic_name` apa adanya seperti sebelum perubahan ini.
 - **Dropdown pilihan user** (`ctx.picUsers`, di-fetch sekali saat halaman dibuka lewat
-  `fetchPicEligibleUsers()` → RPC `get_users_with_page_access('direct_loading')`) — berisi SEMUA
-  user yang punya **page access** (bukan cuma edit access) ke halaman `direct_loading`, sesuai
-  permintaan eksplisit user ("role akses utk halaman ini", BUKAN dibatasi ke akses edit). Bahwa
-  user itu BENERAN bisa approve tetap butuh `canEditDirectLoading` (gerbang lama, tidak berubah)
-  — jadi kalau admin assign PIC ke user yang cuma view-only, tombol approve tetap tidak akan
-  muncul buat dia sampai role-nya dikasih akses edit juga (2 syarat independen, sama pola dgn
-  gating approval lain di app ini).
+  `fetchPicEligibleUsers()`) — **VERSI AWAL** (2026-09) isinya SEMUA user yang punya page access
+  ke `direct_loading` lewat RPC `get_users_with_page_access('direct_loading')`. **DIPERSEMPIT
+  susulan (2026-09, permintaan user)**: sekarang HANYA user yang SUDAH py jabatan approval "PIC"
+  di Kelola Role & Akses (`user_approval_tiers`, page_key='direct_loading', tier='PIC') DAN masih
+  py page access ke halaman ini — lewat RPC BARU `get_users_with_approval_tier(p_page_key,
+  p_tier)`, RPC lama `get_users_with_page_access` DIHAPUS (`drop function`, sudah tidak dipakai
+  di mana pun lagi). **PENTING, JANGAN SALAH PAHAM**: ini CUMA mempersempit PILIHAN di dropdown,
+  BUKAN mengembalikan `user_approval_tiers` jadi mekanisme otorisasi approve lagi — siapa yang
+  BOLEH APPROVE tahap PIC suatu memo TETAP ditentukan oleh `pic_user_id` PER-MEMO (lihat guard RPC
+  `approve_far_overseas_air`/`reject_far_overseas_air` di bawah, TIDAK ikut berubah oleh
+  penyempitan dropdown ini). Admin TIDAK otomatis muncul di dropdown ini (RPC baru SENGAJA TIDAK
+  py bypass `is_protected`, beda dari RPC lama) — konsisten dgn aturan "Admin tidak bypass
+  approval-tier gate" yang sudah ada; kalau admin mau bisa dipilih jadi PIC, admin harus assign
+  dirinya sendiri jabatan "PIC" dulu di Kelola Role & Akses. Bahwa user yang dipilih BENERAN bisa
+  approve tetap butuh `canEditDirectLoading` (gerbang lama, tidak berubah) — jadi kalau ternyata
+  role user itu berubah jadi view-only setelah dipilih, tombol approve tetap tidak akan muncul
+  buat dia (2 syarat independen, sama pola dgn gating approval lain di app ini).
 - **`FarOverseasAirHelpers.ts`** — `pic_user_id` ditambahkan ke `REKAPAN_EDITABLE_FIELDS`
   (`pic_name` TETAP di situ juga, karena disinkron bareng). `fetchPicEligibleUsers()` fungsi baru,
   wrapper RPC di atas.
@@ -793,17 +803,27 @@ Admin) sampai di-assign lewat dropdown ini.
   memo." (kalau sudah di-assign tapi ke user lain).
 - **BELUM DIJALANKAN ke Supabase production — WAJIB dijalankan manual dulu di SQL editor**
   (tanpa ini, kolom PIC di List Memo akan gagal tersimpan — kolom `pic_user_id` belum ada — dan
-  RPC `get_users_with_page_access` akan error "function does not exist" begitu halaman dibuka):
+  RPC `get_users_with_approval_tier` akan error "function does not exist" begitu halaman dibuka.
+  Kalau RPC `get_users_with_page_access(text)` versi awal SUDAH sempat dijalankan duluan, `drop
+  function` di bawah aman dijalankan ulang -- `if exists` mencegah error kalau ternyata belum
+  pernah dijalankan sama sekali):
   ```sql
   alter table public.rekapan_far_overseas_air
     add column if not exists pic_user_id uuid references public.profiles(id);
 
-  -- RPC baru: daftar user yang py page access ke suatu page_key. SECURITY DEFINER krn user
-  -- biasa (non-admin) TIDAK punya akses SELECT langsung ke role_page_access/user_roles/profiles
-  -- (RLS admin-only, lihat halaman Kelola Role & Akses) -- tapi tetap perlu baca daftar ini utk
-  -- ngisi dropdown PIC. UNION dgn role is_protected (Admin) krn Admin SELALU akses penuh
-  -- (hardcode di is_admin(), tidak lewat role_page_access -- lihat catatan RBAC di atas).
-  create or replace function public.get_users_with_page_access(p_page_key text)
+  -- RPC versi awal (SEMUA user dgn page access ke suatu page_key, TANPA filter jabatan) SUDAH
+  -- DIGANTI oleh get_users_with_approval_tier di bawah -- drop dulu supaya tidak nganggur.
+  drop function if exists public.get_users_with_page_access(text);
+
+  -- RPC baru: daftar user yang PUNYA JABATAN APPROVAL TERTENTU (p_tier) utk suatu page_key, DAN
+  -- masih py page access ke halaman itu (2 syarat) -- dipakai isi dropdown PIC List Memo, supaya
+  -- cuma user yang SUDAH di-assign jabatan "PIC" di Kelola Role & Akses yang muncul sbg pilihan.
+  -- SECURITY DEFINER krn user biasa (non-admin) TIDAK punya akses SELECT langsung ke
+  -- user_approval_tiers/role_page_access/user_roles/profiles (RLS admin-only kecuali baris
+  -- miliknya sendiri, lihat halaman Kelola Role & Akses). SENGAJA TIDAK ADA bypass `is_protected`
+  -- (Admin) di sini -- beda dari pola akses halaman biasa, krn approval-tier MEMANG tidak
+  -- auto-lolos utk Admin (lihat catatan "Jabatan approval per USER, PER HALAMAN" di atas).
+  create or replace function public.get_users_with_approval_tier(p_page_key text, p_tier text)
   returns table (id uuid, nama text, email text)
   language sql
   security definer
@@ -811,14 +831,13 @@ Admin) sampai di-assign lewat dropdown ini.
   as $$
     select distinct p.id, p.nama, p.email
     from public.profiles p
+    join public.user_approval_tiers uat on uat.user_id = p.id and uat.page_key = p_page_key and uat.tier = p_tier
     join public.user_roles ur on ur.user_id = p.id
-    join public.roles r on r.id = ur.role_id
-    left join public.role_page_access rpa on rpa.role_id = r.id and rpa.page_key = p_page_key
-    where r.is_protected = true or rpa.page_key is not null
+    join public.role_page_access rpa on rpa.role_id = ur.role_id and rpa.page_key = p_page_key
     order by p.nama;
   $$;
 
-  grant execute on function public.get_users_with_page_access(text) to authenticated;
+  grant execute on function public.get_users_with_approval_tier(text, text) to authenticated;
 
   -- Timpa guard tahap PIC di approve_far_overseas_air (TIER1/TIER2/TIER3 TIDAK berubah) --
   -- create or replace, nama & param function-nya SAMA, aman ditimpa.
