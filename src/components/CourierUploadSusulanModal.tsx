@@ -81,7 +81,13 @@ export default function CourierUploadSusulanModal({ onClose, onJobStarted, onSen
     setUploading(true);
     const formData = new FormData();
     files.forEach((file, i) => formData.append('file_' + i, file));
-    if (awbHint) formData.append('awb_hint', awbHint);
+    // SELALU kirim field ini (2026-09, permintaan user -- sebelumnya cuma diappend kalau
+    // awbHint truthy, jadi kalau kosong field-nya HILANG total dari payload, bukan cuma
+    // ber-value kosong). server.ts (`/api/n8n-proxy-start`) diselaraskan supaya forward field
+    // ini SELAMA field-nya ADA di request (bukan lagi cek truthy), jadi n8n selalu terima
+    // `awb_hint` (string kosong kalau memang record-nya belum py AWB) & tidak perlu menebak
+    // apakah field ini sengaja tidak dikirim vs kelewat krn falsy check.
+    formData.append('awb_hint', awbHint || '');
     try {
       const customWebhook = localStorage.getItem('n8n_webhook_url');
       const headers: HeadersInit = { 'X-Webhook-Type': 'courier' };

@@ -42,8 +42,13 @@ app.post('/api/n8n-proxy-start', upload.any(), async (req, res) => {
       // Courier, CourierUploadSusulanModal.tsx) -- supaya dokumen susulan yang tidak selalu
       // mencantumkan AWB di dalamnya sendiri (mis. Credit Note) tetap bisa digabung n8n ke
       // record PIB/CN yang benar berdasar AWB, bukan dianggap shipment baru.
-      const awbHint = req.body?.awb_hint;
-      if (awbHint) formData.append('awb_hint', awbHint);
+      // Cek keberadaan field (`!== undefined`), BUKAN truthy (2026-09, fix) -- client SEKARANG
+      // selalu kirim field ini walau isinya string kosong (record belum py AWB), jadi truthy
+      // check lama (`if (awbHint)`) akan DIAM-DIAM MENJATUHKAN field itu tiap kali isinya kosong,
+      // padahal client bermaksud tetap mengirimnya. Upload courier NORMAL (UploadPage.tsx) TIDAK
+      // PERNAH mengirim field ini sama sekali (req.body.awb_hint tetap undefined), jadi cabang
+      // ini tidak menambah field baru ke jalur upload pertama yang tidak memintanya.
+      if (req.body?.awb_hint !== undefined) formData.append('awb_hint', req.body.awb_hint);
     }
 
     const response = await fetch(webhookUrl, {

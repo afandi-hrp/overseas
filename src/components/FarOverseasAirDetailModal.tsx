@@ -155,11 +155,16 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
   const statusMeta = APPROVAL_STATUS_META[rec.approval_status] || APPROVAL_STATUS_META.PENDING;
 
   // Kolom "Disiapkan Oleh" tampilkan nama Exim Officer (approval tahap 1) DAN nama PIC
-  // berdampingan format "exim/pic" -- nama PIC ambil dari approval PIC (kalau sudah approve,
-  // sama pola dengan tier1/2/3: nama approver menggantikan default), fallback ke `pic_name`
-  // manual selama belum ada yang approve. Kalau salah satunya belum ada, tampilkan yang ada saja.
+  // berdampingan format "exim/pic" -- KEDUANYA HANYA muncul setelah tahap itu BENERAN di-approve
+  // (entryFor(1)/picEntry, dari `approvals` jsonb), TIDAK ADA fallback ke `rec.pic_name` lagi
+  // (2026-09, FIX -- SEBELUMNYA fallback ke `rec.pic_name` bikin nama PIC langsung nongol di
+  // memo cetak begitu admin/ops PILIH user di dropdown PIC List Memo, PADAHAL PIC-nya belum
+  // approve apa-apa. `pic_name` sekarang disinkronkan OTOMATIS dari dropdown -- lihat
+  // FarOverseasAirPage.tsx -- jadi tidak lagi aman dipakai sbg fallback tampilan pre-approval
+  // spt dulu waktu masih teks manual bebas. Konsisten dgn `eximName` yg dari awal MEMANG tidak
+  // py fallback serupa). Kalau salah satunya belum approve, tampilkan yang sudah approve saja.
   const eximName = entryFor(1)?.nama || null;
-  const picDisplayName = picEntry?.nama || rec.pic_name || null;
+  const picDisplayName = picEntry?.nama || null;
   const disiapkanNama = eximName && picDisplayName ? `${eximName}/${picDisplayName}` : (eximName || picDisplayName || null);
 
   const nextStep = nextStepForStatus(rec.approval_status);

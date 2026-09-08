@@ -770,9 +770,21 @@ Admin) sampai di-assign lewat dropdown ini.
   sumber otorisasi tahap PIC sekarang. Kolom lama `pic_name` (text) TETAP ADA, TIDAK dihapus, tapi
   SEKARANG murni kosmetik/cetak — otomatis disinkronkan (nama user yg dipilih) tiap kali
   `pic_user_id` diubah & disimpan (`FarOverseasAirPage.tsx`, handler `onChange` dropdown PIC set
-  `pic_user_id` DAN `pic_name` sekaligus ke `pendingEdits`) — supaya `FarOverseasAirDetailModal.tsx`
-  (kolom "Disiapkan Oleh" di memo cetak) **TIDAK PERLU disentuh sama sekali**, tetap baca
-  `rec.pic_name` apa adanya seperti sebelum perubahan ini.
+  `pic_user_id` DAN `pic_name` sekaligus ke `pendingEdits`).
+  **BUG ditemukan & diperbaiki (2026-09, laporan user)**: rencana awal "`FarOverseasAirDetailModal.tsx`
+  TIDAK PERLU disentuh sama sekali, tetap baca `rec.pic_name` apa adanya" TERNYATA salah —
+  `picDisplayName` di modal itu sebelumnya fallback ke `rec.pic_name` kalau PIC belum approve
+  (`picEntry?.nama || rec.pic_name || null`), jadi begitu admin/ops PILIH user di dropdown PIC
+  (yang otomatis nge-sync `pic_name`), nama itu LANGSUNG muncul di kolom "Disiapkan Oleh" memo
+  cetak walau PIC-nya belum klik approve apa pun — padahal fallback ini dulu AMAN selama
+  `pic_name` masih teks manual bebas (isinya "rencana"/tebakan ops, wajar tampil duluan), TAPI
+  begitu `pic_name` jadi HASIL SINKRON OTOMATIS dari assignment, fallback yang sama jadi
+  menyesatkan (seolah PIC sudah menyetujui, padahal baru di-assign). **FIX**: fallback ke
+  `rec.pic_name` DIHAPUS TOTAL dari `picDisplayName` (SEKARANG `picEntry?.nama || null`,
+  konsisten dgn `eximName` yang dari awal MEMANG tidak pernah py fallback serupa) — nama PIC di
+  memo cetak SEKARANG BENERAN cuma muncul setelah PIC yang bersangkutan klik approve. Kolom
+  `pic_name` di database TETAP disinkronkan otomatis seperti biasa (masih berguna sbg data
+  mentah/query), CUMA tidak lagi dipakai sbg fallback tampilan pre-approval di modal ini.
 - **Dropdown pilihan user** (`ctx.picUsers`, di-fetch sekali saat halaman dibuka lewat
   `fetchPicEligibleUsers()`) — **VERSI AWAL** (2026-09) isinya SEMUA user yang punya page access
   ke `direct_loading` lewat RPC `get_users_with_page_access('direct_loading')`. **DIPERSEMPIT
@@ -1554,6 +1566,18 @@ sertakan Credit Note/SPTNP/BPN SPTNP), TANPA harus bikin record shipment baru da
   `tsx` (dipakai `npm run dev`) TIDAK hot-reload `server.ts`, beda dari Vite HMR frontend (lihat
   catatan "Tech stack" di atas) — tanpa restart, field baru ini tidak akan ke-forward walau kode
   sudah berubah.
+  **FIX (2026-09, laporan user "awb hint kadang tidak terkirim")**: baik client
+  (`CourierUploadSusulanModal.tsx`) maupun `server.ts` SEBELUMNYA cuma append/forward field ini
+  kalau NILAINYA truthy (`if (awbHint) ...`) — akibatnya kalau `record.awb` kosong/null (baris
+  belum py AWB), field `awb_hint` HILANG TOTAL dari payload ke n8n (bukan cuma ber-nilai kosong),
+  jadi dari sisi n8n tidak bisa dibedakan "sengaja tidak dikirim" vs "field-nya memang tidak
+  ada". Diperbaiki jadi 2 sisi: (1) client SEKARANG SELALU `formData.append('awb_hint', awbHint
+  || '')` — field ini SELALU ada di request, biar sudah kosong; (2) `server.ts` diganti dari cek
+  truthy ke cek keberadaan field (`if (req.body?.awb_hint !== undefined) ...`) — supaya string
+  kosong ikut diteruskan (truthy check lama akan menjatuhkannya lagi kalau tidak ikut diubah).
+  Upload courier NORMAL (`UploadPage.tsx`) TIDAK PERNAH mengirim field ini sama sekali (beda dari
+  `CourierUploadSusulanModal.tsx`), jadi `req.body.awb_hint` tetap `undefined` di jalur itu dan
+  TIDAK ikut ketambahan field baru — fix ini scoped HANYA ke jalur upload susulan.
 - **Status job inline di `ChecklistModal`** (state `activeJobId`/`activeJobStatus`/
   `activeJobError`, REPLIKA pola polling per-job `BunkerKelengkapanModal.tsx`, BUKAN mengandalkan
   widget `ProcessingQueue` generik yang TIDAK dirender di halaman Audit Courier sama sekali):
