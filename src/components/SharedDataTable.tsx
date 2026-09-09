@@ -4279,7 +4279,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       {/* ── Main Content ── */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
         
-        <header className="px-3 pt-1 pb-2 shrink-0">
+        <header className="px-3 pt-1 pb-1 shrink-0">
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-3">
               <h1 className="font-bold text-xl text-[#5A305A] leading-tight">
@@ -4296,7 +4296,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           </div>
         </header>
 
-        <main className="px-3 py-4 flex-1 flex flex-col overflow-hidden">
+        <main className="px-3 pt-2 pb-2 flex-1 flex flex-col overflow-hidden">
 
                               {/* ── Tabs & Search ── */}
             <div className="flex flex-col gap-4 mb-4">

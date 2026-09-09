@@ -27,7 +27,7 @@ const MAIN_TABS = [
     basePath: '/sea-air',
     subTabs: [
       { id: 'sea_air_audit',   label: 'Audit', path: '/sea-air/audit', pageKey: 'sea_air_audit' },
-      { id: 'sea_air_rekapan', label: 'Recap', path: '/sea-air/rekapan', pageKey: 'sea_air_rekapan' },
+      { id: 'sea_air_rekapan', label: 'Invoice Recap', path: '/sea-air/rekapan', pageKey: 'sea_air_rekapan' },
       { id: 'sea_air_upload', label: 'Upload', path: '/sea-air/upload', pageKey: 'sea_air_upload' },
     ]
   },

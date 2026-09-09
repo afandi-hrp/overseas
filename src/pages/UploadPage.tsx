@@ -352,7 +352,7 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
 
       <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
         {fixedType && (
-          <header className="px-6 pt-1 pb-2">
+          <header className="px-3 pt-1 pb-1">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="flex items-center gap-3">
                 <div className="w-11 h-11 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0 shadow-sm">
@@ -372,7 +372,7 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
           </header>
         )}
 
-        <main className="max-w-xl mx-auto px-4 py-6 space-y-4">
+        <main className="max-w-xl mx-auto px-3 pt-2 pb-6 space-y-4">
           <ProcessingQueue type={webhookType} />
 
           {/* Webhook Selector — disembunyikan jika halaman sudah spesifik Courier/Sea & Air */}

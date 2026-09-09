@@ -306,8 +306,16 @@ export default function BunkerPage() {
         </div>
       )}
 
-      <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10 no-scrollbar">
-        <header className="px-6 pt-1 pb-2">
+      {/* Shell tinggi tetap (h-full flex flex-col overflow-hidden) -- BUKAN lagi
+          overflow-y-auto full-page (SEBELUMNYA halaman ini scroll penuh termasuk header, jadi
+          kartu tabel yg rounded ikut ke-scroll ke atas & kelihatan "kotak"/lurus begitu bagian
+          atasnya lewat viewport, 2026-09 laporan user "harusnya melengkung"). SEKARANG header &
+          toolbar tetap diam (shrink-0), HANYA baris tabel yg scroll internal di dalam kartu List
+          (lihat overflow-y-auto di wrapper <table> di bawah) -- kartu rounded-2xl-nya SENDIRI
+          jadi SELALU utuh kelihatan di layar, tidak pernah "terpotong" krn discroll lewat. Pola
+          ini REPLIKA `SharedDataTable.tsx`/`FarOverseasAirPage.tsx`. */}
+      <div className="flex-1 h-full flex flex-col overflow-hidden min-w-0">
+        <header className="px-3 pt-1 pb-1 shrink-0">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0 shadow-sm">
@@ -322,10 +330,10 @@ export default function BunkerPage() {
           </div>
         </header>
 
-        <main className="px-6 py-4 space-y-5">
+        <main className="px-3 pt-2 pb-2 flex-1 flex flex-col overflow-hidden gap-5">
 
           {activeJobId && activeJobStatus === 'PENDING' && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3">
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3 shrink-0">
               <div className="w-9 h-9 rounded-full border-2 border-amber-400 border-t-transparent animate-spin shrink-0" />
               <div>
                 <p className="text-sm font-bold text-amber-800">AI is processing the document...</p>
@@ -334,7 +342,7 @@ export default function BunkerPage() {
             </div>
           )}
           {activeJobId && activeJobStatus === 'SUCCESS' && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between gap-3">
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-3">
                 <CheckCircle2 size={22} className="text-emerald-600 shrink-0" />
                 <p className="text-sm font-bold text-emerald-800">Document processed successfully and now appears in the list.</p>
@@ -343,7 +351,7 @@ export default function BunkerPage() {
             </div>
           )}
           {activeJobId && activeJobStatus === 'FAILED' && (
-            <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-center justify-between gap-3">
+            <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-3">
                 <AlertTriangle size={20} className="text-rose-600 shrink-0" />
                 <div>
@@ -355,9 +363,11 @@ export default function BunkerPage() {
             </div>
           )}
 
-          {/* List */}
-          <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 shadow-sm overflow-hidden">
-            <div className="px-5 py-4 border-b border-white/60 flex items-center justify-between gap-3 flex-wrap">
+          {/* List -- flex-1 min-h-0 supaya kartu ini yg mengisi sisa tinggi layar & HANYA
+              area tabel di dalamnya (overflow-y-auto di bawah) yg scroll, kartu-nya sendiri
+              (rounded-2xl) selalu utuh kelihatan (lihat komentar shell di atas). */}
+          <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
+            <div className="px-5 py-4 border-b border-white/60 flex items-center justify-between gap-3 flex-wrap shrink-0">
               <h2 className="text-sm font-bold text-[#5A305A] shrink-0">Bunker Document List</h2>
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="flex items-center gap-2 rounded-full pl-3.5 pr-3 py-1.5 border border-slate-200 bg-white shrink-0">
@@ -421,9 +431,9 @@ export default function BunkerPage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0">
               <table className="w-full text-[11px] bg-white">
-                <thead>
+                <thead className="sticky top-0 z-20">
                   <tr className="text-[10px] text-[#5A305A]/70 uppercase bg-slate-50">
                     <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">No PO</th>
                     <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Vendor</th>
@@ -500,7 +510,7 @@ export default function BunkerPage() {
             </div>
 
             {rows.length > 0 && (
-              <div className="flex max-sm:flex-col justify-between items-center px-5 py-3 border-t border-slate-200 bg-slate-50 gap-3">
+              <div className="flex max-sm:flex-col justify-between items-center px-5 py-3 border-t border-slate-200 bg-slate-50 gap-3 shrink-0">
                 <div className="text-xs text-[#5A305A]">
                   Showing <span className="font-semibold text-[#5A305A]">{listStartIndex + 1}-{Math.min(listStartIndex + pageSize, totalRecords)}</span> of <span className="font-semibold text-[#5A305A]">{totalRecords}</span> records
                 </div>

@@ -58,7 +58,7 @@ export default function AccountPage() {
 
   return (
     <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
-      <header className="px-6 pt-1 pb-2">
+      <header className="px-3 pt-1 pb-1">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">My Account</h1>
@@ -68,7 +68,7 @@ export default function AccountPage() {
         </div>
       </header>
 
-      <main className="max-w-2xl mx-auto px-4 py-8">
+      <main className="max-w-2xl mx-auto px-3 pt-2 pb-8">
 
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
           <div className="space-y-4 mb-6">

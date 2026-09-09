@@ -19,6 +19,49 @@
   }
 }
 
+/* Zoom 90% khusus layar laptop kecil (~14", viewport <=1600px CSS px) -- permintaan user:
+   tampilan default 100% dirasa terlalu besar/padat di laptop 14", 90% (dites manual lewat
+   Ctrl+- browser) yang pas. Pakai CSS `zoom` (BUKAN `transform: scale`) karena app ini banyak
+   pakai `position: fixed`/sticky (modal overlay, dropdown, sticky table header/kolom) yang akan
+   RUSAK kalau elemen induknya di-transform (transform bikin containing block baru, elemen fixed
+   di dalamnya jadi relatif ke situ, bukan lagi viewport browser) -- `zoom` ditangani browser
+   SEPERTI user benar-benar zoom manual, jadi fixed/sticky tetap normal relatif viewport.
+   Trade-off yang disadari: `zoom` non-standar tapi didukung penuh Chrome/Edge/Safari; Firefox
+   versi lama TIDAK mendukung -- fallback-nya aman (tampil 100% biasa, bukan rusak/error).
+   Breakpoint 1600px representasi resolusi laptop 14" umum (1366x768, 1440x900, 1536x864 hasil
+   scaling OS Windows), SENGAJA tidak menyentuh monitor eksternal/desktop yang umumnya >=1920px
+   -- sesuaikan angka ini kalau ternyata ada laptop 14" beresolusi lebih tinggi yang masih
+   kelewat besar, atau sebaliknya ada monitor >1600px yang tidak sengaja ikut ke-zoom. */
+@media (max-width: 1600px) {
+  html {
+    zoom: 90%;
+  }
+
+  /* FIX (2026-09, laporan user + screenshot: strip putih kosong di bawah halaman) -- CSS
+     `zoom` (beda dari zoom bawaan browser Ctrl+-) TIDAK ikut menyesuaikan unit `vh` di Chromium:
+     `100vh` tetap dihitung dari tinggi window APA ADANYA (mis. 900px), lalu box setinggi itu
+     BARU di-render kecil 90% (jadi cuma 810px SECARA VISUAL) -- sisa 90px di bawahnya jadi
+     latar putih kosong (background <body>, bukan gradient app). Elemen `h-screen`/`min-h-screen`
+     Tailwind (dipakai `MainLayout.tsx`, `AdminLayout.tsx`, `App.tsx`/`RequirePageAccess.tsx`
+     loading/error state, `LoginPage.tsx`) SEMUANYA pakai `100vh` mentah -- override di sini jadi
+     `calc(100vh / 0.9)` supaya SETELAH di-shrink 90% oleh `zoom`, tingginya balik pas 100vh
+     scr visual (matematika: `(100vh / 0.9) * 0.9 = 100vh`). Override CSS class Tailwind generik
+     ini (bukan ubah tiap komponen satu-satu) supaya otomatis ke-cover di MANA PUN `h-screen`/
+     `min-h-screen` dipakai, termasuk kalau ada pemakaian baru nanti.
+     CATATAN: elemen dgn tinggi vh SPESIFIK selain full-page (mis. modal `h-[92vh]`/
+     `max-h-[85vh]`) TIDAK ikut dikompensasi di sini -- efeknya cuma modal itu SECARA VISUAL
+     jadi ~90% dari proporsi vh yang diminta (mis. `85vh` jadi kelihatan setinggi ~76.5% layar
+     asli), BUKAN bug "gap putih" spt full-page container ini (krn modal py background overlay
+     sendiri yg menutupi, bukan nge-expose background <body>) -- dianggap trade-off minor yang
+     bisa diterima, TIDAK dikompensasi kecuali ada laporan spesifik. */
+  .h-screen {
+    height: calc(100vh / 0.9);
+  }
+  .min-h-screen {
+    min-height: calc(100vh / 0.9);
+  }
+}
+
 @keyframes spin-slow {
   to { transform: rotate(360deg); }
 }

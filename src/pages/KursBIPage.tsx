@@ -227,7 +227,7 @@ export default function KursBIPage() {
 
   return (
     <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
-      <header className="px-6 pt-1 pb-2">
+      <header className="px-3 pt-1 pb-1">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
@@ -242,7 +242,7 @@ export default function KursBIPage() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 pt-3 pb-8">
+      <main className="max-w-7xl mx-auto px-3 pt-2 pb-8">
 
         {/* Form Panel */}
         {canEditKursBI && (

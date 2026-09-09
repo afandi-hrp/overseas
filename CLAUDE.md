@@ -91,6 +91,10 @@ menangani Courier Audit/Rekapan, Sea & Air Audit/Rekapan, dan Audit Trail — di
   dipersempit juga. Berlaku ke SEMUA tab yang dirender lewat komponen ini (Courier/Sea & Air/Audit
   Trail), bukan cuma Audit Courier — kalau nanti ada laporan halaman lain jadi kurang lega,
   pertimbangkan trade-off ini.
+  **Susulan (2026-09): `px-3` ini SEKARANG STANDAR DI SEMUA HALAMAN app ini**, bukan cuma
+  `SharedDataTable.tsx` lagi — lihat "Pola UI yang harus diikuti" di bawah utk daftar lengkap
+  16 file lain yang ikut diseragamkan (permintaan user "margin kiri-kanan semua halaman
+  disamakan & dipersempit").
 - **Dropdown Company Audit Courier** (`activeCourierImporAnFilter`, ~baris 4158) — lebar
   dikecilkan dari `max-w-[160px]` ke `w-[70px]` lalu ke **`w-[48px]`** (2026-09, laporan sama
   seperti di atas, dipersempit 2x krn tab CN masih kepotong di iterasi pertama) + `truncate` —
@@ -456,6 +460,11 @@ dan bagian `CourierValidasiPage.tsx` yang merender label dari `SECTIONS`).
   nama akun ("Pengguna"→"User"), tombol/tooltip footer sidebar ("Akun Saya"→"My Account",
   "Pengaturan"→"Settings", "Keluar"→"Logout"). Label lain (Courier, Sea & Air, Audit, Upload,
   FAR Overseas, Bunker, Audit AP Local, Audit Trail) sudah Inggris dari awal, tidak disentuh.
+  **Susulan (2026-09, permintaan user)**: submenu Sea & Air `sea_air_rekapan` (`label: 'Recap'`)
+  disamakan dgn Courier jadi **`'Invoice Recap'`** — sebelumnya cuma Courier
+  (`courier_rekapan`) yg pakai label "Invoice Recap", Sea & Air masih "Recap" polos, sekarang
+  konsisten di kedua submenu. `id`/`path`/`pageKey` (`sea_air_rekapan`, `/sea-air/rekapan`)
+  TIDAK berubah, murni ganti teks label tampilan.
 - ✅ `src/components/Greeting.tsx` — sapaan waktu ("Selamat pagi/siang/sore/malam"→"Good
   morning/afternoon/evening/night"), format tanggal `toLocaleDateString` diganti locale
   `'id-ID'`→`'en-US'`.
@@ -563,6 +572,18 @@ dan bagian `CourierValidasiPage.tsx` yang merender label dari `SECTIONS`).
   kolom/baris/tabel tidak perlu dirubah"): badge status per-section "X/Y sesuai"/"X tidak
   sesuai" (~baris 1441-1444, teks statis di luar `section.label`, aman) → "match"/"mismatch";
   teks "jika ada — khusus jalur PIB" → "if applicable — PIB path only".
+  **Pengecualian (2026-09, permintaan eksplisit user)**: `section.label`/`srcLabel` utk
+  `s_no_vessel_imo` ("TIDAK ADA NAMA VESSEL DAN NOMOR IMO" → **"NO VESSEL NAME AND IMO NUMBER"**,
+  `srcLabel` ikut diterjemahkan jg meski tidak pernah dipakai tampil krn section ini py override
+  `getSrcTooltipLabel` sendiri, lihat baris ~148) DITERJEMAHKAN — beda dari kebijakan umum
+  "nama tabel tidak perlu dirubah" di atas, krn user MINTA LANGSUNG utk tabel spesifik ini. Field
+  row-nya (`"Format Pass: Tidak Ada Vessel & IMO"`, `isFormat`) TIDAK ikut diterjemahkan — itu
+  string logic-critical (dipakai `computeStatus()` via `fieldName.includes("Tidak Ada Vessel")`,
+  lihat "TEMUAN PENTING" di atas), translate field itu tanpa refactor `computeStatus` akan
+  merusak deteksi format-nya. `hint: 'Sesuai jika kosong'` juga TIDAK disentuh (tidak diminta).
+  Kalau nanti ada permintaan translate nama tabel/section LAIN di modal ini secara spesifik
+  (bukan kebijakan umum), ikuti pola yang sama: `label`/`srcLabel` aman diubah, `field`/`rowLabel`/
+  `compareDoc` HARUS dicek dulu apakah dipakai `computeStatus`/keyword-matching sebelum disentuh.
   **`ValidasiPerhitunganPIB.tsx`** (komponen kalkulasi PIB terpisah, dirender di dalam
   `ValidasiModal.tsx`) — HANYA UI chrome yang ditranslate: `StatusBadge` lokal-nya sendiri
   (~baris 100, "Sesuai"/"Tidak Sesuai"→"Match"/"Mismatch", key internal `match`/`mismatch`/
@@ -701,6 +722,133 @@ dan bagian `CourierValidasiPage.tsx` yang merender label dari `SECTIONS`).
 Komentar kode & isi CLAUDE.md ini SENGAJA TETAP Bahasa Indonesia (bukan bagian dari scope
 "teks yang tampil ke user").
 
+## Zoom 90% otomatis di layar laptop 14" (`src/index.css`, 2026-09)
+
+Permintaan user: tampilan default 100% dirasa terlalu besar/padat di laptop 14" — user tes
+manual pakai Ctrl+- browser & konfirmasi 90% yang pas. Diimplementasi sbg CSS global
+(`@media (max-width: 1600px) { html { zoom: 90%; } }`) di `src/index.css`, BUKAN diskusi
+dulu — user eksplisit minta "eksekusi zoom 90%" setelah sesi diskusi singkat soal opsinya.
+
+- **`zoom` (BUKAN `transform: scale`)** — app ini BANYAK pakai `position: fixed`/sticky (semua
+  modal overlay, dropdown, sticky table header/kolom di `SharedDataTable.tsx`/`AuditPoPage.tsx`/
+  dst) — `transform` pada elemen induk bikin containing block baru, SEMUA elemen `fixed` di
+  dalamnya jadi relatif ke situ (BUKAN lagi viewport browser), merusak total positioning modal
+  &sticky di seluruh app. `zoom` ditangani browser SEPERTI user beneran zoom manual (Ctrl+-),
+  jadi `fixed`/sticky tetap normal relatif viewport — SATU-SATUNYA opsi CSS yang aman utk app
+  dengan pola positioning seperti ini, JANGAN ganti ke `transform: scale` nanti tanpa audit ulang
+  semua modal & sticky element di app.
+- **Trade-off yang disadari & diterima**: `zoom` CSS property NON-STANDAR (bukan bagian spec
+  CSS resmi) — didukung PENUH di Chrome/Edge/Safari (browser yg dipakai internal Waruna Group),
+  TAPI Firefox versi lama TIDAK mendukungnya. Fallback-nya AMAN (browser yg tidak kenal `zoom`
+  cuma mengabaikan properti itu, tampil 100% normal — BUKAN error/rusak), jadi risikonya cuma
+  "sebagian user Firefox lama tidak dapat efek 90%-nya", bukan app jadi rusak.
+- **Breakpoint `max-width: 1600px`** — representasi kasar resolusi laptop 14" umum (1366×768,
+  1440×900, 1536×864 hasil scaling OS Windows 125%/150%), SENGAJA tidak menyentuh monitor
+  eksternal/desktop yang umumnya ≥1920px CSS px. Ini heuristik viewport WIDTH, BUKAN deteksi
+  ukuran fisik layar sungguhan (CSS/browser tidak bisa tahu ukuran fisik monitor) — laptop 14"
+  yang di-set resolusi tinggi (mis. 1920×1080 native tanpa OS scaling) TIDAK akan kena zoom ini
+  (viewport CSS px-nya >1600), dan sebaliknya monitor eksternal kecil/di-resize browser-nya jadi
+  sempit BISA ikut kena zoom walau bukan laptop 14" beneran. Kalau ada laporan "laptop 14" saya
+  kok tidak ke-zoom" atau "monitor saya malah ikut ke-zoom", sesuaikan angka breakpoint ini —
+  BUKAN bug logic, murni batas heuristik yang perlu dikalibrasi ulang.
+- Berlaku GLOBAL (elemen `<html>`) — otomatis ke SEMUA halaman aplikasi tanpa perlu ubah kode di
+  halaman manapun, TIDAK terkait/tumpang tindih dgn penyeragaman `px-3` header/main (poin
+  "Pola UI yang harus diikuti" di bawah) — itu soal padding horizontal, ini soal skala
+  keseluruhan tampilan (font, spacing, semua ukuran ikut mengecil proporsional 90%).
+- **BUG ditemukan & diperbaiki (2026-09, laporan user + screenshot: strip putih kosong di bawah
+  halaman setelah zoom aktif)** — akar masalah: CSS `zoom` (beda dari zoom bawaan browser
+  Ctrl+-) TIDAK ikut menyesuaikan unit `vh` di Chromium — `100vh` tetap dihitung dari tinggi
+  window APA ADANYA (mis. 900px), lalu box setinggi itu BARU di-render kecil 90% (jadi cuma
+  810px SECARA VISUAL) — sisa 90px di bawahnya nge-expose background `<body>` polos (putih),
+  bukan gradient app. Elemen `h-screen`/`min-h-screen` Tailwind (dipakai `MainLayout.tsx`,
+  `AdminLayout.tsx`, `App.tsx`/`RequirePageAccess.tsx` loading/error state, `LoginPage.tsx`) —
+  SEMUANYA pakai `100vh`/`min-height:100vh` mentah, kena masalah ini. **Fix**: di DALAM media
+  query yg sama, override CLASS Tailwind generik-nya (bukan ubah tiap komponen satu-satu):
+  ```css
+  .h-screen { height: calc(100vh / 0.9); }
+  .min-h-screen { min-height: calc(100vh / 0.9); }
+  ```
+  Matematikanya: `(100vh / 0.9) * 0.9 (hasil shrink zoom) = 100vh` lagi secara visual — otomatis
+  ke-cover di MANA PUN class ini dipakai, termasuk pemakaian baru nanti, tanpa sentuh komponen.
+  **TIDAK dikompensasi** (SENGAJA, trade-off minor yg diterima): elemen dgn tinggi vh SPESIFIK
+  selain full-page (mis. modal `h-[92vh]`/`max-h-[85vh]` di berbagai modal app ini) — efeknya
+  modal itu SECARA VISUAL jadi ~90% dari proporsi vh yg diminta (mis. `85vh` jadi kelihatan
+  setinggi ~76.5% layar asli), BUKAN bug "gap putih" spt full-page container (krn modal py
+  background overlay sendiri yg menutupi, tidak nge-expose `<body>`) — TIDAK dikompensasi
+  kecuali ada laporan spesifik soal modal tertentu kelihatan kekecilan.
+
+## Bunker — kartu List selalu utuh, cuma baris tabel yg scroll internal (`BunkerPage.tsx`, 2026-09)
+
+Laporan user + screenshot: waktu halaman di-scroll ke bawah, kartu List (`rounded-2xl`) kelihatan
+"kotak"/lurus, bukan melengkung lagi. **Akar masalah**: SEBELUMNYA seluruh halaman ini scroll
+sbg SATU HALAMAN PENUH (`<div className="flex-1 h-full overflow-y-auto ...">` di wrapper paling
+luar) — header, banner, toolbar, DAN kartu tabel SEMUA ikut ter-scroll bareng. Begitu user
+scroll ke bawah, bagian ATAS kartu List (yg py sudut membulat) ikut ter-scroll lewat batas atas
+viewport, yg tersisa di layar cuma bagian TENGAH kotak-nya (yg secara definisi tidak melengkung
+— radius cuma ada di sudut asli kotak, bukan "mengikuti" area yg kebetulan kelihatan).
+
+**Fix (REPLIKA pola `SharedDataTable.tsx`/`FarOverseasAirPage.tsx`)**: halaman diubah dari
+"scroll 1 halaman penuh" jadi "shell tinggi tetap + scroll internal cuma di baris tabel":
+- Wrapper terluar: `overflow-y-auto` → `flex flex-col overflow-hidden` (halaman TIDAK PERNAH
+  scroll sbg 1 kesatuan lagi).
+- `<header>` & toolbar List (search/filter/tombol) dikasih `shrink-0` — SELALU diam di posisinya,
+  tidak ikut scroll.
+- Kartu List (`bg-white/70 ... rounded-2xl ...`) ditambah `flex-1 flex flex-col min-h-0` —
+  mengisi SISA tinggi layar, sudut membulatnya SELALU ada di batas layar/tetap kelihatan penuh,
+  TIDAK PERNAH "terpotong" ter-scroll lewat.
+- Wrapper `<table>` (`overflow-x-auto`) ditambah `overflow-y-auto flex-1 min-h-0` — SATU-SATUNYA
+  bagian yg beneran scroll sekarang, di DALAM kartu yg sudah tetap posisinya. `<thead>` ditambah
+  `sticky top-0 z-20` (SEBELUMNYA tidak sticky sama sekali krn dulu toh seluruh halaman yg
+  scroll, header kolom jadi butuh sticky beneran sekarang supaya tetap kebaca sambil scroll
+  baris) — kolom Action (`sticky right-0`) yg sudah ada dari awal TIDAK berubah.
+- Pagination footer dikasih `shrink-0` — SELALU di bawah kartu, tidak ikut lenyap/ter-scroll.
+- 3 banner status job (PENDING/SUCCESS/FAILED) di atas kartu List juga dikasih `shrink-0`.
+- `pb-10 no-scrollbar` di wrapper terluar DIHAPUS (tidak relevan lagi — wrapper ini sudah tidak
+  py scrollbar sendiri sama sekali sekarang, `overflow-hidden` bukan `auto`).
+
+**Susulan (2026-09, dikonfirmasi user "juga terjadi hal yang sama") — SUDAH di-porting** ke
+`AuditPoPage.tsx`, `AuditPoOverseasPage.tsx`, `PiLocalPage.tsx` — struktur identik persis (shell
+`flex flex-col overflow-hidden`, `header`/toolbar/pagination `shrink-0`, kartu List `flex-1 flex
+flex-col min-h-0`, wrapper `<table>` `overflow-x-auto overflow-y-auto flex-1 min-h-0`, `<thead
+className="sticky top-0 z-20">`). `KategoriPicker` punya dropdown absolute `z-30` (`AuditPoPage.tsx`/
+`AuditPoOverseasPage.tsx`/`PiLocalPage.tsx`) — TETAP di atas `z-20` thead baru, tidak ketiban.
+
+**Margin bawah dipersempit (2026-09, permintaan tambahan user "margin bawah dgn tabel masih
+terlalu besar")** — `<main>` di KEEMPAT halaman ini (`BunkerPage.tsx` + 3 halaman di atas) diubah
+dari `py-4` (padding atas-bawah SAMA) jadi **`pt-4 pb-2`** (atas tetap, bawah dipersempit) — jarak
+antara kartu List dgn tepi bawah layar SEKARANG lebih rapat. Kalau nanti halaman list LAIN
+(`CourierValidasiPage.tsx`/`FarOverseasAirPage.tsx`, yg sudah lebih dulu pakai pola shell serupa)
+py laporan margin bawah serupa, terapkan pola `pt-4 pb-2` yg sama.
+
+## Courier Validasi — panel list disatukan jadi 1 kartu (`src/pages/courier/CourierValidasiPage.tsx`, 2026-09)
+
+Halaman ini (list, BUKAN modal `ValidasiModal.tsx` per-shipment) render tiap baris sbg KARTU
+(bukan `<table>` beneran) — toolbar (search+Refresh+Export), daftar kartu record, & footer
+pagination SEBELUMNYA 3 elemen `rounded-2xl` TERPISAH yang floating di atas gradient background
+halaman (masing2 py `border`+shadow sendiri, dipisah `mb-4`/`mt-4`) — SATU-SATUNYA halaman list
+di app ini yg BEDA dari pola umum (semua halaman list lain — `SharedDataTable.tsx`,
+`AuditPoPage.tsx`, `BunkerPage.tsx`, `PiLocalPage.tsx`, `FarOverseasAirPage.tsx` — sudah lebih
+dulu pakai 1 kartu besar menyatu utk toolbar+tabel+pagination). User lapor "tabel belum selaras
+dgn panelnya" + minta "melengkung supaya cantik" (screenshot) — DISELARASKAN ke pola umum itu:
+- Toolbar, daftar kartu record (scrollable), dan pagination SEKARANG di dalam SATU
+  `<div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 shadow-sm
+  overflow-hidden flex-1 flex flex-col min-h-0">` (persis pola halaman list lain) — toolbar &
+  pagination jadi strip `border-b`/`border-t` di dalamnya (bukan kartu `rounded-2xl` sendiri
+  lagi), daftar kartu record dpt padding `p-4` & `overflow-y-auto` di tengah.
+  Konstanta `TOOLBAR_GLASS` (dulu dipakai 3 tempat: toolbar, empty-state, kartu record, DAN
+  pagination) DIHAPUS TOTAL — sudah tidak dipakai lagi setelah restrukturisasi ini.
+- **Kartu record individual** — background diganti dari translucent `bg-white/70 backdrop-blur`
+  (`TOOLBAR_GLASS`, bikin "dobel blur" krn sekarang bersarang di dalam panel translucent yg
+  sama) jadi **SOLID** `bg-white border border-slate-200 shadow-sm` — lebih jelas kontrasnya
+  sbg baris di dalam panel, konsisten dgn kartu/baris di halaman list lain yg juga solid putih
+  di dalam panel translucent-nya.
+- **Search bar dilebarkan** (permintaan user "buat agar lebih lebar sedikit") — `w-40` (default)
+  → **`w-64`**, `focus:w-56` → **`focus:w-80`**. Style-nya jg disederhanakan dari ikut
+  `TOOLBAR_GLASS` (translucent) jadi solid `bg-white/90 border-slate-200` (konsisten dgn kartu
+  record di atas, bukan lagi glass-effect terpisah).
+- Empty state "Tidak ada data validasi ditemukan" TIDAK LAGI py kartu `rounded-2xl` sendiri —
+  cukup teks polos di dalam area list yg sudah berada di dalam panel utama.
+
 ## Pola UI yang harus diikuti (dikonsolidasi sepanjang sesi-sesi sebelumnya)
 
 - **Warna brand**: ungu `#5A305A` (hover `#73507B`) untuk tombol aksi utama & ikon header.
@@ -709,7 +857,7 @@ Komentar kode & isi CLAUDE.md ini SENGAJA TETAP Bahasa Indonesia (bukan bagian d
 - **Header halaman** (pola wajib, contoh: `FarOverseasVendorTarifPage.tsx`, `KursBIPage.tsx`):
   ```jsx
   <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
-    <header className="px-6 pt-1 pb-2">
+    <header className="px-3 pt-1 pb-2">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
@@ -723,15 +871,53 @@ Komentar kode & isi CLAUDE.md ini SENGAJA TETAP Bahasa Indonesia (bukan bagian d
         <Greeting />
       </div>
     </header>
-    <main className="max-w-7xl mx-auto px-4 pt-3 pb-8">
+    <main className="max-w-7xl mx-auto px-3 pt-2 pb-8">
       ...
     </main>
   </div>
   ```
   Header **full-width** (BUKAN di dalam `max-w-* mx-auto`) — kalau header ikut kena `mx-auto`,
-  `<Greeting />` kepental ke bawah judul di layar sempit/nama panjang. `main` pakai `pt-3` (bukan
+  `<Greeting />` kepental ke bawah judul di layar sempit/nama panjang. `main` pakai `pt-2` (bukan
   `py-8`) di sisi atas supaya jaraknya rapat ke header, `max-w-7xl` untuk halaman dengan tabel
   lebar, `max-w-2xl`/`max-w-5xl` untuk form sempit.
+  **Jarak header↔main dipersempit lagi (2026-09, permintaan user "margin antara sapaan dgn yg
+  dibawahnya masih terlalu besar")** — 2 nilai diturunkan SEKALIGUS di 17 file (16 halaman +
+  `SharedDataTable.tsx`, daftar file SAMA PERSIS dgn poin `px-3` di bawah, PLUS
+  `SharedDataTable.tsx`): `header` `pb-2` → **`pb-1`**, DAN top-padding `main` diturunkan 1 step
+  (`pt-4`/`pt-3`/`py-4`'s top/`py-6`'s top/`py-8`'s top → **`pt-2`** SEMUA, bottom padding-nya
+  TIDAK diubah/tetap seperti aslinya — utk yg tadinya `py-*` polos, dipecah jadi `pt-2 pb-*`
+  eksplisit). **Halaman baru ke depan ikuti nilai INI** (`pb-1` di header, `pt-2` di sisi atas
+  `main`), BUKAN lagi `pb-2`/`pt-3`/`pt-4` yg didokumentasikan di versi CLAUDE.md sebelumnya.
+  **Susulan (2026-09, permintaan user "margin bawah Courier & Sea & Air disamakan dgn
+  Bunker")** — `main` di `SharedDataTable.tsx` (dipakai Courier Audit/Rekapan & Sea & Air
+  Audit/Rekapan & Audit Trail) diturunkan dari `pb-4` → **`pb-2`**, PERSIS sama dgn
+  `BunkerPage.tsx`. `src/pages/courier/CourierValidasiPage.tsx` (halaman "Courier Validasi" —
+  list MANDIRI, TERPISAH dari `SharedDataTable.tsx`) ikut diturunkan `pb-4` → `pb-2` jg krn
+  termasuk modul Courier. Sea & Air tidak py halaman list terpisah lain di luar
+  `SharedDataTable.tsx` (Audit & Rekapan-nya sama-sama lewat komponen itu), jadi 2 file ini SAJA
+  yg diubah utk cakupan "semua halaman Courier & Sea & Air". **Nilai `pb-2` ini SEKARANG jadi
+  standar bottom-padding `main` utk
+  SEMUA halaman list bertipe "shell tinggi tetap"** (`BunkerPage.tsx`, `AuditPoPage.tsx`,
+  `AuditPoOverseasPage.tsx`, `PiLocalPage.tsx`, `SharedDataTable.tsx`,
+  `CourierValidasiPage.tsx`) — HANYA `FarOverseasAirPage.tsx`/`RateTablesAdmin.tsx`/
+  `FuelSurchargePage.tsx` (pola shell sama, TAPI belum diminta diselaraskan) yg masih `pb-4`,
+  cek dgn user dulu kalau mau ikut diseragamkan juga.
+  **Padding horizontal `header`/`main` DISTANDARKAN ke `px-3` di SEMUA halaman (2026-09,
+  permintaan eksplisit user "margin kiri-kanan semua halaman disamakan & dipersempit")** —
+  SEBELUMNYA CAMPUR (`px-6` di kebanyakan halaman, `px-4` di halaman yg pakai pola `max-w-*
+  mx-auto`, `px-3` HANYA di `SharedDataTable.tsx` sejak fix toolbar Audit Courier kepotong di
+  laptop 14" — lihat catatan `SharedDataTable.tsx` di bawah). SEKARANG SEMUA halaman (termasuk
+  `SharedDataTable.tsx`, TIDAK berubah lagi) pakai `px-3` di `header` MAUPUN `main`, supaya jarak
+  ke sidebar (kiri) & ke tepi layar (kanan) SAMA persis di halaman manapun — 16 file diubah
+  sekaligus (`UploadPage.tsx`, `RateTablesAdmin.tsx`, `CourierValidasiPage.tsx`,
+  `AuditPoPage.tsx`, `BunkerPage.tsx`, `KursRuleVendorPage.tsx`, `PiLocalPage.tsx`,
+  `FarOverseasVendorTarifPage.tsx`, `FarOverseasAirPage.tsx`, `RoleManagementPage.tsx`,
+  `AccountPage.tsx`, `AuditPoOverseasPage.tsx`, `SettingsPage.tsx`, `TarifKontrakPage.tsx`,
+  `FuelSurchargePage.tsx`, `KursBIPage.tsx`). `SettingsPage.tsx` sempat py varian responsif
+  `px-4 sm:px-6` — disederhanakan jadi `px-3` polos (tanpa breakpoint) biar konsisten dgn semua
+  halaman lain yg tidak py varian responsif di titik ini. **Halaman baru manapun ke depan WAJIB
+  pakai `px-3`, JANGAN `px-6`/`px-4` lagi** di `header`/`main` level ini — nilai lain di pola di
+  atas (`pt-1 pb-2`, `pt-3 pb-8`, `max-w-*`) TIDAK berubah.
 - **`<Greeting />`** (`src/components/Greeting.tsx`) — sapaan "Good morning/afternoon/evening/
   night, {nama}" + ikon waktu + tanggal (format `en-US`, sejak translasi UI ke Inggris 2026-09,
   lihat bagian "Translasi UI ke Bahasa Inggris" di bawah). Satu sumber kebenaran, dipasang di
@@ -1697,6 +1883,168 @@ Kedua badge pakai kebijakan sama dengan Doc/Cost Validation: SELALU tampil terma
   (Postgres OR-kan semua policy permissive utk command yang sama, jadi seharusnya aman ditambah,
   tapi tetap cek dulu sebelum run kalau ragu).
 
+## Courier — Document Validation, kolom "REFERENCE" khusus tabel PIB (`src/components/ValidasiModal.tsx`, 2026-09)
+
+**Konteks penting yang WAJIB dipahami dulu**: `ValidasiModal.tsx` (modal "Document Validation" di
+Audit Courier) punya SECTIONS + fungsi `fill()`/`generateValues`-nya SENDIRI, TERPISAH TOTAL dari
+`src/utils/ValidasiHelper.ts`/`ValidasiFill.ts` (yang isinya cuma dipakai `CourierValidasiPage.tsx`
+& fallback badge % di `SharedDataTable.tsx`) — 2 salinan ini SUDAH TERBUKTI TIDAK SINKRON utk 4 id
+`bdjbc01`-`bdjbc04` (nilai src/cmp beda antara kedua file, ditemukan 2026-09 saat investigasi
+task ini). **Kalau mau tau/ubah src-cmp yang BENERAN tampil di modal, WAJIB baca/edit
+`ValidasiModal.tsx`, JANGAN `ValidasiFill.ts`** — sudah pernah salah laporan gara-gara ini.
+`ValidasiFill.ts` BELUM disinkronkan (user belum minta, masih nunggu konfirmasi).
+
+**Temuan yang jadi dasar fitur ini**: di section `s_pib` (tabel "PIB"), nilai **Src ternyata SELALU
+identik di semua kolom dokumen pembanding pada 1 baris field yang sama** — semua 12 sel section ini
+src-nya dari `pibV` (PIB) apa adanya (`pibV.no_pengajuan`/`pibV.item_value`/`pibV.no_invoice`/
+`pibV.total_bayar`, tergantung baris). Ini BEDA dari section `s_inv_freight_duty` (Invoice
+Freight & Duty) yang src-nya bisa beda-beda per kolom dalam 1 baris yang sama (Freight vs Duty vs
+CN-adjusted) — makanya solusi "kolom Referensi tunggal" ini SENGAJA HANYA diterapkan ke `s_pib`,
+BUKAN section lain, kecuali nanti dicek dulu section itu juga punya sifat "1 Src per baris" yang
+sama.
+
+- **Kolom baru "REFERENCE"** (sempat "NILAI REFERENSI", diganti ke Inggris 2026-09) disisipkan
+  di `<thead>`/`<tbody>` PERSIS setelah kolom
+  "VALIDASI FIELD", HANYA render kalau `section.id === 's_pib'` (guard di 2 tempat: header &
+  body). Isinya = nilai Src (ambil dari row id PERTAMA yang match `groupKey(r) === field` di
+  section itu — krn semuanya identik, cukup ambil satu) + tombol edit (mode edit: `<input>`,
+  mode lihat: teks + badge biru "diedit manual" kalau `src_edited`).
+- **Kolom-kolom dokumen (PO/CIPL/Final Invoice/BT Vendor/SPPB/BILLING DJBC/BPN) di section ini
+  SEKARANG cuma render Cmp + ikon status** — kotak Src & label "vs" DISEMBUNYIKAN (guard
+  `section.id !== 's_pib'` di 2 titik JSX: blok Src, dan span "vs"), TIDAK dihapus dari kode
+  (section lain tetap pakai tampilan Src+vs+Cmp seperti biasa, JSX-nya sama persis, cuma
+  dibungkus kondisi).
+- **`setSrcForGroup(section, field, val)`** (fungsi baru, dekat `setObj`) — SATU-SATUNYA cara
+  Src di kolom Referensi ini diedit. BEDA dari `setObj(id, side, val)` yang cuma nulis ke 1 row
+  id — `setSrcForGroup` menulis `src`+`src_edited:true`+`manual_status:null` ke **SEMUA row id**
+  yang berbagi `groupKey` (rowLabel||field) yang sama di section itu (mis. edit Referensi baris
+  "Item Value" otomatis update `src` di `po_item_value_vs_pib`, `pib04`, `pib07`, DAN
+  `bt_vendor_item_value_vs_pib` sekaligus) — WAJIB begini, karena `computeStatus()` tiap kolom
+  tetap baca `values[rowMatch.id].src` MASING-MASING secara independen (state tidak benar-benar
+  digabung jadi 1, cuma DITULIS bareng biar tetap sinkron) — kalau nanti nambah row id baru ke
+  grup field yang sudah ada di `s_pib`, otomatis ikut ke-cover `setSrcForGroup` tanpa ubah kode
+  ini (filter-nya dinamis by `groupKey`), TIDAK PERLU didaftarkan manual satu-satu.
+- **Kalau nanti mau perluas pola "kolom Referensi" ini ke section lain**: WAJIB cek dulu dgn cara
+  yang sama spt investigasi `s_pib` di atas (baca semua `fill()` calls id-id di section itu,
+  bandingkan apakah src-nya BENERAN identik di semua kolom per baris) — JANGAN asumsikan otomatis
+  sama kayak `s_pib` tanpa verifikasi, krn `s_inv_freight_duty` sudah terbukti TIDAK begitu (lihat
+  bagian "Audit AP Local"... eh maksudnya diskusi src/cmp Invoice Freight & Duty di atas -- src-nya
+  beda per kolom Freight/Duty/CN, PERLU pola multi-baris per kartu kalau mau diterapkan di situ,
+  BUKAN 1 kolom tunggal spt `s_pib`).
+
+## Courier — Document Validation, ikon status per sel jadi pill berlabel (`src/components/ValidasiModal.tsx`, 2026-09)
+
+Ikon status per sel di SEMUA tabel modal ini (bukan cuma PIB — berlaku ke semua section karena
+render sel-nya generik/dipakai bareng) — sebelumnya ikon polos tanpa teks (✅/❌/🕐/dot abu-abu)
+— diganti jadi **pill rounded berlabel teks** (mis. hijau "✓ Match", merah "✗ Mismatch", kuning
+"🕐 Incomplete", abu-abu "− —"), meniru referensi visual yang diberikan user (badge pill
+"Match"/"Mismatch").
+
+- **`getCfg(st)`** (fungsi lokal di komponen ini, ~baris 1242) — TERNYATA SUDAH ADA sebelum task
+  ini (bareng `STATUS_CONFIG` ~baris 468, keduanya dulu dead code/tidak dipakai di mana pun,
+  lihat catatan lama "Courier Validasi" di atas) — dipakai ULANG di sini (bukan bikin baru),
+  balikin `{label, bg, color, icon}` per status (`match`/`mismatch`/`partial`/lainnya=empty).
+  `STATUS_CONFIG` (const module-level, versi lain dari mapping yang sama pakai CSS var
+  `var(--color-background-success)` dkk) TETAP TIDAK DIPAKAI/dead code — `getCfg` versi lokal
+  yang dipilih krn pakai literal hex (`bgSuccess`/`txtSuccess`/dst, sudah didefinisikan duluan di
+  scope yang sama) yang lebih pasti kepakai tanpa bergantung CSS var didefinisikan di tempat lain.
+- Blok render "STATUS ICON" (dalam sel matrix tiap kolom dokumen) diganti "STATUS PILL" — ikon
+  (`CheckCircle2`/`XCircle`/`Clock`/`Minus`, baru diimport dari `lucide-react`) + teks label dari
+  `cfg.label`, dibungkus `<div>` rounded-full kecil (`px-2.5 py-1 rounded-full text-[10px]`) pakai
+  `style={{backgroundColor: cfg.bg, color: cfg.color}}` (inline style, bukan Tailwind class, krn
+  warnanya dari variable JS bukan class statis). Interaksi klik (`toggleManualStatus`) & cursor
+  pointer di mode edit TIDAK berubah, cuma dibungkus tampilan pill.
+- Kalau nanti mau ubah warna/label per status lagi, cukup ubah di `getCfg()` SAJA — jangan
+  duplikat mapping serupa lagi di tempat ketiga (`STATUS_CONFIG` yang lama biarkan tetap tidak
+  terpakai kecuali memang diniatkan pindah semua ke situ).
+
+## Courier — Document Validation, tampilan Cmp jadi "(dalam kurung)" tanpa label "vs" (`src/components/ValidasiModal.tsx`, 2026-09)
+
+Berlaku ke SEMUA tabel di modal ini (bukan cuma PIB — blok render sel ini generik/dipakai
+bareng semua section) — sebelumnya Src & Cmp ditampilkan bertumpuk dgn pemisah pill kecil
+"vs" di antaranya, ukuran font sama besar. Sekarang:
+- Label **"vs" DIHAPUS TOTAL** (bukan disembunyikan CSS, elemen `<span>`-nya sudah tidak ada di
+  JSX) — Cmp otomatis "menempel" tepat di bawah Src krn masih dalam wrapper flex-col yang sama,
+  tidak perlu elemen spacer/pemisah lagi.
+  **PENTING (khusus section `s_pib`)**: guard `section.id !== 's_pib'` yang tadinya membungkus
+  span "vs" JADI TIDAK RELEVAN LAGI setelah span-nya dihapus (section `s_pib` sendiri memang
+  sudah tidak pernah render Src+vs di kolom dokumen, lihat catatan kolom "REFERENCE" di atas) —
+  tidak ada regresi, cuma dead condition yang otomatis hilang bareng penghapusan "vs".
+- **Cmp (mode lihat/non-edit)** dibungkus tanda kurung literal `(...)` di JSX
+  (`({formatViewValue(v.cmp, field)})`), font diperkecil dari `text-xs` (12px) →
+  **`text-[10px]`**, warna teks juga dibuat lebih redup (`text-[#5A305A]/70 font-normal`,
+  sebelumnya `text-[#5A305A] font-medium` sama persis dgn Src) — supaya SECARA VISUAL Cmp
+  terlihat sebagai anotasi sekunder di bawah Src (yang tetap `text-xs`/warna solid seperti
+  semula, TIDAK diubah). Badge "diedit manual" (`Edit3` icon) ikut dikecilkan `size={10}` →
+  `size={9}` biar proporsional. Baris "Other Cost" (khusus `po_item_value_vs_pib`/`cipl01`)
+  TIDAK berubah.
+- **Cmp (mode Edit) TETAP bisa diedit** seperti sebelumnya (`<input>`, `onChange` ke `setObj`
+  TIDAK berubah) — HANYA ukuran font input diperkecil `text-xs`→`text-[11px]` + padding
+  dikurangi `py-1.5`→`py-1`, supaya proporsinya tetap terasa "lebih kecil dari Src" sama saat
+  mode edit maupun mode lihat. Placeholder "Cmp" TIDAK dibungkus tanda kurung (kurung cuma
+  utk NILAI yang sudah terisi di mode lihat, bukan literal di dalam input field — kalau
+  dipaksakan ke `value` input, tanda kurungnya akan ikut ke-submit sbg bagian data).
+- Kolom **Src** (baik section biasa maupun kolom "REFERENCE" khusus PIB) TIDAK disentuh sama
+  sekali oleh perubahan ini — tetap ukuran `text-xs` normal, tetap di atas.
+- **Susulan (2026-09, permintaan user)**: khusus section `s_pib`, tampilan **Cmp DIKEMBALIKAN
+  ke gaya semula** (SEBELUM perubahan "(dalam kurung) + font kecil" di atas) — `text-xs` normal,
+  TANPA tanda kurung, warna solid `text-[#5A305A] font-medium` (bukan redup `/70`), input mode
+  edit juga balik `text-xs`/`py-1.5` (bukan `text-[11px]`/`py-1`). Section LAIN (Invoice Freight
+  & Duty, SPTNP, Tabel NPWP, dst) TETAP pakai gaya baru (kurung + font kecil) — jadi sekarang ada
+  3 percabangan render Cmp di 1 blok kode yang sama: `isEditMode` (ukuran input beda tipis
+  tergantung `section.id === 's_pib'`), lalu utk mode lihat: `section.id === 's_pib'` → gaya lama,
+  else → gaya baru (kurung). **Kalau nanti section lain juga diminta balik ke gaya lama, tambahkan
+  id section-nya ke kondisi `section.id === 's_pib'` di 3 titik itu (className input, className
+  span mode lihat "gaya lama"), JANGAN duplikat blok kode baru lagi.**
+- **Susulan lagi (2026-09)**: placeholder literal `"Src"`/`"Cmp"` di kedua `<input>` (muncul
+  sbg teks abu-abu di kotak kosong pas mode Edit, dikeluhkan user via screenshot — kelihatan
+  berulang di semua sel, norak) **DIHAPUS** (jadi string kosong `""`) — placeholder `"Format..."`
+  utk baris `isFormat` (mis. baris "Tidak Ada Nama Vessel & Nomor IMO") TETAP ADA, TIDAK ikut
+  dihapus (itu instruksi format yang informatif, beda konteks dari label generik "Src"/"Cmp").
+  Placeholder `"Referensi"` di kolom REFERENCE (khusus `s_pib`) juga TIDAK disentuh/tidak diminta.
+- **Susulan lagi (2026-09) — pill status "empty" (belum ada nilai apa pun buat dibandingkan)**:
+  sebelumnya abu-abu polos label "—" + ikon `Minus` (dikeluhkan user via screenshot, "cuma abu2
+  & 2 garis") — diganti jadi pill ungu muda label **"Not checked yet"** + ikon `Clock` (SAMA
+  ikonnya dgn status `partial`/"Incomplete", ikon `Minus` sudah tidak dipakai lagi di
+  `StatusIcon` ternary & di-remove dari import `lucide-react`). Warna: `bg: "#EEEAF3"` (lavender
+  muda), `color: "#5A305A"` (ungu brand app, bukan abu-abu netral lagi) — didefinisikan di
+  `getCfg()`, SATU-SATUNYA tempat mapping warna/label/ikon per status (lihat catatan di atas,
+  jangan duplikat mapping lagi kalau mau ubah warna/label status lain nanti).
+- **Susulan lagi (2026-09) — garis pembatas antar kolom "kelihatan tidak nyambung"** (laporan
+  user via 2 screenshot, paling kentara di tabel "TIDAK ADA NAMA VESSEL DAN NOMOR IMO" krn cuma
+  1 baris pendek): BUKAN bug geometris/CSS collapse yang benar2 putus — `border-r`-nya memang
+  ADA di tiap `<th>`/`<td>` sepanjang kolom (dicek satu-satu di kode). Akar masalahnya soal
+  KONTRAS WARNA: dulu semua pembatas vertikal pakai `border-slate-200` (`#e2e8f0`, abu SANGAT
+  muda) — kontrasnya BAGUS di badan tabel (background putih polos), tapi kontrasnya JELEK di
+  baris header krn background header berwarna pastel (biru/kuning/ungu muda dari
+  `getHeaderColor(doc)`) yang tone-nya mirip2 dgn abu muda itu — mata jadi baca "garisnya
+  berhenti/renggang" tepat di batas warna header, padahal geometrinya menerus. **Fix**: SEMUA
+  border vertikal pembatas kolom di tabel ini (7 titik: `<th>` VALIDASI FIELD, `<th>` REFERENCE
+  khusus `s_pib`, `<th>` tiap compareDoc, `<td>` VALIDASI FIELD, `<td>` REFERENCE (2 varian —
+  ada data & fallback "-"), `<td>` tiap compareDoc (2 varian juga)) diseragamkan ke
+  `border-slate-300` (`#cbd5e1`, satu tingkat lebih gelap) — termasuk 2 titik yg pakai trik
+  `box-shadow` (kolom sticky VALIDASI FIELD, `shadow-[1px_0_0_0_#e2e8f0]` → `#cbd5e1`, box-shadow
+  dipakai KHUSUS di kolom sticky krn `border-collapse` diketahui rusak/tidak konsisten kalau
+  dikombinasi `position: sticky`, jadi kolom itu sengaja tidak pakai `border-r` biasa dari awal —
+  ini bukan bagian dari bug yg dilaporkan, cuma ikut disamakan warnanya biar konsisten satu
+  tabel). Border horizontal (`border-b` antar baris) TIDAK diubah — laporan user spesifik soal
+  garis VERTIKAL antar kolom saja. **Kalau nanti border kolom di tabel manapun di modal ini
+  dilaporkan "putus/tidak nyambung" lagi, cek dulu kontras `border-slate-*` terhadap background
+  di titik yg dilaporkan SEBELUM curiga ke bug rendering (sticky/zoom/dll) — ini sudah 2x
+  ditelusuri & ternyata murni soal kontras warna, bukan bug struktural.**
+
+## Sea & Air — Modal "Cost Validasi Shipment & Invoice" disamakan ukurannya dgn Courier (`src/components/ValidasiShipmentInvoiceLengkap.tsx`, 2026-09)
+
+Permintaan user: samakan ukuran modal ini dgn modal "Cost Validation Details" Courier
+(`CostValidationModal.tsx`, container-nya `max-w-6xl max-h-[97vh]`, TANPA height tetap — tinggi
+modal mengikuti konten, `flex-1 overflow-y-auto` di body-nya yg scroll kalau konten melebihi
+`max-h`). Sebelumnya modal Sea & Air ini `max-w-5xl h-[90vh] max-h-[90vh]` (lebih sempit & tinggi
+DIPAKSA 90vh apapun panjang kontennya, beda pola dgn modal Courier). Diubah jadi `max-w-6xl
+max-h-[97vh]` (drop `h-[90vh]` yg fixed) — PERSIS sama classnya dgn Courier. Struktur internal
+modal ini sudah cocok dgn pola ini dari awal (header `shrink-0`, body `flex-1 overflow-y-auto`,
+lihat `ValidasiModal.tsx`-style layout), jadi tidak perlu ubah apa pun selain className container
+terluarnya.
+
 ## Sea & Air — Dokumen Validasi (`src/components/SeaAirValidasiModal.tsx`)
 
 Tabel-tabel di modal ini (INVOICE FCL, FAKTUR PAJAK FCL, PIB Matrix, dll) render kolom "data
@@ -1724,12 +2072,61 @@ user) — panel filter langsung jadi header card, `justify-end`.
   BUKAN beberapa tombol terpisah sekaligus. Pola diambil PERSIS dari kolom AKSI di
   `FarOverseasAirPage.tsx` (List Memo, baris ~862-910): klik toggle → panel kecil di bawahnya
   (non-floating, reflow row, bukan `position: absolute`) berisi Edit/Hapus/Download PDF/Hasil
-  Audit, tiap klik item menutup panel lagi (`setOpenActionsRowId(null)`). Kalau nambah aksi baru
-  di kolom ini, ikuti pola ini juga, jangan balik ke tombol terpisah.
+  Audit.
+  **Panel Aksi TIDAK LAGI auto-close saat klik salah satu item di dalamnya (2026-09, laporan
+  user)** — SEBELUMNYA tiap klik Edit/Hapus/Preview PDF/Hasil Audit ikut `setOpenActionsRowId(null)`
+  (menutup panel Aksi), jadi begitu user tutup modal Preview PDF, panel Aksi-nya sudah hilang
+  duluan — user harus buka toggle "Aksi" lagi kalau mau klik item lain di baris yang sama. Fix:
+  `setOpenActionsRowId(null)` DIHAPUS dari KEEMPAT `onClick` (Edit/Hapus/Preview PDF/Hasil Audit)
+  — panel Aksi SEKARANG TETAP TERBUKA setelah item diklik/modal ditutup, HANYA tertutup kalau
+  user klik toggle "Aksi" lagi secara manual (toggle button-nya sendiri TIDAK diubah, masih
+  `setOpenActionsRowId(openActionsRowId === r.id ? null : r.id)`). **Sudah di-porting ke ke-3
+  halaman** (`AuditPoPage.tsx`, `AuditPoOverseasPage.tsx`, `PiLocalPage.tsx`) — pola struktur
+  identik persis di ketiganya. Kalau nambah aksi baru di kolom ini, JANGAN tambahkan
+  `setOpenActionsRowId(null)` lagi ke `onClick`-nya — ikuti pola "tetap terbuka" ini.
 - Tabel pakai `table-fixed` + `<colgroup>` (lebar eksplisit per kolom) — BUKAN auto layout —
   supaya lebar kolom (terutama Durasi) tidak "digencet" gara-gara sticky Aksi (quirk browser saat
   sticky column dikombinasi table auto-layout). Kolom Kategori & Aksi sengaja dibuat sempit,
   teks kategori panjang di-truncate (`...`) via class `truncate` pada tombol combobox-nya.
+  **Percobaan fix "kolom Aksi kelihatan kosong/tombol tidak fit" (2026-09,
+  `AuditPoPage.tsx`/`AuditPoOverseasPage.tsx`) — SEMUA SUDAH DIREVERT, kondisi SAAT INI tetap
+  APA ADANYA seperti sebelum sesi ini (8 `<col>` lebar tetap termasuk Vendor `160px` & Aksi
+  `105px`, `w-full`, `min-w-[980px]`)**, jangan kaget kalau ternyata tetap ada laporan ruang
+  kosong di kolom Aksi lagi nanti — belum benar-benar terselesaikan, user minta dikembalikan
+  sebelum sempat puas dgn hasilnya. Riwayat singkat (buat konteks kalau dibahas lagi, BUKAN
+  instruksi untuk otomatis diterapkan ulang):
+  - Root cause yang ditemukan (kemungkinan besar valid secara teknis): `<table>` `w-full`
+    dikombinasi SEMUA kolom py `<col>` lebar tetap yang totalnya (990px) < lebar container asli
+    — Chrome tetap mendistribusikan sisa ruang ke kolom-kolom itu (bukan sesuai `table-layout:
+    fixed` versi ideal "lebar = declared, titik"), paling kentara di kolom sempit Aksi (105px).
+  - 2 percobaan awal (tambah `<col>` ke-9 utk Aksi + naikkan `min-w`; DAN kecilkan konten
+    `<th>`/`<td>` Aksi doang tanpa sentuh `<colgroup>`) TERBUKTI GAGAL/tidak berpengaruh.
+  - Percobaan ke-3 (lepas `w-full` sama sekali) BIKIN kolom Aksi pas, TAPI muncul celah kosong
+    baru di SEBELAH KANAN TABEL (di luar tabel) — user juga tidak suka.
+  - Percobaan ke-4 (jadikan kolom **Vendor** `<col />` polos tanpa lebar, biar dia yang nyerap
+    SEMUA sisa ruang scr deterministik per spec, kolom lain termasuk Aksi dijamin pas) —
+    SECARA TEKNIS berhasil bikin Aksi pas TANPA celah di luar tabel, TAPI user bilang hasilnya
+    "tidak cantik" (kemungkinan Vendor jadi kelihatan terlalu lebar/timpang dibanding kolom
+    lain) dan minta revert.
+  - Kalau dibahas lagi ke depan, JANGAN ulang 3 percobaan pertama (sudah terbukti gagal) — kalau
+    mau coba pendekatan "kolom fleksibel" (percobaan ke-4) lagi, PERTIMBANGKAN dulu kolom mana
+    yang paling masuk akal jadi elastis (mungkin bukan Vendor), atau diskusikan dulu trade-off
+    visualnya sebelum diterapkan langsung — jangan asumsikan "teknis benar" = "user akan suka
+    hasilnya".
+  `PiLocalPage.tsx` tidak pernah disentuh sepanjang eksperimen ini.
+  **Susulan (2026-09)**: sempat dicoba lagi persempit `<col>` Aksi dari `105px` → `80px` (+
+  wrapper tombol `92px`→`68px`, `min-w` tabel `980px`→`955px`) atas permintaan user "perkecil
+  ukuran kolom aksi" — TAPI user lalu minta **DIKEMBALIKAN ke ukuran semula** ("tombol aksinya
+  tidak usah diperkecil ukurannya, biarkan di ukuran semula"). Kondisi SAAT INI: `<col>` Aksi
+  balik ke `105px`, wrapper tombol balik ke `w-[92px]`, `min-w` tabel balik ke `980px` (SAMA
+  PERSIS spt sebelum kedua percobaan shrink) — HANYA styling tambahan yg dipertahankan:
+  header `<th>` "Aksi" jadi `text-center` (dari `text-left`), dan wrapper tombol (`<div
+  className="flex flex-col items-center gap-1.5 w-[92px]">`) ditambah `mx-auto` — supaya tombol
+  Aksi rata TENGAH horizontal di dalam kolomnya (sebelumnya nempel kiri krn kolom lebih lebar
+  dari kontennya, itulah sumber "ruang kosong di sebelah kanan" yg dikeluhkan dari awal — bukan
+  colgroup/table-layout yg jadi biang keroknya, cukup `mx-auto` centering yg diperlukan).
+  JANGAN persempit `<col>` Aksi lagi tanpa diminta eksplisit — permintaan terakhir user adalah
+  ukuran semula + rata tengah, bukan kolom yg lebih kecil.
   - `EditAuditPoModal` (`AuditPoPage.tsx`) — form Nama PT/Nomor PO/Vendor/Status Audit/Kategori,
     disimpan sekaligus lewat `updateAuditPoRow(id, updates)`. **Nama PT & Nomor PO SEKARANG
     read-only (2026-09, permintaan user)** — kedua field ini di-render `<input disabled>` (bukan
@@ -1808,13 +2205,40 @@ user) — panel filter langsung jadi header card, `justify-end`.
     `index.html` biasa, bukan error yg jelas — gejalanya membingungkan (kelihatan spt endpoint
     "ada" tapi behavior salah, bukan 404 tegas).
     **Penyesuaian UI lanjutan (2026-09, setelah preview PDF/HTML terbukti jalan)**: tinggi modal
-    dinaikkan `h-[85vh]` → `h-[95vh]` (lebih tinggi, permintaan user krn PDF viewer butuh ruang
-    vertikal lebih). Tombol pojok kanan atas (`externalUrl`, target `_blank`) di-relabel dari
+    dinaikkan `h-[85vh]` → `h-[95vh]` → **`h-[98vh]`** (2026-09, susulan lagi, permintaan user
+    "perbesar tinggi dari modal preview" — hanya diminta di Audit AP Local, TAPI tetap
+    di-porting ke `AuditPoOverseasPage.tsx`/`PiLocalPage.tsx` jg biar konsisten, `PreviewModal`
+    duplikasi persis di ketiganya) — lebih tinggi, permintaan user krn PDF viewer butuh ruang
+    vertikal lebih. Tombol pojok kanan atas (`externalUrl`, target `_blank`) di-relabel dari
     "Buka di tab baru" (ikon `ExternalLink`) → **"Download File"** (ikon `Download`) — user
     klarifikasi fungsi tombol ini SECARA PRAKTIK memang selalu memicu download (bukan preview tab
     baru beneran), krn `externalUrl` link Drive/host asli yg sama² kena batasan render yg
     dijelaskan di atas, jadi label lama menyesatkan. Perilaku `<a>`-nya TIDAK diubah (masih
     `target="_blank" rel="noopener noreferrer"` ke `externalUrl` yg sama), cuma teks & ikon.
+    **Tombol Print ditambahkan (2026-09, permintaan user "sama dgn tombol print di halaman
+    preview PDF")** — user mengira preview PDF SUDAH punya tombol Print, TERNYATA itu BAWAAN
+    PDF viewer browser sendiri (toolbar Chrome PDF viewer di dalam iframe `blob:`), BUKAN tombol
+    milik `PreviewModal` ini — preview Hasil Audit (HTML, `status === 'html'`) tidak py viewer
+    bawaan serupa sama sekali, jadi tidak ada cara print tanpa tombol eksplisit. `iframeRef`
+    (`useRef<HTMLIFrameElement>`) dipasang ke KEDUA `<iframe>` (`status === 'html'` MAUPUN
+    `'blob'`, cuma 1 yg render pada satu waktu, jadi 1 ref cukup), tombol "Print" ditaruh di
+    toolbar SEBELAH KIRI "Download File", muncul kalau `status` `'html'` ATAU `'blob'` (bukan pas
+    `'loading'`/`'error'`).
+    **BUG ditemukan & diperbaiki (2026-09, laporan user "tombol print seperti tidak
+    berfungsi")** — versi awal `sandbox="allow-same-origin"` (tanpa `allow-modals`) pada iframe
+    `srcDoc` (Hasil Audit/HTML) TERNYATA memblokir `window.print()` sama sekali, DIAM-DIAM tanpa
+    error apa pun (browser sengaja begitu — sandbox tanpa `allow-modals` menutup SEMUA dialog
+    modal browsing context itu, termasuk `print()`/`alert()`/`confirm()`, TERLEPAS dari apakah
+    pemanggilnya kode di dalam iframe atau `contentWindow.print()` dari PARENT window — dugaan
+    awal "dipanggil dari parent jadi aman dari sandbox" TERNYATA SALAH, jangan diulang lagi kalau
+    nambah iframe bersandbox lain yg butuh print/dialog). **Fix**: sandbox ditambah jadi
+    `sandbox="allow-same-origin allow-modals"`. Susulan: `handlePrint` jg dikasih
+    `contentWindow.focus()` SEBELUM `.print()` (defensif — beberapa versi Chrome tidak
+    membuka dialog print kalau browsing context iframe belum "aktif"/focused, mis. utk iframe PDF
+    `blob:` yg TIDAK py sandbox attribute sama sekali & seharusnya tidak kena masalah `allow-
+    modals` di atas, tapi tetap dikasih `focus()` jaga-jaga konsisten di kedua kasus). **Sudah
+    di-porting ke ke-3 halaman** (`AuditPoPage.tsx`, `AuditPoOverseasPage.tsx`,
+    `PiLocalPage.tsx`) — `PreviewModal` duplikasi persis di ketiganya.
 - Pagination **server-side** (`.select('*', { count: 'exact' }).range(...)`) karena tabel terus
   bertambah — beda dari kebanyakan halaman admin lain di app ini yang client-side paginated.
   Filter: search (debounced 400ms) ke `nomor_po`/`vendor_name` via `.ilike`, dropdown `nama_pt`
@@ -1835,6 +2259,51 @@ user) — panel filter langsung jadi header card, `justify-end`.
   manual oleh user langsung di Supabase SQL editor, tidak disimpan sbg file migrasi di `sql/`) —
   **belum terverifikasi sudah dijalankan di Supabase production**, cek dulu sebelum mengandalkan
   behavior update/edit/hapus kalau ada laporan gagal simpan.
+  **Fix dropdown kepotong di baris bawah (2026-09, laporan user + screenshot)** — `KategoriPicker`
+  sudah dari awal punya prop `openDirection?: 'down' | 'up'` (dropdown buka ke atas/bawah), TAPI
+  `KategoriCell` (dipakai di `<td>` tabel) TIDAK PERNAH meneruskannya, selalu default `'down'`.
+  Card pembungkus tabel (`bg-white/70 ... rounded-2xl ... overflow-hidden`) meng-clip apa pun yg
+  overflow keluar batas bawahnya — dropdown yg dibuka dari baris DEKAT BAWAH tabel jadi kepotong
+  (search box kelihatan separuh, list opsinya tidak kelihatan sama sekali, ketutup footer
+  pagination). Fix: `KategoriCell` sekarang terima & terusin prop `openDirection` ke
+  `KategoriPicker`, dipanggil dari `rows.map((r, idx) => ...)` dgn
+  `openDirection={idx >= rows.length - 3 ? 'up' : 'down'}` — **3 baris terakhir tiap halaman**
+  buka ke atas (bukan hitung tinggi elemen aktual — cukup toleran utk semua pilihan `pageSize`
+  20/25/50/100 yg ada). Modal `EditAuditPoModal` (form Edit, bukan `<td>` tabel) TIDAK kena bug
+  ini & TIDAK disentuh — posisinya selalu di tengah modal, bukan di baris tabel yg bisa dekat
+  bawah. **Sudah di-porting ke `AuditPoOverseasPage.tsx`** juga (pola duplikasi identik,
+  `canEditAuditPoOverseas` bukan `canEditAuditPo`), **dan ke `src/pages/PiLocalPage.tsx`**
+  (halaman "PI Local" — modul lain dgn pola tabel/`KategoriPicker`/`KategoriCell` identik,
+  `updatePiLocalKategori`/`canEditPiLocal`; belum ada dokumentasi arsitektur lengkap modul ini
+  di CLAUDE.md, cuma fix spesifik ini yg diketahui) — kalau nanti ada laporan bug serupa di
+  halaman lain yg pakai pola dropdown absolute-positioned di dalam card `overflow-hidden`, ini
+  contoh fix-nya (buka ke arah berlawanan utk elemen dekat tepi container yg clip).
+- **Kolom Durasi disembunyikan (2026-09, permintaan user)** — `src/pages/PiLocalPage.tsx`, tabel
+  List PI Local: `<th>`/`<td>` kolom Durasi (`r.durasi_text`) DIHAPUS dari render (bukan cuma
+  `hidden`/CSS), `<colgroup>` (9 `<col>`, sebelumnya 10) & `colSpan` empty-state (`9`, sebelumnya
+  `10`) ikut disesuaikan. Data `durasi_text`/`durasi_detik` di `PiLocalRow` TIDAK dihapus dari
+  tipe/fetch — kolom database tetap ada & tetap ke-fetch (`select('*')`), cuma tidak dirender di
+  tabel lagi. Kalau nanti mau tampilkan lagi, tinggal kembalikan `<th>`/`<td>`/`<col>` yg dihapus
+  & colSpan balik ke `10` — TIDAK perlu ubah fetch/tipe data apa pun.
+  **Bug susulan (2026-09, laporan user + screenshot: kolom KATEGORI kelihatan "tersembunyi"/
+  kepotong "KATEGOI")** — setelah 1 `<col>` dihapus, `<table>` masih `min-w-[1180px]` (nilai
+  LAMA, msh menghitung Durasi yg sudah tidak ada) padahal sum lebar 9 `<col>` yg tersisa cuma
+  ~1090px — mismatch antara `min-w` vs sum col width di tabel `table-fixed` bikin browser
+  redistribusi ruang ekstra TIDAK merata antar kolom (kolom lain melebar tidak proporsional,
+  KATEGORI yg cuma `110px` jadi kelihatan paling sempit/kepotong). Fix: `min-w` diturunkan jadi
+  `1150px` (cocok dgn sum col BARU) DAN lebar col KATEGORI dinaikkan dari `110px` → `170px`
+  (kolom ini isinya `KategoriPicker` combobox, butuh ruang lebih dari kolom teks biasa). **Aturan
+  ke depan**: tiap kali menghapus/menambah kolom di tabel `table-fixed` manapun di app ini
+  (pola sama ada di `AuditPoPage.tsx`/`AuditPoOverseasPage.tsx`), WAJIB hitung ulang & samakan
+  `min-w-[...]` di `<table>` dgn SUM total lebar `<col>` yg tersisa — jangan biarkan `min-w` jadi
+  nilai basi dari sebelum kolom diubah, itu penyebab bug ini.
+- **Kolom Vendor wrap ke bawah (2026-09, permintaan user)** — sebelumnya `truncate` + `title`
+  (tooltip hover) kalau teks panjang, SEKARANG `break-words` (sama pola dgn kolom "Tanggal &
+  Waktu" di tabel yg sama) supaya nama vendor panjang tetap kebaca penuh tanpa perlu hover.
+  `title` attribute DIHAPUS (tidak perlu lagi, teksnya sudah kelihatan semua apa adanya). **Sudah
+  di-porting ke `AuditPoPage.tsx` (Audit AP Local) & `AuditPoOverseasPage.tsx` (Audit AP
+  Overseas)** juga (pola tabel identik) — kalau nanti kolom Vendor di salah satu dari 3 halaman
+  ini (PI Local/Audit AP Local/Audit AP Overseas) diubah lagi, ingat porting manual ke 2 lainnya.
 - `src/utils/AuditPoHelpers.ts` — tipe `AuditPoRow`, `AuditPoEditableFields`, `statusAuditMeta`
   (badge hijau/merah), `KATEGORI_OPTIONS`, `updateAuditPoKategori`, `updateAuditPoRow`,
   `deleteAuditPoRow`.

@@ -566,7 +566,7 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose, canEdi
   return (
     <EditModeContext.Provider value={isEditMode}>
       <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center p-2 sm:p-4 md:p-6 w-full h-full print:bg-white print:p-0">
-        <div className="bg-slate-50 w-full max-w-5xl h-[90vh] max-h-[90vh] rounded-2xl shadow-2xl flex flex-col relative overflow-hidden print:shadow-none print:w-full print:m-0 print:border-none print:rounded-none">
+        <div className="bg-slate-50 w-full max-w-6xl max-h-[97vh] rounded-2xl shadow-2xl flex flex-col relative overflow-hidden print:shadow-none print:w-full print:m-0 print:border-none print:rounded-none">
           
           {/* Header */}
           <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-slate-200 bg-white shrink-0 print:hidden">

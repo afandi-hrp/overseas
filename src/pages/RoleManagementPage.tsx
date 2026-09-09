@@ -248,7 +248,7 @@ export default function RoleManagementPage() {
 
   return (
     <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
-      <header className="px-6 pt-1 pb-2">
+      <header className="px-3 pt-1 pb-1">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
             <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Manage Roles & Access</h1>
@@ -258,7 +258,7 @@ export default function RoleManagementPage() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 pt-3 pb-8 space-y-6">
+      <main className="max-w-7xl mx-auto px-3 pt-2 pb-8 space-y-6">
 
         {toast && (
           <div className={`p-3 rounded-xl border text-sm font-medium ${toast.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'}`}>

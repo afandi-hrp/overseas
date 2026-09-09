@@ -258,7 +258,7 @@ setDoubleChargeMultiplier('2');
 
   return (
     <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
-      <header className="px-6 pt-1 pb-2">
+      <header className="px-3 pt-1 pb-1">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
@@ -273,7 +273,7 @@ setDoubleChargeMultiplier('2');
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 pt-3 pb-8">
+      <main className="max-w-7xl mx-auto px-3 pt-2 pb-8">
 
         {toast && (
           <div className={`mb-4 p-3 rounded-lg border font-medium text-sm flex items-center ${

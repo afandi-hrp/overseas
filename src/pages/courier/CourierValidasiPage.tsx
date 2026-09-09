@@ -307,15 +307,12 @@ export default function CourierValidasiPage() {
 
   const totalPages = Math.ceil(totalRecords / pageSize);
 
-  // Toolbar/panel "kaca" senada dengan halaman Audit/Rekapan Courier & Sea/Air (SharedDataTable.tsx).
-  const TOOLBAR_GLASS = 'bg-white/70 backdrop-blur-md border-slate-200/80 shadow-sm';
-
   const progressBarColor = (pct: number) =>
     pct >= 90 ? 'bg-emerald-600' : pct >= 60 ? 'bg-amber-500' : 'bg-rose-600';
 
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
-      <header className="px-6 pt-1 pb-2 shrink-0">
+      <header className="px-3 pt-1 pb-1 shrink-0">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
@@ -330,51 +327,59 @@ export default function CourierValidasiPage() {
         </div>
       </header>
 
-      <main className="px-6 py-4 flex-1 flex flex-col overflow-hidden">
-        {/* ── Toolbar: search + aksi ── */}
-        <div className={`flex flex-nowrap justify-between items-center gap-2 rounded-2xl px-3 py-3 border overflow-x-auto mb-4 shrink-0 ${TOOLBAR_GLASS}`}>
-          <div className="relative shrink-0">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A305A] pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Cari AWB, Jenis Dokumen..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className={`w-40 rounded-full pl-8 pr-7 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A] focus:bg-white/90 focus:w-56 transition-all border ${TOOLBAR_GLASS}`}
-            />
-            {search && (
+      <main className="px-3 pt-2 pb-2 flex-1 flex flex-col overflow-hidden">
+        {/* Panel utama -- toolbar + daftar record + pagination SEKARANG 1 kartu menyatu
+            (rounded-2xl tunggal), pola SAMA PERSIS dgn halaman list lain di app ini
+            (SharedDataTable.tsx/AuditPoPage.tsx/BunkerPage.tsx/PiLocalPage.tsx/
+            FarOverseasAirPage.tsx) -- SEBELUMNYA toolbar/daftar/pagination 3 kartu terpisah
+            (masing2 rounded-2xl sendiri + gap mb-4/mt-4 di antaranya), user minta "tabel
+            selaras dgn panelnya" & "melengkung supaya cantik" (2026-09) -- disatukan jadi 1
+            panel besar, toolbar & pagination jadi strip border-b/border-t di dalamnya. */}
+        <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
+          {/* ── Toolbar: search + aksi ── */}
+          <div className="px-4 py-3 border-b border-white/60 flex flex-nowrap justify-between items-center gap-2 overflow-x-auto shrink-0">
+            <div className="relative shrink-0">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5A305A] pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Cari AWB, Jenis Dokumen..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-64 rounded-full pl-8 pr-7 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#5A305A]/15 focus:border-[#5A305A] focus:bg-white focus:w-80 transition-all border border-slate-200 bg-white/90"
+              />
+              {search && (
+                <button
+                  onClick={() => setSearch('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#5A305A] hover:text-[#5A305A] focus:outline-none"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
               <button
-                onClick={() => setSearch('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#5A305A] hover:text-[#5A305A] focus:outline-none"
+                onClick={fetchRecords}
+                className="px-3.5 py-2 rounded-full bg-white text-[#5A305A] text-xs font-semibold hover:border-[#5A305A] transition-all h-[38px] flex items-center gap-1.5 border border-slate-200"
               >
-                <X size={14} />
+                <RefreshCw size={13} /> Refresh
               </button>
-            )}
+              <button
+                onClick={() => setExportModalState({ title: 'Validasi Dokumen', cols: VALIDASI_COLS, dateFieldLabel: 'Filter Tgl. Validasi' })}
+                className="px-3.5 py-2 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white text-xs font-semibold transition-all h-[38px] flex items-center gap-1.5"
+              >
+                <Download size={13} /> Export
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={fetchRecords}
-              className="px-3.5 py-2 rounded-full bg-white text-[#5A305A] text-xs font-semibold hover:border-[#5A305A] transition-all h-[38px] flex items-center gap-1.5 border border-slate-200"
-            >
-              <RefreshCw size={13} /> Refresh
-            </button>
-            <button
-              onClick={() => setExportModalState({ title: 'Validasi Dokumen', cols: VALIDASI_COLS, dateFieldLabel: 'Filter Tgl. Validasi' })}
-              className="px-3.5 py-2 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white text-xs font-semibold transition-all h-[38px] flex items-center gap-1.5"
-            >
-              <Download size={13} /> Export
-            </button>
-          </div>
-        </div>
 
-        {/* ── Daftar record ── */}
-        <div className="flex-1 overflow-y-auto">
+          {/* ── Daftar record ── */}
+          <div className="flex-1 overflow-y-auto p-4">
           {loading ? (
             <div className="flex justify-center items-center h-40">
               <div className="w-8 h-8 border-4 border-[#5A305A] border-t-transparent rounded-full animate-spin" />
             </div>
           ) : records.length === 0 ? (
-            <div className={`text-center py-12 text-[#5A305A]/70 text-sm italic rounded-2xl border ${TOOLBAR_GLASS}`}>
+            <div className="text-center py-12 text-[#5A305A]/70 text-sm italic">
               Tidak ada data validasi ditemukan.
             </div>
           ) : (
@@ -397,7 +402,7 @@ export default function CourierValidasiPage() {
                 const pct = checked === 0 ? 0 : Math.round((match / checked) * 100);
 
                 return (
-                  <div key={record.id} className={`rounded-2xl border p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 ${TOOLBAR_GLASS}`}>
+                  <div key={record.id} className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div className="flex gap-6 flex-wrap flex-1 w-full md:w-auto">
                       <div className="flex flex-col gap-1 min-w-[100px]">
                         <span className="text-[10px] font-bold text-[#5A305A]/50 uppercase tracking-wider">Jenis Dokumen</span>
@@ -448,32 +453,34 @@ export default function CourierValidasiPage() {
               })}
             </div>
           )}
-        </div>
-
-        {/* Pagination Footer */}
-        {!loading && totalPages > 1 && (
-          <div className={`mt-4 px-4 py-3 rounded-2xl border flex items-center justify-between shrink-0 ${TOOLBAR_GLASS}`}>
-            <div className="text-xs text-[#5A305A]">
-              Menampilkan <span className="font-bold">{((page - 1) * pageSize) + 1}</span> hingga <span className="font-bold">{Math.min(page * pageSize, totalRecords)}</span> dari <span className="font-bold">{totalRecords}</span> dokumen
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setPage(p => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="p-1.5 rounded-lg border border-slate-200 text-[#5A305A] disabled:opacity-40 hover:bg-slate-50 transition-colors"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <button
-                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-                className="p-1.5 rounded-lg border border-slate-200 text-[#5A305A] disabled:opacity-40 hover:bg-slate-50 transition-colors"
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
           </div>
-        )}
+
+          {/* Pagination Footer -- strip di dalam panel yang sama (border-t), bukan kartu
+              terpisah lagi (lihat komentar di pembuka panel utama di atas). */}
+          {!loading && totalPages > 1 && (
+            <div className="px-4 py-3 border-t border-white/60 flex items-center justify-between shrink-0">
+              <div className="text-xs text-[#5A305A]">
+                Menampilkan <span className="font-bold">{((page - 1) * pageSize) + 1}</span> hingga <span className="font-bold">{Math.min(page * pageSize, totalRecords)}</span> dari <span className="font-bold">{totalRecords}</span> dokumen
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="p-1.5 rounded-lg border border-slate-200 text-[#5A305A] disabled:opacity-40 hover:bg-slate-50 transition-colors"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                  className="p-1.5 rounded-lg border border-slate-200 text-[#5A305A] disabled:opacity-40 hover:bg-slate-50 transition-colors"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </main>
 
       {exportModalState && (

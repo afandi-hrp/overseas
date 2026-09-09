@@ -85,7 +85,7 @@ export default function FuelSurchargePage() {
 
   return (
     <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
-      <header className="px-6 pt-1 pb-2">
+      <header className="px-3 pt-1 pb-1">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
@@ -100,7 +100,7 @@ export default function FuelSurchargePage() {
         </div>
       </header>
 
-      <main className="px-6 py-4">
+      <main className="px-3 pt-2 pb-4">
         {canEditFuelSurcharge && (
           <div className="bg-white/70 backdrop-blur-md p-3.5 rounded-2xl shadow-sm border border-white/60 mb-6">
             <form onSubmit={handleAdd} className="flex flex-nowrap overflow-x-auto gap-4 items-end justify-center">

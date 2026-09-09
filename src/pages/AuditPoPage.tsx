@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
-import { ClipboardCheck, Search, RefreshCw, FileDown, FileText, Check, ChevronDown, Pencil, Trash2, X, ArrowUp, ArrowDown, ArrowUpDown, LayoutDashboard, CalendarDays, Download } from 'lucide-react';
+import { ClipboardCheck, Search, RefreshCw, FileDown, FileText, Check, ChevronDown, Pencil, Trash2, X, ArrowUp, ArrowDown, ArrowUpDown, LayoutDashboard, CalendarDays, Download, Printer } from 'lucide-react';
 import {
   formatDateTimeID, statusAuditMeta, updateAuditPoKategori, updateAuditPoRow, deleteAuditPoRow,
   KATEGORI_OPTIONS, type AuditPoRow,
@@ -138,7 +138,7 @@ function KategoriPicker({ value, onSelect, disabled, buttonLabel, widthClass = '
 
 // Sel tabel Kategori -- auto-save ke DB per pilih (beda dari picker di modal Edit yang cuma
 // disimpan barengan field lain saat klik "Simpan").
-function KategoriCell({ row, onChanged, canEdit }: { row: AuditPoRow; onChanged: (id: string, kategori: string | null) => void; canEdit: boolean }) {
+function KategoriCell({ row, onChanged, canEdit, openDirection = 'down' }: { row: AuditPoRow; onChanged: (id: string, kategori: string | null) => void; canEdit: boolean; openDirection?: 'down' | 'up' }) {
   const [saving, setSaving] = useState(false);
 
   const handleSelect = async (val: string) => {
@@ -159,6 +159,7 @@ function KategoriCell({ row, onChanged, canEdit }: { row: AuditPoRow; onChanged:
       disabled={saving}
       buttonLabel={saving ? 'Menyimpan...' : undefined}
       widthClass="w-full"
+      openDirection={openDirection}
     />
   );
 }
@@ -353,6 +354,22 @@ function PreviewModal({ target, onClose }: { target: PreviewTarget; onClose: () 
   const [status, setStatus] = useState<'loading' | 'html' | 'blob' | 'error'>('loading');
   const [htmlContent, setHtmlContent] = useState('');
   const [blobUrl, setBlobUrl] = useState('');
+  // Tombol Print (2026-09, permintaan user "sama dgn tombol print di halaman preview PDF") --
+  // PDF SEBENARNYA sudah "punya" tombol print, tapi itu BAWAAN PDF viewer browser sendiri
+  // (toolbar Chrome PDF viewer), BUKAN tombol milik modal ini -- Hasil Audit (HTML) tidak py
+  // viewer bawaan serupa jadi butuh tombol eksplisit sendiri. `iframeRef` dipakai bareng utk
+  // KEDUA jenis konten (`status === 'html'` MAUPUN `'blob'`, cuma 1 yg render pada satu waktu)
+  // supaya 1 tombol Print konsisten berfungsi utk keduanya, bukan cuma Hasil Audit.
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const handlePrint = () => {
+    const win = iframeRef.current?.contentWindow;
+    if (!win) return;
+    // `focus()` dulu sebelum `print()` -- beberapa versi Chrome DIAM-DIAM tidak membuka dialog
+    // print kalau browsing context iframe-nya belum "aktif"/focused (dilaporkan user "print
+    // seperti tidak berfungsi"), fokuskan dulu supaya print() ditujukan ke context yg benar.
+    win.focus();
+    win.print();
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -394,10 +411,18 @@ function PreviewModal({ target, onClose }: { target: PreviewTarget; onClose: () 
 
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-[90vw] max-w-6xl h-[95vh] flex flex-col overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl w-[90vw] max-w-6xl h-[98vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-200 shrink-0">
           <h3 className="font-bold text-[#5A305A] text-sm truncate">{target.title}</h3>
           <div className="flex items-center gap-1.5 shrink-0">
+            {(status === 'html' || status === 'blob') && (
+              <button
+                onClick={handlePrint}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-[#5A305A] text-xs font-semibold hover:bg-slate-50 transition-colors"
+              >
+                <Printer size={13} /> Print
+              </button>
+            )}
             <a
               href={target.externalUrl}
               target="_blank"
@@ -420,10 +445,10 @@ function PreviewModal({ target, onClose }: { target: PreviewTarget; onClose: () 
             </div>
           )}
           {status === 'html' && (
-            <iframe srcDoc={htmlContent} title={target.title} className="w-full h-full border-0" sandbox="allow-same-origin" />
+            <iframe ref={iframeRef} srcDoc={htmlContent} title={target.title} className="w-full h-full border-0" sandbox="allow-same-origin allow-modals" />
           )}
           {status === 'blob' && (
-            <iframe src={blobUrl} title={target.title} className="w-full h-full border-0" />
+            <iframe ref={iframeRef} src={blobUrl} title={target.title} className="w-full h-full border-0" />
           )}
         </div>
       </div>
@@ -789,8 +814,11 @@ export default function AuditPoPage() {
           <button onClick={() => setToastMessage(null)} className="text-white/70 hover:text-white p-1 ml-4">&times;</button>
         </div>
       )}
-    <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10 no-scrollbar">
-      <header className="px-6 pt-1 pb-2">
+    {/* Shell tinggi tetap -- lihat catatan lengkap di CLAUDE.md "Bunker -- kartu List selalu
+        utuh" (2026-09), pola sama di-porting ke sini: kartu tabel SELALU utuh kelihatan (sudut
+        membulat tidak pernah ke-scroll lewat viewport), cuma baris tabel yg scroll internal. */}
+    <div className="flex-1 h-full flex flex-col overflow-hidden min-w-0">
+      <header className="px-3 pt-1 pb-1 shrink-0">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0 shadow-sm">
@@ -805,9 +833,9 @@ export default function AuditPoPage() {
         </div>
       </header>
 
-      <main className="px-6 py-4 space-y-5">
-        <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-white/60 flex items-center flex-nowrap gap-2 overflow-x-auto">
+      <main className="px-3 pt-2 pb-2 flex-1 flex flex-col overflow-hidden">
+        <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
+          <div className="px-5 py-4 border-b border-white/60 flex items-center flex-nowrap gap-2 overflow-x-auto shrink-0">
               <button
                 onClick={() => setDashboardOpen(true)}
                 className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-xs transition-all shadow-sm shrink-0"
@@ -885,7 +913,7 @@ export default function AuditPoPage() {
               </div>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0">
             <table className="w-full text-[11px] bg-white table-fixed min-w-[980px]">
               <colgroup>
                 <col style={{ width: '135px' }} />
@@ -897,7 +925,7 @@ export default function AuditPoPage() {
                 <col style={{ width: '110px' }} />
                 <col style={{ width: '105px' }} />
               </colgroup>
-              <thead>
+              <thead className="sticky top-0 z-20">
                 <tr className="text-[10px] text-[#5A305A]/70 uppercase bg-slate-50">
                   <th className="text-left px-3 py-2.5 whitespace-nowrap">
                     <SortableHeader label="Tanggal & Waktu" sortKey="created_at" activeSort={sortBy} activeDir={sortDir} onSort={handleSort} />
@@ -910,7 +938,7 @@ export default function AuditPoPage() {
                   <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Status Audit</th>
                   <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Kategori</th>
                   <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Durasi</th>
-                  <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap sticky right-0 top-0 bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-20 border-l border-slate-200">Aksi</th>
+                  <th className="text-center font-semibold px-3 py-2.5 whitespace-nowrap sticky right-0 top-0 bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-20 border-l border-slate-200">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -919,17 +947,23 @@ export default function AuditPoPage() {
                 ) : rows.length === 0 ? (
                   <tr><td colSpan={8} className="text-center py-10 text-[#5A305A] text-sm italic">Belum ada data Audit AP Local.</td></tr>
                 ) : (
-                  rows.map(r => (
+                  rows.map((r, idx) => (
                     <tr key={r.id} className="group bg-white hover:bg-slate-50 transition-colors">
                       <td className="px-3 py-3 align-top text-[#5A305A] break-words">{formatDateTimeID(r.created_at)}</td>
                       <td className="px-3 py-3 align-top"><PtBadge pt={r.nama_pt} /></td>
                       <td className="px-3 py-3 align-top text-[#5A305A] font-semibold break-words">{r.nomor_po || '-'}</td>
-                      <td className="px-3 py-3 align-top text-[#5A305A] truncate" title={r.vendor_name || undefined}>{r.vendor_name || '-'}</td>
+                      <td className="px-3 py-3 align-top text-[#5A305A] break-words">{r.vendor_name || '-'}</td>
                       <td className="px-3 py-3 align-top"><StatusBadge status={r.status_audit} /></td>
-                      <td className="px-3 py-3 align-top"><KategoriCell row={r} onChanged={handleKategoriChanged} canEdit={canEditAuditPo} /></td>
+                      {/* Baris di dekat bawah tabel buka dropdown ke ATAS (openDirection='up') --
+                          sebelumnya selalu ke bawah, akibatnya di baris paling bawah dropdown-nya
+                          kepotong overflow-hidden card tabel/ketutup footer pagination (2026-09,
+                          laporan user, screenshot). 3 baris terakhir per halaman dianggap "dekat
+                          bawah" -- cukup toleran utk berbagai pageSize (20/25/50/100) tanpa perlu
+                          hitung tinggi elemen actual. */}
+                      <td className="px-3 py-3 align-top"><KategoriCell row={r} onChanged={handleKategoriChanged} canEdit={canEditAuditPo} openDirection={idx >= rows.length - 3 ? 'up' : 'down'} /></td>
                       <td className="px-3 py-3 align-top text-[#5A305A] truncate" title={r.durasi_text || undefined}>{r.durasi_text || '-'}</td>
                       <td className="px-2 py-3 align-top sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-10 border-l border-slate-200 transition-colors">
-                        <div className="flex flex-col items-center gap-1.5 w-[92px]">
+                        <div className="flex flex-col items-center gap-1.5 w-[92px] mx-auto">
                           <button
                             onClick={() => setOpenActionsRowId(openActionsRowId === r.id ? null : r.id)}
                             className={`w-full flex items-center justify-center gap-1 text-[10px] font-bold px-2 py-2 rounded-lg border transition-all ${
@@ -945,7 +979,7 @@ export default function AuditPoPage() {
                             <div className="flex flex-col gap-1.5 items-stretch w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
                               {canEditAuditPo && (
                                 <button
-                                  onClick={() => { setEditRow(r); setOpenActionsRowId(null); }}
+                                  onClick={() => { setEditRow(r); }}
                                   title="Edit"
                                   className="w-full flex items-center gap-1 px-1.5 py-1 rounded-md border border-slate-200 bg-white text-[9px] font-semibold text-[#5A305A] hover:bg-slate-100 transition-colors"
                                 >
@@ -954,7 +988,7 @@ export default function AuditPoPage() {
                               )}
                               {canEditAuditPo && (
                                 <button
-                                  onClick={() => { openDeleteConfirm(r); setOpenActionsRowId(null); }}
+                                  onClick={() => { openDeleteConfirm(r); }}
                                   title="Hapus"
                                   className="w-full flex items-center gap-1 px-1.5 py-1 rounded-md border border-rose-200 bg-rose-50 text-[9px] font-semibold text-rose-600 hover:bg-rose-100 hover:border-rose-300 transition-colors"
                                 >
@@ -966,7 +1000,6 @@ export default function AuditPoPage() {
                                   onClick={() => {
                                     const src = buildPreviewSrc(r.drive_file_id_pdf, r.url_pdf);
                                     if (src) setPreviewTarget({ title: `PDF — ${r.nomor_po || r.vendor_name || r.id}`, src, externalUrl: r.url_pdf!, kind: 'pdf' });
-                                    setOpenActionsRowId(null);
                                   }}
                                   title="Preview PDF"
                                   className="w-full flex items-center gap-1 px-1.5 py-1 rounded-md border border-slate-200 bg-white text-[9px] font-semibold text-[#5A305A] hover:bg-slate-100 transition-colors"
@@ -983,7 +1016,6 @@ export default function AuditPoPage() {
                                   onClick={() => {
                                     const src = buildPreviewSrc(r.drive_file_id_html, r.url_html);
                                     if (src) setPreviewTarget({ title: `Hasil Audit — ${r.nomor_po || r.vendor_name || r.id}`, src, externalUrl: r.url_html!, kind: 'html' });
-                                    setOpenActionsRowId(null);
                                   }}
                                   title="Preview Hasil Audit"
                                   className="w-full flex items-center gap-1 px-1.5 py-1 rounded-md border border-slate-200 bg-white text-[9px] font-semibold text-[#5A305A] hover:bg-slate-100 transition-colors"
@@ -1007,7 +1039,7 @@ export default function AuditPoPage() {
           </div>
 
           {rows.length > 0 && (
-            <div className="flex max-sm:flex-col justify-between items-center px-5 py-3 border-t border-slate-200 bg-slate-50 gap-3">
+            <div className="flex max-sm:flex-col justify-between items-center px-5 py-3 border-t border-slate-200 bg-slate-50 gap-3 shrink-0">
               <div className="text-xs text-[#5A305A]">
                 Menampilkan <span className="font-semibold text-[#5A305A]">{listStartIndex + 1}-{Math.min(listStartIndex + pageSize, totalRecords)}</span> dari <span className="font-semibold text-[#5A305A]">{totalRecords}</span> record
               </div>

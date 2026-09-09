@@ -242,8 +242,8 @@ const SECTIONS: SectionConfig[] = [
   },
   {
     id: "s_no_vessel_imo",
-    label: "TIDAK ADA NAMA VESSEL DAN NOMOR IMO",
-    srcLabel: "Tidak Ada Nama Vessel & Nomor IMO",
+    label: "NO VESSEL NAME AND IMO NUMBER",
+    srcLabel: "No Vessel Name & IMO Number",
     rows: [
       { id: "cipl05", compareDoc: "CIPL",          field: "Format Pass: Tidak Ada Vessel & IMO", isFormat: true, hint: 'Sesuai jika kosong' },
       { id: "po01",   compareDoc: "PO",            field: "Format Pass: Tidak Ada Vessel & IMO", isFormat: true, hint: 'Sesuai jika kosong' },
@@ -703,7 +703,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
         const hasInvoiceFreight = invF.subtotal != null || invF.ppn != null || invF.pt_penerima != null;
         const cmpAwbFisik = Object.keys(awbDet).length > 0 ? docAwb : "";
 
-        fill("if01", hasInvoiceFreight ? docAwb : "", docAwb);
+        fill("if01", invD.awb, docAwb);
         fill("bpn_awb_vs_freight_awb", bpnV.awb, invF.awb);
         fill("if02", hasInvoiceFreight ? invF.subtotal : "", fpF.subtotal);
         fill("if03", hasInvoiceFreight ? invF.ppn : "", fpF.ppn);
@@ -717,7 +717,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
         fill("id04", hasInvoiceFreight ? idOther.actual_weight_kg : null, hasInvoiceFreight ? awbDet.weight : null);
 
         fill("id06", docAwb, cmpAwbFisik);
-        fill("id07", docAwb, sppbV.no_awb || "");
+        fill("id07", invF.awb || invD.awb, pibV.no_awb || "");
 
         // PIB
         fill("pib01", pibV.no_pengajuan || "", sppbV.no_pengajuan || "");
@@ -1043,6 +1043,23 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     });
   };
 
+  // Khusus tabel PIB (section.id === 's_pib') -- Src selalu identik di semua kolom dokumen
+  // pada 1 baris field yang sama (semuanya dari pibV), jadi ditampilkan 1x saja di kolom
+  // "NILAI REFERENSI" tersendiri. Mengedit nilainya harus menulis ke SEMUA row id yang berbagi
+  // field/rowLabel yang sama (pib01/bdjbc01/bdjbc03, dst) supaya perbandingan Cmp per kolom
+  // tetap sinkron -- BUKAN cuma 1 row id spt setObj biasa.
+  const setSrcForGroup = (section: SectionConfig, field: string, val: string) => {
+    const groupKey = (r: any) => r.rowLabel || r.field;
+    const ids = section.rows.filter((r: any) => groupKey(r) === field).map((r: any) => r.id);
+    setValues((v: any) => {
+      const vNew = { ...v };
+      ids.forEach(id => {
+        vNew[id] = { ...vNew[id], src: val, src_edited: true, manual_status: null };
+      });
+      return vNew;
+    });
+  };
+
   const setObj = (id: string, side: string, val: any) => {
     setValues((v: any) => {
       const vNew = { ...v, [id]: { ...v[id], [side]: val, [`${side}_edited`]: true, manual_status: null } };
@@ -1226,7 +1243,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     if (st === 'match') return { label: "Match", bg: bgSuccess, color: txtSuccess, icon: "ti-check" };
     if (st === 'mismatch') return { label: "Mismatch", bg: bgDanger, color: txtDanger, icon: "ti-x" };
     if (st === 'partial') return { label: "Incomplete", bg: bgWarning, color: txtWarn, icon: "ti-clock" };
-    return { label: "—", bg: bgSec, color: txtSec, icon: "ti-minus" };
+    return { label: "Not checked yet", bg: "#EEEAF3", color: "#5A305A", icon: "ti-clock" };
   }
 
   return (
@@ -1451,11 +1468,14 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr>
-                          <th className="p-3 bg-slate-100 border-b border-r border-slate-200 text-[11px] font-bold text-[#5A305A] uppercase tracking-wide whitespace-nowrap w-[1%] sticky left-0 z-10 shadow-[1px_0_0_0_#e2e8f0]">VALIDASI FIELD</th>
+                          <th className="p-3 bg-slate-100 border-b border-r border-slate-300 text-[11px] font-bold text-[#5A305A] uppercase tracking-wide whitespace-nowrap w-[1%] sticky left-0 z-10 shadow-[1px_0_0_0_#cbd5e1]">VALIDASI FIELD</th>
+                          {section.id === 's_pib' && (
+                            <th className="p-3 border-b border-r border-slate-300 text-[11px] font-bold uppercase tracking-widest text-center min-w-[150px] bg-slate-200 text-[#5A305A]">REFERENCE</th>
+                          )}
                           {uniqueCompareDocs.map(doc => {
                              const colorObj = getHeaderColor(doc as string);
                              return (
-                               <th key={doc as string} className="p-3 border-b border-r last:border-r-0 border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center min-w-[150px]" style={{ backgroundColor: colorObj.bg, color: colorObj.text }}>
+                               <th key={doc as string} className="p-3 border-b border-r last:border-r-0 border-slate-300 text-[11px] font-bold uppercase tracking-widest text-center min-w-[150px]" style={{ backgroundColor: colorObj.bg, color: colorObj.text }}>
                                  {getColumnDisplayLabel(doc as string, docType)}
                                </th>
                              )
@@ -1465,7 +1485,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                       <tbody>
                         {uniqueFields.map(field => (
                           <tr key={field} className="border-b border-slate-200 last:border-b-0 hover:bg-slate-50/50 transition-colors">
-                            <td className="p-3 border-r border-slate-200 text-xs font-bold text-[#5A305A] bg-white whitespace-nowrap w-[1%] sticky left-0 z-10 align-middle shadow-[1px_0_0_0_#e2e8f0]">
+                            <td className="p-3 border-r border-slate-300 text-xs font-bold text-[#5A305A] bg-white whitespace-nowrap w-[1%] sticky left-0 z-10 align-middle shadow-[1px_0_0_0_#cbd5e1]">
                               {field}
                               {(() => {
                                  const hints = Array.from(new Set(section.rows.filter((r: any) => groupKey(r) === field && r.hint).map((r: any) => r.hint)));
@@ -1475,10 +1495,35 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                                  ));
                               })()}
                             </td>
+                            {section.id === 's_pib' && (() => {
+                               const refMatch = section.rows.find((r: any) => groupKey(r) === field);
+                               if (!refMatch) return <td className="p-3 border-r border-slate-300 text-center text-[#5A305A] align-middle bg-slate-50/30 min-w-[150px]">-</td>;
+                               const v = values[refMatch.id] || { src: '', cmp: '' };
+                               return (
+                                 <td className="p-3 border-r border-slate-300 align-middle min-w-[150px] bg-slate-50/60">
+                                   {isEditMode ? (
+                                     <input
+                                       className="w-full border border-slate-200 rounded px-2 py-1.5 text-xs text-center focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium text-[#5A305A] bg-white hover:bg-white"
+                                       value={v.src || ""}
+                                       onChange={e => setSrcForGroup(section, field, e.target.value)}
+                                       placeholder="Referensi"
+                                       title="Nilai referensi (PIB) -- berlaku untuk semua kolom dokumen di baris ini"
+                                     />
+                                   ) : (
+                                     <span className={`flex flex-col items-center justify-center text-xs text-center w-full break-words px-1 ${v.src_edited ? 'text-blue-700 font-bold' : 'text-[#5A305A] font-medium'}`}>
+                                       <div>
+                                         {v.srcDisplay ? v.srcDisplay : formatViewValue(v.src, field)}
+                                         {v.src_edited && <Edit3 size={10} className="inline ml-1 text-blue-500 opacity-70" title="Diedit manual" />}
+                                       </div>
+                                     </span>
+                                   )}
+                                 </td>
+                               );
+                            })()}
                             {uniqueCompareDocs.map(doc => {
                                const rowMatch = section.rows.find((r: any) => r.compareDoc === doc && groupKey(r) === field);
                                if (!rowMatch) {
-                                  return <td key={doc as string} className="p-3 border-r border-slate-200 last:border-r-0 text-center text-[#5A305A] align-middle bg-slate-50/30 min-w-[150px]">-</td>;
+                                  return <td key={doc as string} className="p-3 border-r border-slate-300 last:border-r-0 text-center text-[#5A305A] align-middle bg-slate-50/30 min-w-[150px]">-</td>;
                                }
                                const v = values[rowMatch.id] || {src:'', cmp:''};
                                const stComputed = computeStatus(v.src, v.cmp, rowMatch.isFormat, rowMatch.field, debugData.raw?.is_po_non_imi);
@@ -1486,15 +1531,15 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                                const errNpwp = v.cmp && hasNpwpError(rowMatch.id, v.cmp);
                                
                                return (
-                                  <td key={doc as string} className="p-3 border-r border-slate-200 last:border-r-0 align-middle min-w-[150px]">
+                                  <td key={doc as string} className="p-3 border-r border-slate-300 last:border-r-0 align-middle min-w-[150px]">
                                      <div className="flex flex-col gap-2 justify-center items-center w-full">
                                        <div className="flex flex-col items-center gap-1 w-full">
-                                         {isEditMode ? (
+                                         {section.id !== 's_pib' && (isEditMode ? (
                                            <input
                                              className="w-full border border-slate-200 rounded px-2 py-1.5 text-xs text-center focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium text-[#5A305A] bg-slate-50 hover:bg-white"
                                              value={v.src || ""}
                                              onChange={e => setObj(rowMatch.id, 'src', e.target.value)}
-                                             placeholder={rowMatch.isFormat ? "Format..." : "Src"}
+                                             placeholder={rowMatch.isFormat ? "Format..." : ""}
                                              title={`Nilai dari ${getSrcTooltipLabel(rowMatch, section)}`}
                                            />
                                          ) : (
@@ -1505,48 +1550,60 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                                              </div>
                                              {v.srcNote && <div style={{ color: "var(--color-text-tertiary)", fontSize: "10px", marginTop: "2px", fontWeight: "normal" }}>{v.srcNote}</div>}
                                            </span>
-                                         )}
+                                         ))}
 
                                          {!rowMatch.isFormat && (
-                                           <>
-                                             <span className="text-[10px] text-[#5A305A] font-bold lowercase italic shrink-0 px-2 bg-white/80 rounded-full">vs</span>
-                                             {isEditMode ? (
-                                               <input
-                                                 className={`w-full border rounded px-2 py-1.5 text-xs text-center focus:outline-none focus:ring-1 transition-all font-medium text-[#5A305A] ${(errNpwp || v.npwp_status === 'not_found') ? 'border-amber-400 bg-amber-50 focus:border-amber-500 focus:ring-amber-500' : 'border-slate-200 bg-slate-50 hover:bg-white focus:border-blue-500 focus:ring-blue-500'}`}
-                                                 value={v.cmp || ""}
-                                                 onChange={e => {
-                                                   setObj(rowMatch.id, 'cmp', e.target.value);
-                                                   setValues((prev: any) => ({ ...prev, [rowMatch.id]: { ...prev[rowMatch.id], npwp_status: null } }));
-                                                 }}
-                                                 placeholder={"Cmp"}
-                                                 title={`Nilai dari ${getColumnDisplayLabel(rowMatch.compareDoc, docType)}`}
-                                               />
-                                             ) : (
-                                               <span className={`text-xs text-center w-full break-words px-1 ${v.cmp_edited ? 'text-blue-700 font-bold' : 'text-[#5A305A] font-medium'}`}>
-                                                 {formatViewValue(v.cmp, field)}
-                                                 {v.cmp_edited && <Edit3 size={10} className="inline ml-1 text-blue-500 opacity-70" title="Diedit manual" />}
-                                                 {(rowMatch.id === 'po_item_value_vs_pib' || rowMatch.id === 'cipl01') && Number(debugData.raw?.other_cost_valas) !== 0 && (
-                                                   <div style={{ fontSize: '0.85em', fontStyle: 'italic', color: 'var(--color-text-secondary)', marginTop: 2 }}>
-                                                     Other Cost: {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 4 }).format(Number(debugData.raw.other_cost_valas))}
-                                                   </div>
-                                                 )}
-                                               </span>
-                                             )}
-                                           </>
+                                           isEditMode ? (
+                                             <input
+                                               className={`w-full border rounded text-center focus:outline-none focus:ring-1 transition-all font-medium text-[#5A305A] ${section.id === 's_pib' ? 'px-2 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'} ${(errNpwp || v.npwp_status === 'not_found') ? 'border-amber-400 bg-amber-50 focus:border-amber-500 focus:ring-amber-500' : 'border-slate-200 bg-slate-50 hover:bg-white focus:border-blue-500 focus:ring-blue-500'}`}
+                                               value={v.cmp || ""}
+                                               onChange={e => {
+                                                 setObj(rowMatch.id, 'cmp', e.target.value);
+                                                 setValues((prev: any) => ({ ...prev, [rowMatch.id]: { ...prev[rowMatch.id], npwp_status: null } }));
+                                               }}
+                                               placeholder=""
+                                               title={`Nilai dari ${getColumnDisplayLabel(rowMatch.compareDoc, docType)}`}
+                                             />
+                                           ) : section.id === 's_pib' ? (
+                                             <span className={`text-xs text-center w-full break-words px-1 ${v.cmp_edited ? 'text-blue-700 font-bold' : 'text-[#5A305A] font-medium'}`}>
+                                               {formatViewValue(v.cmp, field)}
+                                               {v.cmp_edited && <Edit3 size={10} className="inline ml-1 text-blue-500 opacity-70" title="Diedit manual" />}
+                                               {(rowMatch.id === 'po_item_value_vs_pib' || rowMatch.id === 'cipl01') && Number(debugData.raw?.other_cost_valas) !== 0 && (
+                                                 <div style={{ fontSize: '0.85em', fontStyle: 'italic', color: 'var(--color-text-secondary)', marginTop: 2 }}>
+                                                   Other Cost: {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 4 }).format(Number(debugData.raw.other_cost_valas))}
+                                                 </div>
+                                               )}
+                                             </span>
+                                           ) : (
+                                             <span className={`text-[10px] text-center w-full break-words px-1 ${v.cmp_edited ? 'text-blue-700 font-bold' : 'text-[#5A305A]/70 font-normal'}`}>
+                                               ({formatViewValue(v.cmp, field)})
+                                               {v.cmp_edited && <Edit3 size={9} className="inline ml-1 text-blue-500 opacity-70" title="Diedit manual" />}
+                                               {(rowMatch.id === 'po_item_value_vs_pib' || rowMatch.id === 'cipl01') && Number(debugData.raw?.other_cost_valas) !== 0 && (
+                                                 <div style={{ fontSize: '0.85em', fontStyle: 'italic', color: 'var(--color-text-secondary)', marginTop: 2 }}>
+                                                   Other Cost: {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 4 }).format(Number(debugData.raw.other_cost_valas))}
+                                                 </div>
+                                               )}
+                                             </span>
+                                           )
                                          )}
                                        </div>
 
-                                       {/* STATUS ICON */}
-                                       <div
-                                         className={`shrink-0 flex items-center justify-center w-5 h-5 ${isEditMode ? 'cursor-pointer hover:opacity-75 transition-opacity' : ''}`}
-                                         onClick={() => toggleManualStatus(rowMatch.id, st)}
-                                         title={isEditMode ? "Klik untuk merubah status manual" : undefined}
-                                       >
-                                         {st === 'match' && <CheckCircle2 size={18} className="text-emerald-500 fill-emerald-50" />}
-                                         {st === 'mismatch' && <XCircle size={18} className="text-red-500 fill-red-50" />}
-                                         {st === 'partial' && <Clock size={18} className="text-amber-500 fill-amber-50" />}
-                                         {st === 'empty' && <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>}
-                                       </div>
+                                       {/* STATUS PILL */}
+                                       {(() => {
+                                         const cfg = getCfg(st);
+                                         const StatusIcon = st === 'match' ? CheckCircle2 : st === 'mismatch' ? XCircle : Clock;
+                                         return (
+                                           <div
+                                             className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold whitespace-nowrap ${isEditMode ? 'cursor-pointer hover:opacity-75 transition-opacity' : ''}`}
+                                             style={{ backgroundColor: cfg.bg, color: cfg.color }}
+                                             onClick={() => toggleManualStatus(rowMatch.id, st)}
+                                             title={isEditMode ? "Klik untuk merubah status manual" : undefined}
+                                           >
+                                             <StatusIcon size={12} />
+                                             {cfg.label}
+                                           </div>
+                                         );
+                                       })()}
 
                                        {(errNpwp || v.npwp_status === 'not_found') && (
                                          <div className="text-[9px] text-amber-700 bg-amber-100 px-2 py-0.5 rounded text-center font-bold tracking-wide uppercase border border-amber-200 shadow-sm w-full">
