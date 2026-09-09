@@ -17,7 +17,6 @@ import Greeting from '../components/Greeting';
 //   Lihat src/utils/AuditPoHelpers.ts untuk tipe & helper.
 
 const PT_OPTIONS = ['AMT', 'GMI', 'TTP', 'MJS', 'WSI', 'WNS', 'GENERAL'];
-const STATUS_AUDIT_OPTIONS = ['Selesai Diproses', 'Doc tidak terbaca'];
 
 function StatusBadge({ status }: { status: string | null }) {
   const meta = statusAuditMeta(status);
@@ -243,14 +242,10 @@ function EditAuditPoModal({ record, onClose, onSaved }: { record: AuditPoRow; on
             <input
               value={statusAudit}
               onChange={e => setStatusAudit(e.target.value)}
-              list="status-audit-suggestions"
-              placeholder="Pilih dari saran atau ketik catatan manual (mis. keterangan error)..."
+              placeholder="Ketik catatan manual (mis. keterangan error)..."
               className="w-full rounded-xl px-3 py-2 border border-slate-200 bg-white text-sm text-[#5A305A] focus:outline-none focus:ring-1 focus:ring-[#5A305A]/30"
             />
-            <datalist id="status-audit-suggestions">
-              {STATUS_AUDIT_OPTIONS.map(s => <option key={s} value={s} />)}
-            </datalist>
-            <p className="text-[10px] text-[#5A305A]/60 mt-1">Bisa pilih dari saran, atau ketik bebas untuk catatan internal (mis. jenis error).</p>
+            <p className="text-[10px] text-[#5A305A]/60 mt-1">Ketik bebas untuk catatan internal (mis. jenis error).</p>
           </div>
           <div>
             <label className="text-xs font-semibold text-[#5A305A] mb-1 block">Kategori</label>
@@ -1004,11 +999,11 @@ export default function AuditPoPage() {
                                   title="Preview PDF"
                                   className="w-full flex items-center gap-1 px-1.5 py-1 rounded-md border border-slate-200 bg-white text-[9px] font-semibold text-[#5A305A] hover:bg-slate-100 transition-colors"
                                 >
-                                  <FileDown size={10} /> Preview PDF
+                                  <FileDown size={10} /> PDF
                                 </button>
                               ) : (
                                 <span className="w-full flex items-center gap-1 px-1.5 py-1 rounded-md border border-slate-100 bg-white text-[9px] font-semibold text-slate-300">
-                                  <FileDown size={10} /> Preview PDF
+                                  <FileDown size={10} /> PDF
                                 </span>
                               )}
                               {r.url_html ? (

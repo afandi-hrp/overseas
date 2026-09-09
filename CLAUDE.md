@@ -2246,8 +2246,22 @@ user) — panel filter langsung jadi header card, `justify-end`.
   baru), dropdown **`kategori`** (2026-09, GANTI dari dropdown `status_audit` sebelumnya — daftar
   opsi dari `KATEGORI_OPTIONS` yang sama dgn kolom Kategori, bukan dari `status_audit` lagi),
   rentang tanggal `created_at`. `STATUS_AUDIT_OPTIONS` (2 nilai tetap: "Selesai Diproses"/"Doc
-  tidak terbaca") TETAP dipakai sbg `<datalist>` saran di field Status Audit modal Edit, HANYA
-  dihapus dari filter panel.
+  tidak terbaca") DULU dipakai sbg `<datalist>` saran di field Status Audit modal Edit — **DIHAPUS
+  TOTAL (2026-09, permintaan user "dropdown list nya tidak perlu dimunculkan, cukup ketik
+  manual")**, field Status Audit di `EditAuditPoModal` sekarang `<input>` polos tanpa `list=`/
+  `<datalist>` sama sekali, const `STATUS_AUDIT_OPTIONS` ikut dihapus dari `AuditPoPage.tsx` krn
+  jadi dead code (sudah tidak dipakai di mana pun lagi setelah filter panel-nya jg dihapus
+  sebelumnya). **Awalnya HANYA `AuditPoPage.tsx` (Audit AP Local) yang diubah** (user cuma minta
+  utk Audit AP Local dulu) — **DIPORTING susulan (2026-09, permintaan eksplisit "lakukan hal yang
+  sama pada halaman Audit AP Overseas dan PI Local")** ke `AuditPoOverseasPage.tsx` (const
+  `id="status-audit-suggestions-overseas"`) & `PiLocalPage.tsx` (const
+  `id="status-audit-suggestions-pi-local"`) — pola identik persis (datalist/`STATUS_AUDIT_OPTIONS`
+  dihapus total di KETIGA halaman skrg).
+  Susulan (2026-09): tombol "Preview PDF" di panel Aksi (baik state ada file maupun state
+  disabled abu-abu saat `url_pdf` kosong) diperpendek jadi label **"PDF"** saja (tooltip
+  `title="Preview PDF"` TIDAK diubah, tetap deskriptif). Tombol "Hasil Audit" (utk `url_html`) TIDAK
+  disentuh/tidak diminta. **Diporting jg ke `AuditPoOverseasPage.tsx` & `PiLocalPage.tsx`**
+  (bareng porting datalist di atas) — label "PDF" sekarang konsisten di ke-3 halaman.
 - Kolom `url_pdf`/`url_html` dirender sebagai `<a target="_blank">` biasa (link download
   langsung dari backend, tidak ada logic tambahan di frontend).
 - Kolom **Kategori** (`kategori`, text, nullable) — dipilih lewat combobox searchable terkontrol
