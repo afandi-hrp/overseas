@@ -816,72 +816,74 @@ export default function PiLocalPage() {
               >
                 <LayoutDashboard size={14} /> Dashboard
               </button>
-              <div className="flex items-center gap-2 rounded-full pl-3.5 pr-3 py-1.5 border border-slate-200 bg-white shrink-0">
-                <Search size={13} className="text-[#5A305A]/50 shrink-0" />
-                <input
-                  value={searchInput}
-                  onChange={e => setSearchInput(e.target.value)}
-                  placeholder="Cari No PO / Vendor..."
-                  className="border-0 bg-transparent text-xs text-[#5A305A] focus:outline-none w-28"
-                />
-              </div>
-              <select
-                value={ptFilter}
-                onChange={e => { setPtFilter(e.target.value); setPage(1); }}
-                className="rounded-full px-3 py-2 border border-slate-200 bg-white text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer shrink-0"
-              >
-                <option value="">Semua PT</option>
-                {PT_OPTIONS.map(pt => <option key={pt} value={pt}>{pt}</option>)}
-              </select>
-              <select
-                value={kategoriFilter}
-                onChange={e => { setKategoriFilter(e.target.value); setPage(1); }}
-                className="rounded-full px-3 py-2 border border-slate-200 bg-white text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer shrink-0 max-w-[160px]"
-              >
-                <option value="">Semua Kategori</option>
-                {KATEGORI_OPTIONS.map(k => <option key={k} value={k}>{k}</option>)}
-              </select>
-              <div className="flex gap-1.5 items-center rounded-full pl-2.5 pr-1.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0">
-                <CalendarDays size={13} className="text-[#5A305A] shrink-0" />
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={e => { setDateFrom(e.target.value); setPage(1); }}
-                  className="w-[100px] text-[11px] bg-transparent focus:outline-none text-[#5A305A] cursor-pointer"
-                />
-                <span className="text-[#5A305A] text-xs">–</span>
-                <input
-                  type="date"
-                  value={dateTo}
-                  onChange={e => { setDateTo(e.target.value); setPage(1); }}
-                  className="w-[100px] text-[11px] bg-transparent focus:outline-none text-[#5A305A] cursor-pointer"
-                />
-                {(dateFrom || dateTo) && (
-                  <button onClick={() => { setDateFrom(''); setDateTo(''); setPage(1); }} className="text-[#5A305A] hover:text-[#5A305A] ml-0.5 shrink-0">
-                    <X size={14} />
-                  </button>
-                )}
-              </div>
-              <button
-                onClick={() => fetchList()}
-                disabled={loadingList}
-                title="Refresh"
-                className="p-2 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] transition-all flex items-center justify-center shrink-0 disabled:opacity-50 h-[34px] w-[34px]"
-              >
-                <RefreshCw size={14} className={loadingList ? 'animate-spin' : ''} />
-              </button>
-              <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0 ml-auto">
-                <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">Items</span>
+              <div className="flex items-center justify-end gap-2 flex-nowrap overflow-x-auto min-w-0 flex-1">
+                <div className="flex items-center gap-2 rounded-full pl-3.5 pr-3 py-1.5 border border-slate-200 bg-white shrink-0">
+                  <Search size={13} className="text-[#5A305A]/50 shrink-0" />
+                  <input
+                    value={searchInput}
+                    onChange={e => setSearchInput(e.target.value)}
+                    placeholder="Cari No PO / Vendor..."
+                    className="border-0 bg-transparent text-xs text-[#5A305A] focus:outline-none w-28"
+                  />
+                </div>
                 <select
-                  value={pageSize}
-                  onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
-                  className="border-0 bg-transparent text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer"
+                  value={ptFilter}
+                  onChange={e => { setPtFilter(e.target.value); setPage(1); }}
+                  className="rounded-full px-3 py-2 border border-slate-200 bg-white text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer shrink-0"
                 >
-                  <option value={20}>20</option>
-                  <option value={25}>25</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
+                  <option value="">Semua PT</option>
+                  {PT_OPTIONS.map(pt => <option key={pt} value={pt}>{pt}</option>)}
                 </select>
+                <select
+                  value={kategoriFilter}
+                  onChange={e => { setKategoriFilter(e.target.value); setPage(1); }}
+                  className="rounded-full px-3 py-2 border border-slate-200 bg-white text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer shrink-0 max-w-[160px]"
+                >
+                  <option value="">Semua Kategori</option>
+                  {KATEGORI_OPTIONS.map(k => <option key={k} value={k}>{k}</option>)}
+                </select>
+                <div className="flex gap-1.5 items-center rounded-full pl-2.5 pr-1.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0">
+                  <CalendarDays size={13} className="text-[#5A305A] shrink-0" />
+                  <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={e => { setDateFrom(e.target.value); setPage(1); }}
+                    className="w-[100px] text-[11px] bg-transparent focus:outline-none text-[#5A305A] cursor-pointer"
+                  />
+                  <span className="text-[#5A305A] text-xs">–</span>
+                  <input
+                    type="date"
+                    value={dateTo}
+                    onChange={e => { setDateTo(e.target.value); setPage(1); }}
+                    className="w-[100px] text-[11px] bg-transparent focus:outline-none text-[#5A305A] cursor-pointer"
+                  />
+                  {(dateFrom || dateTo) && (
+                    <button onClick={() => { setDateFrom(''); setDateTo(''); setPage(1); }} className="text-[#5A305A] hover:text-[#5A305A] ml-0.5 shrink-0">
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+                <button
+                  onClick={() => fetchList()}
+                  disabled={loadingList}
+                  title="Refresh"
+                  className="p-2 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] transition-all flex items-center justify-center shrink-0 disabled:opacity-50 h-[34px] w-[34px]"
+                >
+                  <RefreshCw size={14} className={loadingList ? 'animate-spin' : ''} />
+                </button>
+                <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0">
+                  <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">Items</span>
+                  <select
+                    value={pageSize}
+                    onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
+                    className="border-0 bg-transparent text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer"
+                  >
+                    <option value={20}>20</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </div>
               </div>
           </div>
 
