@@ -4126,7 +4126,16 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     : (activeMainTab === 'courier' && activeSubTab === 'courier_audit' && courierAuditType === 'cn') 
     ? CN_COLS 
     : (activeMainTab === 'courier' && activeSubTab === 'courier_audit' && courierAuditType === 'archive')
-    ? [{ key: 'jenis_dokumen', label: 'Type', type: 'text' }, ...PIB_COLS.filter(c => c.key !== 'jenis_dokumen')]
+    ? (() => {
+        // Tab Draft gabung baris PIB+CN, tapi header-nya pakai PIB_COLS -- PIB_COLS TIDAK punya
+        // kolom 'kurs_bi' (cuma dimiliki CN_COLS, PIB pakai 'kurs_ndpbm'), jadi baris CN di tab
+        // ini dulu nilai Kurs BI (Rp)-nya tidak kelihatan sama sekali walau tetap tersimpan di DB.
+        // Disisipkan manual di sini, tepat setelah kolom 'kurs_ndpbm' biar posisinya senada.
+        const base = [{ key: 'jenis_dokumen', label: 'Type', type: 'text' }, ...PIB_COLS.filter(c => c.key !== 'jenis_dokumen')];
+        const idx = base.findIndex(c => c.key === 'kurs_ndpbm');
+        const kursBiCol = { key: 'kurs_bi', label: 'Kurs BI (Rp)', type: 'num' };
+        return idx === -1 ? [...base, kursBiCol] : [...base.slice(0, idx + 1), kursBiCol, ...base.slice(idx + 1)];
+      })()
     : activeTabId === 'sea_air_audit'
     ? SEA_AIR_AUDIT_COLS
     : activeTabId === 'sea_air_rekapan'

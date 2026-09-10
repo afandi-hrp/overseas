@@ -179,18 +179,18 @@ const SECTIONS: SectionConfig[] = [
       { id: "id07", compareDoc: "PIB / SPPBMCP",         field: "No. AWB" },
       { id: "bpn_awb_vs_freight_awb", compareDoc: "BPN/HTBK", field: "Nomor AWB", rowLabel: "No. AWB" },
       { id: "id06", compareDoc: "AWB",                   field: "No. AWB" },
-      { id: "if02", compareDoc: "FP Freight",            field: "Subtotal" },
-      { id: "id01", compareDoc: "FP Duty",               field: "Subtotal" },
-      { id: "cnf02_b", compareDoc: "CN INVOICE FREIGHT", field: "Subtotal after CN" },
-      { id: "cnd02_b", compareDoc: "CN INVOICE DUTY",    field: "Subtotal after CN" },
-      { id: "fpfd05", compareDoc: "FP Freight",        field: "DPP (Freight)",        rowLabel: "DPP" },
-      { id: "fpfd07", compareDoc: "FP Duty",           field: "DPP (Duty)",           rowLabel: "DPP" },
-      { id: "fpr05",  compareDoc: "FP Revisi Freight", field: "DPP (Freight)",        rowLabel: "DPP" },
-      { id: "fpr07",  compareDoc: "FP Revisi Duty",    field: "DPP (Duty)",           rowLabel: "DPP" },
-      { id: "if03", compareDoc: "FP Freight",            field: "PPN" },
-      { id: "id02", compareDoc: "FP Duty",               field: "PPN" },
-      { id: "cnf03_b", compareDoc: "CN INVOICE FREIGHT", field: "PPN" },
-      { id: "cnd03_b", compareDoc: "CN INVOICE DUTY",    field: "PPN" },
+      { id: "if02", compareDoc: "FP Freight",            field: "Subtotal", rowLabel: "Subtotal / Subtotal After CN" },
+      { id: "id01", compareDoc: "FP Duty",               field: "Subtotal", rowLabel: "Subtotal / Subtotal After CN" },
+      { id: "cnf02_b", compareDoc: "FP Revisi Freight",  field: "Subtotal", rowLabel: "Subtotal / Subtotal After CN" },
+      { id: "cnd02_b", compareDoc: "FP Revisi Duty",     field: "Subtotal", rowLabel: "Subtotal / Subtotal After CN" },
+      { id: "fpfd05", compareDoc: "FP Freight",        field: "DPP (Freight)",        rowLabel: "DPP / DPP After CN" },
+      { id: "fpfd07", compareDoc: "FP Duty",           field: "DPP (Duty)",           rowLabel: "DPP / DPP After CN" },
+      { id: "fpr05",  compareDoc: "FP Revisi Freight", field: "DPP (Freight)",        rowLabel: "DPP / DPP After CN" },
+      { id: "fpr07",  compareDoc: "FP Revisi Duty",    field: "DPP (Duty)",           rowLabel: "DPP / DPP After CN" },
+      { id: "if03", compareDoc: "FP Freight",            field: "PPN", rowLabel: "PPN / PPN After CN" },
+      { id: "id02", compareDoc: "FP Duty",               field: "PPN", rowLabel: "PPN / PPN After CN" },
+      { id: "cnf03_b", compareDoc: "FP Revisi Freight",  field: "PPN", rowLabel: "PPN / PPN After CN" },
+      { id: "cnd03_b", compareDoc: "FP Revisi Duty",     field: "PPN", rowLabel: "PPN / PPN After CN" },
       { id: "id04", compareDoc: "AWB",                   field: "Berat (kg)", hint: "(dari Invoice Freight)" },
     ]
   },
@@ -245,9 +245,9 @@ const SECTIONS: SectionConfig[] = [
     label: "NO VESSEL NAME AND IMO NUMBER",
     srcLabel: "No Vessel Name & IMO Number",
     rows: [
-      { id: "cipl05", compareDoc: "CIPL",          field: "Format Pass: Tidak Ada Vessel & IMO", isFormat: true, hint: 'Sesuai jika kosong' },
-      { id: "po01",   compareDoc: "PO",            field: "Format Pass: Tidak Ada Vessel & IMO", isFormat: true, hint: 'Sesuai jika kosong' },
-      { id: "fi01",   compareDoc: "Final Invoice", field: "Format Pass: Tidak Ada Vessel & IMO", isFormat: true, hint: 'Sesuai jika kosong' },
+      { id: "cipl05", compareDoc: "CIPL",          field: "Format Pass: Tidak Ada Vessel & IMO", rowLabel: "No Vessel/IMO Format", isFormat: true, hint: 'Match if empty' },
+      { id: "po01",   compareDoc: "PO",            field: "Format Pass: Tidak Ada Vessel & IMO", rowLabel: "No Vessel/IMO Format", isFormat: true, hint: 'Match if empty' },
+      { id: "fi01",   compareDoc: "Final Invoice", field: "Format Pass: Tidak Ada Vessel & IMO", rowLabel: "No Vessel/IMO Format", isFormat: true, hint: 'Match if empty' },
     ]
   },
   {
@@ -729,7 +729,8 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
         fill("pib06", normalizeInvoiceSeparator(pibV.no_invoice) || "", normalizeInvoiceSeparator(fi.inv_no) || "");
         fill("pib07", pibV.item_value || "", fi.total_value || "");
         fill("po_item_value_vs_pib", pibV.item_value || "", raw.po_total_value || "");
-        
+        if (newV["po_item_value_vs_pib"]) newV["po_item_value_vs_pib"].otherCost = raw.other_cost_valas != null ? String(raw.other_cost_valas) : "";
+
         // PIB NPWP Lookup
         const pibNpwp = findNpwp(pibV.npwp);
         fill("pib08", pibV.npwp || "", pibNpwp?.npwp || "");
@@ -774,6 +775,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
 
         // CIPL
         fill("cipl01", ciplV.total_value || "", raw.po_total_value || "");
+        if (newV["cipl01"]) newV["cipl01"].otherCost = raw.other_cost_valas != null ? String(raw.other_cost_valas) : "";
         fill("cipl02", raw.po_penerima || "", findNpwpByName(raw.po_penerima)?.nama || "");
         fill("po_alamat_npwp", raw.po_alamat || "", findNpwpByName(raw.po_penerima)?.alamat || "");
         fill("cipl03", ciplV.no_invoice || "", fi.inv_no || "");
@@ -1468,7 +1470,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr>
-                          <th className="p-3 bg-slate-100 border-b border-r border-slate-300 text-[11px] font-bold text-[#5A305A] uppercase tracking-wide whitespace-nowrap w-[1%] sticky left-0 z-10 shadow-[1px_0_0_0_#cbd5e1]">VALIDASI FIELD</th>
+                          <th className="p-3 bg-slate-100 border-b border-r border-slate-300 text-[11px] font-bold text-[#5A305A] uppercase tracking-wide whitespace-normal w-[160px] min-w-[160px] max-w-[160px] sticky left-0 z-10 shadow-[1px_0_0_0_#cbd5e1]">VALIDASI FIELD</th>
                           {section.id === 's_pib' && (
                             <th className="p-3 border-b border-r border-slate-300 text-[11px] font-bold uppercase tracking-widest text-center min-w-[150px] bg-slate-200 text-[#5A305A]">REFERENCE</th>
                           )}
@@ -1485,7 +1487,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                       <tbody>
                         {uniqueFields.map(field => (
                           <tr key={field} className="border-b border-slate-200 last:border-b-0 hover:bg-slate-50/50 transition-colors">
-                            <td className="p-3 border-r border-slate-300 text-xs font-bold text-[#5A305A] bg-white whitespace-nowrap w-[1%] sticky left-0 z-10 align-middle shadow-[1px_0_0_0_#cbd5e1]">
+                            <td className="p-3 border-r border-slate-300 text-xs font-bold text-[#5A305A] bg-white whitespace-normal w-[160px] min-w-[160px] max-w-[160px] break-words sticky left-0 z-10 align-middle shadow-[1px_0_0_0_#cbd5e1]">
                               {field}
                               {(() => {
                                  const hints = Array.from(new Set(section.rows.filter((r: any) => groupKey(r) === field && r.hint).map((r: any) => r.hint)));
@@ -1526,6 +1528,9 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                                   return <td key={doc as string} className="p-3 border-r border-slate-300 last:border-r-0 text-center text-[#5A305A] align-middle bg-slate-50/30 min-w-[150px]">-</td>;
                                }
                                const v = values[rowMatch.id] || {src:'', cmp:''};
+                               const otherCostVal = v.otherCost !== undefined && v.otherCost !== null && v.otherCost !== ''
+                                 ? v.otherCost
+                                 : (debugData.raw?.other_cost_valas ?? '');
                                const stComputed = computeStatus(v.src, v.cmp, rowMatch.isFormat, rowMatch.field, debugData.raw?.is_po_non_imi);
                                const st = v.manual_status || stComputed;
                                const errNpwp = v.cmp && hasNpwpError(rowMatch.id, v.cmp);
@@ -1554,23 +1559,35 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
 
                                          {!rowMatch.isFormat && (
                                            isEditMode ? (
-                                             <input
-                                               className={`w-full border rounded text-center focus:outline-none focus:ring-1 transition-all font-medium text-[#5A305A] ${section.id === 's_pib' ? 'px-2 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'} ${(errNpwp || v.npwp_status === 'not_found') ? 'border-amber-400 bg-amber-50 focus:border-amber-500 focus:ring-amber-500' : 'border-slate-200 bg-slate-50 hover:bg-white focus:border-blue-500 focus:ring-blue-500'}`}
-                                               value={v.cmp || ""}
-                                               onChange={e => {
-                                                 setObj(rowMatch.id, 'cmp', e.target.value);
-                                                 setValues((prev: any) => ({ ...prev, [rowMatch.id]: { ...prev[rowMatch.id], npwp_status: null } }));
-                                               }}
-                                               placeholder=""
-                                               title={`Nilai dari ${getColumnDisplayLabel(rowMatch.compareDoc, docType)}`}
-                                             />
+                                             <>
+                                               <input
+                                                 className={`w-full border rounded text-center focus:outline-none focus:ring-1 transition-all font-medium text-[#5A305A] ${section.id === 's_pib' ? 'px-2 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'} ${(errNpwp || v.npwp_status === 'not_found') ? 'border-amber-400 bg-amber-50 focus:border-amber-500 focus:ring-amber-500' : 'border-slate-200 bg-slate-50 hover:bg-white focus:border-blue-500 focus:ring-blue-500'}`}
+                                                 value={v.cmp || ""}
+                                                 onChange={e => {
+                                                   setObj(rowMatch.id, 'cmp', e.target.value);
+                                                   setValues((prev: any) => ({ ...prev, [rowMatch.id]: { ...prev[rowMatch.id], npwp_status: null } }));
+                                                 }}
+                                                 placeholder=""
+                                                 title={`Nilai dari ${getColumnDisplayLabel(rowMatch.compareDoc, docType)}`}
+                                               />
+                                               {(rowMatch.id === 'po_item_value_vs_pib' || rowMatch.id === 'cipl01') && (
+                                                 <input
+                                                   className="w-full border border-slate-200 rounded px-2 py-1 text-[10px] text-center italic focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium text-[#5A305A] bg-slate-50 hover:bg-white mt-1"
+                                                   value={otherCostVal}
+                                                   onChange={e => setObj(rowMatch.id, 'otherCost', e.target.value)}
+                                                   placeholder="Other Cost"
+                                                   title="Other Cost -- bisa diedit manual"
+                                                 />
+                                               )}
+                                             </>
                                            ) : section.id === 's_pib' ? (
                                              <span className={`text-xs text-center w-full break-words px-1 ${v.cmp_edited ? 'text-blue-700 font-bold' : 'text-[#5A305A] font-medium'}`}>
                                                {formatViewValue(v.cmp, field)}
                                                {v.cmp_edited && <Edit3 size={10} className="inline ml-1 text-blue-500 opacity-70" title="Diedit manual" />}
-                                               {(rowMatch.id === 'po_item_value_vs_pib' || rowMatch.id === 'cipl01') && Number(debugData.raw?.other_cost_valas) !== 0 && (
+                                               {(rowMatch.id === 'po_item_value_vs_pib' || rowMatch.id === 'cipl01') && Number(otherCostVal) !== 0 && (
                                                  <div style={{ fontSize: '0.85em', fontStyle: 'italic', color: 'var(--color-text-secondary)', marginTop: 2 }}>
-                                                   Other Cost: {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 4 }).format(Number(debugData.raw.other_cost_valas))}
+                                                   Other Cost: {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 4 }).format(Number(otherCostVal))}
+                                                   {v.otherCost_edited && <Edit3 size={9} className="inline ml-1 text-blue-500 opacity-70" title="Diedit manual" />}
                                                  </div>
                                                )}
                                              </span>
@@ -1578,9 +1595,10 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                                              <span className={`text-[10px] text-center w-full break-words px-1 ${v.cmp_edited ? 'text-blue-700 font-bold' : 'text-[#5A305A]/70 font-normal'}`}>
                                                ({formatViewValue(v.cmp, field)})
                                                {v.cmp_edited && <Edit3 size={9} className="inline ml-1 text-blue-500 opacity-70" title="Diedit manual" />}
-                                               {(rowMatch.id === 'po_item_value_vs_pib' || rowMatch.id === 'cipl01') && Number(debugData.raw?.other_cost_valas) !== 0 && (
+                                               {(rowMatch.id === 'po_item_value_vs_pib' || rowMatch.id === 'cipl01') && Number(otherCostVal) !== 0 && (
                                                  <div style={{ fontSize: '0.85em', fontStyle: 'italic', color: 'var(--color-text-secondary)', marginTop: 2 }}>
-                                                   Other Cost: {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 4 }).format(Number(debugData.raw.other_cost_valas))}
+                                                   Other Cost: {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 4 }).format(Number(otherCostVal))}
+                                                   {v.otherCost_edited && <Edit3 size={9} className="inline ml-1 text-blue-500 opacity-70" title="Diedit manual" />}
                                                  </div>
                                                )}
                                              </span>

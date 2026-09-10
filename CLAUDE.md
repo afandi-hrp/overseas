@@ -580,7 +580,14 @@ dan bagian `CourierValidasiPage.tsx` yang merender label dari `SECTIONS`).
   row-nya (`"Format Pass: Tidak Ada Vessel & IMO"`, `isFormat`) TIDAK ikut diterjemahkan — itu
   string logic-critical (dipakai `computeStatus()` via `fieldName.includes("Tidak Ada Vessel")`,
   lihat "TEMUAN PENTING" di atas), translate field itu tanpa refactor `computeStatus` akan
-  merusak deteksi format-nya. `hint: 'Sesuai jika kosong'` juga TIDAK disentuh (tidak diminta).
+  merusak deteksi format-nya.
+  **Susulan (2026-09, permintaan user "rubah jadi bahasa inggris yang singkat")** — nama baris
+  yang TAMPIL (bukan `field` logic-critical di atas) diganti pakai `rowLabel: "No Vessel/IMO
+  Format"` (ketiga row `cipl05`/`po01`/`fi01` diberi `rowLabel` yang SAMA — groupKey `rowLabel ||
+  field` tetap menghasilkan 1 baris gabungan seperti sebelumnya, cuma teks yang RENDER di kolom
+  "VALIDASI FIELD" sekarang baca `rowLabel` ini, bukan `field` mentah lagi). `hint: 'Sesuai jika
+  kosong'` diterjemahkan jadi **`'Match if empty'`** (field `hint` murni teks tampilan, aman
+  diubah — beda dari `field` yang dipakai keyword-matching `computeStatus()`, TIDAK disentuh).
   Kalau nanti ada permintaan translate nama tabel/section LAIN di modal ini secara spesifik
   (bukan kebijakan umum), ikuti pola yang sama: `label`/`srcLabel` aman diubah, `field`/`rowLabel`/
   `compareDoc` HARUS dicek dulu apakah dipakai `computeStatus`/keyword-matching sebelum disentuh.
@@ -1996,6 +2003,15 @@ bareng semua section) — sebelumnya Src & Cmp ditampilkan bertumpuk dgn pemisah
   else → gaya baru (kurung). **Kalau nanti section lain juga diminta balik ke gaya lama, tambahkan
   id section-nya ke kondisi `section.id === 's_pib'` di 3 titik itu (className input, className
   span mode lihat "gaya lama"), JANGAN duplikat blok kode baru lagi.**
+  **Percobaan sempat dicoba (2026-09) — DIBATALKAN**: sempat nambah `s_inv_freight_duty` ke
+  kondisi `section.id === 's_pib'` ini (Cmp tabel Invoice Freight & Duty jadi ikut gaya lama juga)
+  krn disangka itu maksud user pas diminta "lampirkan secara utuh lagi nilai src dan cmp" —
+  TERNYATA BUKAN itu yg dimaksud user ("bukan begitu maksud saya"), SUDAH DIREVERT ke kondisi
+  SEMULA (`section.id === 's_pib'` polos, tanpa `s_inv_freight_duty`) di KEDUA titik (className
+  input mode edit, className span mode lihat). **Jangan re-apply perubahan ini lagi tanpa
+  konfirmasi ulang maksud user yang sebenarnya** — belum jelas apa yang dimaksud "lampirkan
+  secara utuh", tanyakan detail dulu (mis. apakah maksudnya nilai src/cmp yang terpotong/tidak
+  lengkap krn suatu bug lain, bukan soal gaya tampilan kurung/font kecil ini).
 - **Susulan lagi (2026-09)**: placeholder literal `"Src"`/`"Cmp"` di kedua `<input>` (muncul
   sbg teks abu-abu di kotak kosong pas mode Edit, dikeluhkan user via screenshot — kelihatan
   berulang di semua sel, norak) **DIHAPUS** (jadi string kosong `""`) — placeholder `"Format..."`
@@ -2032,6 +2048,111 @@ bareng semua section) — sebelumnya Src & Cmp ditampilkan bertumpuk dgn pemisah
   dilaporkan "putus/tidak nyambung" lagi, cek dulu kontras `border-slate-*` terhadap background
   di titik yg dilaporkan SEBELUM curiga ke bug rendering (sticky/zoom/dll) — ini sudah 2x
   ditelusuri & ternyata murni soal kontras warna, bukan bug struktural.**
+
+## Courier — Document Validation, baris "Subtotal after CN" digabung ke baris "Subtotal" (`src/components/ValidasiModal.tsx`, 2026-09)
+
+Tabel "INVOICE FREIGHT & INVOICE DUTY" (`s_inv_freight_duty`) tadinya punya 2 baris terpisah:
+"Subtotal" (kolom FP Freight/FP Duty) dan "Subtotal after CN" (kolom CN INVOICE FREIGHT/CN
+INVOICE DUTY) — digabung jadi **1 baris** atas permintaan user. 4 row config (`if02`/`id01`/
+`cnf02_b`/`cnd02_b`) SEKARANG semuanya diberi `rowLabel: "Subtotal / Subtotal After CN"` yang
+SAMA (sebelumnya `if02`/`id01` tidak punya `rowLabel` — groupKey jatuh ke `field`, "Subtotal" vs
+"Subtotal after CN" beda field jadi 2 baris terpisah; `cnf02_b`/`cnd02_b` `field`-nya jg diubah
+dari "Subtotal after CN" → "Subtotal" — TIDAK berpengaruh ke `computeStatus()` krn kedua string
+sama² match keyword `lowerField.includes("total")`, lihat "TEMUAN PENTING" soal `field` dipakai
+keyword-matching di atas). Karena tabel dirender per-`groupKey` (`rowLabel || field`), ke-4
+kolom dokumen ini SEKARANG otomatis tampil dalam SATU baris tabel dgn label "Subtotal / Subtotal
+After CN".
+
+## Courier — Document Validation, lebar kolom "VALIDASI FIELD" diseragamkan (`src/components/ValidasiModal.tsx`, 2026-09)
+
+Kolom pertama (sticky) di SEMUA tabel modal ini SEBELUMNYA `w-[1%] whitespace-nowrap` — lebar
+otomatis menyesuaikan teks nama baris TERPANJANG di section itu, jadi beda-beda lebarnya antar
+tabel (mis. "Format Pass: Tidak Ada Vessel & IMO" bikin section itu jauh lebih lebar dari section
+lain) — dikeluhkan user "tidak rapi". Diseragamkan ke `<th>` DAN `<td>`-nya (2 titik, keduanya
+generik/dipakai semua section): `w-[160px] min-w-[160px] max-w-[160px] whitespace-normal` (sempat `220px`, dikecilkan ke `160px`
+susulan permintaan user "terlalu lebar") (`<td>` tambah `break-words`) — SEMUA tabel SEKARANG
+punya lebar kolom pertama PERSIS sama,
+nama baris yang kepanjangan WRAP ke bawah (bukan lagi 1 baris horizontal dipaksa muat/scroll).
+`sticky left-0`/shadow border-nya TIDAK berubah.
+
+## Courier — Document Validation, "Other Cost" (tabel PIB baris Item Value & CIPL baris Total Item Value, kolom PO) SEKARANG bisa diedit manual (`src/components/ValidasiModal.tsx`, 2026-09)
+
+Sebelumnya "Other Cost" (angka italic kecil di bawah nilai Cmp kolom PO, cuma muncul di 2 row
+`po_item_value_vs_pib`/`cipl01`) MURNI DISPLAY dari `debugData.raw.other_cost_valas`
+(`data_validasi_raw` di tabel `dokumen_validasi`, hasil ekstraksi n8n) — tidak ada `<input>` sama
+sekali, tidak bisa dikoreksi manual. Sekarang bisa diedit & TERSIMPAN, permintaan user.
+
+- **`otherCost` ditambahkan ke object `values[id]`** (state yang SAMA dipakai `src`/`cmp`/
+  `manual_status` per baris) — BUKAN field baru terpisah, jadi otomatis ikut ke-serialize ke
+  `values_json` saat "Simpan" (`handleSaveValidasi`, ~baris 1008) TANPA perlu ubah skema/RPC/query
+  Supabase apa pun — pola generik `setObj(id, side, val)` yang sudah ada dipakai apa adanya
+  (`setObj(rowMatch.id, 'otherCost', val)`), sama seperti `setObj(id, 'cmp', val)`.
+- **Default awal** (saat BELUM pernah ada baris `tabel_checklist_validasi` tersimpan utk
+  shipment itu — jalur `fill()` dari `raw`, ~baris 731/776): `newV["po_item_value_vs_pib"]
+  .otherCost`/`newV["cipl01"].otherCost` diisi dari `raw.other_cost_valas` (String-kan) sbg nilai
+  awal. Begitu SUDAH pernah tersimpan, load berikutnya baca `cl.values_json` langsung (jalur
+  fill() di-skip sepenuhnya, lihat "return" ~baris 615), jadi nilai manual yang tersimpan TIDAK
+  PERNAH ketiban ulang oleh `raw.other_cost_valas` lagi.
+  **Data lama (checklist yg tersimpan SEBELUM fitur ini)** tidak punya `v.otherCost` di
+  `values_json`-nya — fallback tampilan (`otherCostVal`, dihitung di render per baris) baca
+  `v.otherCost` DULU, baru fallback ke `debugData.raw?.other_cost_valas` kalau kosong/undefined —
+  jadi data lama tetap tampil apa adanya (dari raw) sampai user pertama kali edit & simpan.
+- **Render**: mode Edit nambah `<input>` kecil italic di bawah input Cmp (HANYA utk 2 row id di
+  atas, dibungkus fragment `<>...</>` krn sekarang ada 2 elemen sejajar) — mode Lihat TETAP baris
+  italic "Other Cost: {angka}" seperti semula, cuma sumber angkanya `otherCostVal` (bukan
+  `debugData.raw` mentah lagi), + badge `Edit3` kecil kalau `v.otherCost_edited` true (pola sama
+  dgn badge "diedit manual" pada `src`/`cmp`). Berlaku di KEDUA varian tampilan (section `s_pib`
+  font normal, section lain/CIPL font `text-[10px]` dalam kurung) — 2 titik JSX, keduanya diubah
+  bareng.
+
+## Courier — Document Validation, sel CN dipindah dari kolom CN INVOICE FREIGHT/DUTY ke FP Revisi Freight/Duty (`src/components/ValidasiModal.tsx`, 2026-09)
+
+Tabel "INVOICE FREIGHT & INVOICE DUTY" — 4 row config (`cnf02_b`/`cnd02_b` di baris "Subtotal /
+Subtotal After CN", `cnf03_b`/`cnd03_b` di baris "PPN") tadinya render di kolom **CN INVOICE
+FREIGHT**/**CN INVOICE DUTY** — permintaan user PINDAHKAN ke kolom **FP Revisi Freight**/**FP
+Revisi Duty** yang SUDAH ADA di tabel yang sama (dipakai baris "No Invoice PPJK"/`fpr06`/`fpr08`
+& "DPP"/`fpr05`/`fpr07`). Caranya CUKUP ganti `compareDoc` ke-4 row itu (data src/cmp/logic-nya
+TIDAK berubah sama sekali, cuma pindah kolom render): `cnf02_b`/`cnf03_b`: `"CN INVOICE FREIGHT"`
+→ `"FP Revisi Freight"`; `cnd02_b`/`cnd03_b`: `"CN INVOICE DUTY"` → `"FP Revisi Duty"`.
+- Kolom **CN INVOICE FREIGHT**/**CN INVOICE DUTY** TETAP ADA di tabel (dipakai row lain, mis.
+  `cnf01_a`/`cnd01_a` di baris "No. AWB") — utk baris "Subtotal / Subtotal After CN" & "PPN",
+  kolom ini SEKARANG tampil "-" (tidak ada row match lagi di situ), sedangkan kolom **FP Revisi
+  Freight**/**FP Revisi Duty** yang sebelumnya "-" utk 2 baris ini SEKARANG terisi.
+  `getSrcTooltipLabel()`/`getColumnDisplayLabel()`/warna header — SEMUA generik baca
+  `rowMatch.compareDoc` apa adanya, tidak perlu diubah krn "FP Revisi Freight"/"FP Revisi Duty"
+  SUDAH terdaftar warnanya (dipakai row lain di section yg sama).
+  **Kalau nanti mau pindah kolom row lain lagi di tabel manapun di modal ini, pola yang sama
+  berlaku: ganti `compareDoc` row config-nya SAJA — JANGAN duplikat row/tambah id baru.**
+
+## Courier — Document Validation, nama baris "DPP" & "PPN" ditambah "/ ... After CN" (`src/components/ValidasiModal.tsx`, 2026-09)
+
+Tabel "INVOICE FREIGHT & INVOICE DUTY" — nama baris (kolom "VALIDASI FIELD") diubah:
+"DPP" → **"DPP / DPP After CN"** (`fpfd05`/`fpfd07`/`fpr05`/`fpr07`, ke-4nya SUDAH punya
+`rowLabel: "DPP"` sebelumnya, tinggal ganti teksnya, groupKey/pengelompokan baris TIDAK berubah),
+"PPN" → **"PPN / PPN After CN"** (`if03`/`id02`/`cnf03_b`/`cnd03_b` — SEBELUMNYA row ini TIDAK
+py `rowLabel` sama sekali, groupKey jatuh ke `field: "PPN"` yg SAMA di ke-4nya jadi tetap 1 baris
+gabungan; SEKARANG ke-4nya diberi `rowLabel: "PPN / PPN After CN"` yg identik — hasil
+pengelompokan baris SAMA seperti sebelumnya, cuma teks tampilnya beda). `field` mentah
+(`"DPP (Freight)"`/`"DPP (Duty)"`/`"PPN"`) TIDAK disentuh — tetap dipakai `computeStatus()` utk
+keyword-matching (`fieldName.includes("DPP (")`, `lowerField.includes("ppn")`), aman krn hanya
+`rowLabel` (murni tampilan) yang diubah.
+
+## Courier Audit — kolom "Kurs BI (Rp)" ditambahkan ke tab Draft (`src/components/SharedDataTable.tsx`, 2026-09)
+
+Tab **Draft** (`courierAuditType === 'archive'`, gabung baris PIB+CN) pakai `activeCols` = PIB_COLS
+(dgn kolom `jenis_dokumen`/"Type" disisipkan di depan, ~baris 4128) — TERNYATA kolom **"Kurs BI
+(Rp)"** (`key: 'kurs_bi'`) HANYA ada di `CN_COLS`, PIB_COLS cuma punya "Kurs NDPBM"
+(`kurs_ndpbm`) — jadi baris CN di tab Draft dulu TIDAK PERNAH menampilkan Kurs BI (Rp) sama
+sekali (bukan di-hide via fitur Customize View, murni krn kolomnya tidak ada di `activeCols`
+Draft — nilainya sendiri tetap tersimpan normal di DB, cuma tidak dirender).
+- Fix: `activeCols` utk `courierAuditType === 'archive'` SEKARANG dibangun via IIFE — ambil
+  index kolom `kurs_ndpbm`, sisipkan `{ key: 'kurs_bi', label: 'Kurs BI (Rp)', type: 'num' }`
+  TEPAT SETELAHNYA (fallback ke akhir array kalau `kurs_ndpbm` tidak ketemu). Baris PIB (tidak
+  punya field `kurs_bi`) otomatis tampil kosong/"-" di kolom ini, seperti kolom lain yang
+  memang cuma relevan utk salah satu jenis dokumen — WAJAR, bukan bug.
+  `COURIER_AUDIT_CUSTOMIZABLE_COLS` (fitur Customize View) SUDAH dari awal mencakup `kurs_bi`
+  (dedup dari `PIB_COLS`+`CN_COLS`, `CN_COLS` sudah py kolom ini) — TIDAK perlu diubah, kolom ini
+  otomatis ikut bisa di-hide/tampilkan lewat Customize View jg di tab Draft sekarang.
 
 ## Sea & Air — Modal "Cost Validasi Shipment & Invoice" disamakan ukurannya dgn Courier (`src/components/ValidasiShipmentInvoiceLengkap.tsx`, 2026-09)
 
