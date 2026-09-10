@@ -15,6 +15,7 @@ import FarOverseasVendorTarifPage from './pages/FarOverseasVendorTarifPage';
 import RateTablesAdmin from './pages/RateTablesAdmin';
 import MainLayout from './components/MainLayout';
 import AdminLayout from './components/AdminLayout';
+import LockScreen from './components/LockScreen';
 import LoginPage from './pages/LoginPage';
 import RoleManagementPage from './pages/RoleManagementPage';
 import RequirePageAccess from './components/RequirePageAccess';
@@ -35,7 +36,7 @@ import AuditPoOverseasPage from './pages/AuditPoOverseasPage';
 import PiLocalPage from './pages/PiLocalPage';
 
 function ProtectedRoute() {
-  const { session, loading } = useAuth();
+  const { session, loading, lockScreenActive } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -46,11 +47,31 @@ function ProtectedRoute() {
     );
   }
 
-  if (!session) {
+  // Sesi ini benar-benar habis (bukan cuma lock screen) -- baru redirect ke LoginPage penuh.
+  // `session` di sini adalah nilai yang di-"freeze" AuthContext selama lockScreenActive true
+  // (lihat komentar frozenRef di AuthContext.tsx), jadi TIDAK null selama lock screen aktif --
+  // pengecekan `lockScreenActive` di bawah, BUKAN `!session` saja, yang menentukan render mana.
+  if (!session && !lockScreenActive) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  return <Outlet />;
+  // `<Outlet/>` SENGAJA dirender polos, TIDAK PERNAH dibungkus wrapper apa pun di sini --
+  // strukturnya harus tetap SAMA PERSIS kapan pun `lockScreenActive` berubah, supaya React
+  // TIDAK PERNAH meng-unmount+me-mount ulang halaman di baliknya (itu JUSTRU menghilangkan
+  // state/data yang sedang ingin "dibekukan" saat lock screen aktif). Blur+`inert`-nya SENDIRI
+  // BUKAN diterapkan di sini lagi (2026-09, KEAMANAN) -- lihat effect di `AuthContext.tsx` yang
+  // menerapkannya via DOM API langsung ke SEMUA child `<body>` (termasuk `#root` yg membungkus
+  // `<Outlet/>` ini, TAPI JUGA modal manapun yang di-render lewat React Portal ke
+  // `document.body`, mis. `FarOverseasAirDetailModal.tsx`/`BunkerCompareDocModal.tsx` -- kalau
+  // blur cuma dipasang di `<Outlet/>` seperti versi awal, portal-portal itu TIDAK IKUT TERTUTUP
+  // sama sekali, celah keamanan). `<LockScreen/>` (SEKARANG portal ke `document.body` sendiri,
+  // lihat file-nya) tetap di-mount/unmount dari sini berdasarkan `lockScreenActive`.
+  return (
+    <>
+      <Outlet />
+      {lockScreenActive && <LockScreen />}
+    </>
+  );
 }
 
 // "/" dan "/dashboard" dulu redirect hardcode ke halaman Courier -- sekarang app dipakai lintas

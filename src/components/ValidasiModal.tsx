@@ -415,7 +415,8 @@ function computeStatus(srcVal: any, cmpVal: any, isFormat: boolean | undefined, 
   }
 
   if (fieldName.includes("Referensi (")) {
-    if (!srcVal || !cmpVal) return "empty";
+    if (!srcVal && !cmpVal) return "empty";
+    if (!srcVal || !cmpVal) return "partial";
     return String(srcVal).toLowerCase().includes(String(cmpVal).toLowerCase()) ? "match" : "mismatch";
   }
 
@@ -721,7 +722,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
 
         // PIB
         fill("pib01", pibV.no_pengajuan || "", sppbV.no_pengajuan || "");
-        fill("pib02", pibV.no_awb || "", sppbV.no_awb || "");
+        fill("pib02", invF.awb || invD.awb || "", sppbV.no_awb || "");
         fill("pib03", normalizeInvoiceSeparator(pibV.no_invoice) || "", normalizeInvoiceSeparator(ciplV.no_invoice) || "");
         fill("pib04", pibV.item_value || "", ciplV.total_value || "");
         fill("bt_vendor_no_invoice_vs_pib", normalizeInvoiceSeparator(pibV.no_invoice) || "", normalizeInvoiceSeparator(btVendorV.no_invoice) || "");

@@ -121,6 +121,276 @@ menangani Courier Audit/Rekapan, Sea & Air Audit/Rekapan, dan Audit Trail — di
   value lagi (mis. utk search/filter), tetap pakai `rec.ppjk`/`rec.awb` asli, bukan hasil display
   ini.
 
+## Auto-logout: idle 30 menit + logout paksa saat tab BENERAN ditutup (`src/lib/AuthContext.tsx`, 2026-09)
+
+**Idle timeout (SUDAH ADA sebelumnya, bukan baru)**: `IDLE_TIMEOUT_MS = 30 menit`, dicek tiap
+15 detik (`IDLE_CHECK_INTERVAL_MS`), berdasar event `mousemove`/`mousedown`/`keydown`/
+`touchstart`/`scroll` (di-throttle max 1x/5 detik). Timestamp aktivitas terakhir disimpan di
+`localStorage` key `shipment_last_activity_ts` (SENGAJA `localStorage` bukan state lokal --
+supaya sinkron antar-tab, aktivitas di tab manapun menunda logout di semua tab).
+**Konsekuensi yang sempat jadi pertanyaan user**: kalau tab ditutup sebelum 30 menit lalu dibuka
+lagi besoknya, effect cleanup yang MENGHAPUS `shipment_last_activity_ts` (`localStorage.
+removeItem` di baris return effect) **TIDAK DIJAMIN jalan** saat tab ditutup (browser mematikan
+JS context tanpa unmount React normal) -- jadi timestamp lama TETAP ada, dan begitu app dibuka
+lagi besoknya, dalam ≤15 detik pertama otomatis logout (selisih waktu sudah jauh lebih dari 30
+menit). Ini SUDAH terjadi SEBELUM fitur di bawah ditambahkan -- kebetulan menutupi kebutuhan
+"logout kalau tab ditutup" utk kasus jeda PANJANG (semalam), TAPI TIDAK utk jeda PENDEK (tutup
+tab, buka lagi 5 menit kemudian -- idle timer belum lewat 30 menit, jadi TIDAK logout). Fitur
+baru di bawah ini melengkapi celah itu.
+
+**Logout paksa saat tab ditutup (BARU, 2026-09, permintaan eksplisit user)** -- 2 keputusan
+desain yang DIKONFIRMASI user lewat AskUserQuestion sebelum diimplementasi (JANGAN diubah tanpa
+konfirmasi ulang):
+1. **"Tutup 1 tab = logout SEMUA tab"** (bukan "tab lain tetap login selama masih ada yang
+   terbuka") -- user pilih opsi paling ketat/simpel, BUKAN opsi "hitung tab yang masih terbuka".
+2. **Refresh (F5) HARUS TETAP AMAN, tidak boleh ikut ke-logout** -- meski browser TIDAK punya
+   event native yang membedakan "tab ditutup" vs "halaman di-refresh" (keduanya sama-sama
+   memicu `pagehide`/`beforeunload`), user pilih tetap ingin kedua hal ini dibedakan (bukan
+   opsi "refresh juga logout" yang lebih simpel implementasinya).
+
+**Cara kerja** (konstanta `TAB_ID_KEY`/`PENDING_CLOSE_KEY`/`CLOSE_CONFIRM_MS = 1500ms`, effect
+baru setelah effect idle-timeout, sama-sama gated `isAuthed`):
+- Tiap tab dapat `tabId` unik disimpan di **`sessionStorage`** (BUKAN `localStorage`) --
+  SENGAJA, krn `sessionStorage` BERTAHAN saat tab di-refresh (tabId tetap sama), TAPI HILANG
+  TOTAL kalau tab beneran ditutup (tab yang dibuka lagi nanti dapat `tabId` baru, beda).
+- Saat tab mau unload (`pagehide` DAN `beforeunload`, dipasang keduanya utk redundansi browser
+  beda-beda), tab menulis **"kemungkinan menutup"** ke `localStorage` (`PENDING_CLOSE_KEY`,
+  isinya `{tabId, ts}`) -- BUKAN langsung logout, krn di titik ini belum bisa dipastikan apakah
+  ini refresh atau penutupan beneran.
+- **Kalau ternyata cuma refresh**: begitu tab yang SAMA mount lagi (tabId dari `sessionStorage`
+  masih sama persis), dia cek `PENDING_CLOSE_KEY` yang baru saja dia tulis sendiri sebelum
+  unload -- `pending.tabId === tabId (milik sendiri)` -- langsung DIHAPUS/dibatalkan, tidak ada
+  logout. Ini biasanya selesai dalam waktu SANGAT singkat (reload browser tipikal <500ms).
+- **Kalau ternyata beneran ditutup**: tidak ada tab dengan `tabId` yang sama yang mount lagi
+  utk membatalkan jejak itu, jadi jejak `PENDING_CLOSE_KEY` "kadaluwarsa" -- 2 jalur deteksi:
+  1. **Tab LAIN yang masih hidup** (kalau ada) mendengar perubahan `PENDING_CLOSE_KEY` lewat
+     event `storage` browser (event ini HANYA terpicu di tab lain, TIDAK PERNAH di tab yang
+     melakukan perubahan itu sendiri -- pas dipakai sbg "sinyal antar-tab" tanpa BroadcastChannel)
+     -- pasang timer `CLOSE_CONFIRM_MS` (1.5 detik), kalau setelah itu jejaknya MASIH SAMA
+     (belum dibatalkan refresh), simpulkan tab itu beneran tertutup -- SEMUA tab lain ikut
+     `supabase.auth.signOut()`. Ini yang memenuhi keputusan desain #1 (tutup 1 tab dari
+     beberapa tab yang terbuka = semua ikut logout), TANPA ikut ke-trigger oleh refresh biasa
+     (keputusan desain #2) krn jendela 1.5 detik itu jauh lebih lama dari waktu refresh normal.
+  2. **Tidak ada tab lain yang hidup** (skenario asli yang ditanyakan user -- tab satu-satunya
+     ditutup, dibuka lagi besoknya) -- tidak ada yang mendengar event `storage` secara
+     real-time, jadi dicek ULANG saat tab BARU itu mount: `pending.tabId !== tabId (baru)` DAN
+     `Date.now() - pending.ts > CLOSE_CONFIRM_MS` (pasti true kalau jedanya semalam) -- logout
+     paksa terjadi SAAT MOUNT tab baru itu, sebelum idle-timer 30 menit sempat berperan sama
+     sekali.
+- **Keterbatasan yang disadari & DITERIMA** (bukan bug, konsekuensi platform web): kalau browser
+  di-force-kill (Task Manager/crash), `pagehide`/`beforeunload` TIDAK sempat terpicu sama sekali
+  -- mekanisme ini TIDAK bisa mendeteksi itu (jejak `PENDING_CLOSE_KEY` tidak pernah ditulis).
+  Idle-timeout 30 menit di atas TETAP jadi jaring pengaman independen utk skenario itu.
+
+## Lock screen: auto-logout tidak lagi lempar ke LoginPage kalau masih di tab yang sama (`src/lib/AuthContext.tsx`, `src/App.tsx`, `src/components/LockScreen.tsx`, 2026-09)
+
+Permintaan user: kalau auto-logout terjadi (idle-timeout 30 menit ATAU logout-paksa-tutup-tab di
+atas) SELAGI tab yang sama masih terbuka, JANGAN lempar ke LoginPage kosong — tampilkan halaman
+TERAKHIR apa adanya (di-blur, non-interaktif) + panel kecil minta PASSWORD SAJA (user/email tidak
+perlu diketik ulang). Begitu password benar, halaman yang di-blur langsung "hidup" lagi persis di
+tempatnya (state React TIDAK PERNAH hilang, TIDAK reload). TAPI kalau tab sudah BENERAN
+ditutup+sesi habis (dibuka lagi nanti/besok, React tree fresh) ATAU user SENGAJA klik "Logout" —
+tetap tampilkan LoginPage PENUH seperti biasa (2 pengecualian ini DIKONFIRMASI eksplisit lewat
+AskUserQuestion sebelum implementasi).
+
+- **`AuthContext.tsx`** — 3 potongan state baru, SEMUA di dalam `AuthProvider`:
+  - `hadSessionRef` (useRef, BUKAN localStorage — sengaja reset sendiri tiap tab baru/reload):
+    jadi `true` PERMANEN begitu `session` SEKALI SAJA truthy di tab ini.
+  - `manualSignOutRef`: `true` HANYA selama proses lewat `signOut()` (dipanggil tombol "Logout"
+    UI, `MainLayout.tsx`/`LockScreen.tsx` "Not you? Log out") — supaya lock screen TIDAK muncul
+    utk logout yang memang disengaja. Direset `false` lagi otomatis tiap kali `session` truthy
+    (login baru/berhasil).
+  - `frozenRef`: snapshot `{session, profile, allowedPageKeys, editPageKeys,
+    approvalTiersByPage, isAdmin}` TERAKHIR sebelum sesi hilang. **Alasan krusial**: context yang
+    di-expose ke SELURUH halaman (`exposedSession`/`exposedProfile`/dst) TIDAK PERNAH langsung
+    ikut jadi `null`/kosong selama `lockScreenActive` true — tetap pakai nilai BEKU ini. Kalau
+    tidak dibekukan, halaman-halaman lain yang py `useEffect([user?.id])` (fetch data scoped ke
+    user) akan ikut ter-trigger ulang oleh transisi session->null yang sifatnya SEMENTARA ini,
+    berpotensi memicu fetch gagal/kosongin data yang seharusnya cuma "dibekukan" tampilannya.
+  - `lockScreenActive = !session && hadSessionRef.current && !manualSignOutRef.current` (session
+    di sini RAW state, bukan yang di-expose) — SATU-SATUNYA sinyal yang dipakai `App.tsx` utk
+    memilih render blur+LockScreen vs `<Navigate to="/login">`.
+- **`App.tsx` `ProtectedRoute`** — wrapper `<div><div className={lockScreenActive ? 'blur...' :
+  'contents'} inert={lockScreenActive || undefined}><Outlet/></div>{lockScreenActive &&
+  <LockScreen/>}</div>` SELALU dirender (BUKAN cuma muncul kondisional) — **KRUSIAL**: kalau
+  struktur pohonnya berubah tiap kali `lockScreenActive` berubah (mis. `<Outlet/>` polos vs
+  dibungkus `<div>`), React akan MENGANGGAP itu elemen berbeda dan me-unmount lalu me-mount ulang
+  SELURUH halaman di baliknya — persis kebalikan dari tujuan "membekukan tampilan". `className`
+  `'contents'` (Tailwind `display:contents`, TIDAK mempengaruhi layout sama sekali) dipakai saat
+  TIDAK lock, `blur-md brightness-95` dipakai saat lock — cuma GANTI CLASS, bukan struktur.
+  `inert` (atribut HTML asli, didukung React 19) dipasang tambahan krn `pointer-events-none` di
+  className CUMA menutup mouse/touch, TIDAK menutup keyboard shortcut yang mungkin terpasang di
+  halaman tertentu — `inert` menutup SEMUA jalur interaksi termasuk itu.
+  Pengecekan redirect diganti dari `if (!session)` → **`if (!session && !lockScreenActive)`** —
+  `session` di sini VALUE YANG SUDAH DI-EXPOSE (frozen selama lock), jadi TIDAK PERNAH null
+  selama lock aktif; `lockScreenActive` (bukan `!session`) yang menentukan cabang render mana.
+- **`src/components/LockScreen.tsx`** (komponen baru) — overlay `fixed inset-0` mirip gaya
+  `LoginPage.tsx` (skala lebih kecil, panel tunggal) — cuma 1 field password (email/nama diambil
+  dari `lockedProfile`, TIDAK perlu diketik ulang), tombol submit panggil `unlock(password)`,
+  tombol kecil "Not you? Log out" panggil `signOut()` biasa (balik ke LoginPage penuh, utk ganti
+  akun).
+- **`unlock(password)`** (di `AuthContext.tsx`) — `supabase.auth.signInWithPassword({email dari
+  frozenRef, password})`. Sukses → `onAuthStateChange` yang SUDAH ADA otomatis mengisi `session`
+  lagi → `lockScreenActive` balik `false` sendiri (TIDAK ada logic khusus "un-freeze", cuma
+  berhenti memakai `frozenRef` krn `session` sudah truthy lagi) → blur+LockScreen hilang, `Outlet`
+  yang dari tadi TETAP MOUNTED langsung "hidup" lagi apa adanya. Gagal → return `{error}` yang
+  ditampilkan `LockScreen` (mis. "Password salah.", pesan Supabase lain apa adanya).
+- **`unlockInFlight` (2026-09, FIX bug flash-spinner)** — `unlock()` memakai EMAIL YANG SAMA dgn
+  sesi sebelumnya, jadi `onAuthStateChange` internal (`isRealUserChange`, bandingkan user id
+  sebelum/sesudah) menganggapnya user id BERUBAH (krn sempat `null` di antaranya saat lock) →
+  sempat menyalakan `accessLoading` lagi sesaat → TANPA suppression, `loading` global jadi true
+  sesaat → `ProtectedRoute` sempat MENGGANTI Outlet+blur dgn spinner PENUH LAYAR (elemen beda,
+  Outlet ikut ke-unmount — persis yg ingin dihindari). Fix: flag `unlockInFlight` (di-set true di
+  awal `unlock()`, di-reset via effect yang mendeteksi TRANSISI `accessLoading` true→false, PLUS
+  fallback `setTimeout` 5 detik jaga-jaga race) menekan `loading` global SELAMA proses unlock,
+  TANPA mengubah logic `fetchAccess()`/`onAuthStateChange` yang sudah "battle-tested" itu sendiri.
+- **`resolveStaleCloseTrace()` (2026-09, FIX bug lock-screen-muncul-padahal-seharusnya-LoginPage
+  utk skenario "tab ditutup, dibuka lagi besoknya")** — versi PERTAMA pengecekan jejak
+  `PENDING_CLOSE_KEY` (dari fitur "Logout paksa saat tab ditutup" di atas) HANYA dilakukan di
+  dalam effect yang di-gate `isAuthed` — masalahnya effect itu baru jalan SETELAH `getSession()`
+  awal resolve (sesi lama yg SEHARUSNYA sudah invalid sempat kelihatan truthy dulu sesaat),
+  `hadSessionRef` KEBURU jadi `true` SEBELUM sempat diketahui bahwa sesi itu semestinya sudah mati
+  — akibatnya begitu efek itu BARU signOut(), `lockScreenActive` malah jadi `true` (krn
+  `hadSessionRef` sudah kepalang true), user salah lihat LockScreen padahal seharusnya LoginPage
+  penuh. **Fix**: `resolveStaleCloseTrace(tabId)` (ASYNC) dipanggil PALING AWAL di effect init
+  utama, SEBELUM `getSession()` sama sekali — kalau terbukti tab SEBELUMNYA beneran tertutup
+  (bukan refresh), `supabase.auth.signOut()` dipanggil DULU sebelum `getSession()`, supaya
+  `getSession()` konsisten balikin `null` sejak awal (sesi basi TIDAK PERNAH sempat kelihatan
+  truthy barang sesaat pun, `hadSessionRef` tidak pernah ke-set). Fungsi ini ASYNC & MENUNGGU
+  (bukan cuma cek sesaat) — kalau jejaknya dari tab lain TAPI jendela konfirmasi refresh
+  (`CLOSE_CONFIRM_MS`) belum lewat, dia menunggu SISA waktunya dulu (maks +1.5 detik ke waktu
+  loading awal, kasus SANGAT jarang) baru memutuskan — mencegah race "tab baru mount PAS di
+  tengah jendela konfirmasi tab lain yang lagi mau ditutup" ninggalin jejak menggantung yang
+  keliru terdeteksi di mount BERIKUTNYA (kapan pun, bisa jauh lebih lama) alih-alih di jendela
+  waktu yang seharusnya.
+- **Keterbatasan yang disadari & DITERIMA**: kalau user membuka app di >2 tab lalu menutup salah
+  satu, tab-tab LAIN yang masih terbuka ikut logout ke LockScreen (bukan cuma tab yang ditutup) —
+  sesuai keputusan desain "tutup 1 tab = logout semua" yang sudah dikonfirmasi user sebelumnya di
+  fitur "Logout paksa saat tab ditutup". Kalau nanti user minta lock screen JUGA muncul utk
+  skenario cross-tab itu (bukan cuma idle-timeout di tab yang sama) — SUDAH otomatis begitu,
+  krn keduanya sama-sama lewat `supabase.auth.signOut()` mentah (bukan wrapper `signOut()`),
+  `manualSignOutRef` tetap `false`, `lockScreenActive` tetap `true` di tab manapun yang masih
+  terbuka.
+
+## Auto-logout/Lock screen — laporan "tidak jalan sama sekali" & diagnostik sementara (2026-09)
+
+User lapor 2 hal SEKALIGUS setelah fitur idle-timeout + lock screen di atas selesai: (1) coba
+fitur "login tanpa isi username" (LockScreen/unlock) "seperti tidak jalan", (2) tunggu 30 menit
+idle, aplikasi TIDAK auto-logout sama sekali. Sudah dikonfirmasi via AskUserQuestion: BUKAN krn
+lupa hard-refresh (sudah refresh/restart dev server dulu), BUKAN krn ada tab lain yang bikin
+timer ke-reset (cuma 1 tab). Kedua laporan ini KEMUNGKINAN BESAR 1 akar masalah yang sama: kalau
+idle-timeout tidak pernah BENERAN memicu logout, LockScreen juga tidak akan pernah muncul sama
+sekali utk ditest (jadi "seperti tidak jalan" bukan berarti `unlock()`-nya sendiri yang rusak).
+
+**Temuan dari membaca source `@supabase/auth-js` (`node_modules/@supabase/auth-js/dist/module/
+GoTrueClient.js`, method `_signOut`)** — SEBELUM ini, `supabase.auth.signOut()` di effect
+idle-timeout/tab-tertutup dipanggil "fire and forget" (`supabase.auth.signOut();`, TANPA
+`await`/cek hasil sama sekali) — ternyata `_signOut()` versi Supabase ini memanggil endpoint
+REVOKE ke SERVER LEBIH DULU (`this.admin.signOut(accessToken, scope)`), dan **KALAU panggilan itu
+gagal dgn error SELAIN 404/401/403/sesi-sudah-hilang (mis. network timeout/diblokir firewall/500),
+fungsi ini `return` LEBIH AWAL TANPA PERNAH memanggil `_removeSession()`** — artinya sesi LOKAL
+TIDAK PERNAH dihapus, TIDAK ADA event `SIGNED_OUT` yang terpicu, DAN TIDAK ADA error yang
+kelihatan di mana pun (krn tidak pernah dicek hasilnya) — persis simptom "nunggu 30 menit, tidak
+terjadi apa-apa sama sekali". Kalau ini penyebabnya di lingkungan Waruna Group (jaringan
+kantor/firewall/proxy yang mungkin membatasi endpoint tertentu), retry tiap 15 detik
+(`IDLE_CHECK_INTERVAL_MS`) TIDAK AKAN membantu kalau blokirnya PERSISTEN (bukan sekali doang).
+
+**BELUM DIPERBAIKI (tidak tau root cause PASTI tanpa lihat Console user)** — yang SUDAH
+dilakukan cuma menambah **diagnostik sementara** (SEMUA di `src/lib/AuthContext.tsx`, ditandai
+komentar "DIAGNOSTIK SEMENTARA (2026-09)", JANGAN dihapus dulu sebelum penyebab pastinya
+ketemu):
+1. Interval idle-timeout SEKARANG `console.info` begitu ambang 30 menit tercapai (+ hitung menit
+   idle aktualnya), lalu `await` hasil `signOut()` dan `console.error('[Auto-logout] signOut()
+   gagal (idle-timeout):', error)` kalau gagal.
+2. `resolveStaleCloseTrace`'s forced signOut (init()) & tab-lain-tertutup punya `console.error`
+   serupa masing-masing dgn label berbeda (`'(stale-close-trace)'`/`'(tab-lain-tertutup)'`).
+3. `lockScreenActive` ditambah 1 effect kecil `console.info('[Auto-logout] Lock screen
+   aktif...')` PERSIS saat nilainya jadi `true` — kalau log ini TIDAK PERNAH muncul di Console
+   sama sekali walau sudah nunggu lama, itu BUKTI KUAT idle-timeout-nya yang gagal (bukan
+   LockScreen/`unlock()`-nya).
+4. `unlock()` ditambah `console.error`/`console.info` di titik gagal (frozenRef kosong,
+   `signInWithPassword` gagal) & berhasil.
+
+**`IDLE_TIMEOUT_MS` SEMPAT diperkecil ke 5 menit** (permintaan user, utk mempercepat siklus tes
+idle-timeout drpd nunggu 30 menit tiap percobaan) — **SUDAH DIKEMBALIKAN ke `30 * 60 * 1000` (30
+menit)** setelah user konfirmasi "sudah berhasil" dgn nilai 5 menit itu (2026-09). Kesimpulan:
+mekanisme idle-timeout/lock-screen-nya SENDIRI TERBUKTI BEKERJA BENAR — laporan awal "30 menit
+tidak auto-logout" kemungkinan besar soal DURASI TES (mis. belum benar-benar menunggu penuh 30
+menit tanpa sentuh mouse/keyboard sama sekali) BUKAN bug di logic-nya, krn dgn nilai 5 menit
+(logic persis sama, cuma angkanya beda) hasilnya sukses.
+
+**Log diagnostik (`console.info`/`console.error` berlabel `[Auto-logout]`, ditambahkan di
+`AuthContext.tsx` — idle-timeout interval, `resolveStaleCloseTrace`, tab-lain-tertutup,
+`lockScreenActive` effect, `unlock()`) SENGAJA DIBIARKAN TETAP ADA** (TIDAK dihapus) — murni
+`console.*`, tidak ada efek samping ke UI/behavior, berguna kalau nanti ada laporan serupa lagi
+(mis. di jaringan Waruna Group yang berbeda, atau device lain) supaya bisa langsung dicek Console
+tanpa perlu pasang ulang instrumentasi dari nol. Kalau nanti dirasa mengganggu/exercise
+kebersihan console produksi, boleh dihapus — tapi TIDAK ADA urgensi utk itu selama masih fase
+observasi fitur auto-logout/lock-screen yang baru ini.
+
+## Lock screen — audit keamanan & 3 celah yang ditemukan+diperbaiki (2026-09)
+
+Permintaan user: "cek apakah fitur input password ini sudah bersih dari bug/celah keamanan yang
+bisa bikin orang melihat isi tanpa login". Hasil audit code-review (bukan pentest live, tidak ada
+akses browser dari sesi Claude Code manapun) — ditemukan **3 celah nyata**, SEMUA sudah
+diperbaiki:
+
+1. **Modal yang di-render via React Portal ke `document.body` TIDAK IKUT ter-blur/ter-`inert`**
+   (PALING SIGNIFIKAN). Implementasi awal ProtectedRoute (`App.tsx`) cuma membungkus `<Outlet/>`
+   dgn blur+`inert` — TERNYATA minimal 2 modal di app ini (`FarOverseasAirDetailModal.tsx` —
+   preview cetak memo FAR Overseas Air, `BunkerCompareDocModal.tsx` — preview cetak Bunker)
+   di-render lewat `ReactDOM.createPortal(..., document.body)`, jadi DOM node-nya jadi SIBLING
+   dari `#root`, BUKAN child dari `<Outlet/>` — kalau modal itu kebetulan sedang terbuka PAS
+   idle-timeout/logout-paksa-tutup-tab memicu lock, isinya (bisa data finansial/memo approval)
+   tetap tampil UTUH & BISA DIKLIK, PERSIS SEPERTI TIDAK ADA LOCK SCREEN. **Fix**: blur+`inert`
+   SEKARANG diterapkan via DOM API langsung (`AuthContext.tsx`, effect baru) ke SEMUA child
+   langsung `<body>` KECUALI node portal LockScreen sendiri (`LOCKSCREEN_PORTAL_ID`, exported
+   const) — otomatis menutupi `#root` (jadi `<Outlet/>` tetap tercakup) DAN modal portal manapun,
+   TERMASUK yang ditambahkan nanti (generik, tidak perlu didaftarkan satu-satu). `App.tsx`
+   `ProtectedRoute` disederhanakan balik ke `<Outlet/>` polos (blur-nya sudah tidak ditangani di
+   situ lagi) + `LockScreen` SEKARANG JUGA portal ke `document.body` (harus, supaya tidak ikut
+   memblur/mengunci dirinya sendiri — id-nya yg dikecualikan itu).
+   **Limitasi yang disadari & DITERIMA**: effect ini cuma jalan SEKALI saat lock AKTIF (iterasi
+   `document.body.children` PADA SAAT ITU) — kalau ada portal BARU yang muncul SETELAH lock
+   sudah aktif (mis. proses background tanpa interaksi user memicu toast/modal baru), portal itu
+   TIDAK ikut tertutup krn effect tidak pakai `MutationObserver`. Risiko rendah (krn `#root` sudah
+   `inert`, user tidak bisa memicu modal baru lewat klik apa pun selagi terkunci) tapi bukan nol
+   utk trigger non-klik (mis. timer). Belum diimplementasikan MutationObserver-nya (di luar
+   cakupan permintaan awal, pertimbangkan kalau ada laporan portal baru lolos blur).
+2. **Halaman bisa dipulihkan browser dari bfcache (back/forward cache) dalam kondisi SEBELUM lock
+   aktif** — kalau user navigasi KELUAR dari app ke situs lain lalu tekan Back, sebagian browser
+   memulihkan SNAPSHOT PERSIS DOM+JS dari sesaat sebelum ditinggalkan (JS "dibekukan" total,
+   TIDAK ada kode inisialisasi yang jalan ulang) — kalau idle-timeout sempat terjadi SELAGI di
+   situs lain (JS tab ini beku, tidak sempat memprosesnya), begitu dipulihkan yg muncul adalah
+   tampilan LAMA yg masih UTUH TIDAK TERBLUR, lock screen TIDAK PERNAH sempat aktif di snapshot
+   itu. **Fix**: listener `pageshow` baru (`AuthContext.tsx`, effect terpisah, TIDAK di-gate
+   `isAuthed` — harus selalu aktif) — kalau `event.persisted === true` (indikasi halaman dipulihkan
+   dari bfcache, BUKAN load normal), paksa `window.location.reload()` supaya SELURUH state
+   (termasuk status auth/lock) dihitung ulang dari nol, tidak percaya ke snapshot beku.
+3. **Snapshot yang dibekukan (`frozenRef`) menyimpan `access_token`/`refresh_token` MENTAH** di
+   memori JS (React ref) SELAMA lock screen aktif (bisa berlangsung lama, sampai unlock/logout
+   manual) — `access_token` (JWT) TIDAK otomatis batal walau `signOut()` sukses (cuma me-revoke
+   `refresh_token`-nya; JWT tetap valid scr kriptografis sampai masa berlakunya sendiri lewat,
+   umumnya ~1 jam) — siapa pun yg py akses DevTools ke tab yang terkunci (mis. React DevTools,
+   inspect komponen `AuthProvider`) bisa membaca token itu & memakainya LANGSUNG lewat request
+   API terpisah (curl/Postman), BYPASS UI app ini sepenuhnya. **Fix**: `access_token`/
+   `refresh_token`/`provider_token`/`provider_refresh_token` di-REDACT (diganti string
+   `'[redacted-while-locked]'`) SEBELUM disimpan ke `frozenRef` — dikonfirmasi via grep TIDAK ADA
+   kode di app ini yang baca field-field itu dari context/session manapun (yang benar2 dipakai
+   cuma `session.user.email` via `unlock()`), jadi aman di-redact tanpa merusak fungsi apa pun.
+
+**Keterbatasan INHEREN yang TIDAK BISA (dan TIDAK PERLU) diperbaiki, HARUS dipahami user**: blur
+CSS + `inert` HANYA mencegah interaksi & tampilan visual biasa — data mentahnya TETAP ADA di DOM
+(cuma diburamkan secara visual). Siapa pun yang membuka DevTools browser (F12) di komputer yang
+SEDANG terkunci TETAP BISA membaca isi HTML/teks aslinya langsung dari situ (`document.body.
+outerHTML` dkk) — ini keterbatasan MENDASAR dari SEMUA mekanisme "lock screen" berbasis client-side
+JS/CSS di web manapun, bukan spesifik ke implementasi ini, dan TIDAK ADA cara menutupnya dari sisi
+JS semata (satu-satunya solusi lengkap adalah kunci layar tingkat OS, di luar cakupan aplikasi
+web). Threat model fitur ini adalah "orang lewat/menyentuh layar tanpa sengaja", BUKAN "penyerang
+teknis dgn akses fisik + DevTools ke perangkat yang tidak terjaga" — untuk ancaman terakhir itu,
+selain redact token di atas (poin 3, yang menyempitkan JENDELA WAKTU token bisa dicuri, bukan
+menghilangkannya total), tidak ada mitigasi tambahan yang realistis dari level aplikasi web.
+
 ## RBAC (role & akses per halaman)
 
 Sudah diimplementasikan (lihat `sql/001_rbac_and_bunker_rls.sql`, `sql/002_direct_loading_rls.sql`):
@@ -2153,6 +2423,58 @@ Draft — nilainya sendiri tetap tersimpan normal di DB, cuma tidak dirender).
   `COURIER_AUDIT_CUSTOMIZABLE_COLS` (fitur Customize View) SUDAH dari awal mencakup `kurs_bi`
   (dedup dari `PIB_COLS`+`CN_COLS`, `CN_COLS` sudah py kolom ini) — TIDAK perlu diubah, kolom ini
   otomatis ikut bisa di-hide/tampilkan lewat Customize View jg di tab Draft sekarang.
+
+## Courier — Document Validation, Src baris "No. AWB" kolom SPPB disamakan dgn kolom PIB/SPPBMCP (`src/components/ValidasiModal.tsx`, 2026-09)
+
+Row config `pib02` (baris "No. AWB", kolom **SPPB**) — Src SEBELUMNYA `pibV.no_awb` (`raw.pib_v.
+no_awb`), DIGANTI jadi **`invF.awb || invD.awb`** (`raw.invoice_freight_v.awb`, fallback
+`raw.invoice_duty_v.awb`) — PERSIS logic Src yang sudah dipakai row `id07` (kolom **PIB /
+SPPBMCP**, baris yang sama). Cmp (`sppbV.no_awb`, `raw.sppb_v.no_awb`) TIDAK diubah — itu nilai
+pembanding dari dokumen SPPB itu sendiri, bukan bagian dari perubahan ini.
+
+**BUKAN BUG — fallback ini TIDAK berlaku retroaktif ke checklist yang SUDAH PERNAH disimpan**
+(dilaporkan user + screenshot: shipment DHL `9765959733`, kolom SPPB tetap kosong walau Invoice
+Freight & Invoice Duty ada, padahal shipment LAIN behasil fallback normal). Akar masalahnya di
+alur load modal (~baris 604-617): kalau `tabel_checklist_validasi` SUDAH punya baris utk
+shipment itu (pernah dibuka & disimpan sebelumnya), `values_json` yang tersimpan dipakai APA
+ADANYA (`setValues(cl.values_json)`) lalu `return` — SELURUH blok `fill()` (termasuk fallback
+`invF.awb || invD.awb` yang baru ditambahkan ini) **TIDAK PERNAH dijalankan ulang** utk shipment
+yang sudah py checklist tersimpan. Jadi:
+- Shipment yang **checklist-nya tersimpan SEBELUM** fix fallback ini dibuat → Src SPPB-nya
+  tetap nilai LAMA (dari rumus lama `pibV.no_awb`, bisa kosong) — TIDAK otomatis ter-update.
+- Shipment yang **belum pernah disimpan checklist-nya** → langsung pakai rumus BARU dari
+  `fill()`, fallback jalan normal.
+- Ini pola yang SAMA persis dgn keterbatasan `fill()`-only-jika-belum-ada-checklist yang sudah
+  didokumentasikan di bagian lain CLAUDE.md ("Src selalu identik... di section `s_pib`" dkk) —
+  bukan hal baru, cuma kali ini kena field Src `pib02` yang barusan diubah rumusnya.
+**Keputusan (2026-09, dikonfirmasi user via AskUserQuestion)**: TIDAK ADA perbaikan kode yg
+diminta utk skenario ini — user cuma minta penjelasan akar masalahnya, `values_json` shipment
+lama yang sudah tersimpan DIBIARKAN apa adanya (opsi "edit manual per-shipment" atau "tombol
+Refresh dari Sumber" DITAWARKAN tapi TIDAK dipilih). Kalau nanti ada laporan SERUPA lagi (field
+lain, checklist lama tidak ikut ke-update walau rumus `fill()`-nya sudah diperbaiki), JANGAN
+curiga fallback/rumusnya salah dulu — cek DULU apakah shipment itu sudah py baris di
+`tabel_checklist_validasi` dari SEBELUM rumus diubah.
+
+## Courier — Document Validation, bug status "Not checked yet" padahal Cmp sudah terisi (`computeStatus()`, `src/components/ValidasiModal.tsx`, 2026-09)
+
+Laporan user + screenshot: baris "No Invoice PPJK" kolom FP Revisi Freight/Duty — Src kosong tapi
+Cmp SUDAH ada isinya (mis. "MESIR00022371"), status pill malah tampil **"Not checked yet"**
+(status `empty`), padahal seharusnya **"Incomplete"** (status `partial`) — sesuai konvensi umum
+di fungsi ini (baris 441-442: `!s && !c → empty`, `!s || !c → partial`, cuma salah SATU sisi
+kosong TETAP dianggap "ada yang perlu ditindaklanjuti", bukan "belum dicek sama sekali").
+
+**Akar masalah**: cabang KHUSUS `fieldName.includes("Referensi (")` (dipakai field
+`"Referensi (Freight)"`/`"Referensi (Duty)"` — baris "No Invoice PPJK" di 4 kolom FP Freight/FP
+Duty/FP Revisi Freight/FP Revisi Duty) py logic SENDIRI yang TIDAK ikut konvensi umum itu:
+`if (!srcVal || !cmpVal) return "empty";` — pakai `||` (SALAH SATU kosong = "empty"), BUKAN `&&`
+(KEDUANYA kosong baru "empty") seperti pola generik di bawahnya. Fix: disamakan poLanya —
+```js
+if (!srcVal && !cmpVal) return "empty";
+if (!srcVal || !cmpVal) return "partial";
+```
+Efeknya BERLAKU ke ke-4 kolom yang pakai field "Referensi (...)" ini (bukan cuma FP Revisi yang
+dilaporkan) — SEKARANG kalau HANYA salah satu sisi (Src ATAU Cmp) kosong, statusnya "Incomplete"
+(kuning), baru "Not checked yet" (abu/lavender) kalau KEDUANYA benar-benar kosong.
 
 ## Sea & Air — Modal "Cost Validasi Shipment & Invoice" disamakan ukurannya dgn Courier (`src/components/ValidasiShipmentInvoiceLengkap.tsx`, 2026-09)
 
