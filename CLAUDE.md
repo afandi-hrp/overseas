@@ -2476,6 +2476,56 @@ Efeknya BERLAKU ke ke-4 kolom yang pakai field "Referensi (...)" ini (bukan cuma
 dilaporkan) — SEKARANG kalau HANYA salah satu sisi (Src ATAU Cmp) kosong, statusnya "Incomplete"
 (kuning), baru "Not checked yet" (abu/lavender) kalau KEDUANYA benar-benar kosong.
 
+## Courier — Document Validation, tabel "NO VESSEL NAME AND IMO NUMBER" gated oleh Document Completeness Checklist (`computeStatus()`, `src/components/ValidasiModal.tsx`, 2026-09)
+
+Permintaan user: di section `s_no_vessel_imo` (3 row `cipl05`/`po01`/`fi01`, kolom CIPL/PO/Final
+Invoice) — SEBELUM ini status selalu langsung "kosong = Match, ada isi = Mismatch"
+(`fieldName.includes("Tidak Ada Vessel")` branch di `computeStatus()`, lihat section di atas soal
+logic aslinya) TANPA peduli apakah dokumen PO/CIPL/Final Invoice itu SENDIRI sudah dipastikan ada
+lewat "Document Completeness Checklist" (`ChecklistModal.tsx`, tabel `dokumen_checklist`, kolom
+`ada_po`/`ada_cipl`/`ada_final_invoice`). User minta: **kalau dokumennya BELUM dicentang di
+Checklist, tampilkan "Incomplete" dulu** (belum relevan dicek match/mismatch krn dokumennya
+sendiri belum dikonfirmasi ada) — **begitu SUDAH dicentang, baru balik ke logic lama**
+(kosong/null = Match, ada isi = Mismatch).
+
+- **`getDocChecklistFlag(compareDoc, flags)`** (fungsi baru, module-level, dekat
+  `computeStatus`) — map `compareDoc` row ("PO"/"CIPL"/"Final Invoice") ke flag
+  `ada_po`/`ada_cipl`/`ada_final_invoice` yang sesuai (`!!flags.xxx`, jadi `undefined`/`null`
+  otomatis jadi `false` = "belum dicentang"). Kolom LAIN (bukan salah satu dari 3 ini) balikin
+  `true` — TIDAK ikut gating apa pun, HANYA relevan utk 3 row section `s_no_vessel_imo`.
+- **`computeStatus()`** — parameter baru `docChecked: boolean = true` (default `true` supaya
+  SEMUA pemanggilan LAIN yang belum diberi param ini — kalau ada di masa depan — tidak berubah
+  perilakunya). Di dalam cabang `fieldName.includes("Tidak Ada Vessel")`: `if (!docChecked)
+  return "partial"` (Incomplete) DICEK **PALING AWAL, SEBELUM `isPoNonImi`** (BUKAN sesudahnya —
+  versi PERTAMA taruh `isPoNonImi` duluan, TERBUKTI SALAH: laporan user + screenshot shipment
+  FEDEX `876734693383` — Final Invoice yang jelas-jelas "Missing Documents" di Checklist tetap
+  tampil "Match", krn `is_po_non_imi` true utk shipment itu, bypass total gating checklist yang
+  baru ditambahkan. **FIX**: urutan ditukar — exemption "PO non-IMI selalu match" cuma masuk akal
+  KALAU dokumennya sendiri sudah dikonfirmasi ada lewat Checklist; kalau checklist bilang belum
+  dicentang, "match" jadi menyesatkan (seolah sudah dicek & lolos, padahal dokumennya sendiri
+  belum tentu ada) — jadi SEKARANG `docChecked` DICEK DULU, `isPoNonImi` BARU setelahnya.
+  **Jangan tukar balik urutan ini** kalau nanti ada laporan "PO non-IMI kelihatan Incomplete
+  padahal Checklist-nya sudah lengkap" — itu justru perilaku BENAR (gating docChecked TIDAK
+  aktif kalau checklist SUDAH tercentang, tinggal isPoNonImi yang jalan normal seperti biasa).
+- **State baru `docCompletenessFlags`** (`{ada_po?, ada_cipl?, ada_final_invoice?}`) — di-fetch
+  SEKALI di `doLoad()` dari `dokumen_checklist` (`select('ada_po, ada_cipl, ada_final_invoice')
+  .eq(pib_id ? 'pib_id' : 'cn_id', pib_id || cn_id).maybeSingle()`), diletakkan SEBELUM
+  early-return baris `tabel_checklist_validasi` (bukan sesudahnya) supaya tetap ke-fetch baik
+  utk shipment yang SUDAH maupun BELUM pernah punya checklist Doc Validation tersimpan. Kalau
+  baris `dokumen_checklist` belum ada sama sekali (checklist kelengkapan belum pernah dibuka &
+  disimpan) — `dc` jadi `null`, ke-3 flag jadi `false` (dianggap "belum dicentang" = Incomplete,
+  KONSISTEN dgn maksud user: dokumen belum terkonfirmasi ada = belum bisa dicek match/mismatch).
+- Dipanggil di KEEMPAT titik `computeStatus(...)` di file ini (autosave debounce effect via
+  `docCompletenessFlagsRef` — pola ref yang sama dgn `activeSectionsRef`/`pibStatsRef`/
+  `debugDataRef`, supaya tidak memicu autosave dobel — `stats` useMemo, `sectionStats()`, dan
+  render sel tabel) — SEMUA mengoper `getDocChecklistFlag(r.compareDoc atau rowMatch.compareDoc,
+  docCompletenessFlags/Ref.current)` sbg argumen ke-6. `stats` useMemo dependency array ditambah
+  `docCompletenessFlags`.
+- **Kalau nanti mau gating serupa diterapkan ke section/baris lain**, cek dulu apakah section
+  itu juga py 1 baris = 1 compareDoc PERSIS PO/CIPL/Final Invoice (nama compareDoc-nya HARUS
+  cocok string literal yg dicek `getDocChecklistFlag`) — kalau beda nama compareDoc, tambahkan
+  cabang barunya di situ, JANGAN duplikat function serupa.
+
 ## Sea & Air — Modal "Cost Validasi Shipment & Invoice" disamakan ukurannya dgn Courier (`src/components/ValidasiShipmentInvoiceLengkap.tsx`, 2026-09)
 
 Permintaan user: samakan ukuran modal ini dgn modal "Cost Validation Details" Courier

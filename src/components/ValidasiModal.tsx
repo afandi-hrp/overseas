@@ -409,7 +409,19 @@ function normalizePt(val: any) {
     .trim();
 }
 
-function computeStatus(srcVal: any, cmpVal: any, isFormat: boolean | undefined, fieldName: string = "", isPoNonImi?: boolean) {
+// Baca status centang dokumen di Document Completeness Checklist (`dokumen_checklist`,
+// ada_po/ada_cipl/ada_final_invoice) berdasar `compareDoc` 1 row -- HANYA relevan utk 3 kolom
+// section `s_no_vessel_imo` (PO/CIPL/Final Invoice), lihat pemakaiannya di `computeStatus()`.
+// Kolom lain (BUKAN salah satu dari 3 ini) balikin `true` -- artinya TIDAK ikut gating apa pun
+// (2026-09).
+function getDocChecklistFlag(compareDoc: string | undefined, flags: { ada_po?: boolean; ada_cipl?: boolean; ada_final_invoice?: boolean }): boolean {
+  if (compareDoc === "PO") return !!flags.ada_po;
+  if (compareDoc === "CIPL") return !!flags.ada_cipl;
+  if (compareDoc === "Final Invoice") return !!flags.ada_final_invoice;
+  return true;
+}
+
+function computeStatus(srcVal: any, cmpVal: any, isFormat: boolean | undefined, fieldName: string = "", isPoNonImi?: boolean, docChecked: boolean = true) {
   if (fieldName.includes("DPP (")) {
     return compareNumeric(srcVal, cmpVal);
   }
@@ -431,6 +443,14 @@ function computeStatus(srcVal: any, cmpVal: any, isFormat: boolean | undefined, 
   const c = String(cmpVal || "").trim();
   if (isFormat) {
     if (fieldName.includes("Tidak Ada Vessel")) {
+       // Dokumen (PO/CIPL/Final Invoice) BELUM dicentang di Document Completeness Checklist --
+       // belum bisa dipastikan dokumennya ada, jadi TIDAK relevan dicek match/mismatch ATAUPUN
+       // exemption `isPoNonImi` di bawah -- tampilkan "Incomplete" dulu (2026-09). DICEK PALING
+       // AWAL (sebelum isPoNonImi) SENGAJA -- exemption "PO non-IMI selalu match" cuma masuk
+       // akal KALAU dokumennya sendiri sudah dikonfirmasi ada lewat Checklist; kalau belum,
+       // "match" bakal menyesatkan (seolah sudah dicek & lolos, padahal dokumennya sendiri
+       // belum tentu ada).
+       if (!docChecked) return "partial";
        // PO non-IMI (raw.is_po_non_imi) boleh cantumkan vessel/IMO — selalu pass.
        if (isPoNonImi) return "match";
        const val = (s === "—" || s === "-") ? "" : s;
@@ -518,6 +538,14 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   const [showHeaderDetail, setShowHeaderDetail] = useState(true);
   const [snapshotValues, setSnapshotValues] = useState<any>(null);
   const [pibStats, setPibStats] = useState({ match: 0, mismatch: 0, empty: 0 });
+  // Status centang PO/CIPL/Final Invoice dari "Document Completeness Checklist" (tabel
+  // `dokumen_checklist`, kolom `ada_po`/`ada_cipl`/`ada_final_invoice`) -- 2026-09, dipakai
+  // GATING baris "No Vessel/IMO Format" (section `s_no_vessel_imo`): kalau dokumennya BELUM
+  // dicentang di Checklist, statusnya "Incomplete" dulu (belum relevan dicek match/mismatch-nya
+  // krn dokumennya sendiri belum dikonfirmasi ada) -- baru kalau SUDAH dicentang, balik ke
+  // logic lama (kosong/null = Match, ada isi = Mismatch). Default `false` (belum fetch/belum ada
+  // baris checklist sama sekali = dianggap belum dicentang, lihat `getDocChecklistFlag()`).
+  const [docCompletenessFlags, setDocCompletenessFlags] = useState<{ ada_po?: boolean; ada_cipl?: boolean; ada_final_invoice?: boolean }>({});
 
   // Ref "salinan terbaru" -- dibaca saat auto-save benar-benar jalan, tapi TIDAK memicu
   // ulang timer debounce-nya (beda dari taruh langsung di dependency array useEffect di bawah).
@@ -530,6 +558,8 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   pibStatsRef.current = pibStats;
   const debugDataRef = useRef(debugData);
   debugDataRef.current = debugData;
+  const docCompletenessFlagsRef = useRef(docCompletenessFlags);
+  docCompletenessFlagsRef.current = docCompletenessFlags;
   // Set true tiap kali doLoad() mengisi values/awbNo/tanggal/namaChecker secara programatis
   // (dari checklist tersimpan ATAU auto-suggest dari dokumen sumber) -- itu BUKAN edit user,
   // jadi auto-save berikutnya yang terpicu oleh pengisian itu harus dilewati sekali saja.
@@ -579,10 +609,21 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
         setDocType(null);
       }
 
+      // Status centang PO/CIPL/Final Invoice dari Document Completeness Checklist -- di-fetch
+      // SEBELUM early-return checklist di bawah, supaya tetap kepakai baik shipment yang sudah
+      // maupun BELUM pernah punya baris tabel_checklist_validasi tersimpan.
+      if (pib_id || cn_id) {
+        const { data: dc } = await supabase.from('dokumen_checklist')
+          .select('ada_po, ada_cipl, ada_final_invoice')
+          .eq(pib_id ? 'pib_id' : 'cn_id', pib_id || cn_id)
+          .maybeSingle();
+        setDocCompletenessFlags({ ada_po: !!dc?.ada_po, ada_cipl: !!dc?.ada_cipl, ada_final_invoice: !!dc?.ada_final_invoice });
+      }
+
       const queryPib_cnid = [];
       if (pib_id) queryPib_cnid.push(`pib_id.eq.${pib_id}`);
       if (cn_id) queryPib_cnid.push(`cn_id.eq.${cn_id}`);
-      
+
       let raw: any = {};
       let docAwb = "";
       
@@ -959,7 +1000,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
        let match = 0, mismatch = 0, partial = 0, empty = 0;
        activeSectionsNow.forEach(s => s.rows.forEach(r => {
            const v = values[r.id] || {src: '', cmp: ''};
-           const stComputed = computeStatus(v.src, v.cmp, r.isFormat, r.field, debugDataNow.raw?.is_po_non_imi);
+           const stComputed = computeStatus(v.src, v.cmp, r.isFormat, r.field, debugDataNow.raw?.is_po_non_imi, getDocChecklistFlag(r.compareDoc, docCompletenessFlagsRef.current));
            const st = v.manual_status || stComputed;
            if (st === "match") match++;
            else if (st === "mismatch") mismatch++;
@@ -1106,14 +1147,14 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     let match = 0, mismatch = 0, partial = 0, empty = 0;
     activeSections.forEach(s => s.rows.forEach(r => {
       const v = values[r.id] || {src: '', cmp: ''};
-      const stComputed = computeStatus(v.src, v.cmp, r.isFormat, r.field, debugData.raw?.is_po_non_imi);
+      const stComputed = computeStatus(v.src, v.cmp, r.isFormat, r.field, debugData.raw?.is_po_non_imi, getDocChecklistFlag(r.compareDoc, docCompletenessFlags));
       const st = v.manual_status || stComputed;
       if (st === "match") match++;
       else if (st === "mismatch") mismatch++;
       else if (st === "partial") partial++;
       else empty++;
     }));
-    
+
     match += pibStats.match;
     mismatch += pibStats.mismatch;
     empty += pibStats.empty;
@@ -1122,13 +1163,13 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     const totalItems = match + mismatch + partial + empty;
     const pct = checked === 0 ? 0 : Math.round((match / checked) * 100);
     return { match, mismatch, partial, empty, checked, pct, total: totalItems };
-  }, [values, activeSections, computeStatus, pibStats, debugData]);
+  }, [values, activeSections, computeStatus, pibStats, debugData, docCompletenessFlags]);
 
   const sectionStats = (section: any) => {
     let m = 0, mm = 0, tot = section.rows.length;
     section.rows.forEach((r: any) => {
       const v = values[r.id] || {src: '', cmp: ''};
-      const stComputed = computeStatus(v.src, v.cmp, r.isFormat, r.field, debugData.raw?.is_po_non_imi);
+      const stComputed = computeStatus(v.src, v.cmp, r.isFormat, r.field, debugData.raw?.is_po_non_imi, getDocChecklistFlag(r.compareDoc, docCompletenessFlags));
       const st = v.manual_status || stComputed;
       if (st === "match") m++;
       else if (st === "mismatch") mm++;
@@ -1532,7 +1573,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                                const otherCostVal = v.otherCost !== undefined && v.otherCost !== null && v.otherCost !== ''
                                  ? v.otherCost
                                  : (debugData.raw?.other_cost_valas ?? '');
-                               const stComputed = computeStatus(v.src, v.cmp, rowMatch.isFormat, rowMatch.field, debugData.raw?.is_po_non_imi);
+                               const stComputed = computeStatus(v.src, v.cmp, rowMatch.isFormat, rowMatch.field, debugData.raw?.is_po_non_imi, getDocChecklistFlag(rowMatch.compareDoc, docCompletenessFlags));
                                const st = v.manual_status || stComputed;
                                const errNpwp = v.cmp && hasNpwpError(rowMatch.id, v.cmp);
                                
