@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
-import { Globe2, Search, RefreshCw, FileDown, FileText, Check, ChevronDown, Pencil, Trash2, X, ArrowUp, ArrowDown, ArrowUpDown, LayoutDashboard, CalendarDays, Download, Printer } from 'lucide-react';
+import { Globe2, Search, RefreshCw, FileDown, FileText, Check, ChevronDown, Pencil, Trash2, X, ArrowUp, ArrowDown, ArrowUpDown, LayoutDashboard, CalendarDays, Download, Printer, FilterX } from 'lucide-react';
 import {
   formatDateTimeID, statusAuditMeta, updateAuditPoOverseasKategori, updateAuditPoOverseasRow, deleteAuditPoOverseasRow,
   KATEGORI_OPTIONS, type AuditPoOverseasRow,
@@ -17,14 +18,32 @@ import Greeting from '../components/Greeting';
 //   DUPLIKASI PERSIS dari AuditPoPage.tsx (Audit AP Local), cuma tabel/page_key/label diganti --
 //   lihat src/utils/AuditPoOverseasHelpers.ts untuk tipe & helper.
 
+// Fallback SEBELUM daftar dinamis (di bawah) selesai di-fetch pertama kali, ATAU kalau fetch-nya
+// gagal -- bukan lagi daftar TETAP (2026-09, REPLIKA PERSIS AuditPoPage.tsx, lihat komentar
+// panjang `fetchDistinctNamaPt()` di sana).
 const PT_OPTIONS = ['AMT', 'GMI', 'TTP', 'MJS', 'WSI', 'WNS', 'GENERAL'];
+
+// Ambil daftar `nama_pt` DISTINCT yang BENERAN ada di tabel -- lihat komentar lengkap versi
+// AuditPoPage.tsx. Dipakai DI 2 TEMPAT: dropdown filter panel utama, DAN seed daftar PT di tab
+// "Per Vendor" modal Dashboard.
+async function fetchDistinctNamaPt(table: string): Promise<string[]> {
+  const { data, error } = await supabase.from(table).select('nama_pt');
+  if (error || !data) return PT_OPTIONS;
+  const set = new Set<string>();
+  data.forEach((r: any) => {
+    const pt = (r.nama_pt || '').trim();
+    if (pt) set.add(pt);
+  });
+  if (set.size === 0) return PT_OPTIONS;
+  return Array.from(set).sort();
+}
 
 function StatusBadge({ status }: { status: string | null }) {
   const meta = statusAuditMeta(status);
   return <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${meta.badgeClass}`}>{meta.label}</span>;
 }
 
-type SortKey = 'created_at' | 'nama_pt';
+type SortKey = 'created_at' | 'nama_pt' | 'kategori';
 
 // Header kolom yang bisa diklik utk sort -- toggle asc/desc, dipakai kolom Tanggal & Waktu dan
 // Nama PT. Sort dilakukan server-side (lihat query.order() di fetchList) karena pagination di
@@ -57,23 +76,74 @@ function PtBadge({ pt }: { pt: string | null }) {
   );
 }
 
+// Pemisah antar kategori kalau lebih dari 1 dipilih -- SAMA pola dgn gabungan PO/vessel di
+// modul lain app ini (tanda "+"), disimpan APA ADANYA sbg 1 string di kolom `kategori` (text,
+// TIDAK ada migrasi skema jadi array/tabel terpisah).
+const KATEGORI_MULTI_SEPARATOR = ' + ';
+function parseKategoriMulti(value: string | null): string[] {
+  return (value || '').split(KATEGORI_MULTI_SEPARATOR).map(s => s.trim()).filter(Boolean);
+}
+
 // Combobox searchable terkontrol utk kategori -- ketik utk filter daftar KATEGORI_OPTIONS, klik
 // utk pilih (bukan free text bebas, sesuai daftar tetap dari user). Dipakai 2 tempat: sel tabel
 // (KategoriCell, auto-save per pilih) & modal Edit (form biasa, disimpan barengan field lain
-// saat klik "Simpan").
-function KategoriPicker({ value, onSelect, disabled, buttonLabel, widthClass = 'w-[220px]', openDirection = 'down' }: {
-  value: string | null; onSelect: (val: string) => void; disabled?: boolean; buttonLabel?: string; widthClass?: string; openDirection?: 'down' | 'up';
+// saat klik "Simpan"). Mode multi (2026-09) -- `value` bisa berisi BEBERAPA kategori sekaligus
+// digabung tanda "+" (`KATEGORI_MULTI_SEPARATOR`), tiap opsi jadi checkbox toggle (dropdown TIDAK
+// otomatis tertutup habis klik satu, supaya user bisa pilih lebih dari 1 sekaligus) --
+// `onSelect` dipanggil dgn STRING GABUNGAN barunya tiap kali toggle.
+// Lebar & estimasi tinggi panel dropdown -- dipakai `updateCoords()` menghitung posisi & arah
+// (atas/bawah) SEBELUM panel benar-benar dirender.
+const KATEGORI_PANEL_W = 280;
+const KATEGORI_PANEL_MAX_H = 260;
+
+function KategoriPicker({ value, onSelect, disabled, buttonLabel, widthClass = 'w-[220px]' }: {
+  value: string | null; onSelect: (val: string) => void; disabled?: boolean; buttonLabel?: string; widthClass?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const wrapRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Posisi panel DIHITUNG SAAT DIBUKA dari posisi tombol di VIEWPORT (2026-09, REPLIKA PERSIS
+  // AuditPoPage.tsx, FIX bug "list kategori kepotong kalau baris tabel cuma sedikit" -- lihat
+  // komentar panjang di sana) -- panel di-render via React Portal ke `document.body`
+  // (`position: fixed`), LEPAS dari `overflow-hidden` kartu tabel manapun, arah buka dihitung
+  // ulang tiap kali dibuka dari sisa ruang viewport asli (bukan tebakan index baris).
+  const [coords, setCoords] = useState<{ left: number; direction: 'up' | 'down'; top?: number; bottom?: number } | null>(null);
+
+  const updateCoords = useCallback(() => {
+    if (!wrapRef.current) return;
+    const rect = wrapRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const direction: 'up' | 'down' = spaceBelow >= KATEGORI_PANEL_MAX_H || spaceBelow >= spaceAbove ? 'down' : 'up';
+    let left = rect.left;
+    if (left + KATEGORI_PANEL_W > window.innerWidth - 8) left = window.innerWidth - KATEGORI_PANEL_W - 8;
+    if (left < 8) left = 8;
+    setCoords(
+      direction === 'down'
+        ? { left, direction, top: rect.bottom + 4 }
+        : { left, direction, bottom: window.innerHeight - rect.top + 4 }
+    );
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updateCoords();
+    window.addEventListener('scroll', updateCoords, true);
+    window.addEventListener('resize', updateCoords);
+    return () => {
+      window.removeEventListener('scroll', updateCoords, true);
+      window.removeEventListener('resize', updateCoords);
+    };
+  }, [open, updateCoords]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        setQuery('');
-      }
+      const target = e.target as Node;
+      if (wrapRef.current?.contains(target)) return;
+      if (panelRef.current?.contains(target)) return;
+      setOpen(false);
+      setQuery('');
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -85,14 +155,15 @@ function KategoriPicker({ value, onSelect, disabled, buttonLabel, widthClass = '
     return KATEGORI_OPTIONS.filter(opt => opt.toLowerCase().includes(q));
   }, [query]);
 
-  const handleSelect = (val: string) => {
-    setOpen(false);
-    setQuery('');
-    if (val !== value) onSelect(val);
+  const selected = useMemo(() => parseKategoriMulti(value), [value]);
+
+  const handleToggle = (val: string) => {
+    const next = selected.includes(val) ? selected.filter(v => v !== val) : [...selected, val];
+    onSelect(next.join(KATEGORI_MULTI_SEPARATOR));
   };
 
   return (
-    <div ref={wrapRef} className={`relative ${widthClass}`}>
+    <div ref={wrapRef} className={widthClass}>
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
@@ -102,8 +173,12 @@ function KategoriPicker({ value, onSelect, disabled, buttonLabel, widthClass = '
         <span className="truncate">{buttonLabel || value || 'Pilih kategori...'}</span>
         <ChevronDown size={12} className="shrink-0 opacity-60" />
       </button>
-      {open && (
-        <div className={`absolute z-30 w-[280px] bg-white rounded-xl border border-slate-200 shadow-lg overflow-hidden ${openDirection === 'up' ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
+      {open && coords && createPortal(
+        <div
+          ref={panelRef}
+          style={{ position: 'fixed', left: coords.left, top: coords.top, bottom: coords.bottom, width: KATEGORI_PANEL_W }}
+          className="z-[9999] bg-white rounded-xl border border-slate-200 shadow-lg overflow-hidden"
+        >
           <div className="p-2 border-b border-slate-100">
             <input
               autoFocus
@@ -117,20 +192,35 @@ function KategoriPicker({ value, onSelect, disabled, buttonLabel, widthClass = '
             {filtered.length === 0 ? (
               <p className="text-[11px] text-[#5A305A]/60 italic text-center py-4">Tidak ada kategori cocok.</p>
             ) : (
-              filtered.map(opt => (
-                <button
-                  key={opt}
-                  type="button"
-                  onClick={() => handleSelect(opt)}
-                  className={`w-full flex items-center gap-1.5 px-3 py-1.5 text-left text-[11px] hover:bg-slate-50 transition-colors ${opt === value ? 'text-[#5A305A] font-semibold bg-slate-50' : 'text-[#5A305A]/80'}`}
-                >
-                  {opt === value ? <Check size={11} className="shrink-0" /> : <span className="w-[11px] shrink-0" />}
-                  <span className="truncate">{opt}</span>
-                </button>
-              ))
+              filtered.map(opt => {
+                const isSelected = selected.includes(opt);
+                return (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => handleToggle(opt)}
+                    className={`w-full flex items-center gap-1.5 px-3 py-1.5 text-left text-[11px] hover:bg-slate-50 transition-colors ${isSelected ? 'text-[#5A305A] font-semibold bg-slate-50' : 'text-[#5A305A]/80'}`}
+                  >
+                    <span className={`w-[13px] h-[13px] shrink-0 rounded border flex items-center justify-center ${isSelected ? 'bg-[#5A305A] border-[#5A305A]' : 'border-slate-300'}`}>
+                      {isSelected && <Check size={9} className="text-white" />}
+                    </span>
+                    <span className="truncate">{opt}</span>
+                  </button>
+                );
+              })
             )}
           </div>
-        </div>
+          <div className="p-1.5 border-t border-slate-100 flex justify-end">
+            <button
+              type="button"
+              onClick={() => { setOpen(false); setQuery(''); }}
+              className="px-3 py-1 rounded-lg text-[11px] font-semibold text-white bg-[#5A305A] hover:bg-[#73507B] transition-colors"
+            >
+              Selesai
+            </button>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -138,7 +228,7 @@ function KategoriPicker({ value, onSelect, disabled, buttonLabel, widthClass = '
 
 // Sel tabel Kategori -- auto-save ke DB per pilih (beda dari picker di modal Edit yang cuma
 // disimpan barengan field lain saat klik "Simpan").
-function KategoriCell({ row, onChanged, canEdit, openDirection = 'down' }: { row: AuditPoOverseasRow; onChanged: (id: string, kategori: string | null) => void; canEdit: boolean; openDirection?: 'down' | 'up' }) {
+function KategoriCell({ row, onChanged, canEdit }: { row: AuditPoOverseasRow; onChanged: (id: string, kategori: string | null) => void; canEdit: boolean }) {
   const [saving, setSaving] = useState(false);
 
   const handleSelect = async (val: string) => {
@@ -159,7 +249,6 @@ function KategoriCell({ row, onChanged, canEdit, openDirection = 'down' }: { row
       disabled={saving}
       buttonLabel={saving ? 'Menyimpan...' : undefined}
       widthClass="w-full"
-      openDirection={openDirection}
     />
   );
 }
@@ -250,7 +339,7 @@ function EditAuditPoOverseasModal({ record, onClose, onSaved }: { record: AuditP
           </div>
           <div>
             <label className="text-xs font-semibold text-[#5A305A] mb-1 block">Kategori</label>
-            <KategoriPicker value={kategori || null} onSelect={setKategori} widthClass="w-full" openDirection="up" />
+            <KategoriPicker value={kategori || null} onSelect={setKategori} widthClass="w-full" />
           </div>
         </div>
 
@@ -463,6 +552,21 @@ function todayIso(): string {
 }
 
 type DashboardStats = { total: number; sesuai: number; bermasalah: number };
+type VendorStat = { pt: string; count: number };
+
+// "Sumbu bagus" utk gridline chart batang tab "Per Vendor" modal Dashboard -- pilih step
+// gridline (10/20/25/50/100/...) berdasar skala nilai maksimum, supaya jumlah garis horizontal
+// wajar (~4-6 garis) apapun skala datanya. REPLIKA PERSIS dari AuditPoPage.tsx (Audit AP Local)
+// -- kalau diubah, ingat sinkronkan ke sana & PiLocalPage.tsx juga.
+function niceAxisStep(maxVal: number): number {
+  const target = Math.max(maxVal, 1) / 4;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(target)));
+  const residual = target / magnitude;
+  if (residual > 5) return 10 * magnitude;
+  if (residual > 2) return 5 * magnitude;
+  if (residual > 1) return 2 * magnitude;
+  return magnitude;
+}
 
 // Geometri pie chart "callout" (garis penunjuk keluar ke label, gaya slide asli) -- dipakai
 // DashboardModal. angleDeg diukur searah jarum jam dari atas (0deg = jam 12), SAMA dgn arah
@@ -478,6 +582,23 @@ function buildPieSlicePath(cx: number, cy: number, r: number, startAngle: number
   return `M ${cx} ${cy} L ${p1.x.toFixed(2)} ${p1.y.toFixed(2)} A ${r} ${r} 0 ${largeArc} 1 ${p2.x.toFixed(2)} ${p2.y.toFixed(2)} Z`;
 }
 
+// Varian lebih terang dari warna hex -- dipakai bikin radial gradient per slice pie (2026-09,
+// REPLIKA PERSIS AuditPoPage.tsx/Audit AP Local -- kalau diubah, ingat sinkronkan ke sana &
+// PiLocalPage.tsx juga) supaya ada kesan highlight/glossy dari tengah ke tepi.
+function lightenHex(hex: string, amount: number): string {
+  const n = parseInt(hex.replace('#', ''), 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const mix = (c: number) => Math.round(c + (255 - c) * amount);
+  return `#${mix(r).toString(16).padStart(2, '0')}${mix(g).toString(16).padStart(2, '0')}${mix(b).toString(16).padStart(2, '0')}`;
+}
+// Varian lebih gelap -- dipakai stroke/rim tiap slice.
+function darkenHex(hex: string, amount: number): string {
+  const n = parseInt(hex.replace('#', ''), 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  const mix = (c: number) => Math.round(c * (1 - amount));
+  return `#${mix(r).toString(16).padStart(2, '0')}${mix(g).toString(16).padStart(2, '0')}${mix(b).toString(16).padStart(2, '0')}`;
+}
+
 // Modal "Dashboard" -- ringkasan poin AP PO Overseas dalam rentang tanggal terpilih (created_at),
 // pola mirip slide "Document Test Overview" yang dipakai tim Cost Controller. Total Running AI =
 // jumlah baris dalam rentang; Total Bermasalah = baris dgn status_audit TIDAK null dalam rentang;
@@ -491,6 +612,27 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Tab ke-2 modal Dashboard: "Per Vendor" (2026-09, REPLIKA PERSIS AuditPoPage.tsx) -- chart
+  // batang jumlah baris per `nama_pt` yang `status_audit`-nya terisi, dalam rentang tanggal SAMA
+  // dgn tab Overview.
+  const [activeTab, setActiveTab] = useState<'overview' | 'vendor' | 'kategori'>('overview');
+  const [vendorStats, setVendorStats] = useState<VendorStat[] | null>(null);
+  const [vendorLoading, setVendorLoading] = useState(true);
+  const [vendorError, setVendorError] = useState<string | null>(null);
+
+  // Tab ke-3 modal Dashboard: "Kategori" (2026-09, permintaan user via screenshot slide
+  // "Kategori Kesalahan Dihitung dari Excel") -- chart batang HORIZONTAL jumlah baris per
+  // `kategori` (bukan per PT), dalam rentang tanggal SAMA dgn 2 tab lain.
+  const [kategoriStats, setKategoriStats] = useState<VendorStat[] | null>(null);
+  const [kategoriLoading, setKategoriLoading] = useState(true);
+  const [kategoriError, setKategoriError] = useState<string | null>(null);
+
+  // Daftar PT DINAMIS (2026-09, lihat `fetchDistinctNamaPt()`) -- dipakai seed tab "Per Vendor".
+  const [ptOptions, setPtOptions] = useState<string[]>(PT_OPTIONS);
+  useEffect(() => {
+    fetchDistinctNamaPt('audit_po_apovs_comp').then(setPtOptions);
+  }, []);
 
   const fetchStats = useCallback(async (from: string, to: string) => {
     setLoading(true);
@@ -511,9 +653,65 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
     setStats({ total, bermasalah, sesuai: total - bermasalah });
   }, []);
 
+  // "GENERAL" dikeluarkan dari chart ini (bukan nama PT spesifik) -- semua `ptOptions` (daftar
+  // DINAMIS, BUKAN LAGI `PT_OPTIONS` hardcode -- 2026-09, FIX bug "Per Vendor belum sync nama
+  // PT") lain selalu jadi baris dgn count default 0 (chart tetap tampil apa adanya walau rentang
+  // kosong).
+  const fetchVendorStats = useCallback(async (from: string, to: string) => {
+    setVendorLoading(true);
+    setVendorError(null);
+    const { data, error: fetchError } = await supabase.from('audit_po_apovs_comp').select('nama_pt')
+      .not('status_audit', 'is', null)
+      .gte('created_at', `${from}T00:00:00`).lte('created_at', `${to}T23:59:59`);
+    setVendorLoading(false);
+    if (fetchError) { setVendorError(fetchError.message); return; }
+
+    const counts: Record<string, number> = {};
+    ptOptions.filter(pt => pt !== 'GENERAL').forEach(pt => { counts[pt] = 0; });
+    (data || []).forEach((r: any) => {
+      const pt = (r.nama_pt || '').trim() || 'TIDAK DIKETAHUI';
+      if (pt === 'GENERAL') return;
+      counts[pt] = (counts[pt] || 0) + 1;
+    });
+    const list = Object.entries(counts)
+      .map(([pt, count]) => ({ pt, count }))
+      .sort((a, b) => b.count - a.count);
+    setVendorStats(list);
+  }, [ptOptions]);
+
+  // `kategori` bisa berisi GABUNGAN beberapa kategori (dipisah " + ", lihat KategoriPicker mode
+  // multi) -- dipecah pakai `parseKategoriMulti()` yang SAMA dipakai combobox-nya, tiap bagian
+  // dihitung TERPISAH (baris "A + B" nambah 1 utk A DAN 1 utk B). HANYA kategori yang BENERAN
+  // muncul di data yang ditampilkan (BEDA dari tab Per Vendor yang selalu seed semua
+  // `PT_OPTIONS` ke 0) -- daftar `KATEGORI_OPTIONS` di halaman ini panjang (istilah
+  // Impor/Overseas), menampilkan SEMUANYA dgn 0 akan bikin chart penuh batang kosong, tidak
+  // sesuai referensi user (cuma tampilkan kategori yang ada datanya, disortir descending).
+  const fetchKategoriStats = useCallback(async (from: string, to: string) => {
+    setKategoriLoading(true);
+    setKategoriError(null);
+    const { data, error: fetchError } = await supabase.from('audit_po_apovs_comp').select('kategori')
+      .not('kategori', 'is', null)
+      .gte('created_at', `${from}T00:00:00`).lte('created_at', `${to}T23:59:59`);
+    setKategoriLoading(false);
+    if (fetchError) { setKategoriError(fetchError.message); return; }
+
+    const counts: Record<string, number> = {};
+    (data || []).forEach((r: any) => {
+      parseKategoriMulti(r.kategori).forEach(k => {
+        counts[k] = (counts[k] || 0) + 1;
+      });
+    });
+    const list = Object.entries(counts)
+      .map(([pt, count]) => ({ pt, count }))
+      .sort((a, b) => b.count - a.count);
+    setKategoriStats(list);
+  }, []);
+
   useEffect(() => {
     fetchStats(appliedFrom, appliedTo);
-  }, [appliedFrom, appliedTo, fetchStats]);
+    fetchVendorStats(appliedFrom, appliedTo);
+    fetchKategoriStats(appliedFrom, appliedTo);
+  }, [appliedFrom, appliedTo, fetchStats, fetchVendorStats, fetchKategoriStats]);
 
   const handleApply = () => {
     setAppliedFrom(dateFrom);
@@ -565,7 +763,7 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
           <div className="flex items-start justify-between gap-3 pl-8">
             <div className="min-w-0">
               <h3 className="font-extrabold text-[#5A305A] text-base leading-tight">
-                Document Test Overview {stats ? `(${formatDateShort(appliedFrom)} - ${formatDateShort(appliedTo)})` : ''}
+                Document Overview {stats ? `(${formatDateShort(appliedFrom)} - ${formatDateShort(appliedTo)})` : ''}
                 <span className="text-rose-500">*</span>
               </h3>
               <h4 className="font-semibold text-slate-800 text-lg mt-1 pb-1 border-b-2 border-slate-800 inline-block">
@@ -593,18 +791,40 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
             />
             <button
               onClick={handleApply}
-              disabled={loading}
+              disabled={loading || vendorLoading}
               className="px-4 py-1.5 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-xs transition-all disabled:opacity-50"
             >
               Terapkan
             </button>
+
+            <div className="ml-auto flex items-center gap-1 bg-slate-200/70 rounded-full p-1">
+              <button
+                onClick={() => setActiveTab('overview')}
+                className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${activeTab === 'overview' ? 'bg-[#5A305A] text-white shadow-sm' : 'text-slate-500 hover:text-[#5A305A]'}`}
+              >
+                Overview
+              </button>
+              <button
+                onClick={() => setActiveTab('vendor')}
+                className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${activeTab === 'vendor' ? 'bg-[#5A305A] text-white shadow-sm' : 'text-slate-500 hover:text-[#5A305A]'}`}
+              >
+                Per Vendor
+              </button>
+              <button
+                onClick={() => setActiveTab('kategori')}
+                className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${activeTab === 'kategori' ? 'bg-[#5A305A] text-white shadow-sm' : 'text-slate-500 hover:text-[#5A305A]'}`}
+              >
+                Kategori
+              </button>
+            </div>
           </div>
 
           {error && (
             <div className="mb-3 p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 break-words">{error}</div>
           )}
 
-          {loading ? (
+          <div className="min-h-[380px] mt-3 flex flex-col justify-center">
+          {activeTab === 'overview' && (loading ? (
             <div className="text-center py-14 text-[#5A305A] text-sm">Memuat data...</div>
           ) : stats ? (
             <div className="flex max-lg:flex-col items-center gap-10 pl-8">
@@ -633,9 +853,11 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
                     Tidak ada data di rentang ini
                   </div>
                 ) : (
-                  <svg width={570} height={300} viewBox="0 0 570 300">
+                  <svg width={600} height={300} viewBox="0 0 600 300">
                     {(() => {
-                      const cx = 285, cy = 150, r = 90;
+                      // r 90->105, cx 285->300 (cx-r TETAP 195, IDENTIK versi lama) -- REPLIKA
+                      // PERSIS AuditPoPage.tsx, lihat komentar lengkap di sana.
+                      const cx = 300, cy = 150, r = 105;
                       let cum = 0;
                       const slices = [
                         { pct: sesuaiPct, color: '#86efac', label: 'PO Sesuai' },
@@ -647,11 +869,27 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
                       });
                       return (
                         <>
-                          {slices.map(s => {
-                            if (s.pct <= 0.05) return null;
-                            if (s.pct >= 99.95) return <circle key={s.label} cx={cx} cy={cy} r={r} fill={s.color} />;
-                            return <path key={s.label} d={buildPieSlicePath(cx, cy, r, s.startAngle, s.endAngle)} fill={s.color} />;
-                          })}
+                          <defs>
+                            <filter id="auditPoOverseasPieShadow" x="-30%" y="-30%" width="160%" height="160%">
+                              <feDropShadow dx="0" dy="6" stdDeviation="6" floodColor="#000000" floodOpacity="0.25" />
+                            </filter>
+                            {slices.map(s => (
+                              <radialGradient key={`grad-${s.label}`} id={`auditPoOverseasPieGrad-${s.label.replace(/\s+/g, '')}`} cx="35%" cy="30%" r="75%">
+                                <stop offset="0%" stopColor={lightenHex(s.color, 0.55)} />
+                                <stop offset="65%" stopColor={s.color} />
+                                <stop offset="100%" stopColor={darkenHex(s.color, 0.12)} />
+                              </radialGradient>
+                            ))}
+                          </defs>
+                          <g filter="url(#auditPoOverseasPieShadow)">
+                            {slices.map(s => {
+                              if (s.pct <= 0.05) return null;
+                              const gradId = `url(#auditPoOverseasPieGrad-${s.label.replace(/\s+/g, '')})`;
+                              const rim = darkenHex(s.color, 0.18);
+                              if (s.pct >= 99.95) return <circle key={s.label} cx={cx} cy={cy} r={r} fill={gradId} stroke={rim} strokeWidth={1.5} />;
+                              return <path key={s.label} d={buildPieSlicePath(cx, cy, r, s.startAngle, s.endAngle)} fill={gradId} stroke={rim} strokeWidth={1.5} strokeLinejoin="round" />;
+                            })}
+                          </g>
                           {slices.map(s => {
                             if (s.pct <= 0.05) return null;
                             const p1 = polarPoint(cx, cy, r, s.midAngle);
@@ -675,9 +913,202 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
                 )}
               </div>
             </div>
-          ) : null}
+          ) : null)}
+
+          {activeTab === 'vendor' && (
+            <VendorTabContent loading={vendorLoading} error={vendorError} stats={vendorStats} />
+          )}
+
+          {activeTab === 'kategori' && (
+            <KategoriTabContent loading={kategoriLoading} error={kategoriError} stats={kategoriStats} />
+          )}
+          </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Tab "Per Vendor" modal Dashboard -- REPLIKA PERSIS AuditPoPage.tsx (Audit AP Local). Kalau
+// diubah, ingat sinkronkan ke sana & PiLocalPage.tsx juga.
+function VendorTabContent({ loading, error, stats }: { loading: boolean; error: string | null; stats: VendorStat[] | null }) {
+  if (error) {
+    return <div className="mb-3 p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 break-words">{error}</div>;
+  }
+  if (loading) {
+    return <div className="text-center py-14 text-[#5A305A] text-sm">Memuat data...</div>;
+  }
+
+  const rows = stats || [];
+
+  const totalDokumen = rows.reduce((sum, s) => sum + s.count, 0);
+  const maxCount = rows.length > 0 ? Math.max(...rows.map(s => s.count)) : 0;
+  const step = maxCount > 0 ? niceAxisStep(maxCount) : 2;
+  const axisTop = maxCount > 0 ? step * Math.ceil(maxCount / step) : 10;
+  const gridlines = Array.from({ length: Math.round(axisTop / step) + 1 }, (_, i) => i * step);
+
+  const W = 640, H = 340;
+  const marginLeft = 50, marginRight = 20, marginTop = 20, marginBottom = 60;
+  const plotW = W - marginLeft - marginRight;
+  const plotH = H - marginTop - marginBottom;
+  const barGap = 18;
+  const barW = Math.min(70, (plotW - barGap * (rows.length + 1)) / rows.length);
+  const scaleY = (val: number) => plotH - (val / axisTop) * plotH;
+
+  const top2 = maxCount > 0 ? rows.slice(0, 2).map(s => s.pt) : [];
+
+  return (
+    <div className="pl-8">
+      <div className="overflow-x-auto">
+        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="max-w-full">
+          <g transform={`translate(${marginLeft},${marginTop})`}>
+            {gridlines.map(v => (
+              <g key={v}>
+                <line x1={0} y1={scaleY(v)} x2={plotW} y2={scaleY(v)} stroke="#e2e8f0" strokeWidth={1} />
+                <text x={-8} y={scaleY(v)} fontSize={11} fill="#64748b" textAnchor="end" dominantBaseline="middle">{v}</text>
+              </g>
+            ))}
+            <line x1={0} y1={plotH} x2={plotW} y2={plotH} stroke="#334155" strokeWidth={1.5} />
+
+            {rows.map((s, i) => {
+              const x = barGap + i * (barW + barGap);
+              const barH = plotH - scaleY(s.count);
+              const y = scaleY(s.count);
+              const valueLabelY = barH < 20 ? y - 6 : y + 16;
+              const valueLabelFill = barH < 20 ? '#5A305A' : '#ffffff';
+              return (
+                <g key={s.pt}>
+                  {barH > 0 && <rect x={x} y={y} width={barW} height={barH} fill="#5A305A" rx={2} />}
+                  <text x={x + barW / 2} y={valueLabelY} fontSize={11} fontWeight={700} fill={valueLabelFill} textAnchor="middle">{s.count}</text>
+                  <text x={x + barW / 2} y={plotH + 18} fontSize={11} fontWeight={600} fill="#334155" textAnchor="middle">{s.pt}</text>
+                </g>
+              );
+            })}
+
+            <text x={plotW / 2} y={plotH + 42} fontSize={11} fill="#64748b" textAnchor="middle">NAMA PT</text>
+            <text x={-marginLeft + 12} y={plotH / 2} fontSize={11} fill="#64748b" textAnchor="middle" transform={`rotate(-90, ${-marginLeft + 12}, ${plotH / 2})`}>Jumlah</text>
+          </g>
+        </svg>
+      </div>
+      <p className="text-xs text-slate-500 mt-3 max-w-2xl">
+        * Key Notes: Visualisasi menunjukkan frekuensi vendor yang sudah masuk pada rentang tanggal
+        terpilih. {top2.length === 2 && (
+          <>Adapun <span className="font-bold">PT {top2[0]}</span> dan <span className="font-bold">PT {top2[1]}</span> yang sering ditemui dalam test atau verifikasi AI. </>
+        )}
+        Total vendor yang sudah uji coba sebanyak <span className="font-bold">{totalDokumen}</span> Dokumen.
+      </p>
+    </div>
+  );
+}
+
+// Pecah label kategori jadi maks 2 baris (greedy word-wrap sederhana) -- dipakai label sumbu Y
+// tabel "Kategori" (2026-09) krn nama kategori bisa panjang (mis. "NOMOR DOKUMEN PURCHASE
+// ORDER"), replika visual referensi user yang label panjangnya wrap 2 baris di kolom label kiri.
+function wrapKategoriLabel(label: string, maxCharsPerLine = 24): string[] {
+  const words = label.split(' ');
+  const lines: string[] = [];
+  let current = '';
+  for (const w of words) {
+    const next = current ? `${current} ${w}` : w;
+    if (next.length > maxCharsPerLine && current) {
+      lines.push(current);
+      current = w;
+    } else {
+      current = next;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.slice(0, 2);
+}
+
+// Tab "Kategori" modal Dashboard (2026-09, permintaan user via screenshot slide "Kategori
+// Kesalahan Dihitung dari Excel") -- chart batang HORIZONTAL jumlah baris per `kategori` (bukan
+// per PT spt tab "Per Vendor"), HANYA kategori yang muncul di data (tidak di-seed 0 spt
+// PT_OPTIONS, lihat komentar `fetchKategoriStats`).
+function KategoriTabContent({ loading, error, stats }: { loading: boolean; error: string | null; stats: VendorStat[] | null }) {
+  if (error) {
+    return <div className="mb-3 p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 break-words">{error}</div>;
+  }
+  if (loading) {
+    return <div className="text-center py-14 text-[#5A305A] text-sm">Memuat data...</div>;
+  }
+
+  const rows = stats || [];
+  if (rows.length === 0) {
+    return <div className="py-14 text-center text-xs text-[#5A305A]/50">Tidak ada kategori tercatat di rentang ini.</div>;
+  }
+
+  const totalDokumen = rows.reduce((sum, s) => sum + s.count, 0);
+  const maxCount = Math.max(...rows.map(s => s.count));
+  const step = niceAxisStep(maxCount);
+  const axisTop = step * Math.ceil(maxCount / step);
+  const gridlines = Array.from({ length: Math.round(axisTop / step) + 1 }, (_, i) => i * step);
+
+  const marginLeft = 190, marginRight = 30, marginTop = 10, marginBottom = 50;
+  const rowH = 42, rowGap = 12;
+  const plotW = 480;
+  const plotH = rows.length * (rowH + rowGap) - rowGap;
+  const W = marginLeft + plotW + marginRight;
+  const H = marginTop + plotH + marginBottom;
+  const scaleX = (val: number) => (val / axisTop) * plotW;
+
+  const top2 = rows.slice(0, 2).map(s => s.pt);
+
+  return (
+    <div className="pl-8">
+      <h4 className="font-bold text-slate-800 text-base mb-1">Kategori Terbanyak</h4>
+      <div className="overflow-x-auto">
+        <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="max-w-full">
+          <g transform={`translate(${marginLeft},${marginTop})`}>
+            {gridlines.map(v => (
+              <line key={v} x1={scaleX(v)} y1={0} x2={scaleX(v)} y2={plotH} stroke="#e2e8f0" strokeWidth={1} />
+            ))}
+            <line x1={0} y1={0} x2={0} y2={plotH} stroke="#334155" strokeWidth={1.5} />
+            <line x1={0} y1={plotH} x2={plotW} y2={plotH} stroke="#334155" strokeWidth={1.5} />
+            {gridlines.map(v => (
+              <text key={`t-${v}`} x={scaleX(v)} y={plotH + 16} fontSize={11} fill="#64748b" textAnchor="middle">{v}</text>
+            ))}
+
+            {rows.map((s, i) => {
+              const y = i * (rowH + rowGap);
+              const barLen = scaleX(s.count);
+              const barCenter = y + rowH / 2;
+              const barTooNarrow = barLen < 26;
+              const lines = wrapKategoriLabel(s.pt);
+              const lineStartY = barCenter - ((lines.length - 1) * 6);
+              return (
+                <g key={s.pt}>
+                  {lines.map((line, li) => (
+                    <text key={li} x={-10} y={lineStartY + li * 12} fontSize={10} fill="#1e293b" textAnchor="end" dominantBaseline="middle">{line}</text>
+                  ))}
+                  <rect x={0} y={y} width={Math.max(barLen, 1)} height={rowH} fill="#5A305A" rx={2} />
+                  <text
+                    x={barTooNarrow ? barLen + 6 : barLen - 8}
+                    y={barCenter}
+                    fontSize={11}
+                    fontWeight={700}
+                    fill={barTooNarrow ? '#5A305A' : '#ffffff'}
+                    textAnchor={barTooNarrow ? 'start' : 'end'}
+                    dominantBaseline="middle"
+                  >
+                    {s.count}
+                  </text>
+                </g>
+              );
+            })}
+
+            <text x={plotW / 2} y={plotH + 38} fontSize={11} fill="#64748b" textAnchor="middle">Jumlah</text>
+            <text x={-marginLeft + 12} y={plotH / 2} fontSize={11} fill="#64748b" textAnchor="middle" transform={`rotate(-90, ${-marginLeft + 12}, ${plotH / 2})`}>Kategori</text>
+          </g>
+        </svg>
+      </div>
+      <p className="text-xs text-slate-500 mt-3 max-w-2xl">
+        * Key Notes: Visualisasi menunjukkan frekuensi mayoritas kategori kesalahan terbanyak pada
+        rentang tanggal terpilih. {top2.length === 2 && (
+          <>Adapun kategori <span className="font-bold">{top2[0]}</span> dan <span className="font-bold">{top2[1]}</span> memiliki tingkat kesalahan yang sering ditemui. </>
+        )}
+        Total kategori tercatat sebanyak <span className="font-bold">{totalDokumen}</span> Dokumen.
+      </p>
     </div>
   );
 }
@@ -699,6 +1130,25 @@ export default function AuditPoOverseasPage() {
   const [kategoriFilter, setKategoriFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+
+  // Opsi dropdown filter PT -- DINAMIS dari data asli (2026-09, lihat `fetchDistinctNamaPt()`).
+  const [ptOptions, setPtOptions] = useState<string[]>(PT_OPTIONS);
+  useEffect(() => {
+    fetchDistinctNamaPt('audit_po_apovs_comp').then(setPtOptions);
+  }, []);
+
+  // Reset semua filter panel (search/PT/Kategori/rentang tanggal) sekaligus ke default kosong
+  // (2026-09, permintaan user, tombol ikon polos tanpa teks) -- TIDAK menyentuh `sortBy`/
+  // `sortDir`/`pageSize`, itu bukan "filter" tapi preferensi tampilan/urutan tabel.
+  const handleResetFilters = () => {
+    setSearchInput('');
+    setSearch('');
+    setPtFilter('');
+    setKategoriFilter('');
+    setDateFrom('');
+    setDateTo('');
+    setPage(1);
+  };
 
   const [sortBy, setSortBy] = useState<SortKey>('created_at');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -741,13 +1191,18 @@ export default function AuditPoOverseasPage() {
   const fetchList = useCallback(async () => {
     setLoadingList(true);
     const startIndex = (page - 1) * pageSize;
-    let query = supabase.from('audit_po_apovs_comp').select('*', { count: 'exact' }).order(sortBy, { ascending: sortDir === 'asc' });
+    // nullsFirst: false -- baris tanpa kategori (null) SELALU di bawah, baik ASC maupun DESC
+    // (2026-09, lihat catatan sama di AuditPoPage.tsx).
+    let query = supabase.from('audit_po_apovs_comp').select('*', { count: 'exact' }).order(sortBy, { ascending: sortDir === 'asc', nullsFirst: false });
     if (search.trim()) {
       const s = search.trim().replace(/[%,]/g, '');
       query = query.or(`nomor_po.ilike.%${s}%,vendor_name.ilike.%${s}%`);
     }
     if (ptFilter) query = query.eq('nama_pt', ptFilter);
-    if (kategoriFilter) query = query.eq('kategori', kategoriFilter);
+    // .ilike (bukan .eq) -- 2026-09, sejak kolom `kategori` bisa berisi GABUNGAN beberapa
+    // kategori (dipisah " + ", lihat KategoriPicker mode multi), exact match akan gagal cocok
+    // ke baris yang kategori-nya digabung dgn kategori lain.
+    if (kategoriFilter) query = query.ilike('kategori', `%${kategoriFilter}%`);
     if (dateFrom) query = query.gte('created_at', `${dateFrom}T00:00:00`);
     if (dateTo) query = query.lte('created_at', `${dateTo}T23:59:59`);
     const { data, error, count } = await query.range(startIndex, startIndex + pageSize - 1);
@@ -848,7 +1303,7 @@ export default function AuditPoOverseasPage() {
                   className="rounded-full px-3 py-2 border border-slate-200 bg-white text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer shrink-0"
                 >
                   <option value="">Semua PT</option>
-                  {PT_OPTIONS.map(pt => <option key={pt} value={pt}>{pt}</option>)}
+                  {ptOptions.map(pt => <option key={pt} value={pt}>{pt}</option>)}
                 </select>
                 <select
                   value={kategoriFilter}
@@ -886,6 +1341,13 @@ export default function AuditPoOverseasPage() {
                   className="p-2 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] transition-all flex items-center justify-center shrink-0 disabled:opacity-50 h-[34px] w-[34px]"
                 >
                   <RefreshCw size={14} className={loadingList ? 'animate-spin' : ''} />
+                </button>
+                <button
+                  onClick={handleResetFilters}
+                  title="Reset Filter"
+                  className="p-2 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] transition-all flex items-center justify-center shrink-0 h-[34px] w-[34px]"
+                >
+                  <FilterX size={14} />
                 </button>
                 <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0">
                   <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">Items</span>
@@ -926,7 +1388,9 @@ export default function AuditPoOverseasPage() {
                   <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Nomor PO</th>
                   <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Vendor</th>
                   <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Status Audit</th>
-                  <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Kategori</th>
+                  <th className="text-left px-3 py-2.5 whitespace-nowrap">
+                    <SortableHeader label="Kategori" sortKey="kategori" activeSort={sortBy} activeDir={sortDir} onSort={handleSort} />
+                  </th>
                   <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Durasi</th>
                   <th className="text-center font-semibold px-3 py-2.5 whitespace-nowrap sticky right-0 top-0 bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-20 border-l border-slate-200">Aksi</th>
                 </tr>
@@ -937,7 +1401,7 @@ export default function AuditPoOverseasPage() {
                 ) : rows.length === 0 ? (
                   <tr><td colSpan={8} className="text-center py-10 text-[#5A305A] text-sm italic">Belum ada data Audit AP Overseas.</td></tr>
                 ) : (
-                  rows.map((r, idx) => (
+                  rows.map((r) => (
                     <tr key={r.id} className="group bg-white hover:bg-slate-50 transition-colors">
                       <td className="px-3 py-3 align-top text-[#5A305A] break-words">{formatDateTimeID(r.created_at)}</td>
                       <td className="px-3 py-3 align-top"><PtBadge pt={r.nama_pt} /></td>
@@ -946,7 +1410,7 @@ export default function AuditPoOverseasPage() {
                       <td className="px-3 py-3 align-top"><StatusBadge status={r.status_audit} /></td>
                       {/* Baris dekat bawah tabel buka dropdown ke ATAS -- lihat catatan sama di
                           AuditPoPage.tsx (2026-09, porting fix "kategori tidak terlihat"). */}
-                      <td className="px-3 py-3 align-top"><KategoriCell row={r} onChanged={handleKategoriChanged} canEdit={canEditAuditPoOverseas} openDirection={idx >= rows.length - 3 ? 'up' : 'down'} /></td>
+                      <td className="px-3 py-3 align-top"><KategoriCell row={r} onChanged={handleKategoriChanged} canEdit={canEditAuditPoOverseas} /></td>
                       <td className="px-3 py-3 align-top text-[#5A305A] truncate" title={r.durasi_text || undefined}>{r.durasi_text || '-'}</td>
                       <td className="px-2 py-3 align-top sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-10 border-l border-slate-200 transition-colors">
                         <div className="flex flex-col items-center gap-1.5 w-[92px] mx-auto">

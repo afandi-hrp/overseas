@@ -2682,6 +2682,13 @@ user) — panel filter langsung jadi header card, `justify-end`.
     modals` di atas, tapi tetap dikasih `focus()` jaga-jaga konsisten di kedua kasus). **Sudah
     di-porting ke ke-3 halaman** (`AuditPoPage.tsx`, `AuditPoOverseasPage.tsx`,
     `PiLocalPage.tsx`) — `PreviewModal` duplikasi persis di ketiganya.
+- **Tombol "Reset Filter" (2026-09, permintaan user, ikon polos tanpa teks)** — `FilterX` dari
+  `lucide-react`, ditaruh tepat setelah tombol Refresh di panel filter (search/PT/Kategori/
+  rentang tanggal). `handleResetFilters()` mengosongkan `searchInput`/`search`/`ptFilter`/
+  `kategoriFilter`/`dateFrom`/`dateTo` sekaligus + reset `page` ke 1 — SENGAJA TIDAK menyentuh
+  `sortBy`/`sortDir`/`pageSize` (itu preferensi tampilan/urutan tabel, bukan "filter"). Diterapkan
+  di KETIGA halaman (`AuditPoPage.tsx`/`AuditPoOverseasPage.tsx`/`PiLocalPage.tsx`), pola identik
+  persis — tiap halaman py salinan `handleResetFilters` sendiri (TIDAK ada komponen shared).
 - Pagination **server-side** (`.select('*', { count: 'exact' }).range(...)`) karena tabel terus
   bertambah — beda dari kebanyakan halaman admin lain di app ini yang client-side paginated.
   Filter: search (debounced 400ms) ke `nomor_po`/`vendor_name` via `.ilike`, dropdown `nama_pt`
@@ -2735,6 +2742,31 @@ user) — panel filter langsung jadi header card, `justify-end`.
   di CLAUDE.md, cuma fix spesifik ini yg diketahui) — kalau nanti ada laporan bug serupa di
   halaman lain yg pakai pola dropdown absolute-positioned di dalam card `overflow-hidden`, ini
   contoh fix-nya (buka ke arah berlawanan utk elemen dekat tepi container yg clip).
+  **FIX TUNTAS via React Portal (2026-09, laporan user + screenshot: "saat barisnya cuma 1/2/3,
+  list kategorinya kepotong")** — versi fix di atas (tebak arah dari INDEX baris, `idx >=
+  rows.length - 3 ? 'up' : 'down'`) TERNYATA masih SALAH kalau baris TOTAL SEDIKIT (1-3 baris):
+  SEMUA baris kena kondisi itu (jadi buka ke ATAS), padahal baris-baris itu ADA DI PALING ATAS
+  tabel, TIDAK PUNYA ruang cukup DI ATAS-nya sebelum mentok panel filter/toolbar — dropdown-nya
+  malah kepotong ke ATAS (arah baru, bug lama yg "kepotong ke bawah" sudah tidak terjadi lagi,
+  cuma pindah arah). Akar masalah SEBENARNYA: dropdown selama ini `position: absolute` relatif
+  ke DALAM card `overflow-hidden` yang sama, jadi APAPUN arahnya (atas/bawah) tetap bisa kena
+  clip kalau kartu tabelnya terlalu pendek (baris dikit) utk menampung tinggi dropdown penuh di
+  arah manapun. **Fix TUNTAS**: `KategoriPicker` sekarang di-render lewat **React Portal ke
+  `document.body`** (`createPortal`, `position: fixed`) — LEPAS TOTAL dari `overflow-hidden` card
+  manapun, arah buka (atas/bawah) DIHITUNG ULANG tiap kali dropdown dibuka dari
+  `getBoundingClientRect()` tombol vs `window.innerHeight` (`updateCoords()`, effect
+  `useLayoutEffect` + listener `scroll`/`resize` selagi terbuka) — BUKAN lagi ditebak dari index
+  baris tabel, jadi BENAR utk berapa pun jumlah baris totalnya (1 baris, 3 baris, ratusan baris).
+  Prop `openDirection` (di `KategoriPicker` MAUPUN `KategoriCell`) **DIHAPUS TOTAL** dari
+  signature-nya (sudah tidak relevan) — SEMUA pemanggil (`KategoriCell` di `<td>` tabel,
+  `KategoriPicker` langsung di `EditAuditPoModal`/`EditAuditPoOverseasModal`/`EditPiLocalModal`)
+  ikut disederhanakan, tidak mengirim prop itu lagi. Klik-di-luar-utk-tutup (`mousedown`
+  listener) disesuaikan supaya cek klik di DALAM panel yg sekarang di DOM terpisah (`panelRef`,
+  BUKAN cuma `wrapRef` yg membungkus tombol) — tanpa ini, klik di dalam panel portal akan
+  ke-anggap "di luar" & dropdown langsung tertutup sendiri. Diterapkan IDENTIK PERSIS di KETIGA
+  halaman (`AuditPoPage.tsx`/`AuditPoOverseasPage.tsx`/`PiLocalPage.tsx`) — TIDAK ada komponen
+  shared, tiap halaman py salinan `KategoriPicker` sendiri, kalau diubah lagi ingat porting
+  manual ke 2 lainnya.
 - **Kolom Durasi disembunyikan (2026-09, permintaan user)** — `src/pages/PiLocalPage.tsx`, tabel
   List PI Local: `<th>`/`<td>` kolom Durasi (`r.durasi_text`) DIHAPUS dari render (bukan cuma
   `hidden`/CSS), `<colgroup>` (9 `<col>`, sebelumnya 10) & `colSpan` empty-state (`9`, sebelumnya
@@ -2770,7 +2802,12 @@ user) — panel filter langsung jadi header card, `justify-end`.
 - **Tombol "Dashboard" + `DashboardModal`** (2026-09, tombol di panel filter, PALING KIRI —
   sempat dicoba di `ml-auto`/ujung kanan lebih dulu, DIGANTI atas permintaan user; panel filter
   halaman ini pakai `overflow-x-auto` bukan `flex-wrap` supaya tetap muat 1 baris di layar 14")
-  — buka modal ringkasan poin ala slide internal "Document Test Overview" tim Cost Controller.
+  — buka modal ringkasan poin ala slide internal tim Cost Controller. Judul tab Overview di
+  dalam modal ini SEMPAT bernama "Document Test Overview", **DIGANTI (2026-09, permintaan
+  eksplisit user) jadi "Document Overview"** — di KETIGA halaman (`AuditPoPage.tsx`/
+  `AuditPoOverseasPage.tsx`/`PiLocalPage.tsx`), cuma teks JSX yang tampil ke user yang diubah;
+  komentar kode ("mengikuti gaya slide 'Document Test Overview'" dkk) SENGAJA DIBIARKAN apa
+  adanya (bukan teks tampilan, di luar cakupan permintaan ini).
   Filter rentang tanggal (`created_at`, default 7 hari terakhir) → 3 angka + pie chart: **Total
   PO Running AI** = count baris dalam rentang, **Total PO Bermasalah** = count baris dalam
   rentang dgn `status_audit` TIDAK null, **Total PO Sesuai** = selisih keduanya (dihitung di
@@ -2825,12 +2862,227 @@ user) — panel filter langsung jadi header card, `justify-end`.
   container list+pie ini lagi (sudah terbukti bikin layout aneh di percobaan sebelumnya), cukup
   sesuaikan `max-w-*` modal + lebar list/ukuran pie bareng² secara proporsional, dan tetap cek
   muat di layar 14" (`92vh` scroll fallback masih ada, tapi usahakan tidak sampai kepakai).
+- **Efek "3D" pada pie + pie diperbesar sedikit (2026-09, permintaan user "seperti 3D... terlihat
+  lebih hidup" + "agak dibesarkan sedikit")** — BUKAN elips/ekstrusi beneran (geometri lingkaran
+  penuh TETAP dipertahankan, krn semua perhitungan garis callout label — `polarPoint`, kink
+  `r+18`, leader 45px, dst — asumsikan lingkaran utuh; kalau di-squash jadi elips lewat transform
+  `scaleY`, callout line & posisi label akan salah/miring). Efek 3D dicapai via kombinasi murni
+  SVG `<defs>` tanpa mengubah geometri:
+  1. **Radial gradient per slice** (`auditPoPieGrad-<label>`, `cx=35% cy=30% r=75%`) — terang
+     (`lightenHex(color, 0.55)`) di titik offset atas-kiri lalu memudar ke warna asli di tengah
+     lalu sedikit lebih gelap (`darkenHex(color, 0.12)`) di tepi terluar — ilusi cahaya jatuh dari
+     satu arah spt permukaan bola/dome, bukan flat fill polos.
+  2. **Drop-shadow** (`<filter id="auditPoPieShadow"><feDropShadow dy=6 stdDeviation=6
+     floodOpacity=.25/></filter>`, dipasang di `<g filter="url(#auditPoPieShadow)">` yang
+     membungkus SEMUA slice) — kesan piringan "terangkat" dari background modal.
+  3. **Rim/garis tepi lebih gelap** (`stroke={darkenHex(color, 0.18)}`, `strokeWidth={1.5}`,
+     `strokeLinejoin="round"`) di tiap slice — batas antar slice lebih tegas, bukan menyatu flat.
+  `lightenHex(hex, amount)`/`darkenHex(hex, amount)` (helper module-level baru, dekat
+  `buildPieSlicePath`) — mix RGB manual ke arah putih/hitam sebesar `amount` (0-1), generik utk
+  slice warna apa pun (BUKAN hardcode 2 warna sesuai/bermasalah saat ini) kalau nanti nambah
+  slice ke-3.
+  **Ukuran pie diperbesar**: `r` 90 → **105** (~+17%). `cx` digeser 285 → **300**, `viewBox`/
+  `svg width` 570 → **600** — SENGAJA supaya `cx - r` (margin kiri ke tepi callout) TETAP PERSIS
+  195 (IDENTIK dgn versi lama 285-90), dan margin kanan (`width - cx`) juga tetap 300 simetris —
+  jadi jarak aman ke garis callout label TIDAK BERUBAH sama sekali walau pie-nya lebih besar
+  (semua offset callout — `r+18`, leader 45px, gap 6px, lebar teks — pakai piksel ABSOLUT bukan
+  relatif ke `r`, jadi asal `cx-r` dipertahankan konstan, buffer amannya ikut konstan juga —
+  TIDAK PERLU hitung ulang margin dari nol spt peringatan sebelumnya, cukup jaga `cx-r` = 195).
+  **Kalau nanti mau perbesar/perkecil pie lagi, GESER `cx` sebesar perubahan `r` (jangan ubah
+  salah satu saja)** supaya `cx-r` tetap 195 dan lebar svg ikut disesuaikan `2*cx`.
+  **Sudah DI-PORTING ke `AuditPoOverseasPage.tsx` (Audit AP Overseas) & `PiLocalPage.tsx` (PI
+  Local)** juga (2026-09, permintaan eksplisit user) — pola IDENTIK PERSIS (`lightenHex`/
+  `darkenHex`/gradient/shadow/rim/ukuran `r=105`,`cx=300`), cuma id `<filter>`/`<radialGradient>`
+  diberi prefix beda per halaman (`auditPoPieShadow`/`auditPoOverseasPieShadow`/
+  `piLocalPieShadow`, dst) supaya tidak bentrok kalau ada kemungkinan (meski tidak akan pernah)
+  2 modal render bersamaan di DOM yang sama. TIDAK ada komponen shared — tiap halaman py salinan
+  `lightenHex`/`darkenHex`/pie SVG sendiri (sesuai pola duplikasi arsitektur ketiga halaman ini) —
+  kalau nanti efek 3D/ukuran pie diubah lagi di satu halaman, ingat porting manual ke 2 lainnya.
+- **Tab ke-2 modal Dashboard: "Per Vendor" (2026-09, chart batang, permintaan user via
+  screenshot slide "Cost Controller - AP Local")** — modal Dashboard SEKARANG punya 2 tab (state
+  `activeTab: 'overview' | 'vendor'`, tombol pill switcher `ml-auto` di baris filter tanggal,
+  paling kanan): **Overview** (pie chart yang sudah ada, TIDAK diubah) & **Per Vendor** (BARU) —
+  chart BATANG jumlah baris PER `nama_pt` yang `status_audit`-nya SUDAH TERISI (bukan null/
+  kosong) dalam rentang tanggal yang SAMA dgn tab Overview (fetch dipanggil bareng
+  `fetchStats`/`fetchVendorStats` sekaligus tiap kali "Terapkan" diklik, bukan lazy per-tab).
+  - `fetchVendorStats()` — `select('nama_pt')` SAJA (bukan `select('*')`, ringan) dari
+    `audit_po_ap_comp` yg `status_audit` tidak null dalam rentang, dikelompokkan & dihitung DI
+    CLIENT (aman krn jumlah PT tetap kecil, `PT_OPTIONS` cuma 7 opsi) — bukan lewat RPC agregasi
+    terpisah. Hasil disortir DESCENDING by count (`VendorStat[]`).
+  - `niceAxisStep(maxVal)` (helper module-level baru, generik, REPLIKA pola umum "nice numbers"
+    axis chart) — pilih step gridline (10/20/25/50/100/...) dari skala nilai maksimum supaya
+    jumlah garis horizontal wajar (~4-6 garis) apapun skalanya, TIDAK di-hardcode ke 0/50/100/
+    150/200 spt di contoh screenshot user (itu kebetulan skala datanya, bukan angka tetap).
+  - `VendorTabContent` (komponen terpisah, bukan inline di `DashboardModal`) — render chart
+    batang SVG manual (SAMA pola dgn pie chart Overview — TIDAK ada library chart baru
+    ditambahkan ke project, cek dulu `package.json` kalau mau nambah nanti). Tiap batang warna
+    solid `#5A305A` (brand app, BUKAN teal spt contoh screenshot — disesuaikan ke warna brand),
+    label jumlah PUTIH di dalam batang dekat puncak, label nama PT di bawah sumbu X. Judul kecil
+    `<h4>` "Jumlah Vendor Berdasarkan Dokumen Yang Masuk" di atas chart **DIHAPUS (2026-09,
+    permintaan eksplisit user)** di KETIGA halaman — chart langsung tampil tanpa judul tab
+    tambahan itu (nama tab pill "Per Vendor" di toolbar sudah cukup menjelaskan konteksnya).
+    Footnote Key Notes REPLIKA kalimat di slide contoh ("PT X dan PT Y yang sering ditemui...",
+    "Total vendor ... sebanyak N Dokumen") — 2 PT tersering DIHITUNG DINAMIS (2 teratas dari list yg sudah
+    disortir descending), BUKAN hardcode "WNS"/"MJS" spt di contoh gambar.
+  - **Susulan (2026-09, permintaan user)**: kalau rentang tanggal kosong/tidak ada dokumen
+    bermasalah sama sekali, chart TETAP TAMPIL apa adanya (BUKAN lagi pesan "Tidak ada data di
+    rentang ini" polos) — SEMUA `PT_OPTIONS` **KECUALI "GENERAL"** (susulan permintaan user,
+    bukan nama PT spesifik jadi tidak relevan ditampilkan per-vendor — di-filter di 2 titik:
+    seed nilai 0 & saat menambah count dari hasil query) selalu jadi baris `VendorStat` dari
+    `fetchVendorStats()` dgn `count` default `0` (di-seed duluan SEBELUM loop hasil query
+    menambah count-nya), PT yang muncul di data tapi tidak ada di `PT_OPTIONS` (`'TIDAK
+    DIKETAHUI'`) tetap ikut ditambahkan kalau kebetulan ada. Batang setinggi 0 dirender sbg
+    `<rect>` KOSONG (tidak digambar, `barH > 0` guard) TAPI label angka "0"-nya TETAP tampil,
+    dipindah posisi ke ATAS titik dasar batang (bukan "di dalam batang dekat puncak" spt batang
+    normal — kalau tetap di posisi lama, akan numpuk sama label nama PT di bawah sumbu X krn
+    tinggi batangnya 0). Skala sumbu Y placeholder `0-10` (step `2`) dipakai KHUSUS saat SEMUA
+    nilai 0 (`niceAxisStep(0)` kalau dipakai apa adanya menghasilkan skala pecahan aneh, lihat
+    guard `maxCount > 0 ? niceAxisStep(maxCount) : 2` di kode). Kalimat Key Notes "PT X dan PT Y
+    yang sering ditemui" HANYA muncul kalau `maxCount > 0` (kalau semua PT 0, klaim "sering
+    ditemui" tidak masuk akal — tidak ada satu kejadian pun), kalimat "Total vendor ... sebanyak
+    N Dokumen" TETAP selalu muncul (N boleh 0).
+  - **Susulan lagi (2026-09, permintaan user "ukuran modal per tab jangan beda-beda")** — konten
+    KEDUA tab (`Overview` pie chart & `Per Vendor` batang) dibungkus 1 wrapper
+    `min-h-[380px] flex flex-col justify-center` yang SAMA (di `DashboardModal`, membungkus
+    kondisional `activeTab === 'overview' ? (...) : ...`, BUKAN 2 wrapper terpisah per tab) —
+    modal ini `max-h-[92vh] overflow-y-auto` (tinggi total ikut konten di dalamnya), SEBELUM fix
+    ini tinggi natural pie-chart+panel-poin vs chart-batang beda, jadi ukuran modal "meloncat"
+    tiap ganti tab. `min-h` yang sama di titik itu membuat modal TIDAK PERNAH lebih pendek dari
+    380px di tab manapun/kondisi manapun (loading/error/data-kosong/data-normal), `justify-center`
+    supaya konten yang secara alami lebih pendek dari 380px tetap rata tengah vertikal (bukan
+    nempel ke atas, kelihatan kurang rapi kalau dibiarkan nempel atas). **Susulan (2026-09,
+    permintaan user "naikkan sedikit margin antara tab halaman dan tulisan Poin yang
+    diperoleh")** — wrapper ini ditambah `mt-3` (jadi `min-h-[380px] mt-3 flex flex-col
+    justify-center`) di KETIGA halaman — jarak dari baris tab pill (Overview/Per Vendor/
+    Kategori) ke konten pertama di bawahnya (teks "Poin yang diperoleh" di tab Overview, atau
+    chart di tab lain) jadi sedikit lebih lega, sebelumnya nempel rapat ke garis pembatas
+    `border-b` panel filter tanggal.
+  - **Susulan (2026-09, permintaan user "warna tab aktif diganti ungu yang ada di aplikasi
+    ini")** — tab pill AKTIF (Overview/Per Vendor/Kategori) di dalam grup switcher
+    (`bg-slate-200/70 rounded-full`) diganti dari `bg-white text-[#5A305A] shadow-sm` (pill putih
+    + teks ungu) jadi **`bg-[#5A305A] text-white shadow-sm`** (pill solid ungu brand + teks
+    putih) — konsisten dgn pola tombol aksi utama app ini (mis. tombol "Terapkan" di baris yang
+    sama, `bg-[#5A305A] hover:bg-[#73507B] text-white`). Tab TIDAK aktif TIDAK berubah
+    (`text-slate-500 hover:text-[#5A305A]`, tanpa background). Diterapkan di KETIGA halaman, 3
+    tombol tiap halaman (9 titik total).
+  - **Susulan (2026-09) — sudah DI-PORTING ke `AuditPoOverseasPage.tsx` (Audit AP Overseas, tabel
+    `audit_po_apovs_comp`) & `PiLocalPage.tsx` (PI Local, tabel `audit_po_pi_local_comp`)**, atas
+    permintaan eksplisit user — pola IDENTIK PERSIS di ketiga halaman
+    (`niceAxisStep`/`VendorTabContent`/`fetchVendorStats`/tab switcher/wrapper `min-h-[380px]`,
+    termasuk exclude "GENERAL"), cuma nama tabel Supabase yang beda per halaman. Kalau nanti
+    formula/UI tab ini diubah lagi di salah satu halaman, ingat porting manual ke 2 lainnya —
+    TIDAK ada komponen shared, tiap halaman py salinan `DashboardModal`/`VendorTabContent`
+    sendiri (sesuai pola duplikasi arsitektur ketiga halaman ini, lihat "Audit AP Overseas" di
+    atas).
 - **Filter tanggal panel utama** (2026-09, DISELARASKAN dgn gaya date-range filter Sea & Air di
   `SharedDataTable.tsx`) — dari 2 `<input type="date">` terpisah + teks "s/d" polos, diganti jadi
   1 pill (`CalendarDays` icon + 2 input tanggal + separator "–" + tombol clear `X` kalau salah
   satu terisi), pola & lebar input (`w-[100px]`) SAMA PERSIS dgn filter tanggal Audit/Rekapan
   Sea & Air. Tombol Refresh jadi ICON-ONLY (teks "Refresh" dihapus, tetap ada `title` attribute
   utk aksesibilitas/tooltip browser).
+- **Kolom Kategori — bisa pilih LEBIH DARI 1 kategori sekaligus (2026-09)** — `KategoriPicker`
+  (dipakai `KategoriCell` di kolom tabel maupun form `EditAuditPoModal`) diubah dari single-select
+  (klik 1 opsi → langsung tersimpan & dropdown tertutup) jadi **multi-select**: tiap opsi jadi
+  checkbox toggle (ikon centang di kotak kecil, bukan lagi `Check` polos di sebelah 1 opsi
+  terpilih), dropdown TIDAK otomatis tertutup habis klik satu opsi — ada tombol **"Selesai"** di
+  footer dropdown utk menutup manual setelah selesai pilih beberapa. Kategori yang dipilih
+  disimpan sbg **1 string digabung tanda `" + "`** (`KATEGORI_MULTI_SEPARATOR`, helper
+  `parseKategoriMulti()` utk parse balik ke array saat render checkbox) di kolom `kategori` yang
+  SAMA (text, TIDAK ada migrasi skema jadi array/tabel terpisah — kolom `audit_po_ap_comp.
+  kategori` tetap 1 kolom text apa adanya). `KategoriCell` (auto-save per pilih) tetap panggil
+  `updateAuditPoKategori(row.id, val)` PERSIS sama, cuma `val` sekarang bisa berisi gabungan
+  ("A + B") bukan cuma 1 nilai — tidak perlu ubah fungsi itu sendiri.
+  Kolom tabel & form Edit menampilkan hasilnya APA ADANYA (`row.kategori`/`value`, truncate kalau
+  panjang) — tidak ada perubahan tampilan selain sumber datanya sekarang bisa string gabungan.
+  **Susulan wajib**: filter dropdown Kategori di panel filter (`kategoriFilter`) diganti dari
+  `.eq('kategori', kategoriFilter)` → **`.ilike('kategori', '%'+kategoriFilter+'%')`** — exact
+  match akan GAGAL cocok ke baris yang kategori-nya sekarang gabungan (mis. filter pilih "PN
+  NUMBER" tapi baris tersimpan "CIF - Nilai Pabean + PN Number" — `.eq` tidak akan
+  ketemu, `.ilike` contains akan ketemu).
+  **Susulan (2026-09) — sudah DI-PORTING ke `AuditPoOverseasPage.tsx` (Audit AP Overseas) &
+  `PiLocalPage.tsx` (PI Local)** juga, atas permintaan eksplisit user — pola IDENTIK PERSIS di
+  ketiga halaman (`KATEGORI_MULTI_SEPARATOR`/`parseKategoriMulti()`/`KategoriPicker` mode
+  checkbox multi + tombol "Selesai" + filter `.eq`→`.ilike`), sesuai duplikasi arsitektur ketiga
+  halaman ini yang sudah didokumentasikan (lihat "Audit AP Overseas" di bawah). Kalau nanti
+  formula/UI mode multi ini diubah lagi di salah satu halaman, ingat porting manual ke 2 lainnya
+  — TIDAK ada komponen shared, tiap halaman py salinan `KategoriPicker`/`KategoriCell` sendiri.
+
+## Kolom Kategori sortable (2026-09, ketiga halaman)
+
+Permintaan user: kolom **Kategori** di tabel List (`AuditPoPage.tsx`/`AuditPoOverseasPage.tsx`/
+`PiLocalPage.tsx`) sekarang bisa di-sort, sama seperti kolom "Tanggal & Waktu"/"Nama PT" yang
+sudah lebih dulu punya `SortableHeader`. Sort di ketiga halaman ini SERVER-SIDE (`query.order()`
+di `fetchList`, karena pagination-nya server-side, lihat bagian "Audit AP Local" di atas) — jadi
+menambah kolom sort baru CUKUP 2 langkah, TIDAK perlu logic tambahan apa pun:
+1. `type SortKey` diperluas dari `'created_at' | 'nama_pt'` → **`'created_at' | 'nama_pt' |
+   'kategori'`**.
+2. `<th>` Kategori (sebelumnya `<th className="...">Kategori</th>` polos) dibungkus
+   `<SortableHeader label="Kategori" sortKey="kategori" activeSort={sortBy}
+   activeDir={sortDir} onSort={handleSort} />` — komponen `SortableHeader` & handler
+   `handleSort`/state `sortBy`/`sortDir` SUDAH ADA (dipakai kolom "Tanggal & Waktu"/"Nama PT"),
+   tidak perlu ditulis ulang.
+
+`query.order(sortBy, { ascending: sortDir === 'asc' })` generik baca `sortBy` apa adanya (string
+literal nama kolom), jadi otomatis ikut sort by `kategori` tanpa perlu cabang kondisi tambahan.
+**Catatan urutan sort utk kolom `kategori` yang isinya bisa GABUNGAN multi-kategori** (`"A + B"`,
+lihat bagian "Kolom Kategori — bisa pilih LEBIH DARI 1 kategori" di atas) — sort ini murni
+`ORDER BY kategori` alfabetis di Postgres terhadap STRING GABUNGAN apa adanya (bukan per-kategori
+individual di dalam gabungan itu), jadi baris dgn kategori gabungan diurutkan berdasar huruf
+pertama string gabungannya, bukan diurai dulu — WAJAR & konsisten dgn cara filter `.ilike` yang
+sudah ada (juga baca string gabungan apa adanya), bukan bug.
+
+Diterapkan IDENTIK di ketiga halaman — TIDAK ada komponen shared, tiap halaman py salinan
+`type SortKey`/`<SortableHeader>` sendiri, kalau nanti ditambah kolom sort lain lagi ingat
+porting manual ke 2 lainnya.
+
+**Bug susulan diperbaiki (2026-09, laporan user + screenshot)**: sort ASC kolom Kategori taruh
+baris TANPA kategori (`null`) di PALING ATAS — ini perilaku DEFAULT Postgres utk `ORDER BY ...
+ASC` (NULL dianggap "lebih besar" dari string apa pun, jadi nongol duluan pas ASC), BUKAN yang
+diinginkan user (harusnya baris kosong SELALU di bawah, apa pun arah sort-nya). **Fix**: `.order()`
+di `fetchList` (query utama, ketiga halaman) ditambah opsi **`nullsFirst: false`** — dipasang
+GENERIK di call `.order(sortBy, {...})` yang sama (bukan cabang kondisi khusus `kategori` saja),
+jadi otomatis berlaku ke kolom sort MANAPUN yang dipilih user (aman utk `created_at`/`nama_pt`
+jg, krn kolom itu jarang/tidak pernah null di data asli — tidak mengubah perilaku sort yang
+sudah ada utk kolom-kolom itu). Diterapkan identik di ketiga file (`AuditPoPage.tsx` →
+`audit_po_ap_comp`, `AuditPoOverseasPage.tsx` → `audit_po_apovs_comp`, `PiLocalPage.tsx` →
+`audit_po_pi_local_comp`).
+
+## Filter dropdown "Semua PT" & tab "Per Vendor" — DINAMIS dari data asli, bukan lagi hardcode (2026-09, ketiga halaman)
+
+Laporan user + screenshot: dropdown filter "Semua PT" di 3 halaman (Audit AP Local, Audit AP
+Overseas, PI Local) TIDAK menampilkan semua nama PT yang benar-benar ada di tabel — mis. "GUN"
+tampil sbg `nama_pt` di baris tabel, TAPI TIDAK ADA di opsi dropdown "Semua PT" (jadi PT itu
+TIDAK BISA difilter lewat dropdown sama sekali, walau barisnya sendiri tetap muncul & bisa
+ditemukan via search). Tab "Per Vendor" di modal Dashboard juga ikut tidak sinkron (chart batang
+seed nilai 0 dari daftar PT yang sama).
+
+**Akar masalah**: `PT_OPTIONS` (`['AMT', 'GMI', 'TTP', 'MJS', 'WSI', 'WNS', 'GENERAL']`) adalah
+array HARDCODE, dipakai LANGSUNG buat isi opsi dropdown filter DAN seed baris 0 di chart "Per
+Vendor" — kalau tabel (`audit_po_ap_comp`/`audit_po_apovs_comp`/`audit_po_pi_local_comp`) ternyata
+punya `nama_pt` lain yang tidak ada di 7 nama itu, filter/chart tidak pernah tau soal itu.
+
+**Fix (diterapkan IDENTIK di ketiga halaman)**: `PT_OPTIONS` SEKARANG jadi fallback saja (dipakai
+SEBELUM fetch dinamis pertama selesai, atau kalau fetch-nya gagal/kosong), bukan lagi daftar
+tetap. Fungsi baru `fetchDistinctNamaPt(table)` — `supabase.from(table).select('nama_pt')` (1
+kolom saja, tanpa filter, ringan), dedup+sort DI CLIENT via `Set` (Supabase-js tidak punya opsi
+"distinct" bawaan) — fallback ke `PT_OPTIONS` kalau `error`/`data` kosong/hasil dedup kosong.
+- State `ptOptions` (`useState<string[]>(PT_OPTIONS)`) + `useEffect` sekali panggil
+  `fetchDistinctNamaPt(<nama tabel>).then(setPtOptions)` — ditambahkan di **2 tempat per
+  halaman**: komponen utama (dipakai dropdown filter "Semua PT") DAN `DashboardModal` (dipakai
+  seed chart tab "Per Vendor", `useCallback fetchVendorStats` dependency array diubah dari `[]`
+  → `[ptOptions]` supaya chart ikut recompute begitu daftar PT dinamis selesai di-fetch).
+- Dropdown filter diganti dari `{PT_OPTIONS.map(...)}` → `{ptOptions.map(...)}`.
+- Seed chart "Per Vendor" diganti dari `PT_OPTIONS.filter(pt => pt !== 'GENERAL').forEach(...)` →
+  `ptOptions.filter(pt => pt !== 'GENERAL').forEach(...)` (exclude "GENERAL" tetap sama, sudah
+  ada sebelumnya) — PT yang muncul di data tapi tidak ada di `ptOptions` tetap ikut ditambahkan
+  via key baru di object `counts` (perilaku lama ini tidak berubah).
+- Nama tabel yang di-query per halaman: `AuditPoPage.tsx` → `audit_po_ap_comp`,
+  `AuditPoOverseasPage.tsx` → `audit_po_apovs_comp`, `PiLocalPage.tsx` →
+  `audit_po_pi_local_comp`.
+
+Kalau nanti ada laporan serupa lagi (PT baru tidak muncul di filter/chart), cek dulu apakah
+`fetchDistinctNamaPt` benar2 ke-panggil (network tab/Console) sebelum curiga ke logic filter —
+kemungkinan besar ini sudah teratasi otomatis krn sifatnya dinamis, bukan hardcode lagi.
 
 ## Audit AP Overseas — duplikasi persis Audit AP Local, tabel beda (`src/pages/AuditPoOverseasPage.tsx`)
 
@@ -2863,6 +3115,42 @@ harus di-porting manual ke file satunya (dan sebaliknya).
   Local per saat halaman ini dibuat, cuma judul sub-heading "Audit AP Overseas" & "# AP PO
   Overseas", query ke `audit_po_apovs_comp`. Kalau geometri pie/ukuran modal AP Local diubah
   lagi nanti, ingat porting manual ke sini juga kalau mau konsisten.
+  **Tab ke-3 "Kategori" (2026-09, HANYA di halaman ini, BELUM diminta di AP Local/PI Local)** —
+  chart batang HORIZONTAL jumlah baris per `kategori` (BUKAN per `nama_pt` spt tab "Per Vendor"),
+  permintaan user via screenshot slide "Kategori Kesalahan Dihitung dari Excel". `activeTab` jadi
+  union 3 nilai (`'overview' | 'vendor' | 'kategori'`).
+  - `fetchKategoriStats()` — `select('kategori')` (bukan `select('*')`) dari `audit_po_apovs_comp`
+    yg `kategori` TIDAK null dalam rentang tanggal (TIDAK difilter `status_audit` — beda dari
+    `fetchVendorStats`, krn kolom `kategori` sendiri SUDAH merepresentasikan "ada kesalahan apa",
+    filter tambahan tidak relevan di sini). Tiap baris di-pecah pakai `parseKategoriMulti()`
+    (helper yg SAMA dipakai `KategoriPicker` mode multi) — kategori gabungan "A + B" nambah 1 ke
+    A DAN 1 ke B secara terpisah. **TIDAK di-seed ke semua `KATEGORI_OPTIONS` spt tab Per Vendor
+    seed semua `PT_OPTIONS`** — daftar `KATEGORI_OPTIONS` halaman ini PANJANG (istilah Impor
+    Overseas), kalau semua ditampilkan dgn 0 chart-nya jadi penuh batang kosong, TIDAK sesuai
+    referensi user (yang cuma tampilkan kategori yang BENERAN ada datanya, descending). Kalau
+    tidak ada kategori sama sekali di rentang itu → pesan "Tidak ada kategori tercatat di
+    rentang ini" (BEDA dari tab Per Vendor yang selalu tampil chart 0 apa adanya — keputusan
+    desain berbeda krn alasan seed di atas).
+  - `wrapKategoriLabel(label, maxCharsPerLine=24)` (helper baru, greedy word-wrap maks 2 baris)
+    — nama kategori bisa panjang (mis. "NOMOR DOKUMEN PURCHASE ORDER"), label sumbu Y di-wrap
+    manual jadi maks 2 baris `<text>`/`<tspan>` REPLIKA visual referensi user.
+  - `KategoriTabContent` (komponen baru, reuse type `VendorStat` apa adanya — field `pt` dipakai
+    generik sbg "label", BUKAN cuma nama PT, tidak perlu tipe baru) — chart batang HORIZONTAL
+    (beda orientasi dari `VendorTabContent` yang vertikal): sumbu Y (kiri) = daftar kategori,
+    sumbu X (bawah) = "Jumlah" dgn gridline `niceAxisStep` (REPLIKA sama). Tinggi SVG dinamis
+    mengikuti jumlah kategori (`rows.length * (rowH+rowGap)`) — BEDA dari tab lain yang tinggi
+    SVG-nya tetap (`H=340`), krn jumlah kategori tidak tetap seperti PT (7 opsi) — kalau kategori
+    banyak, modal jadi lebih tinggi, ditangani otomatis oleh `overflow-y-auto max-h-[92vh]` modal
+    terluar (scroll internal, TIDAK memerlukan penanganan tambahan).
+  - Footer Key Notes REPLIKA gaya sama (2 kategori terbanyak dihitung dinamis, "Total kategori
+    tercatat sebanyak N Dokumen").
+  - **Susulan (2026-09) — sudah DI-PORTING ke `AuditPoPage.tsx` (Audit AP Local, tabel
+    `audit_po_ap_comp`) & `PiLocalPage.tsx` (PI Local, tabel `audit_po_pi_local_comp`)** juga,
+    atas permintaan eksplisit user — pola IDENTIK PERSIS di ketiga halaman
+    (`fetchKategoriStats`/`wrapKategoriLabel`/`KategoriTabContent`/tombol tab "Kategori"), cuma
+    nama tabel Supabase yang beda per halaman (SAMA pola porting dgn tab "Per Vendor" di atas).
+    TIDAK ada komponen shared — tiap halaman py salinan sendiri. Kalau nanti formula/UI tab ini
+    diubah lagi di satu halaman, ingat porting manual ke 2 lainnya.
 - Tombol "Preview PDF"/"Hasil Audit" + `PreviewModal`/`buildDrivePreviewSrc` (2026-09) — ikut
   diporting bareng dari AP Local (user minta fiturnya di AP Local, diterapkan juga ke sini
   proaktif biar 2 halaman ini tetap konsisten sesuai prinsip duplikasi di atas) — lihat detail
