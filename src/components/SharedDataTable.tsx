@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { CheckCircle2, XCircle, X, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays, AlertTriangle, Save, SlidersHorizontal, RotateCcw, SquareX, UploadCloud } from 'lucide-react'
+import { CheckCircle2, XCircle, X, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays, AlertTriangle, Save, SlidersHorizontal, RotateCcw, SquareX, UploadCloud, Pencil } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
@@ -172,6 +172,109 @@ const NumberInput = ({ value, onChange, placeholder, className, isPct }: { value
   )
 }
 
+// ─── Audit Courier — Auto-Calculate Kolom Turunan (2026-09) ─────────────────
+// 7 kolom turunan dihitung otomatis dari kolom sumbernya, URUTAN WAJIB 1->7 (field bawah pakai
+// hasil field atas). Field manapun yang PERNAH diedit manual oleh user TIDAK PERNAH ditimpa lagi
+// oleh kalkulasi ini -- override dicatat permanen di kolom DB `manual_override_fields` (jsonb
+// array nama field, ada di tabel_audit_pib & tabel_audit_cn, BELUM DIJALANKAN ke Supabase
+// production -- lihat CLAUDE.md). Dipakai di 3 jalur input: EditModal (create & edit form),
+// fetchRecords/getExportData (live-compute utk data hasil isian n8n), handleInlineSaveRow (edit
+// massal/per-baris inline). Kalau salah satu jalur ini lupa dipanggil, hasilnya nyasar diam2.
+const COURIER_AUDIT_CALC_FIELDS = ['total_nilai_pabean', 'total_nilai_pabean_bm', 'ppn_pct', 'pph_pct', 'item_price_idr', 'total_pib_cn', 'cek_selisih'] as const;
+
+function courierAuditCalcNum(v: any): number {
+  if (v === null || v === undefined || v === '') return 0;
+  if (typeof v === 'string') return Number(v.replace(/,/g, '')) || 0;
+  return Number(v) || 0;
+}
+
+const courierAuditIsEmpty = (v: any) => v === null || v === undefined || v === '';
+
+// `row` = gabungan record lama + perubahan baru (dependency terbaru). `jenisDokumen` = 'PIB'/'CN'
+// (menentukan Sanksi ADM ikut dihitung atau 0). `overrideFields` = daftar key yang JANGAN
+// ditimpa. Return HANYA field yang boleh dihitung ulang (field yg di-override tidak ada di
+// return object -- pemanggil harus merge, bukan replace total).
+function computeCourierAuditCalc(row: Record<string, any>, jenisDokumen: string, overrideFields: string[] | Set<string> | null | undefined): Record<string, any> {
+  const ov = overrideFields instanceof Set ? overrideFields : new Set(overrideFields || []);
+  const n = courierAuditCalcNum;
+  const out: Record<string, any> = {};
+
+  // 1. Total Customs Value = Valas DPP x Kurs NDPBM
+  const totalNilaiPabeanCalc = n(row.valas_dpp) * n(row.kurs_ndpbm);
+  if (!ov.has('total_nilai_pabean')) out.total_nilai_pabean = totalNilaiPabeanCalc;
+  const totalNilaiPabeanEff = ov.has('total_nilai_pabean') ? n(row.total_nilai_pabean) : totalNilaiPabeanCalc;
+
+  // 2. T N.Pabean + BM = (1) + BM (Rp)
+  const totalNilaiPabeanBmCalc = totalNilaiPabeanEff + n(row.bm);
+  if (!ov.has('total_nilai_pabean_bm')) out.total_nilai_pabean_bm = totalNilaiPabeanBmCalc;
+  const totalNilaiPabeanBmEff = ov.has('total_nilai_pabean_bm') ? n(row.total_nilai_pabean_bm) : totalNilaiPabeanBmCalc;
+
+  // 3 & 4. PPN/PPH (%) = Nilai (Rp) / (2) -- "" kalau (2) kosong/0 (guard pembagi nol)
+  if (!ov.has('ppn_pct')) out.ppn_pct = totalNilaiPabeanBmEff ? (n(row.ppn_nilai) / totalNilaiPabeanBmEff) : '';
+  if (!ov.has('pph_pct')) out.pph_pct = totalNilaiPabeanBmEff ? (n(row.pph_nilai) / totalNilaiPabeanBmEff) : '';
+
+  // 5. Item Price (Rp) = "" kalau Item Price & Other Cost dua-duanya kosong; kalau Currency=USD
+  // pakai (Item Price+Other Cost)*Kurs NDPBM, selain itu Item Price*Kurs BI (PIB tidak punya
+  // kolom Kurs BI sendiri -- fallback ke Kurs NDPBM, sama pola fallback yang sudah ada di kode).
+  const itemPriceEmpty = courierAuditIsEmpty(row.item_price) && courierAuditIsEmpty(row.other_cost);
+  const currency = String(row.kurs || '').trim().toUpperCase();
+  const kursBiEff = n(row.kurs_bi) || n(row.kurs_ndpbm);
+  const itemPriceIdrCalc: number | '' = itemPriceEmpty ? '' : (currency === 'USD'
+    ? (n(row.item_price) + n(row.other_cost)) * n(row.kurs_ndpbm)
+    : n(row.item_price) * kursBiEff);
+  if (!ov.has('item_price_idr')) out.item_price_idr = itemPriceIdrCalc;
+  const itemPriceIdrEff = ov.has('item_price_idr') ? n(row.item_price_idr) : n(itemPriceIdrCalc);
+
+  // 6. Total PIB/CN (Rp) = BM (Rp) + PPN Nilai (Rp) + PPH Nilai (Rp) + (jalur CN ? Sanksi ADM : 0)
+  const sanksiAdm = jenisDokumen === 'CN' ? n(row.sanksi_adm) : 0;
+  if (!ov.has('total_pib_cn')) out.total_pib_cn = n(row.bm) + n(row.ppn_nilai) + n(row.pph_nilai) + sanksiAdm;
+
+  // 7. Check Difference (Rp) = (1) - (Item Price (Rp) + Total Inv Freight)
+  if (!ov.has('cek_selisih')) out.cek_selisih = totalNilaiPabeanEff - (itemPriceIdrEff + n(row.total_inv_freight));
+
+  return out;
+}
+
+// ─── Rekapan Courier — Auto-Calculate Kolom Turunan (2026-09) ───────────────
+// Sama prinsip dgn COURIER_AUDIT_CALC_FIELDS di atas (override manual permanen, live-compute di
+// semua jalur input). "Jumlah Vessel" = jumlah pemisah '+' pada kolom Vessel + 1 (vessel kosong
+// atau tanpa '+' otomatis = 1, jangan sampai pembagi nol) -- PIC WAJIB pisah vessel dgn '+'
+// (spasi-plus-spasi spt data lama), pemisah lain (koma dst) bikin hitungan ini salah.
+const COURIER_REKAPAN_CALC_FIELDS = ['total_amount', 'breakdown_courier_adm_vessel', 'breakdown_duty_vessel', 'breakdown_freight_vessel', 'breakdown_bm_vessel', 'breakdown_ppnpph_vessel'] as const;
+
+function courierRekapanVesselCount(vesselText: any): number {
+  const text = String(vesselText || '');
+  if (!text) return 1;
+  const plusCount = text.split('+').length - 1;
+  return plusCount + 1;
+}
+
+function computeCourierRekapanCalc(row: Record<string, any>, overrideFields: string[] | Set<string> | null | undefined): Record<string, any> {
+  const ov = overrideFields instanceof Set ? overrideFields : new Set(overrideFields || []);
+  const n = courierAuditCalcNum;
+  const out: Record<string, any> = {};
+
+  const courierAdmFee = n(row.courier_adm_fee);
+  const totalDutyTax = n(row.total_duty_tax);
+  const totalFreight = n(row.total_freight);
+  const bm = n(row.bm);
+  const ppn = n(row.ppn);
+  const pph = n(row.pph);
+  const vesselCount = courierRekapanVesselCount(row.vessel);
+
+  // 1. Total Amount = Courier Adm Fee + Total Duty Tax + Total Freight
+  if (!ov.has('total_amount')) out.total_amount = courierAdmFee + totalDutyTax + totalFreight;
+
+  // 2-6. Breakdown per Vessel
+  if (!ov.has('breakdown_courier_adm_vessel')) out.breakdown_courier_adm_vessel = courierAdmFee / vesselCount;
+  if (!ov.has('breakdown_duty_vessel')) out.breakdown_duty_vessel = totalDutyTax / vesselCount;
+  if (!ov.has('breakdown_freight_vessel')) out.breakdown_freight_vessel = totalFreight / vesselCount;
+  if (!ov.has('breakdown_bm_vessel')) out.breakdown_bm_vessel = bm / vesselCount;
+  if (!ov.has('breakdown_ppnpph_vessel')) out.breakdown_ppnpph_vessel = (ppn + pph) / vesselCount;
+
+  return out;
+}
+
 // ─── Edit Modal ───────────────────────────────────────────────
 function EditModal({ record, tab, cols, onClose, onSaved, isCreate, createDefaults }: { record: any, tab: any, cols: any[], onClose: () => void, onSaved: () => void, isCreate?: boolean, createDefaults?: Record<string, any> }) {
   const [form, setForm] = useState<Record<string, any>>(() => {
@@ -186,115 +289,69 @@ function EditModal({ record, tab, cols, onClose, onSaved, isCreate, createDefaul
   const [saving, setSaving] = useState(false)
   const [err,    setErr]    = useState<string | null>(null)
 
+  // Field2 auto-calculate (COURIER_AUDIT_CALC_FIELDS) yg SUDAH PERNAH diedit manual oleh user --
+  // dari data lama (`record.manual_override_fields`) atau baru ditandai selama sesi form ini.
+  // `setManual` dipakai KHUSUS onChange input kolom auto-calculate (bukan `set` biasa) supaya
+  // kalkulasi otomatis berhenti menimpa field itu setelah user ketik manual.
+  const [overrides, setOverrides] = useState<Set<string>>(
+    () => new Set(Array.isArray(record?.manual_override_fields) ? record.manual_override_fields : [])
+  );
+
   const set = (key: string, val: any) => setForm(p => ({ ...p, [key]: val }))
+  const setManual = (key: string, val: any) => {
+    set(key, val);
+    setOverrides(prev => (prev.has(key) ? prev : new Set(prev).add(key)));
+  };
 
   useEffect(() => {
     if (tab.id === 'courier_audit') {
-      const getNum = (key: string) => {
-        const v = form[key];
-        if (v === null || v === undefined || v === '') return 0;
-        if (typeof v === 'string') return Number(v.replace(/,/g, ''));
-        return Number(v) || 0;
-      };
-
-      const kursBI = getNum('kurs_bi') || getNum('kurs_ndpbm') || getNum('kurs'); // Use kurs_ndpbm or kurs if kurs_bi is not available (like in PIB)
-      const itemPrice = getNum('item_price');
-      const otherCost = getNum('other_cost');
-      const totalNilaiPabean = getNum('total_nilai_pabean');
-      const totalInvFreight = getNum('total_inv_freight');
-
-      const expectedItemPriceIdr = Number(((itemPrice + otherCost) * kursBI).toFixed(2));
-      
-      const currentItemPriceIdr = form.item_price_idr !== undefined && form.item_price_idr !== '' 
-        ? getNum('item_price_idr') 
-        : expectedItemPriceIdr;
+      const jenisDokumen = String(form.jenis_dokumen || (record && record.jenis_dokumen) || '').trim().toUpperCase();
+      const calc = computeCourierAuditCalc(form, jenisDokumen, overrides);
 
       setForm(prev => {
         let updates: any = {};
         let changed = false;
-
-        if (Number(prev.item_price_idr) !== expectedItemPriceIdr && (itemPrice || otherCost || kursBI)) {
-          updates.item_price_idr = expectedItemPriceIdr;
-          changed = true;
-        }
-
-        const jenisDokumen = form.jenis_dokumen || (record && record.jenis_dokumen);
-        if (jenisDokumen === 'CN' || jenisDokumen === 'cn') {
-          const actualItemPriceIdr = updates.item_price_idr !== undefined ? updates.item_price_idr : currentItemPriceIdr;
-          const newCekSelisih = Number((totalNilaiPabean - (totalInvFreight + actualItemPriceIdr)).toFixed(2));
-          
-          if (Number(prev.cek_selisih) !== newCekSelisih) {
-            updates.cek_selisih = newCekSelisih;
+        Object.keys(calc).forEach(k => {
+          // Bandingkan sbg angka biar tidak infinite-loop gara2 beda representasi string vs number
+          const a = calc[k] === '' ? '' : Number(calc[k]);
+          const b = prev[k] === '' || prev[k] === undefined || prev[k] === null ? '' : Number(prev[k]);
+          if (a !== b) {
+            updates[k] = calc[k];
             changed = true;
           }
-        }
-
-        if (changed) {
-          return { ...prev, ...updates };
-        }
-        return prev;
-      });
-    }
-  }, [tab.id, form.kurs_bi, form.kurs, form.item_price, form.other_cost, form.total_nilai_pabean, form.total_inv_freight, form.item_price_idr]);
-
-  useEffect(() => {
-    if (tab.id === 'courier_rekapan') {
-      const getNum = (key: string) => {
-        const v = form[key];
-        if (v === null || v === undefined || v === '') return 0;
-        if (typeof v === 'string') return Number(v.replace(/,/g, ''));
-        return Number(v) || 0;
-      };
-
-      const vesselText = form['vessel'] || '';
-      const vesselArray = vesselText.split('+').map((s: string) => s.trim()).filter(Boolean);
-      const vesselCount = vesselArray.length;
-
-      const courierAdmFee = getNum('courier_adm_fee');
-      const totalDutyTax = getNum('total_duty_tax');
-      const totalFreight = getNum('total_freight');
-      const bm = getNum('bm');
-      const ppn = getNum('ppn');
-      const pph = getNum('pph');
-
-      const expectedBreakdownCourierAdmVessel = vesselCount > 0 ? Number((courierAdmFee / vesselCount).toFixed(2)) : 0;
-      const expectedBreakdownDutyVessel = vesselCount > 0 ? Number((totalDutyTax / vesselCount).toFixed(2)) : 0;
-      const expectedBreakdownFreightVessel = vesselCount > 0 ? Number((totalFreight / vesselCount).toFixed(2)) : 0;
-      const expectedBreakdownBmVessel = vesselCount > 0 ? Number((bm / vesselCount).toFixed(2)) : 0;
-      const expectedBreakdownPpnpphVessel = vesselCount > 0 ? Number(((ppn + pph) / vesselCount).toFixed(2)) : 0;
-
-      setForm(prev => {
-        let updates: any = {};
-        let changed = false;
-
-        const checkAndUpdate = (key: string, expectedVal: number) => {
-          if (Number(prev[key]) !== expectedVal) {
-            updates[key] = expectedVal;
-            changed = true;
-          }
-        };
-
-        checkAndUpdate('breakdown_courier_adm_vessel', expectedBreakdownCourierAdmVessel);
-        checkAndUpdate('breakdown_duty_vessel', expectedBreakdownDutyVessel);
-        checkAndUpdate('breakdown_freight_vessel', expectedBreakdownFreightVessel);
-        checkAndUpdate('breakdown_bm_vessel', expectedBreakdownBmVessel);
-        checkAndUpdate('breakdown_ppnpph_vessel', expectedBreakdownPpnpphVessel);
-
-        if (changed) {
-          return { ...prev, ...updates };
-        }
-        return prev;
+        });
+        return changed ? { ...prev, ...updates } : prev;
       });
     }
   }, [
-    tab.id,
-    form.vessel,
-    form.courier_adm_fee,
-    form.total_duty_tax,
-    form.total_freight,
-    form.bm,
-    form.ppn,
-    form.pph
+    tab.id, overrides, form.jenis_dokumen,
+    form.valas_dpp, form.kurs_ndpbm, form.bm, form.ppn_nilai, form.pph_nilai,
+    form.item_price, form.other_cost, form.kurs, form.kurs_bi, form.total_inv_freight,
+    form.sanksi_adm,
+    form.total_nilai_pabean, form.total_nilai_pabean_bm, form.item_price_idr,
+  ]);
+
+  useEffect(() => {
+    if (tab.id === 'courier_rekapan') {
+      const calc = computeCourierRekapanCalc(form, overrides);
+
+      setForm(prev => {
+        let updates: any = {};
+        let changed = false;
+        Object.keys(calc).forEach(k => {
+          const a = Number(calc[k]);
+          const b = prev[k] === '' || prev[k] === undefined || prev[k] === null ? 0 : Number(prev[k]);
+          if (a !== b) {
+            updates[k] = Number(a.toFixed(2));
+            changed = true;
+          }
+        });
+        return changed ? { ...prev, ...updates } : prev;
+      });
+    }
+  }, [
+    tab.id, overrides,
+    form.vessel, form.courier_adm_fee, form.total_duty_tax, form.total_freight, form.bm, form.ppn, form.pph,
   ]);
 
   // BALANCE = VALAS DPP * KURS NDPBM - (TOTAL INV FREIGHT + ITEM PRICE (RP))
@@ -347,6 +404,13 @@ function EditModal({ record, tab, cols, onClose, onSaved, isCreate, createDefaul
       const EXCLUDED_COLS = ['jenis_source', 'validasi_jalur', 'catatan_jalur', 'status_kelengkapan', 'dokumen_kurang', 'pct_kelengkapan', 'total_mandatory', 'total_mandatory_ada'];
       const payload: Record<string, any> = { ...form }
 
+      // Simpan daftar kolom auto-calculate yg pernah diedit manual (lihat `overrides`/`setManual`
+      // di atas) supaya kalkulasi otomatis di fetch/inline-edit berikutnya tidak menimpa lagi.
+      if (tab.id === 'courier_audit' || tab.id === 'courier_rekapan') {
+        const calcFieldSet = new Set<string>(tab.id === 'courier_audit' ? COURIER_AUDIT_CALC_FIELDS : COURIER_REKAPAN_CALC_FIELDS);
+        payload.manual_override_fields = Array.from(overrides).filter((f: string) => calcFieldSet.has(f));
+      }
+
       Object.keys(payload).forEach(key => {
         if (payload[key] === '') payload[key] = null;
       });
@@ -387,7 +451,11 @@ function EditModal({ record, tab, cols, onClose, onSaved, isCreate, createDefaul
           // ke `tabel_audit_cn` yg tidak punya kolom itu sama sekali) -> Supabase error "Could not
           // find the '<kolom>' column of '<tabel>' in the schema cache" (2026-09, laporan user).
           // Fix: buang key manapun yg TIDAK ada di daftar kolom tabel tujuan yg SEBENARNYA dipakai.
-          const allowedKeysCreate = new Set((jenisDokumen === 'CN' ? CN_COLS : PIB_COLS).map(c => c.key));
+          // `status` (kolom asli tabel_audit_pib/cn, dipakai filter ARCHIVED) SENGAJA tidak ada
+          // di PIB_COLS/CN_COLS (yg ada cuma `status_kelengkapan`) -- kalau tidak di-whitelist
+          // manual di sini, createDefaults={status:'ARCHIVED'} di atas ikut ke-strip diam2 &
+          // insert jatuh ke default kolom DB (2026-09, laporan user "status masih LENGKAP").
+          const allowedKeysCreate = new Set([...(jenisDokumen === 'CN' ? CN_COLS : PIB_COLS).map(c => c.key), 'status', 'manual_override_fields']);
           Object.keys(payload).forEach(k => { if (!allowedKeysCreate.has(k)) delete payload[k]; });
           const { error: insErr } = await supabase.from(targetTableCreate).insert(payload);
           if (insErr) throw insErr;
@@ -537,10 +605,15 @@ function EditModal({ record, tab, cols, onClose, onSaved, isCreate, createDefaul
                   />
                 )
               } else if (c.type === 'num' || c.type === 'pct') {
+                // Kolom auto-calculate (COURIER_AUDIT_CALC_FIELDS) tetap bisa diketik manual --
+                // via `setManual` biar ditandai `overrides` & berhenti ditimpa kalkulasi otomatis
+                // (lihat useEffect di atas). Marker biru+pensil di label ditangani di bawah.
+                const isCalcField = (tab.id === 'courier_audit' && (COURIER_AUDIT_CALC_FIELDS as readonly string[]).includes(c.key))
+                  || (tab.id === 'courier_rekapan' && (COURIER_REKAPAN_CALC_FIELDS as readonly string[]).includes(c.key));
                 inputElement = (
                   <NumberInput
                     value={form[c.key]}
-                    onChange={(v) => set(c.key, v)}
+                    onChange={(v) => isCalcField ? setManual(c.key, v) : set(c.key, v)}
                     placeholder={`Enter ${c.label}...`}
                     className="w-full border border-blue-200 bg-blue-50/30 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-medium text-[#5A305A] h-[34px]"
                     isPct={c.type === 'pct'}
@@ -559,11 +632,19 @@ function EditModal({ record, tab, cols, onClose, onSaved, isCreate, createDefaul
                 )
               }
 
+              const isOverriddenCalc = ((tab.id === 'courier_audit' && (COURIER_AUDIT_CALC_FIELDS as readonly string[]).includes(c.key))
+                || (tab.id === 'courier_rekapan' && (COURIER_REKAPAN_CALC_FIELDS as readonly string[]).includes(c.key))) && overrides.has(c.key);
+
               return (
                 <div key={c.key} className={c.key === 'notes' || c.key === 'remarks' ? 'col-span-2 md:col-span-3 lg:col-span-4' : 'col-span-2 md:col-span-1'}>
-                  <label className="text-[10px] font-semibold flex items-center gap-1.5 text-blue-600 mb-1">
+                  <label className="text-[10px] font-semibold flex items-center gap-1.5 mb-1 text-blue-600">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#4a3552] inline-block"></span>
                     {c.label}
+                    {isOverriddenCalc && (
+                      <span className="inline-flex items-center gap-0.5 text-blue-600" title="Nilai diedit manual, tidak lagi dihitung otomatis">
+                        <Pencil size={9} />
+                      </span>
+                    )}
                   </label>
                   {inputElement}
                 </div>
@@ -3245,6 +3326,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           });
         }
 
+        // Live-compute 7 kolom turunan Audit Courier (lihat COURIER_AUDIT_CALC_FIELDS) tiap
+        // fetch -- supaya data hasil isian n8n (yg tidak pernah lewat form ini) ikut auto-koreksi
+        // saat tampil, KECUALI field yg sudah pernah ditandai override manual per baris.
+        combined.forEach(r => Object.assign(r, computeCourierAuditCalc(r, r.jenis_dokumen, r.manual_override_fields)));
+
         await mergeChecklistData(combined);
 
         const { docPctMap: draftDocPctMap, costPctMap: draftCostPctMap } = await fetchCourierValidationBadgePct(combined);
@@ -3423,6 +3509,12 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           });
         }
         await mergeChecklistData(data, courierAuditType === 'pib' ? 'pib' : (courierAuditType === 'cn' ? 'cn' : undefined));
+
+        // Live-compute 7 kolom turunan Audit Courier (lihat COURIER_AUDIT_CALC_FIELDS di atas)
+        // -- data langsung dari `tabel_audit_pib`/`tabel_audit_cn` tidak selalu punya `jenis_dokumen`
+        // (kolom itu murni tag di sisi frontend utk tab Draft), jadi dipastikan dari courierAuditType.
+        const jenisDokumenNormal = courierAuditType === 'pib' ? 'PIB' : 'CN';
+        data.forEach((r: any) => Object.assign(r, computeCourierAuditCalc(r, r.jenis_dokumen || jenisDokumenNormal, r.manual_override_fields)));
       }
 
       // Badge persentase di tombol "Doc Validation"/"Cost. Validation" halaman Audit Courier --
@@ -3507,36 +3599,13 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           const cv = costValidations.find(c => c.awb === r.awb);
           r.status_cost = cv ? cv.status_cost : null;
 
-          const vesselText = r.vessel || '';
-          const vesselArray = vesselText.split('+').map((s: string) => s.trim()).filter(Boolean);
-          const vesselCount = vesselArray.length;
-          
-          const courierAdmFee = Number(r.courier_adm_fee) || 0;
-          const totalDutyTax = Number(r.total_duty_tax) || 0;
-          const totalFreight = Number(r.total_freight) || 0;
-          const bm = Number(r.bm) || 0;
-          const ppn = Number(r.ppn) || 0;
-          const pph = Number(r.pph) || 0;
-
-          r.breakdown_courier_adm_vessel = vesselCount > 0 ? Number((courierAdmFee / vesselCount).toFixed(2)) : 0;
-          r.breakdown_duty_vessel = vesselCount > 0 ? Number((totalDutyTax / vesselCount).toFixed(2)) : 0;
-          r.breakdown_freight_vessel = vesselCount > 0 ? Number((totalFreight / vesselCount).toFixed(2)) : 0;
-          r.breakdown_bm_vessel = vesselCount > 0 ? Number((bm / vesselCount).toFixed(2)) : 0;
-          r.breakdown_ppnpph_vessel = vesselCount > 0 ? Number(((ppn + pph) / vesselCount).toFixed(2)) : 0;
+          Object.assign(r, computeCourierRekapanCalc(r, r.manual_override_fields));
         } else if ((activeMainTab === 'courier' && activeSubTab === 'courier_audit')) {
-          const kursBI = Number(r.kurs_bi) || Number(r.kurs_ndpbm) || Number(r.kurs) || 0;
-          const itemPrice = Number(r.item_price) || 0;
-          const otherCost = Number(r.other_cost) || 0;
-          const totalNilaiPabean = Number(r.total_nilai_pabean) || 0;
-          const totalInvFreight = Number(r.total_inv_freight) || 0;
-          
-          const expectedItemPriceIdr = Number(((itemPrice + otherCost) * kursBI).toFixed(2));
-          const actualItemPriceIdr = r.item_price_idr !== null && r.item_price_idr !== undefined ? Number(r.item_price_idr) : expectedItemPriceIdr;
-          
-          if ((courierAuditType === 'cn')) {
-             r.cek_selisih = Number((totalNilaiPabean - (totalInvFreight + actualItemPriceIdr)).toFixed(2));
-          }
-
+          // Kalkulasi 7 kolom turunan (computeCourierAuditCalc) SUDAH dijalankan lebih dulu di
+          // `data.forEach` sebelum enrichedData ini dibangun (lihat di atas) -- JANGAN hitung
+          // ulang di sini pakai formula lama (dulu ada duplikat formula di sini yg CUMA jalan
+          // utk CN & tidak sadar `manual_override_fields`, jadi menimpa balik hasil yg sudah
+          // benar dgn nilai lama. Dihapus, bukan lupa).
           const badgeKey = (r.jenis_dokumen === 'CN' || courierAuditType === 'cn') ? `cn_${r.id}` : `pib_${r.id}`;
           r.doc_validation_pct = courierDocValidationPctMap[badgeKey] ?? 0;
           r.cost_validation_pct = courierCostValidationPctMap[badgeKey] ?? 0;
@@ -3679,6 +3748,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           }
         });
       }
+      combined.forEach(r => Object.assign(r, computeCourierAuditCalc(r, r.jenis_dokumen, r.manual_override_fields)));
+
       await mergeChecklistData(combined);
       return combined;
     }
@@ -3809,39 +3880,18 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         });
       }
       await mergeChecklistData(data, courierAuditType === 'pib' ? 'pib' : (courierAuditType === 'cn' ? 'cn' : undefined));
+
+      const jenisDokumenNormalExport = courierAuditType === 'pib' ? 'PIB' : 'CN';
+      data.forEach((r: any) => Object.assign(r, computeCourierAuditCalc(r, r.jenis_dokumen || jenisDokumenNormalExport, r.manual_override_fields)));
     }
 
     return (data || []).map(r => {
       if ((activeMainTab === 'courier' && activeSubTab === 'courier_rekapan')) {
-        const vesselText = r.vessel || '';
-        const vesselArray = vesselText.split('+').map((s: string) => s.trim()).filter(Boolean);
-        const vesselCount = vesselArray.length;
-        
-        const courierAdmFee = Number(r.courier_adm_fee) || 0;
-        const totalDutyTax = Number(r.total_duty_tax) || 0;
-        const totalFreight = Number(r.total_freight) || 0;
-        const bm = Number(r.bm) || 0;
-        const ppn = Number(r.ppn) || 0;
-        const pph = Number(r.pph) || 0;
-
-        r.breakdown_courier_adm_vessel = vesselCount > 0 ? Number((courierAdmFee / vesselCount).toFixed(2)) : 0;
-        r.breakdown_duty_vessel = vesselCount > 0 ? Number((totalDutyTax / vesselCount).toFixed(2)) : 0;
-        r.breakdown_freight_vessel = vesselCount > 0 ? Number((totalFreight / vesselCount).toFixed(2)) : 0;
-        r.breakdown_bm_vessel = vesselCount > 0 ? Number((bm / vesselCount).toFixed(2)) : 0;
-        r.breakdown_ppnpph_vessel = vesselCount > 0 ? Number(((ppn + pph) / vesselCount).toFixed(2)) : 0;
+        Object.assign(r, computeCourierRekapanCalc(r, r.manual_override_fields));
       } else if ((activeMainTab === 'courier' && activeSubTab === 'courier_audit')) {
-        const kursBI = Number(r.kurs_bi) || Number(r.kurs_ndpbm) || Number(r.kurs) || 0;
-        const itemPrice = Number(r.item_price) || 0;
-        const otherCost = Number(r.other_cost) || 0;
-        const totalNilaiPabean = Number(r.total_nilai_pabean) || 0;
-        const totalInvFreight = Number(r.total_inv_freight) || 0;
-        
-        const expectedItemPriceIdr = Number(((itemPrice + otherCost) * kursBI).toFixed(2));
-        const actualItemPriceIdr = r.item_price_idr !== null && r.item_price_idr !== undefined ? Number(r.item_price_idr) : expectedItemPriceIdr;
-        
-        if ((courierAuditType === 'cn')) {
-           r.cek_selisih = Number((totalNilaiPabean - (totalInvFreight + actualItemPriceIdr)).toFixed(2));
-        }
+        // Kalkulasi courier_audit sudah dijalankan lewat `data.forEach` di atas (lihat
+        // jenisDokumenNormalExport) -- JANGAN duplikat formula di sini lagi (lihat catatan sama
+        // di fetchRecords/enrichedData).
       } else if ((activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit')) {
         const valasDpp = Number(r.valas_dpp) || 0;
         const kursNdpbm = Number(r.kurs_ndpbm) || 0;
@@ -3884,7 +3934,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       let activeCols: any[] = [];
       if (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit') activeCols = SEA_AIR_AUDIT_COLS;
       else if (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan') activeCols = SEA_AIR_REKAPAN_COLS;
-      else if (activeMainTab === 'courier' && activeSubTab === 'courier_audit') activeCols = COURIER_COLS;
+      // PIB_COLS+CN_COLS (bukan COURIER_COLS, yg isinya kolom Rekapan) -- perlu tipe num/pct yg
+      // BENAR utk kolom2 auto-calculate (lihat COURIER_AUDIT_CALC_FIELDS) supaya konversi Number
+      // di bawah jalan sebelum dipakai hitung ulang dependency-nya.
+      else if (activeMainTab === 'courier' && activeSubTab === 'courier_audit') activeCols = [...PIB_COLS, ...CN_COLS];
       else if (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') activeCols = COURIER_COLS;
 
       activeCols.forEach(c => {
@@ -3939,7 +3992,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       } else if (activeMainTab === 'courier' && activeSubTab === 'courier_audit') {
         const record = records.find(r => String(r.id) === String(id));
         if (!record) return false;
-        
+
         let targetTable = '';
         if (record.jenis_dokumen === 'PIB' || cleanedPayload.jenis_dokumen === 'PIB') {
           targetTable = 'tabel_audit_pib';
@@ -3948,10 +4001,46 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         } else {
           targetTable = record.no_pib ? 'tabel_audit_pib' : 'tabel_audit_cn';
         }
-        
+
+        // 7 kolom turunan (COURIER_AUDIT_CALC_FIELDS) -- inline edit cuma kirim field yg berubah
+        // (bukan seluruh record), jadi hitung ulang dari gabungan record lama + perubahan baru.
+        // Kalau salah satu field kalkulasi itu sendiri yg diketik langsung lewat inline edit,
+        // tandai override permanen (manual_override_fields) supaya tidak ditimpa lagi ke depannya.
+        const jenisDokumenForCalc = targetTable === 'tabel_audit_cn' ? 'CN' : 'PIB';
+        const existingOverrides: string[] = Array.isArray(record.manual_override_fields) ? record.manual_override_fields : [];
+        const newlyOverridden = COURIER_AUDIT_CALC_FIELDS.filter(f => f in cleanedPayload);
+        const mergedOverrides = Array.from(new Set([...existingOverrides, ...newlyOverridden]));
+
+        const mergedRow = { ...record, ...cleanedPayload };
+        const calc = computeCourierAuditCalc(mergedRow, jenisDokumenForCalc, mergedOverrides);
+        Object.assign(cleanedPayload, calc);
+        Object.keys(cleanedPayload).forEach(k => { if (cleanedPayload[k] === '') cleanedPayload[k] = null; });
+        if (mergedOverrides.length !== existingOverrides.length) {
+          cleanedPayload.manual_override_fields = mergedOverrides;
+        }
+
         const res = await supabase.from(targetTable).update(cleanedPayload).eq('id', id);
         error = res.error;
       } else if (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') {
+        const record = records.find(r => String(r.id) === String(id));
+
+        // 6 kolom turunan Rekapan Courier (lihat COURIER_REKAPAN_CALC_FIELDS) -- pola sama
+        // persis dgn courier_audit di atas: hitung ulang dari gabungan record lama + perubahan
+        // baru, field kalkulasi yg diketik langsung ditandai override permanen.
+        if (record) {
+          const existingOverrides: string[] = Array.isArray(record.manual_override_fields) ? record.manual_override_fields : [];
+          const newlyOverridden = COURIER_REKAPAN_CALC_FIELDS.filter(f => f in cleanedPayload);
+          const mergedOverrides = Array.from(new Set([...existingOverrides, ...newlyOverridden]));
+
+          const mergedRow = { ...record, ...cleanedPayload };
+          const calc = computeCourierRekapanCalc(mergedRow, mergedOverrides);
+          Object.assign(cleanedPayload, calc);
+          Object.keys(cleanedPayload).forEach(k => { if (cleanedPayload[k] === '') cleanedPayload[k] = null; });
+          if (mergedOverrides.length !== existingOverrides.length) {
+            cleanedPayload.manual_override_fields = mergedOverrides;
+          }
+        }
+
         const res = await supabase.from('rekapan_courier').update(cleanedPayload).eq('id', id);
         error = res.error;
       } else {
@@ -4176,7 +4265,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         const base = [{ key: 'jenis_dokumen', label: 'Type', type: 'text' }, ...PIB_COLS.filter(c => c.key !== 'jenis_dokumen')];
         const idx = base.findIndex(c => c.key === 'kurs_ndpbm');
         const kursBiCol = { key: 'kurs_bi', label: 'Kurs BI (Rp)', type: 'num' };
-        return idx === -1 ? [...base, kursBiCol] : [...base.slice(0, idx + 1), kursBiCol, ...base.slice(idx + 1)];
+        const withKursBi = idx === -1 ? [...base, kursBiCol] : [...base.slice(0, idx + 1), kursBiCol, ...base.slice(idx + 1)];
+        // Sama alasannya dgn kurs_bi di atas -- `sanksi_adm` cuma ada di CN_COLS, tapi tab Draft
+        // (form Add Data-nya) butuh field ini kelihatan juga saat Document Type dipilih 'CN'
+        // (formula Total PIB/CN butuh Sanksi ADM utk jalur CN, lihat COURIER_AUDIT_CALC_FIELDS).
+        return [...withKursBi, { key: 'sanksi_adm', label: 'Admin Penalty', type: 'num' }];
       })()
     : activeTabId === 'sea_air_audit'
     ? SEA_AIR_AUDIT_COLS

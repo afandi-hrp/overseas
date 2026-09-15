@@ -1025,6 +1025,113 @@ via `applySubmitDateHighlight()` (ARGB `FFFFF5C5`, `row.eachCell({includeEmpty:t
 `splitByPoDetail !== 'courier_rekapan'` supaya tidak ikut mewarnai export lain. **Kalau warna
 on-screen diganti, WAJIB sinkron ARGB di sini juga.**
 
+## Audit Courier — Auto-Calculate 7 kolom turunan (2026-09, `SharedDataTable.tsx`)
+
+Permintaan user: 7 kolom Audit Courier (PIB & CN) dihitung otomatis dari kolom sumbernya, urutan
+WAJIB 1->7 (field bawah pakai hasil field atas), berlaku di SEMUA jalur input — form Add Data,
+form Edit, edit massal/inline, DAN data hasil isian n8n (live-compute saat tampil, app ini tidak
+bisa "mencegat" insert n8n langsung ke Supabase). Field manapun yg PERNAH diedit manual oleh user
+TIDAK PERNAH ditimpa otomatis lagi (ditandai biru+ikon pensil di form).
+
+**Formula** (`computeCourierAuditCalc()`, fungsi pure module-level dipakai di semua jalur di
+bawah — SATU-SATUNYA sumber kebenaran, JANGAN duplikat logic ini di tempat lain):
+1. `total_nilai_pabean` (Total Customs Value) = `valas_dpp` × `kurs_ndpbm`
+2. `total_nilai_pabean_bm` (T N.Pabean + BM) = (1) + `bm`
+3. `ppn_pct` = `ppn_nilai` / (2), `""` kalau (2) kosong/0 (guard pembagi nol)
+4. `pph_pct` = `pph_nilai` / (2), `""` kalau (2) kosong/0
+5. `item_price_idr` = `""` kalau `item_price`+`other_cost` DUA-DUANYA kosong; kalau `kurs`
+   (kolom CURRENCY, dibandingkan `==='USD'`) → `(item_price+other_cost) × kurs_ndpbm`; selain
+   itu → `item_price × kurs_bi` (PIB tidak punya kolom Kurs BI sendiri, fallback `kurs_ndpbm`,
+   sama pola fallback yg sudah ada sebelumnya di kode)
+6. `total_pib_cn` (Total PIB/CN Rp) = `bm` + `ppn_nilai` + `pph_nilai` + (`jenis_dokumen==='CN'`
+   ? `sanksi_adm` : 0)
+7. `cek_selisih` (Check Difference) = (1) − (`item_price_idr` + `total_inv_freight`)
+
+**Override manual per field** — kolom DB baru `manual_override_fields` (jsonb array nama field,
+di `tabel_audit_pib` & `tabel_audit_cn`). **BELUM DIJALANKAN ke Supabase production**:
+```sql
+alter table public.tabel_audit_pib add column if not exists manual_override_fields jsonb not null default '[]'::jsonb;
+alter table public.tabel_audit_cn add column if not exists manual_override_fields jsonb not null default '[]'::jsonb;
+```
+`computeCourierAuditCalc(row, jenisDokumen, overrideFields)` SKIP field yg ada di
+`overrideFields` dari return-nya (pemanggil WAJIB merge, bukan replace total, ke row/payload).
+
+**3 jalur wajib panggil fungsi ini, kalau ada jalur input baru WAJIB ikut ditambahkan**:
+1. **`EditModal` (Add Data & Edit form)** — state `overrides: Set<string>` (diisi awal dari
+   `record.manual_override_fields`), `setManual(key,val)` dipakai KHUSUS onChange 7 field ini
+   (bukan `set` biasa) supaya nge-add ke `overrides` + `useEffect` (dependency semua kolom
+   sumber formula) hitung ulang tiap render, SKIP field yg ada di `overrides`. Saat Save,
+   `payload.manual_override_fields = Array.from(overrides)` (difilter cuma 7 nama field
+   valid). Label field yg ke-override dikasih ikon `Pencil` biru (lucide-react) + title
+   "Nilai diedit manual, tidak lagi dihitung otomatis". `allowedKeysCreate` (strip payload
+   create, lihat bug di bawah) WAJIB include `'manual_override_fields'` juga (union manual),
+   kalau lupa nasibnya sama dgn bug `status` di bawah — field percuma ditulis tapi hilang
+   sebelum insert.
+2. **`fetchRecords`/`getExportData`** (masing2 2 cabang: gabungan Draft + normal PIB/CN,
+   TOTAL 4 titik) — `rows.forEach(r => Object.assign(r, computeCourierAuditCalc(r,
+   r.jenis_dokumen, r.manual_override_fields)))` dipanggil SETELAH data mentah di-fetch. Ini
+   yg bikin data hasil isian n8n ikut "terkoreksi" saat tampil tanpa perlu ubah workflow n8n.
+3. **`handleInlineSaveRow`** (edit massal/per-baris inline courier_audit) — gabung
+   `record` lama + `cleanedPayload` baru jadi `mergedRow`, field 7-kalkulasi yg ADA LANGSUNG
+   di `cleanedPayload` (user ketik manual via inline edit) otomatis masuk
+   `manual_override_fields` baru (union dgn yg lama), lalu `computeCourierAuditCalc` dipanggil
+   dgn override gabungan itu & hasilnya di-`Object.assign` balik ke `cleanedPayload` sebelum
+   `.update()`. **Bug terkait ditemukan & diperbaiki**: `activeCols` dipakai loop konversi
+   Number sebelumnya salah pakai `COURIER_COLS` (kolom Rekapan) utk cabang `courier_audit` --
+   diganti `[...PIB_COLS, ...CN_COLS]` supaya field2 kalkulasi ini beneran ke-convert Number
+   sebelum dipakai hitung ulang dependency-nya.
+
+**Field baru "Sanksi ADM" di form Add Data** — `sanksi_adm` sudah ada di `CN_COLS` (jadi
+otomatis muncul saat tab aktif = CN), TAPI form Add Data dari tab **Draft** (default tab saat
+buka Audit Courier) pakai `activeCols` berbasis `PIB_COLS` yg tidak punya kolom ini sama sekali
+-- disisipkan manual (pola sama dgn `kurs_bi` yg sudah lebih dulu disisipkan ke cols Draft ini,
+lihat catatan di bawah "Kolom AWB"). Sengaja TIDAK dibedakan tampil/sembunyi berdasar value
+dropdown Document Type real-time (keputusan desain lama yg sudah dikonfirmasi, lihat bug fix
+"Add Data kirim ke tabel salah" di bawah) — konsisten dgn precedent `kurs_bi`.
+
+**Bug ditemukan & diperbaiki selama implementasi (status masih `LENGKAP` bukan `ARCHIVED` saat
+Add Data)** — lihat detail lengkap di bagian "Add Data manual Audit Courier — kolom Status
+terkunci ARCHIVED" di atas; root cause SAMA PERSIS (`allowedKeysCreate` strip key yg tidak ada
+di `PIB_COLS`/`CN_COLS`) yg mengingatkan kenapa `manual_override_fields` WAJIB di-union manual
+juga ke whitelist itu.
+
+## Rekapan Courier — Auto-Calculate 6 kolom turunan (2026-09, `SharedDataTable.tsx`)
+
+Sama prinsip & arsitektur dgn "Audit Courier — Auto-Calculate" di atas (baca itu dulu utk pola
+umum: override manual permanen via kolom `manual_override_fields`, live-compute di 3 jalur
+input). Fungsi pure `computeCourierRekapanCalc()` + `COURIER_REKAPAN_CALC_FIELDS` (6 field).
+
+**Formula**: "Jumlah Vessel" = jumlah pemisah `+` pada kolom `vessel` + 1 (`courierRekapanVesselCount()`
+-- vessel kosong = 1, TIDAK PERNAH 0, guard pembagi nol otomatis krn selalu minimal 1).
+1. `total_amount` = `courier_adm_fee` + `total_duty_tax` + `total_freight` (berdiri sendiri,
+   TIDAK bergantung Jumlah Vessel)
+2. `breakdown_courier_adm_vessel` = `courier_adm_fee` / Jumlah Vessel
+3. `breakdown_duty_vessel` = `total_duty_tax` / Jumlah Vessel
+4. `breakdown_freight_vessel` = `total_freight` / Jumlah Vessel
+5. `breakdown_bm_vessel` = `bm` / Jumlah Vessel
+6. `breakdown_ppnpph_vessel` = (`ppn` + `pph`) / Jumlah Vessel
+
+**BELUM DIJALANKAN ke Supabase production**:
+```sql
+alter table public.rekapan_courier add column if not exists manual_override_fields jsonb not null default '[]'::jsonb;
+```
+
+**3 jalur wajib** (sama pola persis dgn Audit Courier, jangan diulang detail di sini):
+1. `EditModal` — `useEffect` GANTI TOTAL breakdown-calc lama yg SUDAH ADA sebelumnya di kode
+   (breakdown_* sudah auto-calc dari awal, TAPI dulu selalu overwrite tanpa override-awareness
+   & split vessel pakai `.split('+').filter(Boolean)` bukan formula char-count resmi -- kini
+   `courierRekapanVesselCount()` konsisten). `total_amount` BARU (dulu tidak ada sama sekali).
+2. **3 titik live-compute** (BUKAN 2 spt disebut di bagian Audit Courier -- Rekapan punya 1
+   titik ekstra): `fetchRecords`'s `enrichedData` (~baris 3593, GANTI TOTAL blok breakdown lama
+   yg sama masalahnya kayak di EditModal), DAN `getExportData`'s return-map (~baris 3906, sama).
+   Cabang `courier_audit` di 2 tempat yg sama SEKARANG cuma comment "sudah dihitung duluan lewat
+   `data.forEach`" -- **bug ditemukan & diperbaiki**: sebelum fix ini, blok lama di sini
+   (formula `cek_selisih` versi lama, cuma jalan utk CN, tanpa sadar override) jalan SETELAH
+   `data.forEach` yg sudah benar, jadi DIAM2 MENIMPA BALIK hasil yg sudah benar dgn nilai basi
+   tiap kali halaman di-fetch/export -- root cause ini ditemukan pas nambah fitur Rekapan
+   Courier, bukan dari laporan user terpisah.
+3. `handleInlineSaveRow` cabang `courier_rekapan` — pola sama persis dgn `courier_audit`.
+
 ## Bug fix: "Add Data" Audit Courier bisa kirim payload ke tabel yg salah (`EditModal`, `SharedDataTable.tsx`)
 
 Laporan user: tambah data jalur CN error `Could not find the 'no_pib' column of
@@ -1062,6 +1169,14 @@ record biasa & tab lain). Tampil `<input disabled>` teks "Archived" (via `getSta
 aktual dikirim lewat `createDefaults={{status:'ARCHIVED'}}` (`EditModal` prop, bukan dari
 `form.status` krn input disabled tidak update state). `createDefaults` ini berlaku utk SEMUA
 `courierAuditType` (PIB/CN/Draft), bukan cuma tab Draft seperti sebelumnya.
+
+**Bug ditemukan & diperbaiki — status masih ke-insert `LENGKAP` (default DB) padahal
+`createDefaults` sudah `ARCHIVED`**: kolom asli `status` (dipakai filter `.eq('status',
+'ARCHIVED')` archive) SENGAJA TIDAK ADA di `PIB_COLS`/`CN_COLS` (yg ada cuma
+`status_kelengkapan`, field beda) — logic anti-mismatch-tabel `allowedKeysCreate` (strip key
+payload yg bukan bagian `cols` tabel tujuan, lihat bug "Add Data kirim ke tabel salah" di bawah)
+ikut MEMBUANG `status` dari payload sebelum insert krn dianggap key asing, `createDefaults` jadi
+percuma. Fix: `allowedKeysCreate` di-union manual dgn `'status'`.
 
 **Konsekuensi berdampak (sesuai desain existing, bukan bug baru)**: query Audit Courier normal
 `.neq('status','ARCHIVED')` (lihat bagian arsitektur Courier di atas) — data manual baru TIDAK
