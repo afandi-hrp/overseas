@@ -42,6 +42,7 @@ Semua route (kecuali `/login`) dibungkus `<ProtectedRoute>` → `<MainLayout>` (
 | `/audit-po` | `AuditPoPage` | read-only judul card, label menu "Audit AP Local" |
 | `/audit-po-overseas` | `AuditPoOverseasPage` | label "Audit AP Overseas", DUPLIKASI SENGAJA `AuditPoPage` (tabel `audit_po_apovs_comp`) |
 | `/pi-local` | `PiLocalPage` | tabel `audit_po_pi_local_comp`, duplikasi arsitektur sama dgn AuditPoPage/AuditPoOverseasPage |
+| `/accounting-rekap` | `AccountingRekapPage` | tabel `accounting_rekap_finance`, sub-halaman "Compare Doc", lihat bagian "Accounting Rekap" |
 | `/audit-trail` | `AuditTrailPage` → `SharedDataTable` (tab `trail`) | |
 | `/settings` | `SettingsPage` | hub kartu-kartu modul admin (murni presentational, tanpa state) |
 | `/settings/webhooks` | `WebhookSettingsPage` | Konfigurasi Webhook Otomasi — page_key `settings_webhooks`, diakses via kartu di `/settings` |
@@ -912,11 +913,78 @@ create policy "audit_po_apovs_comp_delete" on public.audit_po_apovs_comp
   for delete using (public.has_edit_access('audit_po_overseas'));
 ```
 
+## Accounting Rekap — duplikasi Audit AP Local, tabel finance baru (`src/pages/AccountingRekapPage.tsx`, 2026-09)
+
+Dibuat 2026-09 atas permintaan user: halaman baru "identik" tampilannya dgn Audit AP Local, jadi
+sub-halaman ke-4 di bawah menu sidebar "Compare Doc" (bareng Bunker/Audit AP Local/Audit AP
+Overseas) — DUPLIKASI SENGAJA (bukan komponen generik/di-share), sama prinsipnya dgn Audit AP
+Overseas/PI Local. Kalau ada bug/fitur yang perlu diterapkan ke salah satu halaman "Compare Doc"
+manapun, JANGAN asumsikan otomatis ke-apply ke yang lain.
+
+- Tabel `accounting_rekap_finance` (skema diberikan user apa adanya): `id`, `created_at`,
+  `tanggal_dokumen`, `vendor`, `nomor_po`, `pt_internal`, `bank`, `total_bayar` (bigint),
+  `lokasi_folder`, `drive_file_id`, `url_view`, `waktu_proses`, `status_proses`. **RLS
+  DISERAGAMKAN (2026-09, permintaan user) dgn pola `audit_po_apovs_comp`/Audit AP Overseas** —
+  policy SELECT longgar bawaan (`accounting_rekap_finance_select_anon`, `to anon,
+  authenticated using (true)`) DIGANTI jadi `has_page_access('accounting_rekap')`, ditambah 3
+  policy INSERT/UPDATE/DELETE via `has_edit_access('accounting_rekap')`:
+  ```sql
+  drop policy if exists "accounting_rekap_finance_select_anon" on public.accounting_rekap_finance;
+  create policy "accounting_rekap_finance_select" on public.accounting_rekap_finance
+    for select using (public.has_page_access('accounting_rekap'));
+  create policy "accounting_rekap_finance_insert" on public.accounting_rekap_finance
+    for insert with check (public.has_edit_access('accounting_rekap'));
+  create policy "accounting_rekap_finance_update" on public.accounting_rekap_finance
+    for update using (public.has_edit_access('accounting_rekap'))
+    with check (public.has_edit_access('accounting_rekap'));
+  create policy "accounting_rekap_finance_delete" on public.accounting_rekap_finance
+    for delete using (public.has_edit_access('accounting_rekap'));
+  ```
+  **BELUM DIVERIFIKASI dijalankan ke Supabase production** — WAJIB dijalankan manual dulu
+  sebelum halaman ini bisa diakses sama sekali (SELECT sekarang butuh page access, bukan lagi
+  `true` bebas) dan sebelum Edit/Hapus bisa jalan.
+- Beda dari Audit AP Local: **TIDAK ADA kolom `kategori` sama sekali** di tabel ini — jadi
+  `KategoriPicker`/`KategoriCell`/kolom Kategori di tabel & tab "Kategori" di modal Dashboard
+  DIHILANGKAN TOTAL (bukan disembunyikan), modal Dashboard cuma py 2 tab (Overview/Per Vendor).
+  Field mapping: `nama_pt`→`pt_internal`, `vendor_name`→`vendor`, `status_audit`→`status_proses`,
+  `durasi_text`→`waktu_proses`. Field baru yang tidak ada di Audit AP Local:
+  `tanggal_dokumen`/`bank`/`total_bayar`/`lokasi_folder` — `tanggal_dokumen`/`bank`/
+  `total_bayar`/`status_proses` boleh dikoreksi manual lewat modal Edit (bareng `vendor`),
+  `pt_internal`/`nomor_po` TETAP read-only (konsisten pola Audit AP Local versi terbaru).
+  `lokasi_folder`/`drive_file_id`/`url_view`/`waktu_proses` murni hasil otomasi backend.
+- **Preview dokumen disederhanakan jadi 1 file** (beda dari Audit AP Local yg py 2 tombol
+  terpisah PDF/Hasil Audit) — tombol tunggal "Preview" pakai `url_view`/`drive_file_id` yg sama,
+  `guessPreviewKind()` menebak `html` vs `pdf` dari ekstensi URL (fallback `pdf`, kemungkinan
+  besar dokumen finance di-scan sbg PDF). `buildPreviewSrc`/`PreviewModal` (proxy
+  `/api/drive-file-proxy?id=...`, fetch+srcDoc/blob teknik) REPLIKA PERSIS Audit AP Local.
+- `statusProsesMeta()` (`AccountingRekapHelpers.ts`) — beda dari `statusAuditMeta` Audit AP Local
+  (yang cuma 2 nilai tetap "Selesai Diproses"/"Doc tidak terbaca") — domain nilai `status_proses`
+  BELUM DITENTUKAN (bebas teks dari otomasi/manual), jadi TIDAK ada mapping label per-nilai,
+  cukup tampilkan apa adanya + badge amber kalau terisi, abu-abu netral kalau kosong.
+  Dashboard "Total Bermasalah"/"Total Sesuai" pakai konvensi SAMA dgn Audit AP Local:
+  `status_proses` TIDAK null = "Bermasalah", selisihnya = "Sesuai".
+- `formatRupiah()` (baru, tidak ada equivalent di Audit AP Local) — format `total_bayar` jadi
+  `"Rp 1.234.567"` (`toLocaleString('id-ID')`), dipakai kolom tabel & (belum) di modal Dashboard.
+- Page_key `accounting_rekap`, route `/accounting-rekap`, group PAGE_REGISTRY `'Accounting
+  Rekap'` (grup baru, generik lewat `PAGE_GROUPS` — otomatis muncul di matrix Kelola Role &
+  Akses). Didaftarkan sbg subTab ke-4 grup "Compare Doc" di `MainLayout.tsx` (`basePath` induk
+  `/compare-doc` tetap dummy, tidak perlu diubah — `pathBelongs` generik sudah menangani path
+  baru ini otomatis lewat `t.subTabs?.some(...)`, lihat bagian "Compare Doc" di bawah).
+- `src/utils/AccountingRekapHelpers.ts` — duplikasi pola `AuditPoHelpers.ts`: tipe
+  `AccountingRekapRow`, `AccountingRekapEditableFields`, `statusProsesMeta`, `formatRupiah`,
+  `updateAccountingRekapRow`, `deleteAccountingRekapRow`.
+- **BELUM porting**: fitur "Dropdown Kategori bisa multi-select"/`KategoriPicker` (tidak relevan,
+  tabel ini tidak punya kolom kategori), badge persentase/Checklist/Cost Validation (tabel ini
+  tidak py konsep checklist/cost-validasi terpisah spt Courier). `PT_OPTIONS` fallback +
+  `fetchDistinctPtInternal('accounting_rekap_finance')` (pola sama `fetchDistinctNamaPt` Audit AP
+  Local) SUDAH diterapkan dari awal (bukan hardcode statis).
+
 ## Struktur menu sidebar "Compare Doc" (`src/components/MainLayout.tsx`)
 
 Bunker, Audit AP Local, Audit AP Overseas digabung 1 menu induk "Compare Doc" (icon
-`GitCompare`) dgn 3 submenu — murni reorganisasi sidebar, route/page_key TIDAK berubah.
-`basePath:'/compare-doc'` SENGAJA dummy (3 route tidak berbagi prefix senada). `activeMainTab`
+`GitCompare`) dgn submenu (2026-09 nambah subTab ke-4 "Accounting Rekap") — murni reorganisasi
+sidebar, route/page_key TIDAK berubah. `basePath:'/compare-doc'` SENGAJA dummy (route-route ini
+tidak berbagi prefix senada). `activeMainTab`
 diperluas: kalau tab punya `subTabs`, cek juga `subTabs.some(s => pathBelongs(pathname,
 s.path))`. `PAGE_REGISTRY` groups TIDAK ikut digabung (beda concern dari struktur visual).
 
@@ -1098,6 +1166,9 @@ kelengkapan di-merge manual di JS dari `dokumen_checklist` via `mergeChecklistDa
 **Bunker**: `bunker_dokumen`, `bunker_processing_queue`.
 
 **Audit AP Local**: `audit_po_ap_comp` (otomasi backend).
+
+**Accounting Rekap**: `accounting_rekap_finance` (otomasi backend, RLS baru cuma SELECT — lihat
+bagian "Accounting Rekap" di atas soal gap INSERT/UPDATE/DELETE).
 **Audit AP Overseas**: `audit_po_apovs_comp` (otomasi backend, duplikasi struktur).
 **PI Local**: `audit_po_pi_local_comp` (otomasi backend, duplikasi struktur juga — lihat
 "Audit AP Local" utk arsitektur 3-halaman duplikat).
