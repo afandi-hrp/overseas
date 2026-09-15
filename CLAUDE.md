@@ -1052,6 +1052,23 @@ stripping payload di atas — field2 yg TAMPIL di form tetap ikut tab yg SEDANG 
 value dropdown ini secara real-time), jadi kombinasi keduanya (dropdown genggam nilai valid +
 stripping payload jaga-jaga mismatch) tetap dipertahankan.
 
+## Add Data manual Audit Courier — kolom Status terkunci ARCHIVED (`SharedDataTable.tsx`)
+
+Permintaan user: field **Status** di form "Add Data" Audit Courier BUKAN lagi dropdown pilihan
+(dulu `LENGKAP`/`PROSES`/`PENDING`/`REVISI`) — sekarang SELALU `ARCHIVED` otomatis, tidak ada
+opsi lain utk dipilih user. Guard renderer field: `c.key === 'status' && tab.id === 'courier_audit'
+&& isCreate` (dicek SEBELUM cabang `status` generik lain — cabang lama tetap dipakai Edit
+record biasa & tab lain). Tampil `<input disabled>` teks "Archived" (via `getStatusLabel`), nilai
+aktual dikirim lewat `createDefaults={{status:'ARCHIVED'}}` (`EditModal` prop, bukan dari
+`form.status` krn input disabled tidak update state). `createDefaults` ini berlaku utk SEMUA
+`courierAuditType` (PIB/CN/Draft), bukan cuma tab Draft seperti sebelumnya.
+
+**Konsekuensi berdampak (sesuai desain existing, bukan bug baru)**: query Audit Courier normal
+`.neq('status','ARCHIVED')` (lihat bagian arsitektur Courier di atas) — data manual baru TIDAK
+tampil di tab PIB/CN Audit biasa, hanya kelihatan lewat tab **Draft**. Ini konsisten dgn
+mekanisme ARCHIVED yg sudah ada (bukan hal baru dari perubahan ini), hanya sekarang jadi
+satu-satunya jalur utk data manual.
+
 ## Edit Massal — Audit Courier & Rekapan Courier (`SharedDataTable.tsx`)
 
 Arsitektur `pendingEdits`/`getVal`/`setVal` direplika dari FAR Overseas List Memo, TAPI toggle

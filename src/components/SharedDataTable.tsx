@@ -504,6 +504,17 @@ function EditModal({ record, tab, cols, onClose, onSaved, isCreate, createDefaul
                     <option value="CN">CN</option>
                   </select>
                 )
+              } else if (c.key === 'status' && tab.id === 'courier_audit' && isCreate) {
+                // Data manual di Audit Courier SELALU masuk sbg ARCHIVED (tidak muncul di Audit,
+                // baru kelihatan lewat tab Draft) -- field terkunci, bukan pilihan user.
+                inputElement = (
+                  <input
+                    type="text"
+                    value={getStatusLabel('ARCHIVED')}
+                    disabled
+                    className="w-full border border-blue-200 bg-blue-50/30 rounded-lg px-3 py-2 text-xs font-medium text-[#5A305A] h-[34px] opacity-60 cursor-not-allowed"
+                  />
+                )
               } else if (c.key === 'status') {
                 inputElement = (
                   <select
@@ -4229,7 +4240,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           tab={tab}
           cols={activeCols}
           isCreate
-          createDefaults={(activeMainTab === 'courier' && activeSubTab === 'courier_audit' && courierAuditType === 'archive') ? { status: 'ARCHIVED' } : undefined}
+          createDefaults={(activeMainTab === 'courier' && activeSubTab === 'courier_audit') ? { status: 'ARCHIVED' } : undefined}
           onClose={() => setShowAddRowModal(false)}
           onSaved={fetchRecords}
         />
