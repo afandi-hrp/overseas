@@ -67,6 +67,7 @@ export const PAGE_REGISTRY: PageEntry[] = [
 
   { key: 'audit_trail', label: 'Audit Trail', path: '/audit-trail', group: 'General' },
 
+  { key: 'settings_webhooks', label: 'Konfigurasi Webhook Otomasi', path: '/settings/webhooks', group: 'Settings' },
   { key: 'admin_rates', label: 'Rate Tables & PPJK', path: '/admin/rates', group: 'Settings' },
   { key: 'settings_fuel_surcharge', label: 'Fuel Surcharge', path: '/settings/fuel-surcharge', group: 'Settings' },
   { key: 'settings_kurs_bi', label: 'Kurs BI Harian', path: '/settings/kurs-bi', group: 'Settings' },

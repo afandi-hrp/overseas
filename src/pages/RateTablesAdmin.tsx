@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Table2 } from 'lucide-react';
 import RateSheetDHL from './admin/RateSheetDHL';
 import RateSheetFedEx from './admin/RateSheetFedEx';
+import RateSheetUPS from './admin/RateSheetUPS';
 import SurchargeDHL from './admin/SurchargeDHL';
 import SurchargeFedEx from './admin/SurchargeFedEx';
 import ZoneMappingEditor from './admin/ZoneMappingEditor';
@@ -16,6 +17,7 @@ export default function RateTablesAdmin() {
   const tabs = [
     { id: 'dhl_rate', label: 'Rate Sheet DHL' },
     { id: 'fedex_rate', label: 'Rate Sheet FedEx' },
+    { id: 'ups_rate', label: 'Rate Sheet UPS' },
     { id: 'dhl_surcharge', label: 'Surcharge DHL' },
     { id: 'fedex_surcharge', label: 'Surcharge FedEx' },
     { id: 'zone_mapping', label: 'Zone Mapping' },
@@ -71,6 +73,7 @@ export default function RateTablesAdmin() {
         <div className="flex-1 overflow-y-auto pt-4 -mx-1 px-1">
           {activeTab === 'dhl_rate' && <RateSheetDHL />}
           {activeTab === 'fedex_rate' && <RateSheetFedEx />}
+          {activeTab === 'ups_rate' && <RateSheetUPS />}
           {activeTab === 'dhl_surcharge' && <SurchargeDHL />}
           {activeTab === 'fedex_surcharge' && <SurchargeFedEx />}
           {activeTab === 'zone_mapping' && <ZoneMappingEditor />}

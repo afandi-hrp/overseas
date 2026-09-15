@@ -379,6 +379,16 @@ function EditModal({ record, tab, cols, onClose, onSaved, isCreate, createDefaul
           const jenisDokumen = String(payload.jenis_dokumen || '').trim().toUpperCase() === 'CN' ? 'CN' : 'PIB';
           payload.jenis_dokumen = jenisDokumen;
           const targetTableCreate = jenisDokumen === 'CN' ? 'tabel_audit_cn' : 'tabel_audit_pib';
+          // Form "Add Data" ini dirender pakai `cols` = activeCols, yg ikut TAB YANG SEDANG AKTIF
+          // (PIB/CN/Draft) -- TAPI field "Document Type" (jenis_dokumen) adalah <input> teks bebas
+          // (lihat render generik di atas), jadi user BISA mengetik "CN" manual walau field2 yg
+          // muncul di form masih dari PIB_COLS (mis. `no_pib`), atau sebaliknya. Kalau tidak
+          // di-strip, payload itu ikut terkirim ke tabel yg SKEMANYA BEDA (mis. `no_pib` dikirim
+          // ke `tabel_audit_cn` yg tidak punya kolom itu sama sekali) -> Supabase error "Could not
+          // find the '<kolom>' column of '<tabel>' in the schema cache" (2026-09, laporan user).
+          // Fix: buang key manapun yg TIDAK ada di daftar kolom tabel tujuan yg SEBENARNYA dipakai.
+          const allowedKeysCreate = new Set((jenisDokumen === 'CN' ? CN_COLS : PIB_COLS).map(c => c.key));
+          Object.keys(payload).forEach(k => { if (!allowedKeysCreate.has(k)) delete payload[k]; });
           const { error: insErr } = await supabase.from(targetTableCreate).insert(payload);
           if (insErr) throw insErr;
           onSaved()
@@ -473,7 +483,28 @@ function EditModal({ record, tab, cols, onClose, onSaved, isCreate, createDefaul
               if (c.type === 'num' || c.type === 'pct') inputType = 'number';
 
               let inputElement = null;
-              if (c.key === 'status') {
+              if (c.key === 'jenis_dokumen' && tab.id === 'courier_audit') {
+                // Dropdown TERBATAS PIB/CN (2026-09, permintaan user) -- sebelumnya field teks
+                // bebas, resiko salah ketik/salah tabel tujuan saat "Add Data" (lihat fix
+                // stripping payload di handleSave di atas). Dropdown TIDAK menutup celah itu
+                // sepenuhnya (masih perlu stripping krn form fields yg tampil ikut tab AKTIF,
+                // bukan value dropdown ini), tapi cegah user salah ketik/typo nilai selain
+                // PIB/CN. Disabled saat EDIT (bukan create) -- record yg sudah ada tabelnya
+                // ditentukan dari `record.jenis_dokumen` asli (lihat handleSave), mengubah field
+                // ini di mode Edit TIDAK memindahkan row ke tabel lain, jadi disable supaya
+                // tidak menyesatkan user mengira bisa "pindah jalur" lewat sini.
+                inputElement = (
+                  <select
+                    value={form[c.key] ?? ''}
+                    onChange={e => set(c.key, e.target.value)}
+                    disabled={!isCreate}
+                    className="w-full border border-blue-200 bg-blue-50/30 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-medium text-[#5A305A] h-[34px] disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    <option value="PIB">PIB</option>
+                    <option value="CN">CN</option>
+                  </select>
+                )
+              } else if (c.key === 'status') {
                 inputElement = (
                   <select
                     value={form[c.key] ?? ''}

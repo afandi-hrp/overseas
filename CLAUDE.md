@@ -16,25 +16,19 @@ approval-nya.
 - Ikon: `lucide-react`. Server kecil (`server.ts`, Express) hanya untuk proxy — bukan backend
   data utama: upload ke n8n (`/api/n8n-proxy-start`), dan proxy preview file Google Drive
   (`/api/drive-file-proxy?id=<drive_file_id>`, dipakai `PreviewModal` di `AuditPoPage.tsx`/
-  `AuditPoOverseasPage.tsx`, lihat bagian "Audit AP Local" untuk detailnya). **`tsx` (dipakai
-  `npm run dev`) TIDAK hot-reload perubahan kode `server.ts`** — beda dari Vite HMR utk frontend,
-  tiap ubah `server.ts` WAJIB restart dev server manual, kalau tidak endpoint baru/berubah tidak
-  akan kepakai (gejalanya membingungkan: request ke endpoint itu jatuh ke SPA fallback & balikin
-  `index.html` biasa, bukan 404 tegas).
-- Verifikasi standar setelah edit: `npx tsc --noEmit` (harus bersih, tidak ada error).
-- **Browser tab title = "BeeHive"** (2026-09, distandarkan — sebelumnya CAMPUR ANTARA 3 brand
-  berbeda: `index.html` default "Shipment", sebagian halaman set `document.title = '... ·
-  Shipment'` via `useEffect`, TAPI `UploadPage.tsx` & dashboard `SharedDataTable.tsx` malah pakai
-  sisa brand lama "IMI Import System" — semua DISERAGAMKAN ke suffix `· BeeHive`, sesuai nama
-  yang sudah dipakai di logo sidebar `MainLayout.tsx`). `index.html` `<title>` (dipakai halaman
-  yg TIDAK override `document.title`, mis. `/login`) juga diganti dari "Shipment" → "BeeHive".
-  Kalau nambah halaman baru yang set `document.title` sendiri, ikuti pola `'<Judul Halaman> ·
-  BeeHive'`, JANGAN pakai "Shipment"/"IMI Import System" lagi.
+  `AuditPoOverseasPage.tsx`/`PiLocalPage.tsx`). **`tsx` (dipakai `npm run dev`) TIDAK
+  hot-reload perubahan kode `server.ts`** — beda dari Vite HMR utk frontend, tiap ubah
+  `server.ts` WAJIB restart dev server manual, kalau tidak endpoint baru/berubah jatuh ke SPA
+  fallback & balikin `index.html` biasa (bukan 404 tegas — gejalanya membingungkan).
+- Verifikasi standar setelah edit: `npx tsc --noEmit` (harus bersih).
+- **Browser tab title = "BeeHive"** — semua halaman pakai suffix `· BeeHive` di `document.title`
+  (atau `index.html` default utk halaman yg tidak override, mis. `/login`). Halaman baru ikuti
+  pola `'<Judul Halaman> · BeeHive'`.
 
 ## Struktur routing & halaman (`src/App.tsx`)
 
 Semua route (kecuali `/login`) dibungkus `<ProtectedRoute>` → `<MainLayout>` (sidebar) →
-`<RequirePageAccess pageKey="...">` (lihat RBAC di bawah).
+`<RequirePageAccess pageKey="...">`.
 
 | Route | Komponen | Catatan |
 |---|---|---|
@@ -43,1098 +37,314 @@ Semua route (kecuali `/login`) dibungkus `<ProtectedRoute>` → `<MainLayout>` (
 | `/courier/rekapan` | `CourierRekapanPage` → `SharedDataTable` | |
 | `/courier/validasi` | `CourierValidasiPage` | halaman mandiri, bukan `SharedDataTable` |
 | `/sea-air/audit`, `/sea-air/rekapan` | → `SharedDataTable` | |
-| `/direct-loading`, `/direct-loading/:id` | `FarOverseasAirPage` | modul "FAR Overseas" di sidebar |
+| `/direct-loading`, `/direct-loading/:id` | `FarOverseasAirPage` | modul "FAR Overseas" di sidebar; `page_key`/route TETAP `direct_loading`/`/direct-loading` (label tampil "FAR Overseas") |
 | `/bunker` | `BunkerPage` | |
-| `/audit-po` | `AuditPoPage` | read-only, label menu "Audit AP Local", lihat bagian "Audit AP Local" di bawah |
-| `/audit-po-overseas` | `AuditPoOverseasPage` | label menu "Audit AP Overseas", DUPLIKASI PERSIS `AuditPoPage` tabel `audit_po_apovs_comp`, lihat bagian "Audit AP Overseas" di bawah |
+| `/audit-po` | `AuditPoPage` | read-only judul card, label menu "Audit AP Local" |
+| `/audit-po-overseas` | `AuditPoOverseasPage` | label "Audit AP Overseas", DUPLIKASI SENGAJA `AuditPoPage` (tabel `audit_po_apovs_comp`) |
+| `/pi-local` | `PiLocalPage` | tabel `audit_po_pi_local_comp`, duplikasi arsitektur sama dgn AuditPoPage/AuditPoOverseasPage |
 | `/audit-trail` | `AuditTrailPage` → `SharedDataTable` (tab `trail`) | |
-| `/settings` | `SettingsPage` | hub: webhook config + kartu-kartu modul admin |
+| `/settings` | `SettingsPage` | hub kartu-kartu modul admin (murni presentational, tanpa state) |
+| `/settings/webhooks` | `WebhookSettingsPage` | Konfigurasi Webhook Otomasi — page_key `settings_webhooks`, diakses via kartu di `/settings` |
 | `/settings/roles` | `RoleManagementPage` | admin-only |
 | `/account` | `AccountPage` | |
-| `/admin/rates` | `RateTablesAdmin` | tab-tab: RateSheetDHL/FedEx, SurchargeDHL/FedEx,
-  ZoneMappingEditor, NPWPEditor, PPJKCostRule, SurchargeCIPLRule (di `src/pages/admin/`) |
+| `/admin/rates` | `RateTablesAdmin` | tab: RateSheetDHL/FedEx/UPS, SurchargeDHL/FedEx, ZoneMappingEditor, NPWPEditor, PPJKCostRule, SurchargeCIPLRule (`src/pages/admin/`) |
 | `/settings/fuel-surcharge` | `FuelSurchargePage` | |
 | `/settings/kurs-bi` | `KursBIPage` | |
 | `/settings/kurs-rule-vendor` | `KursRuleVendorPage` | |
 | `/settings/tarif-kontrak` | `TarifKontrakPage` | |
 | `/settings/tarif-far-overseas-vendor` | `FarOverseasVendorTarifPage` | |
 
-**`SharedDataTable.tsx`** (`src/components/`, ~3800 baris) adalah komponen generik besar yang
-menangani Courier Audit/Rekapan, Sea & Air Audit/Rekapan, dan Audit Trail — dipilih lewat prop
-`defaultMainTab`/`defaultSubTab`. Hati-hati kalau edit — banyak logic bercabang berdasar
-`activeMainTab`/`activeSubTab`.
+**`SharedDataTable.tsx`** (`src/components/`, ~3800 baris) komponen generik besar: Courier
+Audit/Rekapan, Sea & Air Audit/Rekapan, Audit Trail — dipilih via prop
+`defaultMainTab`/`defaultSubTab`. Banyak logic bercabang berdasar
+`activeMainTab`/`activeSubTab`, hati-hati saat edit.
 
-- **Kolom AWB — beda perilaku SENGAJA antara Audit Courier & Rekapan Courier** (2026-09,
-  dikonfirmasi user, JANGAN disatukan lagi jadi 1 perilaku):
-  - **Audit Courier** (`PIB_COLS`/`CN_COLS`, kolom `awb` TANPA `type` → masuk cabang `!c.type` di
-    `getCellData()`, ~baris 1364) — tampil **APA ADANYA** dari `tabel_audit_pib`/`tabel_audit_cn`,
-    termasuk prefix carrier ("DHL NO."/"FEDEX No.") kalau memang begitu tersimpan di database.
-  - **Rekapan Courier** (`COURIER_COLS`, kolom `awb` diberi `type: 'awb_strip_carrier'`, cabang
-    sendiri di `getCellData()`) — prefix carrier ("DHL NO."/"FEDEX No.") DIBUANG dari tampilan
-    (regex `.replace(/^(DHL|FEDEX)\s*NO\.?\s*:?\s*/i, '')`), cuma nomornya saja yang tampil. Mode
-    edit inline TETAP tampilkan/edit nilai mentah (tidak ikut di-strip) — stripping ini MURNI
-    kosmetik tampilan read-only, sama pola dengan `ppjk` (buang prefix "OWN").
-  - Filter/normalisasi serupa (`replace(/^(DHL|FEDEX).../)`) juga ADA & SENGAJA DIBIARKAN di
-    `ValidasiModal.tsx`/`ValidasiHelper.ts` — itu utk internal matching/lookup AWB ke
-    `tabel_audit_pib`, BUKAN utk display, jadi tidak termasuk cakupan 2 poin di atas.
-- **Filter tanggal Audit Courier (`filterStartDate`/`filterEndDate`)** — SUDAH berdasarkan kolom
-  `tgl_ppjk` (label kolom "PPJK Date") utk `courier_audit` (PIB maupun CN, lihat query ~baris
-  3017-3031 & export ~baris 3322-3329/3373-3382) — BUKAN `created_at`/kolom lain. Beda dgn
-  Courier Rekapan yang pakai `tgl_terima_email`. Kalau nanti ada laporan filter tanggal "salah
-  kolom" lagi di Audit Courier, cek dulu apa benar row yang dimaksud `tgl_ppjk`-nya kosong/beda
-  dari yang diharapkan user (data issue), bukan otomatis asumsi kode filternya yang salah.
-- **Padding halaman `<header>`/`<main>`** (~baris 3864/3881, 2026-09) — dikecilkan dari `px-6` ke
-  `px-3` (kiri-kanan simetris karena `px-*` = padding kedua sisi) atas laporan user: di laptop
-  14", panel filter toolbar (`overflow-x-auto`) Audit Courier kepotong sampai tab **CN** (kadang
-  **PIB**) tidak kelihatan tanpa scroll horizontal — dropdown Company sudah dikecilkan duluan
-  (lihat poin di bawah) tapi masih kurang, jadi margin kiri (jarak ke sidebar)/kanan halaman ikut
-  dipersempit juga. Berlaku ke SEMUA tab yang dirender lewat komponen ini (Courier/Sea & Air/Audit
-  Trail), bukan cuma Audit Courier — kalau nanti ada laporan halaman lain jadi kurang lega,
-  pertimbangkan trade-off ini.
-  **Susulan (2026-09): `px-3` ini SEKARANG STANDAR DI SEMUA HALAMAN app ini**, bukan cuma
-  `SharedDataTable.tsx` lagi — lihat "Pola UI yang harus diikuti" di bawah utk daftar lengkap
-  16 file lain yang ikut diseragamkan (permintaan user "margin kiri-kanan semua halaman
-  disamakan & dipersempit").
-- **Dropdown Company Audit Courier** (`activeCourierImporAnFilter`, ~baris 4158) — lebar
-  dikecilkan dari `max-w-[160px]` ke `w-[70px]` lalu ke **`w-[48px]`** (2026-09, laporan sama
-  seperti di atas, dipersempit 2x krn tab CN masih kepotong di iterasi pertama) + `truncate` —
-  nama company panjang otomatis terpotong `...`, isi `<option>` tetap lengkap (cuma tampilan
-  trigger-nya yang dipotong).
-- **Input tanggal panel filter** (`filterStartDate`/`filterEndDate`, ~baris 4007/4014, dipakai
-  Courier/Sea & Air Audit/Rekapan + Audit Trail) — lebar tiap input dikecilkan dari `w-[100px]`
-  ke `w-[82px]` (2026-09, bagian dari iterasi kedua pelebaran ruang toolbar Audit Courier) — ikut
-  ke SEMUA tab yang pakai filter tanggal ini (bukan cuma Audit Courier), karena satu style class
-  yang sama dipakai berulang di tempat itu.
-- **`CourierRekapanRowGroup`** (~baris 1736): pasangan PO↔Vessel utk kolom NO PO/VESSEL yang
-  bisa di-split banyak baris dibangun dari `rec.po_pt_imi`/`rec.vessel` (dipisah `+`/`,`).
-  Pairing-nya jalan kalau SALAH SATU dari kedua field itu ada isinya (bukan cuma po_pt_imi) —
-  dulu ada bug: kalau po_pt_imi kosong (baris ditambah manual tanpa PO tapi Vessel diisi), nilai
-  vessel-nya hilang total dari tampilan tabel meski tetap tersimpan normal di `rec.vessel`
-  (makanya masih muncul benar di form Edit inline & export Excel, yang baca `rec.vessel`
-  langsung tanpa lewat pairing ini). SUDAH DIPERBAIKI (2026-09) — jangan reintroduce kondisi
-  `if (typeof rec.po_pt_imi === 'string')` doang di awal blok ini.
-- **Formatting display-only di `getCellData()`** (kolom tanpa `type`, ~baris 1293): kolom `ppjk`
-  strip prefix `"OWN "` (mis. hasil extract Gemini "OWN DHL" → tampil "DHL" saja, konsisten
-  dengan `ppjkTabs` filter yang sudah lebih dulu strip prefix ini) dan kolom `awb` strip prefix
-  carrier `"DHL NO."`/`"FEDEX No."` (mis. "DHL NO. 1234567890" → tampil "1234567890" saja) —
-  murni tampilan, DATA MENTAH DI SUPABASE TIDAK BERUBAH (masih ada prefix-nya). Kalau butuh raw
-  value lagi (mis. utk search/filter), tetap pakai `rec.ppjk`/`rec.awb` asli, bukan hasil display
-  ini.
+- **Kolom AWB — beda SENGAJA antara Audit Courier & Rekapan Courier** (JANGAN disatukan):
+  Audit Courier (`PIB_COLS`/`CN_COLS`, `awb` tanpa `type`) tampil APA ADANYA termasuk prefix
+  carrier ("DHL NO."/"FEDEX No."). Rekapan Courier (`COURIER_COLS`, `type:'awb_strip_carrier'`)
+  BUANG prefix carrier di tampilan (regex `.replace(/^(DHL|FEDEX)\s*NO\.?\s*:?\s*/i,'')`) — mode
+  edit inline tetap raw. Sama pola dgn kolom `ppjk` (buang prefix "OWN"). Regex serupa di
+  `ValidasiModal.tsx`/`ValidasiHelper.ts` untuk internal matching AWB, bukan display — di luar
+  cakupan ini.
+- **Filter tanggal Audit Courier** — berdasar `tgl_ppjk` ("PPJK Date"), BUKAN `created_at`.
+  Rekapan Courier pakai `tgl_terima_email`. Kalau ada laporan "filter salah kolom", cek dulu
+  apa datanya (`tgl_ppjk` kosong/beda), bukan otomatis curigai kode.
+- **Padding halaman** — lihat "Pola UI yang harus diikuti" di bawah (standar `px-3`/`pt-2`/`pb-1`
+  di semua halaman termasuk file ini).
+- Dropdown Company Audit Courier (`activeCourierImporAnFilter`) — `w-[48px] truncate` (dipersempit
+  drastis, layar 14" toolbar filter kepotong sampai tab CN tidak kelihatan tanpa scroll).
+- Input tanggal filter (`filterStartDate`/`filterEndDate`) — `w-[82px]`, dipakai
+  Courier/Sea & Air Audit/Rekapan + Audit Trail.
+- **`CourierRekapanRowGroup`**: pairing PO↔Vessel dari `rec.po_pt_imi`/`rec.vessel` jalan kalau
+  SALAH SATU field ada isinya (bukan cuma `po_pt_imi`) — dulu bug: `po_pt_imi` kosong bikin
+  `vessel` hilang dari tampilan (tetap ada di data/export). Sudah fix, jangan reintroduce cek
+  `if (typeof rec.po_pt_imi === 'string')` doang.
+- **`getCellData()` formatting display-only**: kolom `ppjk` strip prefix "OWN ", kolom `awb`
+  strip prefix carrier — murni tampilan, data mentah Supabase TIDAK berubah.
 
-## Auto-logout: idle 30 menit + logout paksa saat tab BENERAN ditutup (`src/lib/AuthContext.tsx`, 2026-09)
+## Auto-logout: idle 30 menit + logout paksa saat tab ditutup (`src/lib/AuthContext.tsx`)
 
-**Idle timeout (SUDAH ADA sebelumnya, bukan baru)**: `IDLE_TIMEOUT_MS = 30 menit`, dicek tiap
-15 detik (`IDLE_CHECK_INTERVAL_MS`), berdasar event `mousemove`/`mousedown`/`keydown`/
-`touchstart`/`scroll` (di-throttle max 1x/5 detik). Timestamp aktivitas terakhir disimpan di
-`localStorage` key `shipment_last_activity_ts` (SENGAJA `localStorage` bukan state lokal --
-supaya sinkron antar-tab, aktivitas di tab manapun menunda logout di semua tab).
-**Konsekuensi yang sempat jadi pertanyaan user**: kalau tab ditutup sebelum 30 menit lalu dibuka
-lagi besoknya, effect cleanup yang MENGHAPUS `shipment_last_activity_ts` (`localStorage.
-removeItem` di baris return effect) **TIDAK DIJAMIN jalan** saat tab ditutup (browser mematikan
-JS context tanpa unmount React normal) -- jadi timestamp lama TETAP ada, dan begitu app dibuka
-lagi besoknya, dalam ≤15 detik pertama otomatis logout (selisih waktu sudah jauh lebih dari 30
-menit). Ini SUDAH terjadi SEBELUM fitur di bawah ditambahkan -- kebetulan menutupi kebutuhan
-"logout kalau tab ditutup" utk kasus jeda PANJANG (semalam), TAPI TIDAK utk jeda PENDEK (tutup
-tab, buka lagi 5 menit kemudian -- idle timer belum lewat 30 menit, jadi TIDAK logout). Fitur
-baru di bawah ini melengkapi celah itu.
+**Idle timeout** (pre-existing): `IDLE_TIMEOUT_MS = 30 menit`, cek tiap 15 detik, aktivitas
+`mousemove`/`mousedown`/`keydown`/`touchstart`/`scroll` (throttle 1x/5dtk), timestamp di
+`localStorage` (`shipment_last_activity_ts`, sengaja bukan state lokal — sinkron antar-tab).
 
-**Logout paksa saat tab ditutup (BARU, 2026-09, permintaan eksplisit user)** -- 2 keputusan
-desain yang DIKONFIRMASI user lewat AskUserQuestion sebelum diimplementasi (JANGAN diubah tanpa
-konfirmasi ulang):
-1. **"Tutup 1 tab = logout SEMUA tab"** (bukan "tab lain tetap login selama masih ada yang
-   terbuka") -- user pilih opsi paling ketat/simpel, BUKAN opsi "hitung tab yang masih terbuka".
-2. **Refresh (F5) HARUS TETAP AMAN, tidak boleh ikut ke-logout** -- meski browser TIDAK punya
-   event native yang membedakan "tab ditutup" vs "halaman di-refresh" (keduanya sama-sama
-   memicu `pagehide`/`beforeunload`), user pilih tetap ingin kedua hal ini dibedakan (bukan
-   opsi "refresh juga logout" yang lebih simpel implementasinya).
+**Logout paksa saat tab ditutup** (keputusan desain DIKONFIRMASI user, jangan ubah tanpa
+konfirmasi ulang): (1) **tutup 1 tab = logout SEMUA tab** (bukan hitung tab yg masih terbuka);
+(2) **refresh (F5) TETAP AMAN**, tidak boleh ikut logout.
 
-**Cara kerja** (konstanta `TAB_ID_KEY`/`PENDING_CLOSE_KEY`/`CLOSE_CONFIRM_MS = 1500ms`, effect
-baru setelah effect idle-timeout, sama-sama gated `isAuthed`):
-- Tiap tab dapat `tabId` unik disimpan di **`sessionStorage`** (BUKAN `localStorage`) --
-  SENGAJA, krn `sessionStorage` BERTAHAN saat tab di-refresh (tabId tetap sama), TAPI HILANG
-  TOTAL kalau tab beneran ditutup (tab yang dibuka lagi nanti dapat `tabId` baru, beda).
-- Saat tab mau unload (`pagehide` DAN `beforeunload`, dipasang keduanya utk redundansi browser
-  beda-beda), tab menulis **"kemungkinan menutup"** ke `localStorage` (`PENDING_CLOSE_KEY`,
-  isinya `{tabId, ts}`) -- BUKAN langsung logout, krn di titik ini belum bisa dipastikan apakah
-  ini refresh atau penutupan beneran.
-- **Kalau ternyata cuma refresh**: begitu tab yang SAMA mount lagi (tabId dari `sessionStorage`
-  masih sama persis), dia cek `PENDING_CLOSE_KEY` yang baru saja dia tulis sendiri sebelum
-  unload -- `pending.tabId === tabId (milik sendiri)` -- langsung DIHAPUS/dibatalkan, tidak ada
-  logout. Ini biasanya selesai dalam waktu SANGAT singkat (reload browser tipikal <500ms).
-- **Kalau ternyata beneran ditutup**: tidak ada tab dengan `tabId` yang sama yang mount lagi
-  utk membatalkan jejak itu, jadi jejak `PENDING_CLOSE_KEY` "kadaluwarsa" -- 2 jalur deteksi:
-  1. **Tab LAIN yang masih hidup** (kalau ada) mendengar perubahan `PENDING_CLOSE_KEY` lewat
-     event `storage` browser (event ini HANYA terpicu di tab lain, TIDAK PERNAH di tab yang
-     melakukan perubahan itu sendiri -- pas dipakai sbg "sinyal antar-tab" tanpa BroadcastChannel)
-     -- pasang timer `CLOSE_CONFIRM_MS` (1.5 detik), kalau setelah itu jejaknya MASIH SAMA
-     (belum dibatalkan refresh), simpulkan tab itu beneran tertutup -- SEMUA tab lain ikut
-     `supabase.auth.signOut()`. Ini yang memenuhi keputusan desain #1 (tutup 1 tab dari
-     beberapa tab yang terbuka = semua ikut logout), TANPA ikut ke-trigger oleh refresh biasa
-     (keputusan desain #2) krn jendela 1.5 detik itu jauh lebih lama dari waktu refresh normal.
-  2. **Tidak ada tab lain yang hidup** (skenario asli yang ditanyakan user -- tab satu-satunya
-     ditutup, dibuka lagi besoknya) -- tidak ada yang mendengar event `storage` secara
-     real-time, jadi dicek ULANG saat tab BARU itu mount: `pending.tabId !== tabId (baru)` DAN
-     `Date.now() - pending.ts > CLOSE_CONFIRM_MS` (pasti true kalau jedanya semalam) -- logout
-     paksa terjadi SAAT MOUNT tab baru itu, sebelum idle-timer 30 menit sempat berperan sama
-     sekali.
-- **Keterbatasan yang disadari & DITERIMA** (bukan bug, konsekuensi platform web): kalau browser
-  di-force-kill (Task Manager/crash), `pagehide`/`beforeunload` TIDAK sempat terpicu sama sekali
-  -- mekanisme ini TIDAK bisa mendeteksi itu (jejak `PENDING_CLOSE_KEY` tidak pernah ditulis).
-  Idle-timeout 30 menit di atas TETAP jadi jaring pengaman independen utk skenario itu.
+Mekanisme: tiap tab dapat `tabId` unik di `sessionStorage` (bertahan saat refresh, hilang saat
+tab ditutup beneran). Saat unload (`pagehide`+`beforeunload`), tulis `PENDING_CLOSE_KEY`
+`{tabId, ts}` ke `localStorage`. Kalau tab yg SAMA mount lagi (refresh) → hapus jejak sendiri,
+tidak logout. Kalau tab lain masih hidup → dengar event `storage`, tunggu `CLOSE_CONFIRM_MS`
+(1.5 detik) lalu kalau jejak belum dibatalkan → semua tab `signOut()`. Kalau tidak ada tab lain
+hidup → dicek ulang saat tab baru mount (`pending.tabId !== tabId baru` DAN
+`Date.now()-pending.ts > CLOSE_CONFIRM_MS`) → logout saat mount. Keterbatasan diterima:
+force-kill browser tidak terdeteksi (idle-timeout jadi jaring pengaman independen).
 
-## Lock screen: auto-logout tidak lagi lempar ke LoginPage kalau masih di tab yang sama (`src/lib/AuthContext.tsx`, `src/App.tsx`, `src/components/LockScreen.tsx`, 2026-09)
+## Lock screen (`AuthContext.tsx`, `App.tsx`, `LockScreen.tsx`)
 
-Permintaan user: kalau auto-logout terjadi (idle-timeout 30 menit ATAU logout-paksa-tutup-tab di
-atas) SELAGI tab yang sama masih terbuka, JANGAN lempar ke LoginPage kosong — tampilkan halaman
-TERAKHIR apa adanya (di-blur, non-interaktif) + panel kecil minta PASSWORD SAJA (user/email tidak
-perlu diketik ulang). Begitu password benar, halaman yang di-blur langsung "hidup" lagi persis di
-tempatnya (state React TIDAK PERNAH hilang, TIDAK reload). TAPI kalau tab sudah BENERAN
-ditutup+sesi habis (dibuka lagi nanti/besok, React tree fresh) ATAU user SENGAJA klik "Logout" —
-tetap tampilkan LoginPage PENUH seperti biasa (2 pengecualian ini DIKONFIRMASI eksplisit lewat
-AskUserQuestion sebelum implementasi).
+Auto-logout (idle atau tab-tertutup) SELAGI tab yg sama masih terbuka → JANGAN lempar ke
+LoginPage kosong, tampilkan halaman TERAKHIR di-blur+`inert` + panel kecil minta PASSWORD SAJA.
+Password benar → halaman hidup lagi tanpa reload. TAPI kalau tab BENERAN ditutup+sesi habis
+(dibuka lagi nanti, React tree fresh) atau user klik "Logout" manual → tetap LoginPage penuh
+(2 pengecualian dikonfirmasi eksplisit).
 
-- **`AuthContext.tsx`** — 3 potongan state baru, SEMUA di dalam `AuthProvider`:
-  - `hadSessionRef` (useRef, BUKAN localStorage — sengaja reset sendiri tiap tab baru/reload):
-    jadi `true` PERMANEN begitu `session` SEKALI SAJA truthy di tab ini.
-  - `manualSignOutRef`: `true` HANYA selama proses lewat `signOut()` (dipanggil tombol "Logout"
-    UI, `MainLayout.tsx`/`LockScreen.tsx` "Not you? Log out") — supaya lock screen TIDAK muncul
-    utk logout yang memang disengaja. Direset `false` lagi otomatis tiap kali `session` truthy
-    (login baru/berhasil).
-  - `frozenRef`: snapshot `{session, profile, allowedPageKeys, editPageKeys,
-    approvalTiersByPage, isAdmin}` TERAKHIR sebelum sesi hilang. **Alasan krusial**: context yang
-    di-expose ke SELURUH halaman (`exposedSession`/`exposedProfile`/dst) TIDAK PERNAH langsung
-    ikut jadi `null`/kosong selama `lockScreenActive` true — tetap pakai nilai BEKU ini. Kalau
-    tidak dibekukan, halaman-halaman lain yang py `useEffect([user?.id])` (fetch data scoped ke
-    user) akan ikut ter-trigger ulang oleh transisi session->null yang sifatnya SEMENTARA ini,
-    berpotensi memicu fetch gagal/kosongin data yang seharusnya cuma "dibekukan" tampilannya.
-  - `lockScreenActive = !session && hadSessionRef.current && !manualSignOutRef.current` (session
-    di sini RAW state, bukan yang di-expose) — SATU-SATUNYA sinyal yang dipakai `App.tsx` utk
-    memilih render blur+LockScreen vs `<Navigate to="/login">`.
-- **`App.tsx` `ProtectedRoute`** — wrapper `<div><div className={lockScreenActive ? 'blur...' :
-  'contents'} inert={lockScreenActive || undefined}><Outlet/></div>{lockScreenActive &&
-  <LockScreen/>}</div>` SELALU dirender (BUKAN cuma muncul kondisional) — **KRUSIAL**: kalau
-  struktur pohonnya berubah tiap kali `lockScreenActive` berubah (mis. `<Outlet/>` polos vs
-  dibungkus `<div>`), React akan MENGANGGAP itu elemen berbeda dan me-unmount lalu me-mount ulang
-  SELURUH halaman di baliknya — persis kebalikan dari tujuan "membekukan tampilan". `className`
-  `'contents'` (Tailwind `display:contents`, TIDAK mempengaruhi layout sama sekali) dipakai saat
-  TIDAK lock, `blur-md brightness-95` dipakai saat lock — cuma GANTI CLASS, bukan struktur.
-  `inert` (atribut HTML asli, didukung React 19) dipasang tambahan krn `pointer-events-none` di
-  className CUMA menutup mouse/touch, TIDAK menutup keyboard shortcut yang mungkin terpasang di
-  halaman tertentu — `inert` menutup SEMUA jalur interaksi termasuk itu.
-  Pengecekan redirect diganti dari `if (!session)` → **`if (!session && !lockScreenActive)`** —
-  `session` di sini VALUE YANG SUDAH DI-EXPOSE (frozen selama lock), jadi TIDAK PERNAH null
-  selama lock aktif; `lockScreenActive` (bukan `!session`) yang menentukan cabang render mana.
-- **`src/components/LockScreen.tsx`** (komponen baru) — overlay `fixed inset-0` mirip gaya
-  `LoginPage.tsx` (skala lebih kecil, panel tunggal) — cuma 1 field password (email/nama diambil
-  dari `lockedProfile`, TIDAK perlu diketik ulang), tombol submit panggil `unlock(password)`,
-  tombol kecil "Not you? Log out" panggil `signOut()` biasa (balik ke LoginPage penuh, utk ganti
-  akun).
-- **`unlock(password)`** (di `AuthContext.tsx`) — `supabase.auth.signInWithPassword({email dari
-  frozenRef, password})`. Sukses → `onAuthStateChange` yang SUDAH ADA otomatis mengisi `session`
-  lagi → `lockScreenActive` balik `false` sendiri (TIDAK ada logic khusus "un-freeze", cuma
-  berhenti memakai `frozenRef` krn `session` sudah truthy lagi) → blur+LockScreen hilang, `Outlet`
-  yang dari tadi TETAP MOUNTED langsung "hidup" lagi apa adanya. Gagal → return `{error}` yang
-  ditampilkan `LockScreen` (mis. "Password salah.", pesan Supabase lain apa adanya).
-- **`unlockInFlight` (2026-09, FIX bug flash-spinner)** — `unlock()` memakai EMAIL YANG SAMA dgn
-  sesi sebelumnya, jadi `onAuthStateChange` internal (`isRealUserChange`, bandingkan user id
-  sebelum/sesudah) menganggapnya user id BERUBAH (krn sempat `null` di antaranya saat lock) →
-  sempat menyalakan `accessLoading` lagi sesaat → TANPA suppression, `loading` global jadi true
-  sesaat → `ProtectedRoute` sempat MENGGANTI Outlet+blur dgn spinner PENUH LAYAR (elemen beda,
-  Outlet ikut ke-unmount — persis yg ingin dihindari). Fix: flag `unlockInFlight` (di-set true di
-  awal `unlock()`, di-reset via effect yang mendeteksi TRANSISI `accessLoading` true→false, PLUS
-  fallback `setTimeout` 5 detik jaga-jaga race) menekan `loading` global SELAMA proses unlock,
-  TANPA mengubah logic `fetchAccess()`/`onAuthStateChange` yang sudah "battle-tested" itu sendiri.
-- **`resolveStaleCloseTrace()` (2026-09, FIX bug lock-screen-muncul-padahal-seharusnya-LoginPage
-  utk skenario "tab ditutup, dibuka lagi besoknya")** — versi PERTAMA pengecekan jejak
-  `PENDING_CLOSE_KEY` (dari fitur "Logout paksa saat tab ditutup" di atas) HANYA dilakukan di
-  dalam effect yang di-gate `isAuthed` — masalahnya effect itu baru jalan SETELAH `getSession()`
-  awal resolve (sesi lama yg SEHARUSNYA sudah invalid sempat kelihatan truthy dulu sesaat),
-  `hadSessionRef` KEBURU jadi `true` SEBELUM sempat diketahui bahwa sesi itu semestinya sudah mati
-  — akibatnya begitu efek itu BARU signOut(), `lockScreenActive` malah jadi `true` (krn
-  `hadSessionRef` sudah kepalang true), user salah lihat LockScreen padahal seharusnya LoginPage
-  penuh. **Fix**: `resolveStaleCloseTrace(tabId)` (ASYNC) dipanggil PALING AWAL di effect init
-  utama, SEBELUM `getSession()` sama sekali — kalau terbukti tab SEBELUMNYA beneran tertutup
-  (bukan refresh), `supabase.auth.signOut()` dipanggil DULU sebelum `getSession()`, supaya
-  `getSession()` konsisten balikin `null` sejak awal (sesi basi TIDAK PERNAH sempat kelihatan
-  truthy barang sesaat pun, `hadSessionRef` tidak pernah ke-set). Fungsi ini ASYNC & MENUNGGU
-  (bukan cuma cek sesaat) — kalau jejaknya dari tab lain TAPI jendela konfirmasi refresh
-  (`CLOSE_CONFIRM_MS`) belum lewat, dia menunggu SISA waktunya dulu (maks +1.5 detik ke waktu
-  loading awal, kasus SANGAT jarang) baru memutuskan — mencegah race "tab baru mount PAS di
-  tengah jendela konfirmasi tab lain yang lagi mau ditutup" ninggalin jejak menggantung yang
-  keliru terdeteksi di mount BERIKUTNYA (kapan pun, bisa jauh lebih lama) alih-alih di jendela
-  waktu yang seharusnya.
-- **Keterbatasan yang disadari & DITERIMA**: kalau user membuka app di >2 tab lalu menutup salah
-  satu, tab-tab LAIN yang masih terbuka ikut logout ke LockScreen (bukan cuma tab yang ditutup) —
-  sesuai keputusan desain "tutup 1 tab = logout semua" yang sudah dikonfirmasi user sebelumnya di
-  fitur "Logout paksa saat tab ditutup". Kalau nanti user minta lock screen JUGA muncul utk
-  skenario cross-tab itu (bukan cuma idle-timeout di tab yang sama) — SUDAH otomatis begitu,
-  krn keduanya sama-sama lewat `supabase.auth.signOut()` mentah (bukan wrapper `signOut()`),
-  `manualSignOutRef` tetap `false`, `lockScreenActive` tetap `true` di tab manapun yang masih
-  terbuka.
+- `hadSessionRef` (ref, bukan localStorage, reset tiap tab baru): true permanen begitu session
+  pernah truthy di tab ini. `manualSignOutRef`: true selama proses `signOut()` sengaja (tombol
+  Logout) — supaya lock screen tidak muncul utk logout disengaja. `frozenRef`: snapshot
+  `{session, profile, allowedPageKeys, editPageKeys, approvalTiersByPage, isAdmin}` TERAKHIR
+  sebelum sesi hilang — context yg di-expose ke halaman TIDAK PERNAH ikut null selama
+  `lockScreenActive`, tetap pakai nilai beku ini (supaya `useEffect([user?.id])` di halaman lain
+  tidak ke-trigger ulang oleh transisi session->null sementara).
+  `lockScreenActive = !session && hadSessionRef.current && !manualSignOutRef.current`.
+- `App.tsx` `ProtectedRoute`: SELALU render struktur yg SAMA (`<div><div className={lockScreenActive
+  ? 'blur-md brightness-95' : 'contents'} inert={lockScreenActive||undefined}><Outlet/></div>
+  {lockScreenActive && <LockScreen/>}</div>`) — kalau strukturnya berubah kondisional, React
+  unmount+remount seluruh halaman (persis kebalikan tujuannya). Redirect check:
+  `if (!session && !lockScreenActive)`.
+- `unlock(password)`: `signInWithPassword({email dari frozenRef, password})`. Sukses →
+  `onAuthStateChange` existing otomatis isi session lagi → lockScreenActive false sendiri.
+  `unlockInFlight` flag menekan `loading` global selama proses unlock (fix bug flash-spinner:
+  email sama dgn null-transisi bikin `isRealUserChange` salah anggap user id berubah).
+- `resolveStaleCloseTrace(tabId)` (ASYNC, dipanggil PALING AWAL sebelum `getSession()`) — fix bug
+  "tab ditutup semalam, dibuka lagi besok tapi lihat LockScreen bukan LoginPage": kalau tab
+  sebelumnya terbukti beneran tertutup, `signOut()` dipanggil DULU sebelum `getSession()` supaya
+  sesi basi tidak pernah sempat kelihatan truthy (`hadSessionRef` tidak pernah ke-set salah).
 
-## Auto-logout/Lock screen — laporan "tidak jalan sama sekali" & diagnostik sementara (2026-09)
+### Diagnostik idle-logout tidak jalan (2026-09, log tetap ada, JANGAN dihapus)
 
-User lapor 2 hal SEKALIGUS setelah fitur idle-timeout + lock screen di atas selesai: (1) coba
-fitur "login tanpa isi username" (LockScreen/unlock) "seperti tidak jalan", (2) tunggu 30 menit
-idle, aplikasi TIDAK auto-logout sama sekali. Sudah dikonfirmasi via AskUserQuestion: BUKAN krn
-lupa hard-refresh (sudah refresh/restart dev server dulu), BUKAN krn ada tab lain yang bikin
-timer ke-reset (cuma 1 tab). Kedua laporan ini KEMUNGKINAN BESAR 1 akar masalah yang sama: kalau
-idle-timeout tidak pernah BENERAN memicu logout, LockScreen juga tidak akan pernah muncul sama
-sekali utk ditest (jadi "seperti tidak jalan" bukan berarti `unlock()`-nya sendiri yang rusak).
+Ditemukan via baca source `@supabase/auth-js` `GoTrueClient._signOut`: dulu `signOut()` dipanggil
+fire-and-forget (tanpa await/cek) — kalau revoke ke server GAGAL (network/firewall, bukan
+404/401/403), `_signOut()` return awal TANPA `_removeSession()` — sesi lokal tidak pernah
+terhapus, TANPA error terlihat. Fix: SEMUA titik panggil `signOut()` (idle-timeout,
+resolveStaleCloseTrace, tab-lain-tertutup) sekarang `await` + `console.error('[Auto-logout] ...
+gagal', error)`. Log diagnostik `[Auto-logout]` (idle threshold reached, lockScreenActive jadi
+true, unlock gagal/berhasil) SENGAJA DIBIARKAN — berguna kalau ada laporan serupa lagi.
+`IDLE_TIMEOUT_MS` sempat diturunkan ke 5 menit utk testing, SUDAH DIKEMBALIKAN ke 30 menit
+setelah user konfirmasi mekanismenya terbukti benar (root cause "30 menit tidak jalan" adalah
+soal durasi tes, bukan bug).
 
-**Temuan dari membaca source `@supabase/auth-js` (`node_modules/@supabase/auth-js/dist/module/
-GoTrueClient.js`, method `_signOut`)** — SEBELUM ini, `supabase.auth.signOut()` di effect
-idle-timeout/tab-tertutup dipanggil "fire and forget" (`supabase.auth.signOut();`, TANPA
-`await`/cek hasil sama sekali) — ternyata `_signOut()` versi Supabase ini memanggil endpoint
-REVOKE ke SERVER LEBIH DULU (`this.admin.signOut(accessToken, scope)`), dan **KALAU panggilan itu
-gagal dgn error SELAIN 404/401/403/sesi-sudah-hilang (mis. network timeout/diblokir firewall/500),
-fungsi ini `return` LEBIH AWAL TANPA PERNAH memanggil `_removeSession()`** — artinya sesi LOKAL
-TIDAK PERNAH dihapus, TIDAK ADA event `SIGNED_OUT` yang terpicu, DAN TIDAK ADA error yang
-kelihatan di mana pun (krn tidak pernah dicek hasilnya) — persis simptom "nunggu 30 menit, tidak
-terjadi apa-apa sama sekali". Kalau ini penyebabnya di lingkungan Waruna Group (jaringan
-kantor/firewall/proxy yang mungkin membatasi endpoint tertentu), retry tiap 15 detik
-(`IDLE_CHECK_INTERVAL_MS`) TIDAK AKAN membantu kalau blokirnya PERSISTEN (bukan sekali doang).
+### Audit keamanan lock screen — 3 celah ditemukan & diperbaiki
 
-**BELUM DIPERBAIKI (tidak tau root cause PASTI tanpa lihat Console user)** — yang SUDAH
-dilakukan cuma menambah **diagnostik sementara** (SEMUA di `src/lib/AuthContext.tsx`, ditandai
-komentar "DIAGNOSTIK SEMENTARA (2026-09)", JANGAN dihapus dulu sebelum penyebab pastinya
-ketemu):
-1. Interval idle-timeout SEKARANG `console.info` begitu ambang 30 menit tercapai (+ hitung menit
-   idle aktualnya), lalu `await` hasil `signOut()` dan `console.error('[Auto-logout] signOut()
-   gagal (idle-timeout):', error)` kalau gagal.
-2. `resolveStaleCloseTrace`'s forced signOut (init()) & tab-lain-tertutup punya `console.error`
-   serupa masing-masing dgn label berbeda (`'(stale-close-trace)'`/`'(tab-lain-tertutup)'`).
-3. `lockScreenActive` ditambah 1 effect kecil `console.info('[Auto-logout] Lock screen
-   aktif...')` PERSIS saat nilainya jadi `true` — kalau log ini TIDAK PERNAH muncul di Console
-   sama sekali walau sudah nunggu lama, itu BUKTI KUAT idle-timeout-nya yang gagal (bukan
-   LockScreen/`unlock()`-nya).
-4. `unlock()` ditambah `console.error`/`console.info` di titik gagal (frozenRef kosong,
-   `signInWithPassword` gagal) & berhasil.
+1. **Modal via React Portal ke `document.body` tidak ikut ter-blur** (`FarOverseasAirDetailModal`/
+   `BunkerCompareDocModal` preview cetak) — DOM-nya sibling dari `#root`, bukan child `<Outlet/>`.
+   Fix: blur+`inert` diterapkan via DOM API langsung ke SEMUA child langsung `<body>` KECUALI
+   node portal LockScreen sendiri (`LOCKSCREEN_PORTAL_ID`) — generik, otomatis cover portal baru
+   manapun. `ProtectedRoute` disederhanakan balik ke `<Outlet/>` polos. Limitasi diterima: effect
+   cuma jalan sekali saat lock aktif, portal BARU yg muncul SETELAH lock aktif tidak ikut
+   tertutup (risiko rendah karena `#root` sudah inert, tidak bisa klik trigger apa pun).
+2. **bfcache restore snapshot SEBELUM lock aktif** (Back dari situs lain) — fix: listener
+   `pageshow` (effect terpisah, TIDAK di-gate `isAuthed`), kalau `event.persisted===true` paksa
+   `window.location.reload()`.
+3. **`frozenRef` menyimpan `access_token`/`refresh_token` mentah** selama lock aktif (JWT tetap
+   valid ~1 jam walau `signOut()` sukses) — fix: `access_token`/`refresh_token`/`provider_token`/
+   `provider_refresh_token` di-REDACT (`'[redacted-while-locked]'`) sebelum simpan ke `frozenRef`
+   (dikonfirmasi tidak ada kode yg baca field itu dari context manapun).
 
-**`IDLE_TIMEOUT_MS` SEMPAT diperkecil ke 5 menit** (permintaan user, utk mempercepat siklus tes
-idle-timeout drpd nunggu 30 menit tiap percobaan) — **SUDAH DIKEMBALIKAN ke `30 * 60 * 1000` (30
-menit)** setelah user konfirmasi "sudah berhasil" dgn nilai 5 menit itu (2026-09). Kesimpulan:
-mekanisme idle-timeout/lock-screen-nya SENDIRI TERBUKTI BEKERJA BENAR — laporan awal "30 menit
-tidak auto-logout" kemungkinan besar soal DURASI TES (mis. belum benar-benar menunggu penuh 30
-menit tanpa sentuh mouse/keyboard sama sekali) BUKAN bug di logic-nya, krn dgn nilai 5 menit
-(logic persis sama, cuma angkanya beda) hasilnya sukses.
-
-**Log diagnostik (`console.info`/`console.error` berlabel `[Auto-logout]`, ditambahkan di
-`AuthContext.tsx` — idle-timeout interval, `resolveStaleCloseTrace`, tab-lain-tertutup,
-`lockScreenActive` effect, `unlock()`) SENGAJA DIBIARKAN TETAP ADA** (TIDAK dihapus) — murni
-`console.*`, tidak ada efek samping ke UI/behavior, berguna kalau nanti ada laporan serupa lagi
-(mis. di jaringan Waruna Group yang berbeda, atau device lain) supaya bisa langsung dicek Console
-tanpa perlu pasang ulang instrumentasi dari nol. Kalau nanti dirasa mengganggu/exercise
-kebersihan console produksi, boleh dihapus — tapi TIDAK ADA urgensi utk itu selama masih fase
-observasi fitur auto-logout/lock-screen yang baru ini.
-
-## Lock screen — audit keamanan & 3 celah yang ditemukan+diperbaiki (2026-09)
-
-Permintaan user: "cek apakah fitur input password ini sudah bersih dari bug/celah keamanan yang
-bisa bikin orang melihat isi tanpa login". Hasil audit code-review (bukan pentest live, tidak ada
-akses browser dari sesi Claude Code manapun) — ditemukan **3 celah nyata**, SEMUA sudah
-diperbaiki:
-
-1. **Modal yang di-render via React Portal ke `document.body` TIDAK IKUT ter-blur/ter-`inert`**
-   (PALING SIGNIFIKAN). Implementasi awal ProtectedRoute (`App.tsx`) cuma membungkus `<Outlet/>`
-   dgn blur+`inert` — TERNYATA minimal 2 modal di app ini (`FarOverseasAirDetailModal.tsx` —
-   preview cetak memo FAR Overseas Air, `BunkerCompareDocModal.tsx` — preview cetak Bunker)
-   di-render lewat `ReactDOM.createPortal(..., document.body)`, jadi DOM node-nya jadi SIBLING
-   dari `#root`, BUKAN child dari `<Outlet/>` — kalau modal itu kebetulan sedang terbuka PAS
-   idle-timeout/logout-paksa-tutup-tab memicu lock, isinya (bisa data finansial/memo approval)
-   tetap tampil UTUH & BISA DIKLIK, PERSIS SEPERTI TIDAK ADA LOCK SCREEN. **Fix**: blur+`inert`
-   SEKARANG diterapkan via DOM API langsung (`AuthContext.tsx`, effect baru) ke SEMUA child
-   langsung `<body>` KECUALI node portal LockScreen sendiri (`LOCKSCREEN_PORTAL_ID`, exported
-   const) — otomatis menutupi `#root` (jadi `<Outlet/>` tetap tercakup) DAN modal portal manapun,
-   TERMASUK yang ditambahkan nanti (generik, tidak perlu didaftarkan satu-satu). `App.tsx`
-   `ProtectedRoute` disederhanakan balik ke `<Outlet/>` polos (blur-nya sudah tidak ditangani di
-   situ lagi) + `LockScreen` SEKARANG JUGA portal ke `document.body` (harus, supaya tidak ikut
-   memblur/mengunci dirinya sendiri — id-nya yg dikecualikan itu).
-   **Limitasi yang disadari & DITERIMA**: effect ini cuma jalan SEKALI saat lock AKTIF (iterasi
-   `document.body.children` PADA SAAT ITU) — kalau ada portal BARU yang muncul SETELAH lock
-   sudah aktif (mis. proses background tanpa interaksi user memicu toast/modal baru), portal itu
-   TIDAK ikut tertutup krn effect tidak pakai `MutationObserver`. Risiko rendah (krn `#root` sudah
-   `inert`, user tidak bisa memicu modal baru lewat klik apa pun selagi terkunci) tapi bukan nol
-   utk trigger non-klik (mis. timer). Belum diimplementasikan MutationObserver-nya (di luar
-   cakupan permintaan awal, pertimbangkan kalau ada laporan portal baru lolos blur).
-2. **Halaman bisa dipulihkan browser dari bfcache (back/forward cache) dalam kondisi SEBELUM lock
-   aktif** — kalau user navigasi KELUAR dari app ke situs lain lalu tekan Back, sebagian browser
-   memulihkan SNAPSHOT PERSIS DOM+JS dari sesaat sebelum ditinggalkan (JS "dibekukan" total,
-   TIDAK ada kode inisialisasi yang jalan ulang) — kalau idle-timeout sempat terjadi SELAGI di
-   situs lain (JS tab ini beku, tidak sempat memprosesnya), begitu dipulihkan yg muncul adalah
-   tampilan LAMA yg masih UTUH TIDAK TERBLUR, lock screen TIDAK PERNAH sempat aktif di snapshot
-   itu. **Fix**: listener `pageshow` baru (`AuthContext.tsx`, effect terpisah, TIDAK di-gate
-   `isAuthed` — harus selalu aktif) — kalau `event.persisted === true` (indikasi halaman dipulihkan
-   dari bfcache, BUKAN load normal), paksa `window.location.reload()` supaya SELURUH state
-   (termasuk status auth/lock) dihitung ulang dari nol, tidak percaya ke snapshot beku.
-3. **Snapshot yang dibekukan (`frozenRef`) menyimpan `access_token`/`refresh_token` MENTAH** di
-   memori JS (React ref) SELAMA lock screen aktif (bisa berlangsung lama, sampai unlock/logout
-   manual) — `access_token` (JWT) TIDAK otomatis batal walau `signOut()` sukses (cuma me-revoke
-   `refresh_token`-nya; JWT tetap valid scr kriptografis sampai masa berlakunya sendiri lewat,
-   umumnya ~1 jam) — siapa pun yg py akses DevTools ke tab yang terkunci (mis. React DevTools,
-   inspect komponen `AuthProvider`) bisa membaca token itu & memakainya LANGSUNG lewat request
-   API terpisah (curl/Postman), BYPASS UI app ini sepenuhnya. **Fix**: `access_token`/
-   `refresh_token`/`provider_token`/`provider_refresh_token` di-REDACT (diganti string
-   `'[redacted-while-locked]'`) SEBELUM disimpan ke `frozenRef` — dikonfirmasi via grep TIDAK ADA
-   kode di app ini yang baca field-field itu dari context/session manapun (yang benar2 dipakai
-   cuma `session.user.email` via `unlock()`), jadi aman di-redact tanpa merusak fungsi apa pun.
-
-**Keterbatasan INHEREN yang TIDAK BISA (dan TIDAK PERLU) diperbaiki, HARUS dipahami user**: blur
-CSS + `inert` HANYA mencegah interaksi & tampilan visual biasa — data mentahnya TETAP ADA di DOM
-(cuma diburamkan secara visual). Siapa pun yang membuka DevTools browser (F12) di komputer yang
-SEDANG terkunci TETAP BISA membaca isi HTML/teks aslinya langsung dari situ (`document.body.
-outerHTML` dkk) — ini keterbatasan MENDASAR dari SEMUA mekanisme "lock screen" berbasis client-side
-JS/CSS di web manapun, bukan spesifik ke implementasi ini, dan TIDAK ADA cara menutupnya dari sisi
-JS semata (satu-satunya solusi lengkap adalah kunci layar tingkat OS, di luar cakupan aplikasi
-web). Threat model fitur ini adalah "orang lewat/menyentuh layar tanpa sengaja", BUKAN "penyerang
-teknis dgn akses fisik + DevTools ke perangkat yang tidak terjaga" — untuk ancaman terakhir itu,
-selain redact token di atas (poin 3, yang menyempitkan JENDELA WAKTU token bisa dicuri, bukan
-menghilangkannya total), tidak ada mitigasi tambahan yang realistis dari level aplikasi web.
+Keterbatasan INHEREN diterima: blur+inert cuma visual, DevTools (F12) tetap bisa baca DOM mentah
+— ini batas semua lock-screen client-side, bukan spesifik implementasi ini. Threat model: "orang
+lewat tanpa sengaja", bukan "penyerang teknis + akses fisik + DevTools".
 
 ## RBAC (role & akses per halaman)
 
-Sudah diimplementasikan (lihat `sql/001_rbac_and_bunker_rls.sql`, `sql/002_direct_loading_rls.sql`):
-- Tabel `roles`, `user_roles`, `role_page_access` — role "Admin" (`is_protected=true`) selalu
-  akses penuh, di-hardcode di function `is_admin()`, tidak lewat `role_page_access`.
-- `src/lib/permissions.ts` — `PAGE_REGISTRY` satu sumber kebenaran daftar `page_key` (dipakai
-  sidebar, route guard, halaman Kelola Role & Akses). Tambah halaman baru → daftarkan di sini.
-- **Layout `RoleManagementPage.tsx` dirapikan (2026-09)** — makin banyak halaman/role/user
-  terdaftar, 2 panel (matrix akses & daftar user) bisa jadi sangat panjang ke bawah. Fix:
-  - **Matrix "Akses Halaman per Role"**: tiap grup (`PAGE_GROUPS`) sekarang bisa di-collapse
-    satu-satu (state `collapsedGroups: Set<string>`, tombol toggle di header grup + chevron),
-    plus tombol "Ciutkan Semua"/"Bentangkan Semua" di pojok kanan atas panel. Container tabelnya
-    dikasih `max-h-[520px] overflow-auto` + header (`<thead>`) `sticky top-0` (dobel sticky
-    dengan kolom pertama yg sudah `sticky left-0` dari awal) — jadi walau daftar halaman panjang,
-    tinggi panel di halaman TIDAK ikut membengkak tanpa batas, tinggal scroll di dalam kotaknya,
-    nama role tetap kelihatan pas scroll ke bawah.
-  - **"Role per User"**: list user dibungkus `max-h-[420px] overflow-y-auto` (sebelumnya scroll
-    ikut halaman penuh, bisa sangat panjang kalau user banyak) — search box yg sudah ada
-    (`userSearch`) TETAP di luar kotak scroll ini (selalu kelihatan). Counter kecil ditambah di
-    kedua panel ("N halaman · M grup", "N dari M user") supaya PIC langsung tau skala datanya
-    tanpa perlu scroll/hitung manual.
-  - Kalau nanti nambah lagi elemen yg berpotensi jadi panjang di halaman ini (mis. daftar role
-    kalau nanti jumlahnya banyak), ikuti pola yg sama: kotak dgn `max-h-*` + `overflow-y-auto`
-    + header/kolom kunci `sticky`, bukan biarkan mengalir bebas ke bawah halaman.
-- `src/components/RequirePageAccess.tsx` — route guard, prop `pageKey` atau `adminOnly`.
-- `AuthContext` panggil RPC `get_my_access()` sekali saat login → `{is_admin, page_keys}`.
-- **Akses view-only vs edit (2026-09, SELESAI untuk semua halaman yang punya konsep edit)**:
-  `role_page_access` punya kolom `can_edit boolean default true` (nambah 1 dimensi di atas akses
-  lihat halaman yang sudah ada). Function `has_edit_access(p_page_key)` (pola sama
-  `has_page_access`, syarat tambahan `can_edit=true`). RPC `get_my_access()` balikin juga
-  `edit_page_keys` (subset dari `page_keys`). `AuthContext` expose `editPageKeys` (Set) + helper
-  `canEdit(pageKey)`. UI matrix di `RoleManagementPage.tsx` — begitu suatu page_key dicentang utk 1
-  role, muncul badge kecil `EDIT`/`VIEW` di sebelah checkbox-nya (klik utk toggle `can_edit`), lewat
-  `toggleRoleCanEdit()`.
-  **Keputusan desain (dikonfirmasi user 2026-09)**: granularitas TETAP per page_key terpisah, TIDAK
-  digabung — halaman yang punya fitur tambahan dengan page_key sendiri di PAGE_REGISTRY (mis.
-  Audit Courier punya Checklist/Doc Validation/Cost Validation) sengaja TIDAK ikut otomatis
-  ter-cover oleh toggle Edit halaman utamanya; PIC atur satu-satu.
-  **Cakupan final — 20 dari 23 page_key yang punya konsep "edit"** (dicek tuntas via query
-  `pg_class.relrowsecurity`+`pg_policy`, SEMUA 32 tabel `policy_count=4`, SEMUA 15 RPC penulis
-  data — 14 unik + 1 overload — punya guard `has_edit_access` & `SECURITY DEFINER`):
-  `courier_audit`, `courier_rekapan`, `courier_validasi`, `courier_checklist_dokumen`,
-  `courier_dokumen_validation`, `courier_cost_validation`, `sea_air_audit`, `sea_air_rekapan`,
-  `sea_air_checklist_validation`, `sea_air_dokumen_validation`, `sea_air_cost_validation`,
-  `bunker`, `direct_loading`, `audit_po`, `admin_rates`, `settings_fuel_surcharge`,
-  `settings_kurs_bi`, `settings_kurs_rule_vendor`, `settings_tarif_kontrak`,
-  `settings_tarif_far_overseas_vendor`. File/komponen terkait per modul: `SharedDataTable.tsx`
-  (Courier+Sea&Air, termasuk `ChecklistModal`/`ValidasiModal`/`CostValidationModal`/
-  `SeaAirChecklistModal`/`SeaAirValidasiModal`/`ValidasiShipmentInvoiceLengkap`),
-  `BunkerPage.tsx`+modalnya, `FarOverseasAirPage.tsx`+modalnya, `AuditPoPage.tsx`,
-  8 file `src/pages/admin/*`, `FuelSurchargePage.tsx`, `KursBIPage.tsx`,
-  `KursRuleVendorPage.tsx`, `TarifKontrakPage.tsx`, `FarOverseasVendorTarifPage.tsx`.
-  **3 page_key TIDAK ikut** (sengaja, bukan halaman "punya data yang bisa diedit" biasa):
-  `courier_upload`+`sea_air_upload` (`UploadPage.tsx`) — tombol submit sudah di-gate `canEdit(...)`
-  di UI, TAPI upload-nya lewat proxy Express (`/api/n8n-proxy-start`) ke n8n, BUKAN langsung ke
-  Supabase, jadi TIDAK BISA diproteksi RLS — proteksinya cuma di level UI, bisa di-bypass kalau
-  seseorang panggil endpoint proxy itu langsung; `audit_trail` — murni log baca-saja, tidak ada
-  aksi edit; `settings_roles` — sudah admin-only lewat `isAdmin()`, bukan lewat matrix page_key.
-  **Temuan penting (2026-09) soal RPC `SECURITY DEFINER`**: banyak RPC penulis data di app ini
-  (`upsert_kurs_bi`, `update_seaair_row`, `insert_seaair_row`, `update_rekapan_far_overseas_manual`,
-  `update_cost_validasi_far_overseas_manual`, `upsert_tarif_far_overseas_vendor`,
-  `nonaktifkan_tarif_far_overseas_vendor`, `nonaktifkan_tarif_kontrak`, `upsert_kurs_rule_vendor`,
-  `update_rekapan_po_vessel`, `update_validasi_matriks_manual`, `fn_delete_far_overseas_air`,
-  `fn_delete_pib`, `fn_delete_cn`) adalah **`SECURITY DEFINER`** — jalan dengan hak akses pemilik
-  function, BYPASS RLS tabel sepenuhnya. Kalau cuma split RLS tabel tanpa sadar ini, view-only
-  tetap bisa nulis lewat RPC itu walau tombol UI-nya disembunyikan. FIX yang sudah diterapkan:
-  tiap RPC itu ditambah `IF NOT public.has_edit_access('<page_key>') THEN RAISE EXCEPTION ...`
-  di baris pertama body-nya (dikonfirmasi via `pg_get_functiondef(...) ilike '%has_edit_access%'`).
-  **Kalau nanti nambah RPC baru yang menulis ke tabel ber-RLS, WAJIB cek dulu apakah
-  `SECURITY DEFINER` — kalau ya, WAJIB tambah guard `has_edit_access` manual di dalamnya, RLS
-  tabel saja TIDAK CUKUP.** RPC yang `SECURITY INVOKER` (mis. `fn_hitung_storage`,
-  `fn_save_storage_estimate`, `fn_update_actual_value`, `fn_apply_credit_note`,
-  `fn_recompute_totals`, `fn_revise_credit_note`, `fn_archive_pib`, `fn_archive_cn`) sudah otomatis
-  ikut RLS tabel yang disentuhnya, tidak perlu guard tambahan. `get_kurs_efektif` sengaja TIDAK
-  diberi guard — murni fungsi baca/hitung, tidak menulis apa pun.
-  SQL migration-nya TIDAK disimpan sbg file di `sql/` (dijalankan user langsung lewat chat, sesuai
-  preferensi) — kalau perlu reproduce, tulis ulang dari pola select/has_page_access +
-  insert-update-delete/has_edit_access, lihat contoh lengkap di `sql/002_direct_loading_rls.sql`.
-- **Status RLS 2 tabel yang DULU bolong total** (`audit_po_ap_comp`, `tabel_surcharge_rule`) —
-  bisa diakses siapa saja termasuk tanpa login. Sudah DITUTUP (2026-09), sekarang bagian dari
-  cakupan `admin_rates`/`audit_po` di atas (`policy_count=4`, dikonfirmasi).
-  Catatan tersisa: `audit_po_ap_comp` diisi otomasi n8n tiap 30 menit — BELUM diverifikasi eksplisit
-  apakah otomasi itu tetap jalan normal setelah RLS aktif (perlu proses itu pakai service role key).
-- **"Jabatan approval" per USER, PER HALAMAN (2026-09, VERSI FINAL #2 — dipakai FAR Overseas Air
-  sekarang, dirancang generik utk modul approval lain di masa depan, lihat bagian FAR Overseas
-  Air di bawah utk detail alur Direct Loading-nya)** — riwayat desain (SEMUA versi sebelumnya
-  SUDAH DIGANTI, jangan reintroduce yang manapun): (1) `roles.approval_tier` per-role — salah
-  paham dari maksud user; (2) `profiles.approval_tier` per-user tapi 1 kolom GLOBAL (cuma cukup
-  utk 1 modul approval) — user lalu bilang ke depan bakal ada approval berjenjang di halaman lain
-  dgn jabatan beda (mis. "SPV" di Direct Loading tapi "Manager" di Bunker), jadi 1 kolom global
-  tidak cukup. **Desain final**: tabel `user_approval_tiers` (`user_id`, `page_key`, `tier`, PK
-  gabungan `(user_id, page_key)` — 1 user MAKSIMAL 1 jabatan PER HALAMAN, tapi BEBAS beda-beda
-  jabatan di halaman berbeda) NEMPEL LANGSUNG di user, TERPISAH TOTAL dari role RBAC manapun —
-  jabatan di halaman X baru **"berfungsi"** kalau user itu JUGA punya role (role apa saja) yang
-  kasih akses edit ke halaman X (2 syarat INDEPENDEN per halaman, harus sama-sama terpenuhi:
-  gating ganda `canEdit(pageKey) && canApproveTier(pageKey, step)`, lihat `AuthContext.tsx` &
-  `FarOverseasAirDetailModal.tsx`). Daftar tier & label yang VALID per halaman (vocab BEBAS beda
-  per halaman, tidak perlu sama kayak TIER1/PIC/TIER2/TIER3-nya Direct Loading) SATU SUMBER
-  KEBENARANNYA `PAGE_REGISTRY[].approvalTiers` (`src/lib/permissions.ts`) — halaman baru yang mau
-  punya approval berjenjang TINGGAL isi field `approvalTiers` di entry `PAGE_REGISTRY`-nya,
-  `RoleManagementPage.tsx` OTOMATIS nambah 1 dropdown baru utk halaman itu tanpa perlu ubah kode
-  di file itu (lihat `APPROVAL_TIER_PAGES` export). **BELUM DIJALANKAN ke Supabase production —
-  WAJIB dijalankan manual dulu di SQL editor sebelum fitur approval bisa dipakai sama sekali**
-  (tanpa ini, query `user_approval_tiers` di `RoleManagementPage.tsx` akan error tabel tidak ada,
-  dan RPC `get_my_approval_tiers()` di bawah juga belum ada):
-  ```sql
-  create table if not exists public.user_approval_tiers (
-    user_id uuid not null references public.profiles(id) on delete cascade,
-    page_key text not null,
-    tier text not null,
-    primary key (user_id, page_key)
-  );
-  alter table public.user_approval_tiers enable row level security;
-  -- FIX (2026-09) -- versi PERTAMA lupa bikin policy sama sekali, akibatnya RLS nolak SEMUA
-  -- akses langsung ke tabel ini (termasuk dari RoleManagementPage.tsx yang pakai
-  -- .from('user_approval_tiers') langsung, BUKAN lewat RPC, utk select/upsert/delete) -- dropdown
-  -- "Jabatan Approval" kelihatan tapi gagal tersimpan. Policy ini WAJIB ada: admin boleh
-  -- select/insert/update/delete BEBAS (dipakai RoleManagementPage.tsx), user biasa boleh SELECT
-  -- baris miliknya sendiri saja (jaga-jaga kalau nanti ada UI non-admin yang perlu baca
-  -- langsung -- SAAT INI baca normal tetap lewat RPC get_my_approval_tiers, bukan lewat ini).
-  create policy "Admins manage user_approval_tiers" on public.user_approval_tiers
-    for all
-    using (public.is_admin())
-    with check (public.is_admin());
-  create policy "Users read own approval tiers" on public.user_approval_tiers
-    for select
-    using (auth.uid() = user_id);
+`sql/001_rbac_and_bunker_rls.sql`, `sql/002_direct_loading_rls.sql`. Tabel `roles`,
+`user_roles`, `role_page_access` — role "Admin" (`is_protected=true`) selalu akses penuh
+(hardcode `is_admin()`, bukan lewat `role_page_access`).
 
-  create or replace function public.get_my_approval_tiers()
-  returns jsonb
-  language sql
-  security definer
-  stable
-  as $$
-    select coalesce(jsonb_object_agg(uat.page_key, uat.tier), '{}'::jsonb)
-    from public.user_approval_tiers uat
-    where uat.user_id = auth.uid();
-  $$;
+- `src/lib/permissions.ts` — `PAGE_REGISTRY` = satu sumber kebenaran daftar `page_key`. Tambah
+  halaman baru → daftarkan di sini.
+- **`RoleManagementPage.tsx`** — matrix "Page Access per Role": grup (`PAGE_GROUPS`) collapsible
+  per grup + tombol Expand/Collapse All (default CIUTKAN semua), container `max-h-[520px]
+  overflow-auto` + `<thead>` sticky. Panel "Roles per User" — REBUILT jadi tabel matrix (bukan
+  pill list lama): sticky kolom pertama, checkbox bulat emerald per role, dropdown jabatan
+  approval (kalau ada `APPROVAL_TIER_PAGES`) SEBELUM kolom role, `max-h-[420px] overflow-y-auto`.
+  Semua teks Inggris (lihat bagian Translasi di bawah).
+- `src/components/RequirePageAccess.tsx` — route guard (`pageKey` atau `adminOnly`).
+- `AuthContext` panggil RPC `get_my_access()` saat login → `{is_admin, page_keys}`.
+- **View-only vs edit**: `role_page_access.can_edit boolean default true`. `has_edit_access
+  (p_page_key)` (pola sama `has_page_access`). `get_my_access()` juga balikin `edit_page_keys`.
+  `AuthContext` expose `editPageKeys` + `canEdit(pageKey)`. Matrix UI: badge EDIT/VIEW toggle di
+  sebelah checkbox akses. Granularitas TETAP per page_key terpisah (Audit Courier
+  Checklist/Doc Validation/Cost Validation punya page_key sendiri, TIDAK otomatis ikut toggle
+  edit halaman utama).
+  **Cakupan final: 20 dari 23 page_key** (semua 32 tabel RLS `policy_count=4`, semua 15 RPC
+  penulis data — 14 unik+1 overload — punya guard `has_edit_access`+`SECURITY DEFINER`).
+  3 page_key TIDAK ikut: `courier_upload`/`sea_air_upload` (upload lewat proxy Express ke n8n,
+  bukan langsung Supabase, RLS tidak berlaku — proteksi cuma UI); `audit_trail` (baca-saja);
+  `settings_roles` (admin-only via `isAdmin()`, bukan matrix).
+  **PENTING — RPC `SECURITY DEFINER` bypass RLS total**: banyak RPC penulis data
+  (`upsert_kurs_bi`, `update_seaair_row`, `insert_seaair_row`,
+  `update_rekapan_far_overseas_manual`, `update_cost_validasi_far_overseas_manual`,
+  `upsert_tarif_far_overseas_vendor`, `nonaktifkan_tarif_far_overseas_vendor`,
+  `nonaktifkan_tarif_kontrak`, `upsert_kurs_rule_vendor`, `update_rekapan_po_vessel`,
+  `update_validasi_matriks_manual`, `fn_delete_far_overseas_air`, `fn_delete_pib`,
+  `fn_delete_cn`) adalah `SECURITY DEFINER` — tiap satu WAJIB ditambah
+  `IF NOT public.has_edit_access('<page_key>') THEN RAISE EXCEPTION` di baris pertama body-nya,
+  RLS tabel saja TIDAK CUKUP. **Nambah RPC baru yg menulis ke tabel ber-RLS: WAJIB cek dulu
+  apakah `SECURITY DEFINER`, kalau ya WAJIB tambah guard manual.** RPC `SECURITY INVOKER`
+  (`fn_hitung_storage`, `fn_save_storage_estimate`, `fn_update_actual_value`,
+  `fn_apply_credit_note`, `fn_recompute_totals`, `fn_revise_credit_note`, `fn_archive_pib`,
+  `fn_archive_cn`) otomatis ikut RLS tabel, tidak perlu guard tambahan. `get_kurs_efektif` murni
+  baca, tidak perlu guard.
+  `audit_po_ap_comp`/`tabel_surcharge_rule` dulu RLS bolong total (bisa diakses tanpa login) —
+  SUDAH DITUTUP, sekarang bagian cakupan `admin_rates`/`audit_po` (`policy_count=4`). Catatan:
+  `audit_po_ap_comp` diisi otomasi n8n tiap 30 menit — belum diverifikasi eksplisit otomasi itu
+  tetap jalan setelah RLS aktif (perlu service role key).
 
-  grant execute on function public.get_my_approval_tiers() to authenticated;
-  ```
-  (Kalau sempat menjalankan versi `roles.approval_tier` atau `profiles.approval_tier` dari
-  iterasi sebelumnya, kolom itu aman dibiarkan nganggur/di-drop manual — tidak dipakai lagi di
-  kode manapun.)
-  SENGAJA dibuat sebagai RPC **BARU/TERPISAH** (`get_my_approval_tiers()`), BUKAN nambah field ke
-  `get_my_access()` yang sudah ada — supaya tidak perlu menulis ulang body `get_my_access()` yang
-  sudah kritikal & battle-tested tanpa akses DB langsung utk verifikasi isi aslinya (resikonya
-  kalau salah tebak logic-nya, bisa lock-out semua user dari semua halaman).
-  - `src/lib/AuthContext.tsx` — panggil RPC ini di `fetchAccess()` (paralel dgn `get_my_access()`),
-    expose `approvalTiersByPage: Record<string, string>` (`page_key` → `tier`, BUKAN `Set<string>`
-    datar lagi seperti versi 1-kolom-global) + helper `canApproveTier(pageKey, tier)` (`isAdmin`
-    selalu lolos di semua halaman tanpa perlu baris `user_approval_tiers`). Fail-closed kalau RPC
-    belum ada di Supabase (objek kosong `{}`, BUKAN diam-diam boleh semua) — TAPI karena
-    `fetchAccess` tidak return-early lagi kalau panggilan `get_my_access()` gagal (lihat kode),
-    akses halaman biasa tetap jalan normal meski RPC approval_tiers ini belum ada, cuma fitur
-    approve-nya yg nonaktif (tombol tidak pernah muncul kecuali Admin).
-  - `src/lib/permissions.ts` — `PageEntry.approvalTiers?: {value, label}[]` (opsional, array =
-    urutan rantai approval dari awal ke akhir), `APPROVAL_TIER_PAGES` (filter `PAGE_REGISTRY` yang
-    py `approvalTiers` terisi, dipakai `RoleManagementPage.tsx` render dropdown-nya).
-  - `src/pages/RoleManagementPage.tsx` — 1 dropdown kecil "Jabatan Approval" PER HALAMAN di
-    `APPROVAL_TIER_PAGES` untuk TIAP BARIS USER (panel "Role per User", BUKAN di panel "Daftar
-    Role") — kalau baru 1 halaman (`direct_loading`) yang py `approvalTiers`, cuma 1 dropdown yang
-    tampil; nanti nambah otomatis begitu ada halaman lain didaftarkan. Handler
-    `updateUserApprovalTier(profile, pageKey, tier)` — `tier` kosong (opsi "—") berarti `.delete()`
-    baris `user_approval_tiers` user itu utk halaman itu, `tier` terisi berarti `.upsert()`
-    (`onConflict: 'user_id,page_key'`). TIDAK ADA pengecualian khusus utk Admin di sini — dropdown
-    tetap muncul & BERPENGARUH di baris user manapun termasuk yang py role Admin, KARENA
-    `canApproveTier` SENGAJA tidak punya bypass `isAdmin` (2026-09, permintaan eksplisit user:
-    "admin tidak bisa bebas melakukan approval") — user Admin TETAP HARUS di-assign jabatan
-    approval-nya sendiri lewat dropdown ini kalau mau bisa approve tahap manapun. Ini beda dari
-    `canEdit`/akses halaman biasa yang Admin TETAP selalu bypass (`is_admin()` hardcode akses
-    penuh, tidak berubah) — HANYA gating approval-tier yang tidak lagi otomatis lolos utk Admin.
-  - **Enforcement server-side (2026-09) — RPC `approve_far_overseas_air`**: approval SEKARANG
-    lewat RPC ini (`SECURITY DEFINER`), BUKAN lagi `.update()` langsung ke
-    `rekapan_far_overseas_air` (versi sebelumnya cuma gating frontend, itu jadi RIWAYAT — sudah
-    DIGANTI, jangan reintroduce `.update()` langsung utk approval). RPC-nya **BELUM DIJALANKAN ke
-    Supabase production — WAJIB dijalankan manual dulu** (kalau belum, tombol approve akan error
-    "function does not exist" begitu diklik):
-    ```sql
-    create or replace function public.approve_far_overseas_air(
-      p_id uuid,          -- SESUAIKAN tipe ini kalau `rekapan_far_overseas_air.id` BUKAN uuid
-                           -- (cek dulu di Table Editor Supabase -- belum ada akses DB langsung
-                           -- utk konfirmasi tipe PK-nya, uuid dipilih krn paling umum di app ini)
-      p_step text,         -- 'TIER1' | 'PIC' | 'TIER2' | 'TIER3'
-      p_nama text,
-      p_jabatan text default null
-    )
-    returns jsonb
-    language plpgsql
-    security definer
-    as $$
-    declare
-      v_current_status text;
-      v_expected_status text;
-      v_new_status text;
-      v_entry_tier_text text;
-      v_entry jsonb;
-      v_new_approvals jsonb;
-    begin
-      if not public.has_edit_access('direct_loading') then
-        raise exception 'Not authorized to edit FAR Overseas Air memos';
-      end if;
+### "Jabatan approval" per USER, per HALAMAN
 
-      if p_step not in ('TIER1', 'PIC', 'TIER2', 'TIER3') then
-        raise exception 'Invalid approval step: %', p_step;
-      end if;
+**Desain final** (2 versi sebelumnya — `roles.approval_tier`, `profiles.approval_tier` global —
+SUDAH DIGANTI, jangan reintroduce): tabel `user_approval_tiers` (`user_id`, `page_key`, `tier`,
+PK gabungan) — 1 user maks 1 jabatan PER HALAMAN, bebas beda per halaman. Jabatan "berfungsi"
+HANYA kalau user JUGA punya role dgn akses edit ke halaman itu (2 syarat independen: gating
+ganda `canEdit(pageKey) && canApproveTier(pageKey, step)`). Daftar tier/label valid per halaman:
+`PAGE_REGISTRY[].approvalTiers` (`src/lib/permissions.ts`) — `RoleManagementPage.tsx` otomatis
+render dropdown baru tanpa ubah kode (`APPROVAL_TIER_PAGES` export).
 
-      -- Jabatan approval NEMPEL DI USER PER HALAMAN (user_approval_tiers), BUKAN di role &
-      -- BUKAN 1 kolom global -- lihat catatan "Jabatan approval per USER, PER HALAMAN" di atas.
-      -- 'direct_loading' hardcode di sini krn RPC ini KHUSUS utk modul FAR Overseas Air -- RPC
-      -- approval modul lain (kalau nanti dibuat) filter page_key masing-masing. Guard
-      -- has_edit_access di atas SUDAH menangani syarat "user ini punya role dgn akses edit ke
-      -- halaman" (syarat ke-2). SENGAJA TIDAK ADA bypass `is_admin()` di sini (2026-09,
-      -- permintaan eksplisit user) -- Admin TETAP harus punya baris user_approval_tiers yang
-      -- cocok utk bisa approve, sama kayak user lain. JANGAN tambahkan lagi
-      -- `not public.is_admin() and` di depan exists ini.
-      if not exists (
-        select 1 from public.user_approval_tiers uat
-        where uat.user_id = auth.uid() and uat.page_key = 'direct_loading' and uat.tier = p_step
-      ) then
-        raise exception 'You do not have the % approval role', p_step;
-      end if;
+**BELUM DIJALANKAN ke Supabase production — WAJIB dijalankan manual dulu**:
+```sql
+create table if not exists public.user_approval_tiers (
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  page_key text not null,
+  tier text not null,
+  primary key (user_id, page_key)
+);
+alter table public.user_approval_tiers enable row level security;
+create policy "Admins manage user_approval_tiers" on public.user_approval_tiers
+  for all using (public.is_admin()) with check (public.is_admin());
+create policy "Users read own approval tiers" on public.user_approval_tiers
+  for select using (auth.uid() = user_id);
 
-      select approval_status into v_current_status
-      from public.rekapan_far_overseas_air
-      where id = p_id
-      for update;
+create or replace function public.get_my_approval_tiers()
+returns jsonb language sql security definer stable as $$
+  select coalesce(jsonb_object_agg(uat.page_key, uat.tier), '{}'::jsonb)
+  from public.user_approval_tiers uat where uat.user_id = auth.uid();
+$$;
+grant execute on function public.get_my_approval_tiers() to authenticated;
+```
+(Kolom `roles.approval_tier`/`profiles.approval_tier` iterasi lama aman didiamkan/di-drop, sudah
+tidak dipakai.) RPC ini SENGAJA terpisah dari `get_my_access()` (supaya tidak menulis ulang body
+yg battle-tested tanpa akses DB langsung).
 
-      if not found then
-        raise exception 'Memo not found: %', p_id;
-      end if;
+- `AuthContext.tsx` panggil paralel dgn `get_my_access()`, expose `approvalTiersByPage:
+  Record<string,string>` + `canApproveTier(pageKey, tier)` (`isAdmin` selalu lolos). Fail-closed
+  kalau RPC belum ada (`{}`), TAPI akses halaman biasa tetap jalan normal (fetchAccess tidak
+  return-early).
+- `permissions.ts` — `PageEntry.approvalTiers?: {value,label}[]`, `APPROVAL_TIER_PAGES`.
+- `RoleManagementPage.tsx` — dropdown "Jabatan Approval" per halaman PER BARIS USER (panel "Roles
+  per User"). `updateUserApprovalTier` — tier kosong = delete, terisi = upsert
+  (`onConflict:'user_id,page_key'`). **TIDAK ADA bypass Admin di sini** (permintaan eksplisit:
+  "admin tidak bisa bebas approval") — beda dari `canEdit`/akses halaman biasa yg Admin selalu
+  bypass. HANYA gating approval-tier yg tidak otomatis lolos utk Admin.
+- **Enforcement server-side** — approval lewat RPC `approve_far_overseas_air`
+  (`SECURITY DEFINER`), BUKAN `.update()` langsung (versi lama, JANGAN reintroduce). SQL lengkap
+  ada di bagian "FAR Overseas Air — PIC per-memo assignment" di bawah (versi TERBARU, sudah
+  termasuk perubahan guard PIC).
 
-      v_expected_status := case p_step
-        when 'TIER1' then 'PENDING'
-        when 'PIC' then 'TIER1_DONE'
-        when 'TIER2' then 'PIC_DONE'
-        when 'TIER3' then 'TIER2_DONE'
-      end;
+## Translasi UI ke Bahasa Inggris (IN PROGRESS, per modul)
 
-      if v_current_status is distinct from v_expected_status then
-        raise exception 'This memo is not currently awaiting the % step (current status: %)', p_step, v_current_status;
-      end if;
+**Cakupan yg dikonfirmasi TIDAK diubah**: (1) nilai status di DATABASE tetap Indonesia
+(`LENGKAP`/`PROSES`/`PENDING`/`REVISI`/dst) — kalau badge status mau ditranslate, WAJIB lewat
+lapisan mapping render-only, JANGAN ubah nilai yg dikirim ke Supabase; (2) istilah domain
+customs/logistik dibiarkan (PPJK/AWB/PIB/BM/DPP/SPTNP/NDPBM/CIPL/BPN/HS Code dst) — hanya label
+sekitarnya yg ditranslate; (3) nama kolom/tabel database TIDAK diubah.
 
-      v_new_status := case p_step
-        when 'TIER1' then 'TIER1_DONE'
-        when 'PIC' then 'PIC_DONE'
-        when 'TIER2' then 'TIER2_DONE'
-        when 'TIER3' then 'APPROVED'
-      end;
+**TEMUAN KRITIS — field/rowLabel bisa jadi logic key, bukan cuma display**: di
+`src/utils/ValidasiHelper.ts` & SECTIONS lokal `ValidasiModal.tsx`/`SeaAirValidasiModal.tsx`,
+`field`/`rowLabel`/`compareDoc` dipakai SUBSTRING MATCHING di `computeStatus()` (mis.
+`.includes("DPP (")`, `.includes("Tidak Ada Vessel")`) DAN sbg `groupKey` pengelompokan baris —
+JANGAN translate `field`/`rowLabel`/`compareDoc`/`label`/`srcLabel` di SECTIONS mana pun tanpa
+refactor `computeStatus()` dulu (pindah ke matching berbasis `id` stabil). `label`/`srcLabel`
+aman diubah (murni display); `field`/`rowLabel`/`compareDoc` HARUS dicek dulu.
 
-      v_entry_tier_text := case p_step when 'PIC' then 'PIC' when 'TIER1' then '1' when 'TIER2' then '2' when 'TIER3' then '3' end;
+**Progress**: Sidebar/Greeting/Bunker/AccountPage/RoleManagementPage/Courier Upload (+Sea&Air
+Upload otomatis ikut, file sama)/Courier Audit&Rekapan (STATUS_LABELS mapping display, sentinel
+`'Semua'`→`'All'`)/Courier Validasi (HANYA UI chrome, SECTIONS lokal TIDAK disentuh — lihat
+pengecualian `s_no_vessel_imo` rowLabel di bawah)/Sea & Air (SEA_AIR_*_COLS, SeaAirChecklistModal,
+SeaAirValidasiModal UI chrome saja — `SeaAirValidasiModal.tsx` py SECTIONS-style data sendiri
+`INVOICE_FCL_COLS` dkk, TIDAK disentuh)/FAR Overseas Air (SELESAI, KECUALI badan memo cetak
+`FarOverseasAirDetailModal.tsx` — pengecualian PERMANEN, lihat bawah)/Zoom 90%/dst — SELESAI.
+BELUM: Bunker page sendiri sudah selesai; Audit AP Local, Audit Trail, Settings hub, halaman
+admin, AccountPage, LoginPage — BELUM.
 
-      v_entry := case p_step
-        when 'PIC' then jsonb_build_object('tier', 'PIC', 'nama', p_nama, 'jabatan', 'PIC', 'approved_at', now(), 'user_email', auth.email())
-        when 'TIER1' then jsonb_build_object('tier', 1, 'nama', p_nama, 'jabatan', coalesce(p_jabatan, '-'), 'approved_at', now(), 'user_email', auth.email())
-        when 'TIER2' then jsonb_build_object('tier', 2, 'nama', p_nama, 'jabatan', coalesce(p_jabatan, '-'), 'approved_at', now(), 'user_email', auth.email())
-        when 'TIER3' then jsonb_build_object('tier', 3, 'nama', p_nama, 'jabatan', coalesce(p_jabatan, '-'), 'approved_at', now(), 'user_email', auth.email())
-      end;
+**Pengecualian PERMANEN — badan memo cetak `FarOverseasAirDetailModal.tsx`**: istilah dalam kotak
+border `#FFF5C5` (replika dokumen fisik) SENGAJA TETAP Indonesia ("Disiapkan Oleh,"/"Diperiksa
+Oleh,", "Tanggal:", "NOTE :", "MOHON DIBANTU BAYARKAN...") — dokumen resmi dikirim ke pihak
+eksternal, beda risiko dari teks UI biasa. `TIER_ACTION_LABEL`/`PIC_ACTION_LABEL` & teks PIC juga
+ikut Indonesia utk konsistensi. **Satu-satunya bagian UI yg sengaja TIDAK ikut program translasi.**
 
-      select coalesce(jsonb_agg(elem), '[]'::jsonb)
-      into v_new_approvals
-      from jsonb_array_elements(
-        coalesce((select approvals from public.rekapan_far_overseas_air where id = p_id), '[]'::jsonb)
-      ) elem
-      where (elem->>'tier') is distinct from v_entry_tier_text;
+**Pengecualian lain yg dikonfirmasi eksplisit user**: `ValidasiModal.tsx` section
+`s_no_vessel_imo` — `section.label`/`srcLabel` DITERJEMAHKAN ("NO VESSEL NAME AND IMO NUMBER"),
+`rowLabel: "No Vessel/IMO Format"` (gabungan 3 row cipl05/po01/fi01), `hint: 'Match if empty'` —
+TAPI `field` mentah (`"Format Pass: Tidak Ada Vessel & IMO"`, logic-critical) TIDAK disentuh.
 
-      v_new_approvals := v_new_approvals || jsonb_build_array(v_entry);
+**Regex logic-critical yg TIDAK BOLEH ditranslate**: `mapModeToJenisLayanan()`
+(`FarOverseasAirHelpers.ts`) — mapping ke string Indonesia HARUS PERSIS sama dgn kolom
+`jenis_layanan` di `far_overseas_tarif_vendor`. `inputPlaceholder: 'PENGIRIMAN DARI {ASAL} KE
+{TUJUAN} (...)'` (kolom NOTE 1) — regex `parseRouteNote()` `/^PENGIRIMAN DARI (.+) KE (.+)
+\((.+)\)$/i` WAJIB diikuti literal, translate hint tanpa translate regex bikin parse gagal diam2.
 
-      update public.rekapan_far_overseas_air
-      set approval_status = v_new_status,
-          approvals = v_new_approvals
-      where id = p_id;
+Komentar kode & CLAUDE.md ini TETAP Bahasa Indonesia (bukan scope translasi UI).
 
-      return jsonb_build_object('approval_status', v_new_status, 'approvals', v_new_approvals);
-    end;
-    $$;
+## Zoom 90% otomatis di layar laptop 14" (`src/index.css`)
 
-    grant execute on function public.approve_far_overseas_air(uuid, text, text, text) to authenticated;
-    ```
-    Guard 3-lapis di dalamnya: (1) `has_edit_access('direct_loading')`, (2) user (atau
-    `is_admin()`) harus punya baris `user_approval_tiers` dgn `page_key='direct_loading'` &
-    `tier = p_step`, (3) `approval_status` SAAT INI harus PERSIS
-    status "menunggu tahap ini" (`v_expected_status`, dgn `for update` row lock supaya 2 approval
-    bersamaan tidak balapan) — kalau salah satu gagal, function `raise exception` (client terima di
-    `error.message`). Function ini yang MENENTUKAN `approval_status`/`approvals` baru (bukan
-    dihitung di client) — `handleApprove` di `FarOverseasAirDetailModal.tsx` pakai APA ADANYA hasil
-    `returns jsonb` dari RPC ini (`{approval_status, approvals}`) buat update state lokal, TIDAK
-    menghitung ulang sendiri, supaya client selalu sinkron persis dengan hasil di DB. `jabatan`
-    (teks role utk tampilan tanda tangan, mis. "Manager Finance") & `nama` masih dikirim dari
-    client (bukan divalidasi/di-derive ulang di RPC) — ini AMAN karena keduanya murni teks
-    kosmetik utk memo cetak, bukan bagian keputusan otorisasi (yang divalidasi adalah `p_step`
-    lewat `user_approval_tiers`, bukan `p_nama`/`p_jabatan`).
+`@media (max-width:1600px){html{zoom:90%;}}` — pakai `zoom` (BUKAN `transform:scale`, app ini
+banyak pakai `position:fixed`/sticky, `transform` bikin containing block baru yg merusak semua
+fixed/sticky positioning). Non-standar CSS, Firefox lama tidak dukung (fallback aman: tampil
+100% normal, bukan rusak). Breakpoint 1600px = heuristik viewport width kasar utk laptop 14",
+BUKAN deteksi ukuran fisik — kalau ada laporan salah kalibrasi, sesuaikan angka.
 
-## Translasi UI ke Bahasa Inggris (IN PROGRESS, dimulai 2026-09)
+**Bug ditemukan & diperbaiki — strip putih di bawah halaman**: CSS `zoom` TIDAK ikut menyesuaikan
+unit `vh` di Chromium (`100vh` dihitung dari window asli, baru di-shrink visual 90%, sisa ruang
+expose background body putih). Fix, DI DALAM media query yg sama:
+```css
+.h-screen { height: calc(100vh / 0.9); }
+.min-h-screen { min-height: calc(100vh / 0.9); }
+```
+Otomatis cover semua pemakaian class ini. TIDAK dikompensasi utk `vh` spesifik non-fullpage (mis.
+modal `h-[92vh]`) — trade-off minor diterima kecuali ada laporan spesifik.
 
-Atas permintaan user, SELURUH teks yang tampil ke user di aplikasi ini sedang ditranslasi dari
-Bahasa Indonesia ke Bahasa Inggris, dikerjakan BERTAHAP per modul (bukan sekaligus) supaya tiap
-tahap bisa diverifikasi `npx tsc --noEmit` + cek visual dulu sebelum lanjut. **Keputusan
-cakupan yang sudah dikonfirmasi user**:
-1. **Nilai status di database TIDAK diubah** (mis. `LENGKAP`/`PROSES`/`PENDING`/`REVISI`/
-   `TIDAK LENGKAP`/`BELUM LENGKAP`/`PERLU REVIEW`/`ARCHIVED` di kolom `status` — ditulis oleh
-   otomasi n8n, dibaca balik oleh logic frontend). `StatusBadge` (`SharedDataTable.tsx` ~baris
-   112) SAAT INI merender nilai `status` mentah langsung tanpa lapisan mapping tampilan — kalau
-   badge status mau ditranslasi ke Inggris juga nanti, WAJIB lewat lapisan mapping
-   Indonesia→Inggris di level render SAJA, JANGAN pernah ubah nilai `status` yang dikirim ke
-   Supabase (akan langsung tidak match dengan apa yang ditulis n8n).
-2. **Istilah domain customs/logistik dibiarkan apa adanya**: PPJK, AWB, PIB, BM, DPP, SPTNP,
-   NDPBM, CIPL, BPN, HS Code, dll — ini singkatan resmi dokumen kepabeanan Indonesia, tidak
-   punya padanan baku dalam Bahasa Inggris yang dipakai industri. Hanya teks di SEKITAR
-   istilah ini (label kolom seperti "Nomor"→"Number", "Tanggal"→"Date") yang ditranslasi.
-3. Nama kolom/tabel database (mis. `nama_pt`, `jenis_dokumen`, `rekapan_seaair`) TIDAK diubah —
-   itu identifier teknis, bukan teks tampilan; mengubahnya butuh migrasi skema + koordinasi
-   ulang n8n, di luar cakupan task ini.
+## Shell "tinggi tetap + scroll internal" — Bunker, AuditPo*, PiLocal, CourierValidasi
 
-**TEMUAN PENTING (2026-09) — jangan asal translate string yang terlihat seperti label**: di
-`src/utils/ValidasiHelper.ts` (dipakai `ValidasiModal.tsx`/`ValidasiPerhitunganPIB.tsx`/
-`CourierValidasiPage.tsx`, sistem matrix Doc Validation Courier), field `field`/`rowLabel` di
-tiap baris array `SECTIONS` BUKAN cuma teks tampilan — `computeStatus()` (baris ~253) melakukan
-SUBSTRING MATCHING terhadap nilai `field` ini buat menentukan cara membandingkan 2 nilai (mis.
-`fieldName.includes("DPP (")`, `.includes("Referensi (")`, `.includes("Cek Master NPWP")`,
-`lowerField.includes("alamat")`/`"nama pt"`/`"nama npwp"`/`"npwp"`/`"harga"`/`"berat"`/`"awb"`/
-`"invoice"`/`"value"`/`"total"`). `field`/`rowLabel` JUGA dipakai sebagai `groupKey` pengelompokan
-baris di UI (`ValidasiModal.tsx` baris ~1418). Jadi string ini SEKALIGUS logic key & display
-text — analog dengan peringatan "jangan ganti nama baris" dari user, tapi lebih dalam karena
-nyambung ke keyword-matching di logic, bukan cuma dipakai sebagai object key lookup. **JANGAN
-translate `field`/`rowLabel`/`compareDoc`/`label`/`srcLabel` di `SECTIONS` tanpa refactor
-`computeStatus()` dulu supaya keyword-matching-nya tidak lagi bergantung ke teks Indonesia ini**
-(mis. pindah ke matching berbasis `id` yang stabil). Modul Courier Validasi (SharedDataTable
-`VALIDASI_COLS`/`COURIER_COLS` sendiri sudah aman ditranslate — sudah dilakukan; yang BELUM &
-BERISIKO adalah isi `ValidasiModal.tsx`, `CostValidationModal.tsx`,
-`ValidasiPerhitunganPIB.tsx`, `ValidasiHelper.ts`, `ValidasiPibHelper.ts`, `ValidasiFill.ts`,
-dan bagian `CourierValidasiPage.tsx` yang merender label dari `SECTIONS`).
+Pola wajib utk halaman list (replika `SharedDataTable.tsx`/`FarOverseasAirPage.tsx`): wrapper
+terluar `flex flex-col overflow-hidden` (BUKAN `overflow-y-auto` di 1 halaman penuh — sudut
+rounded card List akan ikut ter-scroll lewat & kelihatan "kotak" kalau salah). `<header>`+toolbar
+`shrink-0`. Kartu List `flex-1 flex flex-col min-h-0`. Wrapper `<table>`
+`overflow-x-auto overflow-y-auto flex-1 min-h-0`, `<thead className="sticky top-0 z-20">`.
+Pagination footer `shrink-0`. Diterapkan di `BunkerPage.tsx`, `AuditPoPage.tsx`,
+`AuditPoOverseasPage.tsx`, `PiLocalPage.tsx`. `KategoriPicker` dropdown `z-30` (di atas thead
+z-20). `CourierValidasiPage.tsx` sudah pola shell sama tapi list-nya kartu bukan `<table>`, lihat
+bagian tersendiri di bawah.
 
-**Progress per modul** (update daftar ini tiap modul baru selesai ditranslasi):
-- ✅ Sidebar/menu utama (`src/components/MainLayout.tsx`) — label submenu Courier/Sea & Air
-  ("Rekapan Invoice"→"Invoice Recap", "Validasi"→"Validation", "Rekapan"→"Recap"), fallback
-  nama akun ("Pengguna"→"User"), tombol/tooltip footer sidebar ("Akun Saya"→"My Account",
-  "Pengaturan"→"Settings", "Keluar"→"Logout"). Label lain (Courier, Sea & Air, Audit, Upload,
-  FAR Overseas, Bunker, Audit AP Local, Audit Trail) sudah Inggris dari awal, tidak disentuh.
-  **Susulan (2026-09, permintaan user)**: submenu Sea & Air `sea_air_rekapan` (`label: 'Recap'`)
-  disamakan dgn Courier jadi **`'Invoice Recap'`** — sebelumnya cuma Courier
-  (`courier_rekapan`) yg pakai label "Invoice Recap", Sea & Air masih "Recap" polos, sekarang
-  konsisten di kedua submenu. `id`/`path`/`pageKey` (`sea_air_rekapan`, `/sea-air/rekapan`)
-  TIDAK berubah, murni ganti teks label tampilan.
-- ✅ `src/components/Greeting.tsx` — sapaan waktu ("Selamat pagi/siang/sore/malam"→"Good
-  morning/afternoon/evening/night"), format tanggal `toLocaleDateString` diganti locale
-  `'id-ID'`→`'en-US'`.
-- ✅ **Bunker** (`src/pages/BunkerPage.tsx` + `src/components/BunkerUploadModal.tsx`/
-  `BunkerKelengkapanModal.tsx`/`BunkerCompareDocModal.tsx`/`BunkerAuditLogModal.tsx` +
-  `src/utils/BunkerHelpers.ts`) — SELESAI penuh (2026-09). Termasuk semua toast/error message,
-  judul modal, tombol, placeholder, label field, header tabel (Kapal→Vessel, Lokasi→Location,
-  Aksi→Action, dst), pesan error upload (`humanizeUploadError`), `friendlyDbError`. Label
-  tampilan (BUKAN key/value DB) juga ditranslate: `SUMMARY_STATUS_META`/`STATUS_WORKFLOW_META`
-  (`summaryStatusMeta`/`workflowMeta` di `BunkerHelpers.ts` — KEY jsonb/DB seperti
-  `'LOLOS VERIFIKASI'`/`'BUTUH REVIEW'`/`'BARU'`/`'DIPROSES'`/`'DISETUJUI'`/`'DIBAYAR'` TIDAK
-  diubah, cuma `label`-nya: Lolos Verifikasi→Passed Verification, Butuh Review→Needs Review,
-  Baru→New, Diproses→In Progress, Disetujui→Approved, Dibayar→Paid), `KELENGKAPAN_LABELS`/
-  `MATRIX_COLUMN_LABELS` (Faktur Pajak→Tax Invoice, Kwitansi→Receipt, Berita Acara→Official
-  Report, Hasil Lab→Lab Results — istilah dokumen bisnis umum, BUKAN singkatan resmi kepabeanan
-  spesifik semacam PPJK/PIB yang dipertahankan apa adanya per aturan translasi poin 2 di atas).
-  **SENGAJA TIDAK disentuh** (data/matching logic yang baca teks dari database/backend, bukan
-  label tampilan statis): `resolveAcuanColumnKey()` (cocokkan `acuan_label` dari backend, masih
-  Indonesia), `isWrongRowMismatch()` di `BunkerCompareDocModal.tsx` (regex cocokkan teks
-  `summary.mismatches` dari backend), dan format `"{field} — Lama: X → Baru: Y"` yang ditulis
-  `logBunkerAudit()`/dibaca `splitAuditCatatan()` (`BunkerAuditLogModal.tsx`) — ini format
-  PERSISTEN yang sudah kepakai di data historis `audit_trail`, ubah kata "Lama"/"Baru"-nya
-  butuh migrasi data + sinkron ulang regex parser-nya, DI LUAR cakupan translasi UI murni (kalau
-  nanti mau diubah, lakukan sengaja & terpisah, bukan collateral dari task translasi lain).
-  `field_label` yang DIKIRIM ke `logBunkerAudit()` (mis. "Manual Confirmation: ...", "Manual
-  Notes") sudah Inggris utk entri BARU — entri lama tetap Indonesia (riwayat, tidak diubah).
-- ✅ `src/pages/AccountPage.tsx` (Akun Saya) — SELESAI penuh (2026-09): judul halaman "Akun
-  Saya"→"My Account" + subjudul, label field (Nama→Name), placeholder input (Nama
-  lengkap→Full name, Minimal 6 karakter→At least 6 characters, Ulangi password baru→Repeat new
-  password), tombol (Simpan→Save, Menyimpan...→Saving..., Ganti Password→Change Password,
-  Ubah Password→Change Password, Memproses...→Processing...), label Password Baru/Konfirmasi
-  Password Baru→New Password/Confirm New Password, semua pesan sukses/error inline. Key internal
-  `'sukses'`/`'gagal'` pada state message TIDAK diubah (cuma dipakai utk pilih warna teks, bukan
-  teks tampilan).
-- ✅ `src/pages/RoleManagementPage.tsx` (Kelola Role & Akses) — SELESAI penuh (2026-09): judul
-  halaman + subjudul, judul 3 panel ("Daftar Role"→"Role List", "Akses Halaman per
-  Role"→"Page Access per Role", "Role per User"→"Roles per User"), tombol/label (Tambah
-  Role→Add Role, Bentangkan/Ciutkan Semua→Expand/Collapse All, Bawaan→Built-in, kolom
-  Halaman→Page), placeholder input, semua toast sukses/error, confirm dialog hapus role, tooltip
-  checkbox akses/EDIT-VIEW & dropdown jabatan approval, empty state "Tidak ada user
-  ditemukan"→"No users found", "(tanpa nama)"→"(no name)".
-  Label jabatan approval Direct Loading di `PAGE_REGISTRY` (`permissions.ts`) disamakan
-  Inggris-nya dgn `STEP_LABEL` di `FarOverseasAirDetailModal.tsx` ("Exim (Disiapkan
-  Oleh)"→"Prepared By (Exim)", "Direktur"→"Director"). Susulan (2026-09, permintaan user): grup
-  di matrix "Akses Halaman per Role" defaultnya CIUTKAN semua (`collapsedGroups` init
-  `new Set(PAGE_GROUPS)`, sebelumnya default terbentang semua), tinggi baris matrix & baris grup
-  diperbesar sedikit (`py-2`→`py-3.5`/`py-3`).
-  **Panel "Roles per User" dirombak jadi tabel matrix (2026-09, permintaan user "mempercantik
-  panel ini")** — SEBELUMNYA layout 1 baris per user berisi pill button per role (klik toggle) +
-  dropdown jabatan approval di sebelahnya, TIDAK KONSISTEN visual dgn panel "Page Access per
-  Role" di atasnya. SEKARANG pola tabelnya PERSIS sama dgn panel itu: sticky kolom pertama (nama
-  + email user), header sticky, checkbox bulat emerald per kolom role (`toggleUserRole`
-  tidak berubah logic-nya, cuma pembungkus visualnya jadi `<td>`/tombol checkbox, bukan pill).
-  Kolom dropdown jabatan approval (`APPROVAL_TIER_PAGES`, kalau ada) ditaruh SEBELUM kolom-kolom
-  role, tetap `<select>` (bukan checkbox, krn nilainya bukan boolean) — value dropdown sekarang
-  cukup label tier-nya saja (`opt.label`) tanpa prefix nama halaman lagi (dulu
-  `"{page.label}: {opt.label}"`) krn sudah ada di header kolom (`{page.label} Approval`), jadi
-  tidak perlu diulang. Badge "No role assigned" (dulu muncul di baris user tanpa role) DIHAPUS --
-  di tabel matrix, user tanpa role cukup kelihatan dari semua kolom role-nya kosong (unchecked),
-  tidak perlu badge terpisah lagi.
-- **Entry `direct_loading` di `PAGE_REGISTRY` — `label` & `group` diganti ke "FAR Overseas"
-  (2026-09, koreksi user: nama tampilnya di RBAC selama ini masih "Direct Loading", padahal
-  halamannya sendiri sudah "FAR Overseas" di sidebar & semua tempat lain)** — sebelumnya
-  `label: 'Direct Loading', group: 'Direct Loading'`. `key` (`'direct_loading'`) & `path`
-  (`/direct-loading`) TETAP TIDAK DIUBAH (identifier teknis/route, dipakai di kode & RLS/RPC
-  Supabase — mengubahnya butuh migrasi lebih luas, di luar cakupan koreksi nama tampil ini) — pola
-  sama seperti `AuditPoPage`/`audit_po` yang nama teknisnya beda dari label yang ditampilkan
-  ("Audit AP Local"). `PageEntry['group']` (union type) & `PAGE_GROUPS` array ikut diganti
-  `'Direct Loading'`→`'FAR Overseas'` supaya header grup collapsible di matrix "Page Access per
-  Role" juga ikut konsisten. Efeknya otomatis nyebar ke: matrix akses (nama grup & label baris),
-  dropdown "Jabatan Approval" panel "Roles per User" (header kolom jadi "FAR Overseas Approval").
-- 🟡 Courier Upload — SELESAI. `src/pages/UploadPage.tsx` (dipakai bareng Sea & Air Upload lewat
-  `fixedType`, jadi Sea & Air Upload OTOMATIS ikut selesai juga) + `src/components/
-  ProcessingQueue.tsx` (dipakai kedua modul Upload) ditranslate penuh, termasuk toast/error
-  message, step loading overlay, panduan dokumen wajib/opsional.
-- 🟡 Courier Audit & Rekapan — SEBAGIAN BESAR selesai di `SharedDataTable.tsx` (dipakai bareng
-  Sea & Air Audit/Rekapan, jadi banyak yang otomatis ikut kena juga): kolom `COURIER_COLS`/
-  `PIB_COLS`/`CN_COLS`/`CHECKLIST_FIELDS`, `ChecklistModal`, `EditModal` (form Tambah/Edit +
-  status select), `DeleteModal`, toolbar (search/filter/export/tambah data), tombol aksi inline
-  per baris (Edit/Save/Cancel/Delete/Checklist), empty state & error state. Ditambah lapisan
-  translasi tampilan `STATUS_LABELS`/`getStatusLabel()` (~baris 112) dipakai di badge status +
-  select status — nilai DB tetap Indonesia, cuma tampilannya Inggris (lihat poin 1 di atas).
-  Sentinel filter internal `'Semua'` diganti `'All'` di seluruh file (bukan nilai DB, aman).
-  Susulan (2026-09, dari screenshot user): header kolom sticky "Aksi"→"Action", kolom sintetis
-  `{ key: 'jenis_dokumen', label: 'Jenis' }` di tabel gabungan PIB+CN (tab Draft)→"Type", footer
-  pagination "Menampilkan X-Y dari Z record"→"Showing X-Y of Z records".
-  `SEA_AIR_AUDIT_COLS`/`SEA_AIR_REKAPAN_COLS` (kolom Sea & Air spesifik) ditranslate belakangan
-  di modul Sea & Air, lihat poin di bawah.
-- 🟡 Courier Validasi (`ValidasiModal.tsx`) — **HANYA UI chrome statis** yang ditranslate
-  (dikonfirmasi eksplisit oleh user via screenshot 2026-09: "yang dirubah hanya kata-kata...
-  untuk nama kolom nama baris dan nama tabel tidak perlu dirubah"): judul modal ("Validasi
-  Dokumen"→"Document Validation" + subjudul), tombol (Cetak/Simpan/Batal/Ciutkan/Lebarkan →
-  Print/Save/Cancel/Collapse/Expand), label field meta (Jenis Dokumen/Tanggal cek/Diperiksa oleh/
-  Catatan Perubahan Manual → Document Type/Check date/Checked by/Manual Change Notes + 2
-  placeholder input-nya), panel statistik (Sesuai/Tidak sesuai/Belum diisi/Akurasi validasi →
-  Match/Mismatch/Not filled yet/Validation accuracy — via 2 mapping `STATUS_CONFIG` ~baris 468
-  & `getCfg()` ~baris 1225, KEDUANYA cuma mapping status→label tampilan, key internalnya
-  `match`/`mismatch`/`partial`/`empty` TIDAK diubah, aman). **TIDAK DISENTUH SAMA SEKALI**: array
-  `SECTIONS` lokal di file ini (field/compareDoc/rowLabel/label/hint per baris matrix) — ini
-  SAMA PERSIS risikonya dengan `ValidasiHelper.ts` (lihat "TEMUAN PENTING" di atas), file ini
-  ternyata punya SECTIONS sendiri (bukan import dari ValidasiHelper.ts) dengan pola sama:
-  `field` dipakai `computeStatus()` utk keyword-matching cara banding 2 nilai, bukan cuma teks
-  tampilan.
-  Susulan (2026-09, dari screenshot user, konfirmasi ulang cakupan "hanya kata-kata... nama
-  kolom/baris/tabel tidak perlu dirubah"): badge status per-section "X/Y sesuai"/"X tidak
-  sesuai" (~baris 1441-1444, teks statis di luar `section.label`, aman) → "match"/"mismatch";
-  teks "jika ada — khusus jalur PIB" → "if applicable — PIB path only".
-  **Pengecualian (2026-09, permintaan eksplisit user)**: `section.label`/`srcLabel` utk
-  `s_no_vessel_imo` ("TIDAK ADA NAMA VESSEL DAN NOMOR IMO" → **"NO VESSEL NAME AND IMO NUMBER"**,
-  `srcLabel` ikut diterjemahkan jg meski tidak pernah dipakai tampil krn section ini py override
-  `getSrcTooltipLabel` sendiri, lihat baris ~148) DITERJEMAHKAN — beda dari kebijakan umum
-  "nama tabel tidak perlu dirubah" di atas, krn user MINTA LANGSUNG utk tabel spesifik ini. Field
-  row-nya (`"Format Pass: Tidak Ada Vessel & IMO"`, `isFormat`) TIDAK ikut diterjemahkan — itu
-  string logic-critical (dipakai `computeStatus()` via `fieldName.includes("Tidak Ada Vessel")`,
-  lihat "TEMUAN PENTING" di atas), translate field itu tanpa refactor `computeStatus` akan
-  merusak deteksi format-nya.
-  **Susulan (2026-09, permintaan user "rubah jadi bahasa inggris yang singkat")** — nama baris
-  yang TAMPIL (bukan `field` logic-critical di atas) diganti pakai `rowLabel: "No Vessel/IMO
-  Format"` (ketiga row `cipl05`/`po01`/`fi01` diberi `rowLabel` yang SAMA — groupKey `rowLabel ||
-  field` tetap menghasilkan 1 baris gabungan seperti sebelumnya, cuma teks yang RENDER di kolom
-  "VALIDASI FIELD" sekarang baca `rowLabel` ini, bukan `field` mentah lagi). `hint: 'Sesuai jika
-  kosong'` diterjemahkan jadi **`'Match if empty'`** (field `hint` murni teks tampilan, aman
-  diubah — beda dari `field` yang dipakai keyword-matching `computeStatus()`, TIDAK disentuh).
-  Kalau nanti ada permintaan translate nama tabel/section LAIN di modal ini secara spesifik
-  (bukan kebijakan umum), ikuti pola yang sama: `label`/`srcLabel` aman diubah, `field`/`rowLabel`/
-  `compareDoc` HARUS dicek dulu apakah dipakai `computeStatus`/keyword-matching sebelum disentuh.
-  **`ValidasiPerhitunganPIB.tsx`** (komponen kalkulasi PIB terpisah, dirender di dalam
-  `ValidasiModal.tsx`) — HANYA UI chrome yang ditranslate: `StatusBadge` lokal-nya sendiri
-  (~baris 100, "Sesuai"/"Tidak Sesuai"→"Match"/"Mismatch", key internal `match`/`mismatch`/
-  `empty` tidak diubah, sama pola aman dengan `STATUS_CONFIG`), header tabel kalkulasi
-  (AKTUAL/SELISIH/CARA PERHITUNGAN → ACTUAL/DIFFERENCE/CALCULATION METHOD, FIELD/EXPECTED/STATUS
-  sudah Inggris), judul collapsible "Rincian Item Pabean (Halaman Lanjutan)"→"Customs Item
-  Details (Continued Page)" + subjudulnya (warna teksnya juga diganti ke `#FFF5C5` sesuai
-  permintaan user, ~baris 568). **TIDAK DISENTUH**: `FORMULA` (teks rumus statis, ~baris 5-15),
-  label tiap baris kalkulasi (mis. "Freight (25)"/"Asuransi (24)"/"Nilai Pabean (26)" — row
-  identifier, bukan cuma display), `status_checklist` (`'BELUM LENGKAP'`/`'ADA KETIDAKSESUAIAN'`/
-  `'LULUS'` di `ValidasiModal.tsx` ~baris 971-973 — INI NILAI YANG DISIMPAN KE DB, sama kategori
-  bahaya dengan `status` LENGKAP/PROSES/dst, JANGAN diubah).
-  `CostValidationModal.tsx`, `ValidasiHelper.ts`, `ValidasiPibHelper.ts`, `ValidasiFill.ts`, dan
-  `CourierValidasiPage.tsx` (list-nya, `VALIDASI_COLS` lokal) BELUM disentuh sama sekali.
-- 🟡 Sea & Air — SELESAI (2026-09, dikonfirmasi user pola sama dengan Courier Validasi: "jangan
-  rubah nama kolom, tabel dan baris"). Upload sudah otomatis selesai dari sesi Courier (file
-  sama). Rincian:
-  - `SharedDataTable.tsx`: label Indonesia tersisa di `SEA_AIR_AUDIT_COLS`/`SEA_AIR_REKAPAN_COLS`
-    ditranslate (`Asuransi`→`Insurance`, `NILAI PABEAN`/`NILAI IMPOR`→`CUSTOMS VALUE`/`IMPORT
-    VALUE`, `Tanggal`→`Date`, `Total Keseluruhan`→`Grand Total`, `Tgl Submit Finance`→`Finance
-    Submit Date`, `Type Container`→`Container Type`, dan semua label `Biaya X`/`Vendor
-    Inspeksi`/`Vendor Lainnya` dkk di breakdown cost EMKL/Freight/PBM/Lift Off/Inspeksi/
-    Handling/Lainnya → `X Cost`/`Inspection Vendor`/`Other Vendor` dst). Select status
-    LENGKAP/ARCHIVED di `SeaAirAuditRowGroup`/`SeaAirRekapanRowGroup` dibungkus `getStatusLabel()`
-    (sebelumnya cuma dilakukan utk Courier). Tombol "💲 Cost Validasi"→"Cost Validation", badge
-    boolean `type: 'bool'` (kolom V1-V14 di `VALIDASI_COLS`) "✅ LULUS"/"❌ GAGAL"→"✅ PASS"/
-    "❌ FAIL" (murni turunan boolean, bukan nilai DB, aman).
-  - `SeaAirChecklistModal.tsx` (read-only checklist viewer) — ditambah `STATUS_LABELS`/
-    `getStatusLabel()` versi lokal (sama pola dgn `SharedDataTable.tsx`, termasuk status
-    `'ADA KETIDAKSESUAIAN'`→"Mismatch Found" krn dipakai juga di modul ini), judul/label/empty
-    state ditranslate penuh.
-  - **`SeaAirValidasiModal.tsx`** — TERKONFIRMASI file ini punya SECTIONS-style data sendiri
-    (`headerColors`, `INVOICE_FCL_COLS`/`FP_FCL_COLS`/`PIB_COLS`/dst, row/col dipakai sbg key
-    lookup `checks.find(c => c.row === row && c.col === col)`) — SAMA RISIKONYA dgn
-    `ValidasiHelper.ts`, TIDAK DISENTUH SAMA SEKALI. Yang ditranslate HANYA UI chrome: judul
-    modal + subjudul, tombol (Mode Edit/Print/Simpan Perubahan), `StatusBadge` lokal (match/
-    mismatch/null → "Match"/"Mismatch"/"Not checked yet", tooltip manual-edit), panel Statistik
-    Global, empty state "Dokumen tidak diupload / tidak relevan"→"Document not uploaded / not
-    relevant", badge "Kosong"→"Empty" (VesselTable), placeholder input DUTY table, semua
-    `alert()`/`confirm()` dialog. Header kolom sticky "Validasi" (leftmost label column di semua
-    tabel matrix ini) DITRANSLATE ke "Validation" — dikonfirmasi ini BUKAN key lookup (cuma
-    literal JSX text di 7 tempat, grep `'Validasi'`/`"Validasi"` sbg string literal = 0 match),
-    beda dari `headerColors`/`INVOICE_FCL_COLS` dkk yang memang dipakai sbg key. `SectionWrap`
-    title prop (INVOICE/FAKTUR PAJAK/VESSEL/PIB/DUTY/EMKL/ACTUAL) TIDAK disentuh (nama section/
-    tabel). `console.error`/comment dev tetap Indonesia (bukan scope).
-    Susulan (2026-09, dari screenshot user, tabel DUTY): `headerColors` key `"Aktual (PIB)"` /
-    `"Expected (Kalkulasi)"` (dipakai jadi key lookup WARNA saja, bukan matching data — beda
-    dari `INVOICE_FCL_COLS` dkk — dicek aman, diganti bareng ke-2 pemakaiannya sekaligus)
-    →`"Actual (PIB)"`/`"Expected (Calculation)"`. Row label tabel DUTY (`rows` array lokal di
-    `DutyTable`, KUNCI lookup-nya `key: "bm"/"ppn"/"pph"/"total"` — BEDA dari `label` yang
-    murni display, jadi aman diubah): **atas permintaan eksplisit user**, `label` "BM (PIB No.
-    37)"/"PPN (PIB No. 41)"/"PPH (PIB No. 43)" disederhanakan jadi "BM"/"PPN"/"PPH" (lebar kolom
-    dipertahankan, tidak berubah krn `LABEL_COL_PCT` persen tetap, bukan berdasar isi teks).
-    "Item pabean (N item):"→"Customs items (N item(s)):", tombol "Sembunyikan"/"Tampilkan"→
-    "Hide"/"Show", header sub-tabel item "Nilai Pabean"→"Customs Value", teks status PIB
-    "Status validasi otomatis dari sistem berdasarkan perbandingan data dokumen."→"Automatic
-    validation status from the system based on document data comparison."
-    Susulan lain (screenshot user, halaman kosong "No data yet"): tombol "Upload sekarang →" di
-    `SharedDataTable.tsx` (~baris 3904, muncul saat tabel Audit/Rekapan kosong & belum ada
-    filter search) diterjemahkan ke "Upload now →" SEKALIGUS di-restyle jadi tombol solid
-    `bg-[#5A305A]` (sebelumnya cuma teks link biru underline) sesuai permintaan user.
-  - **`ValidasiShipmentInvoiceLengkap.tsx`** (modal Cost Validation Sea & Air "Cost Validasi
-    Shipment & Invoice", dipanggil dari `SharedDataTable.tsx`, BELUM diaudit menyeluruh — baru
-    beberapa bagian yang disentuh atas permintaan user 2026-09): "Ringkasan Validasi Cost"→"Cost
-    Validation Summary", "Keseluruhan akurasi cost vs actual invoice"→"Overall cost accuracy vs
-    actual invoice" (~baris 675-680, panel STATUS BAR bagian atas modal). File ini belum dicek
-    apakah punya pola SECTIONS/row-col lookup serupa `SeaAirValidasiModal.tsx` — kalau ada
-    permintaan translate lanjutan di file ini, cek dulu pola `checks.find(...)`/`field` dipakai
-    sbg matching key sebelum translate row/col apa pun.
-    **`globalStats`** (~baris 538, dipakai panel "Cost Validation Summary"): tambah persentase
-    "Overall Accuracy" + progress bar (2026-09, replika persis pola `globalStats`/bar warna di
-    `SeaAirValidasiModal.tsx` ~baris 1414/1478-1486 — hijau `>=90%`, kuning `>=60%`, merah di
-    bawahnya). Formula: `pct = round(match / total * 100)`, `total` = jumlah SEMUA baris
-    `checks` (bukan cuma yang statusnya match/mismatch — baris kosong/belum dicek tetap masuk
-    `total`, cuma tidak masuk `match`), `match` = baris berstatus `"MATCH"`. **Baris dari tabel
-    "INVOICE SURVEYOR (OPSIONAL)"** (`section === 'SURVEYOR'`, lihat `getRowsFor("SURVEYOR")`
-    ~baris 747) DIKECUALIKAN dari `globalStats` sama sekali (difilter sebelum hitung
-    match/total) — dikonfirmasi user 2026-09, karena tabel itu opsional, baris SURVEYOR yang
-    kosong/belum diisi TIDAK BOLEH ikut menurunkan skor akurasi cost yang wajib. Kalau nanti ada
-    section lain yang sifatnya opsional serupa, tambahkan `section` value-nya ke filter yang
-    sama.
-- ✅ FAR Overseas / Direct Loading — SELESAI (2026-09), dengan 1 pengecualian permanen yang
-  dikonfirmasi user (memo cetak, lihat di bawah).
-  - `src/utils/FarOverseasAirHelpers.ts`: `APPROVAL_STATUS_META`/`COST_STATUS_META` (pola
-    display-only sama dgn `STATUS_LABELS`, key `PENDING`/`TIER1_DONE`/`TIER2_DONE`/`APPROVED`/
-    `REJECTED`/`MATCH`/`BELUM_LENGKAP`/`OVERCHARGE`/`UNDERCHARGE` TIDAK diubah, cuma `.label`)
-    ditranslate penuh. Notes template di `computeExpectedFromRate` ("Tarif rentang..."/"origin:
-    ..., tujuan: ...") ditranslate SEBAGIAN — teks scaffolding-nya saja, `rate.jenis_layanan`/
-    `rate.mata_uang` (nilai asli dari `far_overseas_tarif_vendor`) TIDAK disentuh.
-    **JANGAN SENTUH** `mapModeToJenisLayanan()` — mapping keyword (REGULER/SEA/AIR/dst) ke
-    STRING INDONESIA `'Reguler Freight'/'Economy'/'Express'/'Sea Freight'/'Air Freight'` yang
-    harus PERSIS SAMA dengan nilai kolom `jenis_layanan` di tabel `far_overseas_tarif_vendor`
-    (dibaca `rematchTarif()`) — ini data-matching, bukan teks tampilan, translate akan
-    memutus pencocokan tarif otomatis sepenuhnya.
-  - `FarOverseasAirPage.tsx`: List Memo (toolbar/header/toast/confirm delete/empty state/
-    "Simpan Semua"/Antrian Proses) ditranslate penuh, termasuk `header:` kolom tabel ("JUDUL
-    MEMO"→"MEMO TITLE", "STATUS APPROVAL"→"APPROVAL STATUS", "STATUS COST"→"COST STATUS").
-    **JANGAN SENTUH** `inputPlaceholder: 'PENGIRIMAN DARI {ASAL} KE {TUJUAN} (AIR/SEA/REG/
-    EXPRESS/ECONOMY)'` (kolom NOTE 1/`route_note`) — ini BUKAN cuma hint UI, `parseRouteNote()`
-    di `FarOverseasAirHelpers.ts` pakai regex `/^PENGIRIMAN DARI (.+) KE (.+) \((.+)\)$/i` yang
-    WAJIB user ikuti literal (Bahasa Indonesia) saat isi field ini secara manual — translate
-    hint-nya ke Inggris tanpa translate regex-nya akan bikin user salah format & re-kalkulasi
-    cost validation gagal diam-diam (`parseRouteNote` return null).
-  - `FarOverseasAirUploadModal.tsx`, `FarOverseasAirWeightBreakdownModal.tsx` — ditranslate
-    penuh (murni UI chrome, tidak ada memo cetak/matching logic).
-  - `FarOverseasAirCostValidationModal.tsx` — ditranslate penuh: `COST_ROW_LABELS` (key
-    `KG`/`UNIT_PRICE_DARI_DESCRIPTION`/`OTHER_CHARGES`/`TOTAL` tidak diubah, cuma label),
-    `RateCandidateCard` labels (Origin/Tujuan/Jenis Layanan/Harga/Estimasi Waktu →
-    Origin/Destination/Service Type/Price/Estimated Time — LABEL saja, `rate.jenis_layanan` dkk
-    values tidak disentuh), badge SESUAI/TIDAK SESUAI→MATCH/MISMATCH, semua toast/error/empty
-    state. **`RateRowCard`** (render `Object.entries(row)` mentah dari `RateRow`) SENGAJA TIDAK
-    disentuh — itu literal nama kolom database (`jenis_layanan`, `harga_per_kg`, dst) yang
-    dirender langsung sebagai label debug, bukan UI label yang di-desain, jadi tidak bisa/tidak
-    perlu ditranslate.
-  - **`FarOverseasAirDetailModal.tsx`** (modal memo approval + REPLIKA MEMO CETAK) — UI chrome
-    non-print (toolbar, toast, `ApprovalConfirmModal`, `RejectModal`, "PO Details", "Rejection
-    Reason", tombol "Reject") SUDAH ditranslate. **KEPUTUSAN FINAL (dikonfirmasi user 2026-09,
-    JANGAN diubah lagi tanpa ditanya ulang)**: istilah yang tercetak di badan memo resmi
-    (bagian dalam kotak border `#FFF5C5`, replika dokumen fisik asli) SENGAJA DIBIARKAN Bahasa
-    Indonesia — label tanda tangan "Disiapkan Oleh,"/"Diperiksa Oleh," (`SignatureColumn`
-    ~baris 317-319), "Tanggal:" di kolom approval (~baris 60), blok "NOTE :" & catatan
-    pembayaran "MOHON DIBANTU BAYARKAN PADA TANGGAL :" (~baris 303/325-328), karena ini dokumen
-    resmi yang mungkin dicetak/dikirim ke pihak eksternal (vendor/perusahaan) — beda risikonya
-    dari teks UI aplikasi biasa. Konsisten dengan itu, `TIER_ACTION_LABEL`/`PIC_ACTION_LABEL`
-    (tombol "Setujui — Disiapkan Oleh"/dst, MERUJUK istilah yang sama) dan teks PIC "Persetujuan
-    PIC — terpisah dari tahapan Disiapkan/Diperiksa di atas..." JUGA SENGAJA DIBIARKAN Indonesia
-    biar konsisten dengan istilah cetaknya. Ini SATU-SATUNYA bagian UI yang sengaja TIDAK ikut
-    program translasi keseluruhan aplikasi — pengecualian permanen, bukan item yang belum
-    dikerjakan.
-- ⬜ Bunker (`BunkerPage.tsx`) — belum.
-- ⬜ Audit AP Local (`AuditPoPage.tsx`) — belum.
-- ⬜ Audit Trail, Settings hub, halaman admin (`src/pages/admin/*`, RoleManagementPage,
-  FuelSurchargePage, KursBIPage, KursRuleVendorPage, TarifKontrakPage,
-  FarOverseasVendorTarifPage), AccountPage, LoginPage — belum.
+## Pola UI wajib (dikonsolidasi)
 
-Komentar kode & isi CLAUDE.md ini SENGAJA TETAP Bahasa Indonesia (bukan bagian dari scope
-"teks yang tampil ke user").
-
-## Zoom 90% otomatis di layar laptop 14" (`src/index.css`, 2026-09)
-
-Permintaan user: tampilan default 100% dirasa terlalu besar/padat di laptop 14" — user tes
-manual pakai Ctrl+- browser & konfirmasi 90% yang pas. Diimplementasi sbg CSS global
-(`@media (max-width: 1600px) { html { zoom: 90%; } }`) di `src/index.css`, BUKAN diskusi
-dulu — user eksplisit minta "eksekusi zoom 90%" setelah sesi diskusi singkat soal opsinya.
-
-- **`zoom` (BUKAN `transform: scale`)** — app ini BANYAK pakai `position: fixed`/sticky (semua
-  modal overlay, dropdown, sticky table header/kolom di `SharedDataTable.tsx`/`AuditPoPage.tsx`/
-  dst) — `transform` pada elemen induk bikin containing block baru, SEMUA elemen `fixed` di
-  dalamnya jadi relatif ke situ (BUKAN lagi viewport browser), merusak total positioning modal
-  &sticky di seluruh app. `zoom` ditangani browser SEPERTI user beneran zoom manual (Ctrl+-),
-  jadi `fixed`/sticky tetap normal relatif viewport — SATU-SATUNYA opsi CSS yang aman utk app
-  dengan pola positioning seperti ini, JANGAN ganti ke `transform: scale` nanti tanpa audit ulang
-  semua modal & sticky element di app.
-- **Trade-off yang disadari & diterima**: `zoom` CSS property NON-STANDAR (bukan bagian spec
-  CSS resmi) — didukung PENUH di Chrome/Edge/Safari (browser yg dipakai internal Waruna Group),
-  TAPI Firefox versi lama TIDAK mendukungnya. Fallback-nya AMAN (browser yg tidak kenal `zoom`
-  cuma mengabaikan properti itu, tampil 100% normal — BUKAN error/rusak), jadi risikonya cuma
-  "sebagian user Firefox lama tidak dapat efek 90%-nya", bukan app jadi rusak.
-- **Breakpoint `max-width: 1600px`** — representasi kasar resolusi laptop 14" umum (1366×768,
-  1440×900, 1536×864 hasil scaling OS Windows 125%/150%), SENGAJA tidak menyentuh monitor
-  eksternal/desktop yang umumnya ≥1920px CSS px. Ini heuristik viewport WIDTH, BUKAN deteksi
-  ukuran fisik layar sungguhan (CSS/browser tidak bisa tahu ukuran fisik monitor) — laptop 14"
-  yang di-set resolusi tinggi (mis. 1920×1080 native tanpa OS scaling) TIDAK akan kena zoom ini
-  (viewport CSS px-nya >1600), dan sebaliknya monitor eksternal kecil/di-resize browser-nya jadi
-  sempit BISA ikut kena zoom walau bukan laptop 14" beneran. Kalau ada laporan "laptop 14" saya
-  kok tidak ke-zoom" atau "monitor saya malah ikut ke-zoom", sesuaikan angka breakpoint ini —
-  BUKAN bug logic, murni batas heuristik yang perlu dikalibrasi ulang.
-- Berlaku GLOBAL (elemen `<html>`) — otomatis ke SEMUA halaman aplikasi tanpa perlu ubah kode di
-  halaman manapun, TIDAK terkait/tumpang tindih dgn penyeragaman `px-3` header/main (poin
-  "Pola UI yang harus diikuti" di bawah) — itu soal padding horizontal, ini soal skala
-  keseluruhan tampilan (font, spacing, semua ukuran ikut mengecil proporsional 90%).
-- **BUG ditemukan & diperbaiki (2026-09, laporan user + screenshot: strip putih kosong di bawah
-  halaman setelah zoom aktif)** — akar masalah: CSS `zoom` (beda dari zoom bawaan browser
-  Ctrl+-) TIDAK ikut menyesuaikan unit `vh` di Chromium — `100vh` tetap dihitung dari tinggi
-  window APA ADANYA (mis. 900px), lalu box setinggi itu BARU di-render kecil 90% (jadi cuma
-  810px SECARA VISUAL) — sisa 90px di bawahnya nge-expose background `<body>` polos (putih),
-  bukan gradient app. Elemen `h-screen`/`min-h-screen` Tailwind (dipakai `MainLayout.tsx`,
-  `AdminLayout.tsx`, `App.tsx`/`RequirePageAccess.tsx` loading/error state, `LoginPage.tsx`) —
-  SEMUANYA pakai `100vh`/`min-height:100vh` mentah, kena masalah ini. **Fix**: di DALAM media
-  query yg sama, override CLASS Tailwind generik-nya (bukan ubah tiap komponen satu-satu):
-  ```css
-  .h-screen { height: calc(100vh / 0.9); }
-  .min-h-screen { min-height: calc(100vh / 0.9); }
-  ```
-  Matematikanya: `(100vh / 0.9) * 0.9 (hasil shrink zoom) = 100vh` lagi secara visual — otomatis
-  ke-cover di MANA PUN class ini dipakai, termasuk pemakaian baru nanti, tanpa sentuh komponen.
-  **TIDAK dikompensasi** (SENGAJA, trade-off minor yg diterima): elemen dgn tinggi vh SPESIFIK
-  selain full-page (mis. modal `h-[92vh]`/`max-h-[85vh]` di berbagai modal app ini) — efeknya
-  modal itu SECARA VISUAL jadi ~90% dari proporsi vh yg diminta (mis. `85vh` jadi kelihatan
-  setinggi ~76.5% layar asli), BUKAN bug "gap putih" spt full-page container (krn modal py
-  background overlay sendiri yg menutupi, tidak nge-expose `<body>`) — TIDAK dikompensasi
-  kecuali ada laporan spesifik soal modal tertentu kelihatan kekecilan.
-
-## Bunker — kartu List selalu utuh, cuma baris tabel yg scroll internal (`BunkerPage.tsx`, 2026-09)
-
-Laporan user + screenshot: waktu halaman di-scroll ke bawah, kartu List (`rounded-2xl`) kelihatan
-"kotak"/lurus, bukan melengkung lagi. **Akar masalah**: SEBELUMNYA seluruh halaman ini scroll
-sbg SATU HALAMAN PENUH (`<div className="flex-1 h-full overflow-y-auto ...">` di wrapper paling
-luar) — header, banner, toolbar, DAN kartu tabel SEMUA ikut ter-scroll bareng. Begitu user
-scroll ke bawah, bagian ATAS kartu List (yg py sudut membulat) ikut ter-scroll lewat batas atas
-viewport, yg tersisa di layar cuma bagian TENGAH kotak-nya (yg secara definisi tidak melengkung
-— radius cuma ada di sudut asli kotak, bukan "mengikuti" area yg kebetulan kelihatan).
-
-**Fix (REPLIKA pola `SharedDataTable.tsx`/`FarOverseasAirPage.tsx`)**: halaman diubah dari
-"scroll 1 halaman penuh" jadi "shell tinggi tetap + scroll internal cuma di baris tabel":
-- Wrapper terluar: `overflow-y-auto` → `flex flex-col overflow-hidden` (halaman TIDAK PERNAH
-  scroll sbg 1 kesatuan lagi).
-- `<header>` & toolbar List (search/filter/tombol) dikasih `shrink-0` — SELALU diam di posisinya,
-  tidak ikut scroll.
-- Kartu List (`bg-white/70 ... rounded-2xl ...`) ditambah `flex-1 flex flex-col min-h-0` —
-  mengisi SISA tinggi layar, sudut membulatnya SELALU ada di batas layar/tetap kelihatan penuh,
-  TIDAK PERNAH "terpotong" ter-scroll lewat.
-- Wrapper `<table>` (`overflow-x-auto`) ditambah `overflow-y-auto flex-1 min-h-0` — SATU-SATUNYA
-  bagian yg beneran scroll sekarang, di DALAM kartu yg sudah tetap posisinya. `<thead>` ditambah
-  `sticky top-0 z-20` (SEBELUMNYA tidak sticky sama sekali krn dulu toh seluruh halaman yg
-  scroll, header kolom jadi butuh sticky beneran sekarang supaya tetap kebaca sambil scroll
-  baris) — kolom Action (`sticky right-0`) yg sudah ada dari awal TIDAK berubah.
-- Pagination footer dikasih `shrink-0` — SELALU di bawah kartu, tidak ikut lenyap/ter-scroll.
-- 3 banner status job (PENDING/SUCCESS/FAILED) di atas kartu List juga dikasih `shrink-0`.
-- `pb-10 no-scrollbar` di wrapper terluar DIHAPUS (tidak relevan lagi — wrapper ini sudah tidak
-  py scrollbar sendiri sama sekali sekarang, `overflow-hidden` bukan `auto`).
-
-**Susulan (2026-09, dikonfirmasi user "juga terjadi hal yang sama") — SUDAH di-porting** ke
-`AuditPoPage.tsx`, `AuditPoOverseasPage.tsx`, `PiLocalPage.tsx` — struktur identik persis (shell
-`flex flex-col overflow-hidden`, `header`/toolbar/pagination `shrink-0`, kartu List `flex-1 flex
-flex-col min-h-0`, wrapper `<table>` `overflow-x-auto overflow-y-auto flex-1 min-h-0`, `<thead
-className="sticky top-0 z-20">`). `KategoriPicker` punya dropdown absolute `z-30` (`AuditPoPage.tsx`/
-`AuditPoOverseasPage.tsx`/`PiLocalPage.tsx`) — TETAP di atas `z-20` thead baru, tidak ketiban.
-
-**Margin bawah dipersempit (2026-09, permintaan tambahan user "margin bawah dgn tabel masih
-terlalu besar")** — `<main>` di KEEMPAT halaman ini (`BunkerPage.tsx` + 3 halaman di atas) diubah
-dari `py-4` (padding atas-bawah SAMA) jadi **`pt-4 pb-2`** (atas tetap, bawah dipersempit) — jarak
-antara kartu List dgn tepi bawah layar SEKARANG lebih rapat. Kalau nanti halaman list LAIN
-(`CourierValidasiPage.tsx`/`FarOverseasAirPage.tsx`, yg sudah lebih dulu pakai pola shell serupa)
-py laporan margin bawah serupa, terapkan pola `pt-4 pb-2` yg sama.
-
-## Courier Validasi — panel list disatukan jadi 1 kartu (`src/pages/courier/CourierValidasiPage.tsx`, 2026-09)
-
-Halaman ini (list, BUKAN modal `ValidasiModal.tsx` per-shipment) render tiap baris sbg KARTU
-(bukan `<table>` beneran) — toolbar (search+Refresh+Export), daftar kartu record, & footer
-pagination SEBELUMNYA 3 elemen `rounded-2xl` TERPISAH yang floating di atas gradient background
-halaman (masing2 py `border`+shadow sendiri, dipisah `mb-4`/`mt-4`) — SATU-SATUNYA halaman list
-di app ini yg BEDA dari pola umum (semua halaman list lain — `SharedDataTable.tsx`,
-`AuditPoPage.tsx`, `BunkerPage.tsx`, `PiLocalPage.tsx`, `FarOverseasAirPage.tsx` — sudah lebih
-dulu pakai 1 kartu besar menyatu utk toolbar+tabel+pagination). User lapor "tabel belum selaras
-dgn panelnya" + minta "melengkung supaya cantik" (screenshot) — DISELARASKAN ke pola umum itu:
-- Toolbar, daftar kartu record (scrollable), dan pagination SEKARANG di dalam SATU
-  `<div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 shadow-sm
-  overflow-hidden flex-1 flex flex-col min-h-0">` (persis pola halaman list lain) — toolbar &
-  pagination jadi strip `border-b`/`border-t` di dalamnya (bukan kartu `rounded-2xl` sendiri
-  lagi), daftar kartu record dpt padding `p-4` & `overflow-y-auto` di tengah.
-  Konstanta `TOOLBAR_GLASS` (dulu dipakai 3 tempat: toolbar, empty-state, kartu record, DAN
-  pagination) DIHAPUS TOTAL — sudah tidak dipakai lagi setelah restrukturisasi ini.
-- **Kartu record individual** — background diganti dari translucent `bg-white/70 backdrop-blur`
-  (`TOOLBAR_GLASS`, bikin "dobel blur" krn sekarang bersarang di dalam panel translucent yg
-  sama) jadi **SOLID** `bg-white border border-slate-200 shadow-sm` — lebih jelas kontrasnya
-  sbg baris di dalam panel, konsisten dgn kartu/baris di halaman list lain yg juga solid putih
-  di dalam panel translucent-nya.
-- **Search bar dilebarkan** (permintaan user "buat agar lebih lebar sedikit") — `w-40` (default)
-  → **`w-64`**, `focus:w-56` → **`focus:w-80`**. Style-nya jg disederhanakan dari ikut
-  `TOOLBAR_GLASS` (translucent) jadi solid `bg-white/90 border-slate-200` (konsisten dgn kartu
-  record di atas, bukan lagi glass-effect terpisah).
-- Empty state "Tidak ada data validasi ditemukan" TIDAK LAGI py kartu `rounded-2xl` sendiri —
-  cukup teks polos di dalam area list yg sudah berada di dalam panel utama.
-
-## Pola UI yang harus diikuti (dikonsolidasi sepanjang sesi-sesi sebelumnya)
-
-- **Warna brand**: ungu `#5A305A` (hover `#73507B`) untuk tombol aksi utama & ikon header.
-  Beberapa tombol lama masih `bg-blue-600` (belum semua dimigrasi) — kalau menyentuh halaman
-  lama, samakan ke `#5A305A` saat diminta user.
+- **Warna brand**: ungu `#5A305A` (hover `#73507B`) tombol aksi utama & ikon header. Beberapa
+  tombol lama masih `bg-blue-600` (belum semua dimigrasi) — samakan ke `#5A305A` saat menyentuh
+  halaman lama & diminta user.
 - **Header halaman** (pola wajib, contoh: `FarOverseasVendorTarifPage.tsx`, `KursBIPage.tsx`):
   ```jsx
   <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
-    <header className="px-3 pt-1 pb-2">
+    <header className="px-3 pt-1 pb-1">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
@@ -1153,2473 +363,729 @@ dgn panelnya" + minta "melengkung supaya cantik" (screenshot) — DISELARASKAN k
     </main>
   </div>
   ```
-  Header **full-width** (BUKAN di dalam `max-w-* mx-auto`) — kalau header ikut kena `mx-auto`,
-  `<Greeting />` kepental ke bawah judul di layar sempit/nama panjang. `main` pakai `pt-2` (bukan
-  `py-8`) di sisi atas supaya jaraknya rapat ke header, `max-w-7xl` untuk halaman dengan tabel
-  lebar, `max-w-2xl`/`max-w-5xl` untuk form sempit.
-  **Jarak header↔main dipersempit lagi (2026-09, permintaan user "margin antara sapaan dgn yg
-  dibawahnya masih terlalu besar")** — 2 nilai diturunkan SEKALIGUS di 17 file (16 halaman +
-  `SharedDataTable.tsx`, daftar file SAMA PERSIS dgn poin `px-3` di bawah, PLUS
-  `SharedDataTable.tsx`): `header` `pb-2` → **`pb-1`**, DAN top-padding `main` diturunkan 1 step
-  (`pt-4`/`pt-3`/`py-4`'s top/`py-6`'s top/`py-8`'s top → **`pt-2`** SEMUA, bottom padding-nya
-  TIDAK diubah/tetap seperti aslinya — utk yg tadinya `py-*` polos, dipecah jadi `pt-2 pb-*`
-  eksplisit). **Halaman baru ke depan ikuti nilai INI** (`pb-1` di header, `pt-2` di sisi atas
-  `main`), BUKAN lagi `pb-2`/`pt-3`/`pt-4` yg didokumentasikan di versi CLAUDE.md sebelumnya.
-  **Susulan (2026-09, permintaan user "margin bawah Courier & Sea & Air disamakan dgn
-  Bunker")** — `main` di `SharedDataTable.tsx` (dipakai Courier Audit/Rekapan & Sea & Air
-  Audit/Rekapan & Audit Trail) diturunkan dari `pb-4` → **`pb-2`**, PERSIS sama dgn
-  `BunkerPage.tsx`. `src/pages/courier/CourierValidasiPage.tsx` (halaman "Courier Validasi" —
-  list MANDIRI, TERPISAH dari `SharedDataTable.tsx`) ikut diturunkan `pb-4` → `pb-2` jg krn
-  termasuk modul Courier. Sea & Air tidak py halaman list terpisah lain di luar
-  `SharedDataTable.tsx` (Audit & Rekapan-nya sama-sama lewat komponen itu), jadi 2 file ini SAJA
-  yg diubah utk cakupan "semua halaman Courier & Sea & Air". **Nilai `pb-2` ini SEKARANG jadi
-  standar bottom-padding `main` utk
-  SEMUA halaman list bertipe "shell tinggi tetap"** (`BunkerPage.tsx`, `AuditPoPage.tsx`,
-  `AuditPoOverseasPage.tsx`, `PiLocalPage.tsx`, `SharedDataTable.tsx`,
+  Header **full-width** (BUKAN di dalam `max-w-* mx-auto`, atau `<Greeting/>` kepental ke bawah
+  judul di layar sempit). Nilai STANDAR (SEMUA halaman baru wajib ikuti — versi lama `pb-2`/
+  `pt-3`/`pt-4`/`px-6`/`px-4` sudah tidak berlaku): `header` `px-3 pt-1 pb-1`; `main` `px-3`,
+  top-padding `pt-2`, `max-w-7xl` (tabel lebar)/`max-w-2xl`/`max-w-5xl` (form sempit). Bottom
+  padding `main` **`pb-2`** utk SEMUA halaman list "shell tinggi tetap" (`BunkerPage.tsx`,
+  `AuditPoPage.tsx`, `AuditPoOverseasPage.tsx`, `PiLocalPage.tsx`, `SharedDataTable.tsx`,
   `CourierValidasiPage.tsx`) — HANYA `FarOverseasAirPage.tsx`/`RateTablesAdmin.tsx`/
-  `FuelSurchargePage.tsx` (pola shell sama, TAPI belum diminta diselaraskan) yg masih `pb-4`,
-  cek dgn user dulu kalau mau ikut diseragamkan juga.
-  **Padding horizontal `header`/`main` DISTANDARKAN ke `px-3` di SEMUA halaman (2026-09,
-  permintaan eksplisit user "margin kiri-kanan semua halaman disamakan & dipersempit")** —
-  SEBELUMNYA CAMPUR (`px-6` di kebanyakan halaman, `px-4` di halaman yg pakai pola `max-w-*
-  mx-auto`, `px-3` HANYA di `SharedDataTable.tsx` sejak fix toolbar Audit Courier kepotong di
-  laptop 14" — lihat catatan `SharedDataTable.tsx` di bawah). SEKARANG SEMUA halaman (termasuk
-  `SharedDataTable.tsx`, TIDAK berubah lagi) pakai `px-3` di `header` MAUPUN `main`, supaya jarak
-  ke sidebar (kiri) & ke tepi layar (kanan) SAMA persis di halaman manapun — 16 file diubah
-  sekaligus (`UploadPage.tsx`, `RateTablesAdmin.tsx`, `CourierValidasiPage.tsx`,
-  `AuditPoPage.tsx`, `BunkerPage.tsx`, `KursRuleVendorPage.tsx`, `PiLocalPage.tsx`,
-  `FarOverseasVendorTarifPage.tsx`, `FarOverseasAirPage.tsx`, `RoleManagementPage.tsx`,
-  `AccountPage.tsx`, `AuditPoOverseasPage.tsx`, `SettingsPage.tsx`, `TarifKontrakPage.tsx`,
-  `FuelSurchargePage.tsx`, `KursBIPage.tsx`). `SettingsPage.tsx` sempat py varian responsif
-  `px-4 sm:px-6` — disederhanakan jadi `px-3` polos (tanpa breakpoint) biar konsisten dgn semua
-  halaman lain yg tidak py varian responsif di titik ini. **Halaman baru manapun ke depan WAJIB
-  pakai `px-3`, JANGAN `px-6`/`px-4` lagi** di `header`/`main` level ini — nilai lain di pola di
-  atas (`pt-1 pb-2`, `pt-3 pb-8`, `max-w-*`) TIDAK berubah.
-- **`<Greeting />`** (`src/components/Greeting.tsx`) — sapaan "Good morning/afternoon/evening/
-  night, {nama}" + ikon waktu + tanggal (format `en-US`, sejak translasi UI ke Inggris 2026-09,
-  lihat bagian "Translasi UI ke Bahasa Inggris" di bawah). Satu sumber kebenaran, dipasang di
-  HAMPIR SEMUA halaman (kecuali `/login`). Jangan duplikat logic `getGreetingMeta` lagi di file
-  lain.
-- **Panel filter tabel**: 1 kartu putih (`bg-white rounded-2xl shadow-sm border border-slate-200
-  p-4`) berisi search/dropdown/checkbox/total/tombol "Tambah X" — SEMUA dalam **1 baris**
-  (`flex flex-nowrap items-center gap-3 overflow-x-auto`, bukan `flex-wrap`) supaya tidak pecah
-  jadi 2 baris di layar sempit. Filter dengan banyak opsi pakai `<select>` dropdown, BUKAN
-  tombol-tombol pill, kalau ingin tetap ringkas 1 baris. Tombol "Tambah ..." biasanya ditaruh di
-  ujung kanan panel filter ini (`ml-auto`), bukan di header.
-- **Pagination tabel**: kalau data di-fetch semua sekaligus (bukan server-side paginated), pakai
-  pola client-side: `page`/`pageSize` state, `useMemo` slice dari `filteredData`, `useEffect`
-  reset `page` ke 1 saat filter berubah, footer "Menampilkan X–Y dari Z" + tombol
-  `ChevronLeft`/`ChevronRight` (contoh: `TarifKontrakPage.tsx`, `FarOverseasVendorTarifPage.tsx`).
-- **Modal (Antrian Proses, Upload Dokumen, konfirmasi hapus, dll)**: overlay
-  `fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[70..9999] flex items-center justify-center
-  p-4`, box `bg-white rounded-2xl shadow-2xl`. Modal antrian/upload lebar mengikuti layar
-  (`w-[70vw] max-w-3xl` / `w-[85vw] max-w-6xl`), bukan lebar tetap kecil — supaya proporsional
-  di layar besar (24").
+  `FuelSurchargePage.tsx` masih `pb-4` (belum diminta diselaraskan, cek user dulu).
+  `px-3` berlaku SEMUA halaman (16 file + `SharedDataTable.tsx` diseragamkan 2026-09) — jarak ke
+  sidebar & tepi layar sama persis. **Halaman baru WAJIB `px-3`, JANGAN `px-6`/`px-4`.**
+- **`<Greeting />`** (`src/components/Greeting.tsx`) — sapaan waktu + ikon + tanggal (`en-US`),
+  satu sumber kebenaran, dipasang hampir semua halaman kecuali `/login`.
+- **Panel filter tabel**: 1 kartu (`bg-white rounded-2xl shadow-sm border border-slate-200 p-4`),
+  semua kontrol dalam 1 baris (`flex flex-nowrap items-center gap-3 overflow-x-auto`, BUKAN
+  `flex-wrap`). Dropdown utk banyak opsi, bukan pill buttons. Tombol "Tambah ..." di ujung kanan
+  (`ml-auto`).
+  **Pagination**: client-side kalau data fetch semua sekaligus (`page`/`pageSize` state,
+  `useMemo` slice, reset `page` ke 1 saat filter berubah, footer "Showing X-Y of Z" +
+  Chevron tombol). AuditPo*/PiLocal pakai **server-side** pagination (`.range()`, tabel besar).
+- **Modal**: overlay `fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[70..9999] flex
+  items-center justify-center p-4`, box `bg-white rounded-2xl shadow-2xl`. Modal
+  antrian/upload lebar mengikuti layar (`w-[70vw] max-w-3xl`/`w-[85vw] max-w-6xl`).
 
-## FAR Overseas Air — PIC per-memo assignment (2026-09, GANTI TOTAL dari `user_approval_tiers`)
+## FAR Overseas Air — PIC per-memo assignment (GANTI TOTAL dari `user_approval_tiers`)
 
-**Keputusan desain (dikonfirmasi user 2026-09)**: kolom **PIC** di List Memo, yang SEBELUMNYA
-cuma teks bebas (`pic_name`, TIDAK terhubung ke otorisasi approve sama sekali — siapa pun yang
-punya jabatan approval "PIC" di Kelola Role & Akses bisa approve tahap PIC memo MANAPUN), SEKARANG
-jadi **dropdown pilih user per-baris** — dan user yang dipilih itu jadi SATU-SATUNYA yang boleh
-approve tahap PIC memo tersebut. Ini BUKAN penambahan syarat di atas `user_approval_tiers`,
-tapi **PENGGANTIAN TOTAL mekanisme utk tahap PIC** — dropdown "Jabatan Approval FAR Overseas"
-di Kelola Role & Akses (panel "Roles per User") **TIDAK LAGI berpengaruh ke tahap PIC** (TETAP
-berlaku normal ke tahap TIER2/SPV & TIER3/Director, itu TIDAK berubah). Kalau baris belum
-di-assign PIC-nya sama sekali, TIDAK ADA SIAPA PUN yang eligible approve tahap itu (termasuk
-Admin) sampai di-assign lewat dropdown ini.
+Kolom **PIC** di List Memo (dulu `pic_name` text bebas, TIDAK terhubung otorisasi — siapa pun
+dgn jabatan "PIC" bisa approve tahap PIC memo MANAPUN) SEKARANG dropdown pilih user per-baris —
+user yg dipilih SATU-SATUNYA yg boleh approve tahap PIC memo itu. Dropdown "Jabatan Approval FAR
+Overseas" di Kelola Role & Akses TIDAK LAGI berpengaruh ke tahap PIC (TETAP berlaku ke
+TIER2/SPV & TIER3/Director). Baris belum di-assign PIC → TIDAK ADA SIAPA PUN eligible (termasuk
+Admin).
 
-- **Kolom baru** `rekapan_far_overseas_air.pic_user_id` (uuid, FK ke `profiles.id`) — SATU-SATUNYA
-  sumber otorisasi tahap PIC sekarang. Kolom lama `pic_name` (text) TETAP ADA, TIDAK dihapus, tapi
-  SEKARANG murni kosmetik/cetak — otomatis disinkronkan (nama user yg dipilih) tiap kali
-  `pic_user_id` diubah & disimpan (`FarOverseasAirPage.tsx`, handler `onChange` dropdown PIC set
-  `pic_user_id` DAN `pic_name` sekaligus ke `pendingEdits`).
-  **BUG ditemukan & diperbaiki (2026-09, laporan user)**: rencana awal "`FarOverseasAirDetailModal.tsx`
-  TIDAK PERLU disentuh sama sekali, tetap baca `rec.pic_name` apa adanya" TERNYATA salah —
-  `picDisplayName` di modal itu sebelumnya fallback ke `rec.pic_name` kalau PIC belum approve
-  (`picEntry?.nama || rec.pic_name || null`), jadi begitu admin/ops PILIH user di dropdown PIC
-  (yang otomatis nge-sync `pic_name`), nama itu LANGSUNG muncul di kolom "Disiapkan Oleh" memo
-  cetak walau PIC-nya belum klik approve apa pun — padahal fallback ini dulu AMAN selama
-  `pic_name` masih teks manual bebas (isinya "rencana"/tebakan ops, wajar tampil duluan), TAPI
-  begitu `pic_name` jadi HASIL SINKRON OTOMATIS dari assignment, fallback yang sama jadi
-  menyesatkan (seolah PIC sudah menyetujui, padahal baru di-assign). **FIX**: fallback ke
-  `rec.pic_name` DIHAPUS TOTAL dari `picDisplayName` (SEKARANG `picEntry?.nama || null`,
-  konsisten dgn `eximName` yang dari awal MEMANG tidak pernah py fallback serupa) — nama PIC di
-  memo cetak SEKARANG BENERAN cuma muncul setelah PIC yang bersangkutan klik approve. Kolom
-  `pic_name` di database TETAP disinkronkan otomatis seperti biasa (masih berguna sbg data
-  mentah/query), CUMA tidak lagi dipakai sbg fallback tampilan pre-approval di modal ini.
-- **Dropdown pilihan user** (`ctx.picUsers`, di-fetch sekali saat halaman dibuka lewat
-  `fetchPicEligibleUsers()`) — **VERSI AWAL** (2026-09) isinya SEMUA user yang punya page access
-  ke `direct_loading` lewat RPC `get_users_with_page_access('direct_loading')`. **DIPERSEMPIT
-  susulan (2026-09, permintaan user)**: sekarang HANYA user yang SUDAH py jabatan approval "PIC"
-  di Kelola Role & Akses (`user_approval_tiers`, page_key='direct_loading', tier='PIC') DAN masih
-  py page access ke halaman ini — lewat RPC BARU `get_users_with_approval_tier(p_page_key,
-  p_tier)`, RPC lama `get_users_with_page_access` DIHAPUS (`drop function`, sudah tidak dipakai
-  di mana pun lagi). **PENTING, JANGAN SALAH PAHAM**: ini CUMA mempersempit PILIHAN di dropdown,
-  BUKAN mengembalikan `user_approval_tiers` jadi mekanisme otorisasi approve lagi — siapa yang
-  BOLEH APPROVE tahap PIC suatu memo TETAP ditentukan oleh `pic_user_id` PER-MEMO (lihat guard RPC
-  `approve_far_overseas_air`/`reject_far_overseas_air` di bawah, TIDAK ikut berubah oleh
-  penyempitan dropdown ini). Admin TIDAK otomatis muncul di dropdown ini (RPC baru SENGAJA TIDAK
-  py bypass `is_protected`, beda dari RPC lama) — konsisten dgn aturan "Admin tidak bypass
-  approval-tier gate" yang sudah ada; kalau admin mau bisa dipilih jadi PIC, admin harus assign
-  dirinya sendiri jabatan "PIC" dulu di Kelola Role & Akses. Bahwa user yang dipilih BENERAN bisa
-  approve tetap butuh `canEditDirectLoading` (gerbang lama, tidak berubah) — jadi kalau ternyata
-  role user itu berubah jadi view-only setelah dipilih, tombol approve tetap tidak akan muncul
-  buat dia (2 syarat independen, sama pola dgn gating approval lain di app ini).
-- **`FarOverseasAirHelpers.ts`** — `pic_user_id` ditambahkan ke `REKAPAN_EDITABLE_FIELDS`
-  (`pic_name` TETAP di situ juga, karena disinkron bareng). `fetchPicEligibleUsers()` fungsi baru,
-  wrapper RPC di atas.
-- **`FarOverseasAirDetailModal.tsx`** — helper baru `isEligibleForStep(step)`: utk `step==='PIC'`
-  cek `rec.pic_user_id === user?.id` (BUKAN lagi `canApproveTier('direct_loading','PIC')`), utk
-  step lain TETAP `canApproveTier(...)` seperti sebelumnya. Dipakai GANTI `canApproveTier(...)`
-  langsung di 3 tempat: `canReject`, kondisi tampil pesan "tidak eligible", kondisi tampil tombol
-  Approve. Pesan penjelas saat tidak eligible dibedakan utk PIC: "This memo doesn't have a PIC
-  assigned yet..." (kalau `pic_user_id` masih null) vs "You are not the PIC assigned to this
-  memo." (kalau sudah di-assign tapi ke user lain).
-- **BELUM DIJALANKAN ke Supabase production — WAJIB dijalankan manual dulu di SQL editor**
-  (tanpa ini, kolom PIC di List Memo akan gagal tersimpan — kolom `pic_user_id` belum ada — dan
-  RPC `get_users_with_approval_tier` akan error "function does not exist" begitu halaman dibuka.
-  Kalau RPC `get_users_with_page_access(text)` versi awal SUDAH sempat dijalankan duluan, `drop
-  function` di bawah aman dijalankan ulang -- `if exists` mencegah error kalau ternyata belum
-  pernah dijalankan sama sekali):
-  ```sql
-  alter table public.rekapan_far_overseas_air
-    add column if not exists pic_user_id uuid references public.profiles(id);
+- Kolom baru `rekapan_far_overseas_air.pic_user_id` (uuid, FK `profiles.id`) — SATU-SATUNYA
+  sumber otorisasi tahap PIC. `pic_name` (text) tetap ada, murni kosmetik/cetak, auto-sync
+  tiap `pic_user_id` berubah.
+  **Fix bug**: `picDisplayName` di `FarOverseasAirDetailModal.tsx` dulu fallback ke `rec.pic_name`
+  kalau PIC belum approve — begitu `pic_name` jadi hasil sync otomatis, nama PIC LANGSUNG muncul
+  di "Disiapkan Oleh" walau belum approve. Fix: fallback DIHAPUS TOTAL (`picEntry?.nama || null`,
+  konsisten dgn `eximName`).
+- Dropdown PIC (`ctx.picUsers`) HANYA user yg SUDAH punya jabatan "PIC" (`user_approval_tiers`
+  page_key='direct_loading' tier='PIC') DAN masih punya page access — RPC
+  `get_users_with_approval_tier(p_page_key, p_tier)` (RPC lama `get_users_with_page_access`
+  DIHAPUS). Ini CUMA mempersempit pilihan dropdown, BUKAN mengembalikan `user_approval_tiers` jadi
+  mekanisme otorisasi PIC (itu tetap `pic_user_id` per-memo). Admin TIDAK otomatis muncul (RPC
+  baru sengaja tanpa bypass `is_protected`).
+- `FarOverseasAirHelpers.ts`: `pic_user_id` di `REKAPAN_EDITABLE_FIELDS` (`pic_name` tetap ada).
+  `fetchPicEligibleUsers()` wrapper RPC baru.
+- `FarOverseasAirDetailModal.tsx`: `isEligibleForStep(step)` — utk PIC cek `rec.pic_user_id ===
+  user?.id` (BUKAN `canApproveTier`), step lain tetap `canApproveTier(...)`.
 
-  -- RPC versi awal (SEMUA user dgn page access ke suatu page_key, TANPA filter jabatan) SUDAH
-  -- DIGANTI oleh get_users_with_approval_tier di bawah -- drop dulu supaya tidak nganggur.
-  drop function if exists public.get_users_with_page_access(text);
-
-  -- RPC baru: daftar user yang PUNYA JABATAN APPROVAL TERTENTU (p_tier) utk suatu page_key, DAN
-  -- masih py page access ke halaman itu (2 syarat) -- dipakai isi dropdown PIC List Memo, supaya
-  -- cuma user yang SUDAH di-assign jabatan "PIC" di Kelola Role & Akses yang muncul sbg pilihan.
-  -- SECURITY DEFINER krn user biasa (non-admin) TIDAK punya akses SELECT langsung ke
-  -- user_approval_tiers/role_page_access/user_roles/profiles (RLS admin-only kecuali baris
-  -- miliknya sendiri, lihat halaman Kelola Role & Akses). SENGAJA TIDAK ADA bypass `is_protected`
-  -- (Admin) di sini -- beda dari pola akses halaman biasa, krn approval-tier MEMANG tidak
-  -- auto-lolos utk Admin (lihat catatan "Jabatan approval per USER, PER HALAMAN" di atas).
-  create or replace function public.get_users_with_approval_tier(p_page_key text, p_tier text)
-  returns table (id uuid, nama text, email text)
-  language sql
-  security definer
-  stable
-  as $$
-    select distinct p.id, p.nama, p.email
-    from public.profiles p
-    join public.user_approval_tiers uat on uat.user_id = p.id and uat.page_key = p_page_key and uat.tier = p_tier
-    join public.user_roles ur on ur.user_id = p.id
-    join public.role_page_access rpa on rpa.role_id = ur.role_id and rpa.page_key = p_page_key
-    order by p.nama;
-  $$;
-
-  grant execute on function public.get_users_with_approval_tier(text, text) to authenticated;
-
-  -- Timpa guard tahap PIC di approve_far_overseas_air (TIER1/TIER2/TIER3 TIDAK berubah) --
-  -- create or replace, nama & param function-nya SAMA, aman ditimpa.
-  create or replace function public.approve_far_overseas_air(
-    p_id uuid,
-    p_step text,
-    p_nama text,
-    p_jabatan text default null
-  )
-  returns jsonb
-  language plpgsql
-  security definer
-  as $$
-  declare
-    v_current_status text;
-    v_expected_status text;
-    v_new_status text;
-    v_entry_tier_text text;
-    v_entry jsonb;
-    v_new_approvals jsonb;
-  begin
-    if not public.has_edit_access('direct_loading') then
-      raise exception 'Not authorized to edit FAR Overseas Air memos';
-    end if;
-
-    if p_step not in ('TIER1', 'PIC', 'TIER2', 'TIER3') then
-      raise exception 'Invalid approval step: %', p_step;
-    end if;
-
-    -- TAHAP PIC (2026-09, GANTI): otorisasi dari `pic_user_id` PER-MEMO (kolom PIC di List
-    -- Memo), BUKAN lagi dari user_approval_tiers. TIER1/TIER2/TIER3 TETAP lewat
-    -- user_approval_tiers seperti sebelumnya, TIDAK berubah.
-    if p_step = 'PIC' then
-      if not exists (
-        select 1 from public.rekapan_far_overseas_air
-        where id = p_id and pic_user_id = auth.uid()
-      ) then
-        raise exception 'You are not the assigned PIC for this memo';
-      end if;
-    else
-      if not exists (
-        select 1 from public.user_approval_tiers uat
-        where uat.user_id = auth.uid() and uat.page_key = 'direct_loading' and uat.tier = p_step
-      ) then
-        raise exception 'You do not have the % approval role', p_step;
-      end if;
-    end if;
-
-    select approval_status into v_current_status
-    from public.rekapan_far_overseas_air
-    where id = p_id
-    for update;
-
-    if not found then
-      raise exception 'Memo not found: %', p_id;
-    end if;
-
-    v_expected_status := case p_step
-      when 'TIER1' then 'PENDING'
-      when 'PIC' then 'TIER1_DONE'
-      when 'TIER2' then 'PIC_DONE'
-      when 'TIER3' then 'TIER2_DONE'
-    end;
-
-    if v_current_status is distinct from v_expected_status then
-      raise exception 'This memo is not currently awaiting the % step (current status: %)', p_step, v_current_status;
-    end if;
-
-    v_new_status := case p_step
-      when 'TIER1' then 'TIER1_DONE'
-      when 'PIC' then 'PIC_DONE'
-      when 'TIER2' then 'TIER2_DONE'
-      when 'TIER3' then 'APPROVED'
-    end;
-
-    v_entry_tier_text := case p_step when 'PIC' then 'PIC' when 'TIER1' then '1' when 'TIER2' then '2' when 'TIER3' then '3' end;
-
-    v_entry := case p_step
-      when 'PIC' then jsonb_build_object('tier', 'PIC', 'nama', p_nama, 'jabatan', 'PIC', 'approved_at', now(), 'user_email', auth.email())
-      when 'TIER1' then jsonb_build_object('tier', 1, 'nama', p_nama, 'jabatan', coalesce(p_jabatan, '-'), 'approved_at', now(), 'user_email', auth.email())
-      when 'TIER2' then jsonb_build_object('tier', 2, 'nama', p_nama, 'jabatan', coalesce(p_jabatan, '-'), 'approved_at', now(), 'user_email', auth.email())
-      when 'TIER3' then jsonb_build_object('tier', 3, 'nama', p_nama, 'jabatan', coalesce(p_jabatan, '-'), 'approved_at', now(), 'user_email', auth.email())
-    end;
-
-    select coalesce(jsonb_agg(elem), '[]'::jsonb)
-    into v_new_approvals
-    from jsonb_array_elements(
-      coalesce((select approvals from public.rekapan_far_overseas_air where id = p_id), '[]'::jsonb)
-    ) elem
-    where (elem->>'tier') is distinct from v_entry_tier_text;
-
-    v_new_approvals := v_new_approvals || jsonb_build_array(v_entry);
-
-    update public.rekapan_far_overseas_air
-    set approval_status = v_new_status,
-        approvals = v_new_approvals
-    where id = p_id;
-
-    return jsonb_build_object('approval_status', v_new_status, 'approvals', v_new_approvals);
-  end;
-  $$;
-
-  grant execute on function public.approve_far_overseas_air(uuid, text, text, text) to authenticated;
-
-  -- Timpa guard tahap PIC di reject_far_overseas_air (v_next_step dihitung dari status saat ini,
-  -- sama seperti sebelumnya) -- TIER1/TIER2/TIER3 TIDAK berubah.
-  create or replace function public.reject_far_overseas_air(
-    p_id uuid,
-    p_reason text
-  )
-  returns jsonb
-  language plpgsql
-  security definer
-  as $$
-  declare
-    v_current_status text;
-    v_next_step text;
-  begin
-    if not public.has_edit_access('direct_loading') then
-      raise exception 'Not authorized to edit FAR Overseas Air memos';
-    end if;
-
-    if p_reason is null or btrim(p_reason) = '' then
-      raise exception 'Rejection reason is required';
-    end if;
-
-    select approval_status into v_current_status
-    from public.rekapan_far_overseas_air
-    where id = p_id
-    for update;
-
-    if not found then
-      raise exception 'Memo not found: %', p_id;
-    end if;
-
-    if v_current_status in ('APPROVED', 'REJECTED') then
-      raise exception 'This memo cannot be rejected (current status: %)', v_current_status;
-    end if;
-
-    v_next_step := case coalesce(v_current_status, 'PENDING')
-      when 'PENDING' then 'TIER1'
-      when 'TIER1_DONE' then 'PIC'
-      when 'PIC_DONE' then 'TIER2'
-      when 'TIER2_DONE' then 'TIER3'
-    end;
-
-    -- TAHAP PIC (2026-09, GANTI): sama pola dgn approve_far_overseas_air di atas.
-    if v_next_step = 'PIC' then
-      if not exists (
-        select 1 from public.rekapan_far_overseas_air
-        where id = p_id and pic_user_id = auth.uid()
-      ) then
-        raise exception 'You are not the assigned PIC for this memo';
-      end if;
-    else
-      if not exists (
-        select 1 from public.user_approval_tiers uat
-        where uat.user_id = auth.uid() and uat.page_key = 'direct_loading' and uat.tier = v_next_step
-      ) then
-        raise exception 'You do not have the % approval role for this step', v_next_step;
-      end if;
-    end if;
-
-    update public.rekapan_far_overseas_air
-    set approval_status = 'REJECTED',
-        notes = p_reason
-    where id = p_id;
-
-    return jsonb_build_object('approval_status', 'REJECTED', 'notes', p_reason);
-  end;
-  $$;
-
-  grant execute on function public.reject_far_overseas_air(uuid, text) to authenticated;
-  ```
-  Kalau nanti menemukan versi lama function ini (guard PIC lewat `user_approval_tiers` polos utk
-  SEMUA tahap termasuk PIC) — itu VERSI LAMA, `create or replace` di atas otomatis menimpanya,
-  aman dijalankan ulang. **JANGAN reintroduce guard lama itu utk tahap PIC.**
-
-## FAR Overseas Air — Clear massal Processing Queue (`FarOverseasAirPage.tsx`, 2026-09)
-
-Modal "Processing Queue" (tombol jam di List Memo) — tombol **"✕ Clear Completed/Failed"** baru
-di header modal (sebelah judul, muncul HANYA kalau ada minimal 1 item `SUCCESS`/`FAILED` di
-`queue`), utk hapus SEMUA kartu selesai/gagal sekaligus dari `far_overseas_air_processing_queue`
-— sebelumnya cuma bisa satu-satu lewat tombol "×" per kartu (`dismissQueueItem`, TETAP ADA,
-tidak dihapus, utk dismiss 1 item spesifik). Item `PENDING`/`PROCESSING` TIDAK ikut kehapus
-(masih berjalan, tidak punya tombol dismiss sama sekali, individual maupun massal).
-- `clearCompletedFailedQueue()` — replika pola `handleDismiss`/"Clear Completed/Failed" milik
-  `src/components/ProcessingQueue.tsx` (komponen generik Courier/Sea & Air) — TAPI FAR Overseas
-  Air PUNYA modal antrian sendiri di file ini (`QueueCard`/`fetchQueue`/state `queue`), TIDAK
-  memakai `ProcessingQueue.tsx` sama sekali, jadi fungsi ini genuinely baru di file ini, bukan
-  reuse komponen. Native `confirm()` sebelum delete (sama persis pola `ProcessingQueue.tsx`) —
-  SATU-SATUNYA tempat di `FarOverseasAirPage.tsx` yang pakai `confirm()` browser native
-  (aksi destruktif lain di halaman ini, mis. Delete Memo, pakai `DeleteConfirmModal` custom) —
-  dipertahankan `confirm()` di sini krn risikonya rendah (cuma notifikasi antrian, bukan data
-  bisnis) & supaya konsisten dgn pola yang sudah established di `ProcessingQueue.tsx`.
-  Feedback sukses/gagal pakai `toastMessage` state yang SUDAH ADA di halaman ini (dipakai juga
-  oleh `handleSentNoJob`), bukan toast baru.
-
-## Bunker — Clear massal Processing Queue (`BunkerPage.tsx`, 2026-09)
-
-Sama persis pola & implementasi dgn "FAR Overseas Air — Clear massal Processing Queue" di atas
-(REPLIKA, ditambahkan susulan atas permintaan user utk halaman Bunker) — tombol **"✕ Clear
-Completed/Failed"** di header modal Processing Queue, muncul HANYA kalau ada minimal 1 item
-`SUCCESS`/`FAILED` di `queue`, hapus semua sekaligus dari `bunker_processing_queue`. Tombol "×"
-per-kartu (`dismissQueueItem`) TETAP ADA, tidak dihapus. Item `PENDING` (Bunker TIDAK punya
-status `PROCESSING` terpisah, beda dari FAR Overseas — lihat `fetchQueue` filter) TIDAK ikut
-kehapus. `clearCompletedFailedQueue()` pakai `confirm()` native (sama alasan/pola dgn versi FAR
-Overseas) & `toastMessage` state yang sudah ada di halaman ini. **Kalau nanti ada laporan bug di
-salah satu halaman (FAR Overseas/Bunker), cek juga apa halaman satunya kena bug yang sama** —
-2 implementasi ini independen (bukan komponen shared), jadi fix di satu tempat TIDAK otomatis
-ikut ke tempat lain.
-
-## FAR Overseas Air — NOTE 2 dipecah jadi "From Document" + "Manual Note" (`FarOverseasAirPage.tsx`, 2026-09)
-
-Kolom **NOTE 2** di List Memo tadinya 1 field tunggal `item_description` — diisi otomatis oleh
-ekstraksi n8n, TAPI juga langsung bisa diedit manual lewat UI (`REKAPAN_EDITABLE_FIELDS`) —
-akibatnya kalau user edit manual, **nilai hasil ekstraksi asli ikut TERTIMPA/HILANG** tanpa jejak.
-**Diganti (permintaan user)**: 1 sel kolom sekarang dibagi 2 bagian dgn garis pemisah vertikal:
-- **Kiri ("From Document")** — `item_description` apa adanya dari database, SELAMANYA read-only
-  (tidak ada mode edit sama sekali di bagian ini).
-- **Kanan ("Manual Note")** — kolom BARU `item_description_manual`, murni catatan tambahan user,
-  ikut pola `pendingEdits`/`getVal`/`setVal`/`EditableCell` yang sama dgn kolom lain di List Memo
-  (badge pensil kuning kalau berubah, disimpan bareng "Save All"/`update_rekapan_far_overseas_manual`).
-
-**BELUM DIJALANKAN ke Supabase production — WAJIB dijalankan manual dulu di SQL editor** (tanpa
-ini, kolom kanan akan selalu kosong & gagal tersimpan — RPC `update_rekapan_far_overseas_manual`
-akan error/diam2 skip field yg kolomnya belum ada di tabel):
+**BELUM DIJALANKAN ke Supabase production — WAJIB dijalankan manual dulu** (versi TERBARU RPC
+approve/reject, guard PIC via `pic_user_id`, guard TIER1/2/3 tetap via `user_approval_tiers`):
 ```sql
-alter table public.rekapan_far_overseas_air add column if not exists item_description_manual text;
-```
-- `REKAPAN_EDITABLE_FIELDS` (`FarOverseasAirHelpers.ts`) — `item_description` DIKELUARKAN dari
-  set ini (supaya nilai ekstraksi tidak bisa lagi ketimpa lewat form manapun), `item_description_manual`
-  DITAMBAHKAN.
-- `LIST_COLUMNS` entry "NOTE 2" (`FarOverseasAirPage.tsx`) diganti dari field biasa (`field:
-  'item_description', wide: true`) jadi custom `render` — pola sama dengan kolom WEIGHT
-  BREAKDOWN/VESSEL yang sudah lebih dulu pakai `ctx.getVal`/`ctx.setVal`/`ctx.editingRowId`.
-  Container `w-[360px]` (lebih lebar dari kolom wide biasa `w-[300px]` krn sekarang menampung
-  2 sub-panel + label + divider).
-- **Memo cetak (`FarOverseasAirDetailModal.tsx`) SENGAJA TIDAK diubah** — baris "2." di blok
-  NOTE cetak resmi TETAP HANYA dari `item_description` (nilai database/ekstraksi), TIDAK ikut
-  menampilkan `item_description_manual` sama sekali (dikonfirmasi eksplisit user: catatan manual
-  ini murni catatan internal, bukan bagian dokumen resmi yg dicetak/dikirim ke vendor).
-- `FAR_EXPORT_COLS` (export Excel List Memo) ditambah 1 baris `{ key: 'item_description_manual',
-  label: 'NOTE 2 (MANUAL)' }` tepat setelah `item_description` — tidak perlu ubah `getExportData`
-  krn sudah `...r` spread semua kolom mentah hasil `select('*')`, kolom baru otomatis ikut kebawa
-  begitu ada di database.
+alter table public.rekapan_far_overseas_air
+  add column if not exists pic_user_id uuid references public.profiles(id);
 
-## FAR Overseas Air — arsitektur cost validation (kompleks, baca dulu sebelum ubah)
+drop function if exists public.get_users_with_page_access(text);
 
-- `rekapan_far_overseas_air` (1 baris = 1 memo, punya `route_note` = "PENGIRIMAN DARI {asal} KE
-  {tujuan} ({mode})") ↔ 1:1 via `far_overseas_id` FK ↔ `cost_validasi_far_overseas_air`
-  (`vendor_matched`, `rate_row_used` jsonb, `status`, `catatan`, `cost_validation` jsonb array
-  `{row_key, expected, actual, notes, edited}`).
-- **Baris TOTAL AMOUNT** (memo cetak, `FarOverseasAirDetailModal.tsx`) — kalau mata uangnya
-  bukan IDR (`showIdrHint`), selain konversi "(≈ Rp ...)" sekarang ada juga "(Kurs: ...)" kecil
-  italic di sampingnya. Kurs ini DIHITUNG ULANG langsung dari `total_amount_idr / total_amount`
-  (bukan baca field `kurs_used` yang tersimpan) — supaya selalu konsisten dgn 2 angka yang
-  sama-sama tercetak di baris itu.
-- **Filter approval per level** (List Memo, `FarOverseasAirPage.tsx`, 2026-09) — dropdown
-  "Approval" (state `approvalFilter`: `ALL`/`TIER1`/`PIC`/`TIER2`/`TIER3`, urutan dropdown SENGAJA
-  ikut urutan rantai approval), tiap opsi selain ALL nunjukin COUNT total memo yang pending di
-  level itu (state `approvalCounts`, dihitung `fetchApprovalCounts`). Karena rantai approval
-  sekarang WAJIB berurutan (lihat subbagian "Approval berjenjang" di bawah), SEMUA level filter
-  map ke `approval_status` kolom biasa lewat `APPROVAL_FILTER_STATUS` (`TIER1`→`PENDING`,
-  `PIC`→`TIER1_DONE`, `TIER2`→`PIC_DONE`, `TIER3`→`TIER2_DONE`) — server-side `.eq()` murni,
-  TIDAK ADA lagi filter/paginate manual di JS (versi sebelum PIC masuk rantai utama SEMPAT begitu,
-  karena PIC dulu independen dari `approval_status` — sudah tidak berlaku). `fetchApprovalCounts`
-  dipanggil sekali di awal + lewat helper `refreshList` (dipanggil dari `onChanged`
-  `FarOverseasAirDetailModal` & tombol Refresh) supaya count-nya ikut update begitu ada
-  approve/reject/delete.
-- **Approval berjenjang WAJIB berurutan: Prepared By (Exim) → PIC → SPV → Director** (2026-09,
-  VERSI FINAL — GANTI TOTAL dari 2 versi sebelumnya: pertama PIC independen tanpa gating jabatan,
-  lalu PIC independen TAPI dengan approval terpisah; keduanya SUDAH TIDAK BERLAKU, jangan
-  reintroduce). `approval_status` sekarang py 5 nilai berurutan: `PENDING` (nunggu Prepared
-  By) → `TIER1_DONE` (nunggu PIC) → `PIC_DONE` (nunggu SPV) → `TIER2_DONE` (nunggu Director) →
-  `APPROVED`. Semua logic state machine ada di `FarOverseasAirDetailModal.tsx`:
-  `nextStepForStatus(status)` (tentukan tahap berikutnya dari status saat ini),
-  `STEP_ENTRY_TIER`/`STEP_STATUS_AFTER`/`STEP_LABEL`/`STEP_ACTION_LABEL` (mapping per tahap).
-  `handleApprove(step, nama)` SELALU update `approval_status` (beda dari versi PIC-independen
-  lama yang skip update status utk tahap PIC) + append 1 entry `{tier, nama, jabatan,
-  approved_at, user_email}` ke `approvals` (tier utk PIC tetap string `'PIC'`, tier1/2/3 tetap
-  number, supaya `entryFor(1)`/`entryFor(2)`/`entryFor(3)`/`entryFor('PIC')` & tampilan
-  signature table tidak perlu berubah). Kolom tanda tangan cetak TETAP cuma 3 (Disiapkan Oleh /
-  Diperiksa Oleh x2) — nama PIC TETAP digabung ke kolom "Disiapkan Oleh" bareng nama Exim
-  (`disiapkanNama`, format `"{exim}/{pic}"`), TIDAK PERNAH jadi kolom tanda tangan sendiri.
-  **Gating siapa yang boleh approve tahap yang sedang aktif**: 2 syarat INDEPENDEN — `canEditDirectLoading`
-  (akses edit halaman, dari role RBAC manapun) DAN `canApproveTier('direct_loading', step)` dari
-  `useAuth()` (user itu SENDIRI — bukan role-nya — harus py baris `user_approval_tiers` utk
-  halaman `direct_loading` yang tier-nya PERSIS cocok tahap itu, lihat subbagian "Jabatan
-  approval per USER, PER HALAMAN" di bagian RBAC atas — governance/skema datanya
-  didokumentasikan di sana, bukan di sini). Kalau
-  user py akses edit tapi jabatannya tidak cocok, tombol approve TIDAK muncul, diganti pesan
-  penjelas "You don't have the '{tahap}' approval role for this step." (bukan disembunyikan
-  total tanpa penjelasan). **Data lama (sebelum fitur ini) berpotensi tidak konsisten** — memo
-  yang sudah `APPROVED`/lanjut ke tahap tinggi dari sebelum ada tahap PIC di rantai TIDAK
-  otomatis punya entry PIC di `approvals`-nya (tidak ada migrasi data retroaktif), jadi kolom
-  "Disiapkan Oleh" utk memo lama itu cuma nampilin nama Exim tanpa PIC — ini WAJAR utk data lama,
-  bukan bug.
-  **Approve SEKARANG satu klik langsung, TIDAK ADA lagi modal konfirmasi nama** (2026-09, VERSI
-  FINAL #2 — sempat dibuat modal dgn field nama read-only dulu, TERNYATA user masih menganggap
-  itu "masih ada konfirmasi nama" krn modalnya sendiri tetap muncul; SUDAH DIHAPUS TOTAL,
-  `ApprovalConfirmModal` & state `confirmStep` tidak ada lagi di komponen ini, jangan
-  reintroduce). Tombol "Approve — {tahap}" di Aksi persetujuan sekarang langsung memanggil
-  `handleApprove(nextStep, defaultNamaForStep(nextStep))` saat diklik — TIDAK ADA popup apa pun
-  di antaranya, nama dikirim ke RPC apa adanya dari `defaultNamaForStep(step)`:
-  - **TIER1 (Exim) & PIC**: `profile?.nama || user?.email` — nama USER YANG SEDANG LOGIN (identitas
-    orang yang benar-benar klik approve).
-  - **TIER2 (SPV) & TIER3 (Direktur)**: `signer?.tier2_name`/`signer?.tier3_name` dari
-    `far_overseas_signer_config` — TETAP nama resmi jabatan itu per company, SENGAJA TIDAK
-    pernah ikut berubah jadi nama user yang login, supaya tanda tangan SPV/Direktur di memo
-    selalu konsisten dgn identitas resmi perusahaan siapa pun staff yang memprosesnya secara
-    teknis (permintaan eksplisit user 2026-09: "nama di memo tidak berubah jadi nama user
-    approval, tetap apa adanya").
-  Kalau nanti nambah tahap approval baru (di modul manapun), tentukan dulu termasuk kategori
-  mana (identitas personal login vs jabatan resmi tetap) sebelum isi `defaultNamaForStep`-nya.
-  Tombol Approve dikasih `disabled={submitting}` + label "Saving..." saat proses berjalan, jaga2
-  dobel klik krn sekarang tidak ada lagi jeda modal konfirmasi sblm request terkirim.
-  **Reject dibatasi HANYA utk user yang eligible approve TAHAP YANG SEDANG AKTIF** (2026-09,
-  VERSI FINAL #2 — versi PERTAMA cukup "punya jabatan approval apa saja utk halaman ini"
-  (`!!approvalTiersByPage['direct_loading']`), TERNYATA itu bikin tombol Reject tetap kelihatan
-  buat user yang tahapnya SENDIRI sudah selesai, mis. PIC yang sudah approve masih lihat tombol
-  Reject pas memo sudah lanjut nunggu SPV — SUDAH DIGANTI, jangan reintroduce versi lama itu):
-  `canReject = nextStep != null && canApproveTier('direct_loading', nextStep)` (lihat komponen
-  utama) — PERSIS SAMA syaratnya dgn tombol Approve, jadi Reject & Approve SELALU muncul/hilang
-  bareng utk siapa pun yang buka memo ini. TIDAK ADA bypass `isAdmin`, sama pola dgn
-  `canApproveTier`.
-  **Enforcement server-side (2026-09) — RPC `reject_far_overseas_air`**: reject SEKARANG lewat
-  RPC ini (`SECURITY DEFINER`), BUKAN lagi `.update()` langsung ke `rekapan_far_overseas_air`
-  (versi sebelumnya cuma gating frontend, itu jadi RIWAYAT — sudah DIGANTI, jangan reintroduce
-  `.update()` langsung utk reject). RPC-nya **BELUM DIJALANKAN ke Supabase production — WAJIB
-  dijalankan manual dulu** (kalau sempat menjalankan versi pertama RPC ini yang guard-nya cuma
-  "jabatan apa saja", timpa dgn `create or replace` versi final di bawah ini — aman, nama
-  function & param-nya sama):
-  ```sql
-  create or replace function public.reject_far_overseas_air(
-    p_id uuid,          -- SESUAIKAN tipe ini kalau `rekapan_far_overseas_air.id` BUKAN uuid
-    p_reason text
-  )
-  returns jsonb
-  language plpgsql
-  security definer
-  as $$
-  declare
-    v_current_status text;
-    v_next_step text;
-  begin
-    if not public.has_edit_access('direct_loading') then
-      raise exception 'Not authorized to edit FAR Overseas Air memos';
+create or replace function public.get_users_with_approval_tier(p_page_key text, p_tier text)
+returns table (id uuid, nama text, email text)
+language sql security definer stable as $$
+  select distinct p.id, p.nama, p.email
+  from public.profiles p
+  join public.user_approval_tiers uat on uat.user_id = p.id and uat.page_key = p_page_key and uat.tier = p_tier
+  join public.user_roles ur on ur.user_id = p.id
+  join public.role_page_access rpa on rpa.role_id = ur.role_id and rpa.page_key = p_page_key
+  order by p.nama;
+$$;
+grant execute on function public.get_users_with_approval_tier(text, text) to authenticated;
+
+create or replace function public.approve_far_overseas_air(
+  p_id uuid, p_step text, p_nama text, p_jabatan text default null
+) returns jsonb language plpgsql security definer as $$
+declare
+  v_current_status text; v_expected_status text; v_new_status text;
+  v_entry_tier_text text; v_entry jsonb; v_new_approvals jsonb;
+begin
+  if not public.has_edit_access('direct_loading') then
+    raise exception 'Not authorized to edit FAR Overseas Air memos';
+  end if;
+  if p_step not in ('TIER1', 'PIC', 'TIER2', 'TIER3') then
+    raise exception 'Invalid approval step: %', p_step;
+  end if;
+
+  -- TAHAP PIC: otorisasi dari pic_user_id PER-MEMO, BUKAN user_approval_tiers.
+  -- TIER1/TIER2/TIER3 TETAP lewat user_approval_tiers.
+  if p_step = 'PIC' then
+    if not exists (
+      select 1 from public.rekapan_far_overseas_air
+      where id = p_id and pic_user_id = auth.uid()
+    ) then
+      raise exception 'You are not the assigned PIC for this memo';
     end if;
-
-    if p_reason is null or btrim(p_reason) = '' then
-      raise exception 'Rejection reason is required';
+  else
+    if not exists (
+      select 1 from public.user_approval_tiers uat
+      where uat.user_id = auth.uid() and uat.page_key = 'direct_loading' and uat.tier = p_step
+    ) then
+      raise exception 'You do not have the % approval role', p_step;
     end if;
+  end if;
 
-    select approval_status into v_current_status
-    from public.rekapan_far_overseas_air
-    where id = p_id
-    for update;
+  select approval_status into v_current_status from public.rekapan_far_overseas_air where id = p_id for update;
+  if not found then raise exception 'Memo not found: %', p_id; end if;
 
-    if not found then
-      raise exception 'Memo not found: %', p_id;
+  v_expected_status := case p_step when 'TIER1' then 'PENDING' when 'PIC' then 'TIER1_DONE'
+    when 'TIER2' then 'PIC_DONE' when 'TIER3' then 'TIER2_DONE' end;
+  if v_current_status is distinct from v_expected_status then
+    raise exception 'This memo is not currently awaiting the % step (current status: %)', p_step, v_current_status;
+  end if;
+
+  v_new_status := case p_step when 'TIER1' then 'TIER1_DONE' when 'PIC' then 'PIC_DONE'
+    when 'TIER2' then 'TIER2_DONE' when 'TIER3' then 'APPROVED' end;
+  v_entry_tier_text := case p_step when 'PIC' then 'PIC' when 'TIER1' then '1' when 'TIER2' then '2' when 'TIER3' then '3' end;
+  v_entry := case p_step
+    when 'PIC' then jsonb_build_object('tier','PIC','nama',p_nama,'jabatan','PIC','approved_at',now(),'user_email',auth.email())
+    else jsonb_build_object('tier', (case p_step when 'TIER1' then 1 when 'TIER2' then 2 when 'TIER3' then 3 end),
+      'nama', p_nama, 'jabatan', coalesce(p_jabatan,'-'), 'approved_at', now(), 'user_email', auth.email())
+  end;
+
+  select coalesce(jsonb_agg(elem), '[]'::jsonb) into v_new_approvals
+  from jsonb_array_elements(coalesce((select approvals from public.rekapan_far_overseas_air where id = p_id), '[]'::jsonb)) elem
+  where (elem->>'tier') is distinct from v_entry_tier_text;
+  v_new_approvals := v_new_approvals || jsonb_build_array(v_entry);
+
+  update public.rekapan_far_overseas_air set approval_status = v_new_status, approvals = v_new_approvals where id = p_id;
+  return jsonb_build_object('approval_status', v_new_status, 'approvals', v_new_approvals);
+end;
+$$;
+grant execute on function public.approve_far_overseas_air(uuid, text, text, text) to authenticated;
+
+create or replace function public.reject_far_overseas_air(p_id uuid, p_reason text)
+returns jsonb language plpgsql security definer as $$
+declare v_current_status text; v_next_step text;
+begin
+  if not public.has_edit_access('direct_loading') then raise exception 'Not authorized to edit FAR Overseas Air memos'; end if;
+  if p_reason is null or btrim(p_reason) = '' then raise exception 'Rejection reason is required'; end if;
+  select approval_status into v_current_status from public.rekapan_far_overseas_air where id = p_id for update;
+  if not found then raise exception 'Memo not found: %', p_id; end if;
+  if v_current_status in ('APPROVED', 'REJECTED') then
+    raise exception 'This memo cannot be rejected (current status: %)', v_current_status;
+  end if;
+  v_next_step := case coalesce(v_current_status, 'PENDING')
+    when 'PENDING' then 'TIER1' when 'TIER1_DONE' then 'PIC' when 'PIC_DONE' then 'TIER2' when 'TIER2_DONE' then 'TIER3' end;
+  if v_next_step = 'PIC' then
+    if not exists (select 1 from public.rekapan_far_overseas_air where id = p_id and pic_user_id = auth.uid()) then
+      raise exception 'You are not the assigned PIC for this memo';
     end if;
-
-    if v_current_status in ('APPROVED', 'REJECTED') then
-      raise exception 'This memo cannot be rejected (current status: %)', v_current_status;
-    end if;
-
-    -- Tahap yang sedang aktif/ditunggu -- REPLIKA PERSIS nextStepForStatus() di
-    -- FarOverseasAirDetailModal.tsx, WAJIB tetap sinkron kalau urutan tahapnya berubah lagi.
-    v_next_step := case coalesce(v_current_status, 'PENDING')
-      when 'PENDING' then 'TIER1'
-      when 'TIER1_DONE' then 'PIC'
-      when 'PIC_DONE' then 'TIER2'
-      when 'TIER2_DONE' then 'TIER3'
-    end;
-
-    -- Cuma user yang eligible approve TAHAP YANG SEDANG AKTIF ini yang boleh reject di titik
-    -- ini -- BUKAN siapa saja yang pernah py jabatan approval apapun (lihat catatan versi final
-    -- di atas). Sama persis syaratnya dgn guard tier di approve_far_overseas_air.
+  else
     if not exists (
       select 1 from public.user_approval_tiers uat
       where uat.user_id = auth.uid() and uat.page_key = 'direct_loading' and uat.tier = v_next_step
     ) then
       raise exception 'You do not have the % approval role for this step', v_next_step;
     end if;
-
-    update public.rekapan_far_overseas_air
-    set approval_status = 'REJECTED',
-        notes = p_reason
-    where id = p_id;
-
-    return jsonb_build_object('approval_status', 'REJECTED', 'notes', p_reason);
-  end;
-  $$;
-
-  grant execute on function public.reject_far_overseas_air(uuid, text) to authenticated;
-  ```
-  Guard 4-lapis: (1) `has_edit_access('direct_loading')`, (2) `p_reason` wajib diisi (non-empty
-  setelah trim), (3) `approval_status` SAAT INI tidak boleh sudah `APPROVED`/`REJECTED` (`for
-  update` row lock, sama pola dgn `approve_far_overseas_air`), (4) user harus punya baris
-  `user_approval_tiers` dgn tier PERSIS = tahap yang sedang aktif (`v_next_step`, dihitung ulang
-  dari `v_current_status` — BUKAN dari `p_step` krn RPC reject tidak terima param step, tahapnya
-  ditentukan dari status memo saat itu).
-  `handleReject` di `FarOverseasAirDetailModal.tsx` pakai APA ADANYA hasil `returns jsonb`
-  (`{approval_status, notes}`) buat update state lokal, TIDAK menghitung ulang sendiri.
-- **Document Validation** (`FarOverseasAirCostValidationModal.tsx`) — baris NAMA PT tiap PO yang
-  namanya cocok (`looseNameMatch`) dengan `dominantPtName` (nama PT dari `dominant_company_code`,
-  yang juga tampil di kolom PO baris CONCLUSION) dikasih centang hijau (`CheckCircle2`), supaya
-  user langsung tau PO mana saja yang jadi kontributor nama PT dominan di CONCLUSION (2026-09).
-  **PT Name & PO Number digabung jadi 1 baris (2026-09, permintaan user, 2 iterasi)** —
-  SEBELUMNYA 2 `<tr>` terpisah ("PT NAME" & "PO NUMBER", masing-masing baris sendiri). Iterasi
-  pertama digabung jadi 1 `<tr>` label "PT NAME / PO NO." TAPI nama PT & input PO Number masih
-  DITUMPUK 2 baris (`flex flex-col` implisit via 2 `<div>` bertumpuk) di dalam `<td>` PO yang
-  sama — user minta lebih lanjut supaya BENERAN sejajar horizontal, BUKAN cuma digabung
-  cell-nya. **Versi final**: nama PT + centang dominant + badge edited + separator "—" + input
-  `EditableCell` PO Number semua dalam SATU `<div className="flex items-center gap-2
-  flex-wrap">` — tampil 1 baris horizontal penuh, `EditableCell`-nya dibungkus
-  `flex-1 min-w-[140px]` supaya tetap py lebar wajar & bisa nge-klik utk edit meski PT name-nya
-  pendek. **Iterasi ketiga (susulan, `flex-wrap` TERNYATA masih bikin pecah 2 baris kalau nama PT
-  panjang, mis. "PT. PELAYARAN MULTI JAYA SAMUDERA")**: `flex-wrap` diganti `flex-nowrap`, span
-  nama PT & separator "—" dikasih `whitespace-nowrap`/`shrink-0`, wrapper `EditableCell` PO
-  Number juga `whitespace-nowrap` — SEKARANG PASTI 1 baris apa pun panjang nama PT-nya. Kolom PO
-  tabel ini TIDAK py `table-layout: fixed` (cuma `w-[30%]` di `<th>`, sifatnya preferensi bukan
-  batas keras), jadi kalau isinya tidak muat, tabel/kolom melebar sendiri melebihi 30% dan
-  wrapper `<div className="overflow-x-auto">` di luarnya yang menangani scroll horizontal —
-  BUKAN teks yang dipaksa wrap ke baris baru lagi. Spacer abu-abu antar PO (`<tr aria-hidden>`)
-  TETAP ADA, sekarang jadi pemisah antar 1-baris-per-PO (bukan lagi antar sepasang baris).
-- **Lebar modal** (2026-09, susulan) — `max-w-4xl` → `max-w-5xl`, permintaan user supaya baris
-  PT Name/PO Number gabungan (poin di atas) & tabel Cost Validation py lebih ruang, tidak sempit.
-- **Urutan ditukar jadi PO No. duluan, baru PT Name** (2026-09, susulan, "supaya rapi") — label
-  baris jadi "PO NO. / PT NAME" (sebelumnya "PT NAME / PO NO."), urutan elemen di dalam
-  `<div className="flex items-center gap-2 flex-nowrap">` ditukar: `EditableCell` PO Number
-  duluan, baru separator "—", nama PT, centang dominant, badge edited. Murni tukar urutan JSX,
-  tidak ada logic/data yang berubah.
-- **RPC-only mutation** — JANGAN pernah `.update()`/`.insert()` mentah ke 2 tabel ini. Selalu
-  lewat `update_rekapan_far_overseas_manual(p_id, p_updates)` dan
-  `update_cost_validasi_far_overseas_manual(p_id, p_document_validation?, p_cost_validation?,
-  p_status?, p_rate_row_used?, p_catatan?)`. **`p_catatan` param BELUM terverifikasi ada di
-  fungsi Postgres-nya** (ditambahkan sisi frontend, belum ada akses DB langsung untuk konfirmasi
-  — cek dulu sebelum mengandalkan behavior ini di production).
-  **KONFIRMASI ISI ASLI `update_rekapan_far_overseas_manual` (2026-09, via
-  `pg_get_functiondef`)**: function ini PUNYA whitelist kolom sendiri yang DI-HARDCODE di
-  variable `v_allowed_columns` (array text literal di dalam PL/pgSQL) — TERPISAH TOTAL dari
-  `REKAPAN_EDITABLE_FIELDS` di frontend (`FarOverseasAirHelpers.ts`). Kalau suatu field ADA di
-  `REKAPAN_EDITABLE_FIELDS` (jadi bisa di-toggle edit di UI & terkirim ke RPC) TAPI TIDAK ADA di
-  `v_allowed_columns`, RPC-nya diam-diam SKIP field itu (`RAISE WARNING ... dilewati`, BUKAN
-  error) — hasilnya: toast frontend bilang "Changes saved successfully" (RPC tetap return OK
-  krn field lain yg valid tetap ke-update & row tetap ke-touch), TAPI nilai field itu TIDAK
-  PERNAH benar-benar tersimpan, balik ke nilai lama begitu di-refresh. **BUG PERSIS INI TERJADI**
-  (2026-09) waktu `item_description_manual` (fitur split NOTE 2) & `pic_user_id` (fitur PIC
-  per-memo) ditambahkan ke `REKAPAN_EDITABLE_FIELDS` TAPI lupa ditambahkan juga ke
-  `v_allowed_columns` di RPC-nya — root cause ditemukan via `pg_get_functiondef`, diperbaiki
-  dgn `create or replace function` yang nambah 2 nama kolom itu ke array (SQL lengkapnya
-  dijalankan user langsung, tidak disimpan sbg file). **ATURAN WAJIB ke depan: SETIAP kali
-  nambah field baru ke `REKAPAN_EDITABLE_FIELDS`, WAJIB juga minta user jalankan `create or
-  replace` utk nambah nama kolom yang sama ke `v_allowed_columns` di RPC ini — 2 tempat ini
-  HARUS selalu sinkron, TIDAK ADA mekanisme otomatis yang menjaga keduanya tetap sama.** Kalau
-  ada laporan "sudah Save tapi field X balik kosong lagi" utk field FAR Overseas manapun, WAJIB
-  cek dulu apakah field itu ada di `v_allowed_columns` (minta `pg_get_functiondef` kalau perlu)
-  SEBELUM curiga ke frontend.
-- `src/utils/FarOverseasAirHelpers.ts` — `computeExpectedFromRate`, `computeCostStatus`,
-  `parseRouteNote`, `mapModeToJenisLayanan`, `rematchTarif` (REPLIKA PERSIS logic matching tarif
-  n8n — filter berjenjang jenis layanan→origin→tujuan→berat, "lunak" — kalau diubah, HARUS tetap
-  sinkron dengan n8n, jangan diubah sepihak di frontend saja). `rematchTarif` SATU-SATUNYA fungsi
-  pencocokan tarif di app ini (dulu bernama `matchOctagonTarif`, Octagon-only — sudah
-  digeneralisasi 2026-09, vendor Octagon/Jianqiao ditentukan dari `ship_via`, JANGAN bikin
-  salinan/versi kedua lagi).
-- **Edit NOTE 1 (`route_note`) memicu re-kalkulasi Cost Validation otomatis** (2026-09, VERSI
-  FINAL — pernah ada 2 versi berbeda sebelumnya, versi lama SUDAH DIGANTI total, jangan
-  reintroduce logic lama itu): berlaku generik utk vendor Octagon MAUPUN Jianqiao. Fungsi
-  `reMatchAfterRouteNoteEdit` di `FarOverseasAirPage.tsx`, dipanggil dari `handleSaveAllEdits`
-  setiap kali `route_note` termasuk field yang diubah saat "Simpan Semua". Alur: parse
-  `route_note` baru (`parseRouteNote`, format wajib
-  `"PENGIRIMAN DARI {asal} KE {tujuan} ({mode})"`, kalau tidak match → skip + toast peringatan
-  format) → ambil `ship_via`/`qty` dari baris terkait → tentukan `jenisLayananSaatIni`:
-  PRIORITASKAN hasil `mapModeToJenisLayanan(mode)` dari NOTE 1 yang baru (user BISA mengoreksi
-  kata mode-nya juga, bukan cuma kota — kata kunci valid: AIR/SEA/REG atau REGULER/EXPRESS/
-  ECONOMY, map ke `jenis_layanan` PERSIS di `far_overseas_tarif_vendor`), kalau kata kuncinya
-  tidak dikenali baru fallback ke `jenis_layanan` dari `rate_row_used` YANG SEDANG TERSIMPAN
-  (null kalau masih array/ambigu) → `rematchTarif(...)` → 0 kandidat = `rate_row_used=null` +
-  status `BELUM_LENGKAP`, 1 kandidat = hitung ulang expected via `computeExpectedFromRate` +
-  simpan, >1 kandidat = `rate_row_used` jadi array (UI munculkan pilihan manual) + status
-  `BELUM_LENGKAP` → semua disimpan lewat `update_cost_validasi_far_overseas_manual`. Input
-  `route_note` di List Memo dikasih `inputPlaceholder` (lihat `EditableCell`/
-  `ListColumn.inputPlaceholder`) berisi hint format + kata kunci mode yang valid.
-  **Kenapa teks kota di `unitPriceNotes` (kolom Notes baris "Unit Price" di Cost Validation)
-  kadang TIDAK ikut berubah walau NOTE 1 sudah diedit & disimpan** (2026-09, sudah diperbaiki) —
-  akar masalahnya di sifat "lunak" filter origin/tujuan `rematchTarif`: kalau kota yang baru
-  diketik user TIDAK ketemu persis di kolom `origin`/`tujuan` tabel `far_overseas_tarif_vendor`
-  utk vendor itu, filter itu di-skip (bukan gagal) dan kandidat SEBELUM filter origin/tujuan
-  tetap dipakai — paling kentara utk vendor yang cuma punya 1 baris tarif generik per jenis
-  layanan (mis. Jianqiao yang rutenya di tabel tarif memang selalu "origin: CHINA, tujuan:
-  JAKARTA" apa pun kota yang diketik user, karena Jianqiao memang tidak punya varian kota lain di
-  tarifnya) — hasilnya `candidates.length` tetap 1 (dianggap "berhasil" cocok) TAPI kota di
-  tarif yang kepakai bukan kota yang baru diketik. FIX: `computeExpectedFromRate` sekarang terima
-  2 parameter opsional `displayOrigin`/`displayTujuan` (HANYA mempengaruhi teks `unitPriceNotes`,
-  TIDAK PERNAH mempengaruhi angka `expected` — itu tetap murni dari data `rate` yang match) —
-  `reMatchAfterRouteNoteEdit` WAJIB isi 2 param ini dengan `parsed.origin`/`parsed.destination`
-  (hasil parse NOTE 1 yang baru), supaya teks Notes SELALU sinkron dengan apa yang diketik user
-  di NOTE 1, terlepas dari kota apa yang sebenarnya kepakai di baris tarif yang match. Pemanggil
-  lain (`handleSelectRate`, fitur pilih-rate-manual di `FarOverseasAirCostValidationModal.tsx`)
-  SENGAJA TIDAK isi 2 param ini (biarkan default ke `rate.origin`/`rate.tujuan`) karena di situ
-  tidak ada "kota yang baru diketik" utk dijadikan acuan.
-- Kolom `po_list` (jsonb array di `rekapan_far_overseas_air`, tipe `PoListEntry` di
-  `FarOverseasAirHelpers.ts`) tiap entry punya `po_no_raw` & `vessel_raw` — ini SATU-SATUNYA
-  sumber pasangan PO↔Vessel yang presisi baris-per-baris. `vessel_internal_note` cuma string
-  ringkas nama-nama kapal (digabung " + "), TIDAK ada info nomor PO di teks itu lagi — JANGAN
-  di-parse buat breakdown. Di List Memo (`FarOverseasAirPage.tsx`), kolom **NO PO** & **VESSEL**
-  berbagi 1 state expand (`expandedPoRows`/`togglePoExpanded`, tombol toggle ada di kolom NO PO
-  saja) — saat expanded, keduanya render baris-per-baris dari `po_list` (bukan
-  `vessel_internal_note`), sejajar per index, baris dengan `vessel_raw` null tampil `"-"` (tidak
-  di-skip, supaya urutan tetap 1:1 dengan No PO).
-- **Memo cetak** (`FarOverseasAirDetailModal.tsx`) — `vessel_internal_note` SENGAJA TIDAK PERNAH
-  dirender di modal ini sama sekali (bukan cuma `print:hidden`) — field itu HANYA boleh tampil di
-  kolom VESSEL tabel List Memo. NOTE 3 (`status_note`) & NOTE 4 (`other_note`) SEKARANG ikut masuk
-  ke baris "NOTE :" di memo cetak (bareng NOTE 1/NOTE 2), tapi HANYA render barisnya kalau isinya
-  tidak null/kosong (baris yang kosong tidak dirender sama sekali, bukan tampil "-").
-- **PIC** — kolom manual `pic_name` (text, mirip `buyer_name`, ada di `REKAPAN_EDITABLE_FIELDS` &
-  editable inline di List Memo lewat kolom "PIC") TETAP ADA sebagai fallback nama sebelum
-  di-approve. Nama PIC ditampilkan digabung bersebelahan dengan nama Exim di kolom "Disiapkan
-  Oleh" (bukan kolom tanda tangan sendiri) — untuk alur approval PIC yang sebenarnya (sekarang
-  bagian rantai WAJIB berurutan Exim→PIC→SPV→Director, BUKAN lagi independen), lihat subbagian
-  **"Approval berjenjang WAJIB berurutan"** di atas (RBAC/`FarOverseasAirDetailModal.tsx`) — versi
-  ini SUDAH 2x diganti total dari pendekatan sebelumnya, jangan reintroduce versi lama manapun.
-  Kolom **BUYER** (`buyer_name`) ditambahkan di List Memo bersebelahan dengan PIC (2026-09) —
-  sebelumnya `buyer_name` cuma tampil di memo cetak, sekarang juga editable inline di List Memo
-  (sudah ada di `REKAPAN_EDITABLE_FIELDS` dari awal).
-- **Field baris header memo cetak** (PO.No/Supplier kiri, Inv.No/Date kanan) — kedua kolom
-  SENGAJA dipisah jadi 2 blok independen (bukan 2 baris flex-row PO.No+Inv.No lalu
-  Supplier+Date) supaya Inv.No & Date tetap rapat berdekatan walau PO.No isinya panjang/wrap
-  banyak baris (mis. gabungan banyak PO) — kalau digabung 1 baris flex, tinggi baris itu ikut
-  ketarik setinggi PO.No, jadi Date jadi jauh dari Inv.No.
-- **Urutan baris field memo cetak (2026-09, permintaan user)** — PO.No/Supplier (blok kiri) &
-  Inv.No/Date (blok kanan) TIDAK berubah posisi (tetap di baris paling atas, lihat poin di atas).
-  Baris-baris DI BAWAHNYA diurutkan ulang jadi: **Buyer → Ship Via → Departure Date → Weight →
-  Price /Kg → TOTAL AMOUNT** (sebelumnya: Ship Via → Buyer → Weight → Price /Kg → Departure
-  Date → TOTAL AMOUNT). Cuma urutan JSX `<MemoField>` yang ditukar (~baris 288-292), tidak ada
-  field yang ditambah/dihapus/diganti sumber datanya.
-- **Note pembayaran** (2026-09): 1 baris teks kecil `"Note: MOHON DIBANTU BAYARKAN PADA TANGGAL :
-  {expected_payment_date}"` (format `formatDateMemo`) ditaruh DI LUAR kotak/tabel memo (di bawah
-  signature table), TAPI TETAP ikut tercetak di mode print (bukan `print:hidden`) — beda dari
-  field lain di luar kotak memo yang defaultnya `print:hidden`. Karena field ini sekarang sudah
-  tercetak lewat note ini, blok "Catatan Internal (tidak tercetak di memo)" yang dulu menampilkan
-  Expected Payment Date terpisah SUDAH DIHAPUS (redundant).
-
-## Sea & Air — Audit, kolom "No. PIB" ambil dari `no_aju` (`SEA_AIR_AUDIT_COLS`, 2026-09)
-
-Kolom **No. PIB** di halaman Audit Sea & Air (`SharedDataTable.tsx` ~baris 576) SEKARANG baca dari
-`no_aju` (`{ key: 'no_aju', label: 'No. PIB', type: 'no_aju_format' }`), BUKAN lagi dari kolom
-`no_pib` — permintaan eksplisit user 2026-09, kedua kolom (`no_pib` & `no_aju`) SAMA-SAMA ada di
-tabel `tabel_audit_seaair`. **JANGAN disamakan dengan Courier** — `PIB_COLS` (Audit Courier,
-~baris 683) TETAP pakai `key: 'no_pib'`, TIDAK ikut diubah, karena user cuma minta perubahan ini
-utk Sea & Air.
-- Cukup ganti `key` di definisi kolom, `type: 'no_aju_format'`/label "No. PIB" TIDAK berubah —
-  `getCellData()` (formatter `no_aju_format`, ~baris 1690) generik baca `rec[c.key]` apa adanya,
-  jadi otomatis ikut baca `no_aju` tanpa perlu ubah logic formatter.
-- `isInlineEditable()` TIDAK mengecualikan `no_pib` MAUPUN `no_aju` dari daftar exclude-nya, jadi
-  kolom ini tetap bisa diedit inline seperti sebelumnya (form edit sekarang kirim/terima field
-  `no_aju`, bukan `no_pib`, lewat RPC `update_seaair_row`/`insert_seaair_row` yang generik
-  terima `p_data` apa adanya).
-- `searchCols` utk `sea_air_audit` (~baris 3319/3722) SUDAH dari awal mencakup KEDUA kolom
-  (`['no_aju', 'no_pib', 'awb', 'po_ori', 'vendor']`) — TIDAK diubah, jadi search tetap match ke
-  isi `no_pib` juga (superset, bukan mengurangi cakupan pencarian).
-- Kolom `no_pib` di `tabel_audit_seaair` TIDAK dihapus dari database, cuma tidak lagi ditampilkan
-  di kolom "No. PIB" tabel Audit — kalau nanti ada laporan "No. PIB kosong padahal ada datanya",
-  cek dulu apa datanya ada di `no_pib` (kolom lama) vs `no_aju` (kolom yang sekarang dipakai).
-
-## Sea & Air — Audit, kolom Balance & Asuransi (`src/components/SharedDataTable.tsx`, 2026-09)
-
-Kolom `balance` & `asuransi` di tabel `tabel_audit_seaair` (halaman Audit Sea & Air) SEKARANG
-punya formula hardcode di frontend (sebelumnya murni field pass-through hasil ekstraksi n8n,
-lihat catatan lama di bawah soal ini):
-- `BALANCE = VALAS_DPP * KURS_NDPBM - (TOTAL_INV_FREIGHT + ITEM_PRICE_IDR)`
-- `ASURANSI = 0.5% * (TOTAL_INV_FREIGHT + ITEM_PRICE_IDR)`
-
-Diimplementasi di 3 tempat (Sea & Air Audit editing-nya INLINE per baris, bukan modal, lihat
-`SeaAirAuditRowGroup`/`isInlineEditable` — modal `EditModal` cuma dipakai utk flow "Tambah
-Data"):
-1. `EditModal` (~baris 218+, `useEffect` khusus `tab.id === 'sea_air_audit'`) — pola sama
-   persis dengan auto-calc `item_price_idr`/`cek_selisih` milik `courier_audit` yang sudah ada
-   duluan di atasnya, dipakai saat create record baru.
-2. `handleInlineSaveRow` (~baris 3277) — inline edit cuma kirim field yang BERUBAH (diff), jadi
-   kalau salah satu dari 4 kolom sumber ikut berubah, balance/asuransi dihitung ulang dari
-   gabungan `record` lama + `cleanedPayload` baru, lalu disisipkan ke payload sebelum dikirim
-   ke RPC `update_seaair_row` (jadi ikut TERSIMPAN ke DB).
-3. **`fetchRecords`'s `enrichedData` DAN `getExportData`** (2026-09, FIX bug — awalnya SENGAJA
-   tidak dipasang di sini, niatnya biar nilai asli n8n tetap tampil apa adanya sampai user edit,
-   analog `item_price_idr`. Ternyata ini bikin baris yang belum PERNAH diedit manual — yaitu
-   HAMPIR SEMUA baris, karena n8n memang tidak pernah isi `balance`/`asuransi` — selalu tampil
-   "-" walau ke-4 data sumbernya lengkap, user lapor "hasil kalkulasi tidak muncul". Fix: hitung
-   ulang `r.balance`/`r.asuransi` dari 4 field sumber di SETIAP baris hasil fetch/export, sama
-   persis formula di poin 1/2 — idempoten dengan hasil edit-triggered karena formulanya sama,
-   jadi tidak konflik. Sekarang kolom ini SELALU live-computed dari data yang ada, bukan
-   menunggu user mengedit dulu.
-
-`balance`/`asuransi` DIKELUARKAN dari `isInlineEditable()` (~baris 1316) — tidak bisa diketik
-manual lagi lewat inline edit, murni hasil formula (sama perlakuan dengan `cek_selisih`). Kalau
-formula perlu diubah lagi nanti, HARUS disinkronkan di SEMUA 4 tempat ini (EditModal,
-handleInlineSaveRow, fetchRecords enrichedData, getExportData).
-
-## Sea & Air — Rekapan, badge persentase di tombol Doc/Cost Validation (2026-09)
-
-Di halaman **Rekapan Sea & Air**, tombol "🔎 Doc Validation" & "💲 Cost Validation" pada panel
-Action tiap baris (`SeaAirRekapanRowGroup`, ~baris 2228-2249) sekarang punya BADGE PERSENTASE
-kecil di pojok kanan-atas tombolnya (bulat, hijau `>=90%` / kuning `>=60%` / merah di bawahnya),
-supaya user langsung tahu skor akurasi validasi tanpa buka modalnya dulu. Badge SELALU tampil
-(dikonfirmasi user 2026-09) — termasuk saat 0% atau belum ada data validasi sama sekali untuk
-shipment itu (fallback `total === 0` / tidak ketemu record matriks|cost validasi → `0`, BUKAN
-`null` seperti percobaan awal yang bikin badge-nya malah hilang).
-
-Dihitung di `fetchRecords` (~baris 2907-2946, bareng `seaAirAuditStatusMap` yang sudah ada
-lebih dulu) lewat 2 batch query tambahan (chunk 50, sejalan dengan pola `tabel_audit_seaair`
-yang sudah ada), lalu disimpan ke `r.doc_validation_pct`/`r.cost_validation_pct` per baris di
-`enrichedData` — **BUKAN dihitung ulang di komponen row**, supaya query-nya batch sekali per
-halaman (bukan N+1 query per baris):
-- **Doc Validation** — dari `dokumen_validasi_matriks_seaair.checks` (jsonb array, join
-  `seaair_id`). Formula REPLIKA PERSIS `globalStats` di `SeaAirValidasiModal.tsx` (~baris 1402):
-  cuma hitung `checks` yang `match` sudah terisi (`true`/`false`, BUKAN `null` = "Belum dicek")
-  sebagai `total`, `match === true` sebagai pembilang.
-- **Cost Validation** — dari `cost_validasi_seaair.checks` (jsonb array, join `seaair_id`).
-  Formula REPLIKA PERSIS `globalStats` di `ValidasiShipmentInvoiceLengkap.tsx` (~baris 538,
-  SUDAH termasuk fix exclude SURVEYOR 2026-09): `checks` dengan `section === 'SURVEYOR'`
-  DIKECUALIKAN dulu sebelum hitung `total`/`status === 'MATCH'`.
-
-**Kalau formula persentase di salah satu modal itu diubah lagi nanti, WAJIB disinkronkan juga
-di sini** (3 tempat: `SeaAirValidasiModal.tsx` `globalStats`, `ValidasiShipmentInvoiceLengkap.tsx`
-`globalStats`, `SharedDataTable.tsx` `fetchRecords` map di atas) — kalau tidak, badge di List
-Rekapan bisa beda angka dengan yang ditampilkan di dalam modalnya sendiri.
-
-## Courier — Audit, badge persentase di tombol Doc/Cost Validation + footer % Cost Validation (2026-09)
-
-Pola yang sama dengan badge Sea & Air Rekapan di atas, diterapkan juga ke tombol "🔍 Doc
-Validation" & "💲 Cost. Validation" di panel Action tiap baris **Audit Courier**
-(`CourierAuditRowGroup`, ~baris 1764-1789) — badge SELALU tampil (termasuk 0%, sama kebijakan
-dgn Sea & Air).
-
-- **`src/utils/CostValidationHelpers.ts`** (FILE BARU) — `isRowVisible()` & `computeLiveCostSummary()`
-  DIPINDAHKAN ke sini dari `CostValidationModal.tsx` (logic aslinya SAMA PERSIS, cuma
-  dipindah/di-export, bukan ditulis ulang) supaya jadi SATU-SATUNYA sumber kebenaran ringkasan
-  Cost Validation Courier (visibilitas 9 baris komponen Freight/Duty + klasifikasi OK/SELISIH/NA
-  + status TOTAL Freight & TOTAL Duty). Dipakai oleh 2 tempat: `CostValidationModal.tsx` (detail
-  per shipment, lewat `liveSummary = useMemo(() => computeLiveCostSummary(data, jenisDokumen))`)
-  DAN `SharedDataTable.tsx` `fetchRecords` (badge, panggil langsung per baris `tabel_cost_validasi`
-  yang di-fetch). **Kalau aturan visibilitas/klasifikasi baris cost validation berubah, WAJIB
-  diubah di file ini SAJA** — jangan pernah tulis ulang logic yang sama di `CostValidationModal.tsx`
-  atau di `SharedDataTable.tsx` lagi.
-  `computeLiveCostSummary()` sekarang juga mengembalikan `pct` (`total_ok / total_cost_cek * 100`,
-  dibulatkan, `0` kalau `total_cost_cek` 0) — dipakai baik utk badge maupun panel "Overall
-  Accuracy" baru di footer modal (lihat di bawah).
-- **`CostValidationModal.tsx`** — footer "Summary Footer" (sebelumnya cuma Total Validable/OK/
-  SELISIH/N/A + badge STATUS besar + badge Invoice Freight/Duty, TANPA persentase sama sekali)
-  SEKARANG ditambah panel "Overall Accuracy" + progress bar (~setelah baris STATUS, sebelum
-  badge Invoice Freight/Duty), replika visual PERSIS pola `SeaAirValidasiModal.tsx`/
-  `ValidasiShipmentInvoiceLengkap.tsx` (hijau `>=90%`, kuning `>=60%`, merah di bawahnya).
-- **`SharedDataTable.tsx` `fetchRecords`** (courier_audit branch, ~setelah `mergeChecklistData`)
-  — 2 batch query TAMBAHAN (paralel via `Promise.all`, chunk 50, per pib_id/cn_id):
-  1. **Doc Validation** — dari `tabel_checklist_validasi` (`total_match`/`total_mismatch`),
-     formula SAMA PERSIS `CourierValidasiPage.tsx`: `pct = checked>0 ? match/checked*100 : 0`
-     (`checked = total_match+total_mismatch`, `total_empty`/"belum diisi" TIDAK masuk penyebut).
-     **FIX (2026-09, laporan user "badge Doc Validation 0% semua, tidak sinkron dgn halaman
-     Dokumen Validasi")**: `tabel_checklist_validasi` CUMA keisi kalau seseorang PERNAH buka
-     `ValidasiModal.tsx` (Doc Validation) dan klik Simpan (insert/update manual di
-     `handleSaveValidasi`, ~baris 1001-1013 — BUKAN diisi otomatis oleh n8n). Jadi mayoritas baris
-     yang belum pernah dibuka modalnya TIDAK punya baris sama sekali di situ — awalnya badge-nya
-     selalu 0% BUKAN karena skornya beneran 0%, tapi karena datanya belum pernah dihitung. Fix:
-     ditambah FALLBACK live-calc di `fetchCourierValidationBadgePct()` (~baris 929) utk pib_id/
-     cn_id yang tidak ketemu di `tabel_checklist_validasi` — REPLIKA PERSIS logic fallback yang
-     sudah lebih dulu ada di `CourierValidasiPage.tsx` (fetch `dokumen_validasi.data_validasi_raw`
-     per pib_id/cn_id yang hilang, lalu `SECTIONS`/`computeStatus`/`generateValues`/
-     `calculatePibStats`, sama seperti `needsCalculation` branch di halaman itu). **JANGAN tulis
-     ulang formula fallback ini lagi di tempat ketiga** — kalau perlu diubah, cek dulu apakah
-     `CourierValidasiPage.tsx` juga perlu diubah bareng biar tetap sinkron.
-     Badge tampil `0%` (bukan disembunyikan) HANYA kalau setelah fallback pun tetap tidak ada
-     data sama sekali (baris `dokumen_validasi` jenis itu juga tidak ketemu) — kebijakan sama
-     dgn Sea & Air.
-  2. **Cost Validation** — dari `tabel_cost_validasi` (`select('*')`, order `created_at` desc,
-     ambil baris PALING BARU per pib_id/cn_id kalau ada >1, sama pola dgn `costValidations` utk
-     Rekapan Courier yang sudah ada duluan), lalu panggil `computeLiveCostSummary()` yang sama
-     dipakai modalnya sendiri — TIDAK ada duplikasi formula.
-  Kedua map di-attach ke `r.doc_validation_pct`/`r.cost_validation_pct` per baris di
-  `enrichedData` (branch `courier_audit`, bareng `cek_selisih`), key `pib_${id}`/`cn_${id}`
-  ditentukan dari `r.jenis_dokumen` (fallback `courierAuditType` utk baris di tab PIB/CN murni).
-
-  **PENTING (fix susulan 2026-09, dari laporan user "badge belum ada" di tab Draft)**: `fetchRecords`
-  punya **2 JALUR FETCH TERPISAH** utk `courier_audit` — jalur normal (query `tabel_audit_pib`
-  ATAU `tabel_audit_cn` sendiri-sendiri, tergantung `courierAuditType` 'pib'/'cn') DAN jalur
-  KHUSUS tab Draft/`courierAuditType === 'archive'` (~baris 2726, query PIB+CN SEKALIGUS lalu
-  di-`combine`, `return` lebih awal SEBELUM sampai ke jalur normal — beda `setRecords()` call
-  sendiri). Badge yang tadinya cuma dipasang di jalur normal TIDAK PERNAH kena di tab Draft
-  karena early-return itu. Fix: logic batch-query badge dipindah jadi fungsi module-level
-  **`fetchCourierValidationBadgePct(rows)`** (~baris 918, tepat setelah `mergeChecklistData`),
-  dipanggil dari KEDUA jalur (jalur Draft ~baris 2822, jalur normal ~baris 3068) supaya badge-nya
-  konsisten muncul di semua tab (PIB/CN/Draft). **Kalau nanti nambah jalur fetch baru lagi utk
-  `courier_audit`, WAJIB panggil `fetchCourierValidationBadgePct()` juga di situ** — jangan tulis
-  ulang batch query-nya.
-
-## Upload Dokumen Susulan dari Checklist — Audit Courier (`CourierUploadSusulanModal.tsx`, 2026-09)
-
-Tombol **"Upload Additional Doc"** di footer `ChecklistModal` (Document Completeness Checklist,
-`SharedDataTable.tsx`, sejajar Cancel/Save Checklist per permintaan user) — utk kirim ulang
-dokumen susulan yang belum ter-upload saat upload pertama di halaman Upload Courier (mis. lupa
-sertakan Credit Note/SPTNP/BPN SPTNP), TANPA harus bikin record shipment baru dari nol.
-
-- **Pola REPLIKA PERSIS** `BunkerUploadModal.tsx` + `BunkerKelengkapanModal.tsx` (uploader generik
-  + hint field + banner status job inline) — komponen baru `src/components/
-  CourierUploadSusulanModal.tsx` adalah duplikasi `BunkerUploadModal.tsx` dgn 1 perbedaan
-  fungsional: field hint yang dikirim adalah **`awb_hint`** (nomor AWB record yg checklist-nya
-  sedang dibuka), BUKAN `no_po_hint`. Webhook type tetap `'courier'` (SAMA dgn upload pertama di
-  `UploadPage.tsx`, localStorage key custom webhook juga sama `'n8n_webhook_url'`) — jalur n8n
-  yang dipakai MEMANG harus workflow Courier yang sama, bukan workflow terpisah.
-- **`server.ts`** (`/api/n8n-proxy-start`) — ditambah forward field `awb_hint` dari
-  `req.body?.awb_hint` ke FormData yg diteruskan ke n8n, REPLIKA PERSIS pola `no_po_hint` yang
-  sudah ada (baris sebelahnya). **WAJIB restart dev server manual setelah perubahan ini** —
-  `tsx` (dipakai `npm run dev`) TIDAK hot-reload `server.ts`, beda dari Vite HMR frontend (lihat
-  catatan "Tech stack" di atas) — tanpa restart, field baru ini tidak akan ke-forward walau kode
-  sudah berubah.
-  **FIX (2026-09, laporan user "awb hint kadang tidak terkirim")**: baik client
-  (`CourierUploadSusulanModal.tsx`) maupun `server.ts` SEBELUMNYA cuma append/forward field ini
-  kalau NILAINYA truthy (`if (awbHint) ...`) — akibatnya kalau `record.awb` kosong/null (baris
-  belum py AWB), field `awb_hint` HILANG TOTAL dari payload ke n8n (bukan cuma ber-nilai kosong),
-  jadi dari sisi n8n tidak bisa dibedakan "sengaja tidak dikirim" vs "field-nya memang tidak
-  ada". Diperbaiki jadi 2 sisi: (1) client SEKARANG SELALU `formData.append('awb_hint', awbHint
-  || '')` — field ini SELALU ada di request, biar sudah kosong; (2) `server.ts` diganti dari cek
-  truthy ke cek keberadaan field (`if (req.body?.awb_hint !== undefined) ...`) — supaya string
-  kosong ikut diteruskan (truthy check lama akan menjatuhkannya lagi kalau tidak ikut diubah).
-  Upload courier NORMAL (`UploadPage.tsx`) TIDAK PERNAH mengirim field ini sama sekali (beda dari
-  `CourierUploadSusulanModal.tsx`), jadi `req.body.awb_hint` tetap `undefined` di jalur itu dan
-  TIDAK ikut ketambahan field baru — fix ini scoped HANYA ke jalur upload susulan.
-- **Status job inline di `ChecklistModal`** (state `activeJobId`/`activeJobStatus`/
-  `activeJobError`, REPLIKA pola polling per-job `BunkerKelengkapanModal.tsx`, BUKAN mengandalkan
-  widget `ProcessingQueue` generik yang TIDAK dirender di halaman Audit Courier sama sekali):
-  - Kalau n8n mengembalikan `job_id` di response (`onJobStarted`) → poll `tabel_processing_queue`
-    tiap 4 detik lewat `.eq('id', jobId)` sampai `status` jadi `SUCCESS`/`FAILED`. Saat `SUCCESS`,
-    `refetchChecklistAfterUpload()` fetch ulang baris `dokumen_checklist` (by `pib_id`/`cn_id`)
-    dan update `form`/`existingId` checklist di modal ini SECARA LANGSUNG (centang ikut update
-    tanpa tutup-buka modal manual) + panggil `onSaved?.()` (refresh badge % di tabel List Audit).
-  - Kalau n8n TIDAK mengembalikan `job_id` (`onSentNoJob`) → tidak bisa di-poll spesifik, cukup
-    tampilkan banner biru "Document sent..." dan minta user buka ulang checklist-nya nanti.
-  - **BELUM TERVERIFIKASI apakah workflow n8n Courier saat ini benar-benar mengembalikan
-    `job_id`** di response webhook-nya (`UploadPage.tsx` yang sudah ada dari awal TIDAK PERNAH
-    membaca `data.job_id` sama sekali — cuma cek `data.status === 'warning'` — beda dari Bunker
-    yang `BunkerUploadModal.tsx` sudah lebih dulu terbukti membaca `data.job_id`). Kalau n8n
-    Courier ternyata tidak mengembalikan `job_id`, fitur ini TETAP JALAN (fallback ke jalur
-    `onSentNoJob`/banner "SENT"), cuma tidak dapat feedback real-time per-job seperti Bunker.
-- ⚠️ **KETERGANTUNGAN KRITIS DI LUAR REPO INI — workflow n8n Courier (eksternal, tidak ada
-  visibilitas dari sesi Claude Code manapun) HARUS diupdate supaya**: (1) menerima field
-  `awb_hint` dari form-data upload, (2) memakainya utk mencari `tabel_audit_pib`/
-  `tabel_audit_cn` yang `awb`-nya cocok, lalu MERGE hasil ekstraksi dokumen baru ke record itu
-  (update `dokumen_checklist` terkait, dst) — BUKAN membuat record PIB/CN baru dari nol seperti
-  upload pertama. **Tanpa perubahan di sisi n8n ini, tombol "Upload Additional Doc" akan
-  mengirim file dgn benar (sudah diverifikasi kode frontend+proxy), TAPI n8n kemungkinan besar
-  akan memprosesnya sbg shipment baru yang terpisah** (persis seperti upload biasa), bukan
-  digabung ke record yang sedang dibuka checklist-nya. Cek dgn tim n8n/otomasi sebelum
-  mengandalkan fitur ini di production — sama persis situasinya dgn `no_po_hint` Bunker yang
-  SUDAH terbukti jalan (karena `BunkerUploadModal.tsx` sudah lama dipakai & workflow n8n Bunker
-  sudah menangani hint itu), sementara `awb_hint` Courier ini BARU ditambahkan, belum ada
-  konfirmasi n8n Courier sudah bisa menanganinya.
-- Gate akses: tombol cuma muncul kalau `canEdit` true (prop yang sama yg sudah dipakai
-  `ChecklistModal`, diisi `canEdit('courier_checklist_dokumen')` dari pemanggilnya) — TIDAK ada
-  page_key/RBAC baru, ikut aturan existing "Akses view-only vs edit" di atas. Sama seperti
-  `courier_upload`/`sea_air_upload`, proteksi ini MURNI UI (upload lewat proxy Express ke n8n,
-  BUKAN langsung ke Supabase, jadi TIDAK BISA diproteksi RLS).
-- `awbHint` yang dikirim ke modal = `record.awb` (mentah, TERMASUK prefix carrier "DHL NO."/
-  "FEDEX No." kalau memang begitu tersimpan — Audit Courier TIDAK strip prefix ini, lihat aturan
-  AWB display di atas) — kalau `record.awb` kosong/null, modal tetap bisa dipakai tapi tampilkan
-  banner kuning bahwa dokumen akan diproses spt upload pertama biasa (tanpa hint merge).
-
-## Badge persentase tombol Checklist — Audit Courier & Rekapan Sea & Air (2026-09)
-
-Pola sama dgn badge Doc/Cost Validation di atas, tapi lebih sederhana karena persentasenya
-SUDAH TERSIMPAN LANGSUNG di database (kolom `pct_kelengkapan`, diisi `ChecklistModal.tsx`/
-`SeaAirChecklistModal.tsx` saat checklist disimpan) — TIDAK perlu dihitung ulang di frontend
-sama sekali, beda dari Doc/Cost Validation yang harus live-compute dari `checks`.
-
-- **Audit Courier** (`CourierAuditRowGroup`, tombol "📋 Checklist") — TIDAK perlu query
-  tambahan apa pun. `rec.pct_kelengkapan` SUDAH otomatis ke-merge ke tiap baris lewat
-  `mergeChecklistData()` (dipanggil di KEDUA jalur fetch `courier_audit`, termasuk jalur
-  Draft/archive) — `CHECKLIST_MERGE_FIELDS` (~baris 882) sudah dari awal mencakup
-  `pct_kelengkapan`. Badge langsung baca `Number(rec.pct_kelengkapan) || 0`.
-- **Rekapan Sea & Air** (`SeaAirRekapanRowGroup`, tombol "✓ Checklist") — badge baru
-  `rec.checklist_pct`, diisi dari batch query TAMBAHAN ke `dokumen_checklist_seaair`
-  (`seaair_id, pct_kelengkapan`) di `fetchRecords`, dalam blok yang sama dengan
-  `seaAirAuditStatusMap`/Doc/Cost Validation pct map (biar cuma 1 batch round-trip per
-  kolom per halaman, bukan nambah round-trip terpisah).
-
-Kedua badge pakai kebijakan sama dengan Doc/Cost Validation: SELALU tampil termasuk `0%`
-(fallback `?? 0`, bukan `null`/hilang).
-
-## Bunker — badge persentase Match & Riwayat Perubahan per baris (2026-09)
-
-- **Badge persentase "Match" di banner modal Compare Doc + badge di tombol "Compare Doc" list**
-  (`BunkerCompareDocModal.tsx`/`BunkerPage.tsx`) — `computeMatrixMatchStats()`
-  (`src/utils/BunkerHelpers.ts`) SATU-SATUNYA sumber kebenaran hitungan Match/Warning/Mismatch +
-  persentase, dari `row_status` tiap baris `matrix_perbandingan` (baris tanpa `row_status` tidak
-  ikut jadi penyebut, sama pola dgn "Overall Accuracy" Cost Validation Courier/Sea & Air). Dipakai
-  2 tempat: (1) banner ringkasan atas modal (jumlah Match/Warning/Mismatch + progress bar warna
-  hijau ≥90%/kuning ≥60%/merah di bawahnya), (2) badge bulat pojok kanan-atas tombol "Compare
-  Doc" di tiap baris List Bunker (`r.matrix_perbandingan` sudah ikut ke-fetch dari `select('*')`
-  yang sudah ada, TIDAK perlu query tambahan). Kalau formula/threshold warnanya diubah, ubah di
-  `computeMatrixMatchStats()` saja, JANGAN hitung ulang manual di 2 tempat itu.
-- **Riwayat Perubahan per baris** (tombol "Riwayat" baru di panel Aksi List Bunker,
-  `BunkerPage.tsx`, buka `BunkerAuditLogModal.tsx`) — mencatat SIAPA/KAPAN/APA YANG DIUBAH utk
-  3 titik edit yang ada di `BunkerCompareDocModal.tsx`: Status Workflow, Catatan Manual (via
-  `handleSave`), dan Konfirmasi Manual per field (`ConfirmMatchCell` submit/cancel). **SENGAJA
-  PAKAI ULANG tabel `audit_trail` yang sudah ada** (yang sama dibaca halaman "Audit Trail" global
-  lewat `v_audit_trail`, lihat `TRAIL_TABLES.BUNKER` di `SharedDataTable.tsx`) — dikonfirmasi user
-  2026-09, supaya TIDAK menambah tabel audit-trail baru lagi. **Kolom ASLI tabel `audit_trail`
-  (dikonfirmasi via `information_schema.columns` 2026-09): `id`, `created_at`, `tabel`, `action`,
-  `awb`, `no_dokumen`, `jenis`, `user_email`, `catatan` — TIDAK ADA kolom `deskripsi`/`old_value`/
-  `new_value` terpisah (percobaan pertama pakai kolom `deskripsi` GAGAL run-time, "column
-  audit_trail.deskripsi does not exist" — `deskripsi` cuma label kolom tampilan di `TRAIL_COLS`
-  utk halaman Audit Trail global via view `v_audit_trail`, BUKAN nama kolom fisik tabel
-  `audit_trail` aslinya).** Kolom yang dipakai: `tabel` (selalu `'bunker_dokumen'`), `jenis`
-  (`'BUNKER'`), `action` (`'UPDATE'`), `no_dokumen` (diisi `no_po` baris itu — **KUNCI filter
-  riwayat balik ke 1 baris**, karena tabel ini tidak punya kolom `record_id` eksplisit; valid krn
-  kontrak data "1 baris bunker_dokumen = 1 No PO" yang sudah ada dari awal), `user_email`, dan
-  `catatan` — SEMUA info (nama field + nilai lama/baru) digabung jadi SATU string di `catatan`
-  (satu-satunya kolom bebas yang ada), format tetap `"{field_label} — Lama: {old} → Baru:
-  {new}"`, di-parse balik oleh `splitAuditCatatan()` di `BunkerAuditLogModal.tsx` utk ditampilkan
-  terpisah (nama field jadi header, lama/baru jadi 2 kotak warna) — fallback tampil apa adanya
-  kalau formatnya tidak cocok. Dicatat LANGSUNG dari aplikasi (fungsi `logBunkerAudit()`/
-  `fetchBunkerAuditLog()` di `BunkerHelpers.ts`), BUKAN trigger DB — app yang paling tau nilai
-  lama & baru persis tanpa perlu logic diff di Postgres. Baris yang belum/tidak punya `no_po`
-  DILEWATI (tidak nulis log) drpd nyasar ke riwayat baris lain yang `no_po`-nya sama-sama null.
-  **BELUM DIJALANKAN ke Supabase production — WAJIB dijalankan manual dulu** (tanpa ini, insert
-  riwayat dari `logBunkerAudit()` akan gagal diam-diam kena RLS, dan/atau tombol "Riwayat" bisa
-  kosong utk user yang tidak punya akses halaman Audit Trail terpisah):
-  ```sql
-  -- Insert riwayat LANGSUNG dari browser (bukan service role n8n) -- scoped SUPAYA user cuma
-  -- bisa insert baris bertanda tabel='bunker_dokumen', tidak bisa menyuntik entri utk modul lain.
-  create policy "audit_trail_insert_bunker_app" on public.audit_trail
-    for insert
-    with check (tabel = 'bunker_dokumen' and public.has_edit_access('bunker'));
-
-  -- SELECT tambahan (permissive, di-OR dgn policy SELECT yang sudah ada) -- supaya user yang
-  -- PUNYA akses halaman Bunker TAPI TIDAK PUNYA akses halaman Audit Trail terpisah (page_key
-  -- berbeda) tetap bisa buka tombol "Riwayat" per baris di List Bunker.
-  create policy "audit_trail_select_bunker_app" on public.audit_trail
-    for select
-    using (tabel = 'bunker_dokumen' and public.has_page_access('bunker'));
-  ```
-  **BELUM TERVERIFIKASI**: definisi persis policy SELECT `audit_trail` yang sudah ada sebelumnya
-  (dibuat waktu modul Audit Trail global dulu dibangun) — belum ada akses DB langsung utk
-  konfirmasi apakah policy tambahan di atas akan tumpang tindih/duplikat scope dgn yang sudah ada
-  (Postgres OR-kan semua policy permissive utk command yang sama, jadi seharusnya aman ditambah,
-  tapi tetap cek dulu sebelum run kalau ragu).
-
-## Courier — Document Validation, kolom "REFERENCE" khusus tabel PIB (`src/components/ValidasiModal.tsx`, 2026-09)
-
-**Konteks penting yang WAJIB dipahami dulu**: `ValidasiModal.tsx` (modal "Document Validation" di
-Audit Courier) punya SECTIONS + fungsi `fill()`/`generateValues`-nya SENDIRI, TERPISAH TOTAL dari
-`src/utils/ValidasiHelper.ts`/`ValidasiFill.ts` (yang isinya cuma dipakai `CourierValidasiPage.tsx`
-& fallback badge % di `SharedDataTable.tsx`) — 2 salinan ini SUDAH TERBUKTI TIDAK SINKRON utk 4 id
-`bdjbc01`-`bdjbc04` (nilai src/cmp beda antara kedua file, ditemukan 2026-09 saat investigasi
-task ini). **Kalau mau tau/ubah src-cmp yang BENERAN tampil di modal, WAJIB baca/edit
-`ValidasiModal.tsx`, JANGAN `ValidasiFill.ts`** — sudah pernah salah laporan gara-gara ini.
-`ValidasiFill.ts` BELUM disinkronkan (user belum minta, masih nunggu konfirmasi).
-
-**Temuan yang jadi dasar fitur ini**: di section `s_pib` (tabel "PIB"), nilai **Src ternyata SELALU
-identik di semua kolom dokumen pembanding pada 1 baris field yang sama** — semua 12 sel section ini
-src-nya dari `pibV` (PIB) apa adanya (`pibV.no_pengajuan`/`pibV.item_value`/`pibV.no_invoice`/
-`pibV.total_bayar`, tergantung baris). Ini BEDA dari section `s_inv_freight_duty` (Invoice
-Freight & Duty) yang src-nya bisa beda-beda per kolom dalam 1 baris yang sama (Freight vs Duty vs
-CN-adjusted) — makanya solusi "kolom Referensi tunggal" ini SENGAJA HANYA diterapkan ke `s_pib`,
-BUKAN section lain, kecuali nanti dicek dulu section itu juga punya sifat "1 Src per baris" yang
-sama.
-
-- **Kolom baru "REFERENCE"** (sempat "NILAI REFERENSI", diganti ke Inggris 2026-09) disisipkan
-  di `<thead>`/`<tbody>` PERSIS setelah kolom
-  "VALIDASI FIELD", HANYA render kalau `section.id === 's_pib'` (guard di 2 tempat: header &
-  body). Isinya = nilai Src (ambil dari row id PERTAMA yang match `groupKey(r) === field` di
-  section itu — krn semuanya identik, cukup ambil satu) + tombol edit (mode edit: `<input>`,
-  mode lihat: teks + badge biru "diedit manual" kalau `src_edited`).
-- **Kolom-kolom dokumen (PO/CIPL/Final Invoice/BT Vendor/SPPB/BILLING DJBC/BPN) di section ini
-  SEKARANG cuma render Cmp + ikon status** — kotak Src & label "vs" DISEMBUNYIKAN (guard
-  `section.id !== 's_pib'` di 2 titik JSX: blok Src, dan span "vs"), TIDAK dihapus dari kode
-  (section lain tetap pakai tampilan Src+vs+Cmp seperti biasa, JSX-nya sama persis, cuma
-  dibungkus kondisi).
-- **`setSrcForGroup(section, field, val)`** (fungsi baru, dekat `setObj`) — SATU-SATUNYA cara
-  Src di kolom Referensi ini diedit. BEDA dari `setObj(id, side, val)` yang cuma nulis ke 1 row
-  id — `setSrcForGroup` menulis `src`+`src_edited:true`+`manual_status:null` ke **SEMUA row id**
-  yang berbagi `groupKey` (rowLabel||field) yang sama di section itu (mis. edit Referensi baris
-  "Item Value" otomatis update `src` di `po_item_value_vs_pib`, `pib04`, `pib07`, DAN
-  `bt_vendor_item_value_vs_pib` sekaligus) — WAJIB begini, karena `computeStatus()` tiap kolom
-  tetap baca `values[rowMatch.id].src` MASING-MASING secara independen (state tidak benar-benar
-  digabung jadi 1, cuma DITULIS bareng biar tetap sinkron) — kalau nanti nambah row id baru ke
-  grup field yang sudah ada di `s_pib`, otomatis ikut ke-cover `setSrcForGroup` tanpa ubah kode
-  ini (filter-nya dinamis by `groupKey`), TIDAK PERLU didaftarkan manual satu-satu.
-- **Kalau nanti mau perluas pola "kolom Referensi" ini ke section lain**: WAJIB cek dulu dgn cara
-  yang sama spt investigasi `s_pib` di atas (baca semua `fill()` calls id-id di section itu,
-  bandingkan apakah src-nya BENERAN identik di semua kolom per baris) — JANGAN asumsikan otomatis
-  sama kayak `s_pib` tanpa verifikasi, krn `s_inv_freight_duty` sudah terbukti TIDAK begitu (lihat
-  bagian "Audit AP Local"... eh maksudnya diskusi src/cmp Invoice Freight & Duty di atas -- src-nya
-  beda per kolom Freight/Duty/CN, PERLU pola multi-baris per kartu kalau mau diterapkan di situ,
-  BUKAN 1 kolom tunggal spt `s_pib`).
-
-## Courier — Document Validation, ikon status per sel jadi pill berlabel (`src/components/ValidasiModal.tsx`, 2026-09)
-
-Ikon status per sel di SEMUA tabel modal ini (bukan cuma PIB — berlaku ke semua section karena
-render sel-nya generik/dipakai bareng) — sebelumnya ikon polos tanpa teks (✅/❌/🕐/dot abu-abu)
-— diganti jadi **pill rounded berlabel teks** (mis. hijau "✓ Match", merah "✗ Mismatch", kuning
-"🕐 Incomplete", abu-abu "− —"), meniru referensi visual yang diberikan user (badge pill
-"Match"/"Mismatch").
-
-- **`getCfg(st)`** (fungsi lokal di komponen ini, ~baris 1242) — TERNYATA SUDAH ADA sebelum task
-  ini (bareng `STATUS_CONFIG` ~baris 468, keduanya dulu dead code/tidak dipakai di mana pun,
-  lihat catatan lama "Courier Validasi" di atas) — dipakai ULANG di sini (bukan bikin baru),
-  balikin `{label, bg, color, icon}` per status (`match`/`mismatch`/`partial`/lainnya=empty).
-  `STATUS_CONFIG` (const module-level, versi lain dari mapping yang sama pakai CSS var
-  `var(--color-background-success)` dkk) TETAP TIDAK DIPAKAI/dead code — `getCfg` versi lokal
-  yang dipilih krn pakai literal hex (`bgSuccess`/`txtSuccess`/dst, sudah didefinisikan duluan di
-  scope yang sama) yang lebih pasti kepakai tanpa bergantung CSS var didefinisikan di tempat lain.
-- Blok render "STATUS ICON" (dalam sel matrix tiap kolom dokumen) diganti "STATUS PILL" — ikon
-  (`CheckCircle2`/`XCircle`/`Clock`/`Minus`, baru diimport dari `lucide-react`) + teks label dari
-  `cfg.label`, dibungkus `<div>` rounded-full kecil (`px-2.5 py-1 rounded-full text-[10px]`) pakai
-  `style={{backgroundColor: cfg.bg, color: cfg.color}}` (inline style, bukan Tailwind class, krn
-  warnanya dari variable JS bukan class statis). Interaksi klik (`toggleManualStatus`) & cursor
-  pointer di mode edit TIDAK berubah, cuma dibungkus tampilan pill.
-- Kalau nanti mau ubah warna/label per status lagi, cukup ubah di `getCfg()` SAJA — jangan
-  duplikat mapping serupa lagi di tempat ketiga (`STATUS_CONFIG` yang lama biarkan tetap tidak
-  terpakai kecuali memang diniatkan pindah semua ke situ).
-
-## Courier — Document Validation, tampilan Cmp jadi "(dalam kurung)" tanpa label "vs" (`src/components/ValidasiModal.tsx`, 2026-09)
-
-Berlaku ke SEMUA tabel di modal ini (bukan cuma PIB — blok render sel ini generik/dipakai
-bareng semua section) — sebelumnya Src & Cmp ditampilkan bertumpuk dgn pemisah pill kecil
-"vs" di antaranya, ukuran font sama besar. Sekarang:
-- Label **"vs" DIHAPUS TOTAL** (bukan disembunyikan CSS, elemen `<span>`-nya sudah tidak ada di
-  JSX) — Cmp otomatis "menempel" tepat di bawah Src krn masih dalam wrapper flex-col yang sama,
-  tidak perlu elemen spacer/pemisah lagi.
-  **PENTING (khusus section `s_pib`)**: guard `section.id !== 's_pib'` yang tadinya membungkus
-  span "vs" JADI TIDAK RELEVAN LAGI setelah span-nya dihapus (section `s_pib` sendiri memang
-  sudah tidak pernah render Src+vs di kolom dokumen, lihat catatan kolom "REFERENCE" di atas) —
-  tidak ada regresi, cuma dead condition yang otomatis hilang bareng penghapusan "vs".
-- **Cmp (mode lihat/non-edit)** dibungkus tanda kurung literal `(...)` di JSX
-  (`({formatViewValue(v.cmp, field)})`), font diperkecil dari `text-xs` (12px) →
-  **`text-[10px]`**, warna teks juga dibuat lebih redup (`text-[#5A305A]/70 font-normal`,
-  sebelumnya `text-[#5A305A] font-medium` sama persis dgn Src) — supaya SECARA VISUAL Cmp
-  terlihat sebagai anotasi sekunder di bawah Src (yang tetap `text-xs`/warna solid seperti
-  semula, TIDAK diubah). Badge "diedit manual" (`Edit3` icon) ikut dikecilkan `size={10}` →
-  `size={9}` biar proporsional. Baris "Other Cost" (khusus `po_item_value_vs_pib`/`cipl01`)
-  TIDAK berubah.
-- **Cmp (mode Edit) TETAP bisa diedit** seperti sebelumnya (`<input>`, `onChange` ke `setObj`
-  TIDAK berubah) — HANYA ukuran font input diperkecil `text-xs`→`text-[11px]` + padding
-  dikurangi `py-1.5`→`py-1`, supaya proporsinya tetap terasa "lebih kecil dari Src" sama saat
-  mode edit maupun mode lihat. Placeholder "Cmp" TIDAK dibungkus tanda kurung (kurung cuma
-  utk NILAI yang sudah terisi di mode lihat, bukan literal di dalam input field — kalau
-  dipaksakan ke `value` input, tanda kurungnya akan ikut ke-submit sbg bagian data).
-- Kolom **Src** (baik section biasa maupun kolom "REFERENCE" khusus PIB) TIDAK disentuh sama
-  sekali oleh perubahan ini — tetap ukuran `text-xs` normal, tetap di atas.
-- **Susulan (2026-09, permintaan user)**: khusus section `s_pib`, tampilan **Cmp DIKEMBALIKAN
-  ke gaya semula** (SEBELUM perubahan "(dalam kurung) + font kecil" di atas) — `text-xs` normal,
-  TANPA tanda kurung, warna solid `text-[#5A305A] font-medium` (bukan redup `/70`), input mode
-  edit juga balik `text-xs`/`py-1.5` (bukan `text-[11px]`/`py-1`). Section LAIN (Invoice Freight
-  & Duty, SPTNP, Tabel NPWP, dst) TETAP pakai gaya baru (kurung + font kecil) — jadi sekarang ada
-  3 percabangan render Cmp di 1 blok kode yang sama: `isEditMode` (ukuran input beda tipis
-  tergantung `section.id === 's_pib'`), lalu utk mode lihat: `section.id === 's_pib'` → gaya lama,
-  else → gaya baru (kurung). **Kalau nanti section lain juga diminta balik ke gaya lama, tambahkan
-  id section-nya ke kondisi `section.id === 's_pib'` di 3 titik itu (className input, className
-  span mode lihat "gaya lama"), JANGAN duplikat blok kode baru lagi.**
-  **Percobaan sempat dicoba (2026-09) — DIBATALKAN**: sempat nambah `s_inv_freight_duty` ke
-  kondisi `section.id === 's_pib'` ini (Cmp tabel Invoice Freight & Duty jadi ikut gaya lama juga)
-  krn disangka itu maksud user pas diminta "lampirkan secara utuh lagi nilai src dan cmp" —
-  TERNYATA BUKAN itu yg dimaksud user ("bukan begitu maksud saya"), SUDAH DIREVERT ke kondisi
-  SEMULA (`section.id === 's_pib'` polos, tanpa `s_inv_freight_duty`) di KEDUA titik (className
-  input mode edit, className span mode lihat). **Jangan re-apply perubahan ini lagi tanpa
-  konfirmasi ulang maksud user yang sebenarnya** — belum jelas apa yang dimaksud "lampirkan
-  secara utuh", tanyakan detail dulu (mis. apakah maksudnya nilai src/cmp yang terpotong/tidak
-  lengkap krn suatu bug lain, bukan soal gaya tampilan kurung/font kecil ini).
-- **Susulan lagi (2026-09)**: placeholder literal `"Src"`/`"Cmp"` di kedua `<input>` (muncul
-  sbg teks abu-abu di kotak kosong pas mode Edit, dikeluhkan user via screenshot — kelihatan
-  berulang di semua sel, norak) **DIHAPUS** (jadi string kosong `""`) — placeholder `"Format..."`
-  utk baris `isFormat` (mis. baris "Tidak Ada Nama Vessel & Nomor IMO") TETAP ADA, TIDAK ikut
-  dihapus (itu instruksi format yang informatif, beda konteks dari label generik "Src"/"Cmp").
-  Placeholder `"Referensi"` di kolom REFERENCE (khusus `s_pib`) juga TIDAK disentuh/tidak diminta.
-- **Susulan lagi (2026-09) — pill status "empty" (belum ada nilai apa pun buat dibandingkan)**:
-  sebelumnya abu-abu polos label "—" + ikon `Minus` (dikeluhkan user via screenshot, "cuma abu2
-  & 2 garis") — diganti jadi pill ungu muda label **"Not checked yet"** + ikon `Clock` (SAMA
-  ikonnya dgn status `partial`/"Incomplete", ikon `Minus` sudah tidak dipakai lagi di
-  `StatusIcon` ternary & di-remove dari import `lucide-react`). Warna: `bg: "#EEEAF3"` (lavender
-  muda), `color: "#5A305A"` (ungu brand app, bukan abu-abu netral lagi) — didefinisikan di
-  `getCfg()`, SATU-SATUNYA tempat mapping warna/label/ikon per status (lihat catatan di atas,
-  jangan duplikat mapping lagi kalau mau ubah warna/label status lain nanti).
-- **Susulan lagi (2026-09) — garis pembatas antar kolom "kelihatan tidak nyambung"** (laporan
-  user via 2 screenshot, paling kentara di tabel "TIDAK ADA NAMA VESSEL DAN NOMOR IMO" krn cuma
-  1 baris pendek): BUKAN bug geometris/CSS collapse yang benar2 putus — `border-r`-nya memang
-  ADA di tiap `<th>`/`<td>` sepanjang kolom (dicek satu-satu di kode). Akar masalahnya soal
-  KONTRAS WARNA: dulu semua pembatas vertikal pakai `border-slate-200` (`#e2e8f0`, abu SANGAT
-  muda) — kontrasnya BAGUS di badan tabel (background putih polos), tapi kontrasnya JELEK di
-  baris header krn background header berwarna pastel (biru/kuning/ungu muda dari
-  `getHeaderColor(doc)`) yang tone-nya mirip2 dgn abu muda itu — mata jadi baca "garisnya
-  berhenti/renggang" tepat di batas warna header, padahal geometrinya menerus. **Fix**: SEMUA
-  border vertikal pembatas kolom di tabel ini (7 titik: `<th>` VALIDASI FIELD, `<th>` REFERENCE
-  khusus `s_pib`, `<th>` tiap compareDoc, `<td>` VALIDASI FIELD, `<td>` REFERENCE (2 varian —
-  ada data & fallback "-"), `<td>` tiap compareDoc (2 varian juga)) diseragamkan ke
-  `border-slate-300` (`#cbd5e1`, satu tingkat lebih gelap) — termasuk 2 titik yg pakai trik
-  `box-shadow` (kolom sticky VALIDASI FIELD, `shadow-[1px_0_0_0_#e2e8f0]` → `#cbd5e1`, box-shadow
-  dipakai KHUSUS di kolom sticky krn `border-collapse` diketahui rusak/tidak konsisten kalau
-  dikombinasi `position: sticky`, jadi kolom itu sengaja tidak pakai `border-r` biasa dari awal —
-  ini bukan bagian dari bug yg dilaporkan, cuma ikut disamakan warnanya biar konsisten satu
-  tabel). Border horizontal (`border-b` antar baris) TIDAK diubah — laporan user spesifik soal
-  garis VERTIKAL antar kolom saja. **Kalau nanti border kolom di tabel manapun di modal ini
-  dilaporkan "putus/tidak nyambung" lagi, cek dulu kontras `border-slate-*` terhadap background
-  di titik yg dilaporkan SEBELUM curiga ke bug rendering (sticky/zoom/dll) — ini sudah 2x
-  ditelusuri & ternyata murni soal kontras warna, bukan bug struktural.**
-
-## Courier — Document Validation, baris "Subtotal after CN" digabung ke baris "Subtotal" (`src/components/ValidasiModal.tsx`, 2026-09)
-
-Tabel "INVOICE FREIGHT & INVOICE DUTY" (`s_inv_freight_duty`) tadinya punya 2 baris terpisah:
-"Subtotal" (kolom FP Freight/FP Duty) dan "Subtotal after CN" (kolom CN INVOICE FREIGHT/CN
-INVOICE DUTY) — digabung jadi **1 baris** atas permintaan user. 4 row config (`if02`/`id01`/
-`cnf02_b`/`cnd02_b`) SEKARANG semuanya diberi `rowLabel: "Subtotal / Subtotal After CN"` yang
-SAMA (sebelumnya `if02`/`id01` tidak punya `rowLabel` — groupKey jatuh ke `field`, "Subtotal" vs
-"Subtotal after CN" beda field jadi 2 baris terpisah; `cnf02_b`/`cnd02_b` `field`-nya jg diubah
-dari "Subtotal after CN" → "Subtotal" — TIDAK berpengaruh ke `computeStatus()` krn kedua string
-sama² match keyword `lowerField.includes("total")`, lihat "TEMUAN PENTING" soal `field` dipakai
-keyword-matching di atas). Karena tabel dirender per-`groupKey` (`rowLabel || field`), ke-4
-kolom dokumen ini SEKARANG otomatis tampil dalam SATU baris tabel dgn label "Subtotal / Subtotal
-After CN".
-
-## Courier — Document Validation, lebar kolom "VALIDASI FIELD" diseragamkan (`src/components/ValidasiModal.tsx`, 2026-09)
-
-Kolom pertama (sticky) di SEMUA tabel modal ini SEBELUMNYA `w-[1%] whitespace-nowrap` — lebar
-otomatis menyesuaikan teks nama baris TERPANJANG di section itu, jadi beda-beda lebarnya antar
-tabel (mis. "Format Pass: Tidak Ada Vessel & IMO" bikin section itu jauh lebih lebar dari section
-lain) — dikeluhkan user "tidak rapi". Diseragamkan ke `<th>` DAN `<td>`-nya (2 titik, keduanya
-generik/dipakai semua section): `w-[160px] min-w-[160px] max-w-[160px] whitespace-normal` (sempat `220px`, dikecilkan ke `160px`
-susulan permintaan user "terlalu lebar") (`<td>` tambah `break-words`) — SEMUA tabel SEKARANG
-punya lebar kolom pertama PERSIS sama,
-nama baris yang kepanjangan WRAP ke bawah (bukan lagi 1 baris horizontal dipaksa muat/scroll).
-`sticky left-0`/shadow border-nya TIDAK berubah.
-
-## Courier — Document Validation, "Other Cost" (tabel PIB baris Item Value & CIPL baris Total Item Value, kolom PO) SEKARANG bisa diedit manual (`src/components/ValidasiModal.tsx`, 2026-09)
-
-Sebelumnya "Other Cost" (angka italic kecil di bawah nilai Cmp kolom PO, cuma muncul di 2 row
-`po_item_value_vs_pib`/`cipl01`) MURNI DISPLAY dari `debugData.raw.other_cost_valas`
-(`data_validasi_raw` di tabel `dokumen_validasi`, hasil ekstraksi n8n) — tidak ada `<input>` sama
-sekali, tidak bisa dikoreksi manual. Sekarang bisa diedit & TERSIMPAN, permintaan user.
-
-- **`otherCost` ditambahkan ke object `values[id]`** (state yang SAMA dipakai `src`/`cmp`/
-  `manual_status` per baris) — BUKAN field baru terpisah, jadi otomatis ikut ke-serialize ke
-  `values_json` saat "Simpan" (`handleSaveValidasi`, ~baris 1008) TANPA perlu ubah skema/RPC/query
-  Supabase apa pun — pola generik `setObj(id, side, val)` yang sudah ada dipakai apa adanya
-  (`setObj(rowMatch.id, 'otherCost', val)`), sama seperti `setObj(id, 'cmp', val)`.
-- **Default awal** (saat BELUM pernah ada baris `tabel_checklist_validasi` tersimpan utk
-  shipment itu — jalur `fill()` dari `raw`, ~baris 731/776): `newV["po_item_value_vs_pib"]
-  .otherCost`/`newV["cipl01"].otherCost` diisi dari `raw.other_cost_valas` (String-kan) sbg nilai
-  awal. Begitu SUDAH pernah tersimpan, load berikutnya baca `cl.values_json` langsung (jalur
-  fill() di-skip sepenuhnya, lihat "return" ~baris 615), jadi nilai manual yang tersimpan TIDAK
-  PERNAH ketiban ulang oleh `raw.other_cost_valas` lagi.
-  **Data lama (checklist yg tersimpan SEBELUM fitur ini)** tidak punya `v.otherCost` di
-  `values_json`-nya — fallback tampilan (`otherCostVal`, dihitung di render per baris) baca
-  `v.otherCost` DULU, baru fallback ke `debugData.raw?.other_cost_valas` kalau kosong/undefined —
-  jadi data lama tetap tampil apa adanya (dari raw) sampai user pertama kali edit & simpan.
-- **Render**: mode Edit nambah `<input>` kecil italic di bawah input Cmp (HANYA utk 2 row id di
-  atas, dibungkus fragment `<>...</>` krn sekarang ada 2 elemen sejajar) — mode Lihat TETAP baris
-  italic "Other Cost: {angka}" seperti semula, cuma sumber angkanya `otherCostVal` (bukan
-  `debugData.raw` mentah lagi), + badge `Edit3` kecil kalau `v.otherCost_edited` true (pola sama
-  dgn badge "diedit manual" pada `src`/`cmp`). Berlaku di KEDUA varian tampilan (section `s_pib`
-  font normal, section lain/CIPL font `text-[10px]` dalam kurung) — 2 titik JSX, keduanya diubah
-  bareng.
-
-## Courier — Document Validation, sel CN dipindah dari kolom CN INVOICE FREIGHT/DUTY ke FP Revisi Freight/Duty (`src/components/ValidasiModal.tsx`, 2026-09)
-
-Tabel "INVOICE FREIGHT & INVOICE DUTY" — 4 row config (`cnf02_b`/`cnd02_b` di baris "Subtotal /
-Subtotal After CN", `cnf03_b`/`cnd03_b` di baris "PPN") tadinya render di kolom **CN INVOICE
-FREIGHT**/**CN INVOICE DUTY** — permintaan user PINDAHKAN ke kolom **FP Revisi Freight**/**FP
-Revisi Duty** yang SUDAH ADA di tabel yang sama (dipakai baris "No Invoice PPJK"/`fpr06`/`fpr08`
-& "DPP"/`fpr05`/`fpr07`). Caranya CUKUP ganti `compareDoc` ke-4 row itu (data src/cmp/logic-nya
-TIDAK berubah sama sekali, cuma pindah kolom render): `cnf02_b`/`cnf03_b`: `"CN INVOICE FREIGHT"`
-→ `"FP Revisi Freight"`; `cnd02_b`/`cnd03_b`: `"CN INVOICE DUTY"` → `"FP Revisi Duty"`.
-- Kolom **CN INVOICE FREIGHT**/**CN INVOICE DUTY** TETAP ADA di tabel (dipakai row lain, mis.
-  `cnf01_a`/`cnd01_a` di baris "No. AWB") — utk baris "Subtotal / Subtotal After CN" & "PPN",
-  kolom ini SEKARANG tampil "-" (tidak ada row match lagi di situ), sedangkan kolom **FP Revisi
-  Freight**/**FP Revisi Duty** yang sebelumnya "-" utk 2 baris ini SEKARANG terisi.
-  `getSrcTooltipLabel()`/`getColumnDisplayLabel()`/warna header — SEMUA generik baca
-  `rowMatch.compareDoc` apa adanya, tidak perlu diubah krn "FP Revisi Freight"/"FP Revisi Duty"
-  SUDAH terdaftar warnanya (dipakai row lain di section yg sama).
-  **Kalau nanti mau pindah kolom row lain lagi di tabel manapun di modal ini, pola yang sama
-  berlaku: ganti `compareDoc` row config-nya SAJA — JANGAN duplikat row/tambah id baru.**
-
-## Courier — Document Validation, nama baris "DPP" & "PPN" ditambah "/ ... After CN" (`src/components/ValidasiModal.tsx`, 2026-09)
-
-Tabel "INVOICE FREIGHT & INVOICE DUTY" — nama baris (kolom "VALIDASI FIELD") diubah:
-"DPP" → **"DPP / DPP After CN"** (`fpfd05`/`fpfd07`/`fpr05`/`fpr07`, ke-4nya SUDAH punya
-`rowLabel: "DPP"` sebelumnya, tinggal ganti teksnya, groupKey/pengelompokan baris TIDAK berubah),
-"PPN" → **"PPN / PPN After CN"** (`if03`/`id02`/`cnf03_b`/`cnd03_b` — SEBELUMNYA row ini TIDAK
-py `rowLabel` sama sekali, groupKey jatuh ke `field: "PPN"` yg SAMA di ke-4nya jadi tetap 1 baris
-gabungan; SEKARANG ke-4nya diberi `rowLabel: "PPN / PPN After CN"` yg identik — hasil
-pengelompokan baris SAMA seperti sebelumnya, cuma teks tampilnya beda). `field` mentah
-(`"DPP (Freight)"`/`"DPP (Duty)"`/`"PPN"`) TIDAK disentuh — tetap dipakai `computeStatus()` utk
-keyword-matching (`fieldName.includes("DPP (")`, `lowerField.includes("ppn")`), aman krn hanya
-`rowLabel` (murni tampilan) yang diubah.
-
-## Courier Audit — kolom "Kurs BI (Rp)" ditambahkan ke tab Draft (`src/components/SharedDataTable.tsx`, 2026-09)
-
-Tab **Draft** (`courierAuditType === 'archive'`, gabung baris PIB+CN) pakai `activeCols` = PIB_COLS
-(dgn kolom `jenis_dokumen`/"Type" disisipkan di depan, ~baris 4128) — TERNYATA kolom **"Kurs BI
-(Rp)"** (`key: 'kurs_bi'`) HANYA ada di `CN_COLS`, PIB_COLS cuma punya "Kurs NDPBM"
-(`kurs_ndpbm`) — jadi baris CN di tab Draft dulu TIDAK PERNAH menampilkan Kurs BI (Rp) sama
-sekali (bukan di-hide via fitur Customize View, murni krn kolomnya tidak ada di `activeCols`
-Draft — nilainya sendiri tetap tersimpan normal di DB, cuma tidak dirender).
-- Fix: `activeCols` utk `courierAuditType === 'archive'` SEKARANG dibangun via IIFE — ambil
-  index kolom `kurs_ndpbm`, sisipkan `{ key: 'kurs_bi', label: 'Kurs BI (Rp)', type: 'num' }`
-  TEPAT SETELAHNYA (fallback ke akhir array kalau `kurs_ndpbm` tidak ketemu). Baris PIB (tidak
-  punya field `kurs_bi`) otomatis tampil kosong/"-" di kolom ini, seperti kolom lain yang
-  memang cuma relevan utk salah satu jenis dokumen — WAJAR, bukan bug.
-  `COURIER_AUDIT_CUSTOMIZABLE_COLS` (fitur Customize View) SUDAH dari awal mencakup `kurs_bi`
-  (dedup dari `PIB_COLS`+`CN_COLS`, `CN_COLS` sudah py kolom ini) — TIDAK perlu diubah, kolom ini
-  otomatis ikut bisa di-hide/tampilkan lewat Customize View jg di tab Draft sekarang.
-
-## Courier — Document Validation, Src baris "No. AWB" kolom SPPB disamakan dgn kolom PIB/SPPBMCP (`src/components/ValidasiModal.tsx`, 2026-09)
-
-Row config `pib02` (baris "No. AWB", kolom **SPPB**) — Src SEBELUMNYA `pibV.no_awb` (`raw.pib_v.
-no_awb`), DIGANTI jadi **`invF.awb || invD.awb`** (`raw.invoice_freight_v.awb`, fallback
-`raw.invoice_duty_v.awb`) — PERSIS logic Src yang sudah dipakai row `id07` (kolom **PIB /
-SPPBMCP**, baris yang sama). Cmp (`sppbV.no_awb`, `raw.sppb_v.no_awb`) TIDAK diubah — itu nilai
-pembanding dari dokumen SPPB itu sendiri, bukan bagian dari perubahan ini.
-
-**BUKAN BUG — fallback ini TIDAK berlaku retroaktif ke checklist yang SUDAH PERNAH disimpan**
-(dilaporkan user + screenshot: shipment DHL `9765959733`, kolom SPPB tetap kosong walau Invoice
-Freight & Invoice Duty ada, padahal shipment LAIN behasil fallback normal). Akar masalahnya di
-alur load modal (~baris 604-617): kalau `tabel_checklist_validasi` SUDAH punya baris utk
-shipment itu (pernah dibuka & disimpan sebelumnya), `values_json` yang tersimpan dipakai APA
-ADANYA (`setValues(cl.values_json)`) lalu `return` — SELURUH blok `fill()` (termasuk fallback
-`invF.awb || invD.awb` yang baru ditambahkan ini) **TIDAK PERNAH dijalankan ulang** utk shipment
-yang sudah py checklist tersimpan. Jadi:
-- Shipment yang **checklist-nya tersimpan SEBELUM** fix fallback ini dibuat → Src SPPB-nya
-  tetap nilai LAMA (dari rumus lama `pibV.no_awb`, bisa kosong) — TIDAK otomatis ter-update.
-- Shipment yang **belum pernah disimpan checklist-nya** → langsung pakai rumus BARU dari
-  `fill()`, fallback jalan normal.
-- Ini pola yang SAMA persis dgn keterbatasan `fill()`-only-jika-belum-ada-checklist yang sudah
-  didokumentasikan di bagian lain CLAUDE.md ("Src selalu identik... di section `s_pib`" dkk) —
-  bukan hal baru, cuma kali ini kena field Src `pib02` yang barusan diubah rumusnya.
-**Keputusan (2026-09, dikonfirmasi user via AskUserQuestion)**: TIDAK ADA perbaikan kode yg
-diminta utk skenario ini — user cuma minta penjelasan akar masalahnya, `values_json` shipment
-lama yang sudah tersimpan DIBIARKAN apa adanya (opsi "edit manual per-shipment" atau "tombol
-Refresh dari Sumber" DITAWARKAN tapi TIDAK dipilih). Kalau nanti ada laporan SERUPA lagi (field
-lain, checklist lama tidak ikut ke-update walau rumus `fill()`-nya sudah diperbaiki), JANGAN
-curiga fallback/rumusnya salah dulu — cek DULU apakah shipment itu sudah py baris di
-`tabel_checklist_validasi` dari SEBELUM rumus diubah.
-
-## Courier — Document Validation, bug status "Not checked yet" padahal Cmp sudah terisi (`computeStatus()`, `src/components/ValidasiModal.tsx`, 2026-09)
-
-Laporan user + screenshot: baris "No Invoice PPJK" kolom FP Revisi Freight/Duty — Src kosong tapi
-Cmp SUDAH ada isinya (mis. "MESIR00022371"), status pill malah tampil **"Not checked yet"**
-(status `empty`), padahal seharusnya **"Incomplete"** (status `partial`) — sesuai konvensi umum
-di fungsi ini (baris 441-442: `!s && !c → empty`, `!s || !c → partial`, cuma salah SATU sisi
-kosong TETAP dianggap "ada yang perlu ditindaklanjuti", bukan "belum dicek sama sekali").
-
-**Akar masalah**: cabang KHUSUS `fieldName.includes("Referensi (")` (dipakai field
-`"Referensi (Freight)"`/`"Referensi (Duty)"` — baris "No Invoice PPJK" di 4 kolom FP Freight/FP
-Duty/FP Revisi Freight/FP Revisi Duty) py logic SENDIRI yang TIDAK ikut konvensi umum itu:
-`if (!srcVal || !cmpVal) return "empty";` — pakai `||` (SALAH SATU kosong = "empty"), BUKAN `&&`
-(KEDUANYA kosong baru "empty") seperti pola generik di bawahnya. Fix: disamakan poLanya —
-```js
-if (!srcVal && !cmpVal) return "empty";
-if (!srcVal || !cmpVal) return "partial";
+  end if;
+  update public.rekapan_far_overseas_air set approval_status = 'REJECTED', notes = p_reason where id = p_id;
+  return jsonb_build_object('approval_status', 'REJECTED', 'notes', p_reason);
+end;
+$$;
+grant execute on function public.reject_far_overseas_air(uuid, text) to authenticated;
 ```
-Efeknya BERLAKU ke ke-4 kolom yang pakai field "Referensi (...)" ini (bukan cuma FP Revisi yang
-dilaporkan) — SEKARANG kalau HANYA salah satu sisi (Src ATAU Cmp) kosong, statusnya "Incomplete"
-(kuning), baru "Not checked yet" (abu/lavender) kalau KEDUANYA benar-benar kosong.
+Kalau nemu versi LAMA function ini (guard PIC lewat `user_approval_tiers` polos), `create or
+replace` di atas timpa otomatis — JANGAN reintroduce guard lama itu utk tahap PIC.
 
-## Courier — Document Validation, tabel "NO VESSEL NAME AND IMO NUMBER" gated oleh Document Completeness Checklist (`computeStatus()`, `src/components/ValidasiModal.tsx`, 2026-09)
+## FAR Overseas Air / Bunker — Clear massal Processing Queue
 
-Permintaan user: di section `s_no_vessel_imo` (3 row `cipl05`/`po01`/`fi01`, kolom CIPL/PO/Final
-Invoice) — SEBELUM ini status selalu langsung "kosong = Match, ada isi = Mismatch"
-(`fieldName.includes("Tidak Ada Vessel")` branch di `computeStatus()`, lihat section di atas soal
-logic aslinya) TANPA peduli apakah dokumen PO/CIPL/Final Invoice itu SENDIRI sudah dipastikan ada
-lewat "Document Completeness Checklist" (`ChecklistModal.tsx`, tabel `dokumen_checklist`, kolom
-`ada_po`/`ada_cipl`/`ada_final_invoice`). User minta: **kalau dokumennya BELUM dicentang di
-Checklist, tampilkan "Incomplete" dulu** (belum relevan dicek match/mismatch krn dokumennya
-sendiri belum dikonfirmasi ada) — **begitu SUDAH dicentang, baru balik ke logic lama**
-(kosong/null = Match, ada isi = Mismatch).
+Tombol **"✕ Clear Completed/Failed"** di header modal Processing Queue (`FarOverseasAirPage.tsx`
+& `BunkerPage.tsx`, implementasi independen masing2, TIDAK shared) — muncul kalau ada ≥1 item
+SUCCESS/FAILED, hapus semua sekaligus. Tombol "×" per-kartu (`dismissQueueItem`) tetap ada.
+PENDING/PROCESSING tidak ikut kehapus. Pakai `confirm()` native + `toastMessage` state existing.
+Bug fix di satu halaman TIDAK otomatis ikut ke yg lain (2 implementasi independen).
 
-- **`getDocChecklistFlag(compareDoc, flags)`** (fungsi baru, module-level, dekat
-  `computeStatus`) — map `compareDoc` row ("PO"/"CIPL"/"Final Invoice") ke flag
-  `ada_po`/`ada_cipl`/`ada_final_invoice` yang sesuai (`!!flags.xxx`, jadi `undefined`/`null`
-  otomatis jadi `false` = "belum dicentang"). Kolom LAIN (bukan salah satu dari 3 ini) balikin
-  `true` — TIDAK ikut gating apa pun, HANYA relevan utk 3 row section `s_no_vessel_imo`.
-- **`computeStatus()`** — parameter baru `docChecked: boolean = true` (default `true` supaya
-  SEMUA pemanggilan LAIN yang belum diberi param ini — kalau ada di masa depan — tidak berubah
-  perilakunya). Di dalam cabang `fieldName.includes("Tidak Ada Vessel")`: `if (!docChecked)
-  return "partial"` (Incomplete) DICEK **PALING AWAL, SEBELUM `isPoNonImi`** (BUKAN sesudahnya —
-  versi PERTAMA taruh `isPoNonImi` duluan, TERBUKTI SALAH: laporan user + screenshot shipment
-  FEDEX `876734693383` — Final Invoice yang jelas-jelas "Missing Documents" di Checklist tetap
-  tampil "Match", krn `is_po_non_imi` true utk shipment itu, bypass total gating checklist yang
-  baru ditambahkan. **FIX**: urutan ditukar — exemption "PO non-IMI selalu match" cuma masuk akal
-  KALAU dokumennya sendiri sudah dikonfirmasi ada lewat Checklist; kalau checklist bilang belum
-  dicentang, "match" jadi menyesatkan (seolah sudah dicek & lolos, padahal dokumennya sendiri
-  belum tentu ada) — jadi SEKARANG `docChecked` DICEK DULU, `isPoNonImi` BARU setelahnya.
-  **Jangan tukar balik urutan ini** kalau nanti ada laporan "PO non-IMI kelihatan Incomplete
-  padahal Checklist-nya sudah lengkap" — itu justru perilaku BENAR (gating docChecked TIDAK
-  aktif kalau checklist SUDAH tercentang, tinggal isPoNonImi yang jalan normal seperti biasa).
-- **State baru `docCompletenessFlags`** (`{ada_po?, ada_cipl?, ada_final_invoice?}`) — di-fetch
-  SEKALI di `doLoad()` dari `dokumen_checklist` (`select('ada_po, ada_cipl, ada_final_invoice')
-  .eq(pib_id ? 'pib_id' : 'cn_id', pib_id || cn_id).maybeSingle()`), diletakkan SEBELUM
-  early-return baris `tabel_checklist_validasi` (bukan sesudahnya) supaya tetap ke-fetch baik
-  utk shipment yang SUDAH maupun BELUM pernah punya checklist Doc Validation tersimpan. Kalau
-  baris `dokumen_checklist` belum ada sama sekali (checklist kelengkapan belum pernah dibuka &
-  disimpan) — `dc` jadi `null`, ke-3 flag jadi `false` (dianggap "belum dicentang" = Incomplete,
-  KONSISTEN dgn maksud user: dokumen belum terkonfirmasi ada = belum bisa dicek match/mismatch).
-- Dipanggil di KEEMPAT titik `computeStatus(...)` di file ini (autosave debounce effect via
-  `docCompletenessFlagsRef` — pola ref yang sama dgn `activeSectionsRef`/`pibStatsRef`/
-  `debugDataRef`, supaya tidak memicu autosave dobel — `stats` useMemo, `sectionStats()`, dan
-  render sel tabel) — SEMUA mengoper `getDocChecklistFlag(r.compareDoc atau rowMatch.compareDoc,
-  docCompletenessFlags/Ref.current)` sbg argumen ke-6. `stats` useMemo dependency array ditambah
-  `docCompletenessFlags`.
-- **Kalau nanti mau gating serupa diterapkan ke section/baris lain**, cek dulu apakah section
-  itu juga py 1 baris = 1 compareDoc PERSIS PO/CIPL/Final Invoice (nama compareDoc-nya HARUS
-  cocok string literal yg dicek `getDocChecklistFlag`) — kalau beda nama compareDoc, tambahkan
-  cabang barunya di situ, JANGAN duplikat function serupa.
+## FAR Overseas Air — NOTE 2 dipecah "From Document" + "Manual Note"
 
-## Sea & Air — Modal "Cost Validasi Shipment & Invoice" disamakan ukurannya dgn Courier (`src/components/ValidasiShipmentInvoiceLengkap.tsx`, 2026-09)
+Kolom NOTE 2 dulu 1 field `item_description` (hasil ekstraksi n8n TAPI juga bisa diedit manual →
+nilai ekstraksi asli hilang tanpa jejak). Sekarang 2 bagian: **kiri "From Document"** =
+`item_description` read-only selamanya; **kanan "Manual Note"** = kolom baru
+`item_description_manual`, ikut pola `pendingEdits` biasa.
 
-Permintaan user: samakan ukuran modal ini dgn modal "Cost Validation Details" Courier
-(`CostValidationModal.tsx`, container-nya `max-w-6xl max-h-[97vh]`, TANPA height tetap — tinggi
-modal mengikuti konten, `flex-1 overflow-y-auto` di body-nya yg scroll kalau konten melebihi
-`max-h`). Sebelumnya modal Sea & Air ini `max-w-5xl h-[90vh] max-h-[90vh]` (lebih sempit & tinggi
-DIPAKSA 90vh apapun panjang kontennya, beda pola dgn modal Courier). Diubah jadi `max-w-6xl
-max-h-[97vh]` (drop `h-[90vh]` yg fixed) — PERSIS sama classnya dgn Courier. Struktur internal
-modal ini sudah cocok dgn pola ini dari awal (header `shrink-0`, body `flex-1 overflow-y-auto`,
-lihat `ValidasiModal.tsx`-style layout), jadi tidak perlu ubah apa pun selain className container
-terluarnya.
+**BELUM DIJALANKAN ke Supabase — WAJIB manual**:
+```sql
+alter table public.rekapan_far_overseas_air add column if not exists item_description_manual text;
+```
+`item_description` DIKELUARKAN dari `REKAPAN_EDITABLE_FIELDS`, `item_description_manual`
+ditambahkan. Memo cetak SENGAJA TIDAK diubah — baris NOTE cetak resmi TETAP hanya
+`item_description` (catatan manual murni internal, bukan bagian dokumen resmi).
+`FAR_EXPORT_COLS` ditambah `item_description_manual`.
 
-## Sea & Air — Dokumen Validasi (`src/components/SeaAirValidasiModal.tsx`)
+## FAR Overseas Air — arsitektur cost validation
 
-Tabel-tabel di modal ini (INVOICE FCL, FAKTUR PAJAK FCL, PIB Matrix, dll) render kolom "data
-check" (PPJK/Freight Origin/Freight Destination/Storage/Laporan Surveyor/LOLO/Trucking/dst)
-lewat **daftar kolom yang di-HARDCODE**, BUKAN otomatis mengikuti field apa saja yang ada di
-data — `INVOICE_FCL_COLS` & `FP_FCL_COLS` (~baris 450/521). Kalau n8n/backend menambah jenis
-data check baru di kolom-kolom ini, kolom itu TIDAK akan muncul di tabel sampai ditambahkan
-manual ke daftar tsb + entry warna di `headerColors` (~baris 10). Kolom "Trucking" sudah
-ditambahkan (2026-09) ke `INVOICE_FCL_COLS`, `FP_FCL_COLS`, dan `headerColors`.
+`rekapan_far_overseas_air` (`route_note` = "PENGIRIMAN DARI {asal} KE {tujuan} ({mode})") ↔ 1:1
+via `far_overseas_id` ↔ `cost_validasi_far_overseas_air` (`vendor_matched`, `rate_row_used`
+jsonb, `status`, `catatan`, `cost_validation` jsonb array).
 
-## Audit AP Local — halaman laporan otomasi + koreksi manual terbatas (`src/pages/AuditPoPage.tsx`)
+- Baris TOTAL AMOUNT (memo cetak) non-IDR: "(≈ Rp ...)" + "(Kurs: ...)" — kurs dihitung ulang
+  dari `total_amount_idr/total_amount` (bukan field `kurs_used` tersimpan), supaya konsisten.
+- **Filter approval per level** (List Memo) — dropdown `approvalFilter` (ALL/TIER1/PIC/TIER2/
+  TIER3), tiap opsi tampil COUNT pending (`fetchApprovalCounts`). Rantai approval WAJIB
+  berurutan (lihat di bawah) → semua level map ke `approval_status` via `APPROVAL_FILTER_STATUS`
+  (TIER1→PENDING, PIC→TIER1_DONE, TIER2→PIC_DONE, TIER3→TIER2_DONE), server-side `.eq()` murni.
+- **Approval berjenjang WAJIB berurutan: Prepared By(Exim) → PIC → SPV → Director** (VERSI
+  FINAL — GANTI TOTAL dari 2 versi lama PIC-independen, jangan reintroduce). `approval_status`
+  5 nilai: `PENDING`→`TIER1_DONE`→`PIC_DONE`→`TIER2_DONE`→`APPROVED`.
+  `nextStepForStatus()`/`STEP_ENTRY_TIER`/`STEP_STATUS_AFTER`/`STEP_LABEL`/`STEP_ACTION_LABEL`
+  di `FarOverseasAirDetailModal.tsx`. Kolom tanda tangan cetak TETAP cuma 3 — nama PIC digabung
+  ke kolom "Disiapkan Oleh" bareng Exim (`"{exim}/{pic}"`), TIDAK PERNAH kolom sendiri.
+  Gating approve: `canEditDirectLoading` DAN `canApproveTier('direct_loading', step)` (2 syarat
+  independen). Data lama (sebelum fitur PIC) wajar tidak punya entry PIC di `approvals`.
+  **Approve satu klik langsung, TIDAK ADA modal konfirmasi nama** (dihapus total, jangan
+  reintroduce) — `handleApprove(nextStep, defaultNamaForStep(nextStep))` langsung jalan.
+  `defaultNamaForStep`: TIER1&PIC = `profile?.nama || user?.email` (identitas login);
+  TIER2&TIER3 = `signer?.tier2_name`/`tier3_name` dari `far_overseas_signer_config` (jabatan
+  resmi TETAP, TIDAK ikut nama user login — permintaan eksplisit). Tombol
+  `disabled={submitting}`, label "Saving...".
+  **Reject HANYA utk user eligible approve TAHAP AKTIF** (VERSI FINAL — versi awal "punya
+  jabatan approval apa saja" SUDAH DIGANTI): `canReject = nextStep != null &&
+  canApproveTier('direct_loading', nextStep)` — SAMA syarat dgn Approve, tidak ada bypass Admin.
+  Enforcement server-side via RPC `reject_far_overseas_air` (SQL lengkap di atas, bagian PIC
+  per-memo — sudah versi terbaru, JANGAN pakai `.update()` langsung).
+- **Document Validation** (`FarOverseasAirCostValidationModal.tsx`) — baris NAMA PT yg cocok
+  `dominantPtName` dikasih centang hijau. **PT Name & PO Number 1 baris horizontal** (`flex
+  items-center gap-2 flex-nowrap`, urutan: PO No. dulu baru PT Name — `whitespace-nowrap`/
+  `shrink-0` supaya tidak wrap 2 baris walau nama PT panjang). Modal `max-w-5xl`.
+- **RPC-only mutation** — JANGAN `.update()`/`.insert()` mentah ke 2 tabel ini. Selalu
+  `update_rekapan_far_overseas_manual(p_id, p_updates)` &
+  `update_cost_validasi_far_overseas_manual(...)`.
+  **KRITIS — whitelist kolom RPC TERPISAH dari frontend**: `update_rekapan_far_overseas_manual`
+  punya `v_allowed_columns` HARDCODE terpisah total dari `REKAPAN_EDITABLE_FIELDS` frontend.
+  Field yg ada di frontend tapi TIDAK di whitelist RPC → diam-diam SKIP (`RAISE WARNING`, bukan
+  error) — toast "saved successfully" tapi nilai balik ke lama saat refresh. Bug ini SUDAH
+  TERJADI utk `item_description_manual` & `pic_user_id`. **ATURAN WAJIB**: tiap kali nambah
+  field ke `REKAPAN_EDITABLE_FIELDS`, WAJIB minta user jalankan `create or replace` nambah nama
+  kolom yg sama ke `v_allowed_columns` — 2 tempat ini HARUS selalu sinkron manual. Kalau ada
+  laporan "sudah Save tapi field X balik kosong", cek `v_allowed_columns` dulu (`pg_get_functiondef`).
+- `FarOverseasAirHelpers.ts` — `computeExpectedFromRate`, `computeCostStatus`, `parseRouteNote`,
+  `mapModeToJenisLayanan`, `rematchTarif` (REPLIKA PERSIS logic matching tarif n8n — kalau
+  diubah, HARUS sinkron n8n). `rematchTarif` SATU-SATUNYA fungsi matching (generik Octagon &
+  Jianqiao via `ship_via`, JANGAN bikin versi kedua).
+- **Edit NOTE 1 memicu re-kalkulasi Cost Validation otomatis** (VERSI FINAL, generik utk semua
+  vendor) — `reMatchAfterRouteNoteEdit` di `FarOverseasAirPage.tsx`, dipanggil dari
+  `handleSaveAllEdits` tiap `route_note` berubah. Parse `route_note` baru → prioritaskan
+  `mapModeToJenisLayanan(mode baru)`, fallback ke `rate_row_used` tersimpan kalau tidak dikenali
+  → `rematchTarif` → 0 kandidat=`BELUM_LENGKAP`, 1=hitung ulang expected, >1=array pilihan manual.
+  `computeExpectedFromRate` terima param opsional `displayOrigin`/`displayTujuan` (HANYA
+  pengaruhi teks `unitPriceNotes`, TIDAK PERNAH pengaruhi angka `expected`) — fix bug teks kota
+  Notes tidak sinkron kalau vendor cuma py 1 baris tarif generik (filter origin/tujuan di-skip
+  krn "lunak"). `reMatchAfterRouteNoteEdit` WAJIB isi 2 param ini dari hasil parse; pemanggil
+  lain (`handleSelectRate`) sengaja TIDAK isi (default ke `rate.origin`/`rate.tujuan`).
+- `po_list` (jsonb array, tiap entry `po_no_raw`/`vessel_raw`) = SATU-SATUNYA sumber pasangan
+  PO↔Vessel presisi. `vessel_internal_note` cuma string ringkas nama kapal, JANGAN di-parse utk
+  breakdown. List Memo kolom NO PO & VESSEL berbagi 1 state expand, render dari `po_list`
+  (bukan `vessel_internal_note`) saat expanded.
+- Memo cetak: `vessel_internal_note` TIDAK PERNAH dirender (hanya di kolom VESSEL List Memo).
+  NOTE 3 (`status_note`)/NOTE 4 (`other_note`) ikut masuk baris "NOTE:" cetak (hanya kalau isi).
+- **PIC** kolom manual `pic_name` tetap ada sbg fallback nama (lihat "PIC per-memo assignment"
+  di atas utk approval sebenarnya). Kolom BUYER (`buyer_name`) editable inline di List Memo.
+- Urutan field memo cetak: PO.No/Supplier & Inv.No/Date SENGAJA 2 blok independen (bukan 1 baris
+  flex, supaya PO.No panjang tidak menarik Date jauh dari Inv.No). Baris bawahnya: Buyer → Ship
+  Via → Departure Date → Weight → Price/Kg → TOTAL AMOUNT.
+- Note pembayaran: 1 baris "Note: MOHON DIBANTU BAYARKAN PADA TANGGAL : {date}" DI LUAR kotak
+  memo tapi TETAP tercetak (bukan `print:hidden`).
 
-Nama file/route/`page_key` tetap `AuditPoPage`/`/audit-po`/`audit_po` (nama teknis dari saat
-dibuat), tapi label yang tampil ke user di sidebar & judul halaman adalah **"Audit AP Local"**.
-Halaman ini TIDAK punya judul card ("Daftar Hasil Audit..." sengaja dihapus atas permintaan
-user) — panel filter langsung jadi header card, `justify-end`.
+## Sea & Air — kolom khusus
 
-- Tabel `audit_po_ap_comp` (1 baris = 1 hasil audit PO/vendor) diisi OTOMASI BACKEND tiap 30
-  menit — pola dasar sama seperti `BunkerPage.tsx` tapi lebih sederhana (tidak ada
-  upload/modal-antrian). 5 kolom (`nama_pt`, `nomor_po`, `vendor_name`, `status_audit`,
-  `kategori`) BOLEH dikoreksi manual lewat modal Edit, dan barisnya BOLEH dihapus permanen lewat
-  modal Hapus — semua kolom lain (`durasi_text`, `durasi_detik`, `url_pdf`, `url_html`,
-  `drive_file_id_*`) tetap read-only murni karena dihasilkan otomatis dari file asli oleh backend.
-- Kolom **Aksi** — di-*group* jadi 1 tombol toggle "Aksi" per baris (state `openActionsRowId`),
-  BUKAN beberapa tombol terpisah sekaligus. Pola diambil PERSIS dari kolom AKSI di
-  `FarOverseasAirPage.tsx` (List Memo, baris ~862-910): klik toggle → panel kecil di bawahnya
-  (non-floating, reflow row, bukan `position: absolute`) berisi Edit/Hapus/Download PDF/Hasil
-  Audit.
-  **Panel Aksi TIDAK LAGI auto-close saat klik salah satu item di dalamnya (2026-09, laporan
-  user)** — SEBELUMNYA tiap klik Edit/Hapus/Preview PDF/Hasil Audit ikut `setOpenActionsRowId(null)`
-  (menutup panel Aksi), jadi begitu user tutup modal Preview PDF, panel Aksi-nya sudah hilang
-  duluan — user harus buka toggle "Aksi" lagi kalau mau klik item lain di baris yang sama. Fix:
-  `setOpenActionsRowId(null)` DIHAPUS dari KEEMPAT `onClick` (Edit/Hapus/Preview PDF/Hasil Audit)
-  — panel Aksi SEKARANG TETAP TERBUKA setelah item diklik/modal ditutup, HANYA tertutup kalau
-  user klik toggle "Aksi" lagi secara manual (toggle button-nya sendiri TIDAK diubah, masih
-  `setOpenActionsRowId(openActionsRowId === r.id ? null : r.id)`). **Sudah di-porting ke ke-3
-  halaman** (`AuditPoPage.tsx`, `AuditPoOverseasPage.tsx`, `PiLocalPage.tsx`) — pola struktur
-  identik persis di ketiganya. Kalau nambah aksi baru di kolom ini, JANGAN tambahkan
-  `setOpenActionsRowId(null)` lagi ke `onClick`-nya — ikuti pola "tetap terbuka" ini.
-- Tabel pakai `table-fixed` + `<colgroup>` (lebar eksplisit per kolom) — BUKAN auto layout —
-  supaya lebar kolom (terutama Durasi) tidak "digencet" gara-gara sticky Aksi (quirk browser saat
-  sticky column dikombinasi table auto-layout). Kolom Kategori & Aksi sengaja dibuat sempit,
-  teks kategori panjang di-truncate (`...`) via class `truncate` pada tombol combobox-nya.
-  **Percobaan fix "kolom Aksi kelihatan kosong/tombol tidak fit" (2026-09,
-  `AuditPoPage.tsx`/`AuditPoOverseasPage.tsx`) — SEMUA SUDAH DIREVERT, kondisi SAAT INI tetap
-  APA ADANYA seperti sebelum sesi ini (8 `<col>` lebar tetap termasuk Vendor `160px` & Aksi
-  `105px`, `w-full`, `min-w-[980px]`)**, jangan kaget kalau ternyata tetap ada laporan ruang
-  kosong di kolom Aksi lagi nanti — belum benar-benar terselesaikan, user minta dikembalikan
-  sebelum sempat puas dgn hasilnya. Riwayat singkat (buat konteks kalau dibahas lagi, BUKAN
-  instruksi untuk otomatis diterapkan ulang):
-  - Root cause yang ditemukan (kemungkinan besar valid secara teknis): `<table>` `w-full`
-    dikombinasi SEMUA kolom py `<col>` lebar tetap yang totalnya (990px) < lebar container asli
-    — Chrome tetap mendistribusikan sisa ruang ke kolom-kolom itu (bukan sesuai `table-layout:
-    fixed` versi ideal "lebar = declared, titik"), paling kentara di kolom sempit Aksi (105px).
-  - 2 percobaan awal (tambah `<col>` ke-9 utk Aksi + naikkan `min-w`; DAN kecilkan konten
-    `<th>`/`<td>` Aksi doang tanpa sentuh `<colgroup>`) TERBUKTI GAGAL/tidak berpengaruh.
-  - Percobaan ke-3 (lepas `w-full` sama sekali) BIKIN kolom Aksi pas, TAPI muncul celah kosong
-    baru di SEBELAH KANAN TABEL (di luar tabel) — user juga tidak suka.
-  - Percobaan ke-4 (jadikan kolom **Vendor** `<col />` polos tanpa lebar, biar dia yang nyerap
-    SEMUA sisa ruang scr deterministik per spec, kolom lain termasuk Aksi dijamin pas) —
-    SECARA TEKNIS berhasil bikin Aksi pas TANPA celah di luar tabel, TAPI user bilang hasilnya
-    "tidak cantik" (kemungkinan Vendor jadi kelihatan terlalu lebar/timpang dibanding kolom
-    lain) dan minta revert.
-  - Kalau dibahas lagi ke depan, JANGAN ulang 3 percobaan pertama (sudah terbukti gagal) — kalau
-    mau coba pendekatan "kolom fleksibel" (percobaan ke-4) lagi, PERTIMBANGKAN dulu kolom mana
-    yang paling masuk akal jadi elastis (mungkin bukan Vendor), atau diskusikan dulu trade-off
-    visualnya sebelum diterapkan langsung — jangan asumsikan "teknis benar" = "user akan suka
-    hasilnya".
-  `PiLocalPage.tsx` tidak pernah disentuh sepanjang eksperimen ini.
-  **Susulan (2026-09)**: sempat dicoba lagi persempit `<col>` Aksi dari `105px` → `80px` (+
-  wrapper tombol `92px`→`68px`, `min-w` tabel `980px`→`955px`) atas permintaan user "perkecil
-  ukuran kolom aksi" — TAPI user lalu minta **DIKEMBALIKAN ke ukuran semula** ("tombol aksinya
-  tidak usah diperkecil ukurannya, biarkan di ukuran semula"). Kondisi SAAT INI: `<col>` Aksi
-  balik ke `105px`, wrapper tombol balik ke `w-[92px]`, `min-w` tabel balik ke `980px` (SAMA
-  PERSIS spt sebelum kedua percobaan shrink) — HANYA styling tambahan yg dipertahankan:
-  header `<th>` "Aksi" jadi `text-center` (dari `text-left`), dan wrapper tombol (`<div
-  className="flex flex-col items-center gap-1.5 w-[92px]">`) ditambah `mx-auto` — supaya tombol
-  Aksi rata TENGAH horizontal di dalam kolomnya (sebelumnya nempel kiri krn kolom lebih lebar
-  dari kontennya, itulah sumber "ruang kosong di sebelah kanan" yg dikeluhkan dari awal — bukan
-  colgroup/table-layout yg jadi biang keroknya, cukup `mx-auto` centering yg diperlukan).
-  JANGAN persempit `<col>` Aksi lagi tanpa diminta eksplisit — permintaan terakhir user adalah
-  ukuran semula + rata tengah, bukan kolom yg lebih kecil.
-  - `EditAuditPoModal` (`AuditPoPage.tsx`) — form Nama PT/Nomor PO/Vendor/Status Audit/Kategori,
-    disimpan sekaligus lewat `updateAuditPoRow(id, updates)`. **Nama PT & Nomor PO SEKARANG
-    read-only (2026-09, permintaan user)** — kedua field ini di-render `<input disabled>` (bukan
-    `<select>`/`<input>` biasa lagi), value tetap dikirim apa adanya ke `updateAuditPoRow` saat
-    Simpan (tidak berubah, cuma tidak bisa diedit user). Vendor/Status Audit/Kategori tetap bisa
-    diedit seperti biasa.
-  - `DeleteAuditPoModal` — pola sama persis `DeleteConfirmModal` di `BunkerPage.tsx`, konfirmasi
-    dulu sebelum `deleteAuditPoRow(id)` (hard delete permanen).
-  - **Tombol "Preview PDF"/"Hasil Audit" (2026-09, GANTI dari `<a target="_blank">` biasa)** —
-    sekarang tombol yg buka `PreviewModal` (iframe besar `w-[90vw] max-w-6xl h-[85vh]`) dalam
-    aplikasi, bukan langsung download/buka tab baru. `buildPreviewSrc(rawUrl, driveFileId)`
-    PRIORITASKAN `url_pdf`/`url_html` MENTAH dulu (host asli di luar Drive), `drive_file_id_*`
-    cuma fallback kalau raw url-nya null.
-    **Versi awal KEBALIK (prioritas Drive dulu) — SUDAH DIPERBAIKI (2026-09), jangan reintroduce**:
-    sempat prioritaskan `drive_file_id_html` → URL `https://drive.google.com/file/d/<id>/preview`
-    duluan, TERNYATA (dikonfirmasi user via screenshot) Google Drive SENGAJA TIDAK PERNAH
-    me-render file HTML upload user sbg halaman hidup di endpoint itu (proteksi bawaan Google,
-    cegah XSS/phishing dari origin drive.google.com) — yang muncul cuma SOURCE CODE mentah
-    dgn syntax highlight (ketauan dari `<!DOCTYPE html>...` tampil apa adanya + ikon kaca
-    pembesar cari-teks khas Drive), bukan halaman ter-render. Fallback ke Drive TETAP OK KHUSUS
-    PDF (Drive PDF viewer beneran render PDF, beda dari HTML) tapi jangan diandalkan utk HTML.
-    **Iterasi ke-2 juga gagal — SUDAH DIPERBAIKI (2026-09)**: setelah fix di atas, `target.src`
-    (skrg `url_pdf`/`url_html` mentah) ditaruh LANGSUNG di `<iframe src=...>` — TERNYATA blank
-    total tanpa pesan error apapun (dikonfirmasi user via screenshot ke-2). Ini gejala khas server
-    asal file itu ngirim header `X-Frame-Options`/CSP `frame-ancestors` yg BLOKIR framing dari
-    origin lain (browser blank-in diam2, tidak nampilin halaman error besar) — iframe `src` ke
-    URL pihak lain SELALU tunduk ke header itu, sesuai host aslinya, TIDAK ADA cara di-bypass dari
-    sisi `src` doang mau app apapun yg nge-embed.
-    **Versi final (2026-09)**: `PreviewModal` sekarang `fetch()` konten filenya lewat JS dulu
-    (di `useEffect`, dgn cleanup `cancelled` flag + `URL.revokeObjectURL` biar tidak leak), BARU
-    suntikkan HASIL fetch-nya (bukan URL-nya lagi) ke iframe — `srcDoc` (teks HTML mentah) utk
-    `kind: 'html'`, atau `blob:` object URL (`URL.createObjectURL`) utk `kind: 'pdf'` (browser
-    tetap render pakai PDF viewer bawaannya dari `blob:` URL). Iframe yg isinya `srcDoc`/`blob:`
-    DIANGGAP SAME-ORIGIN oleh browser, jadi TIDAK tunduk lagi ke X-Frame-Options/frame-ancestors
-    server asalnya — itu inti kenapa cara ini bisa nembus sementara `src` langsung tidak bisa.
-    `PreviewTarget` nambah field `kind: 'pdf' | 'html'` (diisi eksplisit oleh caller pas klik
-    tombol PDF vs Hasil Audit, BUKAN di-sniff dari content-type response) supaya tau cara proses
-    hasil fetch-nya. State modal: `'loading' | 'html' | 'blob' | 'error'` — `'error'` muncul kalau
-    `fetch` gagal (network error ATAU response bukan 2xx), tampilkan pesan jelas + arahkan ke
-    tombol "Buka di tab baru", BUKAN diam2 blank lagi.
-    **Iterasi ke-3, akar masalah sebenarnya (2026-09, dikonfirmasi user)**: user coba buka
-    `url_html` LANGSUNG di Google Drive (bukan lewat app ini) — TERAP tetap cuma nampilin source
-    code, bukan halaman ter-render. Ini MEMBUKTIKAN `url_html`/`url_pdf` MEMANG link Google Drive
-    juga (bukan host terpisah di luar Drive spt dugaan awal), dan batasan "Drive tidak pernah
-    render HTML" ini berlaku di link/endpoint Drive MANAPUN (`/view`, `/preview`, atau di-fetch
-    client) — fetch client-side ke `url_html` sama saja percuma, yang didapat cuma halaman
-    viewer Drive-nya, bukan file HTML asli.
-    **Solusi final (2026-09) — proxy backend `server.ts`**: endpoint baru
-    `GET /api/drive-file-proxy?id=<drive_file_id>` — `id` divalidasi regex ketat
-    (`/^[a-zA-Z0-9_-]{10,100}$/`) SEBELUM dipakai, endpoint ini SENGAJA HANYA boleh minta ke
-    domain Drive (bukan proxy generik ke URL dari client) supaya BUKAN celah SSRF. Server minta
-    file ASLI dari `https://drive.usercontent.google.com/download?id=<id>&export=download&confirm=t`
-    (endpoint file mentah, BUKAN endpoint viewer `/view`/`/preview` yg dipakai browser saat
-    navigasi biasa) — request ini server-ke-server, TIDAK tunduk CORS/X-Frame-Options browser
-    sama sekali — lalu di-STREAM langsung ke response (`Readable.fromWeb(driveRes.body).pipe(res)`,
-    dari `node:stream`) TANPA PERNAH ditulis ke disk (murni relay real-time, dikonfirmasi ke user
-    sebelum diimplementasikan — TIDAK membebani storage server berapa pun banyak file di-preview).
-    `buildPreviewSrc(driveFileId, rawUrl)` (URUTAN PARAM DIBALIK dari versi sebelumnya) SEKARANG
-    prioritaskan proxy ini (`/api/drive-file-proxy?id=<drive_file_id>`) DULU, `url_pdf`/`url_html`
-    mentah cuma fallback kalau `drive_file_id`-nya null (fallback ini kemungkinan besar tetap
-    gagal krn alasan yg sama di atas, tapi tetap dicoba drpd langsung nyerah).
-    **Bug lanjutan yg ditemukan & diperbaiki (2026-09)**: setelah proxy jalan, preview HTML sudah
-    OK tapi preview PDF malah trigger DOWNLOAD file (nama file jadi UUID tanpa ekstensi di
-    Downloads browser, bukan tampil di iframe) — penyebabnya header `Content-Type` dari respons
-    Drive utk endpoint download kadang generik (`application/octet-stream`), bukan
-    `application/pdf`, dan browser menolak render `blob:` URL ber-type octet-stream secara inline
-    (di-treat sbg "harus di-download", bukan "boleh ditampilkan"). Fix: di blok `kind === 'pdf'`
-    `PreviewModal`, `Blob` hasil fetch di-rewrap paksa jadi `type: 'application/pdf'`
-    (`new Blob([rawBlob], { type: 'application/pdf' })`) SEBELUM `URL.createObjectURL` — TIDAK
-    mengandalkan header Content-Type upstream sama sekali utk kasus PDF, krn `target.kind` sudah
-    pasti tau ini PDF dari tombol mana yg diklik. **PENTING**: `tsx` (dipakai `npm run dev`,
-    lihat `server.ts`) TIDAK hot-reload perubahan kode backend seperti Vite HMR utk frontend —
-    tiap kali `server.ts` diubah, dev server WAJIB di-restart manual (stop lalu `npm run dev`
-    lagi) supaya perubahan endpoint proxy ini kepakai, kalau tidak permintaan ke
-    `/api/drive-file-proxy` bakal jatuh ke SPA fallback (`app.get('*', ...)`) dan balikin
-    `index.html` biasa, bukan error yg jelas — gejalanya membingungkan (kelihatan spt endpoint
-    "ada" tapi behavior salah, bukan 404 tegas).
-    **Penyesuaian UI lanjutan (2026-09, setelah preview PDF/HTML terbukti jalan)**: tinggi modal
-    dinaikkan `h-[85vh]` → `h-[95vh]` → **`h-[98vh]`** (2026-09, susulan lagi, permintaan user
-    "perbesar tinggi dari modal preview" — hanya diminta di Audit AP Local, TAPI tetap
-    di-porting ke `AuditPoOverseasPage.tsx`/`PiLocalPage.tsx` jg biar konsisten, `PreviewModal`
-    duplikasi persis di ketiganya) — lebih tinggi, permintaan user krn PDF viewer butuh ruang
-    vertikal lebih. Tombol pojok kanan atas (`externalUrl`, target `_blank`) di-relabel dari
-    "Buka di tab baru" (ikon `ExternalLink`) → **"Download File"** (ikon `Download`) — user
-    klarifikasi fungsi tombol ini SECARA PRAKTIK memang selalu memicu download (bukan preview tab
-    baru beneran), krn `externalUrl` link Drive/host asli yg sama² kena batasan render yg
-    dijelaskan di atas, jadi label lama menyesatkan. Perilaku `<a>`-nya TIDAK diubah (masih
-    `target="_blank" rel="noopener noreferrer"` ke `externalUrl` yg sama), cuma teks & ikon.
-    **Tombol Print ditambahkan (2026-09, permintaan user "sama dgn tombol print di halaman
-    preview PDF")** — user mengira preview PDF SUDAH punya tombol Print, TERNYATA itu BAWAAN
-    PDF viewer browser sendiri (toolbar Chrome PDF viewer di dalam iframe `blob:`), BUKAN tombol
-    milik `PreviewModal` ini — preview Hasil Audit (HTML, `status === 'html'`) tidak py viewer
-    bawaan serupa sama sekali, jadi tidak ada cara print tanpa tombol eksplisit. `iframeRef`
-    (`useRef<HTMLIFrameElement>`) dipasang ke KEDUA `<iframe>` (`status === 'html'` MAUPUN
-    `'blob'`, cuma 1 yg render pada satu waktu, jadi 1 ref cukup), tombol "Print" ditaruh di
-    toolbar SEBELAH KIRI "Download File", muncul kalau `status` `'html'` ATAU `'blob'` (bukan pas
-    `'loading'`/`'error'`).
-    **BUG ditemukan & diperbaiki (2026-09, laporan user "tombol print seperti tidak
-    berfungsi")** — versi awal `sandbox="allow-same-origin"` (tanpa `allow-modals`) pada iframe
-    `srcDoc` (Hasil Audit/HTML) TERNYATA memblokir `window.print()` sama sekali, DIAM-DIAM tanpa
-    error apa pun (browser sengaja begitu — sandbox tanpa `allow-modals` menutup SEMUA dialog
-    modal browsing context itu, termasuk `print()`/`alert()`/`confirm()`, TERLEPAS dari apakah
-    pemanggilnya kode di dalam iframe atau `contentWindow.print()` dari PARENT window — dugaan
-    awal "dipanggil dari parent jadi aman dari sandbox" TERNYATA SALAH, jangan diulang lagi kalau
-    nambah iframe bersandbox lain yg butuh print/dialog). **Fix**: sandbox ditambah jadi
-    `sandbox="allow-same-origin allow-modals"`. Susulan: `handlePrint` jg dikasih
-    `contentWindow.focus()` SEBELUM `.print()` (defensif — beberapa versi Chrome tidak
-    membuka dialog print kalau browsing context iframe belum "aktif"/focused, mis. utk iframe PDF
-    `blob:` yg TIDAK py sandbox attribute sama sekali & seharusnya tidak kena masalah `allow-
-    modals` di atas, tapi tetap dikasih `focus()` jaga-jaga konsisten di kedua kasus). **Sudah
-    di-porting ke ke-3 halaman** (`AuditPoPage.tsx`, `AuditPoOverseasPage.tsx`,
-    `PiLocalPage.tsx`) — `PreviewModal` duplikasi persis di ketiganya.
-- **Tombol "Reset Filter" (2026-09, permintaan user, ikon polos tanpa teks)** — `FilterX` dari
-  `lucide-react`, ditaruh tepat setelah tombol Refresh di panel filter (search/PT/Kategori/
-  rentang tanggal). `handleResetFilters()` mengosongkan `searchInput`/`search`/`ptFilter`/
-  `kategoriFilter`/`dateFrom`/`dateTo` sekaligus + reset `page` ke 1 — SENGAJA TIDAK menyentuh
-  `sortBy`/`sortDir`/`pageSize` (itu preferensi tampilan/urutan tabel, bukan "filter"). Diterapkan
-  di KETIGA halaman (`AuditPoPage.tsx`/`AuditPoOverseasPage.tsx`/`PiLocalPage.tsx`), pola identik
-  persis — tiap halaman py salinan `handleResetFilters` sendiri (TIDAK ada komponen shared).
-- Pagination **server-side** (`.select('*', { count: 'exact' }).range(...)`) karena tabel terus
-  bertambah — beda dari kebanyakan halaman admin lain di app ini yang client-side paginated.
-  Filter: search (debounced 400ms) ke `nomor_po`/`vendor_name` via `.ilike`, dropdown `nama_pt`
-  (single-select, opsi hardcode: AMT/GMI/TTP/MJS/WSI/WNS/GENERAL — cek ulang ke DB kalau ada PT
-  baru), dropdown **`kategori`** (2026-09, GANTI dari dropdown `status_audit` sebelumnya — daftar
-  opsi dari `KATEGORI_OPTIONS` yang sama dgn kolom Kategori, bukan dari `status_audit` lagi),
-  rentang tanggal `created_at`. `STATUS_AUDIT_OPTIONS` (2 nilai tetap: "Selesai Diproses"/"Doc
-  tidak terbaca") DULU dipakai sbg `<datalist>` saran di field Status Audit modal Edit — **DIHAPUS
-  TOTAL (2026-09, permintaan user "dropdown list nya tidak perlu dimunculkan, cukup ketik
-  manual")**, field Status Audit di `EditAuditPoModal` sekarang `<input>` polos tanpa `list=`/
-  `<datalist>` sama sekali, const `STATUS_AUDIT_OPTIONS` ikut dihapus dari `AuditPoPage.tsx` krn
-  jadi dead code (sudah tidak dipakai di mana pun lagi setelah filter panel-nya jg dihapus
-  sebelumnya). **Awalnya HANYA `AuditPoPage.tsx` (Audit AP Local) yang diubah** (user cuma minta
-  utk Audit AP Local dulu) — **DIPORTING susulan (2026-09, permintaan eksplisit "lakukan hal yang
-  sama pada halaman Audit AP Overseas dan PI Local")** ke `AuditPoOverseasPage.tsx` (const
-  `id="status-audit-suggestions-overseas"`) & `PiLocalPage.tsx` (const
-  `id="status-audit-suggestions-pi-local"`) — pola identik persis (datalist/`STATUS_AUDIT_OPTIONS`
-  dihapus total di KETIGA halaman skrg).
-  Susulan (2026-09): tombol "Preview PDF" di panel Aksi (baik state ada file maupun state
-  disabled abu-abu saat `url_pdf` kosong) diperpendek jadi label **"PDF"** saja (tooltip
-  `title="Preview PDF"` TIDAK diubah, tetap deskriptif). Tombol "Hasil Audit" (utk `url_html`) TIDAK
-  disentuh/tidak diminta. **Diporting jg ke `AuditPoOverseasPage.tsx` & `PiLocalPage.tsx`**
-  (bareng porting datalist di atas) — label "PDF" sekarang konsisten di ke-3 halaman.
-- Kolom `url_pdf`/`url_html` dirender sebagai `<a target="_blank">` biasa (link download
-  langsung dari backend, tidak ada logic tambahan di frontend).
-- Kolom **Kategori** (`kategori`, text, nullable) — dipilih lewat combobox searchable terkontrol
-  `KategoriPicker` (`AuditPoPage.tsx`, dipakai 2 tempat: `KategoriCell` di kolom tabel = auto-save
-  per pilih via `updateAuditPoKategori`; form di `EditAuditPoModal` = disimpan barengan field lain
-  saat klik "Simpan"): ketik untuk filter, klik untuk pilih dari daftar tetap `KATEGORI_OPTIONS`
-  (`src/utils/AuditPoHelpers.ts`) — BUKAN free text bebas. Kolom ini perlu di-provision dulu lewat
-  `alter table public.audit_po_ap_comp add column if not exists kategori text;` (dijalankan
-  manual oleh user langsung di Supabase SQL editor, tidak disimpan sbg file migrasi di `sql/`) —
-  **belum terverifikasi sudah dijalankan di Supabase production**, cek dulu sebelum mengandalkan
-  behavior update/edit/hapus kalau ada laporan gagal simpan.
-  **Fix dropdown kepotong di baris bawah (2026-09, laporan user + screenshot)** — `KategoriPicker`
-  sudah dari awal punya prop `openDirection?: 'down' | 'up'` (dropdown buka ke atas/bawah), TAPI
-  `KategoriCell` (dipakai di `<td>` tabel) TIDAK PERNAH meneruskannya, selalu default `'down'`.
-  Card pembungkus tabel (`bg-white/70 ... rounded-2xl ... overflow-hidden`) meng-clip apa pun yg
-  overflow keluar batas bawahnya — dropdown yg dibuka dari baris DEKAT BAWAH tabel jadi kepotong
-  (search box kelihatan separuh, list opsinya tidak kelihatan sama sekali, ketutup footer
-  pagination). Fix: `KategoriCell` sekarang terima & terusin prop `openDirection` ke
-  `KategoriPicker`, dipanggil dari `rows.map((r, idx) => ...)` dgn
-  `openDirection={idx >= rows.length - 3 ? 'up' : 'down'}` — **3 baris terakhir tiap halaman**
-  buka ke atas (bukan hitung tinggi elemen aktual — cukup toleran utk semua pilihan `pageSize`
-  20/25/50/100 yg ada). Modal `EditAuditPoModal` (form Edit, bukan `<td>` tabel) TIDAK kena bug
-  ini & TIDAK disentuh — posisinya selalu di tengah modal, bukan di baris tabel yg bisa dekat
-  bawah. **Sudah di-porting ke `AuditPoOverseasPage.tsx`** juga (pola duplikasi identik,
-  `canEditAuditPoOverseas` bukan `canEditAuditPo`), **dan ke `src/pages/PiLocalPage.tsx`**
-  (halaman "PI Local" — modul lain dgn pola tabel/`KategoriPicker`/`KategoriCell` identik,
-  `updatePiLocalKategori`/`canEditPiLocal`; belum ada dokumentasi arsitektur lengkap modul ini
-  di CLAUDE.md, cuma fix spesifik ini yg diketahui) — kalau nanti ada laporan bug serupa di
-  halaman lain yg pakai pola dropdown absolute-positioned di dalam card `overflow-hidden`, ini
-  contoh fix-nya (buka ke arah berlawanan utk elemen dekat tepi container yg clip).
-  **FIX TUNTAS via React Portal (2026-09, laporan user + screenshot: "saat barisnya cuma 1/2/3,
-  list kategorinya kepotong")** — versi fix di atas (tebak arah dari INDEX baris, `idx >=
-  rows.length - 3 ? 'up' : 'down'`) TERNYATA masih SALAH kalau baris TOTAL SEDIKIT (1-3 baris):
-  SEMUA baris kena kondisi itu (jadi buka ke ATAS), padahal baris-baris itu ADA DI PALING ATAS
-  tabel, TIDAK PUNYA ruang cukup DI ATAS-nya sebelum mentok panel filter/toolbar — dropdown-nya
-  malah kepotong ke ATAS (arah baru, bug lama yg "kepotong ke bawah" sudah tidak terjadi lagi,
-  cuma pindah arah). Akar masalah SEBENARNYA: dropdown selama ini `position: absolute` relatif
-  ke DALAM card `overflow-hidden` yang sama, jadi APAPUN arahnya (atas/bawah) tetap bisa kena
-  clip kalau kartu tabelnya terlalu pendek (baris dikit) utk menampung tinggi dropdown penuh di
-  arah manapun. **Fix TUNTAS**: `KategoriPicker` sekarang di-render lewat **React Portal ke
-  `document.body`** (`createPortal`, `position: fixed`) — LEPAS TOTAL dari `overflow-hidden` card
-  manapun, arah buka (atas/bawah) DIHITUNG ULANG tiap kali dropdown dibuka dari
-  `getBoundingClientRect()` tombol vs `window.innerHeight` (`updateCoords()`, effect
-  `useLayoutEffect` + listener `scroll`/`resize` selagi terbuka) — BUKAN lagi ditebak dari index
-  baris tabel, jadi BENAR utk berapa pun jumlah baris totalnya (1 baris, 3 baris, ratusan baris).
-  Prop `openDirection` (di `KategoriPicker` MAUPUN `KategoriCell`) **DIHAPUS TOTAL** dari
-  signature-nya (sudah tidak relevan) — SEMUA pemanggil (`KategoriCell` di `<td>` tabel,
-  `KategoriPicker` langsung di `EditAuditPoModal`/`EditAuditPoOverseasModal`/`EditPiLocalModal`)
-  ikut disederhanakan, tidak mengirim prop itu lagi. Klik-di-luar-utk-tutup (`mousedown`
-  listener) disesuaikan supaya cek klik di DALAM panel yg sekarang di DOM terpisah (`panelRef`,
-  BUKAN cuma `wrapRef` yg membungkus tombol) — tanpa ini, klik di dalam panel portal akan
-  ke-anggap "di luar" & dropdown langsung tertutup sendiri. Diterapkan IDENTIK PERSIS di KETIGA
-  halaman (`AuditPoPage.tsx`/`AuditPoOverseasPage.tsx`/`PiLocalPage.tsx`) — TIDAK ada komponen
-  shared, tiap halaman py salinan `KategoriPicker` sendiri, kalau diubah lagi ingat porting
-  manual ke 2 lainnya.
-- **Kolom Durasi disembunyikan (2026-09, permintaan user)** — `src/pages/PiLocalPage.tsx`, tabel
-  List PI Local: `<th>`/`<td>` kolom Durasi (`r.durasi_text`) DIHAPUS dari render (bukan cuma
-  `hidden`/CSS), `<colgroup>` (9 `<col>`, sebelumnya 10) & `colSpan` empty-state (`9`, sebelumnya
-  `10`) ikut disesuaikan. Data `durasi_text`/`durasi_detik` di `PiLocalRow` TIDAK dihapus dari
-  tipe/fetch — kolom database tetap ada & tetap ke-fetch (`select('*')`), cuma tidak dirender di
-  tabel lagi. Kalau nanti mau tampilkan lagi, tinggal kembalikan `<th>`/`<td>`/`<col>` yg dihapus
-  & colSpan balik ke `10` — TIDAK perlu ubah fetch/tipe data apa pun.
-  **Bug susulan (2026-09, laporan user + screenshot: kolom KATEGORI kelihatan "tersembunyi"/
-  kepotong "KATEGOI")** — setelah 1 `<col>` dihapus, `<table>` masih `min-w-[1180px]` (nilai
-  LAMA, msh menghitung Durasi yg sudah tidak ada) padahal sum lebar 9 `<col>` yg tersisa cuma
-  ~1090px — mismatch antara `min-w` vs sum col width di tabel `table-fixed` bikin browser
-  redistribusi ruang ekstra TIDAK merata antar kolom (kolom lain melebar tidak proporsional,
-  KATEGORI yg cuma `110px` jadi kelihatan paling sempit/kepotong). Fix: `min-w` diturunkan jadi
-  `1150px` (cocok dgn sum col BARU) DAN lebar col KATEGORI dinaikkan dari `110px` → `170px`
-  (kolom ini isinya `KategoriPicker` combobox, butuh ruang lebih dari kolom teks biasa). **Aturan
-  ke depan**: tiap kali menghapus/menambah kolom di tabel `table-fixed` manapun di app ini
-  (pola sama ada di `AuditPoPage.tsx`/`AuditPoOverseasPage.tsx`), WAJIB hitung ulang & samakan
-  `min-w-[...]` di `<table>` dgn SUM total lebar `<col>` yg tersisa — jangan biarkan `min-w` jadi
-  nilai basi dari sebelum kolom diubah, itu penyebab bug ini.
-- **Kolom Vendor wrap ke bawah (2026-09, permintaan user)** — sebelumnya `truncate` + `title`
-  (tooltip hover) kalau teks panjang, SEKARANG `break-words` (sama pola dgn kolom "Tanggal &
-  Waktu" di tabel yg sama) supaya nama vendor panjang tetap kebaca penuh tanpa perlu hover.
-  `title` attribute DIHAPUS (tidak perlu lagi, teksnya sudah kelihatan semua apa adanya). **Sudah
-  di-porting ke `AuditPoPage.tsx` (Audit AP Local) & `AuditPoOverseasPage.tsx` (Audit AP
-  Overseas)** juga (pola tabel identik) — kalau nanti kolom Vendor di salah satu dari 3 halaman
-  ini (PI Local/Audit AP Local/Audit AP Overseas) diubah lagi, ingat porting manual ke 2 lainnya.
-- `src/utils/AuditPoHelpers.ts` — tipe `AuditPoRow`, `AuditPoEditableFields`, `statusAuditMeta`
-  (badge hijau/merah), `KATEGORI_OPTIONS`, `updateAuditPoKategori`, `updateAuditPoRow`,
-  `deleteAuditPoRow`.
-- Didaftarkan di `PAGE_REGISTRY` (`src/lib/permissions.ts`, key `audit_po`, group
-  `'Audit AP Local'` — ini grouping utk matrix Kelola Role & Akses SAJA, TIDAK terkait dgn
-  struktur submenu sidebar, lihat poin "Compare Doc" di bawah).
-- **Tombol "Dashboard" + `DashboardModal`** (2026-09, tombol di panel filter, PALING KIRI —
-  sempat dicoba di `ml-auto`/ujung kanan lebih dulu, DIGANTI atas permintaan user; panel filter
-  halaman ini pakai `overflow-x-auto` bukan `flex-wrap` supaya tetap muat 1 baris di layar 14")
-  — buka modal ringkasan poin ala slide internal tim Cost Controller. Judul tab Overview di
-  dalam modal ini SEMPAT bernama "Document Test Overview", **DIGANTI (2026-09, permintaan
-  eksplisit user) jadi "Document Overview"** — di KETIGA halaman (`AuditPoPage.tsx`/
-  `AuditPoOverseasPage.tsx`/`PiLocalPage.tsx`), cuma teks JSX yang tampil ke user yang diubah;
-  komentar kode ("mengikuti gaya slide 'Document Test Overview'" dkk) SENGAJA DIBIARKAN apa
-  adanya (bukan teks tampilan, di luar cakupan permintaan ini).
-  Filter rentang tanggal (`created_at`, default 7 hari terakhir) → 3 angka + pie chart: **Total
-  PO Running AI** = count baris dalam rentang, **Total PO Bermasalah** = count baris dalam
-  rentang dgn `status_audit` TIDAK null, **Total PO Sesuai** = selisih keduanya (dihitung di
-  frontend, bukan query terpisah). Fetch pakai `count: 'exact', head: true` (2 query paralel via
-  `Promise.all`, tidak menarik data baris ke client) — kalau nanti breakdown per-kategori/per-PT
-  ditambahkan, tetap pertahankan pola head-count ini, jangan fetch semua baris lalu hitung di JS.
-  Pie chart pakai CSS `conic-gradient` murni (TIDAK ada library chart baru ditambahkan ke
-  project — cek dulu `package.json` kalau mau, project ini belum punya recharts/d3/dst). Ornamen
-  dekoratif (arc lingkaran pojok kiri-atas, mark diamond/chevron, dotted grid kanan, stripe
-  segitiga hijau/kuning pojok bawah) murni CSS/SVG inline di dalam modal, meniru gaya visual
-  slide aslinya — TIDAK ada logo Waruna (tidak ada file asset logo di `src/`, byline "Cost
-  Controller" di slide asli diganti "Audit AP Local" biar konsisten dgn nama halaman ini). Blok
-  judul & filter tanggal dikasih `pl-8` tambahan (2026-09) supaya teksnya tidak tertimpa ornamen
-  arc/diamond di pojok kiri-atas. Ukuran modal & pie chart berubah beberapa kali sebelum versi
-  FINAL (2026-09): `max-w-5xl`/`w-64 h-64` (awal) → dikecilkan ke `w-40 h-40` supaya muat 1 layar
-  14" tanpa scroll → diperbesar ke `max-w-6xl`/`w-60 h-60` DENGAN list `w-64` + container
-  `justify-center` (supaya pie "tidak mepet kanan") — TAPI versi `justify-center` ini ternyata
-  malah bikin jarak list↔pie jadi kegedean/aneh & teks kelihatan tidak natural rata-kiri lagi
-  (dikonfirmasi user dari screenshot, DIBATALKAN). **Versi final (2026-09)**: modal `max-w-4xl`, container `flex items-center gap-10 pl-8` (TANPA
-  `justify-center`). List angka block SEKARANG lebar auto (bukan `w-56` fixed lagi) +
-  `whitespace-nowrap` per `<li>` — supaya tiap baris ("Total PO Running AI : N Documents") SELALU
-  1 baris, tidak ter-wrap 2 baris (masalah yg dikeluhkan user waktu list masih dipaksa `w-56`
-  sempit). **Pie chart DIGANTI TOTAL dari CSS `conic-gradient` div ke SVG manual** (2026-09,
-  meniru gaya "pointer-line callout" di slide asli persis, bukan cuma dot+teks di bawah pie lagi)
-  — helper geometri `polarPoint`/`buildPieSlicePath` (di scope modul, atas `DashboardModal`)
-  menghitung slice pie via `<path>` arc (sudut diukur SEARAH JARUM JAM dari jam 12, `angleDeg=0`
-  di atas — SAMA dgn arah default CSS conic-gradient, sengaja disamakan biar warnanya konsisten
-  kalau nanti mau dibanding-banding). Kasus 1 warna 100% di-`<circle>` biasa (arc SVG tidak bisa
-  gambar lingkaran penuh 360° dari titik awal=akhir yg sama, makanya di-special-case). Slice
-  dgn `pct <= 0.05` (nyaris 0%) SENGAJA TIDAK dirender callout-nya sama sekali (baik shape
-  maupun garis+labelnya) — meniru screenshot referensi user yg cuma nampilin "PO Sesuai 100%"
-  tanpa "PO Bermasalah 0%" sama sekali saat datanya semua sesuai. Garis callout: titik di tepi
-  pie (`r`) → titik tekuk (`r+18`) → leader horizontal sepanjang 45px ke arah kanan/kiri
-  (ditentukan dari posisi x titik tekuk vs pusat), lalu label 2 baris (nama tebal + persentase
-  abu-abu) nempel di ujung leader, `textAnchor` menyesuaikan sisi kiri/kanan. Kalau nanti nambah
-  breakdown pie 3 warna+ (bukan cuma sesuai/bermasalah), pola `slices` map ini generik & bisa
-  diperpanjang array-nya, TIDAK perlu ubah helper geometri-nya.
-  **Fix clipping label (2026-09)**: `viewBox`/`cx`/`r` awal (`400x280`, `cx=130`, `r=105`)
-  ternyata KETERLALU SEMPIT di sisi kiri — label "PO Bermasalah" (slice kecil, muncul di sisi
-  kiri lingkaran) kepotong krn garis callout+teksnya keluar dari batas SVG (margin kiri cuma
-  `cx - r` = 25px, jauh dari cukup utk kink+leader+lebar teks). Sempat dinaikkan ke `620x300`/
-  `cx=310,r=95` (modal ikut ke `max-w-6xl`) supaya tidak clip, TAPI modalnya jadi kelihatan
-  kelewat lebar (dikeluhkan user) — **versi final**: `viewBox="0 0 570 300"`, `cx=285, cy=150,
-  r=90` (dinaikkan sedikit dari `r=85` atas permintaan user, "perbesar sedikit lagi"), modal
-  tetap `max-w-5xl` (tinggi/padding TIDAK diubah, cuma lebar pie). Margin simetris kiri/kanan
-  `cx - r` = 195px, masih di atas reach maksimum callout (`kink(14) + leader(38) + gap(6) +
-  lebar teks terpanjang "PO Bermasalah" ~120px` ≈ 178px < 195, buffer ~17px) jadi TIDAK clip.
-  Kalau nanti label lebih panjang ditambahkan atau ukuran pie diubah lagi, HITUNG ULANG margin
-  ini (`cx - r` harus tetap lebih besar dari total reach callout ke arah itu, sisakan buffer
-  secukupnya) SEBELUM ubah lebar modal — itu 2x penyebab bug/komplain sebelumnya (clip krn
-  margin kurang, lalu kelewat lebar krn overkompensasi). JANGAN pakai `justify-center` pada
-  container list+pie ini lagi (sudah terbukti bikin layout aneh di percobaan sebelumnya), cukup
-  sesuaikan `max-w-*` modal + lebar list/ukuran pie bareng² secara proporsional, dan tetap cek
-  muat di layar 14" (`92vh` scroll fallback masih ada, tapi usahakan tidak sampai kepakai).
-- **Efek "3D" pada pie + pie diperbesar sedikit (2026-09, permintaan user "seperti 3D... terlihat
-  lebih hidup" + "agak dibesarkan sedikit")** — BUKAN elips/ekstrusi beneran (geometri lingkaran
-  penuh TETAP dipertahankan, krn semua perhitungan garis callout label — `polarPoint`, kink
-  `r+18`, leader 45px, dst — asumsikan lingkaran utuh; kalau di-squash jadi elips lewat transform
-  `scaleY`, callout line & posisi label akan salah/miring). Efek 3D dicapai via kombinasi murni
-  SVG `<defs>` tanpa mengubah geometri:
-  1. **Radial gradient per slice** (`auditPoPieGrad-<label>`, `cx=35% cy=30% r=75%`) — terang
-     (`lightenHex(color, 0.55)`) di titik offset atas-kiri lalu memudar ke warna asli di tengah
-     lalu sedikit lebih gelap (`darkenHex(color, 0.12)`) di tepi terluar — ilusi cahaya jatuh dari
-     satu arah spt permukaan bola/dome, bukan flat fill polos.
-  2. **Drop-shadow** (`<filter id="auditPoPieShadow"><feDropShadow dy=6 stdDeviation=6
-     floodOpacity=.25/></filter>`, dipasang di `<g filter="url(#auditPoPieShadow)">` yang
-     membungkus SEMUA slice) — kesan piringan "terangkat" dari background modal.
-  3. **Rim/garis tepi lebih gelap** (`stroke={darkenHex(color, 0.18)}`, `strokeWidth={1.5}`,
-     `strokeLinejoin="round"`) di tiap slice — batas antar slice lebih tegas, bukan menyatu flat.
-  `lightenHex(hex, amount)`/`darkenHex(hex, amount)` (helper module-level baru, dekat
-  `buildPieSlicePath`) — mix RGB manual ke arah putih/hitam sebesar `amount` (0-1), generik utk
-  slice warna apa pun (BUKAN hardcode 2 warna sesuai/bermasalah saat ini) kalau nanti nambah
-  slice ke-3.
-  **Ukuran pie diperbesar**: `r` 90 → **105** (~+17%). `cx` digeser 285 → **300**, `viewBox`/
-  `svg width` 570 → **600** — SENGAJA supaya `cx - r` (margin kiri ke tepi callout) TETAP PERSIS
-  195 (IDENTIK dgn versi lama 285-90), dan margin kanan (`width - cx`) juga tetap 300 simetris —
-  jadi jarak aman ke garis callout label TIDAK BERUBAH sama sekali walau pie-nya lebih besar
-  (semua offset callout — `r+18`, leader 45px, gap 6px, lebar teks — pakai piksel ABSOLUT bukan
-  relatif ke `r`, jadi asal `cx-r` dipertahankan konstan, buffer amannya ikut konstan juga —
-  TIDAK PERLU hitung ulang margin dari nol spt peringatan sebelumnya, cukup jaga `cx-r` = 195).
-  **Kalau nanti mau perbesar/perkecil pie lagi, GESER `cx` sebesar perubahan `r` (jangan ubah
-  salah satu saja)** supaya `cx-r` tetap 195 dan lebar svg ikut disesuaikan `2*cx`.
-  **Sudah DI-PORTING ke `AuditPoOverseasPage.tsx` (Audit AP Overseas) & `PiLocalPage.tsx` (PI
-  Local)** juga (2026-09, permintaan eksplisit user) — pola IDENTIK PERSIS (`lightenHex`/
-  `darkenHex`/gradient/shadow/rim/ukuran `r=105`,`cx=300`), cuma id `<filter>`/`<radialGradient>`
-  diberi prefix beda per halaman (`auditPoPieShadow`/`auditPoOverseasPieShadow`/
-  `piLocalPieShadow`, dst) supaya tidak bentrok kalau ada kemungkinan (meski tidak akan pernah)
-  2 modal render bersamaan di DOM yang sama. TIDAK ada komponen shared — tiap halaman py salinan
-  `lightenHex`/`darkenHex`/pie SVG sendiri (sesuai pola duplikasi arsitektur ketiga halaman ini) —
-  kalau nanti efek 3D/ukuran pie diubah lagi di satu halaman, ingat porting manual ke 2 lainnya.
-- **Tab ke-2 modal Dashboard: "Per Vendor" (2026-09, chart batang, permintaan user via
-  screenshot slide "Cost Controller - AP Local")** — modal Dashboard SEKARANG punya 2 tab (state
-  `activeTab: 'overview' | 'vendor'`, tombol pill switcher `ml-auto` di baris filter tanggal,
-  paling kanan): **Overview** (pie chart yang sudah ada, TIDAK diubah) & **Per Vendor** (BARU) —
-  chart BATANG jumlah baris PER `nama_pt` yang `status_audit`-nya SUDAH TERISI (bukan null/
-  kosong) dalam rentang tanggal yang SAMA dgn tab Overview (fetch dipanggil bareng
-  `fetchStats`/`fetchVendorStats` sekaligus tiap kali "Terapkan" diklik, bukan lazy per-tab).
-  - `fetchVendorStats()` — `select('nama_pt')` SAJA (bukan `select('*')`, ringan) dari
-    `audit_po_ap_comp` yg `status_audit` tidak null dalam rentang, dikelompokkan & dihitung DI
-    CLIENT (aman krn jumlah PT tetap kecil, `PT_OPTIONS` cuma 7 opsi) — bukan lewat RPC agregasi
-    terpisah. Hasil disortir DESCENDING by count (`VendorStat[]`).
-  - `niceAxisStep(maxVal)` (helper module-level baru, generik, REPLIKA pola umum "nice numbers"
-    axis chart) — pilih step gridline (10/20/25/50/100/...) dari skala nilai maksimum supaya
-    jumlah garis horizontal wajar (~4-6 garis) apapun skalanya, TIDAK di-hardcode ke 0/50/100/
-    150/200 spt di contoh screenshot user (itu kebetulan skala datanya, bukan angka tetap).
-  - `VendorTabContent` (komponen terpisah, bukan inline di `DashboardModal`) — render chart
-    batang SVG manual (SAMA pola dgn pie chart Overview — TIDAK ada library chart baru
-    ditambahkan ke project, cek dulu `package.json` kalau mau nambah nanti). Tiap batang warna
-    solid `#5A305A` (brand app, BUKAN teal spt contoh screenshot — disesuaikan ke warna brand),
-    label jumlah PUTIH di dalam batang dekat puncak, label nama PT di bawah sumbu X. Judul kecil
-    `<h4>` "Jumlah Vendor Berdasarkan Dokumen Yang Masuk" di atas chart **DIHAPUS (2026-09,
-    permintaan eksplisit user)** di KETIGA halaman — chart langsung tampil tanpa judul tab
-    tambahan itu (nama tab pill "Per Vendor" di toolbar sudah cukup menjelaskan konteksnya).
-    Footnote Key Notes REPLIKA kalimat di slide contoh ("PT X dan PT Y yang sering ditemui...",
-    "Total vendor ... sebanyak N Dokumen") — 2 PT tersering DIHITUNG DINAMIS (2 teratas dari list yg sudah
-    disortir descending), BUKAN hardcode "WNS"/"MJS" spt di contoh gambar.
-  - **Susulan (2026-09, permintaan user)**: kalau rentang tanggal kosong/tidak ada dokumen
-    bermasalah sama sekali, chart TETAP TAMPIL apa adanya (BUKAN lagi pesan "Tidak ada data di
-    rentang ini" polos) — SEMUA `PT_OPTIONS` **KECUALI "GENERAL"** (susulan permintaan user,
-    bukan nama PT spesifik jadi tidak relevan ditampilkan per-vendor — di-filter di 2 titik:
-    seed nilai 0 & saat menambah count dari hasil query) selalu jadi baris `VendorStat` dari
-    `fetchVendorStats()` dgn `count` default `0` (di-seed duluan SEBELUM loop hasil query
-    menambah count-nya), PT yang muncul di data tapi tidak ada di `PT_OPTIONS` (`'TIDAK
-    DIKETAHUI'`) tetap ikut ditambahkan kalau kebetulan ada. Batang setinggi 0 dirender sbg
-    `<rect>` KOSONG (tidak digambar, `barH > 0` guard) TAPI label angka "0"-nya TETAP tampil,
-    dipindah posisi ke ATAS titik dasar batang (bukan "di dalam batang dekat puncak" spt batang
-    normal — kalau tetap di posisi lama, akan numpuk sama label nama PT di bawah sumbu X krn
-    tinggi batangnya 0). Skala sumbu Y placeholder `0-10` (step `2`) dipakai KHUSUS saat SEMUA
-    nilai 0 (`niceAxisStep(0)` kalau dipakai apa adanya menghasilkan skala pecahan aneh, lihat
-    guard `maxCount > 0 ? niceAxisStep(maxCount) : 2` di kode). Kalimat Key Notes "PT X dan PT Y
-    yang sering ditemui" HANYA muncul kalau `maxCount > 0` (kalau semua PT 0, klaim "sering
-    ditemui" tidak masuk akal — tidak ada satu kejadian pun), kalimat "Total vendor ... sebanyak
-    N Dokumen" TETAP selalu muncul (N boleh 0).
-  - **Susulan lagi (2026-09, permintaan user "ukuran modal per tab jangan beda-beda")** — konten
-    KEDUA tab (`Overview` pie chart & `Per Vendor` batang) dibungkus 1 wrapper
-    `min-h-[380px] flex flex-col justify-center` yang SAMA (di `DashboardModal`, membungkus
-    kondisional `activeTab === 'overview' ? (...) : ...`, BUKAN 2 wrapper terpisah per tab) —
-    modal ini `max-h-[92vh] overflow-y-auto` (tinggi total ikut konten di dalamnya), SEBELUM fix
-    ini tinggi natural pie-chart+panel-poin vs chart-batang beda, jadi ukuran modal "meloncat"
-    tiap ganti tab. `min-h` yang sama di titik itu membuat modal TIDAK PERNAH lebih pendek dari
-    380px di tab manapun/kondisi manapun (loading/error/data-kosong/data-normal), `justify-center`
-    supaya konten yang secara alami lebih pendek dari 380px tetap rata tengah vertikal (bukan
-    nempel ke atas, kelihatan kurang rapi kalau dibiarkan nempel atas). **Susulan (2026-09,
-    permintaan user "naikkan sedikit margin antara tab halaman dan tulisan Poin yang
-    diperoleh")** — wrapper ini ditambah `mt-3` (jadi `min-h-[380px] mt-3 flex flex-col
-    justify-center`) di KETIGA halaman — jarak dari baris tab pill (Overview/Per Vendor/
-    Kategori) ke konten pertama di bawahnya (teks "Poin yang diperoleh" di tab Overview, atau
-    chart di tab lain) jadi sedikit lebih lega, sebelumnya nempel rapat ke garis pembatas
-    `border-b` panel filter tanggal.
-  - **Susulan (2026-09, permintaan user "warna tab aktif diganti ungu yang ada di aplikasi
-    ini")** — tab pill AKTIF (Overview/Per Vendor/Kategori) di dalam grup switcher
-    (`bg-slate-200/70 rounded-full`) diganti dari `bg-white text-[#5A305A] shadow-sm` (pill putih
-    + teks ungu) jadi **`bg-[#5A305A] text-white shadow-sm`** (pill solid ungu brand + teks
-    putih) — konsisten dgn pola tombol aksi utama app ini (mis. tombol "Terapkan" di baris yang
-    sama, `bg-[#5A305A] hover:bg-[#73507B] text-white`). Tab TIDAK aktif TIDAK berubah
-    (`text-slate-500 hover:text-[#5A305A]`, tanpa background). Diterapkan di KETIGA halaman, 3
-    tombol tiap halaman (9 titik total).
-  - **Susulan (2026-09) — sudah DI-PORTING ke `AuditPoOverseasPage.tsx` (Audit AP Overseas, tabel
-    `audit_po_apovs_comp`) & `PiLocalPage.tsx` (PI Local, tabel `audit_po_pi_local_comp`)**, atas
-    permintaan eksplisit user — pola IDENTIK PERSIS di ketiga halaman
-    (`niceAxisStep`/`VendorTabContent`/`fetchVendorStats`/tab switcher/wrapper `min-h-[380px]`,
-    termasuk exclude "GENERAL"), cuma nama tabel Supabase yang beda per halaman. Kalau nanti
-    formula/UI tab ini diubah lagi di salah satu halaman, ingat porting manual ke 2 lainnya —
-    TIDAK ada komponen shared, tiap halaman py salinan `DashboardModal`/`VendorTabContent`
-    sendiri (sesuai pola duplikasi arsitektur ketiga halaman ini, lihat "Audit AP Overseas" di
-    atas).
-- **Filter tanggal panel utama** (2026-09, DISELARASKAN dgn gaya date-range filter Sea & Air di
-  `SharedDataTable.tsx`) — dari 2 `<input type="date">` terpisah + teks "s/d" polos, diganti jadi
-  1 pill (`CalendarDays` icon + 2 input tanggal + separator "–" + tombol clear `X` kalau salah
-  satu terisi), pola & lebar input (`w-[100px]`) SAMA PERSIS dgn filter tanggal Audit/Rekapan
-  Sea & Air. Tombol Refresh jadi ICON-ONLY (teks "Refresh" dihapus, tetap ada `title` attribute
-  utk aksesibilitas/tooltip browser).
-- **Kolom Kategori — bisa pilih LEBIH DARI 1 kategori sekaligus (2026-09)** — `KategoriPicker`
-  (dipakai `KategoriCell` di kolom tabel maupun form `EditAuditPoModal`) diubah dari single-select
-  (klik 1 opsi → langsung tersimpan & dropdown tertutup) jadi **multi-select**: tiap opsi jadi
-  checkbox toggle (ikon centang di kotak kecil, bukan lagi `Check` polos di sebelah 1 opsi
-  terpilih), dropdown TIDAK otomatis tertutup habis klik satu opsi — ada tombol **"Selesai"** di
-  footer dropdown utk menutup manual setelah selesai pilih beberapa. Kategori yang dipilih
-  disimpan sbg **1 string digabung tanda `" + "`** (`KATEGORI_MULTI_SEPARATOR`, helper
-  `parseKategoriMulti()` utk parse balik ke array saat render checkbox) di kolom `kategori` yang
-  SAMA (text, TIDAK ada migrasi skema jadi array/tabel terpisah — kolom `audit_po_ap_comp.
-  kategori` tetap 1 kolom text apa adanya). `KategoriCell` (auto-save per pilih) tetap panggil
-  `updateAuditPoKategori(row.id, val)` PERSIS sama, cuma `val` sekarang bisa berisi gabungan
-  ("A + B") bukan cuma 1 nilai — tidak perlu ubah fungsi itu sendiri.
-  Kolom tabel & form Edit menampilkan hasilnya APA ADANYA (`row.kategori`/`value`, truncate kalau
-  panjang) — tidak ada perubahan tampilan selain sumber datanya sekarang bisa string gabungan.
-  **Susulan wajib**: filter dropdown Kategori di panel filter (`kategoriFilter`) diganti dari
-  `.eq('kategori', kategoriFilter)` → **`.ilike('kategori', '%'+kategoriFilter+'%')`** — exact
-  match akan GAGAL cocok ke baris yang kategori-nya sekarang gabungan (mis. filter pilih "PN
-  NUMBER" tapi baris tersimpan "CIF - Nilai Pabean + PN Number" — `.eq` tidak akan
-  ketemu, `.ilike` contains akan ketemu).
-  **Susulan (2026-09) — sudah DI-PORTING ke `AuditPoOverseasPage.tsx` (Audit AP Overseas) &
-  `PiLocalPage.tsx` (PI Local)** juga, atas permintaan eksplisit user — pola IDENTIK PERSIS di
-  ketiga halaman (`KATEGORI_MULTI_SEPARATOR`/`parseKategoriMulti()`/`KategoriPicker` mode
-  checkbox multi + tombol "Selesai" + filter `.eq`→`.ilike`), sesuai duplikasi arsitektur ketiga
-  halaman ini yang sudah didokumentasikan (lihat "Audit AP Overseas" di bawah). Kalau nanti
-  formula/UI mode multi ini diubah lagi di salah satu halaman, ingat porting manual ke 2 lainnya
-  — TIDAK ada komponen shared, tiap halaman py salinan `KategoriPicker`/`KategoriCell` sendiri.
+- **Audit, "No. PIB" dari `no_aju`** (bukan `no_pib`) — permintaan eksplisit HANYA Sea & Air,
+  `PIB_COLS` Courier TIDAK ikut diubah (tetap `no_pib`). `searchCols` sudah cakup kedua kolom.
+- **Audit, kolom Balance & Asuransi** — formula hardcode frontend:
+  `BALANCE = VALAS_DPP*KURS_NDPBM - (TOTAL_INV_FREIGHT+ITEM_PRICE_IDR)`,
+  `ASURANSI = 0.5%*(TOTAL_INV_FREIGHT+ITEM_PRICE_IDR)`. Diimplementasi di 3 tempat HARUS sinkron:
+  `EditModal` useEffect, `handleInlineSaveRow` (diff-based), `fetchRecords`'s `enrichedData` DAN
+  `getExportData` (live-computed tiap fetch — awalnya sengaja TIDAK di sini supaya nilai n8n
+  asli tampil, tapi n8n memang tidak pernah isi kolom ini jadi selalu "-" sampai diedit; fix:
+  hitung ulang di semua baris hasil fetch). `balance`/`asuransi` DIKELUARKAN dari
+  `isInlineEditable()`.
+- **Rekapan, badge % Doc/Cost Validation** di tombol (bulat, hijau≥90%/kuning≥60%/merah).
+  Dihitung batch di `fetchRecords` (bukan per-row query), disimpan `r.doc_validation_pct`/
+  `r.cost_validation_pct`. Formula REPLIKA PERSIS `globalStats` `SeaAirValidasiModal.tsx` (Doc,
+  exclude `match===null`) & `ValidasiShipmentInvoiceLengkap.tsx` (Cost, exclude
+  `section==='SURVEYOR'`). **Kalau formula di modal berubah, WAJIB sinkron ulang di 3 tempat
+  ini** (2 modal + `SharedDataTable.tsx` fetchRecords).
+- **Modal Cost Validasi Shipment & Invoice** disamakan ukuran dgn Courier CostValidationModal:
+  `max-w-6xl max-h-[97vh]` (drop `h-[90vh]` fixed lama).
+- **`SeaAirValidasiModal.tsx`** — kolom "data check" HARDCODE (`INVOICE_FCL_COLS`/`FP_FCL_COLS`
+  ~baris 450/521 + `headerColors`), TIDAK otomatis ikut field baru dari backend — kolom
+  "Trucking" sudah ditambahkan manual ke ketiganya.
 
-## Kolom Kategori sortable (2026-09, ketiga halaman)
+## Courier — Audit, badge % + footer % Cost Validation
 
-Permintaan user: kolom **Kategori** di tabel List (`AuditPoPage.tsx`/`AuditPoOverseasPage.tsx`/
-`PiLocalPage.tsx`) sekarang bisa di-sort, sama seperti kolom "Tanggal & Waktu"/"Nama PT" yang
-sudah lebih dulu punya `SortableHeader`. Sort di ketiga halaman ini SERVER-SIDE (`query.order()`
-di `fetchList`, karena pagination-nya server-side, lihat bagian "Audit AP Local" di atas) — jadi
-menambah kolom sort baru CUKUP 2 langkah, TIDAK perlu logic tambahan apa pun:
-1. `type SortKey` diperluas dari `'created_at' | 'nama_pt'` → **`'created_at' | 'nama_pt' |
-   'kategori'`**.
-2. `<th>` Kategori (sebelumnya `<th className="...">Kategori</th>` polos) dibungkus
-   `<SortableHeader label="Kategori" sortKey="kategori" activeSort={sortBy}
-   activeDir={sortDir} onSort={handleSort} />` — komponen `SortableHeader` & handler
-   `handleSort`/state `sortBy`/`sortDir` SUDAH ADA (dipakai kolom "Tanggal & Waktu"/"Nama PT"),
-   tidak perlu ditulis ulang.
+Pola sama Sea & Air Rekapan di atas, diterapkan ke `CourierAuditRowGroup` tombol Doc/Cost
+Validation. **`src/utils/CostValidationHelpers.ts`** (BARU) — `isRowVisible()`/
+`computeLiveCostSummary()` DIPINDAHKAN dari `CostValidationModal.tsx` ke sini, SATU-SATUNYA
+sumber kebenaran (dipakai `CostValidationModal.tsx` DAN `SharedDataTable.tsx` fetchRecords).
+`computeLiveCostSummary()` juga return `pct` — dipakai badge & panel "Overall Accuracy" baru di
+footer modal.
 
-`query.order(sortBy, { ascending: sortDir === 'asc' })` generik baca `sortBy` apa adanya (string
-literal nama kolom), jadi otomatis ikut sort by `kategori` tanpa perlu cabang kondisi tambahan.
-**Catatan urutan sort utk kolom `kategori` yang isinya bisa GABUNGAN multi-kategori** (`"A + B"`,
-lihat bagian "Kolom Kategori — bisa pilih LEBIH DARI 1 kategori" di atas) — sort ini murni
-`ORDER BY kategori` alfabetis di Postgres terhadap STRING GABUNGAN apa adanya (bukan per-kategori
-individual di dalam gabungan itu), jadi baris dgn kategori gabungan diurutkan berdasar huruf
-pertama string gabungannya, bukan diurai dulu — WAJAR & konsisten dgn cara filter `.ilike` yang
-sudah ada (juga baca string gabungan apa adanya), bukan bug.
+**Doc Validation fallback** — `tabel_checklist_validasi` CUMA keisi kalau seseorang PERNAH buka
+`ValidasiModal.tsx` & klik Simpan (bukan otomatis n8n). Fix: `fetchCourierValidationBadgePct()`
+punya FALLBACK live-calc (REPLIKA logic `CourierValidasiPage.tsx` `needsCalculation`) utk
+pib_id/cn_id yg tidak ketemu di tabel itu — JANGAN tulis ulang formula ini di tempat ketiga.
+Badge `0%` hanya kalau setelah fallback pun benar2 tidak ada data.
 
-Diterapkan IDENTIK di ketiga halaman — TIDAK ada komponen shared, tiap halaman py salinan
-`type SortKey`/`<SortableHeader>` sendiri, kalau nanti ditambah kolom sort lain lagi ingat
-porting manual ke 2 lainnya.
+**PENTING — 2 jalur fetch terpisah utk `courier_audit`**: jalur normal (PIB/CN sendiri-sendiri)
+DAN jalur khusus tab Draft/`archive` (query gabung, `return` lebih awal). Logic badge dipindah
+jadi fungsi module-level `fetchCourierValidationBadgePct(rows)`, dipanggil dari KEDUA jalur.
+**Nambah jalur fetch baru → WAJIB panggil fungsi ini juga.**
 
-**Bug susulan diperbaiki (2026-09, laporan user + screenshot)**: sort ASC kolom Kategori taruh
-baris TANPA kategori (`null`) di PALING ATAS — ini perilaku DEFAULT Postgres utk `ORDER BY ...
-ASC` (NULL dianggap "lebih besar" dari string apa pun, jadi nongol duluan pas ASC), BUKAN yang
-diinginkan user (harusnya baris kosong SELALU di bawah, apa pun arah sort-nya). **Fix**: `.order()`
-di `fetchList` (query utama, ketiga halaman) ditambah opsi **`nullsFirst: false`** — dipasang
-GENERIK di call `.order(sortBy, {...})` yang sama (bukan cabang kondisi khusus `kategori` saja),
-jadi otomatis berlaku ke kolom sort MANAPUN yang dipilih user (aman utk `created_at`/`nama_pt`
-jg, krn kolom itu jarang/tidak pernah null di data asli — tidak mengubah perilaku sort yang
-sudah ada utk kolom-kolom itu). Diterapkan identik di ketiga file (`AuditPoPage.tsx` →
-`audit_po_ap_comp`, `AuditPoOverseasPage.tsx` → `audit_po_apovs_comp`, `PiLocalPage.tsx` →
-`audit_po_pi_local_comp`).
+## Upload Dokumen Susulan — Audit Courier (`CourierUploadSusulanModal.tsx`)
 
-## Filter dropdown "Semua PT" & tab "Per Vendor" — DINAMIS dari data asli, bukan lagi hardcode (2026-09, ketiga halaman)
+Tombol "Upload Additional Doc" di footer `ChecklistModal` — kirim dokumen susulan tanpa bikin
+record shipment baru. REPLIKA `BunkerUploadModal.tsx`+`BunkerKelengkapanModal.tsx`, beda field
+hint = `awb_hint` (bukan `no_po_hint`). Webhook type tetap `'courier'`.
 
-Laporan user + screenshot: dropdown filter "Semua PT" di 3 halaman (Audit AP Local, Audit AP
-Overseas, PI Local) TIDAK menampilkan semua nama PT yang benar-benar ada di tabel — mis. "GUN"
-tampil sbg `nama_pt` di baris tabel, TAPI TIDAK ADA di opsi dropdown "Semua PT" (jadi PT itu
-TIDAK BISA difilter lewat dropdown sama sekali, walau barisnya sendiri tetap muncul & bisa
-ditemukan via search). Tab "Per Vendor" di modal Dashboard juga ikut tidak sinkron (chart batang
-seed nilai 0 dari daftar PT yang sama).
+- `server.ts` forward `awb_hint` — **SELALU** append (`|| ''`, bukan cek truthy) baik client
+  maupun server (`req.body?.awb_hint !== undefined`, bukan truthy check) — fix bug field hilang
+  total kalau `record.awb` kosong. Restart dev server manual wajib.
+- Status job inline di `ChecklistModal` (state `activeJobId`/`activeJobStatus`, REPLIKA polling
+  `BunkerKelengkapanModal.tsx`, BUKAN `ProcessingQueue` generik). Kalau n8n balikin `job_id` →
+  poll `tabel_processing_queue` tiap 4dtk. Kalau tidak → banner "Document sent...".
+  **BELUM TERVERIFIKASI** apakah n8n Courier balikin `job_id` sama sekali.
+- ⚠️ **KETERGANTUNGAN EKSTERNAL — workflow n8n Courier HARUS diupdate** utk terima `awb_hint` &
+  MERGE ke record existing (bukan bikin PIB/CN baru) — belum ada visibilitas/konfirmasi ini
+  sudah dikerjakan di sisi n8n.
+- Gate: tombol muncul kalau `canEdit('courier_checklist_dokumen')` — proteksi MURNI UI (proxy
+  Express, bukan RLS), sama seperti `courier_upload`.
 
-**Akar masalah**: `PT_OPTIONS` (`['AMT', 'GMI', 'TTP', 'MJS', 'WSI', 'WNS', 'GENERAL']`) adalah
-array HARDCODE, dipakai LANGSUNG buat isi opsi dropdown filter DAN seed baris 0 di chart "Per
-Vendor" — kalau tabel (`audit_po_ap_comp`/`audit_po_apovs_comp`/`audit_po_pi_local_comp`) ternyata
-punya `nama_pt` lain yang tidak ada di 7 nama itu, filter/chart tidak pernah tau soal itu.
+## Badge % Checklist — Audit Courier & Rekapan Sea & Air
 
-**Fix (diterapkan IDENTIK di ketiga halaman)**: `PT_OPTIONS` SEKARANG jadi fallback saja (dipakai
-SEBELUM fetch dinamis pertama selesai, atau kalau fetch-nya gagal/kosong), bukan lagi daftar
-tetap. Fungsi baru `fetchDistinctNamaPt(table)` — `supabase.from(table).select('nama_pt')` (1
-kolom saja, tanpa filter, ringan), dedup+sort DI CLIENT via `Set` (Supabase-js tidak punya opsi
-"distinct" bawaan) — fallback ke `PT_OPTIONS` kalau `error`/`data` kosong/hasil dedup kosong.
-- State `ptOptions` (`useState<string[]>(PT_OPTIONS)`) + `useEffect` sekali panggil
-  `fetchDistinctNamaPt(<nama tabel>).then(setPtOptions)` — ditambahkan di **2 tempat per
-  halaman**: komponen utama (dipakai dropdown filter "Semua PT") DAN `DashboardModal` (dipakai
-  seed chart tab "Per Vendor", `useCallback fetchVendorStats` dependency array diubah dari `[]`
-  → `[ptOptions]` supaya chart ikut recompute begitu daftar PT dinamis selesai di-fetch).
-- Dropdown filter diganti dari `{PT_OPTIONS.map(...)}` → `{ptOptions.map(...)}`.
-- Seed chart "Per Vendor" diganti dari `PT_OPTIONS.filter(pt => pt !== 'GENERAL').forEach(...)` →
-  `ptOptions.filter(pt => pt !== 'GENERAL').forEach(...)` (exclude "GENERAL" tetap sama, sudah
-  ada sebelumnya) — PT yang muncul di data tapi tidak ada di `ptOptions` tetap ikut ditambahkan
-  via key baru di object `counts` (perilaku lama ini tidak berubah).
-- Nama tabel yang di-query per halaman: `AuditPoPage.tsx` → `audit_po_ap_comp`,
-  `AuditPoOverseasPage.tsx` → `audit_po_apovs_comp`, `PiLocalPage.tsx` →
-  `audit_po_pi_local_comp`.
+Lebih sederhana — % SUDAH tersimpan langsung (`pct_kelengkapan`), tidak perlu live-compute.
+Audit Courier: `rec.pct_kelengkapan` sudah ter-merge via `mergeChecklistData()` (kedua jalur
+fetch termasuk Draft). Rekapan Sea & Air: `rec.checklist_pct` dari batch query
+`dokumen_checklist_seaair` (digabung 1 round-trip dgn Doc/Cost Validation pct map).
 
-Kalau nanti ada laporan serupa lagi (PT baru tidak muncul di filter/chart), cek dulu apakah
-`fetchDistinctNamaPt` benar2 ke-panggil (network tab/Console) sebelum curiga ke logic filter —
-kemungkinan besar ini sudah teratasi otomatis krn sifatnya dinamis, bukan hardcode lagi.
+## Bunker — badge % Match & Riwayat Perubahan
 
-## Audit AP Overseas — duplikasi persis Audit AP Local, tabel beda (`src/pages/AuditPoOverseasPage.tsx`)
-
-Dibuat 2026-09 atas permintaan user: "buat halaman baru yang kurang lebih sama seperti Audit AP
-Local, tapi dari tabel yang berbeda" — jadi DUPLIKASI SENGAJA (bukan komponen generik/di-share),
-supaya kedua halaman bisa berkembang independen tanpa risiko saling pengaruh. Kalau nanti ada
-bug/fitur yang perlu diterapkan ke salah satu, JANGAN asumsikan otomatis ke-apply ke yang lain —
-harus di-porting manual ke file satunya (dan sebaliknya).
-
-- Tabel `audit_po_apovs_comp` (skema identik `audit_po_ap_comp` PLUS kolom `kategori` yang
-  ditambah manual via SQL, lihat bawah — tabel aslinya dari user TIDAK punya kolom ini, beda dari
-  `audit_po_ap_comp` yang sudah lebih dulu punya). Struktur & perilaku SAMA PERSIS dengan Audit
-  AP Local: 5 kolom (`nama_pt`, `nomor_po`, `vendor_name`, `status_audit`, `kategori`) boleh
-  dikoreksi manual, `nama_pt`/`nomor_po` READ-ONLY di modal Edit (ikut perilaku terbaru AP Local,
-  bukan versi awal), kolom lain read-only murni hasil otomasi backend.
-- `src/utils/AuditPoOverseasHelpers.ts` — duplikasi PERSIS `AuditPoHelpers.ts`, fungsi diberi
-  suffix `Overseas` (`updateAuditPoOverseasKategori`, `updateAuditPoOverseasRow`,
-  `deleteAuditPoOverseasRow`, type `AuditPoOverseasRow`/`AuditPoOverseasEditableFields`).
-  `PT_OPTIONS` (di halaman) SAMA PERSIS dgn AP Local (dikonfirmasi user). `KATEGORI_OPTIONS`
-  SEMPAT sama persis dgn AP Local juga, TAPI **DIGANTI TOTAL (2026-09, permintaan eksplisit
-  user)** — daftar kategori Overseas BEDA dari AP Local (istilah bahasa Inggris/Impor: "DOKUMEN
-  STOCK IN/PI", "IMPORT CALCULATION/LOGISTIC", "DESTINATION INDONESIA", "CUSTOMER NAME",
-  "CURRENCY", "PN NUMBER", dst — bukan sekadar variasi kecil, daftar lengkapnya beda total dari
-  AP Local yg masih Bahasa Indonesia/istilah lokal). **Sejak sini `KATEGORI_OPTIONS` TIDAK BOLEH
-  disamakan otomatis lagi antara AuditPoHelpers.ts & AuditPoOverseasHelpers.ts** — dulu (sebelum
-  2026-09 ini) kalau ada perubahan `KATEGORI_OPTIONS` di salah satu, wajar diporting ke yg lain
-  krn memang sama; SEKARANG JANGAN, keduanya sudah sengaja berbeda isi kategori-nya, cuma pola
-  UI-nya (combobox searchable, dst) yg tetap sama.
-- Tombol Dashboard + `DashboardModal` (SVG pie callout dkk) — duplikasi PERSIS versi final AP
-  Local per saat halaman ini dibuat, cuma judul sub-heading "Audit AP Overseas" & "# AP PO
-  Overseas", query ke `audit_po_apovs_comp`. Kalau geometri pie/ukuran modal AP Local diubah
-  lagi nanti, ingat porting manual ke sini juga kalau mau konsisten.
-  **Tab ke-3 "Kategori" (2026-09, HANYA di halaman ini, BELUM diminta di AP Local/PI Local)** —
-  chart batang HORIZONTAL jumlah baris per `kategori` (BUKAN per `nama_pt` spt tab "Per Vendor"),
-  permintaan user via screenshot slide "Kategori Kesalahan Dihitung dari Excel". `activeTab` jadi
-  union 3 nilai (`'overview' | 'vendor' | 'kategori'`).
-  - `fetchKategoriStats()` — `select('kategori')` (bukan `select('*')`) dari `audit_po_apovs_comp`
-    yg `kategori` TIDAK null dalam rentang tanggal (TIDAK difilter `status_audit` — beda dari
-    `fetchVendorStats`, krn kolom `kategori` sendiri SUDAH merepresentasikan "ada kesalahan apa",
-    filter tambahan tidak relevan di sini). Tiap baris di-pecah pakai `parseKategoriMulti()`
-    (helper yg SAMA dipakai `KategoriPicker` mode multi) — kategori gabungan "A + B" nambah 1 ke
-    A DAN 1 ke B secara terpisah. **TIDAK di-seed ke semua `KATEGORI_OPTIONS` spt tab Per Vendor
-    seed semua `PT_OPTIONS`** — daftar `KATEGORI_OPTIONS` halaman ini PANJANG (istilah Impor
-    Overseas), kalau semua ditampilkan dgn 0 chart-nya jadi penuh batang kosong, TIDAK sesuai
-    referensi user (yang cuma tampilkan kategori yang BENERAN ada datanya, descending). Kalau
-    tidak ada kategori sama sekali di rentang itu → pesan "Tidak ada kategori tercatat di
-    rentang ini" (BEDA dari tab Per Vendor yang selalu tampil chart 0 apa adanya — keputusan
-    desain berbeda krn alasan seed di atas).
-  - `wrapKategoriLabel(label, maxCharsPerLine=24)` (helper baru, greedy word-wrap maks 2 baris)
-    — nama kategori bisa panjang (mis. "NOMOR DOKUMEN PURCHASE ORDER"), label sumbu Y di-wrap
-    manual jadi maks 2 baris `<text>`/`<tspan>` REPLIKA visual referensi user.
-  - `KategoriTabContent` (komponen baru, reuse type `VendorStat` apa adanya — field `pt` dipakai
-    generik sbg "label", BUKAN cuma nama PT, tidak perlu tipe baru) — chart batang HORIZONTAL
-    (beda orientasi dari `VendorTabContent` yang vertikal): sumbu Y (kiri) = daftar kategori,
-    sumbu X (bawah) = "Jumlah" dgn gridline `niceAxisStep` (REPLIKA sama). Tinggi SVG dinamis
-    mengikuti jumlah kategori (`rows.length * (rowH+rowGap)`) — BEDA dari tab lain yang tinggi
-    SVG-nya tetap (`H=340`), krn jumlah kategori tidak tetap seperti PT (7 opsi) — kalau kategori
-    banyak, modal jadi lebih tinggi, ditangani otomatis oleh `overflow-y-auto max-h-[92vh]` modal
-    terluar (scroll internal, TIDAK memerlukan penanganan tambahan).
-  - Footer Key Notes REPLIKA gaya sama (2 kategori terbanyak dihitung dinamis, "Total kategori
-    tercatat sebanyak N Dokumen").
-  - **Susulan (2026-09) — sudah DI-PORTING ke `AuditPoPage.tsx` (Audit AP Local, tabel
-    `audit_po_ap_comp`) & `PiLocalPage.tsx` (PI Local, tabel `audit_po_pi_local_comp`)** juga,
-    atas permintaan eksplisit user — pola IDENTIK PERSIS di ketiga halaman
-    (`fetchKategoriStats`/`wrapKategoriLabel`/`KategoriTabContent`/tombol tab "Kategori"), cuma
-    nama tabel Supabase yang beda per halaman (SAMA pola porting dgn tab "Per Vendor" di atas).
-    TIDAK ada komponen shared — tiap halaman py salinan sendiri. Kalau nanti formula/UI tab ini
-    diubah lagi di satu halaman, ingat porting manual ke 2 lainnya.
-- Tombol "Preview PDF"/"Hasil Audit" + `PreviewModal`/`buildDrivePreviewSrc` (2026-09) — ikut
-  diporting bareng dari AP Local (user minta fiturnya di AP Local, diterapkan juga ke sini
-  proaktif biar 2 halaman ini tetap konsisten sesuai prinsip duplikasi di atas) — lihat detail
-  lengkap & catatan verifikasi di bagian "Audit AP Local" di atas.
-- Page_key `audit_po_overseas`, route `/audit-po-overseas`, group PAGE_REGISTRY `'Audit AP
-  Overseas'` (`src/lib/permissions.ts`, generik lewat `PAGE_GROUPS` jadi otomatis muncul di
-  matrix Kelola Role & Akses tanpa perubahan tambahan di `RoleManagementPage.tsx` — grouping ini
-  cuma utk matrix, TIDAK terkait struktur submenu sidebar, lihat poin "Compare Doc" di bawah).
-  **Bug ditemukan & diperbaiki saat menambahkan halaman ini**: `MainLayout.tsx` penentu tab
-  sidebar aktif (`activeMainTab`) tadinya pakai `location.pathname.startsWith(t.basePath)` polos
-  — karena `/audit-po-overseas` diawali string `/audit-po`, tanpa fix ini halaman Overseas akan
-  salah ke-highlight. Diperbaiki jadi helper `pathBelongs` (exact match atau diikuti `/`) —
-  detail lengkapnya sekarang ada di poin "Compare Doc" di bawah karena helper ini dipakai lagi
-  & diperluas di sana.
-- SQL setup (dijalankan user langsung di Supabase SQL editor, TIDAK disimpan sbg file di `sql/`,
-  sama pola dgn migration Audit AP Local sebelumnya):
+- `computeMatrixMatchStats()` (`src/utils/BunkerHelpers.ts`) — SATU-SATUNYA sumber Match/
+  Warning/Mismatch + %, dari `row_status` `matrix_perbandingan`. Dipakai banner modal Compare Doc
+  & badge tombol "Compare Doc" List Bunker.
+- **Riwayat Perubahan** (tombol "Riwayat", `BunkerAuditLogModal.tsx`) — PAKAI ULANG tabel
+  `audit_trail` existing (bukan tabel baru). **Kolom ASLI tabel ini**: `id`, `created_at`,
+  `tabel`, `action`, `awb`, `no_dokumen`, `jenis`, `user_email`, `catatan` — **TIDAK ADA**
+  `deskripsi`/`old_value`/`new_value` (percobaan pertama pakai `deskripsi` GAGAL runtime,
+  `deskripsi` cuma label tampilan `TRAIL_COLS` via view `v_audit_trail`). Semua info digabung ke
+  `catatan` format `"{field_label} — Lama: {old} → Baru: {new}"`, di-parse balik
+  `splitAuditCatatan()`. `no_dokumen` = `no_po` (kunci filter balik ke 1 baris, karena tabel ini
+  tidak punya `record_id` eksplisit). Dicatat LANGSUNG dari app (`logBunkerAudit()`, bukan
+  trigger DB).
+  **BELUM DIJALANKAN ke Supabase production**:
   ```sql
-  alter table public.audit_po_apovs_comp add column if not exists kategori text;
-  alter table public.audit_po_apovs_comp enable row level security;
-  create policy "audit_po_apovs_comp_select" on public.audit_po_apovs_comp
-    for select using (public.has_page_access('audit_po_overseas'));
-  create policy "audit_po_apovs_comp_insert" on public.audit_po_apovs_comp
-    for insert with check (public.has_edit_access('audit_po_overseas'));
-  create policy "audit_po_apovs_comp_update" on public.audit_po_apovs_comp
-    for update using (public.has_edit_access('audit_po_overseas'))
-    with check (public.has_edit_access('audit_po_overseas'));
-  create policy "audit_po_apovs_comp_delete" on public.audit_po_apovs_comp
-    for delete using (public.has_edit_access('audit_po_overseas'));
+  create policy "audit_trail_insert_bunker_app" on public.audit_trail
+    for insert with check (tabel = 'bunker_dokumen' and public.has_edit_access('bunker'));
+  create policy "audit_trail_select_bunker_app" on public.audit_trail
+    for select using (tabel = 'bunker_dokumen' and public.has_page_access('bunker'));
   ```
-  **BELUM TERVERIFIKASI sudah dijalankan di Supabase production** (sama seperti catatan kolom
-  `kategori` di Audit AP Local) — cek dulu sebelum mengandalkan filter Kategori atau proteksi
-  edit/hapus di halaman ini kalau ada laporan gagal simpan atau data bisa diedit tanpa akses.
+  Belum terverifikasi apakah tumpang tindih dgn policy SELECT lama (kemungkinan aman krn
+  Postgres OR-kan policy permissive, tapi cek dulu kalau ragu).
 
-## Struktur menu sidebar "Compare Doc" (`src/components/MainLayout.tsx`, 2026-09)
+## Courier — Document Validation (`ValidasiModal.tsx`) — kumpulan fitur 2026-09
 
-`MAIN_TABS` — Bunker, Audit AP Local, dan Audit AP Overseas DULUNYA 3 tab top-level terpisah di
-sidebar, digabung atas permintaan user jadi 1 menu induk **"Compare Doc"** (icon `GitCompare`)
-dengan 3 submenu (pola sama seperti Courier/Sea & Air yang sudah lebih dulu punya submenu).
-Route masing-masing (`/bunker`, `/audit-po`, `/audit-po-overseas`) & page_key-nya TIDAK berubah
-sama sekali — murni reorganisasi tampilan sidebar, `PAGE_REGISTRY`/RLS/halaman-nya sendiri tetap
-apa adanya.
+**Konteks penting**: file ini punya SECTIONS + `fill()`/`generateValues` SENDIRI, TERPISAH dari
+`ValidasiHelper.ts`/`ValidasiFill.ts` — SUDAH TERBUKTI TIDAK SINKRON (id `bdjbc01`-`bdjbc04`
+beda nilai). **Kalau mau tau/ubah src-cmp yg BENERAN tampil, baca/edit `ValidasiModal.tsx`,
+JANGAN `ValidasiFill.ts`** (belum disinkronkan, belum diminta user).
 
-- `id: 'compare_doc'`, `path: '/bunker'` (tujuan default kalau tombol menu induk sendiri
-  diklik), `basePath: '/compare-doc'` — **`basePath` ini SENGAJA dummy/tidak match route
-  manapun**, beda dari Courier/Sea & Air yang subtab-nya berbagi 1 basePath asli (`/courier`,
-  `/sea-air`). Bunker/Audit AP Local/Audit AP Overseas TIDAK berbagi prefix path yang senada
-  (`/bunker` vs `/audit-po` vs `/audit-po-overseas`), jadi basePath induk tunggal tidak bisa
-  dipakai utk deteksi "submenu compare_doc sedang aktif".
-- Karena itu, logic `activeMainTab` (penentu highlight tab di sidebar) DIPERLUAS: sebelumnya cuma
-  cek `pathBelongs(pathname, t.basePath)`, SEKARANG kalau tab itu punya `subTabs`, ikut dicek
-  juga `t.subTabs.some(s => pathBelongs(pathname, s.path))`. Helper `pathBelongs(pathname, base)`
-  = `pathname === base || pathname.startsWith(base + '/')` (bukan `startsWith` polos — ini fix
-  bug yg sama dgn yg ditemukan pas nambah Audit AP Overseas, `/audit-po` adalah prefix string
-  dari `/audit-po-overseas`). Kalau nanti nambah grup submenu campuran serupa (path-nya tidak
-  senada), pastikan basePath induknya tetap dummy & pola pengecekan subTabs ini yang dipakai,
-  BUKAN nyoba paksa basePath asli salah satu subtab jadi basePath induk (bakal salah highlight
-  submenu lain yang path-nya beda).
-- Icon `Fuel`/`ClipboardCheck`/`Globe2` (dulu dipakai Bunker/Audit AP Local/Audit AP Overseas
-  sbg tab top-level) DIHAPUS dari import `MainLayout.tsx` krn submenu di app ini TIDAK
-  menampilkan icon per-item (cuma label + dot indicator, lihat rendering `subTabs.map` di file
-  ini) — kalau nanti mau submenu punya icon lagi, baru re-add.
-- `PAGE_REGISTRY` groups (`'Bunker'`, `'Audit AP Local'`, `'Audit AP Overseas'`, dipakai matrix
-  Kelola Role & Akses) SENGAJA TIDAK ikut digabung — itu concern terpisah dari struktur visual
-  submenu sidebar ini, biar PIC tetap bisa lihat & atur akses per modul dgn jelas di halaman
-  Kelola Role & Akses walau tampilannya di sidebar sekarang nested.
+- **Kolom "REFERENCE" khusus section `s_pib`** — Src di section ini SELALU identik di semua
+  kolom dokumen per baris (beda dari `s_inv_freight_duty` yg src BEDA per kolom — JANGAN
+  asumsikan section lain sama tanpa verifikasi ulang seperti investigasi ini). 1 kolom Referensi
+  tunggal disisip setelah "VALIDASI FIELD" (guard `section.id==='s_pib'`), kolom dokumen lain
+  cuma render Cmp (Src+"vs" disembunyikan). `setSrcForGroup(section,field,val)` — tulis ke
+  SEMUA row id yg berbagi `groupKey` sekaligus.
+- **Pill status berlabel** — ikon polos diganti pill rounded + teks (`getCfg(st)`, sudah ada
+  sebelumnya sbg dead code, dipakai ulang). `STATUS_CONFIG` lama TETAP dead code, jangan
+  duplikat mapping lagi.
+- **Cmp "(dalam kurung)" tanpa label "vs"** — "vs" dihapus total. Cmp mode-lihat: kurung +
+  `text-[10px]` + warna redup `/70` — KECUALI section `s_pib`, DIKEMBALIKAN ke gaya lama (tanpa
+  kurung, `text-xs`, solid) atas permintaan susulan. **Kalau section lain diminta balik ke gaya
+  lama, tambahkan id-nya ke kondisi `section.id === 's_pib'` di 3 titik (JANGAN duplikat blok
+  baru)**. Placeholder literal "Src"/"Cmp" DIHAPUS (placeholder "Format..." row `isFormat` &
+  "Referensi" kolom REFERENCE TETAP ADA). Pill status "empty" diganti label "Not checked yet" +
+  ikon `Clock` (bg lavender `#EEEAF3`/warna `#5A305A`, bukan abu polos lagi).
+  **Percobaan DIBATALKAN**: sempat nambah `s_inv_freight_duty` ke exception ini, TERNYATA salah
+  paham maksud user, SUDAH DIREVERT — jangan re-apply tanpa konfirmasi ulang.
+- **Border kolom kontras** — SEMUA border vertikal (7 titik + 2 box-shadow sticky) diseragamkan
+  `border-slate-300`/`#cbd5e1` (dari `border-slate-200`/`#e2e8f0` yg kontrasnya jelek di atas
+  header berwarna pastel). BUKAN bug geometris — kalau ada laporan "border putus" lagi, cek
+  kontras dulu SEBELUM curiga bug struktural (sudah 2x ditelusuri, murni soal warna).
+- **Baris "Subtotal after CN" digabung ke "Subtotal"** — `rowLabel: "Subtotal / Subtotal After
+  CN"` sama di 4 row config (`if02`/`id01`/`cnf02_b`/`cnd02_b`).
+- **Lebar kolom "VALIDASI FIELD" diseragamkan** — `w-[160px] min-w-[160px] max-w-[160px]
+  whitespace-normal` (`<td>` + `break-words`) di SEMUA tabel (2 titik th/td).
+- **"Other Cost" (PIB Item Value & CIPL Total Item Value kolom PO) bisa diedit manual** —
+  `otherCost` ditambahkan ke `values[id]` (otomatis ke-serialize ke `values_json`, tanpa ubah
+  skema/RPC). Default awal dari `raw.other_cost_valas`, setelah pernah tersimpan baca
+  `cl.values_json` langsung (jalur fill() di-skip). Data lama fallback: baca `v.otherCost` dulu,
+  fallback raw.
+- **Sel CN dipindah kolom** — 4 row (`cnf02_b`/`cnd02_b` "Subtotal.../PPN") pindah `compareDoc`
+  dari "CN INVOICE FREIGHT/DUTY" → "FP Revisi Freight/Duty". Kolom lama tetap ada (dipakai row
+  lain), sekarang tampil "-" utk 2 baris ini.
+- **"DPP"→"DPP / DPP After CN"**, **"PPN"→"PPN / PPN After CN"** (rowLabel saja, `field` mentah
+  tidak disentuh, keyword-matching aman).
+- **Src baris "No. AWB" kolom SPPB** (`pib02`) diganti dari `pibV.no_awb` → `invF.awb ||
+  invD.awb` (samakan dgn `id07`). **BUKAN retroaktif** — checklist yg SUDAH tersimpan
+  (`tabel_checklist_validasi` ada baris) TIDAK ikut ke-update, karena jalur `fill()` di-skip
+  total kalau sudah ada baris tersimpan. Keputusan user: TIDAK ADA fix kode, cukup dijelaskan.
+- **Bug status "Not checked yet" padahal Cmp terisi** — cabang khusus
+  `fieldName.includes("Referensi (")` pakai `||` (salah, salah satu kosong="empty") bukan `&&`
+  (konvensi umum: kedua kosong baru "empty", satu kosong="partial"/Incomplete). Fixed:
+  `if (!srcVal && !cmpVal) return "empty"; if (!srcVal || !cmpVal) return "partial";`
+- **Tabel "NO VESSEL NAME AND IMO NUMBER" gated Document Completeness Checklist** —
+  `getDocChecklistFlag(compareDoc, flags)` map PO/CIPL/Final Invoice → `ada_po`/`ada_cipl`/
+  `ada_final_invoice`. `computeStatus(..., docChecked=true)` — `if (!docChecked) return
+  "partial"` dicek **PALING AWAL, SEBELUM `isPoNonImi`** (urutan KRITIS — versi awal taruh
+  `isPoNonImi` duluan, bug: PO non-IMI bypass total gating checklist walau dok "Missing").
+  **JANGAN tukar urutan ini lagi.** State `docCompletenessFlags` di-fetch sekali di `doLoad()`
+  dari `dokumen_checklist`, SEBELUM early-return baris tersimpan.
 
-## Customize View — Audit Courier & Rekapan Courier (`src/components/SharedDataTable.tsx`, 2026-09)
+## Courier — Document Validation tombol Checklist "Upload Additional Doc" — lihat bagian tersendiri di atas.
 
-Fitur pilih kolom mana yang tampil di tabel, TERPISAH untuk 2 menu: Audit Courier & Rekapan
-Courier (Sea & Air, Validasi, Audit Trail TIDAK ikut cakupan ini).
+## Courier Audit — kolom "Kurs BI (Rp)" di tab Draft
 
-- **Sumber daftar kolom** (SESUAI PRINSIP "pakai kolom yang sudah ada, jangan bikin daftar
-  baru"): `COURIER_AUDIT_CUSTOMIZABLE_COLS` (~setelah `COURIER_COLS`) = gabungan dedup-by-key
-  dari `PIB_COLS` + `CN_COLS` — 1 preferensi berlaku ke SEMUA sub-tipe tab Audit (PIB/CN/Draft),
-  kalau suatu kolom hasil hide tidak ada di sub-tipe yang aktif otomatis tidak berpengaruh
-  (aman, tidak perlu preferensi terpisah per sub-tipe). `COURIER_REKAPAN_CUSTOMIZABLE_COLS` =
-  langsung dari `COURIER_COLS`. Kolom `index` ("No.") dikeluarkan dari daftar — selalu tampil,
-  tidak bisa disembunyikan; kolom `Action` (sticky) juga tidak termasuk cakupan fitur ini.
-- **Penyimpanan preferensi**: localStorage (BUKAN tabel Supabase baru — ini murni preferensi
-  tampilan, bukan data bisnis, jadi disepakati tidak perlu migrasi SQL), key
-  `beehive_customize_view:${user.id}:courier_audit` / `:courier_rekapan` (per-user via `user.id`
-  dari `useAuth()`, per-menu via key terpisah). **Konsekuensi yang disadari**: preferensi TIDAK
-  sinkron lintas device/browser (khas localStorage) — kalau nanti user minta sinkron lintas
-  device, perlu upgrade ke tabel Supabase baru (belum diimplementasikan, sengaja localStorage
-  dulu krn lebih simpel & sudah memenuhi requirement "per-user per-menu" as-is).
-- **State**: `courierAuditHiddenCols`/`courierRekapanHiddenCols` (`Set<string>`, isi = kolom yang
-  DI-HIDE, kosong = default/semua tampil — ini definisi "kondisi default" karena SEBELUM fitur
-  ini semua kolom memang selalu tampil apa adanya, tidak ada konsep hidden-by-default di tabel
-  manapun di app ini). Di-init dari localStorage via `loadHiddenCols()`, di-reload ulang lewat
-  `useEffect` kalau `user?.id` berubah (ganti akun di browser yang sama).
-- **`CustomizeViewModal`** (komponen baru, ditaruh setelah `DeleteModal`) — modal generik terima
-  `title`/`allCols`/`hiddenKeys`/`onCancel`/`onSave`, dipakai bareng utk kedua menu (Audit &
-  Recap) lewat prop yang beda. State pending (`pendingHidden`) LOKAL di dalam modal — perubahan
-  checkbox TIDAK langsung ter-apply ke tabel, harus klik "Save" (App requirement #5). Tombol
-  "Reset to Default" cuma mengosongkan `pendingHidden` (= semua tercentang) di dalam modal, TETAP
-  butuh klik "Save" sesudahnya utk benar-benar ter-apply & tersimpan (bukan auto-save). Search
-  bar filter list berdasar `label` (case-insensitive substring), tidak mempengaruhi apa yang
-  sudah tercentang/tidak. Tombol "Uncheck All" (2026-09, di footer sebelah "Reset to Default",
-  SEMPAT dicoba jadi link kecil di bawah search bar dulu — dipindah atas permintaan user) —
-  meng-uncheck SEMUA kolom di `allCols` (bukan cuma hasil filter search saat ini), berguna utk
-  mulai dari kosong lalu user tinggal cari & centang beberapa kolom yang diinginkan saja.
-- **Penerapan ke tabel**: `activeCols` (variable existing yang menentukan daftar kolom aktif per
-  tab) **TETAP UTUH/tidak difilter** — masih dipakai apa adanya utk `EditModal`/`AddRowModal`/
-  Export (`ExportModal`), supaya field yang disembunyikan dari TAMPILAN TABEL tetap bisa diedit
-  & tetap ikut ter-export. Variable BARU `visibleCols` (dihitung sesudah `activeCols`) = filter
-  `activeCols` buang key yang ada di hidden-set, HANYA saat `activeSubTab` adalah `courier_audit`/
-  `courier_rekapan` (tab lain `visibleCols === activeCols`, tidak berubah). `visibleCols` dipakai
-  GANTI `activeCols` di 3 tempat: `<thead>` (`activeCols.map` → `visibleCols.map`), prop
-  `cols={...}` di `CourierAuditRowGroup`, dan `cols={...}` di `CourierRekapanRowGroup` — supaya
-  header & isi baris tetap sejajar. Row-group lain (`SeaAirAuditRowGroup`/`SeaAirRekapanRowGroup`/
-  `DataRow` default) TIDAK disentuh, tetap pakai `activeCols` penuh.
-  **Kalau fitur ini nanti diperluas ke tab lain (mis. Sea & Air), WAJIB ikuti pola yang sama:
-  jangan filter `activeCols` itu sendiri (akan ikut memfilter Edit/Add/Export), buat
-  `visibleCols` terpisah dan cuma pasang di thead + row-group yang relevan.**
-- Tombol toolbar "Customize View" (icon `SlidersHorizontal`, dekat tombol Refresh) muncul kalau
-  `activeSubTab` courier_audit/courier_rekapan — SENGAJA TIDAK digate `canEdit()`, karena ini
-  preferensi tampilan pribadi (bukan aksi mengubah data), semua role yang bisa lihat halaman ini
-  boleh customize tampilannya sendiri.
+Tab Draft (gabung PIB+CN) pakai `activeCols=PIB_COLS` yg tidak punya `kurs_bi` (cuma
+`CN_COLS` yg punya) — baris CN di Draft dulu tidak pernah tampil Kurs BI. Fix: `activeCols` utk
+Draft dibangun via IIFE, sisip `{key:'kurs_bi', label:'Kurs BI (Rp)', type:'num'}` setelah
+`kurs_ndpbm`. `COURIER_AUDIT_CUSTOMIZABLE_COLS` sudah cakup ini dari awal.
 
-## Highlight baris Submit Date — Rekapan Courier (`CourierRekapanRowGroup`, 2026-09)
+## Sea & Air — Modal Cost Validasi Shipment & Invoice (`ValidasiShipmentInvoiceLengkap.tsx`)
 
-Baris di tabel **Recap Courier** (SEMUA tab All PPJK/DHL/FEDEX & semua pilihan Company) diberi
-warna latar kalau kolom `submit_date`-nya terisi (tidak null/kosong) — murni penanda visual,
-TIDAK ada perubahan data, teks, label, ikon, bold, tooltip, atau notifikasi apa pun.
+`globalStats` (footer "Cost Validation Summary") tambah % + progress bar (REPLIKA
+`SeaAirValidasiModal.tsx`). `pct = round(match/total*100)`, `total` = SEMUA baris `checks`
+(bukan cuma yg statusnya terisi). Baris section `'SURVEYOR'` DIKECUALIKAN dari hitungan (opsional,
+tidak boleh turunkan skor). File ini BELUM diaudit menyeluruh apakah punya pola SECTIONS/
+row-col-lookup lain — cek dulu sebelum translate/ubah row/col lain.
 
-- `hasSubmitDate = !!String(effectiveRec.submit_date ?? '').trim()` (dihitung dari `effectiveRec`
-  — record yang SUDAH digabung dengan pending edit yang belum disimpan, sama seperti tampilan sel
-  lain di komponen ini — jadi warnanya juga ikut update live kalau user sedang mengedit
-  `submit_date` di mode edit massal/per-baris, walau ini bonus di luar scope awal yang cuma minta
-  konsisten lintas sort/filter/pagination/search).
-- Style: `bg-[#FFF5C5]` (kuning muda) + `border-l-[3px] border-l-[#E6C25C]` (aksen emas, gelap
-  dari base) di `<tr>`. Hover jadi `hover:bg-[#F5E28F]` (sedikit lebih gelap, BUKAN hilang/ketutup
-  warna hover biru biasa `hover:bg-blue-50/30`) — kalau `hasSubmitDate` true, seluruh kombinasi
-  bg/hover lain (mode edit massal `bg-blue-50/50`, baris ke-2+ hasil split PO `bg-slate-50/40`)
-  DIABAIKAN, kuning SELALU menang (row-level ternary tunggal di `rowBgClass`, bukan menumpuk
-  banyak class bg sekaligus yg hasilnya tidak terprediksi krn cuma 1 declaration bg yg menang di
-  CSS). **Riwayat warna (2026-09, JANGAN reintroduce versi lama)**: ungu solid
-  (`#F1E7F1`/`#5A305A`) → coral solid (`#FBE4DD`/`#F3D0C4`/`#E0724E`) → gradient kuning→coral
-  (`linear-gradient(90deg,#FFF5C5_0%,#F58C77_100%)`) → **VERSI FINAL: kuning solid `#FFF5C5`**
-  (permintaan user berturut-turut, gradient-nya "tidak cocok"). `#FFF5C5`/`#F5E28F` KEBETULAN
-  sama persis dgn `auditHighlightClass` yang sudah lebih dulu ada di `SeaAirRekapanRowGroup`
-  (~baris 2286, penanda `audit_status === 'LENGKAP'`, fitur BEDA & TIDAK terkait) — hanya
-  kebetulan warna yang sama, bukan style yang di-share/reuse antar 2 fitur ini.
-- **2 tempat tambahan yang HARUS ikut disesuaikan warnanya, kalau tidak baris highlight akan
-  "bolong" putih di tengah/kanan**: (1) `additionalClasses` utk kolom pertama saat PO di-split &
-  expanded (`bg-white group-hover:bg-blue-50/30` → jadi `bg-[#FFF5C5] group-hover:bg-[#F5E28F]`
-  kalau `hasSubmitDate`); (2) kolom **Action** sticky kanan (`bg-white group-hover:bg-slate-50` →
-  jadi `bg-[#FFF5C5] group-hover:bg-[#F5E28F]` kalau `hasSubmitDate`) — keduanya render `<td>`
-  dgn bg eksplisit sendiri yg SECARA VISUAL menutupi bg `<tr>` di area itu kalau tidak ikut
-  disesuaikan.
-- Badge `INVOICE TYPE` (Freight/Duty/Credit Note, `type: 'invType'` di `getCellData()`) tetap
-  render span dgn warna badge sendiri di atas background kuning baris (badge invType SEKARANG
-  py warna per jenis sejak susulan 2026-09 di bawah, TIDAK lagi cuma amber/sky polos — tetap
-  konsisten kontras di atas background kuning highlight ini krn warnanya beda kategori).
-- **Cakupan SENGAJA cuma `CourierRekapanRowGroup`** — `CourierAuditRowGroup`/
-  `SeaAirAuditRowGroup`/`SeaAirRekapanRowGroup` (3 komponen lain yg py pola `additionalClasses`
-  sama persis, ditemukan lewat grep saat implementasi) TIDAK ikut disentuh, request-nya cuma utk
-  halaman Invoice Recap Courier.
-- **App ini TIDAK punya dark mode** (dicek: 0 pemakaian class `dark:` di seluruh `src/`) — jadi
-  warna solid `#FFF5C5`/`#E6C25C`/`#F5E28F` dipakai apa adanya tanpa varian `dark:`. Kalau nanti
-  app beneran nambah dark mode, style highlight ini WAJIB direvisit (kontras kuning muda di atas
-  background gelap kemungkinan besar tidak terbaca).
+## Audit AP Local — halaman laporan otomasi + koreksi terbatas (`src/pages/AuditPoPage.tsx`)
 
-### Badge warna per jenis Invoice Type (`getCellData()`, `type: 'invType'`, 2026-09 susulan)
+Nama file/route/page_key `AuditPoPage`/`/audit-po`/`audit_po` (teknis), label tampil **"Audit AP
+Local"**. Tidak punya judul card, panel filter langsung jadi header, `justify-end`.
 
-Sebelumnya badge kolom **INVOICE TYPE** cuma bedain 2 warna (`DUTY` = amber, SELAIN itu = sky
-biru polos — jadi Freight/Credit Note Duty/Credit Note Freight semuanya keliatan sama birunya).
-Diganti jadi warna per jenis (permintaan user, dari screenshot yang nunjukin badge biru itu
-ketimpa/kurang kontras di atas highlight baris kuning `#FFF5C5` di atas):
-- `FREIGHT` → `bg-[#F58C77] text-white` (coral)
-- `DUTY` → `bg-[#F5E28F] text-[#5A305A]` (kuning lebih gelap dari highlight baris `#FFF5C5`,
-  biar tetap ada beda kontras walau baris ybs juga lagi ke-highlight kuning)
-- `CREDIT NOTE DUTY` & `CREDIT NOTE FREIGHT` → `bg-[#5A305A] text-white` (ungu brand)
-- Value lain yang tidak dikenali (fallback) → tetap `bg-sky-100 text-sky-700` (perilaku lama)
+**PENTING — 3 halaman duplikat arsitektur**: `AuditPoPage.tsx` (tabel `audit_po_ap_comp`),
+`AuditPoOverseasPage.tsx` (`audit_po_apovs_comp`), `PiLocalPage.tsx` (`audit_po_pi_local_comp`)
+adalah **DUPLIKASI SENGAJA, TIDAK ADA KOMPONEN SHARED** — pola/struktur identik persis
+(`KategoriPicker`, `PreviewModal`, `DashboardModal`, dll masing2 py salinan sendiri). Kalau
+mengubah salah satu, **WAJIB porting manual ke 2 lainnya** kecuali disebutkan HANYA utk 1
+halaman. Rule ini dinyatakan SEKALI di sini — subbagian di bawah tidak mengulanginya lagi
+kecuali ada pengecualian scope.
 
-Deteksi jenis via `String(rec.invoice_type ?? '').toUpperCase()` lalu `.includes('CREDIT NOTE')`
-(dicek PALING DULU, sebelum cek `DUTY`/`FREIGHT` exact-match, supaya "CREDIT NOTE DUTY" tidak
-kepental ke cabang `DUTY` biasa) — case-insensitive, tahan variasi casing data dari Gemini/n8n.
-Ini kolom `getCellData()` generik (dipakai di banyak tempat lewat `COURIER_COLS`), TIDAK
-dibatasi cuma render di `CourierRekapanRowGroup` — tapi `invoice_type`/`type: 'invType'` sejauh
-ini CUMA ada di `COURIER_COLS` (Rekapan Courier), jadi secara praktis efeknya cuma kelihatan di
-situ.
+- Tabel `audit_po_ap_comp` diisi otomasi backend tiap 30 menit. 5 kolom (`nama_pt`, `nomor_po`,
+  `vendor_name`, `status_audit`, `kategori`) bisa dikoreksi manual + baris bisa dihapus permanen;
+  kolom lain read-only murni. `nama_pt`/`nomor_po` SEKARANG read-only di modal Edit (permintaan
+  user), Vendor/Status Audit/Kategori tetap edit.
+- **Kolom Aksi** — toggle panel per baris (`openActionsRowId`, pola `FarOverseasAirPage.tsx`,
+  bukan floating absolute). Panel **TIDAK auto-close** setelah klik item (fix: `setOpenActionsRowId
+  (null)` dihapus dari 4 onClick) — hanya tutup via toggle manual.
+- Tabel `table-fixed` + `<colgroup>` lebar eksplisit (bukan auto-layout, hindari sticky-column
+  quirk). **Beberapa percobaan fix "kolom Aksi kosong/tidak fit" SEMUA DIREVERT** — kondisi
+  final: 8 `<col>` lebar tetap (Vendor 160px, Aksi 105px), `w-full`, `min-w-[980px]`, wrapper
+  tombol Aksi `w-[92px] mx-auto` (rata tengah — ini yg fix "ruang kosong kanan", BUKAN
+  colgroup/table-layout). **JANGAN coba lagi**: (a) tambah `<col>` ke-9, (b) shrink konten
+  th/td doang, (c) lepas `w-full` (bikin celah di luar tabel), (d) jadikan kolom Vendor polos
+  tanpa lebar (teknis berhasil tapi user bilang "tidak cantik").
+  **Aturan wajib**: tiap tambah/hapus kolom tabel `table-fixed`, WAJIB samakan `min-w-[...]`
+  dgn SUM lebar `<col>` tersisa (bug pernah terjadi: hapus kolom Durasi di PiLocalPage tanpa
+  update `min-w`, kolom lain jadi redistribusi tidak proporsional).
+  - `EditAuditPoModal` — form, `updateAuditPoRow(id, updates)`.
+  - `DeleteAuditPoModal` — pola `DeleteConfirmModal` Bunker.
+  - **Preview PDF/Hasil Audit via `PreviewModal` in-app** (BUKAN `<a target=_blank>` biasa) —
+    riwayat: Drive tidak pernah render HTML upload user sbg halaman hidup (proteksi XSS bawaan,
+    cuma source code mentah tampil) → iframe `src` langsung ke URL luar kena X-Frame-
+    Options/CSP blank tanpa pesan. **Solusi final**: proxy backend
+    `GET /api/drive-file-proxy?id=<drive_file_id>` (`server.ts`, id divalidasi regex ketat
+    `^[a-zA-Z0-9_-]{10,100}$`, request server-ke-server ke
+    `https://drive.usercontent.google.com/download?id=...&export=download&confirm=t`, di-STREAM
+    langsung tanpa disk). `PreviewModal` fetch via JS lalu suntik `srcDoc` (HTML) atau
+    `blob:` URL (PDF, `Blob` di-rewrap paksa `type:'application/pdf'` — fix bug PDF trigger
+    download krn Content-Type upstream generik) ke iframe — `srcDoc`/`blob:` dianggap
+    same-origin, imun X-Frame-Options. `buildPreviewSrc(driveFileId, rawUrl)` prioritaskan proxy,
+    `url_pdf`/`url_html` mentah fallback. Tombol pojok kanan "Download File" (bukan lagi "Buka
+    di tab baru" — fungsinya memang selalu trigger download). Tombol **Print** —
+    `sandbox="allow-same-origin allow-modals"` WAJIB (tanpa `allow-modals`, `window.print()`
+    diblokir diam-diam meski dipanggil dari parent window). Tinggi modal `h-[98vh]`.
+  - Tombol "Reset Filter" (`FilterX` icon polos) — reset search/PT/Kategori/tanggal, TIDAK reset
+    sortBy/sortDir/pageSize.
+  - Pagination **server-side** (`.range()`, tabel terus bertambah). Search debounced 400ms ke
+    `nomor_po`/`vendor_name`. Dropdown `nama_pt` & `kategori` DINAMIS dari data asli (lihat
+    subbagian tersendiri di bawah, bukan lagi hardcode `PT_OPTIONS`). `STATUS_AUDIT_OPTIONS`
+    datalist DIHAPUS TOTAL (input polos, ketik manual).
+  - Kolom **Kategori** — combobox `KategoriPicker` (bukan free text), **MULTI-SELECT** (checkbox
+    toggle + tombol "Selesai", disimpan 1 string gabung `" + "` via `KATEGORI_MULTI_SEPARATOR`/
+    `parseKategoriMulti()`). Filter kategori pakai `.ilike('%..%')` bukan `.eq` (exact match
+    gagal cocok ke gabungan). **Dropdown di-render via React Portal ke `document.body`**
+    (`position:fixed`, arah buka dihitung ulang tiap buka dari `getBoundingClientRect()` vs
+    `window.innerHeight`) — FIX TUNTAS dari 2 percobaan gagal sebelumnya (tebak arah dari index
+    baris — salah kalau total baris sedikit). Prop `openDirection` DIHAPUS TOTAL dari
+    `KategoriPicker`/`KategoriCell`.
+  - Kolom Vendor — `break-words` (bukan truncate+tooltip), nama panjang wrap penuh.
+  - `src/utils/AuditPoHelpers.ts` — `AuditPoRow`, `AuditPoEditableFields`, `statusAuditMeta`,
+    `KATEGORI_OPTIONS`, `updateAuditPoKategori`, `updateAuditPoRow`, `deleteAuditPoRow`.
+  - `PAGE_REGISTRY` key `audit_po`, group `'Audit AP Local'` (grouping utk matrix Kelola Role
+    SAJA, tidak terkait struktur submenu sidebar — lihat "Compare Doc" di bawah).
+  - **Tombol "Dashboard" + `DashboardModal`** (paling kiri panel filter) — ringkasan poin ala
+    slide internal. Tab **Overview**: pie chart SVG manual (bukan `conic-gradient` lagi, sudah
+    diganti — geometri lingkaran penuh dipertahankan utk callout label akurat), efek "3D"
+    (radial gradient + drop-shadow + rim stroke, helper `lightenHex`/`darkenHex`), `r=105,
+    cx=300` (JAGA `cx-r=195` konstan kalau resize pie — margin callout aman). Tab **Per Vendor**:
+    chart batang vertikal per `nama_pt` (`status_audit` terisi), `niceAxisStep()` helper axis.
+    Tab **Kategori** (chart batang HORIZONTAL per `kategori`, `wrapKategoriLabel()` word-wrap,
+    TIDAK di-seed 0 seperti Per Vendor — kalau kosong, pesan "Tidak ada kategori tercatat").
+    Wrapper `min-h-[380px] mt-3 flex flex-col justify-center` (SAMA di semua tab, cegah modal
+    "meloncat" ukuran). Tab switcher aktif = `bg-[#5A305A] text-white`.
+    Semua 3 tab (Overview/Per Vendor/Kategori) + efek 3D + dropdown dinamis PT — porting: 3
+    halaman duplikat (lihat catatan di atas).
+  - **Filter dropdown "Semua PT" & seed chart "Per Vendor" DINAMIS** (bukan hardcode
+    `PT_OPTIONS` lagi) — `fetchDistinctNamaPt(table)` (`select('nama_pt')`, dedup+sort client),
+    fallback ke `PT_OPTIONS` kalau gagal/kosong. State `ptOptions`, 2 titik per halaman (komponen
+    utama + `DashboardModal`). Fix laporan "PT baru (mis. GUN) tidak muncul di dropdown/chart".
+  - **Kolom Kategori sortable** — `type SortKey` tambah `'kategori'`, `<SortableHeader>` di th.
+    Sort server-side (`.order()`, generik). `.order(sortBy,{ascending, nullsFirst:false})` —
+    fix bug baris kosong nongol di atas saat sort ASC (Postgres default NULL=largest).
 
-### Export Excel Rekapan Courier — PO PT IMI/PO Non IMI/Vessel TIDAK di-split lagi (`src/components/ExportModal.tsx`, 2026-09)
+## Audit AP Overseas (`AuditPoOverseasPage.tsx`)
 
-Export Excel di halaman **Rekapan Courier** (Invoice Recap) SEBELUMNYA memecah 1 shipment jadi
-BANYAK baris Excel kalau `po_pt_imi`/`vessel` punya lebih dari 1 nilai (mis. 4 PO → 4 baris
-Excel, kolom lain di-merge/`mergeCells` supaya kelihatan 1 kesatuan) — pola ini REPLIKA dari
-split serupa yang sudah lebih dulu ada utk Rekapan Sea & Air (`po_detail`, array JSON per-PO).
-**Diganti (permintaan user, dikonfirmasi HANYA utk Rekapan Courier — TIDAK menyentuh Sea & Air
-Rekapan yang split-nya TETAP jalan seperti biasa)**: kolom `po_pt_imi`/`po_shipping`/`vessel`
-(& `breakdown_courier_adm_vessel`/`breakdown_duty_vessel`/`breakdown_freight_vessel`/
-`breakdown_bm_vessel`/`breakdown_ppnpph_vessel`) sekarang SELALU 1 baris per shipment di export,
-persis apa adanya nilai kolom di DB (yang MEMANG sudah tersimpan ter-gabung tanda `"+"`, mis.
-`"PO123 + PO456"` — beda dari Sea & Air yang PO/vessel-nya tidak ada sbg kolom teks langsung,
-cuma ada di `po_detail` JSON, jadi Sea & Air tetap butuh proses split/rebuild).
-- `getSplitRows()` di `ExportModal.tsx` — cabang `splitByPoDetail === 'courier_rekapan'`
-  DIHAPUS, sekarang SELALU `return null` kalau bukan `'sea_air_rekapan'`, jatuh ke jalur baris
-  normal (`buildCellValue(item, c, undefined, false)`, baca `item[c.key]` apa adanya).
-  `parseCourierPoVesselPairs()` & `COURIER_REKAPAN_SPLIT_REPEATING_COLS` (helper khusus split
-  Courier yg jadi dead code) DIHAPUS TOTAL, bukan cuma dibiarkan nganggur.
-- `SharedDataTable.tsx` masih mengirim prop `splitByPoDetail="courier_rekapan"` ke `ExportModal`
-  saat export dari tab Rekapan Courier (TIDAK diubah, sengaja dibiarkan) — value ini SEKARANG
-  cuma dipakai sbg penanda "bukan sea_air_rekapan" (selalu jatuh ke `return null`), tidak error
-  apa pun kalau dikirim, tapi kalau nanti mau bersih-bersih total boleh juga dihapus dari
-  pemanggilnya (di luar scope perubahan ini, sengaja tidak disentuh biar diff minimal).
-- Preview tabel di dalam modal (bagian atas `ExportModal.tsx`, `data.slice(0, 10)`) TIDAK
-  pernah melakukan split sama sekali (baca `row[c.key]` langsung) — jadi preview-nya dari awal
-  SUDAH selalu 1 baris per shipment, tidak ada perubahan tampilan preview krn fix ini.
+Duplikasi persis Audit AP Local (lihat rule duplikasi di atas), tabel `audit_po_apovs_comp`.
+`KATEGORI_OPTIONS` **BEDA TOTAL** dari AP Local (istilah Impor/Overseas bahasa Inggris: "DOKUMEN
+STOCK IN/PI", "IMPORT CALCULATION/LOGISTIC", "CUSTOMER NAME", "CURRENCY", "PN NUMBER" dst) —
+**sejak 2026-09 JANGAN disamakan otomatis lagi** antara `AuditPoHelpers.ts` &
+`AuditPoOverseasHelpers.ts` (dulu wajar sama, sekarang sengaja beda).
 
-### Export Excel Rekapan Courier — highlight `submit_date` ikut ke Excel (`applySubmitDateHighlight`, 2026-09)
+Tab ke-3 "Kategori" di Dashboard PERTAMA KALI dibuat di sini, lalu di-porting ke AP Local &
+PiLocal (lihat detail di bagian Audit AP Local). `MainLayout.tsx` bug fix: `activeMainTab`
+deteksi via `pathBelongs(pathname, base)` (exact match atau diikuti `/`) — bukan `startsWith`
+polos, krn `/audit-po-overseas` diawali string `/audit-po`.
 
-Susulan dari fix split di atas: baris yang di aplikasi kelihatan kuning (highlight
-`submit_date` terisi, lihat bagian "Highlight baris Submit Date — Rekapan Courier" di atas)
-SEKARANG juga kuning di file Excel hasil export — baris yang putih di aplikasi tetap putih di
-Excel, TIDAK ada perubahan lain (angka/teks/format kolom tetap apa adanya).
-- `applySubmitDateHighlight(row, item)` di `ExportModal.tsx` (dekat `applyNumberFormat`) —
-  replika warna PERSIS dari highlight on-screen (`bg-[#FFF5C5]` → ARGB Excel `FFFFF5C5`), pakai
-  `row.eachCell({ includeEmpty: true }, cell => cell.fill = {...})` supaya SELURUH kolom di
-  baris itu ke-warnai (bukan cuma kolom yang kebetulan punya nilai).
-- Dipanggil di jalur baris normal (`data.forEach` di `handleExport`, setelah `applyNumberFormat`)
-  — cukup di situ SAJA krn jalur `splitRows` (dipakai Sea & Air Rekapan) sudah tidak pernah
-  aktif lagi utk `courier_rekapan` sejak fix split sebelumnya (lihat section di atas), jadi
-  SEMUA baris Rekapan Courier pasti lewat jalur normal ini.
-- Guard `splitByPoDetail !== 'courier_rekapan'` di baris pertama function — memastikan fitur ini
-  CUMA aktif utk export Rekapan Courier, TIDAK ikut mewarnai export Sea & Air Rekapan/Audit
-  Courier/lain-lain yang kebetulan lewat komponen `ExportModal` yang sama.
-- Kalau nanti warna highlight on-screen (`#FFF5C5`, lihat section "Highlight baris Submit Date")
-  diganti lagi, WAJIB disinkronkan ke sini juga (ganti literal ARGB `FFFFF5C5`) — supaya
-  aplikasi & hasil export tidak beda warna.
+Page_key `audit_po_overseas`, route `/audit-po-overseas`, group `'Audit AP Overseas'`.
 
-## Edit Massal — Audit Courier & Rekapan Courier (`src/components/SharedDataTable.tsx`, 2026-09)
+**BELUM DIJALANKAN ke Supabase production**:
+```sql
+alter table public.audit_po_apovs_comp add column if not exists kategori text;
+alter table public.audit_po_apovs_comp enable row level security;
+create policy "audit_po_apovs_comp_select" on public.audit_po_apovs_comp
+  for select using (public.has_page_access('audit_po_overseas'));
+create policy "audit_po_apovs_comp_insert" on public.audit_po_apovs_comp
+  for insert with check (public.has_edit_access('audit_po_overseas'));
+create policy "audit_po_apovs_comp_update" on public.audit_po_apovs_comp
+  for update using (public.has_edit_access('audit_po_overseas'))
+  with check (public.has_edit_access('audit_po_overseas'));
+create policy "audit_po_apovs_comp_delete" on public.audit_po_apovs_comp
+  for delete using (public.has_edit_access('audit_po_overseas'));
+```
 
-Fitur baru: banyak baris bisa punya perubahan (kolom BEDA-BEDA per baris) yang belum disimpan
-sekaligus, disimpan bareng lewat 1 tombol "Save All". Arsitektur `pendingEdits`/`getVal`/`setVal`
-DIREPLIKA dari List Memo FAR Overseas (`FarOverseasAirPage.tsx`), TAPI toggle mode editnya SUDAH
-DIUBAH dari per-baris jadi GLOBAL (lihat di bawah) — beda dari FAR Overseas yang masih per-baris
-— kalau nanti modul lain butuh fitur serupa, contoh yang lebih relevan adalah versi Courier ini,
-bukan FAR Overseas.
+## Struktur menu sidebar "Compare Doc" (`src/components/MainLayout.tsx`)
 
-**Konsep inti (VERSI FINAL, 2026-09 — direvisi dari desain awal yang per-baris)**: awalnya dibuat
-1 tombol "Edit" per baris (replika persis pola FAR Overseas) — user MENOLAK desain ini ("lae
-berarti harus tetap klik edit di tiap baris yang ada? itu namanya bukan edit masal lae, saya mau
-klik satu tombol edit lae"). Diganti jadi **SATU tombol toggle global "Edit Mode" di toolbar**
-(sebelah tombol "Add Data", muncul kalau `canEdit('courier_audit')`/`canEdit('courier_rekapan')`)
-— `courierAuditEditMode`/`courierRekapanEditMode` (`boolean`, BUKAN `editingRowId: number|null`
-lagi). Sekali diklik ON, SEMUA baris yang sedang tampil (lintas halaman/pagination — lihat catatan
-`page` di bawah) langsung masuk mode input sekaligus, tidak perlu klik per baris. Perubahan
-tetap disimpan di `pendingEdits` (keyed by row `id`), dipakai baik saat mode input aktif maupun
-buat `effectiveRec` read-only merge (`getCellData()`), sampai user klik "Save All" (commit semua
-ke DB via `handleInlineSaveRow` per baris, `Promise.all` paralel) atau "Cancel" (buang SEMUA
-pending edit). Mode edit TIDAK otomatis mati setelah "Save All" — sengaja dibiarkan ON supaya user
-bisa lanjut edit baris lain tanpa klik toggle lagi.
+Bunker, Audit AP Local, Audit AP Overseas digabung 1 menu induk "Compare Doc" (icon
+`GitCompare`) dgn 3 submenu — murni reorganisasi sidebar, route/page_key TIDAK berubah.
+`basePath:'/compare-doc'` SENGAJA dummy (3 route tidak berbagi prefix senada). `activeMainTab`
+diperluas: kalau tab punya `subTabs`, cek juga `subTabs.some(s => pathBelongs(pathname,
+s.path))`. `PAGE_REGISTRY` groups TIDAK ikut digabung (beda concern dari struktur visual).
 
-**Tombol "Edit" per-baris DIKEMBALIKAN LAGI (2026-09, susulan)** — sempat dihapus total waktu
-toggle global ditambahkan (asumsi awal: toggle global menggantikan kebutuhan toggle per-baris),
-TERNYATA user masih butuh keduanya ("tombol edit perbaris nya jangan di hilangkan juga lae,
-karena perlu juga edit per baris tanpa edit masal lae") — kadang cuma mau koreksi 1 baris tanpa
-membuka mode edit di SEMUA baris sekaligus. Diimplementasikan sbg state LOKAL per-row-group
-(`rowEditOn`, `useState` di dalam `CourierAuditRowGroup`/`CourierRekapanRowGroup` sendiri, BUKAN
-diangkat ke parent seperti `pendingEdits`) — `editingThisRow = (!!editMode || rowEditOn) &&
-canBulkEdit && ...`. Tombol "✏️ Edit"/"Editing" di panel Action toggle `rowEditOn` murni lokal;
-TIDAK ADA `onToggleEdit` prop lagi (beda dari desain lama sebelum toggle global) — parent tidak
-perlu tahu baris mana yang lagi di-toggle manual, karena `pendingEdits` tetap 1 sumber kebenaran
-yang sama dipakai baik dari toggle global maupun toggle per-baris ini. Jadi SEKARANG ADA 2 CARA
-independen utk masuk mode input per baris: toggle global (semua baris) ATAU tombol Edit baris itu
-sendiri (cuma baris itu) — keduanya menulis ke `pendingEdits` yang sama, "Save All"/"Cancel" tetap
-berlaku ke SEMUA baris yang berubah dari cara manapun.
+## Customize View — Audit Courier & Rekapan Courier (`SharedDataTable.tsx`)
 
-**Tombol "Save" per-baris (2026-09, susulan lagi)** — laporan user: "setelah di coba tombol
-simpan nya tidak bisa lae, harusnya di bedakan tombol simpan edit masal dan tombol simpan edit
-per baris lae". Sebelum ini SATU-SATUNYA cara commit ke DB adalah bar mengambang "Save All" yang
-commit SEMUA baris di `pendingEdits` sekaligus — kalau user cuma edit 1 baris lewat tombol Edit
-per-baris (`rowEditOn`), tidak ada cara simpan CUMA baris itu tanpa ikut nge-commit baris lain
-yang mungkin belum selesai diedit. Fix: ditambah `handleSaveOneCourierAuditRow(id)`/
-`handleSaveOneCourierRekapanRow(id)` (~baris setelah `handleDiscardAll*Edits`) — ambil
-`pendingEdits[id]` doang, panggil `handleInlineSaveRow(id, payload, true)` (fungsi SAMA yang
-dipakai "Save All", TIDAK ada logic simpan baru), sukses → hapus entry itu SAJA dari
-`pendingEdits` (bukan `setPendingEdits({})` semua). Diteruskan ke row-group lewat prop baru
-`onSaveRow?: (id: number) => Promise<boolean>`. Tombol "💾 Save" (hijau) muncul di panel Action
-HANYA kalau `rowEditOn` true (state lokal row ini) — dengan kata lain **kalau baris masuk mode
-edit lewat toggle GLOBAL toolbar ("Edit Mode"), tombol Save per-baris TIDAK muncul** (memang
-disengaja — cara simpannya utk mode global tetap "Save All" bar, supaya jelas dipisah: edit
-massal → Save All, edit satu baris manual → tombol Save di baris itu sendiri). Klik Save sukses →
-`rowEditOn` di-set `false` lagi (keluar dari mode input baris itu otomatis), state loading lokal
-`savingRow` men-disable tombol selama proses & ganti teks jadi "Saving...".
+Pilih kolom tampil, terpisah 2 menu (Sea & Air/Validasi/Audit Trail tidak ikut).
+`COURIER_AUDIT_CUSTOMIZABLE_COLS` (gabungan dedup PIB_COLS+CN_COLS)/
+`COURIER_REKAPAN_CUSTOMIZABLE_COLS` (COURIER_COLS). Disimpan localStorage (BUKAN Supabase — murni
+preferensi tampilan), key `beehive_customize_view:${user.id}:courier_audit`/`:courier_rekapan`
+(tidak sinkron lintas device, disengaja). `CustomizeViewModal` generik (title/allCols/hiddenKeys/
+onCancel/onSave), state pending lokal (butuh klik Save, bukan auto-apply). Tombol "Reset to
+Default"/"Uncheck All" di footer.
 
-**2 bug susulan lagi (2026-09, laporan yang SAMA: "tombol save all pada edit masal seperti
-tidak berfungsi... tidak bisa simpan ke database", DAN "jika edit per baris kenapa tombol save
-all edit masal muncul juga lae? harusnya tidak muncul")**:
-1. **Bar "Save All" muncul walau lagi edit PER-BARIS (bukan edit massal)** — kondisi tampil bar
-   sebelumnya cuma `courierAuditChangedRowIds.length > 0` (ADA pending edit apa pun, dari toggle
-   global MAUPUN dari tombol Edit satu baris — keduanya nulis ke `pendingEdits` yang sama, lihat
-   poin di atas). FIX: tambah syarat `courierAuditEditMode`/`courierRekapanEditMode` (toggle
-   GLOBAL) di kondisi tampil bar (~baris sebelum `<AlertTriangle>`) — bar "Save All" SEKARANG
-   CUMA muncul kalau mode edit GLOBAL sedang aktif, bukan cuma krn ada 1 baris pending dari edit
-   manual per-baris (yang punya tombol Save sendiri, lihat poin di atas).
-2. **Save All "kelihatan tidak simpan ke DB"** — `handleInlineSaveRow` sebenarnya SUDAH patch
-   `records` state lokal secara optimis begitu sukses (`setRecords(prev => prev.map(...))`), tapi
-   TIDAK PERNAH panggil `fetchRecords()` (refetch penuh dari server) setelahnya — kalau ternyata
-   ada kasus dimana update Supabase "sukses" (tidak error) tapi sebenarnya 0 baris ke-update (mis.
-   RLS `USING` clause diam-diam memfilter baris tanpa melempar error — perilaku umum Postgres RLS
-   utk UPDATE), tampilan tetap kelihatan "berhasil" padahal DB tidak berubah, dan setelah
-   navigasi/refresh manual baru ketahuan datanya balik ke nilai lama. FIX (defensif, ROOT CAUSE
-   PASTI belum terverifikasi krn belum ada akses DB langsung/log Supabase dari sesi manapun):
-   (a) `handleSaveAllCourierAuditEdits`/`Rekapan` & `handleSaveOneCourierAuditRow`/`Rekapan`
-   SEKARANG panggil `fetchRecords()` setelah ada minimal 1 baris sukses disimpan, supaya tabel
-   selalu mencerminkan state DB SEBENARNYA, bukan cuma patch optimis; (b) `handleInlineSaveRow`
-   SEKARANG SELALU `console.error('handleInlineSaveRow failed:', { id, payload, error })` di
-   blok catch (sebelumnya kalau dipanggil dgn `silent=true` — SEMUA pemanggil bulk-edit pakai
-   `silent=true` — errornya benar-benar hilang tanpa jejak apa pun, termasuk di console).
-   Kalau user lapor lagi "tidak tersimpan" setelah fix ini, MINTA screenshot Console (F12) dulu —
-   sekarang harus ada log `handleInlineSaveRow failed: {...}` di sana yang nunjukin pesan error
-   asli dari Supabase (mis. kolom tidak ada di tabel tujuan — lihat RESIKO PIB/CN id collision di
-   atas — atau RLS) — JANGAN tebak-tebak lagi tanpa lihat pesan itu.
+**Penerapan**: `activeCols` (dipakai EditModal/AddRowModal/Export) TETAP UTUH — variable BARU
+`visibleCols` (filter buang hidden keys, HANYA aktif di courier_audit/courier_rekapan) dipakai
+GANTI `activeCols` di thead + row-group Courier saja. **Kalau diperluas ke tab lain, WAJIB ikuti
+pola ini — jangan filter `activeCols` itu sendiri.**
 
-**ROOT CAUSE Save All ketemu & diperbaiki (2026-09, susulan lagi)** — setelah user konfirmasi
-"edit perbaris sudah berhasil simpan" TAPI Save All (edit massal) masih gagal, bandingkan 2 jalur
-kode itu ketemu bedanya: **tipe data `id`**. Kolom `id` bertipe `bigint`/`int8` di Postgres
-(kemungkinan `tabel_audit_pib`/`tabel_audit_cn`, cek skema asli kalau perlu verifikasi)
-dikembalikan Supabase-js sbg **STRING** (bukan JS number, demi mencegah presisi hilang di angka
-besar) — sedangkan kolom `int4` biasa dikembalikan sbg number. Tombol Save PER-BARIS meneruskan
-`rec.id` APA ADANYA (tipe aslinya, entah string atau number) ke `handleInlineSaveRow`, jadi
-`records.find(r => r.id === id)` di dalamnya selalu cocok. TAPI `courierAuditChangedRowIds`/
-`courierRekapanChangedRowIds` (dipakai Save All) sebelumnya PAKSA `.map(([id]) => Number(id))` —
-kalau `id` aslinya string bigint, hasil `Number(id)` jadi tipe BEDA dari `r.id` yang masih
-string, jadi `r.id === id` (strict equality) SELALU `false` → `records.find(...)` selalu
-`undefined` → `if (!record) return false;` → gagal DIAM-DIAM (early return SEBELUM try/catch
-sempat jalan, jadi TIDAK ADA console.error/alert sama sekali, cocok dgn laporan user "modal
-konfirmasi/bar tidak hilang, tidak ada pesan apa pun"). FIX (2 sisi, HARUS bareng):
-1. `courierAuditPendingEdits`/`courierRekapanPendingEdits` diubah tipe dari `Record<number, ...>`
-   ke **`Record<string, ...>`** (state tetap JS object biasa jadi ini murni perbaikan tipe TS,
-   TIDAK ada perubahan runtime), dan `courierAuditChangedRowIds`/`courierRekapanChangedRowIds`
-   TIDAK LAGI `Number(id)` — dibiarkan string apa adanya (key asli dari `Object.entries`).
-2. `handleInlineSaveRow` (parameter `id` sekarang `number | string`) — SEMUA perbandingan
-   `r.id === id`/pencarian record via id (4 titik: `sea_air_audit` depKeys block, `sea_air_
-   rekapan`, `courier_audit`, plus `setRecords` optimistic patch di akhir) diganti jadi
-   `String(r.id) === String(id)` — perbandingan berbasis string SELALU konsisten apa pun tipe asli
-   `r.id` (number ATAU string), jadi imun dari mismatch tipe int4-vs-bigint ini. **Kalau nanti
-   nambah cabang baru di `handleInlineSaveRow` yang butuh cari record via id, WAJIB pakai pola
-   `String(r.id) === String(id)` ini juga, JANGAN `r.id === id` polos lagi.**
+## Highlight baris Submit Date — Rekapan Courier (`CourierRekapanRowGroup`)
 
-**Tombol Action tetap terbuka saat Edit per-baris (2026-09, susulan)** — laporan user: "jika edit
-perbaris harusnya tombol aksi nya tetap muncul, supaya untuk simpan bisa mudah". Sebelumnya klik
-"Edit" ikut `setShowActions(false)` (menutup panel Action), jadi tombol "💾 Save" yang baru muncul
-langsung ikut tersembunyi juga — user harus buka lagi panel Action manual utk klik Save. FIX:
-tombol Edit SEKARANG cuma `setRowEditOn(v => !v)` TANPA menutup panel Action — panel tetap
-terbuka (`showActions` tidak disentuh) supaya tombol Save langsung kelihatan & bisa diklik tanpa
-buka-tutup panel lagi. Tombol Save & aksi lain (Checklist/Delete/dst) TETAP menutup panel setelah
-diklik seperti biasa (`setShowActions(false)` di situ tidak diubah) — cuma tombol Edit yang
-dikecualikan.
+Baris dgn `submit_date` terisi diberi warna latar `bg-[#FFF5C5]` (kuning, hover
+`#F5E28F`) + `border-l-[3px] border-l-[#E6C25C]` — SELALU menang di atas kombinasi bg lain
+(edit massal/split-PO). **Riwayat warna (ungu→coral→gradient→kuning solid FINAL) — JANGAN
+reintroduce versi lama.** 2 tempat tambahan HARUS ikut disesuaikan (kolom pertama saat PO
+expanded, kolom Action sticky) — kalau tidak, highlight "bolong" putih. Cakupan SENGAJA cuma
+`CourierRekapanRowGroup` (3 row-group lain dgn pola sama TIDAK disentuh). App ini TIDAK punya
+dark mode.
 
-**Implementasi** (state di komponen induk `SharedDataTable`, ~baris 2737-2758):
-- `courierAudit{EditMode,PendingEdits}` + `courierRekapan{EditMode,PendingEdits}` — state
-  TERPISAH per sub-tab (bukan digabung), supaya tidak ada state nyasar antar tab.
-- `getCourierAuditVal`/`setCourierAuditVal`/`courierAuditChangedRowIds` (dan pasangan
-  Rekapan-nya) — helper murni. TIDAK ADA `toggleCourierAuditEditRow` di level PARENT lagi (toggle
-  per-baris sekarang murni state lokal `rowEditOn` di dalam row-group masing-masing, lihat di
-  atas) — toggle GLOBAL tetap langsung `setCourierAuditEditMode(v => !v)` dari tombol toolbar.
-- `CourierAuditRowGroup`/`CourierRekapanRowGroup` terima prop `editMode?: boolean` (mode global
-  dari parent) DIGABUNG dengan state lokal `rowEditOn` (mode manual per-baris) —
-  `editingThisRow = (!!editMode || rowEditOn) && canBulkEdit` (Audit masih ada gate tambahan
-  `rec.status !== 'LENGKAP'`). Kedua row-group PUNYA tombol "Edit"/"Editing" lagi di panel Action
-  (paling atas, sebelum Checklist/Validasi/Cost/Archive/Undraft/Delete).
-- **Bug (ditemukan & diperbaiki 2026-09)**: `courierAuditChangedRowIds`/`courierRekapanChangedRowIds`
-  awalnya dihitung `Object.keys(pendingEdits).map(Number).filter(id =>
-  Object.keys(pendingEdits[id]).length > 0)` — pola ini RAWAN CRASH (`TypeError: Cannot convert
-  undefined or null to object` di `Object.keys`) kalau key asli di `pendingEdits` bukan string
-  numerik kanonik (mis. baris tanpa `id` valid, key jadi `"undefined"`, lalu `Number("undefined")`
-  = `NaN` dipakai sbg index balik `pendingEdits[NaN]` → dicoba akses properti `"NaN"` yang TIDAK
-  ADA → `undefined` → `Object.keys(undefined)` meledak). User lapor "layar putih" (React unmount
-  total, tidak ada error boundary) begitu ngedit sebuah field (mis. tanggal) di mode edit massal.
-  FIX: ganti ke `Object.entries(pendingEdits).filter(([, edits]) => edits &&
-  Object.keys(edits).length > 0).map(([id]) => Number(id))` — TIDAK PERNAH re-index balik ke
-  object pakai key yang sudah di-coerce, jadi aman dari mismatch key apa pun bentuknya.
-- **`handleInlineSaveRow` DIPAKAI ULANG untuk commit** (parameter ke-3 `silent?: boolean` supaya
-  bulk-save tidak memicu N `alert()` terpisah kalau beberapa baris gagal — cukup 1 alert
-  ringkasan di akhir) — SATU-SATUNYA tempat resolusi tabel tujuan (PIB vs CN vs
-  `rekapan_courier`) & coercion tipe angka, JANGAN duplikat logic ini lagi di handler bulk-save.
-  Baris yang GAGAL disimpan TETAP ada di `pendingEdits` (supaya user bisa retry "Save All" lagi),
-  baris yang BERHASIL langsung dibuang dari situ.
-- Bar mengambang "N row(s) have unsaved changes" + Cancel/Save All (~sebelum penutup return
-  utama SharedDataTable) — 2 blok terpisah (Audit vs Rekapan), muncul HANYA kalau
-  `activeSubTab` yang cocok & ada `changedRowIds`. Direset otomatis (dibuang, bukan disimpan) kalau
-  user pindah `activeMainTab`/`activeSubTab`/`courierAuditType` — TAPI SENGAJA TIDAK direset saat
-  pindah `page` (dikeluarkan dari dependency array `useEffect` reset), supaya user bisa mengedit
-  banyak baris LINTAS HALAMAN pagination dulu, baru "Save All" sekaligus di akhir — konsekuensi
-  dari mode edit yang sekarang global, bukan per-baris.
+**Badge warna per Invoice Type** (`getCellData()` type `invType`) — FREIGHT=coral, DUTY=kuning
+gelap, CREDIT NOTE DUTY/FREIGHT=ungu brand, lainnya=sky biru (fallback). Deteksi
+`.includes('CREDIT NOTE')` dicek PALING DULU sebelum exact-match DUTY/FREIGHT.
 
-**RESIKO YANG SUDAH DIKETAHUI, BUKAN BUG BARU** (pre-existing dari `handleInlineSaveRow`, sudah
-ada SEBELUM fitur edit massal ini, edit massal cuma memperbesar kemungkinan kejadiannya karena
-sekarang bisa banyak baris pending sekaligus): di tab **Draft** Audit Courier, baris PIB dan CN
-digabung dari 2 tabel terpisah (`tabel_audit_pib`/`tabel_audit_cn`) yang masing-masing punya
-sequence id sendiri-sendiri — SECARA TEORI bisa collision (PIB id=5 dan CN id=5 sama-sama ada).
-`pendingEdits` di sini di-key oleh `rec.id` MENTAH (tanpa prefix `pib_`/`cn_` seperti yang
-dipakai badge persentase di `fetchCourierValidationBadgePct`), dan `handleInlineSaveRow` resolve
-tabel tujuan lewat `records.find(r => r.id === id)` (ambil match PERTAMA di array, bukan
-berdasar jenis dokumen eksplisit). Kalau collision itu benar-benar terjadi, edit pada 1 baris
-bisa salah nyasar ke baris lain yang id-nya sama tapi beda jenis dokumen. BELUM diperbaiki
-(butuh redesain key jadi composite `pib_${id}`/`cn_${id}` di `handleInlineSaveRow` DAN
-`pendingEdits` DAN `editingRowId` sekaligus, cakupannya lebih luas dari sekadar fitur edit
-massal ini) — kalau ada laporan user "data record lain ikut berubah" di tab Draft, ini
-kemungkinan besar penyebabnya, cek dulu ke sini.
+**Export Excel Rekapan Courier** — PO PT IMI/Vessel dkk **TIDAK di-split lagi jadi banyak baris**
+(beda dari Sea & Air Rekapan yg TETAP split via `po_detail` JSON — TIDAK disentuh). `getSplitRows()`
+cabang `courier_rekapan` DIHAPUS total, `parseCourierPoVesselPairs`/
+`COURIER_REKAPAN_SPLIT_REPEATING_COLS` dihapus (dead code). Highlight `submit_date` ikut ke Excel
+via `applySubmitDateHighlight()` (ARGB `FFFFF5C5`, `row.eachCell({includeEmpty:true})`) — guard
+`splitByPoDetail !== 'courier_rekapan'` supaya tidak ikut mewarnai export lain. **Kalau warna
+on-screen diganti, WAJIB sinkron ARGB di sini juga.**
 
-## Peta tabel Supabase (per modul, dari grep `.from(...)` di seluruh `src/`)
+## Bug fix: "Add Data" Audit Courier bisa kirim payload ke tabel yg salah (`EditModal`, `SharedDataTable.tsx`)
+
+Laporan user: tambah data jalur CN error `Could not find the 'no_pib' column of
+'tabel_audit_cn' in the schema cache`. **Root cause**: form "Add Data" dirender pakai `cols` =
+`activeCols` yg ditentukan dari TAB YANG SEDANG AKTIF (PIB_COLS/CN_COLS/Draft), TAPI field
+"Document Type" (`jenis_dokumen`) di form itu cuma `<input>` teks bebas (tidak ada validasi
+dropdown) — user bisa ketik "CN" manual walau field2 yg tampil masih dari `PIB_COLS` (mis.
+`no_pib`), atau sebaliknya. `handleSave` (isCreate) resolve tabel tujuan dari `jenis_dokumen`
+yg DIKETIK itu, TAPI payload tetap membawa semua key dari `cols` asal (termasuk `no_pib` yg
+TIDAK ADA di `tabel_audit_cn` sama sekali) → Supabase menolak insert.
+**Fix**: sebelum insert, payload di-strip ke HANYA key yg ada di `(jenisDokumen === 'CN' ?
+CN_COLS : PIB_COLS).map(c => c.key)` — generik utk mismatch arah manapun (CN→PIB atau
+sebaliknya). Path EDIT (bukan create) TIDAK kena bug ini — target tabel di situ diresolve dari
+`record.jenis_dokumen` (data asli row, bukan ketikan user), jadi payload/cols dari awal sudah
+konsisten dgn tabel record itu berada.
+
+**Susulan (2026-09, permintaan user)**: field "Document Type" (`jenis_dokumen`) di `EditModal`
+DIGANTI dari `<input>` teks bebas jadi `<select>` cuma 2 opsi `PIB`/`CN` (guard `c.key ===
+'jenis_dokumen' && tab.id === 'courier_audit'`, dicek SEBELUM cabang `status` di renderer field
+generik). **Disabled saat mode Edit** (`disabled={!isCreate}`) — mengubah field ini di baris yg
+sudah ada TIDAK memindahkan row ke tabel lain (target tabel Edit tetap diresolve dari
+`record.jenis_dokumen` asli), jadi disable-nya mencegah user mengira bisa "pindah jalur" lewat
+situ. Dropdown ini MENGURANGI risiko typo/nilai selain PIB/CN, TAPI TIDAK menggantikan fix
+stripping payload di atas — field2 yg TAMPIL di form tetap ikut tab yg SEDANG AKTIF (bukan ikut
+value dropdown ini secara real-time), jadi kombinasi keduanya (dropdown genggam nilai valid +
+stripping payload jaga-jaga mismatch) tetap dipertahankan.
+
+## Edit Massal — Audit Courier & Rekapan Courier (`SharedDataTable.tsx`)
+
+Arsitektur `pendingEdits`/`getVal`/`setVal` direplika dari FAR Overseas List Memo, TAPI toggle
+mode **GLOBAL** (`courierAuditEditMode`/`courierRekapanEditMode: boolean`, bukan per-baris seperti
+FAR Overseas — versi awal per-baris DITOLAK user, "mau klik satu tombol edit"). Toggle di
+toolbar → SEMUA baris tampil masuk mode input sekaligus. Disimpan via "Save All" (commit semua
+`pendingEdits` via `handleInlineSaveRow` paralel) atau "Cancel" (buang semua).
+
+**Tombol Edit per-baris DIKEMBALIKAN** (susulan, user masih butuh edit 1 baris saja) — state
+LOKAL `rowEditOn` di dalam row-group (bukan diangkat ke parent). `editingThisRow = (!!editMode
+|| rowEditOn) && canBulkEdit`. Tombol Edit TIDAK menutup panel Action (beda dari aksi lain) —
+supaya tombol Save langsung kelihatan.
+
+**Tombol Save per-baris** (`handleSaveOneCourierAuditRow`/`Rekapan`) — commit HANYA
+`pendingEdits[id]` itu (bukan semua), pakai `handleInlineSaveRow` yg sama. Muncul HANYA kalau
+`rowEditOn` true (bukan mode global — Save All tetap jalur commit utk mode global).
+
+**Bar "Save All" kondisi tampil** — DITAMBAH syarat `courierAuditEditMode`/`courierRekapanEditMode`
+(bukan cuma "ada pending edit apa pun") — fix bug bar muncul saat cuma edit per-baris manual.
+
+**ROOT CAUSE Save All gagal diam-diam (2 bug ditemukan & diperbaiki)**:
+1. `Object.keys(pendingEdits).map(Number)...` bisa crash (`NaN` index) kalau key tidak numerik
+   kanonik — fix: `Object.entries(pendingEdits).filter(([,edits])=>edits &&
+   Object.keys(edits).length>0).map(([id])=>Number(id))`.
+2. **Tipe id bigint-vs-int4**: kolom `id` bigint dikembalikan Supabase-js sbg STRING (bukan JS
+   number, cegah presisi hilang). `courierAuditChangedRowIds` dulu paksa `Number(id)` — kalau
+   `id` asli string, `records.find(r=>r.id===id)` (strict equality, tipe beda) SELALU gagal
+   diam-diam (early return sebelum try/catch, TIDAK ada console.error). **FIX (2 sisi wajib
+   bareng)**: (a) `pendingEdits` tipe `Record<string,...>`, `changedRowIds` TIDAK di-`Number()`
+   lagi; (b) `handleInlineSaveRow` — SEMUA pencarian record via id (4 titik) pakai
+   `String(r.id) === String(id)`, bukan `r.id === id` polos. **Cabang baru yg cari record via
+   id WAJIB pakai pola String() ini.**
+3. `handleInlineSaveRow` sekarang SELALU `console.error` di catch (dulu silent=true bikin error
+   hilang total tanpa jejak) + `fetchRecords()` dipanggil setelah commit sukses (bukan cuma
+   patch optimis state lokal — jaga2 RLS diam2 gagal 0 row tanpa error).
+
+**RESIKO PRE-EXISTING, bukan bug baru dari fitur ini**: tab Draft gabung PIB+CN dari 2 tabel
+BEDA sequence id (potensi collision id sama). `pendingEdits`/`handleInlineSaveRow` key by `rec.id`
+mentah (tanpa prefix pib_/cn_) — kalau collision, edit bisa nyasar ke baris lain jenis dokumen
+beda. BELUM diperbaiki (butuh redesain key composite, di luar cakupan edit massal ini).
+
+## Konfigurasi Webhook Otomasi jadi halaman sendiri (`src/pages/WebhookSettingsPage.tsx`)
+
+Panel "Konfigurasi Webhook Otomasi" (Courier/Sea & Air/Direct Loading/Bunker) yang dulu inline
+di `SettingsPage.tsx` DIPINDAH jadi halaman sendiri `/settings/webhooks`, diakses lewat kartu
+`ModuleCard` di hub `/settings` (pola sama dgn kartu "Rate Tables & PPJK"). Logic (state
+`webhookUrl` dkk, `handleSave`/`handleTest`, key localStorage `n8n_webhook_url`/
+`n8n_seaair_webhook_url`/`n8n_far_overseas_air_webhook_url`/`n8n_bunker_webhook_url`) TIDAK
+berubah, murni dipindah lokasi — `SettingsPage.tsx` sekarang murni presentational (cuma
+`canSee()` dari `useAuth()`, tanpa state). Page_key baru `settings_webhooks` didaftarkan di
+`PAGE_REGISTRY` — **TIDAK ada konsep edit terpisah** (halaman ini tidak menulis ke Supabase,
+cuma localStorage, sama seperti `courier_upload`/`sea_air_upload`).
+**Konsekuensi RBAC**: page_key ini BARU & BELUM di-assign ke role mana pun di
+`role_page_access` — HANYA Admin yang otomatis bisa akses sampai PIC assign page_key
+`settings_webhooks` ke role yang relevan di Kelola Role & Akses (beda dari perilaku LAMA yang
+semua user login bisa akses tanpa batasan role sama sekali) — WAJAR/disengaja, bukan bug kalau
+ada laporan "user non-admin tidak lihat kartu Webhook lagi".
+
+## Rate Tables & PPJK — dukungan UPS (`src/pages/admin/`)
+
+Keputusan dikonfirmasi user: Category UPS = tambah opsi baru (`SURCHARGE`, `SERVICE`) ke dropdown
+Category existing (13 opsi total), BUKAN petakan ke kategori lama. `SurchargeUPS.tsx` TERPISAH
+**TIDAK dibuat** — `PPJKCostRule.tsx` yg diperluas sudah cukup.
+
+**`PPJKCostRule.tsx`**: Courier dropdown +`UPS`. Price Mechanism +6 opsi baru
+(`FLAT_PER_PACKAGE`, `FLAT_PER_PALLET`, `PER_PACKAGE_MAX_SHIPMENT`,
+`GREATER_OF_SHIPMENT_OR_KG`, `PER_TIER_VALUE`, `PER_KG_PER_DAY`). 2 field baru:
+`max_shipment_idr`, `tier_value_idr`. `getNilaiText()` +6 cabang baru — **kalau nambah mechanism
+baru lagi, WAJIB tambah cabang di sini juga** (kalau lupa, badge "Nilai" tampil "-" walau data
+lengkap). **BELUM DIVERIFIKASI ke production**: CHECK constraint enum `courier`/
+`price_mechanism`/`category` mungkin perlu update juga; kolom baru WAJIB provision:
+```sql
+alter table public.tabel_ppjk_cost_rule add column if not exists max_shipment_idr numeric;
+alter table public.tabel_ppjk_cost_rule add column if not exists tier_value_idr numeric;
+```
+
+**`RateSheetUPS.tsx`** (BARU, tabel `tabel_rate_sheet_ups`) — duplikasi struktur `RateSheetDHL.tsx`
+(bukan generik, konsisten pola duplikasi Rate Sheet). Beda field: `service` (4 pilihan UPS
+WORLDWIDE...), `package_type` (+`PALLET`), `rate_type` (+`MINIMUM_RATE`, tanpa field berat sama
+sekali), `zone` (string `'Zone 1'`..`'Zone 10'`, BEDA schema dari DHL/number & FedEx/single-letter).
+Field berat 4-kolom: `weight_exact_kg` (FIXED), `weight_from_kg`/`weight_to_kg` (MULTIPLIER),
+`weight_label` (teks bebas opsional). Didaftarkan di `RateTablesAdmin.tsx` tab `ups_rate`.
+
+**BELUM DIJALANKAN — tabel `tabel_rate_sheet_ups` BELUM ADA SAMA SEKALI** (tabel baru, bukan
+cuma kolom), harus dibuat manual (skema/RLS ikut pola `tabel_rate_sheet_dhl`/`fedex` +
+`has_page_access`/`has_edit_access('admin_rates')`).
+
+**Belum diimplementasikan (SENGAJA TERPISAH, jangan campur ke task UPS)**: kemungkinan mismatch
+`min_idr`/`max_idr` frontend vs nama kolom DB asli `minimum_idr`/`maximum_idr` di
+`PPJKCostRule.tsx` — pre-existing (bukan spesifik UPS), user minta diverifikasi/diperbaiki
+TERPISAH kalau diminta eksplisit nanti.
+
+## Peta tabel Supabase (per modul)
 
 **Auth & RBAC**: `profiles`, `roles`, `user_roles`, `role_page_access`.
 
 **Courier**: `rekapan_courier`, `tabel_audit_pib`, `tabel_audit_cn`, `tabel_cost_validasi`,
 `dokumen_checklist`, `dokumen_validasi`, `tabel_checklist_validasi`, `tabel_npwp`,
-`tabel_processing_queue`. View `v_pib_lengkap`/`v_cn_lengkap` (join `tabel_audit_pib`/`tabel_audit_cn`
-↔ `dokumen_checklist`) MASIH ADA di Supabase tapi TIDAK DIPAKAI LAGI di frontend sejak 2026-09 —
-halaman Courier Audit sekarang query langsung ke `tabel_audit_pib`/`tabel_audit_cn`, lalu kolom
-`status_kelengkapan`/`dokumen_kurang`/`pct_kelengkapan`/`total_mandatory*`/`ada_*` di-merge manual
-di JS dari `dokumen_checklist` lewat helper `mergeChecklistData()` (`SharedDataTable.tsx`, dipakai di
-`fetchRecords` & `getExportData`). Merge ini cocokkan `pib_id`/`cn_id` = `id` (cabang fallback lama
-`awb`-only di view sudah dead code, sudah dicek 0 baris `dokumen_checklist` dengan `pib_id`/`cn_id`
-NULL per 2026-09) — kalau suatu saat ada baris `dokumen_checklist` yang `pib_id`/`cn_id`-nya NULL
-lagi, `mergeChecklistData` TIDAK akan menemukannya (beda dari behavior lama view).
+`tabel_processing_queue`. View `v_pib_lengkap`/`v_cn_lengkap` MASIH ADA tapi TIDAK DIPAKAI lagi
+di frontend — Audit Courier sekarang query langsung `tabel_audit_pib`/`tabel_audit_cn`, kolom
+kelengkapan di-merge manual di JS dari `dokumen_checklist` via `mergeChecklistData()` (cocokkan
+`pib_id`/`cn_id`=`id`; cabang fallback `awb`-only lama sudah dead code, dicek 0 baris NULL).
 
 **Sea & Air**: `rekapan_seaair`, `tabel_audit_seaair`, `cost_validasi_seaair`,
 `dokumen_checklist_seaair`, `dokumen_validasi_seaair`, `dokumen_validasi_matriks_seaair`,
@@ -3631,22 +1097,24 @@ lagi, `mergeChecklistData` TIDAK akan menemukannya (beda dari behavior lama view
 
 **Bunker**: `bunker_dokumen`, `bunker_processing_queue`.
 
-**Audit AP Local**: `audit_po_ap_comp` (diisi otomasi backend).
-
-**Audit AP Overseas**: `audit_po_apovs_comp` (diisi otomasi backend, duplikasi struktur `audit_po_ap_comp` — lihat bagian "Audit AP Overseas" di atas).
+**Audit AP Local**: `audit_po_ap_comp` (otomasi backend).
+**Audit AP Overseas**: `audit_po_apovs_comp` (otomasi backend, duplikasi struktur).
+**PI Local**: `audit_po_pi_local_comp` (otomasi backend, duplikasi struktur juga — lihat
+"Audit AP Local" utk arsitektur 3-halaman duplikat).
 
 **Admin/rate master (Courier)**: `tabel_rate_sheet_dhl`, `tabel_rate_sheet_fedex`,
-`tabel_surcharge_dhl`, `tabel_surcharge_fedex`, `tabel_surcharge_rule` (CIPL),
-`tabel_zone_mapping`, `tabel_ppjk_cost_rule`, `tabel_fuel_surcharge`.
+`tabel_rate_sheet_ups`, `tabel_surcharge_dhl`, `tabel_surcharge_fedex`, `tabel_surcharge_rule`
+(CIPL), `tabel_zone_mapping`, `tabel_ppjk_cost_rule`, `tabel_fuel_surcharge`.
 
-**Lain-lain**: `v_audit_trail` (view gabungan buat halaman Audit Trail).
+**Lain-lain**: `v_audit_trail` (view gabungan Audit Trail).
 
-## Peta RPC function Supabase (dari grep `.rpc(...)`)
+## Peta RPC function Supabase
 
-- Auth: `get_my_access()`.
+- Auth: `get_my_access()`, `get_my_approval_tiers()`.
 - FAR Overseas Air: `update_rekapan_far_overseas_manual`,
   `update_cost_validasi_far_overseas_manual`, `fn_delete_far_overseas_air`,
-  `upsert_tarif_far_overseas_vendor`, `nonaktifkan_tarif_far_overseas_vendor`.
+  `upsert_tarif_far_overseas_vendor`, `nonaktifkan_tarif_far_overseas_vendor`,
+  `approve_far_overseas_air`, `reject_far_overseas_air`, `get_users_with_approval_tier`.
 - Sea & Air: `insert_seaair_row`, `update_seaair_row`, `update_rekapan_po_vessel`,
   `update_validasi_matriks_manual`, `update_cost_validasi_manual`, `get_kurs_efektif`,
   `upsert_kurs_rule_vendor`, `upsert_kurs_bi`, `nonaktifkan_tarif_kontrak`.
@@ -3654,8 +1122,7 @@ lagi, `mergeChecklistData` TIDAK akan menemukannya (beda dari behavior lama view
   `fn_save_storage_estimate`, `fn_update_actual_value`, `fn_apply_credit_note`,
   `fn_recompute_totals`, `fn_revise_credit_note`.
 
-Tidak ada akses DB langsung dari sesi Claude Code manapun sejauh ini — semua daftar di atas
-disimpulkan dari pemanggilan di kode frontend, BUKAN dari `information_schema` Supabase. Kalau
-ragu soal signature/param exact suatu RPC, cek dulu ke Supabase (SQL editor) sebelum ubah
-pemanggilannya, terutama untuk param yang baru ditambahkan sisi frontend (lihat catatan
-`p_catatan` di atas).
+Tidak ada akses DB langsung dari sesi Claude Code manapun — daftar di atas disimpulkan dari
+pemanggilan kode frontend, BUKAN `information_schema` Supabase. Kalau ragu soal signature/param
+exact suatu RPC (terutama param baru dari sisi frontend), cek dulu di Supabase SQL editor
+sebelum ubah pemanggilannya.

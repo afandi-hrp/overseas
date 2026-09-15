@@ -13,6 +13,7 @@ import KursRuleVendorPage from './pages/KursRuleVendorPage';
 import TarifKontrakPage from './pages/TarifKontrakPage';
 import FarOverseasVendorTarifPage from './pages/FarOverseasVendorTarifPage';
 import RateTablesAdmin from './pages/RateTablesAdmin';
+import WebhookSettingsPage from './pages/WebhookSettingsPage';
 import MainLayout from './components/MainLayout';
 import AdminLayout from './components/AdminLayout';
 import LockScreen from './components/LockScreen';
@@ -121,6 +122,7 @@ export default function App() {
                   sidebar navigasi tidak muncul sama sekali (gap arsitektur lama, pola sama
                   seperti bug /account yang sudah diperbaiki sebelumnya). Dipindah ke dalam sini
                   supaya sidebar tetap tampil di semua halaman Pengaturan. */}
+              <Route path="/settings/webhooks" element={<RequirePageAccess pageKey="settings_webhooks"><WebhookSettingsPage /></RequirePageAccess>} />
               <Route path="/admin/rates" element={<RequirePageAccess pageKey="admin_rates"><RateTablesAdmin /></RequirePageAccess>} />
               <Route path="/settings/fuel-surcharge" element={<RequirePageAccess pageKey="settings_fuel_surcharge"><FuelSurchargePage /></RequirePageAccess>} />
               <Route path="/settings/kurs-bi" element={<RequirePageAccess pageKey="settings_kurs_bi"><KursBIPage /></RequirePageAccess>} />

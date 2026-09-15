@@ -109,6 +109,12 @@ export default function PPJKCostRule() {
     if (m === 'PCT_OF_FISCAL') return `${row.pct_value || 0}%, min Rp ${row.min_idr || 0} (threshold: ${row.fiscal_threshold_idr||0})`;
     if (m === 'DAILY_SHIPMENT_AND_KG') return `Rp ${row.flat_idr||0}/ship + Rp ${row.per_kg_idr||0}/kg/hari`;
     if (m === 'FLAT_PER_DAY') return `Rp ${row.per_day_idr || 0}/day`;
+    if (m === 'FLAT_PER_PACKAGE') return `Rp ${row.flat_idr || 0}/koli`;
+    if (m === 'FLAT_PER_PALLET') return `Rp ${row.flat_idr || 0}/pallet`;
+    if (m === 'PER_PACKAGE_MAX_SHIPMENT') return `Rp ${row.flat_idr||0}/koli, maks Rp ${row.max_shipment_idr||0}/shipment`;
+    if (m === 'GREATER_OF_SHIPMENT_OR_KG') return `Rp ${row.flat_idr||0}/shipment ATAU Rp ${row.per_kg_idr||0}/kg (mana lebih besar)`;
+    if (m === 'PER_TIER_VALUE') return `Rp ${row.flat_idr||0} per kelipatan Rp ${row.tier_value_idr||0}`;
+    if (m === 'PER_KG_PER_DAY') return `Rp ${row.per_kg_idr||0}/kg/hari (${row.free_days||0} hari gratis)`;
     return '-';
   };
 
@@ -123,6 +129,7 @@ export default function PPJKCostRule() {
               <option value="DHL">DHL</option>
               <option value="FEDEX">FEDEX</option>
               <option value="BOTH">BOTH</option>
+              <option value="UPS">UPS</option>
             </select>
           </div>
           <div>
@@ -229,6 +236,7 @@ export default function PPJKCostRule() {
                       <option value="DHL">DHL</option>
                       <option value="FEDEX">FEDEX</option>
                       <option value="BOTH">BOTH</option>
+                      <option value="UPS">UPS</option>
                     </select>
                   </div>
                   <div>
@@ -245,6 +253,8 @@ export default function PPJKCostRule() {
                       <option value="EXPORT_DECL">EXPORT_DECL</option>
                       <option value="INSPECTION">INSPECTION</option>
                       <option value="OTHER">OTHER</option>
+                      <option value="SURCHARGE">SURCHARGE</option>
+                      <option value="SERVICE">SERVICE</option>
                     </select>
                   </div>
                   <div>
@@ -263,6 +273,12 @@ export default function PPJKCostRule() {
                       <option value="PCT_OF_FISCAL">PCT_OF_FISCAL</option>
                       <option value="DAILY_SHIPMENT_AND_KG">DAILY_SHIPMENT_AND_KG</option>
                       <option value="FLAT_PER_DAY">FLAT_PER_DAY</option>
+                      <option value="FLAT_PER_PACKAGE">FLAT_PER_PACKAGE</option>
+                      <option value="FLAT_PER_PALLET">FLAT_PER_PALLET</option>
+                      <option value="PER_PACKAGE_MAX_SHIPMENT">PER_PACKAGE_MAX_SHIPMENT</option>
+                      <option value="GREATER_OF_SHIPMENT_OR_KG">GREATER_OF_SHIPMENT_OR_KG</option>
+                      <option value="PER_TIER_VALUE">PER_TIER_VALUE</option>
+                      <option value="PER_KG_PER_DAY">PER_KG_PER_DAY</option>
                     </select>
                   </div>
                   
@@ -298,6 +314,14 @@ export default function PPJKCostRule() {
                     <div>
                       <label className="block text-xs font-bold text-[#5A305A] mb-1">Free Days</label>
                       <input type="number" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.free_days ?? ''} onChange={e => setForm({...form, free_days: Number(e.target.value)})} />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-[#5A305A] mb-1">Max Shipment IDR</label>
+                      <input type="number" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.max_shipment_idr ?? ''} onChange={e => setForm({...form, max_shipment_idr: Number(e.target.value)})} />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-[#5A305A] mb-1">Tier Value IDR</label>
+                      <input type="number" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.tier_value_idr ?? ''} onChange={e => setForm({...form, tier_value_idr: Number(e.target.value)})} />
                     </div>
                   </div>
 
