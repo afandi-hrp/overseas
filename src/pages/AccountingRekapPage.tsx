@@ -42,7 +42,11 @@ async function fetchDistinctPtInternal(table: string): Promise<string[]> {
 
 function StatusBadge({ status }: { status: string | null }) {
   const meta = statusProsesMeta(status);
-  return <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${meta.badgeClass}`}>{meta.label}</span>;
+  // `status_proses` bebas teks (bukan enum tetap, lihat AccountingRekapHelpers.ts) -- bisa
+  // panjang, jadi badge-nya WAJIB bisa wrap ke baris baru (rounded-lg, bukan rounded-full
+  // whitespace-nowrap spt sebelumnya -- pill penuh + nowrap bikin teks panjang overflow keluar
+  // kolom tak kelihatan). Sama pola dgn kolom Nomor PO/Vendor (break-words).
+  return <span className={`inline-block text-[10px] font-bold px-2 py-1 rounded-lg break-words ${meta.badgeClass}`}>{meta.label}</span>;
 }
 
 type SortKey = 'created_at' | 'pt_internal';
@@ -974,7 +978,11 @@ export default function AccountingRekapPage() {
           </div>
 
           <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0">
-            <table className="w-full text-[11px] bg-white table-fixed min-w-[1175px]">
+            {/* Kolom Waktu Proses disembunyikan (2026-09, permintaan user) -- col/th/td-nya
+                dihapus, min-w disamakan dgn SUM lebar <col> tersisa (lihat aturan wajib
+                table-fixed di CLAUDE.md, kalau tidak disamakan kolom lain redistribusi tidak
+                proporsional). */}
+            <table className="w-full text-[11px] bg-white table-fixed min-w-[1075px]">
               <colgroup>
                 <col style={{ width: '130px' }} />
                 <col style={{ width: '110px' }} />
@@ -984,7 +992,6 @@ export default function AccountingRekapPage() {
                 <col style={{ width: '100px' }} />
                 <col style={{ width: '120px' }} />
                 <col style={{ width: '110px' }} />
-                <col style={{ width: '100px' }} />
                 <col style={{ width: '105px' }} />
               </colgroup>
               <thead className="sticky top-0 z-20">
@@ -1001,15 +1008,14 @@ export default function AccountingRekapPage() {
                   <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Bank</th>
                   <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Total Bayar</th>
                   <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Status Proses</th>
-                  <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Waktu Proses</th>
                   <th className="text-center font-semibold px-3 py-2.5 whitespace-nowrap sticky right-0 top-0 bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-20 border-l border-slate-200">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {loadingList ? (
-                  <tr><td colSpan={10} className="text-center py-10 text-[#5A305A] text-sm">Memuat data...</td></tr>
+                  <tr><td colSpan={9} className="text-center py-10 text-[#5A305A] text-sm">Memuat data...</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={10} className="text-center py-10 text-[#5A305A] text-sm italic">Belum ada data Accounting Rekap.</td></tr>
+                  <tr><td colSpan={9} className="text-center py-10 text-[#5A305A] text-sm italic">Belum ada data Accounting Rekap.</td></tr>
                 ) : (
                   rows.map((r) => (
                     <tr key={r.id} className="group bg-white hover:bg-slate-50 transition-colors">
@@ -1020,8 +1026,7 @@ export default function AccountingRekapPage() {
                       <td className="px-3 py-3 align-top text-[#5A305A] break-words">{r.vendor || '-'}</td>
                       <td className="px-3 py-3 align-top text-[#5A305A] break-words">{r.bank || '-'}</td>
                       <td className="px-3 py-3 align-top text-[#5A305A] font-mono break-words">{formatRupiah(r.total_bayar)}</td>
-                      <td className="px-3 py-3 align-top"><StatusBadge status={r.status_proses} /></td>
-                      <td className="px-3 py-3 align-top text-[#5A305A] truncate" title={r.waktu_proses || undefined}>{r.waktu_proses || '-'}</td>
+                      <td className="px-3 py-3 align-top break-words"><StatusBadge status={r.status_proses} /></td>
                       <td className="px-2 py-3 align-top sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-10 border-l border-slate-200 transition-colors">
                         <div className="flex flex-col items-center gap-1.5 w-[92px] mx-auto">
                           <button

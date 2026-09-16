@@ -960,7 +960,16 @@ manapun, JANGAN asumsikan otomatis ke-apply ke yang lain.
 - `statusProsesMeta()` (`AccountingRekapHelpers.ts`) — beda dari `statusAuditMeta` Audit AP Local
   (yang cuma 2 nilai tetap "Selesai Diproses"/"Doc tidak terbaca") — domain nilai `status_proses`
   BELUM DITENTUKAN (bebas teks dari otomasi/manual), jadi TIDAK ada mapping label per-nilai,
-  cukup tampilkan apa adanya + badge amber kalau terisi, abu-abu netral kalau kosong.
+  cukup tampilkan apa adanya + badge amber kalau terisi, abu-abu netral kalau kosong. **Badge
+  `StatusBadge` WAJIB bisa wrap** (`rounded-lg break-words`, BUKAN `rounded-full whitespace-nowrap`
+  spt versi awal) — krn teksnya bebas panjang (bukan enum tetap), pill nowrap bikin teks panjang
+  overflow keluar kolom & tidak kelihatan (2026-09, laporan user). Sama pola dgn kolom Nomor
+  PO/Vendor (`break-words`) di tabel yg sama.
+  **Kolom "Waktu Proses" disembunyikan dari tabel** (2026-09, permintaan user) — `<col>`/`<th>`/
+  `<td>`-nya dihapus total (bukan cuma disembunyikan CSS), `colSpan` empty-state 10->9, `min-w`
+  table-fixed disamakan ke SUM lebar `<col>` tersisa (1175px->1075px, lihat aturan wajib
+  table-fixed di bagian "Audit AP Local" di atas). Data `waktu_proses` TETAP ada di DB/query,
+  cuma tidak dirender.
   Dashboard "Total Bermasalah"/"Total Sesuai" pakai konvensi SAMA dgn Audit AP Local:
   `status_proses` TIDAK null = "Bermasalah", selisihnya = "Sesuai".
 - `formatRupiah()` (baru, tidak ada equivalent di Audit AP Local) — format `total_bayar` jadi
