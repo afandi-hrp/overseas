@@ -1318,6 +1318,389 @@ sudah pernah disimpan. Actual Days & Billing Days TIDAK disimpan sbg kolom terpi
 balik — begitu 2 tanggal ini prefill, `useEffect` `checkExpected()` (RPC `fn_hitung_storage`)
 otomatis jalan ulang & isi keduanya live, sama seperti alur input baru.
 
+## Modul REPORTING (Dashboard + Cost per Vessel) — BARU (2026-09)
+
+Menu baru "Reporting" (2 submenu: Dashboard, Cost per Vessel) — biaya per vessel digabung dari 3
+sumber (Courier Invoice Recap, Sea & Air Invoice Recap, FAR Overseas/Borongan), dicocokkan ke
+`master_vessel`. **Status: schema + ETL + 2 halaman Reporting + 1 halaman admin
+`MasterVesselAdminPage.tsx` SUDAH ADA**, recompute SUDAH DITES BERHASIL (2026-09, setelah 2 bug
+ditemukan & diperbaiki — lihat catatan bug di bawah), TAPI belum pernah dites end-to-end dgn
+data production 1 tahun penuh (belum ada tools DB langsung dari sesi Claude Code manapun — lihat
+catatan umum di paling bawah CLAUDE.md) — kalau ada laporan "angka salah/kosong", cek dulu
+asumsi2 mapping kolom sumber di bawah sebelum curiga bug logic.
+
+- `src/lib/permissions.ts` — page_key `reporting_dashboard` (`/reporting/dashboard`) &
+  `reporting_cost_per_vessel` (`/reporting/cost-per-vessel`), group `'Reporting'` baru.
+- `src/components/MainLayout.tsx` — menu sidebar "Reporting" (icon `BarChart3`), `basePath`
+  `/reporting` REAL (bukan dummy spt "Compare Doc" — 2 subtab-nya beneran berbagi prefix ini).
+- `src/App.tsx` — 2 route baru, pola sama persis modul lain (`RequirePageAccess` per page_key).
+
+- **`master_vessel`** (`sql/003_reporting_master_vessel.sql`, BELUM DIJALANKAN ke Supabase
+  production — WAJIB dijalankan manual dulu): `vessel_id` (bigint identity, PK — SENGAJA bukan
+  nama, sesuai permintaan user), `vessel_name` (unique), `alias_name` (text[], nullable),
+  `base`, `fleet_group`, `category` (`VESSEL`/`OTHERS`), `status` (`AKTIF`/`SCRAP`).
+  **`vessel_type` SENGAJA TIDAK ADA** (keputusan eksplisit user 2026-09: "buang saja", cuma
+  pakai `fleet_group` utk pengelompokan DAN chart — domain awal yg disebutkan user
+  TANKER/TUGBOAT/CEMENT CARRIER/OTHERS/TBA lebih sempit dari `fleet_group` asli yg py juga
+  BULK CARRIER/TOWING BARGE/OIL BARGE, jadi `fleet_group` dipakai apa adanya, JANGAN
+  reintroduce `vessel_type` tanpa app diminta ulang).
+- **Sumber data**: `MASTER VESSEL.xlsx` (root project, dikirim user) — HANYA 3 kolom terisi
+  (`UNDER`=base, `UNDER2`=fleet_group, `VESSEL NAME`=vessel_name; kolom COURIER/DUTY/FREIGHT/
+  BM/PPN+PPH di header row-nya KOSONG semua, sekadar template, bukan data). 254 baris unik,
+  di-extract via Node `xlsx` package (sudah ada di `package.json`) jadi INSERT statement
+  langsung di file SQL di atas — **`alias_name` SEMUA NULL** (file sumber tidak py data alias
+  sama sekali, walau kolomnya disiapkan di skema utk diisi manual belakangan).
+  **Derivasi kolom yg tidak ada di file sumber** (dikonfirmasi user):
+  - `category`: `fleet_group === 'OTHERS'` → `'OTHERS'`, selain itu (termasuk `fleet_group`
+    `'TBA'`, mis. "MT. PERTAMINA GALUNGGUNG" yg armadanya belum ditentukan — TETAP kapal
+    sungguhan) → `'VESSEL'`.
+  - `status`: suffix `"(SCRAP)"`/`"(Scrap)"` di nama → `'SCRAP'` (suffix dibuang dari
+    `vessel_name` yg disimpan, cuma 3 baris: MT. DEEP BLUE, MT. MARTHA OPTION, MT. MEDELIN
+    MASTER), sisanya → `'AKTIF'`.
+- **RLS**: SELECT via `has_page_access('reporting_dashboard')` ATAU
+  `has_page_access('reporting_cost_per_vessel')` — **2 page_key ini BELUM didaftarkan** di
+  `PAGE_REGISTRY` (`src/lib/permissions.ts`) krn halaman React-nya belum dibuat; WAJIB
+  didaftarkan bareng saat halaman dibuat, kalau tidak RLS block semua (has_page_access selalu
+  false utk page_key yg tidak terdaftar). Edit (INSERT/UPDATE/DELETE) SEMENTARA `is_admin()`
+  polos (bukan `has_edit_access` ke page_key spesifik) krn belum ada halaman admin utk kelola
+  master vessel di scope ini.
+### Tabel alokasi biaya (`reporting_cost_allocation`, `sql/004_reporting_cost_allocation.sql`)
+
+**BELUM DIJALANKAN ke Supabase production — WAJIB dijalankan manual dulu, SETELAH
+`sql/003_reporting_master_vessel.sql`.** Snapshot hasil pembagian biaya per vessel per bulan,
+DISIMPAN (bukan live-compute di layar, sesuai Aturan Umum #2 brief user — bisa ditelusuri audit).
+Kolom generik menampung union semua method (field yg tidak relevan dibiarkan 0):
+`method` (`COURIER`/`SEA`/`AIR`/`BORONGAN`), `period_month` (tanggal awal bulan),
+`vessel_id`/`vessel_name_raw`, `source_table`/`source_row_id` (jejak baris asal, utk audit),
+`courier_adm`/`duty`/`freight`/`handling_total`/`bm`/`ppn_pph`/`borongan_total`, `needs_review`
+(vessel tidak cocok master). Unique constraint `(method, source_table, source_row_id,
+vessel_name_raw)` — recompute per bulan = delete semua baris `period_month` itu dulu, insert
+ulang (idempotent). RLS: SELECT via `has_page_access` salah satu dari 2 page_key Reporting,
+INSERT/UPDATE/DELETE via `has_edit_access('reporting_cost_per_vessel')`.
+
+### ETL / alokasi (`src/utils/ReportingHelpers.ts`) — SATU-SATUNYA sumber kebenaran formula
+
+`recomputeReportingMonth(monthDate)` — dipanggil dari tombol "Recompute" di Cost per Vessel,
+proses 1 bulan sekaligus (Tahunan = loop 12x). 3 fungsi builder per sumber, jalan paralel:
+
+- **`buildCourierRows`** — dari `rekapan_courier`, filter `tgl_terima_email` di bulan itu. Pisah
+  kolom `vessel` dgn `+` (`splitVesselList()`), **NILAI BREAKDOWN (`breakdown_courier_adm_vessel`
+  dst, lihat "Rekapan Courier — Auto-Calculate" di atas) DIPAKAI APA ADANYA, TIDAK dibagi lagi**
+  (permintaan eksplisit user) — tiap nama vessel di baris itu dapat nilai breakdown yg SAMA.
+- **`buildSeaAirRows`** — dari `rekapan_seaair`, filter `tgl`. `shipment_type` LCL/FCL -> method
+  `SEA`, `AIR` -> method `AIR` (shipment_type lain diabaikan, di luar cakupan 2 method ini).
+  **Bug ditemukan & diperbaiki saat testing (`column rekapan_seaair.vessel does not exist`)**:
+  tabel ini TIDAK PUNYA kolom `vessel` mentah di top-level sama sekali (beda dari
+  `rekapan_courier`/`rekapan_far_overseas_air`) — daftar vessel-nya HANYA ada di dalam kolom
+  jsonb `po_detail` (array `{po_no, vessel}`, lihat "Export Excel Rekapan Courier"/
+  `SeaAirRekapanRowGroup` di atas: Sea & Air Rekapan TETAP split PO↔Vessel via `po_detail`, beda
+  dari Courier yg sudah berhenti split). Fix: `extractSeaAirVesselNames(poDetail)` parse
+  `po_detail` (array atau string JSON), ambil `vessel` tiap entry (di-`splitVesselList()` lagi
+  jaga2 kalau 1 entry sendiri sudah gabungan `+`). Pakai kolom RAW (`duty_total`, `bm`, `ppn`,
+  `pph`, `emkl_biaya`/`biaya_origin`/`biaya_destination`/`pbm_biaya`/`lift_off_biaya`/
+  `inspeksi_biaya`/`handling_biaya`/`other_biaya` dijumlah jadi `handling_total`) — **BUKAN**
+  kolom `*_split` yg juga ada di tabel ini (`duty_split`/`bm_split`/dst, itu hasil split PO↔Vessel
+  fitur LAIN, sengaja tidak dipakai di sini krn user eksplisit minta formula dari kolom RAW
+  dibagi jumlah vessel, bukan pakai nilai yg sudah pernah di-split sebelumnya). Dibagi rata
+  `/ jumlah vessel` (hasil `extractSeaAirVesselNames`), sesuai permintaan user.
+- **`buildBoronganRows`** — dari `rekapan_far_overseas_air`, filter `invoice_date` ("sementara,
+  karena belum ada tgl terima", sesuai brief user — GANTI ke kolom lain kalau field tgl terima
+  yg sebenarnya sudah ada/diminta). Vessel dari `vessel_internal_note` (bukan `po_list` — field
+  itu utk pairing PO presisi, di luar cakupan; **ASUMSI**: `vessel_internal_note` pakai pemisah
+  `+` sama seperti sumber lain, BELUM diverifikasi ke data production sungguhan). Total dari
+  `total_amount_idr` (fallback `total_amount` kalau kosong, asumsi sudah IDR) dibagi rata jumlah
+  vessel. **TIDAK difilter `approval_status`** (semua memo ikut, apapun status approval-nya) —
+  kalau maunya cuma yg sudah APPROVED, WAJIB diubah eksplisit kalau diminta.
+  **Konfirmasi user (2026-09)**: `vessel_internal_note` memang pakai pemisah `+` sama seperti
+  sumber lain — asumsi ini TERBUKTI BENAR, tidak perlu diragukan lagi.
+- **`matchVessel(rawName, masterList)`** — cocokkan case/whitespace-insensitive ke
+  `vessel_name` ATAU salah satu `alias_name`. Tidak ketemu -> `vessel_id=null`,
+  `needs_review=true`, baris TETAP disimpan (Aturan Umum #3 — tidak boleh hilang diam2).
+- Formula total (`totalCost`/`totalExclPpn`/`metricForMethod`/`zeroSums`/`addSums`,
+  `MetricKey`/`ALL_METRIC_KEYS`) — **SATU-SATUNYA tempat rumus total biaya**, di-import KEDUA
+  halaman (Cost per Vessel & Dashboard) supaya angkanya tidak pernah beda (Aturan Umum #1).
+  `metricForMethod`: ALL=jumlah semua kolom; COURIER=adm+duty+freight+bm+ppn_pph;
+  SEA/AIR=duty+handling_total+bm+ppn_pph; BORONGAN=borongan_total.
+
+### `ReportingCostPerVesselPage.tsx`
+
+Tabel pivot 4 tab, label tombol singkat (2026-09, permintaan user) — **All**/Courier/**Sea &
+Air**/**FAR Ovs** (value internal `TabId` TETAP `'ALL'|'COURIER'|'SEA_AIR'|'BORONGAN'`, cuma
+label tombol yg dipendekkan — "FAR Ovs" label utk method `BORONGAN`, JANGAN bingung dgn modul
+"FAR Overseas"/`direct_loading` yg beda sama sekali, cuma kebetulan sama istilah singkatnya
+krn sumber data Borongan emang dari situ). SEA & AIR SUDAH DIGABUNG 1 tab (lihat catatan "Tab
+Sea & Air digabung" di bawah), filter Monthly/Yearly + tahun/bulan. **Dashboard TIDAK ikut
+disingkat** (`METHOD_LABEL` di `ReportingDashboardPage.tsx` tetap "Chartered", bukan "FAR Ovs" —
+permintaan user SPESIFIK cuma label tab Cost per Vessel).
+Baris = SEMUA `master_vessel` (termasuk yg biayanya 0 bulan itu — vessel jadi sumber baris,
+bukan cuma yg py transaksi) + grup tambahan "PERLU DIPERIKSA" (vessel_name dari sumber yg tidak
+match master, SELALU tampil paling bawah). Base/Fleet Group tidak diulang (blank kalau sama dgn
+baris sebelumnya, dicek via komponen sebelumnya di array `displayRows` yg sudah tersorted), ada
+baris Subtotal per fleet_group (bg `#EEEAF3`) & Grand Total (bg `#5A305A` solid) di paling bawah.
+Tahunan = 12 kolom bulan, 1 angka total per bulan (`metricForMethod`) — sesuai instruksi user
+"supaya tabel tidak terlalu lebar", diterapkan ke SEMUA 5 tab termasuk All Method (bukan cuma
+tab per-method) krn brief tidak eksplisit kecualikan All Method & lebih konsisten.
+Tombol **Recompute** (gated `canEdit('reporting_cost_per_vessel')`) panggil
+`recomputeReportingMonth` (Tahunan = loop 12 bulan sekuensial, TIDAK paralel — hindari flood
+request). Tombol **Export** — Excel via `exceljs` (pola sama `ExportModal.tsx`), replika
+struktur tabel on-screen (grup/subtotal/grand total ikut, subtotal & grand total row di-bold).
+Baca filter awal dari query string (`?mode=&year=&month=&tab=`) via `useSearchParams` — dipakai
+Dashboard utk "chart bisa diklik buka Cost per Vessel terfilter".
+**Tombol "Customize View"** — pilih kolom biaya tampil/sembunyi PER TAB (`CustomizeViewModal`
+lokal di file ini, TIDAK reuse punya `SharedDataTable.tsx` yg tidak di-export), HANYA muncul di
+mode Bulanan (Tahunan selalu 12 kolom bulan tetap, tidak relevan utk dikustomisasi). Disimpan
+localStorage key `beehive_customize_view:${user.id}:reporting_cost_per_vessel:${tab}` (pola sama
+modul Courier). Export Excel IKUT Customize View (kolom yg disembunyikan di layar juga tidak ikut
+ke file Excel).
+
+### `ReportingDashboardPage.tsx` — layout FINAL (v3, 2026-09, beberapa revisi susulan user)
+
+**Urutan baris (dari atas ke bawah) — JANGAN diubah tanpa diminta ulang**:
+1. **3 kartu ringkasan**: Total Cost (+ % vs periode sebelumnya) | **Highest Vessel Cost**
+   (nama + nominal vessel biaya TERTINGGI periode terpilih, `topVessels[0]` — array YG SAMA
+   dipakai section 3 di bawah, JANGAN hitung ulang terpisah) | Previous Period.
+   **GANTI TOTAL dari kartu "Jumlah Vessel Aktif Biaya"** (versi v1/v2 nampilin COUNT DISTINCT
+   vessel — DIHAPUS, bukan lagi bagian dashboard ini sama sekali, permintaan user eksplisit).
+2. **Cost per Method** — 4 kartu terpisah (Courier/Sea/Air/Chartered, bukan digabung).
+3. **Vessels with Highest Cost** — bar horizontal, MELEBAR PENUH baris sendiri (v1/v2 dulu
+   setengah lebar bersebelahan "Cost by Category" — DIPINDAH krn user minta chart ini
+   ditonjolkan/dilebarkan).
+4. **Cost by Category** (kiri) + **Cost per Fleet Group** (kanan), setengah lebar masing2 —
+   "Cost by Category" GANTI NAMA dari "Cost per Cost Type" (v2). Posisi "Cost per Fleet Group"
+   TERTUKAR dgn section 3 (dulu di sini melebar penuh, sekarang di sini setengah lebar).
+5. **Monthly Trend** — SELALU 12 bulan penuh (terlepas filter Bulanan/Tahunan yg aktif di kartu
+   lain), tetap chart vertikal.
+
+**`HorizontalBarChart` — HTML, BUKAN SVG lagi** (v1 pakai `<div>` width%, v2 diganti SVG manual
+dgn label dipotong paksa `.slice(0,19)+'…'` kalau >20 karakter — laporan user "nama vessel
+kepotong titik-titik" krn SVG `<text>` TIDAK BISA wrap multi-baris tanpa hitung lebar per-
+karakter manual). v3 FINAL: kembali ke HTML (`<div>` flex row: label `w-48 break-words` + bar
+`flex-1` + nilai `w-44` kanan) — label SELALU tampil PENUH, membungkus (wrap) ke baris
+berikutnya kalau kepanjangan, TIDAK PERNAH dipotong/`...` lagi. Tooltip native via atribut HTML
+`title` (pengganti `<title>` SVG). `VerticalBarChart` (Monthly Trend) TETAP SVG (label bulan
+pendek/tetap, tidak kena masalah yg sama).
+
+**Nominal SELALU format penuh** (2026-09, permintaan user eksplisit) — `fmtRpShort()`
+(singkatan M/Jt, versi v1/v2) **DIHAPUS TOTAL** dari file ini, SEMUA tempat (kartu ringkasan,
+Cost per Method, label+tooltip bar chart) sekarang pakai `fmtRp()` biasa (`Rp 2.412.885.640`,
+BUKAN `Rp 2.4 M`). `ReportingCostPerVesselPage.tsx` TIDAK PERNAH punya versi singkat sama
+sekali (sudah full number dari awal), jadi tidak ada yg perlu diubah di halaman itu.
+
+Semua kartu/bar yg bisa diklik pakai `<Link>`/`onBarClick`+`useNavigate` ke Cost per Vessel dgn
+query string filter (`filterQuery()`, lihat pola di atas).
+
+### Ciutkan/lebarkan baris per Fleet Group (`ReportingCostPerVesselPage.tsx`, 2026-09)
+
+State `collapsedGroups: Set<string>` (key `${base}::${fleetGroup}`, sama persis `groupKey` yg
+sudah dihitung tiap baris `vessel`/`subtotal` di `displayRows`). Baris vessel dari grup yg
+diciutkan DIFILTER dari render (`visibleDisplayRows = displayRows.filter(row => row.type !==
+'vessel' || !collapsedGroups.has(row.groupKey))`) — baris **Subtotal TETAP SELALU tampil**
+(berfungsi jg sbg "header" grup saat diciutkan, ada tombol chevron + label jumlah vessel
+`(N vessel)`). Tombol toolbar "Ciutkan Semua"/"Lebarkan Semua" isi/kosongkan
+`collapsedGroups` sekaligus dari `allGroupKeys` (dihitung dari `displayRows`, BUKAN
+`visibleDisplayRows` -- supaya "Lebarkan Semua" tetap bisa buka grup yg sedang diciutkan).
+State lokal saja (tidak disimpan localStorage/Supabase), reset tiap buka halaman. Export Excel
+TIDAK ikut status ciutkan (`handleExport` tetap pakai `displayRows` penuh, bukan
+`visibleDisplayRows`) — export selalu lengkap terlepas dari tampilan layar.
+
+**3 baris per grup: HEADER (toggle, ATAS) + vessel + SUBTOTAL (angka, BAWAH)** — DESAIN FINAL
+2026-09, 2 iterasi sebelumnya SALAH:
+- v1: Subtotal (angka + toggle jadi 1 baris) di BAWAH -> laporan user "kenapa ciutkannya di
+  bawah, harusnya di atas".
+- v2 (SALAH PAHAM, SEMPAT DIKERJAKAN LALU DIREVERT): pindahkan baris Subtotal ITU SENDIRI
+  (angka + toggle) ke ATAS -> user klarifikasi maksudnya BUKAN itu: **Subtotal (rekap angka)
+  TETAP di bawah spt semula**, yg diminta naik ke atas CUMA TOGGLE-nya.
+- v3 (FINAL): `type Disp` sekarang py **4 varian** (nambah `'header'`) -- per grup push urutan
+  `{type:'header', base, fleetGroup, groupKey, count}` (TANPA angka, toggle ciutkan +
+  nama grup DI SINI) dulu, baru semua baris `{type:'vessel', ...}`, baru
+  `{type:'subtotal', ..., sums, monthly}` (angka rekap, TANPA toggle, TETAP paling bawah spt
+  desain awal). `toggleGroup(groupKey)` SEKARANG di baris header, BUKAN subtotal.
+  `visibleDisplayRows` filter TETAP HANYA sembunyikan `type==='vessel'` (header & subtotal
+  SELALU tampil, header jadi "jangkar" grup saat ciutkan, subtotal tetap keliatan rekapnya).
+  **3 tempat WAJIB tangani varian `'header'` baru ini** (kalau nambah renderer baru lain utk
+  `displayRows`, WAJIB ikut juga): render tabel on-screen, `handleExport` (skip -- baris header
+  tidak ikut ke Excel, Fleet Group sudah ada di baris Subtotal), `ExportPreviewModal` (return
+  `null`, tidak dihitung di preview).
+  Baris vessel TETAP tidak menampilkan Base/Fleet Group sendiri (kosong, `pl-6` indent) — sudah
+  terwakili baris header DI ATAS & subtotal DI BAWAH.
+
+**Ikon toggle diperhalus** — dulu tukar `ChevronRight`/`ChevronDown` (2 icon beda), SEKARANG 1
+icon `ChevronDown` yg di-rotate `-90deg` (CSS `transition-transform`) saat ciutkan, dibungkus
+lingkaran kecil border (`w-5 h-5 rounded-full border`) yg highlight saat hover — animasi mulus,
+BUKAN icon lompat ganti. **Warna toggle `#73507B`** (permintaan user eksplisit — border
+lingkaran, ikon chevron, DAN `border-l` aksen kiri baris header semua ikut warna ini; BEDA dari
+`#5A305A` yg dipakai teks Base/label lain di baris yg sama, sengaja dibedakan biar toggle-nya
+menonjol). **Dipaksa via inline `style={{color:'#73507B'}}`/`style={{border:'1.5px solid
+#73507B'}}`** (BUKAN className Tailwind arbitrary-value `text-[#73507B]`/`border-[#73507B]/40`
+spt percobaan pertama) — user laporan warnanya "belum berubah" walau kode sudah benar (kemungkinan
+opacity modifier `/40`/`/50` bikin warnanya terlalu redup mirip `#5A305A` sekilas, atau delay
+HMR) — inline style solid (tanpa opacity) memastikan warnanya PASTI beda & jelas kelihatan,
+tidak bergantung Tailwind JIT arbitrary-value edge case.
+
+**Lebar kolom tabel — `table-fixed` + `colgroup`** (2026-09, laporan user "jarak kolom terlalu
+jauh") — sebelumnya `<table>` polos tanpa `colgroup` (auto-layout): kalau kolom cuma sedikit
+(mis. tab All cuma 2 kolom angka), browser meregangkan kolom terakhir isi SISA lebar layar,
+bikin jarak kosong lebar antara label & angkanya. Fix: `numericColCount` (jumlah kolom angka yg
+lagi tampil -- `visibleMonthlyCols.length` utk Bulanan, SELALU `12` utk Tahunan) x `numColW`
+(150px tetap per kolom) + 3 kolom awal tetap (Base 130px, Fleet Group 150px, Vessel 150px) =
+`min-width` tabel, dibungkus `overflow-x-auto` (scroll horizontal muncul kalau kolom banyak,
+BUKAN kolom meregang random). **Susulan**: kolom PALING KANAN sempat kelihatan mepet nempel tepi
+kartu (laporan user) — semua `<th>`/`<td>` numerik (header + vessel + subtotal + grand total)
+ditambah `last:pr-5` (Tailwind `last:` variant, cuma kena elemen TERAKHIR di tiap `<tr>`) supaya
+ada nafas ekstra di kanan tanpa mengubah lebar `colgroup`/proporsi kolom lain. **Cuma diterapkan
+ke tabel utama on-screen** -- `ExportPreviewModal` BELUM ikut colgroup/padding ini (preview
+export, dampak lebih kecil, bisa ditambah kalau diminta).
+
+**Baris pemisah Subtotal pakai warna `#FFF5C5`** (kuning, `hover:#F5E28F` +
+`border-l-[3px] border-l-[#E6C25C]`) — GANTI dari `#EEEAF3` (ungu muda) versi v1, permintaan
+user supaya konsisten dgn warna highlight kuning yg sudah dipakai modul lain (lihat "Highlight
+baris Submit Date — Rekapan Courier" di atas, sumber warna yg sama).
+
+### Toggle "Hide Scrapped" (`ReportingCostPerVesselPage.tsx`, label dipendekkan 2026-09 dari
+"Hide Scrapped Vessels" — permintaan user)
+
+Checkbox di toolbar filter, state lokal `hideScrap` (default `false`/tampil semua, TIDAK
+disimpan — reset tiap buka halaman). Saat aktif: vessel `master_vessel.status==='SCRAP'`
+DIKELUARKAN TOTAL dari seeding baris pivot (tidak nongol sbg baris 0), DAN baris
+`reporting_cost_allocation` yg `vessel_id`-nya cocok ke vessel SCRAP itu DIBUANG dari agregasi
+(bukan cuma disembunyikan visual) — supaya Subtotal/Grand Total ikut benar tidak menghitung
+biaya vessel yg disembunyikan. Vessel SCRAP yg PUNYA biaya bulan itu (kapal baru discrap
+tengah bulan mis.) sengaja TETAP ikut kebuang saat toggle aktif — kalau mau granular per-bulan
+(tampilkan biaya SEBELUM discrap), belum diimplementasi.
+
+### Export Excel — preview dulu sebelum file dibuat (2026-09, permintaan user)
+
+`ExportPreviewModal` (`ReportingCostPerVesselPage.tsx`, komponen lokal) — pola sama `ExportModal.tsx`
+(dipakai Audit Courier dkk): tombol "Export" toolbar sekarang cuma buka modal preview dulu
+(`showExportPreview`), file Excel baru beneran dibuat (`handleExport`, logic-nya TIDAK berubah)
+saat user klik "Export" DI DALAM modal. Preview replika PERSIS struktur tabel on-screen
+(vessel/subtotal/grand total) dibatasi 15 baris pertama + pesan "showing first N rows...". Header
+tabel preview **`#5A305A`** (permintaan user eksplisit — SENGAJA beda dari `ExportModal.tsx` yg
+pakai abu-abu `bg-slate-100`, disamakan ke warna brand khusus di modal Reporting ini). Header
+FILE EXCEL-nya sendiri (`headerRow.fill` di `handleExport`) SUDAH `FF5A305A` dari awal (tidak
+berubah), jadi preview & file akhir sekarang konsisten warnanya. TIDAK ada langkah konfirmasi
+password spt `ExportModal.tsx` (Cost per Vessel bukan data sensitif spt Audit Courier, tidak
+diminta user) — kalau nanti diminta, tambahkan pola `ExportPasswordConfirmModal` yg sama.
+
+### Panel "NEEDS REVIEW" — detail sumber vessel_name yg tidak cocok master (2026-09)
+
+**`reporting_cost_allocation.source_label`** — kolom baru (`sql/005_reporting_source_label.sql`,
+**BELUM DIJALANKAN ke Supabase production**, jalankan SETELAH `sql/004_...`), diisi identifier
+manusiawi per baris sumber saat recompute: Courier -> `no_invoice` (fallback `awb`); Sea & Air ->
+`no_invoice` (fallback `awb`); Borongan -> `no_invoice` (fallback `memo_title`). Kolom ini MURNI
+utk ditampilkan (bukan dipakai matching/kalkulasi apa pun).
+
+`METHOD_SOURCE_PAGE` (`ReportingHelpers.ts`, exported) — map `AllocationMethod` -> halaman &
+label identifier tujuan (`{label, path, idLabel}`), mis. `COURIER` -> `{'Courier > Invoice
+Recap', '/courier/rekapan', 'Invoice No. / AWB'}`. `SEA`/`AIR` sama-sama arah ke Sea & Air
+Rekapan (konsisten dgn tab gabungan "Sea & Air" di Cost per Vessel).
+
+**`ReviewDetailsModal`** (`ReportingCostPerVesselPage.tsx`) — dibuka via tombol "View Details" di
+banner NEEDS REVIEW. Data dikumpulkan di useMemo yg sama dgn `displayRows` (`reviewMap`,
+key=`vessel_name_raw`, value=array `{method, sourceLabel, periodMonth}` — 1 vessel_name bisa
+muncul di banyak baris sumber/bulan berbeda, SEMUA ditampilkan bukan cuma yg pertama). Tiap
+kemunculan tampil: link halaman tujuan (`<Link>` react-router, BUKAN deep-link ke baris spesifik
+— app ini belum punya route per-record utk Courier/Sea&Air/FAR Overseas) + identifier
+(`source_label`) + bulan periodenya, supaya user tinggal Ctrl+F/cari manual di halaman itu.
+**BELUM ADA fitur alias langsung dari modal ini** (mis. tombol "Tambah sbg Alias" yg langsung
+`.update()` `master_vessel.alias_name`) — user masih harus buka `/settings/master-vessel` manual
+kalau mau menambahkan alias. Tambahkan kalau diminta eksplisit.
+
+### Tab Sea & Air digabung, tombol Collapse/Expand digabung, translasi Inggris (2026-09)
+
+**Tab SEA/AIR digabung jadi 1 tab "Sea & Air"** (`ReportingCostPerVesselPage.tsx`, dulu 2 tab
+terpisah) — `TabId` union sekarang `'ALL'|'COURIER'|'SEA_AIR'|'BORONGAN'` (BUKAN lagi
+`'SEA'|'AIR'` terpisah). `rowsForTab` filter baris `method==='SEA' || method==='AIR'` saat
+`activeTab==='SEA_AIR'`. `metricForTab()` wrapper petakan `'SEA_AIR'` -> `'SEA'` sebelum panggil
+`metricForMethod()` (`ReportingHelpers.ts` cuma kenal method asli `SEA`/`AIR` sesuai kolom DB —
+formulanya IDENTIK utk keduanya jadi aman diwakilkan salah satu).
+
+**Tombol Collapse All/Expand All digabung jadi 1** (dulu 2 tombol terpisah) — `allCollapsed =
+allGroupKeys.length>0 && allGroupKeys.every(k=>collapsedGroups.has(k))`, label & ikon ganti
+otomatis ("Collapse All" <-> "Expand All") mengikuti status semua grup saat ini.
+
+**Translasi Inggris — `ReportingCostPerVesselPage.tsx` & `ReportingDashboardPage.tsx`** (2 halaman
+Reporting utama, PERMINTAAN EKSPLISIT user 2026-09) — SEMUA teks UI (label, toast, placeholder,
+tooltip title, empty-state) diterjemahkan ke Inggris. Beberapa keputusan istilah:
+- **"Borongan" -> "Chartered"** (label tab & kartu Dashboard) — method `BORONGAN` di kolom DB
+  `reporting_cost_allocation.method` TIDAK BERUBAH (cuma label tampilan), jangan translate value
+  data manapun yg match string ini.
+- **"PERLU DIPERIKSA" (pseudo base/fleet_group utk vessel tak cocok master) -> "NEEDS REVIEW"**
+  (konstanta `NEEDS_REVIEW` di `ReportingCostPerVesselPage.tsx`, string literal langsung di
+  `ReportingDashboardPage.tsx` — murni label tampilan, bukan value tersimpan ke DB manapun).
+- **`MasterVesselAdminPage.tsx` SENGAJA TIDAK ikut** translasi ini (user minta "2 halaman" — tabel
+  pivot + dashboard, bukan halaman admin master vessel) — masih Bahasa Indonesia, JANGAN
+  disamakan otomatis tanpa diminta eksplisit.
+- Komentar kode TETAP Bahasa Indonesia (bukan scope translasi UI, sama konvensi modul lain —
+  lihat bagian "Translasi UI ke Bahasa Inggris" di atas).
+
+### Warna toolbar per tombol (`ReportingCostPerVesselPage.tsx`, 2026-09)
+
+Dulu SEMUA tombol toolbar (Collapse/Expand, Customize View, Export) putih/outline polos KECUALI
+Recompute (oranye, sudah dari awal) — permintaan user dikasih warna tematik masing2 biar gampang
+dibedakan sekilas: **Collapse/Expand All** = ungu `#73507B` (`bg-[#73507B]/10 text-[#73507B]
+border-[#73507B]/30`, senada warna toggle chevron di baris header grup — sama-sama soal
+struktur/tampilan tabel); **Recompute** = oranye `bg-orange-50 text-orange-700` (TIDAK diubah,
+aksi hitung ulang data); **Customize View** = biru `bg-blue-50 text-blue-700` (pengaturan
+tampilan); **Export** = hijau `bg-emerald-50 text-emerald-700` (konvensi umum aksi
+unduh/keluarkan data). Tab pemilih method (All/Courier/Sea & Air/FAR Ovs) TIDAK ikut diwarnai
+beda2 — TETAP pola toggle aktif `#5A305A` solid vs putih-outline, sengaja tidak disentuh.
+
+### Bug ditemukan & diperbaiki — Recompute gagal `duplicate key value violates unique
+constraint "reporting_cost_allocation_...key"` (2026-09, laporan user)
+
+**Root cause**: 1 baris sumber (mis. 1 baris `rekapan_courier`, ATAU 1 baris `rekapan_seaair`
+dgn 2 entry `po_detail` yg VESSEL-nya SAMA) bisa menghasilkan nama vessel yg SAMA muncul 2x
+setelah di-split — kode lama push 1 baris terpisah per kemunculan nama, langsung tabrakan sama
+unique constraint `(method, source_table, source_row_id, vessel_name_raw)` saat insert (SEMUA
+insert dalam 1 chunk gagal krn constraint, `recomputeReportingMonth` sudah keburu `delete()`
+duluan sebelum insert gagal → laporan susulan user "datanya jadi tidak ada yang muncul" cocok
+dgn gejala ini: delete sukses, insert gagal, hasil akhir 0 baris).
+**Fix**: `pushDedupedRows()` (`ReportingHelpers.ts`) — SEMUA 3 builder (`buildCourierRows`/
+`buildSeaAirRows`/`buildBoronganRows`) sekarang WAJIB lewat fungsi ini, bukan push langsung ke
+array `rows`. Nama vessel yg sama dalam 1 baris sumber di-GABUNG (SUM nilainya) jadi 1 entry
+SEBELUM insert — ini bukan cuma workaround constraint, tapi SECARA MATEMATIS BENAR: vessel yg
+muncul 2x di daftar memang seharusnya dapat 2 "jatah" (constraint di DB jadi guard yg benar,
+bukan yg dilanggar). **Kalau nambah sumber method baru lagi ke modul Reporting, WAJIB pakai
+`pushDedupedRows()` juga** — push manual ke array `rows` langsung berisiko re-introduce bug ini.
+
+### `MasterVesselAdminPage.tsx` — halaman admin kelola `master_vessel` (2026-09)
+
+Route `/settings/master-vessel`, admin-only (`RequirePageAccess adminOnly`, pola SAMA
+`RoleManagementPage.tsx` — BUKAN lewat matrix page_key, konsisten dgn RLS write
+`master_vessel_admin_write` yg `is_admin()` polos). Page_key `settings_master_vessel`
+didaftarkan di `PAGE_REGISTRY` murni utk tampil di matrix Kelola Role & Akses (dokumentasi),
+BUKAN sumber gating sebenarnya. Kartu akses di `/settings` digating `isAdmin` (sama pola kartu
+"Kelola Role & Akses").
+
+Cuma ~250an baris data (awal dari `MASTER VESSEL.xlsx`) — fetch semua sekaligus via
+`fetchMasterVessels()` (`ReportingHelpers.ts`), filter/sort/search MURNI client-side (search
+cocokkan `vessel_name` + `alias_name`), TIDAK perlu pagination server-side. CRUD langsung
+`.insert()`/`.update()`/`.delete()` ke `master_vessel` (bukan RPC — RLS `is_admin()` sudah cukup
+proteksinya, beda dari modul FAR Overseas yg WAJIB RPC krn ada whitelist kolom terpisah).
+Form Edit: `alias_name` input teks dipisah koma -> `string[]` (kosong -> `null`, bukan array
+kosong). Delete: baris `reporting_cost_allocation` yg pernah cocok ke vessel ini TIDAK ikut
+terhapus (tidak ada FK cascade) — vessel_id jadi rujukan basi, aman krn `vessel_id` bigint
+identity TIDAK PERNAH di-reuse Postgres.
+
+### Chart Dashboard — upgrade dari `<div>` width% ke SVG manual (2026-09)
+
+`HorizontalBarChart`/`VerticalBarChart` (komponen lokal `ReportingDashboardPage.tsx`, BUKAN
+library chart — konsisten pola SVG manual yg sudah dipakai `AuditPoPage.tsx` DashboardModal).
+Dipakai section 3 (Top Vessel)/4 (Per Jenis Biaya)/5 (Per Fleet Group) — horizontal — & section 6
+(Tren Bulanan) — vertical, dgn gridline. Tooltip pakai `<title>` SVG native (hover browser
+bawaan, bukan tooltip custom JS) — nampilkan label+nilai persis saat hover bar. Klik-through ke
+Cost per Vessel (`onBarClick`) pindah dari `<Link>` per-bar (v1) jadi `onClick` + `useNavigate()`
+(SVG `<g onClick>`, lebih simpel drpd nest elemen anchor di dalam `<svg>`). Section 1
+(kartu ringkasan)/2 (Biaya per Method) TETAP `<Link>` biasa (bukan chart, tidak perlu SVG).
+
+### Yang belum dikerjakan / gap yang diketahui
+
+Belum ada testing menyeluruh dgn data production 1 tahun penuh (baru dites recompute 1 bulan,
+sudah lolos setelah 2 bug ditemukan & diperbaiki); vessel SCRAP yg baru discrap TENGAH BULAN
+tidak bisa ditampilkan granular (toggle "Sembunyikan SCRAP" buang seluruh biaya bulan itu, tidak
+cuma sebagian sebelum tanggal scrap).
+
 ## Peta tabel Supabase (per modul)
 
 **Auth & RBAC**: `profiles`, `roles`, `user_roles`, `role_page_access`.
@@ -1350,6 +1733,10 @@ bagian "Accounting Rekap" di atas soal gap INSERT/UPDATE/DELETE).
 **Admin/rate master (Courier)**: `tabel_rate_sheet_dhl`, `tabel_rate_sheet_fedex`,
 `tabel_rate_sheet_ups`, `tabel_surcharge_dhl`, `tabel_surcharge_fedex`, `tabel_surcharge_rule`
 (CIPL), `tabel_zone_mapping`, `tabel_ppjk_cost_rule`, `tabel_fuel_surcharge`.
+
+**Reporting** (lihat bagian tersendiri di atas): `master_vessel`, `reporting_cost_allocation`
+(snapshot hasil alokasi, sumbernya baca `rekapan_courier`/`rekapan_seaair`/
+`rekapan_far_overseas_air`, BUKAN tabel baru miliknya sendiri).
 
 **Lain-lain**: `v_audit_trail` (view gabungan Audit Trail).
 

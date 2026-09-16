@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../lib/AuthContext';
 import {
   Settings as SettingsIcon, FileCheck2, Fuel, Table2, Flame, Landmark,
-  SlidersHorizontal, FileText, ShieldCheck, ArrowRight, Webhook,
+  SlidersHorizontal, FileText, ShieldCheck, ArrowRight, Webhook, Ship,
 } from 'lucide-react';
 import Greeting from '../components/Greeting';
 
@@ -85,6 +85,9 @@ export default function SettingsPage() {
             )}
             {isAdmin && (
               <ModuleCard icon={ShieldCheck} title="Kelola Role & Akses" description="Atur role, halaman yang boleh diakses tiap role, dan role per user (khusus PIC/Admin)." to="/settings/roles" actionLabel="Kelola Role" />
+            )}
+            {isAdmin && (
+              <ModuleCard icon={Ship} title="Master Vessel" description="Kelola master data kapal & entri non-kapal yang dipakai modul Reporting (Dashboard/Cost per Vessel)." to="/settings/master-vessel" actionLabel="Kelola Vessel" />
             )}
           </div>
         </div>

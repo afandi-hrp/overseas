@@ -36,6 +36,9 @@ import AuditPoPage from './pages/AuditPoPage';
 import AuditPoOverseasPage from './pages/AuditPoOverseasPage';
 import PiLocalPage from './pages/PiLocalPage';
 import AccountingRekapPage from './pages/AccountingRekapPage';
+import ReportingDashboardPage from './pages/ReportingDashboardPage';
+import ReportingCostPerVesselPage from './pages/ReportingCostPerVesselPage';
+import MasterVesselAdminPage from './pages/MasterVesselAdminPage';
 
 function ProtectedRoute() {
   const { session, loading, lockScreenActive } = useAuth();
@@ -115,9 +118,13 @@ export default function App() {
               <Route path="/pi-local" element={<RequirePageAccess pageKey="pi_local"><PiLocalPage /></RequirePageAccess>} />
               <Route path="/accounting-rekap" element={<RequirePageAccess pageKey="accounting_rekap"><AccountingRekapPage /></RequirePageAccess>} />
 
+              <Route path="/reporting/dashboard" element={<RequirePageAccess pageKey="reporting_dashboard"><ReportingDashboardPage /></RequirePageAccess>} />
+              <Route path="/reporting/cost-per-vessel" element={<RequirePageAccess pageKey="reporting_cost_per_vessel"><ReportingCostPerVesselPage /></RequirePageAccess>} />
+
               <Route path="/audit-trail" element={<RequirePageAccess pageKey="audit_trail"><AuditTrailPage /></RequirePageAccess>} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/settings/roles" element={<RequirePageAccess adminOnly><RoleManagementPage /></RequirePageAccess>} />
+              <Route path="/settings/master-vessel" element={<RequirePageAccess adminOnly><MasterVesselAdminPage /></RequirePageAccess>} />
               <Route path="/account" element={<AccountPage />} />
 
               {/* Halaman-halaman modul Pengaturan -- sebelumnya dirender DI LUAR MainLayout jadi

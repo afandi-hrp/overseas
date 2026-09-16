@@ -14,7 +14,7 @@ export type PageEntry = {
   // halaman lain -- lihat courier_cost_validation dkk di bawah. Tidak ikut route guard
   // (RequirePageAccess), cuma dipakai SharedDataTable.tsx utk sembunyikan/tampilkan tombol.
   path?: string;
-  group: 'Courier' | 'Sea & Air' | 'FAR Overseas' | 'Bunker' | 'Audit AP Local' | 'Audit AP Overseas' | 'PI Local' | 'Accounting Rekap' | 'General' | 'Settings';
+  group: 'Courier' | 'Sea & Air' | 'FAR Overseas' | 'Bunker' | 'Audit AP Local' | 'Audit AP Overseas' | 'PI Local' | 'Accounting Rekap' | 'Reporting' | 'General' | 'Settings';
   // Daftar "jabatan approval" yang berlaku KHUSUS utk halaman ini (opsional -- cuma diisi utk
   // halaman yang punya alur approval berjenjang, mis. Direct Loading/FAR Overseas Air:
   // Exim -> PIC -> SPV -> Direktur). Kosongkan/hilangkan field ini utk halaman yang belum py
@@ -67,6 +67,9 @@ export const PAGE_REGISTRY: PageEntry[] = [
 
   { key: 'accounting_rekap', label: 'Accounting Rekap', path: '/accounting-rekap', group: 'Accounting Rekap' },
 
+  { key: 'reporting_dashboard', label: 'Dashboard (Reporting)', path: '/reporting/dashboard', group: 'Reporting' },
+  { key: 'reporting_cost_per_vessel', label: 'Cost per Vessel', path: '/reporting/cost-per-vessel', group: 'Reporting' },
+
   { key: 'audit_trail', label: 'Audit Trail', path: '/audit-trail', group: 'General' },
 
   { key: 'settings_webhooks', label: 'Konfigurasi Webhook Otomasi', path: '/settings/webhooks', group: 'Settings' },
@@ -80,9 +83,14 @@ export const PAGE_REGISTRY: PageEntry[] = [
   // via isAdmin, bukan lewat matrix page_key ini) -- tapi tetap didaftarkan di sini supaya
   // tetap tampil & konsisten di matrix Kelola Role & Akses utk keperluan dokumentasi/display.
   { key: 'settings_roles', label: 'Kelola Role & Akses', path: '/settings/roles', group: 'Settings' },
+  // Sama pola dgn settings_roles di atas -- admin-only via isAdmin() (RequirePageAccess
+  // adminOnly), BUKAN lewat matrix page_key (RLS write master_vessel juga is_admin() polos,
+  // lihat sql/003_reporting_master_vessel.sql). Didaftarkan di sini murni utk tampil konsisten
+  // di matrix Kelola Role & Akses (dokumentasi), bukan sumber gating akses sebenarnya.
+  { key: 'settings_master_vessel', label: 'Master Vessel', path: '/settings/master-vessel', group: 'Settings' },
 ];
 
-export const PAGE_GROUPS: PageEntry['group'][] = ['Courier', 'Sea & Air', 'FAR Overseas', 'Bunker', 'Audit AP Local', 'Audit AP Overseas', 'PI Local', 'Accounting Rekap', 'General', 'Settings'];
+export const PAGE_GROUPS: PageEntry['group'][] = ['Courier', 'Sea & Air', 'FAR Overseas', 'Bunker', 'Audit AP Local', 'Audit AP Overseas', 'PI Local', 'Accounting Rekap', 'Reporting', 'General', 'Settings'];
 
 export function pageLabel(key: string): string {
   return PAGE_REGISTRY.find(p => p.key === key)?.label || key;

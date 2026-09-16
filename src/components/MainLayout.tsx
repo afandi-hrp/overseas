@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plane, Ship, ScrollText, Settings, ChevronUp, ChevronDown, LogOut, UserCircle, FileCheck2, GitCompare } from 'lucide-react';
+import { Plane, Ship, ScrollText, Settings, ChevronUp, ChevronDown, LogOut, UserCircle, FileCheck2, GitCompare, BarChart3 } from 'lucide-react';
 import shipmentIcon from '../assets/beehive-icon.png';
 import { useAuth } from '../lib/AuthContext';
 
@@ -57,6 +57,17 @@ const MAIN_TABS = [
       { id: 'audit_po_overseas', label: 'Audit AP Overseas', path: '/audit-po-overseas', pageKey: 'audit_po_overseas' },
       { id: 'accounting_rekap', label: 'Accounting Rekap', path: '/accounting-rekap', pageKey: 'accounting_rekap' },
       { id: 'pi_local', label: 'PI Local', path: '/pi-local', pageKey: 'pi_local' },
+    ]
+  },
+  {
+    id: 'reporting',
+    label: 'Reporting',
+    icon: BarChart3,
+    path: '/reporting/dashboard',
+    basePath: '/reporting',
+    subTabs: [
+      { id: 'reporting_dashboard', label: 'Dashboard', path: '/reporting/dashboard', pageKey: 'reporting_dashboard' },
+      { id: 'reporting_cost_per_vessel', label: 'Cost per Vessel', path: '/reporting/cost-per-vessel', pageKey: 'reporting_cost_per_vessel' },
     ]
   },
   {
