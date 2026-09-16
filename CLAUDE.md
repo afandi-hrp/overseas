@@ -1471,14 +1471,23 @@ ke file Excel).
 5. **Monthly Trend** — SELALU 12 bulan penuh (terlepas filter Bulanan/Tahunan yg aktif di kartu
    lain), tetap chart vertikal.
 
-**`HorizontalBarChart` — HTML, BUKAN SVG lagi** (v1 pakai `<div>` width%, v2 diganti SVG manual
-dgn label dipotong paksa `.slice(0,19)+'…'` kalau >20 karakter — laporan user "nama vessel
-kepotong titik-titik" krn SVG `<text>` TIDAK BISA wrap multi-baris tanpa hitung lebar per-
-karakter manual). v3 FINAL: kembali ke HTML (`<div>` flex row: label `w-48 break-words` + bar
-`flex-1` + nilai `w-44` kanan) — label SELALU tampil PENUH, membungkus (wrap) ke baris
-berikutnya kalau kepanjangan, TIDAK PERNAH dipotong/`...` lagi. Tooltip native via atribut HTML
-`title` (pengganti `<title>` SVG). `VerticalBarChart` (Monthly Trend) TETAP SVG (label bulan
-pendek/tetap, tidak kena masalah yg sama).
+**`HorizontalBarChart` DAN `VerticalBarChart` — HTML, BUKAN SVG SAMA SEKALI** (2026-09, KEDUANYA
+sempat lewat versi SVG lalu di-drop total, JANGAN reintroduce SVG utk chart bar manapun di
+halaman ini):
+- `HorizontalBarChart`: v1 `<div>` width% -> v2 SVG manual dgn label dipotong paksa
+  `.slice(0,19)+'…'` kalau >20 karakter (laporan user "nama vessel kepotong titik-titik", SVG
+  `<text>` tidak bisa wrap multi-baris tanpa hitung lebar per-karakter manual) -> v3 FINAL balik
+  ke HTML (`<div>` flex row: label `w-48 break-words` + bar `flex-1` + nilai `w-44` kanan) —
+  label SELALU tampil PENUH, membungkus (wrap) kalau kepanjangan, TIDAK PERNAH dipotong lagi.
+- `VerticalBarChart` (Monthly Trend): v1 SVG viewBox tetap (`preserveAspectRatio="xMinYMin
+  meet"`) -> sempat di-patch `preserveAspectRatio="none"` (fix laporan "bolong kanan", TERNYATA
+  bikin masalah BARU: stretch non-uniform sumbu X jauh lebih besar drpd Y bikin sudut rect
+  (`rx=4`)/garis gridline putus2 TERDISTORSI, laporan user "gepeng & pecah") -> v3 FINAL
+  **DIHAPUS TOTAL SVG-nya**, ganti `<div>` flex (`flex-1` per bulan, tinggi bar % dari
+  `max-height` container `h-52`, label bulan baris terpisah di bawah pakai `flex-1` yg sama biar
+  align persis dgn bar-nya) — TIDAK ADA viewBox/scaling manual lagi sama sekali, jadi TIDAK
+  MUNGKIN kena masalah stretch non-uniform apa pun.
+Tooltip KEDUA chart via atribut HTML native `title` (pengganti `<title>` SVG yg dulu dipakai).
 
 **Nominal SELALU format penuh** (2026-09, permintaan user eksplisit) — `fmtRpShort()`
 (singkatan M/Jt, versi v1/v2) **DIHAPUS TOTAL** dari file ini, SEMUA tempat (kartu ringkasan,

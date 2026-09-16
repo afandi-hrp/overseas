@@ -331,7 +331,7 @@ export default function ReportingCostPerVesselPage() {
             </div>
             <div>
               <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Cost per Vessel</h1>
-              <p className="text-[#5A305A] font-light text-sm mt-1">Cost recap per vessel — Courier, Sea & Air, and Chartered</p>
+              <p className="text-[#5A305A] font-light text-sm mt-1">Cost summary per vessel — Courier, Sea, Air, FAR Overseas</p>
             </div>
           </div>
           <Greeting />

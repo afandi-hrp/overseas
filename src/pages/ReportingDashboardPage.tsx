@@ -46,46 +46,49 @@ function HorizontalBarChart({ data, color, formatValue, onBarClick }: {
   );
 }
 
+// HTML (BUKAN SVG lagi) — 2026-09, laporan user bar-nya "gepeng & pecah" di versi SVG. Root
+// cause: `preserveAspectRatio="none"` (fix percobaan sebelumnya utk masalah "bolong kanan")
+// meregangkan SUMBU X JAUH lebih besar drpd sumbu Y (viewBox 720x220 dipaksa isi container
+// ratusan-ribuan px lebar tapi tinggi tetap ~220px) -- sudut membulat (`rx=4`) & garis putus2
+// gridline TIDAK ikut proporsional thdp stretch non-uniform ini, jadi kelihatan distorsi/pecah.
+// Fix TUNTAS: ganti total ke `<div>` flex (lebar kolom otomatis dari `flex-1`, TIDAK PERNAH
+// ada masalah stretch non-uniform krn tidak ada viewBox/scaling manual sama sekali) -- pola
+// sama dgn `HorizontalBarChart` yg sudah lebih dulu dipindah dari SVG ke HTML.
 function VerticalBarChart({ data, color, formatValue, onBarClick }: {
   data: { label: string; value: number }[]; color: string; formatValue: (n: number) => string;
   onBarClick?: (index: number) => void;
 }) {
-  const chartW = 720;
-  const chartH = 220;
-  const padBottom = 26;
-  const padTop = 10;
-  const plotH = chartH - padBottom - padTop;
   const max = Math.max(1, ...data.map(d => d.value));
-  const barGap = 6;
-  const barW = (chartW / data.length) - barGap;
-  const gridLines = [0, 0.25, 0.5, 0.75, 1];
+  const gridLines = [0, 25, 50, 75, 100];
 
-  // `preserveAspectRatio="none"` (2026-09, laporan user "panel Monthly Trend kelihatan bolong
-  // kanan") -- default SVG `xMinYMin meet` PERTAHANKAN rasio viewBox (720:220) di dalam
-  // container yg CSS-nya `w-full` (lebar penuh kartu, ratusan px) tapi TINGGI TETAP (`chartH`
-  // px pas) -- krn tinggi sudah pas-pasan (scale=1), "meet" TIDAK ikut meregangkan lebar,
-  // sisa ruang kanan kosong. `none` paksa stretch penuh kedua sumbu (aman utk bar chart --
-  // semua koordinat bar/gridline berbasis proporsi `chartW`/`chartH`, stretch uniform tidak
-  // mendistorsi tampilan bar).
   return (
-    <svg viewBox={`0 0 ${chartW} ${chartH}`} className="w-full" style={{ height: chartH }} preserveAspectRatio="none">
-      {gridLines.map(g => {
-        const y = padTop + plotH - g * plotH;
-        return <line key={g} x1={0} x2={chartW} y1={y} y2={y} stroke="#E2E8F0" strokeWidth={1} strokeDasharray={g === 0 ? undefined : '3,3'} />;
-      })}
-      {data.map((d, i) => {
-        const h = (d.value / max) * plotH;
-        const x = i * (barW + barGap) + barGap / 2;
-        const y = padTop + plotH - h;
-        return (
-          <g key={d.label} className={onBarClick ? 'cursor-pointer' : ''} onClick={() => onBarClick?.(i)}>
-            <title>{`${d.label}: ${formatValue(d.value)}`}</title>
-            <rect x={x} y={y} width={barW} height={Math.max(1, h)} rx={4} fill={color} opacity={d.value > 0 ? 1 : 0.15} className="transition-all" />
-            <text x={x + barW / 2} y={chartH - 10} fontSize="10" fill="#5A305A" textAnchor="middle" fontWeight="bold">{d.label}</text>
-          </g>
-        );
-      })}
-    </svg>
+    <div>
+      <div className="relative h-52">
+        <div className="absolute inset-0 flex flex-col justify-between pointer-events-none">
+          {gridLines.map(g => <div key={g} className="border-t border-dashed border-slate-200" />)}
+        </div>
+        <div className="relative h-full flex items-end gap-1.5">
+          {data.map((d, i) => (
+            <div
+              key={d.label}
+              title={`${d.label}: ${formatValue(d.value)}`}
+              onClick={() => onBarClick?.(i)}
+              className={`flex-1 h-full flex items-end ${onBarClick ? 'cursor-pointer' : ''}`}
+            >
+              <div
+                className="w-full rounded-t transition-all"
+                style={{ height: `${Math.max(1, (d.value / max) * 100)}%`, backgroundColor: color, opacity: d.value > 0 ? 1 : 0.15 }}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="flex gap-1.5 mt-2">
+        {data.map(d => (
+          <div key={d.label} className="flex-1 text-center text-[10px] font-bold text-[#5A305A]">{d.label}</div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -214,7 +217,7 @@ export default function ReportingDashboardPage() {
             </div>
             <div>
               <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Reporting Dashboard</h1>
-              <p className="text-[#5A305A] font-light text-sm mt-1">Cost summary per vessel — Courier, Sea, Air, Chartered</p>
+              <p className="text-[#5A305A] font-light text-sm mt-1">Cost summary per vessel — Courier, Sea, Air, FAR Overseas</p>
             </div>
           </div>
           <Greeting />

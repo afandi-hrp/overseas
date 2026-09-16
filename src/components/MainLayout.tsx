@@ -40,6 +40,19 @@ const MAIN_TABS = [
     pageKey: 'direct_loading',
   },
   {
+    // Posisi TEPAT DI BAWAH "FAR Overseas" (2026-09, permintaan user -- dulu di bawah "Compare
+    // Doc"). Urutan array ini = urutan render sidebar, JANGAN dipindah lagi tanpa diminta ulang.
+    id: 'reporting',
+    label: 'Reporting',
+    icon: BarChart3,
+    path: '/reporting/dashboard',
+    basePath: '/reporting',
+    subTabs: [
+      { id: 'reporting_dashboard', label: 'Dashboard', path: '/reporting/dashboard', pageKey: 'reporting_dashboard' },
+      { id: 'reporting_cost_per_vessel', label: 'Cost per Vessel', path: '/reporting/cost-per-vessel', pageKey: 'reporting_cost_per_vessel' },
+    ]
+  },
+  {
     // Menu gabungan (2026-09, permintaan user) -- Bunker, Audit AP Local, Audit AP Overseas
     // dulunya 3 tab top-level terpisah, sekarang jadi submenu di bawah 1 menu "Compare Doc".
     // `basePath` sengaja diisi path dummy yang tidak match route manapun ('/compare-doc') karena
@@ -57,17 +70,6 @@ const MAIN_TABS = [
       { id: 'audit_po_overseas', label: 'Audit AP Overseas', path: '/audit-po-overseas', pageKey: 'audit_po_overseas' },
       { id: 'accounting_rekap', label: 'Accounting Rekap', path: '/accounting-rekap', pageKey: 'accounting_rekap' },
       { id: 'pi_local', label: 'PI Local', path: '/pi-local', pageKey: 'pi_local' },
-    ]
-  },
-  {
-    id: 'reporting',
-    label: 'Reporting',
-    icon: BarChart3,
-    path: '/reporting/dashboard',
-    basePath: '/reporting',
-    subTabs: [
-      { id: 'reporting_dashboard', label: 'Dashboard', path: '/reporting/dashboard', pageKey: 'reporting_dashboard' },
-      { id: 'reporting_cost_per_vessel', label: 'Cost per Vessel', path: '/reporting/cost-per-vessel', pageKey: 'reporting_cost_per_vessel' },
     ]
   },
   {
