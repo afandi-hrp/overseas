@@ -107,7 +107,7 @@ function pushDedupedRows(
 ) {
   const map = new Map<string, Record<MetricKey, number>>();
   names.forEach(name => {
-    const key = name || '(kosong)';
+    const key = name || '(empty)';
     if (!map.has(key)) map.set(key, zeroSums());
     addSums(map.get(key)!, perNameValues);
   });

@@ -1706,6 +1706,287 @@ Cost per Vessel (`onBarClick`) pindah dari `<Link>` per-bar (v1) jadi `onClick` 
 (SVG `<g onClick>`, lebih simpel drpd nest elemen anchor di dalam `<svg>`). Section 1
 (kartu ringkasan)/2 (Biaya per Method) TETAP `<Link>` biasa (bukan chart, tidak perlu SVG).
 
+### Header panel berwarna (`ReportingDashboardPage.tsx`, 2026-09)
+
+Permintaan user: SEMUA panel dulu `bg-white` polos ("flat putih"), diberi header berwarna dari 4
+warna brand yg dilampirkan user (`#FFF5C5` kuning pastel, `#F58C77` coral, `#5A305A` ungu tua,
+`#73507B` ungu medium). Helper `PanelHeader({color, dark, children})` — strip
+`rounded-t-2xl` berwarna solid di atas tiap panel, teks putih default, `dark` prop (teks
+`#5A305A`) dipakai KHUSUS background `#FFF5C5` (terlalu terang utk teks putih, kontras jelek).
+Wrapper panel WAJIB `overflow-hidden` (bukan lagi `p-4` langsung) supaya sudut rounded
+`rounded-t-2xl` header ke-clip rapi, konten asli dipindah ke `<div className="p-4">` terpisah
+di bawah header. Kartu yg berupa `<Link>` (Total Cost, Highest Vessel Cost) tetap
+clickable — `PanelHeader` + content div taruh di DALAM `<Link>`, `hover:border-[#5A305A]` tetap
+di elemen `<Link>` terluar.
+
+**Assignment warna per panel** (variasi manual, bukan formula — sekadar supaya tidak monoton):
+Total Cost=`#5A305A`, Highest Vessel Cost=`#73507B`, Previous Period=`#FFF5C5`(dark), Cost per
+Method=`#F58C77`, Vessels with Highest Cost=`#5A305A`, Cost by Category=`#73507B`, Cost per
+Fleet Group=`#FFF5C5`(dark), Monthly Trend=`#F58C77`. 4 sub-kartu method (Courier/Sea/Air/
+Chartered) DI DALAM panel "Cost per Method" TIDAK ikut diubah — tetap `border-slate-200` polos +
+teks warna `METHOD_COLOR` masing2 (beda concern dari header panel luar).
+
+### Header panel berwarna — susulan: konten masih "putih-putih" (2026-09)
+
+Laporan user setelah header panel diwarnai (lihat bagian di atas): AREA KONTEN di bawah header
+(chart/kartu) masih terasa "flat putih" krn `<div className="p-4">` konten tetap `bg-white`
+polos. Fix: tiap `<div className="p-4">` konten SEKARANG dikasih `style={{backgroundColor:
+'<colorHeaderNya>0D'}}` (hex 8-digit, alpha `0D`≈5%) -- tint sangat tipis dari warna header
+panel yg sama, supaya nuansa warnanya "menular" ke seluruh kartu bukan cuma strip header doang.
+Khusus panel dgn header `#FFF5C5` (kuning pastel, sudah terang dari awal) alpha-nya lebih besar
+(`80`≈50%) supaya tintnya kelihatan (5% dari warna sepucat itu nyaris tidak beda dari putih).
+Sub-kartu method (Courier/Sea/Air/Chartered) di DALAM panel "Cost per Method" ditambah
+`bg-white` eksplisit (sebelumnya transparan/ikut tint parent-nya) supaya tetap kontras & mudah
+dibaca di atas tint parent yg berwarna. **Kalau nambah panel baru ke halaman ini, WAJIB kasih
+tint sama (`${headerColor}0D`, atau `80` khusus `#FFF5C5`) ke content div-nya juga** -- jangan
+biarkan `bg-white`/tanpa style, nanti balik keliatan "putih-putih" lagi.
+
+**Susulan lagi — masih ada garis/strip putih di bagian BAWAH sebagian kartu** (2026-09, laporan
+user + screenshot, kelihatan jelas di kartu "Previous Period" & "Total Cost" yg kontennya
+pendek): root cause BUKAN soal alpha tint, tapi wrapper kartu (`<Link>`/`<div>` terluar) adalah
+grid item yg di-stretch (`align-items: stretch` default) menyamakan tingginya dgn kartu
+TERTINGGI di baris grid yg sama, SEMENTARA `<div className="p-4">` konten di dalamnya cuma
+setinggi konten aslinya (tidak ikut stretch) -- sisa ruang kosong di bawah expose
+`bg-white`/transparent milik WRAPPER, bukan tint konten. Fix: wrapper kartu ditambah
+`flex flex-col`, `<div>` konten ditambah `flex-1` -- konten (dan tint-nya) SEKARANG otomatis
+mengisi PENUH sisa tinggi kartu, tidak ada lagi celah putih di bawah apapun tinggi konten
+relatif ke kartu lain di grid yg sama. **Diterapkan ke SEMUA 8 wrapper panel di halaman ini --
+kalau nambah panel baru, WAJIB `flex flex-col` di wrapper + `flex-1` di content div juga.**
+
+### Klik vessel di chart "Vessels with Highest Cost" -> scroll+blink ke baris di Cost per Vessel (2026-09)
+
+Permintaan user: klik bar vessel di Dashboard harus membuka Cost per Vessel LANGSUNG mengarah
+(scroll) ke baris vessel itu + ada efek kedap-kedip (bukan cuma buka halaman filter umum spt
+sebelumnya). Alur:
+- `ReportingDashboardPage.tsx` — `topVessels` (dipakai section "Highest Vessel Cost" & chart
+  "Vessels with Highest Cost") sekarang IKUT nyimpan `key` per entry (`v:<vessel_id>` utk vessel
+  cocok master / `u:<vessel_name_raw>` utk needs-review) — SENGAJA format PERSIS SAMA dgn
+  `VesselAgg.key` di `ReportingCostPerVesselPage.tsx`, supaya bisa langsung dipakai cari baris
+  target di sana tanpa mapping tambahan. `vesselFilterQuery(tab, vesselKey)` (varian
+  `filterQuery()` yg SUDAH ADA, nambah `&highlight=<vesselKey encoded>`) dipakai di 2 tempat:
+  `<Link>` kartu "Highest Vessel Cost" (arah ke `topVessels[0]`) & `onBarClick` chart "Vessels
+  with Highest Cost" (arah ke vessel yg DIKLIK, bukan selalu index 0).
+- `ReportingCostPerVesselPage.tsx` — baca `?highlight=` sbg state `highlightKey` (dikonsumsi
+  SEKALI, di-null-kan setelah baris ketemu supaya tidak berulang tiap re-render/ganti filter
+  lain). `useEffect` (dependency `highlightKey`/`loading`/`displayRows`/`collapsedGroups`) cari
+  baris `type==='vessel'` yg `data.key===highlightKey` di `displayRows` (BUKAN
+  `visibleDisplayRows` -- perlu cek grup-nya walau lagi diciutkan) -- kalau grup vessel itu
+  SEDANG diciutkan, `collapsedGroups` di-buka paksa dulu (`collapsedGroups` sengaja masuk
+  dependency effect ini, supaya effect jalan LAGI begitu grup selesai terbuka & barisnya beneran
+  ada di DOM). Setelah elemen ketemu (`document.getElementById('vessel-row-'+encodeURIComponent
+  (key))`) -> `scrollIntoView({behavior:'smooth', block:'center'})` + set `blinkKey` (dibersihkan
+  otomatis via `setTimeout` 5 detik, SINKRON dgn durasi animasi CSS `.reporting-row-blink` di
+  `src/index.css`, `@keyframes reporting-row-blink` 1s x 5 iterasi = 5dtk (2026-09, permintaan
+  user diperpanjang dari versi awal 1.8dtk -- **kalau durasi diubah lagi, WAJIB samakan ANGKA
+  DETIK di 2 tempat ini** -- CSS animation & `setTimeout` JS, keduanya harus identik), kuning
+  `#FFF5C5`/`#F5E28F` -- SAMA warna dgn highlight baris Subtotal, konsisten dgn "bahasa warna
+  kuning = disorot" yg sudah dipakai modul lain).
+- `<tr>` baris vessel dikasih `id={'vessel-row-'+encodeURIComponent(row.data.key)}` (SELALU ada,
+  tidak cuma saat highlight aktif -- murni anchor DOM, tidak ganggu apa pun) + className
+  kondisional `reporting-row-blink` saat `blinkKey===row.data.key`.
+- **Chart Dashboard lain (Monthly Trend/Cost by Category/Cost per Fleet Group) TIDAK ikut fitur
+  ini** — cuma diminta utk chart per-VESSEL (target barisnya jelas 1:1), chart2 lain arah ke
+  bulan/kategori/fleet_group yg tidak punya baris tunggal spesifik di tabel pivot utk di-scroll.
+
+**Bug ditemukan & diperbaiki — klik vessel BELUM mengarah ke barisnya (2026-09, laporan susulan
+user)**: root cause RACE CONDITION -- `masterVessels` (`fetchMasterVessels()`) di-fetch di effect
+TERPISAH dari `rawRows` (`loadRows()`), independen & async. Effect scroll+blink cuma nunggu
+`loading` (state punya `loadRows()`/`rawRows`) jadi `false`, TIDAK nunggu `masterVessels` --
+kalau render pertama kali `loading` sudah `false` tapi `masterVessels` MASIH `[]`, baris target
+(vessel_id valid) sementara jatuh ke grup fallback "NEEDS REVIEW" (blm ke-map ke master), effect
+tetap "berhasil" nemu elemennya di posisi SEMENTARA itu -> scroll ke situ -> `highlightKey`
+langsung di-null-kan (consumed sekali). Detik berikutnya `masterVessels` datang, baris PINDAH ke
+grup Base/Fleet Group asli (posisi scroll jadi tidak relevan lagi) -- TAPI tidak ada re-scroll
+susulan krn `highlightKey` sudah kepakai duluan. **Fix**: state baru `mastersLoaded` (di-set
+`true` setelah `fetchMasterVessels()` resolve/reject), effect scroll+blink SEKARANG WAJIB
+`mastersLoaded===true` juga sebelum boleh consume `highlightKey` (guard `if (!highlightKey ||
+loading || !mastersLoaded) return;`, `mastersLoaded` masuk dependency array) -- baris target
+sudah pasti di posisi FINAL (grup Base/Fleet Group yg benar) saat scroll beneran terjadi.
+
+### Label vessel_name kosong: "(kosong)" -> "(empty)" (2026-09)
+
+`pushDedupedRows()` (`ReportingHelpers.ts`) pakai fallback string kalau nama vessel hasil split
+sumbernya string kosong (mis. `vessel`/`vessel_internal_note` benar2 tidak diisi) -- SEMPAT
+`'(kosong)'` (Indonesia, kebawa dari sesi lama sebelum 2 halaman Reporting ini ikut program
+translasi Inggris), diganti `'(empty)'` (permintaan user eksplisit, konsisten dgn seluruh UI
+halaman ini yg sudah Inggris). **Nilai ini DISIMPAN ke `reporting_cost_allocation.vessel_name_raw`
+saat Recompute** (bukan live-computed) -- ganti kode di sini TIDAK otomatis mengubah baris yg
+SUDAH pernah di-recompute sebelumnya, user WAJIB klik tombol **Recompute** ulang (bulan yg
+relevan) di Cost per Vessel supaya baris lama yg masih bertuliskan "(kosong)" ke-refresh jadi
+"(empty)".
+
+### REVISI BESAR "REPORTING" (2026-09) — Cost per Vessel & Dashboard
+
+Permintaan user dalam 1 pesan terstruktur ("REVISI MENU REPORTING", bagian A = Cost per Vessel,
+B = Dashboard). Semua poin di bawah SUDAH diimplementasikan dalam 1 sesi yg sama, `npx tsc
+--noEmit` bersih.
+
+**A1. Sembunyikan vessel tanpa biaya (`ReportingCostPerVesselPage.tsx`)** — checkbox baru "Show
+vessels without cost" (default **TIDAK** dicentang -- kebalikan `hideScrap`/"Hide Scrapped" yg
+defaultnya tampil). State `showZeroCost`. Filter diterapkan di `all = all.filter(v =>
+totalCost(v.sums) !== 0)` **SEBELUM** grouping (bukan filter visual sesudahnya) -- vessel `v.sums`
+SUDAH terfilter per-tab lewat `rowsForTab` di awal `useMemo`, jadi cek `totalCost` otomatis benar
+per-tab TANPA logic tambahan (mis. tab Courier vessel yg cuma py biaya Sea, `totalCost` bakal 0
+di situ, ke-hide -- benar sesuai maksud "tanpa biaya DI TAB itu"). Konsekuensi otomatis dari
+filter di titik ini (bukan filter terpisah): (a) jumlah "(N vessel)" di baris header/subtotal
+ikut menyesuaikan; (b) fleet_group yg SEMUA vesselnya ke-filter otomatis tidak muncul grup-nya
+sama sekali (grup dibangun dari isi `all` yg sudah difilter); (c) `vesselRowCount`/preview Export
+(`ExportPreviewModal`) OTOMATIS ikut benar tanpa perubahan kode terpisah, krn keduanya baca
+`displayRows` yg sama (turunan dari `all` yg sudah difilter).
+
+**A2. Tombol "Back to Dashboard"** — `<Link to="/reporting/dashboard">` + ikon `ArrowLeft`, di
+`<header>`, baris sendiri DI ATAS baris icon+judul+Greeting (bukan sebaris persis dgn judul,
+supaya tidak berdesakan dgn Greeting di kanan) -- tetap "pojok kiri atas, sebelum filter
+periode" krn `<header>` mendahului `<main>` (tempat filter) di urutan DOM.
+
+**A3. Lock header & Grand Total (sticky) — REARSITEKTUR ke "shell tinggi tetap + scroll
+internal"** (pola SAMA persis dgn `BunkerPage.tsx`/`AuditPoPage.tsx` dkk, lihat bagian tersendiri
+di atas) — wrapper terluar `flex-1 h-full overflow-HIDDEN` (BUKAN lagi `overflow-y-auto`,
+halaman ITU SENDIRI tidak lagi scroll), `<header>` & filter card `shrink-0` (jadi SELALU
+terlihat, tidak perlu sticky krn memang tidak pernah ikut scroll), kartu tabel `flex-1 flex
+flex-col min-h-0`, div scroll BARU (`ref={scrollRef}`, `overflow-auto flex-1 min-h-0`) yg
+membungkus `<table>` -- INI yg beneran scroll (ganti dari `overflow-x-auto` polos sebelumnya
+yg TIDAK py scroll vertikal sendiri). `<thead>` tetap `sticky top-0`. Baris GRAND TOTAL
+**DIPINDAH keluar dari `<tbody>`** (dulu baris terakhir hasil `.map()`) jadi elemen `<tfoot>`
+tersendiri dgn `sticky bottom-0` (dihitung terpisah via `displayRows.find(r=>r.type==='grand')`,
+BUKAN dari `visibleDisplayRows.map()` lagi -- row union type `Disp` TETAP py varian `'grand'`,
+cuma cara render-nya yg dipisah).
+
+**A4. Tab "FAR Ovs" -> "All-In Import"** — `TABS` label BORONGAN diganti, value internal
+`TabId`/`AllocationMethod` TETAP `'BORONGAN'` (tidak ada migrasi data/kode logic apa pun).
+
+**A5. Kolom "Total Unofficial Cost" -> "Total All-In Import"** — `columnsForTab()` cabang
+`BORONGAN`, murni label kolom (key tetap `borongan_total`).
+
+**A6. Tombol lompat atas/bawah melayang** — `scrollRef` (div scroll dari poin A3) + state
+`atTop`/`atBottom` (listener `scroll`+`resize` pada `scrollRef.current`, dihitung ulang tiap
+`visibleDisplayRows.length`/`loading` berubah). Tombol `fixed bottom-32 right-6` (panah atas,
+sembunyi kalau `atTop`) & `fixed bottom-20 right-6` (panah bawah, sembunyi kalau `atBottom`) --
+`bottom-32`/`bottom-20` (BUKAN `bottom-6` biasa) sengaja diberi jarak dari baris GRAND TOTAL
+sticky di bawah tabel (permintaan eksplisit "jangan menutupi grand total"). Scrollbar tabel
+TIDAK perlu disembunyikan manual -- app ini SUDAH default sembunyikan semua scrollbar
+(`src/index.css`), tombol ini murni gantinya biar tetap bisa lompat cepat.
+
+---
+
+**B1. Kartu baru "Total Cost Exclude PPN+PPH" (`ReportingDashboardPage.tsx`)** — disisipkan PERSIS
+di antara "Total Cost" & "Highest Vessel Cost" (urutan final: Total Cost | Total Cost Exclude
+PPN+PPH | Highest Vessel Cost | Previous Period), grid `md:grid-cols-2 xl:grid-cols-4` (dari
+`md:grid-cols-3`). Nilainya `totalExclPpn(curSums)` (fungsi SUDAH ADA di `ReportingHelpers.ts`,
+sebelumnya cuma dipakai `ReportingCostPerVesselPage.tsx` kolom "Total Excl. PPN+PPH" -- SEKARANG
+diimpor juga ke Dashboard, SATU-SATUNYA sumber formula, Aturan Umum #1 tetap terjaga). Warna
+header panel `#D97706` (oranye, belum pernah dipakai di 8 panel lain -- variasi tambahan).
+
+**B2. "Chartered" -> "All-In Import"** — `METHOD_LABEL[BORONGAN]` (card di panel "Cost per
+Method") DAN label yg sama di array `perJenisBiaya` ("Cost by Category", supaya konsisten --
+TIDAK diminta eksplisit tapi disamakan krn kalau tidak, 1 dashboard bisa nampilkan 2 istilah beda
+utk nilai yg sama & membingungkan). Value data (`borongan_total`) TIDAK berubah.
+
+**B3. Dropdown filter method di header "Cost per Method"** — `METHOD_FILTER_OPTIONS` (All
+Method/Courier/Sea/Air/All-In Import), state `methodFilter`. `PanelHeader` diperluas terima prop
+opsional `right` (render node di kanan judul, dipakai taruh `<select>` ini). **Filter method INI
+SENGAJA TIDAK memfilter panel "Cost per Method" itu sendiri** (`perMethod` tetap dihitung dari
+`currentRows` MENTAH, breakdown semua method harus tetap kelihatan semua) -- yg terfilter
+`filteredCurrentRows`/`filteredPreviousRows`/`filteredYearRows` (turunan `useMemo` baru), dipakai
+GANTI `currentRows`/`previousRows`/`yearRows` polos utk: `curSums`/`prevSums` (3 dari 4 kartu
+ringkasan yg berbasis total, `Previous Period` ikut lewat `prevSums`), `topVessels`,
+`perFleetGroup`, `monthlyTrend`. Link/`onBarClick` navigasi ke Cost per Vessel yg tadinya
+hardcode `tab=ALL` (kartu Total Cost/Highest Vessel Cost/chart Vessels with Highest Cost/Monthly
+Trend) diganti pakai `filteredTabParam` (=`methodFilter`) -- konsisten dgn apa yg SEDANG
+ditampilkan dashboard saat diklik. 4 sub-kartu method DI DALAM panel "Cost per Method" itu
+sendiri TIDAK berubah (tetap link ke method masing2 apa adanya, tidak terpengaruh dropdown ini).
+
+**B4. Tombol lompat atas/bawah melayang** — pola SAMA persis poin A6, TAPI halaman ini **TIDAK**
+dikonversi ke shell "tinggi tetap" (tidak diminta lock header/footer di sini, beda dari Cost per
+Vessel) -- `pageScrollRef` nunjuk ke div `overflow-y-auto` yg SUDAH ADA dari awal (wrapper
+terluar halaman ini, `ref` baru ditambahkan ke situ + `relative` biar aman utk elemen `fixed`
+turunannya). Effect cek `atTop`/`atBottom` py dependency tambahan `methodFilter`/`periodMode`/
+`year`/`month` (BUKAN cuma `loading` spt di Cost per Vessel) -- konten Dashboard bisa berubah
+tinggi drastis (jumlah baris chart dst) tanpa event `scroll`/`resize` asli terpicu saat filter
+ganti, jadi effect-nya WAJIB ikut jalan ulang manual lewat dependency ini. Tombol `bottom-20`
+(atas)/`bottom-6` (bawah) -- TIDAK perlu jarak ekstra ala Cost per Vessel krn halaman ini tidak
+punya baris sticky di bawah yg perlu dihindari.
+
+### Susulan revisi Cost per Vessel (2026-09) — Back to Dashboard melayang, hapus Hide Scrapped, singkat label
+
+3 perubahan kecil susulan dari revisi besar di atas, semua di `ReportingCostPerVesselPage.tsx`:
+
+- **"Back to Dashboard" jadi tombol melayang** (dulu link inline di `<header>`, DIHAPUS dari
+  situ) -- sekarang `<Link>` `fixed bottom-44 right-6` (icon-only `ArrowLeft`, tooltip `title`),
+  DITUMPUK di ATAS 2 tombol lompat atas/bawah yg sudah ada (`bottom-32`/`bottom-20`, gaya bulat
+  sama persis) -- 3 tombol melayang total di pojok kanan bawah, urutan dari atas ke bawah: Back
+  to Dashboard -> Jump to top -> Jump to bottom.
+- **Checkbox "Hide Scrapped" DIHAPUS TOTAL** (state `hideScrap`, `scrapVesselIds` filtering di
+  `displayRows` useMemo, JSX checkbox-nya) -- permintaan eksplisit user. **Konsekuensi**: vessel
+  berstatus SCRAP SEKARANG SELALU ikut tampil di pivot (perilaku sama seperti dulu saat checkbox
+  ini TIDAK dicentang/default) -- tidak ada lagi cara menyembunyikannya dari UI. Kalau diminta
+  lagi nanti, fitur ini perlu dibuat ulang dari nol (bukan cuma un-hide, kodenya sudah dibuang).
+- **Label checkbox "Show vessels without cost" -> "Show zero-cost"** (terlalu panjang, permintaan
+  user) -- state (`showZeroCost`) & logic filter TIDAK berubah, murni teks label.
+- **Susulan LAGI (2026-09, screenshot user): 3 tombol melayang kegedean & nutupin baris tabel** --
+  dulu `w-10 h-10`/ikon `18`, tersebar `bottom-20`/`bottom-32`/`bottom-44` (melayang di TENGAH
+  ketinggian tabel, nutupin banyak baris data). Diperkecil `w-8 h-8`/ikon `14`, DAN ditumpuk
+  RAPAT betulan di pojok kanan-BAWAH LAYAR (`right-3`, `bottom-3`/`bottom-14`/`bottom-24` --
+  bukan lagi tersebar dari tengah ke bawah). Baris GRAND TOTAL sticky tetap aman tidak
+  ketutupan krn beda posisi vertikal (grand total nempel di tepi BAWAH AREA TABEL, bukan tepi
+  bawah LAYAR -- `main` masih py `pb-2` jadi ada jarak alami).
+- **Susulan LAGI-LAGI (2026-09): `right-3` masih kurang mepet tepi layar** -- digeser jadi
+  `right-1` (laporan user "masih kurang geser ke kanan"). Ukuran (`w-8 h-8`/ikon `14`) TIDAK
+  diubah lagi, user konfirmasi sudah pas. **`ReportingDashboardPage.tsx` disamakan juga**
+  (permintaan eksplisit "lakukan juga hal yang sama pada halaman Reporting Dashboard") -- 2
+  tombol lompat atas/bawah di situ (dulu `w-10 h-10`/ikon `18`/`right-6`, TIDAK PERNAH
+  diperkecil sebelumnya krn revisi ukuran sebelumnya cuma menyentuh Cost per Vessel) ikut
+  diseragamkan jadi `w-8 h-8`/ikon `14`/`right-1`/`bottom-14`+`bottom-3` (Dashboard tidak py
+  tombol "Back to Dashboard" melayang -- cuma 2 tombol, bukan 3 spt Cost per Vessel).
+
+### Fix: halaman tidak full-width di monitor 24" (2026-09, laporan user + screenshot)
+
+`ReportingDashboardPage.tsx`/`ReportingCostPerVesselPage.tsx` py `<main className="max-w-7xl
+mx-auto ...">` sejak awal dibuat (ikut pola "Header halaman" umum di dokumen ini yg memang
+`max-w-7xl`/`max-w-2xl`/`max-w-5xl` sesuai kebutuhan) -- TERNYATA di layar lebar (monitor 24")
+nyisa ruang kosong besar kiri-kanan, beda dari Audit Courier (`SharedDataTable.tsx` `<main>`)
+yg TIDAK py `max-w-*`/`mx-auto` sama sekali, jadi selalu full-width sejajar sidebar & tepi
+layar. Fix: `max-w-7xl mx-auto` DIHAPUS dari `<main>` KEDUA halaman Reporting ini, disamakan
+`px-3 pt-2 pb-*` polos spt Audit Courier. **Halaman lain yg SUDAH `max-w-7xl`/`max-w-2xl` dkk
+TIDAK ikut disentuh** (lihat "Pola UI wajib" di atas -- itu tetap konvensi resmi utk halaman
+form/list sempit; 2 halaman Reporting ini SEKARANG pengecualian krn tabel pivotnya lebar &
+diminta full-width, sama alasannya dgn Audit Courier/Audit AP Local dkk yg juga full-width).
+
+### Dropdown filter method dipindah ke panel filter periode (2026-09, laporan user "tidak keliatan"+susulan "di sebelah tahun")
+
+Dropdown `METHOD_FILTER_OPTIONS` (`ReportingDashboardPage.tsx`) awalnya ditaruh di header panel
+"Cost per Method" (pojok kanan, prop `right` di `PanelHeader`) -- user melaporkan "tidak ada
+dropdown-nya" (screenshot cuma nunjuk panel filter periode paling atas, belum scroll ke panel
+"Cost per Method" yg lebih bawah) lalu diminta eksplisit dipindah ke panel filter periode
+utama, sejajar dgn dropdown Monthly/Sep/2026 (`<select>` ke-4, setelah `year`). `PanelHeader`
+panel "Cost per Method" balik jadi bentuk polos (tanpa prop `right`, prop-nya sendiri TETAP ada
+di komponen `PanelHeader` -- BUKAN dihapus, cuma tidak dipakai lagi di panel ini, aman dipakai
+lagi kalau ada panel lain butuh elemen di kanan header ke depannya). Logic filter
+(`filteredCurrentRows`/`filteredPreviousRows`/`filteredYearRows`, `filteredTabParam`) TIDAK
+berubah sama sekali -- murni pindah LOKASI elemen `<select>`-nya di JSX.
+
+### Warna tematik dropdown panel filter (`ReportingDashboardPage.tsx`, 2026-09)
+
+Permintaan user: 4 dropdown di panel filter periode (dulu SEMUA putih/border abu polos, sama
+`border-slate-300` spt sebelum revisi warna toolbar `ReportingCostPerVesselPage.tsx` dilakukan)
+dikasih warna tematik, pola sama "Warna toolbar per tombol" (lihat bagian tsb di atas). 3
+dropdown periode (Monthly/Yearly, bulan, tahun) dikelompokkan 1 warna ungu `#73507B`
+(`bg-[#73507B]/10 text-[#73507B] border-[#73507B]/30`, soal "kapan" -- SAMA warna dgn tombol
+Collapse/Expand All di Cost per Vessel yg jg soal struktur/kontrol tampilan). Dropdown method
+(paling kanan, lihat bagian "Dropdown filter method dipindah..." di atas) dikasih warna coral
+`#F58C77` TERPISAH (`bg-[#F58C77]/10 text-[#F58C77] border-[#F58C77]/40`) -- SENGAJA disamakan
+dgn warna header panel "Cost per Method" (sumber `METHOD_LABEL`), asosiasi visual "warna ini =
+filter method". **Bug ditemukan & diperbaiki saat implementasi ini**: percobaan pertama tidak
+sengaja MENGHAPUS pembungkus `<div className="flex flex-nowrap items-center gap-3
+overflow-x-auto">` (nested di dalam kartu filter `bg-white rounded-2xl ...`) saat menyisipkan
+komentar penjelasan warna -- `npx tsc --noEmit` lolos (JSX tetap balance krn jumlah tag
+buka/tutup `<div>` di seluruh return statement kebetulan tetap genap), TAPI struktur DOM jadi
+salah (4 `<select>` jadi child LANGSUNG kartu putih, bukan di dalam flex row-nya) -- ditemukan
+lewat re-read manual, BUKAN dari error compiler. **Pelajaran**: `tsc` TIDAK menjamin JSX
+nesting semantically benar, cuma syntactically valid -- WAJIB baca ulang hasil edit structural
+JSX (bukan cuma andalkan tsc bersih) tiap kali Edit tool memotong potongan besar berisi tag
+pembuka/penutup campuran.
+
 ### Yang belum dikerjakan / gap yang diketahui
 
 Belum ada testing menyeluruh dgn data production 1 tahun penuh (baru dites recompute 1 bulan,

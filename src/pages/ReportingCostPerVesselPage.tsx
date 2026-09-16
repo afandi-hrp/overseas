@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { BarChart3, RefreshCw, Download, AlertTriangle, SlidersHorizontal, X, ChevronDown, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
+import { BarChart3, RefreshCw, Download, AlertTriangle, SlidersHorizontal, X, ChevronDown, ChevronsDownUp, ChevronsUpDown, ArrowLeft, ArrowUp, ArrowDown } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import Greeting from '../components/Greeting';
 import { useAuth } from '../lib/AuthContext';
@@ -17,12 +17,14 @@ const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Se
 // dgn `AllocationMethod` (`ReportingHelpers.ts`) + `'ALL'` -- TIDAK ADA lagi mapping/alias
 // gabungan spt 'SEA_AIR' dulu.
 type TabId = 'ALL' | AllocationMethod;
+// Label tab BORONGAN "FAR Ovs" -> "All-In Import" (2026-09, permintaan user) -- value internal
+// `TabId`/`AllocationMethod` TETAP `'BORONGAN'`, cuma label tombol yg berubah.
 const TABS: { id: TabId; label: string }[] = [
   { id: 'ALL', label: 'All' },
   { id: 'COURIER', label: 'Courier' },
   { id: 'SEA', label: 'Sea' },
   { id: 'AIR', label: 'Air' },
-  { id: 'BORONGAN', label: 'FAR Ovs' },
+  { id: 'BORONGAN', label: 'All-In Import' },
 ];
 
 // Kolom biaya yg ditampilkan per tab (MONTHLY view). Dijaga sinkron dgn `metricForMethod()`
@@ -37,7 +39,7 @@ function columnsForTab(tab: TabId): { key: MetricKey | 'total_cost' | 'total_exc
   if (tab === 'SEA' || tab === 'AIR') return [
     { key: 'duty', label: 'Duty' }, { key: 'handling_total', label: 'Handling Total' }, { key: 'bm', label: 'BM' }, { key: 'ppn_pph', label: 'PPN+PPH' },
   ];
-  return [{ key: 'borongan_total', label: 'Total Unofficial Cost' }];
+  return [{ key: 'borongan_total', label: 'Total All-In Import' }];
 }
 
 const metricForTab = (s: Record<MetricKey, number>, tab: TabId) => metricForMethod(s, tab);
@@ -69,6 +71,12 @@ export default function ReportingCostPerVesselPage() {
   const [year, setYear] = useState(Number(searchParams.get('year')) || today.getFullYear());
   const [month, setMonth] = useState(Number(searchParams.get('month')) || today.getMonth() + 1);
   const [activeTab, setActiveTab] = useState<TabId>((searchParams.get('tab') as TabId) || 'ALL');
+  // Scroll+blink ke baris vessel spesifik saat datang dari chart "Vessels with Highest Cost" di
+  // Dashboard (`?highlight=<VesselAgg.key>`, 2026-09 permintaan user). `highlightKey` dikonsumsi
+  // SEKALI (di-null-kan setelah ketemu) supaya tidak berulang tiap re-render/perubahan filter
+  // lain; `blinkKey` cuma nyalakan animasi CSS sesaat lalu ikut dibersihkan via timeout.
+  const [highlightKey, setHighlightKey] = useState<string | null>(searchParams.get('highlight'));
+  const [blinkKey, setBlinkKey] = useState<string | null>(null);
 
   const [masterVessels, setMasterVessels] = useState<MasterVessel[]>([]);
   const [rawRows, setRawRows] = useState<any[]>([]);
@@ -90,10 +98,11 @@ export default function ReportingCostPerVesselPage() {
   // `beehive_customize_view:*` di SharedDataTable.tsx.
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
   const [showCustomize, setShowCustomize] = useState(false);
-  // Sembunyikan vessel berstatus SCRAP dari pivot -- default TAMPIL (aman/tidak breaking), user
-  // toggle manual kalau mau disembunyikan. State lokal saja (tidak disimpan), reset tiap buka
-  // halaman.
-  const [hideScrap, setHideScrap] = useState(false);
+  // Sembunyikan vessel tanpa biaya (SEMUA kolom biayanya 0) dari pivot -- default DISEMBUNYIKAN
+  // (2026-09, permintaan user). Berlaku di SEMUA tab (angka `v.sums` sudah terfilter per-tab
+  // lewat `rowsForTab`, jadi cek totalCost otomatis benar per-tab tanpa logic tambahan).
+  // Checkbox "Show zero-cost" utk menampilkan lagi kalau perlu.
+  const [showZeroCost, setShowZeroCost] = useState(false);
   // Ciutkan/lebarkan baris per fleet_group (2026-09, permintaan user -- halaman kepanjangan
   // kalau semua vessel selalu tampil). State lokal saja (tidak disimpan), key `${base}::${fleetGroup}`
   // sama persis dgn `groupKey` yg sudah dihitung di useMemo displayRows.
@@ -112,7 +121,16 @@ export default function ReportingCostPerVesselPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, user?.id]);
 
-  useEffect(() => { fetchMasterVessels().then(setMasterVessels).catch(e => setError(e.message)); }, []);
+  // `mastersLoaded` dipakai gate effect scroll+blink (di bawah) -- tanpa ini, effect bisa jalan
+  // "sukses" duluan pas `masterVessels` masih `[]` (fetch async terpisah dari `loadRows()`),
+  // ketemu barisnya di grup sementara "NEEDS REVIEW" (fallback saat vessel_id belum ke-map),
+  // langsung consume `highlightKey`+scroll ke posisi SEMENTARA itu -- begitu masterVessels
+  // datang & baris pindah ke grup asli, tidak ada scroll susulan lagi krn highlightKey sudah
+  // ke-null-kan (2026-09, akar penyebab laporan user "klik vessel belum mengarah ke baris").
+  const [mastersLoaded, setMastersLoaded] = useState(false);
+  useEffect(() => {
+    fetchMasterVessels().then(v => { setMasterVessels(v); setMastersLoaded(true); }).catch(e => { setError(e.message); setMastersLoaded(true); });
+  }, []);
 
   const loadRows = async () => {
     setLoading(true);
@@ -159,9 +177,7 @@ export default function ReportingCostPerVesselPage() {
     const rowsForTab = activeTab === 'ALL' ? rawRows : rawRows.filter(r => r.method === activeTab);
 
     const aggMap = new Map<string, VesselAgg>();
-    const scrapVesselIds = new Set<number>();
     masterVessels.forEach(mv => {
-      if (hideScrap && mv.status === 'SCRAP') { scrapVesselIds.add(mv.vessel_id); return; }
       aggMap.set(`v:${mv.vessel_id}`, {
         key: `v:${mv.vessel_id}`, vesselId: mv.vessel_id, vesselName: mv.vessel_name,
         base: mv.base, fleetGroup: mv.fleet_group, sums: zeroSums(), monthly: {},
@@ -173,7 +189,6 @@ export default function ReportingCostPerVesselPage() {
     // dicari manual (permintaan user "supaya mempermudah user mencari").
     const reviewMap = new Map<string, { method: AllocationMethod; sourceLabel: string | null; periodMonth: string }[]>();
     rowsForTab.forEach(r => {
-      if (r.vessel_id && scrapVesselIds.has(r.vessel_id)) return; // toggle "Hide Scrapped"
       const monthNum = Number(String(r.period_month).substring(5, 7));
       let key = r.vessel_id ? `v:${r.vessel_id}` : `u:${r.vessel_name_raw}`;
       let agg = aggMap.get(key);
@@ -193,7 +208,12 @@ export default function ReportingCostPerVesselPage() {
       addSums(agg.monthly[monthNum], r);
     });
 
-    const all = Array.from(aggMap.values());
+    let all = Array.from(aggMap.values());
+    // Buang vessel tanpa biaya SEBELUM grouping -- supaya jumlah "(N vessel)" di baris header/
+    // subtotal & count di preview export ikut menyesuaikan otomatis (bukan cuma disembunyikan
+    // visual doang). Grup yg SEMUA vesselnya kebuang (fleet_group tanpa 1 pun vessel berbiaya)
+    // otomatis tidak muncul sama sekali, krn grup dibangun dari isi `all` yg sudah difilter ini.
+    if (!showZeroCost) all = all.filter(v => totalCost(v.sums) !== 0);
     all.sort((a, b) => {
       if (a.base === NEEDS_REVIEW && b.base !== NEEDS_REVIEW) return 1;
       if (b.base === NEEDS_REVIEW && a.base !== NEEDS_REVIEW) return -1;
@@ -244,7 +264,28 @@ export default function ReportingCostPerVesselPage() {
 
     const needsReviewDetails = Array.from(reviewMap.entries()).map(([vesselName, occurrences]) => ({ vesselName, occurrences }));
     return { displayRows: out, needsReviewDetails };
-  }, [rawRows, masterVessels, activeTab, hideScrap]);
+  }, [rawRows, masterVessels, activeTab, showZeroCost]);
+
+  // Jalankan scroll+blink sekali begitu baris targetnya sudah ada di DOM (setelah loading selesai
+  // & displayRows terbentuk). Grup fleet_group vessel ini juga dipaksa terbuka dulu (kalau
+  // sebelumnya diciutkan) supaya barisnya benar2 ada di DOM saat di-scroll.
+  useEffect(() => {
+    if (!highlightKey || loading || !mastersLoaded) return;
+    const row = displayRows.find(r => r.type === 'vessel' && r.data.key === highlightKey) as
+      { type: 'vessel'; data: VesselAgg; groupKey: string } | undefined;
+    if (!row) return;
+    setCollapsedGroups(prev => { if (!prev.has(row.groupKey)) return prev; const next = new Set(prev); next.delete(row.groupKey); return next; });
+    const el = document.getElementById(`vessel-row-${encodeURIComponent(highlightKey)}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setBlinkKey(highlightKey);
+      const t = setTimeout(() => setBlinkKey(null), 5000);
+      setHighlightKey(null);
+      return () => clearTimeout(t);
+    }
+    // Elemen belum ada di DOM (mis. grup baru saja dibuka, belum re-render) -- `collapsedGroups`
+    // di dependency supaya effect ini jalan lagi begitu grup selesai dibuka.
+  }, [highlightKey, loading, mastersLoaded, displayRows, collapsedGroups]);
 
   const handleExport = async () => {
     // Export ikut Customize View (kolom yg disembunyikan di layar juga tidak ikut ke Excel) --
@@ -321,9 +362,30 @@ export default function ReportingCostPerVesselPage() {
   // terpisah) -- label & aksinya berganti otomatis mengikuti status semua grup saat ini.
   const allCollapsed = allGroupKeys.length > 0 && allGroupKeys.every(k => collapsedGroups.has(k));
 
+  // Tombol lompat atas/bawah melayang (2026-09, permintaan user, ganti scrollbar tabel yg
+  // memang sudah disembunyikan default di seluruh app -- lihat `src/index.css`). `scrollRef`
+  // nunjuk ke div `overflow-auto` yg BENERAN scroll (tabel), bukan halaman -- lihat catatan
+  // "shell tinggi tetap" di bawah kenapa scroll dipindah ke sini. `atTop`/`atBottom` dipakai
+  // sembunyikan tombol yg arahnya sudah tidak relevan.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [atTop, setAtTop] = useState(true);
+  const [atBottom, setAtBottom] = useState(true);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const check = () => {
+      setAtTop(el.scrollTop <= 4);
+      setAtBottom(el.scrollTop + el.clientHeight >= el.scrollHeight - 4);
+    };
+    check();
+    el.addEventListener('scroll', check);
+    window.addEventListener('resize', check);
+    return () => { el.removeEventListener('scroll', check); window.removeEventListener('resize', check); };
+  }, [visibleDisplayRows.length, loading]);
+
   return (
-    <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
-      <header className="px-3 pt-1 pb-1">
+    <div className="flex-1 h-full overflow-hidden min-w-0 flex flex-col">
+      <header className="px-3 pt-1 pb-1 shrink-0">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
@@ -338,8 +400,14 @@ export default function ReportingCostPerVesselPage() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-3 pt-2 pb-2">
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-3">
+      {/* Shell "tinggi tetap + scroll internal" (2026-09, permintaan user "lock header & grand
+          total") -- pola sama `BunkerPage.tsx`/`AuditPoPage.tsx` dkk (lihat CLAUDE.md). Halaman
+          ITU SENDIRI tidak lagi scroll (`overflow-hidden` di wrapper terluar) -- filter/toolbar
+          `shrink-0` jadi SELALU terlihat (tidak perlu sticky, memang tidak pernah ikut scroll),
+          & tabel dapat area `flex-1` sendiri yg BENERAN scroll (`scrollRef`), thead `sticky
+          top-0` & baris GRAND TOTAL `sticky bottom-0` di dalam area scroll itu. */}
+      <main className="px-3 pt-2 pb-2 w-full flex-1 flex flex-col min-h-0">
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-3 shrink-0">
           <div className="flex flex-nowrap items-center gap-3 overflow-x-auto">
             <select value={periodMode} onChange={e => setPeriodMode(e.target.value as PeriodMode)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-semibold text-[#5A305A]">
               <option value="MONTHLY">Monthly</option>
@@ -355,8 +423,8 @@ export default function ReportingCostPerVesselPage() {
             </select>
 
             <label className="flex items-center gap-1.5 text-xs text-[#5A305A] font-medium whitespace-nowrap cursor-pointer">
-              <input type="checkbox" checked={hideScrap} onChange={e => setHideScrap(e.target.checked)} className="w-3.5 h-3.5 accent-[#5A305A]" />
-              Hide Scrapped
+              <input type="checkbox" checked={showZeroCost} onChange={e => setShowZeroCost(e.target.checked)} className="w-3.5 h-3.5 accent-[#5A305A]" />
+              Show zero-cost
             </label>
 
             {/* Tiap tombol dikasih warna tematik sendiri (2026-09, permintaan user -- dulu semua
@@ -406,8 +474,8 @@ export default function ReportingCostPerVesselPage() {
           )}
         </div>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex-1 flex flex-col min-h-0">
+          <div ref={scrollRef} className="overflow-auto flex-1 min-h-0">
             {/* table-fixed + colgroup lebar eksplisit (2026-09, laporan user "jarak terlalu
                 jauh") -- tanpa ini, `<table>` auto-layout meregangkan 1-2 kolom angka terakhir
                 mengisi SISA lebar layar (bisa ratusan px kosong sebelum angkanya), krn cuma ada
@@ -437,7 +505,7 @@ export default function ReportingCostPerVesselPage() {
                   <tr><td colSpan={20} className="text-center py-10 text-red-600">{error}</td></tr>
                 ) : visibleDisplayRows.length === 0 ? (
                   <tr><td colSpan={20} className="text-center py-10 text-[#5A305A] italic">No master vessel data yet.</td></tr>
-                ) : visibleDisplayRows.map((row, idx) => {
+                ) : visibleDisplayRows.filter(row => row.type !== 'grand').map((row, idx) => {
                   if (row.type === 'header') {
                     const isCollapsed = collapsedGroups.has(row.groupKey);
                     return (
@@ -462,7 +530,7 @@ export default function ReportingCostPerVesselPage() {
                     // Base/Fleet Group TIDAK diulang di baris vessel (sengaja dikosongkan) --
                     // sudah tercantum di baris HEADER (toggle) di atas & baris Subtotal di bawah.
                     return (
-                      <tr key={row.data.key} className="hover:bg-blue-50/30">
+                      <tr key={row.data.key} id={`vessel-row-${encodeURIComponent(row.data.key)}`} className={`hover:bg-blue-50/30 ${blinkKey === row.data.key ? 'reporting-row-blink' : ''}`}>
                         <td className="px-3 py-2"></td>
                         <td className="px-3 py-2"></td>
                         <td className="px-3 py-2 text-[#5A305A] font-semibold pl-6">{row.data.vesselName}</td>
@@ -502,27 +570,75 @@ export default function ReportingCostPerVesselPage() {
                       </tr>
                     );
                   }
-                  return (
-                    <tr key="grand" className="bg-[#5A305A] text-white font-bold">
+                  return null; // 'grand' difilter keluar dari sini, dirender terpisah di <tfoot> sticky bottom di bawah
+                })}
+              </tbody>
+              {/* GRAND TOTAL dikunci di BAWAH area scroll tabel (2026-09, permintaan user) --
+                  `<tfoot>` + `sticky bottom-0` (kebalikan pola `<thead> sticky top-0` di atas),
+                  DIPISAH dari `visibleDisplayRows.map()` di atas (dulu baris terakhir di situ)
+                  supaya bisa berdiri sendiri sbg elemen sticky-bottom yg valid. */}
+              {!loading && !error && (() => {
+                const grand = displayRows.find(r => r.type === 'grand') as { type: 'grand'; sums: Record<MetricKey, number>; monthly: Record<number, Record<MetricKey, number>> } | undefined;
+                if (!grand) return null;
+                return (
+                  <tfoot>
+                    <tr className="bg-[#5A305A] text-white font-bold sticky bottom-0 z-10">
                       <td className="px-3 py-2.5" colSpan={3}>GRAND TOTAL</td>
                       {periodMode === 'MONTHLY'
                         ? visibleMonthlyCols.map(c => (
                             <td key={c.key} className="px-3 py-2.5 text-right font-mono last:pr-5">
-                              {fmtRp(c.key === 'total_cost' ? totalCost(row.sums) : c.key === 'total_excl_ppn' ? totalExclPpn(row.sums) : row.sums[c.key as MetricKey])}
+                              {fmtRp(c.key === 'total_cost' ? totalCost(grand.sums) : c.key === 'total_excl_ppn' ? totalExclPpn(grand.sums) : grand.sums[c.key as MetricKey])}
                             </td>
                           ))
                         : Array.from({ length: 12 }).map((_, mi) => (
                             <td key={mi} className="px-3 py-2.5 text-right font-mono last:pr-5">
-                              {fmtRp(row.monthly[mi + 1] ? metricForTab(row.monthly[mi + 1], activeTab) : 0)}
+                              {fmtRp(grand.monthly[mi + 1] ? metricForTab(grand.monthly[mi + 1], activeTab) : 0)}
                             </td>
                           ))}
                     </tr>
-                  );
-                })}
-              </tbody>
+                  </tfoot>
+                );
+              })()}
             </table>
           </div>
         </div>
+
+        {/* Tombol melayang (Back to Dashboard + lompat atas/bawah) -- `fixed` relatif viewport
+            (BUKAN relatif kartu tabel), supaya posisinya tetap menempel pojok kanan bawah LAYAR
+            walau area tabel di atas scroll internal (bukan lagi scroll halaman penuh, lihat
+            catatan shell "tinggi tetap" di atas). **Susulan 2026-09 (laporan user + screenshot:
+            ukuran kegedean & nutupin baris tabel di tengah layar)** -- diperkecil `w-10 h-10`
+            ->`w-8 h-8` (ikon `18`->`14`), DAN digeser betulan ke pojok kanan BAWAH (`right-1`,
+            digeser lebih dekat lagi ke tepi layar dari `right-3` semula -- laporan user susulan
+            "masih kurang geser ke kanan"), ditumpuk rapat `bottom-3`/`bottom-14`/`bottom-24` -- BUKAN lagi tersebar
+            `bottom-20`/`bottom-32`/`bottom-44` yg dulu melayang di tengah ketinggian tabel &
+            nutupin banyak baris). Jarak ke baris GRAND TOTAL sticky (permintaan lama "jangan
+            menutupi grand total") tetap terjaga krn tombol PALING BAWAH (`bottom-3`≈12px) masih
+            lebih kecil dari tinggi baris Grand Total (~44px) TAPI grand total row z-index 10 <
+            tombol z-30 -- baris itu sendiri yg sticky nempel PERSIS di tepi bawah area scroll,
+            bukan di tepi layar, jadi tombol pojok kanan-BAWAH LAYAR (bukan bawah tabel) otomatis
+            tidak pernah menutupinya (beda posisi vertikal, tabel berhenti sebelum tepi layar
+            krn `main` masih py `pb-2`). Disembunyikan masing2 kalau sudah di ujung arahnya
+            (`atTop`/`atBottom`). Tidak perlu tampilkan scrollbar tabel -- app ini sudah default
+            sembunyikan semua scrollbar (`src/index.css`), tombol ini cuma gantinya. */}
+        <Link to="/reporting/dashboard" title="Back to Dashboard" aria-label="Back to Dashboard"
+          className="fixed bottom-24 right-1 z-30 w-8 h-8 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white shadow-lg flex items-center justify-center transition-all">
+          <ArrowLeft size={14} />
+        </Link>
+        {!atTop && (
+          <button onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+            title="Jump to top" aria-label="Jump to top"
+            className="fixed bottom-14 right-1 z-30 w-8 h-8 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white shadow-lg flex items-center justify-center transition-all">
+            <ArrowUp size={14} />
+          </button>
+        )}
+        {!atBottom && (
+          <button onClick={() => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })}
+            title="Jump to bottom" aria-label="Jump to bottom"
+            className="fixed bottom-3 right-1 z-30 w-8 h-8 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white shadow-lg flex items-center justify-center transition-all">
+            <ArrowDown size={14} />
+          </button>
+        )}
       </main>
 
       {showCustomize && (
