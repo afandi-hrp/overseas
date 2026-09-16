@@ -1301,6 +1301,23 @@ ETA 1 Sep -> Release 3 Sep dulu = 2 hari, sekarang = 3 hari. Guard `Math.max(0, 
 (kalau Release < ETA, tidak boleh negatif). Sebelum perubahan ini formula TIDAK PERNAH diubah
 sejak fungsi ini pertama dibuat (dicek via `git log -p`).
 
+**Storage Weight bisa diedit manual** (2026-09, permintaan user) — dulu murni display read-only
+dari `data.cv_storage_weight_kg` (fallback `cv_chargeable_kg`), sekarang jadi `<input>` (state
+`storageWeightManual`, prefill dari data tiap `data` berubah via `useEffect([data])`).
+`checkExpected()` (RPC `fn_hitung_storage`) prioritaskan `storageWeightManual` di atas nilai data
+asli. Disimpan bareng ETA/Release Date lewat `.update()` langsung ke `tabel_cost_validasi`
+(`cv_storage_weight_kg`, BUKAN via RPC `fn_save_storage_estimate` — RPC itu tidak punya param
+weight sama sekali) saat klik "Simpan Estimasi Baru" — jadi tetap butuh ETA & Release Date diisi
+juga (tombol Simpan gated syarat yg sama spt sebelumnya, TIDAK ada jalur simpan weight sendirian
+tanpa 2 tanggal itu).
+
+**ETA/Release Date prefill dari estimasi tersimpan sebelumnya** (2026-09, permintaan user) —
+dulu SENGAJA selalu kosong tiap buka panel (klik tombol edit di `editStorageManual`), sekarang
+`useEffect([data])` isi `etaDate`/`releaseDate` dari `data.cv_eta_date`/`cv_release_date` kalau
+sudah pernah disimpan. Actual Days & Billing Days TIDAK disimpan sbg kolom terpisah yg dibaca
+balik — begitu 2 tanggal ini prefill, `useEffect` `checkExpected()` (RPC `fn_hitung_storage`)
+otomatis jalan ulang & isi keduanya live, sama seperti alur input baru.
+
 ## Peta tabel Supabase (per modul)
 
 **Auth & RBAC**: `profiles`, `roles`, `user_roles`, `role_page_access`.

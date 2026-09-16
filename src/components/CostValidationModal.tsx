@@ -76,6 +76,10 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
   const [editStorageManual, setEditStorageManual] = useState(false);
   const [storageExpectedResult, setStorageExpectedResult] = useState<{ expected_idr: number, billing_days?: number, rate_per_day?: number, rate_per_kg?: number } | null>(null);
   const [debugError, setDebugError] = useState<string>('');
+  // Storage Weight manual override (2026-09, permintaan user) -- dulu murni display read-only
+  // dari `cv_storage_weight_kg` (fallback `cv_chargeable_kg`), sekarang bisa diedit & disimpan.
+  // Prefill dari data tiap `data` berubah (pola sama dgn field2 lain di panel ini).
+  const [storageWeightManual, setStorageWeightManual] = useState<string>('');
 
   // Edit Mode states
   const [isEditing, setIsEditing] = useState(false);
@@ -91,13 +95,26 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
   }, [awb, jenisDokumen, docId]);
 
   useEffect(() => {
+    if (data) {
+      setStorageWeightManual(String(Number(data.cv_storage_weight_kg) || Number(data.cv_chargeable_kg) || ''));
+      // Prefill ETA/Release Date dari estimasi TERSIMPAN sebelumnya (2026-09, permintaan user)
+      // -- dulu SENGAJA selalu kosong tiap buka panel ini, sekarang kalau sudah pernah "Simpan
+      // Estimasi Baru" (cv_eta_date/cv_release_date sudah keisi), tampil lagi supaya user tidak
+      // perlu isi ulang dari awal cuma buat update. Actual Days & Billing Days otomatis ikut
+      // muncul (dihitung ulang oleh useEffect checkExpected() di bawah begitu 2 tanggal ini ada).
+      setEtaDate(data.cv_eta_date ? String(data.cv_eta_date).substring(0, 10) : '');
+      setReleaseDate(data.cv_release_date ? String(data.cv_release_date).substring(0, 10) : '');
+    }
+  }, [data]);
+
+  useEffect(() => {
     if (data && !isEditing && etaDate && releaseDate) {
       checkExpected();
     } else if (!isEditing) {
       setStorageExpectedResult(null);
       setDebugError('');
     }
-  }, [etaDate, releaseDate, data, jenisDokumen, isEditing]);
+  }, [etaDate, releaseDate, data, jenisDokumen, isEditing, storageWeightManual]);
 
   const getActualDays = () => {
     if (!etaDate || !releaseDate) return 0;
@@ -116,8 +133,9 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
     const courier = (data.cv_courier || '').toUpperCase();
     const jd = (jenisDokumen || data.jenis_dokumen || '').toUpperCase();
     
-    // cv_storage_weight_kg is for storage. Fallback to cv_chargeable_kg if zero/null
-    const storage_weight = Number(data.cv_storage_weight_kg) || Number(data.cv_chargeable_kg) || 0;
+    // cv_storage_weight_kg is for storage. Prioritaskan input manual user (storageWeightManual),
+    // fallback ke data asli/cv_chargeable_kg kalau field manual masih kosong.
+    const storage_weight = Number(storageWeightManual) || Number(data.cv_storage_weight_kg) || Number(data.cv_chargeable_kg) || 0;
     
     try {
       const { data: rpcData, error } = await supabase.rpc('fn_hitung_storage', {
@@ -206,7 +224,8 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
         .update({
           cv_eta_date: etaDate,
           cv_release_date: releaseDate,
-          cv_storage_input_manual: true
+          cv_storage_input_manual: true,
+          cv_storage_weight_kg: Number(storageWeightManual) || null
         })
         .eq('id', data.id);
         
@@ -1488,8 +1507,18 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                         <p className="font-semibold">{formatRp(data.cv_storage_actual)}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-[#5A305A] mb-0.5">Storage Weight</p>
-                        <p className="font-semibold">{(Number(data.cv_storage_weight_kg) || Number(data.cv_chargeable_kg)) ? `${Number(data.cv_storage_weight_kg) || Number(data.cv_chargeable_kg)} kg` : '-'}</p>
+                        <p className="text-xs text-[#5A305A] mb-0.5">Storage Weight (bisa diedit manual)</p>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            step="any"
+                            value={storageWeightManual}
+                            onChange={e => setStorageWeightManual(e.target.value)}
+                            placeholder="0"
+                            className="w-24 border border-slate-300 rounded-lg px-2 py-1 font-semibold text-[#5A305A] bg-white focus:outline-none focus:ring focus:ring-orange-200"
+                          />
+                          <span className="font-semibold">kg</span>
+                        </div>
                       </div>
                     </div>
 
