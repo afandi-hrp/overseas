@@ -988,6 +988,37 @@ manapun, JANGAN asumsikan otomatis ke-apply ke yang lain.
   `fetchDistinctPtInternal('accounting_rekap_finance')` (pola sama `fetchDistinctNamaPt` Audit AP
   Local) SUDAH diterapkan dari awal (bukan hardcode statis).
 
+## Navigasi mobile -- hamburger + drawer (`src/components/MainLayout.tsx`, 2026-09)
+
+Permintaan user (+ screenshot): top bar mobile (`md:hidden`) dulu nampilin SEMUA main tab +
+subtab section aktif sbg 2 baris scroll horizontal LANGSUNG di top bar (padat, gampang salah
+tap, kepanjangan kalau tab-nya banyak). **GANTI TOTAL** jadi pola umum "hamburger menu": top bar
+mobile SEKARANG cuma logo "BeeHive" + 1 tombol ikon 3 garis (`Menu` dari `lucide-react`, state
+`mobileMenuOpen`) -- klik buka **drawer** slide-in dari kiri (`motion.div`, `AnimatePresence`,
+`initial/animate/exit x: '-100%'->0`, `w-[82vw] max-w-[19rem]`) + backdrop gelap terpisah
+(`bg-black/50`, klik nutup drawer). Drawer isinya REPLIKA struktur menu desktop sidebar (main
+tab + submenu expand), TAPI state expand submenu terpisah sendiri (`mobileExpandedTab`, BUKAN
+reuse `expandedTab` desktop yg dikendalikan hover mouse -- gesture mobile beda, tap toggle
+buka/tutup, bukan hover) + footer My Account/Settings/Logout (dulu di top bar versi lama,
+sekarang pindah ke dalam drawer krn top bar sudah terlalu ringkas cuma logo+hamburger).
+
+- **Auto-tutup drawer**: `useEffect([location.pathname])` set `mobileMenuOpen=false` tiap
+  route berubah (jaring pengaman tambahan di luar `onClick` manual tiap link/tombol di dalam
+  drawer yg SUDAH menutup manual juga -- dobel proteksi, bukan duplikasi bug).
+- **`mobileExpandedTab` di-reset ke `activeMainTab` SETIAP drawer dibuka** (`useEffect([mobileMenuOpen,
+  activeMainTab])`, BUKAN tiap `activeMainTab` berubah polos) -- supaya section yg lagi aktif
+  otomatis muncul ter-expand tiap buka drawer, TAPI user tetap bebas ciutkan manual tanpa
+  ke-expand paksa balik oleh render lain selama drawer masih terbuka.
+- Tombol main tab TANPA `subTabs` (mis. FAR Overseas/Audit Trail) langsung `navigate()` +
+  tutup drawer sekali klik (SAMA pola tab dgn subTabs yg diklik langsung dari header-nya sendiri
+  -- beda dari tab BER-subTabs yg klik header-nya cuma toggle expand/collapse, harus lanjut klik
+  salah satu subtab utk benar2 pindah halaman).
+- 2 `<AnimatePresence>` independen di komponen ini (1 utk drawer mobile, 1 utk transisi konten
+  halaman `key={location.pathname}` yg SUDAH ADA dari awal) -- React mengizinkan banyak instance
+  `AnimatePresence` bersisian, TIDAK saling konflik.
+- Desktop sidebar (`hidden md:block`) TIDAK disentuh SAMA SEKALI oleh perubahan ini -- cakupan
+  MURNI `md:hidden` (mobile) saja.
+
 ## Struktur menu sidebar "Compare Doc" (`src/components/MainLayout.tsx`)
 
 Bunker, Audit AP Local, Audit AP Overseas digabung 1 menu induk "Compare Doc" (icon
@@ -1986,6 +2017,63 @@ lewat re-read manual, BUKAN dari error compiler. **Pelajaran**: `tsc` TIDAK menj
 nesting semantically benar, cuma syntactically valid -- WAJIB baca ulang hasil edit structural
 JSX (bukan cuma andalkan tsc bersih) tiap kali Edit tool memotong potongan besar berisi tag
 pembuka/penutup campuran.
+
+### Header panel diseragamkan (riwayat 4 iterasi warna, 2026-09)
+
+Semua 8 panel dashboard yg sebelumnya variasi 4 warna brand berbeda (`#5A305A`/`#73507B`/
+`#F58C77`/`#FFF5C5`, lihat bagian "Header panel berwarna" di atas) diseragamkan SEMUA jadi 1
+warna, BERUBAH 3x SETELAHNYA -- **kondisi FINAL/SEKARANG: `#DCC9E0`** (lavender pastel sangat
+muda, user kasih hex eksplisit langsung "ganti jadi warna ini") + prop `dark` WAJIB (teks
+`#5A305A`, brightness `#DCC9E0` ~209 dari skala 0-255/formula ITU-R BT.601 `0.299R+0.587G+
+0.114B` -- JAUH di atas ambang ganti ke teks gelap ~150, teks putih nyaris tidak kebaca di
+warna sepucat ini). Content tint `#DCC9E080` (alpha besar, pola sama `#FFF5C5` dulu -- warna
+pucat butuh alpha tinggi spy tint kelihatan beda dari putih polos). Riwayat iterasi SEBELUMNYA
+(JANGAN reintroduce tanpa diminta ulang): `#FFF5C5`(+`dark`) -> `#73507B`(tanpa `dark`) ->
+`#8F7395`("lighten 20%" dari `#73507B`, tanpa `dark`) -> `#DCC9E0`(+`dark`, FINAL). **`PanelHeader`
+prop `color`/`dark` TIDAK dihapus** (masih diterima komponennya) -- kalau diminta variasi warna
+lagi ke depan, tinggal ganti value `color`/tambah-hapus `dark` per panel sesuai brightness-nya
+(pakai formula ITU-R BT.601 di atas, ambang kasar ~150 utk tentukan perlu `dark` atau tidak),
+arsitekturnya tetap fleksibel. 4 sub-kartu method (Courier/Sea/Air/Chartered) di DALAM panel
+"Cost per Method" & warna bar chart (`#D97706` Cost by Category, `#0284C7` Cost per Fleet
+Group) TIDAK ikut diseragamkan -- beda konteks (warna isi konten, bukan header panel luar).
+
+### Susulan: konten panel putih polos + hilangkan border "garis putih" (2026-09, screenshot user)
+
+2 perbaikan lanjutan dari header `#DCC9E0` di atas, `ReportingDashboardPage.tsx`:
+
+- **Content di bawah header SEKARANG `bg-white` polos** (dulu ikut tint warna header,
+  `#DCC9E080` dkk) -- permintaan "warna konten-nya buat putih aja". Cuma STRIP HEADER-nya yg
+  berwarna, badan panel selalu putih bersih. Style inline `backgroundColor` di content div
+  DIHAPUS TOTAL, ganti className `bg-white` polos.
+  **Susulan (2026-09) ganti warna header lagi -> WAJIB reset content div balik ke `bg-white`
+  polos juga (JANGAN tint ulang otomatis)** -- keputusan user eksplisit "konten putih aja",
+  beda dari revisi warna header sebelumnya yg selalu ikut nge-tint konten.
+- **Border `border border-slate-200` DIHAPUS dari 8 wrapper panel** (laporan user "seperti ada
+  garis putih/border putih di tiap panel", screenshot menunjukkan outline tipis di sekeliling
+  tiap kartu terhadap background gradient peach/lavender halaman -- border abu SANGAT terang
+  itu yg kelihatan spt "putih" saat kontras dgn gradient warna di belakangnya). Wrapper panel
+  sekarang cuma `bg-white rounded-2xl shadow-sm overflow-hidden` (`shadow-sm` tetap dipertahankan
+  utk elevasi visual, TANPA border). **Kartu filter periode (`p-4 mb-3` di atas 8 panel) & 4
+  sub-kartu method di DALAM panel "Cost per Method" TIDAK ikut dihapus border-nya** -- cakupan
+  permintaan user MURNI "8 panel" utama, bukan elemen lain di halaman ini.
+
+### Susulan: 2 kelompok warna header berbeda (2026-09, riwayat 2 iterasi warna kelompok kedua)
+
+Setelah SEMPAT diseragamkan 1 warna (`#DCC9E0`, lihat bagian di atas), user minta 5 dari 8 panel
+dibedakan lagi warnanya: **Cost per Method, Vessels with Highest Cost, Cost by Category, Cost
+per Fleet Group, Monthly Trend** diganti `#F7A392` (coral muda, hasil "lighten ~20%" dari
+`#F58C77` ke arah putih -- permintaan eksplisit "warna #F58C77 tapi lebih muda"), LALU diganti
+LAGI (susulan langsung) jadi **`#FFF5C5`** (kuning pastel, permintaan eksplisit user berikutnya
+-- kebetulan hex-nya sama dgn salah satu iterasi warna SELURUH-8-panel yg lampau, TAPI ini
+keputusan BARU yg cakupannya cuma 5 panel ini, BUKAN reintroduce state lama secara utuh).
+**4 kartu ringkasan (Total Cost/Total Cost Exclude PPN+PPH/Highest Vessel Cost/Previous
+Period) TETAP `#DCC9E0`** (TIDAK disentuh sama sekali di kedua revisi susulan ini, di luar
+cakupan permintaan). Konten di bawah header (`bg-white` polos, dari revisi sebelumnya) TIDAK
+berubah -- user eksplisit bilang "konteksnya tetap warna putih", jadi warna baru INI HANYA
+berlaku ke strip header, bukan area konten. **Kondisi final SEKARANG: 2 kelompok warna header
+berbeda** di halaman yg sama (`#DCC9E0` kartu ringkasan / `#FFF5C5` panel analitik-chart) --
+kalau nambah panel baru, WAJIB tanya/tentukan masuk kelompok mana sebelum asal pilih salah
+satu warna.
 
 ### Yang belum dikerjakan / gap yang diketahui
 

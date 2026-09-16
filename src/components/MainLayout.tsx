@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plane, Ship, ScrollText, Settings, ChevronUp, ChevronDown, LogOut, UserCircle, FileCheck2, GitCompare, BarChart3 } from 'lucide-react';
+import { Plane, Ship, ScrollText, Settings, ChevronUp, ChevronDown, LogOut, UserCircle, FileCheck2, GitCompare, BarChart3, Menu, X } from 'lucide-react';
 import shipmentIcon from '../assets/beehive-icon.png';
 import { useAuth } from '../lib/AuthContext';
 
@@ -85,6 +85,13 @@ const MAIN_TABS = [
 
 export default function MainLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  // Navigasi mobile (2026-09, permintaan user) -- dulu top bar mobile nampilin SEMUA tab+subtab
+  // sbg 2 baris scroll horizontal (kepotong/kepanjangan di layar sempit). GANTI TOTAL jadi
+  // hamburger (ikon 3 garis) + drawer slide-in dari kiri, replika struktur menu desktop sidebar
+  // (main tab + submenu expand) TAPI komponen JSX terpisah sendiri (gesture/interaksi mobile --
+  // tap buka/tutup submenu -- beda dari desktop yg hover).
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileExpandedTab, setMobileExpandedTab] = useState<string | null>(null);
   const location = useLocation();
   const navigate = useNavigate();
   const { signOut, allowedPageKeys, isAdmin, profile, user } = useAuth();
@@ -132,70 +139,126 @@ export default function MainLayout() {
     setExpandedTab(activeMainTab);
   }, [activeMainTab]);
 
+  // Drawer mobile: tutup otomatis tiap pindah halaman (jaga2 kalau ada jalur navigasi yg lolos
+  // dari `onClick` manual di link/tombol drawer), & submenu yg ke-expand default ikut section
+  // aktif SETIAP drawer dibuka (`mobileMenuOpen`) -- bukan `activeMainTab` polos, supaya user
+  // BEBAS ciutkan submenu section aktif tanpa balik ke-expand paksa tiap render biasa.
+  useEffect(() => { setMobileMenuOpen(false); }, [location.pathname]);
+  useEffect(() => { if (mobileMenuOpen) setMobileExpandedTab(activeMainTab); }, [mobileMenuOpen, activeMainTab]);
+
   return (
     <div className="flex flex-col md:flex-row h-screen overflow-hidden bg-gradient-to-br from-[#FFF5C5] to-[#F58C77] md:p-4 md:gap-4">
       
-      {/* ── Mobile Top Navigation ── */}
-      <div className="md:hidden flex flex-col shrink-0 bg-[#5A305A] text-white z-50 shadow-md rounded-b-[1.5rem]">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
-           <div className="flex items-center gap-2.5">
-             <img src={shipmentIcon} alt="BeeHive" className="h-7 w-7 object-contain shrink-0" />
-             <div className="font-bold text-xl tracking-wide">BeeHive</div>
-           </div>
-           <div className="flex gap-2">
-             <Link to="/account" className="w-9 h-9 rounded-lg flex items-center justify-center bg-white/5 text-[#a394a8] hover:bg-white/10 hover:text-white transition-colors">
-               <UserCircle size={18} />
-             </Link>
-             <Link to="/settings" className="w-9 h-9 rounded-lg flex items-center justify-center bg-white/5 text-[#a394a8] hover:bg-white/10 hover:text-white transition-colors">
-               <Settings size={18} />
-             </Link>
-             <button onClick={handleLogout} className="w-9 h-9 rounded-lg flex items-center justify-center bg-white/5 text-[#a394a8] hover:bg-white/10 hover:text-white transition-colors">
-               <LogOut size={18} />
-             </button>
-           </div>
+      {/* ── Mobile Top Bar (compact, hamburger only) ── */}
+      <div className="md:hidden flex items-center justify-between px-5 py-4 shrink-0 bg-[#5A305A] text-white z-50 shadow-md rounded-b-[1.5rem]">
+        <div className="flex items-center gap-2.5">
+          <img src={shipmentIcon} alt="BeeHive" className="h-7 w-7 object-contain shrink-0" />
+          <div className="font-bold text-xl tracking-wide">BeeHive</div>
         </div>
-
-        <div className="flex overflow-x-auto no-scrollbar px-3 py-3 gap-2">
-          {visibleTabs.map(t => {
-            const isActive = activeMainTab === t.id;
-            const Icon = t.icon;
-            return (
-              <button
-                key={t.id}
-                onClick={() => navigate(t.path)}
-                className={`flex items-center whitespace-nowrap gap-2 px-4 py-2.5 rounded-xl transition-all ${
-                  isActive ? 'bg-white text-[#5A305A] shadow-sm' : 'text-[#a394a8] hover:text-white hover:bg-white/5'
-                }`}
-              >
-                <Icon size={16} strokeWidth={2.25} />
-                <span className="text-[15px] font-bold">{t.label}</span>
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Subtabs horizontal list if they exist */}
-        {visibleTabs.find(t => t.id === activeMainTab)?.subTabs && (
-          <div className="flex overflow-x-auto no-scrollbar px-3 pb-3 gap-2">
-            {visibleTabs.find(t => t.id === activeMainTab)?.subTabs?.map(sub => {
-              const isSubActive = activeSubTabPath === sub.path;
-              return (
-                <Link
-                  key={sub.id}
-                  to={sub.path}
-                  className={`text-[13px] font-bold whitespace-nowrap px-4 py-2 rounded-lg transition-all border ${
-                    isSubActive
-                      ? 'bg-[#5B4266] text-white border-transparent shadow-inner'
-                      : 'border-white/10 text-[#a394a8] hover:text-white hover:bg-white/5'
-                  }`}
-                >
-                  {sub.label}
-                </Link>
-              );
-            })}
-          </div>
-        )}
+        <button onClick={() => setMobileMenuOpen(true)} aria-label="Open menu"
+          className="w-9 h-9 rounded-lg flex items-center justify-center bg-white/10 text-white hover:bg-white/20 transition-colors">
+          <Menu size={20} />
+        </button>
       </div>
+
+      {/* ── Mobile Nav Drawer (2026-09) -- slide-in dari kiri, backdrop gelap, isinya replika
+          struktur menu desktop sidebar (main tab + submenu tap-to-expand) + Account/Settings/
+          Logout di footer. Ganti total dari versi lama (2 baris scroll horizontal semua
+          tab+subtab sekaligus di top bar). */}
+      <AnimatePresence>
+        {mobileMenuOpen && (
+          <React.Fragment>
+            <motion.div
+              className="md:hidden fixed inset-0 bg-black/50 z-[60]"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setMobileMenuOpen(false)}
+            />
+            <motion.div
+              className="md:hidden fixed top-0 left-0 bottom-0 w-[82vw] max-w-[19rem] bg-[#5A305A] z-[70] flex flex-col shadow-2xl"
+              initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }}
+              transition={{ type: 'tween', duration: 0.25, ease: 'easeOut' }}
+            >
+              <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <img src={shipmentIcon} alt="BeeHive" className="h-7 w-7 object-contain shrink-0" />
+                  <div className="font-bold text-lg tracking-wide text-white">BeeHive</div>
+                </div>
+                <button onClick={() => setMobileMenuOpen(false)} aria-label="Close menu"
+                  className="w-8 h-8 rounded-lg flex items-center justify-center bg-white/10 text-white hover:bg-white/20 transition-colors">
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto no-scrollbar px-3 py-3">
+                {visibleTabs.map(t => {
+                  const isActive = activeMainTab === t.id;
+                  const Icon = t.icon;
+                  return (
+                    <div key={t.id} className="mb-0.5">
+                      <button
+                        onClick={() => {
+                          if (t.subTabs) { setMobileExpandedTab(prev => prev === t.id ? null : t.id); }
+                          else { navigate(t.path); setMobileMenuOpen(false); }
+                        }}
+                        className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl transition-all ${
+                          isActive ? 'bg-white text-[#5A305A] shadow-sm' : 'text-[#a394a8] hover:text-white hover:bg-white/5'
+                        }`}
+                      >
+                        <span className="flex items-center gap-3">
+                          <Icon size={16} strokeWidth={2.25} />
+                          <span className="text-[15px] font-bold">{t.label}</span>
+                        </span>
+                        {t.subTabs && (mobileExpandedTab === t.id ? <ChevronUp size={14} /> : <ChevronDown size={14} />)}
+                      </button>
+
+                      {t.subTabs && mobileExpandedTab === t.id && (
+                        <div className="flex flex-col pl-9 gap-1 mt-1 mb-2">
+                          {t.subTabs.map(sub => {
+                            const isSubActive = activeSubTabPath === sub.path;
+                            return (
+                              <Link
+                                key={sub.id}
+                                to={sub.path}
+                                onClick={() => setMobileMenuOpen(false)}
+                                className={`flex items-center gap-3 text-[14px] font-semibold py-2 px-3 rounded-lg transition-all ${
+                                  isSubActive ? 'bg-[#5B4266] text-white shadow-inner' : 'text-[#a394a8] hover:text-white hover:bg-white/5'
+                                }`}
+                              >
+                                <span className={`w-[5px] h-[5px] rounded-full shrink-0 ${isSubActive ? 'bg-white' : 'bg-[#a394a8]'}`}></span>
+                                {sub.label}
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="shrink-0 px-3 pb-4 pt-2 border-t border-white/10">
+                <Link to="/account" onClick={() => setMobileMenuOpen(false)}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${
+                    location.pathname === '/account' ? 'text-white bg-white/10' : 'text-[#a394a8] hover:bg-white/5 hover:text-white'
+                  }`}>
+                  <UserCircle size={16} strokeWidth={2.25} />
+                  <span className="text-[15px] font-semibold">My Account</span>
+                </Link>
+                <Link to="/settings" onClick={() => setMobileMenuOpen(false)}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-[#a394a8] hover:bg-white/5 hover:text-white">
+                  <Settings size={16} strokeWidth={2.25} />
+                  <span className="text-[15px] font-semibold">Settings</span>
+                </Link>
+                <button onClick={handleLogout}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-[#a394a8] hover:bg-white/5 hover:text-white">
+                  <LogOut size={16} strokeWidth={2.25} />
+                  <span className="text-[15px] font-semibold">Logout</span>
+                </button>
+              </div>
+            </motion.div>
+          </React.Fragment>
+        )}
+      </AnimatePresence>
 
       {/* ── Desktop Sidebar Navigation ── */}
       <div className="hidden md:block relative shrink-0 w-[5rem] z-50">

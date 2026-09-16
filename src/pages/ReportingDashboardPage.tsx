@@ -106,9 +106,20 @@ function VerticalBarChart({ data, color, formatValue, onBarClick }: {
 }
 
 // Header berwarna per panel (2026-09, permintaan user -- dulu SEMUA panel flat putih polos).
-// Palet dari brand: ungu tua `#5A305A`/ungu medium `#73507B` (teks putih, kontras cukup) +
-// kuning pastel `#FFF5C5` (teks TETAP `#5A305A`, background-nya terlalu terang utk teks putih).
-// Warna coral `#F58C77` dari gradient header aplikasi (`src/index.css`?) juga dipakai teks putih.
+// Riwayat warna (SEMUA 8 panel 1 warna dulu, lalu dipecah 2 kelompok): 4 warna brand berbeda
+// per panel -> diseragamkan `#FFF5C5` -> `#73507B` -> `#8F7395` -> `#DCC9E0` (lavender, SEMUA 8
+// panel) -> dipecah 2 kelompok (4 kartu ringkasan tetap `#DCC9E0`, 5 panel lain sempat
+// `#F7A392`/coral muda) -> **SEKARANG (final)**: 5 panel yg tadi `#F7A392` diganti LAGI balik ke
+// `#FFF5C5` (permintaan eksplisit user, BUKAN reintroduce state lama -- ini keputusan BARU,
+// kebetulan hex-nya sama dgn salah satu iterasi lampau). **Kondisi FINAL SEKARANG**: 4 panel
+// kartu ringkasan (Total Cost/Total Cost Exclude PPN+PPH/Highest Vessel Cost/Previous Period)
+// = `#DCC9E0`; 5 panel analitik/chart (Cost per Method/Vessels with Highest Cost/Cost by
+// Category/Cost per Fleet Group/Monthly Trend) = `#FFF5C5`. SEMUA varian warna panel pakai
+// `dark` (teks `#5A305A`) krn brightness keduanya (formula ITU-R BT.601 `0.299R+0.587G+
+// 0.114B`) di atas ambang ~150 -- teks putih akan sulit terbaca. **Content di bawah header
+// SELALU `bg-white` POLOS** (permintaan eksplisit user "konten tetap putih", TIDAK ikut tint
+// warna header). `dark`/`color` prop TETAP fleksibel di komponen `PanelHeader` kalau diminta
+// variasi/warna lain lagi ke depan.
 function PanelHeader({ color, dark, children, right }: { color: string; dark?: boolean; children: React.ReactNode; right?: React.ReactNode }) {
   return (
     <div className="px-4 py-2.5 rounded-t-2xl flex items-center justify-between gap-2" style={{ backgroundColor: color }}>
@@ -340,9 +351,9 @@ export default function ReportingDashboardPage() {
                 "Cost per Method" di bawah) krn `curTotal`/`curTotalExclPpn`/`prevTotal`/
                 `topVessels` sumbernya sudah `filteredCurrentRows`/`filteredPreviousRows`. */}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-              <Link to={`/reporting/cost-per-vessel${filterQuery(filteredTabParam)}`} className="flex flex-col bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:border-[#5A305A] transition-all">
-                <PanelHeader color="#5A305A">Total Cost</PanelHeader>
-                <div className="p-4 flex-1" style={{ backgroundColor: '#5A305A0D' }}>
+              <Link to={`/reporting/cost-per-vessel${filterQuery(filteredTabParam)}`} className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden hover:border-[#5A305A] transition-all">
+                <PanelHeader color="#DCC9E0" dark>Total Cost</PanelHeader>
+                <div className="p-4 flex-1 bg-white">
                   <p className="text-2xl font-bold text-[#5A305A]">{fmtRp(curTotal)}</p>
                   <div className={`flex items-center gap-1 mt-1 text-xs font-bold ${pctChange >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                     {pctChange >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
@@ -350,15 +361,15 @@ export default function ReportingDashboardPage() {
                   </div>
                 </div>
               </Link>
-              <Link to={`/reporting/cost-per-vessel${filterQuery(filteredTabParam)}`} className="flex flex-col bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:border-[#5A305A] transition-all">
-                <PanelHeader color="#D97706">Total Cost Exclude PPN+PPH</PanelHeader>
-                <div className="p-4 flex-1" style={{ backgroundColor: '#D977060D' }}>
+              <Link to={`/reporting/cost-per-vessel${filterQuery(filteredTabParam)}`} className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden hover:border-[#5A305A] transition-all">
+                <PanelHeader color="#DCC9E0" dark>Total Cost Exclude PPN+PPH</PanelHeader>
+                <div className="p-4 flex-1 bg-white">
                   <p className="text-2xl font-bold text-[#5A305A]">{fmtRp(curTotalExclPpn)}</p>
                 </div>
               </Link>
-              <Link to={topVessels.length > 0 ? `/reporting/cost-per-vessel${vesselFilterQuery(filteredTabParam, topVessels[0].key)}` : `/reporting/cost-per-vessel${filterQuery(filteredTabParam)}`} className="flex flex-col bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:border-[#5A305A] transition-all">
-                <PanelHeader color="#73507B">Highest Vessel Cost</PanelHeader>
-                <div className="p-4 flex-1" style={{ backgroundColor: '#73507B0D' }}>
+              <Link to={topVessels.length > 0 ? `/reporting/cost-per-vessel${vesselFilterQuery(filteredTabParam, topVessels[0].key)}` : `/reporting/cost-per-vessel${filterQuery(filteredTabParam)}`} className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden hover:border-[#5A305A] transition-all">
+                <PanelHeader color="#DCC9E0" dark>Highest Vessel Cost</PanelHeader>
+                <div className="p-4 flex-1 bg-white">
                   {topVessels.length === 0 ? (
                     <p className="text-sm text-[#5A305A]/60 italic">No data yet.</p>
                   ) : (
@@ -369,9 +380,9 @@ export default function ReportingDashboardPage() {
                   )}
                 </div>
               </Link>
-              <div className="flex flex-col bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                <PanelHeader color="#FFF5C5" dark>Previous Period</PanelHeader>
-                <div className="p-4 flex-1" style={{ backgroundColor: '#FFF5C580' }}>
+              <div className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden">
+                <PanelHeader color="#DCC9E0" dark>Previous Period</PanelHeader>
+                <div className="p-4 flex-1 bg-white">
                   <p className="text-2xl font-bold text-[#5A305A]">{fmtRp(prevTotal)}</p>
                 </div>
               </div>
@@ -381,9 +392,9 @@ export default function ReportingDashboardPage() {
                 periode di atas (2026-09, permintaan susulan user "di sebelah tahun"). Panel ini
                 TIDAK ikut terfilter dropdown itu (`perMethod` sengaja tetap dihitung dari
                 `currentRows` mentah, breakdown semua method harus tetap kelihatan semua). */}
-            <div className="flex flex-col bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-              <PanelHeader color="#F58C77">Cost per Method</PanelHeader>
-              <div className="p-4 flex-1" style={{ backgroundColor: '#F58C770D' }}>
+            <div className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden">
+              <PanelHeader color="#FFF5C5" dark>Cost per Method</PanelHeader>
+              <div className="p-4 flex-1 bg-white">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   {(['COURIER', 'SEA', 'AIR', 'BORONGAN'] as AllocationMethod[]).map(m => (
                     <Link key={m} to={`/reporting/cost-per-vessel${filterQuery(m)}`} className="rounded-xl border border-slate-200 bg-white p-3 hover:border-[#5A305A] transition-all">
@@ -399,9 +410,9 @@ export default function ReportingDashboardPage() {
                 permintaan user, dulu setengah lebar bersebelahan dgn "Cost by Category"). Klik
                 bar -> Cost per Vessel scroll+blink ke baris vessel itu (2026-09, permintaan
                 user: "harusnya baris vesselnya langsung mengarah ke situ + efek kedap kedip"). */}
-            <div className="flex flex-col bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-              <PanelHeader color="#5A305A">Vessels with Highest Cost</PanelHeader>
-              <div className="p-4 flex-1" style={{ backgroundColor: '#5A305A0D' }}>
+            <div className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden">
+              <PanelHeader color="#FFF5C5" dark>Vessels with Highest Cost</PanelHeader>
+              <div className="p-4 flex-1 bg-white">
                 {topVessels.length === 0 ? (
                   <p className="text-xs text-[#5A305A]/60 italic">No data yet.</p>
                 ) : (
@@ -418,9 +429,9 @@ export default function ReportingDashboardPage() {
                 masing2 -- 2026-09, posisi "Cost per Fleet Group" ditukar dgn "Vessels with
                 Highest Cost" (dulu di sini, sekarang pindah jadi baris sendiri di atas). */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-              <div className="flex flex-col bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                <PanelHeader color="#73507B">Cost by Category</PanelHeader>
-                <div className="p-4 flex-1" style={{ backgroundColor: '#73507B0D' }}>
+              <div className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden">
+                <PanelHeader color="#FFF5C5" dark>Cost by Category</PanelHeader>
+                <div className="p-4 flex-1 bg-white">
                   {perJenisBiaya.length === 0 ? (
                     <p className="text-xs text-[#5A305A]/60 italic">No data yet.</p>
                   ) : (
@@ -429,9 +440,9 @@ export default function ReportingDashboardPage() {
                 </div>
               </div>
 
-              <div className="flex flex-col bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden">
                 <PanelHeader color="#FFF5C5" dark>Cost per Fleet Group</PanelHeader>
-                <div className="p-4 flex-1" style={{ backgroundColor: '#FFF5C580' }}>
+                <div className="p-4 flex-1 bg-white">
                   {perFleetGroup.length === 0 ? (
                     <p className="text-xs text-[#5A305A]/60 italic">No data yet.</p>
                   ) : (
@@ -442,9 +453,9 @@ export default function ReportingDashboardPage() {
             </div>
 
             {/* Baris 5: Monthly trend */}
-            <div className="flex flex-col bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-              <PanelHeader color="#F58C77">Monthly Trend ({year})</PanelHeader>
-              <div className="p-4 flex-1" style={{ backgroundColor: '#F58C770D' }}>
+            <div className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden">
+              <PanelHeader color="#FFF5C5" dark>Monthly Trend ({year})</PanelHeader>
+              <div className="p-4 flex-1 bg-white">
                 <VerticalBarChart
                   data={monthlyTrend.map((v, i) => ({ label: MONTH_NAMES[i], value: v }))}
                   color="#5A305A" formatValue={fmtRp}
