@@ -1285,6 +1285,22 @@ cuma kolom), harus dibuat manual (skema/RLS ikut pola `tabel_rate_sheet_dhl`/`fe
 `PPJKCostRule.tsx` — pre-existing (bukan spesifik UPS), user minta diverifikasi/diperbaiki
 TERPISAH kalau diminta eksplisit nanti.
 
+## Cost Validation Courier — panel "Hitung Ulang Estimasi Bonded Storage" (`CostValidationModal.tsx`)
+
+Field2 di panel ini bagi dua: **Storage Actual/Storage Weight** langsung dari kolom tabel
+`tabel_cost_validasi` (`cv_storage_actual`, `cv_storage_weight_kg` fallback `cv_chargeable_kg`,
+BUKAN RPC); **Billing Days/Expected Storage** dari RPC `fn_hitung_storage` (live-preview, tiap
+ETA/Release Date berubah) lalu dipersist via `fn_save_storage_estimate` (trigger
+`fn_recompute_totals` di sisi Supabase) saat klik "Simpan Estimasi Baru".
+
+**`getActualDays()` — Actual Days DIHITUNG DI FRONTEND (JS), BUKAN RPC/Supabase** — cuma
+`Math.ceil((releaseDate - etaDate) / 1hari)`, lalu dikirim sbg parameter `p_actual_days` ke 2 RPC
+di atas (Supabase cuma terima angka jadi, tidak hitung ulang dari tanggal mentah). **+1 (2026-09,
+permintaan user)** — ETA & Release Date dihitung PENUH dua-duanya (bukan cuma selisih murni):
+ETA 1 Sep -> Release 3 Sep dulu = 2 hari, sekarang = 3 hari. Guard `Math.max(0, ...)` tetap ada
+(kalau Release < ETA, tidak boleh negatif). Sebelum perubahan ini formula TIDAK PERNAH diubah
+sejak fungsi ini pertama dibuat (dicek via `git log -p`).
+
 ## Peta tabel Supabase (per modul)
 
 **Auth & RBAC**: `profiles`, `roles`, `user_roles`, `role_page_access`.

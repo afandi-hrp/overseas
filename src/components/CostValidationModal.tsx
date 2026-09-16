@@ -104,7 +104,9 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
     const mEta = new Date(etaDate);
     const mRel = new Date(releaseDate);
     const diffTime = mRel.getTime() - mEta.getTime();
-    return Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+    // +1 (2026-09, permintaan user) -- hari ETA & Release dihitung penuh dua-duanya, bukan cuma
+    // selisihnya. Sebelumnya ETA 1 Sep -> Release 3 Sep = 2 hari, sekarang = 3 hari.
+    return Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1);
   };
 
   const checkExpected = async () => {
