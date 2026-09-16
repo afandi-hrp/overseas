@@ -1608,12 +1608,15 @@ kalau mau menambahkan alias. Tambahkan kalau diminta eksplisit.
 
 ### Tab Sea & Air digabung, tombol Collapse/Expand digabung, translasi Inggris (2026-09)
 
-**Tab SEA/AIR digabung jadi 1 tab "Sea & Air"** (`ReportingCostPerVesselPage.tsx`, dulu 2 tab
-terpisah) — `TabId` union sekarang `'ALL'|'COURIER'|'SEA_AIR'|'BORONGAN'` (BUKAN lagi
-`'SEA'|'AIR'` terpisah). `rowsForTab` filter baris `method==='SEA' || method==='AIR'` saat
-`activeTab==='SEA_AIR'`. `metricForTab()` wrapper petakan `'SEA_AIR'` -> `'SEA'` sebelum panggil
-`metricForMethod()` (`ReportingHelpers.ts` cuma kenal method asli `SEA`/`AIR` sesuai kolom DB —
-formulanya IDENTIK utk keduanya jadi aman diwakilkan salah satu).
+**Tab SEA/AIR digabung jadi 1 tab "Sea & Air" LALU DIPISAH LAGI** (`ReportingCostPerVesselPage.tsx`)
+— riwayat: awalnya 2 tab terpisah -> digabung 1 tab "Sea & Air" (permintaan user saat itu) ->
+**DIPISAH BALIK jadi 2 tab lagi** (permintaan susulan user, "SEA_AIR" dianggap kurang
+detail/kurang jelas dipisah per method). **KONDISI FINAL/SEKARANG**: `TabId` PERSIS sama dgn
+`AllocationMethod | 'ALL'` (`'ALL'|'COURIER'|'SEA'|'AIR'|'BORONGAN'`), TIDAK ADA lagi id
+gabungan `'SEA_AIR'` sama sekali — `rowsForTab` filter `r.method === activeTab` polos (generik,
+sama pola tab lain), `metricForTab()` panggil `metricForMethod(sums, tab)` LANGSUNG tanpa
+mapping/alias apa pun. **Kalau ada permintaan gabung lagi ke depan, JANGAN otomatis reuse nama
+`'SEA_AIR'` dari riwayat ini** — cek dulu apakah user masih mau persis pola yg sama atau beda.
 
 **Tombol Collapse All/Expand All digabung jadi 1** (dulu 2 tombol terpisah) — `allCollapsed =
 allGroupKeys.length>0 && allGroupKeys.every(k=>collapsedGroups.has(k))`, label & ikon ganti

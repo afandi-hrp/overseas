@@ -12,14 +12,16 @@ import {
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
 
-// SEA & AIR digabung jadi 1 tab (2026-09, permintaan user -- dulu 2 tab terpisah). Formula
-// biaya (`metricForTab` di bawah) & filter baris (`rowsForTab`) sama-sama treat 'SEA_AIR' spt
-// method 'SEA' (formula SEA & AIR IDENTIK, lihat `metricForMethod` di `ReportingHelpers.ts`).
-type TabId = 'ALL' | 'COURIER' | 'SEA_AIR' | 'BORONGAN';
+// Sea & Air DIPISAH LAGI jadi 2 tab terpisah (2026-09, permintaan user -- sempat digabung 1 tab
+// "Sea & Air" sebelumnya, TERNYATA diminta balik ke versi awal). `TabId` sekarang PERSIS sama
+// dgn `AllocationMethod` (`ReportingHelpers.ts`) + `'ALL'` -- TIDAK ADA lagi mapping/alias
+// gabungan spt 'SEA_AIR' dulu.
+type TabId = 'ALL' | AllocationMethod;
 const TABS: { id: TabId; label: string }[] = [
   { id: 'ALL', label: 'All' },
   { id: 'COURIER', label: 'Courier' },
-  { id: 'SEA_AIR', label: 'Sea & Air' },
+  { id: 'SEA', label: 'Sea' },
+  { id: 'AIR', label: 'Air' },
   { id: 'BORONGAN', label: 'FAR Ovs' },
 ];
 
@@ -32,15 +34,13 @@ function columnsForTab(tab: TabId): { key: MetricKey | 'total_cost' | 'total_exc
     { key: 'courier_adm', label: 'Courier Adm' }, { key: 'duty', label: 'Duty' }, { key: 'freight', label: 'Freight' },
     { key: 'bm', label: 'BM' }, { key: 'ppn_pph', label: 'PPN+PPH' },
   ];
-  if (tab === 'SEA_AIR') return [
+  if (tab === 'SEA' || tab === 'AIR') return [
     { key: 'duty', label: 'Duty' }, { key: 'handling_total', label: 'Handling Total' }, { key: 'bm', label: 'BM' }, { key: 'ppn_pph', label: 'PPN+PPH' },
   ];
   return [{ key: 'borongan_total', label: 'Total Unofficial Cost' }];
 }
 
-// `metricForMethod()` cuma kenal 'SEA'/'AIR' terpisah (nama kolom DB `method`), bukan
-// 'SEA_AIR' gabungan -- tapi formulanya IDENTIK utk keduanya, jadi aman diwakilkan 'SEA'.
-const metricForTab = (s: Record<MetricKey, number>, tab: TabId) => metricForMethod(s, tab === 'SEA_AIR' ? 'SEA' : tab);
+const metricForTab = (s: Record<MetricKey, number>, tab: TabId) => metricForMethod(s, tab);
 
 const fmtRp = (n: number) => n ? `Rp ${Math.round(n).toLocaleString('id-ID')}` : '-';
 
@@ -156,9 +156,7 @@ export default function ReportingCostPerVesselPage() {
   // Aturan Umum #1: agregasi ini SATU-SATUNYA tempat hitung pivot, dipakai tab manapun & dibaca
   // ulang (query sama) oleh ReportingDashboardPage.tsx supaya angka tidak pernah beda.
   const { displayRows, needsReviewDetails } = useMemo(() => {
-    const rowsForTab = activeTab === 'ALL' ? rawRows
-      : activeTab === 'SEA_AIR' ? rawRows.filter(r => r.method === 'SEA' || r.method === 'AIR')
-      : rawRows.filter(r => r.method === activeTab);
+    const rowsForTab = activeTab === 'ALL' ? rawRows : rawRows.filter(r => r.method === activeTab);
 
     const aggMap = new Map<string, VesselAgg>();
     const scrapVesselIds = new Set<number>();
