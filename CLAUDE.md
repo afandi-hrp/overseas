@@ -2466,11 +2466,18 @@ internalnya sama sekali, hanya dirender bergantian sbg children tab).
   lihat `SettingsPage.tsx`): tab yang page_key-nya tidak diizinkan disembunyikan dari tab bar
   (bukan disabled), dan kalau user tidak punya akses ke KEDUANYA, tampilkan pesan "Tidak Ada
   Akses" sendiri (replika gaya `RequirePageAccess.tsx`).
-- **Sidebar** (`MainLayout.tsx`) — menu "Reporting" (2 subtab) GANTI TOTAL jadi 1 item tanpa
-  subtab, label "Cost by Vessel", `pageKeys` (array BARU, beda dari `pageKey` tunggal yang
-  dipakai tab lain) — tab sidebar ini tampil kalau user punya akses ke SALAH SATU dari 2
-  page_key lama. `visibleTabs` di `MainLayout.tsx` diperluas dukung `t.pageKeys?.some(...)`
-  sbg alternatif dari `t.pageKey` tunggal (generik, bisa dipakai tab lain ke depan kalau perlu).
+- **Sidebar** (`MainLayout.tsx`) — menu "Reporting" (2 subtab) sempat GANTI TOTAL jadi 1 item
+  tanpa subtab label "Cost by Vessel" langsung, LALU (susulan, permintaan user) **DIBUNGKUS LAGI**
+  jadi 1 menu induk **"Reporting"** dgn 1 subtab **"Cost by Vessel"** di dalamnya (struktur
+  expand/collapse sama persis Courier/Sea & Air — klik header "Reporting" buka/tutup submenu,
+  klik "Cost by Vessel" baru navigasi) — supaya sidebar siap kalau modul Reporting lain
+  ditambah ke depan sbg subtab baru di bawah induk yang sama. `pageKeys` (array, beda dari
+  `pageKey` tunggal yang dipakai tab lain) dipasang di level SUBTAB "Cost by Vessel" — tampil
+  kalau user punya akses ke SALAH SATU dari 2 page_key lama. `MAIN_TABS`/`visibleTabs` di
+  `MainLayout.tsx` sekarang py tipe eksplisit `MainTab`/`SubTab` (ditambahkan krn TS tidak bisa
+  infer union `pageKey`/`pageKeys` lintas-anggota array literal tanpa anotasi tipe) — mendukung
+  `pageKeys` di level MAIN_TAB TANPA subTabs (dulu) MAUPUN di level SUBTAB (sekarang), generik
+  bisa dipakai tab/subtab lain ke depan kalau perlu akses "salah satu dari beberapa page_key".
 - **Cross-navigation internal TETAP JALAN PERSIS SEPERTI SEBELUMNYA** (kartu/chart Dashboard ->
   scroll+blink ke baris vessel di Cost per Vessel, tombol "Back to Dashboard") — SEMUA link
   hardcode `/reporting/cost-per-vessel`/`/reporting/dashboard` di KEDUA komponen anak diarahkan

@@ -5,7 +5,15 @@ import { Plane, Ship, ScrollText, Settings, ChevronUp, ChevronDown, LogOut, User
 import shipmentIcon from '../assets/beehive-icon.png';
 import { useAuth } from '../lib/AuthContext';
 
-const MAIN_TABS = [
+// Tipe eksplisit (2026-09, ditambahkan saat "Cost by Vessel" butuh `pageKeys` array di beberapa
+// entry) -- tanpa ini TS infer union literal per-anggota array yg TIDAK saling exchangeable
+// (mis. entry dgn `pageKey` tunggal vs `pageKeys` array dianggap 2 tipe beda total), bikin akses
+// `t.pageKeys`/`s.pageKeys` di `visibleTabs` error walau valid secara logic (optional chaining
+// tetap butuh properti itu ADA di tipe union-nya, bukan cuma di sebagian anggota).
+type SubTab = { id: string; label: string; path: string; pageKey?: string; pageKeys?: string[] };
+type MainTab = { id: string; label: string; icon: any; path: string; basePath: string; pageKey?: string; pageKeys?: string[]; subTabs?: SubTab[] };
+
+const MAIN_TABS: MainTab[] = [
   {
     id: 'courier',
     label: 'Courier',
@@ -42,20 +50,24 @@ const MAIN_TABS = [
   {
     // Posisi TEPAT DI BAWAH "FAR Overseas" (2026-09, permintaan user -- dulu di bawah "Compare
     // Doc"). Urutan array ini = urutan render sidebar, JANGAN dipindah lagi tanpa diminta ulang.
-    // GANTI TOTAL 2026-09 (susulan): "Reporting Dashboard" & "Cost per Vessel" dulu 2 subtab
-    // terpisah, SEKARANG digabung jadi 1 halaman `CostByVesselPage.tsx` (2 tab DI DALAM
-    // halaman itu sendiri, bukan lagi di sidebar) -- menu sidebar jadi 1 item tanpa subTabs
-    // (pola sama "FAR Overseas" di atas), label diganti "Cost by Vessel". `pageKeys` (array,
-    // BUKAN `pageKey` tunggal) -- tab ini tampil kalau user py akses ke SALAH SATU dari 2
-    // page_key lama (`reporting_dashboard`/`reporting_cost_per_vessel`), keduanya TETAP ada di
-    // PAGE_REGISTRY (assignment role existing tidak berubah) -- gating detail per-tab di DALAM
-    // halaman dilakukan sendiri oleh `CostByVesselPage.tsx`.
+    // Riwayat: "Reporting Dashboard" & "Cost per Vessel" dulu 2 subtab terpisah -> digabung jadi
+    // 1 halaman `CostByVesselPage.tsx` (2 tab DI DALAM halaman) -> menu sidebar sempat jadi 1
+    // item tanpa subTabs -> SEKARANG (susulan, permintaan user) DIBUNGKUS LAGI jadi 1 menu induk
+    // "Reporting" dgn 1 subtab "Cost by Vessel" (bukan lagi top-level langsung) -- supaya
+    // struktur sidebar siap kalau modul Reporting lain ditambah ke depan sbg subtab baru.
+    // `pageKeys` (array, BUKAN `pageKey` tunggal) di level SUBTAB -- tab ini tampil kalau user
+    // py akses ke SALAH SATU dari 2 page_key lama (`reporting_dashboard`/
+    // `reporting_cost_per_vessel`), keduanya TETAP ada di PAGE_REGISTRY (assignment role
+    // existing tidak berubah) -- gating detail per-tab DI DALAM halaman tetap oleh
+    // `CostByVesselPage.tsx` sendiri, ini cuma gating utk tampil/tidaknya menu sidebar.
     id: 'reporting',
-    label: 'Cost by Vessel',
+    label: 'Reporting',
     icon: BarChart3,
     path: '/reporting/cost-by-vessel',
     basePath: '/reporting',
-    pageKeys: ['reporting_dashboard', 'reporting_cost_per_vessel'],
+    subTabs: [
+      { id: 'reporting_cost_by_vessel', label: 'Cost by Vessel', path: '/reporting/cost-by-vessel', pageKeys: ['reporting_dashboard', 'reporting_cost_per_vessel'] },
+    ],
   },
   {
     // Menu gabungan (2026-09, permintaan user) -- Bunker, Audit AP Local, Audit AP Overseas
@@ -114,11 +126,15 @@ export default function MainLayout() {
   const visibleTabs = useMemo(() => {
     return MAIN_TABS.map(t => {
       if (t.subTabs) {
-        const visibleSub = isAdmin ? t.subTabs : t.subTabs.filter(s => allowedPageKeys.has(s.pageKey));
+        // Subtab bisa py `pageKey` tunggal (Courier/Sea & Air dst) ATAU `pageKeys` array (mis.
+        // "Cost by Vessel" -- lolos kalau py akses ke SALAH SATU dari beberapa page_key).
+        const visibleSub = isAdmin ? t.subTabs : t.subTabs.filter(s =>
+          s.pageKey ? allowedPageKeys.has(s.pageKey) : s.pageKeys ? s.pageKeys.some(pk => allowedPageKeys.has(pk)) : false
+        );
         return visibleSub.length > 0 ? { ...t, subTabs: visibleSub } : null;
       }
-      // `pageKeys` (array, dipakai "Cost by Vessel" -- lolos kalau py akses ke SALAH SATU dari
-      // beberapa page_key) -- beda dari `pageKey` tunggal yang dipakai tab lain.
+      // `pageKeys` (array) di level MAIN_TAB tanpa subTabs -- sama polanya, lolos kalau py akses
+      // ke SALAH SATU dari beberapa page_key.
       const allowed = isAdmin || (t.pageKey ? allowedPageKeys.has(t.pageKey) : t.pageKeys ? t.pageKeys.some(pk => allowedPageKeys.has(pk)) : false);
       return allowed ? t : null;
     }).filter((t): t is NonNullable<typeof t> => t !== null);
