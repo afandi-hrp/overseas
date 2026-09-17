@@ -54,7 +54,7 @@ export default function MasterVesselAdminPage() {
         if (!hay.includes(q)) return false;
       }
       return true;
-    }).sort((a, b) => a.base.localeCompare(b.base) || a.fleet_group.localeCompare(b.fleet_group) || a.vessel_name.localeCompare(b.vessel_name));
+    }).sort((a, b) => a.sort_order - b.sort_order);
   }, [rows, search, filterBase, filterFleetGroup, filterCategory, filterStatus]);
 
   return (
@@ -113,6 +113,7 @@ export default function MasterVesselAdminPage() {
             <table className="w-full text-[11px]">
               <thead className="sticky top-0 z-20 bg-slate-50">
                 <tr className="text-[10px] text-[#5A305A]/70 uppercase">
+                  <th className="text-left px-3 py-2.5 whitespace-nowrap">Sort</th>
                   <th className="text-left px-3 py-2.5 whitespace-nowrap">Base</th>
                   <th className="text-left px-3 py-2.5 whitespace-nowrap">Fleet Group</th>
                   <th className="text-left px-3 py-2.5 whitespace-nowrap">Vessel Name</th>
@@ -124,13 +125,14 @@ export default function MasterVesselAdminPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
-                  <tr><td colSpan={7} className="text-center py-10 text-[#5A305A]">Memuat data...</td></tr>
+                  <tr><td colSpan={8} className="text-center py-10 text-[#5A305A]">Memuat data...</td></tr>
                 ) : error ? (
-                  <tr><td colSpan={7} className="text-center py-10 text-red-600">{error}</td></tr>
+                  <tr><td colSpan={8} className="text-center py-10 text-red-600">{error}</td></tr>
                 ) : filteredRows.length === 0 ? (
-                  <tr><td colSpan={7} className="text-center py-10 text-[#5A305A] italic">Tidak ada data cocok filter.</td></tr>
+                  <tr><td colSpan={8} className="text-center py-10 text-[#5A305A] italic">Tidak ada data cocok filter.</td></tr>
                 ) : filteredRows.map(r => (
                   <tr key={r.vessel_id} className="hover:bg-blue-50/30">
+                    <td className="px-3 py-2 text-[#5A305A]/60 font-mono">{r.sort_order}</td>
                     <td className="px-3 py-2 text-[#5A305A]">{r.base}</td>
                     <td className="px-3 py-2 text-[#5A305A]">{r.fleet_group}</td>
                     <td className="px-3 py-2 text-[#5A305A] font-semibold break-words">{r.vessel_name}</td>
@@ -185,6 +187,7 @@ function EditMasterVesselModal({ record, onClose, onSaved }: { record: MasterVes
   const [category, setCategory] = useState<'VESSEL' | 'OTHERS'>(record?.category || 'VESSEL');
   const [status, setStatus] = useState<'AKTIF' | 'SCRAP'>(record?.status || 'AKTIF');
   const [aliasText, setAliasText] = useState((record?.alias_name || []).join(', '));
+  const [sortOrder, setSortOrder] = useState(record?.sort_order != null ? String(record.sort_order) : '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -197,7 +200,7 @@ function EditMasterVesselModal({ record, onClose, onSaved }: { record: MasterVes
     setError(null);
     try {
       const aliasArr = aliasText.split(',').map(s => s.trim()).filter(Boolean);
-      const payload = {
+      const payload: any = {
         vessel_name: vesselName.trim(),
         base: base.trim().toUpperCase(),
         fleet_group: fleetGroup.trim().toUpperCase(),
@@ -205,6 +208,9 @@ function EditMasterVesselModal({ record, onClose, onSaved }: { record: MasterVes
         status,
         alias_name: aliasArr.length > 0 ? aliasArr : null,
       };
+      // sort_order dikosongkan = pakai default kolom (nempel di akhir daftar, lihat
+      // sql/006_master_vessel_sort_order.sql) -- cuma dikirim kalau diisi eksplisit.
+      if (sortOrder.trim() !== '') payload.sort_order = Number(sortOrder);
       if (isCreate) {
         const { error: insErr } = await supabase.from('master_vessel').insert(payload);
         if (insErr) throw insErr;
@@ -262,6 +268,11 @@ function EditMasterVesselModal({ record, onClose, onSaved }: { record: MasterVes
             <label className="text-[10px] font-semibold text-blue-600 mb-1 block">Alias (pisahkan koma, opsional)</label>
             <input value={aliasText} onChange={e => setAliasText(e.target.value)} placeholder="mis. nama lama, alias lain" className="w-full border border-blue-200 bg-blue-50/30 rounded-lg px-3 py-2 text-xs text-[#5A305A]" />
             <p className="text-[10px] text-[#5A305A]/60 mt-1">Dipakai `matchVessel()` (Reporting) supaya nama lama/alias tetap cocok ke vessel ini saat Recompute.</p>
+          </div>
+          <div>
+            <label className="text-[10px] font-semibold text-blue-600 mb-1 block">Sort Order (opsional)</label>
+            <input value={sortOrder} onChange={e => setSortOrder(e.target.value.replace(/[^0-9]/g, ''))} placeholder="Kosongkan = taruh di akhir daftar" className="w-full border border-blue-200 bg-blue-50/30 rounded-lg px-3 py-2 text-xs text-[#5A305A]" />
+            <p className="text-[10px] text-[#5A305A]/60 mt-1">Menentukan posisi baris di tabel Cost per Vessel (ikut urutan file Master Vessel, bukan alfabet).</p>
           </div>
           {error && <div className="bg-red-50 border border-red-200 rounded-lg p-2.5 text-xs text-red-700">{error}</div>}
         </div>

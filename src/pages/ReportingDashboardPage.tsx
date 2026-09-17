@@ -5,12 +5,14 @@ import Greeting from '../components/Greeting';
 import {
   fetchMasterVessels, fetchAllocationRows, MasterVessel,
   MetricKey, zeroSums, totalCost, totalExclPpn, metricForMethod, addSums, AllocationMethod,
+  PeriodMode, quarterOfMonth,
 } from '../utils/ReportingHelpers';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-// "Chartered" -> "All-In Import" (2026-09, permintaan user -- samakan penamaan dgn label tab
-// BORONGAN di Cost per Vessel). Value internal `AllocationMethod` TETAP `'BORONGAN'`.
-const METHOD_LABEL: Record<AllocationMethod, string> = { COURIER: 'Courier', SEA: 'Sea', AIR: 'Air', BORONGAN: 'All-In Import' };
+const MONTH_NAMES_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+// "All-In Import" -> "FAR Ovs" (2026-09 "REVISI MENU REPORTING" -- kembali ke penamaan sebelum
+// direname jadi "All-In Import" sesi lalu). Value internal `AllocationMethod` TETAP `'BORONGAN'`.
+const METHOD_LABEL: Record<AllocationMethod, string> = { COURIER: 'Courier', SEA: 'Sea', AIR: 'Air', BORONGAN: 'FAR Ovs' };
 const METHOD_COLOR: Record<AllocationMethod, string> = { COURIER: '#5A305A', SEA: '#2563EB', AIR: '#0EA5E9', BORONGAN: '#D97706' };
 // Opsi dropdown filter method di header panel "Cost per Method" (2026-09, permintaan user) --
 // TIDAK memfilter panel "Cost per Method" itu sendiri (tetap tampil breakdown semua method),
@@ -21,7 +23,7 @@ const METHOD_FILTER_OPTIONS: { id: 'ALL' | AllocationMethod; label: string }[] =
   { id: 'COURIER', label: 'Courier' },
   { id: 'SEA', label: 'Sea' },
   { id: 'AIR', label: 'Air' },
-  { id: 'BORONGAN', label: 'All-In Import' },
+  { id: 'BORONGAN', label: 'FAR Ovs' },
 ];
 
 // Nominal SELALU ditampilkan penuh (pemisah ribuan titik id-ID) -- TIDAK PERNAH disingkat
@@ -105,6 +107,56 @@ function VerticalBarChart({ data, color, formatValue, onBarClick }: {
   );
 }
 
+// Donut chart -- SVG stroke-dasharray per segment, pola serupa pie chart manual
+// `AuditPoPage.tsx` DashboardModal yang sudah ada di project. BUKAN bar chart -- viewBox persegi
+// tetap (`0 0 100 100`), TIDAK PERNAH di-stretch non-uniform kayak `VerticalBarChart` versi SVG
+// lama yang pernah "gepeng & pecah" (lihat komentar di atas), jadi aman dari masalah itu. Total
+// (sum seluruh segmen) dirender di tengah donut via `<text>`. Legend di kanan: nama method,
+// persentase, DAN nominal PENUH (bukan singkatan -- pola `fmtRp` yang sudah ada).
+function DonutChart({ data, formatValue }: { data: { label: string; value: number; color: string }[]; formatValue: (n: number) => string }) {
+  const total = data.reduce((a, d) => a + d.value, 0);
+  const R = 40, CX = 50, CY = 50, STROKE = 16;
+  const circumference = 2 * Math.PI * R;
+  let offsetAcc = 0;
+  const segments = data.filter(d => d.value > 0).map(d => {
+    const frac = total > 0 ? d.value / total : 0;
+    const dash = frac * circumference;
+    const seg = { ...d, frac, dashArray: `${dash} ${circumference - dash}`, dashOffset: -offsetAcc };
+    offsetAcc += dash;
+    return seg;
+  });
+
+  return (
+    <div className="flex flex-col sm:flex-row items-center gap-6">
+      <div className="relative w-48 h-48 shrink-0">
+        <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
+          <circle cx={CX} cy={CY} r={R} fill="none" stroke="#F1F5F9" strokeWidth={STROKE} />
+          {segments.map((s, i) => (
+            <circle key={i} cx={CX} cy={CY} r={R} fill="none" stroke={s.color} strokeWidth={STROKE}
+              strokeDasharray={s.dashArray} strokeDashoffset={s.dashOffset} strokeLinecap="butt">
+              <title>{s.label}: {formatValue(s.value)}</title>
+            </circle>
+          ))}
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-[10px] font-bold uppercase text-[#5A305A]/60">Total</span>
+          <span className="text-sm font-black text-[#5A305A] text-center px-2 break-words">{formatValue(total)}</span>
+        </div>
+      </div>
+      <div className="flex-1 w-full space-y-2.5">
+        {data.map((d, i) => (
+          <div key={i} className="flex items-center gap-2.5">
+            <span className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: d.color }} />
+            <span className="text-xs font-semibold text-[#5A305A] flex-1">{d.label}</span>
+            <span className="text-xs font-bold text-[#5A305A]/70 w-12 text-right shrink-0">{total > 0 ? Math.round((d.value / total) * 100) : 0}%</span>
+            <span className="text-xs font-bold font-mono text-[#5A305A] shrink-0">{formatValue(d.value)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Header berwarna per panel (2026-09, permintaan user -- dulu SEMUA panel flat putih polos).
 // Riwayat warna (SEMUA 8 panel 1 warna dulu, lalu dipecah 2 kelompok): 4 warna brand berbeda
 // per panel -> diseragamkan `#FFF5C5` -> `#73507B` -> `#8F7395` -> `#DCC9E0` (lavender, SEMUA 8
@@ -134,15 +186,19 @@ export default function ReportingDashboardPage() {
   const navigate = useNavigate();
 
   const today = new Date();
-  const [periodMode, setPeriodMode] = useState<'MONTHLY' | 'YEARLY'>('MONTHLY');
+  // Mode periode diperluas Monthly/Yearly -> Monthly/Quarterly/Yearly (2026-09 "REVISI MENU
+  // REPORTING" poin A2). Quarterly TIDAK multi-select (beda dari Cost per Vessel) -- 1 quarter
+  // aktif via dropdown Q1-Q4 terpisah, `quarter` derive default dari bulan berjalan.
+  const [periodMode, setPeriodMode] = useState<PeriodMode>('MONTHLY');
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1);
+  const [quarter, setQuarter] = useState<1 | 2 | 3 | 4>(quarterOfMonth(today.getMonth() + 1));
   // Dropdown filter method di header "Cost per Method" (2026-09) -- lihat `METHOD_FILTER_OPTIONS`.
   const [methodFilter, setMethodFilter] = useState<'ALL' | AllocationMethod>('ALL');
 
   const [masterVessels, setMasterVessels] = useState<MasterVessel[]>([]);
-  const [yearRows, setYearRows] = useState<any[]>([]); // seluruh baris tahun `year` -- dipotong client-side utk MONTHLY
-  const [prevRows, setPrevRows] = useState<any[]>([]); // periode sebelumnya (utk perbandingan)
+  const [yearRows, setYearRows] = useState<any[]>([]); // seluruh baris tahun `year` -- dipotong client-side utk MONTHLY/QUARTERLY
+  const [prevRows, setPrevRows] = useState<any[]>([]); // periode sebelumnya (utk perbandingan) -- bisa beda tahun dari `year`
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { fetchMasterVessels().then(setMasterVessels); }, []);
@@ -151,13 +207,15 @@ export default function ReportingDashboardPage() {
     let active = true;
     setLoading(true);
     // Sama fungsi (`fetchAllocationRows`) & tabel yg dipakai Cost per Vessel (Aturan Umum #1) --
-    // Dashboard ambil 1 tahun penuh sekali fetch (dipotong per bulan di client utk kartu/mode
-    // MONTHLY + dipakai langsung utk chart "Tren Bulanan"), lebih hemat drpd fetch berulang.
+    // Dashboard ambil 1 tahun penuh sekali fetch (dipotong per bulan/quarter di client), lebih
+    // hemat drpd fetch berulang. Periode SEBELUMNYA (`prevRows`) fetch tahun yg relevan (bisa
+    // tahun-1 kalau bulan/quarter aktif ada di awal tahun).
+    const prevYear = periodMode === 'YEARLY' ? year - 1
+      : periodMode === 'QUARTERLY' ? (quarter === 1 ? year - 1 : year)
+      : (month === 1 ? year - 1 : year);
     Promise.all([
       fetchAllocationRows('YEARLY', year, month),
-      periodMode === 'MONTHLY'
-        ? fetchAllocationRows('YEARLY', month === 1 ? year - 1 : year, month) // ambil tahun yg mencakup bulan sebelumnya
-        : fetchAllocationRows('YEARLY', year - 1, month),
+      fetchAllocationRows('YEARLY', prevYear, month),
     ]).then(([yr, pr]) => {
       if (!active) return;
       setYearRows(yr);
@@ -165,21 +223,45 @@ export default function ReportingDashboardPage() {
       setLoading(false);
     }).catch(() => active && setLoading(false));
     return () => { active = false; };
-  }, [year, month, periodMode]);
+  }, [year, month, quarter, periodMode]);
 
   const currentRows = useMemo(() => {
     if (periodMode === 'YEARLY') return yearRows;
+    if (periodMode === 'QUARTERLY') {
+      const months = [1, 2, 3].map(i => (quarter - 1) * 3 + i);
+      return yearRows.filter(r => months.includes(Number(String(r.period_month).substring(5, 7))));
+    }
     const monthStr = `${year}-${String(month).padStart(2, '0')}`;
     return yearRows.filter(r => String(r.period_month).startsWith(monthStr));
-  }, [yearRows, periodMode, year, month]);
+  }, [yearRows, periodMode, year, month, quarter]);
 
   const previousRows = useMemo(() => {
     if (periodMode === 'YEARLY') return prevRows.filter(r => String(r.period_month).startsWith(String(year - 1)));
+    if (periodMode === 'QUARTERLY') {
+      const pq = quarter === 1 ? 4 : ((quarter - 1) as 1 | 2 | 3);
+      const py = quarter === 1 ? year - 1 : year;
+      const months = [1, 2, 3].map(i => (pq - 1) * 3 + i);
+      return prevRows.filter(r => String(r.period_month).startsWith(String(py)) && months.includes(Number(String(r.period_month).substring(5, 7))));
+    }
     const pm = month === 1 ? 12 : month - 1;
     const py = month === 1 ? year - 1 : year;
     const monthStr = `${py}-${String(pm).padStart(2, '0')}`;
     return prevRows.filter(r => String(r.period_month).startsWith(monthStr));
-  }, [prevRows, periodMode, year, month]);
+  }, [prevRows, periodMode, year, month, quarter]);
+
+  // Label pembanding dinamis mengikuti mode periode aktif (2026-09, poin A2):
+  // Monthly -> "vs Aug 2026", Quarterly -> "vs Q2 2026", Yearly -> "vs 2025".
+  const comparePeriodLabel = useMemo(() => {
+    if (periodMode === 'YEARLY') return `vs ${year - 1}`;
+    if (periodMode === 'QUARTERLY') {
+      const pq = quarter === 1 ? 4 : quarter - 1;
+      const py = quarter === 1 ? year - 1 : year;
+      return `vs Q${pq} ${py}`;
+    }
+    const pm = month === 1 ? 12 : month - 1;
+    const py = month === 1 ? year - 1 : year;
+    return `vs ${MONTH_NAMES_FULL[pm - 1].slice(0, 3)} ${py}`;
+  }, [periodMode, year, month, quarter]);
 
   const masterById = useMemo(() => new Map(masterVessels.map(m => [m.vessel_id, m])), [masterVessels]);
 
@@ -196,7 +278,15 @@ export default function ReportingDashboardPage() {
   const curTotal = totalCost(curSums);
   const curTotalExclPpn = totalExclPpn(curSums);
   const prevTotal = totalCost(prevSums);
-  const pctChange = prevTotal !== 0 ? ((curTotal - prevTotal) / prevTotal) * 100 : (curTotal !== 0 ? 100 : 0);
+  const prevTotalExclPpn = totalExclPpn(prevSums);
+  const curPpn = curSums.ppn_pph;
+  const prevPpn = prevSums.ppn_pph;
+  // Helper generik %-perubahan -- dipakai 3 kartu nominal (Total Cost/Excl PPN+PPH/Total
+  // PPN+PPH). Highest Vessel Cost SENGAJA TIDAK pakai ini (poin A3: tidak perlu persentase).
+  const pctOf = (cur: number, prev: number) => prev !== 0 ? ((cur - prev) / prev) * 100 : (cur !== 0 ? 100 : 0);
+  const pctChange = pctOf(curTotal, prevTotal);
+  const pctChangeExclPpn = pctOf(curTotalExclPpn, prevTotalExclPpn);
+  const pctChangePpn = pctOf(curPpn, prevPpn);
 
   // ─── Kartu 2: biaya per method ───────────────────────────────────────
   const perMethod = useMemo(() => {
@@ -285,7 +375,7 @@ export default function ReportingDashboardPage() {
     // `methodFilter`/`periodMode`/`year`/`month` ikut jadi dependency -- konten (jumlah baris
     // chart dst) bisa berubah tinggi tanpa event scroll/resize asli terpicu, effect ini WAJIB
     // jalan ulang biar `atTop`/`atBottom` tidak basi setelah ganti filter.
-  }, [loading, methodFilter, periodMode, year, month]);
+  }, [loading, methodFilter, periodMode, year, month, quarter]);
 
   return (
     <div ref={pageScrollRef} className="flex-1 h-full overflow-y-auto min-w-0 pb-10 relative">
@@ -313,13 +403,19 @@ export default function ReportingDashboardPage() {
                 dikasih warna coral `#F58C77` TERPISAH supaya kelihatan beda fungsi & sengaja
                 disamakan dgn warna header panel "Cost per Method" yg jadi sumber `METHOD_LABEL`-nya
                 -- asosiasi visual "warna ini = filter method". */}
-            <select value={periodMode} onChange={e => setPeriodMode(e.target.value as any)} className="rounded-lg px-2 py-1.5 text-xs font-bold bg-[#73507B]/10 text-[#73507B] border border-[#73507B]/30">
+            <select value={periodMode} onChange={e => setPeriodMode(e.target.value as PeriodMode)} className="rounded-lg px-2 py-1.5 text-xs font-bold bg-[#73507B]/10 text-[#73507B] border border-[#73507B]/30">
               <option value="MONTHLY">Monthly</option>
+              <option value="QUARTERLY">Quarterly</option>
               <option value="YEARLY">Yearly</option>
             </select>
             {periodMode === 'MONTHLY' && (
               <select value={month} onChange={e => setMonth(Number(e.target.value))} className="rounded-lg px-2 py-1.5 text-xs font-bold bg-[#73507B]/10 text-[#73507B] border border-[#73507B]/30">
                 {MONTH_NAMES.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+              </select>
+            )}
+            {periodMode === 'QUARTERLY' && (
+              <select value={quarter} onChange={e => setQuarter(Number(e.target.value) as 1 | 2 | 3 | 4)} className="rounded-lg px-2 py-1.5 text-xs font-bold bg-[#73507B]/10 text-[#73507B] border border-[#73507B]/30">
+                {[1, 2, 3, 4].map(q => <option key={q} value={q}>Q{q}</option>)}
               </select>
             )}
             <select value={year} onChange={e => setYear(Number(e.target.value))} className="rounded-lg px-2 py-1.5 text-xs font-bold bg-[#73507B]/10 text-[#73507B] border border-[#73507B]/30">
@@ -341,15 +437,14 @@ export default function ReportingDashboardPage() {
           <div className="text-center py-16 text-[#5A305A]">Loading data...</div>
         ) : (
           <div className="space-y-4">
-            {/* Baris 1: 4 kartu ringkasan (Total Cost | Total Cost Exclude PPN+PPH | Highest
-                Vessel Cost | Previous Period) -- 2026-09, kartu "Total Cost Exclude PPN+PPH"
-                BARU disisipkan tepat di samping "Total Cost" (permintaan user eksplisit).
-                Kartu kedua (lama) GANTI TOTAL dari "jumlah vessel" jadi nama + nominal vessel
-                BIAYA TERTINGGI periode ini (`topVessels[0]`, array yg sama dgn chart section
-                "Vessels with Highest Cost" di bawah -- SATU sumber data, JANGAN hitung ulang
-                terpisah). Semua 4 kartu ikut ter-filter `methodFilter` (lihat dropdown di panel
-                "Cost per Method" di bawah) krn `curTotal`/`curTotalExclPpn`/`prevTotal`/
-                `topVessels` sumbernya sudah `filteredCurrentRows`/`filteredPreviousRows`. */}
+            {/* Baris 1: 4 kartu ringkasan (2026-09 "REVISI MENU REPORTING" poin A2 -- urutan
+                BARU: Total Cost | Highest Vessel Cost | Total Cost Excl. PPN+PPH | Total PPN+PPH.
+                Kartu "Total PPN+PPH" BARU. 3 kartu nominal (Total Cost/Excl PPN+PPH/Total
+                PPN+PPH) tampilkan %, "Highest Vessel Cost" TIDAK. Teks pembanding dinamis
+                mengikuti mode periode aktif (`comparePeriodLabel`) -- Monthly "vs Aug 2026",
+                Quarterly "vs Q2 2026", Yearly "vs 2025". Kartu "Previous Period" LAMA DIHAPUS
+                (posisinya digantikan "Total PPN+PPH"), nominal periode sebelumnya sekarang murni
+                bahan hitung %, tidak perlu kartu sendiri lagi. */}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
               <Link to={`/reporting/cost-per-vessel${filterQuery(filteredTabParam)}`} className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden hover:border-[#5A305A] transition-all">
                 <PanelHeader color="#DCC9E0" dark>Total Cost</PanelHeader>
@@ -357,14 +452,8 @@ export default function ReportingDashboardPage() {
                   <p className="text-2xl font-bold text-[#5A305A]">{fmtRp(curTotal)}</p>
                   <div className={`flex items-center gap-1 mt-1 text-xs font-bold ${pctChange >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                     {pctChange >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
-                    {Math.abs(pctChange).toFixed(1)}% vs previous period
+                    {Math.abs(pctChange).toFixed(1)}% {comparePeriodLabel}
                   </div>
-                </div>
-              </Link>
-              <Link to={`/reporting/cost-per-vessel${filterQuery(filteredTabParam)}`} className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden hover:border-[#5A305A] transition-all">
-                <PanelHeader color="#DCC9E0" dark>Total Cost Exclude PPN+PPH</PanelHeader>
-                <div className="p-4 flex-1 bg-white">
-                  <p className="text-2xl font-bold text-[#5A305A]">{fmtRp(curTotalExclPpn)}</p>
                 </div>
               </Link>
               <Link to={topVessels.length > 0 ? `/reporting/cost-per-vessel${vesselFilterQuery(filteredTabParam, topVessels[0].key)}` : `/reporting/cost-per-vessel${filterQuery(filteredTabParam)}`} className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden hover:border-[#5A305A] transition-all">
@@ -380,48 +469,64 @@ export default function ReportingDashboardPage() {
                   )}
                 </div>
               </Link>
-              <div className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden">
-                <PanelHeader color="#DCC9E0" dark>Previous Period</PanelHeader>
+              <Link to={`/reporting/cost-per-vessel${filterQuery(filteredTabParam)}`} className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden hover:border-[#5A305A] transition-all">
+                <PanelHeader color="#DCC9E0" dark>Total Cost Excl. PPN+PPH</PanelHeader>
                 <div className="p-4 flex-1 bg-white">
-                  <p className="text-2xl font-bold text-[#5A305A]">{fmtRp(prevTotal)}</p>
+                  <p className="text-2xl font-bold text-[#5A305A]">{fmtRp(curTotalExclPpn)}</p>
+                  <div className={`flex items-center gap-1 mt-1 text-xs font-bold ${pctChangeExclPpn >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                    {pctChangeExclPpn >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
+                    {Math.abs(pctChangeExclPpn).toFixed(1)}% {comparePeriodLabel}
+                  </div>
                 </div>
-              </div>
+              </Link>
+              <Link to={`/reporting/cost-per-vessel${filterQuery(filteredTabParam)}`} className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden hover:border-[#5A305A] transition-all">
+                <PanelHeader color="#DCC9E0" dark>Total PPN+PPH</PanelHeader>
+                <div className="p-4 flex-1 bg-white">
+                  <p className="text-2xl font-bold text-[#5A305A]">{fmtRp(curPpn)}</p>
+                  <div className={`flex items-center gap-1 mt-1 text-xs font-bold ${pctChangePpn >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                    {pctChangePpn >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
+                    {Math.abs(pctChangePpn).toFixed(1)}% {comparePeriodLabel}
+                  </div>
+                </div>
+              </Link>
             </div>
 
-            {/* Baris 2: Cost per Method -- dropdown filter method dipindah ke panel filter
-                periode di atas (2026-09, permintaan susulan user "di sebelah tahun"). Panel ini
-                TIDAK ikut terfilter dropdown itu (`perMethod` sengaja tetap dihitung dari
-                `currentRows` mentah, breakdown semua method harus tetap kelihatan semua). */}
-            <div className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden">
-              <PanelHeader color="#FFF5C5" dark>Cost per Method</PanelHeader>
-              <div className="p-4 flex-1 bg-white">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {(['COURIER', 'SEA', 'AIR', 'BORONGAN'] as AllocationMethod[]).map(m => (
-                    <Link key={m} to={`/reporting/cost-per-vessel${filterQuery(m)}`} className="rounded-xl border border-slate-200 bg-white p-3 hover:border-[#5A305A] transition-all">
-                      <p className="text-[11px] font-bold uppercase mb-1" style={{ color: METHOD_COLOR[m] }}>{METHOD_LABEL[m]}</p>
-                      <p className="text-sm font-bold text-[#5A305A]">{fmtRp(perMethod[m])}</p>
-                    </Link>
-                  ))}
+            {/* Baris 2: "Cost per Method" (donut, kiri) + "Vessels with Highest Cost" (bar,
+                kanan) -- 1 baris berdampingan (2026-09 "REVISI MENU REPORTING" poin A3, GANTI
+                TOTAL dari layout lama: dulu Cost per Method full-width kartu kecil per method,
+                lalu Vessels with Highest Cost full-width baris sendiri di bawahnya). Cost per
+                Method TETAP tidak terfilter dropdown method (`perMethod` dihitung dari
+                `currentRows` mentah, breakdown semua method harus tetap kelihatan semua). Klik
+                bar Vessels -> Cost per Vessel scroll+blink ke baris vessel itu (sudah ada
+                sebelumnya, TIDAK diubah). */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <div className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden">
+                <PanelHeader color="#FFF5C5" dark>Cost per Method</PanelHeader>
+                <div className="p-4 flex-1 bg-white">
+                  {(['COURIER', 'SEA', 'AIR', 'BORONGAN'] as AllocationMethod[]).every(m => perMethod[m] === 0) ? (
+                    <p className="text-xs text-[#5A305A]/60 italic">No data yet.</p>
+                  ) : (
+                    <DonutChart
+                      data={(['COURIER', 'SEA', 'AIR', 'BORONGAN'] as AllocationMethod[]).map(m => ({ label: METHOD_LABEL[m], value: perMethod[m], color: METHOD_COLOR[m] }))}
+                      formatValue={fmtRp}
+                    />
+                  )}
                 </div>
               </div>
-            </div>
 
-            {/* Baris 3: Vessels with Highest Cost -- MELEBAR PENUH, baris sendiri (2026-09,
-                permintaan user, dulu setengah lebar bersebelahan dgn "Cost by Category"). Klik
-                bar -> Cost per Vessel scroll+blink ke baris vessel itu (2026-09, permintaan
-                user: "harusnya baris vesselnya langsung mengarah ke situ + efek kedap kedip"). */}
-            <div className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden">
-              <PanelHeader color="#FFF5C5" dark>Vessels with Highest Cost</PanelHeader>
-              <div className="p-4 flex-1 bg-white">
-                {topVessels.length === 0 ? (
-                  <p className="text-xs text-[#5A305A]/60 italic">No data yet.</p>
-                ) : (
-                  <HorizontalBarChart
-                    data={topVessels.map(v => ({ label: v.name, value: v.total }))}
-                    color="#5A305A" formatValue={fmtRp}
-                    onBarClick={(i) => navigate(`/reporting/cost-per-vessel${vesselFilterQuery(filteredTabParam, topVessels[i].key)}`)}
-                  />
-                )}
+              <div className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden">
+                <PanelHeader color="#FFF5C5" dark>Vessels with Highest Cost</PanelHeader>
+                <div className="p-4 flex-1 bg-white">
+                  {topVessels.length === 0 ? (
+                    <p className="text-xs text-[#5A305A]/60 italic">No data yet.</p>
+                  ) : (
+                    <HorizontalBarChart
+                      data={topVessels.map(v => ({ label: v.name, value: v.total }))}
+                      color="#5A305A" formatValue={fmtRp}
+                      onBarClick={(i) => navigate(`/reporting/cost-per-vessel${vesselFilterQuery(filteredTabParam, topVessels[i].key)}`)}
+                    />
+                  )}
+                </div>
               </div>
             </div>
 

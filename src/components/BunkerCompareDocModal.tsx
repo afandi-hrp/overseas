@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, AlertTriangle, ListChecks, ClipboardList, Save, ShieldCheck, CheckCircle2, XCircle, RotateCcw, Printer } from 'lucide-react';
+import { X, AlertTriangle, ListChecks, ClipboardList, Save, ShieldCheck, CheckCircle2, XCircle, RotateCcw, Printer, FileText, ExternalLink } from 'lucide-react';
 import {
   parseJsonField, getMatrixColumns, resolveAcuanColumnKey, summaryStatusMeta,
   STATUS_WORKFLOW_OPTIONS, workflowMeta, rowStatusClass, rowStatusMeta, updateBunkerDokumen,
@@ -10,6 +10,11 @@ import {
 import { useAuth } from '../lib/AuthContext';
 
 type TableKelengkapanGroup = { group: string; items: { label: string; val: string | null }[] };
+// Elemen array kolom `source_files` (jsonb) -- riwayat KUMULATIF semua file yang pernah
+// diupload untuk PO ini (termasuk dokumen susulan), BUKAN cuma upload terakhir. `file_url`
+// BISA null (dokumen lama sebelum fitur ini ada, atau upload ke Drive sempat gagal) --
+// kondisi normal, bukan bug, harus ditangani (lihat SourceFilesSection).
+type SourceFileEntry = { filename?: string | null; file_url?: string | null; uploaded_at?: string | null; job_id?: number | string | null };
 type RowStatus = 'Match' | 'Warning' | 'Mismatch';
 type MatrixRow = {
   field: string; acuan_label?: string | null;
@@ -230,6 +235,60 @@ function ConfirmMatchCell({ row, bunkerId, noPo, statusManualRaw, onConfirmed }:
         />
       )}
     </>
+  );
+}
+
+// Seksi "Dokumen Asli" -- daftar semua file yang pernah diupload untuk PO ini (kumulatif,
+// termasuk dokumen susulan, TIDAK di-dedupe walau ada filename yang sama berulang -- itu
+// memang riwayat upload, bukan bug). Diurutkan terbaru ke terlama. Link Drive dibuka apa
+// adanya di tab baru (target=_blank) -- SENGAJA TIDAK diembed/iframe (lihat catatan di
+// HtmlValue/komentar file lain soal X-Frame-Options, kasusnya sama: Drive kadang menolak
+// dibuka dalam iframe lintas-domain).
+function SourceFilesSection({ sourceFilesRaw }: { sourceFilesRaw: unknown }) {
+  const files: SourceFileEntry[] = parseJsonField(sourceFilesRaw) || [];
+  const sorted = [...files].sort((a, b) => {
+    const ta = a.uploaded_at ? new Date(a.uploaded_at).getTime() : 0;
+    const tb = b.uploaded_at ? new Date(b.uploaded_at).getTime() : 0;
+    return tb - ta;
+  });
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
+        <h3 className="text-sm xl:text-base font-bold text-[#5A305A]">3. Original Documents</h3>
+      </div>
+      {sorted.length === 0 ? (
+        <p className="text-xs text-[#5A305A] italic text-center py-6">No files uploaded yet.</p>
+      ) : (
+        <div className="divide-y divide-slate-100">
+          {sorted.map((f, i) => (
+            <div key={i} className="flex items-center justify-between gap-3 px-4 py-2.5">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <FileText size={16} className="text-[#5A305A]/50 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs xl:text-sm font-medium text-[#5A305A] break-words">{f.filename || 'Untitled file'}</p>
+                  <p className="text-[10px] xl:text-[11px] text-[#5A305A]/60">{formatDateTimeID(f.uploaded_at)}</p>
+                </div>
+              </div>
+              {f.file_url ? (
+                <a
+                  href={f.file_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 text-[11px] xl:text-xs font-bold text-blue-600 hover:text-white hover:bg-blue-600 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-full whitespace-nowrap transition-all flex items-center gap-1"
+                >
+                  <ExternalLink size={11} /> Open
+                </a>
+              ) : (
+                <span className="shrink-0 text-[11px] xl:text-xs font-semibold text-slate-400 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-full whitespace-nowrap">
+                  Preview unavailable
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -521,6 +580,9 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged, canE
                 </div>
               )}
             </div>
+
+            {/* 3. DOKUMEN ASLI (source_files) */}
+            <SourceFilesSection sourceFilesRaw={rec.source_files} />
 
             {/* Status workflow + catatan manual -- BEBAS diedit dari aplikasi, tidak lewat n8n */}
             <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-4">

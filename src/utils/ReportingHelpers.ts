@@ -13,6 +13,7 @@ export type MasterVessel = {
   fleet_group: string;
   category: 'VESSEL' | 'OTHERS';
   status: 'AKTIF' | 'SCRAP';
+  sort_order: number;
 };
 
 export type AllocationMethod = 'COURIER' | 'SEA' | 'AIR' | 'BORONGAN';
@@ -69,8 +70,13 @@ export function monthStart(dateStr: string): string {
   return `${d.substring(0, 7)}-01`;
 }
 
+// order by sort_order (BUKAN vessel_name/alfabet lagi, 2026-09 "REVISI MENU REPORTING" poin B7)
+// -- urutan baris di Cost per Vessel WAJIB ikut persis urutan file Excel Master Vessel, termasuk
+// BASE yang tidak berurutan rapi (mis. JAKARTA muncul 2 blok terpisah). Lihat
+// sql/006_master_vessel_sort_order.sql -- WAJIB dijalankan manual dulu di Supabase, kalau belum
+// kolom `sort_order` tidak ada & query ini akan error.
 export async function fetchMasterVessels(): Promise<MasterVessel[]> {
-  const { data, error } = await supabase.from('master_vessel').select('*').order('vessel_name');
+  const { data, error } = await supabase.from('master_vessel').select('*').order('sort_order');
   if (error) throw error;
   return (data || []) as MasterVessel[];
 }
@@ -290,20 +296,35 @@ export const METHOD_SOURCE_PAGE: Record<AllocationMethod, { label: string; path:
   BORONGAN: { label: 'FAR Overseas > Memo List', path: '/direct-loading', idLabel: 'Invoice No. / Memo Title' },
 };
 
-export type PeriodMode = 'MONTHLY' | 'YEARLY';
+export type PeriodMode = 'MONTHLY' | 'QUARTERLY' | 'YEARLY';
 
-// Ambil baris alokasi tersimpan utk 1 bulan spesifik ATAU 1 tahun penuh (12 bulan) -- fungsi
-// generik ini dipakai KEDUA halaman (Dashboard & Cost per Vessel) supaya query/filter selalu
-// identik (Aturan Umum #1).
-export async function fetchAllocationRows(mode: PeriodMode, year: number, month: number): Promise<any[]> {
-  let query = supabase.from('reporting_cost_allocation').select('*');
-  if (mode === 'MONTHLY') {
-    const monthStartStr = `${year}-${String(month).padStart(2, '0')}-01`;
-    query = query.eq('period_month', monthStartStr);
-  } else {
-    query = query.gte('period_month', `${year}-01-01`).lt('period_month', `${year + 1}-01-01`);
-  }
-  const { data, error } = await query;
+// ─── 2026-09 "REVISI MENU REPORTING" -- periode berbasis daftar {year,month} eksplisit ────────
+// Cost per Vessel butuh multi-select bulan/tahun bebas (mis. Jul+Agu+Sep 2026, atau
+// 2024+2025+2026 sekaligus) -- fungsi generik ini SATU-SATUNYA cara fetch baris
+// `reporting_cost_allocation` dari KEDUA halaman (Aturan Umum #1 tetap terjaga: query/filter
+// selalu identik). Dedup via Set string 'YYYY-MM-01' sebelum `.in()` -- aman kalau caller kasih
+// pasangan {year,month} duplikat (mis. hasil cartesian product tahun x bulan yang overlap).
+export type YearMonth = { year: number; month: number }; // month 1-12
+
+export async function fetchAllocationRowsByMonths(pairs: YearMonth[]): Promise<any[]> {
+  const monthStrs = Array.from(new Set(pairs.map(p => `${p.year}-${String(p.month).padStart(2, '0')}-01`)));
+  if (monthStrs.length === 0) return [];
+  const { data, error } = await supabase.from('reporting_cost_allocation').select('*').in('period_month', monthStrs);
   if (error) throw error;
   return data || [];
+}
+
+export const monthsOfYear = (year: number): YearMonth[] => Array.from({ length: 12 }, (_, i) => ({ year, month: i + 1 }));
+export const monthsOfQuarter = (year: number, quarter: 1 | 2 | 3 | 4): YearMonth[] => {
+  const start = (quarter - 1) * 3 + 1;
+  return [start, start + 1, start + 2].map(month => ({ year, month }));
+};
+export const quarterOfMonth = (month: number): 1 | 2 | 3 | 4 => (Math.ceil(month / 3) as 1 | 2 | 3 | 4);
+
+// Wrapper single-period (dipakai ReportingDashboardPage.tsx yang tidak butuh multi-select) --
+// dibangun di atas fetchAllocationRowsByMonths supaya tetap 1 sumber query yang sama.
+export async function fetchAllocationRows(mode: PeriodMode, year: number, month: number, quarter?: 1 | 2 | 3 | 4): Promise<any[]> {
+  if (mode === 'MONTHLY') return fetchAllocationRowsByMonths([{ year, month }]);
+  if (mode === 'QUARTERLY') return fetchAllocationRowsByMonths(monthsOfQuarter(year, quarter ?? quarterOfMonth(month)));
+  return fetchAllocationRowsByMonths(monthsOfYear(year));
 }

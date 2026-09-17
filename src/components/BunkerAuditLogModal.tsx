@@ -14,6 +14,16 @@ function splitAuditCatatan(catatan: string | null): { field: string; old: string
 
 // Riwayat perubahan PER BARIS bunker_dokumen -- lihat catatan lengkap di BunkerHelpers.ts
 // (logBunkerAudit/fetchBunkerAuditLog) soal kenapa ini pakai ulang tabel audit_trail global.
+//
+// Filter `splitAuditCatatan(e.catatan) || e.user_email` (2026-09) -- ditemukan entri "asing"
+// di tabel audit_trail (tabel='bunker_dokumen') yang BUKAN ditulis logBunkerAudit(): user_email
+// NULL ("By: Unknown") + catatan berisi dump mentah diff SELURUH kolom row (vendor/summary/
+// source_files/extracted_raw dst, bukan 1 field), kemungkinan besar proses lain (n8n/trigger DB)
+// insert langsung ke tabel yang sama. logBunkerAudit() SENDIRI selalu isi user_email & format
+// catatan ketat "{field} — Lama: X → Baru: Y" -- entri yang GAGAL diparse `splitAuditCatatan`
+// DAN user_email kosong dianggap bukan dari aplikasi ini, disembunyikan (bukan dihapus dari DB,
+// murni tidak dirender) supaya modal tidak berantakan. Entri lama tanpa user_email TAPI catatan
+// masih cocok pola aplikasi tetap tampil (kondisi `||`, bukan `&&`).
 export default function BunkerAuditLogModal({ record, onClose }: {
   record: any;
   onClose: () => void;
@@ -58,11 +68,11 @@ export default function BunkerAuditLogModal({ record, onClose }: {
             <p className="text-xs text-[#5A305A]/70 italic text-center py-8">Loading history...</p>
           ) : error ? (
             <p className="text-xs text-rose-600 text-center py-8">{error}</p>
-          ) : entries.length === 0 ? (
+          ) : entries.filter(e => splitAuditCatatan(e.catatan) || e.user_email).length === 0 ? (
             <p className="text-xs text-[#5A305A]/70 italic text-center py-8">No manual changes recorded for this row yet.</p>
           ) : (
             <ol className="space-y-3">
-              {entries.map(e => {
+              {entries.filter(e => splitAuditCatatan(e.catatan) || e.user_email).map(e => {
                 const diff = splitAuditCatatan(e.catatan);
                 return (
                   <li key={e.id} className="border border-slate-200 rounded-xl p-3">

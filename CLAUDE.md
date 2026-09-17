@@ -651,6 +651,35 @@ jsonb, `status`, `catatan`, `cost_validation` jsonb array).
   ~baris 450/521 + `headerColors`), TIDAK otomatis ikut field baru dari backend — kolom
   "Trucking" sudah ditambahkan manual ke ketiganya.
 
+## Bunker — Riwayat Perubahan menyembunyikan entri "asing" bukan dari aplikasi (2026-09)
+
+Laporan user: modal "Change History" (`BunkerAuditLogModal.tsx`) menampilkan entri berantakan
+`By: Unknown` + isi `catatan` dump mentah diff SELURUH kolom row (`vendor: X → Y; summary: {...}
+→ {...}; source_files: [...]; extracted_raw: {...}`), bukan format rapi 1 field yang biasa.
+**Root cause**: entri ini BUKAN ditulis `logBunkerAudit()` (lihat `BunkerHelpers.ts`) — fungsi
+itu SELALU isi `user_email` & format `catatan` ketat `"{field} — Lama: X → Baru: Y"`. Entri asing
+ini kemungkinan besar di-insert LANGSUNG ke tabel `audit_trail` (`tabel='bunker_dokumen'`) oleh
+proses lain (n8n/trigger DB) — **BELUM diverifikasi sumber pastinya** (tidak ada akses n8n/DB
+langsung dari sesi Claude Code). Fix SEMENTARA di sisi tampilan (`BunkerAuditLogModal.tsx`):
+entri difilter `splitAuditCatatan(e.catatan) || e.user_email` — yang GAGAL diparse formatnya
+DAN `user_email` kosong disembunyikan (bukan dihapus dari DB, murni tidak dirender). Kalau nanti
+ketahuan proses n8n mana yang insert entri ini, root cause sebenarnya ada di sana, bukan di app.
+
+## Bunker — seksi "Original Documents" (`source_files`) di `BunkerCompareDocModal.tsx` (2026-09)
+
+Kolom `bunker_dokumen.source_files` (jsonb array, KUMULATIF — riwayat SEMUA file yg pernah
+diupload utk PO itu termasuk dokumen susulan, elemen `{filename, file_url, uploaded_at,
+job_id}`) ditampilkan sbg seksi baru "3. Original Documents" di `BunkerCompareDocModal.tsx`
+(`SourceFilesSection`), setelah seksi "2. Document Comparison". Diurutkan terbaru→terlama
+(`uploaded_at`), TIDAK di-dedupe (filename sama berulang = riwayat sah, bukan bug). `file_url`
+bisa `null` (dokumen lama sebelum fitur ini ADA/upload ke Drive gagal — kondisi NORMAL) → badge
+abu-abu "Preview unavailable" (non-klik), bukan link mati. `file_url` terisi → `<a
+target="_blank">` langsung ke link Drive apa adanya (BUKAN iframe/embed custom — link
+`drive.google.com/.../view` kadang menolak dibuka dalam iframe lintas-domain, beda dari pola
+proxy `/api/drive-file-proxy` yg dipakai Audit AP Local/dst, SENGAJA tidak dipakai di sini krn
+file ini sudah public "anyone with link" & tidak butuh proxy backend). Array kosong/tidak ada →
+empty-state "No files uploaded yet.".
+
 ## Courier — Audit, badge % + footer % Cost Validation
 
 Pola sama Sea & Air Rekapan di atas, diterapkan ke `CourierAuditRowGroup` tombol Doc/Cost
@@ -2074,6 +2103,94 @@ berlaku ke strip header, bukan area konten. **Kondisi final SEKARANG: 2 kelompok
 berbeda** di halaman yg sama (`#DCC9E0` kartu ringkasan / `#FFF5C5` panel analitik-chart) --
 kalau nambah panel baru, WAJIB tanya/tentukan masuk kelompok mana sebelum asal pilih salah
 satu warna.
+
+### REVISI MENU REPORTING (2026-09, lanjutan) — label FAR Ovs, kartu baru, donut, Periodic View
+
+Permintaan user terstruktur ("REVISI MENU REPORTING", bagian A = Dashboard, B = Cost per
+Vessel). Klarifikasi yang dikonfirmasi user SEBELUM implementasi (penting utk keputusan
+arsitektur di bawah): (1) kolom akumulasi Periodic View ("TOTAL YTD"/"TOTAL TAHUN"/"TOTAL
+AKUMULASI") = **jumlah dari periode yang SEDANG ditampilkan/dipilih saja** (BUKAN year-to-date
+sungguhan/akumulasi seluruh histori data — jadi TIDAK perlu fetch data tahun lain di luar yang
+dipilih user); (2) TIDAK ADA dropdown Quarter terpisah — quarter di tab Quarterly (Periodic
+View) **diturunkan dari dropdown Bulan** yang dipilih fleksibel (grouping bulan-bulan terpilih
+ke kuartalnya, cuma menjumlah bulan yang BENERAN dipilih, bukan otomatis tarik bulan lain).
+
+**"All-In Import" -> "FAR Ovs" (LAGI, kembali ke penamaan sebelum di-rename)** — di KEDUA
+halaman (`METHOD_LABEL`/`METHOD_FILTER_OPTIONS`/`perJenisBiaya` di Dashboard; `TABS`/
+`columnsForTab` label kolom "Total FAR Ovs" di Cost per Vessel). Value internal
+`AllocationMethod`/`TabId` TETAP `'BORONGAN'` — HANYA label tampilan yang berubah, riwayat 2
+iterasi nama sebelumnya (FAR Ovs -> All-In Import -> FAR Ovs lagi) dicatat supaya tidak
+reintroduce nama lain tanpa diminta ulang.
+
+**`master_vessel.sort_order` (BARU)** — kolom int, migrasi `sql/006_master_vessel_sort_order.sql`
+(**BELUM DIJALANKAN ke Supabase production — WAJIB dijalankan manual dulu**, backfill via
+`row_number() over (order by vessel_id)` krn `vessel_id` identity SUDAH inkremen persis sesuai
+urutan baris file Excel Master Vessel saat insert awal). Cost per Vessel WAJIB tampilkan baris
+PERSIS urutan file (bukan alfabet) — `fetchMasterVessels()` diganti `.order('sort_order')`
+(dari `.order('vessel_name')`). `ReportingCostPerVesselPage.tsx` — resort alfabet manual di
+`displayRows` useMemo (`a.base.localeCompare(...)` dkk) **DIHAPUS TOTAL**: urutan
+`Array.from(aggMap.values())` otomatis benar krn `aggMap` dibangun dari `masterVessels.forEach`
+yang urutannya sudah `sort_order`. Ini otomatis menangani kasus "BASE tidak berurutan rapi di
+file" (mis. JAKARTA muncul 2 blok terpisah, dipisah BELAWAN/TBA/DUMAI/SURABAYA di antaranya) —
+grouping baris konsekutif `${base}::${fleetGroup}` yang SUDAH ADA sebelumnya otomatis membuat
+blok terpisah kalau posisinya memang tidak berurutan, TANPA logic tambahan. `MasterVesselAdminPage.tsx`
+— kolom "Sort" + field edit `sort_order` (opsional, kosong = default kolom = taruh di akhir),
+list di-sort by `sort_order` (bukan alfabet lagi).
+
+**`ReportingHelpers.ts` — arsitektur periode generik `{year,month}[]`** — `fetchAllocationRows
+(mode,year,month)` (Monthly/Yearly saja) diganti fondasi baru `fetchAllocationRowsByMonths
+(pairs: YearMonth[])` (`.in('period_month', [...])`, dedup) — SATU-SATUNYA query dipakai KEDUA
+halaman (Aturan Umum #1 tetap terjaga). `monthsOfYear`/`monthsOfQuarter`/`quarterOfMonth` helper
+kecil. `fetchAllocationRows(mode,year,month,quarter?)` TETAP ADA sbg wrapper single-period
+(dipakai Dashboard yang tidak butuh multi-select), `PeriodMode` nambah `'QUARTERLY'`.
+
+**A. Reporting Dashboard** — mode periode Monthly/Yearly -> **Monthly/Quarterly/Yearly** (dropdown
+Quarter Q1-Q4 SINGLE-select muncul saat Quarterly, BEDA dari Cost per Vessel yang multi-select).
+**4 kartu ringkasan, urutan BARU**: Total Cost | Highest Vessel Cost | Total Cost Excl. PPN+PPH |
+**Total PPN+PPH (kartu BARU)** — kartu "Previous Period" lama DIHAPUS (fungsinya sekarang murni
+bahan hitung %, bukan kartu sendiri). 3 kartu nominal tampilkan %, Highest Vessel Cost TIDAK.
+Teks pembanding dinamis (`comparePeriodLabel`) ikut mode aktif: Monthly `"vs Aug 2026"` (english
+3-huruf, SENGAJA beda dari dropdown bulan Indonesia `MONTH_NAMES` yang dipakai di tempat lain),
+Quarterly `"vs Q2 2026"`, Yearly `"vs 2025"`. **"Cost per Method" jadi Donut chart** (komponen
+baru `DonutChart`, SVG `stroke-dasharray` per segmen, viewBox persegi TETAP — bukan bar chart,
+jadi imun dari masalah distorsi stretch non-uniform yang pernah dialami `VerticalBarChart` versi
+SVG lama) — total di tengah, legend kanan (nama+persen+nominal PENUH). Ditaruh 1 baris `grid
+lg:grid-cols-2` bersama "Vessels with Highest Cost" (donut kiri, bar kanan) — GANTI TOTAL dari
+layout lama (Cost per Method full-width kartu kecil di atas, Vessels with Highest Cost full-width
+baris sendiri di bawah). "Cost by Category"/"Cost per Fleet Group" TIDAK berubah.
+
+**B. Cost per Vessel — perubahan TERBESAR** — `ReportingCostPerVesselPage.tsx`:
+- Deretan tombol tab method -> **1 dropdown** (`TABS.map` jadi `<select>`, "All Method" default).
+- **Periode multi-select**: `year`/`month` single-value diganti `selectedYears: Set<number>`/
+  `selectedMonths: Set<number>` + komponen lokal BARU `MultiSelectDropdown` (tombol+panel
+  checkbox+"All"/"Clear", TIDAK pakai React Portal serumit `KategoriPicker` krn filter bar cukup
+  ruang). **Bulan kosong utk 1+ tahun = seluruh 12 bulan tahun itu** (`emptyMeansAll` prop) —
+  mendukung contoh user "pilih 2024+2025+2026 saja". `selectedPeriods` useMemo = cartesian
+  product tahun x bulan, SATU-SATUNYA sumber resolusi periode final (fetch, Recompute, kolom
+  Periodic View semua pakai ini). Chip periode aktif ditampilkan di bawah filter bar.
+- **2 sub-tab tampilan** (`viewMode: 'SUMMARY'|'PERIODIC'`): **Summary View** = layout `displayRows`
+  LAMA TIDAK diubah strukturnya, cuma sumber datanya sekarang gabungan `selectedPeriods`.
+  **Periodic View (BARU)** — sub-tab periode sendiri (`periodicMode: 'MONTHLY'|'QUARTERLY'|'YEARLY'`,
+  HANYA relevan Periodic View), kolom dihitung `buildPeriodColumns(selectedPeriods, periodicMode)`
+  — grouping bulan-bulan terpilih ke level periode (quarter = `Math.ceil(month/3)` dari bulan yg
+  BENERAN dipilih, bukan tarik semua bulan quarter itu). Header 2 tingkat (`<thead>` 2 `<tr>`,
+  `rowSpan`/`colSpan` HTML): tingkat 1 = label periode ("JANUARI 2026"/"JAN-MAR (Q1) 2026"/
+  "TAHUN 2026"), tingkat 2 = "Total Cost"/"Excl PPN+PPH". Kolom PALING KANAN = akumulasi
+  (`accLabel` ikut `periodicMode`: "TOTAL YTD"/"TOTAL TAHUN"/"TOTAL AKUMULASI") = **`VesselAgg.sums`
+  APA ADANYA** (sesuai klarifikasi user: SUM seluruh periode yang sedang ditampilkan, BUKAN
+  fetch histori tambahan). `VesselAgg.monthly: Record<number,sums>` (key 1-12, collision-prone
+  lintas tahun) **DIGANTI `periodSums: Record<string,sums>`** (key `'YYYY-MM'`, aman multi-tahun)
+  — `sumPeriodKeys()` helper gabungkan balik ke level quarter/year saat render/export.
+- **Export ikut PERSIS tampilan** (poin B5) — `handleExport`/`ExportPreviewModal` sekarang terima
+  `viewMode`/`periodColumns`/`accLabel`, dan **pakai `visibleDisplayRows`** (BUKAN `displayRows`
+  mentah — FIX bug lama: baris grup yang sedang diciutkan dulu TETAP ke-export, sekarang tidak).
+  Header Excel Periodic View pakai `ws.mergeCells(...)` 2 tingkat, sama persis struktur on-screen.
+- **Recompute** (poin B6) — loop SEMUA bulan unik di `selectedPeriods` (bukan lagi tergantung
+  mode Monthly/Yearly terpisah) — krn Summary View & KETIGA sub-mode Periodic View semuanya murni
+  agregasi dari baris bulanan yang sama (`reporting_cost_allocation`), merecompute bulan2 ini
+  OTOMATIS bikin semua tampilan konsisten tanpa logic terpisah per mode. **"Last recomputed"**
+  ditampilkan di filter bar — TANPA kolom/tabel baru, cukup `MAX(created_at)` dari baris yang
+  SUDAH ter-fetch client-side (`created_at` sudah ke-select via `select('*')`).
 
 ### Yang belum dikerjakan / gap yang diketahui
 
