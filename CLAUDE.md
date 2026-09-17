@@ -553,6 +553,178 @@ ditambahkan. Memo cetak SENGAJA TIDAK diubah — baris NOTE cetak resmi TETAP ha
 `item_description` (catatan manual murni internal, bukan bagian dokumen resmi).
 `FAR_EXPORT_COLS` ditambah `item_description_manual`.
 
+**Susulan (2026-09) — label "ITEMS" di baris NOTE 2 memo cetak**: `FarOverseasAirDetailModal.tsx`
+baris NOTE cetak "2." (dari `item_description`, BUKAN `item_description_manual`) ditambah label
+`ITEMS :` sebelum teksnya — jadi tampil "2. ITEMS : {nama items}". Murni teks statis di JSX,
+tidak ada perubahan data/kolom.
+
+**Susulan LAGI (2026-09) — `item_description_manual` SEKARANG ikut tampil di memo cetak, dalam
+kurung** — GANTI dari keputusan sebelumnya ("Memo cetak SENGAJA TIDAK diubah") yang sudah TIDAK
+BERLAKU LAGI: baris "2. ITEMS :" sekarang `{item_description}{' ('}{item_description_manual}{')'}`
+kalau `item_description_manual` terisi (kalau kosong, baris tetap sama seperti sebelumnya, tanpa
+kurung kosong). Kondisi render baris tetap `rec.item_description` (dari NOTE 2 kiri/"From
+Document") — `item_description_manual` MURNI tambahan di dalam kurung, TIDAK bisa bikin baris
+"2." muncul sendirian kalau `item_description` kosong.
+
+## FAR Overseas Air — NOTE 3 format baku "BARANG DITERIMA LOG {KOTA} {TANGGAL}" (2026-09)
+
+List Memo kolom NOTE 3 (`status_note`) — dulu free-text bebas, sekarang UI-nya dipaksa format
+baku: **kota** (read-only, otomatis dari `cost_validasi_far_overseas_air.rate_row_used.tujuan`
+— kota TUJUAN yang sama dipakai Cost Validation) + **tanggal** (dipilih manual via
+`<input type="date">`, kalender bawaan browser). Kolom DB TETAP 1 (`status_note`, text) — TIDAK
+ADA kolom tanggal/kota terpisah, hasil pilihan di-komposisi jadi 1 string
+`"BARANG DITERIMA LOG {KOTA} {DD/MM/YYYY}"` lalu itu yang disimpan (`composeStatusNote()`,
+`FarOverseasAirPage.tsx`). Saat baris dibuka edit lagi, tanggalnya di-parse balik dari akhir
+string tersimpan (`parseStatusNoteDateIso()`, regex `(\d{2})\/(\d{2})\/(\d{4})\s*$`) untuk
+prefill date picker — **kalau format teks di DB tidak cocok pola ini** (data lama sebelum fitur
+ini, atau pernah diedit manual di luar UI ini), date picker tampil kosong (bukan error), user
+tinggal pilih ulang tanggalnya.
+
+- **Sumber kota** — `ListRenderCtx.costCityMap` (state BARU `costCityMap`, `FarOverseasAirPage.tsx`),
+  di-fetch BARENG `costStatusMap` (1 query yang sama, `fetchCostStatusMap()`, nambah kolom
+  `rate_row_used` ke `.select()`) — `parseJsonField(c.rate_row_used).tujuan`. TIDAK ada fetch
+  terpisah, TIDAK live-refresh saat `rate_row_used` berubah di
+  `FarOverseasAirCostValidationModal.tsx` (baru ikut ter-update saat `fetchList()` berikutnya,
+  sama batasannya dgn `costStatusMap`).
+- **Kalau belum ada Cost Validation matched** (`costCityMap[r.id]` kosong) — date picker
+  `disabled`, teks "(no destination city yet)" ditampilkan — TIDAK BISA compose NOTE 3 tanpa
+  kota, mencegah tersimpan string "BARANG DITERIMA LOG  DD/MM/YYYY" (kota kosong).
+  `handleInlineSaveRow`/pendingEdits TIDAK berubah — field `status_note` tetap ikut pola edit
+  massal/inline biasa, cuma UI-nya yang diganti dari free-text jadi kota+date picker.
+- Value baku ini MURNI hasil komposisi UI — user TIDAK BISA lagi ketik bebas ke NOTE 3 lewat
+  form ini. Kalau ke depan perlu tambahan teks bebas, pertimbangkan field baru terpisah (pola
+  sama NOTE 2 "From Document"/"Manual Note" di atas), JANGAN kembalikan NOTE 3 ke free-text
+  polos tanpa diminta ulang.
+
+## FAR Overseas Air — toggle tampilan List/Card (`FarOverseasAirPage.tsx`, 2026-09)
+
+Toolbar List Memo dapat toggle **List/Card** (state lokal `viewMode`, default **CARD** — TIDAK
+disimpan, reset ke Card lagi tiap buka halaman/refresh, pola sama preferensi tampilan sesaat
+lain di app ini). **Card MURNI
+tampilan ringkas untuk browsing cepat, TIDAK mereplikasi form edit apa pun** — keputusan
+disengaja setelah diskusi dgn user: kolom di tabel List ada ~25an, kalau dipaksa jadi card
+penuh malah lebih berantakan dibanding tabel. `FarOverseasAirDetailModal.tsx` (modal
+approval memo) **SENGAJA TIDAK disentuh sama sekali** oleh fitur ini — sensitif/replika
+dokumen fisik (lihat pengecualian translasi di atas), cuma DIPANGGIL apa adanya (persis pola
+`navigate('/direct-loading/${id}')` yang sudah dipakai tombol "Approval" di List) dari tombol
+Card, bukan dimodifikasi.
+
+- **Card view** (`viewMode==='CARD'`) — grid `grid-cols-1 sm:grid-cols-2 xl:grid-cols-3`. `rows`/
+  `page`/`pageSize`/filter approval SAMA PERSIS dgn List (state yang sama, cuma cara render
+  beda) — pindah List<->Card TIDAK reset halaman/filter.
+  **Urutan baris field DI DALAM card (2026-09, permintaan user, riwayat beberapa iterasi urutan —
+  KHUSUS card, BEDA dari urutan kolom `LIST_COLUMNS` di tabel List, JANGAN disamakan otomatis
+  kalau urutan List berubah ke depan)**: baris header = **Ship Via** (kiri) + badge Approval/
+  Cost Status (kanan) -> grid 2 kolom **Invoice No | Inv Date** -> **Vendor** (full-width) ->
+  **No PO** (ringkas, "+N more" kalau gabungan banyak PO, full-width) -> grid 2 kolom
+  **Total Amount | Qty/Weight** (`{r.qty}/{r.weight_unit}` 1 baris, mis. "120/KG") ->
+  **Notes 1** (`route_note`, full-width). Field **Vessel** (`vessel_internal_note`) yang dulu
+  ada di card DIHAPUS dari tampilan card (tidak lagi ditampilkan sama sekali di Card, TETAP ada
+  di tabel List seperti biasa). `memo_title` ditampilkan TEPAT DI ATAS badge Approval Status
+  (pojok kanan atas card, `text-right`, `max-w-[55%]` supaya judul panjang tidak mendesak Ship
+  Via di kiri) — cuma render kalau terisi (`r.memo_title &&`, banyak memo lama tidak punya judul).
+- **Tombol "Print Memo" di baris aksi card (2026-09)** — di SAMPING tombol Edit (setelah Edit,
+  urutan akhir: Approval | Cost | Edit | Print Memo | Delete).
+  `FarOverseasAirDetailModal.tsx` (memo cetak) **SENGAJA TIDAK disentuh sama sekali**
+  (permintaan eksplisit user) — tombol ini MURNI meminjam mekanisme deep-link
+  `/direct-loading/:id` yang SUDAH ADA (dipakai tombol "Approval"), yang membuka modal itu lalu
+  otomatis memicu `window.print()`. Alur: `onClick` set `autoPrintRef.current = true` (ref
+  BARU, bukan state — tidak perlu re-render) lalu `navigate('/direct-loading/${r.id}')` (SAMA
+  PERSIS tombol Approval) -> effect `loadDeepLink` (sudah ada, fetch record & `setSelected`)
+  cek `autoPrintRef.current`, kalau true: reset ke `false` lalu poll (`waitForPrintAreaThenPrint`,
+  interval 50ms, maks 20x percobaan) sampai `#far-overseas-print-area` (elemen root modal, CSS
+  `@media print` di `src/index.css` yang mengisolasi elemen ini saat cetak SUDAH ADA dari fitur
+  Print manual di dalam modal, TIDAK diubah) BENERAN ada di DOM, baru `window.print()` di dalam
+  2x `requestAnimationFrame` bersarang (1 frame commit React, 1 frame browser selesai paint).
+  **Bug ditemukan & diperbaiki (2 iterasi)**: (1) versi awal pakai `setTimeout(..., 200)`
+  fixed-delay — `window.print()` mencetak APA ADANYA yang sudah ter-render di DOM saat
+  dipanggil (bukan nunggu render selesai dulu), jadi kalau device/koneksi lambat & 200ms belum
+  cukup buat modal (portal ke `document.body`) selesai commit+paint, hasilnya PRINT PREVIEW
+  KOSONG — diganti poll DOM (`waitForPrintAreaThenPrint`) + rAF; (2) SUSULAN — poll DOM saja
+  TERNYATA belum cukup, laporan user "header kiri memo (nama PT) masih tampil '-'" — root cause
+  `FarOverseasAirDetailModal.tsx` punya fetch ASYNC KEDUA setelah mount (`far_overseas_signer_config`
+  by `dominant_company_code`, isi komponen `CompanyLogo` di file itu — nama PT/logo header memo)
+  yang belum resolve saat elemen print area SUDAH ada di DOM (elemen muncul duluan dgn
+  placeholder "-", baru terisi setelah fetch itu selesai & re-render). Fix: `loadDeepLink`
+  duplikasi query YANG SAMA (`far_overseas_signer_config` by `dominant_company_code`) sebagai
+  PROXY waktu tunggu — hasilnya TIDAK DIPAKAI sama sekali, cuma di-`await` supaya alur print
+  beneran menunggu network round-trip fetch kedua itu selesai (berjalan paralel, durasinya
+  kurang lebih sama dgn punya modal), BARU lanjut poll DOM + rAF + `window.print()`. **Kalau ke
+  depan `FarOverseasAirDetailModal.tsx` nambah fetch async LAIN LAGI yang datanya ikut tercetak
+  di memo, alur print-dari-card ini WAJIB ikut ditambah duplikasi `await` yang sama** (pola sama
+  yang dipakai di sini), kalau tidak risiko print preview kosong sebagian bisa muncul lagi utk
+  data dari fetch baru itu.
+  **Edge case DITERIMA**: kalau modal untuk
+  memo YANG SAMA sudah terbuka saat tombol Print di-klik, `navigate()` ke path yang sama TIDAK
+  mengubah `deepLinkId` -> effect `loadDeepLink` TIDAK jalan ulang -> print tidak otomatis
+  terpicu (`autoPrintRef` tertinggal `true` tanpa konsumsi) — user tinggal klik tombol Print
+  manual di dalam modal yang sudah terbuka itu, bukan bug yang blocking.
+- **4 tombol aksi per card** — REPLIKA fungsi tombol Action per-baris di List, dipanggil
+  langsung (bukan lewat dropdown "Action" seperti List, karena card sudah cukup lega utk
+  tombol langsung): **Approval** (`navigate('/direct-loading/${r.id}')`, buka
+  `FarOverseasAirDetailModal.tsx` via deep-link route — SAMA PERSIS mekanisme List, TIDAK ada
+  jalur baru); **Cost** (`setCostModalRow(r)`); **Edit** (gated `canEditDirectLoading`, lihat
+  poin di bawah); **Delete** (gated `canEditDirectLoading`, `openDeleteConfirm(r)`, SAMA fungsi
+  dgn List).
+- **Tombol Edit di card SELALU pindah balik ke mode List** (`handleEditFromCard(id)`) — Card
+  TIDAK punya form edit sendiri. Alur: `setViewMode('LIST')` -> `setEditingRowId(id)` (SET
+  LANGSUNG, bukan `toggleEditRow` yang bisa toggle-off kalau id sama) -> `setTimeout(...,50)`
+  panggil `document.getElementById('far-row-'+id)?.scrollIntoView({behavior:'smooth',
+  block:'center'})` supaya user otomatis diarahkan (scroll) ke baris yang tadi diklik di Card,
+  bukan cuma pindah mode lalu bingung baris mana. `setTimeout` dipakai (bukan langsung) supaya
+  tabel List sempat commit ke DOM dulu sebelum `scrollIntoView` dipanggil — switch state
+  `viewMode` & scroll terjadi di render yang sama kalau tidak ditunda, elemen `far-row-{id}`
+  belum tentu ada di DOM saat itu. `<tr id={'far-row-'+r.id}>` ditambahkan KHUSUS untuk target
+  scroll ini (sebelumnya tabel List tidak punya id per baris sama sekali).
+- Area scroll Card **TERPISAH dari List** — List punya scroll ganda horizontal (`topScrollRef`/
+  `bottomScrollRef`, tabel lebar banyak kolom), Card cukup 1 `overflow-y-auto` vertikal biasa
+  (grid card tidak butuh scroll horizontal). Footer Pagination (`rows.length > 0 && (...)`)
+  TIDAK diduplikasi — tetap 1 footer di luar kedua blok List/Card, dipakai bareng oleh
+  keduanya krn `rows`/`page`/`totalRecords` sama.
+- **Baris tombol aksi SELALU rata bawah per card** (2026-09, laporan user "tombol tidak
+  seragam" — posisinya naik-turun tergantung berapa banyak baris teks Vendor/Vessel dkk yang
+  panjangnya bervariasi antar memo). Fix: konten card (baris No PO+badge & grid info) dibungkus
+  1 `<div className="flex-1">`, baris tombol dikasih `mt-auto` (GANTI dari `mt-1` biasa) — card
+  itu sendiri `flex flex-col`, jadi wrapper `flex-1` ini mengisi SEMUA sisa tinggi card (CSS
+  Grid `grid-cols-*` secara default men-stretch semua card 1 baris ke tinggi card TERTINGGI di
+  baris itu), mendorong baris tombol turun rata ke tepi bawah card tanpa peduli berapa
+  banyak konten di atasnya. **Kalau nambah field baru ke card, WAJIB taruh di DALAM wrapper
+  `flex-1` ini** (bukan sejajar dengan baris tombol) supaya rata-bawah ini tidak rusak lagi.
+
+## FAR Overseas Air — Search + Sort di toolbar List Memo (`FarOverseasAirPage.tsx`, 2026-09)
+
+Dropdown "Items" (pageSize selector) di toolbar List Memo DIGANTI jadi **Search box + dropdown
+Sort + tombol toggle arah** (permintaan user). `pageSize` state TETAP ADA (dipakai apa adanya,
+default 10) — cuma UI selector-nya yang dihilangkan, bukan fungsinya.
+
+- **Search** (`searchInput`/`searchTerm`, debounced 400ms — pola sama Audit AP Local) — cari di
+  4 kolom sekaligus via `.or()` ilike server-side: `ship_via`, `vendor`, `route_note` (NOTE 1,
+  mengandung negara/kota asal), `item_description_manual` (NOTE 2 Manual). `%`/`_` di input
+  di-escape (`\\$&`) sebelum masuk pattern `ilike` — cegah user input karakter wildcard SQL
+  ilike tidak sengaja mengubah maksud pencarian.
+- **Sort** (`sortBy`/`sortDir`, default `invoice_date` DESC — SAMA seperti urutan lama
+  `created_at` desc) — 5 opsi: Date (`invoice_date`), Ship Via, Vendor, **Notes 1 (Origin)**,
+  **Notes 2 (Manual)**. Tombol toggle arah (ikon panah atas/bawah) terpisah dari dropdown.
+  **Batasan disengaja "Notes 1 (Origin)"**: sort ini ORDER BY kolom `route_note` APA ADANYA
+  (bukan hasil ekstrak origin-nya doang) — SEMUA nilai `route_note` berformat baku "PENGIRIMAN
+  DARI {asal} KE {tujuan} (...)" (lihat `parseRouteNote`), jadi prefix "PENGIRIMAN DARI " SELALU
+  SAMA di semua baris → ORDER BY teks mentahnya otomatis ekuivalen dengan sort by nama kota/negara
+  asal (karakter pertama yang beda antar baris justru mulai persis dari situ, setelah prefix yang
+  sama). Baris yang formatnya TIDAK cocok pola baku (data lama/manual non-standar) tetap ikut
+  ter-sort, cuma relatif kurang presisi — DITERIMA, tidak ada kolom "origin" terpisah di DB untuk
+  sort yang 100% akurat tanpa parsing di level SQL (di luar cakupan Supabase-js query builder).
+- `page` di-reset ke 1 otomatis (`useEffect([searchTerm, sortBy, sortDir])`) tiap search/sort
+  berubah — konsisten dengan `approvalFilter` yang juga reset page manual di `onChange`-nya.
+- **LEBAR diperkecil** (2026-09, laporan user — TERNYATA maksudnya lebar, BUKAN ukuran/tinggi/
+  font, percobaan pertama sempat memperkecil semuanya termasuk `h-[34px]`->`h-[28px]`+font+ikon,
+  SUDAH DIREVERT balik ke ukuran SAMA dgn kontrol toolbar lain di baris itu). Kondisi FINAL:
+  tinggi/font/ikon TETAP `h-[34px]`/`text-xs`/`size={13-14}` (sama semua kontrol toolbar lain),
+  HANYA lebar yang dipersempit — Search box `w-[125px]` (dari `w-[200px]`), Sort box `w-[150px]`
+  (BARU, sebelumnya tanpa lebar tetap/selebar konten). Placeholder dipendekkan jadi
+  `"Search..."` (deskripsi 4 kolom yang dicari dipindah ke `title` tooltip).
+- Berlaku SAMA ke List & Card (keduanya baca `rows`/`page` yang sama, search+sort tidak
+  dibedakan per viewMode).
+
 ## FAR Overseas Air — arsitektur cost validation
 
 `rekapan_far_overseas_air` (`route_note` = "PENGIRIMAN DARI {asal} KE {tujuan} ({mode})") ↔ 1:1
@@ -673,12 +845,23 @@ job_id}`) ditampilkan sbg seksi baru "3. Original Documents" di `BunkerCompareDo
 (`SourceFilesSection`), setelah seksi "2. Document Comparison". Diurutkan terbaru→terlama
 (`uploaded_at`), TIDAK di-dedupe (filename sama berulang = riwayat sah, bukan bug). `file_url`
 bisa `null` (dokumen lama sebelum fitur ini ADA/upload ke Drive gagal — kondisi NORMAL) → badge
-abu-abu "Preview unavailable" (non-klik), bukan link mati. `file_url` terisi → `<a
-target="_blank">` langsung ke link Drive apa adanya (BUKAN iframe/embed custom — link
-`drive.google.com/.../view` kadang menolak dibuka dalam iframe lintas-domain, beda dari pola
-proxy `/api/drive-file-proxy` yg dipakai Audit AP Local/dst, SENGAJA tidak dipakai di sini krn
-file ini sudah public "anyone with link" & tidak butuh proxy backend). Array kosong/tidak ada →
-empty-state "No files uploaded yet.".
+abu-abu "Preview unavailable" (non-klik), bukan link mati. Array kosong/tidak ada → empty-state
+"No files uploaded yet.".
+
+**Susulan (2026-09) — preview LANGSUNG di dalam aplikasi, BUKAN lagi tab baru**: permintaan
+user, GANTI TOTAL dari versi awal (`<a target="_blank">` polos ke link Drive apa adanya). Sekarang
+pakai pola SAMA PERSIS modul lain (`PreviewModal` di `AuditPoPage.tsx`/`AccountingRekapPage.tsx`
+dkk) — proxy backend `/api/drive-file-proxy?id=<drive_file_id>` (`server.ts`), fetch via JS lalu
+suntik `srcDoc` (HTML)/`blob:` (PDF, di-rewrap paksa `type:'application/pdf'`) ke iframe supaya
+lolos X-Frame-Options server asal. **Beda dari modul lain**: `bunker_dokumen.source_files` TIDAK
+punya kolom `drive_file_id` terpisah (cuma `file_url` mentah) — `extractDriveFileId()` (BARU)
+parse ID dari pola URL Drive umum (`/file/d/<ID>/...` atau `?id=<ID>`) via regex. Kalau ID gagal
+diekstrak (URL bukan format Drive standar), `buildBunkerPreviewSrc()` return `null` → badge
+"Preview unavailable" (BUKAN fallback ke URL mentah spt modul lain — URL Drive mentah TIDAK BISA
+di-`fetch()` dari sini krn CORS kalau bukan lewat proxy, lebih jujur tampilkan unavailable drpd
+iframe kosong/error diam2). Tombol "Open" berubah jadi "Preview" (ikon `Eye`), modal preview
+(`BunkerPreviewModal`) py tombol "Download File" (`<a target="_blank">` ke `file_url` ASLI,
+bukan proxy) sbg fallback kalau preview gagal dimuat.
 
 ## Courier — Audit, badge % + footer % Cost Validation
 
@@ -1755,6 +1938,31 @@ kosong). Delete: baris `reporting_cost_allocation` yg pernah cocok ke vessel ini
 terhapus (tidak ada FK cascade) — vessel_id jadi rujukan basi, aman krn `vessel_id` bigint
 identity TIDAK PERNAH di-reuse Postgres.
 
+**Tambah vessel baru otomatis nempel di BAWAH grup Base+Fleet Group yang sudah ada** (2026-09,
+permintaan user: "vessel baru terlist di Fleet Group yang sama tapi di paling bawah, jangan
+disisipkan di tengah, biar tau mana yang baru mana yang lama") — sebelumnya field Sort Order
+dikosongkan = pakai DEFAULT KOLOM (nempel di paling akhir SELURUH tabel, bukan di grupnya, lihat
+"Bug ditemukan" bagian Cost per Vessel di atas soal kenapa itu salah). Fix: `insertAfterGroup()`
+(fungsi baru di `MasterVesselAdminPage.tsx`) — form Tambah Vessel deteksi LIVE saat mengetik
+Base+Fleet Group: kalau cocok grup yang sudah ada (`matchedGroup`), Sort Order dikosongkan ->
+otomatis dihitung `MAX(sort_order anggota grup itu) + 1`, tampil info hijau "akan ditambahkan di
+paling bawah grup ... (setelah '...')" di form.
+
+**KRITIS — kenapa TIDAK BISA cuma `MAX+1` polos tanpa geser baris lain**: `sort_order` hasil
+migrasi awal RAPAT tanpa celah (1..N, lihat `sql/006_master_vessel_sort_order.sql`) — nilai
+`MAX(grup)+1` HAMPIR PASTI sudah dipakai vessel LAIN (anggota grup berikutnya persis di file
+asli) → kalau dibiarkan, vessel baru "tie" sama vessel grup lain, dan urutan tampil (ikut
+`ORDER BY sort_order`) bisa nyasar gabung ke grup TETANGGA bukan grup yang dimaksud. Fix:
+`insertAfterGroup()` GESER (+1) SEMUA vessel yang `sort_order`-nya lebih besar dari titik sisip,
+diproses dari nilai PALING BESAR mundur ke kecil (`toShift.sort((a,b)=>b.sort_order-a.sort_order)`)
+supaya tidak pernah ada 2 baris kebentur nilai sama di tengah proses pergeseran — baru setelah
+itu vessel baru pakai slot yang sudah kosong. Proses ini beberapa request `.update()` berurutan
+(bisa puluhan-ratusan tergantung posisi grup di file), jadi Save bisa makan beberapa detik utk
+grup yang posisinya di awal/tengah file — DITERIMA (aksi admin manual, jarang terjadi, bukan
+tabel besar). Kalau grup BELUM ADA (fleet group baru sama sekali), `insertAfterGroup()` return
+`null` → fallback ke perilaku lama (Sort Order kosong = default kolom = nempel akhir tabel).
+Field Sort Order manual TETAP ada sbg override kalau admin mau posisi spesifik lain.
+
 ### Chart Dashboard — upgrade dari `<div>` width% ke SVG manual (2026-09)
 
 `HorizontalBarChart`/`VerticalBarChart` (komponen lokal `ReportingDashboardPage.tsx`, BUKAN
@@ -2191,6 +2399,110 @@ baris sendiri di bawah). "Cost by Category"/"Cost per Fleet Group" TIDAK berubah
   OTOMATIS bikin semua tampilan konsisten tanpa logic terpisah per mode. **"Last recomputed"**
   ditampilkan di filter bar — TANPA kolom/tabel baru, cukup `MAX(created_at)` dari baris yang
   SUDAH ter-fetch client-side (`created_at` sudah ke-select via `select('*')`).
+
+### Cost per Vessel — revisi susulan (2026-09): key collision, dropdown ke-clip, kolom diseragamkan, header akumulasi
+
+7 perbaikan/perubahan susulan dari revisi besar di atas, semua di `ReportingCostPerVesselPage.tsx`.
+
+1. **Tombol Summary View/Periodic View dipindah** dari deretan filter atas ke pojok kiri-atas
+   KARTU TABEL (baris toolbar baru `shrink-0 border-b` tepat di atas `scrollRef` div) — dropdown
+   `periodicMode` (Monthly/Quarterly/Yearly) ikut pindah ke situ, cuma muncul saat Periodic View.
+2. **Bug ditemukan & diperbaiki — dropdown Year/Month "tidak bisa diklik"**: root cause
+   `MultiSelectDropdown` panelnya dulu `position:absolute` DI DALAM container filter bar yang
+   py `overflow-x-auto` — CSS quirk: `overflow-x` non-`visible` tanpa `overflow-y` eksplisit
+   bikin browser meng-clip SUMBU Y JUGA, jadi panel checkbox-nya ke-clip habis oleh parent-nya
+   sendiri (bukan literally "tidak bisa diklik", tapi TIDAK PERNAH TERLIHAT/TERJANGKAU). Fix:
+   panel di-render via React Portal ke `document.body`, `position:fixed` dihitung dari
+   `getBoundingClientRect()` tombolnya (pola sama `KategoriPicker` di `AuditPoHelpers.ts`,
+   reposisi ulang tiap `resize`/`scroll` window selama panel terbuka).
+3. **Bug ditemukan & diperbaiki — "Show Zero Cost" tidak menampilkan vessel lengkap di beberapa
+   fleet group"**: BUKAN bug logic filter `showZeroCost` (kodenya sudah benar) — root cause
+   **React key collision**: base+fleet_group yang SAMA PERSIS bisa muncul di >1 BLOK terpisah
+   non-kontinu di file Master Vessel (mis. JAKARTA/TANKER dkk, lihat poin B7 revisi sebelumnya).
+   Key React (`hdr-${groupKey}`/`sub-${base}-${fleetGroup}`) DAN entry `collapsedGroups` dulu
+   dibentuk dari `groupKey = base::fleetGroup` APA ADANYA — 2 blok berbeda dgn nama sama jadi
+   py key IDENTIK, bikin React salah reuse/skip elemen DOM antar blok (gejala persis laporan
+   user: "toggle Collapse/Expand berulang kadang memunculkan vessel yg tadinya hilang" — classic
+   symptom key collision, force re-render kadang "membetulkan" tampilan sesaat). Fix: `groupKey`
+   final sekarang `${base}::${fleetGroup}#${index blok}` (unik per BLOK, bukan per NAMA) —
+   deteksi kontinuitas (kapan mulai blok baru) tetap pakai `base::fleetGroup` mentah, cuma key
+   akhirnya yang dibikin unik. Key subtotal row disamakan pakai `row.groupKey` juga (dulu
+   `sub-${base}-${fleetGroup}`, sama masalahnya).
+4. **Kolom Summary View diseragamkan** — All Method/Courier/Sea/Air SEKARANG SAMA PERSIS 2 kolom
+   `Total Vessel Cost`/`Total Excl. PPN+PPH` (dulu Courier dijabarkan Courier Adm/Duty/Freight/
+   BM/PPN+PPH, Sea/Air dijabarkan Duty/Handling Total/BM/PPN+PPH). Breakdown ini DIHAPUS TOTAL
+   dari `columnsForTab()` — SECARA MATEMATIS tetap benar krn `sums` yang dipakai SUDAH terfilter
+   per-method lewat `rowsForTab`, cuma beda cara tampil (total vs breakdown), bukan beda angka.
+   **FAR Ovs (BORONGAN) SENGAJA TETAP 1 kolom sendiri** (`Total FAR Ovs`) — pengecualian
+   eksplisit user, method ini memang cuma py 1 jenis biaya (`borongan_total`), tidak ada apa pun
+   utk diseragamkan/dihapus.
+5-7. **Header kolom akumulasi Periodic View disederhanakan** — label "TOTAL YTD"(Monthly)/
+   "TOTAL TAHUN"(Quarterly)/"TOTAL AKUMULASI"(Yearly) DIHAPUS TOTAL dari kolom paling kanan
+   (di 3 tempat: tabel on-screen, `ExportPreviewModal`, DAN file Excel `handleExport` via
+   `ws.mergeCells`) — header "Total Cost"/"Excl PPN+PPH" kolom itu sekarang `rowSpan={2}`
+   MEMBENTANG dari baris 1 langsung (SAMA persis pola Base/Fleet Group/Vessel di kiri), bukan
+   lagi py baris label periode terpisah di atasnya. Berlaku SERAGAM ke ketiga `periodicMode`
+   (Monthly/Quarterly/Yearly) — TIDAK ADA lagi variasi teks label per mode utk kolom ini. Const
+   `accLabel` (dulu menghasilkan 3 variasi teks itu) DIHAPUS TOTAL dari kode, sudah tidak dipakai
+   di mana pun.
+
+### Reporting Dashboard + Cost per Vessel digabung jadi 1 halaman "Cost by Vessel" (2026-09)
+
+Permintaan user: 2 halaman top-level terpisah ("Reporting Dashboard" `/reporting/dashboard` &
+"Cost per Vessel" `/reporting/cost-per-vessel`) digabung jadi **1 halaman/1 route**
+(`/reporting/cost-by-vessel`, `src/pages/CostByVesselPage.tsx`, BARU) dengan **2 tab** di
+dalamnya — masing2 tab tetap menampilkan komponen yang PERSIS SAMA seperti sebelumnya
+(`ReportingDashboardPage.tsx`/`ReportingCostPerVesselPage.tsx` TIDAK diubah struktur
+internalnya sama sekali, hanya dirender bergantian sbg children tab).
+
+- **page_key RBAC TETAP 2 terpisah** (`reporting_dashboard`/`reporting_cost_per_vessel` di
+  `PAGE_REGISTRY`) — SENGAJA TIDAK digabung jadi 1 page_key baru, supaya assignment akses
+  per-role yang sudah ada di Kelola Role & Akses tetap valid apa adanya tanpa perlu migrasi SQL
+  apa pun (murni penggabungan navigasi/UI). `PAGE_REGISTRY[].path` keduanya sekarang menunjuk ke
+  route gabungan yang SAMA, dibedakan lewat query `?view=dashboard`/`?view=cost_per_vessel`.
+- **Route `/reporting/cost-by-vessel` SENGAJA TIDAK dibungkus `RequirePageAccess pageKey=...`
+  tunggal** di `App.tsx` (butuh cek "salah SATU dari 2 page_key", bukan 1) — gating dilakukan
+  INTERNAL oleh `CostByVesselPage.tsx` sendiri (pola sama hub `/settings` — `canSee()` internal,
+  lihat `SettingsPage.tsx`): tab yang page_key-nya tidak diizinkan disembunyikan dari tab bar
+  (bukan disabled), dan kalau user tidak punya akses ke KEDUANYA, tampilkan pesan "Tidak Ada
+  Akses" sendiri (replika gaya `RequirePageAccess.tsx`).
+- **Sidebar** (`MainLayout.tsx`) — menu "Reporting" (2 subtab) GANTI TOTAL jadi 1 item tanpa
+  subtab, label "Cost by Vessel", `pageKeys` (array BARU, beda dari `pageKey` tunggal yang
+  dipakai tab lain) — tab sidebar ini tampil kalau user punya akses ke SALAH SATU dari 2
+  page_key lama. `visibleTabs` di `MainLayout.tsx` diperluas dukung `t.pageKeys?.some(...)`
+  sbg alternatif dari `t.pageKey` tunggal (generik, bisa dipakai tab lain ke depan kalau perlu).
+- **Cross-navigation internal TETAP JALAN PERSIS SEPERTI SEBELUMNYA** (kartu/chart Dashboard ->
+  scroll+blink ke baris vessel di Cost per Vessel, tombol "Back to Dashboard") — SEMUA link
+  hardcode `/reporting/cost-per-vessel`/`/reporting/dashboard` di KEDUA komponen anak diarahkan
+  ulang ke route gabungan + `?view=...` (param lama mode/year/month/tab/highlight TETAP dikirim
+  apa adanya, dibaca komponen anak masing2 lewat `useSearchParams()`-nya sendiri karena berbagi
+  URL yang sama — TIDAK ADA props baru yang perlu di-thread antar 2 komponen). `CostByVesselPage.tsx`
+  baca `?view=` via `useEffect` (bereaksi ke navigasi internal dari komponen anak) + tombol tab
+  manual (`switchTab()`, update state DAN `setSearchParams` sekaligus supaya URL & tab selalu
+  sinkron dua arah).
+- Kedua komponen anak TETAP py `document.title` sendiri-sendiri (`useEffect([])` masing2) —
+  `CostByVesselPage.tsx` set "Cost by Vessel · BeeHive" duluan saat mount awal, TAPI effect
+  komponen ANAK jalan lebih dulu dari effect PARENT tiap commit (urutan React: child effects
+  duluan) jadi title akhirnya balik ke title spesifik tab yang lagi aktif setiap kali pindah tab
+  — DITERIMA sebagai perilaku wajar (title tetap relevan menunjukkan tab mana yang aktif),
+  BUKAN bug, tidak perlu "dipaksa" selalu "Cost by Vessel" kalau tidak diminta eksplisit.
+
+**Susulan (2026-09) — tab bar dirapikan + header dikonsolidasi**: laporan user "tab jelek, ada
+border putih, harusnya di bawah keterangan halaman" (versi awal taruh tab bar `border-b-2` mirip
+tab browser TERPISAH DI ATAS masing2 komponen anak yang MASIH py header bawaan sendiri —
+hasilnya dobel header + tab strip kelihatan norak nempel di background gradient). Fix:
+- `ReportingDashboardPage`/`ReportingCostPerVesselPage` sekarang terima prop opsional
+  **`embedded?: boolean`** — kalau `true`, blok `<header>` bawaan (ikon+judul+deskripsi+
+  `<Greeting/>`) DISKIP total, SISANYA (`<main>` ke bawah, SEMUA logic/state/tampilan) TIDAK
+  disentuh sama sekali. Prop ini generik (default `undefined`/falsy) — dipanggil TANPA prop di
+  tempat lain manapun (kalau ada) akan tetap render header seperti biasa, tidak ada breaking
+  change.
+- `CostByVesselPage.tsx` sekarang py **1 header sendiri** (pola "Header halaman" standar,
+  ikon `Ship`, judul "Cost by Vessel") + **tab bar pill button polos** tepat di bawah
+  judul+deskripsi (`bg-[#5A305A] text-white` aktif / `bg-white text-[#5A305A]/70` non-aktif,
+  TANPA border/garis pemisah apa pun — pola sama tombol toggle `viewMode` di
+  `ReportingCostPerVesselPage.tsx`), lalu render komponen anak dengan `embedded` (menghilangkan
+  header duplikat mereka).
 
 ### Yang belum dikerjakan / gap yang diketahui
 

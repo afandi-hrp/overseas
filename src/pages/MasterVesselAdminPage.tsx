@@ -164,6 +164,7 @@ export default function MasterVesselAdminPage() {
       {editRecord && (
         <EditMasterVesselModal
           record={editRecord === 'NEW' ? null : editRecord}
+          rows={rows}
           onClose={() => setEditRecord(null)}
           onSaved={() => { setEditRecord(null); setToast('Data vessel tersimpan.'); load(); }}
         />
@@ -179,7 +180,30 @@ export default function MasterVesselAdminPage() {
   );
 }
 
-function EditMasterVesselModal({ record, onClose, onSaved }: { record: MasterVessel | null; onClose: () => void; onSaved: () => void }) {
+const normKey = (s: string) => s.trim().toUpperCase();
+
+// Sisipkan vessel baru di PALING BAWAH grup Base+Fleet Group yang SUDAH ADA (2026-09, permintaan
+// user: "vessel baru terlist di bagian paling bawah Fleet Group-nya, jangan disisipkan di
+// tengah") -- BUKAN cuma `MAX(sort_order grup itu) + 1` polos, krn `sort_order` hasil migrasi
+// awal RAPAT tanpa celah (1..N) -- nilai +1 itu SELALU sudah dipakai vessel LAIN (anggota grup
+// BERIKUTNYA di file asli), jadi vessel baru akan JADI SATU nilai (tie) dengan vessel grup lain
+// -- kalau dibiarkan, urutan tampil bisa nyasar ke belakang grup lain, bukan nempel di grup yg
+// dimaksud. Fix: GESER (+1) semua vessel yang sort_order-nya > titik sisip, dari yang PALING
+// BESAR duluan (mundur ke kecil) supaya tidak pernah ada 2 baris kebentur nilai yang sama di
+// tengah proses. Vessel baru lalu pakai slot yang baru kosong itu.
+async function insertAfterGroup(rows: MasterVessel[], base: string, fleetGroup: string): Promise<number | null> {
+  const groupMembers = rows.filter(r => normKey(r.base) === base && normKey(r.fleet_group) === fleetGroup);
+  if (groupMembers.length === 0) return null; // grup belum ada -- fallback ke default (nempel akhir tabel)
+  const insertAfter = Math.max(...groupMembers.map(r => r.sort_order));
+  const toShift = rows.filter(r => r.sort_order > insertAfter).sort((a, b) => b.sort_order - a.sort_order);
+  for (const r of toShift) {
+    const { error } = await supabase.from('master_vessel').update({ sort_order: r.sort_order + 1 }).eq('vessel_id', r.vessel_id);
+    if (error) throw error;
+  }
+  return insertAfter + 1;
+}
+
+function EditMasterVesselModal({ record, rows, onClose, onSaved }: { record: MasterVessel | null; rows: MasterVessel[]; onClose: () => void; onSaved: () => void }) {
   const isCreate = !record;
   const [vesselName, setVesselName] = useState(record?.vessel_name || '');
   const [base, setBase] = useState(record?.base || '');
@@ -190,6 +214,14 @@ function EditMasterVesselModal({ record, onClose, onSaved }: { record: MasterVes
   const [sortOrder, setSortOrder] = useState(record?.sort_order != null ? String(record.sort_order) : '');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Deteksi live saat mengetik Base+Fleet Group di form Tambah -- kalau cocok grup yang sudah
+  // ada, tampilkan info "otomatis di bawah {vessel terakhir grup itu}" & Sort Order manual
+  // TIDAK perlu diisi (auto). Kalau grup belum ada (fleet group baru), tetap fallback lama.
+  const matchedGroup = isCreate && base.trim() && fleetGroup.trim()
+    ? rows.filter(r => normKey(r.base) === normKey(base) && normKey(r.fleet_group) === normKey(fleetGroup))
+    : [];
+  const lastInGroup = matchedGroup.length > 0 ? matchedGroup.reduce((a, b) => a.sort_order > b.sort_order ? a : b) : null;
 
   const handleSave = async () => {
     if (!vesselName.trim() || !base.trim() || !fleetGroup.trim()) {
@@ -210,7 +242,15 @@ function EditMasterVesselModal({ record, onClose, onSaved }: { record: MasterVes
       };
       // sort_order dikosongkan = pakai default kolom (nempel di akhir daftar, lihat
       // sql/006_master_vessel_sort_order.sql) -- cuma dikirim kalau diisi eksplisit.
-      if (sortOrder.trim() !== '') payload.sort_order = Number(sortOrder);
+      if (sortOrder.trim() !== '') {
+        payload.sort_order = Number(sortOrder);
+      } else if (isCreate) {
+        // Base+Fleet Group cocok grup existing -> otomatis nempel di PALING BAWAH grup itu
+        // (lihat `insertAfterGroup`). Kalau tidak cocok grup manapun (fleet group baru), biarkan
+        // pakai default kolom seperti sebelumnya (nempel di akhir seluruh tabel).
+        const autoSortOrder = await insertAfterGroup(rows, payload.base, payload.fleet_group);
+        if (autoSortOrder != null) payload.sort_order = autoSortOrder;
+      }
       if (isCreate) {
         const { error: insErr } = await supabase.from('master_vessel').insert(payload);
         if (insErr) throw insErr;
@@ -248,6 +288,11 @@ function EditMasterVesselModal({ record, onClose, onSaved }: { record: MasterVes
               <input value={fleetGroup} onChange={e => setFleetGroup(e.target.value)} className="w-full border border-blue-200 bg-blue-50/30 rounded-lg px-3 py-2 text-xs text-[#5A305A]" />
             </div>
           </div>
+          {isCreate && lastInGroup && (
+            <p className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-2">
+              Vessel ini akan otomatis ditambahkan di <b>paling bawah</b> grup {base.trim().toUpperCase()} / {fleetGroup.trim().toUpperCase()} (setelah "{lastInGroup.vessel_name}") — Sort Order tidak perlu diisi manual.
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[10px] font-semibold text-blue-600 mb-1 block">Kategori</label>
@@ -270,9 +315,9 @@ function EditMasterVesselModal({ record, onClose, onSaved }: { record: MasterVes
             <p className="text-[10px] text-[#5A305A]/60 mt-1">Dipakai `matchVessel()` (Reporting) supaya nama lama/alias tetap cocok ke vessel ini saat Recompute.</p>
           </div>
           <div>
-            <label className="text-[10px] font-semibold text-blue-600 mb-1 block">Sort Order (opsional)</label>
-            <input value={sortOrder} onChange={e => setSortOrder(e.target.value.replace(/[^0-9]/g, ''))} placeholder="Kosongkan = taruh di akhir daftar" className="w-full border border-blue-200 bg-blue-50/30 rounded-lg px-3 py-2 text-xs text-[#5A305A]" />
-            <p className="text-[10px] text-[#5A305A]/60 mt-1">Menentukan posisi baris di tabel Cost per Vessel (ikut urutan file Master Vessel, bukan alfabet).</p>
+            <label className="text-[10px] font-semibold text-blue-600 mb-1 block">Sort Order (opsional, override manual)</label>
+            <input value={sortOrder} onChange={e => setSortOrder(e.target.value.replace(/[^0-9]/g, ''))} placeholder={isCreate && lastInGroup ? 'Kosongkan = otomatis di bawah grup' : 'Kosongkan = taruh di akhir daftar'} className="w-full border border-blue-200 bg-blue-50/30 rounded-lg px-3 py-2 text-xs text-[#5A305A]" />
+            <p className="text-[10px] text-[#5A305A]/60 mt-1">Menentukan posisi baris di tabel Cost per Vessel (ikut urutan file Master Vessel, bukan alfabet). Biarkan kosong kalau Base+Fleet Group cocok grup yang sudah ada — otomatis nempel di bawah grup itu.</p>
           </div>
           {error && <div className="bg-red-50 border border-red-200 rounded-lg p-2.5 text-xs text-red-700">{error}</div>}
         </div>

@@ -181,7 +181,11 @@ function PanelHeader({ color, dark, children, right }: { color: string; dark?: b
   );
 }
 
-export default function ReportingDashboardPage() {
+// `embedded` (2026-09, dipakai `CostByVesselPage.tsx`) -- kalau true, `<header>` bawaan halaman
+// ini (judul+ikon+Greeting) DISKIP -- halaman induk (`CostByVesselPage`) sudah py header+tab bar
+// sendiri, dobel header kelihatan aneh. Sisanya (SEMUA logic/tampilan di bawah `<main>`) TIDAK
+// berubah sama sekali.
+export default function ReportingDashboardPage({ embedded }: { embedded?: boolean } = {}) {
   useEffect(() => { document.title = 'Reporting Dashboard · BeeHive'; }, []);
   const navigate = useNavigate();
 
@@ -345,9 +349,15 @@ export default function ReportingDashboardPage() {
     return arr.map(s => totalCost(s));
   }, [filteredYearRows]);
 
+  // Halaman gabungan "Cost by Vessel" (2026-09) -- Dashboard & Cost per Vessel SEKARANG 1 route
+  // (`/reporting/cost-by-vessel`) 2 tab, BUKAN lagi 2 route terpisah. Navigasi internal ke tab
+  // "Cost per Vessel" WAJIB sisip `view=cost_per_vessel` (dibaca `CostByVesselPage.tsx` utk
+  // pindah tab) -- param lama (mode/year/month/tab/highlight) TETAP dikirim apa adanya, dibaca
+  // `ReportingCostPerVesselPage.tsx` sendiri via `useSearchParams()` (URL yg sama).
+  const COST_PER_VESSEL_PATH = '/reporting/cost-by-vessel';
   // Method aktif dipakai sbg param `tab` saat navigasi ke Cost per Vessel dari kartu/chart yg
   // ikut ter-filter (2026-09) -- konsisten dgn apa yg lagi ditampilkan dashboard saat diklik.
-  const filterQuery = (tab: string) => `?mode=${periodMode}&year=${year}&month=${month}&tab=${tab}`;
+  const filterQuery = (tab: string) => `?view=cost_per_vessel&mode=${periodMode}&year=${year}&month=${month}&tab=${tab}`;
   const filteredTabParam = methodFilter;
   // Sama dgn `filterQuery`, tapi nyisipin `&highlight=<vesselKey>` -- Cost per Vessel baca param
   // ini utk scroll+blink otomatis ke baris vessel yg diklik dari chart Dashboard (2026-09).
@@ -379,20 +389,22 @@ export default function ReportingDashboardPage() {
 
   return (
     <div ref={pageScrollRef} className="flex-1 h-full overflow-y-auto min-w-0 pb-10 relative">
-      <header className="px-3 pt-1 pb-1">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
-              <LayoutDashboard size={17} />
+      {!embedded && (
+        <header className="px-3 pt-1 pb-1">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
+                <LayoutDashboard size={17} />
+              </div>
+              <div>
+                <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Reporting Dashboard</h1>
+                <p className="text-[#5A305A] font-light text-sm mt-1">Cost summary per vessel — Courier, Sea, Air, FAR Overseas</p>
+              </div>
             </div>
-            <div>
-              <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Reporting Dashboard</h1>
-              <p className="text-[#5A305A] font-light text-sm mt-1">Cost summary per vessel — Courier, Sea, Air, FAR Overseas</p>
-            </div>
+            <Greeting />
           </div>
-          <Greeting />
-        </div>
-      </header>
+        </header>
+      )}
 
       <main className="px-3 pt-2 pb-8">
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-3">
@@ -446,7 +458,7 @@ export default function ReportingDashboardPage() {
                 (posisinya digantikan "Total PPN+PPH"), nominal periode sebelumnya sekarang murni
                 bahan hitung %, tidak perlu kartu sendiri lagi. */}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-              <Link to={`/reporting/cost-per-vessel${filterQuery(filteredTabParam)}`} className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden hover:border-[#5A305A] transition-all">
+              <Link to={`${COST_PER_VESSEL_PATH}${filterQuery(filteredTabParam)}`} className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden hover:border-[#5A305A] transition-all">
                 <PanelHeader color="#DCC9E0" dark>Total Cost</PanelHeader>
                 <div className="p-4 flex-1 bg-white">
                   <p className="text-2xl font-bold text-[#5A305A]">{fmtRp(curTotal)}</p>
@@ -456,7 +468,7 @@ export default function ReportingDashboardPage() {
                   </div>
                 </div>
               </Link>
-              <Link to={topVessels.length > 0 ? `/reporting/cost-per-vessel${vesselFilterQuery(filteredTabParam, topVessels[0].key)}` : `/reporting/cost-per-vessel${filterQuery(filteredTabParam)}`} className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden hover:border-[#5A305A] transition-all">
+              <Link to={topVessels.length > 0 ? `${COST_PER_VESSEL_PATH}${vesselFilterQuery(filteredTabParam, topVessels[0].key)}` : `${COST_PER_VESSEL_PATH}${filterQuery(filteredTabParam)}`} className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden hover:border-[#5A305A] transition-all">
                 <PanelHeader color="#DCC9E0" dark>Highest Vessel Cost</PanelHeader>
                 <div className="p-4 flex-1 bg-white">
                   {topVessels.length === 0 ? (
@@ -469,7 +481,7 @@ export default function ReportingDashboardPage() {
                   )}
                 </div>
               </Link>
-              <Link to={`/reporting/cost-per-vessel${filterQuery(filteredTabParam)}`} className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden hover:border-[#5A305A] transition-all">
+              <Link to={`${COST_PER_VESSEL_PATH}${filterQuery(filteredTabParam)}`} className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden hover:border-[#5A305A] transition-all">
                 <PanelHeader color="#DCC9E0" dark>Total Cost Excl. PPN+PPH</PanelHeader>
                 <div className="p-4 flex-1 bg-white">
                   <p className="text-2xl font-bold text-[#5A305A]">{fmtRp(curTotalExclPpn)}</p>
@@ -479,7 +491,7 @@ export default function ReportingDashboardPage() {
                   </div>
                 </div>
               </Link>
-              <Link to={`/reporting/cost-per-vessel${filterQuery(filteredTabParam)}`} className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden hover:border-[#5A305A] transition-all">
+              <Link to={`${COST_PER_VESSEL_PATH}${filterQuery(filteredTabParam)}`} className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden hover:border-[#5A305A] transition-all">
                 <PanelHeader color="#DCC9E0" dark>Total PPN+PPH</PanelHeader>
                 <div className="p-4 flex-1 bg-white">
                   <p className="text-2xl font-bold text-[#5A305A]">{fmtRp(curPpn)}</p>
@@ -523,7 +535,7 @@ export default function ReportingDashboardPage() {
                     <HorizontalBarChart
                       data={topVessels.map(v => ({ label: v.name, value: v.total }))}
                       color="#5A305A" formatValue={fmtRp}
-                      onBarClick={(i) => navigate(`/reporting/cost-per-vessel${vesselFilterQuery(filteredTabParam, topVessels[i].key)}`)}
+                      onBarClick={(i) => navigate(`${COST_PER_VESSEL_PATH}${vesselFilterQuery(filteredTabParam, topVessels[i].key)}`)}
                     />
                   )}
                 </div>
@@ -564,7 +576,7 @@ export default function ReportingDashboardPage() {
                 <VerticalBarChart
                   data={monthlyTrend.map((v, i) => ({ label: MONTH_NAMES[i], value: v }))}
                   color="#5A305A" formatValue={fmtRp}
-                  onBarClick={(i) => navigate(`/reporting/cost-per-vessel?mode=MONTHLY&year=${year}&month=${i + 1}&tab=${filteredTabParam}`)}
+                  onBarClick={(i) => navigate(`${COST_PER_VESSEL_PATH}?view=cost_per_vessel&mode=MONTHLY&year=${year}&month=${i + 1}&tab=${filteredTabParam}`)}
                 />
               </div>
             </div>

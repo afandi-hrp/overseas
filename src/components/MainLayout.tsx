@@ -42,15 +42,20 @@ const MAIN_TABS = [
   {
     // Posisi TEPAT DI BAWAH "FAR Overseas" (2026-09, permintaan user -- dulu di bawah "Compare
     // Doc"). Urutan array ini = urutan render sidebar, JANGAN dipindah lagi tanpa diminta ulang.
+    // GANTI TOTAL 2026-09 (susulan): "Reporting Dashboard" & "Cost per Vessel" dulu 2 subtab
+    // terpisah, SEKARANG digabung jadi 1 halaman `CostByVesselPage.tsx` (2 tab DI DALAM
+    // halaman itu sendiri, bukan lagi di sidebar) -- menu sidebar jadi 1 item tanpa subTabs
+    // (pola sama "FAR Overseas" di atas), label diganti "Cost by Vessel". `pageKeys` (array,
+    // BUKAN `pageKey` tunggal) -- tab ini tampil kalau user py akses ke SALAH SATU dari 2
+    // page_key lama (`reporting_dashboard`/`reporting_cost_per_vessel`), keduanya TETAP ada di
+    // PAGE_REGISTRY (assignment role existing tidak berubah) -- gating detail per-tab di DALAM
+    // halaman dilakukan sendiri oleh `CostByVesselPage.tsx`.
     id: 'reporting',
-    label: 'Reporting',
+    label: 'Cost by Vessel',
     icon: BarChart3,
-    path: '/reporting/dashboard',
+    path: '/reporting/cost-by-vessel',
     basePath: '/reporting',
-    subTabs: [
-      { id: 'reporting_dashboard', label: 'Dashboard', path: '/reporting/dashboard', pageKey: 'reporting_dashboard' },
-      { id: 'reporting_cost_per_vessel', label: 'Cost per Vessel', path: '/reporting/cost-per-vessel', pageKey: 'reporting_cost_per_vessel' },
-    ]
+    pageKeys: ['reporting_dashboard', 'reporting_cost_per_vessel'],
   },
   {
     // Menu gabungan (2026-09, permintaan user) -- Bunker, Audit AP Local, Audit AP Overseas
@@ -112,7 +117,9 @@ export default function MainLayout() {
         const visibleSub = isAdmin ? t.subTabs : t.subTabs.filter(s => allowedPageKeys.has(s.pageKey));
         return visibleSub.length > 0 ? { ...t, subTabs: visibleSub } : null;
       }
-      const allowed = isAdmin || (t.pageKey ? allowedPageKeys.has(t.pageKey) : false);
+      // `pageKeys` (array, dipakai "Cost by Vessel" -- lolos kalau py akses ke SALAH SATU dari
+      // beberapa page_key) -- beda dari `pageKey` tunggal yang dipakai tab lain.
+      const allowed = isAdmin || (t.pageKey ? allowedPageKeys.has(t.pageKey) : t.pageKeys ? t.pageKeys.some(pk => allowedPageKeys.has(pk)) : false);
       return allowed ? t : null;
     }).filter((t): t is NonNullable<typeof t> => t !== null);
   }, [allowedPageKeys, isAdmin]);

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams, Link } from 'react-router-dom';
 import { BarChart3, RefreshCw, Download, AlertTriangle, SlidersHorizontal, X, ChevronDown, ChevronsDownUp, ChevronsUpDown, ArrowLeft, ArrowUp, ArrowDown } from 'lucide-react';
 import ExcelJS from 'exceljs';
@@ -30,20 +31,15 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'BORONGAN', label: 'FAR Ovs' },
 ];
 
-// Kolom biaya yg ditampilkan per tab (Summary View / kolom bulanan lama). Dijaga sinkron dgn
-// `metricForMethod()` (`ReportingHelpers.ts`, dipakai Periodic View -- 1 kolom total per periode,
-// jumlah dari kolom2 yg sama di sini -- DAN oleh ReportingDashboardPage.tsx, satu sumber
-// kebenaran formula).
+// Kolom biaya yg ditampilkan per tab (Summary View). 2026-09 poin 4 (revisi susulan): All
+// Method/Courier/Sea/Air DISERAGAMKAN jadi 2 kolom generik "Total Vessel Cost"/"Total Excl.
+// PPN+PPH" (dulu Courier/Sea/Air dijabarkan per Duty/Handling/BM/dst -- DIHAPUS, breakdown itu
+// TIDAK PERNAH salah krn `sums` yg dipakai SUDAH terfilter per-method lewat `rowsForTab`, cuma
+// beda cara tampil). FAR Ovs (BORONGAN) SENGAJA TETAP 1 kolom sendiri -- memang cuma py 1 jenis
+// biaya (`borongan_total`), tidak ada breakdown apa pun utk diseragamkan.
 function columnsForTab(tab: TabId): { key: MetricKey | 'total_cost' | 'total_excl_ppn'; label: string }[] {
-  if (tab === 'ALL') return [{ key: 'total_cost', label: 'Total Vessel Cost' }, { key: 'total_excl_ppn', label: 'Total Excl. PPN+PPH' }];
-  if (tab === 'COURIER') return [
-    { key: 'courier_adm', label: 'Courier Adm' }, { key: 'duty', label: 'Duty' }, { key: 'freight', label: 'Freight' },
-    { key: 'bm', label: 'BM' }, { key: 'ppn_pph', label: 'PPN+PPH' },
-  ];
-  if (tab === 'SEA' || tab === 'AIR') return [
-    { key: 'duty', label: 'Duty' }, { key: 'handling_total', label: 'Handling Total' }, { key: 'bm', label: 'BM' }, { key: 'ppn_pph', label: 'PPN+PPH' },
-  ];
-  return [{ key: 'borongan_total', label: 'Total FAR Ovs' }];
+  if (tab === 'BORONGAN') return [{ key: 'borongan_total', label: 'Total FAR Ovs' }];
+  return [{ key: 'total_cost', label: 'Total Vessel Cost' }, { key: 'total_excl_ppn', label: 'Total Excl. PPN+PPH' }];
 }
 
 const metricForTab = (s: Record<MetricKey, number>, tab: TabId) => metricForMethod(s, tab);
@@ -98,30 +94,59 @@ function sumPeriodKeys(periodSums: Record<string, Record<MetricKey, number>>, mo
 // checkbox + "All"/"Clear" (TIDAK perlu React Portal serumit `KategoriPicker` di
 // AuditPoHelpers.ts, filter bar di halaman ini cukup ruang, bukan sel tabel sempit). Tutup
 // otomatis kalau klik di luar panel.
+// FIX 2026-09 (poin 2, laporan user "dropdown Year/Month tidak bisa diklik"): panel dulu
+// `position:absolute` di dalam container filter bar yang punya `overflow-x-auto`
+// (`flex flex-nowrap ... overflow-x-auto`) -- CSS `overflow-x` non-`visible` ikut meng-clip
+// sumbu Y juga (quirk browser: `overflow-x:auto` tanpa `overflow-y` eksplisit browser
+// menganggap keduanya `auto`), jadi panel checkbox-nya literally TIDAK PERNAH terlihat/bisa
+// diklik -- ke-clip habis oleh parent-nya sendiri. Fix: render panel via React Portal ke
+// `document.body`, `position:fixed` dihitung dari `getBoundingClientRect()` tombolnya (pola sama
+// `KategoriPicker` di AuditPoHelpers.ts) -- lolos dari overflow container manapun.
 function MultiSelectDropdown({ label, options, selected, onChange, emptyMeansAll }: {
   label: string; options: { value: number; label: string }[]; selected: Set<number>;
   onChange: (next: Set<number>) => void; emptyMeansAll?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; minWidth: number } | null>(null);
+
   useEffect(() => {
-    const onDocClick = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    if (!open) return;
+    const updatePos = () => {
+      const r = btnRef.current?.getBoundingClientRect();
+      if (r) setPos({ top: r.bottom + 4, left: r.left, minWidth: Math.max(r.width, 170) });
+    };
+    updatePos();
+    window.addEventListener('resize', updatePos);
+    window.addEventListener('scroll', updatePos, true);
+    return () => { window.removeEventListener('resize', updatePos); window.removeEventListener('scroll', updatePos, true); };
+  }, [open]);
+
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (btnRef.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setOpen(false);
+    };
     document.addEventListener('mousedown', onDocClick);
     return () => document.removeEventListener('mousedown', onDocClick);
   }, []);
+
   const toggle = (v: number) => { const next = new Set(selected); if (next.has(v)) next.delete(v); else next.add(v); onChange(next); };
   const summary = selected.size === 0
     ? (emptyMeansAll ? 'All' : 'None')
     : selected.size === 1 ? (options.find(o => o.value === Array.from(selected)[0])?.label || '1 selected') : `${selected.size} selected`;
 
   return (
-    <div className="relative" ref={ref}>
-      <button type="button" onClick={() => setOpen(o => !o)}
+    <>
+      <button ref={btnRef} type="button" onClick={() => setOpen(o => !o)}
         className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-semibold text-[#5A305A] bg-white flex items-center gap-1.5 whitespace-nowrap">
         {label}: {summary} <ChevronDown size={12} />
       </button>
-      {open && (
-        <div className="absolute z-20 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg p-2 max-h-64 overflow-y-auto min-w-[170px]">
+      {open && pos && createPortal(
+        <div ref={panelRef} style={{ position: 'fixed', top: pos.top, left: pos.left, minWidth: pos.minWidth }}
+          className="z-[999] bg-white border border-slate-200 rounded-lg shadow-lg p-2 max-h-64 overflow-y-auto">
           <div className="flex gap-3 mb-1.5 pb-1.5 border-b border-slate-100">
             <button onClick={() => onChange(new Set(options.map(o => o.value)))} className="text-[10px] font-bold text-[#5A305A] hover:underline">All</button>
             <button onClick={() => onChange(new Set())} className="text-[10px] font-bold text-[#5A305A] hover:underline">Clear</button>
@@ -132,13 +157,18 @@ function MultiSelectDropdown({ label, options, selected, onChange, emptyMeansAll
               {o.label}
             </label>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
-    </div>
+    </>
   );
 }
 
-export default function ReportingCostPerVesselPage() {
+// `embedded` (2026-09, dipakai `CostByVesselPage.tsx`) -- kalau true, `<header>` bawaan halaman
+// ini (judul+ikon+Greeting) DISKIP -- halaman induk (`CostByVesselPage`) sudah py header+tab bar
+// sendiri, dobel header kelihatan aneh. Sisanya (SEMUA logic/tampilan di bawah `<header>`) TIDAK
+// berubah sama sekali.
+export default function ReportingCostPerVesselPage({ embedded }: { embedded?: boolean } = {}) {
   useEffect(() => { document.title = 'Cost per Vessel · BeeHive'; }, []);
   const { canEdit, user } = useAuth();
   const canEditPage = canEdit('reporting_cost_per_vessel');
@@ -343,12 +373,22 @@ export default function ReportingCostPerVesselPage() {
       | { type: 'vessel'; data: VesselAgg; groupKey: string }
       | { type: 'subtotal'; base: string; fleetGroup: string; groupKey: string; count: number; sums: Record<MetricKey, number>; periodSums: Record<string, Record<MetricKey, number>> }
       | { type: 'grand'; sums: Record<MetricKey, number>; periodSums: Record<string, Record<MetricKey, number>> };
+    // `rawGroupKey` (base::fleetGroup) dipakai HANYA utk deteksi kontinuitas (blok baru kalau
+    // beda dari blok sebelumnya) -- BUKAN dipakai sbg React key/collapsedGroups key final, krn
+    // base+fleetGroup yg SAMA PERSIS bisa muncul di >1 blok TERPISAH (non-kontinu, mis. JAKARTA
+    // muncul 2x di file Master Vessel -- lihat poin B7). Kalau dipakai apa adanya, key React
+    // (header/subtotal) DAN entry `collapsedGroups` jadi BENTROK antar blok yg beda tapi nama
+    // sama -- akibatnya toggle collapse 1 blok ikut mempengaruhi blok lain yg key-nya kebetulan
+    // sama (bug ditemukan 2026-09: "beberapa fleet group tidak muncul lengkap saat Show
+    // Zero Cost dicentang, tapi collapse/uncollapse berulang kadang memunculkannya" -- gejala
+    // klasik React key collision, BUKAN bug logic filter `showZeroCost`). Fix: setiap BLOK
+    // (bukan tiap NAMA grup) dapat `groupKey` unik `${rawGroupKey}#${index blok}`.
     const groups: { base: string; fleetGroup: string; groupKey: string; vessels: VesselAgg[] }[] = [];
     all.forEach(v => {
-      const groupKey = `${v.base}::${v.fleetGroup}`;
+      const rawGroupKey = `${v.base}::${v.fleetGroup}`;
       const g = groups[groups.length - 1];
-      if (!g || g.groupKey !== groupKey) {
-        groups.push({ base: v.base, fleetGroup: v.fleetGroup, groupKey, vessels: [v] });
+      if (!g || `${g.base}::${g.fleetGroup}` !== rawGroupKey) {
+        groups.push({ base: v.base, fleetGroup: v.fleetGroup, groupKey: `${rawGroupKey}#${groups.length}`, vessels: [v] });
       } else {
         g.vessels.push(v);
       }
@@ -402,8 +442,6 @@ export default function ReportingCostPerVesselPage() {
     // di dependency supaya effect ini jalan lagi begitu grup selesai dibuka.
   }, [highlightKey, loading, mastersLoaded, displayRows, collapsedGroups]);
 
-  const accLabel = periodicMode === 'MONTHLY' ? 'TOTAL YTD' : periodicMode === 'QUARTERLY' ? 'TOTAL TAHUN' : 'TOTAL AKUMULASI';
-
   const handleExport = async () => {
     // Export ikut PERSIS tampilan layar (2026-09 poin B5): viewMode, kolom Customize View yg
     // sedang tampil, DAN status ciutkan grup (`visibleDisplayRows`, BUKAN `displayRows` mentah --
@@ -443,7 +481,10 @@ export default function ReportingCostPerVesselPage() {
       // Periodic View -- header 2 tingkat via mergeCells (poin B5: "header ikut 2 tingkat dgn
       // sel digabung, supaya tidak perlu dirapikan manual di Excel"). Baris 1 = Base/Fleet
       // Group/Vessel (rowSpan 2, vertical merge) + label periode (colSpan 2 per kolom, horizontal
-      // merge) + label akumulasi (colSpan 2). Baris 2 = "Total Cost"/"Excl PPN+PPH" berulang.
+      // merge). Baris 2 = "Total Cost"/"Excl PPN+PPH" berulang per kolom periode. **Kolom
+      // akumulasi paling kanan (2026-09 poin 5-7, revisi susulan)**: label "TOTAL YTD"/"TOTAL
+      // TAHUN"/"TOTAL AKUMULASI" DIHAPUS -- header "Total Cost"/"Excl PPN+PPH"-nya di-merge
+      // VERTIKAL (rowSpan 2) langsung dari baris 1, SAMA seperti Base/Fleet Group/Vessel.
       ws.columns = [
         { key: 'base', width: 16 }, { key: 'fleet_group', width: 18 }, { key: 'vessel', width: 30 },
         ...periodColumns.flatMap(p => [{ key: `${p.key}_t`, width: 18 }, { key: `${p.key}_e`, width: 18 }]),
@@ -459,9 +500,9 @@ export default function ReportingCostPerVesselPage() {
         headerRow2.getCell(col).value = 'Total Cost'; headerRow2.getCell(col + 1).value = 'Excl PPN+PPH';
         col += 2;
       });
-      headerRow1.getCell(col).value = accLabel;
-      ws.mergeCells(1, col, 1, col + 1);
-      headerRow2.getCell(col).value = 'Total Cost'; headerRow2.getCell(col + 1).value = 'Excl PPN+PPH';
+      headerRow1.getCell(col).value = 'Total Cost';
+      headerRow1.getCell(col + 1).value = 'Excl PPN+PPH';
+      ws.mergeCells(1, col, 2, col); ws.mergeCells(1, col + 1, 2, col + 1);
       [headerRow1, headerRow2].forEach(hr => hr.eachCell({ includeEmpty: true }, cell => {
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF5A305A' } };
         cell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
@@ -537,20 +578,22 @@ export default function ReportingCostPerVesselPage() {
 
   return (
     <div className="flex-1 h-full overflow-hidden min-w-0 flex flex-col">
-      <header className="px-3 pt-1 pb-1 shrink-0">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
-              <BarChart3 size={17} />
+      {!embedded && (
+        <header className="px-3 pt-1 pb-1 shrink-0">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
+                <BarChart3 size={17} />
+              </div>
+              <div>
+                <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Cost per Vessel</h1>
+                <p className="text-[#5A305A] font-light text-sm mt-1">Cost summary per vessel — Courier, Sea, Air, FAR Overseas</p>
+              </div>
             </div>
-            <div>
-              <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Cost per Vessel</h1>
-              <p className="text-[#5A305A] font-light text-sm mt-1">Cost summary per vessel — Courier, Sea, Air, FAR Overseas</p>
-            </div>
+            <Greeting />
           </div>
-          <Greeting />
-        </div>
-      </header>
+        </header>
+      )}
 
       {/* Shell "tinggi tetap + scroll internal" (2026-09, permintaan user "lock header & grand
           total") -- pola sama `BunkerPage.tsx`/`AuditPoPage.tsx` dkk (lihat CLAUDE.md). Halaman
@@ -587,24 +630,6 @@ export default function ReportingCostPerVesselPage() {
               {allCollapsed ? <ChevronsUpDown size={13} /> : <ChevronsDownUp size={13} />}
               {allCollapsed ? 'Expand All' : 'Collapse All'}
             </button>
-
-            {/* 2 sub-tab tampilan (poin B3): Summary View (layout lama) / Periodic View (BARU,
-                matriks kolom per periode). */}
-            <div className="flex items-center gap-1 ml-2">
-              {(['SUMMARY', 'PERIODIC'] as ViewMode[]).map(v => (
-                <button key={v} onClick={() => setViewMode(v)}
-                  className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${viewMode === v ? 'bg-[#5A305A] text-white border-[#5A305A]' : 'bg-white text-[#5A305A] border-slate-200 hover:border-[#5A305A]'}`}>
-                  {v === 'SUMMARY' ? 'Summary View' : 'Periodic View'}
-                </button>
-              ))}
-            </div>
-            {viewMode === 'PERIODIC' && (
-              <select value={periodicMode} onChange={e => setPeriodicMode(e.target.value as PeriodicMode)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-semibold text-[#5A305A]">
-                <option value="MONTHLY">Monthly</option>
-                <option value="QUARTERLY">Quarterly</option>
-                <option value="YEARLY">Yearly</option>
-              </select>
-            )}
 
             <div className="ml-auto flex items-center gap-2">
               {canEditPage && (
@@ -651,6 +676,25 @@ export default function ReportingCostPerVesselPage() {
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex-1 flex flex-col min-h-0">
+          {/* 2 sub-tab tampilan DIPINDAH ke pojok kiri-atas kartu tabel (2026-09 poin 1, laporan
+              user "jangan di deretan filter atas") -- shrink-0, di ATAS area scroll tabel. */}
+          <div className="flex items-center gap-2 px-4 pt-3 pb-2 shrink-0 border-b border-slate-100">
+            <div className="flex items-center gap-1">
+              {(['SUMMARY', 'PERIODIC'] as ViewMode[]).map(v => (
+                <button key={v} onClick={() => setViewMode(v)}
+                  className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${viewMode === v ? 'bg-[#5A305A] text-white border-[#5A305A]' : 'bg-white text-[#5A305A] border-slate-200 hover:border-[#5A305A]'}`}>
+                  {v === 'SUMMARY' ? 'Summary View' : 'Periodic View'}
+                </button>
+              ))}
+            </div>
+            {viewMode === 'PERIODIC' && (
+              <select value={periodicMode} onChange={e => setPeriodicMode(e.target.value as PeriodicMode)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-semibold text-[#5A305A]">
+                <option value="MONTHLY">Monthly</option>
+                <option value="QUARTERLY">Quarterly</option>
+                <option value="YEARLY">Yearly</option>
+              </select>
+            )}
+          </div>
           <div ref={scrollRef} className="overflow-auto flex-1 min-h-0">
             {/* table-fixed + colgroup lebar eksplisit (2026-09, laporan user "jarak terlalu
                 jauh") -- tanpa ini, `<table>` auto-layout meregangkan 1-2 kolom angka terakhir
@@ -673,15 +717,21 @@ export default function ReportingCostPerVesselPage() {
                     {visibleMonthlyCols.map(c => <th key={c.key} className="text-right px-3 py-2.5 whitespace-nowrap truncate last:pr-5">{c.label}</th>)}
                   </tr>
                 ) : (
-                  // Header 2 tingkat (poin B3): tingkat 1 = label periode (colSpan 2) + label
-                  // akumulasi (colSpan 2), tingkat 2 = "Total Cost"/"Excl PPN+PPH" berulang.
+                  // Header 2 tingkat (poin B3, revisi 5-7): tingkat 1 = label periode (colSpan 2)
+                  // per kolom periode, tingkat 2 = "Total Cost"/"Excl PPN+PPH" berulang di
+                  // bawahnya. Kolom AKUMULASI paling kanan SENGAJA TIDAK py label periode
+                  // ("TOTAL YTD"/"TOTAL TAHUN"/"TOTAL AKUMULASI" DIHAPUS, laporan user) --
+                  // header "Total Cost"/"Excl PPN+PPH"-nya `rowSpan={2}` MEMBENTANG dari row1
+                  // langsung (menutupi posisi yg dulu diisi label akumulasi), SAMA seperti
+                  // Base/Fleet Group/Vessel di kiri.
                   <>
                     <tr className="text-[10px] text-[#5A305A]/70 uppercase">
                       <th rowSpan={2} className="text-left px-3 py-2.5 whitespace-nowrap align-bottom">Base</th>
                       <th rowSpan={2} className="text-left px-3 py-2.5 whitespace-nowrap align-bottom">Fleet Group</th>
                       <th rowSpan={2} className="text-left px-3 py-2.5 whitespace-nowrap align-bottom">Vessel</th>
                       {periodColumns.map(p => <th key={p.key} colSpan={2} className="text-center px-3 py-1.5 whitespace-nowrap border-l border-slate-200">{p.label}</th>)}
-                      <th colSpan={2} className="text-center px-3 py-1.5 whitespace-nowrap border-l border-slate-200 last:pr-5">{accLabel}</th>
+                      <th rowSpan={2} className="text-right px-3 py-2 whitespace-nowrap border-l border-slate-200 align-bottom">Total Cost</th>
+                      <th rowSpan={2} className="text-right px-3 py-2 whitespace-nowrap last:pr-5 align-bottom">Excl PPN+PPH</th>
                     </tr>
                     <tr className="text-[10px] text-[#5A305A]/70 uppercase">
                       {periodColumns.map(p => (
@@ -690,8 +740,6 @@ export default function ReportingCostPerVesselPage() {
                           <th className="text-right px-3 py-2 whitespace-nowrap">Excl PPN+PPH</th>
                         </React.Fragment>
                       ))}
-                      <th className="text-right px-3 py-2 whitespace-nowrap border-l border-slate-200">Total Cost</th>
-                      <th className="text-right px-3 py-2 whitespace-nowrap last:pr-5">Excl PPN+PPH</th>
                     </tr>
                   </>
                 )}
@@ -766,7 +814,7 @@ export default function ReportingCostPerVesselPage() {
                   }
                   if (row.type === 'subtotal') {
                     return (
-                      <tr key={`sub-${row.base}-${row.fleetGroup}`} className="bg-[#FFF5C5] hover:bg-[#F5E28F] border-l-[3px] border-l-[#E6C25C] font-bold">
+                      <tr key={`sub-${row.groupKey}`} className="bg-[#FFF5C5] hover:bg-[#F5E28F] border-l-[3px] border-l-[#E6C25C] font-bold">
                         <td className="px-3 py-2"></td>
                         <td className="px-3 py-2 text-[#5A305A]" colSpan={2}>
                           Subtotal {row.fleetGroup}
@@ -837,7 +885,7 @@ export default function ReportingCostPerVesselPage() {
             krn `main` masih py `pb-2`). Disembunyikan masing2 kalau sudah di ujung arahnya
             (`atTop`/`atBottom`). Tidak perlu tampilkan scrollbar tabel -- app ini sudah default
             sembunyikan semua scrollbar (`src/index.css`), tombol ini cuma gantinya. */}
-        <Link to="/reporting/dashboard" title="Back to Dashboard" aria-label="Back to Dashboard"
+        <Link to="/reporting/cost-by-vessel?view=dashboard" title="Back to Dashboard" aria-label="Back to Dashboard"
           className="fixed bottom-24 right-1 z-30 w-8 h-8 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white shadow-lg flex items-center justify-center transition-all">
           <ArrowLeft size={14} />
         </Link>
@@ -876,7 +924,6 @@ export default function ReportingCostPerVesselPage() {
           visibleMonthlyCols={visibleMonthlyCols}
           viewMode={viewMode}
           periodColumns={periodColumns}
-          accLabel={accLabel}
           activeTab={activeTab}
           onClose={() => setShowExportPreview(false)}
           onConfirm={async () => { await handleExport(); setShowExportPreview(false); }}
@@ -938,10 +985,10 @@ function CustomizeViewModal({ allCols, hiddenKeys, onCancel, onSave }: {
 // yg dipakai Audit Courier: tampilkan dulu isinya, baru user konfirmasi "Export"). Header tabel
 // preview `#5A305A` (permintaan user eksplisit -- BEDA dari `ExportModal.tsx` yg pakai abu-abu,
 // sengaja disamakan warna brand di modal Reporting ini).
-function ExportPreviewModal({ displayRows, visibleMonthlyCols, viewMode, periodColumns, accLabel, activeTab, onClose, onConfirm }: {
+function ExportPreviewModal({ displayRows, visibleMonthlyCols, viewMode, periodColumns, activeTab, onClose, onConfirm }: {
   displayRows: any[];
   visibleMonthlyCols: { key: MetricKey | 'total_cost' | 'total_excl_ppn'; label: string }[];
-  viewMode: ViewMode; periodColumns: PeriodColumn[]; accLabel: string; activeTab: TabId;
+  viewMode: ViewMode; periodColumns: PeriodColumn[]; activeTab: TabId;
   onClose: () => void; onConfirm: () => Promise<void>;
 }) {
   const [exporting, setExporting] = useState(false);
@@ -984,7 +1031,8 @@ function ExportPreviewModal({ displayRows, visibleMonthlyCols, viewMode, periodC
                       <th rowSpan={2} className="px-3 py-2.5 whitespace-nowrap align-bottom">Fleet Group</th>
                       <th rowSpan={2} className="px-3 py-2.5 whitespace-nowrap align-bottom">Vessel</th>
                       {periodColumns.map(p => <th key={p.key} colSpan={2} className="px-3 py-1.5 text-center whitespace-nowrap border-l border-white/20">{p.label}</th>)}
-                      <th colSpan={2} className="px-3 py-1.5 text-center whitespace-nowrap border-l border-white/20">{accLabel}</th>
+                      <th rowSpan={2} className="px-3 py-2 text-right whitespace-nowrap border-l border-white/20 align-bottom">Total Cost</th>
+                      <th rowSpan={2} className="px-3 py-2 text-right whitespace-nowrap align-bottom">Excl PPN+PPH</th>
                     </tr>
                     <tr>
                       {periodColumns.map(p => (
@@ -993,8 +1041,6 @@ function ExportPreviewModal({ displayRows, visibleMonthlyCols, viewMode, periodC
                           <th className="px-3 py-2 text-right whitespace-nowrap">Excl PPN+PPH</th>
                         </React.Fragment>
                       ))}
-                      <th className="px-3 py-2 text-right whitespace-nowrap border-l border-white/20">Total Cost</th>
-                      <th className="px-3 py-2 text-right whitespace-nowrap">Excl PPN+PPH</th>
                     </tr>
                   </>
                 )}

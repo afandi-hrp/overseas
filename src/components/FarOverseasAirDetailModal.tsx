@@ -333,7 +333,12 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
                 <span className="underline font-semibold shrink-0">NOTE :</span>
                 <div className="space-y-1">
                   {rec.route_note && <p><span className="font-semibold">1.</span> {rec.route_note}</p>}
-                  {rec.item_description && <p><span className="font-semibold">2.</span> {rec.item_description}</p>}
+                  {rec.item_description && (
+                    <p>
+                      <span className="font-semibold">2. ITEMS :</span> {rec.item_description}
+                      {rec.item_description_manual && <span> ({rec.item_description_manual})</span>}
+                    </p>
+                  )}
                   {rec.status_note && <p><span className="font-semibold">3.</span> {rec.status_note}</p>}
                   {rec.other_note && <p><span className="font-semibold">4.</span> {rec.other_note}</p>}
                   {!rec.route_note && !rec.item_description && !rec.status_note && !rec.other_note && <p className="text-[#5A305A]/50 italic">-</p>}

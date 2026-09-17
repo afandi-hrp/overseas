@@ -67,8 +67,11 @@ export const PAGE_REGISTRY: PageEntry[] = [
 
   { key: 'accounting_rekap', label: 'Accounting Rekap', path: '/accounting-rekap', group: 'Accounting Rekap' },
 
-  { key: 'reporting_dashboard', label: 'Dashboard (Reporting)', path: '/reporting/dashboard', group: 'Reporting' },
-  { key: 'reporting_cost_per_vessel', label: 'Cost per Vessel', path: '/reporting/cost-per-vessel', group: 'Reporting' },
+  // 2026-09: 2 halaman ini digabung jadi 1 route/halaman "Cost by Vessel" (`CostByVesselPage.tsx`,
+  // 2 tab) -- page_key TETAP 2 terpisah (assignment akses per-role existing tidak berubah),
+  // cuma `path` sekarang keduanya nunjuk ke route gabungan yg sama dgn `?view=` beda per tab.
+  { key: 'reporting_dashboard', label: 'Dashboard (Reporting)', path: '/reporting/cost-by-vessel?view=dashboard', group: 'Reporting' },
+  { key: 'reporting_cost_per_vessel', label: 'Cost per Vessel', path: '/reporting/cost-by-vessel?view=cost_per_vessel', group: 'Reporting' },
 
   { key: 'audit_trail', label: 'Audit Trail', path: '/audit-trail', group: 'General' },
 

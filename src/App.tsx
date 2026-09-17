@@ -36,8 +36,7 @@ import AuditPoPage from './pages/AuditPoPage';
 import AuditPoOverseasPage from './pages/AuditPoOverseasPage';
 import PiLocalPage from './pages/PiLocalPage';
 import AccountingRekapPage from './pages/AccountingRekapPage';
-import ReportingDashboardPage from './pages/ReportingDashboardPage';
-import ReportingCostPerVesselPage from './pages/ReportingCostPerVesselPage';
+import CostByVesselPage from './pages/CostByVesselPage';
 import MasterVesselAdminPage from './pages/MasterVesselAdminPage';
 
 function ProtectedRoute() {
@@ -118,8 +117,13 @@ export default function App() {
               <Route path="/pi-local" element={<RequirePageAccess pageKey="pi_local"><PiLocalPage /></RequirePageAccess>} />
               <Route path="/accounting-rekap" element={<RequirePageAccess pageKey="accounting_rekap"><AccountingRekapPage /></RequirePageAccess>} />
 
-              <Route path="/reporting/dashboard" element={<RequirePageAccess pageKey="reporting_dashboard"><ReportingDashboardPage /></RequirePageAccess>} />
-              <Route path="/reporting/cost-per-vessel" element={<RequirePageAccess pageKey="reporting_cost_per_vessel"><ReportingCostPerVesselPage /></RequirePageAccess>} />
+              {/* Gabungan "Cost by Vessel" (2026-09) -- GANTI TOTAL dari 2 route terpisah
+                  (/reporting/dashboard, /reporting/cost-per-vessel), sekarang 1 route 2 tab.
+                  TIDAK dibungkus RequirePageAccess pageKey tunggal (butuh cek "salah SATU dari
+                  2 page_key", bukan 1) -- gating dilakukan INTERNAL oleh CostByVesselPage.tsx
+                  sendiri (pola sama /settings hub), lihat komentar lengkap di file itu. Route
+                  lama DIHAPUS TOTAL -- semua link internal sudah diarahkan ulang ke sini. */}
+              <Route path="/reporting/cost-by-vessel" element={<CostByVesselPage />} />
 
               <Route path="/audit-trail" element={<RequirePageAccess pageKey="audit_trail"><AuditTrailPage /></RequirePageAccess>} />
               <Route path="/settings" element={<SettingsPage />} />

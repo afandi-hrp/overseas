@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
-import { CheckCircle2, FileCheck2, UploadCloud, X, AlertTriangle, Clock, ClipboardCheck, ClipboardList, Edit3, Save, Scale, Trash2, RefreshCw, ChevronDown } from 'lucide-react';
+import { CheckCircle2, FileCheck2, UploadCloud, X, AlertTriangle, Clock, ClipboardCheck, ClipboardList, Edit3, Save, Scale, Trash2, RefreshCw, ChevronDown, LayoutGrid, List as ListIcon, Printer, Search, ArrowUp, ArrowDown } from 'lucide-react';
 import { formatMoney, formatDateID, APPROVAL_STATUS_META, COST_STATUS_META, REKAPAN_EDITABLE_FIELDS, updateRekapanFarOverseasAir, parseRouteNote, rematchTarif, mapModeToJenisLayanan, computeExpectedFromRate, computeCostStatus, parseJsonField, fetchPicEligibleUsers, type PoListEntry, type PicEligibleUser } from '../utils/FarOverseasAirHelpers';
 import { EditableCell } from '../components/FarOverseasAirEditableField';
 import FarOverseasAirDetailModal from '../components/FarOverseasAirDetailModal';
@@ -122,6 +122,7 @@ type ListRenderCtx = {
   expandedPoRows: Set<string>;
   togglePoExpanded: (id: string) => void;
   picUsers: PicEligibleUser[];
+  costCityMap: Record<string, string>;
 };
 
 type ListColumn = {
@@ -144,6 +145,22 @@ const getPoListEntries = (r: any): PoListEntry[] => {
 };
 
 const fmtWithCurrency = (currencyField: string) => (v: any, r: any) => formatMoney(v, r[currencyField]);
+
+// NOTE 3 (status_note) format baku (2026-09, permintaan user): "BARANG DITERIMA LOG {KOTA}
+// {DD/MM/YYYY}" -- kota otomatis dari `cost_validasi_far_overseas_air.rate_row_used.tujuan`
+// (ctx.costCityMap), tanggal dipilih manual via date picker. Disimpan sebagai 1 string utuh ke
+// `status_note` (SATU-SATUNYA kolom DB, tidak ada kolom tanggal terpisah) -- saat edit dibuka
+// lagi, tanggalnya di-parse balik dari akhir string via STATUS_NOTE_DATE_RE.
+const STATUS_NOTE_DATE_RE = /(\d{2})\/(\d{2})\/(\d{4})\s*$/;
+const composeStatusNote = (city: string, isoDate: string): string => {
+  const [y, m, d] = isoDate.split('-');
+  return `BARANG DITERIMA LOG ${city} ${d}/${m}/${y}`;
+};
+const parseStatusNoteDateIso = (text: string | null | undefined): string => {
+  const m = STATUS_NOTE_DATE_RE.exec(text || '');
+  if (!m) return '';
+  return `${m[3]}-${m[2]}-${m[1]}`;
+};
 
 const fmtTotalAmount = (v: any, r: any) => {
   const showIdrHint = r.total_amount_currency && r.total_amount_currency !== 'IDR' && r.total_amount_idr != null;
@@ -222,10 +239,6 @@ const LIST_COLUMNS: ListColumn[] = [
     { header: 'SHIP VIA', field: 'ship_via' },
     { header: 'INVOICE NO', field: 'no_invoice' },
     { header: 'INVOICE DATE', field: 'invoice_date', inputType: 'date', format: v => formatDateID(v) },
-    // departure_date SELALU kosong dari hasil ekstraksi otomatis (Gemini tidak pernah isi ini) --
-    // wajib diisi manual oleh user di sini. Dipakai sebagai field "Departure Date" di memo cetak
-    // (FarOverseasAirDetailModal.tsx), TERPISAH dari invoice_date.
-    { header: 'DEPARTURE DATE', field: 'departure_date', inputType: 'date', format: v => formatDateID(v) },
     { header: 'QTY', field: 'qty', inputType: 'number', align: 'right' },
     { header: 'WEIGHT', field: 'weight_unit' },
     {
@@ -289,7 +302,48 @@ const LIST_COLUMNS: ListColumn[] = [
         );
       }
     },
-    { header: 'NOTE 3', field: 'status_note', wide: true },
+    {
+      // Format baku "BARANG DITERIMA LOG {KOTA} {DD/MM/YYYY}" -- kota READ-ONLY (ikut kota
+      // tujuan di Cost Validation, ctx.costCityMap), tanggal dipilih via <input type="date">
+      // (kalender bawaan browser). Kalau belum ada Cost Validation matched (kota kosong), date
+      // picker disabled dulu -- tidak ada kota valid untuk dikomposisi.
+      header: 'NOTE 3',
+      wide: true,
+      render: (r, _idx, _costStatus, ctx) => {
+        const editingThisRow = ctx.editingRowId === r.id;
+        const city = ctx.costCityMap[r.id] || '';
+        const currentVal = ctx.getVal(r, 'status_note');
+        const edited = Array.isArray(r.edited_fields) && r.edited_fields.includes('status_note');
+        if (editingThisRow) {
+          const isoDate = parseStatusNoteDateIso(currentVal);
+          return (
+            <div className="w-[300px] flex flex-col gap-1">
+              <div className="text-[11px] leading-snug">
+                <span className="font-semibold">BARANG DITERIMA LOG</span>{' '}
+                {city ? <span>{city}</span> : <span className="italic text-slate-400">(no destination city yet)</span>}
+              </div>
+              <input
+                type="date"
+                value={isoDate}
+                disabled={!city}
+                onChange={(e) => {
+                  if (!e.target.value || !city) return;
+                  ctx.setVal(r, 'status_note', composeStatusNote(city, e.target.value));
+                }}
+                className="w-[160px] text-xs p-1.5 border border-blue-400 rounded outline-none text-[#5A305A] bg-white disabled:bg-slate-100 disabled:text-slate-400"
+              />
+              {edited && <span className="flex items-center gap-1 text-[10px] text-amber-500"><Edit3 size={11} /> Edited</span>}
+            </div>
+          );
+        }
+        return (
+          <div className="w-[300px] flex items-start gap-1.5">
+            <span className="whitespace-normal break-words leading-snug flex-1">{currentVal || <span className="italic text-slate-400">-</span>}</span>
+            {edited && <Edit3 size={11} className="text-amber-500 shrink-0 mt-0.5" />}
+          </div>
+        );
+      }
+    },
     { header: 'NOTE 4', field: 'other_note', wide: true },
     { header: 'MEMO TITLE', field: 'memo_title' },
     // Kolom PIC (2026-09, GANTI dari free-text `pic_name` jadi dropdown user) -- admin/ops pilih
@@ -377,6 +431,11 @@ const LIST_COLUMNS: ListColumn[] = [
     },
     { header: 'APPROVAL STATUS', render: r => <ApprovalBadge status={r.approval_status} /> },
     { header: 'COST STATUS', render: (_r, _idx, costStatus) => <CostBadge status={costStatus} /> },
+    // departure_date SELALU kosong dari hasil ekstraksi otomatis (Gemini tidak pernah isi ini) --
+    // wajib diisi manual oleh user di sini. Dipakai sebagai field "Departure Date" di memo cetak
+    // (FarOverseasAirDetailModal.tsx), TERPISAH dari invoice_date. Dipindah ke posisi PALING
+    // BELAKANG tabel (2026-09, permintaan user) -- BUKAN lagi setelah INVOICE DATE.
+    { header: 'DEPARTURE DATE', field: 'departure_date', inputType: 'date', format: v => formatDateID(v) },
 ];
 
 // Kolom export Excel -- 1:1 dengan LIST_COLUMNS di atas (semua kolom yang tampil di tabel list
@@ -390,7 +449,6 @@ const FAR_EXPORT_COLS = [
   { key: 'ship_via', label: 'SHIP VIA' },
   { key: 'no_invoice', label: 'INVOICE NO' },
   { key: 'invoice_date', label: 'INVOICE DATE', type: 'date' },
-  { key: 'departure_date', label: 'DEPARTURE DATE', type: 'date' },
   { key: 'qty', label: 'QTY', type: 'num' },
   { key: 'weight_unit', label: 'WEIGHT' },
   { key: 'weight_breakdown', label: 'WEIGHT BREAKDOWN' },
@@ -412,6 +470,7 @@ const FAR_EXPORT_COLS = [
   { key: 'vessel_internal_note', label: 'VESSEL' },
   { key: 'approval_status_display', label: 'STATUS APPROVAL' },
   { key: 'cost_status_display', label: 'STATUS COST' },
+  { key: 'departure_date', label: 'DEPARTURE DATE', type: 'date' },
 ];
 
 export default function FarOverseasAirPage() {
@@ -435,6 +494,11 @@ export default function FarOverseasAirPage() {
 
   const [rows, setRows] = useState<any[]>([]);
   const [costStatusMap, setCostStatusMap] = useState<Record<string, string>>({});
+  // Kota tujuan per memo, dari `cost_validasi_far_overseas_air.rate_row_used.tujuan` -- dipakai
+  // NOTE 3 (`status_note`) supaya format "BARANG DITERIMA LOG {kota} {tanggal}" bisa mengisi
+  // kota otomatis. Di-fetch bareng costStatusMap (query yang sama), TIDAK live-refresh saat
+  // rate_row_used berubah di modal Cost Validation -- ikut ter-refresh tiap fetchList berikutnya.
+  const [costCityMap, setCostCityMap] = useState<Record<string, string>>({});
   const [loadingList, setLoadingList] = useState(true);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -444,9 +508,39 @@ export default function FarOverseasAirPage() {
   // Director, 2026-09) -- lihat APPROVAL_FILTER_STATUS di dekat fetchList.
   const [approvalFilter, setApprovalFilter] = useState<'ALL' | 'PIC' | 'TIER1' | 'TIER2' | 'TIER3'>('ALL');
   const [approvalCounts, setApprovalCounts] = useState({ pic: 0, tier1: 0, tier2: 0, tier3: 0 });
+  // Search + Sort (2026-09, GANTI dari dropdown "Items" pageSize di toolbar -- permintaan user).
+  // `searchInput` = nilai mentah <input>, `searchTerm` = versi debounced 400ms yang beneran
+  // dipakai query (pola sama Audit AP Local, lihat CLAUDE.md) -- supaya tidak fetch tiap
+  // keystroke. Search cari di 4 kolom sekaligus via `.or()` ilike: Ship Via, Vendor, NOTE 1
+  // (`route_note`, mengandung negara asal -- lihat catatan `sortBy` soal batasan "sort by
+  // negara asal"), NOTE 2 Manual (`item_description_manual`).
+  const [searchInput, setSearchInput] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setSearchTerm(searchInput.trim()), 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+  // Sort by -- default TETAP tanggal (invoice_date) terbaru dulu, sama seperti urutan lama
+  // (`created_at` desc). "NOTE 1 (Negara Asal)" SENGAJA sort by kolom `route_note` APA ADANYA
+  // (bukan hasil extract origin-nya doang) -- SEMUA nilai `route_note` berformat baku
+  // "PENGIRIMAN DARI {asal} KE {tujuan} (...)" (lihat `parseRouteNote`/CLAUDE.md), jadi prefix
+  // "PENGIRIMAN DARI " selalu SAMA di semua baris -- ORDER BY teks mentahnya otomatis
+  // ekuivalen dgn sort by nama negara/kota asal (karakter pertama yang BEDA antar baris justru
+  // mulai persis dari situ). Baris yang formatnya TIDAK cocok pola itu (data lama/tidak standar)
+  // tetap ikut ter-sort, cuma urutannya relatif terhadap baris lain jadi kurang presisi --
+  // diterima, TIDAK ada kolom "origin" terpisah di DB untuk sort yang 100% akurat.
+  const [sortBy, setSortBy] = useState<'invoice_date' | 'ship_via' | 'vendor' | 'route_note' | 'item_description_manual'>('invoice_date');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  useEffect(() => { setPage(1); }, [searchTerm, sortBy, sortDir]);
   const [queue, setQueue] = useState<any[]>([]);
   const [picUsers, setPicUsers] = useState<PicEligibleUser[]>([]);
   const [selected, setSelected] = useState<any | null>(null);
+  // Tombol "Print" di Card view (2026-09) -- SENGAJA TIDAK menambah UI print baru,
+  // `FarOverseasAirDetailModal.tsx` (memo cetak) TIDAK BOLEH disentuh (permintaan eksplisit
+  // user). Alurnya PINJAM mekanisme deep-link `/direct-loading/:id` yang SUDAH ADA (dipakai
+  // tombol "Approval") untuk membuka modal itu, lalu begitu modalnya kebuka, otomatis panggil
+  // `window.print()` -- lihat `loadDeepLink` & flag `autoPrintRef` di bawah.
+  const autoPrintRef = useRef(false);
   const [costModalRow, setCostModalRow] = useState<any | null>(null);
   const [weightModalRow, setWeightModalRow] = useState<any | null>(null);
 
@@ -455,6 +549,16 @@ export default function FarOverseasAirPage() {
   const [pendingEdits, setPendingEdits] = useState<Record<string, Record<string, any>>>({});
   const [savingEdits, setSavingEdits] = useState(false);
   const [expandedPoRows, setExpandedPoRows] = useState<Set<string>>(new Set());
+
+  // Toggle List/Card (2026-09, permintaan user) -- state lokal, TIDAK disimpan (reset tiap buka
+  // halaman, sama pola preferensi tampilan sesaat lain di app ini). Card MURNI tampilan ringkas
+  // untuk browsing cepat -- TIDAK ada form edit di dalam card sama sekali (row yang sama tetap
+  // dipakai/di-render dari `rows`/pagination yang sama, cuma cara render-nya beda). Approval
+  // (buka `FarOverseasAirDetailModal.tsx` via deep-link route, SENGAJA TIDAK diubah struktur
+  // internalnya) & Cost Validation dipanggil apa adanya dari card, sama seperti tombol Action di
+  // List. Edit dari card SELALU pindah balik ke mode List (lihat `handleEditFromCard`) --
+  // edit massal/per-baris tetap satu-satunya jalur edit field, card tidak mereplikasi form itu.
+  const [viewMode, setViewMode] = useState<'LIST' | 'CARD'>('CARD');
 
   // Scrollbar geser horizontal ganda (atas + bawah tabel, tersinkron) -- pola yang sama
   // dipakai di SharedDataTable.tsx supaya user tidak perlu scroll ke bawah dulu untuk
@@ -471,7 +575,13 @@ export default function FarOverseasAirPage() {
     });
     resizeObserver.observe(tableRef.current);
     return () => resizeObserver.disconnect();
-  }, [rows]);
+    // `viewMode` WAJIB ikut dependency (2026-09, sejak Card jadi default) -- <table> HANYA ada di
+    // DOM saat viewMode==='LIST' (lihat blok Card view di bawah), jadi `tableRef.current` masih
+    // null saat effect ini pertama jalan (halaman dibuka default Card). Tanpa `viewMode` di sini,
+    // pindah ke List belakangan TIDAK memicu effect lagi (dependency `rows` tidak berubah) --
+    // observer tidak pernah ter-attach, `tableWidth` tetap 0, scrollbar geser atas jadi hilang
+    // (lebarnya 0px) -- laporan user "bar scroll atas hilang" di List.
+  }, [rows, viewMode]);
 
   const handleTopScroll = (e: React.UIEvent<HTMLDivElement>) => {
     if (bottomScrollRef.current) bottomScrollRef.current.scrollLeft = e.currentTarget.scrollLeft;
@@ -486,6 +596,22 @@ export default function FarOverseasAirPage() {
     if (next.has(id)) next.delete(id); else next.add(id);
     return next;
   });
+
+  // Tombol "Edit" di Card view -- pindah ke mode List (SELALU buka edit, bukan toggle, beda dari
+  // `toggleEditRow` biasa yang dipakai tombol Edit di List) lalu scroll ke baris itu (row+page
+  // TIDAK berubah, `rows`/`page` sama persis dengan yang lagi tampil di Card, jadi baris ini pasti
+  // sudah ada di DOM setelah List selesai render -- <tr id={`far-row-${id}`}> ditambahkan khusus
+  // untuk target scroll ini). `setTimeout` menunggu 1 tick render supaya tabel List sempat commit
+  // ke DOM dulu sebelum `scrollIntoView` dipanggil (switch viewMode & scroll terjadi di render
+  // yang sama kalau tidak ditunda).
+  const handleEditFromCard = (id: string) => {
+    setViewMode('LIST');
+    setEditingRowId(id);
+    setOpenActionsRowId(null);
+    setTimeout(() => {
+      document.getElementById(`far-row-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 50);
+  };
 
   const [deleteConfirmRow, setDeleteConfirmRow] = useState<any | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -514,11 +640,18 @@ export default function FarOverseasAirPage() {
   };
 
   const fetchCostStatusMap = useCallback(async (ids: string[]) => {
-    if (!ids.length) { setCostStatusMap({}); return; }
-    const { data: cvData } = await supabase.from('cost_validasi_far_overseas_air').select('far_overseas_id, status').in('far_overseas_id', ids);
+    if (!ids.length) { setCostStatusMap({}); setCostCityMap({}); return; }
+    const { data: cvData } = await supabase.from('cost_validasi_far_overseas_air').select('far_overseas_id, status, rate_row_used').in('far_overseas_id', ids);
     const map: Record<string, string> = {};
-    (cvData || []).forEach((c: any) => { map[c.far_overseas_id] = c.status; });
+    const cityMap: Record<string, string> = {};
+    (cvData || []).forEach((c: any) => {
+      map[c.far_overseas_id] = c.status;
+      const rate = parseJsonField(c.rate_row_used);
+      const tujuan = Array.isArray(rate) ? null : rate?.tujuan;
+      if (tujuan) cityMap[c.far_overseas_id] = tujuan;
+    });
     setCostStatusMap(map);
+    setCostCityMap(cityMap);
   }, []);
 
   // Rantai approval WAJIB berurutan (2026-09): Prepared By(TIER1) -> PIC -> SPV(TIER2) ->
@@ -537,9 +670,14 @@ export default function FarOverseasAirPage() {
 
     let query = supabase.from('rekapan_far_overseas_air').select('*', { count: 'exact' });
     if (approvalFilter !== 'ALL') query = query.eq('approval_status', APPROVAL_FILTER_STATUS[approvalFilter]);
+    if (searchTerm) {
+      const escaped = searchTerm.replace(/[%_]/g, c => `\\${c}`);
+      const pattern = `%${escaped}%`;
+      query = query.or(`ship_via.ilike.${pattern},vendor.ilike.${pattern},route_note.ilike.${pattern},item_description_manual.ilike.${pattern}`);
+    }
 
     const { data, error, count } = await query
-      .order('created_at', { ascending: false })
+      .order(sortBy, { ascending: sortDir === 'asc', nullsFirst: false })
       .range(startIndex, startIndex + pageSize - 1);
     if (!error && data) {
       setRows(data);
@@ -547,7 +685,7 @@ export default function FarOverseasAirPage() {
       await fetchCostStatusMap(data.map((r: any) => r.id).filter(Boolean));
     }
     setLoadingList(false);
-  }, [page, pageSize, approvalFilter, fetchCostStatusMap]);
+  }, [page, pageSize, approvalFilter, searchTerm, sortBy, sortDir, fetchCostStatusMap]);
 
   // Hitung berapa memo yang pending di masing-masing level approval -- dipanggil sekali di awal
   // & tiap kali ada aksi yang mungkin mengubah status approval (lihat refreshList). Semua count
@@ -632,6 +770,33 @@ export default function FarOverseasAirPage() {
         return;
       }
       setSelected(data);
+      if (autoPrintRef.current) {
+        autoPrintRef.current = false;
+        // Bug ditemukan & diperbaiki (susulan) -- print preview MASIH kosong sebagian (header
+        // kiri "FREIGHT & DUTY" nampil "-" instead nama PT) meski elemen #far-overseas-print-area
+        // sudah ada di DOM. Root cause: `FarOverseasAirDetailModal.tsx` (SENGAJA TIDAK disentuh)
+        // punya fetch ASYNC KEDUA setelah mount -- query `far_overseas_signer_config` (nama
+        // PT/logo header memo, lihat komponen `CompanyLogo` di file itu) yang BELUM SELESAI
+        // saat elemen print area pertama kali muncul di DOM (elemen sudah ada duluan, isinya
+        // masih placeholder "-" sampai fetch itu resolve & re-render). Poll DOM saja TIDAK
+        // CUKUP -- perlu ikut menunggu fetch kedua itu. Fix: duplikasi query yang SAMA
+        // (`far_overseas_signer_config` by `dominant_company_code`) di sini MURNI sebagai proxy
+        // waktu tunggu (network round-trip-nya kurang lebih sama dengan punya modal, berjalan
+        // paralel) -- hasil query di sini TIDAK DIPAKAI sama sekali, cuma dipakai `await` supaya
+        // print BENERAN menunggu network selesai, bukan cuma menunggu 1-2 frame render.
+        if (data.dominant_company_code) {
+          await supabase.from('far_overseas_signer_config').select('company_code').eq('company_code', data.dominant_company_code).maybeSingle();
+        }
+        const waitForPrintAreaThenPrint = (attemptsLeft: number) => {
+          if (document.getElementById('far-overseas-print-area')) {
+            requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
+            return;
+          }
+          if (attemptsLeft <= 0) { window.print(); return; }
+          setTimeout(() => waitForPrintAreaThenPrint(attemptsLeft - 1), 50);
+        };
+        waitForPrintAreaThenPrint(20);
+      }
     };
     loadDeepLink();
   }, [deepLinkId, navigate]);
@@ -923,8 +1088,25 @@ export default function FarOverseasAirPage() {
               halaman Audit Sea & Air / Courier) -- bukan seluruh halaman yang discroll panjang. */}
           <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
             <div className="px-5 py-2 border-b border-white/60 flex items-center justify-between gap-3 flex-nowrap shrink-0">
-              <h2 className="text-sm font-bold text-[#5A305A] shrink-0">FAR Overseas Memo List</h2>
               <div className="flex items-center justify-end gap-2 flex-nowrap overflow-x-auto py-2 min-w-0 flex-1">
+                {/* Toggle List/Card (2026-09) -- lihat catatan panjang di deklarasi state
+                    `viewMode` soal batasan Card (view-only + tombol Edit pindah ke List). */}
+                <div className="flex items-center rounded-full border border-slate-200 bg-white p-0.5 shrink-0 h-[34px]">
+                  <button
+                    onClick={() => setViewMode('LIST')}
+                    title="List view"
+                    className={`flex items-center gap-1 px-2.5 h-[27px] rounded-full text-[10px] font-bold uppercase tracking-wide transition-colors ${viewMode === 'LIST' ? 'bg-[#5A305A] text-white' : 'text-[#5A305A]/60 hover:text-[#5A305A]'}`}
+                  >
+                    <ListIcon size={13} /> List
+                  </button>
+                  <button
+                    onClick={() => setViewMode('CARD')}
+                    title="Card view"
+                    className={`flex items-center gap-1 px-2.5 h-[27px] rounded-full text-[10px] font-bold uppercase tracking-wide transition-colors ${viewMode === 'CARD' ? 'bg-[#5A305A] text-white' : 'text-[#5A305A]/60 hover:text-[#5A305A]'}`}
+                  >
+                    <LayoutGrid size={13} /> Card
+                  </button>
+                </div>
                 <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0">
                   <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide whitespace-nowrap">Approval</span>
                   <select
@@ -973,24 +1155,56 @@ export default function FarOverseasAirPage() {
                     <UploadCloud size={14} /> Upload Document
                   </button>
                 )}
-                <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0">
-                  <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">Items</span>
+                {/* Search + Sort (2026-09) -- GANTI dropdown "Items" pageSize (`pageSize` state
+                    TETAP ada, dipakai apa adanya sbg default 10, cuma UI-nya dihilangkan sesuai
+                    permintaan user). Search cari di 4 kolom (Ship Via/Vendor/NOTE 1/NOTE 2
+                    Manual, lihat catatan `searchTerm`), Sort by 5 opsi (lihat catatan `sortBy`
+                    soal batasan sort "NOTE 1 (Negara Asal)"). */}
+                <div className="flex items-center gap-1.5 rounded-full pl-3 pr-1.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0 w-[125px]">
+                  <Search size={13} className="text-[#5A305A]/50 shrink-0" />
+                  <input
+                    type="text"
+                    value={searchInput}
+                    onChange={e => setSearchInput(e.target.value)}
+                    placeholder="Search..."
+                    title="Search ship via, vendor, notes"
+                    className="border-0 bg-transparent text-xs text-[#5A305A] focus:outline-none min-w-0 flex-1 placeholder:text-[#5A305A]/40"
+                  />
+                  {searchInput && (
+                    <button onClick={() => setSearchInput('')} className="text-[#5A305A]/40 hover:text-[#5A305A] shrink-0">
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0 w-[150px]">
+                  <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide whitespace-nowrap shrink-0">Sort</span>
                   <select
-                    value={pageSize}
-                    onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
-                    className="border-0 bg-transparent text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer"
+                    value={sortBy}
+                    onChange={e => setSortBy(e.target.value as typeof sortBy)}
+                    className="border-0 bg-transparent text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer min-w-0 flex-1"
                   >
-                    <option value={10}>10</option>
-                    <option value={20}>20</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
+                    <option value="invoice_date">Date</option>
+                    <option value="ship_via">Ship Via</option>
+                    <option value="vendor">Vendor</option>
+                    <option value="route_note">Notes 1 (Origin)</option>
+                    <option value="item_description_manual">Notes 2 (Manual)</option>
                   </select>
                 </div>
+                <button
+                  onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+                  title={sortDir === 'asc' ? 'Ascending' : 'Descending'}
+                  className="p-2 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] transition-all shadow-sm flex items-center justify-center shrink-0 h-[34px] w-[34px]"
+                >
+                  {sortDir === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
+                </button>
               </div>
             </div>
+            {viewMode === 'LIST' && (
             <div ref={topScrollRef} onScroll={handleTopScroll} className="overflow-x-auto w-full shrink-0 scrollbar-visible">
               <div style={{ width: tableWidth, height: '1px' }} />
             </div>
+            )}
+            {viewMode === 'LIST' && (
             <div ref={bottomScrollRef} onScroll={handleBottomScroll} className="flex-1 min-h-0 overflow-x-auto overflow-y-auto scrollbar-x-visible">
               <table ref={tableRef} className="w-full text-[11px] bg-white">
                 <thead className="sticky top-0 z-20">
@@ -1010,9 +1224,9 @@ export default function FarOverseasAirPage() {
                     rows.map((r, idx) => {
                       const costStatus = costStatusMap[r.id];
                       const editingThisRow = editingRowId === r.id;
-                      const ctx: ListRenderCtx = { onOpenWeightModal: setWeightModalRow, editingRowId, getVal, setVal, expandedPoRows, togglePoExpanded, picUsers };
+                      const ctx: ListRenderCtx = { onOpenWeightModal: setWeightModalRow, editingRowId, getVal, setVal, expandedPoRows, togglePoExpanded, picUsers, costCityMap };
                       return (
-                        <tr key={r.id} className="group bg-white hover:bg-slate-50 transition-colors">
+                        <tr key={r.id} id={`far-row-${r.id}`} className="group bg-white hover:bg-slate-50 transition-colors">
                           {LIST_COLUMNS.map((col, i) => {
                             if (col.render) {
                               return (
@@ -1109,6 +1323,132 @@ export default function FarOverseasAirPage() {
                 </tbody>
               </table>
             </div>
+            )}
+
+            {/* Card view (2026-09) -- tampilan ringkas grid, area scroll TERPISAH dari List (List
+                punya scroll ganda horizontal, Card cukup scroll vertikal biasa). Field yang
+                ditampilkan SENGAJA subset dari LIST_COLUMNS (bukan semua ~25 kolom) -- lihat
+                penjelasan di state `viewMode`: Card untuk browsing cepat, detail lengkap tetap
+                lewat "Approval" (modal `FarOverseasAirDetailModal.tsx`, TIDAK disentuh) atau
+                pindah ke List. */}
+            {viewMode === 'CARD' && (
+              <div className="flex-1 min-h-0 overflow-y-auto p-4">
+                {loadingList ? (
+                  <div className="text-center py-10 text-[#5A305A] text-sm">Loading data...</div>
+                ) : rows.length === 0 ? (
+                  <div className="text-center py-10 text-[#5A305A] text-sm italic">No FAR Overseas data yet. Click "Upload Document" to get started.</div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                    {rows.map((r) => {
+                      const costStatus = costStatusMap[r.id];
+                      const poParts = typeof r.po_ori === 'string' ? r.po_ori.split('+').map((s: string) => s.trim()).filter(Boolean) : [];
+                      return (
+                        <div key={r.id} className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 flex flex-col gap-2.5 hover:border-[#5A305A]/40 transition-colors">
+                          {/* Wrapper `flex-1` di sekitar konten (No PO + info grid) supaya baris
+                              tombol di bawah SELALU nempel di tepi bawah card (`mt-auto`) --
+                              tanpa ini, tombol posisinya ikut naik-turun tergantung berapa
+                              banyak teks (Vendor/Vessel dst bisa 1-3 baris), padahal CSS Grid
+                              menstretch semua card 1 baris ke tinggi yang sama (card tertinggi
+                              di baris itu) -- laporan user "tombol tidak seragam". */}
+                          <div className="flex-1">
+                          {/* Urutan baris field KHUSUS card (2026-09, permintaan user) --
+                              BEDA dari urutan kolom LIST_COLUMNS di tabel List, JANGAN
+                              disamakan otomatis kalau List_COLUMNS berubah urutan ke depan:
+                              Ship Via (+badge) -> Invoice No/Date -> No PO -> Vendor ->
+                              Total Amount -> NOTE 1 (route_note). */}
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Ship Via</p>
+                              <p className="text-xs font-semibold text-[#5A305A] break-words leading-snug">{r.ship_via || <span className="italic text-slate-400 font-normal">-</span>}</p>
+                            </div>
+                            <div className="shrink-0 flex flex-col items-end gap-1 max-w-[55%]">
+                              {r.memo_title && <p className="text-[10px] font-semibold text-[#5A305A]/70 text-right break-words leading-snug">{r.memo_title}</p>}
+                              <ApprovalBadge status={r.approval_status} compact />
+                              <CostBadge status={costStatus} compact />
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs mt-2.5">
+                            <div>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Invoice No</p>
+                              <p className="text-[#5A305A] break-words">{r.no_invoice || <span className="italic text-slate-400">-</span>}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Inv Date</p>
+                              <p className="text-[#5A305A]">{formatDateID(r.invoice_date)}</p>
+                            </div>
+                            <div className="col-span-2">
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Vendor</p>
+                              <p className="text-[#5A305A] break-words">{r.vendor || <span className="italic text-slate-400">-</span>}</p>
+                            </div>
+                            <div className="col-span-2">
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">No PO</p>
+                              <p className="text-[#5A305A] break-words leading-snug">
+                                {poParts.length > 0 ? poParts[0] : <span className="italic text-slate-400">-</span>}
+                                {poParts.length > 1 && <span className="text-slate-400"> (+{poParts.length - 1} more)</span>}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Total Amount</p>
+                              <p className="text-[#5A305A] font-semibold">{fmtTotalAmount(r.total_amount, r)}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Qty/Weight</p>
+                              <p className="text-[#5A305A] break-words">{r.qty ?? <span className="italic text-slate-400">-</span>}/{r.weight_unit || <span className="italic text-slate-400">-</span>}</p>
+                            </div>
+                            <div className="col-span-2">
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Notes 1</p>
+                              <p className="text-[#5A305A] break-words leading-snug">{r.route_note || <span className="italic text-slate-400">-</span>}</p>
+                            </div>
+                          </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 pt-2 border-t border-slate-100 mt-auto">
+                            <button
+                              onClick={() => navigate(`/direct-loading/${r.id}`)}
+                              title="Approval"
+                              className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-semibold text-[#5A305A] hover:bg-slate-50 transition-colors"
+                            >
+                              <ClipboardCheck size={11} /> Approval
+                            </button>
+                            <button
+                              onClick={() => setCostModalRow(r)}
+                              title="Cost Validation"
+                              className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-semibold text-[#5A305A] hover:bg-slate-50 transition-colors"
+                            >
+                              <ClipboardList size={11} /> Cost
+                            </button>
+                            {canEditDirectLoading && (
+                              <button
+                                onClick={() => handleEditFromCard(r.id)}
+                                title="Edit this memo (switches to List view)"
+                                className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-blue-200 bg-blue-50 text-[10px] font-semibold text-blue-700 hover:bg-blue-100 transition-colors"
+                              >
+                                <Edit3 size={11} /> Edit
+                              </button>
+                            )}
+                            <button
+                              onClick={() => { autoPrintRef.current = true; navigate(`/direct-loading/${r.id}`); }}
+                              title="Print memo"
+                              className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-semibold text-[#5A305A] hover:bg-slate-50 transition-colors"
+                            >
+                              <Printer size={11} /> Print Memo
+                            </button>
+                            {canEditDirectLoading && (
+                              <button
+                                onClick={() => openDeleteConfirm(r)}
+                                title="Delete this memo"
+                                className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-rose-200 bg-rose-50 text-[10px] font-semibold text-rose-600 hover:bg-rose-100 transition-colors"
+                              >
+                                <Trash2 size={11} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Footer Pagination -- pola sama seperti SharedDataTable.tsx (halaman Audit Sea & Air) */}
             {rows.length > 0 && (

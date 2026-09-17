@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, AlertTriangle, ListChecks, ClipboardList, Save, ShieldCheck, CheckCircle2, XCircle, RotateCcw, Printer, FileText, ExternalLink } from 'lucide-react';
+import { X, AlertTriangle, ListChecks, ClipboardList, Save, ShieldCheck, CheckCircle2, XCircle, RotateCcw, Printer, FileText, Eye, Download } from 'lucide-react';
 import {
   parseJsonField, getMatrixColumns, resolveAcuanColumnKey, summaryStatusMeta,
   STATUS_WORKFLOW_OPTIONS, workflowMeta, rowStatusClass, rowStatusMeta, updateBunkerDokumen,
@@ -238,13 +238,138 @@ function ConfirmMatchCell({ row, bunkerId, noPo, statusManualRaw, onConfirmed }:
   );
 }
 
+// Ekstrak Google Drive file id dari `file_url` (format umum
+// "https://drive.google.com/file/d/<ID>/view?usp=drivesdk", tapi jaga2 juga format
+// "...?id=<ID>"/"open?id=<ID>") -- dipakai `buildBunkerPreviewSrc()` supaya preview bisa lewat
+// proxy backend yg sama dgn modul lain (`/api/drive-file-proxy`), BUKAN dibuka apa adanya (Drive
+// kadang menolak dibuka dalam iframe lintas-domain krn X-Frame-Options, lihat komentar
+// `PreviewModal` di bawah). Return null kalau polanya tidak dikenali -- fallback tampil badge
+// "Preview unavailable" (BunkerHelpers TIDAK punya kolom `drive_file_id` terpisah spt modul lain,
+// jadi ekstraksi dari URL ini SATU-SATUNYA cara).
+const DRIVE_FILE_ID_RE = /^[a-zA-Z0-9_-]{10,100}$/;
+function extractDriveFileId(url: string): string | null {
+  const m1 = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (m1 && DRIVE_FILE_ID_RE.test(m1[1])) return m1[1];
+  const m2 = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (m2 && DRIVE_FILE_ID_RE.test(m2[1])) return m2[1];
+  return null;
+}
+
+// Proxy backend `/api/drive-file-proxy?id=<drive_file_id>` -- REPLIKA PERSIS `buildPreviewSrc()`
+// AuditPoPage.tsx/AccountingRekapPage.tsx dkk. Return null kalau id tidak bisa diekstrak dari
+// `file_url` (bukan link Drive standar) -- BEDA dari modul lain yg fallback ke URL mentah, krn
+// URL mentah Drive TIDAK BISA di-fetch dari sini (blocked CORS Drive kalau bukan lewat proxy) --
+// lebih jujur tampilkan "Preview unavailable" drpd iframe kosong/error.
+function buildBunkerPreviewSrc(fileUrl: string): string | null {
+  const id = extractDriveFileId(fileUrl);
+  return id ? `/api/drive-file-proxy?id=${encodeURIComponent(id)}` : null;
+}
+
+// File Bunker hampir selalu PDF (lihat kontrak data source_files) -- fallback 'pdf', cek
+// ekstensi HTML jaga2 kalau ada kasus lain.
+function guessBunkerPreviewKind(filename: string | null | undefined): 'pdf' | 'html' {
+  if (filename && /\.html?$/i.test(filename)) return 'html';
+  return 'pdf';
+}
+
+type BunkerPreviewTarget = { title: string; src: string; externalUrl: string; kind: 'pdf' | 'html' };
+
+// Modal preview file -- REPLIKA PERSIS `PreviewModal` AuditPoPage.tsx/AccountingRekapPage.tsx:
+// fetch dulu lewat JS, suntikkan hasilnya via srcDoc/blob: (bukan `src` langsung ke proxy) supaya
+// dianggap same-origin & imun X-Frame-Options, DAN blob PDF di-rewrap paksa `type:'application/
+// pdf'` (fix Content-Type upstream generik trigger download alih2 preview).
+function BunkerPreviewModal({ target, onClose }: { target: BunkerPreviewTarget; onClose: () => void }) {
+  const [status, setStatus] = useState<'loading' | 'html' | 'blob' | 'error'>('loading');
+  const [htmlContent, setHtmlContent] = useState('');
+  const [blobUrl, setBlobUrl] = useState('');
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const handlePrint = () => {
+    const win = iframeRef.current?.contentWindow;
+    if (!win) return;
+    win.focus();
+    win.print();
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl = '';
+    setStatus('loading');
+
+    (async () => {
+      try {
+        const res = await fetch(target.src);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (cancelled) return;
+        if (target.kind === 'html') {
+          const text = await res.text();
+          if (cancelled) return;
+          setHtmlContent(text);
+          setStatus('html');
+        } else {
+          const rawBlob = await res.blob();
+          if (cancelled) return;
+          const blob = rawBlob.type === 'application/pdf' ? rawBlob : new Blob([rawBlob], { type: 'application/pdf' });
+          objectUrl = URL.createObjectURL(blob);
+          setBlobUrl(objectUrl);
+          setStatus('blob');
+        }
+      } catch {
+        if (!cancelled) setStatus('error');
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [target.src, target.kind]);
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[95] flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-[90vw] max-w-6xl h-[98vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-200 shrink-0">
+          <h3 className="font-bold text-[#5A305A] text-sm truncate">{target.title}</h3>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {(status === 'html' || status === 'blob') && (
+              <button onClick={handlePrint} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-[#5A305A] text-xs font-semibold hover:bg-slate-50 transition-colors">
+                <Printer size={13} /> Print
+              </button>
+            )}
+            <a href={target.externalUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-[#5A305A] text-xs font-semibold hover:bg-slate-50 transition-colors">
+              <Download size={13} /> Download File
+            </a>
+            <button onClick={onClose} className="text-[#5A305A]/60 hover:text-[#5A305A] p-1.5"><X size={18} /></button>
+          </div>
+        </div>
+        <div className="flex-1 min-h-0 bg-slate-100">
+          {status === 'loading' && (
+            <div className="w-full h-full flex items-center justify-center text-[#5A305A] text-sm">Memuat preview...</div>
+          )}
+          {status === 'error' && (
+            <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-center px-8">
+              <p className="text-[#5A305A] text-sm font-semibold">Preview tidak bisa dimuat di dalam aplikasi.</p>
+              <p className="text-[#5A305A]/70 text-xs max-w-md">Kemungkinan server asal file ini memblokir akses dari luar (CORS). Gunakan tombol "Download File" di pojok kanan atas untuk melihatnya.</p>
+            </div>
+          )}
+          {status === 'html' && (
+            <iframe ref={iframeRef} srcDoc={htmlContent} title={target.title} className="w-full h-full border-0" sandbox="allow-same-origin allow-modals" />
+          )}
+          {status === 'blob' && (
+            <iframe ref={iframeRef} src={blobUrl} title={target.title} className="w-full h-full border-0" />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Seksi "Dokumen Asli" -- daftar semua file yang pernah diupload untuk PO ini (kumulatif,
 // termasuk dokumen susulan, TIDAK di-dedupe walau ada filename yang sama berulang -- itu
-// memang riwayat upload, bukan bug). Diurutkan terbaru ke terlama. Link Drive dibuka apa
-// adanya di tab baru (target=_blank) -- SENGAJA TIDAK diembed/iframe (lihat catatan di
-// HtmlValue/komentar file lain soal X-Frame-Options, kasusnya sama: Drive kadang menolak
-// dibuka dalam iframe lintas-domain).
+// memang riwayat upload, bukan bug). Diurutkan terbaru ke terlama. 2026-09 (permintaan user):
+// preview LANGSUNG di dalam aplikasi (`BunkerPreviewModal`, pola sama modul lain), BUKAN lagi
+// buka tab baru -- tombol "Open" GANTI jadi "Preview".
 function SourceFilesSection({ sourceFilesRaw }: { sourceFilesRaw: unknown }) {
+  const [previewTarget, setPreviewTarget] = useState<BunkerPreviewTarget | null>(null);
   const files: SourceFileEntry[] = parseJsonField(sourceFilesRaw) || [];
   const sorted = [...files].sort((a, b) => {
     const ta = a.uploaded_at ? new Date(a.uploaded_at).getTime() : 0;
@@ -261,33 +386,40 @@ function SourceFilesSection({ sourceFilesRaw }: { sourceFilesRaw: unknown }) {
         <p className="text-xs text-[#5A305A] italic text-center py-6">No files uploaded yet.</p>
       ) : (
         <div className="divide-y divide-slate-100">
-          {sorted.map((f, i) => (
-            <div key={i} className="flex items-center justify-between gap-3 px-4 py-2.5">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <FileText size={16} className="text-[#5A305A]/50 shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-xs xl:text-sm font-medium text-[#5A305A] break-words">{f.filename || 'Untitled file'}</p>
-                  <p className="text-[10px] xl:text-[11px] text-[#5A305A]/60">{formatDateTimeID(f.uploaded_at)}</p>
+          {sorted.map((f, i) => {
+            const previewSrc = f.file_url ? buildBunkerPreviewSrc(f.file_url) : null;
+            return (
+              <div key={i} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <FileText size={16} className="text-[#5A305A]/50 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-xs xl:text-sm font-medium text-[#5A305A] break-words">{f.filename || 'Untitled file'}</p>
+                    <p className="text-[10px] xl:text-[11px] text-[#5A305A]/60">{formatDateTimeID(f.uploaded_at)}</p>
+                  </div>
                 </div>
+                {previewSrc ? (
+                  <button
+                    onClick={() => setPreviewTarget({
+                      title: f.filename || 'Untitled file',
+                      src: previewSrc,
+                      externalUrl: f.file_url!,
+                      kind: guessBunkerPreviewKind(f.filename),
+                    })}
+                    className="shrink-0 text-[11px] xl:text-xs font-bold text-blue-600 hover:text-white hover:bg-blue-600 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-full whitespace-nowrap transition-all flex items-center gap-1"
+                  >
+                    <Eye size={11} /> Preview
+                  </button>
+                ) : (
+                  <span className="shrink-0 text-[11px] xl:text-xs font-semibold text-slate-400 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-full whitespace-nowrap">
+                    Preview unavailable
+                  </span>
+                )}
               </div>
-              {f.file_url ? (
-                <a
-                  href={f.file_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="shrink-0 text-[11px] xl:text-xs font-bold text-blue-600 hover:text-white hover:bg-blue-600 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-full whitespace-nowrap transition-all flex items-center gap-1"
-                >
-                  <ExternalLink size={11} /> Open
-                </a>
-              ) : (
-                <span className="shrink-0 text-[11px] xl:text-xs font-semibold text-slate-400 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-full whitespace-nowrap">
-                  Preview unavailable
-                </span>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
+      {previewTarget && <BunkerPreviewModal target={previewTarget} onClose={() => setPreviewTarget(null)} />}
     </div>
   );
 }
