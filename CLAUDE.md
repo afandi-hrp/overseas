@@ -2719,6 +2719,135 @@ cuma sebagian sebelum tanggal scrap). Klik bar Trend Quarterly/Yearly di Dashboa
 per Vessel dgn presisi bulan yang tidak sepenuhnya akurat (lihat poin "Trend MENGIKUTI periodMode"
 di atas) — di luar cakupan revisi ini, bisa disempurnakan kalau diminta.
 
+## Overseas Cost by Courier — halaman BARU di menu Reporting (`ReportingCostByCourierPage.tsx`, 2026-09)
+
+Submenu ke-2 di bawah "Reporting" (sejajar "Overseas Cost by Vessel", TIDAK digabung 1 halaman —
+route/page_key sendiri: `/reporting/cost-by-courier`, `reporting_cost_by_courier`). **Sumber data
+`rekapan_courier` (Invoice Recap Courier) — TERPISAH TOTAL dari modul "Overseas Cost by Vessel"**
+(`reporting_cost_allocation`/`master_vessel`, lihat bagian besar di atas) — TIDAK ada overlap
+kode/logic sama sekali, "duplikasi sengaja" pola sama modul Reporting lain.
+
+**File**: `src/utils/ReportingCourierHelpers.ts` (SATU-SATUNYA tempat fetch/agregasi — kalau
+formula berubah, ubah DI SINI), `src/pages/ReportingCostByCourierPage.tsx` (UI).
+
+**PENTING — kolom sumber**: SEMUA angka biaya dari kolom UTAMA `rekapan_courier`
+(`courier_adm_fee`, `total_freight`, `bm`, `ppn`, `pph`, `total_amount`, `total_duty_tax`).
+Kolom `breakdown_*_vessel` (`breakdown_courier_adm_vessel` dkk, milik modul Cost by Vessel, hasil
+bagi rata per-vessel) **SENGAJA TIDAK PERNAH dipakai di halaman ini** — permintaan eksplisit user.
+
+**BELUM DIJALANKAN ke Supabase production — WAJIB dijalankan manual dulu, kalau tidak halaman ini
+akan tampil KOSONG utk user yang punya akses `reporting_cost_by_courier` tapi TIDAK punya akses
+`courier_rekapan`** (RLS `rekapan_courier` SELECT existing di-gate `has_page_access('courier_rekapan')`
+saja — policy BARU ini menambah alternatif akses via OR, TIDAK mengganti/menghapus policy lama):
+```sql
+create policy "rekapan_courier_select_reporting_cost_by_courier" on public.rekapan_courier
+  for select using (public.has_page_access('reporting_cost_by_courier'));
+```
+
+**Aturan distinct count (Freight & Duty jadi 2 baris terpisah per AWB di recap → dobel kalau
+naif)** — `stripAwbCarrier()` (regex diperluas dari pola `awb_strip_carrier` di
+`SharedDataTable.tsx`, DHL|FEDEX|UPS) dipakai SEMUA hitungan distinct:
+- **AWB/Shipment distinct** — `Set` dari AWB yang sudah di-strip prefix carrier.
+- **PO distinct** — `po_pt_imi` + `po_shipping` di-split `+` (pola sama `vessel`/breakdown lain
+  di tabel ini), suffix `"(N)"` (PO partial, mis. `...0001(1)` vs `...0001(2)`) DIBUANG sebelum
+  dedup (`normalizePoKey()`) — 2 partial dianggap 1 PO, sesuai permintaan eksplisit user.
+- **Weight distinct** — `distinctWeightMap()`/`distinctWeightTotal()`: ambil `weight_kg` baris
+  PERTAMA per AWB unik (BUKAN SUM semua baris — weight_kg SAMA di baris Freight & Duty utk 1
+  AWB, kalau dijumlah polos jadi 2x lipat).
+- Sum KOMPONEN BIAYA (Total Cost/Freight/Courier Adm/BM/PPN/PPH/Total Duty Tax) TIDAK di-dedup —
+  SUM semua baris apa adanya (baris Freight & Duty memang 2 catatan biaya berbeda, keduanya sah
+  dijumlah).
+
+**Filter PPJK — meeting-mode (SESUAI SPEK, bukan filter recompute biasa)**: `selectedPpjk`
+(`Set<string>`, kosong = "All") HANYA memfilter data yang DITAMPILKAN kartu/breakdown/detail
+table (`currentRowsSelected`), TAPI donut & persentase card SELALU dihitung terhadap
+`sumsAll`/`ppjkTotals` (SEMUA PPJK, TIDAK terfilter) sebagai penyebut — 1 PPJK terpilih TIDAK
+PERNAH "dinormalisasi ulang jadi 100%". Donut `dimmed` (abu-abu, `#E2E8F0`) utk slice yang TIDAK
+termasuk seleksi, tapi TETAP di posisi/ukuran ASLI-nya dalam lingkaran (bukan dihapus/di-reflow) —
+inti "meeting-mode": klik FedEx di dropdown PPJK -> card jadi "IDR 1,5 M (70.0% dari total)",
+donut FedEx tetap slice 70% di posisi aslinya, sisanya abu kosong (BUKAN redraw donut jadi 100%
+FedEx). Trend chart, Breakdown Komponen Biaya, Detail Data tables, Data Performance — SEMUA ikut
+`selectedPpjk` yang sama (filter, bukan filter+renormalize).
+
+**Periode**: `PeriodMode` (`MONTHLY`/`QUARTERLY`/`YEARLY`) + tahun + bulan/kuartal — SINGLE-select
+(BEDA dari Cost per Vessel yang multi-select tahun/bulan) krn halaman ini fokus 1 periode
+"current" + 1 "previous" utk kartu %, bukan agregasi bentang banyak periode sekaligus. Fetch
+efisien: `yearRows`/`prevYearRows` (2 query MAKS, cuma 1 kalau tahun current & previous SAMA —
+pola sama `ReportingDashboardPage.tsx`) ambil SATU TAHUN PENUH, lalu `currentRows`/`previousRows`
+dipotong client-side via `periodRange()` — Trend chart (SELALU Jan-Dec tahun `year` terpilih,
+terlepas `periodMode`, pola sama Cost by Vessel Monthly Trend versi lama) langsung reuse
+`yearRows` yang sama, TIDAK fetch ulang.
+
+**Data Performance (di dalam By Weight Range)** — `perfMode` (`MTM`/`QTQ`/`YOY`) menentukan
+`perfPeriodMode`+jumlah kolom (`perfCount`: 6 bulan / 4 kuartal / 3 tahun) dari periode SEKARANG
+mundur ke belakang (`buildPeriodSeries()`). **Fetch TERPISAH** (`perfRowsByPeriod`, N query
+paralel via `Promise.all`, N=perfCount) — BUKAN reuse `yearRows` krn bisa melintasi tahun
+(mis. MTM 6 bulan dari Sep mundur ke Apr, atau YoY 3 tahun). Kolom "Total" = SUM/agregasi ulang
+dari GABUNGAN seluruh baris N periode (bukan cuma jumlah kolom-kolom yang sudah ditampilkan) --
+Shipment/Weight distinct di kolom Total dihitung ulang dari gabungan baris (`perfTotal`, BUKAN
+sum naif kolom AWB-distinct per periode yang bisa dobel-hitung AWB yang sama muncul di >1 periode
+kalau shipment-nya lintas tanggal — batasan diterima, jarang terjadi krn 1 AWB biasanya 1 tanggal
+terima email).
+
+**PT dropdown — KETERBATASAN DIKETAHUI**: spek minta "dropdown tampilkan NAMA PT, A/N sebagai
+kunci" — TIDAK ADA sumber data pemetaan kode `an` (mis. "IMI"/"WNS"/"GMI") ke nama PT lengkap
+yang bisa dipakai dgn percaya diri utk `rekapan_courier` (LOGO_ASSETS di `FarOverseasAirHelpers.ts`
+cuma peta kode->logo gambar, bukan nama; `far_overseas_signer_config.company_name_full` scoped ke
+modul FAR Overseas, TIDAK ada jaminan kode-nya funtuk konsisten dgn kode `an` Courier). Dropdown
+"PT" SAAT INI menampilkan kode `an` mentah apa adanya sbg label DAN value (`fetchDistinctAn()`,
+query distinct langsung ke `rekapan_courier`) — **BELUM sesuai spek "tampilkan nama PT"**, perlu
+sumber pemetaan resmi (tabel master baru, atau konfirmasi apakah `far_overseas_signer_config`
+memang boleh dipakai lintas modul) sebelum bisa diperbaiki — MINTA DIKONFIRMASI kalau mau
+diselesaikan.
+
+**Header ikon halaman** — DIGANTI (2026-09, laporan user "samakan dgn halaman lain") dari coral
+`ACCENT` (`#F58C77`) ke ungu brand `bg-[#5A305A]` (pola "Header halaman" standar CLAUDE.md,
+sama semua halaman lain). Toggle sub-tab (By PPJK/Origin/Weight Range) & tombol `perfMode`
+(MTM/QTQ/YoY) di Data Performance JUGA disamakan ke `bg-[#5A305A]` saat aktif (dulu ikut
+`ACCENT`). `ACCENT` (coral) TETAP dipakai KHUSUS sbg warna bar/line chart (Breakdown Freight bar,
+Trend line, HBar Origin/Weight) — itu bukan elemen UI interaktif, konsisten dgn pola modul
+Reporting lain yang tiap chart py warna aksen sendiri (mis. `#D97706` Cost by Category,
+`#0284C7` Cost per Fleet Group di `ReportingDashboardPage.tsx`).
+
+**Export — preview mirror PERSIS + header berwarna (2026-09, susulan)** — 2 perubahan:
+1. **Modal preview digantI TOTAL** dari teks deskripsi singkat jadi TABEL SUNGGUHAN yang me-mirror
+   isi file Excel (Summary/Component/Detail table, header ungu `#5A305A` sama persis dgn yang
+   nanti ditulis ke Excel) — `activeDetailRows`/`activeDetailTitle`/`activeDetailNameLabel`/
+   `activeHideWeightPo` (variable BARU, dihitung SEKALI dari `viewMode` yang aktif) jadi SATU
+   SUMBER dipakai KEDUA tempat (preview modal DAN `handleExport()`) supaya tidak pernah beda.
+   Detail table di preview dibatasi 15 baris pertama (+ pesan "showing first N of M rows — file
+   Excel tetap berisi SEMUA baris") — pola sama preview export di `ReportingCostPerVesselPage.tsx`.
+2. **Nominal di Excel ditulis sbg TEKS YANG SUDAH DIFORMAT** (`fmtIdr()` = "IDR 1.503.385.576",
+   `weight.toLocaleString('id-ID')` dst) — **BUKAN angka mentah + number format Excel** (versi
+   AWAL, laporan user "kok di Excel cuma 312137179 polos, weight malah 'lucu' jadi '1158,1'").
+   Root cause versi awal: `ws.addRow([..., sumsSelected.totalCost])` menulis NILAI NUMERIK
+   mentah tanpa format cell sama sekali — Excel menampilkannya sesuai locale sistem PENERIMA
+   file (bisa beda2, bukan "IDR" + titik pemisah ribuan spt di aplikasi). Fix: SEMUA sel nominal
+   ditulis sbg string HASIL `fmtIdr()`/`toLocaleString('id-ID')` yang SAMA PERSIS dgn yang
+   dirender di layar aplikasi — dijamin identik apa pun locale sistem penerima file, krn sudah
+   jadi teks tetap (bukan angka yang diformat ulang oleh Excel).
+3. **Header tabel di file Excel diberi warna** — `styleHeaderRow(row)` (helper BARU di
+   `handleExport()`, dipakai berulang tiap tabel: Summary/Component/Detail) — fill solid
+   `FF5A305A` (ungu brand) + font putih tebal, ExcelJS `row.eachCell(c => {c.fill=...;
+   c.font=...})`. Judul halaman (`titleRow`) dapat `font: {bold:true,size:14,color:'FF5A305A'}`
+   (teks ungu, BUKAN fill background — beda styling dari header tabel, biar tidak "terlalu
+   penuh warna").
+
+**Bug ditemukan & diperbaiki — chart "Shipment" (By Weight Range) salah tampil format Rupiah**
+(2026-09, laporan user + screenshot) — `HBar` (komponen chart bar horizontal generik, dipakai
+juga utk By Origin & Cost by Weight Range) HARDCODE `fmtIdr()` utk label nilai, padahal chart
+"Shipment" di By Weight Range nilainya JUMLAH shipment (angka biasa, bukan nominal) — tampil
+salah "IDR 14" dst. Fix: `HBar` terima prop opsional `formatValue` (default `fmtIdr`, dipakai
+apa adanya oleh chart Cost & By Origin yang MEMANG nominal) — pemanggilan chart Shipment di By
+Weight Range kirim `formatValue={n => n.toLocaleString('id-ID')}` (angka polos, tanpa prefix).
+
+**Belum diimplementasikan / gap diketahui**: donut "By Origin" TIDAK ikut `dimmed`-style
+meeting-mode (semua origin selalu solid, krn dropdown-nya PPJK bukan Origin — highlight parsial
+cuma relevan utk dimensi yang PUNYA dropdown filter-nya, yaitu PPJK); Weight Range breakpoint
+(0-5/5-25/25-70/70-150/>150) HARDCODE di `WEIGHT_RANGES` (`ReportingCourierHelpers.ts`), belum
+ada UI utk mengubahnya; Conclusion box teksnya template string sederhana (bukan AI-generated),
+cukup utk insight dasar meeting tapi tidak sedalam analisis manual.
+
 ## Peta tabel Supabase (per modul)
 
 **Auth & RBAC**: `profiles`, `roles`, `user_roles`, `role_page_access`.

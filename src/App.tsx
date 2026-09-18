@@ -37,6 +37,7 @@ import AuditPoOverseasPage from './pages/AuditPoOverseasPage';
 import PiLocalPage from './pages/PiLocalPage';
 import AccountingRekapPage from './pages/AccountingRekapPage';
 import CostByVesselPage from './pages/CostByVesselPage';
+import ReportingCostByCourierPage from './pages/ReportingCostByCourierPage';
 import MasterVesselAdminPage from './pages/MasterVesselAdminPage';
 
 function ProtectedRoute() {
@@ -124,6 +125,7 @@ export default function App() {
                   sendiri (pola sama /settings hub), lihat komentar lengkap di file itu. Route
                   lama DIHAPUS TOTAL -- semua link internal sudah diarahkan ulang ke sini. */}
               <Route path="/reporting/cost-by-vessel" element={<CostByVesselPage />} />
+              <Route path="/reporting/cost-by-courier" element={<RequirePageAccess pageKey="reporting_cost_by_courier"><ReportingCostByCourierPage /></RequirePageAccess>} />
 
               <Route path="/audit-trail" element={<RequirePageAccess pageKey="audit_trail"><AuditTrailPage /></RequirePageAccess>} />
               <Route path="/settings" element={<SettingsPage />} />

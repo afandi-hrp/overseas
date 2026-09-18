@@ -72,6 +72,9 @@ export const PAGE_REGISTRY: PageEntry[] = [
   // cuma `path` sekarang keduanya nunjuk ke route gabungan yg sama dgn `?view=` beda per tab.
   { key: 'reporting_dashboard', label: 'Dashboard (Reporting)', path: '/reporting/cost-by-vessel?view=dashboard', group: 'Reporting' },
   { key: 'reporting_cost_per_vessel', label: 'Cost per Vessel', path: '/reporting/cost-by-vessel?view=cost_per_vessel', group: 'Reporting' },
+  // Halaman BARU (2026-09), TERPISAH dari 2 di atas -- sumber data beda total (Invoice Recap
+  // Courier `rekapan_courier`, BUKAN `reporting_cost_allocation`), route sendiri, page_key sendiri.
+  { key: 'reporting_cost_by_courier', label: 'Overseas Cost by Courier', path: '/reporting/cost-by-courier', group: 'Reporting' },
 
   { key: 'audit_trail', label: 'Audit Trail', path: '/audit-trail', group: 'General' },
 

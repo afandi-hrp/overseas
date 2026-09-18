@@ -67,6 +67,9 @@ const MAIN_TABS: MainTab[] = [
     basePath: '/reporting',
     subTabs: [
       { id: 'reporting_cost_by_vessel', label: 'Overseas Cost by Vessel', path: '/reporting/cost-by-vessel', pageKeys: ['reporting_dashboard', 'reporting_cost_per_vessel'] },
+      // BARU (2026-09) -- halaman terpisah, sumber data Invoice Recap Courier (`rekapan_courier`),
+      // page_key sendiri (`pageKey` tunggal, bukan `pageKeys` array krn cuma 1 page_key).
+      { id: 'reporting_cost_by_courier', label: 'Overseas Cost by Courier', path: '/reporting/cost-by-courier', pageKey: 'reporting_cost_by_courier' },
     ],
   },
   {
