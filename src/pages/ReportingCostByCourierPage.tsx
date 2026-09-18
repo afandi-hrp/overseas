@@ -411,7 +411,7 @@ export default function ReportingCostByCourierPage() {
   }, [currentRowsSelected, showZeroCost, originOptions]);
 
   // ─── By Weight Range ─────────────────────────────────────────────────────
-  const weightBucketsFull = useMemo(() => {
+  const weightBucketsFull = useMemo((): (DetailRow & { weight: number })[] => {
     const wmap = distinctWeightMap(currentRowsSelected);
     const bucketOf = new Map<string, string>();
     wmap.forEach((w, awb) => bucketOf.set(awb, weightRangeLabel(w)));
@@ -431,7 +431,13 @@ export default function ReportingCostByCourierPage() {
     });
     return WEIGHT_RANGES.map(rg => {
       const g = out.get(rg.label)!;
-      return { label: rg.label, sums: g.sums, shipment: distinctAwbCount(g.rows), po: distinctPoCount(g.rows), weight: g.weight };
+      // `name` (BUKAN `label`) -- WAJIB sama persis field `DetailRow.name` (dipakai `DetailTable`
+      // generik By PPJK/Origin/Weight Range) supaya kolom "Weight Range" di Detail Data terisi.
+      // Bug ditemukan & diperbaiki (2026-09): field ini sempat bernama `label`, bikin baris Detail
+      // Data (By Weight Range) tampil KOSONG di kolom nama walau data lain (Freight dst) tetap
+      // terisi -- TypeScript TIDAK menangkap ini krn `weightBuckets` tidak diberi anotasi tipe
+      // eksplisit `DetailRow[]` di titik deklarasinya (baru di-cek longgar saat dipakai belakangan).
+      return { name: rg.label, sums: g.sums, shipment: distinctAwbCount(g.rows), po: distinctPoCount(g.rows), weight: g.weight };
     });
   }, [currentRowsSelected]);
   const weightBuckets = useMemo(
@@ -699,7 +705,7 @@ export default function ReportingCostByCourierPage() {
                 {highestRangeBucket && (
                   <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 max-w-xs">
                     <p className="text-[11px] font-semibold text-[#5A305A]/70">Highest Range (Shipment)</p>
-                    <p className="text-lg font-bold text-[#5A305A] mt-0.5">{highestRangeBucket.label}</p>
+                    <p className="text-lg font-bold text-[#5A305A] mt-0.5">{highestRangeBucket.name}</p>
                     <p className="text-[10px] text-[#5A305A]/50 mt-0.5">{highestRangeBucket.shipment} shipment / {highestRangeBucket.weight.toLocaleString('id-ID')} kg</p>
                   </div>
                 )}
@@ -708,11 +714,11 @@ export default function ReportingCostByCourierPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <p className="text-[11px] font-bold text-[#5A305A]/60 uppercase mb-2">Cost</p>
-                      <HBar data={weightBuckets.map(b => ({ label: b.label, value: b.sums.totalCost }))} color={ACCENT} />
+                      <HBar data={weightBuckets.map(b => ({ label: b.name, value: b.sums.totalCost }))} color={ACCENT} />
                     </div>
                     <div>
                       <p className="text-[11px] font-bold text-[#5A305A]/60 uppercase mb-2">Shipment</p>
-                      <ShipmentWeightBar data={weightBuckets.map(b => ({ label: b.label, shipment: b.shipment, weight: b.weight }))} color="#73507B" />
+                      <ShipmentWeightBar data={weightBuckets.map(b => ({ label: b.name, shipment: b.shipment, weight: b.weight }))} color="#73507B" />
                     </div>
                   </div>
                 </div>
@@ -721,7 +727,7 @@ export default function ReportingCostByCourierPage() {
                   title="By Weight Range"
                   compareMode={compareMode} setCompareMode={setCompareMode}
                   compareLabel={conclusionCompareLabel}
-                  text={`Rentang berat dominan: ${highestRangeBucket?.label || '-'} (${highestRangeBucket?.shipment || 0} shipment). Total cost seluruh rentang berat: ${fmtIdr(weightBucketsFull.reduce((a, b) => a + b.sums.totalCost, 0))}.`}
+                  text={`Rentang berat dominan: ${highestRangeBucket?.name || '-'} (${highestRangeBucket?.shipment || 0} shipment). Total cost seluruh rentang berat: ${fmtIdr(weightBucketsFull.reduce((a, b) => a + b.sums.totalCost, 0))}.`}
                 />
               </>
             )}

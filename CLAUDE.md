@@ -1375,6 +1375,56 @@ Default"/"Uncheck All" di footer.
 GANTI `activeCols` di thead + row-group Courier saja. **Kalau diperluas ke tab lain, WAJIB ikuti
 pola ini — jangan filter `activeCols` itu sendiri.**
 
+## Export Excel — "Filter by Column" (`ExportModal.tsx`, 2026-09)
+
+Sebelumnya `ExportModal` (dipakai SEMUA tab yang punya tombol Export: Audit Courier, Rekapan
+Courier, Audit Sea & Air, Rekapan Sea & Air, Audit Trail, dll — komponen generik SATU-SATUNYA)
+cuma punya 1 filter: date range (`startDate`/`endDate`), dan kolom tanggal yang dipakai
+DI-HARDCODE per tab di `getExportData()` (`SharedDataTable.tsx`, mis. Audit Courier =
+`tgl_ppjk`, Rekapan Courier = `tgl_terima_email`) — tidak bisa filter by kolom lain. User minta
+bisa filter by KOLOM APA SAJA, dengan date picker TETAP dipakai khusus kolom tanggal.
+
+**Keputusan arsitektur (Opsi A dari analisa)**: filter kolom baru ini **MURNI client-side**, di
+DALAM `ExportModal.tsx` saja — TIDAK mengubah `getExportData()` di `SharedDataTable.tsx` sama
+sekali (file itu sudah besar & sensitif, banyak logic bercabang per tab). Alasan ini AMAN:
+query `getExportData` SUDAH `.limit(25000-50000)` tanpa filter kolom tambahan pun (cuma
+dibatasi date range server-side) — jadi data yang relevan SUDAH tertarik penuh ke browser
+sebelum file Excel dibuat, filter kolom lanjutan tidak perlu round-trip ke Supabase lagi.
+Konsekuensinya: **fitur ini otomatis berlaku ke SEMUA tab yang pakai `ExportModal`** (tidak
+cuma Audit/Rekapan Courier yang diminta awal), krn satu implementasi generik.
+
+- **State BARU**: `columnFilters: ColumnFilter[]` (`{key,col,op,text,from,to,boolVal}`, `key`
+  = id unik row filter biar bisa banyak filter sekaligus, semua di-AND-kan) + toggle panel
+  `showColumnFilters`. Date range (`startDate`/`endDate`) TIDAK diubah/dihapus — TETAP filter
+  utama/wajib di server (biar volume fetch awal terkontrol), filter kolom ini MURNI tambahan.
+- **`opForType(type)`** — nentuin jenis input dari tipe kolom (`c.type`, SUDAH ADA di `cols`
+  prop yang dikirim tiap pemanggil `ExportModal`, sama persis yang dipakai render tabel
+  on-screen): `date`/`datetime` -> **2 date picker (from/to)** (permintaan eksplisit user "date
+  picker tetap ada"); `num`/`pct` -> 2 input angka (min/max); `bool` -> dropdown
+  LULUS/GAGAL/Semua; sisanya (teks, `status`, `invType`, `awb_strip_carrier`, dll) -> input teks
+  "contains" (case-insensitive).
+- **`filteredData`** (`useMemo`, filter `data` yang sudah ke-fetch dari date range) — SATU
+  SUMBER dipakai KETIGA tempat: tabel preview (10 baris pertama), teks "Total N row(s)", DAN
+  `handleExport()` (`filteredData.forEach` GANTI `data.forEach`) — supaya file Excel yang
+  didownload SELALU SAMA PERSIS dgn yang di-preview, tidak pernah beda.
+- **Perbandingan nilai** — kolom `date`/`num` dibandingkan dari NILAI MENTAH (`item[col.key]`,
+  via `rawColVal()`, termasuk fallback `po_no`/`vessel` dari `po_detail` yang sudah ada sblmnya)
+  supaya perbandingan range akurat (bukan string hasil format). Kolom teks ("contains")
+  dicocokkan ke VERSI TER-FORMAT (`formatValue()`, fungsi yang SAMA dipakai preview & Excel) —
+  supaya pencarian teks cocok dengan apa yang user LIHAT di preview, bukan raw value internal
+  yang mungkin beda format (mis. NPWP mentah vs NPWP yang sudah diformat titik-strip).
+  **JANGAN duplikat logic format lain di sini** — selalu reuse `formatValue()`/`rawColVal()`.
+- **UI** — tombol "Filter by Column (N)" di toolbar (jadi ungu solid kalau ada filter aktif,
+  konsisten pola toggle lain di app), toggle panel di bawahnya isi baris-baris filter (dropdown
+  pilih kolom + input sesuai tipe + tombol ✕ hapus baris itu), tombol "+ Tambah Filter Kolom" /
+  "Hapus Semua Filter Kolom". Panel HANYA tampil kalau `showColumnFilters` true — supaya toolbar
+  modal tidak penuh utk user yang tidak butuh fitur ini.
+- **Gap diketahui**: filter kolom teks pakai match sederhana ("contains" 1 nilai), BUKAN
+  dropdown pilihan nilai unik ala Excel AutoFilter (skrinsyut acuan user) — dipertimbangkan tapi
+  TIDAK diimplementasikan krn effort lebih besar (perlu hitung distinct value per kolom dari
+  `data`) utk manfaat marginal (user masih bisa ketik nilai yang dicari). Bisa ditingkatkan kalau
+  diminta eksplisit.
+
 ## Highlight baris Submit Date — Rekapan Courier (`CourierRekapanRowGroup`)
 
 Baris dgn `submit_date` terisi diberi warna latar `bg-[#FFF5C5]` (kuning, hover
@@ -2936,6 +2986,22 @@ nama+%+cost seperti biasa (TIDAK berubah). `Donut` komponen prop `dimmed` (per-s
 
 **Aturan distinct — TETAP, tidak berubah** (PO gabung PT IMI+Non IMI, partial `(1)`/`(2)`=1 PO;
 Shipment & Weight dari AWB distinct, weight_kg diambil 1x per AWB bukan di-sum).
+
+**Bug ditemukan & diperbaiki — kolom "Weight Range" di Detail Data (By Weight Range) tampil
+KOSONG** (2026-09, laporan user + screenshot) — `weightBucketsFull` (sumber `weightBuckets`/
+`activeDetailRows` utk tab ini) sempat mengisi field nama bucket sbg `label` (mis. `{label:
+rg.label, sums, ...}`), padahal `DetailTable`/`DetailRow` (generik, dipakai KETIGA tab By
+PPJK/Origin/Weight Range) baca field `name`. Nama kolom "Freight"/"BM"/dst tetap terisi
+(field-field itu namanya sama), TAPI kolom "Weight Range" (dari `r.name`) selalu `undefined` ->
+kosong. **TypeScript tidak menangkap ini** krn `weightBucketsFull` tidak diberi anotasi tipe
+eksplisit `DetailRow[]` di titik deklarasinya (`useMemo` infer tipe bebas dari object literal
+internal) — assignment ke `activeDetailRows: DetailRow[]` baru dicek belakangan & entah kenapa
+tidak flag error (union-type inference quirk). Fix: (1) field diganti `name` (bukan `label`,
+titik ganti SATU-SATUNYA sumber di `WEIGHT_RANGES.map(...)`), 3 titik pemakaian lain yang masih
+baca `.label` ikut diperbaiki (`highestRangeBucket.name`, chart `HBar`/`ShipmentWeightBar`
+mapping, teks Conclusion); (2) `weightBucketsFull` SEKARANG diberi anotasi tipe eksplisit
+`(DetailRow & { weight: number })[]` di `useMemo` — supaya kalau field ini salah nama lagi ke
+depan, `tsc --noEmit` LANGSUNG menangkapnya sebelum sempat jadi bug runtime seperti ini.
 
 ## Peta tabel Supabase (per modul)
 

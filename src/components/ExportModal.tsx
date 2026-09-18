@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import ExcelJS from 'exceljs'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
@@ -173,6 +173,82 @@ export default function ExportModal({
 
   const exportCols = cols.filter(c => c.key !== 'index' && c.key !== 'action')
 
+  // Filter "by kolom apa saja" (2026-09, permintaan user) -- TERPISAH dari date range di atas
+  // (yang TETAP jadi filter utama server-side, supaya volume fetch awal tetap terkontrol).
+  // Filter kolom ini jalan di SISI CLIENT, di atas `data` yang SUDAH ke-fetch (limit 25-50rb
+  // baris tergantung tab, sudah tertarik ke browser sebelum file Excel dibuat, jadi filter
+  // tambahan di sini TIDAK butuh round-trip ke Supabase lagi). Diterapkan generik lewat
+  // `exportCols` yang SUDAH ADA (dikirim tiap pemanggil ExportModal, tipe kolom per `c.type`
+  // dipakai utk nentuin jenis input yang dirender -- date tetap date picker, num tetap
+  // angka, sisanya teks "contains"). SATU implementasi ini otomatis berlaku ke SEMUA tab yang
+  // pakai ExportModal (Audit Courier, Rekapan Courier, Audit Sea & Air, Rekapan Sea & Air,
+  // Audit Trail, dst) -- tidak perlu ubah getExportData() di SharedDataTable.tsx sama sekali.
+  type ColumnFilter = { key: string; col: string; op: 'contains' | 'range_date' | 'range_num' | 'bool'; text: string; from: string; to: string; boolVal: string }
+  const [columnFilters, setColumnFilters] = useState<ColumnFilter[]>([])
+  const [showColumnFilters, setShowColumnFilters] = useState(false)
+
+  const opForType = (type: string): ColumnFilter['op'] => {
+    if (type === 'date' || type === 'datetime') return 'range_date'
+    if (isNumType(type, '') || isPctType(type)) return 'range_num'
+    if (type === 'bool') return 'bool'
+    return 'contains'
+  }
+
+  const addColumnFilter = () => {
+    const firstCol = exportCols[0]
+    if (!firstCol) return
+    setColumnFilters(prev => [...prev, { key: `${Date.now()}-${Math.random()}`, col: firstCol.key, op: opForType(firstCol.type || ''), text: '', from: '', to: '', boolVal: '' }])
+  }
+  const removeColumnFilter = (key: string) => setColumnFilters(prev => prev.filter(f => f.key !== key))
+  const updateColumnFilter = (key: string, patch: Partial<ColumnFilter>) => setColumnFilters(prev => prev.map(f => f.key === key ? { ...f, ...patch } : f))
+
+  // Nilai mentah 1 sel utk keperluan filter (BUKAN nilai tampilan Excel -- angka/tanggal tetap
+  // dibaca sbg angka/tanggal asli, biar perbandingan range akurat; teks pakai versi
+  // ter-format `formatValue()` yang sama dgn yang tampil di preview/Excel, supaya "contains"
+  // cocok dgn apa yang user LIHAT, bukan raw value internal yang mungkin beda format).
+  const rawColVal = (item: any, colKey: string) => {
+    if ((colKey === 'po_no' || colKey === 'vessel') && (item[colKey] === null || item[colKey] === undefined || item[colKey] === '') && item.po_detail) {
+      return extractPoDetailField(item, colKey as 'po_no' | 'vessel')
+    }
+    return item[colKey]
+  }
+
+  const filteredData = useMemo(() => {
+    if (columnFilters.length === 0) return data
+    return data.filter(item => columnFilters.every(f => {
+      const col = exportCols.find(c => c.key === f.col)
+      if (!col) return true
+      const raw = rawColVal(item, f.col)
+      if (f.op === 'range_date') {
+        if (!f.from && !f.to) return true
+        if (raw === null || raw === undefined || raw === '') return false
+        const d = new Date(raw)
+        if (isNaN(d.getTime())) return false
+        if (f.from && d < new Date(f.from)) return false
+        if (f.to && d > new Date(`${f.to}T23:59:59`)) return false
+        return true
+      }
+      if (f.op === 'range_num') {
+        if (!f.from && !f.to) return true
+        const n = Number(raw)
+        if (raw === null || raw === undefined || raw === '' || isNaN(n)) return false
+        if (f.from !== '' && n < Number(f.from)) return false
+        if (f.to !== '' && n > Number(f.to)) return false
+        return true
+      }
+      if (f.op === 'bool') {
+        if (!f.boolVal) return true
+        const want = f.boolVal === 'true'
+        return raw === want
+      }
+      // contains (teks, status, invType, awb, dll) -- cocokkan ke versi TER-FORMAT (sama dgn
+      // yang tampil di preview/Excel), case-insensitive.
+      if (!f.text.trim()) return true
+      const display = formatValue(raw, col.type || '', col.key)
+      return display.toLowerCase().includes(f.text.trim().toLowerCase())
+    }))
+  }, [data, columnFilters, exportCols])
+
   const load = async () => {
     try {
       setLoading(true)
@@ -285,7 +361,7 @@ export default function ExportModal({
       }
       const splitRepeatingCols = SEA_AIR_SPLIT_REPEATING_COLS
 
-      data.forEach((item, idx) => {
+      filteredData.forEach((item, idx) => {
         const splitRows = getSplitRows(item)
         if (splitRows) {
           const firstExcelRow = worksheet.rowCount + 1
@@ -362,9 +438,14 @@ export default function ExportModal({
         <div className="px-6 py-5 border-b border-slate-100 flex flex-wrap justify-between items-center bg-slate-50 gap-4">
           <div>
             <h3 className="text-lg font-bold text-[#5A305A]">Preview Export - {title}</h3>
-            {data.length > 0 && <p className="text-sm text-[#5A305A] mt-1">Total {data.length} row(s) akan di-export</p>}
+            {data.length > 0 && (
+              <p className="text-sm text-[#5A305A] mt-1">
+                Total {filteredData.length} row(s) akan di-export
+                {columnFilters.length > 0 && filteredData.length !== data.length && <span className="text-[#5A305A]/60"> (dari {data.length} baris hasil filter tanggal)</span>}
+              </p>
+            )}
           </div>
-          
+
           <div className="flex flex-wrap items-center gap-3 bg-white p-2 border border-slate-200 rounded-lg">
             {dateFieldLabel && <span className="text-xs font-semibold text-[#5A305A] ml-2">{dateFieldLabel}:</span>}
             <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="border border-slate-200 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500" />
@@ -373,11 +454,86 @@ export default function ExportModal({
             <button onClick={load} className="bg-[#4a3552] hover:bg-[#5A305A] text-white text-sm px-4 py-1.5 rounded transition-colors font-medium">Terapkan Filter</button>
           </div>
 
+          {/* Filter by kolom apa saja (2026-09) -- TERPISAH dari date range di atas (yang tetap
+              filter server-side utama). Toggle panel supaya toolbar tidak penuh kalau tidak
+              dipakai. */}
+          <button
+            onClick={() => setShowColumnFilters(o => !o)}
+            className={`flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-lg border transition-colors ${showColumnFilters || columnFilters.length > 0 ? 'bg-[#5A305A] text-white border-[#5A305A]' : 'bg-white text-[#5A305A] border-slate-200 hover:border-[#5A305A]'}`}
+          >
+            Filter by Column {columnFilters.length > 0 && `(${columnFilters.length})`}
+          </button>
+
           <button onClick={onClose} className="text-[#5A305A] hover:text-[#5A305A] transition-colors ml-auto">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
           </button>
         </div>
-        
+
+        {showColumnFilters && (
+          <div className="px-6 py-4 border-b border-slate-100 bg-white space-y-2">
+            {columnFilters.length === 0 && (
+              <p className="text-xs text-[#5A305A]/60">Belum ada filter kolom. Kolom bertipe tanggal tetap pakai date picker, kolom angka pakai rentang angka, kolom lain dicocokkan sebagai teks (contains).</p>
+            )}
+            {columnFilters.map(f => {
+              const col = exportCols.find(c => c.key === f.col)
+              const op = opForType(col?.type || '')
+              return (
+                <div key={f.key} className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={f.col}
+                    onChange={e => {
+                      const newCol = exportCols.find(c => c.key === e.target.value)
+                      updateColumnFilter(f.key, { col: e.target.value, op: opForType(newCol?.type || ''), text: '', from: '', to: '', boolVal: '' })
+                    }}
+                    className="border border-slate-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500 min-w-[160px]"
+                  >
+                    {exportCols.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+                  </select>
+
+                  {op === 'range_date' && (
+                    <>
+                      <input type="date" value={f.from} onChange={e => updateColumnFilter(f.key, { from: e.target.value })} className="border border-slate-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500" />
+                      <span className="text-[#5A305A] text-xs">s/d</span>
+                      <input type="date" value={f.to} onChange={e => updateColumnFilter(f.key, { to: e.target.value })} className="border border-slate-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500" />
+                    </>
+                  )}
+                  {op === 'range_num' && (
+                    <>
+                      <input type="number" placeholder="Min" value={f.from} onChange={e => updateColumnFilter(f.key, { from: e.target.value })} className="border border-slate-200 rounded px-2 py-1.5 text-xs w-24 focus:outline-none focus:border-blue-500" />
+                      <span className="text-[#5A305A] text-xs">s/d</span>
+                      <input type="number" placeholder="Max" value={f.to} onChange={e => updateColumnFilter(f.key, { to: e.target.value })} className="border border-slate-200 rounded px-2 py-1.5 text-xs w-24 focus:outline-none focus:border-blue-500" />
+                    </>
+                  )}
+                  {op === 'bool' && (
+                    <select value={f.boolVal} onChange={e => updateColumnFilter(f.key, { boolVal: e.target.value })} className="border border-slate-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-blue-500">
+                      <option value="">Semua</option>
+                      <option value="true">✅ LULUS</option>
+                      <option value="false">❌ GAGAL</option>
+                    </select>
+                  )}
+                  {op === 'contains' && (
+                    <input
+                      type="text"
+                      placeholder="Cari teks..."
+                      value={f.text}
+                      onChange={e => updateColumnFilter(f.key, { text: e.target.value })}
+                      className="border border-slate-200 rounded px-2 py-1.5 text-xs flex-1 min-w-[160px] focus:outline-none focus:border-blue-500"
+                    />
+                  )}
+
+                  <button onClick={() => removeColumnFilter(f.key)} className="text-rose-500 hover:text-rose-700 text-xs font-bold px-2">✕</button>
+                </div>
+              )
+            })}
+            <div className="flex items-center gap-3 pt-1">
+              <button onClick={addColumnFilter} className="text-xs font-bold text-[#5A305A] hover:underline">+ Tambah Filter Kolom</button>
+              {columnFilters.length > 0 && (
+                <button onClick={() => setColumnFilters([])} className="text-xs font-bold text-rose-600 hover:underline">Hapus Semua Filter Kolom</button>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="flex-1 overflow-auto p-0 bg-slate-50/50 relative">
           {loading ? (
              <div className="flex flex-col items-center justify-center h-full text-[#5A305A]">
@@ -403,7 +559,7 @@ export default function ExportModal({
                     </tr>
                   </thead>
                   <tbody>
-                    {data.slice(0, 10).map((row, idx) => (
+                    {filteredData.slice(0, 10).map((row, idx) => (
                       <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/50">
                         <td className="px-4 py-2 font-mono text-xs text-[#5A305A] text-center">{idx + 1}</td>
                         {exportCols.map(c => {
@@ -431,9 +587,14 @@ export default function ExportModal({
                   </tbody>
                 </table>
               </div>
-              {data.length > 10 && (
+              {filteredData.length === 0 && data.length > 0 && (
+                <div className="text-center py-4 text-xs text-amber-700 font-medium">
+                  Tidak ada baris yang cocok dengan Filter by Column saat ini.
+                </div>
+              )}
+              {filteredData.length > 10 && (
                 <div className="text-center py-4 text-xs text-[#5A305A] font-medium">
-                  Menampilkan 10 baris pertama sebagai preview. Sisa {data.length - 10} baris akan ikut ter-export.
+                  Menampilkan 10 baris pertama sebagai preview. Sisa {filteredData.length - 10} baris akan ikut ter-export.
                 </div>
               )}
             </div>
@@ -441,15 +602,15 @@ export default function ExportModal({
         </div>
 
         <div className="flex gap-3 px-6 py-5 border-t border-slate-100 bg-white">
-          <button 
-            onClick={onClose} 
+          <button
+            onClick={onClose}
             className="flex-1 py-3 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all"
           >
             Batal
           </button>
           <button
             onClick={() => { setPasswordError(null); setShowPasswordConfirm(true) }}
-            disabled={loading || !!err || exporting || data.length === 0}
+            disabled={loading || !!err || exporting || filteredData.length === 0}
             className="flex-[2] flex justify-center items-center py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm disabled:opacity-50 transition-all"
           >
             {exporting ? (
