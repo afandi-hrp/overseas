@@ -473,6 +473,81 @@ const FAR_EXPORT_COLS = [
   { key: 'departure_date', label: 'DEPARTURE DATE', type: 'date' },
 ];
 
+// Modal Edit dari Card view (2026-09) -- REUSE PERSIS `LIST_COLUMNS` (field editor & custom
+// render NOTE 2/NOTE 3/PIC/VESSEL/Weight Breakdown yang SUDAH ADA utk List), TIDAK menduplikasi
+// logic input per field. `ctx` yang dioper ke sini WAJIB `editingRowId` dipaksa `=== row.id`
+// (dilakukan pemanggil, lihat `cardEditRow` di komponen utama) supaya semua `col.render` yang
+// mengecek itu otomatis tampil varian edit-nya. Kolom "NO"/"APPROVAL STATUS"/"COST STATUS"
+// dikeluarkan (bukan field yang bisa diedit, murni info/badge).
+const CARD_EDIT_EXCLUDED_HEADERS = new Set(['NO', 'APPROVAL STATUS', 'COST STATUS']);
+
+function FarOverseasAirCardEditModal({ row, costStatus, ctx, onClose, onCancel, onSave, saving }: {
+  row: any;
+  costStatus: string | undefined;
+  ctx: ListRenderCtx;
+  onClose: () => void;
+  onCancel: () => void;
+  onSave: () => void;
+  saving: boolean;
+}) {
+  const fieldCols = LIST_COLUMNS.filter(col => !CARD_EDIT_EXCLUDED_HEADERS.has(col.header));
+  return (
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[65] flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-2xl max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 shrink-0">
+          <div>
+            <h3 className="text-sm font-bold text-[#5A305A]">Edit Memo</h3>
+            <p className="text-xs text-[#5A305A]/60 mt-0.5">{row.vendor || '-'} &middot; {row.no_invoice || '-'}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 shrink-0"><X size={18} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+          {fieldCols.map((col, i) => {
+            if (col.render) {
+              return (
+                <div key={i}>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">{col.header}</p>
+                  {col.render(row, 0, costStatus, ctx)}
+                </div>
+              );
+            }
+            const field = col.field as string;
+            const val = ctx.getVal(row, field);
+            const edited = Array.isArray(row.edited_fields) && row.edited_fields.includes(field);
+            return (
+              <div key={i}>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">{col.header}</p>
+                <EditableCell
+                  value={val}
+                  displayValue={col.format ? col.format(val, row) : undefined}
+                  editable
+                  edited={edited}
+                  type={col.inputType || 'text'}
+                  inputPlaceholder={col.inputPlaceholder}
+                  className="w-full"
+                  onChange={(v) => ctx.setVal(row, field, col.inputType === 'number' ? (v === null ? null : Number(v)) : v)}
+                />
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-slate-200 shrink-0">
+          <button onClick={onCancel} className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-[#5A305A] hover:bg-slate-50 transition-colors">
+            Cancel
+          </button>
+          <button
+            onClick={onSave}
+            disabled={saving}
+            className="px-4 py-2 rounded-lg bg-[#5A305A] hover:bg-[#73507B] text-white text-xs font-semibold disabled:opacity-50 flex items-center gap-1.5 transition-colors"
+          >
+            <Save size={13} /> {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function FarOverseasAirPage() {
   useEffect(() => { document.title = 'FAR Overseas · BeeHive'; }, []);
 
@@ -552,13 +627,24 @@ export default function FarOverseasAirPage() {
 
   // Toggle List/Card (2026-09, permintaan user) -- state lokal, TIDAK disimpan (reset tiap buka
   // halaman, sama pola preferensi tampilan sesaat lain di app ini). Card MURNI tampilan ringkas
-  // untuk browsing cepat -- TIDAK ada form edit di dalam card sama sekali (row yang sama tetap
-  // dipakai/di-render dari `rows`/pagination yang sama, cuma cara render-nya beda). Approval
-  // (buka `FarOverseasAirDetailModal.tsx` via deep-link route, SENGAJA TIDAK diubah struktur
-  // internalnya) & Cost Validation dipanggil apa adanya dari card, sama seperti tombol Action di
-  // List. Edit dari card SELALU pindah balik ke mode List (lihat `handleEditFromCard`) --
-  // edit massal/per-baris tetap satu-satunya jalur edit field, card tidak mereplikasi form itu.
+  // untuk browsing cepat -- TIDAK ada form edit LANGSUNG di dalam card sama sekali (row yang
+  // sama tetap dipakai/di-render dari `rows`/pagination yang sama, cuma cara render-nya beda).
+  // Approval (buka `FarOverseasAirDetailModal.tsx` via deep-link route, SENGAJA TIDAK diubah
+  // struktur internalnya) & Cost Validation dipanggil apa adanya dari card, sama seperti tombol
+  // Action di List.
   const [viewMode, setViewMode] = useState<'LIST' | 'CARD'>('CARD');
+
+  // Edit dari Card (2026-09, GANTI dari versi awal yang pindah ke mode List -- user minta modal
+  // tersendiri, TIDAK mengarah ke List sama sekali). `cardEditRow` = baris yang lagi diedit lewat
+  // modal ini (null = tertutup). Modal-nya (`FarOverseasAirCardEditModal`, di bawah) REUSE PERSIS
+  // `LIST_COLUMNS` (field editor & custom render NOTE 2/NOTE 3/PIC/VESSEL/dst yang SUDAH ADA
+  // utk List) -- TIDAK menduplikasi logic input per field. Trik-nya: `ctx` yang dioper ke modal
+  // py `editingRowId` DIPAKSA sama dengan `row.id` (`{...ctx, editingRowId: row.id}`) supaya
+  // SEMUA `col.render` yang mengecek `ctx.editingRowId === r.id` otomatis render varian edit-nya
+  // -- state `pendingEdits`/`getVal`/`setVal` SAMA PERSIS dgn yang dipakai List/edit massal
+  // (row id yang sama), jadi "Save Changes" di modal ini cukup panggil `handleSaveAllEdits([row.id])`
+  // (lihat perluasan parameter opsional di situ).
+  const [cardEditRow, setCardEditRow] = useState<any | null>(null);
 
   // Scrollbar geser horizontal ganda (atas + bawah tabel, tersinkron) -- pola yang sama
   // dipakai di SharedDataTable.tsx supaya user tidak perlu scroll ke bawah dulu untuk
@@ -596,22 +682,6 @@ export default function FarOverseasAirPage() {
     if (next.has(id)) next.delete(id); else next.add(id);
     return next;
   });
-
-  // Tombol "Edit" di Card view -- pindah ke mode List (SELALU buka edit, bukan toggle, beda dari
-  // `toggleEditRow` biasa yang dipakai tombol Edit di List) lalu scroll ke baris itu (row+page
-  // TIDAK berubah, `rows`/`page` sama persis dengan yang lagi tampil di Card, jadi baris ini pasti
-  // sudah ada di DOM setelah List selesai render -- <tr id={`far-row-${id}`}> ditambahkan khusus
-  // untuk target scroll ini). `setTimeout` menunggu 1 tick render supaya tabel List sempat commit
-  // ke DOM dulu sebelum `scrollIntoView` dipanggil (switch viewMode & scroll terjadi di render
-  // yang sama kalau tidak ditunda).
-  const handleEditFromCard = (id: string) => {
-    setViewMode('LIST');
-    setEditingRowId(id);
-    setOpenActionsRowId(null);
-    setTimeout(() => {
-      document.getElementById(`far-row-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 50);
-  };
 
   const [deleteConfirmRow, setDeleteConfirmRow] = useState<any | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -772,30 +842,44 @@ export default function FarOverseasAirPage() {
       setSelected(data);
       if (autoPrintRef.current) {
         autoPrintRef.current = false;
-        // Bug ditemukan & diperbaiki (susulan) -- print preview MASIH kosong sebagian (header
-        // kiri "FREIGHT & DUTY" nampil "-" instead nama PT) meski elemen #far-overseas-print-area
-        // sudah ada di DOM. Root cause: `FarOverseasAirDetailModal.tsx` (SENGAJA TIDAK disentuh)
-        // punya fetch ASYNC KEDUA setelah mount -- query `far_overseas_signer_config` (nama
-        // PT/logo header memo, lihat komponen `CompanyLogo` di file itu) yang BELUM SELESAI
-        // saat elemen print area pertama kali muncul di DOM (elemen sudah ada duluan, isinya
-        // masih placeholder "-" sampai fetch itu resolve & re-render). Poll DOM saja TIDAK
-        // CUKUP -- perlu ikut menunggu fetch kedua itu. Fix: duplikasi query yang SAMA
-        // (`far_overseas_signer_config` by `dominant_company_code`) di sini MURNI sebagai proxy
-        // waktu tunggu (network round-trip-nya kurang lebih sama dengan punya modal, berjalan
-        // paralel) -- hasil query di sini TIDAK DIPAKAI sama sekali, cuma dipakai `await` supaya
-        // print BENERAN menunggu network selesai, bukan cuma menunggu 1-2 frame render.
-        if (data.dominant_company_code) {
-          await supabase.from('far_overseas_signer_config').select('company_code').eq('company_code', data.dominant_company_code).maybeSingle();
-        }
-        const waitForPrintAreaThenPrint = (attemptsLeft: number) => {
-          if (document.getElementById('far-overseas-print-area')) {
-            requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
+        // Bug ditemukan & diperbaiki (2 iterasi susulan) -- print preview MASIH kosong sebagian
+        // (header kiri nama PT nampil "-") walau `#far-overseas-print-area` sudah ada di DOM.
+        // Root cause: `FarOverseasAirDetailModal.tsx` (SENGAJA TIDAK disentuh) punya fetch ASYNC
+        // KEDUA setelah mount -- query `far_overseas_signer_config` (nama PT/logo header memo,
+        // komponen `CompanyLogo` di file itu) yang belum tentu selesai + re-render saat print
+        // dipicu. Iterasi PERTAMA (SUDAH DIGANTI, jangan reintroduce): duplikasi query yang sama
+        // sbg "proxy" waktu tunggu -- TERBUKTI TIDAK RELIABLE, query proxy (cuma select 1 kolom)
+        // seringkali selesai LEBIH CEPAT drpd query asli modal (`select('*')`, lebih berat) yang
+        // jalan independen paralel -- tidak ada jaminan urutan antara 2 network request terpisah.
+        // Fix FINAL: `MutationObserver` generik pada `#far-overseas-print-area` -- tunggu sampai
+        // TIDAK ADA perubahan DOM lagi selama 400ms (debounce, menandakan semua fetch async di
+        // dalam modal SUDAH selesai & re-render-nya SUDAH commit ke DOM), baru print dipicu.
+        // Pendekatan ini generik -- tidak perlu tahu/menduplikasi fetch spesifik apa pun di dalam
+        // modal, otomatis ikut benar walau modal nanti nambah fetch async lain lagi. Safety cap
+        // 3 detik supaya tidak nyangkut selamanya kalau ada re-render terus-menerus tak terduga.
+        const waitForDomStableThenPrint = (attemptsLeft: number) => {
+          const el = document.getElementById('far-overseas-print-area');
+          if (!el) {
+            if (attemptsLeft <= 0) { window.print(); return; }
+            setTimeout(() => waitForDomStableThenPrint(attemptsLeft - 1), 50);
             return;
           }
-          if (attemptsLeft <= 0) { window.print(); return; }
-          setTimeout(() => waitForPrintAreaThenPrint(attemptsLeft - 1), 50);
+          let settleTimer: ReturnType<typeof setTimeout>;
+          const capTimer = setTimeout(() => { observer.disconnect(); triggerPrint(); }, 3000);
+          const triggerPrint = () => {
+            clearTimeout(settleTimer);
+            clearTimeout(capTimer);
+            observer.disconnect();
+            requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
+          };
+          const observer = new MutationObserver(() => {
+            clearTimeout(settleTimer);
+            settleTimer = setTimeout(triggerPrint, 400);
+          });
+          observer.observe(el, { childList: true, subtree: true, characterData: true, attributes: true });
+          settleTimer = setTimeout(triggerPrint, 400);
         };
-        waitForPrintAreaThenPrint(20);
+        waitForDomStableThenPrint(20);
       }
     };
     loadDeepLink();
@@ -924,11 +1008,20 @@ export default function FarOverseasAirPage() {
     return { skipped: false as const, candidateCount: candidates.length };
   };
 
-  const handleSaveAllEdits = async () => {
+  // `idsOverride` (2026-09) -- opsional, dipakai modal Edit Card (`FarOverseasAirCardEditModal`)
+  // utk commit HANYA 1 baris (`handleSaveAllEdits([row.id])`) tanpa ikut menyimpan pending edit
+  // baris lain yang mungkin sedang berjalan di List/edit massal. Default (tanpa argumen) TETAP
+  // simpan SEMUA `changedRowIds` seperti sebelumnya -- dipakai tombol "Save All" floating bar.
+  const handleSaveAllEdits = async (idsOverride?: string[]) => {
+    // Filter ulang ke id yang BENERAN py pending edit -- perlu utk kasus modal Edit Card:
+    // `idsOverride=[row.id]` dikirim apa adanya tiap klik "Save Changes", termasuk saat user
+    // buka modal tanpa mengubah apa pun (pendingEdits[row.id] belum ada sama sekali).
+    const targetIds = (idsOverride ?? changedRowIds).filter(id => pendingEdits[id] && Object.keys(pendingEdits[id]).length > 0);
+    if (targetIds.length === 0) return;
     setSavingEdits(true);
-    const results = await Promise.all(changedRowIds.map(id => updateRekapanFarOverseasAir(id, pendingEdits[id])));
+    const results = await Promise.all(targetIds.map(id => updateRekapanFarOverseasAir(id, pendingEdits[id])));
 
-    const routeNoteChangedIds = changedRowIds.filter(id => 'route_note' in pendingEdits[id]);
+    const routeNoteChangedIds = targetIds.filter(id => 'route_note' in pendingEdits[id]);
     let formatWarningCount = 0;
     if (routeNoteChangedIds.length > 0) {
       const rematchResults = await Promise.all(
@@ -952,11 +1045,22 @@ export default function FarOverseasAirPage() {
       setToastMessage('Changes saved successfully.');
       setTimeout(() => setToastMessage(null), 4000);
     }
-    setPendingEdits({});
+    setPendingEdits(prev => {
+      const next = { ...prev };
+      targetIds.forEach(id => { delete next[id]; });
+      return next;
+    });
     fetchList();
   };
 
   const handleDiscardAllEdits = () => setPendingEdits({});
+  // Discard KHUSUS 1 baris -- dipakai tombol "Cancel" di `FarOverseasAirCardEditModal`.
+  const handleDiscardRowEdit = (id: string) => setPendingEdits(prev => {
+    if (!(id in prev)) return prev;
+    const next = { ...prev };
+    delete next[id];
+    return next;
+  });
 
   // Polling job spesifik untuk feedback langsung setelah submit upload di halaman ini
   useEffect(() => {
@@ -1418,8 +1522,8 @@ export default function FarOverseasAirPage() {
                             </button>
                             {canEditDirectLoading && (
                               <button
-                                onClick={() => handleEditFromCard(r.id)}
-                                title="Edit this memo (switches to List view)"
+                                onClick={() => setCardEditRow(r)}
+                                title="Edit this memo"
                                 className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-blue-200 bg-blue-50 text-[10px] font-semibold text-blue-700 hover:bg-blue-100 transition-colors"
                               >
                                 <Edit3 size={11} /> Edit
@@ -1524,6 +1628,18 @@ export default function FarOverseasAirPage() {
           record={weightModalRow}
           onClose={() => setWeightModalRow(null)}
           onSaved={() => fetchList()}
+        />
+      )}
+
+      {cardEditRow && (
+        <FarOverseasAirCardEditModal
+          row={cardEditRow}
+          costStatus={costStatusMap[cardEditRow.id]}
+          ctx={{ onOpenWeightModal: setWeightModalRow, editingRowId: cardEditRow.id, getVal, setVal, expandedPoRows, togglePoExpanded, picUsers, costCityMap }}
+          saving={savingEdits}
+          onClose={() => setCardEditRow(null)}
+          onCancel={() => { handleDiscardRowEdit(cardEditRow.id); setCardEditRow(null); }}
+          onSave={async () => { await handleSaveAllEdits([cardEditRow.id]); setCardEditRow(null); }}
         />
       )}
 

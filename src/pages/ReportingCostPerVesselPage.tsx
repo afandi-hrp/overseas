@@ -11,8 +11,8 @@ import {
   METHOD_SOURCE_PAGE, AllocationMethod,
 } from '../utils/ReportingHelpers';
 
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-const MONTH_NAMES_ID_FULL = ['JANUARI', 'FEBRUARI', 'MARET', 'APRIL', 'MEI', 'JUNI', 'JULI', 'AGUSTUS', 'SEPTEMBER', 'OKTOBER', 'NOVEMBER', 'DESEMBER'];
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTH_NAMES_FULL = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
 
 // Sea & Air DIPISAH LAGI jadi 2 tab terpisah (2026-09, permintaan user -- sempat digabung 1 tab
 // "Sea & Air" sebelumnya, TERNYATA diminta balik ke versi awal). `TabId` sekarang PERSIS sama
@@ -72,7 +72,7 @@ function buildPeriodColumns(periods: YearMonth[], mode: PeriodicMode): PeriodCol
   periods.forEach(p => {
     const monthKey = `${p.year}-${String(p.month).padStart(2, '0')}`;
     let colKey: string; let label: string;
-    if (mode === 'MONTHLY') { colKey = monthKey; label = `${MONTH_NAMES_ID_FULL[p.month - 1]} ${p.year}`; }
+    if (mode === 'MONTHLY') { colKey = monthKey; label = `${MONTH_NAMES_FULL[p.month - 1]} ${p.year}`; }
     else if (mode === 'QUARTERLY') {
       const q = Math.ceil(p.month / 3);
       const qMonths = [(q - 1) * 3 + 1, (q - 1) * 3 + 2, (q - 1) * 3 + 3];
@@ -615,22 +615,12 @@ export default function ReportingCostPerVesselPage({ embedded }: { embedded?: bo
             <MultiSelectDropdown label="Month" options={MONTH_NAMES.map((m, i) => ({ value: i + 1, label: m }))}
               selected={selectedMonths} onChange={setSelectedMonths} emptyMeansAll />
 
-            <label className="flex items-center gap-1.5 text-xs text-[#5A305A] font-medium whitespace-nowrap cursor-pointer">
-              <input type="checkbox" checked={showZeroCost} onChange={e => setShowZeroCost(e.target.checked)} className="w-3.5 h-3.5 accent-[#5A305A]" />
-              Show zero-cost
-            </label>
-
-            {/* Tiap tombol dikasih warna tematik sendiri (2026-09, permintaan user -- dulu semua
-                putih/outline polos): Collapse/Expand = ungu (struktur tampilan), Recompute =
-                oranye (aksi hitung ulang data, sudah ada sejak awal), Customize View = biru
-                (pengaturan tampilan), Export = hijau (aksi keluar/unduh, konvensi umum). */}
-            <button onClick={() => setCollapsedGroups(allCollapsed ? new Set() : new Set(allGroupKeys))}
-              title={allCollapsed ? 'Expand all Fleet Groups' : 'Collapse all Fleet Groups'}
-              className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-lg bg-[#73507B]/10 text-[#73507B] border border-[#73507B]/30 hover:bg-[#73507B]/20 whitespace-nowrap">
-              {allCollapsed ? <ChevronsUpDown size={13} /> : <ChevronsDownUp size={13} />}
-              {allCollapsed ? 'Expand All' : 'Collapse All'}
-            </button>
-
+            {/* "Show zero-cost" & "Collapse All" DIPINDAH (2026-09, permintaan user) ke toolbar
+                kartu tabel, sebaris dgn tombol Summary View/Periodic View -- lihat di bawah,
+                dekat deklarasi `allCollapsed`. Tiap tombol lain di baris ini dikasih warna
+                tematik sendiri (2026-09, permintaan user -- dulu semua putih/outline polos):
+                Recompute = oranye (aksi hitung ulang data, sudah ada sejak awal), Customize View
+                = biru (pengaturan tampilan), Export = hijau (aksi keluar/unduh, konvensi umum). */}
             <div className="ml-auto flex items-center gap-2">
               {canEditPage && (
                 <button onClick={handleRecompute} disabled={recomputing}
@@ -694,6 +684,21 @@ export default function ReportingCostPerVesselPage({ embedded }: { embedded?: bo
                 <option value="YEARLY">Yearly</option>
               </select>
             )}
+            {/* "Show zero-cost" & "Collapse All" (2026-09, DIPINDAH dari filter bar atas ke sini
+                -- permintaan user "sebaris dengan tombol Summary View/Periodic View", posisi
+                kanan). */}
+            <div className="ml-auto flex items-center gap-3">
+              <label className="flex items-center gap-1.5 text-xs text-[#5A305A] font-medium whitespace-nowrap cursor-pointer">
+                <input type="checkbox" checked={showZeroCost} onChange={e => setShowZeroCost(e.target.checked)} className="w-3.5 h-3.5 accent-[#5A305A]" />
+                Show zero-cost
+              </label>
+              <button onClick={() => setCollapsedGroups(allCollapsed ? new Set() : new Set(allGroupKeys))}
+                title={allCollapsed ? 'Expand all Fleet Groups' : 'Collapse all Fleet Groups'}
+                className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-lg bg-[#73507B]/10 text-[#73507B] border border-[#73507B]/30 hover:bg-[#73507B]/20 whitespace-nowrap">
+                {allCollapsed ? <ChevronsUpDown size={13} /> : <ChevronsDownUp size={13} />}
+                {allCollapsed ? 'Expand All' : 'Collapse All'}
+              </button>
+            </div>
           </div>
           <div ref={scrollRef} className="overflow-auto flex-1 min-h-0">
             {/* table-fixed + colgroup lebar eksplisit (2026-09, laporan user "jarak terlalu
@@ -730,8 +735,8 @@ export default function ReportingCostPerVesselPage({ embedded }: { embedded?: bo
                       <th rowSpan={2} className="text-left px-3 py-2.5 whitespace-nowrap align-bottom">Fleet Group</th>
                       <th rowSpan={2} className="text-left px-3 py-2.5 whitespace-nowrap align-bottom">Vessel</th>
                       {periodColumns.map(p => <th key={p.key} colSpan={2} className="text-center px-3 py-1.5 whitespace-nowrap border-l border-slate-200">{p.label}</th>)}
-                      <th rowSpan={2} className="text-right px-3 py-2 whitespace-nowrap border-l border-slate-200 align-bottom">Total Cost</th>
-                      <th rowSpan={2} className="text-right px-3 py-2 whitespace-nowrap last:pr-5 align-bottom">Excl PPN+PPH</th>
+                      <th rowSpan={2} className="text-right px-3 py-2 whitespace-nowrap border-l border-slate-200 align-bottom bg-slate-200/70">Total Cost</th>
+                      <th rowSpan={2} className="text-right px-3 py-2 whitespace-nowrap last:pr-5 align-bottom bg-slate-200/70">Excl PPN+PPH</th>
                     </tr>
                     <tr className="text-[10px] text-[#5A305A]/70 uppercase">
                       {periodColumns.map(p => (
@@ -776,8 +781,11 @@ export default function ReportingCostPerVesselPage({ embedded }: { embedded?: bo
                             </React.Fragment>
                           );
                         })}
-                        <td className="px-3 py-2 text-right font-mono text-[#5A305A] border-l border-slate-100">{fmtRp(totalCost(sums))}</td>
-                        <td className="px-3 py-2 text-right font-mono text-[#5A305A] last:pr-5">{fmtRp(totalExclPpn(sums))}</td>
+                        {/* 2 kolom akumulasi PALING KANAN diberi latar abu-abu agak gelap
+                            (2026-09, permintaan user) -- supaya jelas beda dari kolom-kolom
+                            periode di kirinya (yg latarnya polos/putih). */}
+                        <td className="px-3 py-2 text-right font-mono text-[#5A305A] border-l border-slate-200 bg-slate-200/70">{fmtRp(totalCost(sums))}</td>
+                        <td className="px-3 py-2 text-right font-mono text-[#5A305A] last:pr-5 bg-slate-200/70">{fmtRp(totalExclPpn(sums))}</td>
                       </>
                     );
                   };
@@ -796,7 +804,12 @@ export default function ReportingCostPerVesselPage({ embedded }: { embedded?: bo
                             <span className="text-[10px] font-normal text-[#5A305A]/70">({row.count} {row.count === 1 ? 'vessel' : 'vessels'})</span>
                           </button>
                         </td>
-                        {Array.from({ length: numericColCount }).map((_, i) => <td key={i} className="px-3 py-2"></td>)}
+                        {/* 2 kolom akumulasi paling kanan ikut diberi latar abu-abu gelap di
+                            baris header grup juga (Periodic View) -- konsisten dgn body/subtotal,
+                            supaya garis kolomnya kelihatan menerus dari header sampai footer. */}
+                        {Array.from({ length: numericColCount }).map((_, i) => (
+                          <td key={i} className={`px-3 py-2 ${viewMode === 'PERIODIC' && i >= numericColCount - 2 ? 'bg-slate-200/70' : ''}`}></td>
+                        ))}
                       </tr>
                     );
                   }

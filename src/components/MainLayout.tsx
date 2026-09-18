@@ -66,7 +66,7 @@ const MAIN_TABS: MainTab[] = [
     path: '/reporting/cost-by-vessel',
     basePath: '/reporting',
     subTabs: [
-      { id: 'reporting_cost_by_vessel', label: 'Cost by Vessel', path: '/reporting/cost-by-vessel', pageKeys: ['reporting_dashboard', 'reporting_cost_per_vessel'] },
+      { id: 'reporting_cost_by_vessel', label: 'Overseas Cost by Vessel', path: '/reporting/cost-by-vessel', pageKeys: ['reporting_dashboard', 'reporting_cost_per_vessel'] },
     ],
   },
   {

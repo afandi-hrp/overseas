@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from '../lib/supabase';
-import { Receipt, FileText, Landmark, Ship, Sailboat, FileCheck2, FileDigit, IdCard, Scale, ClipboardList, Edit3, CheckCircle2, XCircle, Clock, Building2, Plane, CalendarDays, UserCheck, ChevronDown, ChevronUp } from 'lucide-react';
+import { Receipt, FileText, Landmark, Ship, Sailboat, FileCheck2, FileDigit, IdCard, Scale, ClipboardList, Edit3, CheckCircle2, XCircle, Clock, Building2, Plane, CalendarDays, UserCheck, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import ValidasiPerhitunganPIB from './ValidasiPerhitunganPIB';
 
 // Format tanggal seragam di seluruh aplikasi: DD-MMMM-YYYY, nama bulan Bahasa Inggris.
@@ -421,6 +421,324 @@ function getDocChecklistFlag(compareDoc: string | undefined, flags: { ada_po?: b
   return true;
 }
 
+// Hitung SEMUA Src/Cmp murni dari data mentah (`dokumen_validasi.data_validasi_raw` + Master
+// NPWP `tabel_npwp`) -- DIEKSTRAK VERBATIM (2026-09) dari fill() block yang sebelumnya inline di
+// dalam `doLoad()` (`ValidasiModal` komponen), SATU-SATUNYA tempat logic ini didefinisikan.
+// Dipakai di 2 tempat: (1) `doLoad()` -- saat modal pertama kali dibuka & BELUM ada baris
+// `tabel_checklist_validasi` tersimpan; (2) tombol "Recompute Missing Data" -- mengisi ulang
+// HANYA field yang src/cmp-nya masih kosong di checklist yang SUDAH tersimpan (lihat
+// `handleRecomputeMissing` di komponen) -- root cause fitur ini: field yang kosong di checklist
+// lama TIDAK PERNAH otomatis terisi lagi walau `dokumen_validasi` sudah lengkap belakangan
+// (dokumen susulan/reprocessing n8n), krn checklist yang sudah tersimpan selalu dibaca apa
+// adanya (lihat "BUKAN retroaktif" di CLAUDE.md). Fungsi murni (pure) -- TIDAK baca/tulis state
+// React sama sekali, supaya aman dipanggil kapan saja (termasuk di luar siklus render) tanpa
+// efek samping selain nilai balik. **PENTING**: kalau logic fill() di `doLoad()` diubah lagi ke
+// depan, WAJIB diubah DI SINI (satu-satunya salinan) -- doLoad tidak lagi punya salinan sendiri.
+function buildValidationValues(raw: any, docAwb: string, localNpwps: any[]): Record<string, any> {
+  const out: Record<string, any> = {};
+  SECTIONS.forEach(s => s.rows.forEach(r => { out[r.id] = { src: "", cmp: "" }; }));
+
+  const invF = raw.invoice_freight_v || {};
+  const fpF = raw.faktur_pajak_freight || {};
+  const idOther = raw.invoice_freight_cost || {};
+  const awbDet = raw.awb_detail_v || {};
+  const invD = raw.invoice_duty_v || {};
+  const invDutyCost = raw.invoice_duty_cost || {};
+  const fpD = raw.faktur_pajak_duty || {};
+  const fi = raw.final_invoice || {};
+  const bdjbc = raw.billing_djbc_total || "";
+
+  const npwpClean = (str: string) => (str || '').replace(/\D/g, '');
+  const findNpwp = (npwpVal: string) => {
+    if (!npwpVal) return null;
+    const clean = npwpClean(npwpVal);
+    return localNpwps.find(n => npwpClean(n.npwp) === clean) || null;
+  };
+
+  const normalizeName = (str: string) => {
+    if (!str) return '';
+    return String(str)
+      .toUpperCase()
+      .trim()
+      .replace(/\s+/g, ' ')
+      .replace(/[.,]/g, '')
+      .replace(/^PT\.?\s+/i, '')
+      .replace(/\s+PT\.?$/i, '');
+  };
+  const findNpwpByName = (namaVal: string) => {
+    if (!namaVal) return null;
+    const clean = normalizeName(namaVal);
+    if (!clean) return null;
+    let found = localNpwps.find(n => normalizeName(n.nama) === clean);
+    if (!found) {
+      found = localNpwps.find(n =>
+        normalizeName(n.nama).includes(clean) ||
+        clean.includes(normalizeName(n.nama))
+      );
+    }
+    if (!found) {
+      // Toleransi kurang/lebih spasi dari hasil ekstraksi OCR (mis. "NUSASENTANA" vs "NUSA SENTANA").
+      const cleanNoSpace = clean.replace(/\s+/g, '');
+      found = localNpwps.find(n => normalizeName(n.nama).replace(/\s+/g, '') === cleanNoSpace);
+    }
+    return found || null;
+  };
+
+  // Fallback: kalau nomor NPWP tidak ditemukan di master (atau kosong), coba cari via nama.
+  const findNpwpWithFallback = (npwpVal: string, namaVal: string) => {
+    return findNpwp(npwpVal) || findNpwpByName(namaVal);
+  };
+
+  const fill = (id: string, srcVal: any, cmpVal: any, srcDisplay?: string, srcNote?: string) => {
+     if (out[id]) {
+        out[id] = {
+           src: srcVal === null ? null : (srcVal === undefined ? "" : srcVal.toString()),
+           cmp: cmpVal === null ? null : (cmpVal === undefined ? "" : cmpVal.toString()),
+           srcDisplay: srcDisplay,
+           srcNote: srcNote
+        };
+     }
+  };
+
+  const pibV = raw.pib_v || {};
+  const sppbV = raw.sppb_v || {};
+  const bpnV = raw.bpn_v || {};
+  const ciplV = raw.cipl_v || {};
+  const btVendorV = raw.bt_vendor_v || {};
+
+  const hasInvoiceFreight = invF.subtotal != null || invF.ppn != null || invF.pt_penerima != null;
+  const cmpAwbFisik = Object.keys(awbDet).length > 0 ? docAwb : "";
+
+  fill("if01", invD.awb, docAwb);
+  fill("bpn_awb_vs_freight_awb", bpnV.awb, invF.awb);
+  fill("if02", hasInvoiceFreight ? invF.subtotal : "", fpF.subtotal);
+  fill("if03", hasInvoiceFreight ? invF.ppn : "", fpF.ppn);
+  fill("if04", fpF.pt_pembeli || "", findNpwpByName(fpF.pt_pembeli)?.nama || "");
+  fill("if06", awbDet.pt_name || "", findNpwpByName(awbDet.pt_name)?.nama || "");
+
+  // INVOICE DUTY
+  fill("id01", invDutyCost.vat_duty_basis_idr || "", fpD.harga_jual || "");
+  fill("id02", invD.ppn, fpD.ppn);
+  fill("id03", fpD.pt_pembeli || "", findNpwpByName(fpD.pt_pembeli)?.nama || "");
+  fill("id04", hasInvoiceFreight ? idOther.actual_weight_kg : null, hasInvoiceFreight ? awbDet.weight : null);
+
+  fill("id06", docAwb, cmpAwbFisik);
+  fill("id07", invF.awb || invD.awb, pibV.no_awb || "");
+
+  // PIB
+  fill("pib01", pibV.no_pengajuan || "", sppbV.no_pengajuan || "");
+  fill("pib02", invF.awb || invD.awb || "", sppbV.no_awb || "");
+  fill("pib03", normalizeInvoiceSeparator(pibV.no_invoice) || "", normalizeInvoiceSeparator(ciplV.no_invoice) || "");
+  fill("pib04", pibV.item_value || "", ciplV.total_value || "");
+  fill("bt_vendor_no_invoice_vs_pib", normalizeInvoiceSeparator(pibV.no_invoice) || "", normalizeInvoiceSeparator(btVendorV.no_invoice) || "");
+  fill("bt_vendor_item_value_vs_pib", pibV.item_value || "", btVendorV.item_value || "");
+  fill("pib06", normalizeInvoiceSeparator(pibV.no_invoice) || "", normalizeInvoiceSeparator(fi.inv_no) || "");
+  fill("pib07", pibV.item_value || "", fi.total_value || "");
+  fill("po_item_value_vs_pib", pibV.item_value || "", raw.po_total_value || "");
+  if (out["po_item_value_vs_pib"]) out["po_item_value_vs_pib"].otherCost = raw.other_cost_valas != null ? String(raw.other_cost_valas) : "";
+
+  // PIB NPWP Lookup
+  const pibNpwp = findNpwp(pibV.npwp);
+  fill("pib08", pibV.npwp || "", pibNpwp?.npwp || "");
+  fill("pib09", pibV.nama_pt || "", pibNpwp?.nama || "");
+  fill("pib10", pibV.alamat_npwp || "", pibNpwp?.alamat || "");
+  if (out["pib08"]) out["pib08"].npwp_status = pibV.npwp && !pibNpwp ? 'not_found' : null;
+
+  // SPPBMCP
+  fill("sppb01", sppbV.total_nilai_pabean ?? null, bpnV.cif_penetapan ?? null);
+
+  // SPPBMCP NPWP Lookup
+  const sppbNpwp = findNpwp(sppbV.npwp);
+  fill("sppb02", sppbV.npwp || "", sppbNpwp?.npwp || "");
+  fill("sppb03", sppbV.nama_pt || "", sppbNpwp?.nama || "");
+  fill("sppb04", sppbV.alamat || "", sppbNpwp?.alamat || "");
+  if (out["sppb02"]) out["sppb02"].npwp_status = sppbV.npwp && !sppbNpwp ? 'not_found' : null;
+
+  // BPN/HTBK NPWP Lookup
+  const bpnMasterNpwp = findNpwp(bpnV.npwp);
+  fill("bpn_no_npwp", bpnV.npwp || "", bpnMasterNpwp?.npwp || "");
+  fill("bpn_nama_npwp", bpnV.nama_pt || "", findNpwpWithFallback(bpnV.npwp, bpnV.nama_pt)?.nama || "");
+
+  // Billing DJBC NPWP Lookup (dokumen tidak mencantumkan alamat)
+  const billingDjbcMasterNpwp = findNpwp(raw.billing_djbc_npwp);
+  fill("billing_djbc_no_npwp", raw.billing_djbc_npwp || "", billingDjbcMasterNpwp?.npwp || "");
+  fill("billing_djbc_nama_npwp", raw.billing_djbc_nama_pt || "", findNpwpWithFallback(raw.billing_djbc_npwp, raw.billing_djbc_nama_pt)?.nama || "");
+
+  // CIPL NPWP Lookup
+  fill("cipl_nama_npwp", ciplV.penerima_barang || "", findNpwpWithFallback(ciplV.npwp, ciplV.penerima_barang)?.nama || "");
+
+  // Final Invoice NPWP Lookup
+  fill("final_invoice_nama_npwp", fi.nama_pt || "", findNpwpWithFallback(fi.npwp, fi.nama_pt)?.nama || "");
+
+  // BT Vendor NPWP Lookup
+  fill("bt_vendor_nama_npwp", btVendorV.nama_pt || "", findNpwpWithFallback(btVendorV.npwp, btVendorV.nama_pt)?.nama || "");
+
+  // BILLING DJBC
+  fill("bdjbc01", pibV.no_pengajuan || "", raw.billing_djbc_nomor_aju || "");
+  fill("bdjbc02", pibV.total_bayar || "", bdjbc || "");
+  fill("bdjbc03", pibV.no_pengajuan || "", bpnV.nomor_dokumen || "");
+  fill("bdjbc04", pibV.total_bayar || "", bpnV.total || "");
+
+  // CIPL
+  fill("cipl01", ciplV.total_value || "", raw.po_total_value || "");
+  if (out["cipl01"]) out["cipl01"].otherCost = raw.other_cost_valas != null ? String(raw.other_cost_valas) : "";
+  fill("cipl02", raw.po_penerima || "", findNpwpByName(raw.po_penerima)?.nama || "");
+  fill("po_alamat_npwp", raw.po_alamat || "", findNpwpByName(raw.po_penerima)?.alamat || "");
+  fill("cipl03", ciplV.no_invoice || "", fi.inv_no || "");
+  fill("cipl04", ciplV.total_value || "", fi.total_value || "");
+  fill("cipl05", raw.cipl_vessel || "", "");
+
+  // PO
+  fill("po01", raw.po_vessel || "", "");
+
+  // FINAL INVOICE
+  const fiVessel = [
+    raw.final_invoice?.vessel,
+    raw.final_invoice?.imo_number
+  ].filter(Boolean).join(' | ') || "";
+  fill("fi01", fiVessel, "");
+
+  // FP FREIGHT Lookup
+  const fpFdNpwp = findNpwp(raw.faktur_pajak_freight_npwp);
+  fill("fpfd01", raw.faktur_pajak_freight_npwp || "", fpFdNpwp?.npwp || "");
+  fill("fpfd02", raw.faktur_pajak_freight_alamat || "", fpFdNpwp?.alamat || "");
+  if (out["fpfd01"]) out["fpfd01"].npwp_status = raw.faktur_pajak_freight_npwp && !fpFdNpwp ? 'not_found' : null;
+
+  // FP FREIGHT DPP & Referensi
+  fill("fpfd05", fpF.dpp || "", hitungDppCmp(fpF.subtotal, fpF.no_seri));
+  fill("fpfd06", fpF.no_referensi || "", invF.no_invoice || "");
+
+  // FP DUTY Lookup
+  const fpDutyNpwp = findNpwp(raw.faktur_pajak_duty_npwp);
+  fill("fpfd03", raw.faktur_pajak_duty_npwp || "", fpDutyNpwp?.npwp || "");
+  fill("fpfd04", raw.faktur_pajak_duty_alamat || "", fpDutyNpwp?.alamat || "");
+  if (out["fpfd03"]) out["fpfd03"].npwp_status = raw.faktur_pajak_duty_npwp && !fpDutyNpwp ? 'not_found' : null;
+
+  // FP DUTY DPP & Referensi
+  fill("fpfd07", fpD.dpp || "", hitungDppCmp(fpD.harga_jual, fpD.no_seri));
+  fill("fpfd08", fpD.no_referensi || "", invD.no_invoice || "");
+
+  // FP REVISI FREIGHT Lookup
+  const fpRF = raw.fp_revisi_freight || {};
+  const hasFpRF = Object.keys(fpRF).length > 0 || raw.fp_revisi_freight_npwp !== undefined && raw.fp_revisi_freight_npwp !== null;
+  if (hasFpRF) {
+      const fpRevNpwp = findNpwp(raw.fp_revisi_freight_npwp);
+      fill("fpr01", raw.fp_revisi_freight_npwp || "", fpRevNpwp?.npwp || "");
+      fill("fpr02", raw.fp_revisi_freight_alamat || "", fpRevNpwp?.alamat || "");
+      if (out["fpr01"]) out["fpr01"].npwp_status = raw.fp_revisi_freight_npwp && !fpRevNpwp ? 'not_found' : null;
+      fill("fpr05", fpRF.dpp || "", hitungDppCmp(fpRF.subtotal, fpRF.no_seri));
+      fill("fpr06", fpRF.no_referensi || "", invF.no_invoice || "");
+  } else {
+      fill("fpr01", null, null);
+      fill("fpr02", null, null);
+      fill("fpr05", null, null);
+      fill("fpr06", null, null);
+  }
+
+  // FP REVISI DUTY Lookup
+  const fpRD = raw.fp_revisi_duty || {};
+  const hasFpRD = Object.keys(fpRD).length > 0 || raw.fp_revisi_duty_npwp !== undefined && raw.fp_revisi_duty_npwp !== null;
+  if (hasFpRD) {
+     const fpRevDutyNpwp = findNpwp(raw.fp_revisi_duty_npwp);
+     fill("fpr03", raw.fp_revisi_duty_npwp || "", fpRevDutyNpwp?.npwp || "");
+     fill("fpr04", raw.fp_revisi_duty_alamat || "", fpRevDutyNpwp?.alamat || "");
+     if (out["fpr03"]) out["fpr03"].npwp_status = raw.fp_revisi_duty_npwp && !fpRevDutyNpwp ? 'not_found' : null;
+     fill("fpr07", fpRD.dpp || "", hitungDppCmp(fpRD.subtotal, fpRD.no_seri));
+     fill("fpr08", fpRD.no_referensi || "", invD.no_invoice || "");
+  } else {
+     fill("fpr03", null, null);
+     fill("fpr04", null, null);
+     fill("fpr07", null, null);
+     fill("fpr08", null, null);
+  }
+
+  // SPTNP
+  const sptnpV = raw.sptnp_v || {};
+  const billingSptnp = raw.billing_sptnp || {};
+  const bpnSptnp = raw.bpn_sptnp || {};
+  const hasSptnp = sptnpV.no_dokumen != null || sptnpV.total != null;
+  if (hasSptnp) {
+     fill("sptnp01_a", sptnpV.no_dokumen, billingSptnp.no_dokumen);
+     fill("sptnp01_b", sptnpV.no_dokumen, bpnSptnp.no_dokumen);
+     fill("sptnp02_a", sptnpV.total, billingSptnp.total);
+     fill("sptnp02_b", sptnpV.total, bpnSptnp.total);
+
+     // SPTNP / Billing SPTNP / BPN SPTNP NPWP Lookup (vs Master NPWP)
+     const sptnpMasterNpwp = findNpwp(sptnpV.npwp);
+     fill("sptnp_no_npwp", sptnpV.npwp || "", sptnpMasterNpwp?.npwp || "");
+     fill("sptnp_nama_npwp", sptnpV.nama_pt || "", findNpwpWithFallback(sptnpV.npwp, sptnpV.nama_pt)?.nama || "");
+
+     const billingSptnpMasterNpwp = findNpwp(billingSptnp.npwp);
+     fill("billing_sptnp_no_npwp", billingSptnp.npwp || "", billingSptnpMasterNpwp?.npwp || "");
+     fill("billing_sptnp_nama_npwp", billingSptnp.nama_pt || "", findNpwpWithFallback(billingSptnp.npwp, billingSptnp.nama_pt)?.nama || "");
+
+     const bpnSptnpMasterNpwp = findNpwp(bpnSptnp.npwp);
+     fill("bpn_sptnp_no_npwp", bpnSptnp.npwp || "", bpnSptnpMasterNpwp?.npwp || "");
+     fill("bpn_sptnp_nama_npwp", bpnSptnp.nama_pt || "", findNpwpWithFallback(bpnSptnp.npwp, bpnSptnp.nama_pt)?.nama || "");
+  } else {
+     const ids = ["sptnp01_a", "sptnp01_b", "sptnp02_a", "sptnp02_b", "sptnp_no_npwp", "sptnp_nama_npwp", "billing_sptnp_no_npwp", "billing_sptnp_nama_npwp", "bpn_sptnp_no_npwp", "bpn_sptnp_nama_npwp"];
+     ids.forEach(id => fill(id, null, null));
+  }
+
+  // CN INVOICE FREIGHT
+  const cnF = raw.credit_note_freight_v || {};
+  const hasCnFreight = cnF.subtotal != null || cnF.ppn != null;
+  if (hasCnFreight) {
+     fill("cnf01_a", cnF.awb_no, docAwb);
+
+     const cnFCount = cnF.count || 1;
+     const noteF = cnFCount > 1 ? `(jumlah dari ${cnFCount} credit note)` : undefined;
+
+     const calcOtherFeesF = (invF.subtotal != null && cnF.subtotal != null) ? Number(invF.subtotal) - Number(cnF.subtotal) : null;
+     fill("cnf02_b", calcOtherFeesF, fpRF.subtotal, (invF.subtotal != null && cnF.subtotal != null) ? `${Number(invF.subtotal).toLocaleString('id-ID')} - ${Number(cnF.subtotal).toLocaleString('id-ID')}` : undefined, noteF);
+
+     const calcPpnF = (fpF.ppn != null && cnF.ppn != null) ? Number(fpF.ppn) - Number(cnF.ppn) : null;
+     fill("cnf03_b", calcPpnF, fpRF.ppn, (fpF.ppn != null && cnF.ppn != null) ? `${Number(fpF.ppn).toLocaleString('id-ID')} - ${Number(cnF.ppn).toLocaleString('id-ID')}` : undefined, noteF);
+
+     // CN Freight NPWP Lookup (vs Master NPWP)
+     fill("cn_freight_nama_npwp", cnF.pt_penerima || "", findNpwpWithFallback(cnF.npwp, cnF.pt_penerima)?.nama || "");
+     fill("cn_freight_alamat_npwp", cnF.alamat || "", findNpwpWithFallback(cnF.npwp, cnF.pt_penerima)?.alamat || "");
+  } else {
+     const ids = ["cnf01_a", "cnf02_b", "cnf03_b", "cn_freight_nama_npwp", "cn_freight_alamat_npwp"];
+     ids.forEach(id => fill(id, null, null));
+  }
+
+  // Invoice Freight — Nama PT & Alamat vs Master NPWP (selalu relevan, tidak tergantung ada/tidaknya Credit Note).
+  // Invoice Freight tidak mencantumkan NPWP, jadi lookup selalu berdasarkan nama.
+  fill("cnf04_a", invF.pt_penerima || "", findNpwpByName(invF.pt_penerima)?.nama || "");
+  fill("invoice_freight_alamat_npwp", invF.alamat || "", findNpwpByName(invF.pt_penerima)?.alamat || "");
+
+  // CN INVOICE DUTY
+  const cnD = raw.credit_note_duty_v || {};
+  const hasCnDuty = cnD.subtotal != null || cnD.ppn != null;
+  if (hasCnDuty) {
+     fill("cnd01_a", cnD.awb_no, docAwb);
+
+     const cnDCount = cnD.count || 1;
+     const noteD = cnDCount > 1 ? `(jumlah dari ${cnDCount} credit note)` : undefined;
+
+     const calcOtherFeesD = (fpD.harga_jual != null && cnD.subtotal != null) ? Number(fpD.harga_jual) - Number(cnD.subtotal) : null;
+     fill("cnd02_b", calcOtherFeesD, fpRD.subtotal, (fpD.harga_jual != null && cnD.subtotal != null) ? `${Number(fpD.harga_jual).toLocaleString('id-ID')} - ${Number(cnD.subtotal).toLocaleString('id-ID')}` : undefined, noteD);
+
+     const calcPpnD = (fpD.ppn != null && cnD.ppn != null) ? Number(fpD.ppn) - Number(cnD.ppn) : null;
+     fill("cnd03_b", calcPpnD, fpRD.ppn, (fpD.ppn != null && cnD.ppn != null) ? `${Number(fpD.ppn).toLocaleString('id-ID')} - ${Number(cnD.ppn).toLocaleString('id-ID')}` : undefined, noteD);
+
+     // CN Duty NPWP Lookup (vs Master NPWP)
+     fill("cn_duty_nama_npwp", cnD.pt_penerima || "", findNpwpWithFallback(cnD.npwp, cnD.pt_penerima)?.nama || "");
+     fill("cn_duty_alamat_npwp", cnD.alamat || "", findNpwpWithFallback(cnD.npwp, cnD.pt_penerima)?.alamat || "");
+  } else {
+     const ids = ["cnd01_a", "cnd02_b", "cnd03_b", "cn_duty_nama_npwp", "cn_duty_alamat_npwp"];
+     ids.forEach(id => fill(id, null, null));
+  }
+
+  // Invoice Duty — Nama PT & Alamat vs Master NPWP (selalu relevan, tidak tergantung ada/tidaknya Credit Note).
+  // Invoice Duty tidak mencantumkan NPWP, jadi lookup selalu berdasarkan nama.
+  fill("cnd04_a", invD.pt_penerima || "", findNpwpByName(invD.pt_penerima)?.nama || "");
+  fill("invoice_duty_alamat_npwp", invD.alamat || "", findNpwpByName(invD.pt_penerima)?.alamat || "");
+
+  return out;
+}
+
 function computeStatus(srcVal: any, cmpVal: any, isFormat: boolean | undefined, fieldName: string = "", isPoNonImi?: boolean, docChecked: boolean = true) {
   if (fieldName.includes("DPP (")) {
     return compareNumeric(srcVal, cmpVal);
@@ -564,6 +882,23 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   // (dari checklist tersimpan ATAU auto-suggest dari dokumen sumber) -- itu BUKAN edit user,
   // jadi auto-save berikutnya yang terpicu oleh pengisian itu harus dilewati sekali saja.
   const skipNextAutosaveRef = useRef(false);
+  // Hasil `buildValidationValues()` PALING TERBARU (diisi tiap doLoad(), baik ada checklist
+  // tersimpan MAUPUN tidak) -- 2026-09, dipakai tombol "Recompute Missing Data"
+  // (`handleRecomputeMissing`) supaya bisa mengisi ulang field yang masih kosong TANPA fetch
+  // ulang dari Supabase. Ref (bukan state) krn murni data mentah utk dipakai tombol, tidak
+  // perlu memicu re-render sendiri.
+  const computedValuesRef = useRef<Record<string, any> | null>(null);
+  const [recomputeMsg, setRecomputeMsg] = useState<string | null>(null);
+  // Cegah checklist baru KEBUAT hanya krn user MEMBUKA/MELIHAT modal ini tanpa mengedit apa pun
+  // (2026-09, laporan user -- ikon pensil "sudah diedit" tidak muncul, artinya field itu memang
+  // TIDAK PERNAH disentuh, tapi baris checklist tetap kebuat/keupdate). Diset `true` HANYA di
+  // titik yang BENERAN dipicu aksi user (setObj/setSrcForGroup/toggleManualStatus/
+  // handleRecomputeMissing/4 input header AWB-Tanggal-Checker-Catatan Manual) -- TIDAK PERNAH
+  // di doLoad() (pengisian programatik awal). Dipakai autosave effect: kalau BELUM ada baris
+  // checklist tersimpan sama sekali DAN ref ini masih `false`, autosave di-skip total (tidak
+  // insert baris baru) -- baris yang SUDAH ada TETAP diupdate seperti biasa (tidak diblokir),
+  // krn baris itu sendiri jadi bukti sudah pernah ada aktivitas checklist sebelumnya.
+  const userActionRef = useRef(false);
 
   useEffect(() => {
     supabase.from('tabel_npwp').select('*').then(({data}) => {
@@ -642,6 +977,27 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
         }
       }
 
+      // Master NPWP -- DIPINDAH ke sini (2026-09, sebelumnya di bawah pengecekan checklist,
+      // HANYA di-fetch kalau checklist BELUM ada). Sekarang SELALU di-fetch duluan supaya
+      // `computed` di bawah bisa dihitung PENUH baik ada checklist tersimpan maupun tidak --
+      // dipakai tombol "Recompute Missing Data" (lihat `computedValuesRef`/
+      // `handleRecomputeMissing`).
+      let localNpwps = npwps;
+      if (localNpwps.length === 0) {
+        const { data: nData } = await supabase.from('tabel_npwp').select('*');
+        if (nData) {
+          localNpwps = nData;
+          setNpwps(nData);
+        }
+      }
+
+      // Hitung SEMUA Src/Cmp murni dari data mentah (`buildValidationValues`, lihat definisinya
+      // di atas komponen ini) -- SELALU dihitung sekarang (dulu logic ini inline di sini & HANYA
+      // jalan kalau BELUM ada checklist tersimpan). Disimpan ke ref supaya tombol "Recompute
+      // Missing Data" bisa pakai versi TERBARU ini kapan saja tanpa fetch ulang.
+      const computed = buildValidationValues(raw, docAwb, localNpwps);
+      computedValuesRef.current = computed;
+
       if (pib_id || cn_id) {
         const queryStr = queryPib_cnid.join(',');
         const { data: checklist } = await supabase.from('tabel_checklist_validasi').select('*').or(queryStr).order('created_at', { ascending: false }).limit(1);
@@ -658,322 +1014,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
         }
       }
 
-      let localNpwps = npwps;
-      if (localNpwps.length === 0) {
-        const { data: nData } = await supabase.from('tabel_npwp').select('*');
-        if (nData) {
-          localNpwps = nData;
-          setNpwps(nData);
-        }
-      }
-
-      const invF = raw.invoice_freight_v || {};
-      const fpF = raw.faktur_pajak_freight || {};
-      const idOther = raw.invoice_freight_cost || {}; 
-      const awbDet = raw.awb_detail_v || {};
-      const invD = raw.invoice_duty_v || {};
-      const invDutyCost = raw.invoice_duty_cost || {};
-      const fpD = raw.faktur_pajak_duty || {};
-      const fi = raw.final_invoice || {};
-      const bdjbc = raw.billing_djbc_total || "";
-      const ciplV = raw.cipl_vessel || "";
-
-      const invFreightAwb = raw.invoice_freight_cost?.awb_no || raw.invoice_freight_v?.awb_no || "";
-      const invDutyAwb = raw.invoice_duty_v?.awb_no || raw.invoice_duty_v?.no_awb || "";
-      const awbDocAwb = awbDet.awb_no || awbDet.no_awb || awbDet.awb || "";
-
-      const npwpClean = (str: string) => (str || '').replace(/\D/g, '');
-      const findNpwp = (npwpVal: string) => {
-        if (!npwpVal) return null;
-        const clean = npwpClean(npwpVal);
-        return localNpwps.find(n => npwpClean(n.npwp) === clean) || null;
-      };
-
-      const normalizeName = (str: string) => {
-        if (!str) return '';
-        return String(str)
-          .toUpperCase()
-          .trim()
-          .replace(/\s+/g, ' ')
-          .replace(/[.,]/g, '')
-          .replace(/^PT\.?\s+/i, '')
-          .replace(/\s+PT\.?$/i, '');
-      };
-      const findNpwpByName = (namaVal: string) => {
-        if (!namaVal) return null;
-        const clean = normalizeName(namaVal);
-        if (!clean) return null;
-        let found = localNpwps.find(n => normalizeName(n.nama) === clean);
-        if (!found) {
-          found = localNpwps.find(n =>
-            normalizeName(n.nama).includes(clean) ||
-            clean.includes(normalizeName(n.nama))
-          );
-        }
-        if (!found) {
-          // Toleransi kurang/lebih spasi dari hasil ekstraksi OCR (mis. "NUSASENTANA" vs "NUSA SENTANA").
-          const cleanNoSpace = clean.replace(/\s+/g, '');
-          found = localNpwps.find(n => normalizeName(n.nama).replace(/\s+/g, '') === cleanNoSpace);
-        }
-        return found || null;
-      };
-
-      // Fallback: kalau nomor NPWP tidak ditemukan di master (atau kosong), coba cari via nama.
-      const findNpwpWithFallback = (npwpVal: string, namaVal: string) => {
-        return findNpwp(npwpVal) || findNpwpByName(namaVal);
-      };
-
-      setValues((v: any) => {
-        const newV = { ...v };
-        const fill = (id: string, srcVal: any, cmpVal: any, srcDisplay?: string, srcNote?: string) => {
-           if (newV[id]) {
-              newV[id] = { 
-                 src: srcVal === null ? null : (srcVal === undefined ? "" : srcVal.toString()), 
-                 cmp: cmpVal === null ? null : (cmpVal === undefined ? "" : cmpVal.toString()),
-                 srcDisplay: srcDisplay,
-                 srcNote: srcNote
-              };
-           }
-        };
-
-        const pibV = raw.pib_v || {};
-        const sppbV = raw.sppb_v || {};
-        const bpnV = raw.bpn_v || {};
-        const ciplV = raw.cipl_v || {};
-        const btVendorV = raw.bt_vendor_v || {};
-
-        const hasInvoiceFreight = invF.subtotal != null || invF.ppn != null || invF.pt_penerima != null;
-        const cmpAwbFisik = Object.keys(awbDet).length > 0 ? docAwb : "";
-
-        fill("if01", invD.awb, docAwb);
-        fill("bpn_awb_vs_freight_awb", bpnV.awb, invF.awb);
-        fill("if02", hasInvoiceFreight ? invF.subtotal : "", fpF.subtotal);
-        fill("if03", hasInvoiceFreight ? invF.ppn : "", fpF.ppn);
-        fill("if04", fpF.pt_pembeli || "", findNpwpByName(fpF.pt_pembeli)?.nama || "");
-        fill("if06", awbDet.pt_name || "", findNpwpByName(awbDet.pt_name)?.nama || "");
-
-        // INVOICE DUTY
-        fill("id01", invDutyCost.vat_duty_basis_idr || "", fpD.harga_jual || "");
-        fill("id02", invD.ppn, fpD.ppn);
-        fill("id03", fpD.pt_pembeli || "", findNpwpByName(fpD.pt_pembeli)?.nama || "");
-        fill("id04", hasInvoiceFreight ? idOther.actual_weight_kg : null, hasInvoiceFreight ? awbDet.weight : null);
-
-        fill("id06", docAwb, cmpAwbFisik);
-        fill("id07", invF.awb || invD.awb, pibV.no_awb || "");
-
-        // PIB
-        fill("pib01", pibV.no_pengajuan || "", sppbV.no_pengajuan || "");
-        fill("pib02", invF.awb || invD.awb || "", sppbV.no_awb || "");
-        fill("pib03", normalizeInvoiceSeparator(pibV.no_invoice) || "", normalizeInvoiceSeparator(ciplV.no_invoice) || "");
-        fill("pib04", pibV.item_value || "", ciplV.total_value || "");
-        fill("bt_vendor_no_invoice_vs_pib", normalizeInvoiceSeparator(pibV.no_invoice) || "", normalizeInvoiceSeparator(btVendorV.no_invoice) || "");
-        fill("bt_vendor_item_value_vs_pib", pibV.item_value || "", btVendorV.item_value || "");
-        fill("pib06", normalizeInvoiceSeparator(pibV.no_invoice) || "", normalizeInvoiceSeparator(fi.inv_no) || "");
-        fill("pib07", pibV.item_value || "", fi.total_value || "");
-        fill("po_item_value_vs_pib", pibV.item_value || "", raw.po_total_value || "");
-        if (newV["po_item_value_vs_pib"]) newV["po_item_value_vs_pib"].otherCost = raw.other_cost_valas != null ? String(raw.other_cost_valas) : "";
-
-        // PIB NPWP Lookup
-        const pibNpwp = findNpwp(pibV.npwp);
-        fill("pib08", pibV.npwp || "", pibNpwp?.npwp || "");
-        fill("pib09", pibV.nama_pt || "", pibNpwp?.nama || "");
-        fill("pib10", pibV.alamat_npwp || "", pibNpwp?.alamat || "");
-        if (newV["pib08"]) newV["pib08"].npwp_status = pibV.npwp && !pibNpwp ? 'not_found' : null;
-
-        // SPPBMCP
-        fill("sppb01", sppbV.total_nilai_pabean ?? null, bpnV.cif_penetapan ?? null);
-        
-        // SPPBMCP NPWP Lookup
-        const sppbNpwp = findNpwp(sppbV.npwp);
-        fill("sppb02", sppbV.npwp || "", sppbNpwp?.npwp || "");
-        fill("sppb03", sppbV.nama_pt || "", sppbNpwp?.nama || "");
-        fill("sppb04", sppbV.alamat || "", sppbNpwp?.alamat || "");
-        if (newV["sppb02"]) newV["sppb02"].npwp_status = sppbV.npwp && !sppbNpwp ? 'not_found' : null;
-
-        // BPN/HTBK NPWP Lookup
-        const bpnMasterNpwp = findNpwp(bpnV.npwp);
-        fill("bpn_no_npwp", bpnV.npwp || "", bpnMasterNpwp?.npwp || "");
-        fill("bpn_nama_npwp", bpnV.nama_pt || "", findNpwpWithFallback(bpnV.npwp, bpnV.nama_pt)?.nama || "");
-
-        // Billing DJBC NPWP Lookup (dokumen tidak mencantumkan alamat)
-        const billingDjbcMasterNpwp = findNpwp(raw.billing_djbc_npwp);
-        fill("billing_djbc_no_npwp", raw.billing_djbc_npwp || "", billingDjbcMasterNpwp?.npwp || "");
-        fill("billing_djbc_nama_npwp", raw.billing_djbc_nama_pt || "", findNpwpWithFallback(raw.billing_djbc_npwp, raw.billing_djbc_nama_pt)?.nama || "");
-
-        // CIPL NPWP Lookup
-        fill("cipl_nama_npwp", ciplV.penerima_barang || "", findNpwpWithFallback(ciplV.npwp, ciplV.penerima_barang)?.nama || "");
-
-        // Final Invoice NPWP Lookup
-        fill("final_invoice_nama_npwp", fi.nama_pt || "", findNpwpWithFallback(fi.npwp, fi.nama_pt)?.nama || "");
-
-        // BT Vendor NPWP Lookup
-        fill("bt_vendor_nama_npwp", btVendorV.nama_pt || "", findNpwpWithFallback(btVendorV.npwp, btVendorV.nama_pt)?.nama || "");
-
-        // BILLING DJBC
-        fill("bdjbc01", pibV.no_pengajuan || "", raw.billing_djbc_nomor_aju || "");
-        fill("bdjbc02", pibV.total_bayar || "", bdjbc || "");
-        fill("bdjbc03", pibV.no_pengajuan || "", bpnV.nomor_dokumen || "");
-        fill("bdjbc04", pibV.total_bayar || "", bpnV.total || "");
-
-        // CIPL
-        fill("cipl01", ciplV.total_value || "", raw.po_total_value || "");
-        if (newV["cipl01"]) newV["cipl01"].otherCost = raw.other_cost_valas != null ? String(raw.other_cost_valas) : "";
-        fill("cipl02", raw.po_penerima || "", findNpwpByName(raw.po_penerima)?.nama || "");
-        fill("po_alamat_npwp", raw.po_alamat || "", findNpwpByName(raw.po_penerima)?.alamat || "");
-        fill("cipl03", ciplV.no_invoice || "", fi.inv_no || "");
-        fill("cipl04", ciplV.total_value || "", fi.total_value || "");
-        fill("cipl05", raw.cipl_vessel || "", "");
-
-        // PO
-        fill("po01", raw.po_vessel || "", "");
-
-        // FINAL INVOICE
-        const fiVessel = [
-          raw.final_invoice?.vessel,
-          raw.final_invoice?.imo_number
-        ].filter(Boolean).join(' | ') || "";
-        fill("fi01", fiVessel, "");
-
-        // FP FREIGHT Lookup
-        const fpFdNpwp = findNpwp(raw.faktur_pajak_freight_npwp);
-        fill("fpfd01", raw.faktur_pajak_freight_npwp || "", fpFdNpwp?.npwp || "");
-        fill("fpfd02", raw.faktur_pajak_freight_alamat || "", fpFdNpwp?.alamat || "");
-        if (newV["fpfd01"]) newV["fpfd01"].npwp_status = raw.faktur_pajak_freight_npwp && !fpFdNpwp ? 'not_found' : null;
-
-        // FP FREIGHT DPP & Referensi
-        fill("fpfd05", fpF.dpp || "", hitungDppCmp(fpF.subtotal, fpF.no_seri));
-        fill("fpfd06", fpF.no_referensi || "", invF.no_invoice || "");
-
-        // FP DUTY Lookup
-        const fpDutyNpwp = findNpwp(raw.faktur_pajak_duty_npwp);
-        fill("fpfd03", raw.faktur_pajak_duty_npwp || "", fpDutyNpwp?.npwp || "");
-        fill("fpfd04", raw.faktur_pajak_duty_alamat || "", fpDutyNpwp?.alamat || "");
-        if (newV["fpfd03"]) newV["fpfd03"].npwp_status = raw.faktur_pajak_duty_npwp && !fpDutyNpwp ? 'not_found' : null;
-
-        // FP DUTY DPP & Referensi
-        fill("fpfd07", fpD.dpp || "", hitungDppCmp(fpD.harga_jual, fpD.no_seri));
-        fill("fpfd08", fpD.no_referensi || "", invD.no_invoice || "");
-
-        // FP REVISI FREIGHT Lookup
-        const fpRF = raw.fp_revisi_freight || {};
-        const hasFpRF = Object.keys(fpRF).length > 0 || raw.fp_revisi_freight_npwp !== undefined && raw.fp_revisi_freight_npwp !== null;
-        if (hasFpRF) {
-            const fpRevNpwp = findNpwp(raw.fp_revisi_freight_npwp);
-            fill("fpr01", raw.fp_revisi_freight_npwp || "", fpRevNpwp?.npwp || "");
-            fill("fpr02", raw.fp_revisi_freight_alamat || "", fpRevNpwp?.alamat || "");
-            if (newV["fpr01"]) newV["fpr01"].npwp_status = raw.fp_revisi_freight_npwp && !fpRevNpwp ? 'not_found' : null;
-            fill("fpr05", fpRF.dpp || "", hitungDppCmp(fpRF.subtotal, fpRF.no_seri));
-            fill("fpr06", fpRF.no_referensi || "", invF.no_invoice || "");
-        } else {
-            fill("fpr01", null, null);
-            fill("fpr02", null, null);
-            fill("fpr05", null, null);
-            fill("fpr06", null, null);
-        }
-
-        // FP REVISI DUTY Lookup
-        const fpRD = raw.fp_revisi_duty || {};
-        const hasFpRD = Object.keys(fpRD).length > 0 || raw.fp_revisi_duty_npwp !== undefined && raw.fp_revisi_duty_npwp !== null;
-        if (hasFpRD) {
-           const fpRevDutyNpwp = findNpwp(raw.fp_revisi_duty_npwp);
-           fill("fpr03", raw.fp_revisi_duty_npwp || "", fpRevDutyNpwp?.npwp || "");
-           fill("fpr04", raw.fp_revisi_duty_alamat || "", fpRevDutyNpwp?.alamat || "");
-           if (newV["fpr03"]) newV["fpr03"].npwp_status = raw.fp_revisi_duty_npwp && !fpRevDutyNpwp ? 'not_found' : null;
-           fill("fpr07", fpRD.dpp || "", hitungDppCmp(fpRD.subtotal, fpRD.no_seri));
-           fill("fpr08", fpRD.no_referensi || "", invD.no_invoice || "");
-        } else {
-           fill("fpr03", null, null);
-           fill("fpr04", null, null);
-           fill("fpr07", null, null);
-           fill("fpr08", null, null);
-        }
-
-        // SPTNP
-        const sptnpV = raw.sptnp_v || {};
-        const billingSptnp = raw.billing_sptnp || {};
-        const bpnSptnp = raw.bpn_sptnp || {};
-        const hasSptnp = sptnpV.no_dokumen != null || sptnpV.total != null;
-        if (hasSptnp) {
-           fill("sptnp01_a", sptnpV.no_dokumen, billingSptnp.no_dokumen);
-           fill("sptnp01_b", sptnpV.no_dokumen, bpnSptnp.no_dokumen);
-           fill("sptnp02_a", sptnpV.total, billingSptnp.total);
-           fill("sptnp02_b", sptnpV.total, bpnSptnp.total);
-
-           // SPTNP / Billing SPTNP / BPN SPTNP NPWP Lookup (vs Master NPWP)
-           const sptnpMasterNpwp = findNpwp(sptnpV.npwp);
-           fill("sptnp_no_npwp", sptnpV.npwp || "", sptnpMasterNpwp?.npwp || "");
-           fill("sptnp_nama_npwp", sptnpV.nama_pt || "", findNpwpWithFallback(sptnpV.npwp, sptnpV.nama_pt)?.nama || "");
-
-           const billingSptnpMasterNpwp = findNpwp(billingSptnp.npwp);
-           fill("billing_sptnp_no_npwp", billingSptnp.npwp || "", billingSptnpMasterNpwp?.npwp || "");
-           fill("billing_sptnp_nama_npwp", billingSptnp.nama_pt || "", findNpwpWithFallback(billingSptnp.npwp, billingSptnp.nama_pt)?.nama || "");
-
-           const bpnSptnpMasterNpwp = findNpwp(bpnSptnp.npwp);
-           fill("bpn_sptnp_no_npwp", bpnSptnp.npwp || "", bpnSptnpMasterNpwp?.npwp || "");
-           fill("bpn_sptnp_nama_npwp", bpnSptnp.nama_pt || "", findNpwpWithFallback(bpnSptnp.npwp, bpnSptnp.nama_pt)?.nama || "");
-        } else {
-           const ids = ["sptnp01_a", "sptnp01_b", "sptnp02_a", "sptnp02_b", "sptnp_no_npwp", "sptnp_nama_npwp", "billing_sptnp_no_npwp", "billing_sptnp_nama_npwp", "bpn_sptnp_no_npwp", "bpn_sptnp_nama_npwp"];
-           ids.forEach(id => fill(id, null, null));
-        }
-
-        // CN INVOICE FREIGHT
-        const cnF = raw.credit_note_freight_v || {};
-        const hasCnFreight = cnF.subtotal != null || cnF.ppn != null;
-        if (hasCnFreight) {
-           fill("cnf01_a", cnF.awb_no, docAwb);
-
-           const cnFCount = cnF.count || 1;
-           const noteF = cnFCount > 1 ? `(jumlah dari ${cnFCount} credit note)` : undefined;
-
-           const calcOtherFeesF = (invF.subtotal != null && cnF.subtotal != null) ? Number(invF.subtotal) - Number(cnF.subtotal) : null;
-           fill("cnf02_b", calcOtherFeesF, fpRF.subtotal, (invF.subtotal != null && cnF.subtotal != null) ? `${Number(invF.subtotal).toLocaleString('id-ID')} - ${Number(cnF.subtotal).toLocaleString('id-ID')}` : undefined, noteF);
-
-           const calcPpnF = (fpF.ppn != null && cnF.ppn != null) ? Number(fpF.ppn) - Number(cnF.ppn) : null;
-           fill("cnf03_b", calcPpnF, fpRF.ppn, (fpF.ppn != null && cnF.ppn != null) ? `${Number(fpF.ppn).toLocaleString('id-ID')} - ${Number(cnF.ppn).toLocaleString('id-ID')}` : undefined, noteF);
-
-           // CN Freight NPWP Lookup (vs Master NPWP)
-           fill("cn_freight_nama_npwp", cnF.pt_penerima || "", findNpwpWithFallback(cnF.npwp, cnF.pt_penerima)?.nama || "");
-           fill("cn_freight_alamat_npwp", cnF.alamat || "", findNpwpWithFallback(cnF.npwp, cnF.pt_penerima)?.alamat || "");
-        } else {
-           const ids = ["cnf01_a", "cnf02_b", "cnf03_b", "cn_freight_nama_npwp", "cn_freight_alamat_npwp"];
-           ids.forEach(id => fill(id, null, null));
-        }
-
-        // Invoice Freight — Nama PT & Alamat vs Master NPWP (selalu relevan, tidak tergantung ada/tidaknya Credit Note).
-        // Invoice Freight tidak mencantumkan NPWP, jadi lookup selalu berdasarkan nama.
-        fill("cnf04_a", invF.pt_penerima || "", findNpwpByName(invF.pt_penerima)?.nama || "");
-        fill("invoice_freight_alamat_npwp", invF.alamat || "", findNpwpByName(invF.pt_penerima)?.alamat || "");
-
-        // CN INVOICE DUTY
-        const cnD = raw.credit_note_duty_v || {};
-        const hasCnDuty = cnD.subtotal != null || cnD.ppn != null;
-        if (hasCnDuty) {
-           fill("cnd01_a", cnD.awb_no, docAwb);
-
-           const cnDCount = cnD.count || 1;
-           const noteD = cnDCount > 1 ? `(jumlah dari ${cnDCount} credit note)` : undefined;
-
-           const calcOtherFeesD = (fpD.harga_jual != null && cnD.subtotal != null) ? Number(fpD.harga_jual) - Number(cnD.subtotal) : null;
-           fill("cnd02_b", calcOtherFeesD, fpRD.subtotal, (fpD.harga_jual != null && cnD.subtotal != null) ? `${Number(fpD.harga_jual).toLocaleString('id-ID')} - ${Number(cnD.subtotal).toLocaleString('id-ID')}` : undefined, noteD);
-
-           const calcPpnD = (fpD.ppn != null && cnD.ppn != null) ? Number(fpD.ppn) - Number(cnD.ppn) : null;
-           fill("cnd03_b", calcPpnD, fpRD.ppn, (fpD.ppn != null && cnD.ppn != null) ? `${Number(fpD.ppn).toLocaleString('id-ID')} - ${Number(cnD.ppn).toLocaleString('id-ID')}` : undefined, noteD);
-
-           // CN Duty NPWP Lookup (vs Master NPWP)
-           fill("cn_duty_nama_npwp", cnD.pt_penerima || "", findNpwpWithFallback(cnD.npwp, cnD.pt_penerima)?.nama || "");
-           fill("cn_duty_alamat_npwp", cnD.alamat || "", findNpwpWithFallback(cnD.npwp, cnD.pt_penerima)?.alamat || "");
-        } else {
-           const ids = ["cnd01_a", "cnd02_b", "cnd03_b", "cn_duty_nama_npwp", "cn_duty_alamat_npwp"];
-           ids.forEach(id => fill(id, null, null));
-        }
-
-        // Invoice Duty — Nama PT & Alamat vs Master NPWP (selalu relevan, tidak tergantung ada/tidaknya Credit Note).
-        // Invoice Duty tidak mencantumkan NPWP, jadi lookup selalu berdasarkan nama.
-        fill("cnd04_a", invD.pt_penerima || "", findNpwpByName(invD.pt_penerima)?.nama || "");
-        fill("invoice_duty_alamat_npwp", invD.alamat || "", findNpwpByName(invD.pt_penerima)?.alamat || "");
-
-        return newV;
-      });
+      setValues(computed);
 
       setAwbNo(docAwb || "");
       if(!tanggal) {
@@ -1043,7 +1084,12 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
        const queryStr = queryPib_cnid.join(',');
 
        const { data: existing } = await supabase.from('tabel_checklist_validasi').select('id').or(queryStr).limit(1);
-       
+
+       // Belum pernah ada baris checklist SAMA SEKALI utk shipment ini, DAN belum ada aksi user
+       // apa pun (murni buka/lihat) -- JANGAN insert baris baru. Baris yang SUDAH ADA tetap
+       // diupdate seperti biasa (tidak diblokir oleh guard ini).
+       if (!(existing && existing.length > 0) && !userActionRef.current) return;
+
        const payload: any = {
           pib_id, cn_id, awb: awbNo, tanggal_cek: tanggal, nama_checker: namaChecker,
           catatan_manual: catatanManual,
@@ -1071,6 +1117,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
 
   const toggleManualStatus = (id: string, currentSt: string) => {
     if (!isEditMode) return;
+    userActionRef.current = true;
     setValues((prev: any) => {
       let nextSt = 'match';
       if (currentSt === 'match') nextSt = 'mismatch';
@@ -1093,6 +1140,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   // field/rowLabel yang sama (pib01/bdjbc01/bdjbc03, dst) supaya perbandingan Cmp per kolom
   // tetap sinkron -- BUKAN cuma 1 row id spt setObj biasa.
   const setSrcForGroup = (section: SectionConfig, field: string, val: string) => {
+    userActionRef.current = true;
     const groupKey = (r: any) => r.rowLabel || r.field;
     const ids = section.rows.filter((r: any) => groupKey(r) === field).map((r: any) => r.id);
     setValues((v: any) => {
@@ -1105,6 +1153,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   };
 
   const setObj = (id: string, side: string, val: any) => {
+    userActionRef.current = true;
     setValues((v: any) => {
       const vNew = { ...v, [id]: { ...v[id], [side]: val, [`${side}_edited`]: true, manual_status: null } };
       if (side === 'cmp' && ['pib08', 'sppb02', 'fpfd01', 'fpr01'].includes(id) && val) {
@@ -1262,6 +1311,51 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     setAwbNo(""); setTanggal(new Date().toISOString().split('T')[0]); setNamaChecker("");
   };
 
+  // "Recompute Missing Data" (2026-09) -- fitur BARU utk kasus checklist yang SUDAH tersimpan
+  // tapi sebagian field-nya masih kosong (src DAN/ATAU cmp) krn dokumen sumbernya (di
+  // `dokumen_validasi`) MASIH KOSONG saat checklist itu pertama kali direkam, lalu belakangan
+  // dilengkapi (dokumen susulan/reprocessing n8n) -- checklist yang SUDAH tersimpan TIDAK PERNAH
+  // otomatis ikut ter-update (lihat catatan panjang di `buildValidationValues`/CLAUDE.md "BUKAN
+  // retroaktif"). Tombol ini mengisi ULANG *hanya* sisi (src/cmp) yang MASIH KOSONG & BELUM
+  // PERNAH diedit manual user (`src_edited`/`cmp_edited`) -- field yang SUDAH terisi (baik dari
+  // fill() lama maupun edit manual) TIDAK PERNAH ditimpa sama sekali, sengaja HATI-HATI supaya
+  // tidak menghapus/mengganti kerja checker yang sudah ada. `manual_status` (override status
+  // Match/Mismatch manual) TIDAK dianggap "sudah diedit" di sini krn itu field TERPISAH dari
+  // src/cmp -- override status tetap dipertahankan apa adanya walau src/cmp-nya baru terisi.
+  const handleRecomputeMissing = () => {
+    const computed = computedValuesRef.current;
+    if (!computed) return;
+    userActionRef.current = true;
+    let filledCount = 0;
+    setValues((prev: any) => {
+      const next: any = { ...prev };
+      Object.keys(computed).forEach(id => {
+        const cur = prev[id] || {};
+        const comp = computed[id] || {};
+        const canFillSrc = !cur.src && !cur.src_edited;
+        const canFillCmp = !cur.cmp && !cur.cmp_edited;
+        if (!canFillSrc && !canFillCmp) return;
+        const newSrc = canFillSrc ? comp.src : cur.src;
+        const newCmp = canFillCmp ? comp.cmp : cur.cmp;
+        if (newSrc === cur.src && newCmp === cur.cmp) return;
+        if (canFillSrc && comp.src) filledCount++;
+        if (canFillCmp && comp.cmp) filledCount++;
+        next[id] = {
+          ...cur,
+          src: newSrc,
+          cmp: newCmp,
+          srcDisplay: canFillSrc ? comp.srcDisplay : cur.srcDisplay,
+          srcNote: canFillSrc ? comp.srcNote : cur.srcNote,
+        };
+      });
+      return next;
+    });
+    setRecomputeMsg(filledCount > 0
+      ? `Recompute selesai: ${filledCount} field terisi dari data terbaru.`
+      : 'Tidak ada field kosong yang bisa diisi ulang -- semua sudah lengkap atau sudah diedit manual.');
+    setTimeout(() => setRecomputeMsg(null), 6000);
+  };
+
   if (loading) {
     return (
       <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center h-full w-full">
@@ -1317,6 +1411,19 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
               )
             ) : (
               <>
+                {/* "Recompute Missing Data" (2026-09) -- HANYA muncul saat Edit mode (aksi
+                    sengaja, bukan otomatis) supaya perubahannya ikut alur Save/Cancel yang
+                    sudah ada (Cancel dgn `snapshotValues` otomatis membatalkan hasil recompute
+                    ini juga kalau user berubah pikiran). TIDAK MENGHAPUS/MENIMPA field yang
+                    sudah terisi ATAU sudah diedit manual -- lihat `handleRecomputeMissing`. */}
+                <button
+                  title="Isi ulang field yang masih kosong dari data dokumen terbaru, tanpa menimpa field yang sudah terisi/diedit"
+                  style={{ ...S.printBtn, color: '#0369a1', borderColor: '#bae6fd', background: '#f0f9ff' }}
+                  onClick={handleRecomputeMissing}
+                >
+                  <RefreshCw size={14} />
+                  <span className="hidden sm:inline">Recompute Missing Data</span>
+                </button>
                 <button style={{ ...S.printBtn, color: '#15803d', borderColor: '#bbf7d0', background: '#f0fdf4' }} onClick={() => setIsEditMode(false)}>
                   <CheckCircle2 size={14} />
                   <span className="hidden sm:inline">Save</span>
@@ -1341,7 +1448,13 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
             </button>
           </div>
         </div>
-        
+
+        {recomputeMsg && (
+          <div className="px-3 md:px-4 py-2 text-xs font-medium text-[#0369a1] bg-[#f0f9ff] border-b border-[#bae6fd] shrink-0 print:hidden">
+            {recomputeMsg}
+          </div>
+        )}
+
         <div className="bg-gradient-to-r from-[#FFF5C5]/55 to-[#F58C77]/35 px-3 md:px-4 pt-2 md:pt-2.5 pb-2 border-b border-[#5A305A]/15 shrink-0 z-10 print:p-0 print:bg-white">
           <div style={S.page}>
             <div style={{...S.header, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', gap: '10px'}}>
@@ -1394,21 +1507,21 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                     <Plane size={12} className="text-[#8b5fa8] shrink-0 print:hidden" />
                     <div>
                       <div className="text-[9px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">No. AWB</div>
-                      {isEditMode ? <input style={S.metaInput} value={awbNo || ""} onChange={e => setAwbNo(e.target.value)} placeholder="e.g. 1234567890" /> : <div className="text-[12px] font-semibold text-[#5A305A] leading-tight">{awbNo || "—"}</div>}
+                      {isEditMode ? <input style={S.metaInput} value={awbNo || ""} onChange={e => { userActionRef.current = true; setAwbNo(e.target.value); }} placeholder="e.g. 1234567890" /> : <div className="text-[12px] font-semibold text-[#5A305A] leading-tight">{awbNo || "—"}</div>}
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 bg-white/90 border border-[#5A305A]/15 rounded-lg px-2.5 py-1 print:bg-transparent print:border-0 print:px-0 print:py-0">
                     <CalendarDays size={12} className="text-[#8b5fa8] shrink-0 print:hidden" />
                     <div>
                       <div className="text-[9px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Check date</div>
-                      {isEditMode ? <input type="date" style={S.metaInput} value={tanggal || ""} onChange={e => setTanggal(e.target.value)} /> : <div className="text-[12px] font-semibold text-[#5A305A] leading-tight">{fmtDateEN(tanggal)}</div>}
+                      {isEditMode ? <input type="date" style={S.metaInput} value={tanggal || ""} onChange={e => { userActionRef.current = true; setTanggal(e.target.value); }} /> : <div className="text-[12px] font-semibold text-[#5A305A] leading-tight">{fmtDateEN(tanggal)}</div>}
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 bg-white/90 border border-[#5A305A]/15 rounded-lg px-2.5 py-1 print:bg-transparent print:border-0 print:px-0 print:py-0">
                     <UserCheck size={12} className="text-[#8b5fa8] shrink-0 print:hidden" />
                     <div>
                       <div className="text-[9px] text-[#8b5fa8] font-semibold uppercase tracking-wide leading-none mb-0.5">Checked by</div>
-                      {isEditMode ? <input style={S.metaInput} value={namaChecker || ""} onChange={e => setNamaChecker(e.target.value)} placeholder="Checker's name" /> : <div className="text-[12px] font-semibold text-[#5A305A] leading-tight">{namaChecker || "—"}</div>}
+                      {isEditMode ? <input style={S.metaInput} value={namaChecker || ""} onChange={e => { userActionRef.current = true; setNamaChecker(e.target.value); }} placeholder="Checker's name" /> : <div className="text-[12px] font-semibold text-[#5A305A] leading-tight">{namaChecker || "—"}</div>}
                     </div>
                   </div>
                 </div>
@@ -1424,7 +1537,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                   {isEditMode ? (
                     <textarea
                       value={catatanManual}
-                      onChange={e => setCatatanManual(e.target.value)}
+                      onChange={e => { userActionRef.current = true; setCatatanManual(e.target.value); }}
                       placeholder="Enter the reason or notes for any manually changed values..."
                       rows={1}
                       className="w-full border border-purple-100 bg-white/70 rounded-lg px-2.5 py-1.5 text-[12px] text-[#5A305A] focus:outline-none focus:ring-2 focus:ring-purple-200 resize-none"

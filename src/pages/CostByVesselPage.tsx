@@ -38,7 +38,7 @@ import ReportingCostPerVesselPage from './ReportingCostPerVesselPage';
 type ReportingView = 'dashboard' | 'cost_per_vessel';
 
 export default function CostByVesselPage() {
-  useEffect(() => { document.title = 'Cost by Vessel · BeeHive'; }, []);
+  useEffect(() => { document.title = 'Overseas Cost by Vessel · BeeHive'; }, []);
   const { isAdmin, allowedPageKeys } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -73,7 +73,7 @@ export default function CostByVesselPage() {
             <ShieldAlert size={22} />
           </div>
           <h2 className="font-bold text-[#5A305A] mb-1.5">Tidak Ada Akses</h2>
-          <p className="text-sm font-light text-[#5A305A]/80">Anda tidak memiliki akses ke halaman "Cost by Vessel". Hubungi PIC/admin kalau merasa ini seharusnya diizinkan.</p>
+          <p className="text-sm font-light text-[#5A305A]/80">Anda tidak memiliki akses ke halaman "Overseas Cost by Vessel". Hubungi PIC/admin kalau merasa ini seharusnya diizinkan.</p>
         </div>
       </div>
     );
@@ -91,7 +91,7 @@ export default function CostByVesselPage() {
               <Ship size={17} />
             </div>
             <div>
-              <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Cost by Vessel</h1>
+              <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Overseas Cost by Vessel</h1>
               <p className="text-[#5A305A] font-light text-sm mt-1">Cost summary per vessel — Courier, Sea, Air, FAR Overseas</p>
             </div>
           </div>
@@ -107,7 +107,7 @@ export default function CostByVesselPage() {
         {canSeeDashboard && (
           <button onClick={() => switchTab('dashboard')}
             className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${view === 'dashboard' ? 'bg-[#5A305A] text-white' : 'bg-white text-[#5A305A]/70 hover:text-[#5A305A]'}`}>
-            <LayoutDashboard size={14} /> Reporting Dashboard
+            <LayoutDashboard size={14} /> Dashboard
           </button>
         )}
         {canSeeCostPerVessel && (

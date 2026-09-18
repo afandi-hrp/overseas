@@ -636,24 +636,28 @@ Card, bukan dimodifikasi.
   `@media print` di `src/index.css` yang mengisolasi elemen ini saat cetak SUDAH ADA dari fitur
   Print manual di dalam modal, TIDAK diubah) BENERAN ada di DOM, baru `window.print()` di dalam
   2x `requestAnimationFrame` bersarang (1 frame commit React, 1 frame browser selesai paint).
-  **Bug ditemukan & diperbaiki (2 iterasi)**: (1) versi awal pakai `setTimeout(..., 200)`
+  **Bug ditemukan & diperbaiki (3 iterasi)**: (1) versi awal pakai `setTimeout(..., 200)`
   fixed-delay — `window.print()` mencetak APA ADANYA yang sudah ter-render di DOM saat
   dipanggil (bukan nunggu render selesai dulu), jadi kalau device/koneksi lambat & 200ms belum
   cukup buat modal (portal ke `document.body`) selesai commit+paint, hasilnya PRINT PREVIEW
-  KOSONG — diganti poll DOM (`waitForPrintAreaThenPrint`) + rAF; (2) SUSULAN — poll DOM saja
-  TERNYATA belum cukup, laporan user "header kiri memo (nama PT) masih tampil '-'" — root cause
-  `FarOverseasAirDetailModal.tsx` punya fetch ASYNC KEDUA setelah mount (`far_overseas_signer_config`
-  by `dominant_company_code`, isi komponen `CompanyLogo` di file itu — nama PT/logo header memo)
-  yang belum resolve saat elemen print area SUDAH ada di DOM (elemen muncul duluan dgn
-  placeholder "-", baru terisi setelah fetch itu selesai & re-render). Fix: `loadDeepLink`
-  duplikasi query YANG SAMA (`far_overseas_signer_config` by `dominant_company_code`) sebagai
-  PROXY waktu tunggu — hasilnya TIDAK DIPAKAI sama sekali, cuma di-`await` supaya alur print
-  beneran menunggu network round-trip fetch kedua itu selesai (berjalan paralel, durasinya
-  kurang lebih sama dgn punya modal), BARU lanjut poll DOM + rAF + `window.print()`. **Kalau ke
-  depan `FarOverseasAirDetailModal.tsx` nambah fetch async LAIN LAGI yang datanya ikut tercetak
-  di memo, alur print-dari-card ini WAJIB ikut ditambah duplikasi `await` yang sama** (pola sama
-  yang dipakai di sini), kalau tidak risiko print preview kosong sebagian bisa muncul lagi utk
-  data dari fetch baru itu.
+  KOSONG — diganti poll DOM (elemen `#far-overseas-print-area` ada/tidak) + rAF; (2) SUSULAN —
+  poll DOM keberadaan elemen saja TERNYATA belum cukup, laporan user "header kiri memo (nama PT)
+  masih tampil '-'" — root cause `FarOverseasAirDetailModal.tsx` punya fetch ASYNC KEDUA setelah
+  mount (`far_overseas_signer_config` by `dominant_company_code`, isi komponen `CompanyLogo` di
+  file itu — nama PT/logo header memo) yang belum resolve saat elemen print area SUDAH ada di
+  DOM. Coba fix: `loadDeepLink` duplikasi query YANG SAMA sbg PROXY waktu tunggu (`await`
+  sebelum print) — SUDAH DIGANTI LAGI, TERBUKTI TIDAK RELIABLE (lihat poin 3); (3) FIX FINAL —
+  laporan user lanjutan: buka via "Approval" dulu baru klik Print MANUAL di dalam modal =
+  lengkap, tapi "Print Memo" langsung dari card = TETAP kosong sebagian, membuktikan proxy-fetch
+  di poin (2) tidak menjamin urutan (2 network request independen paralel, query proxy yang cuma
+  `select` 1 kolom kerap selesai LEBIH CEPAT drpd query asli modal yang `select('*')`). Diganti
+  **`MutationObserver`** generik pada `#far-overseas-print-area` — tunggu sampai TIDAK ADA
+  perubahan DOM lagi selama 400ms (debounce, menandakan semua fetch async di dalam modal SUDAH
+  selesai & re-render-nya SUDAH commit), BARU `window.print()` (dalam 2x rAF). Safety cap 3
+  detik. **Pendekatan ini generik & TIDAK PERLU tahu/menduplikasi fetch spesifik apa pun di
+  dalam modal** — otomatis tetap benar walau `FarOverseasAirDetailModal.tsx` nanti nambah fetch
+  async lain lagi, TIDAK seperti pendekatan proxy-fetch di poin (2) yang WAJIB di-duplikasi
+  manual tiap ada fetch baru (makanya diganti). **JANGAN reintroduce pola proxy-fetch itu.**
   **Edge case DITERIMA**: kalau modal untuk
   memo YANG SAMA sudah terbuka saat tombol Print di-klik, `navigate()` ke path yang sama TIDAK
   mengubah `deepLinkId` -> effect `loadDeepLink` TIDAK jalan ulang -> print tidak otomatis
@@ -666,16 +670,45 @@ Card, bukan dimodifikasi.
   jalur baru); **Cost** (`setCostModalRow(r)`); **Edit** (gated `canEditDirectLoading`, lihat
   poin di bawah); **Delete** (gated `canEditDirectLoading`, `openDeleteConfirm(r)`, SAMA fungsi
   dgn List).
-- **Tombol Edit di card SELALU pindah balik ke mode List** (`handleEditFromCard(id)`) — Card
-  TIDAK punya form edit sendiri. Alur: `setViewMode('LIST')` -> `setEditingRowId(id)` (SET
-  LANGSUNG, bukan `toggleEditRow` yang bisa toggle-off kalau id sama) -> `setTimeout(...,50)`
-  panggil `document.getElementById('far-row-'+id)?.scrollIntoView({behavior:'smooth',
-  block:'center'})` supaya user otomatis diarahkan (scroll) ke baris yang tadi diklik di Card,
-  bukan cuma pindah mode lalu bingung baris mana. `setTimeout` dipakai (bukan langsung) supaya
-  tabel List sempat commit ke DOM dulu sebelum `scrollIntoView` dipanggil — switch state
-  `viewMode` & scroll terjadi di render yang sama kalau tidak ditunda, elemen `far-row-{id}`
-  belum tentu ada di DOM saat itu. `<tr id={'far-row-'+r.id}>` ditambahkan KHUSUS untuk target
-  scroll ini (sebelumnya tabel List tidak punya id per baris sama sekali).
+- **Tombol Edit di card buka `FarOverseasAirCardEditModal` (modal tersendiri, DEFINISI FINAL,
+  2026-09)** — versi SEBELUMNYA ("Edit di card pindah balik ke mode List + auto-scroll ke
+  baris", `handleEditFromCard`/`<tr id="far-row-{id}">` sbg target scroll) SUDAH DIGANTI TOTAL
+  atas permintaan susulan user ("jangan mengarah ke List, tapi modal tersendiri") — JANGAN
+  reintroduce alur pindah-ke-List itu tanpa diminta ulang. `<tr id="far-row-{id}">` di tabel
+  List dibiarkan ada (harmless leftover, tidak dipakai lagi tapi tidak mengganggu).
+  - State `cardEditRow: any | null` (null = modal tertutup) — diisi `setCardEditRow(r)` saat
+    tombol Edit card diklik.
+  - **`FarOverseasAirCardEditModal` (komponen module-level, di atas `export default function
+    FarOverseasAirPage()`) REUSE PERSIS `LIST_COLUMNS`** — TIDAK menduplikasi logic input per
+    field. Iterasi semua `LIST_COLUMNS` KECUALI header `NO`/`APPROVAL STATUS`/`COST STATUS`
+    (`CARD_EDIT_EXCLUDED_HEADERS`, bukan field yang bisa diedit): kolom ber-`render` (NO PO,
+    NOTE 2, NOTE 3, PIC, VESSEL, Weight Breakdown) dipanggil apa adanya
+    (`col.render(row, 0, costStatus, ctx)`); kolom ber-`field` polos pakai `<EditableCell
+    editable>` yang sama seperti di List. **Trik kuncinya**: `ctx` yang dioper ke modal ini
+    py `editingRowId` DIPAKSA `=== row.id` (dibuat di titik render modal, BUKAN memakai
+    `editingRowId` milik List) — SEMUA `col.render` yang mengecek `ctx.editingRowId === r.id`
+    (NOTE 2/NOTE 3/PIC/VESSEL/NO PO) otomatis tampil varian EDIT-nya tanpa kode tambahan apa
+    pun. `pendingEdits`/`getVal`/`setVal` SAMA PERSIS instance dgn List/edit massal (key by
+    row id yang sama) — modal ini BUKAN state terpisah, cuma jendela tampilan lain ke
+    `pendingEdits[row.id]` yang sama.
+  - **Save Changes** — `onSave` panggil `handleSaveAllEdits([row.id])` lalu tutup modal.
+    `handleSaveAllEdits` diperluas terima parameter opsional `idsOverride?: string[]` (default
+    tanpa argumen TETAP simpan SEMUA `changedRowIds` spt sebelumnya, dipakai tombol "Save All"
+    floating bar) — di dalamnya SEKARANG filter ulang `idsOverride` ke id yang BENERAN py
+    pending edit (`pendingEdits[id]` ada isinya) supaya klik "Save Changes" tanpa perubahan
+    apa pun (`pendingEdits[row.id]` belum ada) tidak memanggil RPC dgn payload kosong/undefined.
+    `setPendingEdits` sesudah save SEKARANG hapus HANYA id yang di-save (bukan `{}` polos
+    ganti-semua) — supaya save 1 baris dari modal Card TIDAK ikut membuang pending edit baris
+    LAIN yang mungkin sedang berjalan di List/edit massal secara bersamaan.
+  - **Cancel** — `onCancel` panggil `handleDiscardRowEdit(row.id)` (fungsi BARU, discard
+    KHUSUS 1 row id) lalu tutup modal — beda dari tombol "X" (`onClose`) yang CUMA menutup
+    modal TANPA membuang pending edit (biar user bisa buka lagi lain waktu atau simpan lewat
+    "Save All" floating bar bawah).
+  - Modal ini `z-[65]` — di ANTARA `FarOverseasAirDetailModal.tsx` (`z-[60]`) dan
+    `FarOverseasAirCostValidationModal.tsx`/`FarOverseasAirWeightBreakdownModal.tsx`
+    (`z-[70]`/`z-[75]`) — kolom "Weight Breakdown" di dalam modal ini bisa buka
+    `FarOverseasAirWeightBreakdownModal` (via `ctx.onOpenWeightModal`), yang WAJIB tampil DI
+    ATAS modal Edit Card ini, makanya `z-index`-nya sengaja lebih rendah dari kedua modal itu.
 - Area scroll Card **TERPISAH dari List** — List punya scroll ganda horizontal (`topScrollRef`/
   `bottomScrollRef`, tabel lebar banyak kolom), Card cukup 1 `overflow-y-auto` vertikal biasa
   (grid card tidak butuh scroll horizontal). Footer Pagination (`rows.length > 0 && (...)`)
@@ -992,7 +1025,94 @@ JANGAN `ValidasiFill.ts`** (belum disinkronkan, belum diminta user).
   **JANGAN tukar urutan ini lagi.** State `docCompletenessFlags` di-fetch sekali di `doLoad()`
   dari `dokumen_checklist`, SEBELUM early-return baris tersimpan.
 
-## Courier — Document Validation tombol Checklist "Upload Additional Doc" — lihat bagian tersendiri di atas.
+## Courier — Document Validation, tombol "Recompute Missing Data" (`ValidasiModal.tsx`, 2026-09)
+
+**Kasus nyata yang memicu fitur ini** (AWB "DHL NO. 1973256202", jenis CN): user melaporkan
+kolom "Final Invoice" di tabel CIPL (khusus CN) berstatus "Incomplete", dan baris "Final
+Invoice"/"BT Vendor" di TABEL NPWP berstatus "Not checked yet" — padahal user sudah cek langsung
+ke `dokumen_validasi.data_validasi_raw` dan datanya (`cipl_v`/`final_invoice`/`bt_vendor_v`)
+LENGKAP. Ditelusuri (baca kode + query SQL manual `tabel_checklist_validasi.values_json` utk
+AWB itu): checklist SUDAH tersimpan sejak SEBELUM dokumen Final Invoice/BT Vendor-nya lengkap
+(kemungkinan besar dokumen itu menyusul belakangan atau baru diproses ulang n8n) — `values_json`
+tersimpan py `cipl03.cmp=""`, `cipl04.cmp=""`, `final_invoice_nama_npwp.src=""`,
+`bt_vendor_nama_npwp.src=""` walau `dokumen_validasi` SEKARANG sudah lengkap. Ini BUKAN bug baru
+— pola PERSIS sama dgn catatan "Src baris No. AWB kolom SPPB (pib02)" di atas: begitu ada 1
+baris `tabel_checklist_validasi` tersimpan, `doLoad()` SELALU load `values_json` itu apa adanya
+& tidak pernah hitung ulang dari `dokumen_validasi` (`if (checklist.length > 0) { setValues(...);
+return; }`, lihat bagian gating Checklist di atas) — kalau dokumen sumbernya lengkap BELAKANGAN,
+field yang kadung kosong di checklist TIDAK PERNAH otomatis ter-update ("BUKAN retroaktif").
+
+**Kenapa TIDAK digabung ke `dokumen_validasi` sekalian (dibahas dgn user)**: `dokumen_validasi.
+data_validasi_raw` ditimpa TOTAL oleh n8n tiap kali dokumen diproses ulang — kalau checklist
+manual (status per baris, catatan, nama checker) ditulis ke kolom yang sama, hasil kerja manual
+user bisa hilang tertimpa n8n tanpa jejak. `tabel_checklist_validasi` sengaja terpisah supaya
+hasil ekstraksi AI vs hasil kerja manusia tidak saling menimpa, DAN supaya ada riwayat audit
+(nama checker/tanggal cek). **Solusinya BUKAN menggabung tabel, tapi mekanisme recompute.**
+
+**Arsitektur solusi**:
+- **`buildValidationValues(raw, docAwb, localNpwps)`** (fungsi module-level BARU, di atas
+  `computeStatus()`) — hasil EKSTRAKSI VERBATIM dari fill() block yang SEBELUMNYA inline di
+  dalam `doLoad()` (~300 baris, TIDAK ada satu baris logic pun yang diubah, cuma dipindah +
+  `newV`→`out` + wrap jadi fungsi murni yang seed semua `SECTIONS` row id dulu baru fill()).
+  Fungsi ini SEKARANG SATU-SATUNYA sumber logic fill() — `doLoad()` tidak lagi punya salinan
+  sendiri. **Kalau logic fill() perlu diubah lagi ke depan, ubah DI SINI SAJA.**
+- **`doLoad()` direstrukturisasi** — urutan lama: (fetch raw) → (cek checklist, `return` kalau
+  ada) → (fetch NPWP master) → (fill() inline, HANYA jalan kalau checklist TIDAK ada). Urutan
+  BARU: (fetch raw) → (fetch NPWP master, DIPINDAH ke sini, SEKARANG SELALU jalan) → `const
+  computed = buildValidationValues(...)` (SELALU dihitung, disimpan ke `computedValuesRef`) →
+  (cek checklist, `return` kalau ada, TIDAK BERUBAH) → `setValues(computed)` (kalau checklist
+  tidak ada, ganti dari fill() inline jadi pakai `computed` yang sudah dihitung). Efek samping
+  KECIL yang diterima: fetch NPWP master sekarang jalan juga di kasus checklist SUDAH ada (dulu
+  di-skip) — biaya 1 query ekstra, perlu supaya `computedValuesRef` selalu siap dipakai tombol
+  Recompute kapan pun, termasuk saat checklist SUDAH ada.
+- **`computedValuesRef`** (`useRef`, BUKAN state — murni data mentah utk tombol, tidak perlu
+  re-render) — menyimpan hasil `buildValidationValues()` PALING TERBARU tiap `doLoad()` jalan
+  (checklist ada ATAU tidak).
+- **Tombol "Recompute Missing Data"** — HANYA muncul di mode Edit (aksi disengaja, ikut alur
+  Save/Cancel yang SUDAH ADA: klik Cancel akan membatalkan hasil recompute juga lewat
+  `snapshotValues` yang sudah ada sebelumnya, TIDAK ada mekanisme undo baru yang perlu dibuat).
+  `handleRecomputeMissing()` — utk TIAP row id, isi **src** dari `computed[id].src` HANYA kalau
+  `cur.src` kosong DAN `cur.src_edited` tidak true; isi **cmp** dari `computed[id].cmp` HANYA
+  kalau `cur.cmp` kosong DAN `cur.cmp_edited` tidak true — src/cmp dicek & diisi SECARA
+  TERPISAH (bukan "isi kalau KEDUANYA kosong") krn kasus nyata di atas persis begini: `cipl03.src`
+  SUDAH terisi ("EX-29") tapi `cipl04.cmp` kosong — kalau syaratnya "keduanya kosong", baris ini
+  tidak akan ke-refill sama sekali. **Field yang SUDAH terisi (dari fill() lama ATAU edit manual
+  user) TIDAK PERNAH ditimpa** — ini alasan utama kenapa fitur ini AMAN dipakai kapan saja tanpa
+  risiko menghapus kerja checker yang sudah ada. `manual_status` (override status Match/Mismatch
+  manual via `toggleManualStatus`) SENGAJA TIDAK dianggap "sudah diedit" di sini (field terpisah
+  dari src/cmp) — override status tetap dipertahankan apa adanya walau src/cmp-nya baru terisi.
+  Toast hasil (`recomputeMsg`, state lokal BARU) tampil "N field terisi..." atau "Tidak ada field
+  kosong yang bisa diisi ulang..." — auto-hilang 6 detik.
+- **Persistensi** — TIDAK ADA kode simpan baru; `setValues()` dari `handleRecomputeMissing`
+  memicu `useEffect` autosave debounce yang SUDAH ADA (upsert ke `tabel_checklist_validasi`
+  seperti edit manual biasa), jadi hasil recompute otomatis tersimpan.
+
+**Susulan (2026-09) — cegah checklist baru kebuat cuma krn user MEMBUKA/MELIHAT modal (tanpa
+edit apa pun)**: laporan user — untuk 1 record yang baru dibuka utk keperluan investigasi di
+atas, baris `tabel_checklist_validasi` tetap ke-INSERT walau TIDAK ADA satu pun ikon pensil
+"sudah diedit" muncul (artinya benar2 belum ada field yang disentuh user). Root cause PASTINYA
+belum 100% dikonfirmasi (kandidat: race/timing autosave lama di sekitar `skipNextAutosaveRef`),
+tapi solusinya DIBUAT GENERIK supaya aman terlepas dari penyebab persisnya:
+
+- **`userActionRef`** (`useRef(false)`, BARU) — diset `true` HANYA di titik yang BENERAN dipicu
+  aksi user: `setObj`, `setSrcForGroup`, `toggleManualStatus`, `handleRecomputeMissing`, DAN 4
+  `onChange` input header (No. AWB, Check Date, Checked By, Manual Change Notes — ke-4nya HANYA
+  editable saat `isEditMode`). **TIDAK PERNAH** diset di `doLoad()` (pengisian programatik awal
+  dari `dokumen_validasi`/checklist tersimpan) — itu justru state yang HARUS TETAP dianggap
+  "belum ada aksi user".
+- **Guard di autosave effect** (SEBELUM membangun `payload`/insert-update) — `if (!(existing &&
+  existing.length > 0) && !userActionRef.current) return;`. Efeknya: kalau BELUM ADA baris
+  checklist sama sekali UNTUK shipment ini DAN belum ada satu pun aksi user tercatat di sesi
+  modal ini, autosave di-skip TOTAL (tidak insert baris baru) — modal boleh dibuka/dilihat
+  berkali-kali tanpa pernah membuat baris checklist kalau memang tidak ada yang diedit. Baris
+  yang **SUDAH ADA** sebelumnya (kasus `existing.length > 0`) TETAP diupdate seperti biasa,
+  TIDAK ikut diblokir guard ini — mengubah itu di luar cakupan permintaan (fokusnya cuma
+  mencegah checklist BARU yang "phantom", bukan menghentikan update checklist yang memang sudah
+  legitimate ada). **Kalau nambah cara edit BARU ke `values`/`awbNo`/`tanggal`/`namaChecker`/
+  `catatanManual` ke depan (field baru, tombol baru, dst), WAJIB set `userActionRef.current =
+  true` juga di situ** — kalau lupa, edit itu tidak akan pernah membuat baris checklist BARU
+  (walau field-nya sendiri tetap ter-update di state React, cuma tidak ke-persist ke DB sampai
+  ada aksi lain yang men-set `userActionRef`).
 
 ## Courier Audit — kolom "Kurs BI (Rp)" di tab Draft
 
@@ -2511,12 +2631,93 @@ hasilnya dobel header + tab strip kelihatan norak nempel di background gradient)
   `ReportingCostPerVesselPage.tsx`), lalu render komponen anak dengan `embedded` (menghilangkan
   header duplikat mereka).
 
+### REVISI "Overseas Cost by Vessel" (2026-09, lanjutan) — rename, bulan Inggris, IDR di kartu,
+Trend ikut periode, freeze filter, pindah tombol, shading kolom akumulasi
+
+Permintaan user terstruktur ("Revisi menu Overseas Cost by Vessel"). Tidak ada perubahan
+rumus/angka apa pun — MURNI penamaan, penataan filter/tombol, penyesuaian tampilan trend, dan
+pewarnaan kolom. Semua di bawah SUDAH diimplementasikan, `npx tsc --noEmit` + `npm run build`
+bersih.
+
+**Umum**:
+- **"Cost by Vessel" -> "Overseas Cost by Vessel"** — label menu sidebar (`MainLayout.tsx`,
+  entri `reporting_cost_by_vessel`), `<h1>` + `document.title` + teks pesan "Tidak Ada Akses"
+  di `CostByVesselPage.tsx`. Sub-judul TIDAK berubah ("Cost summary per vessel — Courier, Sea,
+  Air, FAR Overseas"). `PAGE_REGISTRY` label ("Dashboard (Reporting)"/"Cost per Vessel", dipakai
+  matrix Kelola Role & Akses) SENGAJA TIDAK ikut diubah — di luar cakupan (bukan halaman itu
+  sendiri, murni label administratif).
+- **Tab "Reporting Dashboard" -> "Dashboard"** — label tombol tab di `CostByVesselPage.tsx`,
+  DAN (utk konsistensi, tidak diminta eksplisit tapi disamakan) `<h1>`/`document.title` internal
+  `ReportingDashboardPage.tsx` (hanya kepakai saat `!embedded`, tapi title efeknya tetap jalan
+  duluan lalu ketimpa CostByVesselPage — lihat catatan lama "child effect run after parent").
+- **Nama bulan ke Inggris di SELURUH halaman ini** (2 file: `ReportingDashboardPage.tsx`,
+  `ReportingCostPerVesselPage.tsx`) — `MONTH_NAMES` (dulu Indonesia "Jan/Feb/Mar/Apr/Mei/Jun/
+  Jul/Agu/Sep/Okt/Nov/Des") jadi "Jan/Feb/Mar/Apr/May/Jun/Jul/Aug/Sep/Oct/Nov/Dec" di KEDUA file.
+  `MONTH_NAMES_ID_FULL` (`ReportingCostPerVesselPage.tsx`, dipakai label kolom Periodic View
+  Monthly "JANUARI 2026" dst) di-rename `MONTH_NAMES_FULL` + isi Inggris ALL-CAPS ("JANUARY"
+  dst). `MONTH_NAMES_FULL` di `ReportingDashboardPage.tsx` (dipakai `comparePeriodLabel`) SUDAH
+  Inggris dari awal, tidak perlu diubah. `MasterVesselAdminPage.tsx` TETAP TIDAK ikut (pengecualian
+  lama, lihat bagian "Tab Sea & Air digabung..." di atas).
+
+**Tab Dashboard** (`ReportingDashboardPage.tsx`):
+- **Nilai IDR dalam kurung di samping %** — 3 kartu nominal (Total Cost/Total Cost Excl.
+  PPN+PPH/Total PPN+PPH) tampilkan selisih NOMINAL (`cur - prev`, nilai absolut) setelah teks
+  %, format `fmtIdrAbs()` = `"IDR {angka}"` (prefix "IDR", BEDA dari `fmtRp()` yang prefix "Rp"
+  — literal sesuai contoh user `(IDR 2.530.110.000)`/`(IDR 0)`). "Highest Vessel Cost" TETAP
+  TIDAK tampilkan % ataupun IDR ini (sudah dari awal tidak pakai %, konsisten).
+- **Monthly Trend — angka ditampilkan di sisi kiri tiap bar** (`VerticalBarChart`) — SEBELUMNYA
+  angka cuma muncul di tooltip (`title` attr) saat hover, sekarang SELALU tampil sebagai teks
+  vertikal (`writing-mode: vertical-rl` + `rotate(180deg)` supaya terbaca bawah-ke-atas
+  mengikuti arah tumbuh bar) di sebelah kiri tiap bar, anchor ke dasar kolom (sejajar `items-end`
+  parent). Nominal SELALU penuh (BUKAN singkatan — konsisten aturan lama halaman ini yang sudah
+  menghapus total `fmtRpShort`).
+- **Trend MENGIKUTI `periodMode` aktif** (GANTI TOTAL dari versi lama yang SELALU tampil 12
+  bulan tahun `year` terlepas pilihan filter) — Monthly: 12 bulan penuh tahun `year` (SAMA
+  seperti sebelumnya); Quarterly: 4 bar "Jan-Mar"/"Apr-Jun"/"Jul-Sep"/"Oct-Dec" (agregasi
+  `filteredYearRows` per kuartal via `Math.ceil(month/3)`); Yearly: multi-tahun (`trendYears`,
+  RENTANG SAMA dgn dropdown filter Year — `todayYear-3`..`todayYear+2`, 6 tahun) — butuh FETCH
+  TERPISAH (`yearlyTrendRows`, via `fetchAllocationRowsByMonths(trendYears.flatMap(monthsOfYear))`,
+  effect BARU yang HANYA jalan saat `periodMode==='YEARLY'` supaya tidak query 6-tahun penuh
+  kalau tidak perlu — `yearRows`/`prevRows` yang SUDAH ADA cuma cakup 1-2 tahun, tidak cukup utk
+  trend multi-tahun). Panel judul ikut dinamis: "Monthly Trend (Y)"/"Quarterly Trend (Y)"/
+  "Yearly Trend" (tanpa tahun, krn spans multi-tahun). Klik bar (`onBarClick`) disesuaikan per
+  mode: Monthly -> bulan itu; Quarterly -> bulan PERTAMA kuartal itu; Yearly -> tahun itu (bulan
+  dibiarkan bulan berjalan saat ini, BUKAN presisi "1 tahun penuh" — batasan diterima, di luar
+  cakupan revisi deep-link).
+- **Cost by Category label "All-In Import" -> ikut dropdown method (`METHOD_LABEL.BORONGAN` =
+  "FAR Ovs")** — `perJenisBiaya` array literal `'All-In Import'` diganti referensi
+  `METHOD_LABEL.BORONGAN` (dinamis, otomatis ikut kalau `METHOD_LABEL` berubah lagi ke depan,
+  BUKAN hardcode string kedua kalinya). Value data (`curSums.borongan_total`) TIDAK berubah.
+- **Freeze baris filter atas** — kartu filter (Monthly/Quarterly/Yearly | Bulan | Tahun | All
+  Method) dikasih `sticky top-0 z-20 bg-white` (relatif scroll container `pageScrollRef` yang
+  membungkus `<header>`+`<main>`) — `bg-white` WAJIB eksplisit (bg asal transparan) supaya
+  konten yang discroll di baliknya tidak tembus pandang. Halaman ini TETAP scroll penuh (BEDA
+  dari Cost per Vessel yang sudah "shell tinggi tetap" — filter di situ MEMANG sudah selalu
+  terlihat karena `shrink-0` di luar area scroll, poin freeze ini KHUSUS relevan utk Dashboard).
+
+**Tab Cost per Vessel** (`ReportingCostPerVesselPage.tsx`):
+- **Checkbox "Show zero-cost" & tombol "Collapse All" DIPINDAH** dari filter bar atas (sejajar
+  dropdown Year/Month) ke toolbar kartu tabel, sejajar tombol Summary View/Periodic View (kanan,
+  `ml-auto`). State (`showZeroCost`/`collapsedGroups`) & logic filter/collapse TIDAK berubah,
+  murni pindah lokasi elemen JSX-nya.
+- **2 kolom akumulasi paling kanan (Total Cost/Excl PPN+PPH) di Periodic View diberi latar
+  abu-abu agak gelap** (`bg-slate-200/70`) — diterapkan di 3 tempat: header 2-tingkat (kedua
+  `<th rowSpan={2}>`), body `renderNumericCells` (baris vessel & subtotal, 2 `<td>` terakhir),
+  DAN baris header grup (placeholder `<td>` kosong, kondisional `i >= numericColCount - 2` DAN
+  `viewMode==='PERIODIC'` saja) — supaya garis kolom abu-abu itu terlihat MENERUS dari header
+  sampai body, bukan cuma di sebagian baris. **Baris GRAND TOTAL (`<tfoot>`) SENGAJA TIDAK ikut**
+  — seluruh barisnya sudah 1 warna ungu solid (`bg-[#5A305A]`), menambah shading di situ tidak
+  akan kelihatan beda & berisiko malah kelihatan aneh. Berlaku HANYA saat `viewMode==='PERIODIC'`
+  (Summary View tidak punya konsep "kolom akumulasi vs kolom periode", tidak relevan).
+
 ### Yang belum dikerjakan / gap yang diketahui
 
 Belum ada testing menyeluruh dgn data production 1 tahun penuh (baru dites recompute 1 bulan,
 sudah lolos setelah 2 bug ditemukan & diperbaiki); vessel SCRAP yg baru discrap TENGAH BULAN
 tidak bisa ditampilkan granular (toggle "Sembunyikan SCRAP" buang seluruh biaya bulan itu, tidak
-cuma sebagian sebelum tanggal scrap).
+cuma sebagian sebelum tanggal scrap). Klik bar Trend Quarterly/Yearly di Dashboard arah ke Cost
+per Vessel dgn presisi bulan yang tidak sepenuhnya akurat (lihat poin "Trend MENGIKUTI periodMode"
+di atas) — di luar cakupan revisi ini, bisa disempurnakan kalau diminta.
 
 ## Peta tabel Supabase (per modul)
 

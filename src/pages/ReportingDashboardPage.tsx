@@ -3,12 +3,12 @@ import { Link, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Ship, TrendingUp, TrendingDown, ArrowUp, ArrowDown } from 'lucide-react';
 import Greeting from '../components/Greeting';
 import {
-  fetchMasterVessels, fetchAllocationRows, MasterVessel,
+  fetchMasterVessels, fetchAllocationRows, fetchAllocationRowsByMonths, monthsOfYear, MasterVessel,
   MetricKey, zeroSums, totalCost, totalExclPpn, metricForMethod, addSums, AllocationMethod,
   PeriodMode, quarterOfMonth,
 } from '../utils/ReportingHelpers';
 
-const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MONTH_NAMES_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 // "All-In Import" -> "FAR Ovs" (2026-09 "REVISI MENU REPORTING" -- kembali ke penamaan sebelum
 // direname jadi "All-In Import" sesi lalu). Value internal `AllocationMethod` TETAP `'BORONGAN'`.
@@ -83,13 +83,23 @@ function VerticalBarChart({ data, color, formatValue, onBarClick }: {
           {gridLines.map(g => <div key={g} className="border-t border-dashed border-slate-200" />)}
         </div>
         <div className="relative h-full flex items-end gap-1.5">
+          {/* Angka total cost per bar (2026-09, permintaan user) -- ditaruh DI SISI KIRI tiap
+              bar (teks vertikal, `writing-mode: vertical-rl` + `rotate(180deg)` supaya terbaca
+              bawah-ke-atas mengikuti arah tumbuh bar), anchor ke bawah kolom (sejajar dasar bar).
+              Angka SELALU full (bukan singkatan, konsisten aturan nominal di seluruh halaman ini). */}
           {data.map((d, i) => (
             <div
               key={d.label}
               title={`${d.label}: ${formatValue(d.value)}`}
               onClick={() => onBarClick?.(i)}
-              className={`flex-1 h-full flex items-end ${onBarClick ? 'cursor-pointer' : ''}`}
+              className={`flex-1 h-full flex items-end gap-0.5 ${onBarClick ? 'cursor-pointer' : ''}`}
             >
+              <span
+                className="text-[8px] font-bold text-[#5A305A] leading-none shrink-0"
+                style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+              >
+                {formatValue(d.value)}
+              </span>
               <div
                 className="w-full rounded-t transition-all"
                 style={{ height: `${Math.max(1, (d.value / max) * 100)}%`, backgroundColor: color, opacity: d.value > 0 ? 1 : 0.15 }}
@@ -186,7 +196,7 @@ function PanelHeader({ color, dark, children, right }: { color: string; dark?: b
 // sendiri, dobel header kelihatan aneh. Sisanya (SEMUA logic/tampilan di bawah `<main>`) TIDAK
 // berubah sama sekali.
 export default function ReportingDashboardPage({ embedded }: { embedded?: boolean } = {}) {
-  useEffect(() => { document.title = 'Reporting Dashboard · BeeHive'; }, []);
+  useEffect(() => { document.title = 'Dashboard · BeeHive'; }, []);
   const navigate = useNavigate();
 
   const today = new Date();
@@ -204,6 +214,21 @@ export default function ReportingDashboardPage({ embedded }: { embedded?: boolea
   const [yearRows, setYearRows] = useState<any[]>([]); // seluruh baris tahun `year` -- dipotong client-side utk MONTHLY/QUARTERLY
   const [prevRows, setPrevRows] = useState<any[]>([]); // periode sebelumnya (utk perbandingan) -- bisa beda tahun dari `year`
   const [loading, setLoading] = useState(true);
+
+  // Data KHUSUS chart Trend saat `periodMode==='YEARLY'` (2026-09, permintaan user "Trend
+  // mengikuti pilihan periode") -- `yearRows`/`prevRows` di atas cuma cakup 1-2 tahun (tahun aktif
+  // + pembanding), TIDAK cukup utk trend multi-tahun ("2024, 2025, 2026, dst"). `trendYears`
+  // pakai rentang SAMA dgn dropdown Year (`today-3`..`today+2`, 6 tahun) supaya konsisten dgn
+  // pilihan tahun yg tersedia di filter. Fetch TERPISAH (bukan bagian effect `yearRows` di atas)
+  // & HANYA dipicu saat mode Yearly aktif -- hindari query 6-tahun penuh kalau tidak diperlukan.
+  const trendYears = useMemo(() => Array.from({ length: 6 }, (_, i) => today.getFullYear() - 3 + i), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [yearlyTrendRows, setYearlyTrendRows] = useState<any[]>([]);
+  useEffect(() => {
+    if (periodMode !== 'YEARLY') return;
+    let active = true;
+    fetchAllocationRowsByMonths(trendYears.flatMap(y => monthsOfYear(y))).then(rows => { if (active) setYearlyTrendRows(rows); });
+    return () => { active = false; };
+  }, [periodMode, trendYears]);
 
   useEffect(() => { fetchMasterVessels().then(setMasterVessels); }, []);
 
@@ -291,6 +316,13 @@ export default function ReportingDashboardPage({ embedded }: { embedded?: boolea
   const pctChange = pctOf(curTotal, prevTotal);
   const pctChangeExclPpn = pctOf(curTotalExclPpn, prevTotalExclPpn);
   const pctChangePpn = pctOf(curPpn, prevPpn);
+  // Nilai IDR di dalam kurung di samping % (2026-09, permintaan user) -- selisih NOMINAL
+  // (cur - prev, nilai absolut) per kartu, format "IDR {angka}" (BEDA prefix dari `fmtRp`
+  // yang pakai "Rp" -- literal sesuai contoh user "(IDR 2.530.110.000)"/"(IDR 0)").
+  const fmtIdrAbs = (n: number) => `IDR ${Math.round(Math.abs(n)).toLocaleString('id-ID')}`;
+  const diffTotal = curTotal - prevTotal;
+  const diffTotalExclPpn = curTotalExclPpn - prevTotalExclPpn;
+  const diffPpn = curPpn - prevPpn;
 
   // ─── Kartu 2: biaya per method ───────────────────────────────────────
   const perMethod = useMemo(() => {
@@ -326,7 +358,7 @@ export default function ReportingDashboardPage({ embedded }: { embedded?: boolea
     { label: 'Handling Total', value: curSums.handling_total },
     { label: 'BM', value: curSums.bm },
     { label: 'PPN+PPH', value: curSums.ppn_pph },
-    { label: 'All-In Import', value: curSums.borongan_total },
+    { label: METHOD_LABEL.BORONGAN, value: curSums.borongan_total },
   ].filter(x => x.value > 0);
 
   // ─── Kartu 5: biaya per fleet_group ───────────────────────────────────
@@ -339,15 +371,40 @@ export default function ReportingDashboardPage({ embedded }: { embedded?: boolea
     return Array.from(map.entries()).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
   }, [filteredCurrentRows, masterById]);
 
-  // ─── Kartu 6: tren bulanan (selalu 1 tahun penuh, terlepas dari periodMode) ──
-  const monthlyTrend = useMemo(() => {
+  // ─── Kartu 6: Trend -- MENGIKUTI periodMode (2026-09, GANTI dari versi lama yg SELALU 1 tahun
+  // 12 bulan terlepas dari periodMode) ── Monthly: 12 bulan penuh tahun `year` (spt sebelumnya).
+  // Quarterly: 4 kuartal (Jan-Mar/Apr-Jun/Jul-Sep/Oct-Dec) tahun `year`. Yearly: multi-tahun
+  // (`trendYears`, sama rentang dgn dropdown Year) -- pakai `yearlyTrendRows` (fetch terpisah).
+  const filteredYearlyTrendRows = useMemo(
+    () => methodFilter === 'ALL' ? yearlyTrendRows : yearlyTrendRows.filter(r => r.method === methodFilter),
+    [yearlyTrendRows, methodFilter]
+  );
+  const trendData = useMemo(() => {
+    if (periodMode === 'QUARTERLY') {
+      const arr = Array.from({ length: 4 }).map(() => zeroSums());
+      filteredYearRows.forEach(r => {
+        const mn = Number(String(r.period_month).substring(5, 7));
+        if (mn >= 1 && mn <= 12) addSums(arr[Math.ceil(mn / 3) - 1], r);
+      });
+      return { labels: ['Jan-Mar', 'Apr-Jun', 'Jul-Sep', 'Oct-Dec'], values: arr.map(s => totalCost(s)) };
+    }
+    if (periodMode === 'YEARLY') {
+      const arr = trendYears.map(() => zeroSums());
+      filteredYearlyTrendRows.forEach(r => {
+        const y = Number(String(r.period_month).substring(0, 4));
+        const idx = trendYears.indexOf(y);
+        if (idx >= 0) addSums(arr[idx], r);
+      });
+      return { labels: trendYears.map(String), values: arr.map(s => totalCost(s)) };
+    }
     const arr = Array.from({ length: 12 }).map(() => zeroSums());
     filteredYearRows.forEach(r => {
       const mn = Number(String(r.period_month).substring(5, 7));
       if (mn >= 1 && mn <= 12) addSums(arr[mn - 1], r);
     });
-    return arr.map(s => totalCost(s));
-  }, [filteredYearRows]);
+    return { labels: MONTH_NAMES, values: arr.map(s => totalCost(s)) };
+  }, [periodMode, filteredYearRows, filteredYearlyTrendRows, trendYears]);
+  const trendPanelTitle = periodMode === 'QUARTERLY' ? `Quarterly Trend (${year})` : periodMode === 'YEARLY' ? 'Yearly Trend' : `Monthly Trend (${year})`;
 
   // Halaman gabungan "Cost by Vessel" (2026-09) -- Dashboard & Cost per Vessel SEKARANG 1 route
   // (`/reporting/cost-by-vessel`) 2 tab, BUKAN lagi 2 route terpisah. Navigasi internal ke tab
@@ -397,7 +454,7 @@ export default function ReportingDashboardPage({ embedded }: { embedded?: boolea
                 <LayoutDashboard size={17} />
               </div>
               <div>
-                <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Reporting Dashboard</h1>
+                <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Dashboard</h1>
                 <p className="text-[#5A305A] font-light text-sm mt-1">Cost summary per vessel — Courier, Sea, Air, FAR Overseas</p>
               </div>
             </div>
@@ -407,7 +464,12 @@ export default function ReportingDashboardPage({ embedded }: { embedded?: boolea
       )}
 
       <main className="px-3 pt-2 pb-8">
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-3">
+        {/* Freeze baris filter (2026-09, permintaan user "supaya tetap terlihat saat scroll") --
+            `sticky top-0` relatif ke scroll container terluar (`pageScrollRef`, div
+            `overflow-y-auto` yang membungkus `<header>`+`<main>` ini) -- `bg-white` WAJIB
+            eksplisit (default transparan) supaya konten yang discroll di baliknya tidak
+            tembus pandang, `z-20` di atas konten panel lain di bawahnya. */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-3 sticky top-0 z-20">
           <div className="flex flex-nowrap items-center gap-3 overflow-x-auto">
             {/* Warna tematik per dropdown (2026-09, permintaan user, pola sama "Warna toolbar per
                 tombol" di `ReportingCostPerVesselPage.tsx`) -- 3 dropdown periode (Monthly/Yearly,
@@ -462,9 +524,9 @@ export default function ReportingDashboardPage({ embedded }: { embedded?: boolea
                 <PanelHeader color="#DCC9E0" dark>Total Cost</PanelHeader>
                 <div className="p-4 flex-1 bg-white">
                   <p className="text-2xl font-bold text-[#5A305A]">{fmtRp(curTotal)}</p>
-                  <div className={`flex items-center gap-1 mt-1 text-xs font-bold ${pctChange >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                  <div className={`flex items-center gap-1 mt-1 text-xs font-bold flex-wrap ${pctChange >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                     {pctChange >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
-                    {Math.abs(pctChange).toFixed(1)}% {comparePeriodLabel}
+                    {Math.abs(pctChange).toFixed(1)}% {comparePeriodLabel} <span className="font-normal opacity-70">({fmtIdrAbs(diffTotal)})</span>
                   </div>
                 </div>
               </Link>
@@ -485,9 +547,9 @@ export default function ReportingDashboardPage({ embedded }: { embedded?: boolea
                 <PanelHeader color="#DCC9E0" dark>Total Cost Excl. PPN+PPH</PanelHeader>
                 <div className="p-4 flex-1 bg-white">
                   <p className="text-2xl font-bold text-[#5A305A]">{fmtRp(curTotalExclPpn)}</p>
-                  <div className={`flex items-center gap-1 mt-1 text-xs font-bold ${pctChangeExclPpn >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                  <div className={`flex items-center gap-1 mt-1 text-xs font-bold flex-wrap ${pctChangeExclPpn >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                     {pctChangeExclPpn >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
-                    {Math.abs(pctChangeExclPpn).toFixed(1)}% {comparePeriodLabel}
+                    {Math.abs(pctChangeExclPpn).toFixed(1)}% {comparePeriodLabel} <span className="font-normal opacity-70">({fmtIdrAbs(diffTotalExclPpn)})</span>
                   </div>
                 </div>
               </Link>
@@ -495,9 +557,9 @@ export default function ReportingDashboardPage({ embedded }: { embedded?: boolea
                 <PanelHeader color="#DCC9E0" dark>Total PPN+PPH</PanelHeader>
                 <div className="p-4 flex-1 bg-white">
                   <p className="text-2xl font-bold text-[#5A305A]">{fmtRp(curPpn)}</p>
-                  <div className={`flex items-center gap-1 mt-1 text-xs font-bold ${pctChangePpn >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                  <div className={`flex items-center gap-1 mt-1 text-xs font-bold flex-wrap ${pctChangePpn >= 0 ? 'text-red-600' : 'text-emerald-600'}`}>
                     {pctChangePpn >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
-                    {Math.abs(pctChangePpn).toFixed(1)}% {comparePeriodLabel}
+                    {Math.abs(pctChangePpn).toFixed(1)}% {comparePeriodLabel} <span className="font-normal opacity-70">({fmtIdrAbs(diffPpn)})</span>
                   </div>
                 </div>
               </Link>
@@ -569,14 +631,26 @@ export default function ReportingDashboardPage({ embedded }: { embedded?: boolea
               </div>
             </div>
 
-            {/* Baris 5: Monthly trend */}
+            {/* Baris 5: Trend -- SEKARANG mengikuti periodMode aktif (2026-09, GANTI dari versi
+                lama yg selalu 12 bulan tahun `year` terlepas dari periodMode). Klik bar arah ke
+                Cost per Vessel disesuaikan per mode: Monthly -> bulan itu, Quarterly -> bulan
+                pertama kuartal itu, Yearly -> tahun itu (bulan default dibiarkan bulan berjalan,
+                Cost per Vessel tetap bisa ganti sendiri di sana). */}
             <div className="flex flex-col bg-white rounded-2xl shadow-sm overflow-hidden">
-              <PanelHeader color="#FFF5C5" dark>Monthly Trend ({year})</PanelHeader>
+              <PanelHeader color="#FFF5C5" dark>{trendPanelTitle}</PanelHeader>
               <div className="p-4 flex-1 bg-white">
                 <VerticalBarChart
-                  data={monthlyTrend.map((v, i) => ({ label: MONTH_NAMES[i], value: v }))}
+                  data={trendData.labels.map((l, i) => ({ label: l, value: trendData.values[i] }))}
                   color="#5A305A" formatValue={fmtRp}
-                  onBarClick={(i) => navigate(`${COST_PER_VESSEL_PATH}?view=cost_per_vessel&mode=MONTHLY&year=${year}&month=${i + 1}&tab=${filteredTabParam}`)}
+                  onBarClick={(i) => {
+                    if (periodMode === 'QUARTERLY') {
+                      navigate(`${COST_PER_VESSEL_PATH}?view=cost_per_vessel&mode=MONTHLY&year=${year}&month=${i * 3 + 1}&tab=${filteredTabParam}`);
+                    } else if (periodMode === 'YEARLY') {
+                      navigate(`${COST_PER_VESSEL_PATH}?view=cost_per_vessel&mode=MONTHLY&year=${trendYears[i]}&month=${month}&tab=${filteredTabParam}`);
+                    } else {
+                      navigate(`${COST_PER_VESSEL_PATH}?view=cost_per_vessel&mode=MONTHLY&year=${year}&month=${i + 1}&tab=${filteredTabParam}`);
+                    }
+                  }}
                 />
               </div>
             </div>
