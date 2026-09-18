@@ -2841,12 +2841,101 @@ salah "IDR 14" dst. Fix: `HBar` terima prop opsional `formatValue` (default `fmt
 apa adanya oleh chart Cost & By Origin yang MEMANG nominal) — pemanggilan chart Shipment di By
 Weight Range kirim `formatValue={n => n.toLocaleString('id-ID')}` (angka polos, tanpa prefix).
 
-**Belum diimplementasikan / gap diketahui**: donut "By Origin" TIDAK ikut `dimmed`-style
-meeting-mode (semua origin selalu solid, krn dropdown-nya PPJK bukan Origin — highlight parsial
-cuma relevan utk dimensi yang PUNYA dropdown filter-nya, yaitu PPJK); Weight Range breakpoint
-(0-5/5-25/25-70/70-150/>150) HARDCODE di `WEIGHT_RANGES` (`ReportingCourierHelpers.ts`), belum
-ada UI utk mengubahnya; Conclusion box teksnya template string sederhana (bukan AI-generated),
-cukup utk insight dasar meeting tapi tidak sedalam analisis manual.
+**Belum diimplementasikan / gap diketahui**: Weight Range breakpoint (0-5/5-25/25-70/70-150/>150)
+HARDCODE di `WEIGHT_RANGES` (`ReportingCourierHelpers.ts`), belum ada UI utk mengubahnya;
+Conclusion box teksnya template string sederhana (bukan AI-generated), cukup utk insight dasar
+meeting tapi tidak sedalam analisis manual.
+
+### REVISI BESAR "Overseas Cost by Courier" (2026-09, susulan)
+
+Permintaan user terstruktur ("Prompt Revisi: Overseas Cost by Courier"). Semua poin di bawah
+SUDAH diimplementasikan dalam 1 sesi, `npx tsc --noEmit` + `npm run build` bersih.
+
+**1. Nama PPJK — buang prefix "OWN"** — `normalizePpjk()` (fungsi BARU, SATU-SATUNYA tempat,
+`ReportingCourierHelpers.ts`) strip `/^OWN\s+/i` dari `r.ppjk` — "OWN FEDEX"/"OWN DHL" digabung
+jadi "FEDEX"/"DHL". Dipakai di SEMUA titik yang baca `r.ppjk`: `fetchDistinctPpjk()` (dropdown),
+grouping donut/detail table, filter `selectedPpjk`. "OWN" TIDAK PERNAH tampil di visual mana pun.
+
+**2. Dropdown Bulan & Tahun jadi multi-select** — GANTI TOTAL dari single `year`/`month`/`quarter`
+ke `selectedYears`/`selectedMonths` (`Set<number>`, pola SAMA persis `ReportingCostPerVesselPage.tsx`
+— bulan kosong = seluruh 12 bulan tahun terpilih). `buildSelectedPeriods()` (helper BARU) =
+cartesian product tahun x bulan, SATU-SATUNYA sumber resolusi periode (fetch DAN kolom
+Trend/Data Performance). **"Periode sebelumnya" utk kartu %** — diambil dari periode PALING AWAL
+di antara yang terpilih (`earliestPeriod`), mundur 1 unit sesuai `periodMode` (`previousPeriod()`)
+— keputusan desain (BUKAN diminta eksplisit persis begini di prompt, tapi paling masuk akal utk
+multi-select): kalau user pilih Agu+Sep 2026, kartu % membandingkan TOTAL (Agu+Sep) vs Jul 2026
+(1 bulan sebelum Agu, bukan 2 bulan). **Cache per tahun** (`yearsData: Map<year, CourierRow[]>`,
+di-fetch SEKALI per tahun+filter PT, dipakai ulang tiap ganti bulan/kuartal dalam tahun yang
+sama) — GANTI dari fetch per-request lama.
+
+**3. Data Performance dipindah keluar dari tab, jadi section SELALU tampil** — di bawah Breakdown
+Komponen Biaya, DI ATAS sub-toggle By PPJK/Origin/Weight Range (BUKAN lagi di dalam tab By Weight
+Range). Ikut dropdown periode UTAMA (`periodMode`+`selectedYears`+`selectedMonths`) — tombol
+internal Month-to-Month/Quarter-to-Quarter/Year-to-Year (`perfMode`, dulu fetch N-periode
+terpisah via `buildPeriodSeries`) **DIHAPUS TOTAL** (fungsinya sekarang duplikat dgn dropdown
+`periodMode` di atas). Kolom Data Performance SEKARANG reuse `periodColumnRows` (SUMBER SAMA
+dgn Trend chart — `buildPeriodColumns()`, SATU-SATUNYA tempat hitung kolom periode) — TIDAK ADA
+lagi fetch terpisah utk Data Performance (`perfRowsByPeriod`/N-query paralel versi lama DIHAPUS).
+**Baris DIPANGKAS** dari 8 jadi 4: Shipment Growth %, Weight Growth %, Total Shipment (AWB
+distinct), Total Weight — baris Total Freight/Total Duty Tax/Courier Adm Fee/Sum of Total Amount
+DIHAPUS (sudah terwakili di Breakdown Komponen Biaya).
+
+**4. "Show zero-cost" (BARU, pola sama Cost per Vessel)** — checkbox di filter bar, default
+TIDAK dicentang (baris PPJK/Origin/Weight Range bernilai nol DISEMBUNYIKAN). Saat dicentang:
+- **By PPJK** — universe jadi `selectedPpjk` (kalau ada seleksi) atau SEMUA `ppjkOptions`
+  (kalau "All"), diseed nol dulu sebelum diisi dari data — PPJK yang TIDAK muncul sama sekali
+  di data periode itu tetap tampil baris 0.
+- **By Origin** — universe = `originOptions` (fetch BARU, `fetchDistinctOrigin()`).
+- **By Weight Range** — SUDAH otomatis selalu 5 bucket tetap (`WEIGHT_RANGES`), toggle ini cuma
+  MENYARING (bukan menambah) — saat TIDAK dicentang, bucket dgn cost=0 & shipment=0 disaring
+  dari tampilan bar/detail table (`weightBuckets` = filtered dari `weightBucketsFull`).
+Donut PPJK & By Origin ikut aturan yang sama (entries dgn value 0 disaring saat toggle OFF).
+
+**5. Export mencakup SEMUA tabel termasuk Data Performance** — `handleExport()` sekarang tulis
+section Data Performance juga (baris Total Shipment/Total Weight per kolom periode + Total),
+sebelumnya cuma Summary/Component/Detail table.
+
+**A. Card Shipment/PO** — format teks diganti `"{N} shipment / {M} PO"` (huruf kecil, sesuai
+contoh user), dari sebelumnya `"{N} / {M}"` polos.
+
+**B. Breakdown Komponen Biaya — GANTI TOTAL dari bar chart ke list vertikal** (`ComponentLine`,
+komponen BARU) — tiap baris: label, nilai (`fmtIdr`), lalu %+arah+nilai periode sebelumnya dlm
+kurung (persis gaya kartu ringkasan) — `Freight : IDR … — ▲12.4% vs Aug 2026 (IDR …)`. Komponen
+lama `ComponentBar` (bar horizontal) DIHAPUS TOTAL dari file.
+
+**D. Detail Data — kolom diseragamkan utk KETIGA tab** (By PPJK/Origin/Weight Range, dulu Weight
+Range cuma py "Total Cost"+"Shipment"): `Freight | Courier Adm Fee | BM | PPN | PPH | Total Cost
+| Total Excl. PPN+PPH | Shipment | PO` (9 kolom data + No + Nama = 11 kolom total, tabel lebar
+dgn scroll horizontal). `DetailTable` (komponen) di-refactor total, prop `hideWeightPo`
+(versi lama) DIHAPUS — Weight Range SEKARANG hitung Freight/Courier Adm/BM/PPN/PPH/PO per bucket
+juga (sebelumnya cuma Cost+Shipment) via `weightBucketsFull` yang sekarang kumpulkan `rows`
+per bucket (bukan cuma `sums`) supaya `distinctPoCount()` bisa dihitung. Kolom "Weight" DIHAPUS
+dari Detail Data (tidak ada di spek kolom seragam baru — tetap ada di card/bar chart lain,
+cuma bukan di tabel Detail Data).
+
+**E. Donut PPJK — "Others" gabungan (GANTI dari versi lama "tiap PPJK non-terpilih dimmed
+satu-satu")** — saat 1+ PPJK dipilih: slice PPJK terpilih tampil nama+%+cost di posisi ASLI
+(proporsi thd grand total SEMUA PPJK, TIDAK dinormalisasi ulang — perilaku meeting-mode LAMA
+tetap dipertahankan), TAPI SEMUA PPJK lain yang TIDAK dipilih digabung jadi **1 slice "Others"**
+abu-abu (`OTHERS_COLOR = '#E2E8F0'`) — legend cuma tampil "Others" + % (TANPA cost, TANPA nama
+PPJK individual di baliknya). Saat "All PPJK" (tidak ada seleksi): semua PPJK tampil terpisah
+nama+%+cost seperti biasa (TIDAK berubah). `Donut` komponen prop `dimmed` (per-segment) DIGANTI
+`isOthers` (cuma 1 segment yang bisa `isOthers`, bukan banyak segment `dimmed` independen).
+
+**Tab By Weight Range — 2 tambahan**:
+- **Card "Highest Range (Shipment)"** (BARU, mirip referensi Power BI user) — bucket dgn
+  `shipment` TERBANYAK (`highestRangeBucket`, dari `weightBucketsFull` UNFILTERED — supaya
+  akurat terlepas status toggle Show Zero Cost), tampilkan label range + "{N} shipment / {M} kg".
+- **Bar Shipment dgn info berat** — `ShipmentWeightBar` (komponen BARU, GANTI `HBar` generik utk
+  chart ini) — label tiap bar `"{N} Shipment / {M} Kg"` (2 angka sekaligus, `HBar` biasa cuma
+  bisa 1 angka via `formatValue`). Chart Cost tetap pakai `HBar` biasa (1 angka, format Rupiah).
+  Weight per bucket (`weightBucketsFull[].weight`) dihitung dari `distinctWeightMap()` (weight
+  per AWB unik, BUKAN sum baris — sama aturan distinct yang sudah ada), dijumlah per bucket via
+  `Set` AWB-per-bucket supaya 1 AWB (kalau py >1 baris Freight/Duty) tidak dobel-hitung
+  weight-nya di bucket itu.
+
+**Aturan distinct — TETAP, tidak berubah** (PO gabung PT IMI+Non IMI, partial `(1)`/`(2)`=1 PO;
+Shipment & Weight dari AWB distinct, weight_kg diambil 1x per AWB bukan di-sum).
 
 ## Peta tabel Supabase (per modul)
 

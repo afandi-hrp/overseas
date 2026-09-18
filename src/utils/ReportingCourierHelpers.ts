@@ -144,11 +144,33 @@ export async function fetchDistinctAn(): Promise<string[]> {
   (data || []).forEach((d: any) => { const v = (d.an || '').trim(); if (v) set.add(v); });
   return Array.from(set).sort();
 }
+
+// PPJK "OWN FEDEX"/"OWN DHL" -> "FEDEX"/"DHL" (2026-09, permintaan user) -- data punya prefix
+// "OWN " utk sebagian baris (vendor internal "own courier" vs pihak ke-3), TAPI utk pelaporan
+// ini SEMUA baris dgn PPJK dasar yg sama HARUS digabung jadi 1 kategori terlepas prefix "OWN"
+// -- "OWN" TIDAK PERNAH ditampilkan di visual mana pun (dropdown/donut/detail table/export).
+// SATU-SATUNYA tempat normalisasi ini -- dipakai di SEMUA titik yg membaca `r.ppjk` di halaman.
+export function normalizePpjk(raw: any): string {
+  return String(raw || '').replace(/^OWN\s+/i, '').trim();
+}
+
 export async function fetchDistinctPpjk(): Promise<string[]> {
   const { data } = await supabase.from('rekapan_courier').select('ppjk').not('ppjk', 'is', null).limit(5000);
   const set = new Set<string>();
-  (data || []).forEach((d: any) => { const v = (d.ppjk || '').trim(); if (v) set.add(v); });
+  (data || []).forEach((d: any) => { const v = normalizePpjk(d.ppjk); if (v) set.add(v); });
   return Array.from(set).sort();
+}
+export async function fetchDistinctOrigin(): Promise<string[]> {
+  const { data } = await supabase.from('rekapan_courier').select('origin').not('origin', 'is', null).limit(5000);
+  const set = new Set<string>();
+  (data || []).forEach((d: any) => { const v = (d.origin || '').trim(); if (v) set.add(v); });
+  return Array.from(set).sort();
+}
+
+// Fetch 1 tahun penuh sekaligus (dipakai state `yearsData` di halaman, cache per tahun supaya
+// pindah-pindah filter bulan/kuartal dalam tahun yg sama TIDAK fetch ulang).
+export async function fetchCourierYear(year: number, anFilter: Set<string>): Promise<CourierRow[]> {
+  return fetchCourierRows(`${year}-01-01`, `${year}-12-31`, anFilter);
 }
 
 // ─── Periode ────────────────────────────────────────────────────────────────
@@ -194,6 +216,48 @@ export function buildPeriodSeries(mode: PeriodMode, year: number, month: number,
     cur = previousPeriod(mode, cur.year, cur.month, cur.quarter);
   }
   return out;
+}
+
+// ─── Multi-select Bulan+Tahun (2026-09, GANTI dari single year/month/quarter) ──────────────────
+// Pola SAMA persis `ReportingCostPerVesselPage.tsx` (Cost per Vessel): `selectedYears`/
+// `selectedMonths` (Set, bulan kosong = SELURUH 12 bulan tahun itu), `selectedPeriods` =
+// cartesian product tahun x bulan -- SATU-SATUNYA sumber resolusi periode final (fetch DAN
+// kolom Trend/Data Performance, supaya keduanya selalu konsisten).
+export type YearMonth = { year: number; month: number };
+export function buildSelectedPeriods(selectedYears: Set<number>, selectedMonths: Set<number>): YearMonth[] {
+  const years = Array.from(selectedYears).sort((a, b) => a - b);
+  const months = selectedMonths.size > 0 ? Array.from(selectedMonths).sort((a, b) => a - b) : Array.from({ length: 12 }, (_, i) => i + 1);
+  const out: YearMonth[] = [];
+  years.forEach(year => months.forEach(month => out.push({ year, month })));
+  return out;
+}
+
+// Kolom periode (Trend chart & Data Performance) -- 1 kolom per grup bulan terpilih,
+// granularitas ikut `PeriodMode` aktif (SAMA konsep persis `buildPeriodColumns` di
+// `ReportingCostPerVesselPage.tsx`, replika krn beda file sumber/row type, bukan reuse
+// langsung). Quarter/Year DITURUNKAN dari bulan-bulan yg SUDAH dipilih user -- TIDAK ADA
+// dropdown Quarter/Year terpisah, cuma menjumlah bulan yg BENERAN dipilih.
+export type PeriodColumn = { key: string; label: string; monthKeys: string[] };
+export function buildPeriodColumns(periods: YearMonth[], mode: PeriodMode): PeriodColumn[] {
+  const map = new Map<string, PeriodColumn>();
+  periods.forEach(p => {
+    const monthKey = `${p.year}-${pad2(p.month)}`;
+    let colKey: string; let label: string;
+    if (mode === 'MONTHLY') { colKey = monthKey; label = `${MONTH_ABBR[p.month - 1]} ${p.year}`; }
+    else if (mode === 'QUARTERLY') { const q = quarterOfMonth(p.month); colKey = `${p.year}-Q${q}`; label = `Q${q} ${p.year}`; }
+    else { colKey = String(p.year); label = String(p.year); }
+    if (!map.has(colKey)) map.set(colKey, { key: colKey, label, monthKeys: [] });
+    map.get(colKey)!.monthKeys.push(monthKey);
+  });
+  return Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key));
+}
+
+export function monthKeyOf(row: CourierRow): string | null {
+  return row.tgl_terima_email ? row.tgl_terima_email.substring(0, 7) : null;
+}
+export function rowsInMonthKeys(rows: CourierRow[], monthKeys: string[]): CourierRow[] {
+  const set = new Set(monthKeys);
+  return rows.filter(r => { const mk = monthKeyOf(r); return mk && set.has(mk); });
 }
 
 export const fmtIdr = (n: number) => `IDR ${Math.round(n).toLocaleString('id-ID')}`;
