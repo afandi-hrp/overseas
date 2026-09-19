@@ -4,6 +4,7 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { BarChart3, RefreshCw, Download, AlertTriangle, SlidersHorizontal, X, ChevronDown, ChevronsDownUp, ChevronsUpDown, ArrowLeft, ArrowUp, ArrowDown } from 'lucide-react';
 import ExcelJS from 'exceljs';
 import Greeting from '../components/Greeting';
+import { LoadingTableRow } from '../components/LoadingState';
 import { useAuth } from '../lib/AuthContext';
 import {
   fetchMasterVessels, fetchAllocationRowsByMonths, recomputeReportingMonth,
@@ -751,7 +752,7 @@ export default function ReportingCostPerVesselPage({ embedded }: { embedded?: bo
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
-                  <tr><td colSpan={20} className="text-center py-10 text-[#5A305A]">Loading data...</td></tr>
+                  <LoadingTableRow colSpan={20} />
                 ) : error ? (
                   <tr><td colSpan={20} className="text-center py-10 text-red-600">{error}</td></tr>
                 ) : visibleDisplayRows.length === 0 ? (

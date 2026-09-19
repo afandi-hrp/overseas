@@ -11,6 +11,7 @@ import BunkerKelengkapanModal from '../components/BunkerKelengkapanModal';
 import BunkerCompareDocModal from '../components/BunkerCompareDocModal';
 import BunkerAuditLogModal from '../components/BunkerAuditLogModal';
 import Greeting from '../components/Greeting';
+import { LoadingTableRow } from '../components/LoadingState';
 
 // ── Kontrak data (Supabase, sudah dibuat backend n8n -- lihat BunkerHelpers.ts) ──
 // bunker_dokumen (1 baris = 1 No PO): no_po, no_po_key(unik, internal), vendor, kapal, lokasi,
@@ -447,7 +448,7 @@ export default function BunkerPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {loadingList ? (
-                    <tr><td colSpan={8} className="text-center py-10 text-[#5A305A] text-sm">Loading data...</td></tr>
+                    <LoadingTableRow colSpan={8} />
                   ) : rows.length === 0 ? (
                     <tr><td colSpan={8} className="text-center py-10 text-[#5A305A] text-sm italic">No Bunker data yet. Click "Upload Document" to get started.</td></tr>
                   ) : (

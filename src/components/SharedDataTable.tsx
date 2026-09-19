@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import Greeting from './Greeting'
+import { LoadingState } from '../components/LoadingState'
 import ExportModal from '../components/ExportModal'
 import CourierUploadSusulanModal from '../components/CourierUploadSusulanModal'
 import ValidasiModal from '../components/ValidasiModal'
@@ -46,7 +47,44 @@ const TRAIL_TABLES: Record<string, string[]> = {
   COURIER: ['tabel_audit_pib', 'tabel_audit_cn', 'rekapan_courier', 'tabel_checklist_validasi', 'tabel_cost_validasi'],
   SEA_AIR: ['tabel_audit_seaair', 'rekapan_seaair', 'dokumen_validasi_matriks_seaair', 'cost_validasi_seaair'],
   BUNKER: ['bunker_dokumen'],
+  // Audit AP Local/Overseas/PI Local (2026-09) -- lihat logAuditPoAudit/logAuditPoDelete di
+  // src/utils/AuditPoLogHelpers.ts, dipakai ketiga halaman itu via AuditPoLogModal.tsx.
+  AUDIT_PO: ['audit_po_ap_comp', 'audit_po_apovs_comp', 'audit_po_pi_local_comp'],
 }
+
+// Filter server-side (2026-09, laporan user + screenshot: kolom "Catatan" di halaman Audit
+// Trail global tampil dump JSON RAKSASA -- `summary`/`source_files`/`extracted_raw`/
+// `table_kelengkapan`/`matrix_perbandingan` dst) -- entri SEPERTI ITU BUKAN ditulis oleh
+// aplikasi ini, MELAINKAN proses lain (kemungkinan besar trigger Postgres/n8n yang mirror
+// SETIAP UPDATE ke `bunker_dokumen`/tabel Courier & Sea & Air langsung ke `audit_trail`, dump
+// SELURUH kolom yang berubah apa adanya) -- SUDAH didokumentasikan sebagian utk Bunker (lihat
+// "Bunker -- Riwayat Perubahan menyembunyikan entri asing" di CLAUDE.md, tapi fix-nya dulu
+// HANYA diterapkan di modal per-baris `BunkerAuditLogModal.tsx`, BUKAN di halaman Audit Trail
+// GLOBAL ini). Root cause pastinya sudah DIKONFIRMASI (2026-09, akses SQL Editor user sendiri):
+// trigger Postgres `trg_audit_*` (fn_audit_bunker_dokumen/fn_audit_pib/fn_audit_cn/dst) yang
+// mirror SETIAP insert/update/delete ke tabel terkait langsung ke `audit_trail`, cabang UPDATE
+// panggil `fn_audit_diff(to_jsonb(OLD), to_jsonb(NEW))` yang dump SELURUH kolom yang berubah
+// mentah-mentah (bukan cuma field manusiawi). Trigger-trigger ini SUDAH ditambah guard
+// `IF auth.email() IS NULL THEN ... END IF;` (email NULL = koneksi service role key, dipakai
+// n8n) supaya update dari n8n TIDAK LAGI insert ke audit_trail sama sekali -- TAPI update lewat
+// aplikasi (user login) TETAP memicu dump mentah `fn_audit_diff` ini, jadi filter DI SINI masih
+// tetap perlu sbg lapis kedua di sisi tampilan.
+// fix DI SINI murni di sisi TAMPILAN (server-side filter query, bukan hapus dari DB): entri
+// HANYA ditampilkan kalau (a) `catatan` KOSONG/NULL (SEMUA baris INSERT/DELETE dari trigger di
+// atas TIDAK PERNAH mengisi kolom catatan sama sekali -- lihat definisi trigger, kolom itu
+// bahkan tidak masuk daftar kolom INSERT-nya -- jadi NULL selalu aman ditampilkan, TIDAK PERNAH
+// jadi sumber dump panjang), ATAU (b) `catatan` cocok format ringkas yang dipakai KEDUA fungsi
+// tulis milik app ini -- `logBunkerAudit()`/`logAuditPoAudit()` ("{field} — Lama: X → Baru: Y")
+// ATAU `logAuditPoDelete()` ("Baris dihapus permanen — ..."). **Bug ditemukan & diperbaiki**:
+// versi PERTAMA filter ini LUPA syarat (a) -- `.ilike()` terhadap kolom NULL selalu FALSE di
+// Postgres (bukan NULL yang dianggap "lolos"), jadi SEMUA baris INSERT/DELETE (dari SEMUA
+// kategori, bukan cuma Bunker) ikut kebuang & Audit Trail sempat tampil "No data yet" total
+// walau datanya ada di DB (laporan user + screenshot). Konsekuensi DISENGAJA yang TETAP berlaku:
+// kategori Courier/Sea & Air TIDAK py fungsi log manual di app ini (grep dikonfirmasi 0 hasil)
+// -- entri UPDATE kategori itu (hasil dump `fn_audit_diff` dari edit manual lewat UI, BUKAN dari
+// n8n lagi setelah guard di atas) MASIH tersaring krn tidak cocok pola (b), sesuai permintaan
+// user "biar rapi", HANYA baris INSERT/DELETE-nya yang tetap tampil.
+const TRAIL_APP_WRITTEN_FILTER = 'catatan.is.null,catatan.ilike.%— Lama:%,catatan.ilike.Baris dihapus permanen —%';
 
 // ─── Field AI (disabled) dan Manual (editable) per tipe ───────
 
@@ -1342,8 +1380,8 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true }: { rec
     return (
       <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center h-full w-full">
         <div className="bg-white p-6 rounded-2xl shadow-xl">
-           <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
-           <p className="text-[#5A305A] font-medium">Loading checklist...</p>
+           <div className="animate-spin h-8 w-8 border-4 border-[#5A305A]/20 border-t-[#5A305A] rounded-full mx-auto mb-4"></div>
+           <p className="text-[#5A305A] font-medium">Loading data...</p>
         </div>
       </div>
     );
@@ -3389,6 +3427,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       if (activeTrailUserFilter !== 'All') {
         query = query.eq('user_email', activeTrailUserFilter);
       }
+      query = query.or(TRAIL_APP_WRITTEN_FILTER);
     }
 
     // Apply Filter by PPJK
@@ -3794,6 +3833,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       if (activeTrailUserFilter !== 'All') {
         query = query.eq('user_email', activeTrailUserFilter);
       }
+      query = query.or(TRAIL_APP_WRITTEN_FILTER);
     }
 
     // Apply Filter by PPJK
@@ -4461,6 +4501,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         <option value="COURIER">Courier</option>
                         <option value="SEA_AIR">Sea & Air</option>
                         <option value="BUNKER">Bunker</option>
+                        <option value="AUDIT_PO">Audit AP Local/Overseas/PI Local</option>
                       </select>
                     </div>
                   )}
@@ -4763,10 +4804,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           {/* ── Tabel ── */}
           <div className="relative bg-white rounded-2xl border border-slate-200 shadow-sm isolate flex-1 flex flex-col min-h-0 overflow-hidden">
             {loading && records.length === 0 ? (
-              <div className="flex items-center justify-center py-24 text-[#5A305A]">
-                <div className="w-7 h-7 border-2 border-blue-500 border-t-transparent rounded-full animate-spin-slow mr-3" />
-                <span className="text-sm">Loading data from Supabase...</span>
-              </div>
+              <LoadingState />
             ) : fetchError ? (
               <div className="text-center py-24 text-red-500">
                 <p className="text-4xl mb-3">⚠️</p>
@@ -4792,8 +4830,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 {loading && (
                   <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-50 flex items-center justify-center">
                     <div className="flex items-center bg-white px-4 py-2 rounded-xl shadow-md border border-slate-100 text-[#5A305A] font-medium text-sm">
-                      <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mr-3" />
-                      Memperbarui data...
+                      <div className="w-5 h-5 border-2 border-[#5A305A]/20 border-t-[#5A305A] rounded-full animate-spin mr-3" />
+                      Updating data...
                     </div>
                   </div>
                 )}

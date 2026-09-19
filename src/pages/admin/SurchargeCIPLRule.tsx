@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Pencil, Ban, Trash2, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { LoadingTableRow } from '../../components/LoadingState';
 import { useAuth } from '../../lib/AuthContext';
 
 const CATEGORY_OPTIONS = [
@@ -204,7 +205,7 @@ export default function SurchargeCIPLRule() {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td colSpan={10} className="text-center py-10 text-[#5A305A]">Loading...</td></tr>
+              <LoadingTableRow colSpan={10} />
             ) : data.length === 0 ? (
               <tr><td colSpan={10} className="text-center py-10 text-[#5A305A]">Belum ada rule.</td></tr>
             ) : (

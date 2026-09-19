@@ -870,6 +870,84 @@ entri difilter `splitAuditCatatan(e.catatan) || e.user_email` — yang GAGAL dip
 DAN `user_email` kosong disembunyikan (bukan dihapus dari DB, murni tidak dirender). Kalau nanti
 ketahuan proses n8n mana yang insert entri ini, root cause sebenarnya ada di sana, bukan di app.
 
+**Susulan (2026-09) — fix DIPERLUAS ke halaman Audit Trail GLOBAL, bukan cuma modal per-baris**:
+laporan user + screenshot — kolom "Catatan" di halaman Audit Trail (menu sidebar) tampil dump
+JSON RAKSASA (`summary`/`source_files`/`extracted_raw`/`table_kelengkapan`/`matrix_perbandingan`
+dst, satu baris bisa >2000 karakter) utk kategori Bunker. Ditelusuri lebih lanjut: entri "asing"
+ini TERNYATA punya 2 varian — (a) `user_email` NULL + dump SELURUH kolom yang berubah (kasus yang
+sudah didokumentasikan di atas); (b) `user_email` TERISI (mis. `costing@waruna-group.com`, email
+user asli) TAPI catatan tetap format mentah `"{nama_kolom}: {json_lama} → {json_baru}"` (BUKAN
+format ringkas `"{field} — Lama: X → Baru: Y"` yang dipakai `logBunkerAudit()`) — kemungkinan
+besar KEDUANYA berasal dari 1 trigger Postgres yang sama yang mirror SETIAP UPDATE ke
+`bunker_dokumen` (jalan independen dari `logBunkerAudit()`, bukan hanya utk write yang BUKAN dari
+app — root cause LEBIH LUAS dari dugaan awal). `grep` dikonfirmasi: **TIDAK ADA fungsi frontend
+manapun yang menulis ke `audit_trail` dgn `tabel` masuk kategori COURIER/SEA_AIR** (`TRAIL_TABLES`
+di `SharedDataTable.tsx`) — SEMUA entri kategori itu di Audit Trail SAAT INI otomatis berasal dari
+proses lain (trigger DB/n8n), sama sekali bukan dari app.
+
+**Fix**: `TRAIL_APP_WRITTEN_FILTER` (konstanta module-level BARU, `SharedDataTable.tsx`) — filter
+SERVER-SIDE (`.or('catatan.ilike.%— Lama:%,catatan.ilike.Baris dihapus permanen —%')`) diterapkan
+ke KEDUA titik query trail tab (list utama & `getExportData`) — entri HANYA ditampilkan/di-export
+kalau catatan-nya cocok format ringkas milik `logBunkerAudit()`/`logAuditPoAudit()` (mengandung
+`" — Lama:"`) ATAU `logAuditPoDelete()` (`"Baris dihapus permanen —"`). **Efek samping DISENGAJA
+sesuai permintaan user ("insert dari n8n jangan masuk audit trail")**: kategori Courier & Sea &
+Air di halaman Audit Trail SEKARANG TAMPIL KOSONG TOTAL (bukan bug) sampai/kecuali app ini nanti
+benar-benar menulis log manual sendiri utk 2 modul itu (belum ada permintaan/implementasi ke
+arah situ). Kategori Bunker/Audit AP tetap tampil NORMAL, cuma entri "asing"-nya yang tersaring.
+`BunkerAuditLogModal.tsx` (modal per-baris) TIDAK diubah — filter client-side-nya independen &
+tetap valid, tidak konflik dgn filter server-side baru ini (fetch dari path terpisah, `no_po`
+bukan lewat `SharedDataTable.tsx`). **Kalau nambah fungsi log manual baru ke tabel Courier/Sea &
+Air ke depan, WAJIB pakai format catatan yang cocok salah satu 2 pola di atas** — kalau tidak,
+entrinya akan ikut tersaring/tidak muncul di Audit Trail global padahal ditulis app sendiri.
+
+**Root cause DIKONFIRMASI PENUH (2026-09, user jalankan SQL Editor sendiri)** — bukan lagi dugaan:
+10 trigger Postgres `trg_audit_*` (`fn_audit_bunker_dokumen`/`fn_audit_pib`/`fn_audit_cn`/
+`fn_audit_courier`/`fn_audit_seaair`/`fn_audit_rekapan_seaair`/`fn_audit_checklist_validasi`/
+`fn_audit_cost_validasi`/`fn_audit_validasi_matriks_seaair`/`fn_audit_cost_validasi_seaair`)
+terpasang `AFTER INSERT OR DELETE OR UPDATE` di tabel masing2, SEMUA `SECURITY DEFINER` — cabang
+`UPDATE` panggil `fn_audit_diff(to_jsonb(OLD), to_jsonb(NEW))` yang dump SELURUH kolom yang
+berubah mentah-mentah ke `catatan` (bukan cuma field manusiawi), independen total dari
+`logBunkerAudit()`/`logAuditPoAudit()` milik app. Cabang `INSERT`/`DELETE` TIDAK PERNAH mengisi
+`catatan` sama sekali (kolom itu tidak ada di daftar kolom `INSERT INTO audit_trail(...)`-nya),
+jadi SELALU NULL — aman, bukan sumber dump panjang.
+
+**Fix DB (2026-09, dijalankan user manual di Supabase)** — SEMUA 10 fungsi di atas
+`CREATE OR REPLACE` ditambah guard di baris pertama:
+```sql
+IF auth.email() IS NULL THEN
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END IF;
+```
+Rasional: n8n konek Supabase pakai **service role key** (dikonfirmasi user), koneksi itu TIDAK
+py sesi JWT user → `auth.email()` selalu NULL utk request dari n8n, TAPI selalu TERISI utk
+request dari aplikasi (user login). Efeknya: update/insert/delete DARI N8N TIDAK LAGI membuat
+baris apa pun di `audit_trail` (persis permintaan user "insert dari n8n jangan masuk audit
+trail") — update lewat APLIKASI (user login, termasuk dump mentah `fn_audit_diff` di 8 dari 10
+fungsi PIB/CN/Courier/Rekapan Sea Air/Bunker/Seaair-PIB) TETAP tercatat spt biasa, makanya filter
+tampilan `TRAIL_APP_WRITTEN_FILTER` di atas MASIH tetap diperlukan sbg lapis kedua (bukan jadi
+tidak relevan). Data lama (sebelum guard ini dipasang) TIDAK ikut terhapus otomatis — kalau mau
+riwayat lama juga dibersihkan, itu `DELETE` manual terpisah (lihat di bawah).
+
+**Bug ditemukan & diperbaiki — filter awal `TRAIL_APP_WRITTEN_FILTER` bikin halaman Audit Trail
+tampil "No data yet" TOTAL** (2026-09, laporan user + screenshot, Module="All"): versi PERTAMA
+filter cuma py 2 cabang (`catatan.ilike.%— Lama:%` / `catatan.ilike.Baris dihapus permanen —%`)
+— `.ilike()` terhadap kolom `catatan` yang NULL di Postgres SELALU mengevaluasi ke FALSE (BUKAN
+"NULL dianggap lolos"), jadi SEMUA baris `INSERT`/`DELETE` (yang catatan-nya memang SELALU NULL,
+lihat root cause di atas — berlaku utk SEMUA kategori, bukan cuma Bunker) ikut kebuang oleh
+filter ini. Fix: tambah cabang ke-3 `catatan.is.null` di `TRAIL_APP_WRITTEN_FILTER` — kondisi
+final `'catatan.is.null,catatan.ilike.%— Lama:%,catatan.ilike.Baris dihapus permanen —%'`. Baris
+`INSERT`/`DELETE` SEKARANG SELALU lolos (catatan-nya memang tidak pernah jadi sumber dump
+panjang apa pun, terlepas kategori/sumbernya), HANYA baris `UPDATE` yang masih disaring ketat
+sesuai format resmi aplikasi.
+
+**Pembersihan data lama (2026-09, permintaan user eksplisit, dieksekusi user sendiri via SQL
+Editor — BUKAN dari sesi Claude Code manapun, tidak ada akses DB langsung)**: `DELETE FROM
+audit_trail WHERE tabel = 'bunker_dokumen';` — user pilih opsi HAPUS SEMUA riwayat Bunker
+(termasuk log manual yang sah, bukan cuma entri "asing"), riwayat Bunker jadi kosong total mulai
+dari nol pasca-pembersihan. Kategori lain (Courier/Sea & Air/Audit AP) TIDAK ikut dibersihkan,
+tetap py riwayat lama apa adanya.
+
 ## Bunker — seksi "Original Documents" (`source_files`) di `BunkerCompareDocModal.tsx` (2026-09)
 
 Kolom `bunker_dokumen.source_files` (jsonb array, KUMULATIF — riwayat SEMUA file yg pernah
@@ -1160,6 +1238,23 @@ kecuali ada pengecualian scope.
   dgn SUM lebar `<col>` tersisa (bug pernah terjadi: hapus kolom Durasi di PiLocalPage tanpa
   update `min-w`, kolom lain jadi redistribusi tidak proporsional).
   - `EditAuditPoModal` — form, `updateAuditPoRow(id, updates)`.
+  - **Tombol "Tambah Data" (2026-09, permintaan user)** — input manual 1 baris baru, utk kasus
+    dokumen yang gagal diproses otomasi backend sama sekali (tidak ada baris utk dikoreksi lewat
+    modal Edit). `AddAuditPoModal` — form MIRIP `EditAuditPoModal` tapi Nama PT/Nomor PO DI SINI
+    boleh diisi bebas (BUKAN disabled seperti modal Edit) — baris manual belum punya nilai
+    otomasi apa pun utk dikoreksi. `insertAuditPoRow(fields)` (`AuditPoHelpers.ts`) — insert
+    polos ke `audit_po_ap_comp` (bukan RPC, RLS `has_edit_access('audit_po')` INSERT sudah
+    cukup), reuse type `AuditPoEditableFields` (5 field) yang sama dgn Edit. Kolom
+    durasi/url/drive_file_id_* dibiarkan null (murni hasil generate backend, tidak diisi manual).
+    Tombol muncul di toolbar (gated `canEditAuditPo`, sebelah kanan tombol Dashboard, outline
+    putih BUKAN solid ungu spt Dashboard — biar hierarki visual jelas: Dashboard = aksi utama,
+    Tambah Data = aksi sekunder). Setelah simpan, `handleRowAdded()` panggil `fetchList()` ulang
+    (REFETCH, bukan prepend optimis ke state `rows`) — supaya baris baru muncul di posisi yang
+    BENAR sesuai sort/filter/pagination yang sedang aktif, bukan meloncat ke atas/bawah sembarang
+    kalau user sedang sort selain default. **Diporting ke 2 halaman duplikat lainnya**
+    (`AddAuditPoOverseasModal`/`AddPiLocalModal`, `insertAuditPoOverseasRow`/`insertPiLocalRow`)
+    — PI Local py 2 field tambahan (Nomor SJ/Nomor Stock In) yang JUGA boleh diisi bebas di form
+    Tambah (beda dari modal Edit-nya yang read-only utk 4 field identitas).
   - `DeleteAuditPoModal` — pola `DeleteConfirmModal` Bunker.
   - **Preview PDF/Hasil Audit via `PreviewModal` in-app** (BUKAN `<a target=_blank>` biasa) —
     riwayat: Drive tidak pernah render HTML upload user sbg halaman hidup (proteksi XSS bawaan,
@@ -1191,6 +1286,22 @@ kecuali ada pengecualian scope.
     baris — salah kalau total baris sedikit). Prop `openDirection` DIHAPUS TOTAL dari
     `KategoriPicker`/`KategoriCell`.
   - Kolom Vendor — `break-words` (bukan truncate+tooltip), nama panjang wrap penuh.
+  - **Filter dropdown "Semua PT" lebar tetap + kolom Nama PT bisa wrap (2026-09, laporan user +
+    screenshot)** — dropdown filter PT dulu TANPA `max-w-*` (beda dari dropdown Kategori yang
+    sudah `max-w-[160px]`), jadi lebarnya ikut nilai PT yang lagi dipilih (browser native
+    `<select>` sizing quirk) — tidak konsisten dgn dropdown Kategori di sebelahnya. Fix:
+    ditambah `max-w-[160px]` (SAMA persis dgn Kategori) ke dropdown PT. `PtBadge` (kolom Nama PT
+    di tabel) className diganti dari `rounded-full whitespace-nowrap` ke `rounded-lg break-words`
+    — nama PT panjang wrap ke bawah, bukan overflow (sama pola fix `StatusBadge` di atas).
+    Diporting ke ketiga halaman duplikat.
+  - Kolom **Status Audit** — `StatusBadge` pakai `rounded-lg break-words` (bukan `rounded-full
+    whitespace-nowrap`) — `status_audit` bisa teks bebas panjang, pill nowrap bikin overflow
+    keluar kolom (2026-09, laporan user + screenshot). Sama pola persis dgn fix
+    `StatusBadge`/`status_proses` di `AccountingRekapPage.tsx` (lihat bagian "Accounting Rekap"
+    di bawah). Diporting ke ketiga halaman duplikat (`AuditPoPage.tsx`/`AuditPoOverseasPage.tsx`/
+    `PiLocalPage.tsx`), meski nilai `status_audit` di 3 halaman ini SEBENARNYA 2 nilai tetap
+    "Selesai Diproses"/"Doc tidak terbaca" via `statusAuditMeta` — fix tetap diterapkan sbg
+    jaga-jaga kalau ada nilai lain yg lebih panjang masuk ke kolom ini.
   - `src/utils/AuditPoHelpers.ts` — `AuditPoRow`, `AuditPoEditableFields`, `statusAuditMeta`,
     `KATEGORI_OPTIONS`, `updateAuditPoKategori`, `updateAuditPoRow`, `deleteAuditPoRow`.
   - `PAGE_REGISTRY` key `audit_po`, group `'Audit AP Local'` (grouping utk matrix Kelola Role
@@ -1211,9 +1322,82 @@ kecuali ada pengecualian scope.
     `PT_OPTIONS` lagi) — `fetchDistinctNamaPt(table)` (`select('nama_pt')`, dedup+sort client),
     fallback ke `PT_OPTIONS` kalau gagal/kosong. State `ptOptions`, 2 titik per halaman (komponen
     utama + `DashboardModal`). Fix laporan "PT baru (mis. GUN) tidak muncul di dropdown/chart".
+  - **Filter dropdown Kategori — opsi "Tanpa Kategori" (2026-09, permintaan user)** — sentinel
+    string `NO_KATEGORI_SENTINEL = '__NO_KATEGORI__'` (konstanta module-level, TIDAK PERNAH
+    bentrok dgn `KATEGORI_OPTIONS` asli, MURNI penanda frontend, tidak pernah dikirim sbg nilai
+    kategori ke Supabase) disisip sbg `<option>` ke-2 (setelah "Semua Kategori", sebelum daftar
+    `KATEGORI_OPTIONS`). `fetchList` — kalau `kategoriFilter === NO_KATEGORI_SENTINEL`, query
+    diganti `.or('kategori.is.null,kategori.eq.')` (cek NULL ATAU string kosong sekaligus —
+    kolom `kategori` bisa dua-duanya tergantung riwayat: belum pernah diisi otomasi = NULL,
+    pernah diisi lalu dikosongkan manual lewat `KategoriPicker` = string kosong), BUKAN cabang
+    `.ilike()` biasa yang dipakai kategori bernilai. Diporting ke ketiga halaman duplikat.
+  - **Susulan — opsi "Ada Kategori" (2026-09, permintaan user, kebalikan opsi di atas)** —
+    sentinel `HAS_KATEGORI_SENTINEL = '__HAS_KATEGORI__'`, `<option>` ke-3 (setelah "Tanpa
+    Kategori"). Query: `.not('kategori', 'is', null).neq('kategori', '')` — kebalikan PERSIS
+    syarat "Tanpa Kategori" (bukan NULL DAN bukan string kosong). Diporting ke ketiga halaman.
   - **Kolom Kategori sortable** — `type SortKey` tambah `'kategori'`, `<SortableHeader>` di th.
     Sort server-side (`.order()`, generik). `.order(sortBy,{ascending, nullsFirst:false})` —
     fix bug baris kosong nongol di atas saat sort ASC (Postgres default NULL=largest).
+
+## Audit AP Local/Overseas/PI Local — "Riwayat Perubahan" (2026-09)
+
+Pengecualian dari rule "duplikasi sengaja, tidak ada komponen shared" di atas — modal & fungsi log
+**SENGAJA DIBUAT GENERIK** (1 komponen dipakai ketiga halaman lewat parameter `tabel`), keputusan
+eksplisit user, karena modal riwayat murni infrastruktur tanpa logic spesifik per halaman (beda
+dari Edit/Delete/Dashboard/KategoriPicker yang punya alasan kuat utk diduplikasi — field per
+halaman beda, `KATEGORI_OPTIONS` beda, dst).
+
+- **`src/utils/AuditPoLogHelpers.ts`** — `logAuditPoAudit(tabel, recordId, userEmail, changes)`,
+  `logAuditPoDelete(tabel, recordId, userEmail, label)`, `fetchAuditPoLog(tabel, recordId)`. Pakai
+  ulang tabel `audit_trail` GLOBAL (sama dgn fitur "Riwayat" Bunker, lihat `logBunkerAudit()` di
+  `BunkerHelpers.ts`) — **konsekuensinya log dari 3 halaman ini OTOMATIS ikut muncul di halaman
+  Audit Trail global** (menu sidebar → Audit Trail), bukan cuma di modal per-baris.
+- **Kunci pencocokan baris BEDA dari Bunker** — Bunker pakai `no_po` (bisa duplikat/kosong), di
+  sini pakai **`id` (uuid) baris `audit_po_*` itu sendiri** (disimpan di kolom generik
+  `no_dokumen`) — lebih presisi, tidak mungkin bentrok walau `nomor_po` sama/kosong.
+- **`src/components/AuditPoLogModal.tsx`** — replika `BunkerAuditLogModal.tsx`, generik terima
+  props `tabel`/`recordId`/`recordLabel`/`pageTitle`. BEDA dari versi Bunker: TIDAK perlu filter
+  entri "asing" (tabel `audit_po_*` HANYA ditulis oleh `logAuditPoAudit`/`logAuditPoDelete`,
+  tidak ada proses lain yg insert langsung ke `audit_trail` dgn `tabel` ini).
+- **Cakupan aksi yang dicatat (keputusan eksplisit user)**: Edit (field yang BENAR-BENAR berubah
+  saja, dibandingkan via `FIELD_LABELS` map per halaman), Hapus baris (dicatat SEBELUM baris
+  aslinya dihapus, action `DELETE`), ganti Kategori inline (`KategoriCell`, di luar modal Edit).
+  **Tombol "Tambah Data" manual SENGAJA TIDAK dicatat.**
+- Tombol **"Riwayat"** (ikon `History`) di panel Aksi per baris, TIDAK digate `canEdit*` (sama
+  pola Bunker — lihat/baca riwayat boleh siapa saja yg punya akses ke halaman itu, cuma
+  Edit/Hapus yg digate).
+- **`SharedDataTable.tsx` `TRAIL_TABLES`** — kategori baru `AUDIT_PO: ['audit_po_ap_comp',
+  'audit_po_apovs_comp', 'audit_po_pi_local_comp']` + opsi dropdown "Audit AP Local/Overseas/PI
+  Local" di filter "Module" halaman Audit Trail global — supaya bisa difilter khusus dari sana.
+
+**BELUM DIJALANKAN ke Supabase production — WAJIB dijalankan manual dulu** (RLS INSERT/SELECT
+`audit_trail` scoped per `tabel`, pola SAMA PERSIS policy Bunker di atas):
+```sql
+create policy "audit_trail_insert_audit_po_ap" on public.audit_trail
+  for insert with check (tabel = 'audit_po_ap_comp' and public.has_edit_access('audit_po'));
+create policy "audit_trail_select_audit_po_ap" on public.audit_trail
+  for select using (tabel = 'audit_po_ap_comp' and public.has_page_access('audit_po'));
+
+create policy "audit_trail_insert_audit_po_ovs" on public.audit_trail
+  for insert with check (tabel = 'audit_po_apovs_comp' and public.has_edit_access('audit_po_overseas'));
+create policy "audit_trail_select_audit_po_ovs" on public.audit_trail
+  for select using (tabel = 'audit_po_apovs_comp' and public.has_page_access('audit_po_overseas'));
+
+create policy "audit_trail_insert_pi_local" on public.audit_trail
+  for insert with check (tabel = 'audit_po_pi_local_comp' and public.has_edit_access('pi_local'));
+create policy "audit_trail_select_pi_local" on public.audit_trail
+  for select using (tabel = 'audit_po_pi_local_comp' and public.has_page_access('pi_local'));
+```
+**BELUM DIVERIFIKASI**: apakah policy SELECT halaman Audit Trail global (`v_audit_trail`, page_key
+`audit_trail`) sudah cukup permisif utk baca SEMUA `tabel` (termasuk 3 tabel baru ini) atau
+di-scope ketat per `tabel` juga (kalau ketat, WAJIB tambah 1 policy SELECT lagi khusus utk
+page_key `audit_trail`, sama prinsipnya dgn Bunker) — cek dulu kalau ada laporan "log tidak
+muncul di halaman Audit Trail global padahal muncul di modal Riwayat per-baris".
+**BELUM DIVERIFIKASI juga**: kolom `deskripsi` di `v_audit_trail` (view, dipakai `TRAIL_COLS`
+halaman Audit Trail global) kemungkinan dihasilkan dari mapping `tabel`/`action` yang HARDCODE di
+view SQL — entri baru dgn `tabel='audit_po_*'` mungkin tampil `deskripsi` kosong kalau view belum
+tahu mapping-nya (kolom `catatan` tetap terisi lengkap apa pun kondisinya, jadi info tidak hilang,
+cuma kolom `deskripsi`-nya saja yang berpotensi kosong).
 
 ## Audit AP Overseas (`AuditPoOverseasPage.tsx`)
 
@@ -1244,6 +1428,16 @@ create policy "audit_po_apovs_comp_update" on public.audit_po_apovs_comp
 create policy "audit_po_apovs_comp_delete" on public.audit_po_apovs_comp
   for delete using (public.has_edit_access('audit_po_overseas'));
 ```
+
+## PI Local (`PiLocalPage.tsx`) — Search mencakup Nomor Stock In (2026-09)
+
+Duplikasi arsitektur Audit AP Local (lihat rule duplikasi di atas), tabel `audit_po_pi_local_comp`.
+Beda dari 2 halaman duplikat lainnya: py 2 kolom tambahan `nomor_sj`/`nomor_stock_in` (terpisah
+dari `nomor_po`) — lihat komentar di kepala file. Search box (debounced 400ms) awalnya cuma
+`.or(nomor_po.ilike/vendor_name.ilike)` — DITAMBAH `nomor_stock_in.ilike` (permintaan eksplisit
+user) supaya bisa cari langsung dari nomor Stock In, bukan cuma Nomor PO. Placeholder diupdate
+jadi "Cari No PO / No Stock In / Vendor...". **Perubahan ini KHUSUS PI Local** — `AuditPoPage.tsx`/
+`AuditPoOverseasPage.tsx` TIDAK punya kolom `nomor_stock_in` sama sekali, jadi TIDAK diporting.
 
 ## Accounting Rekap — duplikasi Audit AP Local, tabel finance baru (`src/pages/AccountingRekapPage.tsx`, 2026-09)
 
@@ -1359,6 +1553,54 @@ sidebar, route/page_key TIDAK berubah. `basePath:'/compare-doc'` SENGAJA dummy (
 tidak berbagi prefix senada). `activeMainTab`
 diperluas: kalau tab punya `subTabs`, cek juga `subTabs.some(s => pathBelongs(pathname,
 s.path))`. `PAGE_REGISTRY` groups TIDAK ikut digabung (beda concern dari struktur visual).
+
+## Loading state dibakukan — `LoadingState`/`LoadingTableRow` (`src/components/LoadingState.tsx`, 2026-09)
+
+Sebelum ini, teks "sedang memuat data" tersebar di ~35 titik/file dengan variasi tidak konsisten
+— campuran Inggris ("Loading data...", "Loading...") & Indonesia ("Memuat data...", "Memuat data
+dokumen...", "Memuat data validasi cost...", "Memperbarui data..."), sebagian TANPA spinner sama
+sekali (teks polos), warna spinner juga campur (`blue-500`/`blue-600` vs brand ungu `#5A305A`).
+**Ditemukan 1 titik yang bocor nama backend ke user** — `SharedDataTable.tsx` sempat tampil
+literal **"Loading data from Supabase..."** — SUDAH DIPERBAIKI (user TIDAK PERNAH boleh lihat
+nama teknologi backend).
+
+**Keputusan user (2026-09)**: SEMUA teks loading dibakukan ke **Inggris, "Loading data..."**
+— TERLEPAS dari status program terjemahan modul lain yang masih berjalan bertahap per-modul
+(lihat bagian "Translasi UI ke Bahasa Inggris" di atas) — teks loading SENGAJA jadi
+**pengecualian**, dibakukan duluan di SEMUA modul (termasuk yang UI-nya sendiri belum
+diterjemahkan, mis. Audit AP Local/Overseas/PI Local, Tarif Kontrak, Kurs BI/Rule Vendor, admin
+Rate/Surcharge). **JANGAN anggap ini berarti modul-modul itu "sudah selesai" diterjemahkan
+penuh** — cuma teks loading-nya saja yang ikut dibakukan, sisa UI modul itu TETAP mengikuti
+status terjemahan modul masing-masing seperti sebelumnya.
+
+- **`LoadingState`** (blok penuh — halaman/kartu/modal) — spinner brand ungu (`border-[#5A305A]/20
+  border-t-[#5A305A]`) + teks "Loading data..." (bisa di-override via prop `label` kalau ada
+  konteks yang benar-benar perlu lebih spesifik — SEMUA titik yang diganti kemarin SENGAJA
+  dibiarkan pakai default, tidak ada yang pakai `label` custom, demi konsistensi maksimal).
+  Prop `fullHeight` (default `true`, pakai `h-full`) — di-set `false` utk konteks yang parent-nya
+  TIDAK py tinggi eksplisit (mis. `<main>` halaman biasa) supaya tidak collapse jadi 0px.
+- **`LoadingTableRow`** — varian utk `<tbody>` (`<tr><td colSpan={N}>`), `colSpan` WAJIB diisi
+  sama dengan jumlah kolom tabel itu (`activeCols.length`/hitung manual sesuai `<th>` yang ada).
+- **Cakupan yang SUDAH diganti** — SEMUA halaman/modal yang py loading state tabel/blok utama:
+  `SharedDataTable.tsx` (termasuk overlay "Updating data..." saat refresh & modal checklist),
+  `ExportModal.tsx`, `ValidasiModal.tsx`, `ValidasiShipmentInvoiceLengkap.tsx`,
+  `CostValidationModal.tsx`, `FarOverseasAirCostValidationModal.tsx`, `SeaAirChecklistModal.tsx`,
+  `SeaAirValidasiModal.tsx`, `AccountingRekapPage.tsx`, `AuditPoPage.tsx`,
+  `AuditPoOverseasPage.tsx`, `PiLocalPage.tsx`, `BunkerPage.tsx`, `FarOverseasAirPage.tsx`,
+  `KursBIPage.tsx`, `KursRuleVendorPage.tsx`, `FarOverseasVendorTarifPage.tsx`,
+  `TarifKontrakPage.tsx`, `MasterVesselAdminPage.tsx`, `RoleManagementPage.tsx`,
+  `CourierValidasiPage.tsx`, `ReportingDashboardPage.tsx`, `ReportingCostPerVesselPage.tsx`,
+  `ReportingCostByCourierPage.tsx`, admin `PPJKCostRule.tsx`/`RateSheetDHL.tsx`/
+  `RateSheetFedEx.tsx`/`RateSheetUPS.tsx`/`SurchargeDHL.tsx`/`SurchargeFedEx.tsx`/
+  `SurchargeCIPLRule.tsx`/`ZoneMappingEditor.tsx`/`NPWPEditor.tsx`.
+- **SENGAJA TIDAK diganti** — spinner kecil INLINE di tombol aksi (Save/Submit/Refresh icon
+  `RefreshCw` yang berputar, tombol Login/Lock Screen, dsb) — itu indikator "sedang memproses
+  AKSI" (submit/save), BUKAN "sedang memuat data awal dari database", beda konteks/beda tujuan
+  visual, di luar cakupan permintaan user ("loading data dari database").
+- **Halaman baru ke depan yang butuh loading state data awal WAJIB pakai `LoadingState`/
+  `LoadingTableRow`** — JANGAN bikin blok spinner+teks manual baru lagi (apalagi sampai ada teks
+  Indonesia lagi atau warna spinner selain brand ungu) — akan merusak konsistensi yang baru
+  dibakukan ini.
 
 ## Customize View — Audit Courier & Rekapan Courier (`SharedDataTable.tsx`)
 

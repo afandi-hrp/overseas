@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Truck, Download, ChevronDown, TrendingUp, TrendingDown } from 'lucide-react';
 import Greeting from '../components/Greeting';
+import { LoadingState } from '../components/LoadingState';
 import ExcelJS from 'exceljs';
 import {
   CourierRow, PeriodMode, YearMonth, PeriodColumn, fetchCourierYear, fetchDistinctAn, fetchDistinctPpjk, fetchDistinctOrigin,
@@ -573,7 +574,7 @@ export default function ReportingCostByCourierPage() {
         </div>
 
         {loading ? (
-          <div className="text-center py-16 text-[#5A305A]">Loading data...</div>
+          <LoadingState fullHeight={false} />
         ) : (
           <div className="space-y-3">
             {/* A. 4 kartu ringkasan */}

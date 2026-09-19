@@ -335,7 +335,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
           {loading ? (
             <div className="flex flex-col items-center justify-center h-full py-20">
               <div className="animate-spin h-8 w-8 border-4 border-[#5A305A] border-t-transparent rounded-full mb-4" />
-              <p className="text-[#5A305A] text-sm">Loading cost validation data...</p>
+              <p className="text-[#5A305A] text-sm">Loading data...</p>
             </div>
           ) : loadError ? (
             <div className="p-6">

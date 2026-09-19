@@ -11,6 +11,7 @@ import FarOverseasAirWeightBreakdownModal from '../components/FarOverseasAirWeig
 import FarOverseasAirUploadModal from '../components/FarOverseasAirUploadModal';
 import ExportModal from '../components/ExportModal';
 import Greeting from '../components/Greeting';
+import { LoadingState, LoadingTableRow } from '../components/LoadingState';
 
 const QueueCard: React.FC<{ item: any; onDismiss: (id: string) => void }> = ({ item, onDismiss }) => {
   let filenames: string[] = [];
@@ -1321,7 +1322,7 @@ export default function FarOverseasAirPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {loadingList ? (
-                    <tr><td colSpan={LIST_COLUMNS.length + 1} className="text-center py-10 text-[#5A305A] text-sm">Loading data...</td></tr>
+                    <LoadingTableRow colSpan={LIST_COLUMNS.length + 1} />
                   ) : rows.length === 0 ? (
                     <tr><td colSpan={LIST_COLUMNS.length + 1} className="text-center py-10 text-[#5A305A] text-sm italic">No FAR Overseas data yet. Click "Upload Document" to get started.</td></tr>
                   ) : (
@@ -1438,7 +1439,7 @@ export default function FarOverseasAirPage() {
             {viewMode === 'CARD' && (
               <div className="flex-1 min-h-0 overflow-y-auto p-4">
                 {loadingList ? (
-                  <div className="text-center py-10 text-[#5A305A] text-sm">Loading data...</div>
+                  <LoadingState fullHeight={false} />
                 ) : rows.length === 0 ? (
                   <div className="text-center py-10 text-[#5A305A] text-sm italic">No FAR Overseas data yet. Click "Upload Document" to get started.</div>
                 ) : (

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import ExportModal from '../../components/ExportModal';
+import { LoadingState } from '../../components/LoadingState';
 
 import { Search, ChevronLeft, ChevronRight, RefreshCw, Download, X, FileCheck2 } from 'lucide-react';
 import { SECTIONS, computeStatus } from '../../utils/ValidasiHelper';
@@ -375,9 +376,7 @@ export default function CourierValidasiPage() {
           {/* ── Daftar record ── */}
           <div className="flex-1 overflow-y-auto p-4">
           {loading ? (
-            <div className="flex justify-center items-center h-40">
-              <div className="w-8 h-8 border-4 border-[#5A305A] border-t-transparent rounded-full animate-spin" />
-            </div>
+            <LoadingState fullHeight={false} className="h-40 py-0" />
           ) : records.length === 0 ? (
             <div className="text-center py-12 text-[#5A305A]/70 text-sm italic">
               Tidak ada data validasi ditemukan.

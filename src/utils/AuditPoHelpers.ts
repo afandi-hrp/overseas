@@ -110,6 +110,14 @@ export async function updateAuditPoRow(id: string, updates: AuditPoEditableField
   return supabase.from('audit_po_ap_comp').update(updates).eq('id', id);
 }
 
+// Tambah 1 baris manual (tombol "Tambah Data" toolbar, 2026-09) -- reuse AuditPoEditableFields
+// APA ADANYA (nama_pt/nomor_po JUGA boleh diisi di sini, beda dari modal Edit yang read-only utk
+// 2 field itu -- baris manual belum py nilai otomasi sama sekali utk dikoreksi). Kolom
+// durasi/url/drive_file_id_* sengaja TIDAK diisi (tetap null, murni hasil generate backend).
+export async function insertAuditPoRow(fields: AuditPoEditableFields) {
+  return supabase.from('audit_po_ap_comp').insert(fields).select().single();
+}
+
 // Hapus permanen 1 baris hasil audit -- dipakai tombol "Hapus" di kolom Aksi, selalu lewat modal
 // konfirmasi dulu (pola sama seperti confirmDelete di BunkerPage.tsx).
 export async function deleteAuditPoRow(id: string) {

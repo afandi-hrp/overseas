@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
 import { Plus, Edit3, Trash2, Info, SlidersHorizontal, Search } from 'lucide-react';
 import Greeting from '../components/Greeting';
+import { LoadingTableRow } from '../components/LoadingState';
 
 export default function KursRuleVendorPage() {
   const { canEdit } = useAuth();
@@ -267,9 +268,7 @@ export default function KursRuleVendorPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center text-[#5A305A]">Memuat data...</td>
-                  </tr>
+                  <LoadingTableRow colSpan={5} />
                 ) : filteredRules.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-6 py-12 text-center text-[#5A305A]">

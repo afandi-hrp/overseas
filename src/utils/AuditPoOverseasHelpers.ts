@@ -100,6 +100,12 @@ export async function updateAuditPoOverseasRow(id: string, updates: AuditPoOvers
   return supabase.from('audit_po_apovs_comp').update(updates).eq('id', id);
 }
 
+// Tambah 1 baris manual (tombol "Tambah Data" toolbar, 2026-09) -- lihat catatan sama di
+// AuditPoHelpers.ts (Audit AP Local).
+export async function insertAuditPoOverseasRow(fields: AuditPoOverseasEditableFields) {
+  return supabase.from('audit_po_apovs_comp').insert(fields).select().single();
+}
+
 // Hapus permanen 1 baris hasil audit -- dipakai tombol "Hapus" di kolom Aksi, selalu lewat modal
 // konfirmasi dulu (pola sama seperti confirmDelete di BunkerPage.tsx).
 export async function deleteAuditPoOverseasRow(id: string) {

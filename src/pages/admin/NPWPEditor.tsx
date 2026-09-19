@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
+import { LoadingState } from '../../components/LoadingState';
 
 export default function NPWPEditor() {
   const { canEdit } = useAuth();
@@ -116,9 +117,7 @@ export default function NPWPEditor() {
 
       <div className="p-4 flex-1 overflow-auto bg-slate-50">
         {loading ? (
-          <div className="flex items-center justify-center h-40">
-            <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
-          </div>
+          <LoadingState fullHeight={false} className="h-40 py-0" />
         ) : (
           <div className="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
             <div className="overflow-x-auto">

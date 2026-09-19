@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
 import { PlaneTakeoff, ChevronLeft, ChevronRight } from 'lucide-react';
 import Greeting from '../components/Greeting';
+import { LoadingTableRow } from '../components/LoadingState';
 
 const VENDOR_OPTIONS = ['OCTAGON LOGISTIC', 'PT. JIANQIAO LOGISTICS INDONESIA'];
 const JENIS_LAYANAN_OPTIONS = ['Air Freight', 'Sea Freight', 'Reguler Freight', 'Door to Door (Pick Up)', 'Port to Door (Drop Warehouse)'];
@@ -305,11 +306,7 @@ export default function FarOverseasVendorTarifPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
-                  <tr>
-                    <td colSpan={14} className="px-4 py-8 text-center text-sm text-[#5A305A]">
-                      Memuat data...
-                    </td>
-                  </tr>
+                  <LoadingTableRow colSpan={14} />
                 ) : filteredData.length === 0 ? (
                   <tr>
                     <td colSpan={14} className="px-4 py-8 text-center text-sm text-[#5A305A]">

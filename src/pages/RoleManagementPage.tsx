@@ -4,6 +4,7 @@ import { useAuth } from '../lib/AuthContext';
 import { PAGE_REGISTRY, PAGE_GROUPS, APPROVAL_TIER_PAGES } from '../lib/permissions';
 import { Plus, Trash2, ShieldCheck, Users, LayoutGrid, Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 import Greeting from '../components/Greeting';
+import { LoadingState } from '../components/LoadingState';
 
 type Role = { id: string; name: string; description: string | null; is_protected: boolean };
 type ProfileRow = { id: string; email: string | null; nama: string | null };
@@ -267,9 +268,7 @@ export default function RoleManagementPage() {
         )}
 
         {loading ? (
-          <div className="flex items-center justify-center py-24">
-            <div className="w-8 h-8 border-4 border-[#5A305A] border-t-transparent rounded-full animate-spin" />
-          </div>
+          <LoadingState fullHeight={false} />
         ) : (
           <>
             {/* Daftar Role */}

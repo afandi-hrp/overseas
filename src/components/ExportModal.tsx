@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import ExcelJS from 'exceljs'
 import { supabase } from '../lib/supabase'
+import { LoadingState } from './LoadingState'
 import { useAuth } from '../lib/AuthContext'
 
 const formatNoAju = (v: any) => {
@@ -536,10 +537,7 @@ export default function ExportModal({
 
         <div className="flex-1 overflow-auto p-0 bg-slate-50/50 relative">
           {loading ? (
-             <div className="flex flex-col items-center justify-center h-full text-[#5A305A]">
-               <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mr-3 mb-4" />
-               <span className="text-sm font-medium">Memuat data untuk preview...</span>
-             </div>
+             <LoadingState />
           ) : err ? (
              <div className="p-6 text-center text-red-600">
                <div className="bg-red-50 border border-red-200 p-4 rounded-xl inline-block max-w-lg">

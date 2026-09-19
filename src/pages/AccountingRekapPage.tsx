@@ -10,6 +10,7 @@ import {
   type AccountingRekapRow,
 } from '../utils/AccountingRekapHelpers';
 import Greeting from '../components/Greeting';
+import { LoadingState, LoadingTableRow } from '../components/LoadingState';
 
 // ── Kontrak data (Supabase, diisi otomasi backend) ──
 // accounting_rekap_finance (1 baris = 1 dokumen finance/accounting): id, created_at,
@@ -585,7 +586,7 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
 
           <div className="min-h-[380px] mt-3 flex flex-col justify-center">
           {activeTab === 'overview' && (loading ? (
-            <div className="text-center py-14 text-[#5A305A] text-sm">Memuat data...</div>
+            <LoadingState fullHeight={false} />
           ) : stats ? (
             <div className="flex max-lg:flex-col items-center gap-10 pl-8">
               <div className="shrink-0 space-y-3">
@@ -690,7 +691,7 @@ function VendorTabContent({ loading, error, stats }: { loading: boolean; error: 
     return <div className="mb-3 p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 break-words">{error}</div>;
   }
   if (loading) {
-    return <div className="text-center py-14 text-[#5A305A] text-sm">Memuat data...</div>;
+    return <LoadingState fullHeight={false} />;
   }
   const rows = stats || [];
 
@@ -1013,7 +1014,7 @@ export default function AccountingRekapPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {loadingList ? (
-                  <tr><td colSpan={9} className="text-center py-10 text-[#5A305A] text-sm">Memuat data...</td></tr>
+                  <LoadingTableRow colSpan={9} />
                 ) : rows.length === 0 ? (
                   <tr><td colSpan={9} className="text-center py-10 text-[#5A305A] text-sm italic">Belum ada data Accounting Rekap.</td></tr>
                 ) : (

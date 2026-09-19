@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Ship, TrendingUp, TrendingDown, ArrowUp, ArrowDown } from 'lucide-react';
 import Greeting from '../components/Greeting';
+import { LoadingState } from '../components/LoadingState';
 import {
   fetchMasterVessels, fetchAllocationRows, fetchAllocationRowsByMonths, monthsOfYear, MasterVessel,
   MetricKey, zeroSums, totalCost, totalExclPpn, metricForMethod, addSums, AllocationMethod,
@@ -508,7 +509,7 @@ export default function ReportingDashboardPage({ embedded }: { embedded?: boolea
         </div>
 
         {loading ? (
-          <div className="text-center py-16 text-[#5A305A]">Loading data...</div>
+          <LoadingState fullHeight={false} />
         ) : (
           <div className="space-y-4">
             {/* Baris 1: 4 kartu ringkasan (2026-09 "REVISI MENU REPORTING" poin A2 -- urutan

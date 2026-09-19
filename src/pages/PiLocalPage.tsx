@@ -2,12 +2,18 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
-import { ClipboardList, Search, RefreshCw, FileDown, FileText, Check, ChevronDown, Pencil, Trash2, X, ArrowUp, ArrowDown, ArrowUpDown, LayoutDashboard, CalendarDays, Download, Printer, FilterX } from 'lucide-react';
+import { ClipboardList, Search, RefreshCw, FileDown, FileText, Check, ChevronDown, Pencil, Trash2, X, ArrowUp, ArrowDown, ArrowUpDown, LayoutDashboard, CalendarDays, Download, Printer, FilterX, Plus, History } from 'lucide-react';
 import {
   formatDateTimeID, statusAuditMeta, updatePiLocalKategori, updatePiLocalRow, deletePiLocalRow,
-  KATEGORI_OPTIONS, type PiLocalRow,
+  insertPiLocalRow, KATEGORI_OPTIONS, type PiLocalRow,
 } from '../utils/PiLocalHelpers';
+import { logAuditPoAudit, logAuditPoDelete } from '../utils/AuditPoLogHelpers';
 import Greeting from '../components/Greeting';
+import { LoadingState, LoadingTableRow } from '../components/LoadingState';
+import AuditPoLogModal from '../components/AuditPoLogModal';
+
+// Lihat catatan sama di AuditPoPage.tsx.
+const TABEL_NAME = 'audit_po_pi_local_comp';
 
 // ── Kontrak data (Supabase, diisi otomasi backend) ──
 // audit_po_pi_local_comp (1 baris = 1 hasil audit PO/vendor PI Local): id, created_at, nama_pt,
@@ -26,6 +32,14 @@ import Greeting from '../components/Greeting';
 // panjang `fetchDistinctNamaPt()` di sana).
 const PT_OPTIONS = ['AMT', 'GMI', 'TTP', 'MJS', 'WSI', 'WNS', 'GENERAL'];
 
+// Sentinel value opsi "Tanpa Kategori" di dropdown filter Kategori (2026-09, permintaan user) --
+// lihat catatan sama di AuditPoPage.tsx.
+const NO_KATEGORI_SENTINEL = '__NO_KATEGORI__';
+
+// Sentinel value opsi "Ada Kategori" di dropdown filter Kategori (2026-09, permintaan user) --
+// lihat catatan sama di AuditPoPage.tsx.
+const HAS_KATEGORI_SENTINEL = '__HAS_KATEGORI__';
+
 // Ambil daftar `nama_pt` DISTINCT yang BENERAN ada di tabel -- lihat komentar lengkap versi
 // AuditPoPage.tsx. Dipakai DI 2 TEMPAT: dropdown filter panel utama, DAN seed daftar PT di tab
 // "Per Vendor" modal Dashboard.
@@ -43,7 +57,9 @@ async function fetchDistinctNamaPt(table: string): Promise<string[]> {
 
 function StatusBadge({ status }: { status: string | null }) {
   const meta = statusAuditMeta(status);
-  return <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${meta.badgeClass}`}>{meta.label}</span>;
+  // rounded-lg break-words (bukan rounded-full whitespace-nowrap) -- status_audit bisa teks bebas
+  // panjang, pill nowrap bikin overflow keluar kolom. Sama pola dgn AuditPoPage.tsx.
+  return <span className={`text-[10px] font-bold px-2 py-1 rounded-lg break-words ${meta.badgeClass}`}>{meta.label}</span>;
 }
 
 type SortKey = 'created_at' | 'nama_pt' | 'kategori';
@@ -72,8 +88,10 @@ function SortableHeader({ label, sortKey, activeSort, activeDir, onSort }: {
 }
 
 function PtBadge({ pt }: { pt: string | null }) {
+  // rounded-lg break-words (bukan rounded-full whitespace-nowrap) -- nama PT panjang harus enter
+  // ke bawah, bukan overflow keluar kolom (2026-09, permintaan user, sama pola dgn AuditPoPage.tsx).
   return (
-    <span className="text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap bg-slate-100 text-[#5A305A]">
+    <span className="text-[10px] font-bold px-2 py-1 rounded-lg break-words bg-slate-100 text-[#5A305A]">
       {pt || '-'}
     </span>
   );
@@ -232,13 +250,22 @@ function KategoriPicker({ value, onSelect, disabled, buttonLabel, widthClass = '
 // Sel tabel Kategori -- auto-save ke DB per pilih (beda dari picker di modal Edit yang cuma
 // disimpan barengan field lain saat klik "Simpan").
 function KategoriCell({ row, onChanged, canEdit }: { row: PiLocalRow; onChanged: (id: string, kategori: string | null) => void; canEdit: boolean }) {
+  const { user } = useAuth();
   const [saving, setSaving] = useState(false);
 
   const handleSelect = async (val: string) => {
     setSaving(true);
+    const oldVal = row.kategori;
     const { error } = await updatePiLocalKategori(row.id, val);
     setSaving(false);
-    if (!error) onChanged(row.id, val);
+    if (!error) {
+      onChanged(row.id, val);
+      if (oldVal !== val) {
+        logAuditPoAudit(TABEL_NAME, row.id, user?.email, [
+          { field_label: 'Kategori', old_value: oldVal, new_value: val },
+        ]);
+      }
+    }
   };
 
   if (!canEdit) {
@@ -256,7 +283,14 @@ function KategoriCell({ row, onChanged, canEdit }: { row: PiLocalRow; onChanged:
   );
 }
 
+// Label field utk "Riwayat Perubahan" -- lihat catatan sama di AuditPoPage.tsx.
+const FIELD_LABELS: Record<string, string> = {
+  nama_pt: 'Nama PT', nomor_po: 'Nomor PO', nomor_sj: 'Nomor SJ', nomor_stock_in: 'Nomor Stock In',
+  vendor_name: 'Vendor', status_audit: 'Status Audit', kategori: 'Kategori',
+};
+
 function EditPiLocalModal({ record, onClose, onSaved }: { record: PiLocalRow; onClose: () => void; onSaved: (row: PiLocalRow) => void }) {
+  const { user } = useAuth();
   const [namaPt, setNamaPt] = useState(record.nama_pt || '');
   const [nomorPo, setNomorPo] = useState(record.nomor_po || '');
   const [nomorSj, setNomorSj] = useState(record.nomor_sj || '');
@@ -285,6 +319,10 @@ function EditPiLocalModal({ record, onClose, onSaved }: { record: PiLocalRow; on
       setError(err.message);
       return;
     }
+    const changes = (Object.keys(updates) as (keyof typeof updates)[])
+      .filter(key => (record[key] ?? null) !== (updates[key] ?? null))
+      .map(key => ({ field_label: FIELD_LABELS[key], old_value: record[key], new_value: updates[key] }));
+    if (changes.length > 0) logAuditPoAudit(TABEL_NAME, record.id, user?.email, changes);
     onSaved({ ...record, ...updates });
     onClose();
   };
@@ -359,6 +397,134 @@ function EditPiLocalModal({ record, onClose, onSaved }: { record: PiLocalRow; on
               className="w-full rounded-xl px-3 py-2 border border-slate-200 bg-white text-sm text-[#5A305A] focus:outline-none focus:ring-1 focus:ring-[#5A305A]/30"
             />
             <p className="text-[10px] text-[#5A305A]/60 mt-1">Ketik bebas untuk catatan internal (mis. jenis error).</p>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-[#5A305A] mb-1 block">Kategori</label>
+            <KategoriPicker value={kategori || null} onSelect={setKategori} widthClass="w-full" />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 mt-6">
+          <button onClick={onClose} disabled={saving} className="py-2.5 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all disabled:opacity-50">
+            Batal
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="py-2.5 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-sm transition-all disabled:opacity-50"
+          >
+            {saving ? 'Menyimpan...' : 'Simpan'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Tombol "Tambah Data" toolbar (2026-09) -- lihat catatan sama di AuditPoPage.tsx (Audit AP
+// Local). Semua 4 field identitas boleh diisi bebas di sini (bukan disabled spt modal Edit).
+function AddPiLocalModal({ onClose, onAdded }: { onClose: () => void; onAdded: (row: PiLocalRow) => void }) {
+  const [namaPt, setNamaPt] = useState('');
+  const [nomorPo, setNomorPo] = useState('');
+  const [nomorSj, setNomorSj] = useState('');
+  const [nomorStockIn, setNomorStockIn] = useState('');
+  const [vendorName, setVendorName] = useState('');
+  const [statusAudit, setStatusAudit] = useState('');
+  const [kategori, setKategori] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    const fields = {
+      nama_pt: namaPt.trim() || null,
+      nomor_po: nomorPo.trim() || null,
+      nomor_sj: nomorSj.trim() || null,
+      nomor_stock_in: nomorStockIn.trim() || null,
+      vendor_name: vendorName.trim() || null,
+      status_audit: statusAudit.trim() || null,
+      kategori: kategori || null,
+    };
+    const { data, error: err } = await insertPiLocalRow(fields);
+    setSaving(false);
+    if (err || !data) {
+      setError(err?.message || 'Gagal menyimpan data.');
+      return;
+    }
+    onAdded(data as PiLocalRow);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-11 h-11 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
+              <Plus size={18} />
+            </div>
+            <div className="min-w-0">
+              <h3 className="font-bold text-[#5A305A] leading-tight">Tambah Data Manual</h3>
+              <p className="text-xs text-[#5A305A]/70 mt-0.5">PI Local</p>
+            </div>
+          </div>
+          <button onClick={onClose} disabled={saving} className="text-[#5A305A]/60 hover:text-[#5A305A] p-1 disabled:opacity-50"><X size={18} /></button>
+        </div>
+
+        {error && (
+          <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 break-words">{error}</div>
+        )}
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-semibold text-[#5A305A] mb-1 block">Nama PT</label>
+            <input
+              value={namaPt}
+              onChange={e => setNamaPt(e.target.value)}
+              className="w-full rounded-xl px-3 py-2 border border-slate-200 bg-white text-sm text-[#5A305A] focus:outline-none focus:ring-1 focus:ring-[#5A305A]/30"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-[#5A305A] mb-1 block">Nomor PO</label>
+            <input
+              value={nomorPo}
+              onChange={e => setNomorPo(e.target.value)}
+              className="w-full rounded-xl px-3 py-2 border border-slate-200 bg-white text-sm text-[#5A305A] focus:outline-none focus:ring-1 focus:ring-[#5A305A]/30"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-[#5A305A] mb-1 block">Nomor SJ</label>
+            <input
+              value={nomorSj}
+              onChange={e => setNomorSj(e.target.value)}
+              className="w-full rounded-xl px-3 py-2 border border-slate-200 bg-white text-sm text-[#5A305A] focus:outline-none focus:ring-1 focus:ring-[#5A305A]/30"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-[#5A305A] mb-1 block">Nomor Stock In</label>
+            <input
+              value={nomorStockIn}
+              onChange={e => setNomorStockIn(e.target.value)}
+              className="w-full rounded-xl px-3 py-2 border border-slate-200 bg-white text-sm text-[#5A305A] focus:outline-none focus:ring-1 focus:ring-[#5A305A]/30"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-[#5A305A] mb-1 block">Vendor</label>
+            <input
+              value={vendorName}
+              onChange={e => setVendorName(e.target.value)}
+              className="w-full rounded-xl px-3 py-2 border border-slate-200 bg-white text-sm text-[#5A305A] focus:outline-none focus:ring-1 focus:ring-[#5A305A]/30"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-[#5A305A] mb-1 block">Status Audit</label>
+            <input
+              value={statusAudit}
+              onChange={e => setStatusAudit(e.target.value)}
+              placeholder="Ketik catatan manual (mis. keterangan error)..."
+              className="w-full rounded-xl px-3 py-2 border border-slate-200 bg-white text-sm text-[#5A305A] focus:outline-none focus:ring-1 focus:ring-[#5A305A]/30"
+            />
           </div>
           <div>
             <label className="text-xs font-semibold text-[#5A305A] mb-1 block">Kategori</label>
@@ -820,7 +986,7 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
 
           <div className="min-h-[380px] mt-3 flex flex-col justify-center">
           {activeTab === 'overview' && (loading ? (
-            <div className="text-center py-14 text-[#5A305A] text-sm">Memuat data...</div>
+            <LoadingState fullHeight={false} />
           ) : stats ? (
             <div className="flex max-lg:flex-col items-center gap-10 pl-8">
               <div className="shrink-0 space-y-3">
@@ -931,7 +1097,7 @@ function VendorTabContent({ loading, error, stats }: { loading: boolean; error: 
     return <div className="mb-3 p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 break-words">{error}</div>;
   }
   if (loading) {
-    return <div className="text-center py-14 text-[#5A305A] text-sm">Memuat data...</div>;
+    return <LoadingState fullHeight={false} />;
   }
 
   const rows = stats || [];
@@ -1024,7 +1190,7 @@ function KategoriTabContent({ loading, error, stats }: { loading: boolean; error
     return <div className="mb-3 p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 break-words">{error}</div>;
   }
   if (loading) {
-    return <div className="text-center py-14 text-[#5A305A] text-sm">Memuat data...</div>;
+    return <LoadingState fullHeight={false} />;
   }
 
   const rows = stats || [];
@@ -1109,7 +1275,7 @@ function KategoriTabContent({ loading, error, stats }: { loading: boolean; error
 
 export default function PiLocalPage() {
   useEffect(() => { document.title = 'PI Local · BeeHive'; }, []);
-  const { canEdit } = useAuth();
+  const { canEdit, user } = useAuth();
   const canEditPiLocal = canEdit('pi_local');
 
   const [rows, setRows] = useState<PiLocalRow[]>([]);
@@ -1157,9 +1323,11 @@ export default function PiLocalPage() {
   };
 
   const [dashboardOpen, setDashboardOpen] = useState(false);
+  const [addModalOpen, setAddModalOpen] = useState(false);
   const [previewTarget, setPreviewTarget] = useState<PreviewTarget | null>(null);
   const [openActionsRowId, setOpenActionsRowId] = useState<string | null>(null);
   const [editRow, setEditRow] = useState<PiLocalRow | null>(null);
+  const [logRow, setLogRow] = useState<PiLocalRow | null>(null);
   const [deleteConfirmRow, setDeleteConfirmRow] = useState<PiLocalRow | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -1170,8 +1338,9 @@ export default function PiLocalPage() {
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  // Debounce search text (Nomor PO / Vendor) -- tidak ada preseden di BunkerPage, ditambahkan
-  // khusus di sini karena tabel ini besar & terus bertambah dari automasi.
+  // Debounce search text (Nomor PO / Nomor Stock In / Vendor, 2026-09 nambah Nomor Stock In
+  // -- permintaan user) -- tidak ada preseden di BunkerPage, ditambahkan khusus di sini karena
+  // tabel ini besar & terus bertambah dari automasi.
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -1190,13 +1359,21 @@ export default function PiLocalPage() {
     let query = supabase.from('audit_po_pi_local_comp').select('*', { count: 'exact' }).order(sortBy, { ascending: sortDir === 'asc', nullsFirst: false });
     if (search.trim()) {
       const s = search.trim().replace(/[%,]/g, '');
-      query = query.or(`nomor_po.ilike.%${s}%,vendor_name.ilike.%${s}%`);
+      query = query.or(`nomor_po.ilike.%${s}%,nomor_stock_in.ilike.%${s}%,vendor_name.ilike.%${s}%`);
     }
     if (ptFilter) query = query.eq('nama_pt', ptFilter);
-    // .ilike (bukan .eq) -- 2026-09, sejak kolom `kategori` bisa berisi GABUNGAN beberapa
-    // kategori (dipisah " + ", lihat KategoriPicker mode multi), exact match akan gagal cocok
-    // ke baris yang kategori-nya digabung dgn kategori lain.
-    if (kategoriFilter) query = query.ilike('kategori', `%${kategoriFilter}%`);
+    if (kategoriFilter === NO_KATEGORI_SENTINEL) {
+      // Opsi "Tanpa Kategori" (2026-09, permintaan user) -- lihat catatan sama di AuditPoPage.tsx.
+      query = query.or('kategori.is.null,kategori.eq.');
+    } else if (kategoriFilter === HAS_KATEGORI_SENTINEL) {
+      // Opsi "Ada Kategori" (2026-09, permintaan user) -- lihat catatan sama di AuditPoPage.tsx.
+      query = query.not('kategori', 'is', null).neq('kategori', '');
+    } else if (kategoriFilter) {
+      // .ilike (bukan .eq) -- 2026-09, sejak kolom `kategori` bisa berisi GABUNGAN beberapa
+      // kategori (dipisah " + ", lihat KategoriPicker mode multi), exact match akan gagal cocok
+      // ke baris yang kategori-nya digabung dgn kategori lain.
+      query = query.ilike('kategori', `%${kategoriFilter}%`);
+    }
     if (dateFrom) query = query.gte('created_at', `${dateFrom}T00:00:00`);
     if (dateTo) query = query.lte('created_at', `${dateTo}T23:59:59`);
     const { data, error, count } = await query.range(startIndex, startIndex + pageSize - 1);
@@ -1220,12 +1397,19 @@ export default function PiLocalPage() {
     showToast('Perubahan berhasil disimpan.');
   };
 
+  const handleRowAdded = () => {
+    // Refetch (bukan prepend optimis) -- lihat catatan sama di AuditPoPage.tsx.
+    fetchList();
+    showToast('Data berhasil ditambahkan.');
+  };
+
   const openDeleteConfirm = (r: PiLocalRow) => { setDeleteConfirmRow(r); setDeleteError(null); };
 
   const confirmDelete = async () => {
     if (!deleteConfirmRow) return;
     setDeleting(true);
     setDeleteError(null);
+    await logAuditPoDelete(TABEL_NAME, deleteConfirmRow.id, user?.email, `${deleteConfirmRow.nomor_po || deleteConfirmRow.id} · ${deleteConfirmRow.vendor_name || '-'}`);
     const { error } = await deletePiLocalRow(deleteConfirmRow.id);
     setDeleting(false);
     if (error) {
@@ -1281,20 +1465,28 @@ export default function PiLocalPage() {
               >
                 <LayoutDashboard size={14} /> Dashboard
               </button>
+              {canEditPiLocal && (
+                <button
+                  onClick={() => setAddModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] font-semibold text-xs transition-all shrink-0"
+                >
+                  <Plus size={14} /> Tambah Data
+                </button>
+              )}
               <div className="flex items-center justify-end gap-2 flex-nowrap overflow-x-auto min-w-0 flex-1">
                 <div className="flex items-center gap-2 rounded-full pl-3.5 pr-3 py-1.5 border border-slate-200 bg-white shrink-0">
                   <Search size={13} className="text-[#5A305A]/50 shrink-0" />
                   <input
                     value={searchInput}
                     onChange={e => setSearchInput(e.target.value)}
-                    placeholder="Cari No PO / Vendor..."
+                    placeholder="Cari No PO / No Stock In / Vendor..."
                     className="border-0 bg-transparent text-xs text-[#5A305A] focus:outline-none w-28"
                   />
                 </div>
                 <select
                   value={ptFilter}
                   onChange={e => { setPtFilter(e.target.value); setPage(1); }}
-                  className="rounded-full px-3 py-2 border border-slate-200 bg-white text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer shrink-0"
+                  className="rounded-full px-3 py-2 border border-slate-200 bg-white text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer shrink-0 max-w-[160px]"
                 >
                   <option value="">Semua PT</option>
                   {ptOptions.map(pt => <option key={pt} value={pt}>{pt}</option>)}
@@ -1304,7 +1496,9 @@ export default function PiLocalPage() {
                   onChange={e => { setKategoriFilter(e.target.value); setPage(1); }}
                   className="rounded-full px-3 py-2 border border-slate-200 bg-white text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer shrink-0 max-w-[160px]"
                 >
-                  <option value="">Semua Kategori</option>
+                  <option value="">SEMUA KATEGORI</option>
+                  <option value={NO_KATEGORI_SENTINEL}>TANPA KATEGORI</option>
+                  <option value={HAS_KATEGORI_SENTINEL}>ADA KATEGORI</option>
                   {KATEGORI_OPTIONS.map(k => <option key={k} value={k}>{k}</option>)}
                 </select>
                 <div className="flex gap-1.5 items-center rounded-full pl-2.5 pr-1.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0">
@@ -1393,7 +1587,7 @@ export default function PiLocalPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {loadingList ? (
-                  <tr><td colSpan={9} className="text-center py-10 text-[#5A305A] text-sm">Memuat data...</td></tr>
+                  <LoadingTableRow colSpan={9} />
                 ) : rows.length === 0 ? (
                   <tr><td colSpan={9} className="text-center py-10 text-[#5A305A] text-sm italic">Belum ada data PI Local.</td></tr>
                 ) : (
@@ -1442,6 +1636,13 @@ export default function PiLocalPage() {
                                   <Trash2 size={10} /> Hapus
                                 </button>
                               )}
+                              <button
+                                onClick={() => { setLogRow(r); }}
+                                title="Riwayat Perubahan"
+                                className="w-full flex items-center gap-1 px-1.5 py-1 rounded-md border border-slate-200 bg-white text-[9px] font-semibold text-[#5A305A] hover:bg-slate-100 transition-colors"
+                              >
+                                <History size={10} /> Riwayat
+                              </button>
                               {r.url_pdf ? (
                                 <button
                                   onClick={() => {
@@ -1519,6 +1720,10 @@ export default function PiLocalPage() {
       <DashboardModal onClose={() => setDashboardOpen(false)} />
     )}
 
+    {addModalOpen && (
+      <AddPiLocalModal onClose={() => setAddModalOpen(false)} onAdded={handleRowAdded} />
+    )}
+
     {previewTarget && (
       <PreviewModal target={previewTarget} onClose={() => setPreviewTarget(null)} />
     )}
@@ -1534,6 +1739,16 @@ export default function PiLocalPage() {
         error={deleteError}
         onClose={() => setDeleteConfirmRow(null)}
         onConfirm={confirmDelete}
+      />
+    )}
+
+    {logRow && (
+      <AuditPoLogModal
+        tabel={TABEL_NAME}
+        recordId={logRow.id}
+        recordLabel={`${logRow.nomor_po || logRow.id} · ${logRow.vendor_name || '-'}`}
+        pageTitle="PI Local"
+        onClose={() => setLogRow(null)}
       />
     )}
     </>

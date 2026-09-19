@@ -2,12 +2,19 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
-import { ClipboardCheck, Search, RefreshCw, FileDown, FileText, Check, ChevronDown, Pencil, Trash2, X, ArrowUp, ArrowDown, ArrowUpDown, LayoutDashboard, CalendarDays, Download, Printer, FilterX } from 'lucide-react';
+import { ClipboardCheck, Search, RefreshCw, FileDown, FileText, Check, ChevronDown, Pencil, Trash2, X, ArrowUp, ArrowDown, ArrowUpDown, LayoutDashboard, CalendarDays, Download, Printer, FilterX, Plus, History } from 'lucide-react';
 import {
   formatDateTimeID, statusAuditMeta, updateAuditPoKategori, updateAuditPoRow, deleteAuditPoRow,
-  KATEGORI_OPTIONS, type AuditPoRow,
+  insertAuditPoRow, KATEGORI_OPTIONS, type AuditPoRow,
 } from '../utils/AuditPoHelpers';
+import { logAuditPoAudit, logAuditPoDelete } from '../utils/AuditPoLogHelpers';
 import Greeting from '../components/Greeting';
+import { LoadingState, LoadingTableRow } from '../components/LoadingState';
+import AuditPoLogModal from '../components/AuditPoLogModal';
+
+// Nama tabel Supabase (audit_po_ap_comp) DIPAKAI ULANG sbg konstanta lokal supaya tidak salah
+// ketik literal string ini berulang kali (log audit + modal Riwayat) -- lihat AuditPoLogHelpers.ts.
+const TABEL_NAME = 'audit_po_ap_comp';
 
 // ── Kontrak data (Supabase, diisi otomasi backend tiap 30 menit) ──
 // audit_po_ap_comp (1 baris = 1 hasil audit PO/vendor): id, created_at, nama_pt, nomor_po,
@@ -21,6 +28,16 @@ import Greeting from '../components/Greeting';
 // gagal -- bukan lagi daftar TETAP (2026-09, FIX bug "tidak semua nama PT tampil di filter" --
 // lihat `fetchDistinctNamaPt()`).
 const PT_OPTIONS = ['AMT', 'GMI', 'TTP', 'MJS', 'WSI', 'WNS', 'GENERAL'];
+
+// Sentinel value opsi "Tanpa Kategori" di dropdown filter Kategori (2026-09, permintaan user) --
+// string ini TIDAK PERNAH bentrok dengan nama kategori asli (KATEGORI_OPTIONS semua huruf
+// kapital tanpa underscore), dipakai murni sbg penanda di frontend, TIDAK PERNAH dikirim ke
+// Supabase sebagai nilai kategori (lihat cabang khusus di fetchList).
+const NO_KATEGORI_SENTINEL = '__NO_KATEGORI__';
+
+// Sentinel value opsi "Ada Kategori" di dropdown filter Kategori (2026-09, permintaan user) --
+// kebalikan NO_KATEGORI_SENTINEL, sama-sama MURNI penanda frontend.
+const HAS_KATEGORI_SENTINEL = '__HAS_KATEGORI__';
 
 // Ambil daftar `nama_pt` DISTINCT yang BENERAN ada di tabel (2026-09, FIX bug laporan user +
 // screenshot: dropdown filter "Semua PT" cuma menampilkan 7 nama hardcode `PT_OPTIONS`, PADAHAL
@@ -45,7 +62,12 @@ async function fetchDistinctNamaPt(table: string): Promise<string[]> {
 
 function StatusBadge({ status }: { status: string | null }) {
   const meta = statusAuditMeta(status);
-  return <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${meta.badgeClass}`}>{meta.label}</span>;
+  // `rounded-lg break-words` (BUKAN `rounded-full whitespace-nowrap`, 2026-09 fix) -- domain
+  // nilai `status_audit` di data production TERNYATA tidak selalu 2 nilai tetap "Selesai
+  // Diproses"/"Doc tidak terbaca" spt didokumentasikan, bisa jadi teks bebas panjang -- pill
+  // nowrap bikin teks panjang overflow keluar kolom & tidak kelihatan (laporan user +
+  // screenshot). Sama pola fix dgn `statusProsesMeta`/`StatusBadge` Accounting Rekap.
+  return <span className={`text-[10px] font-bold px-2 py-1 rounded-lg break-words ${meta.badgeClass}`}>{meta.label}</span>;
 }
 
 type SortKey = 'created_at' | 'nama_pt' | 'kategori';
@@ -74,8 +96,11 @@ function SortableHeader({ label, sortKey, activeSort, activeDir, onSort }: {
 }
 
 function PtBadge({ pt }: { pt: string | null }) {
+  // rounded-lg break-words (bukan rounded-full whitespace-nowrap) -- nama PT panjang harus enter
+  // ke bawah, bukan overflow keluar kolom (2026-09, permintaan user, sama pola dgn fix
+  // StatusBadge/Nomor PO/Vendor break-words di halaman ini).
   return (
-    <span className="text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap bg-slate-100 text-[#5A305A]">
+    <span className="text-[10px] font-bold px-2 py-1 rounded-lg break-words bg-slate-100 text-[#5A305A]">
       {pt || '-'}
     </span>
   );
@@ -247,13 +272,22 @@ function KategoriPicker({ value, onSelect, disabled, buttonLabel, widthClass = '
 // (2026-09) -- `KategoriPicker` sekarang menghitung arah buka sendiri via portal, lihat
 // komentar panjang di deklarasinya.
 function KategoriCell({ row, onChanged, canEdit }: { row: AuditPoRow; onChanged: (id: string, kategori: string | null) => void; canEdit: boolean }) {
+  const { user } = useAuth();
   const [saving, setSaving] = useState(false);
 
   const handleSelect = async (val: string) => {
     setSaving(true);
+    const oldVal = row.kategori;
     const { error } = await updateAuditPoKategori(row.id, val);
     setSaving(false);
-    if (!error) onChanged(row.id, val);
+    if (!error) {
+      onChanged(row.id, val);
+      if (oldVal !== val) {
+        logAuditPoAudit(TABEL_NAME, row.id, user?.email, [
+          { field_label: 'Kategori', old_value: oldVal, new_value: val },
+        ]);
+      }
+    }
   };
 
   if (!canEdit) {
@@ -271,7 +305,14 @@ function KategoriCell({ row, onChanged, canEdit }: { row: AuditPoRow; onChanged:
   );
 }
 
+// Label field utk "Riwayat Perubahan" -- key HARUS sama persis dgn key AuditPoEditableFields.
+const FIELD_LABELS: Record<string, string> = {
+  nama_pt: 'Nama PT', nomor_po: 'Nomor PO', vendor_name: 'Vendor',
+  status_audit: 'Status Audit', kategori: 'Kategori',
+};
+
 function EditAuditPoModal({ record, onClose, onSaved }: { record: AuditPoRow; onClose: () => void; onSaved: (row: AuditPoRow) => void }) {
+  const { user } = useAuth();
   const [namaPt, setNamaPt] = useState(record.nama_pt || '');
   const [nomorPo, setNomorPo] = useState(record.nomor_po || '');
   const [vendorName, setVendorName] = useState(record.vendor_name || '');
@@ -296,6 +337,11 @@ function EditAuditPoModal({ record, onClose, onSaved }: { record: AuditPoRow; on
       setError(err.message);
       return;
     }
+    // Log field yang BENAR-BENAR berubah saja -- lihat AuditPoLogHelpers.ts.
+    const changes = (Object.keys(updates) as (keyof typeof updates)[])
+      .filter(key => (record[key] ?? null) !== (updates[key] ?? null))
+      .map(key => ({ field_label: FIELD_LABELS[key], old_value: record[key], new_value: updates[key] }));
+    if (changes.length > 0) logAuditPoAudit(TABEL_NAME, record.id, user?.email, changes);
     onSaved({ ...record, ...updates });
     onClose();
   };
@@ -354,6 +400,116 @@ function EditAuditPoModal({ record, onClose, onSaved }: { record: AuditPoRow; on
               className="w-full rounded-xl px-3 py-2 border border-slate-200 bg-white text-sm text-[#5A305A] focus:outline-none focus:ring-1 focus:ring-[#5A305A]/30"
             />
             <p className="text-[10px] text-[#5A305A]/60 mt-1">Ketik bebas untuk catatan internal (mis. jenis error).</p>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-[#5A305A] mb-1 block">Kategori</label>
+            <KategoriPicker value={kategori || null} onSelect={setKategori} widthClass="w-full" />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 mt-6">
+          <button onClick={onClose} disabled={saving} className="py-2.5 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all disabled:opacity-50">
+            Batal
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="py-2.5 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-sm transition-all disabled:opacity-50"
+          >
+            {saving ? 'Menyimpan...' : 'Simpan'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Tombol "Tambah Data" toolbar (2026-09) -- input manual utk baris yang tidak lewat otomasi
+// backend (mis. dokumen yang gagal diproses AI). Beda dari EditAuditPoModal: nama_pt/nomor_po
+// DI SINI boleh diisi bebas (bukan disabled) krn baris manual belum py nilai otomasi apa pun
+// utk dikoreksi.
+function AddAuditPoModal({ onClose, onAdded }: { onClose: () => void; onAdded: (row: AuditPoRow) => void }) {
+  const [namaPt, setNamaPt] = useState('');
+  const [nomorPo, setNomorPo] = useState('');
+  const [vendorName, setVendorName] = useState('');
+  const [statusAudit, setStatusAudit] = useState('');
+  const [kategori, setKategori] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    const fields = {
+      nama_pt: namaPt.trim() || null,
+      nomor_po: nomorPo.trim() || null,
+      vendor_name: vendorName.trim() || null,
+      status_audit: statusAudit.trim() || null,
+      kategori: kategori || null,
+    };
+    const { data, error: err } = await insertAuditPoRow(fields);
+    setSaving(false);
+    if (err || !data) {
+      setError(err?.message || 'Gagal menyimpan data.');
+      return;
+    }
+    onAdded(data as AuditPoRow);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-11 h-11 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
+              <Plus size={18} />
+            </div>
+            <div className="min-w-0">
+              <h3 className="font-bold text-[#5A305A] leading-tight">Tambah Data Manual</h3>
+              <p className="text-xs text-[#5A305A]/70 mt-0.5">Audit AP Local</p>
+            </div>
+          </div>
+          <button onClick={onClose} disabled={saving} className="text-[#5A305A]/60 hover:text-[#5A305A] p-1 disabled:opacity-50"><X size={18} /></button>
+        </div>
+
+        {error && (
+          <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 break-words">{error}</div>
+        )}
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-semibold text-[#5A305A] mb-1 block">Nama PT</label>
+            <input
+              value={namaPt}
+              onChange={e => setNamaPt(e.target.value)}
+              className="w-full rounded-xl px-3 py-2 border border-slate-200 bg-white text-sm text-[#5A305A] focus:outline-none focus:ring-1 focus:ring-[#5A305A]/30"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-[#5A305A] mb-1 block">Nomor PO</label>
+            <input
+              value={nomorPo}
+              onChange={e => setNomorPo(e.target.value)}
+              className="w-full rounded-xl px-3 py-2 border border-slate-200 bg-white text-sm text-[#5A305A] focus:outline-none focus:ring-1 focus:ring-[#5A305A]/30"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-[#5A305A] mb-1 block">Vendor</label>
+            <input
+              value={vendorName}
+              onChange={e => setVendorName(e.target.value)}
+              className="w-full rounded-xl px-3 py-2 border border-slate-200 bg-white text-sm text-[#5A305A] focus:outline-none focus:ring-1 focus:ring-[#5A305A]/30"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-[#5A305A] mb-1 block">Status Audit</label>
+            <input
+              value={statusAudit}
+              onChange={e => setStatusAudit(e.target.value)}
+              placeholder="Ketik catatan manual (mis. keterangan error)..."
+              className="w-full rounded-xl px-3 py-2 border border-slate-200 bg-white text-sm text-[#5A305A] focus:outline-none focus:ring-1 focus:ring-[#5A305A]/30"
+            />
           </div>
           <div>
             <label className="text-xs font-semibold text-[#5A305A] mb-1 block">Kategori</label>
@@ -872,7 +1028,7 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
               rata tengah vertikal, bukan nempel atas. */}
           <div className="min-h-[380px] mt-3 flex flex-col justify-center">
           {activeTab === 'overview' && (loading ? (
-            <div className="text-center py-14 text-[#5A305A] text-sm">Memuat data...</div>
+            <LoadingState fullHeight={false} />
           ) : stats ? (
             <div className="flex max-lg:flex-col items-center gap-10 pl-8">
               <div className="shrink-0 space-y-3">
@@ -997,7 +1153,7 @@ function VendorTabContent({ loading, error, stats }: { loading: boolean; error: 
     return <div className="mb-3 p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 break-words">{error}</div>;
   }
   if (loading) {
-    return <div className="text-center py-14 text-[#5A305A] text-sm">Memuat data...</div>;
+    return <LoadingState fullHeight={false} />;
   }
   // `stats` cuma `null` sesaat sebelum fetch pertama selesai (loading sudah pasti true di titik
   // itu, jadi ditangkap cabang `loading` di atas) -- fallback array kosong murni jaga-jaga TS.
@@ -1107,7 +1263,7 @@ function KategoriTabContent({ loading, error, stats }: { loading: boolean; error
     return <div className="mb-3 p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 break-words">{error}</div>;
   }
   if (loading) {
-    return <div className="text-center py-14 text-[#5A305A] text-sm">Memuat data...</div>;
+    return <LoadingState fullHeight={false} />;
   }
 
   const rows = stats || [];
@@ -1192,7 +1348,7 @@ function KategoriTabContent({ loading, error, stats }: { loading: boolean; error
 
 export default function AuditPoPage() {
   useEffect(() => { document.title = 'Audit AP Local · BeeHive'; }, []);
-  const { canEdit } = useAuth();
+  const { canEdit, user } = useAuth();
   const canEditAuditPo = canEdit('audit_po');
 
   const [rows, setRows] = useState<AuditPoRow[]>([]);
@@ -1241,9 +1397,11 @@ export default function AuditPoPage() {
   };
 
   const [dashboardOpen, setDashboardOpen] = useState(false);
+  const [addModalOpen, setAddModalOpen] = useState(false);
   const [previewTarget, setPreviewTarget] = useState<PreviewTarget | null>(null);
   const [openActionsRowId, setOpenActionsRowId] = useState<string | null>(null);
   const [editRow, setEditRow] = useState<AuditPoRow | null>(null);
+  const [logRow, setLogRow] = useState<AuditPoRow | null>(null);
   const [deleteConfirmRow, setDeleteConfirmRow] = useState<AuditPoRow | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -1279,10 +1437,21 @@ export default function AuditPoPage() {
       query = query.or(`nomor_po.ilike.%${s}%,vendor_name.ilike.%${s}%`);
     }
     if (ptFilter) query = query.eq('nama_pt', ptFilter);
-    // .ilike (bukan .eq) -- 2026-09, sejak kolom `kategori` bisa berisi GABUNGAN beberapa
-    // kategori (dipisah " + ", lihat KategoriPicker mode multi), exact match akan gagal cocok
-    // ke baris yang kategori-nya digabung dgn kategori lain.
-    if (kategoriFilter) query = query.ilike('kategori', `%${kategoriFilter}%`);
+    if (kategoriFilter === NO_KATEGORI_SENTINEL) {
+      // Opsi "Tanpa Kategori" (2026-09, permintaan user) -- kolom kategori kosong bisa berupa
+      // NULL (belum pernah diisi) ATAU string kosong (pernah diisi lalu dikosongkan lewat
+      // KategoriPicker), jadi cek dua-duanya lewat .or().
+      query = query.or('kategori.is.null,kategori.eq.');
+    } else if (kategoriFilter === HAS_KATEGORI_SENTINEL) {
+      // Opsi "Ada Kategori" (2026-09, permintaan user) -- kebalikan "Tanpa Kategori": kategori
+      // TERISI, jadi BUKAN NULL dan BUKAN string kosong.
+      query = query.not('kategori', 'is', null).neq('kategori', '');
+    } else if (kategoriFilter) {
+      // .ilike (bukan .eq) -- 2026-09, sejak kolom `kategori` bisa berisi GABUNGAN beberapa
+      // kategori (dipisah " + ", lihat KategoriPicker mode multi), exact match akan gagal cocok
+      // ke baris yang kategori-nya digabung dgn kategori lain.
+      query = query.ilike('kategori', `%${kategoriFilter}%`);
+    }
     if (dateFrom) query = query.gte('created_at', `${dateFrom}T00:00:00`);
     if (dateTo) query = query.lte('created_at', `${dateTo}T23:59:59`);
     const { data, error, count } = await query.range(startIndex, startIndex + pageSize - 1);
@@ -1306,12 +1475,22 @@ export default function AuditPoPage() {
     showToast('Perubahan berhasil disimpan.');
   };
 
+  const handleRowAdded = () => {
+    // Refetch (bukan prepend optimis) -- baris baru harus lewat urutan sort/filter/pagination
+    // aktif yang SAMA seperti baris lain, supaya tidak "meloncat" ke posisi yang salah kalau
+    // sort/filter sedang tidak default.
+    fetchList();
+    showToast('Data berhasil ditambahkan.');
+  };
+
   const openDeleteConfirm = (r: AuditPoRow) => { setDeleteConfirmRow(r); setDeleteError(null); };
 
   const confirmDelete = async () => {
     if (!deleteConfirmRow) return;
     setDeleting(true);
     setDeleteError(null);
+    // Dicatat SEBELUM baris aslinya dihapus -- lihat catatan di AuditPoLogHelpers.ts.
+    await logAuditPoDelete(TABEL_NAME, deleteConfirmRow.id, user?.email, `${deleteConfirmRow.nomor_po || deleteConfirmRow.id} · ${deleteConfirmRow.vendor_name || '-'}`);
     const { error } = await deleteAuditPoRow(deleteConfirmRow.id);
     setDeleting(false);
     if (error) {
@@ -1367,6 +1546,14 @@ export default function AuditPoPage() {
               >
                 <LayoutDashboard size={14} /> Dashboard
               </button>
+              {canEditAuditPo && (
+                <button
+                  onClick={() => setAddModalOpen(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] font-semibold text-xs transition-all shrink-0"
+                >
+                  <Plus size={14} /> Tambah Data
+                </button>
+              )}
               <div className="flex items-center justify-end gap-2 flex-nowrap overflow-x-auto min-w-0 flex-1">
                 <div className="flex items-center gap-2 rounded-full pl-3.5 pr-3 py-1.5 border border-slate-200 bg-white shrink-0">
                   <Search size={13} className="text-[#5A305A]/50 shrink-0" />
@@ -1380,7 +1567,7 @@ export default function AuditPoPage() {
                 <select
                   value={ptFilter}
                   onChange={e => { setPtFilter(e.target.value); setPage(1); }}
-                  className="rounded-full px-3 py-2 border border-slate-200 bg-white text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer shrink-0"
+                  className="rounded-full px-3 py-2 border border-slate-200 bg-white text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer shrink-0 max-w-[160px]"
                 >
                   <option value="">Semua PT</option>
                   {ptOptions.map(pt => <option key={pt} value={pt}>{pt}</option>)}
@@ -1390,7 +1577,9 @@ export default function AuditPoPage() {
                   onChange={e => { setKategoriFilter(e.target.value); setPage(1); }}
                   className="rounded-full px-3 py-2 border border-slate-200 bg-white text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer shrink-0 max-w-[160px]"
                 >
-                  <option value="">Semua Kategori</option>
+                  <option value="">SEMUA KATEGORI</option>
+                  <option value={NO_KATEGORI_SENTINEL}>TANPA KATEGORI</option>
+                  <option value={HAS_KATEGORI_SENTINEL}>ADA KATEGORI</option>
                   {KATEGORI_OPTIONS.map(k => <option key={k} value={k}>{k}</option>)}
                 </select>
                 <div className="flex gap-1.5 items-center rounded-full pl-2.5 pr-1.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0">
@@ -1477,7 +1666,7 @@ export default function AuditPoPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {loadingList ? (
-                  <tr><td colSpan={8} className="text-center py-10 text-[#5A305A] text-sm">Memuat data...</td></tr>
+                  <LoadingTableRow colSpan={8} />
                 ) : rows.length === 0 ? (
                   <tr><td colSpan={8} className="text-center py-10 text-[#5A305A] text-sm italic">Belum ada data Audit AP Local.</td></tr>
                 ) : (
@@ -1528,6 +1717,13 @@ export default function AuditPoPage() {
                                   <Trash2 size={10} /> Hapus
                                 </button>
                               )}
+                              <button
+                                onClick={() => { setLogRow(r); }}
+                                title="Riwayat Perubahan"
+                                className="w-full flex items-center gap-1 px-1.5 py-1 rounded-md border border-slate-200 bg-white text-[9px] font-semibold text-[#5A305A] hover:bg-slate-100 transition-colors"
+                              >
+                                <History size={10} /> Riwayat
+                              </button>
                               {r.url_pdf ? (
                                 <button
                                   onClick={() => {
@@ -1605,6 +1801,10 @@ export default function AuditPoPage() {
       <DashboardModal onClose={() => setDashboardOpen(false)} />
     )}
 
+    {addModalOpen && (
+      <AddAuditPoModal onClose={() => setAddModalOpen(false)} onAdded={handleRowAdded} />
+    )}
+
     {previewTarget && (
       <PreviewModal target={previewTarget} onClose={() => setPreviewTarget(null)} />
     )}
@@ -1620,6 +1820,16 @@ export default function AuditPoPage() {
         error={deleteError}
         onClose={() => setDeleteConfirmRow(null)}
         onConfirm={confirmDelete}
+      />
+    )}
+
+    {logRow && (
+      <AuditPoLogModal
+        tabel={TABEL_NAME}
+        recordId={logRow.id}
+        recordLabel={`${logRow.nomor_po || logRow.id} · ${logRow.vendor_name || '-'}`}
+        pageTitle="Audit AP Local"
+        onClose={() => setLogRow(null)}
       />
     )}
     </>

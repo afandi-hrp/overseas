@@ -99,6 +99,14 @@ export async function updatePiLocalRow(id: string, updates: PiLocalEditableField
   return supabase.from('audit_po_pi_local_comp').update(updates).eq('id', id);
 }
 
+// Tambah 1 baris manual (tombol "Tambah Data" toolbar, 2026-09) -- lihat catatan sama di
+// AuditPoHelpers.ts (Audit AP Local). Semua 4 field identitas (nama_pt/nomor_po/nomor_sj/
+// nomor_stock_in) boleh diisi di sini walau read-only di modal Edit -- baris manual belum py
+// nilai otomasi sama sekali utk dikoreksi.
+export async function insertPiLocalRow(fields: PiLocalEditableFields) {
+  return supabase.from('audit_po_pi_local_comp').insert(fields).select().single();
+}
+
 // Hapus permanen 1 baris hasil audit -- dipakai tombol "Hapus" di kolom Aksi, selalu lewat modal
 // konfirmasi dulu (pola sama seperti confirmDelete di BunkerPage.tsx).
 export async function deletePiLocalRow(id: string) {

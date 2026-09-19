@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
 import { Landmark, X, Trash2, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import Greeting from '../components/Greeting';
+import { LoadingTableRow } from '../components/LoadingState';
 
 const BULAN_ID = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 
@@ -434,11 +435,7 @@ export default function KursBIPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
-                  <tr>
-                    <td colSpan={6} className="px-5 py-8 text-center text-sm text-[#5A305A]">
-                      Memuat data...
-                    </td>
-                  </tr>
+                  <LoadingTableRow colSpan={6} />
                 ) : history.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-5 py-8 text-center text-sm text-[#5A305A]">

@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
 import { Clock, ArrowUp, Tag, ChevronDown, ChevronUp, FileText, ChevronLeft, ChevronRight } from 'lucide-react';
 import Greeting from '../components/Greeting';
+import { LoadingTableRow } from '../components/LoadingState';
 
 const KATEGORI_OPTIONS = ['PPJK', 'FREIGHT', 'STORAGE', 'SURVEYOR', 'LOLO'];
 const SHIPMENT_TYPE_OPTIONS = ['', 'FCL', 'LCL', 'AIR', 'ALL'];
@@ -342,11 +343,7 @@ setDoubleChargeMultiplier('2');
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
-                  <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-sm text-[#5A305A]">
-                      Memuat data...
-                    </td>
-                  </tr>
+                  <LoadingTableRow colSpan={9} />
                 ) : filteredData.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="px-4 py-8 text-center text-sm text-[#5A305A]">

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Ship, Plus, Pencil, Trash2, X, Search } from 'lucide-react';
 import Greeting from '../components/Greeting';
+import { LoadingTableRow } from '../components/LoadingState';
 import { supabase } from '../lib/supabase';
 import { fetchMasterVessels, MasterVessel } from '../utils/ReportingHelpers';
 
@@ -125,7 +126,7 @@ export default function MasterVesselAdminPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
-                  <tr><td colSpan={8} className="text-center py-10 text-[#5A305A]">Memuat data...</td></tr>
+                  <LoadingTableRow colSpan={8} />
                 ) : error ? (
                   <tr><td colSpan={8} className="text-center py-10 text-red-600">{error}</td></tr>
                 ) : filteredRows.length === 0 ? (

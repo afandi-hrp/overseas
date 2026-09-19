@@ -1360,8 +1360,8 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     return (
       <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center h-full w-full">
         <div className="bg-white p-6 rounded-2xl shadow-xl">
-           <div className="animate-spin h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4"></div>
-           <p className="text-[#5A305A] font-medium">Memuat data dokumen...</p>
+           <div className="animate-spin h-8 w-8 border-4 border-[#5A305A]/20 border-t-[#5A305A] rounded-full mx-auto mb-4"></div>
+           <p className="text-[#5A305A] font-medium">Loading data...</p>
         </div>
       </div>
     );

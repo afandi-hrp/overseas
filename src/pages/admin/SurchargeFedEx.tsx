@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import { LoadingTableRow } from '../../components/LoadingState';
 import { useAuth } from '../../lib/AuthContext';
 
 export default function SurchargeFedEx() {
@@ -145,7 +146,7 @@ export default function SurchargeFedEx() {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td colSpan={8} className="text-center py-10 text-[#5A305A]">Loading...</td></tr>
+              <LoadingTableRow colSpan={8} />
             ) : filtered.length === 0 ? (
               <tr><td colSpan={8} className="text-center py-10 text-[#5A305A]">Data tidak ditemukan</td></tr>
             ) : (
