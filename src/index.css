@@ -62,6 +62,15 @@
   }
 }
 
+/* Percobaan zoom EKSTRA khusus halaman "Overseas Cost by Courier" (2026-09) SUDAH DICOBA &
+   DIBATALKAN atas permintaan user -- terbukti aktif secara teknis (0.81 lewat toggle class
+   `route-cost-by-courier` ke `<html>`, dikonfirmasi `getComputedStyle(document.documentElement)
+   .zoom` = '0.81'), TAPI user tetap merasa proporsinya tidak berubah dibanding sebelumnya
+   (kemungkinan selisih visual 90%->81% terlalu halus utk dirasakan). User minta dikembalikan ke
+   kondisi semula (halaman ini ikut rule zoom 90% GLOBAL biasa, TIDAK ada zoom tambahan apa pun)
+   -- JANGAN reintroduce pendekatan ini tanpa diminta ulang & tanpa kriteria sukses yang lebih
+   terukur (bukan cuma "kelihatan sama/beda" dari mata/foto). */
+
 @keyframes spin-slow {
   to { transform: rotate(360deg); }
 }

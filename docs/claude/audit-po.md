@@ -220,3 +220,46 @@ yang lain.
 - `src/utils/AccountingRekapHelpers.ts` — duplikasi pola `AuditPoHelpers.ts`.
 - **BELUM porting**: `KategoriPicker` (tidak relevan, tanpa kolom kategori), badge %
   Checklist/Cost Validation (tabel ini tidak py konsep itu spt Courier).
+
+## Skalabilitas >100rb baris — dropdown PT & modal Dashboard dipindah ke RPC (2026-09)
+
+Analisa (diminta user): list utama ke-4 halaman (Audit AP Local/Overseas, PI Local, Accounting
+Rekap) SUDAH server-side penuh (pagination `.range()`, search/filter `.ilike()`/`.eq()`/`.or()`
+dikirim ke Postgres) — aman di data besar. TAPI 2 pola berulang di ke-4 halaman TIDAK aman:
+dropdown filter PT (`fetchDistinctNamaPt`/`fetchDistinctPtInternal`) & tab "Per Vendor"/
+"Kategori" modal Dashboard (`fetchVendorStats`/`fetchKategoriStats`) — SEMUANYA fetch SELURUH
+baris tabel/rentang tanggal ke browser TANPA `.limit()`, lalu dedup/agregasi di JS. Di >100rb
+baris ini makin lambat & makin besar payload progresif.
+
+**Fix — 3 RPC baru + index (`sql/007_audit_po_distinct_and_stats_rpc.sql`, BELUM DIJALANKAN ke
+Supabase production — WAJIB dijalankan manual dulu)**:
+- `fn_reporting_distinct_pt(p_table text)` — `SELECT DISTINCT` nama PT di Postgres (bukan
+  dedup di JS), dispatch via `IF/ELSIF p_table = '...'` HARDCODE per tabel (BUKAN dynamic SQL —
+  cegah SQL injection lewat parameter tabel), guard `has_page_access` per tabel di tiap cabang.
+- `fn_reporting_vendor_stats(p_table text, p_from text, p_to text)` — `GROUP BY` nama PT/PT
+  internal di Postgres (status terisi, dalam rentang tanggal), balikin `{pt, cnt}` teragregasi
+  (biasanya ≤20-50 baris) — bukan ribuan baris mentah dihitung ulang di JS.
+- `fn_reporting_kategori_stats(p_table text, p_from text, p_to text)` — REPLIKA persis logic
+  `parseKategoriMulti()`/`KATEGORI_MULTI_SEPARATOR` (` + `) via `unnest(string_to_array(kategori,
+  ' + '))` + `GROUP BY` di Postgres (**kalau separator ini berubah di frontend, WAJIB
+  disinkronkan ke SQL function ini juga**). HANYA utk 3 tabel `audit_po_*` (Accounting Rekap
+  tidak punya kolom kategori).
+- Index tambahan (B-tree utk `created_at`/`nama_pt`/`pt_internal`, GIN `pg_trgm` utk kolom yang
+  dipakai `.ilike('%...%')`: `nomor_po`/`vendor_name`/`kategori`/`nomor_stock_in` di 3 tabel
+  `audit_po_*`, `nomor_po`/`vendor` Accounting Rekap, `no_po`/`vendor`/`kapal` Bunker) —
+  `.ilike()` wildcard-di-kedua-sisi SECARA STRUKTURAL tidak bisa memakai B-tree biasa secara
+  efisien, butuh trigram. `create extension if not exists pg_trgm;` disertakan di file SQL.
+
+**Frontend** — `fetchDistinctNamaPt`/`fetchDistinctPtInternal`/`fetchVendorStats`/
+`fetchKategoriStats` di KEEMPAT halaman (AuditPoPage.tsx, AuditPoOverseasPage.tsx,
+PiLocalPage.tsx, AccountingRekapPage.tsx) diganti dari `.select()` mentah jadi `supabase.rpc(...)`
+— signature/nama fungsi & shape hasil (`{pt,count}[]`/`{pt,cnt}`) TIDAK berubah dari sudut
+pandang caller (`ptOptions`/`vendorStats`/`kategoriStats` state & JSX pemakainya TIDAK disentuh),
+cuma isi implementasi fungsinya. Seed 0 ke `ptOptions` yang tidak muncul di hasil RPC (fitur
+"chart tetap tampil nama PT walau count 0") TETAP dihitung di client (data hasil RPC sudah
+teragregasi kecil, aman digabung manual).
+
+**BELUM dioptimasi (di luar cakupan analisa ini, TIDAK ditemukan di 5 halaman)**: Export Excel —
+tidak ada fitur ini sama sekali di Bunker/Audit AP Local/Overseas/PI Local/Accounting Rekap
+(beda dari modul Courier/Sea & Air yang punya). Bunker sendiri TIDAK kena masalah dropdown PT/
+Dashboard sama sekali (tidak punya keduanya) — cuma dapat tambahan index `pg_trgm` di atas.

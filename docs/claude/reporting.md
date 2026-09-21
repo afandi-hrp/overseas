@@ -263,3 +263,45 @@ modul — MINTA DIKONFIRMASI kalau mau diselesaikan.
 
 **Gap diketahui**: Weight Range breakpoint (0-5/5-25/25-70/70-150/>150) HARDCODE di
 `WEIGHT_RANGES`, belum ada UI utk mengubahnya; Conclusion box teksnya template string sederhana.
+
+## Skalabilitas >100rb baris — paginasi penuh & dropdown distinct via RPC (2026-09)
+
+Analisa (diminta user, sama pola sesi Audit AP sebelumnya): ke-3 halaman/tab (Dashboard, Cost per
+Vessel, Cost by Courier) TIDAK akan crash di data besar (semua fetch tetap dibatasi filter
+tanggal/periode), TAPI 2 masalah ditemukan & diperbaiki:
+
+1. **`fetchCourierRows()`/`fetchCourierYear()` (`ReportingCourierHelpers.ts`) — DULU
+   `.limit(20000)` TUNGGAL** — kalau `rekapan_courier` 1 tahun sudah >20rb baris, Supabase DIAM2
+   memotong ke 20.000 baris pertama TANPA error ke UI (silent truncation — SEMUA turunan
+   chart/kartu/Detail Data/export tahun itu jadi salah tanpa terlihat sbg bug). **Fix**: GANTI
+   jadi paginasi penuh via `.range()` per `COURIER_PAGE_SIZE=1000` berurutan (`order('id')` WAJIB
+   supaya urutan antar-halaman stabil) sampai halaman terakhir — SEMUA baris yang cocok filter
+   SELALU ter-fetch, apa pun jumlahnya, tidak ada lagi batas atas yang diam2 memotong.
+2. **Dropdown filter PT/PPJK/Origin (`fetchDistinctAn`/`fetchDistinctPpjk`/`fetchDistinctOrigin`,
+   `ReportingCourierHelpers.ts`) — DULU `.limit(5000)` baris MENTAH lalu dedup di JS** (limitnya
+   di baris mentah SEBELUM dedup, bukan 5000 nilai unik — PT/PPJK/Origin baru yang baru muncul di
+   baris ke-5001+ bisa diam2 tidak pernah tampil). **Fix**: RPC baru
+   `fn_reporting_courier_distinct(p_column)` (`sql/008_reporting_courier_distinct_rpc.sql`,
+   **BELUM DIJALANKAN ke Supabase production**) — `SELECT DISTINCT` di Postgres, tanpa limit
+   (volume nilai UNIK jauh lebih kecil dari jumlah baris tabel). Normalisasi "OWN X"->"X" (PPJK)
+   tetap dilakukan di client SETELAH terima hasil RPC (bisa menggabung 2 nilai distinct jadi 1,
+   perlu dedup Set ulang).
+3. **`buildCourierRows`/`buildSeaAirRows`/`buildBoronganRows`/`fetchAllocationRowsByMonths`
+   (`ReportingHelpers.ts`) — DULU 1 query polos TANPA `.limit()`/`.range()` sama sekali** (bukan
+   silent-wrong-data spt poin 1, TAPI berisiko lambat/timeout Supabase REST kalau 1
+   bulan/rentang periode sumbernya sudah puluhan-ratusan ribu baris — terutama tombol "Recompute"
+   yang baca 3 tabel sumber sekaligus per bulan). **Fix**: SEMUA 4 fungsi ini GANTI ke helper
+   generik `fetchAllPaginated()` (BARU, module-level di `ReportingHelpers.ts`) — paginasi
+   `.range()` per `REPORTING_PAGE_SIZE=1000` berurutan (`order('id')`), volume TOTAL yang ditarik
+   TIDAK berubah (tetap semua baris cocok filter), cuma dipecah jadi request lebih kecil supaya
+   tidak 1 request raksasa yang rawan timeout.
+
+**Index tambahan** (`sql/008_reporting_courier_distinct_rpc.sql`) — B-tree pada
+`rekapan_courier.tgl_terima_email`/`rekapan_courier.an` (filter+urut paginasi baru di atas).
+Index kolom lain (`rekapan_seaair.tgl`, `rekapan_far_overseas_air.invoice_date`,
+`reporting_cost_allocation.period_month`) **TIDAK DIKETAHUI status-nya dari kode frontend** —
+perlu verifikasi manual langsung di Supabase.
+
+`fetchMasterVessels()` (`master_vessel`, ~250 baris, diisi CRUD admin manual bukan otomasi
+backend) SENGAJA TIDAK disentuh — karakternya beda total dari tabel transaksi, fetch full-table
+tanpa limit aman selama tabel ini tetap berorde ratusan baris.

@@ -146,7 +146,7 @@ function Donut({ segments, centerLabel, centerValue }: { segments: { label: stri
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className="text-[9px] font-bold uppercase text-[#5A305A]/60">{centerLabel}</span>
-          <span className="text-sm font-black text-[#5A305A] text-center px-2 break-words">{centerValue}</span>
+          <span className="text-sm font-black text-center px-2 break-words" style={{ color: '#8A7415' }}>{centerValue}</span>
         </div>
       </div>
       <div className="flex-1 w-full space-y-2">
@@ -197,7 +197,7 @@ function ShipmentWeightBar({ data, shipmentColor, weightColor }: { data: { label
         <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: shipmentColor }} />Shipment</span>
       </div>
       <div className="flex" style={{ height: H }}>
-        <div className="w-10 flex flex-col justify-between text-right pr-1 text-[10px] text-[#5A305A]/60 shrink-0">
+        <div className="w-10 flex flex-col justify-between text-left text-[10px] text-[#5A305A]/60 shrink-0">
           {ticks.map(t => <span key={t}>{Math.round(leftMax * (4 - t) / 4).toLocaleString('id-ID')}</span>)}
         </div>
         <div className="flex-1 relative min-w-0">

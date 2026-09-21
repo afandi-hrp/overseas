@@ -325,8 +325,8 @@ function BunkerPreviewModal({ target, onClose }: { target: BunkerPreviewTarget; 
   }, [target.src, target.kind]);
 
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[95] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-[90vw] max-w-6xl h-[98vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[95] flex items-center justify-center p-2">
+      <div className="bg-white rounded-2xl shadow-2xl w-[97vw] max-w-[1600px] h-[99.5vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-200 shrink-0">
           <h3 className="font-bold text-[#5A305A] text-sm truncate">{target.title}</h3>
           <div className="flex items-center gap-1.5 shrink-0">

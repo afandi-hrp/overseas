@@ -29,16 +29,13 @@ const PT_OPTIONS = ['AMT', 'GMI', 'TTP', 'MJS', 'WSI', 'WNS', 'GENERAL'];
 // Ambil daftar `pt_internal` DISTINCT yang BENERAN ada di tabel (replika `fetchDistinctNamaPt()`
 // di AuditPoPage.tsx) -- dipakai DI 2 TEMPAT: dropdown filter panel utama, DAN seed daftar PT
 // di tab "Per Vendor" modal Dashboard.
+// RPC `fn_reporting_distinct_pt` (2026-09, `sql/007_audit_po_distinct_and_stats_rpc.sql`) --
+// GANTI dari `select('pt_internal')` tanpa `.limit()` -- lihat catatan lengkap di AuditPoPage.tsx.
 async function fetchDistinctPtInternal(table: string): Promise<string[]> {
-  const { data, error } = await supabase.from(table).select('pt_internal');
+  const { data, error } = await supabase.rpc('fn_reporting_distinct_pt', { p_table: table });
   if (error || !data) return PT_OPTIONS;
-  const set = new Set<string>();
-  data.forEach((r: any) => {
-    const pt = (r.pt_internal || '').trim();
-    if (pt) set.add(pt);
-  });
-  if (set.size === 0) return PT_OPTIONS;
-  return Array.from(set).sort();
+  const list = (data as { pt: string }[]).map(r => r.pt).filter(Boolean);
+  return list.length === 0 ? PT_OPTIONS : list;
 }
 
 function StatusBadge({ status }: { status: string | null }) {
@@ -315,8 +312,8 @@ function PreviewModal({ target, onClose }: { target: PreviewTarget; onClose: () 
   }, [target.src, target.kind]);
 
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-[90vw] max-w-6xl h-[98vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[90] flex items-center justify-center p-2">
+      <div className="bg-white rounded-2xl shadow-2xl w-[97vw] max-w-[1600px] h-[99.5vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-200 shrink-0">
           <h3 className="font-bold text-[#5A305A] text-sm truncate">{target.title}</h3>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -458,21 +455,23 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
     setStats({ total, bermasalah, sesuai: total - bermasalah });
   }, []);
 
+  // RPC `fn_reporting_vendor_stats` (2026-09) -- GANTI dari fetch SEMUA baris kolom
+  // `pt_internal` + hitung manual di JS, jadi GROUP BY di Postgres.
   const fetchVendorStats = useCallback(async (from: string, to: string) => {
     setVendorLoading(true);
     setVendorError(null);
-    const { data, error: fetchError } = await supabase.from('accounting_rekap_finance').select('pt_internal')
-      .not('status_proses', 'is', null)
-      .gte('created_at', `${from}T00:00:00`).lte('created_at', `${to}T23:59:59`);
+    const { data, error: fetchError } = await supabase.rpc('fn_reporting_vendor_stats', {
+      p_table: 'accounting_rekap_finance', p_from: from, p_to: to,
+    });
     setVendorLoading(false);
     if (fetchError) { setVendorError(fetchError.message); return; }
 
     const counts: Record<string, number> = {};
     ptOptions.filter(pt => pt !== 'GENERAL').forEach(pt => { counts[pt] = 0; });
-    (data || []).forEach((r: any) => {
-      const pt = (r.pt_internal || '').trim() || 'TIDAK DIKETAHUI';
+    (data as { pt: string; cnt: number }[] || []).forEach(r => {
+      const pt = r.pt || 'TIDAK DIKETAHUI';
       if (pt === 'GENERAL') return;
-      counts[pt] = (counts[pt] || 0) + 1;
+      counts[pt] = (counts[pt] || 0) + Number(r.cnt || 0);
     });
     const list = Object.entries(counts)
       .map(([pt, count]) => ({ pt, count }))

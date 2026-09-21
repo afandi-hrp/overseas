@@ -123,15 +123,39 @@ function pushDedupedRows(
   });
 }
 
+// ─── Paginasi PENUH via `.range()` (2026-09, GANTI dari fetch tunggal tanpa limit) -- versi lama
+// `buildCourierRows`/`buildSeaAirRows`/`buildBoronganRows`/`fetchAllocationRowsByMonths` fetch 1
+// query polos tanpa `.limit()`/`.range()` sama sekali -- TIDAK akan crash (PostgREST tetap
+// balikin SEMUA baris cocok default), TAPI kalau 1 bulan sumbernya sudah puluhan-ratusan ribu
+// baris, satu request itu bisa lambat/berisiko timeout Supabase REST. Fix generik: tarik per
+// halaman `PAGE_SIZE` via `.range()` berurutan sampai halaman terakhir (baris kembali <
+// PAGE_SIZE) -- volume TOTAL yang ditarik SAMA (tetap semua baris bulan itu, bukan dibatasi),
+// cuma dipecah jadi request lebih kecil supaya tidak 1 request raksasa yang rawan timeout. */
+const REPORTING_PAGE_SIZE = 1000;
+async function fetchAllPaginated<T>(buildQuery: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>): Promise<T[]> {
+  const rows: T[] = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await buildQuery(from, from + REPORTING_PAGE_SIZE - 1);
+    if (error) throw error;
+    const page = data || [];
+    rows.push(...page);
+    if (page.length < REPORTING_PAGE_SIZE) break;
+    from += REPORTING_PAGE_SIZE;
+  }
+  return rows;
+}
+
 // ─── Per-sumber: bangun baris alokasi utk 1 bulan ──────────────────────────
 
 async function buildCourierRows(monthStartStr: string, monthEndStr: string, masterList: MasterVessel[]): Promise<AllocationRow[]> {
-  const { data, error } = await supabase
+  const data = await fetchAllPaginated<any>((from, to) => supabase
     .from('rekapan_courier')
     .select('id, tgl_terima_email, vessel, awb, no_invoice, breakdown_courier_adm_vessel, breakdown_duty_vessel, breakdown_freight_vessel, breakdown_bm_vessel, breakdown_ppnpph_vessel')
     .gte('tgl_terima_email', monthStartStr)
-    .lt('tgl_terima_email', monthEndStr);
-  if (error) throw error;
+    .lt('tgl_terima_email', monthEndStr)
+    .order('id', { ascending: true })
+    .range(from, to));
 
   const rows: AllocationRow[] = [];
   (data || []).forEach((r: any) => {
@@ -175,12 +199,13 @@ function extractSeaAirVesselNames(poDetail: any): string[] {
 }
 
 async function buildSeaAirRows(monthStartStr: string, monthEndStr: string, masterList: MasterVessel[]): Promise<AllocationRow[]> {
-  const { data, error } = await supabase
+  const data = await fetchAllPaginated<any>((from, to) => supabase
     .from('rekapan_seaair')
     .select('id, tgl, shipment_type, po_detail, awb, no_invoice, duty_total, bm, ppn, pph, emkl_biaya, biaya_origin, biaya_destination, pbm_biaya, lift_off_biaya, inspeksi_biaya, handling_biaya, other_biaya')
     .gte('tgl', monthStartStr)
-    .lt('tgl', monthEndStr);
-  if (error) throw error;
+    .lt('tgl', monthEndStr)
+    .order('id', { ascending: true })
+    .range(from, to));
 
   const rows: AllocationRow[] = [];
   (data || []).forEach((r: any) => {
@@ -220,12 +245,13 @@ async function buildSeaAirRows(monthStartStr: string, monthEndStr: string, maste
 }
 
 async function buildBoronganRows(monthStartStr: string, monthEndStr: string, masterList: MasterVessel[]): Promise<AllocationRow[]> {
-  const { data, error } = await supabase
+  const data = await fetchAllPaginated<any>((from, to) => supabase
     .from('rekapan_far_overseas_air')
     .select('id, invoice_date, vessel_internal_note, total_amount, total_amount_idr, no_invoice, memo_title')
     .gte('invoice_date', monthStartStr)
-    .lt('invoice_date', monthEndStr);
-  if (error) throw error;
+    .lt('invoice_date', monthEndStr)
+    .order('id', { ascending: true })
+    .range(from, to));
 
   const rows: AllocationRow[] = [];
   (data || []).forEach((r: any) => {
@@ -309,9 +335,11 @@ export type YearMonth = { year: number; month: number }; // month 1-12
 export async function fetchAllocationRowsByMonths(pairs: YearMonth[]): Promise<any[]> {
   const monthStrs = Array.from(new Set(pairs.map(p => `${p.year}-${String(p.month).padStart(2, '0')}-01`)));
   if (monthStrs.length === 0) return [];
-  const { data, error } = await supabase.from('reporting_cost_allocation').select('*').in('period_month', monthStrs);
-  if (error) throw error;
-  return data || [];
+  return fetchAllPaginated<any>((from, to) => supabase
+    .from('reporting_cost_allocation').select('*')
+    .in('period_month', monthStrs)
+    .order('id', { ascending: true })
+    .range(from, to));
 }
 
 export const monthsOfYear = (year: number): YearMonth[] => Array.from({ length: 12 }, (_, i) => ({ year, month: i + 1 }));

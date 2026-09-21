@@ -129,20 +129,42 @@ export function weightRangeLabel(w: number): string {
   return (r || WEIGHT_RANGES[WEIGHT_RANGES.length - 1]).label;
 }
 
+// Paginasi PENUH via `.range()` (2026-09, GANTI dari `.limit(20000)` tunggal) -- limit keras
+// versi lama DIAM-DIAM memotong hasil ke 20.000 baris pertama kalau 1 tahun `rekapan_courier`
+// sudah lebih besar dari itu, TANPA error apa pun ke UI (silent truncation -- semua turunan
+// chart/kartu/export tahun itu jadi salah tanpa terlihat sbg bug). Fix: loop `.range()` per
+// 1000 baris sampai halaman terakhir (baris kembali < PAGE_SIZE) -- SELALU ambil SEMUA baris yg
+// cocok filter, apa pun jumlahnya, `.order('id')` WAJIB supaya urutan antar-halaman stabil
+// (tanpa order, PostgREST tidak menjamin urutan konsisten antar request `.range()` berbeda,
+// berisiko baris kelewat/dobel kalau ada INSERT baris baru di tengah proses paginasi).
+const COURIER_PAGE_SIZE = 1000;
 export async function fetchCourierRows(start: string, end: string, anFilter: Set<string>): Promise<CourierRow[]> {
-  let q = supabase.from('rekapan_courier').select(COURIER_ROW_SELECT)
-    .gte('tgl_terima_email', start).lte('tgl_terima_email', end);
-  if (anFilter.size > 0) q = q.in('an', Array.from(anFilter));
-  const { data, error } = await q.limit(20000);
-  if (error) throw error;
-  return (data || []) as unknown as CourierRow[];
+  const rows: CourierRow[] = [];
+  let from = 0;
+  for (;;) {
+    let q = supabase.from('rekapan_courier').select(COURIER_ROW_SELECT)
+      .gte('tgl_terima_email', start).lte('tgl_terima_email', end)
+      .order('id', { ascending: true });
+    if (anFilter.size > 0) q = q.in('an', Array.from(anFilter));
+    const { data, error } = await q.range(from, from + COURIER_PAGE_SIZE - 1);
+    if (error) throw error;
+    const page = (data || []) as unknown as CourierRow[];
+    rows.push(...page);
+    if (page.length < COURIER_PAGE_SIZE) break;
+    from += COURIER_PAGE_SIZE;
+  }
+  return rows;
 }
 
+// RPC `fn_reporting_courier_distinct` (2026-09, `sql/008_reporting_courier_distinct_rpc.sql`) --
+// GANTI dari `select('an')...limit(5000)` (dedup di JS SETELAH dipotong 5000 baris MENTAH --
+// bukan 5000 nilai unik, jadi PPJK/Origin/PT baru yg baru muncul di baris ke-5001+ bisa diam2
+// TIDAK PERNAH tampil di dropdown) jadi `SELECT DISTINCT` di Postgres (SATU-SATUNYA sumber
+// kebenaran, tidak ada limit -- volume nilai UNIK jauh lebih kecil dari jumlah baris tabel).
 export async function fetchDistinctAn(): Promise<string[]> {
-  const { data } = await supabase.from('rekapan_courier').select('an').not('an', 'is', null).limit(5000);
-  const set = new Set<string>();
-  (data || []).forEach((d: any) => { const v = (d.an || '').trim(); if (v) set.add(v); });
-  return Array.from(set).sort();
+  const { data, error } = await supabase.rpc('fn_reporting_courier_distinct', { p_column: 'an' });
+  if (error || !data) return [];
+  return (data as { val: string }[]).map(r => r.val).filter(Boolean);
 }
 
 // PPJK "OWN FEDEX"/"OWN DHL" -> "FEDEX"/"DHL" (2026-09, permintaan user) -- data punya prefix
@@ -155,16 +177,18 @@ export function normalizePpjk(raw: any): string {
 }
 
 export async function fetchDistinctPpjk(): Promise<string[]> {
-  const { data } = await supabase.from('rekapan_courier').select('ppjk').not('ppjk', 'is', null).limit(5000);
+  const { data, error } = await supabase.rpc('fn_reporting_courier_distinct', { p_column: 'ppjk' });
+  if (error || !data) return [];
+  // Normalisasi "OWN X"->"X" bisa menggabung 2 nilai distinct Postgres jadi 1 -- dedup ULANG di
+  // client via Set setelah normalisasi (RPC sendiri sudah distinct di level nilai MENTAH).
   const set = new Set<string>();
-  (data || []).forEach((d: any) => { const v = normalizePpjk(d.ppjk); if (v) set.add(v); });
+  (data as { val: string }[]).forEach(r => { const v = normalizePpjk(r.val); if (v) set.add(v); });
   return Array.from(set).sort();
 }
 export async function fetchDistinctOrigin(): Promise<string[]> {
-  const { data } = await supabase.from('rekapan_courier').select('origin').not('origin', 'is', null).limit(5000);
-  const set = new Set<string>();
-  (data || []).forEach((d: any) => { const v = (d.origin || '').trim(); if (v) set.add(v); });
-  return Array.from(set).sort();
+  const { data, error } = await supabase.rpc('fn_reporting_courier_distinct', { p_column: 'origin' });
+  if (error || !data) return [];
+  return (data as { val: string }[]).map(r => r.val).filter(Boolean);
 }
 
 // Fetch 1 tahun penuh sekaligus (dipakai state `yearsData` di halaman, cache per tahun supaya

@@ -48,16 +48,15 @@ const HAS_KATEGORI_SENTINEL = '__HAS_KATEGORI__';
 // DI 2 TEMPAT: dropdown filter panel utama, DAN seed daftar PT di tab "Per Vendor" modal
 // Dashboard (supaya PT yang jarang/baru tetap ikut tampil sbg batang 0 kalau rentang tanggal
 // tidak py dokumen bermasalah utk PT itu, bukan cuma PT dari `PT_OPTIONS` lama).
+// RPC `fn_reporting_distinct_pt` (2026-09, `sql/007_audit_po_distinct_and_stats_rpc.sql`) --
+// GANTI dari `select('nama_pt')` tanpa `.limit()` (narik SEMUA baris ke browser lalu dedup di
+// JS) -- di tabel >100rb baris versi lama makin lambat & makin besar payload seiring
+// pertumbuhan data. RPC ini DISTINCT+sort di Postgres, cuma balikin daftar nama PT unik.
 async function fetchDistinctNamaPt(table: string): Promise<string[]> {
-  const { data, error } = await supabase.from(table).select('nama_pt');
+  const { data, error } = await supabase.rpc('fn_reporting_distinct_pt', { p_table: table });
   if (error || !data) return PT_OPTIONS;
-  const set = new Set<string>();
-  data.forEach((r: any) => {
-    const pt = (r.nama_pt || '').trim();
-    if (pt) set.add(pt);
-  });
-  if (set.size === 0) return PT_OPTIONS;
-  return Array.from(set).sort();
+  const list = (data as { pt: string }[]).map(r => r.pt).filter(Boolean);
+  return list.length === 0 ? PT_OPTIONS : list;
 }
 
 function StatusBadge({ status }: { status: string | null }) {
@@ -669,8 +668,8 @@ function PreviewModal({ target, onClose }: { target: PreviewTarget; onClose: () 
   }, [target.src, target.kind]);
 
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-[90vw] max-w-6xl h-[98vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[90] flex items-center justify-center p-2">
+      <div className="bg-white rounded-2xl shadow-2xl w-[97vw] max-w-[1600px] h-[99.5vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-slate-200 shrink-0">
           <h3 className="font-bold text-[#5A305A] text-sm truncate">{target.title}</h3>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -840,14 +839,16 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
     setStats({ total, bermasalah, sesuai: total - bermasalah });
   }, []);
 
-  // Ambil kolom `nama_pt` SAJA (bukan `select('*')`) utk baris yang `status_audit` terisi dalam
-  // rentang tanggal -- dikelompokkan & dihitung di client.
+  // RPC `fn_reporting_vendor_stats` (2026-09) -- GANTI dari fetch SEMUA baris kolom `nama_pt`
+  // (bisa puluhan ribu baris kalau rentang tanggal lebar) + hitung manual di JS, jadi GROUP BY
+  // di Postgres, cuma balikin baris teragregasi (1 baris per nama PT + count). SATU-SATUNYA
+  // yang tetap dihitung di client: seed 0 utk `ptOptions` yang tidak muncul di hasil RPC.
   const fetchVendorStats = useCallback(async (from: string, to: string) => {
     setVendorLoading(true);
     setVendorError(null);
-    const { data, error: fetchError } = await supabase.from('audit_po_ap_comp').select('nama_pt')
-      .not('status_audit', 'is', null)
-      .gte('created_at', `${from}T00:00:00`).lte('created_at', `${to}T23:59:59`);
+    const { data, error: fetchError } = await supabase.rpc('fn_reporting_vendor_stats', {
+      p_table: 'audit_po_ap_comp', p_from: from, p_to: to,
+    });
     setVendorLoading(false);
     if (fetchError) { setVendorError(fetchError.message); return; }
 
@@ -855,20 +856,15 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
     // bernilai 0 dulu (2026-09, permintaan user "kalau datanya tidak ada, tetap munculkan
     // grafiknya, angkanya 0, nama PT-nya tetap muncul") -- supaya chart TETAP tampil dgn semua
     // nama PT yang BENERAN ada di data + batang setinggi 0, bukan "Tidak ada data" polos,
-    // biarpun rentang tanggal itu kosong/nol dokumen bermasalah. **BUKAN LAGI** `PT_OPTIONS`
-    // hardcode 7 nama (2026-09, FIX bug laporan user "Per Vendor belum sync nama PT" -- kalau
-    // ada PT baru/jarang di data, dulu tidak ikut ke-seed di sini, walau tetap muncul lewat loop
-    // hasil query di bawah SELAMA PT itu py minimal 1 baris bermasalah dalam rentang tanggal ini
-    // -- seed dari `ptOptions` memastikan tetap tampil 0 walau PT itu TIDAK py baris bermasalah
-    // sama sekali di rentang ini).
+    // biarpun rentang tanggal itu kosong/nol dokumen bermasalah.
     const counts: Record<string, number> = {};
     // "GENERAL" SENGAJA dikeluarkan dari chart ini (permintaan user 2026-09) -- bukan nama PT
     // spesifik, jadi tidak relevan ditampilkan sbg batang per-vendor.
     ptOptions.filter(pt => pt !== 'GENERAL').forEach(pt => { counts[pt] = 0; });
-    (data || []).forEach((r: any) => {
-      const pt = (r.nama_pt || '').trim() || 'TIDAK DIKETAHUI';
+    (data as { pt: string; cnt: number }[] || []).forEach(r => {
+      const pt = r.pt || 'TIDAK DIKETAHUI';
       if (pt === 'GENERAL') return;
-      counts[pt] = (counts[pt] || 0) + 1;
+      counts[pt] = (counts[pt] || 0) + Number(r.cnt || 0);
     });
     const list = Object.entries(counts)
       .map(([pt, count]) => ({ pt, count }))
@@ -876,27 +872,21 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
     setVendorStats(list);
   }, [ptOptions]);
 
-  // `kategori` bisa berisi GABUNGAN beberapa kategori (dipisah " + ") -- dipecah pakai
-  // `parseKategoriMulti()`, tiap bagian dihitung TERPISAH. TIDAK di-seed ke semua
-  // `KATEGORI_OPTIONS` (beda dari `fetchVendorStats` yg seed semua `PT_OPTIONS`) -- HANYA
-  // kategori yg BENERAN ada datanya yg ditampilkan (descending), sesuai referensi user.
+  // RPC `fn_reporting_kategori_stats` (2026-09) -- GANTI dari fetch SEMUA baris kolom `kategori`
+  // + `parseKategoriMulti()` di JS, jadi split (`unnest(string_to_array(...))`) + GROUP BY di
+  // Postgres -- REPLIKA logic pemisah " + " yang sama, TIDAK di-seed ke semua `KATEGORI_OPTIONS`
+  // (beda dari `fetchVendorStats` yg seed semua `PT_OPTIONS`), sesuai referensi user.
   const fetchKategoriStats = useCallback(async (from: string, to: string) => {
     setKategoriLoading(true);
     setKategoriError(null);
-    const { data, error: fetchError } = await supabase.from('audit_po_ap_comp').select('kategori')
-      .not('kategori', 'is', null)
-      .gte('created_at', `${from}T00:00:00`).lte('created_at', `${to}T23:59:59`);
+    const { data, error: fetchError } = await supabase.rpc('fn_reporting_kategori_stats', {
+      p_table: 'audit_po_ap_comp', p_from: from, p_to: to,
+    });
     setKategoriLoading(false);
     if (fetchError) { setKategoriError(fetchError.message); return; }
 
-    const counts: Record<string, number> = {};
-    (data || []).forEach((r: any) => {
-      parseKategoriMulti(r.kategori).forEach(k => {
-        counts[k] = (counts[k] || 0) + 1;
-      });
-    });
-    const list = Object.entries(counts)
-      .map(([pt, count]) => ({ pt, count }))
+    const list = (data as { kategori: string; cnt: number }[] || [])
+      .map(r => ({ pt: r.kategori, count: Number(r.cnt || 0) }))
       .sort((a, b) => b.count - a.count);
     setKategoriStats(list);
   }, []);
