@@ -182,21 +182,51 @@ function HBar({ data, color, formatValue = fmtIdr }: { data: { label: string; va
   );
 }
 
-// ─── Bar Shipment khusus Weight Range -- label "N Shipment / M Kg" (2026-09 revisi, butuh 2
-// angka sekaligus per baris, beda dari HBar generik yang cuma 1 angka). ─────────────────────────
-function ShipmentWeightBar({ data, color }: { data: { label: string; shipment: number; weight: number }[]; color: string }) {
-  const max = Math.max(1, ...data.map(d => d.shipment));
+// ─── Bar VERTIKAL Shipment x Weight, dual-axis, khusus Weight Range (2026-09 revisi, GANTI dari
+// single-series) -- 2 bar berdampingan per kategori: Shipment (sumbu kiri) & Weight (sumbu
+// kanan), skala independen masing2 supaya proporsional walau satuan beda jauh. ──────────────────
+function ShipmentWeightBar({ data, shipmentColor, weightColor }: { data: { label: string; shipment: number; weight: number }[]; shipmentColor: string; weightColor: string }) {
+  const H = 200;
+  const leftMax = Math.max(1, ...data.map(d => d.shipment)) * 1.15;
+  const rightMax = Math.max(1, ...data.map(d => d.weight)) * 1.15;
+  const ticks = [0, 1, 2, 3, 4];
   return (
-    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-      {data.map((d, i) => (
-        <div key={i} title={`${d.label}: ${d.shipment} Shipment / ${d.weight.toLocaleString('id-ID')} Kg`} className="flex items-center gap-2">
-          <span className="w-24 shrink-0 text-xs font-medium text-[#5A305A] truncate">{d.label}</span>
-          <div className="flex-1 h-3 rounded bg-slate-100 overflow-hidden min-w-0">
-            <div className="h-full rounded" style={{ width: `${Math.max(2, (d.shipment / max) * 100)}%`, backgroundColor: color }} />
-          </div>
-          <span className="w-36 shrink-0 text-right text-[11px] font-bold font-mono text-[#5A305A]">{d.shipment} Shipment / {d.weight.toLocaleString('id-ID')} Kg</span>
+    <div>
+      <div className="flex items-center gap-3 mb-2 text-[10px] font-bold text-[#5A305A]">
+        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: weightColor }} />Weight (Kg)</span>
+        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: shipmentColor }} />Shipment</span>
+      </div>
+      <div className="flex" style={{ height: H }}>
+        <div className="w-10 flex flex-col justify-between text-right pr-1 text-[10px] text-[#5A305A]/60 shrink-0">
+          {ticks.map(t => <span key={t}>{Math.round(leftMax * (4 - t) / 4).toLocaleString('id-ID')}</span>)}
         </div>
-      ))}
+        <div className="flex-1 relative min-w-0">
+          {ticks.map(t => <div key={t} className="absolute left-0 right-0 border-t border-slate-100" style={{ bottom: `${t * 25}%` }} />)}
+          <div className="absolute inset-0 flex items-end gap-1 px-1">
+            {data.map((d, i) => (
+              <div key={i} title={`${d.label}: ${d.shipment} Shipment / ${d.weight.toLocaleString('id-ID')} Kg`}
+                className="flex-1 flex items-end justify-center gap-1 h-full min-w-0">
+                <div className="w-full max-w-[16px] rounded-t relative" style={{ height: `${Math.max(2, (d.shipment / leftMax) * 100)}%`, backgroundColor: shipmentColor }}>
+                  <span className="absolute -top-4 left-1/2 -translate-x-1/2 text-[9px] font-bold text-[#5A305A] whitespace-nowrap">{d.shipment}</span>
+                </div>
+                <div className="w-full max-w-[16px] rounded-t relative" style={{ height: `${Math.max(2, (d.weight / rightMax) * 100)}%`, backgroundColor: weightColor }}>
+                  <span className="absolute -top-4 left-1/2 -translate-x-1/2 text-[9px] font-bold text-[#5A305A] whitespace-nowrap">{d.weight.toLocaleString('id-ID')}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="w-12 flex flex-col justify-between text-left pl-1 text-[10px] text-[#5A305A]/60 shrink-0">
+          {ticks.map(t => <span key={t}>{Math.round(rightMax * (4 - t) / 4).toLocaleString('id-ID')}</span>)}
+        </div>
+      </div>
+      <div className="flex mt-1">
+        <div className="w-10 shrink-0" />
+        <div className="flex-1 flex gap-1 px-1 min-w-0">
+          {data.map((d, i) => <span key={i} className="flex-1 text-center text-[10px] font-medium text-[#5A305A] truncate min-w-0">{d.label}</span>)}
+        </div>
+        <div className="w-12 shrink-0" />
+      </div>
     </div>
   );
 }
@@ -242,6 +272,12 @@ export default function ReportingCostByCourierPage() {
   // SAMA `ReportingCostPerVesselPage.tsx`. Bulan kosong = seluruh 12 bulan tahun terpilih.
   const [selectedYears, setSelectedYears] = useState<Set<number>>(new Set([today.getFullYear()]));
   const [selectedMonths, setSelectedMonths] = useState<Set<number>>(new Set([today.getMonth() + 1]));
+  // Dropdown Monthly/Quarterly/Yearly KHUSUS section "Trend & Performance" (2026-09 revisi,
+  // dipindah dari filter bar utama) -- SENGAJA state terpisah dari `periodMode` di atas, supaya
+  // ganti granularitas di sini TIDAK ikut mengubah Summary Cards/Breakdown/Cost Distribution/
+  // Detail Data (semua itu tetap pakai `periodMode`/`selectedPeriods` apa adanya).
+  const [trendPeriodMode, setTrendPeriodMode] = useState<PeriodMode>('MONTHLY');
+  const [trendOpen, setTrendOpen] = useState(true);
 
   const [anOptions, setAnOptions] = useState<string[]>([]);
   const [ppjkOptions, setPpjkOptions] = useState<string[]>([]);
@@ -362,20 +398,32 @@ export default function ReportingCostByCourierPage() {
     return segs;
   }, [ppjkTotalsAll, selectedPpjk, showZeroCost]);
 
-  // ─── Kolom periode (Trend & Data Performance, SATU sumber) -- ikut dropdown periode utama ─────
+  // `periodColumns` (ikut `periodMode` filter UTAMA, BUKAN `trendPeriodMode`) -- dipakai HANYA
+  // utk label rentang periode aktif (`activePeriodLabel`, judul Breakdown/nama file export),
+  // TIDAK terkait section "Trend & Performance" di bawah.
   const periodColumns: PeriodColumn[] = useMemo(() => buildPeriodColumns(selectedPeriods, periodMode), [selectedPeriods, periodMode]);
-  const periodColumnRows = useMemo(() => periodColumns.map(col => {
+
+  // ─── Kolom periode (Trend & Data Performance, SATU sumber) -- ikut `trendPeriodMode` KHUSUS
+  // section "Trend & Performance" (2026-09 revisi, TERPISAH dari `periodMode` filter utama) ─────
+  const trendPeriodColumns: PeriodColumn[] = useMemo(() => buildPeriodColumns(selectedPeriods, trendPeriodMode), [selectedPeriods, trendPeriodMode]);
+  const trendPeriodColumnRows = useMemo(() => trendPeriodColumns.map(col => {
     const rowsAll = rowsInMonthKeys(currentRows, col.monthKeys);
     const rows = selectedPpjk.size === 0 ? rowsAll : rowsAll.filter(r => selectedPpjk.has(normalizePpjk(r.ppjk)));
-    return { label: col.label, shipment: distinctAwbCount(rows), weight: distinctWeightTotal(rows), totalCost: rows.reduce((a, r) => a + Number(r.total_amount || 0), 0) };
-  }), [periodColumns, currentRows, selectedPpjk]);
+    const sums = zeroCourierSums();
+    rows.forEach(r => addCourierSums(sums, r));
+    return {
+      label: col.label, shipment: distinctAwbCount(rows), weight: distinctWeightTotal(rows),
+      totalCost: sums.totalCost, freight: sums.freight, courierAdm: sums.courierAdm, bm: sums.bm, ppnPph: sums.ppn + sums.pph,
+    };
+  }), [trendPeriodColumns, currentRows, selectedPpjk]);
 
-  const trendData = useMemo(() => periodColumnRows.map(c => ({ label: c.label, value: c.totalCost })), [periodColumnRows]);
+  const trendData = useMemo(() => trendPeriodColumnRows.map(c => ({ label: c.label, value: c.totalCost })), [trendPeriodColumnRows]);
 
-  // ─── Data Performance (SEKARANG selalu tampil, ikut dropdown periode utama -- 2026-09 revisi:
+  // ─── Data Performance (digabung ke section "Trend & Performance" tab By PPJK -- 2026-09 revisi:
   // GANTI dari fetch N-periode terpisah + tombol MTM/QTQ/YoY internal, SEKARANG reuse
-  // `periodColumnRows` yang sama dgn Trend chart, cuma 4 baris metrik) ──────────────────────────
+  // `trendPeriodColumnRows` yang sama dgn Trend chart, 8 baris metrik) ──────────────────────────
   const perfTotalShipment = awbNow, perfTotalWeight = weightNow;
+  const perfTotalFreight = sumsSelected.freight, perfTotalCourierAdm = sumsSelected.courierAdm, perfTotalBm = sumsSelected.bm, perfTotalPpnPph = sumsSelected.ppn + sumsSelected.pph;
 
   // ─── By PPJK detail ──────────────────────────────────────────────────────
   const byPpjkDetail: DetailRow[] = useMemo(() => {
@@ -504,11 +552,15 @@ export default function ReportingCostByCourierPage() {
     ws.addRow([]);
 
     styleHeaderRow(ws.addRow(['Data Performance']));
-    styleHeaderRow(ws.addRow(['Metric', ...periodColumnRows.map(c => c.label), 'Total']));
-    ws.addRow(['Shipment Growth %', ...periodColumnRows.map((c, i) => i === 0 ? '—' : `${pctOf(c.shipment, periodColumnRows[i - 1].shipment).toFixed(1)}%`), '—']);
-    ws.addRow(['Weight Growth %', ...periodColumnRows.map((c, i) => i === 0 ? '—' : `${pctOf(c.weight, periodColumnRows[i - 1].weight).toFixed(1)}%`), '—']);
-    ws.addRow(['Total Shipment (AWB)', ...periodColumnRows.map(c => c.shipment), perfTotalShipment]);
-    ws.addRow(['Total Weight (kg)', ...periodColumnRows.map(c => c.weight.toLocaleString('id-ID')), perfTotalWeight.toLocaleString('id-ID')]);
+    styleHeaderRow(ws.addRow(['Metric', ...trendPeriodColumnRows.map(c => c.label), 'Total']));
+    ws.addRow(['Shipment Growth %', ...trendPeriodColumnRows.map((c, i) => i === 0 ? '—' : `${pctOf(c.shipment, trendPeriodColumnRows[i - 1].shipment).toFixed(1)}%`), '—']);
+    ws.addRow(['Weight Growth %', ...trendPeriodColumnRows.map((c, i) => i === 0 ? '—' : `${pctOf(c.weight, trendPeriodColumnRows[i - 1].weight).toFixed(1)}%`), '—']);
+    ws.addRow(['Total Shipment (AWB)', ...trendPeriodColumnRows.map(c => c.shipment), perfTotalShipment]);
+    ws.addRow(['Total Weight (kg)', ...trendPeriodColumnRows.map(c => c.weight.toLocaleString('id-ID')), perfTotalWeight.toLocaleString('id-ID')]);
+    ws.addRow(['Total Freight', ...trendPeriodColumnRows.map(c => fmtIdr(c.freight)), fmtIdr(perfTotalFreight)]);
+    ws.addRow(['Total Courier Adm Fee', ...trendPeriodColumnRows.map(c => fmtIdr(c.courierAdm)), fmtIdr(perfTotalCourierAdm)]);
+    ws.addRow(['Total BM', ...trendPeriodColumnRows.map(c => fmtIdr(c.bm)), fmtIdr(perfTotalBm)]);
+    ws.addRow(['Total PPN+PPH', ...trendPeriodColumnRows.map(c => fmtIdr(c.ppnPph)), fmtIdr(perfTotalPpnPph)]);
     ws.addRow([]);
 
     styleHeaderRow(ws.addRow([activeDetailTitle]));
@@ -553,11 +605,6 @@ export default function ReportingCostByCourierPage() {
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-3 sticky top-0 z-20">
           <div className="flex flex-nowrap items-center gap-2.5 overflow-x-auto">
             <MultiSelect label="PT" options={anOptions.map(a => ({ value: a, text: a }))} selected={selectedAn} onChange={setSelectedAn} />
-            <select value={periodMode} onChange={e => setPeriodMode(e.target.value as PeriodMode)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-semibold text-[#5A305A]">
-              <option value="MONTHLY">Monthly</option>
-              <option value="QUARTERLY">Quarterly</option>
-              <option value="YEARLY">Yearly</option>
-            </select>
             <MultiSelect label="Year" options={yearOptions.map(y => ({ value: String(y), text: String(y) }))}
               selected={new Set(Array.from(selectedYears).map(String))} onChange={s => setSelectedYears(new Set(Array.from(s).map(Number)))} />
             <MultiSelect label="Month" options={MONTH_ABBR.map((m, i) => ({ value: String(i + 1), text: m }))}
@@ -578,7 +625,7 @@ export default function ReportingCostByCourierPage() {
         ) : (
           <div className="space-y-3">
             {/* A. 4 kartu ringkasan */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
               <SummaryCard
                 label={`Total Cost${ppjkSuffix}`}
                 value={fmtIdr(sumsSelected.totalCost)}
@@ -599,139 +646,158 @@ export default function ReportingCostByCourierPage() {
                 label="Shipment / PO (distinct)"
                 value={`${awbNow} shipment / ${poNow} PO`}
               />
+              {highestRangeBucket && (
+                <SummaryCard
+                  label="Highest Range (Shipment)"
+                  value={highestRangeBucket.name}
+                  sub={`${highestRangeBucket.shipment} shipment / ${highestRangeBucket.weight.toLocaleString('id-ID')} kg`}
+                />
+              )}
             </div>
 
-            {/* B. Breakdown Komponen Biaya -- list vertikal (2026-09 revisi, GANTI dari bar) */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
-              <p className="text-sm font-bold text-[#5A305A] mb-2">Breakdown Komponen Biaya{ppjkSuffix} ({activePeriodLabel})</p>
-              <div>
-                <ComponentLine label="Freight" value={sumsSelected.freight} prevValue={sumsPrevSelected.freight} compareLabel={comparePeriodLabel} />
-                <ComponentLine label="Courier Adm Fee" value={sumsSelected.courierAdm} prevValue={sumsPrevSelected.courierAdm} compareLabel={comparePeriodLabel} />
-                <ComponentLine label="BM" value={sumsSelected.bm} prevValue={sumsPrevSelected.bm} compareLabel={comparePeriodLabel} />
-                <ComponentLine label="PPN" value={sumsSelected.ppn} prevValue={sumsPrevSelected.ppn} compareLabel={comparePeriodLabel} />
-                <ComponentLine label="PPH" value={sumsSelected.pph} prevValue={sumsPrevSelected.pph} compareLabel={comparePeriodLabel} />
+            {/* B. Breakdown Komponen Biaya (kiri) + Cost Distribution (kanan) -- 2026-09 revisi,
+                GANTI dari sub-toggle 3 tombol PPJK/Origin/Weight Range di baris sendiri: dropdown
+                "Group by" sekarang di header panel Cost Distribution, HANYA mengganti Donut+Bar
+                chart & Detail Data di bawah -- Summary Cards/Breakdown/Trend&Performance TIDAK
+                ikut berubah. */}
+            <div className="grid grid-cols-1 xl:grid-cols-5 gap-3">
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 xl:col-span-2">
+                <p className="text-sm font-bold text-[#5A305A] mb-2">Breakdown Komponen Biaya{ppjkSuffix} ({activePeriodLabel})</p>
+                <div>
+                  <ComponentLine label="Freight" value={sumsSelected.freight} prevValue={sumsPrevSelected.freight} compareLabel={comparePeriodLabel} />
+                  <ComponentLine label="Courier Adm Fee" value={sumsSelected.courierAdm} prevValue={sumsPrevSelected.courierAdm} compareLabel={comparePeriodLabel} />
+                  <ComponentLine label="BM" value={sumsSelected.bm} prevValue={sumsPrevSelected.bm} compareLabel={comparePeriodLabel} />
+                  <ComponentLine label="PPN" value={sumsSelected.ppn} prevValue={sumsPrevSelected.ppn} compareLabel={comparePeriodLabel} />
+                  <ComponentLine label="PPH" value={sumsSelected.pph} prevValue={sumsPrevSelected.pph} compareLabel={comparePeriodLabel} />
+                </div>
+                <p className="text-xs text-[#5A305A] mt-3 pt-3 border-t border-slate-100">
+                  Total Cost: <span className="font-bold">{fmtIdr(sumsSelected.totalCost)}</span> · Excl PPN+PPH: <span className="font-bold">{fmtIdr(exclPpnPph(sumsSelected))}</span>
+                </p>
               </div>
-              <p className="text-xs text-[#5A305A] mt-3 pt-3 border-t border-slate-100">
-                Total Cost: <span className="font-bold">{fmtIdr(sumsSelected.totalCost)}</span> · Excl PPN+PPH: <span className="font-bold">{fmtIdr(exclPpnPph(sumsSelected))}</span>
-              </p>
-            </div>
 
-            {/* C. Data Performance -- SEKARANG selalu tampil (2026-09 revisi, dipindah keluar dari
-                tab By Weight Range), ikut dropdown periode utama, 4 baris metrik saja. */}
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 overflow-hidden">
-              <p className="text-sm font-bold text-[#5A305A] mb-3">Data Performance{ppjkSuffix}</p>
-              <div className="overflow-x-auto">
-                <table className="w-full text-[11px]">
-                  <thead>
-                    <tr className="text-[10px] text-[#5A305A]/70 uppercase border-b border-slate-200">
-                      <th className="text-left px-2 py-2 whitespace-nowrap">Metric</th>
-                      {periodColumnRows.map(c => <th key={c.label} className="text-right px-2 py-2 whitespace-nowrap">{c.label}</th>)}
-                      <th className="text-right px-2 py-2 whitespace-nowrap font-bold">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    <PerfRow label="Shipment Growth %" values={periodColumnRows.map((c, i) => i === 0 ? null : pctOf(c.shipment, periodColumnRows[i - 1].shipment))} isPct total={null} />
-                    <PerfRow label="Weight Growth %" values={periodColumnRows.map((c, i) => i === 0 ? null : pctOf(c.weight, periodColumnRows[i - 1].weight))} isPct total={null} />
-                    <PerfRow label="Total Shipment (AWB)" values={periodColumnRows.map(c => c.shipment)} total={perfTotalShipment} />
-                    <PerfRow label="Total Weight (kg)" values={periodColumnRows.map(c => c.weight)} total={perfTotalWeight} />
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* D. Sub-toggle */}
-            <div className="flex items-center gap-2">
-              {(['PPJK', 'ORIGIN', 'WEIGHT'] as ViewMode[]).map(v => (
-                <button key={v} onClick={() => setViewMode(v)}
-                  className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${viewMode === v ? 'bg-[#5A305A] text-white border-[#5A305A]' : 'bg-white text-[#5A305A] border-slate-200 hover:border-[#5A305A]'}`}>
-                  {v === 'PPJK' ? 'By PPJK' : v === 'ORIGIN' ? 'By Origin' : 'By Weight Range'}
-                </button>
-              ))}
-              <span className="text-[10px] text-[#5A305A]/50 ml-1">← hanya blok bawah yang berganti; Card, Breakdown & Data Performance di atas tetap</span>
-            </div>
-
-            {viewMode === 'PPJK' && (
-              <>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                  <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
-                    <p className="text-sm font-bold text-[#5A305A] mb-3">Cost Distribution by PPJK{ppjkSuffix}</p>
-                    {donutSegments.length === 0 ? <p className="text-xs text-slate-400 italic">No data.</p> : <Donut segments={donutSegments} centerLabel="Total" centerValue={fmtIdr(sumsAll.totalCost)} />}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 xl:col-span-3">
+                <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+                  <p className="text-sm font-bold text-[#5A305A]">Cost Distribution</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-[#5A305A]/60 font-medium whitespace-nowrap">Group by:</span>
+                    <select value={viewMode} onChange={e => setViewMode(e.target.value as ViewMode)}
+                      className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-semibold text-[#5A305A]">
+                      <option value="PPJK">PPJK</option>
+                      <option value="ORIGIN">Origin</option>
+                      <option value="WEIGHT">Weight Range</option>
+                    </select>
                   </div>
-                  <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
-                    <p className="text-sm font-bold text-[#5A305A] mb-3">Trend Cost{ppjkSuffix}</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-[11px] font-bold text-[#5A305A]/60 uppercase mb-2">Cost Distribution by {activeDetailNameLabel}</p>
+                    {viewMode === 'PPJK' && (donutSegments.length === 0
+                      ? <p className="text-xs text-slate-400 italic">No data.</p>
+                      : <Donut segments={donutSegments} centerLabel="Total" centerValue={fmtIdr(sumsAll.totalCost)} />)}
+                    {viewMode === 'ORIGIN' && (byOriginDetail.length === 0
+                      ? <p className="text-xs text-slate-400 italic">No data.</p>
+                      : <Donut segments={byOriginDetail.map((d, i) => ({ label: d.name, value: d.sums.totalCost, color: PPJK_COLORS[i % PPJK_COLORS.length] }))} centerLabel="Total" centerValue={fmtIdr(sumsSelected.totalCost)} />)}
+                    {viewMode === 'WEIGHT' && (weightBuckets.length === 0
+                      ? <p className="text-xs text-slate-400 italic">No data.</p>
+                      : <Donut segments={weightBuckets.map((b, i) => ({ label: b.name, value: b.sums.totalCost, color: PPJK_COLORS[i % PPJK_COLORS.length] }))} centerLabel="Total" centerValue={fmtIdr(weightBucketsFull.reduce((a, b) => a + b.sums.totalCost, 0))} />)}
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-bold text-[#5A305A]/60 uppercase mb-2">
+                      {viewMode === 'WEIGHT' ? 'Shipment & Weight' : `Total Cost by ${activeDetailNameLabel}`}
+                    </p>
+                    {viewMode === 'PPJK' && (byPpjkDetail.length === 0
+                      ? <p className="text-xs text-slate-400 italic">No data.</p>
+                      : <HBar data={byPpjkDetail.map(d => ({ label: d.name, value: d.sums.totalCost }))} color={ACCENT} />)}
+                    {viewMode === 'ORIGIN' && (byOriginDetail.length === 0
+                      ? <p className="text-xs text-slate-400 italic">No data.</p>
+                      : <HBar data={byOriginDetail.map(d => ({ label: d.name, value: d.sums.totalCost }))} color={ACCENT} />)}
+                    {viewMode === 'WEIGHT' && (
+                      <ShipmentWeightBar data={weightBuckets.map(b => ({ label: b.name, shipment: b.shipment, weight: b.weight }))} shipmentColor="#73507B" weightColor={ACCENT} />
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Detail Data -- ikut `viewMode`/dropdown "Group by" panel Cost Distribution di atas */}
+            <DetailTable title={activeDetailTitle} nameLabel={activeDetailNameLabel} rows={activeDetailRows} />
+            {viewMode === 'PPJK' && (
+              <ConclusionBox
+                title="By PPJK"
+                compareMode={compareMode} setCompareMode={setCompareMode}
+                compareLabel={conclusionCompareLabel}
+                text={`Total cost${ppjkSuffix} ${pctChangeTotal >= 0 ? 'naik' : 'turun'} ${Math.abs(pctChangeTotal).toFixed(1)}% (${fmtIdrSigned(sumsSelected.totalCost - sumsPrevSelected.totalCost)}) dibanding ${comparePeriodLabel}${selectedPpjk.size > 0 ? `, menyumbang ${pctSelectedOfAll.toFixed(1)}% dari seluruh biaya PPJK` : ''}. ${awbNow} shipment / ${poNow} PO distinct. Komponen terbesar: ${topComponent.label} (${fmtIdr(topComponent.value)}).`}
+              />
+            )}
+            {viewMode === 'ORIGIN' && (
+              <ConclusionBox
+                title="By Origin"
+                compareMode={compareMode} setCompareMode={setCompareMode}
+                compareLabel={conclusionCompareLabel}
+                text={`Origin terbesar: ${byOriginDetail[0]?.name || '-'} (${fmtIdr(byOriginDetail[0]?.sums.totalCost || 0)}, ${sumsSelected.totalCost > 0 ? ((byOriginDetail[0]?.sums.totalCost || 0) / sumsSelected.totalCost * 100).toFixed(1) : 0}% dari total${ppjkSuffix}). Total ${byOriginDetail.length} origin tercatat pada periode ini.`}
+              />
+            )}
+            {viewMode === 'WEIGHT' && (
+              <ConclusionBox
+                title="By Weight Range"
+                compareMode={compareMode} setCompareMode={setCompareMode}
+                compareLabel={conclusionCompareLabel}
+                text={`Rentang berat dominan: ${highestRangeBucket?.name || '-'} (${highestRangeBucket?.shipment || 0} shipment). Total cost seluruh rentang berat: ${fmtIdr(weightBucketsFull.reduce((a, b) => a + b.sums.totalCost, 0))}.`}
+              />
+            )}
+
+            {/* C. Trend & Performance -- panel gabungan (2026-09 revisi, GANTI dari 2 blok
+                terpisah: Trend Cost dulu di grid PPJK, Data Performance dulu selalu tampil di
+                luar tab). DIPINDAH keluar dari tab By PPJK -- SEKARANG SELALU tampil di sini,
+                TIDAK terkait sub-toggle PPJK/Origin/Weight Range di bawah sama sekali. Dropdown
+                Monthly/Quarterly/Yearly di sini KHUSUS panel ini (`trendPeriodMode`), TIDAK
+                mengubah Summary Cards/Breakdown/Cost Distribution/Detail Data. */}
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 overflow-hidden">
+              <button onClick={() => setTrendOpen(o => !o)} className="flex items-center justify-between w-full gap-3">
+                <span className="flex items-center gap-1.5 text-sm font-bold text-[#5A305A]">
+                  <ChevronDown size={16} className={`transition-transform ${trendOpen ? '' : '-rotate-90'}`} />
+                  Trend & Performance{ppjkSuffix}
+                </span>
+                <select value={trendPeriodMode} onClick={e => e.stopPropagation()} onChange={e => setTrendPeriodMode(e.target.value as PeriodMode)}
+                  className="border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-semibold text-[#5A305A]">
+                  <option value="MONTHLY">Monthly</option>
+                  <option value="QUARTERLY">Quarterly</option>
+                  <option value="YEARLY">Yearly</option>
+                </select>
+              </button>
+              {trendOpen && (
+                <div className="mt-3 space-y-4">
+                  <div>
+                    <p className="text-xs font-bold text-[#5A305A]/70 uppercase mb-2">Trend Cost</p>
                     <TrendLine data={trendData} color={ACCENT} />
                   </div>
-                </div>
-                <DetailTable title="Detail Data (By PPJK)" nameLabel="PPJK" rows={byPpjkDetail} />
-                <ConclusionBox
-                  title="By PPJK"
-                  compareMode={compareMode} setCompareMode={setCompareMode}
-                  compareLabel={conclusionCompareLabel}
-                  text={`Total cost${ppjkSuffix} ${pctChangeTotal >= 0 ? 'naik' : 'turun'} ${Math.abs(pctChangeTotal).toFixed(1)}% (${fmtIdrSigned(sumsSelected.totalCost - sumsPrevSelected.totalCost)}) dibanding ${comparePeriodLabel}${selectedPpjk.size > 0 ? `, menyumbang ${pctSelectedOfAll.toFixed(1)}% dari seluruh biaya PPJK` : ''}. ${awbNow} shipment / ${poNow} PO distinct. Komponen terbesar: ${topComponent.label} (${fmtIdr(topComponent.value)}).`}
-                />
-              </>
-            )}
-
-            {viewMode === 'ORIGIN' && (
-              <>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                  <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
-                    <p className="text-sm font-bold text-[#5A305A] mb-3">Cost Distribution by Origin{ppjkSuffix}</p>
-                    {byOriginDetail.length === 0 ? <p className="text-xs text-slate-400 italic">No data.</p> : (
-                      <Donut
-                        segments={byOriginDetail.map((d, i) => ({ label: d.name, value: d.sums.totalCost, color: PPJK_COLORS[i % PPJK_COLORS.length] }))}
-                        centerLabel="Total" centerValue={fmtIdr(sumsSelected.totalCost)}
-                      />
-                    )}
-                  </div>
-                  <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
-                    <p className="text-sm font-bold text-[#5A305A] mb-3">Total Cost by Origin{ppjkSuffix} (all origin)</p>
-                    {byOriginDetail.length === 0 ? <p className="text-xs text-slate-400 italic">No data.</p> : (
-                      <HBar data={byOriginDetail.map(d => ({ label: d.name, value: d.sums.totalCost }))} color={ACCENT} />
-                    )}
-                  </div>
-                </div>
-                <DetailTable title="Detail Data (By Origin)" nameLabel="Origin" rows={byOriginDetail} />
-                <ConclusionBox
-                  title="By Origin"
-                  compareMode={compareMode} setCompareMode={setCompareMode}
-                  compareLabel={conclusionCompareLabel}
-                  text={`Origin terbesar: ${byOriginDetail[0]?.name || '-'} (${fmtIdr(byOriginDetail[0]?.sums.totalCost || 0)}, ${sumsSelected.totalCost > 0 ? ((byOriginDetail[0]?.sums.totalCost || 0) / sumsSelected.totalCost * 100).toFixed(1) : 0}% dari total${ppjkSuffix}). Total ${byOriginDetail.length} origin tercatat pada periode ini.`}
-                />
-              </>
-            )}
-
-            {viewMode === 'WEIGHT' && (
-              <>
-                {highestRangeBucket && (
-                  <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 max-w-xs">
-                    <p className="text-[11px] font-semibold text-[#5A305A]/70">Highest Range (Shipment)</p>
-                    <p className="text-lg font-bold text-[#5A305A] mt-0.5">{highestRangeBucket.name}</p>
-                    <p className="text-[10px] text-[#5A305A]/50 mt-0.5">{highestRangeBucket.shipment} shipment / {highestRangeBucket.weight.toLocaleString('id-ID')} kg</p>
-                  </div>
-                )}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4">
-                  <p className="text-sm font-bold text-[#5A305A] mb-3">Shipment & Cost by Weight Range{ppjkSuffix}</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-[11px] font-bold text-[#5A305A]/60 uppercase mb-2">Cost</p>
-                      <HBar data={weightBuckets.map(b => ({ label: b.name, value: b.sums.totalCost }))} color={ACCENT} />
-                    </div>
-                    <div>
-                      <p className="text-[11px] font-bold text-[#5A305A]/60 uppercase mb-2">Shipment</p>
-                      <ShipmentWeightBar data={weightBuckets.map(b => ({ label: b.name, shipment: b.shipment, weight: b.weight }))} color="#73507B" />
+                  <div>
+                    <p className="text-xs font-bold text-[#5A305A]/70 uppercase mb-2">Data Performance</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-[11px]">
+                        <thead>
+                          <tr className="text-[10px] text-[#5A305A]/70 uppercase border-b border-slate-200">
+                            <th className="text-left px-2 py-2 whitespace-nowrap">Metric</th>
+                            {trendPeriodColumnRows.map(c => <th key={c.label} className="text-right px-2 py-2 whitespace-nowrap">{c.label}</th>)}
+                            <th className="text-right px-2 py-2 whitespace-nowrap font-bold">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          <PerfRow label="Shipment Growth %" values={trendPeriodColumnRows.map((c, i) => i === 0 ? null : pctOf(c.shipment, trendPeriodColumnRows[i - 1].shipment))} isPct total={null} />
+                          <PerfRow label="Weight Growth %" values={trendPeriodColumnRows.map((c, i) => i === 0 ? null : pctOf(c.weight, trendPeriodColumnRows[i - 1].weight))} isPct total={null} />
+                          <PerfRow label="Total Shipment (AWB)" values={trendPeriodColumnRows.map(c => c.shipment)} total={perfTotalShipment} />
+                          <PerfRow label="Total Weight (kg)" values={trendPeriodColumnRows.map(c => c.weight)} total={perfTotalWeight} />
+                          <PerfRow label="Total Freight" values={trendPeriodColumnRows.map(c => c.freight)} total={perfTotalFreight} isMoney />
+                          <PerfRow label="Total Courier Adm Fee" values={trendPeriodColumnRows.map(c => c.courierAdm)} total={perfTotalCourierAdm} isMoney />
+                          <PerfRow label="Total BM" values={trendPeriodColumnRows.map(c => c.bm)} total={perfTotalBm} isMoney />
+                          <PerfRow label="Total PPN+PPH" values={trendPeriodColumnRows.map(c => c.ppnPph)} total={perfTotalPpnPph} isMoney />
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 </div>
-                <DetailTable title="Detail Data (By Weight Range)" nameLabel="Weight Range" rows={weightBuckets} />
-                <ConclusionBox
-                  title="By Weight Range"
-                  compareMode={compareMode} setCompareMode={setCompareMode}
-                  compareLabel={conclusionCompareLabel}
-                  text={`Rentang berat dominan: ${highestRangeBucket?.name || '-'} (${highestRangeBucket?.shipment || 0} shipment). Total cost seluruh rentang berat: ${fmtIdr(weightBucketsFull.reduce((a, b) => a + b.sums.totalCost, 0))}.`}
-                />
-              </>
-            )}
+              )}
+            </div>
           </div>
         )}
       </main>
@@ -774,13 +840,17 @@ export default function ReportingCostByCourierPage() {
                     <thead>
                       <tr style={{ backgroundColor: '#5A305A' }} className="text-white">
                         <th className="text-left px-2 py-1.5">Metric</th>
-                        {periodColumnRows.map(c => <th key={c.label} className="text-right px-2 py-1.5 whitespace-nowrap">{c.label}</th>)}
+                        {trendPeriodColumnRows.map(c => <th key={c.label} className="text-right px-2 py-1.5 whitespace-nowrap">{c.label}</th>)}
                         <th className="text-right px-2 py-1.5 whitespace-nowrap">Total</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-[#5A305A]">
-                      <tr><td className="px-2 py-1.5">Total Shipment (AWB)</td>{periodColumnRows.map((c, i) => <td key={i} className="px-2 py-1.5 text-right font-mono">{c.shipment}</td>)}<td className="px-2 py-1.5 text-right font-mono">{perfTotalShipment}</td></tr>
-                      <tr><td className="px-2 py-1.5">Total Weight (kg)</td>{periodColumnRows.map((c, i) => <td key={i} className="px-2 py-1.5 text-right font-mono">{c.weight.toLocaleString('id-ID')}</td>)}<td className="px-2 py-1.5 text-right font-mono">{perfTotalWeight.toLocaleString('id-ID')}</td></tr>
+                      <tr><td className="px-2 py-1.5">Total Shipment (AWB)</td>{trendPeriodColumnRows.map((c, i) => <td key={i} className="px-2 py-1.5 text-right font-mono">{c.shipment}</td>)}<td className="px-2 py-1.5 text-right font-mono">{perfTotalShipment}</td></tr>
+                      <tr><td className="px-2 py-1.5">Total Weight (kg)</td>{trendPeriodColumnRows.map((c, i) => <td key={i} className="px-2 py-1.5 text-right font-mono">{c.weight.toLocaleString('id-ID')}</td>)}<td className="px-2 py-1.5 text-right font-mono">{perfTotalWeight.toLocaleString('id-ID')}</td></tr>
+                      <tr><td className="px-2 py-1.5">Total Freight</td>{trendPeriodColumnRows.map((c, i) => <td key={i} className="px-2 py-1.5 text-right font-mono">{fmtIdr(c.freight)}</td>)}<td className="px-2 py-1.5 text-right font-mono">{fmtIdr(perfTotalFreight)}</td></tr>
+                      <tr><td className="px-2 py-1.5">Total Courier Adm Fee</td>{trendPeriodColumnRows.map((c, i) => <td key={i} className="px-2 py-1.5 text-right font-mono">{fmtIdr(c.courierAdm)}</td>)}<td className="px-2 py-1.5 text-right font-mono">{fmtIdr(perfTotalCourierAdm)}</td></tr>
+                      <tr><td className="px-2 py-1.5">Total BM</td>{trendPeriodColumnRows.map((c, i) => <td key={i} className="px-2 py-1.5 text-right font-mono">{fmtIdr(c.bm)}</td>)}<td className="px-2 py-1.5 text-right font-mono">{fmtIdr(perfTotalBm)}</td></tr>
+                      <tr><td className="px-2 py-1.5">Total PPN+PPH</td>{trendPeriodColumnRows.map((c, i) => <td key={i} className="px-2 py-1.5 text-right font-mono">{fmtIdr(c.ppnPph)}</td>)}<td className="px-2 py-1.5 text-right font-mono">{fmtIdr(perfTotalPpnPph)}</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -862,7 +932,7 @@ function PreviewTable({ title, rows }: { title: string; rows: [string, string][]
 
 // ─── Detail table -- kolom SERAGAM utk By PPJK/Origin/Weight Range (2026-09 revisi):
 // Freight | Courier Adm Fee | BM | PPN | PPH | Total Cost | Total Excl. PPN+PPH | Shipment | PO
-function DetailTable({ title, nameLabel, rows }: { title: string; nameLabel: string; rows: DetailRow[] }) {
+function DetailTable({ title, nameLabel, rows, bare }: { title?: string; nameLabel: string; rows: DetailRow[]; bare?: boolean }) {
   const totalSums = zeroCourierSums();
   let totalShipment = 0, totalPo = 0;
   rows.forEach(r => {
@@ -871,8 +941,8 @@ function DetailTable({ title, nameLabel, rows }: { title: string; nameLabel: str
     totalShipment += r.shipment; totalPo += r.po;
   });
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 overflow-hidden">
-      <p className="text-sm font-bold text-[#5A305A] mb-3">{title}</p>
+    <div className={bare ? '' : 'bg-white rounded-2xl shadow-sm border border-slate-200 p-4 overflow-hidden'}>
+      {title && <p className="text-sm font-bold text-[#5A305A] mb-3">{title}</p>}
       <div className="overflow-x-auto">
         <table className="w-full text-[11px]">
           <thead>
@@ -930,12 +1000,13 @@ function DetailTable({ title, nameLabel, rows }: { title: string; nameLabel: str
   );
 }
 
-function PerfRow({ label, values, total, isPct }: {
-  label: string; values: (number | null)[]; total: number | null; isPct?: boolean;
+function PerfRow({ label, values, total, isPct, isMoney }: {
+  label: string; values: (number | null)[]; total: number | null; isPct?: boolean; isMoney?: boolean;
 }) {
   const fmt = (v: number | null) => {
     if (v === null) return '—';
     if (isPct) return `${v >= 0 ? '▲' : '▼'} ${Math.abs(v).toFixed(1)}%`;
+    if (isMoney) return fmtIdr(v);
     return v.toLocaleString('id-ID');
   };
   return (
