@@ -80,6 +80,11 @@ grant execute on function public.fn_reporting_vendor_stats(text, text, text) to 
 --    di JS, jadi split+GROUP BY di Postgres (`kategori` gabungan dipisah " + ", REPLIKA persis
 --    `KATEGORI_MULTI_SEPARATOR`/`parseKategoriMulti()` frontend -- kalau separator itu berubah
 --    di frontend, WAJIB disinkronkan ke sini juga).
+-- NOTE (fix): `RETURNS TABLE(kategori text, ...)` bikin PL/pgSQL otomatis membuat variabel
+-- keluaran bernama `kategori` -- referensi `kategori` polos di dalam query body jadi AMBIGU
+-- (bisa merujuk ke variabel keluaran ITU, atau ke kolom tabel `kategori`), muncul sbg error
+-- runtime `column reference "kategori" is ambiguous`. Fix: SEMUA referensi kolom `kategori`
+-- WAJIB diberi alias tabel eksplisit (`t.kategori`, bukan `kategori` polos).
 create or replace function public.fn_reporting_kategori_stats(p_table text, p_from text, p_to text)
 returns table(kategori text, cnt bigint)
 language plpgsql security definer stable as $$
@@ -87,23 +92,23 @@ begin
   if p_table = 'audit_po_ap_comp' then
     if not public.has_page_access('audit_po') then raise exception 'Not authorized'; end if;
     return query select trim(k) as kategori, count(*)::bigint as cnt
-      from public.audit_po_ap_comp, unnest(string_to_array(kategori, ' + ')) as k
-      where kategori is not null and trim(k) <> ''
-        and created_at >= (p_from || 'T00:00:00')::timestamptz and created_at <= (p_to || 'T23:59:59')::timestamptz
+      from public.audit_po_ap_comp t, unnest(string_to_array(t.kategori, ' + ')) as k
+      where t.kategori is not null and trim(k) <> ''
+        and t.created_at >= (p_from || 'T00:00:00')::timestamptz and t.created_at <= (p_to || 'T23:59:59')::timestamptz
       group by 1 order by cnt desc;
   elsif p_table = 'audit_po_apovs_comp' then
     if not public.has_page_access('audit_po_overseas') then raise exception 'Not authorized'; end if;
     return query select trim(k) as kategori, count(*)::bigint as cnt
-      from public.audit_po_apovs_comp, unnest(string_to_array(kategori, ' + ')) as k
-      where kategori is not null and trim(k) <> ''
-        and created_at >= (p_from || 'T00:00:00')::timestamptz and created_at <= (p_to || 'T23:59:59')::timestamptz
+      from public.audit_po_apovs_comp t, unnest(string_to_array(t.kategori, ' + ')) as k
+      where t.kategori is not null and trim(k) <> ''
+        and t.created_at >= (p_from || 'T00:00:00')::timestamptz and t.created_at <= (p_to || 'T23:59:59')::timestamptz
       group by 1 order by cnt desc;
   elsif p_table = 'audit_po_pi_local_comp' then
     if not public.has_page_access('pi_local') then raise exception 'Not authorized'; end if;
     return query select trim(k) as kategori, count(*)::bigint as cnt
-      from public.audit_po_pi_local_comp, unnest(string_to_array(kategori, ' + ')) as k
-      where kategori is not null and trim(k) <> ''
-        and created_at >= (p_from || 'T00:00:00')::timestamptz and created_at <= (p_to || 'T23:59:59')::timestamptz
+      from public.audit_po_pi_local_comp t, unnest(string_to_array(t.kategori, ' + ')) as k
+      where t.kategori is not null and trim(k) <> ''
+        and t.created_at >= (p_from || 'T00:00:00')::timestamptz and t.created_at <= (p_to || 'T23:59:59')::timestamptz
       group by 1 order by cnt desc;
   else
     raise exception 'Unknown table: %', p_table;

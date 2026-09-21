@@ -284,7 +284,9 @@ function KategoriCell({ row, onChanged, canEdit }: { row: AuditPoRow; onChanged:
       if (oldVal !== val) {
         logAuditPoAudit(TABEL_NAME, row.id, user?.email, [
           { field_label: 'Kategori', old_value: oldVal, new_value: val },
-        ]);
+        ]).then(({ error: logError }) => {
+          if (logError) console.error('logAuditPoAudit (Kategori) gagal:', logError);
+        });
       }
     }
   };
@@ -340,7 +342,11 @@ function EditAuditPoModal({ record, onClose, onSaved }: { record: AuditPoRow; on
     const changes = (Object.keys(updates) as (keyof typeof updates)[])
       .filter(key => (record[key] ?? null) !== (updates[key] ?? null))
       .map(key => ({ field_label: FIELD_LABELS[key], old_value: record[key], new_value: updates[key] }));
-    if (changes.length > 0) logAuditPoAudit(TABEL_NAME, record.id, user?.email, changes);
+    if (changes.length > 0) {
+      logAuditPoAudit(TABEL_NAME, record.id, user?.email, changes).then(({ error: logError }) => {
+        if (logError) console.error('logAuditPoAudit (Edit) gagal:', logError);
+      });
+    }
     onSaved({ ...record, ...updates });
     onClose();
   };
@@ -1480,7 +1486,8 @@ export default function AuditPoPage() {
     setDeleting(true);
     setDeleteError(null);
     // Dicatat SEBELUM baris aslinya dihapus -- lihat catatan di AuditPoLogHelpers.ts.
-    await logAuditPoDelete(TABEL_NAME, deleteConfirmRow.id, user?.email, `${deleteConfirmRow.nomor_po || deleteConfirmRow.id} · ${deleteConfirmRow.vendor_name || '-'}`);
+    const { error: logError } = await logAuditPoDelete(TABEL_NAME, deleteConfirmRow.id, user?.email, `${deleteConfirmRow.nomor_po || deleteConfirmRow.id} · ${deleteConfirmRow.vendor_name || '-'}`);
+    if (logError) console.error('logAuditPoDelete gagal:', logError);
     const { error } = await deleteAuditPoRow(deleteConfirmRow.id);
     setDeleting(false);
     if (error) {

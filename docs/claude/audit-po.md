@@ -112,7 +112,9 @@ infrastruktur tanpa logic spesifik per halaman.
   'audit_po_apovs_comp', 'audit_po_pi_local_comp']` + opsi dropdown "Audit AP Local/Overseas/PI
   Local" di filter "Module" Audit Trail global.
 
-**BELUM DIJALANKAN ke Supabase production — WAJIB dijalankan manual dulu**:
+**BELUM DIJALANKAN ke Supabase production — WAJIB dijalankan manual dulu** (SQL final ada di
+`sql/009_audit_po_audit_trail_policies.sql`, `drop policy if exists` dulu supaya aman
+dijalankan ulang):
 ```sql
 create policy "audit_trail_insert_audit_po_ap" on public.audit_trail
   for insert with check (tabel = 'audit_po_ap_comp' and public.has_edit_access('audit_po'));
@@ -129,6 +131,22 @@ create policy "audit_trail_insert_pi_local" on public.audit_trail
 create policy "audit_trail_select_pi_local" on public.audit_trail
   for select using (tabel = 'audit_po_pi_local_comp' and public.has_page_access('pi_local'));
 ```
+
+**Root cause dikonfirmasi (2026-09, laporan user "Riwayat Perubahan tidak tercatat" di ketiga
+halaman)**: 6 policy di atas TERNYATA belum pernah benar2 dijalankan sejak fitur ini dibuat
+(catatan "BELUM DIJALANKAN" di atas akurat, bukan basi) — insert ke `audit_trail` ditolak RLS.
+**Diperparah** oleh bug kedua di kode: `logAuditPoAudit(...)` (jalur Edit & ganti Kategori inline
+di ketiga halaman) dipanggil **tanpa `await`/tanpa cek hasil sama sekali** (fire-and-forget) —
+kalau insert-nya gagal, error hilang total tanpa jejak (tidak ada di console, tidak ada toast),
+padahal perubahan data utamanya (Edit/Kategori) sendiri tetap sukses tersimpan — sehingga gejala
+di layar user "semuanya normal" TAPI riwayatnya tidak pernah tercatat. **Fix kode**: SEMUA
+pemanggilan `logAuditPoAudit`/`logAuditPoDelete` di `AuditPoPage.tsx`/`AuditPoOverseasPage.tsx`/
+`PiLocalPage.tsx` (Edit, ganti Kategori inline, Hapus — 3 titik × 3 halaman = 9 titik total)
+SEKARANG selalu cek hasilnya & `console.error` kalau gagal — **kalau ada laporan serupa lagi ke
+depan, cek Console dulu (F12), sekarang errornya akan muncul di situ**. Belum ditambahkan toast
+ke user (murni console.error, konsisten pola `handleInlineSaveRow` Courier di
+`SharedDataTable.tsx` yang juga baru sebatas console.error) — kalau user minta notifikasi visual
+juga, itu perubahan terpisah.
 **BELUM DIVERIFIKASI**: apakah policy SELECT halaman Audit Trail global (page_key `audit_trail`)
 sudah cukup permisif baca SEMUA `tabel` atau di-scope ketat (kalau ketat, WAJIB tambah 1 policy
 SELECT lagi utk page_key `audit_trail`) — cek dulu kalau ada laporan "log tidak muncul di Audit
