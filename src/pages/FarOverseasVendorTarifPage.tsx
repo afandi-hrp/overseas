@@ -38,8 +38,17 @@ type QuotationDetail = {
   notes: string | null;
 };
 
-function groupKeyOf(q: Pick<Quotation, 'vendor_name' | 'jenis_layanan' | 'origin' | 'tujuan' | 'kategori_barang'>) {
-  return [q.vendor_name, q.jenis_layanan, q.origin, q.tujuan, q.kategori_barang || ''].join('||');
+// Level 1 (Card): vendor+origin+tujuan SAJA -- 1 card = 1 rute, TIDAK peduli jenis layanan
+// (2026-09, permintaan user "1 card per Vendor+Origin+Tujuan"). Level 2 (Sub-section, di
+// DALAM card): jenis_layanan(+kategori_barang, khusus Jianqiao Sea Freight yang py beberapa
+// tarif beda per kategori barang dalam jenis layanan yang sama -- TETAP dipisah sub-section
+// biar tidak nyampur 2 tarif berbeda, spek asli cuma sebut "jenis_layanan" tapi kategori_barang
+// perlu ikut supaya data tidak salah gabung).
+function routeKeyOf(q: Pick<Quotation, 'vendor_name' | 'origin' | 'tujuan'>) {
+  return [q.vendor_name, q.origin, q.tujuan].join('||');
+}
+function subKeyOf(q: Pick<Quotation, 'jenis_layanan' | 'kategori_barang'>) {
+  return [q.jenis_layanan, q.kategori_barang || ''].join('||');
 }
 
 function formatWeight(min: number, max: number | null) {
@@ -73,6 +82,57 @@ function addOneDay(dateStr: string) {
   return d.toISOString().slice(0, 10);
 }
 
+type HargaUnit = 'per_kg' | 'per_cbm' | 'per_cbm_range';
+
+type DetailForm = {
+  id: string | null;
+  berat_min: string;
+  berat_max: string;
+  hargaUnit: HargaUnit;
+  harga: string; // dipakai utk per_kg ATAU per_cbm (satu field, tergantung hargaUnit)
+  harga_per_cbm_min: string;
+  harga_per_cbm_max: string;
+  ppn_status: string;
+  notes: string;
+};
+
+function emptyDetailForm(): DetailForm {
+  return {
+    id: null, berat_min: '', berat_max: '',
+    hargaUnit: 'per_kg', harga: '',
+    harga_per_cbm_min: '', harga_per_cbm_max: '',
+    ppn_status: 'Non-PPN', notes: '',
+  };
+}
+
+// Dropdown satuan harga di form tambah/edit rentang berat (2026-09, GANTI dari checkbox
+// "Pakai Harga/CBM" + 2 field harga terpisah) -- 1 field angka harga + 1 dropdown satuan,
+// dgn opsi "Per CBM (Rentang Harga)" nampilin 2 field (Min/Max) MENGGANTIKAN field tunggal.
+function detailFormFromExisting(existing: QuotationDetail): DetailForm {
+  let hargaUnit: HargaUnit = 'per_kg';
+  let harga = '';
+  if (existing.harga_per_cbm_min != null || existing.harga_per_cbm_max != null) {
+    hargaUnit = 'per_cbm_range';
+  } else if (existing.harga_per_cbm != null) {
+    hargaUnit = 'per_cbm';
+    harga = String(existing.harga_per_cbm);
+  } else if (existing.harga_per_kg != null) {
+    hargaUnit = 'per_kg';
+    harga = String(existing.harga_per_kg);
+  }
+  return {
+    id: existing.id,
+    berat_min: String(existing.berat_min),
+    berat_max: existing.berat_max != null ? String(existing.berat_max) : '',
+    hargaUnit,
+    harga,
+    harga_per_cbm_min: existing.harga_per_cbm_min != null ? String(existing.harga_per_cbm_min) : '',
+    harga_per_cbm_max: existing.harga_per_cbm_max != null ? String(existing.harga_per_cbm_max) : '',
+    ppn_status: existing.ppn_status || 'Non-PPN',
+    notes: existing.notes || '',
+  };
+}
+
 export default function FarOverseasVendorTarifPage() {
   const { canEdit } = useAuth();
   const canEditVendorTarif = canEdit('settings_tarif_far_overseas_vendor');
@@ -88,11 +148,12 @@ export default function FarOverseasVendorTarifPage() {
   const [filterSearch, setFilterSearch] = useState('');
   const [showInactiveQuotations, setShowInactiveQuotations] = useState(false);
 
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [expandedRoutes, setExpandedRoutes] = useState<Set<string>>(new Set());
+  const [expandedSubGroups, setExpandedSubGroups] = useState<Set<string>>(new Set());
   const [expandedQuotations, setExpandedQuotations] = useState<Set<string>>(new Set());
 
-  // Pagination client-side atas daftar rute (grup) -- data quotation sudah di-fetch semua
-  // sekaligus, jadi paging cukup slice di JS spt versi lama halaman ini.
+  // Pagination client-side atas daftar rute (card level-atas) -- data quotation sudah di-fetch
+  // semua sekaligus, jadi paging cukup slice di JS spt versi lama halaman ini.
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
@@ -113,11 +174,7 @@ export default function FarOverseasVendorTarifPage() {
   const [qPeriodeMulai, setQPeriodeMulai] = useState('');
   const [qPeriodeSelesai, setQPeriodeSelesai] = useState('');
 
-  const [detailForms, setDetailForms] = useState<Record<string, {
-    id: string | null; berat_min: string; berat_max: string; harga_per_kg: string;
-    isCbmRange: boolean; harga_per_cbm: string; harga_per_cbm_min: string; harga_per_cbm_max: string;
-    ppn_status: string; notes: string;
-  } | null>>({});
+  const [detailForms, setDetailForms] = useState<Record<string, DetailForm | null>>({});
   const [savingDetailFor, setSavingDetailFor] = useState<string | null>(null);
 
   const showKategoriBarang = qVendorName === JIANQIAO_VENDOR_NAME && qJenisLayanan === 'Sea Freight';
@@ -168,11 +225,13 @@ export default function FarOverseasVendorTarifPage() {
 
   const activeVendors = useMemo(() => vendors.filter(v => v.aktif), [vendors]);
 
-  // Kelompokkan quotation per kombinasi vendor+jenis+origin+tujuan+kategori_barang -- 1 grup =
-  // 1 rute layanan, isinya riwayat periode (bisa >1 quotation kalau harga pernah berubah).
-  const groups = useMemo(() => {
+  // Grouping 2 level (2026-09, GANTI dari 1 level): Level 1 (Card) = vendor+origin+tujuan;
+  // Level 2 (Sub-section, DI DALAM card) = jenis_layanan(+kategori_barang). Tiap sub-group
+  // isinya riwayat periode (quotation) spt sebelumnya -- UI tabel detail/form tetap sama
+  // persis, cuma dibungkus 1 level lebih dalam.
+  const routeGroups = useMemo(() => {
     const q = filterSearch.trim().toLowerCase();
-    const map = new Map<string, Quotation[]>();
+    const routeMap = new Map<string, { key: string; head: Quotation; subMap: Map<string, Quotation[]> }>();
     for (const rec of quotations) {
       if (!showInactiveQuotations && !rec.aktif) continue;
       if (filterVendor !== 'semua' && rec.vendor_name !== filterVendor) continue;
@@ -180,13 +239,22 @@ export default function FarOverseasVendorTarifPage() {
         const hay = `${rec.origin} ${rec.tujuan} ${rec.jenis_layanan} ${rec.kategori_barang || ''}`.toLowerCase();
         if (!hay.includes(q)) continue;
       }
-      const key = groupKeyOf(rec);
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(rec);
+      const rKey = routeKeyOf(rec);
+      if (!routeMap.has(rKey)) routeMap.set(rKey, { key: rKey, head: rec, subMap: new Map() });
+      const route = routeMap.get(rKey)!;
+      const sKey = subKeyOf(rec);
+      if (!route.subMap.has(sKey)) route.subMap.set(sKey, []);
+      route.subMap.get(sKey)!.push(rec);
     }
-    const list = Array.from(map.entries()).map(([key, recs]) => {
-      recs.sort((a, b) => (b.periode_mulai || '').localeCompare(a.periode_mulai || ''));
-      return { key, recs, head: recs[0] };
+
+    const list = Array.from(routeMap.values()).map(route => {
+      const subGroups = Array.from(route.subMap.entries()).map(([key, recs]) => {
+        recs.sort((a, b) => (b.periode_mulai || '').localeCompare(a.periode_mulai || ''));
+        return { key, recs, head: recs[0] };
+      });
+      subGroups.sort((a, b) => a.head.jenis_layanan.localeCompare(b.head.jenis_layanan) || (a.head.kategori_barang || '').localeCompare(b.head.kategori_barang || ''));
+      const anyBerlaku = subGroups.some(sg => sg.recs.some(r => r.aktif && r.periode_selesai == null));
+      return { key: route.key, head: route.head, subGroups, anyBerlaku };
     });
     list.sort((a, b) => {
       const va = a.head.vendor_name.localeCompare(b.head.vendor_name);
@@ -204,15 +272,23 @@ export default function FarOverseasVendorTarifPage() {
     setPage(1);
   }, [filterVendor, filterSearch, showInactiveQuotations]);
 
-  const totalPages = Math.max(1, Math.ceil(groups.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(routeGroups.length / pageSize));
   const validPage = Math.min(page, totalPages);
-  const paginatedGroups = useMemo(() => {
+  const paginatedRoutes = useMemo(() => {
     const start = (validPage - 1) * pageSize;
-    return groups.slice(start, start + pageSize);
-  }, [groups, validPage]);
+    return routeGroups.slice(start, start + pageSize);
+  }, [routeGroups, validPage]);
 
-  const toggleGroup = (key: string) => {
-    setExpandedGroups(prev => {
+  const toggleRoute = (key: string) => {
+    setExpandedRoutes(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleSubGroup = (key: string) => {
+    setExpandedSubGroups(prev => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key); else next.add(key);
       return next;
@@ -339,22 +415,7 @@ export default function FarOverseasVendorTarifPage() {
   const openDetailForm = (quotationId: string, existing?: QuotationDetail) => {
     setDetailForms(prev => ({
       ...prev,
-      [quotationId]: existing ? {
-        id: existing.id,
-        berat_min: String(existing.berat_min),
-        berat_max: existing.berat_max != null ? String(existing.berat_max) : '',
-        harga_per_kg: existing.harga_per_kg != null ? String(existing.harga_per_kg) : '',
-        isCbmRange: existing.harga_per_cbm_min != null || existing.harga_per_cbm_max != null,
-        harga_per_cbm: existing.harga_per_cbm != null ? String(existing.harga_per_cbm) : '',
-        harga_per_cbm_min: existing.harga_per_cbm_min != null ? String(existing.harga_per_cbm_min) : '',
-        harga_per_cbm_max: existing.harga_per_cbm_max != null ? String(existing.harga_per_cbm_max) : '',
-        ppn_status: existing.ppn_status || 'Non-PPN',
-        notes: existing.notes || '',
-      } : {
-        id: null, berat_min: '', berat_max: '', harga_per_kg: '',
-        isCbmRange: false, harga_per_cbm: '', harga_per_cbm_min: '', harga_per_cbm_max: '',
-        ppn_status: 'Non-PPN', notes: '',
-      },
+      [quotationId]: existing ? detailFormFromExisting(existing) : emptyDetailForm(),
     }));
   };
 
@@ -376,10 +437,10 @@ export default function FarOverseasVendorTarifPage() {
         p_quotation_id: quotationId,
         p_berat_min: Number(form.berat_min),
         p_berat_max: form.berat_max !== '' ? Number(form.berat_max) : null,
-        p_harga_per_kg: form.harga_per_kg !== '' ? Number(form.harga_per_kg) : null,
-        p_harga_per_cbm: !form.isCbmRange && form.harga_per_cbm !== '' ? Number(form.harga_per_cbm) : null,
-        p_harga_per_cbm_min: form.isCbmRange && form.harga_per_cbm_min !== '' ? Number(form.harga_per_cbm_min) : null,
-        p_harga_per_cbm_max: form.isCbmRange && form.harga_per_cbm_max !== '' ? Number(form.harga_per_cbm_max) : null,
+        p_harga_per_kg: form.hargaUnit === 'per_kg' && form.harga !== '' ? Number(form.harga) : null,
+        p_harga_per_cbm: form.hargaUnit === 'per_cbm' && form.harga !== '' ? Number(form.harga) : null,
+        p_harga_per_cbm_min: form.hargaUnit === 'per_cbm_range' && form.harga_per_cbm_min !== '' ? Number(form.harga_per_cbm_min) : null,
+        p_harga_per_cbm_max: form.hargaUnit === 'per_cbm_range' && form.harga_per_cbm_max !== '' ? Number(form.harga_per_cbm_max) : null,
         p_ppn_status: form.ppn_status,
         p_notes: form.notes || null,
       });
@@ -473,7 +534,7 @@ export default function FarOverseasVendorTarifPage() {
             Tampilkan yang nonaktif juga
           </label>
           <div className="shrink-0 text-sm text-[#5A305A] font-medium whitespace-nowrap">
-            {groups.length} rute
+            {routeGroups.length} rute
           </div>
           {canEditVendorTarif && (
             <div className="shrink-0 ml-auto flex items-center gap-2">
@@ -493,199 +554,234 @@ export default function FarOverseasVendorTarifPage() {
           )}
         </div>
 
-        {/* List riwayat per rute */}
+        {/* List rute -- 1 card per Vendor+Origin+Tujuan, sub-section per Jenis Layanan */}
         <div className="space-y-3">
           {loading ? (
             <LoadingState fullHeight={false} />
-          ) : groups.length === 0 ? (
+          ) : routeGroups.length === 0 ? (
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center text-sm text-[#5A305A]">
               Tidak ada quotation ditemukan.
             </div>
           ) : (
-            paginatedGroups.map(({ key, recs, head }) => {
-              const isOpen = expandedGroups.has(key);
-              const activeRec = recs.find(r => r.aktif && r.periode_selesai == null) || recs[0];
+            paginatedRoutes.map(route => {
+              const isRouteOpen = expandedRoutes.has(route.key);
               return (
-                <div key={key} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                <div key={route.key} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                   <button
-                    onClick={() => toggleGroup(key)}
+                    onClick={() => toggleRoute(route.key)}
                     className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-slate-50/60 transition-colors text-left"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      {isOpen ? <ChevronDown size={16} className="text-[#5A305A] shrink-0" /> : <ChevronRightIcon size={16} className="text-[#5A305A] shrink-0" />}
+                      {isRouteOpen ? <ChevronDown size={16} className="text-[#5A305A] shrink-0" /> : <ChevronRightIcon size={16} className="text-[#5A305A] shrink-0" />}
                       <div className="min-w-0">
                         <div className="text-sm font-bold text-[#5A305A] truncate">
-                          {head.vendor_name} — {head.origin} → {head.tujuan}
+                          {route.head.vendor_name} — {route.head.origin} → {route.head.tujuan}
                         </div>
                         <div className="text-xs text-[#5A305A] font-light truncate">
-                          {head.jenis_layanan}{head.kategori_barang ? ` · ${head.kategori_barang}` : ''} · {recs.length} periode
+                          {route.subGroups.length} jenis layanan
                         </div>
                       </div>
                     </div>
                     <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${
-                      activeRec?.periode_selesai == null && activeRec?.aktif ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-[#5A305A]'
+                      route.anyBerlaku ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-[#5A305A]'
                     }`}>
-                      {activeRec?.periode_selesai == null && activeRec?.aktif ? 'Berlaku' : 'Semua ditutup'}
+                      {route.anyBerlaku ? 'Berlaku' : 'Semua ditutup'}
                     </span>
                   </button>
 
-                  {isOpen && (
-                    <div className="border-t border-slate-100 divide-y divide-slate-100">
-                      {recs.map(rec => {
-                        const isQuotationOpen = expandedQuotations.has(rec.id);
-                        const details = detailsByQuotation[rec.id] || [];
-                        const form = detailForms[rec.id];
-                        const isMasihBerlaku = rec.periode_selesai == null;
+                  {isRouteOpen && (
+                    <div className="border-t border-slate-100 divide-y divide-slate-100 bg-slate-50/40">
+                      {route.subGroups.map(sub => {
+                        const isSubOpen = expandedSubGroups.has(sub.key);
+                        const subBerlaku = sub.recs.some(r => r.aktif && r.periode_selesai == null);
                         return (
-                          <div key={rec.id} className={`px-4 py-3 ${!rec.aktif ? 'opacity-50' : ''}`}>
-                            <div className="flex items-center justify-between gap-3 flex-wrap">
-                              <button
-                                onClick={() => toggleQuotation(rec.id)}
-                                className="flex items-center gap-2 text-left"
-                              >
-                                {isQuotationOpen ? <ChevronDown size={14} className="text-[#5A305A]" /> : <ChevronRightIcon size={14} className="text-[#5A305A]" />}
+                          <div key={sub.key}>
+                            <button
+                              onClick={() => toggleSubGroup(sub.key)}
+                              className="w-full flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-slate-100/70 transition-colors text-left"
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                {isSubOpen ? <ChevronDown size={14} className="text-[#5A305A] shrink-0" /> : <ChevronRightIcon size={14} className="text-[#5A305A] shrink-0" />}
                                 <span className="text-sm font-semibold text-[#5A305A]">
-                                  {formatDateDMY(rec.periode_mulai)} {'->'} {rec.periode_selesai ? formatDateDMY(rec.periode_selesai) : 'Sekarang'}
+                                  {sub.head.jenis_layanan}{sub.head.kategori_barang ? ` · ${sub.head.kategori_barang}` : ''}
                                 </span>
-                                <span className="text-xs text-[#5A305A] font-light">({rec.mata_uang}, {details.length} rentang berat)</span>
-                                {!rec.aktif && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-[#5A305A]">Nonaktif</span>}
-                              </button>
-                              {canEditVendorTarif && rec.aktif && (
-                                <div className="flex items-center gap-2">
-                                  {isMasihBerlaku && (
-                                    <button
-                                      onClick={() => { openRenewQuotationModal(rec); }}
-                                      className="text-xs bg-[#5A305A]/5 hover:bg-[#5A305A]/10 text-[#5A305A] font-semibold px-2.5 py-1 rounded-lg transition-colors"
-                                    >
-                                      Update Harga (Buat Periode Baru)
-                                    </button>
-                                  )}
-                                  <button
-                                    onClick={() => openEditQuotationModal(rec)}
-                                    className="text-xs bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] font-medium px-2.5 py-1 rounded-lg transition-colors shadow-sm"
-                                  >
-                                    Edit Info
-                                  </button>
-                                  <button
-                                    onClick={() => handleNonaktifkanQuotation(rec.id)}
-                                    className="text-xs bg-white border border-slate-200 hover:bg-red-50 text-[#5A305A] hover:text-red-600 font-medium px-2.5 py-1 rounded-lg transition-colors shadow-sm"
-                                  >
-                                    Nonaktifkan
-                                  </button>
-                                </div>
-                              )}
-                            </div>
+                                <span className="text-xs text-[#5A305A] font-light">— {sub.recs.length} periode</span>
+                              </div>
+                              <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${
+                                subBerlaku ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-[#5A305A]'
+                              }`}>
+                                {subBerlaku ? 'Berlaku' : 'Semua ditutup'}
+                              </span>
+                            </button>
 
-                            {isQuotationOpen && (
-                              <div className="mt-3 ml-6">
-                                <div className="overflow-x-auto rounded-xl border border-slate-100">
-                                  <table className="w-full text-left border-collapse">
-                                    <thead>
-                                      <tr className="bg-slate-50 border-b border-slate-200">
-                                        <th className="px-3 py-2 text-[11px] font-bold text-[#5A305A] uppercase tracking-wider">Berat (Kg)</th>
-                                        <th className="px-3 py-2 text-[11px] font-bold text-[#5A305A] uppercase tracking-wider">Unit Price</th>
-                                        <th className="px-3 py-2 text-[11px] font-bold text-[#5A305A] uppercase tracking-wider">PPN</th>
-                                        <th className="px-3 py-2 text-[11px] font-bold text-[#5A305A] uppercase tracking-wider">Notes</th>
-                                        {canEditVendorTarif && <th className="px-3 py-2 text-[11px] font-bold text-[#5A305A] uppercase tracking-wider text-center">Aksi</th>}
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                      {details.length === 0 && !form ? (
-                                        <tr><td colSpan={5} className="px-3 py-4 text-center text-xs text-[#5A305A]">Belum ada rentang berat.</td></tr>
-                                      ) : details.map(d => (
-                                        <tr key={d.id} className="hover:bg-slate-50/50">
-                                          <td className="px-3 py-2 text-sm text-[#5A305A] font-mono whitespace-nowrap">{formatWeight(d.berat_min, d.berat_max)}</td>
-                                          <td className="px-3 py-2 text-sm text-[#5A305A] font-mono whitespace-nowrap">
-                                            {d.harga_per_kg != null
-                                              ? formatMoney(d.harga_per_kg, rec.mata_uang)
-                                              : (d.harga_per_cbm_min != null || d.harga_per_cbm_max != null)
-                                                ? `${formatMoney(d.harga_per_cbm_min, rec.mata_uang)} - ${formatMoney(d.harga_per_cbm_max, rec.mata_uang)} /CBM`
-                                                : d.harga_per_cbm != null ? `${formatMoney(d.harga_per_cbm, rec.mata_uang)} /CBM` : '-'}
-                                          </td>
-                                          <td className="px-3 py-2 text-sm text-[#5A305A] whitespace-nowrap">{d.ppn_status}</td>
-                                          <td className="px-3 py-2 text-sm text-[#5A305A]">{d.notes || '-'}</td>
-                                          {canEditVendorTarif && (
-                                            <td className="px-3 py-2 text-center">
-                                              <div className="flex items-center justify-center gap-2">
-                                                <button onClick={() => openDetailForm(rec.id, d)} className="text-xs bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] font-medium px-2 py-1 rounded transition-colors shadow-sm">Edit</button>
-                                                <button onClick={() => handleDeleteDetail(d.id)} className="text-xs bg-white border border-slate-200 hover:bg-red-50 text-[#5A305A] hover:text-red-600 font-medium px-2 py-1 rounded transition-colors shadow-sm">Hapus</button>
-                                              </div>
-                                            </td>
-                                          )}
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-
-                                {canEditVendorTarif && (
-                                  form ? (
-                                    <div className="mt-3 bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-3">
-                                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                        <div>
-                                          <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">Berat Min <span className="text-red-500">*</span></label>
-                                          <input type="number" step="any" value={form.berat_min} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, berat_min: e.target.value } }))} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
-                                        </div>
-                                        <div>
-                                          <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">Berat Max (kosongkan = "+")</label>
-                                          <input type="number" step="any" value={form.berat_max} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, berat_max: e.target.value } }))} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
-                                        </div>
-                                        <div>
-                                          <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">Harga / Kg</label>
-                                          <input type="number" step="any" value={form.harga_per_kg} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, harga_per_kg: e.target.value } }))} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm font-mono" />
-                                        </div>
-                                        <div>
-                                          <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">PPN</label>
-                                          <select value={form.ppn_status} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, ppn_status: e.target.value } }))} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm">
-                                            <option value="Non-PPN">Non-PPN</option>
-                                            <option value="PPN">PPN</option>
-                                          </select>
-                                        </div>
+                            {isSubOpen && (
+                              <div className="bg-white border-t border-slate-100 divide-y divide-slate-100">
+                                {sub.recs.map(rec => {
+                                  const isQuotationOpen = expandedQuotations.has(rec.id);
+                                  const details = detailsByQuotation[rec.id] || [];
+                                  const form = detailForms[rec.id];
+                                  const isMasihBerlaku = rec.periode_selesai == null;
+                                  return (
+                                    <div key={rec.id} className={`px-4 py-3 pl-8 ${!rec.aktif ? 'opacity-50' : ''}`}>
+                                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                                        <button
+                                          onClick={() => toggleQuotation(rec.id)}
+                                          className="flex items-center gap-2 text-left"
+                                        >
+                                          {isQuotationOpen ? <ChevronDown size={14} className="text-[#5A305A]" /> : <ChevronRightIcon size={14} className="text-[#5A305A]" />}
+                                          <span className="text-sm font-semibold text-[#5A305A]">
+                                            {formatDateDMY(rec.periode_mulai)} {'->'} {rec.periode_selesai ? formatDateDMY(rec.periode_selesai) : 'Sekarang'}
+                                          </span>
+                                          <span className="text-xs text-[#5A305A] font-light">({rec.mata_uang}, {details.length} rentang berat)</span>
+                                          {!rec.aktif && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-[#5A305A]">Nonaktif</span>}
+                                        </button>
+                                        {canEditVendorTarif && rec.aktif && (
+                                          <div className="flex items-center gap-2">
+                                            {isMasihBerlaku && (
+                                              <button
+                                                onClick={() => { openRenewQuotationModal(rec); }}
+                                                className="text-xs bg-[#5A305A]/5 hover:bg-[#5A305A]/10 text-[#5A305A] font-semibold px-2.5 py-1 rounded-lg transition-colors"
+                                              >
+                                                Update Harga (Buat Periode Baru)
+                                              </button>
+                                            )}
+                                            <button
+                                              onClick={() => openEditQuotationModal(rec)}
+                                              className="text-xs bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] font-medium px-2.5 py-1 rounded-lg transition-colors shadow-sm"
+                                            >
+                                              Edit Info
+                                            </button>
+                                            <button
+                                              onClick={() => handleNonaktifkanQuotation(rec.id)}
+                                              className="text-xs bg-white border border-slate-200 hover:bg-red-50 text-[#5A305A] hover:text-red-600 font-medium px-2.5 py-1 rounded-lg transition-colors shadow-sm"
+                                            >
+                                              Nonaktifkan
+                                            </button>
+                                          </div>
+                                        )}
                                       </div>
 
-                                      <label className="flex items-center gap-2 cursor-pointer text-[11px] font-semibold text-[#5A305A]">
-                                        <input type="checkbox" checked={form.isCbmRange} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, isCbmRange: e.target.checked } }))} className="w-3.5 h-3.5 rounded" />
-                                        Pakai Harga/CBM (bukan Harga/Kg)
-                                      </label>
-                                      {form.isCbmRange ? (
-                                        <div className="grid grid-cols-2 gap-3">
-                                          <div>
-                                            <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">Harga / CBM Min</label>
-                                            <input type="number" step="any" value={form.harga_per_cbm_min} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, harga_per_cbm_min: e.target.value } }))} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm font-mono" />
+                                      {isQuotationOpen && (
+                                        <div className="mt-3 ml-6">
+                                          <div className="overflow-x-auto rounded-xl border border-slate-100">
+                                            <table className="w-full text-left border-collapse">
+                                              <thead>
+                                                <tr className="bg-slate-50 border-b border-slate-200">
+                                                  <th className="px-3 py-2 text-[11px] font-bold text-[#5A305A] uppercase tracking-wider">Berat (Kg)</th>
+                                                  <th className="px-3 py-2 text-[11px] font-bold text-[#5A305A] uppercase tracking-wider">Unit Price</th>
+                                                  <th className="px-3 py-2 text-[11px] font-bold text-[#5A305A] uppercase tracking-wider">PPN</th>
+                                                  <th className="px-3 py-2 text-[11px] font-bold text-[#5A305A] uppercase tracking-wider">Notes</th>
+                                                  {canEditVendorTarif && <th className="px-3 py-2 text-[11px] font-bold text-[#5A305A] uppercase tracking-wider text-center">Aksi</th>}
+                                                </tr>
+                                              </thead>
+                                              <tbody className="divide-y divide-slate-100">
+                                                {details.length === 0 && !form ? (
+                                                  <tr><td colSpan={5} className="px-3 py-4 text-center text-xs text-[#5A305A]">Belum ada rentang berat.</td></tr>
+                                                ) : details.map(d => (
+                                                  <tr key={d.id} className="hover:bg-slate-50/50">
+                                                    <td className="px-3 py-2 text-sm text-[#5A305A] font-mono whitespace-nowrap">{formatWeight(d.berat_min, d.berat_max)}</td>
+                                                    <td className="px-3 py-2 text-sm text-[#5A305A] font-mono whitespace-nowrap">
+                                                      {d.harga_per_kg != null
+                                                        ? formatMoney(d.harga_per_kg, rec.mata_uang)
+                                                        : (d.harga_per_cbm_min != null || d.harga_per_cbm_max != null)
+                                                          ? `${formatMoney(d.harga_per_cbm_min, rec.mata_uang)} - ${formatMoney(d.harga_per_cbm_max, rec.mata_uang)} /CBM`
+                                                          : d.harga_per_cbm != null ? `${formatMoney(d.harga_per_cbm, rec.mata_uang)} /CBM` : '-'}
+                                                    </td>
+                                                    <td className="px-3 py-2 text-sm text-[#5A305A] whitespace-nowrap">{d.ppn_status}</td>
+                                                    <td className="px-3 py-2 text-sm text-[#5A305A]">{d.notes || '-'}</td>
+                                                    {canEditVendorTarif && (
+                                                      <td className="px-3 py-2 text-center">
+                                                        <div className="flex items-center justify-center gap-2">
+                                                          <button onClick={() => openDetailForm(rec.id, d)} className="text-xs bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] font-medium px-2 py-1 rounded transition-colors shadow-sm">Edit</button>
+                                                          <button onClick={() => handleDeleteDetail(d.id)} className="text-xs bg-white border border-slate-200 hover:bg-red-50 text-[#5A305A] hover:text-red-600 font-medium px-2 py-1 rounded transition-colors shadow-sm">Hapus</button>
+                                                        </div>
+                                                      </td>
+                                                    )}
+                                                  </tr>
+                                                ))}
+                                              </tbody>
+                                            </table>
                                           </div>
-                                          <div>
-                                            <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">Harga / CBM Max</label>
-                                            <input type="number" step="any" value={form.harga_per_cbm_max} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, harga_per_cbm_max: e.target.value } }))} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm font-mono" />
-                                          </div>
-                                        </div>
-                                      ) : (
-                                        <div>
-                                          <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">Harga / CBM</label>
-                                          <input type="number" step="any" value={form.harga_per_cbm} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, harga_per_cbm: e.target.value } }))} className="w-full max-w-xs border border-slate-300 rounded-lg px-2 py-1.5 text-sm font-mono" />
+
+                                          {canEditVendorTarif && (
+                                            form ? (
+                                              <div className="mt-3 bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-3">
+                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                                  <div>
+                                                    <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">Berat Min <span className="text-red-500">*</span></label>
+                                                    <input type="number" step="any" value={form.berat_min} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, berat_min: e.target.value } }))} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
+                                                  </div>
+                                                  <div>
+                                                    <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">Berat Max (kosongkan = "+")</label>
+                                                    <input type="number" step="any" value={form.berat_max} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, berat_max: e.target.value } }))} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
+                                                  </div>
+                                                  <div>
+                                                    <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">Satuan Harga</label>
+                                                    <select
+                                                      value={form.hargaUnit}
+                                                      onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, hargaUnit: e.target.value as HargaUnit } }))}
+                                                      className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+                                                    >
+                                                      <option value="per_kg">Kg</option>
+                                                      <option value="per_cbm">CBM</option>
+                                                      <option value="per_cbm_range">CBM (Rentang Harga)</option>
+                                                    </select>
+                                                  </div>
+                                                  <div>
+                                                    <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">PPN</label>
+                                                    <select value={form.ppn_status} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, ppn_status: e.target.value } }))} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm">
+                                                      <option value="Non-PPN">Non-PPN</option>
+                                                      <option value="PPN">PPN</option>
+                                                    </select>
+                                                  </div>
+                                                </div>
+
+                                                {form.hargaUnit === 'per_cbm_range' ? (
+                                                  <div className="grid grid-cols-2 gap-3 max-w-md">
+                                                    <div>
+                                                      <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">Harga CBM Min</label>
+                                                      <input type="number" step="any" value={form.harga_per_cbm_min} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, harga_per_cbm_min: e.target.value } }))} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm font-mono" />
+                                                    </div>
+                                                    <div>
+                                                      <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">Harga CBM Max</label>
+                                                      <input type="number" step="any" value={form.harga_per_cbm_max} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, harga_per_cbm_max: e.target.value } }))} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm font-mono" />
+                                                    </div>
+                                                  </div>
+                                                ) : (
+                                                  <div className="max-w-xs">
+                                                    <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">
+                                                      {form.hargaUnit === 'per_cbm' ? 'Harga / CBM' : 'Harga / Kg'}
+                                                    </label>
+                                                    <input type="number" step="any" value={form.harga} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, harga: e.target.value } }))} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm font-mono" />
+                                                  </div>
+                                                )}
+
+                                                <div>
+                                                  <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">Notes</label>
+                                                  <input type="text" value={form.notes} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, notes: e.target.value } }))} placeholder="Cth: Estimasi 3-7 hari" className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
+                                                </div>
+
+                                                <div className="flex justify-end gap-2">
+                                                  <button onClick={() => closeDetailForm(rec.id)} className="px-3 py-1.5 text-xs font-semibold text-[#5A305A] hover:bg-slate-100 rounded-lg transition-colors">Batal</button>
+                                                  <button onClick={() => handleSaveDetail(rec.id)} disabled={savingDetailFor === rec.id} className="px-3 py-1.5 text-xs font-semibold bg-[#5A305A] hover:bg-[#73507B] text-white rounded-lg transition-colors">
+                                                    {savingDetailFor === rec.id ? 'Menyimpan...' : 'Simpan'}
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            ) : (
+                                              <button
+                                                onClick={() => openDetailForm(rec.id)}
+                                                className="mt-3 text-xs font-semibold text-[#5A305A] bg-[#5A305A]/5 hover:bg-[#5A305A]/10 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
+                                              >
+                                                <Plus size={13} /> Tambah Range Berat
+                                              </button>
+                                            )
+                                          )}
                                         </div>
                                       )}
-
-                                      <div>
-                                        <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">Notes</label>
-                                        <input type="text" value={form.notes} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, notes: e.target.value } }))} placeholder="Cth: Estimasi 3-7 hari" className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
-                                      </div>
-
-                                      <div className="flex justify-end gap-2">
-                                        <button onClick={() => closeDetailForm(rec.id)} className="px-3 py-1.5 text-xs font-semibold text-[#5A305A] hover:bg-slate-100 rounded-lg transition-colors">Batal</button>
-                                        <button onClick={() => handleSaveDetail(rec.id)} disabled={savingDetailFor === rec.id} className="px-3 py-1.5 text-xs font-semibold bg-[#5A305A] hover:bg-[#73507B] text-white rounded-lg transition-colors">
-                                          {savingDetailFor === rec.id ? 'Menyimpan...' : 'Simpan'}
-                                        </button>
-                                      </div>
                                     </div>
-                                  ) : (
-                                    <button
-                                      onClick={() => openDetailForm(rec.id)}
-                                      className="mt-3 text-xs font-semibold text-[#5A305A] bg-[#5A305A]/5 hover:bg-[#5A305A]/10 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
-                                    >
-                                      <Plus size={13} /> Tambah Range Berat
-                                    </button>
-                                  )
-                                )}
+                                  );
+                                })}
                               </div>
                             )}
                           </div>
@@ -699,10 +795,10 @@ export default function FarOverseasVendorTarifPage() {
           )}
         </div>
 
-        {!loading && groups.length > 0 && (
+        {!loading && routeGroups.length > 0 && (
           <div className="mt-4 bg-white rounded-2xl shadow-sm border border-slate-200 px-5 py-3 flex items-center justify-between gap-3 flex-wrap">
             <div className="text-xs text-[#5A305A]">
-              Menampilkan <span className="font-bold">{(validPage - 1) * pageSize + 1}</span>–<span className="font-bold">{Math.min(validPage * pageSize, groups.length)}</span> dari <span className="font-bold">{groups.length}</span> rute
+              Menampilkan <span className="font-bold">{(validPage - 1) * pageSize + 1}</span>–<span className="font-bold">{Math.min(validPage * pageSize, routeGroups.length)}</span> dari <span className="font-bold">{routeGroups.length}</span> rute
             </div>
             <div className="flex items-center gap-2">
               <button

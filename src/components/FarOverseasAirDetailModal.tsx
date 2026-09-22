@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
-import { X, Printer, Stamp, Ban, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, Stamp, Ban, ChevronDown, ChevronUp } from 'lucide-react';
 import { formatMoney, formatDateID, formatDateMemo, APPROVAL_STATUS_META, LOGO_ASSETS, parseJsonField } from '../utils/FarOverseasAirHelpers';
 
 type SignerConfig = {
@@ -264,9 +264,6 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
             <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${statusMeta.badgeClass}`}>{statusMeta.label}</span>
-            <button onClick={() => window.print()} className="px-3 py-1.5 text-sm font-medium bg-slate-100 hover:bg-slate-200 text-[#5A305A] rounded-md flex items-center gap-2 transition-colors">
-              <Printer size={16} /> Print
-            </button>
             <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-[#5A305A] transition-colors">
               <X size={20} />
             </button>

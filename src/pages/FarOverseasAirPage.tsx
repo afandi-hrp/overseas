@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
-import { CheckCircle2, FileCheck2, UploadCloud, X, AlertTriangle, Clock, ClipboardCheck, ClipboardList, Edit3, Save, Scale, Trash2, RefreshCw, ChevronDown, LayoutGrid, List as ListIcon, Printer, Search, ArrowUp, ArrowDown, FolderOpen } from 'lucide-react';
-import { formatMoney, formatDateID, APPROVAL_STATUS_META, COST_STATUS_META, REKAPAN_EDITABLE_FIELDS, updateRekapanFarOverseasAir, parseRouteNote, rematchTarif, mapModeToJenisLayanan, vendorTargetFromShipVia, computeExpectedFromRate, computeCostStatus, parseJsonField, fetchPicEligibleUsers, fetchDistinctMemoTitles, type PoListEntry, type PicEligibleUser, type RateRow } from '../utils/FarOverseasAirHelpers';
+import { CheckCircle2, FileCheck2, UploadCloud, X, AlertTriangle, Clock, ClipboardCheck, ClipboardList, Edit3, Save, Scale, Trash2, RefreshCw, ChevronDown, LayoutGrid, List as ListIcon, Search, ArrowUp, ArrowDown, FolderOpen } from 'lucide-react';
+import { formatMoney, formatDateID, APPROVAL_STATUS_META, COST_STATUS_META, REKAPAN_EDITABLE_FIELDS, updateRekapanFarOverseasAir, parseRouteNote, rematchTarif, mapModeToJenisLayanan, vendorTargetFromShipVia, computeExpectedFromRate, computeCostStatus, parseJsonField, fetchPicEligibleUsers, fetchDistinctMemoTitles, fetchSignerCompanyOptions, fetchActiveTarifRateRows, type PoListEntry, type PicEligibleUser, type RateRow, type CompanyOption } from '../utils/FarOverseasAirHelpers';
 import { EditableCell } from '../components/FarOverseasAirEditableField';
 import FarOverseasAirDetailModal from '../components/FarOverseasAirDetailModal';
 import FarOverseasAirCostValidationModal from '../components/FarOverseasAirCostValidationModal';
@@ -128,6 +128,7 @@ type ListRenderCtx = {
   memoTitleOptions: string[];
   addMemoTitleOption: (title: string) => void;
   tarifVendorRows: RateRow[];
+  companyOptions: CompanyOption[];
 };
 
 type ListColumn = {
@@ -393,27 +394,37 @@ const LIST_COLUMNS: ListColumn[] = [
         );
       }
     },
-    // NOTE 2 dipecah 2 (2026-09, permintaan user): KIRI = item_description hasil ekstraksi
-    // otomatis n8n, SELAMANYA read-only (dikeluarkan dari REKAPAN_EDITABLE_FIELDS supaya tidak
-    // bisa lagi ketimpa lewat UI, beda dari sebelumnya yg 1 field ini langsung bisa diedit &
-    // menimpa nilai ekstraksi). KANAN = kolom BARU `item_description_manual`, murni catatan
-    // manual user, terikat ke pendingEdits/getVal/setVal spt kolom lain. Memo cetak
-    // (FarOverseasAirDetailModal.tsx) SENGAJA TIDAK ikut menampilkan `item_description_manual`
-    // -- baris "2." di NOTE memo cetak resmi TETAP hanya dari `item_description` DB, tidak
-    // berubah (dikonfirmasi user: catatan manual ini murni internal, tidak dicetak).
+    // NOTE 2 dipecah 2 (2026-09): KIRI = `item_description` hasil ekstraksi otomatis n8n --
+    // SEMPAT dikunci read-only total (dikeluarkan dari REKAPAN_EDITABLE_FIELDS), TAPI susulan
+    // (2026-09, permintaan user) DIBUKA JUGA jadi bisa diedit & disimpan spt kolom lain --
+    // `item_description` DIKEMBALIKAN ke `REKAPAN_EDITABLE_FIELDS` (FarOverseasAirHelpers.ts).
+    // KANAN = kolom `item_description_manual`, murni catatan manual user, terikat ke
+    // pendingEdits/getVal/setVal spt kolom lain. Memo cetak (FarOverseasAirDetailModal.tsx)
+    // SENGAJA TIDAK ikut menampilkan `item_description_manual` -- baris "2." di NOTE memo cetak
+    // resmi TETAP hanya dari `item_description` DB (skrng bisa dikoreksi manual dari sini juga).
+    // **PENTING**: kalau nilai TIDAK tersimpan (toast sukses tapi balik kosong saat refresh),
+    // cek dulu `v_allowed_columns` RPC `update_rekapan_far_overseas_manual` sudah include
+    // `item_description` -- whitelist RPC TERPISAH dari `REKAPAN_EDITABLE_FIELDS` frontend
+    // (lihat CLAUDE.md bagian "arsitektur cost validation" — pola sama bug `pic_user_id` dulu).
     {
       header: 'NOTE 2',
       render: (r, _idx, _costStatus, ctx) => {
         const editingThisRow = ctx.editingRowId === r.id;
+        const fromDocVal = ctx.getVal(r, 'item_description');
+        const fromDocEdited = Array.isArray(r.edited_fields) && r.edited_fields.includes('item_description');
         const manualVal = ctx.getVal(r, 'item_description_manual');
         const edited = Array.isArray(r.edited_fields) && r.edited_fields.includes('item_description_manual');
         return (
           <div className="w-[360px] flex items-start gap-2">
             <div className="flex-1 min-w-0">
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wide mb-1">From Document</p>
-              <p className="whitespace-normal break-words leading-snug">
-                {r.item_description || <span className="italic text-slate-400">-</span>}
-              </p>
+              <EditableCell
+                value={fromDocVal}
+                editable={editingThisRow}
+                edited={fromDocEdited}
+                className="whitespace-normal break-words"
+                onChange={(v) => ctx.setVal(r, 'item_description', v)}
+              />
             </div>
             <div className="w-px self-stretch bg-slate-200 shrink-0" />
             <div className="flex-1 min-w-0">
@@ -491,6 +502,41 @@ const LIST_COLUMNS: ListColumn[] = [
         return (
           <div className="w-[160px] flex items-start gap-1.5">
             <span className="whitespace-normal break-words leading-snug flex-1">{val || <span className="italic text-slate-400">-</span>}</span>
+            {edited && <Edit3 size={11} className="text-amber-500 shrink-0 mt-0.5" />}
+          </div>
+        );
+      }
+    },
+    // Kolom "Nama PT" (BARU, 2026-09) -- override MANUAL `dominant_company_code` (field yang
+    // SAMA dipakai `recomputeDominantCompany()` dari breakdown PO, BUKAN kolom baru di DB).
+    // Dibuat krn baris TANPA PO (`po_list` kosong) tidak pernah punya "pemenang" company_code
+    // dari formula PO -- header modal Approval Memo (logo + nama PT) jadi tidak pernah terisi.
+    // `fetchSignerCompanyOptions()` (FarOverseasAirHelpers.ts) sumber dropdown-nya
+    // `far_overseas_signer_config` (tabel yang SAMA dipakai modal Approval Memo cari signer).
+    {
+      header: 'NAMA PT',
+      render: (r, _idx, _costStatus, ctx) => {
+        const editingThisRow = ctx.editingRowId === r.id;
+        const code = ctx.getVal(r, 'dominant_company_code');
+        const edited = Array.isArray(r.edited_fields) && r.edited_fields.includes('dominant_company_code');
+        if (editingThisRow) {
+          return (
+            <select
+              value={code || ''}
+              onChange={(e) => ctx.setVal(r, 'dominant_company_code', e.target.value || null)}
+              className="w-[170px] text-xs p-1.5 border border-blue-400 rounded outline-none text-[#5A305A] bg-white"
+            >
+              <option value="">— Not set —</option>
+              {ctx.companyOptions.map(c => (
+                <option key={c.company_code} value={c.company_code}>{c.company_name_full}</option>
+              ))}
+            </select>
+          );
+        }
+        const resolvedName = ctx.companyOptions.find(c => c.company_code === code)?.company_name_full;
+        return (
+          <div className="w-[160px] flex items-start gap-1.5">
+            <span className="whitespace-normal break-words leading-snug flex-1">{resolvedName || code || <span className="italic text-slate-400">-</span>}</span>
             {edited && <Edit3 size={11} className="text-amber-500 shrink-0 mt-0.5" />}
           </div>
         );
@@ -614,6 +660,7 @@ const FAR_EXPORT_COLS = [
   { key: 'status_note', label: 'NOTE 3' },
   { key: 'other_note', label: 'NOTE 4' },
   { key: 'memo_title', label: 'JUDUL MEMO' },
+  { key: 'nama_pt_display', label: 'NAMA PT' },
   { key: 'pic_name', label: 'PIC' },
   { key: 'buyer_name', label: 'BUYER' },
   { key: 'expected_payment_date', label: 'EXPECTED PAYMENT DATE', type: 'date' },
@@ -759,6 +806,10 @@ export default function FarOverseasAirPage() {
   useEffect(() => { setPage(1); }, [searchTerm, sortBy, sortDir]);
   const [queue, setQueue] = useState<any[]>([]);
   const [picUsers, setPicUsers] = useState<PicEligibleUser[]>([]);
+  // Opsi dropdown "Nama PT" (2026-09, kolom manual BARU) -- di-fetch sekali saat halaman
+  // dibuka (pola sama `picUsers`), dari `far_overseas_signer_config` (SUDAH ADA, dipakai juga
+  // sbg sumber logo/nama PT header modal Approval Memo).
+  const [companyOptions, setCompanyOptions] = useState<CompanyOption[]>([]);
   // Opsi dropdown MEMO TITLE (2026-09) -- di-fetch sekali saat halaman dibuka (pola sama
   // `picUsers`), TIDAK perlu tabel master terpisah (lihat catatan `fetchDistinctMemoTitles`).
   const [memoTitleOptions, setMemoTitleOptions] = useState<string[]>([]);
@@ -768,12 +819,6 @@ export default function FarOverseasAirPage() {
     setMemoTitleOptions(prev => prev.includes(v) ? prev : [...prev, v].sort());
   };
   const [selected, setSelected] = useState<any | null>(null);
-  // Tombol "Print" di Card view (2026-09) -- SENGAJA TIDAK menambah UI print baru,
-  // `FarOverseasAirDetailModal.tsx` (memo cetak) TIDAK BOLEH disentuh (permintaan eksplisit
-  // user). Alurnya PINJAM mekanisme deep-link `/direct-loading/:id` yang SUDAH ADA (dipakai
-  // tombol "Approval") untuk membuka modal itu, lalu begitu modalnya kebuka, otomatis panggil
-  // `window.print()` -- lihat `loadDeepLink` & flag `autoPrintRef` di bawah.
-  const autoPrintRef = useRef(false);
   const [costModalRow, setCostModalRow] = useState<any | null>(null);
   const [weightModalRow, setWeightModalRow] = useState<any | null>(null);
   const [docsModalRow, setDocsModalRow] = useState<any | null>(null);
@@ -971,9 +1016,10 @@ export default function FarOverseasAirPage() {
         total_amount_display: formatMoney(r.total_amount, r.total_amount_currency) + (showIdrHint ? ` (≈ Rp ${Number(r.total_amount_idr).toLocaleString('id-ID')})` : ''),
         approval_status_display: (APPROVAL_STATUS_META[r.approval_status] || APPROVAL_STATUS_META.PENDING).label,
         cost_status_display: costMeta,
+        nama_pt_display: companyOptions.find(c => c.company_code === r.dominant_company_code)?.company_name_full || r.dominant_company_code || '',
       };
     });
-  }, []);
+  }, [companyOptions]);
 
   const fetchQueue = useCallback(async () => {
     const { data } = await supabase
@@ -999,47 +1045,6 @@ export default function FarOverseasAirPage() {
         return;
       }
       setSelected(data);
-      if (autoPrintRef.current) {
-        autoPrintRef.current = false;
-        // Bug ditemukan & diperbaiki (2 iterasi susulan) -- print preview MASIH kosong sebagian
-        // (header kiri nama PT nampil "-") walau `#far-overseas-print-area` sudah ada di DOM.
-        // Root cause: `FarOverseasAirDetailModal.tsx` (SENGAJA TIDAK disentuh) punya fetch ASYNC
-        // KEDUA setelah mount -- query `far_overseas_signer_config` (nama PT/logo header memo,
-        // komponen `CompanyLogo` di file itu) yang belum tentu selesai + re-render saat print
-        // dipicu. Iterasi PERTAMA (SUDAH DIGANTI, jangan reintroduce): duplikasi query yang sama
-        // sbg "proxy" waktu tunggu -- TERBUKTI TIDAK RELIABLE, query proxy (cuma select 1 kolom)
-        // seringkali selesai LEBIH CEPAT drpd query asli modal (`select('*')`, lebih berat) yang
-        // jalan independen paralel -- tidak ada jaminan urutan antara 2 network request terpisah.
-        // Fix FINAL: `MutationObserver` generik pada `#far-overseas-print-area` -- tunggu sampai
-        // TIDAK ADA perubahan DOM lagi selama 400ms (debounce, menandakan semua fetch async di
-        // dalam modal SUDAH selesai & re-render-nya SUDAH commit ke DOM), baru print dipicu.
-        // Pendekatan ini generik -- tidak perlu tahu/menduplikasi fetch spesifik apa pun di dalam
-        // modal, otomatis ikut benar walau modal nanti nambah fetch async lain lagi. Safety cap
-        // 3 detik supaya tidak nyangkut selamanya kalau ada re-render terus-menerus tak terduga.
-        const waitForDomStableThenPrint = (attemptsLeft: number) => {
-          const el = document.getElementById('far-overseas-print-area');
-          if (!el) {
-            if (attemptsLeft <= 0) { window.print(); return; }
-            setTimeout(() => waitForDomStableThenPrint(attemptsLeft - 1), 50);
-            return;
-          }
-          let settleTimer: ReturnType<typeof setTimeout>;
-          const capTimer = setTimeout(() => { observer.disconnect(); triggerPrint(); }, 3000);
-          const triggerPrint = () => {
-            clearTimeout(settleTimer);
-            clearTimeout(capTimer);
-            observer.disconnect();
-            requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
-          };
-          const observer = new MutationObserver(() => {
-            clearTimeout(settleTimer);
-            settleTimer = setTimeout(triggerPrint, 400);
-          });
-          observer.observe(el, { childList: true, subtree: true, characterData: true, attributes: true });
-          settleTimer = setTimeout(triggerPrint, 400);
-        };
-        waitForDomStableThenPrint(20);
-      }
     };
     loadDeepLink();
   }, [deepLinkId, navigate]);
@@ -1056,14 +1061,12 @@ export default function FarOverseasAirPage() {
   // Daftar user yang boleh dipilih sbg PIC di kolom List Memo -- di-fetch sekali saat halaman
   // dibuka (bukan tiap render), lihat CLAUDE.md "PIC per-memo assignment".
   useEffect(() => { fetchPicEligibleUsers().then(setPicUsers); }, []);
+  useEffect(() => { fetchSignerCompanyOptions().then(setCompanyOptions); }, []);
   useEffect(() => { fetchDistinctMemoTitles().then(setMemoTitleOptions); }, []);
   // Opsi 3 dropdown NOTE 1 (2026-09) -- di-fetch sekali, dipakai `RouteNoteEditCell` (filter
   // per-baris via vendor_name di dalam komponen itu, lihat `vendorTargetFromShipVia`).
   const [tarifVendorRows, setTarifVendorRows] = useState<RateRow[]>([]);
-  useEffect(() => {
-    supabase.from('far_overseas_tarif_vendor').select('vendor_name, origin, tujuan, jenis_layanan, aktif')
-      .then(({ data, error }) => { if (error) { console.error('fetch far_overseas_tarif_vendor failed:', error); return; } setTarifVendorRows((data || []) as RateRow[]); });
-  }, []);
+  useEffect(() => { fetchActiveTarifRateRows().then(setTarifVendorRows); }, []);
 
   // Nilai efektif sebuah field: kalau ada edit lokal yang belum disimpan, pakai itu -- kalau
   // tidak, pakai nilai dari server. Perubahan HANYA disimpan ke DB saat "Simpan Semua" diklik.
@@ -1119,13 +1122,10 @@ export default function FarOverseasAirPage() {
     const actualUnitPrice = unitPriceRow?.actual != null && unitPriceRow.actual !== '' ? Number(unitPriceRow.actual) : null;
     const actualTotal = totalRow?.actual != null && totalRow.actual !== '' ? Number(totalRow.actual) : null;
 
-    const { data: tarifRows, error: tarifErr } = await supabase
-      .from('far_overseas_tarif_vendor')
-      .select('*');
-    if (tarifErr) return { skipped: true as const, reason: 'gagal_ambil_tarif' as const };
+    const tarifRows = await fetchActiveTarifRateRows();
 
     const candidates = rematchTarif({
-      vendorRows: tarifRows || [],
+      vendorRows: tarifRows,
       shipVia,
       jenisLayananSaatIni,
       origin: parsed.origin,
@@ -1507,7 +1507,7 @@ export default function FarOverseasAirPage() {
                     rows.map((r, idx) => {
                       const costStatus = costStatusMap[r.id];
                       const editingThisRow = editingRowId === r.id;
-                      const ctx: ListRenderCtx = { onOpenWeightModal: setWeightModalRow, editingRowId, getVal, setVal, expandedPoRows, togglePoExpanded, picUsers, costCityMap, memoTitleOptions, addMemoTitleOption, tarifVendorRows };
+                      const ctx: ListRenderCtx = { onOpenWeightModal: setWeightModalRow, editingRowId, getVal, setVal, expandedPoRows, togglePoExpanded, picUsers, costCityMap, memoTitleOptions, addMemoTitleOption, tarifVendorRows, companyOptions };
                       return (
                         <tr key={r.id} id={`far-row-${r.id}`} className="group bg-white hover:bg-slate-50 transition-colors">
                           {LIST_COLUMNS.map((col, i) => {
@@ -1726,13 +1726,6 @@ export default function FarOverseasAirPage() {
                                 <Edit3 size={13} />
                               </button>
                             )}
-                            <button
-                              onClick={() => { autoPrintRef.current = true; navigate(`/direct-loading/${r.id}`); }}
-                              title="Print memo"
-                              className="flex-1 flex items-center justify-center px-2 py-1 rounded-lg border border-slate-200 bg-white text-[#5A305A] hover:bg-slate-50 transition-colors"
-                            >
-                              <Printer size={13} />
-                            </button>
                             {canEditDirectLoading && (
                               <button
                                 onClick={() => openDeleteConfirm(r)}
@@ -1836,7 +1829,7 @@ export default function FarOverseasAirPage() {
         <FarOverseasAirCardEditModal
           row={cardEditRow}
           costStatus={costStatusMap[cardEditRow.id]}
-          ctx={{ onOpenWeightModal: setWeightModalRow, editingRowId: cardEditRow.id, getVal, setVal, expandedPoRows, togglePoExpanded, picUsers, costCityMap, memoTitleOptions, addMemoTitleOption, tarifVendorRows }}
+          ctx={{ onOpenWeightModal: setWeightModalRow, editingRowId: cardEditRow.id, getVal, setVal, expandedPoRows, togglePoExpanded, picUsers, costCityMap, memoTitleOptions, addMemoTitleOption, tarifVendorRows, companyOptions }}
           saving={savingEdits}
           onClose={() => setCardEditRow(null)}
           onCancel={() => { handleDiscardRowEdit(cardEditRow.id); setCardEditRow(null); }}

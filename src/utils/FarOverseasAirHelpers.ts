@@ -106,7 +106,7 @@ export const REKAPAN_EDITABLE_FIELDS = new Set([
   'total_amount_currency', 'kurs_used', 'total_amount_idr', 'route_note', 'shipment_mode',
   'origin_country', 'destination_city', 'status_note', 'other_note',
   'memo_title', 'expected_payment_date', 'vessel_internal_note', 'notes', 'buyer_name',
-  'weight_breakdown', 'departure_date', 'pic_name', 'item_description_manual', 'pic_user_id',
+  'weight_breakdown', 'departure_date', 'pic_name', 'item_description', 'item_description_manual', 'pic_user_id',
 ]);
 
 export async function updateRekapanFarOverseasAir(id: string | number, updates: Record<string, any>) {
@@ -149,6 +149,22 @@ export async function fetchDistinctMemoTitles(): Promise<string[]> {
   const set = new Set<string>();
   (data || []).forEach((r: any) => { const v = (r.memo_title || '').trim(); if (v) set.add(v); });
   return Array.from(set).sort();
+}
+
+export type CompanyOption = { company_code: string; company_name_full: string };
+
+// Dropdown "Nama PT" (kolom manual BARU, 2026-09) di List Memo -- utk kasus shipment yang TIDAK
+// punya PO sama sekali (`po_list` kosong), `recomputeDominantCompany()` tidak py apa pun utk
+// dihitung (return null) krn formula itu MURNI berdasar jumlah/berat PO per company_code --
+// tanpa PO, `dominant_company_code` tetap null selamanya & header modal Approval Memo (logo +
+// nama PT) tidak pernah terisi. Kolom ini kasih jalan MANUAL override `dominant_company_code`
+// langsung (field yang SAMA, bukan kolom baru di DB) -- aman krn field ini HANYA di-recompute
+// otomatis oleh `WeightBreakdownModal.tsx` (saat breakdown berat per-PO disimpan), TIDAK ada
+// proses lain yang menimpa balik nilai manual ini diam-diam.
+export async function fetchSignerCompanyOptions(): Promise<CompanyOption[]> {
+  const { data, error } = await supabase.from('far_overseas_signer_config').select('company_code, company_name_full').order('company_name_full');
+  if (error) { console.error('fetchSignerCompanyOptions failed:', error); return []; }
+  return Array.isArray(data) ? data : [];
 }
 
 export type PoListEntry = {
@@ -216,6 +232,7 @@ export function recomputeDominantCompany(poList: PoListEntry[]): string | null {
 }
 
 export type RateRow = {
+  vendor_name?: string | null;
   origin?: string | null;
   tujuan?: string | null;
   jenis_layanan?: string | null;
@@ -229,6 +246,71 @@ export type RateRow = {
   estimasi_waktu?: string | null;
   [key: string]: any;
 };
+
+// Struktur tarif vendor DIROMBAK TOTAL (2026-09) dari 1 tabel flat (`far_overseas_tarif_vendor`,
+// 1 baris = 1 kombinasi+1 rentang berat) jadi 2 tabel: `far_overseas_tarif_quotation` (induk, per
+// PERIODE) + `far_overseas_tarif_quotation_detail` (anak, per rentang berat) -- lihat
+// `FarOverseasVendorTarifPage.tsx`/CLAUDE.md. `rematchTarif()`/`RouteNoteEditCell` di
+// `FarOverseasAirPage.tsx` (dropdown NOTE 1 & re-kalkulasi cost validation setelah NOTE 1 diedit)
+// TIDAK ikut disentuh saat perombakan itu -- BARU KETAHUAN (2026-09, laporan user "dropdown NOTE
+// 1 kosong") kedua fungsi itu MASIH query tabel lama, yang sekarang KOSONG (data sudah pindah ke
+// tabel baru, tabel lama cuma backup `far_overseas_tarif_vendor_legacy_backup` -- nama
+// `far_overseas_tarif_vendor` sendiri kemungkinan sudah tidak ada isinya/tidak ter-update lagi).
+//
+// Fix: fungsi INI meng-generate ulang bentuk flat `RateRow[]` (SAMA PERSIS shape tabel lama --
+// vendor_name/origin/tujuan/jenis_layanan/berat_min/berat_max/harga_per_kg/dst, 1 elemen array =
+// 1 kombinasi rute+rentang berat) dari struktur BARU, supaya `rematchTarif()`/`computeExpectedFromRate()`
+// (SATU-SATUNYA fungsi matching tarif di app ini, HARUS SELALU sinkron dgn logic n8n -- JANGAN
+// diubah) TIDAK PERLU disentuh sama sekali, cukup diberi input dari sumber data yang benar.
+// HANYA quotation yang `aktif=true` DAN `periode_selesai IS NULL` (masih berlaku) yang diikutkan
+// -- rematchTarif dipakai utk cocokkan tarif TERKINI (bukan riwayat harga lama). Quotation tanpa
+// rentang berat sama sekali (baru dibuat, belum diisi detail) otomatis TIDAK muncul di hasil ini
+// (sama spt tabel lama: setiap baris SELALU py 1 rentang berat, tidak ada baris "kosong").
+export async function fetchActiveTarifRateRows(): Promise<RateRow[]> {
+  const { data: quotations, error: qErr } = await supabase
+    .from('far_overseas_tarif_quotation')
+    .select('id, vendor_name, jenis_layanan, origin, tujuan, kategori_barang, mata_uang, aktif')
+    .eq('aktif', true)
+    .is('periode_selesai', null);
+  if (qErr) { console.error('fetchActiveTarifRateRows: gagal ambil quotation:', qErr); return []; }
+  const qList = quotations || [];
+  if (qList.length === 0) return [];
+
+  const ids = qList.map((q: any) => q.id);
+  const { data: details, error: dErr } = await supabase
+    .from('far_overseas_tarif_quotation_detail')
+    .select('quotation_id, berat_min, berat_max, harga_per_kg, harga_per_cbm, harga_per_cbm_min, harga_per_cbm_max, ppn_status, notes')
+    .in('quotation_id', ids);
+  if (dErr) { console.error('fetchActiveTarifRateRows: gagal ambil detail:', dErr); return []; }
+
+  const qMap: Record<string, any> = {};
+  qList.forEach((q: any) => { qMap[q.id] = q; });
+
+  return (details || [])
+    .map((d: any) => {
+      const q = qMap[d.quotation_id];
+      if (!q) return null;
+      const row: RateRow = {
+        vendor_name: q.vendor_name,
+        origin: q.origin,
+        tujuan: q.tujuan,
+        jenis_layanan: q.jenis_layanan,
+        kategori_barang: q.kategori_barang,
+        mata_uang: q.mata_uang,
+        aktif: q.aktif,
+        berat_min: d.berat_min,
+        berat_max: d.berat_max,
+        harga_per_kg: d.harga_per_kg,
+        harga_per_cbm: d.harga_per_cbm,
+        harga_per_cbm_min: d.harga_per_cbm_min,
+        harga_per_cbm_max: d.harga_per_cbm_max,
+        ppn_status: d.ppn_status,
+        estimasi_waktu: d.notes,
+      };
+      return row;
+    })
+    .filter((r): r is RateRow => r !== null);
+}
 
 // Hitung ulang expected KG/Unit Price/Total dari 1 tarif (rate) yang dipilih user, saat
 // rate_row_used ambigu (array beberapa tarif sama-sama cocok). Logic ini MIRROR PERSIS dari

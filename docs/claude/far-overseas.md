@@ -20,12 +20,33 @@ validasi shipment berikutnya, tidak perlu sinkron manual apa pun ke n8n).
   `harga_per_cbm`/`harga_per_cbm_min`/`harga_per_cbm_max` utk tarif rentang, `ppn_status`
   PPN/Non-PPN, `notes` teks bebas).
 
-**UI halaman baru** — list dikelompokkan per rute (`groupKeyOf()` = vendor+jenis+origin+tujuan+
-kategori_barang), tiap grup collapsible berisi RIWAYAT periode (quotation) urut `periode_mulai`
-DESC, tiap quotation collapsible lagi berisi tabel Detail Harga per rentang berat (Berat (Kg) |
-Unit Price | PPN | Notes) + form tambah/edit/hapus rentang berat inline (bukan modal terpisah).
+**UI halaman baru — grouping 2 level (2026-09, DIUBAH dari 1 level)**: Level 1 (Card, collapsible)
+= `routeKeyOf()` **vendor+origin+tujuan SAJA** (cth "OCTAGON LOGISTIC — Australia → JAKARTA"),
+TIDAK peduli jenis layanan — semua jenis layanan utk rute yang sama SEKARANG 1 card. Level 2
+(Sub-section, DI DALAM card, collapsible) = `subKeyOf()` **jenis_layanan+kategori_barang** (cth
+"Express — 1 periode [Berlaku]", "Economy — 1 periode"; kategori_barang DIIKUTKAN ke key
+sub-section WALAU spek awal cuma sebut jenis_layanan — Jianqiao Sea Freight py beberapa tarif
+beda per kategori barang dalam jenis layanan yang SAMA, kalau tidak diikutkan 2 tarif beda bisa
+nyampur jadi 1 sub-section). Tiap sub-section berisi RIWAYAT periode (quotation) urut
+`periode_mulai` DESC — **struktur di bawah level ini TIDAK BERUBAH SAMA SEKALI** dari versi 1
+level lama: tiap quotation collapsible berisi tabel Detail Harga per rentang berat (Berat (Kg) |
+Unit Price | PPN | Notes) + form tambah/edit/hapus rentang berat inline, tombol Update Harga
+(Buat Periode Baru)/Edit Info/Nonaktifkan per quotation — SEMUA di level quotation persis sama,
+cuma pembungkusnya sekarang nested 2 level (Card rute → Sub-section jenis layanan → quotation)
+bukan 1 level lagi. Badge "Berlaku"/"Semua ditutup" muncul di KEDUA level (card = ANY sub-section
+berlaku; sub-section = ada quotation aktif & `periode_selesai` null).
 Kolom Berat format `formatWeight()`: `berat_max` null → `"{min}+ Kg"`; `berat_min===berat_max`
 → `"{min} Kg"`; selain itu → `"{min}-{max} Kg"`.
+
+**Form Detail Harga — 1 field + dropdown satuan (2026-09, GANTI dari checkbox "Pakai Harga/CBM"
++ 2 field terpisah)**: dropdown "Satuan Harga" 3 opsi — Per Kg (map `p_harga_per_kg`), Per CBM
+(map `p_harga_per_cbm`), Per CBM (Rentang Harga) (map `p_harga_per_cbm_min`/`p_harga_per_cbm_max`,
+GANTI tampilan 1 field harga jadi 2 field Min/Max). `DetailForm.hargaUnit` (`'per_kg'|'per_cbm'|
+'per_cbm_range'`) — SATU-SATUNYA sumber kebenaran field mana yang dikirim ke RPC (2 field lain
+SELALU dikirim `null`, TIDAK PERNAH digabung). `detailFormFromExisting()` deteksi `hargaUnit`
+awal dari data tersimpan: `harga_per_cbm_min`/`max` terisi → `per_cbm_range`; `harga_per_cbm`
+terisi → `per_cbm`; `harga_per_kg` terisi (atau tidak ada satu pun) → `per_kg` (default). Kolom
+Unit Price di tabel detail (tampilan) TIDAK diubah — tetap baca ketiga kolom apa adanya.
 
 **Alur "Update Harga (Buat Periode Baru)"** — tombol per quotation yg masih berlaku
 (`periode_selesai` null), buka modal Quotation dgn vendor/jenis/origin/tujuan/kategori TERKUNCI
@@ -83,6 +104,67 @@ py RLS aktif per screenshot, ikon beda dari "UNRESTRICTED").
 Modal "Kelola Vendor" belum punya tombol nonaktifkan vendor dari UI (kalau diminta, tambah
 RPC/tombol baru, `aktif` di tabel sudah siap dipakai).
 
+## Bug fix: dropdown NOTE 1 kosong pasca perombakan struktur Tarif Vendor (2026-09)
+
+Perombakan tabel Tarif Vendor (`far_overseas_tarif_vendor` flat → `far_overseas_tarif_quotation`+
+`far_overseas_tarif_quotation_detail`, lihat bagian "Tarif Vendor FAR Overseas Air" di bawah)
+**LUPA menyertakan 2 titik konsumsi di `FarOverseasAirPage.tsx`** — dropdown NOTE 1
+(`RouteNoteEditCell`, `tarifVendorRows` state) & `reMatchAfterRouteNoteEdit()` (re-kalkulasi cost
+validation setelah NOTE 1 diedit) MASIH query tabel lama `far_overseas_tarif_vendor` langsung,
+yang sekarang KOSONG (data sudah pindah, nama tabel itu kemungkinan cuma nyisa nama TANPA
+data/tidak ter-update lagi) — gejalanya persis laporan user: dropdown Origin/Destination/Service
+Type kosong sama sekali.
+
+**Fix**: `fetchActiveTarifRateRows()` (BARU, `FarOverseasAirHelpers.ts`) — generate ulang bentuk
+flat `RateRow[]` (SAMA PERSIS shape tabel lama: vendor_name/origin/tujuan/jenis_layanan/
+berat_min/berat_max/harga_per_kg/dst, 1 elemen = 1 kombinasi rute+rentang berat) dari struktur
+BARU (join client-side `far_overseas_tarif_quotation` `aktif=true` DAN `periode_selesai IS NULL`
++ `far_overseas_tarif_quotation_detail`-nya) — supaya `rematchTarif()`/`computeExpectedFromRate()`
+(SATU-SATUNYA fungsi matching tarif di app ini, HARUS SELALU sinkron dgn logic n8n) **TIDAK PERLU
+disentuh sama sekali**, cukup diberi sumber data yang benar. Kedua titik konsumsi di
+`FarOverseasAirPage.tsx` (`tarifVendorRows` useEffect & `reMatchAfterRouteNoteEdit`) diganti
+panggil fungsi ini. Field lama `minimal_berat`/`estimasi_waktu` (tidak ada lagi di skema baru) —
+`estimasi_waktu` di-map dari `quotation_detail.notes` (tujuan sama: teks bebas keterangan),
+`minimal_berat` dibiarkan `undefined` (`computeExpectedFromRate` sudah py fallback
+`rate.minimal_berat ?? rate.berat_min`, otomatis jatuh ke `berat_min`).
+
+**Kalau ada laporan serupa lagi ("data tarif tidak muncul/kosong" di manapun di modul FAR
+Overseas Air)**: cek dulu apakah titik itu MASIH query `far_overseas_tarif_vendor` langsung
+(`grep -rn "far_overseas_tarif_vendor\b" src/` — HARUS 0 hasil query aktif, sisa cuma boleh
+komentar) — ganti ke `fetchActiveTarifRateRows()` kalau ketemu.
+
+## FAR Overseas Air — Kolom "Nama PT" manual (override `dominant_company_code`, 2026-09)
+
+Header modal Approval Memo (logo + nama PT, `FarOverseasAirDetailModal.tsx` `CompanyLogo`)
+sumbernya `rec.dominant_company_code` -> lookup `far_overseas_signer_config`. Field itu SELAMA
+INI cuma bisa keisi otomatis lewat `recomputeDominantCompany()` (`FarOverseasAirHelpers.ts`,
+dipanggil `FarOverseasAirWeightBreakdownModal.tsx` saat breakdown berat per-PO disimpan) — formula
+MURNI berbasis `po_list` (menang berdasar jumlah PO, tie-break total berat, tie-break terakhir
+WNS). **Shipment TANPA PO SAMA SEKALI (`po_list` kosong) tidak pernah punya "pemenang"** — formula
+return `null`, header modal Approval Memo jadi kosong/tidak ada PT ("conclusion").
+
+**Fix**: kolom BARU **"Nama PT"** di List Memo (`LIST_COLUMNS`, setelah kolom "MEMO TITLE" —
+sempat ditaruh setelah "NO PO", DIPINDAH atas permintaan user) — dropdown
+manual yang langsung nulis ke `dominant_company_code` (field YANG SAMA dipakai formula PO, BUKAN
+kolom baru di DB) via `pendingEdits`/`getVal`/`setVal` biasa. Aman dipakai kapan pun krn
+`dominant_company_code` HANYA di-recompute otomatis oleh `WeightBreakdownModal.tsx` (aksi
+eksplisit "Simpan" breakdown berat) — tidak ada proses lain yang diam-diam menimpa nilai manual
+ini.
+
+- `fetchSignerCompanyOptions()` (`FarOverseasAirHelpers.ts`, BARU) — `select company_code,
+  company_name_full from far_overseas_signer_config` (tabel yang SAMA dipakai modal Approval Memo
+  cari signer), di-fetch sekali saat halaman dibuka (`companyOptions` state, pola sama `picUsers`).
+  `ListRenderCtx.companyOptions` — 2 titik konstruksi ctx (row List biasa &
+  `FarOverseasAirCardEditModal`) WAJIB tetap sinkron kalau `ListRenderCtx` nambah field lagi.
+- Mode tampil: resolve nama lengkap dari `companyOptions` (fallback tampilkan `company_code`
+  mentah kalau kebetulan tidak ketemu di daftar, JANGAN tampil kosong diam2).
+- `FAR_EXPORT_COLS` + `getExportData` — kolom export "NAMA PT" (`nama_pt_display`, computed
+  resolve nama dari `companyOptions`, BUKAN raw `dominant_company_code`) ditambahkan setelah
+  "JUDUL MEMO" (posisi disamakan dgn List Memo), konsisten pola kolom `_display` lain di export ini.
+- RPC `update_rekapan_far_overseas_manual` **SUDAH** py `dominant_company_code` di
+  `v_allowed_columns` (dikonfirmasi dari body fungsi yang dikirim user 2026-09) — TIDAK perlu SQL
+  tambahan utk fitur ini.
+
 ## FAR Overseas Air — Section "Dokumen" (`dokumen_urls`, 2026-09)
 
 Kolom `rekapan_far_overseas_air.dokumen_urls` (jsonb array `{filename, file_url,
@@ -111,8 +193,26 @@ sudah di-share "anyone with link can view".
   di file ini, `z-[90]`, `w-[97vw] max-w-[1600px] h-[99.5vh]`) muncul DI ATAS modal list Dokumen
   (`z-[75]`) saat tombol Preview diklik — 2 modal bertumpuk, pola sama `SourceFilesSection` +
   `BunkerPreviewModal` di Bunker.
-- **SENGAJA TIDAK disentuh**: `FarOverseasAirDetailModal.tsx` (memo cetak) — section Dokumen ini
-  fitur TERPISAH, bukan bagian dari memo cetak.
+- **Dicoba lalu DIBATALKAN (2026-09) — "dokumen pendukung ikut tercetak bareng memo"**: sempat
+  diimplementasi 2 iterasi (embed iframe PDF langsung ke `#far-overseas-print-area` — GAGAL,
+  dokumen tampil kecil/salah skala saat print krn keterbatasan render iframe PDF bersarang di
+  Chrome; lalu diganti ke merge PDF via `pdf-lib`+`html2canvas` — reliable tapi ATAS PERMINTAAN
+  USER fiturnya DIBATALKAN & kode DIKEMBALIKAN ke versi semula). Dependency `pdf-lib`/
+  `html2canvas` SUDAH DI-UNINSTALL dari `package.json`.
+  **Kalau diminta lagi ke depan**: JANGAN pakai pendekatan iframe-embed-lalu-print-outer-page
+  (sudah terbukti gagal) — pendekatan merge-PDF-lalu-print-via-iframe-contentWindow (persis pola
+  `PreviewModal` AuditPoPage.tsx) yang reliable, tapi treat sbg fitur baru dari nol (kode lama
+  sudah tidak ada jejaknya).
+- **Fitur print DIHAPUS TOTAL (2026-09, permintaan eksplisit user)** — beda dari poin di atas
+  (yang cuma revert ke `window.print()` polos), tombol Print SEKARANG BENAR-BENAR TIDAK ADA lagi
+  di mana pun pada modul ini: tombol toolbar "Print" di `FarOverseasAirDetailModal.tsx` DIHAPUS,
+  tombol "Print memo" (ikon `Printer`) di Card view `FarOverseasAirPage.tsx` DIHAPUS, seluruh
+  mekanisme auto-print (`autoPrintRef`, `waitForDomStableThenPrint`/`MutationObserver` di
+  `loadDeepLink`) DIHAPUS jadi dead code. `id="far-overseas-print-area"` & class Tailwind
+  `print:*` di `FarOverseasAirDetailModal.tsx` SENGAJA DIBIARKAN (tidak dihapus) — murni jaga2
+  kalau user print manual via Ctrl+P/menu browser, TIDAK ADA salahnya dibiarkan nganggur.
+  **Kalau diminta lagi ke depan**: ini pekerjaan BARU dari nol (bukan un-revert) — riwayat 2
+  iterasi gagal-lalu-reliable di atas TETAP relevan sbg referensi teknis.
 
 ## FAR Overseas Air — PIC per-memo assignment
 
@@ -256,11 +356,32 @@ PENDING/PROCESSING tidak ikut kehapus.
 
 ## FAR Overseas Air — NOTE 2 "From Document" + "Manual Note" + tampil di memo cetak
 
-Kolom NOTE 2 = 2 bagian: **kiri "From Document"** = `item_description` (hasil ekstraksi n8n,
-read-only selamanya); **kanan "Manual Note"** = kolom `item_description_manual` (ikut pola
-`pendingEdits` biasa). Memo cetak baris "2." format `ITEMS : {item_description}
-({item_description_manual})` (kurung cuma muncul kalau manual note terisi). `FAR_EXPORT_COLS`
-include `item_description_manual`.
+Kolom NOTE 2 = 2 bagian: **kiri "From Document"** = `item_description` (awalnya hasil ekstraksi
+n8n; **SEMPAT dikunci read-only total** — dikeluarkan dari `REKAPAN_EDITABLE_FIELDS` — TAPI
+2026-09 DIBUKA JUGA jadi bisa diedit manual & disimpan, atas permintaan eksplisit user,
+`item_description` DIKEMBALIKAN ke `REKAPAN_EDITABLE_FIELDS`, kolom `<EditableCell>` di
+`FarOverseasAirPage.tsx` terikat `pendingEdits`/`getVal`/`setVal` spt kolom lain — n8n TETAP bisa
+menimpa nilai ini di ekstraksi berikutnya, edit manual TIDAK permanen mencegah itu, beda dgn pola
+`manual_override_fields` Audit Courier); **kanan "Manual Note"** = kolom `item_description_manual`
+(ikut pola `pendingEdits` biasa, TIDAK pernah ditimpa n8n). Memo cetak baris "2." format
+`ITEMS : {item_description} ({item_description_manual})` (kurung cuma muncul kalau manual note
+terisi). `FAR_EXPORT_COLS` include `item_description_manual`.
+
+**RPC `update_rekapan_far_overseas_manual`** — dibuat user sendiri langsung di Supabase (bukan
+lewat sesi Claude Code sebelumnya) — body PERNAH diminta & dikirim user via `pg_get_functiondef`
+(2026-09): `item_description` **SUDAH ADA** di `v_allowed_columns`-nya (tidak perlu patch apa
+pun utk NOTE 2 From Document). TAPI ditemukan **`item_description_manual` DAN `pic_user_id`
+TERNYATA TIDAK ADA** di whitelist yang sama — persis gejala bug "toast sukses tapi nilai balik
+ke lama saat refresh" yang sebelumnya dicatat di dokumen ini sbg "sudah diperbaiki" (rupanya versi
+RPC yang aktif sekarang tidak/belum membawa perbaikan itu). Fix:
+`sql/013_update_rekapan_far_overseas_manual_whitelist_fix.sql` (**BELUM DIJALANKAN ke Supabase
+production — WAJIB dijalankan manual dulu**) — `CREATE OR REPLACE` REPLIKA PERSIS body asli yang
+dikirim user, HANYA menambah 2 string (`'item_description_manual'`, `'pic_user_id'`) ke array
+`v_allowed_columns`, tidak ada logic lain yang diubah. **Kalau ke depan ada laporan serupa lagi
+("sudah Save tapi field X balik kosong") — WAJIB minta user jalankan `select
+pg_get_functiondef('update_rekapan_far_overseas_manual'::regproc)` dulu dan BACA hasilnya
+sebelum menulis `CREATE OR REPLACE` apa pun** (JANGAN tebak isi `v_allowed_columns` dari memori
+dokumen ini — sudah terbukti bisa basi/tidak sinkron dgn RPC yang benar2 aktif).
 
 **BELUM DIJALANKAN ke Supabase — WAJIB manual**:
 ```sql
