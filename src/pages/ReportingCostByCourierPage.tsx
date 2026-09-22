@@ -120,7 +120,7 @@ function ComponentLine({ label, value, prevValue, compareLabel }: { label: strin
 // ─── Donut -- 1 slice highlight per PPJK terpilih pada posisi ASLI, sisanya digabung 1 slice
 // "Others" abu (2026-09 revisi: dulu tiap PPJK non-terpilih tetap tampil nama+dimmed satu-satu,
 // SEKARANG digabung jadi 1 "Others: %" TANPA rincian nama). ────────────────────────────────────
-function Donut({ segments, centerLabel, centerValue }: { segments: { label: string; value: number; color: string; isOthers?: boolean }[]; centerLabel: string; centerValue: string }) {
+function Donut({ segments, centerLabel, centerValue, hideCenterValue }: { segments: { label: string; value: number; color: string; isOthers?: boolean }[]; centerLabel: string; centerValue: string; hideCenterValue?: boolean }) {
   const total = segments.reduce((a, s) => a + s.value, 0);
   const R = 40, CX = 50, CY = 50, STROKE = 16;
   const circumference = 2 * Math.PI * R;
@@ -146,7 +146,9 @@ function Donut({ segments, centerLabel, centerValue }: { segments: { label: stri
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className="text-[9px] font-bold uppercase text-[#5A305A]/60">{centerLabel}</span>
-          <span className="text-sm font-black text-center px-2 break-words" style={{ color: '#8A7415' }}>{centerValue}</span>
+          {!hideCenterValue && (
+            <span className="text-sm font-black text-center px-2 break-words" style={{ color: '#8A7415' }}>{centerValue}</span>
+          )}
         </div>
       </div>
       <div className="flex-1 w-full space-y-2">
@@ -693,13 +695,13 @@ export default function ReportingCostByCourierPage() {
                     <p className="text-[11px] font-bold text-[#5A305A]/60 uppercase mb-2">Cost Distribution by {activeDetailNameLabel}</p>
                     {viewMode === 'PPJK' && (donutSegments.length === 0
                       ? <p className="text-xs text-slate-400 italic">No data.</p>
-                      : <Donut segments={donutSegments} centerLabel="Total" centerValue={fmtIdr(sumsAll.totalCost)} />)}
+                      : <Donut segments={donutSegments} centerLabel="Total" centerValue={fmtIdr(sumsAll.totalCost)} hideCenterValue={selectedPpjk.size > 0} />)}
                     {viewMode === 'ORIGIN' && (byOriginDetail.length === 0
                       ? <p className="text-xs text-slate-400 italic">No data.</p>
-                      : <Donut segments={byOriginDetail.map((d, i) => ({ label: d.name, value: d.sums.totalCost, color: PPJK_COLORS[i % PPJK_COLORS.length] }))} centerLabel="Total" centerValue={fmtIdr(sumsSelected.totalCost)} />)}
+                      : <Donut segments={byOriginDetail.map((d, i) => ({ label: d.name, value: d.sums.totalCost, color: PPJK_COLORS[i % PPJK_COLORS.length] }))} centerLabel="Total" centerValue={fmtIdr(sumsSelected.totalCost)} hideCenterValue={selectedPpjk.size > 0} />)}
                     {viewMode === 'WEIGHT' && (weightBuckets.length === 0
                       ? <p className="text-xs text-slate-400 italic">No data.</p>
-                      : <Donut segments={weightBuckets.map((b, i) => ({ label: b.name, value: b.sums.totalCost, color: PPJK_COLORS[i % PPJK_COLORS.length] }))} centerLabel="Total" centerValue={fmtIdr(weightBucketsFull.reduce((a, b) => a + b.sums.totalCost, 0))} />)}
+                      : <Donut segments={weightBuckets.map((b, i) => ({ label: b.name, value: b.sums.totalCost, color: PPJK_COLORS[i % PPJK_COLORS.length] }))} centerLabel="Total" centerValue={fmtIdr(weightBucketsFull.reduce((a, b) => a + b.sums.totalCost, 0))} hideCenterValue={selectedPpjk.size > 0} />)}
                   </div>
                   <div>
                     <p className="text-[11px] font-bold text-[#5A305A]/60 uppercase mb-2">

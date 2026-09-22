@@ -2,12 +2,13 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
-import { CheckCircle2, FileCheck2, UploadCloud, X, AlertTriangle, Clock, ClipboardCheck, ClipboardList, Edit3, Save, Scale, Trash2, RefreshCw, ChevronDown, LayoutGrid, List as ListIcon, Printer, Search, ArrowUp, ArrowDown } from 'lucide-react';
-import { formatMoney, formatDateID, APPROVAL_STATUS_META, COST_STATUS_META, REKAPAN_EDITABLE_FIELDS, updateRekapanFarOverseasAir, parseRouteNote, rematchTarif, mapModeToJenisLayanan, computeExpectedFromRate, computeCostStatus, parseJsonField, fetchPicEligibleUsers, type PoListEntry, type PicEligibleUser } from '../utils/FarOverseasAirHelpers';
+import { CheckCircle2, FileCheck2, UploadCloud, X, AlertTriangle, Clock, ClipboardCheck, ClipboardList, Edit3, Save, Scale, Trash2, RefreshCw, ChevronDown, LayoutGrid, List as ListIcon, Printer, Search, ArrowUp, ArrowDown, FolderOpen } from 'lucide-react';
+import { formatMoney, formatDateID, APPROVAL_STATUS_META, COST_STATUS_META, REKAPAN_EDITABLE_FIELDS, updateRekapanFarOverseasAir, parseRouteNote, rematchTarif, mapModeToJenisLayanan, vendorTargetFromShipVia, computeExpectedFromRate, computeCostStatus, parseJsonField, fetchPicEligibleUsers, fetchDistinctMemoTitles, type PoListEntry, type PicEligibleUser, type RateRow } from '../utils/FarOverseasAirHelpers';
 import { EditableCell } from '../components/FarOverseasAirEditableField';
 import FarOverseasAirDetailModal from '../components/FarOverseasAirDetailModal';
 import FarOverseasAirCostValidationModal from '../components/FarOverseasAirCostValidationModal';
 import FarOverseasAirWeightBreakdownModal from '../components/FarOverseasAirWeightBreakdownModal';
+import FarOverseasAirDocumentsModal from '../components/FarOverseasAirDocumentsModal';
 import FarOverseasAirUploadModal from '../components/FarOverseasAirUploadModal';
 import ExportModal from '../components/ExportModal';
 import Greeting from '../components/Greeting';
@@ -124,6 +125,9 @@ type ListRenderCtx = {
   togglePoExpanded: (id: string) => void;
   picUsers: PicEligibleUser[];
   costCityMap: Record<string, string>;
+  memoTitleOptions: string[];
+  addMemoTitleOption: (title: string) => void;
+  tarifVendorRows: RateRow[];
 };
 
 type ListColumn = {
@@ -183,6 +187,110 @@ const colWidthClass = (col: ListColumn): string => {
   if (col.inputType === 'number') return 'w-[120px]';
   return 'w-[150px]';
 };
+
+// Dropdown MEMO TITLE + opsi "+ Add new..." (2026-09) -- dipakai kolom MEMO TITLE di LIST_COLUMNS
+// & FarOverseasAirCardEditModal (reuse otomatis krn keduanya lewat `col.render`). Mode "tambah
+// baru" pakai state lokal (`addingNew`) yg beralih tampilan dari <select> ke <input> teks biasa.
+const ADD_NEW_MEMO_TITLE = '__ADD_NEW__';
+function MemoTitleEditCell({ value, options, onChange, onAddOption }: {
+  value: string | null; options: string[]; onChange: (v: string | null) => void; onAddOption: (title: string) => void;
+}) {
+  const [addingNew, setAddingNew] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+
+  if (addingNew) {
+    const commit = () => {
+      const v = newTitle.trim();
+      setAddingNew(false);
+      if (!v) return;
+      onAddOption(v);
+      onChange(v);
+    };
+    return (
+      <input
+        autoFocus
+        type="text"
+        value={newTitle}
+        placeholder="New memo title..."
+        onChange={e => setNewTitle(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); else if (e.key === 'Escape') setAddingNew(false); }}
+        className="w-[160px] text-xs p-1.5 border border-blue-400 rounded outline-none text-[#5A305A] bg-white"
+      />
+    );
+  }
+
+  return (
+    <select
+      value={value && options.includes(value) ? value : ''}
+      onChange={e => {
+        if (e.target.value === ADD_NEW_MEMO_TITLE) { setNewTitle(''); setAddingNew(true); return; }
+        onChange(e.target.value || null);
+      }}
+      className="w-[160px] text-xs p-1.5 border border-blue-400 rounded outline-none text-[#5A305A] bg-white"
+    >
+      <option value="">— None —</option>
+      {value && !options.includes(value) && <option value={value}>{value}</option>}
+      {options.map(o => <option key={o} value={o}>{o}</option>)}
+      <option value={ADD_NEW_MEMO_TITLE}>+ Add new...</option>
+    </select>
+  );
+}
+
+// 3 dropdown terpisah utk NOTE 1 (route_note) -- GANTI dari edit teks bebas (2026-09, permintaan
+// user). Opsi tiap dropdown = nilai UNIK origin/tujuan/jenis_layanan dari
+// `far_overseas_tarif_vendor` yg vendor_name-nya cocok `ship_via` baris ini (`vendorTargetFromShipVia`,
+// SATU-SATUNYA fungsi pemetaan OCTAGON/JIANQIAO, sama yg dipakai `rematchTarif`). Nilai AWAL
+// tiap dropdown di-parse dari `route_note` yg sudah tersimpan (`parseRouteNote` + case-insensitive
+// match ke opsi -- kalau tidak cocok satu pun opsi, dropdown itu dibiarkan KOSONG/unselected,
+// TIDAK dipaksakan pilih salah satu, sesuai permintaan user). `route_note` BARU hanya
+// dikomposisi & di-commit (`onChange`) kalau KETIGA dropdown sudah terisi -- kalau baru sebagian
+// yg dipilih, belum ada teks valid utk disimpan (format baku butuh ketiganya).
+function RouteNoteEditCell({ value, shipVia, tarifVendorRows, onChange }: {
+  value: string | null; shipVia: string | null | undefined; tarifVendorRows: RateRow[]; onChange: (v: string | null) => void;
+}) {
+  const vendorTarget = vendorTargetFromShipVia(shipVia);
+  const vendorRows = tarifVendorRows.filter(t => t.vendor_name === vendorTarget && t.aktif !== false);
+  const originOptions = Array.from(new Set(vendorRows.map(t => t.origin).filter(Boolean) as string[])).sort();
+  const tujuanOptions = Array.from(new Set(vendorRows.map(t => t.tujuan).filter(Boolean) as string[])).sort();
+  const jenisOptions = Array.from(new Set(vendorRows.map(t => t.jenis_layanan).filter(Boolean) as string[])).sort();
+
+  const parsed = parseRouteNote(value);
+  const findMatch = (options: string[], parsedVal: string | undefined): string => {
+    if (!parsedVal) return '';
+    const found = options.find(o => o.toUpperCase() === parsedVal.toUpperCase());
+    return found || '';
+  };
+  const originSel = findMatch(originOptions, parsed?.origin);
+  const tujuanSel = findMatch(tujuanOptions, parsed?.destination);
+  // Jenis Layanan: NOTE 1 lama bisa berisi abbreviation ("AIR"/"SEA"/dst, lihat
+  // `mapModeToJenisLayanan`) -- coba cocokkan langsung dulu (data BARU hasil dropdown ini),
+  // fallback ke hasil terjemahan abbreviation (data LAMA).
+  const jenisSel = findMatch(jenisOptions, parsed?.mode) || findMatch(jenisOptions, mapModeToJenisLayanan(parsed?.mode) || undefined);
+
+  const commit = (o: string, t: string, j: string) => {
+    if (!o || !t || !j) return; // belum lengkap -- jangan commit dulu, format baku butuh ketiganya.
+    onChange(`PENGIRIMAN DARI ${o.toUpperCase()} KE ${t.toUpperCase()} (${j.toUpperCase()})`);
+  };
+
+  const selectClass = "w-full text-xs p-1.5 border border-blue-400 rounded outline-none text-[#5A305A] bg-white";
+  return (
+    <div className="flex flex-col gap-1 w-[220px]">
+      <select value={originSel} onChange={e => commit(e.target.value, tujuanSel, jenisSel)} className={selectClass}>
+        <option value="">— Origin —</option>
+        {originOptions.map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+      <select value={tujuanSel} onChange={e => commit(originSel, e.target.value, jenisSel)} className={selectClass}>
+        <option value="">— Destination —</option>
+        {tujuanOptions.map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+      <select value={jenisSel} onChange={e => commit(originSel, tujuanSel, e.target.value)} className={selectClass}>
+        <option value="">— Service Type —</option>
+        {jenisOptions.map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+    </div>
+  );
+}
 
 const LIST_COLUMNS: ListColumn[] = [
     { header: 'NO', render: (_r, idx) => idx + 1 },
@@ -265,7 +373,26 @@ const LIST_COLUMNS: ListColumn[] = [
     { header: 'OTHER', field: 'other_amount', inputType: 'number', align: 'right', format: fmtWithCurrency('total_amount_currency') },
     { header: 'AMOUNT', field: 'clearance_other_total', inputType: 'number', align: 'right', format: fmtWithCurrency('total_amount_currency') },
     { header: 'TOTAL AMOUNT', field: 'total_amount', inputType: 'number', align: 'right', format: fmtTotalAmount },
-    { header: 'NOTE 1', field: 'route_note', wide: true, inputPlaceholder: 'PENGIRIMAN DARI {ASAL} KE {TUJUAN} (AIR/SEA/REG/EXPRESS/ECONOMY)' },
+    // NOTE 1 jadi 3 dropdown terpisah (2026-09, GANTI dari edit teks bebas, permintaan user
+    // "hindari typo/tidak match, ketiganya simetris") -- lihat `RouteNoteEditCell` di atas.
+    {
+      header: 'NOTE 1',
+      wide: true,
+      render: (r, _idx, _costStatus, ctx) => {
+        const editingThisRow = ctx.editingRowId === r.id;
+        const val = ctx.getVal(r, 'route_note');
+        const edited = Array.isArray(r.edited_fields) && r.edited_fields.includes('route_note');
+        if (editingThisRow) {
+          return <RouteNoteEditCell value={val} shipVia={r.ship_via} tarifVendorRows={ctx.tarifVendorRows} onChange={v => ctx.setVal(r, 'route_note', v)} />;
+        }
+        return (
+          <div className="w-[300px] flex items-start gap-1.5">
+            <span className="whitespace-normal break-words leading-snug flex-1">{val || <span className="italic text-slate-400">-</span>}</span>
+            {edited && <Edit3 size={11} className="text-amber-500 shrink-0 mt-0.5" />}
+          </div>
+        );
+      }
+    },
     // NOTE 2 dipecah 2 (2026-09, permintaan user): KIRI = item_description hasil ekstraksi
     // otomatis n8n, SELAMANYA read-only (dikeluarkan dari REKAPAN_EDITABLE_FIELDS supaya tidak
     // bisa lagi ketimpa lewat UI, beda dari sebelumnya yg 1 field ini langsung bisa diedit &
@@ -346,7 +473,29 @@ const LIST_COLUMNS: ListColumn[] = [
       }
     },
     { header: 'NOTE 4', field: 'other_note', wide: true },
-    { header: 'MEMO TITLE', field: 'memo_title' },
+    // MEMO TITLE jadi dropdown (2026-09, permintaan user) -- isi opsi dari `ctx.memoTitleOptions`
+    // (nilai UNIK yg SUDAH pernah dipakai di data, lihat `fetchDistinctMemoTitles()`). Pilih
+    // "+ Add new..." -> switch ke `<input>` teks biasa (state lokal `addingNew`) supaya user
+    // bisa ketik judul BENAR-BENAR baru -- begitu di-commit, langsung ditambahkan ke
+    // `ctx.memoTitleOptions` in-memory (`addMemoTitleOption`) supaya baris lain di sesi yg sama
+    // bisa langsung pilih judul itu juga tanpa perlu refresh halaman.
+    {
+      header: 'MEMO TITLE',
+      render: (r, _idx, _costStatus, ctx) => {
+        const editingThisRow = ctx.editingRowId === r.id;
+        const val = ctx.getVal(r, 'memo_title');
+        const edited = Array.isArray(r.edited_fields) && r.edited_fields.includes('memo_title');
+        if (editingThisRow) {
+          return <MemoTitleEditCell value={val} options={ctx.memoTitleOptions} onChange={v => ctx.setVal(r, 'memo_title', v)} onAddOption={ctx.addMemoTitleOption} />;
+        }
+        return (
+          <div className="w-[160px] flex items-start gap-1.5">
+            <span className="whitespace-normal break-words leading-snug flex-1">{val || <span className="italic text-slate-400">-</span>}</span>
+            {edited && <Edit3 size={11} className="text-amber-500 shrink-0 mt-0.5" />}
+          </div>
+        );
+      }
+    },
     // Kolom PIC (2026-09, GANTI dari free-text `pic_name` jadi dropdown user) -- admin/ops pilih
     // SIAPA yang berhak approve tahap PIC utk memo ini, dibatasi ke user yg punya page access
     // `direct_loading` (`ctx.picUsers`, dari RPC `get_users_with_page_access`). Field baru
@@ -610,6 +759,14 @@ export default function FarOverseasAirPage() {
   useEffect(() => { setPage(1); }, [searchTerm, sortBy, sortDir]);
   const [queue, setQueue] = useState<any[]>([]);
   const [picUsers, setPicUsers] = useState<PicEligibleUser[]>([]);
+  // Opsi dropdown MEMO TITLE (2026-09) -- di-fetch sekali saat halaman dibuka (pola sama
+  // `picUsers`), TIDAK perlu tabel master terpisah (lihat catatan `fetchDistinctMemoTitles`).
+  const [memoTitleOptions, setMemoTitleOptions] = useState<string[]>([]);
+  const addMemoTitleOption = (title: string) => {
+    const v = title.trim();
+    if (!v) return;
+    setMemoTitleOptions(prev => prev.includes(v) ? prev : [...prev, v].sort());
+  };
   const [selected, setSelected] = useState<any | null>(null);
   // Tombol "Print" di Card view (2026-09) -- SENGAJA TIDAK menambah UI print baru,
   // `FarOverseasAirDetailModal.tsx` (memo cetak) TIDAK BOLEH disentuh (permintaan eksplisit
@@ -619,6 +776,7 @@ export default function FarOverseasAirPage() {
   const autoPrintRef = useRef(false);
   const [costModalRow, setCostModalRow] = useState<any | null>(null);
   const [weightModalRow, setWeightModalRow] = useState<any | null>(null);
+  const [docsModalRow, setDocsModalRow] = useState<any | null>(null);
 
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
   const [openActionsRowId, setOpenActionsRowId] = useState<string | null>(null);
@@ -898,6 +1056,14 @@ export default function FarOverseasAirPage() {
   // Daftar user yang boleh dipilih sbg PIC di kolom List Memo -- di-fetch sekali saat halaman
   // dibuka (bukan tiap render), lihat CLAUDE.md "PIC per-memo assignment".
   useEffect(() => { fetchPicEligibleUsers().then(setPicUsers); }, []);
+  useEffect(() => { fetchDistinctMemoTitles().then(setMemoTitleOptions); }, []);
+  // Opsi 3 dropdown NOTE 1 (2026-09) -- di-fetch sekali, dipakai `RouteNoteEditCell` (filter
+  // per-baris via vendor_name di dalam komponen itu, lihat `vendorTargetFromShipVia`).
+  const [tarifVendorRows, setTarifVendorRows] = useState<RateRow[]>([]);
+  useEffect(() => {
+    supabase.from('far_overseas_tarif_vendor').select('vendor_name, origin, tujuan, jenis_layanan, aktif')
+      .then(({ data, error }) => { if (error) { console.error('fetch far_overseas_tarif_vendor failed:', error); return; } setTarifVendorRows((data || []) as RateRow[]); });
+  }, []);
 
   // Nilai efektif sebuah field: kalau ada edit lokal yang belum disimpan, pakai itu -- kalau
   // tidak, pakai nilai dari server. Perubahan HANYA disimpan ke DB saat "Simpan Semua" diklik.
@@ -1154,7 +1320,7 @@ export default function FarOverseasAirPage() {
           </div>
         </header>
 
-        <main className="px-3 pt-2 pb-4 flex-1 flex flex-col overflow-hidden gap-5">
+        <main className="px-3 pt-2 pb-2 flex-1 flex flex-col overflow-hidden gap-5">
 
           {/* Banner job aktif */}
           {activeJobId && activeJobStatus === 'PENDING' && (
@@ -1192,8 +1358,13 @@ export default function FarOverseasAirPage() {
               area tabel di dalamnya yang scroll (pola sama seperti SharedDataTable.tsx di
               halaman Audit Sea & Air / Courier) -- bukan seluruh halaman yang discroll panjang. */}
           <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
-            <div className="px-5 py-2 border-b border-white/60 flex items-center justify-between gap-3 flex-nowrap shrink-0">
-              <div className="flex items-center justify-end gap-2 flex-nowrap overflow-x-auto py-2 min-w-0 flex-1">
+            {/* Baris 1: filter tampilan (List/Card, Approval, Search, Sort) -- terpisah dari
+                baris aksi di bawahnya (2026-09, permintaan user "4 tombol aksi menempel ke
+                tabel"). Jarak dirapatkan (py-1.5, bukan py-2) + susulan permintaan user "buat
+                seperti ada pembedanya" -- baris ini dikasih `bg-white/40` (baris aksi TETAP
+                transparan) supaya ada kontras visual tipis antar baris, bukan cuma garis. */}
+            <div className="px-5 py-1.5 bg-white/40 flex items-center justify-between gap-3 flex-nowrap shrink-0">
+              <div className="flex items-center gap-2 flex-nowrap overflow-x-auto py-2 min-w-0 flex-1">
                 {/* Toggle List/Card (2026-09) -- lihat catatan panjang di deklarasi state
                     `viewMode` soal batasan Card (view-only + tombol Edit pindah ke List). */}
                 <div className="flex items-center rounded-full border border-slate-200 bg-white p-0.5 shrink-0 h-[34px]">
@@ -1226,46 +1397,12 @@ export default function FarOverseasAirPage() {
                     <option value="TIER3">Pending Director ({approvalCounts.tier3})</option>
                   </select>
                 </div>
-                <button
-                  onClick={() => { fetchList(); fetchQueue(); fetchApprovalCounts(); }}
-                  disabled={loadingList}
-                  title="Refresh"
-                  className="p-2 rounded-full bg-white/70 backdrop-blur-md border border-white/60 hover:bg-white/90 text-[#5A305A] transition-all shadow-sm flex items-center justify-center shrink-0 disabled:opacity-50 h-[34px] w-[34px]"
-                >
-                  <RefreshCw size={14} className={loadingList ? 'animate-spin' : ''} />
-                </button>
-                <button
-                  onClick={() => setShowExportModal(true)}
-                  className="px-3 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold border border-emerald-700 transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px] whitespace-nowrap"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
-                  Export
-                </button>
-                <button
-                  onClick={() => setShowQueuePanel(o => !o)}
-                  className="relative px-3 py-2 rounded-full bg-white/70 backdrop-blur-md border border-white/60 hover:bg-white/90 text-[#5A305A] font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px] whitespace-nowrap"
-                >
-                  <Clock size={14} /> Processing Queue
-                  {queue.length > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
-                      {queue.length}
-                    </span>
-                  )}
-                </button>
-                {canEditDirectLoading && (
-                  <button
-                    onClick={() => setShowUploadModal(true)}
-                    className="px-3 py-2 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px] whitespace-nowrap"
-                  >
-                    <UploadCloud size={14} /> Upload Document
-                  </button>
-                )}
                 {/* Search + Sort (2026-09) -- GANTI dropdown "Items" pageSize (`pageSize` state
                     TETAP ada, dipakai apa adanya sbg default 10, cuma UI-nya dihilangkan sesuai
                     permintaan user). Search cari di 4 kolom (Ship Via/Vendor/NOTE 1/NOTE 2
                     Manual, lihat catatan `searchTerm`), Sort by 5 opsi (lihat catatan `sortBy`
                     soal batasan sort "NOTE 1 (Negara Asal)"). */}
-                <div className="flex items-center gap-1.5 rounded-full pl-3 pr-1.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0 w-[125px]">
+                <div className="flex items-center gap-1.5 rounded-full pl-3 pr-1.5 py-1 h-[34px] border border-slate-200 bg-white flex-1 min-w-[160px]">
                   <Search size={13} className="text-[#5A305A]/50 shrink-0" />
                   <input
                     type="text"
@@ -1281,7 +1418,7 @@ export default function FarOverseasAirPage() {
                     </button>
                   )}
                 </div>
-                <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0 w-[150px]">
+                <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0 w-[210px]">
                   <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide whitespace-nowrap shrink-0">Sort</span>
                   <select
                     value={sortBy}
@@ -1303,6 +1440,47 @@ export default function FarOverseasAirPage() {
                   {sortDir === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
                 </button>
               </div>
+            </div>
+
+            {/* Baris 2: aksi (Refresh/Export/Processing Queue/Upload Document) -- SENGAJA
+                dipisah ke baris sendiri yang menempel LANGSUNG di atas tabel/grid card
+                (border-b di sini, bukan lagi di baris filter di atas), supaya keempatnya
+                jelas terasosiasi dgn tabel di bawahnya, bukan bercampur dgn filter tampilan. */}
+            <div className="px-5 py-1.5 border-b border-white/60 flex items-center justify-end gap-2 flex-nowrap overflow-x-auto shrink-0">
+              <button
+                onClick={() => { fetchList(); fetchQueue(); fetchApprovalCounts(); }}
+                disabled={loadingList}
+                title="Refresh"
+                className="p-2 rounded-full bg-white/70 backdrop-blur-md border border-white/60 hover:bg-white/90 text-[#5A305A] transition-all shadow-sm flex items-center justify-center shrink-0 disabled:opacity-50 h-[34px] w-[34px]"
+              >
+                <RefreshCw size={14} className={loadingList ? 'animate-spin' : ''} />
+              </button>
+              <button
+                onClick={() => setShowExportModal(true)}
+                className="px-3 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold border border-emerald-700 transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px] whitespace-nowrap"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+                Export
+              </button>
+              <button
+                onClick={() => setShowQueuePanel(o => !o)}
+                className="relative px-3 py-2 rounded-full bg-white/70 backdrop-blur-md border border-white/60 hover:bg-white/90 text-[#5A305A] font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px] whitespace-nowrap"
+              >
+                <Clock size={14} /> Processing Queue
+                {queue.length > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
+                    {queue.length}
+                  </span>
+                )}
+              </button>
+              {canEditDirectLoading && (
+                <button
+                  onClick={() => setShowUploadModal(true)}
+                  className="px-3 py-2 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px] whitespace-nowrap"
+                >
+                  <UploadCloud size={14} /> Upload Document
+                </button>
+              )}
             </div>
             {viewMode === 'LIST' && (
             <div ref={topScrollRef} onScroll={handleTopScroll} className="overflow-x-auto w-full shrink-0 scrollbar-visible">
@@ -1329,7 +1507,7 @@ export default function FarOverseasAirPage() {
                     rows.map((r, idx) => {
                       const costStatus = costStatusMap[r.id];
                       const editingThisRow = editingRowId === r.id;
-                      const ctx: ListRenderCtx = { onOpenWeightModal: setWeightModalRow, editingRowId, getVal, setVal, expandedPoRows, togglePoExpanded, picUsers, costCityMap };
+                      const ctx: ListRenderCtx = { onOpenWeightModal: setWeightModalRow, editingRowId, getVal, setVal, expandedPoRows, togglePoExpanded, picUsers, costCityMap, memoTitleOptions, addMemoTitleOption, tarifVendorRows };
                       return (
                         <tr key={r.id} id={`far-row-${r.id}`} className="group bg-white hover:bg-slate-50 transition-colors">
                           {LIST_COLUMNS.map((col, i) => {
@@ -1399,6 +1577,13 @@ export default function FarOverseasAirPage() {
                                     <span className="flex items-center gap-1 text-[9px] font-semibold text-[#5A305A]"><ClipboardList size={10} /> Cost</span>
                                     <CostBadge status={costStatus} compact />
                                   </button>
+                                  <button
+                                    onClick={() => { setDocsModalRow(r); setOpenActionsRowId(null); }}
+                                    title="Dokumen"
+                                    className="w-full flex items-center gap-1 px-1.5 py-1 rounded-md border border-slate-200 bg-white hover:bg-slate-100 transition-colors"
+                                  >
+                                    <span className="flex items-center gap-1 text-[9px] font-semibold text-[#5A305A]"><FolderOpen size={10} /> Dokumen</span>
+                                  </button>
                                   {canEditDirectLoading && (
                                     <button
                                       onClick={() => { toggleEditRow(r.id); setOpenActionsRowId(null); }}
@@ -1443,12 +1628,12 @@ export default function FarOverseasAirPage() {
                 ) : rows.length === 0 ? (
                   <div className="text-center py-10 text-[#5A305A] text-sm italic">No FAR Overseas data yet. Click "Upload Document" to get started.</div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2.5">
                     {rows.map((r) => {
                       const costStatus = costStatusMap[r.id];
                       const poParts = typeof r.po_ori === 'string' ? r.po_ori.split('+').map((s: string) => s.trim()).filter(Boolean) : [];
                       return (
-                        <div key={r.id} className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 flex flex-col gap-2.5 hover:border-[#5A305A]/40 transition-colors">
+                        <div key={r.id} className="bg-white border border-slate-200 rounded-xl shadow-sm p-3 flex flex-col gap-2 hover:border-[#5A305A]/40 transition-colors">
                           {/* Wrapper `flex-1` di sekitar konten (No PO + info grid) supaya baris
                               tombol di bawah SELALU nempel di tepi bawah card (`mt-auto`) --
                               tanpa ini, tombol posisinya ikut naik-turun tergantung berapa
@@ -1472,12 +1657,12 @@ export default function FarOverseasAirPage() {
                               <CostBadge status={costStatus} compact />
                             </div>
                           </div>
-                          <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs mt-2.5">
+                          <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-xs mt-2">
                             <div>
                               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Invoice No</p>
                               <p className="text-[#5A305A] break-words">{r.no_invoice || <span className="italic text-slate-400">-</span>}</p>
                             </div>
-                            <div>
+                            <div className="text-right">
                               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Inv Date</p>
                               <p className="text-[#5A305A]">{formatDateID(r.invoice_date)}</p>
                             </div>
@@ -1496,7 +1681,7 @@ export default function FarOverseasAirPage() {
                               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Total Amount</p>
                               <p className="text-[#5A305A] font-semibold">{fmtTotalAmount(r.total_amount, r)}</p>
                             </div>
-                            <div>
+                            <div className="text-right">
                               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Qty/Weight</p>
                               <p className="text-[#5A305A] break-words">{r.qty ?? <span className="italic text-slate-400">-</span>}/{r.weight_unit || <span className="italic text-slate-400">-</span>}</p>
                             </div>
@@ -1506,44 +1691,55 @@ export default function FarOverseasAirPage() {
                             </div>
                           </div>
                           </div>
-                          <div className="flex items-center gap-1.5 pt-2 border-t border-slate-100 mt-auto">
+                          {/* Tombol jadi icon-only (2026-09, "buat lebih compact") -- label teks
+                              dihapus, `title` tooltip tetap dipertahankan utk aksesibilitas --
+                              supaya 5 tombol tetap muat 1 baris walau card menyempit
+                              (xl:grid-cols-4, lihat di atas). */}
+                          <div className="flex items-center gap-1 pt-1.5 border-t border-slate-100 mt-auto">
                             <button
                               onClick={() => navigate(`/direct-loading/${r.id}`)}
                               title="Approval"
-                              className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-semibold text-[#5A305A] hover:bg-slate-50 transition-colors"
+                              className="flex-1 flex items-center justify-center px-2 py-1 rounded-lg border border-slate-200 bg-white text-[#5A305A] hover:bg-slate-50 transition-colors"
                             >
-                              <ClipboardCheck size={11} /> Approval
+                              <ClipboardCheck size={13} />
                             </button>
                             <button
                               onClick={() => setCostModalRow(r)}
                               title="Cost Validation"
-                              className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-semibold text-[#5A305A] hover:bg-slate-50 transition-colors"
+                              className="flex-1 flex items-center justify-center px-2 py-1 rounded-lg border border-slate-200 bg-white text-[#5A305A] hover:bg-slate-50 transition-colors"
                             >
-                              <ClipboardList size={11} /> Cost
+                              <ClipboardList size={13} />
+                            </button>
+                            <button
+                              onClick={() => setDocsModalRow(r)}
+                              title="Dokumen"
+                              className="flex-1 flex items-center justify-center px-2 py-1 rounded-lg border border-slate-200 bg-white text-[#5A305A] hover:bg-slate-50 transition-colors"
+                            >
+                              <FolderOpen size={13} />
                             </button>
                             {canEditDirectLoading && (
                               <button
                                 onClick={() => setCardEditRow(r)}
                                 title="Edit this memo"
-                                className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-blue-200 bg-blue-50 text-[10px] font-semibold text-blue-700 hover:bg-blue-100 transition-colors"
+                                className="flex-1 flex items-center justify-center px-2 py-1 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
                               >
-                                <Edit3 size={11} /> Edit
+                                <Edit3 size={13} />
                               </button>
                             )}
                             <button
                               onClick={() => { autoPrintRef.current = true; navigate(`/direct-loading/${r.id}`); }}
                               title="Print memo"
-                              className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-slate-200 bg-white text-[10px] font-semibold text-[#5A305A] hover:bg-slate-50 transition-colors"
+                              className="flex-1 flex items-center justify-center px-2 py-1 rounded-lg border border-slate-200 bg-white text-[#5A305A] hover:bg-slate-50 transition-colors"
                             >
-                              <Printer size={11} /> Print Memo
+                              <Printer size={13} />
                             </button>
                             {canEditDirectLoading && (
                               <button
                                 onClick={() => openDeleteConfirm(r)}
                                 title="Delete this memo"
-                                className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-rose-200 bg-rose-50 text-[10px] font-semibold text-rose-600 hover:bg-rose-100 transition-colors"
+                                className="flex-1 flex items-center justify-center px-2 py-1 rounded-lg border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 transition-colors"
                               >
-                                <Trash2 size={11} />
+                                <Trash2 size={13} />
                               </button>
                             )}
                           </div>
@@ -1624,6 +1820,10 @@ export default function FarOverseasAirPage() {
         <FarOverseasAirCostValidationModal farOverseasId={costModalRow.id} onClose={() => setCostModalRow(null)} />
       )}
 
+      {docsModalRow && (
+        <FarOverseasAirDocumentsModal record={docsModalRow} onClose={() => setDocsModalRow(null)} />
+      )}
+
       {weightModalRow && (
         <FarOverseasAirWeightBreakdownModal
           record={weightModalRow}
@@ -1636,7 +1836,7 @@ export default function FarOverseasAirPage() {
         <FarOverseasAirCardEditModal
           row={cardEditRow}
           costStatus={costStatusMap[cardEditRow.id]}
-          ctx={{ onOpenWeightModal: setWeightModalRow, editingRowId: cardEditRow.id, getVal, setVal, expandedPoRows, togglePoExpanded, picUsers, costCityMap }}
+          ctx={{ onOpenWeightModal: setWeightModalRow, editingRowId: cardEditRow.id, getVal, setVal, expandedPoRows, togglePoExpanded, picUsers, costCityMap, memoTitleOptions, addMemoTitleOption, tarifVendorRows }}
           saving={savingEdits}
           onClose={() => setCardEditRow(null)}
           onCancel={() => { handleDiscardRowEdit(cardEditRow.id); setCardEditRow(null); }}

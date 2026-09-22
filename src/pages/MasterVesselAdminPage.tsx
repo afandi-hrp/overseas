@@ -75,7 +75,7 @@ export default function MasterVesselAdminPage() {
         </div>
       </header>
 
-      <main className="max-w-7xl w-full mx-auto px-3 pt-2 pb-2 flex-1 flex flex-col min-h-0">
+      <main className="px-3 pt-2 pb-2 flex-1 flex flex-col min-h-0">
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-3 shrink-0">
           <div className="flex flex-nowrap items-center gap-3 overflow-x-auto">
             <div className="relative">

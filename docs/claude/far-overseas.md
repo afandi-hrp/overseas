@@ -1,3 +1,119 @@
+## Tarif Vendor FAR Overseas Air — dirombak total ke struktur quotation+periode (2026-09)
+
+`FarOverseasVendorTarifPage.tsx` (`/settings/tarif-far-overseas-vendor`, page_key
+`settings_tarif_far_overseas_vendor` TETAP SAMA) DIBANGUN ULANG TOTAL. Tabel lama
+`far_overseas_tarif_vendor` (flat, 1 baris = 1 kombinasi+1 rentang berat, RPC
+`upsert_tarif_far_overseas_vendor`/`nonaktifkan_tarif_far_overseas_vendor`) **SUDAH TIDAK
+DIPAKAI** — masih ada sbg backup `far_overseas_tarif_vendor_legacy_backup`, JANGAN dipakai lagi.
+n8n SUDAH otomatis pakai struktur baru (perubahan harga dari halaman baru langsung berlaku ke
+validasi shipment berikutnya, tidak perlu sinkron manual apa pun ke n8n).
+
+**Struktur baru (3 tabel)**:
+- `far_overseas_vendor_master` (`vendor_name`, `aktif`) — daftar vendor utk dropdown, dikelola
+  via modal "Kelola Vendor" (tombol di toolbar filter) — CRUD add-only dari UI (belum ada
+  edit/nonaktifkan dari modal ini, cuma tambah + lihat status).
+- `far_overseas_tarif_quotation` (INDUK, py PERIODE) — 1 baris = 1 kombinasi vendor+jenis_layanan
+  +origin+tujuan(+kategori_barang khusus Jianqiao) UNTUK 1 PERIODE (`periode_mulai`,
+  `periode_selesai` nullable = masih berlaku).
+- `far_overseas_tarif_quotation_detail` (ANAK) — banyak baris per quotation, 1 baris = 1 rentang
+  berat (`berat_min`/`berat_max` nullable=open-ended) + harganya (`harga_per_kg` ATAU
+  `harga_per_cbm`/`harga_per_cbm_min`/`harga_per_cbm_max` utk tarif rentang, `ppn_status`
+  PPN/Non-PPN, `notes` teks bebas).
+
+**UI halaman baru** — list dikelompokkan per rute (`groupKeyOf()` = vendor+jenis+origin+tujuan+
+kategori_barang), tiap grup collapsible berisi RIWAYAT periode (quotation) urut `periode_mulai`
+DESC, tiap quotation collapsible lagi berisi tabel Detail Harga per rentang berat (Berat (Kg) |
+Unit Price | PPN | Notes) + form tambah/edit/hapus rentang berat inline (bukan modal terpisah).
+Kolom Berat format `formatWeight()`: `berat_max` null → `"{min}+ Kg"`; `berat_min===berat_max`
+→ `"{min} Kg"`; selain itu → `"{min}-{max} Kg"`.
+
+**Alur "Update Harga (Buat Periode Baru)"** — tombol per quotation yg masih berlaku
+(`periode_selesai` null), buka modal Quotation dgn vendor/jenis/origin/tujuan/kategori TERKUNCI
+sama persis (disabled, `qCloseOldId` diisi id quotation lama) — submit `handleSaveQuotation`
+jalankan 2 RPC berurutan: (1) tutup quotation LAMA (`p_periode_selesai` = sehari SEBELUM
+`periode_mulai` baru), (2) buat quotation BARU. User tidak perlu ingat urutan manual 2 langkah
+ini. Field Vendor/Jenis Layanan/Origin/Tujuan/Kategori Barang di-disable saat mode ini (harus
+identik kombinasi lama, hanya kurs/periode/harga yang boleh beda).
+
+**RPC — SUDAH DIBUAT USER SENDIRI** (`21_rpc_quotation_management.sql`, dijalankan user
+langsung, BUKAN dibuatkan dari sesi Claude Code): `upsert_far_overseas_vendor_master`,
+`upsert_far_overseas_tarif_quotation` (signature LEBIH LENGKAP dari dugaan awal — ada
+`p_tipe_layanan`, `p_catatan`, `p_aktif` juga, semua opsional/`DEFAULT NULL`),
+`upsert_far_overseas_tarif_quotation_detail`, `nonaktifkan_far_overseas_tarif_quotation`,
+`hapus_far_overseas_tarif_quotation_detail`. **Jangan bikin ulang RPC ini dari nol kalau ada
+laporan serupa lagi** — sempat terjadi (2026-09) sesi Claude Code bikin versi RPC baru dgn
+signature beda tanpa cek ke user dulu, gagal dijalankan (`42P13: cannot remove parameter
+defaults from existing function`) krn versi user sudah ada duluan.
+
+`sql/011_far_overseas_tarif_quotation_rpc.sql` isinya PATCH (`CREATE OR REPLACE` dgn signature
+IDENTIK ke versi user, **BELUM DIJALANKAN ke Supabase production — WAJIB dijalankan manual
+dulu**) — nambah guard `has_edit_access('settings_tarif_far_overseas_vendor')` di baris pertama
+tiap fungsi, KRN versi awal user TIDAK PUNYA guard ini sama sekali (celah: RPC `SECURITY
+DEFINER` menulis ke tabel ber-RLS, siapa pun yang login — termasuk TANPA akses edit halaman ini —
+bisa panggil RPC-nya langsung dari console browser). Pola wajib project ini, lihat bagian RBAC di
+CLAUDE.md utama ("RPC SECURITY DEFINER bypass RLS total").
+
+**Format tanggal periode** — baris "Periode Mulai -> Periode Selesai" di riwayat quotation
+ditampilkan `DD-MMM-YYYY` (cth "01-Sep-2026") via `formatDateDMY()` (parse manual dari string ISO
+`YYYY-MM-DD`, BUKAN `new Date(iso)` polos — cegah pergeseran timezone lokal). **HANYA display**
+— kolom DB & `<input type="date">` form Quotation TETAP ISO (native date picker browser tidak
+bisa diubah formatnya).
+
+**Pagination** — list rute (grup) di-paginate client-side (`page`/`pageSize=10`, `useMemo` slice
+`groups`, reset `page` ke 1 saat filter berubah, footer "Menampilkan X–Y dari Z rute" + tombol
+Chevron) — pola sama halaman list lain di app ini. Data quotation TETAP di-fetch semua sekaligus
+(`fetchAll()`, tidak server-side/`.range()`), paging cuma memotong tampilan grup di JS.
+
+**RLS 3 tabel baru — SUDAH DIKONFIRMASI KOSONG TOTAL ("UNRESTRICTED") via screenshot Table
+Editor Supabase user (2026-09)** — `far_overseas_vendor_master`/`far_overseas_tarif_quotation`/
+`far_overseas_tarif_quotation_detail` bisa dibaca/ditulis siapa pun yang py anon/authenticated
+key LANGSUNG (`.select()`/`.insert()` dari console browser), TERLEPAS guard `has_edit_access`
+di RPC `sql/011_...` sudah ada — guard RPC TIDAK menggantikan RLS tabel. Fix:
+`sql/012_far_overseas_tarif_quotation_rls.sql` (**BELUM DIJALANKAN ke Supabase production —
+WAJIB dijalankan manual dulu**) — `enable row level security` + 4 policy (SELECT via
+`has_page_access('settings_tarif_far_overseas_vendor')`, INSERT/UPDATE/DELETE via
+`has_edit_access` yang sama) di ketiga tabel, idempotent (`drop policy if exists` dulu).
+**`far_overseas_tarif_vendor_flat` (VIEW, bukan tabel) SENGAJA TIDAK ikut** — Postgres tidak
+py RLS langsung utk view, row security ikut tabel dasarnya; kalau view ini masih aktif dipakai
+baca data, cek definisinya dulu (`pg_get_viewdef`) apakah tabel dasarnya sudah RLS-protected —
+belum diverifikasi dari sesi ini (tidak ada akses DB langsung).
+`far_overseas_tarif_vendor_legacy_backup`/`rekapan_far_overseas_air` TIDAK ikut disentuh (sudah
+py RLS aktif per screenshot, ikon beda dari "UNRESTRICTED").
+
+Modal "Kelola Vendor" belum punya tombol nonaktifkan vendor dari UI (kalau diminta, tambah
+RPC/tombol baru, `aktif` di tabel sudah siap dipakai).
+
+## FAR Overseas Air — Section "Dokumen" (`dokumen_urls`, 2026-09)
+
+Kolom `rekapan_far_overseas_air.dokumen_urls` (jsonb array `{filename, file_url,
+drive_file_id}`) diisi OTOMATIS oleh n8n tiap dokumen yang diproses berhasil diupload ke Google
+Drive (BUKAN oleh app ini, sudah jalan di backend, tidak ada arus data baru dari app) — file
+sudah di-share "anyone with link can view".
+
+- **`FarOverseasAirDocumentsModal.tsx`** (BARU, `src/components/`) — dipanggil dari tombol
+  "Dokumen" (ikon `FolderOpen`) di panel Action List Memo & Card view (`docsModalRow` state,
+  `FarOverseasAirPage.tsx`). **1 shipment = 1 dokumen** (beda dari Bunker/Audit AP yang bisa py
+  banyak file per baris) — klik tombol LANGSUNG buka `PreviewModal` full-screen, **TIDAK ADA
+  modal list/perantara** (versi awal sempat py modal list dulu spt Bunker, DIHAPUS 2026-09 atas
+  permintaan eksplisit user). List ringkas (`DocumentsListWithPreview`, tombol Preview per
+  baris) HANYA jadi fallback kalau `dokumen_urls` kebetulan py >1 entry — bukan alur normal.
+  `docs.length === 0` → modal kecil "Dokumen tidak tersedia" + tombol Tutup, TIDAK crash
+  (`parseJsonField()` + filter entry yang py `drive_file_id`/`file_url`).
+- **Preview — versi awal (`<iframe src="https://drive.google.com/file/d/{id}/preview">`
+  LANGSUNG) DIGANTI** (2026-09, laporan user tampilannya beda dari modul lain — masih kebawa
+  chrome/UI Google Drive sendiri: toolbar, spinner loading Drive). Diganti ke pola PERSIS SAMA
+  dgn `PreviewModal` AuditPoPage.tsx/AccountingRekapPage.tsx/`BunkerPreviewModal`
+  BunkerCompareDocModal.tsx: proxy backend `/api/drive-file-proxy?id=<drive_file_id>` (`server.ts`)
+  di-`fetch()` via JS dulu, hasilnya disuntik ke iframe polos via `srcDoc` (HTML)/`blob:` (PDF,
+  di-rewrap paksa `type:'application/pdf'`) — dianggap same-origin, imun X-Frame-Options DAN
+  tanpa UI bawaan Drive apa pun (murni PDF/HTML viewer bawaan browser). `guessPreviewKind()`
+  tebak dari ekstensi `filename` (fallback 'pdf'). Modal preview terpisah (`PreviewModal` lokal
+  di file ini, `z-[90]`, `w-[97vw] max-w-[1600px] h-[99.5vh]`) muncul DI ATAS modal list Dokumen
+  (`z-[75]`) saat tombol Preview diklik — 2 modal bertumpuk, pola sama `SourceFilesSection` +
+  `BunkerPreviewModal` di Bunker.
+- **SENGAJA TIDAK disentuh**: `FarOverseasAirDetailModal.tsx` (memo cetak) — section Dokumen ini
+  fitur TERPISAH, bukan bagian dari memo cetak.
+
 ## FAR Overseas Air — PIC per-memo assignment
 
 Kolom **PIC** di List Memo = dropdown pilih user per-baris (bukan text bebas) — user yg dipilih
@@ -285,3 +401,60 @@ jsonb, `status`, `catatan`, `cost_validation` jsonb array).
   Urutan field: PO.No/Supplier & Inv.No/Date 2 blok independen; baris bawah Buyer → Ship Via →
   Departure Date → Weight → Price/Kg → TOTAL AMOUNT. Note pembayaran 1 baris DI LUAR kotak memo
   tapi TETAP tercetak.
+
+## FAR Overseas Air — NOTE 1 (route_note) jadi 3 dropdown simetris (2026-09)
+
+Kolom NOTE 1 di List Memo — dulu `EditableCell` teks bebas format baku "PENGIRIMAN DARI {ASAL}
+KE {TUJUAN} ({JENIS})" yang rawan typo/tidak match ke data tarif — sekarang **3 dropdown
+terpisah**: Origin, Destination, Service Type (`RouteNoteEditCell`, module-level, di atas
+`LIST_COLUMNS`, dekat `MemoTitleEditCell`).
+
+- **Opsi dropdown** — nilai UNIK `origin`/`tujuan`/`jenis_layanan` dari `far_overseas_tarif_vendor`,
+  difilter ke `vendor_name` yang cocok `ship_via` baris ini via `vendorTargetFromShipVia()`
+  (fungsi BARU di `FarOverseasAirHelpers.ts`, SATU-SATUNYA pemetaan OCTAGON/JIANQIAO — di-refactor
+  keluar dari `rematchTarif` yang sebelumnya py logic inline sendiri, supaya tidak duplikat).
+  Data tarif (`tarifVendorRows` state BARU, `far_overseas_tarif_vendor` full-fetch sekali saat
+  halaman dibuka) ditambahkan ke `ListRenderCtx` — 2 titik konstruksi ctx (row List biasa &
+  `FarOverseasAirCardEditModal`) WAJIB tetap sinkron kalau `ListRenderCtx` nambah field lagi.
+- **Nilai awal dropdown** — `parseRouteNote()` (fungsi lama, TIDAK diubah) lalu dicocokkan
+  case-insensitive ke opsi dropdown (`findMatch()`). Kalau tidak cocok satu pun opsi (kemungkinan
+  hasil bacaan Gemini beda ejaan/kapitalisasi dari data tarif, atau data lama), dropdown itu
+  dibiarkan KOSONG/unselected — TIDAK dipaksakan pilih salah satu opsi (permintaan eksplisit
+  user). Dropdown Jenis Layanan py fallback tambahan: kalau parse langsung gagal, coba lagi lewat
+  `mapModeToJenisLayanan()` (menerjemahkan abbreviation NOTE 1 versi LAMA — "AIR"/"SEA"/dst —
+  ke nilai `jenis_layanan` canonical) supaya data lama tetap ter-preselect dgn benar.
+- **Commit/compose** — `route_note` BARU cuma di-`onChange` (masuk `pendingEdits`) kalau
+  KETIGA dropdown sudah terisi (`PENGIRIMAN DARI {origin} KE {tujuan} ({jenis})`, HURUF BESAR
+  semua) — belum lengkap = belum ada teks valid utk disimpan, TIDAK ada commit parsial.
+- **Simetris di alur re-match** (`reMatchAfterRouteNoteEdit`, TIDAK diubah strukturnya) — SEKARANG
+  benar2 simetris utk ketiga dropdown (dulu cuma Kota Tujuan yang efektif memicu tarif baru krn
+  `rematchTarif` jenis-nya `===` strict, mode LAMA di NOTE 1 abbreviation vs `jenis_layanan` tabel
+  beda casing selalu gagal match diam2): `rematchTarif()` jenis matching DIGANTI dari `===` strict
+  jadi case-insensitive (simetris dgn origin/tujuan yang SUDAH case-insensitive dari awal) —
+  `mapModeToJenisLayanan()` juga DIGANTI, kalau tidak kena 5 kategori hardcode (Air/Sea/Reguler/
+  Economy/Express) SEKARANG return teks aslinya apa adanya (BUKAN `null` lagi) — kombinasi
+  keduanya bikin ubah dropdown JENIS APA PUN (bukan cuma 5 kategori lama) ikut memicu rematch
+  tarif dengan benar, tidak lagi diam2 fallback ke `rate_row_used` lama.
+
+## FAR Overseas Air — MEMO TITLE jadi dropdown + "Add new..." (2026-09)
+
+Kolom MEMO TITLE (`memo_title`) di List Memo — dulu `EditableCell` teks bebas biasa, sekarang
+`render` custom (`MemoTitleEditCell`, module-level di `FarOverseasAirPage.tsx`, di atas
+`LIST_COLUMNS`) — dropdown isi nilai UNIK yang SUDAH pernah dipakai di data, TIDAK ADA tabel
+master baru (keputusan eksplisit user, dropdown PT-style yang tetap bottleneck-prone di modul
+lain SENGAJA tidak direplikasi di sini). Opsi "+ Add new..." (`ADD_NEW_MEMO_TITLE` sentinel)
+beralih tampilan dari `<select>` ke `<input>` teks biasa (state lokal `addingNew`) — commit-nya
+lewat `ctx.addMemoTitleOption(title)` yang menambah ke state `memoTitleOptions` IN-MEMORY (bukan
+tabel/localStorage) supaya baris LAIN di sesi yang sama langsung bisa pilih judul itu tanpa
+refresh. Judul baru itu OTOMATIS ikut muncul lagi di sesi BERIKUTNYA begitu baris tersimpan
+(krn `fetchDistinctMemoTitles()` baca ulang dari kolom `memo_title` tabel, bukan daftar terpisah)
+— TIDAK perlu migrasi apa pun.
+
+- `fetchDistinctMemoTitles()` (`FarOverseasAirHelpers.ts`) — `select('memo_title').limit(2000)`
+  + dedup di client, di-fetch sekali saat halaman dibuka (pola sama `fetchPicEligibleUsers`).
+  `.limit(2000)` sbg jaga2 (jumlah NILAI UNIK judul memo wajar jauh lebih kecil dari total baris
+  tabel, beda kasus dari dropdown PT Audit AP yang sempat jadi bottleneck di >100rb baris).
+- `ListRenderCtx` (`FarOverseasAirPage.tsx`) ditambah `memoTitleOptions`/`addMemoTitleOption` —
+  dikonstruksi di 2 titik (row List biasa & `FarOverseasAirCardEditModal`), keduanya WAJIB tetap
+  sinkron kalau nambah field `ListRenderCtx` baru lagi ke depan.
+- Mode tampil (bukan edit) TETAP teks polos (bukan badge/dropdown), konsisten kolom lain.

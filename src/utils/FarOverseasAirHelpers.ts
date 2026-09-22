@@ -134,6 +134,23 @@ export async function fetchPicEligibleUsers(): Promise<PicEligibleUser[]> {
   return Array.isArray(data) ? data : [];
 }
 
+// Kolom MEMO TITLE (2026-09, permintaan user "jadi dropdown, bisa tambah manual") -- TIDAK ada
+// tabel master baru, dropdown-nya diisi dari nilai `memo_title` yang UNIK dan SUDAH PERNAH
+// dipakai di data (dedup di client, `.limit(2000)` sbg jaga2 kalau kolom ini nanti dipakai bebas
+// & jadi sangat bervariasi -- daftar NILAI UNIK judul memo secara wajar jauh lebih kecil dari
+// jumlah baris tabel, beda kasus dari dropdown PT di modul Audit AP yg sempat jadi bottleneck).
+// "Tambah Baru" di dropdown-nya MURNI menambah ke daftar in-memory sesi ini (lihat
+// `addMemoTitleOption` di FarOverseasAirPage.tsx) -- begitu user simpan baris dgn judul baru,
+// judul itu OTOMATIS ikut muncul di daftar utk baris lain lain kali `fetchDistinctMemoTitles()`
+// dipanggil ulang (krn sudah ada di kolom `memo_title` tabel), TIDAK perlu tabel master terpisah.
+export async function fetchDistinctMemoTitles(): Promise<string[]> {
+  const { data, error } = await supabase.from('rekapan_far_overseas_air').select('memo_title').not('memo_title', 'is', null).limit(2000);
+  if (error) { console.error('fetchDistinctMemoTitles failed:', error); return []; }
+  const set = new Set<string>();
+  (data || []).forEach((r: any) => { const v = (r.memo_title || '').trim(); if (v) set.add(v); });
+  return Array.from(set).sort();
+}
+
 export type PoListEntry = {
   po_no_raw?: string | null;
   vessel_raw?: string | null;
@@ -273,18 +290,36 @@ export function parseRouteNote(routeNoteText: string | null | undefined): { orig
   return { origin: m[1].trim(), destination: m[2].trim(), mode: m[3].trim().toUpperCase() };
 }
 
-// Terjemahkan kata kunci mode/jenis di NOTE 1 (bagian dalam kurung, cth "AIR"/"SEA"/"REG") ke
-// nilai jenis_layanan PERSIS yang dipakai di far_overseas_tarif_vendor. User BISA mengoreksi kata
-// ini juga (bukan cuma kota asal/tujuan) saat edit NOTE 1 -- kalau tidak dikenali, return null
-// (JANGAN menebak), pemanggil lalu fallback ke jenis_layanan yang sudah tersimpan sebelumnya.
+// Terjemahkan kata kunci mode/jenis di NOTE 1 (bagian dalam kurung, cth "AIR"/"SEA"/"REG", data
+// LAMA sebelum NOTE 1 jadi 3 dropdown -- lihat `RouteNoteEditCell` di FarOverseasAirPage.tsx) ke
+// nilai jenis_layanan PERSIS yang dipakai di far_overseas_tarif_vendor. 5 kategori umum
+// dipetakan eksplisit (case-insensitive substring, cth "AIR FREIGHT" tetap kena cabang "AIR").
+// **Fallback (2026-09)** -- data BARU dari dropdown Jenis Layanan selalu berisi nilai
+// `jenis_layanan` ASLI (bisa APA SAJA, tidak terbatas 5 kategori di atas, ikut isi
+// `far_overseas_tarif_vendor` vendor terkait) yang di-uppercase saat dikomposisi ke teks NOTE 1
+// -- kalau tidak ketemu di 5 cabang eksplisit, KEMBALIKAN teks aslinya apa adanya (trimmed,
+// BUKAN null lagi) supaya `rematchTarif` (case-insensitive utk jenis, lihat di bawah) tetap bisa
+// mencocokkan ke jenis_layanan APAPUN, bukan cuma 5 kategori yang di-hardcode di sini.
 export function mapModeToJenisLayanan(modeText: string | null | undefined): string | null {
   if (!modeText) return null;
-  const upper = modeText.trim().toUpperCase();
+  const trimmed = modeText.trim();
+  const upper = trimmed.toUpperCase();
   if (upper.includes('REGULER') || upper === 'REG') return 'Reguler Freight';
   if (upper.includes('ECONOMY')) return 'Economy';
   if (upper.includes('EXPRESS')) return 'Express';
   if (upper.includes('SEA')) return 'Sea Freight';
   if (upper.includes('AIR')) return 'Air Freight';
+  return trimmed || null;
+}
+
+// Vendor tarif (`far_overseas_tarif_vendor.vendor_name`) yang cocok dgn `ship_via` shipment --
+// SATU-SATUNYA tempat pemetaan OCTAGON/JIANQIAO (dipakai `rematchTarif` di bawah DAN
+// `RouteNoteEditCell` utk membangun opsi 3 dropdown NOTE 1 per-baris) -- JANGAN duplikat logic
+// pemetaan ini di tempat lain.
+export function vendorTargetFromShipVia(shipVia: string | null | undefined): string | null {
+  const shipViaUpper = (shipVia || '').toUpperCase();
+  if (shipViaUpper.includes('OCTAGON')) return 'OCTAGON LOGISTIC';
+  if (shipViaUpper.includes('JIANQIAO')) return 'PT. JIANQIAO LOGISTICS INDONESIA';
   return null;
 }
 
@@ -304,15 +339,17 @@ export function rematchTarif({ vendorRows, shipVia, jenisLayananSaatIni, origin,
   tujuan: string | null | undefined;
   qty: number | null;
 }): RateRow[] {
-  const shipViaUpper = (shipVia || '').toUpperCase();
-  let vendorTarget: string | null = null;
-  if (shipViaUpper.includes('OCTAGON')) vendorTarget = 'OCTAGON LOGISTIC';
-  else if (shipViaUpper.includes('JIANQIAO')) vendorTarget = 'PT. JIANQIAO LOGISTICS INDONESIA';
+  const vendorTarget = vendorTargetFromShipVia(shipVia);
 
   let candidates = vendorRows.filter(t => t.vendor_name === vendorTarget && t.aktif !== false);
 
   if (jenisLayananSaatIni) {
-    const byJenis = candidates.filter(t => t.jenis_layanan === jenisLayananSaatIni);
+    // Case-INSENSITIVE (2026-09, GANTI dari `===` strict) -- simetris dgn matching origin/tujuan
+    // di bawah. NOTE 1 dikomposisi UPPERCASE dari dropdown Jenis Layanan (lihat
+    // `RouteNoteEditCell`/`mapModeToJenisLayanan`), sementara `jenis_layanan` di tabel tarif bisa
+    // apa saja casing-nya (mis. "Air Freight") -- strict match akan gagal walau isinya sama.
+    const jenisUpper = jenisLayananSaatIni.toUpperCase();
+    const byJenis = candidates.filter(t => t.jenis_layanan && t.jenis_layanan.toUpperCase() === jenisUpper);
     if (byJenis.length > 0) candidates = byJenis;
   }
 

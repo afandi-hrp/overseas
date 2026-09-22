@@ -56,12 +56,40 @@ Audit Trail tampil "No data yet" total. Kondisi final:
 Efek DISENGAJA: kategori Courier & Sea & Air di Audit Trail global TAMPIL KOSONG utk baris
 UPDATE (tidak py fungsi log manual sendiri di app ini) sampai/kecuali app nanti nulis log manual
 utk 2 modul itu — **kalau nambah fungsi log manual baru ke tabel Courier/Sea & Air, WAJIB pakai
-format catatan yang cocok salah satu pola di atas**. `BunkerAuditLogModal.tsx` (modal per-baris)
-TIDAK diubah, filter client-side-nya independen & tetap valid.
+format catatan yang cocok salah satu pola di atas**.
+
+**Susulan (2026-09) — `BunkerAuditLogModal.tsx` (modal per-baris) TERNYATA masih tembus entri
+"asing"**: filter lama `splitAuditCatatan(e.catatan) || e.user_email` meloloskan entri kalau
+SALAH SATU syarat terpenuhi — trigger `fn_audit_bunker_dokumen` jalan utk SEMUA UPDATE termasuk
+yang dipicu user login (bukan cuma n8n), jadi `user_email`-nya JUGA ikut terisi (sama persis
+email user yg lagi login), sementara `catatan`-nya tetap dump mentah `fn_audit_diff` (mis.
+`status_manual: {} -> {...}`) — laporan user: modal per-baris tampil 2 baris (1 rapi dari
+`logBunkerAudit()` + 1 dump mentah), padahal Audit Trail global cuma tampil 1 (sudah tersaring
+`TRAIL_APP_WRITTEN_FILTER`). **Fix**: filter modal ini disamakan prinsipnya dgn
+`TRAIL_APP_WRITTEN_FILTER` — HANYA andalkan hasil parse `splitAuditCatatan` (`e.user_email`
+DIBUANG TOTAL dari kondisi filter), krn `logBunkerAudit()` SATU-SATUNYA fungsi yg menulis ke
+tabel ini dari app & SELALU format ketat "{field} — Lama: X → Baru: Y" — entri manapun yg GAGAL
+diparse itu BUKAN dari app ini, terlepas `user_email`-nya terisi atau tidak.
 
 Riwayat Bunker LAMA sempat dibersihkan total via `DELETE FROM audit_trail WHERE tabel =
 'bunker_dokumen';` (permintaan eksplisit user, dieksekusi user sendiri) — kategori lain
 (Courier/Sea & Air/Audit AP) TIDAK ikut dibersihkan.
+
+**Susulan lagi (2026-09) — duplikasi baris FISIK di database, bukan cuma di tampilan**: root
+cause di atas (2 sumber tulis independen ke 1 UPDATE yang sama) diperbaiki lebih dalam di trigger
+itu sendiri, bukan cuma filter tampilan. **`sql/010_fn_audit_bunker_dokumen_skip_status_manual.sql`
+(BELUM DIJALANKAN ke Supabase production — WAJIB dijalankan manual dulu)** — `CREATE OR REPLACE`
+`fn_audit_bunker_dokumen` (didahului `pg_get_functiondef` utk pastikan isi trigger yang ada
+SEKARANG tidak asal ditimpa): cabang `UPDATE` sekarang **skip insert `audit_trail` sama sekali**
+kalau kolom yang BENERAN berubah HANYA `status_manual` (dibandingkan via `to_jsonb(OLD) -
+'status_manual' - 'updated_at' = to_jsonb(NEW) - 'status_manual' - 'updated_at'` — `updated_at`
+ikut dikecualikan dari perbandingan krn itu kolom timestamp auto-touch, bukan konten yang
+relevan diaudit). Kalau ada kolom LAIN yang ikut berubah bareng `status_manual` dalam 1 UPDATE
+yang sama, trigger TETAP jalan normal (baris tetap tercatat apa adanya, `status_manual` TIDAK
+dikecualikan dari ISI dump `fn_audit_diff`, hanya dikecualikan dari SYARAT "perlu insert atau
+tidak"). Guard `auth.email() IS NULL` & cabang DELETE/INSERT TIDAK disentuh. **Kalau ke depan ada
+kolom lain yang JUGA dicatat manual via `logBunkerAudit()` (duplikasi serupa ditemukan lagi),
+tambahkan nama kolomnya ke daftar `- 'kolom'` yang sama di trigger ini.**
 
 ## Bunker — seksi "Original Documents" (`source_files`) di `BunkerCompareDocModal.tsx`
 

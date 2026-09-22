@@ -1,69 +1,162 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
-import { PlaneTakeoff, ChevronLeft, ChevronRight } from 'lucide-react';
+import { PlaneTakeoff, ChevronDown, ChevronRight as ChevronRightIcon, ChevronLeft, Plus, Settings2, X } from 'lucide-react';
 import Greeting from '../components/Greeting';
-import { LoadingTableRow } from '../components/LoadingState';
+import { LoadingState } from '../components/LoadingState';
 
-const VENDOR_OPTIONS = ['OCTAGON LOGISTIC', 'PT. JIANQIAO LOGISTICS INDONESIA'];
-const JENIS_LAYANAN_OPTIONS = ['Air Freight', 'Sea Freight', 'Reguler Freight', 'Door to Door (Pick Up)', 'Port to Door (Drop Warehouse)'];
-const MATA_UANG_OPTIONS = ['IDR', 'RMB'];
+const JENIS_LAYANAN_OPTIONS = ['Air Freight', 'Sea Freight', 'Reguler Freight', 'Express', 'Economy'];
+const MATA_UANG_OPTIONS = ['IDR', 'USD', 'RMB'];
 const KATEGORI_BARANG_OPTIONS = ['BATTERY', 'SHAMPOO (CAIRAN LIQUID)', 'REGULER ITEM'];
+const JIANQIAO_VENDOR_NAME = 'PT. JIANQIAO LOGISTICS INDONESIA';
+
+type VendorMaster = { id: string; vendor_name: string; aktif: boolean };
+
+type Quotation = {
+  id: string;
+  vendor_name: string;
+  jenis_layanan: string;
+  origin: string;
+  tujuan: string;
+  kategori_barang: string | null;
+  mata_uang: string;
+  periode_mulai: string;
+  periode_selesai: string | null;
+  aktif: boolean;
+};
+
+type QuotationDetail = {
+  id: string;
+  quotation_id: string;
+  berat_min: number;
+  berat_max: number | null;
+  harga_per_kg: number | null;
+  harga_per_cbm: number | null;
+  harga_per_cbm_min: number | null;
+  harga_per_cbm_max: number | null;
+  ppn_status: string;
+  notes: string | null;
+};
+
+function groupKeyOf(q: Pick<Quotation, 'vendor_name' | 'jenis_layanan' | 'origin' | 'tujuan' | 'kategori_barang'>) {
+  return [q.vendor_name, q.jenis_layanan, q.origin, q.tujuan, q.kategori_barang || ''].join('||');
+}
+
+function formatWeight(min: number, max: number | null) {
+  if (max == null) return `${min}+ Kg`;
+  if (min === max) return `${min} Kg`;
+  return `${min}-${max} Kg`;
+}
+
+function formatMoney(val: number | null | undefined, cur: string) {
+  if (val == null) return '-';
+  const formatted = val.toLocaleString('id-ID');
+  return cur === 'IDR' ? `Rp ${formatted}` : `${cur} ${formatted}`;
+}
+
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// Format tampilan periode DD-MMM-YYYY (cth "01-Sep-2026") -- HANYA display, kolom DB &
+// <input type="date"> tetap ISO (YYYY-MM-DD), native date picker browser tidak bisa diubah
+// formatnya. Parse manual dari string ISO (bukan `new Date(iso)` polos) supaya tidak kena
+// pergeseran timezone lokal.
+function formatDateDMY(dateStr: string | null | undefined) {
+  if (!dateStr) return '';
+  const [y, m, d] = dateStr.split('-').map(Number);
+  if (!y || !m || !d) return dateStr;
+  return `${String(d).padStart(2, '0')}-${MONTH_ABBR[m - 1]}-${y}`;
+}
+
+function addOneDay(dateStr: string) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
 
 export default function FarOverseasVendorTarifPage() {
   const { canEdit } = useAuth();
   const canEditVendorTarif = canEdit('settings_tarif_far_overseas_vendor');
-  const [data, setData] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [toast, setToast] = useState<{ message: string, type: 'success' | 'error' } | null>(null);
 
-  // Filter states
+  const [loading, setLoading] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  const [vendors, setVendors] = useState<VendorMaster[]>([]);
+  const [quotations, setQuotations] = useState<Quotation[]>([]);
+  const [detailsByQuotation, setDetailsByQuotation] = useState<Record<string, QuotationDetail[]>>({});
+
   const [filterVendor, setFilterVendor] = useState('semua');
   const [filterSearch, setFilterSearch] = useState('');
-  const [showInactive, setShowInactive] = useState(false);
+  const [showInactiveQuotations, setShowInactiveQuotations] = useState(false);
 
-  // Pagination (client-side -- data sudah di-fetch semua sekaligus)
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [expandedQuotations, setExpandedQuotations] = useState<Set<string>>(new Set());
+
+  // Pagination client-side atas daftar rute (grup) -- data quotation sudah di-fetch semua
+  // sekaligus, jadi paging cukup slice di JS spt versi lama halaman ini.
   const [page, setPage] = useState(1);
-  const pageSize = 20;
+  const pageSize = 10;
 
-  // Modal states
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [isVendorModalOpen, setIsVendorModalOpen] = useState(false);
+  const [newVendorName, setNewVendorName] = useState('');
+  const [savingVendor, setSavingVendor] = useState(false);
 
-  // Form states
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [vendorName, setVendorName] = useState(VENDOR_OPTIONS[0]);
-  const [origin, setOrigin] = useState('');
-  const [jenisLayanan, setJenisLayanan] = useState(JENIS_LAYANAN_OPTIONS[0]);
-  const [tipeLayanan, setTipeLayanan] = useState('');
-  const [tujuan, setTujuan] = useState('');
-  const [kategoriBeratLabel, setKategoriBeratLabel] = useState('');
-  const [beratMin, setBeratMin] = useState('');
-  const [beratMax, setBeratMax] = useState('');
-  const [hargaPerKg, setHargaPerKg] = useState('');
-  const [isRentangCbm, setIsRentangCbm] = useState(false);
-  const [hargaPerCbm, setHargaPerCbm] = useState('');
-  const [hargaPerCbmMin, setHargaPerCbmMin] = useState('');
-  const [hargaPerCbmMax, setHargaPerCbmMax] = useState('');
-  const [mataUang, setMataUang] = useState('IDR');
-  const [kategoriBarang, setKategoriBarang] = useState('');
-  const [minimalBerat, setMinimalBerat] = useState('');
-  const [minimalBeratSatuan, setMinimalBeratSatuan] = useState('');
-  const [estimasiWaktu, setEstimasiWaktu] = useState('');
-  const [catatan, setCatatan] = useState('');
-  const [aktif, setAktif] = useState(true);
+  const [isQuotationModalOpen, setIsQuotationModalOpen] = useState(false);
+  const [savingQuotation, setSavingQuotation] = useState(false);
+  const [qEditingId, setQEditingId] = useState<string | null>(null);
+  const [qCloseOldId, setQCloseOldId] = useState<string | null>(null); // mode "Update Harga (Buat Periode Baru)"
+  const [qVendorName, setQVendorName] = useState('');
+  const [qJenisLayanan, setQJenisLayanan] = useState(JENIS_LAYANAN_OPTIONS[0]);
+  const [qOrigin, setQOrigin] = useState('');
+  const [qTujuan, setQTujuan] = useState('');
+  const [qKategoriBarang, setQKategoriBarang] = useState('');
+  const [qMataUang, setQMataUang] = useState('IDR');
+  const [qPeriodeMulai, setQPeriodeMulai] = useState('');
+  const [qPeriodeSelesai, setQPeriodeSelesai] = useState('');
 
-  // kategori_barang cuma relevan untuk Jianqiao Sea Freight -- vendor lain / jenis layanan lain tidak pakai field ini.
-  const showKategoriBarang = vendorName === 'PT. JIANQIAO LOGISTICS INDONESIA' && jenisLayanan === 'Sea Freight';
+  const [detailForms, setDetailForms] = useState<Record<string, {
+    id: string | null; berat_min: string; berat_max: string; harga_per_kg: string;
+    isCbmRange: boolean; harga_per_cbm: string; harga_per_cbm_min: string; harga_per_cbm_max: string;
+    ppn_status: string; notes: string;
+  } | null>>({});
+  const [savingDetailFor, setSavingDetailFor] = useState<string | null>(null);
 
-  const fetchData = async () => {
+  const showKategoriBarang = qVendorName === JIANQIAO_VENDOR_NAME && qJenisLayanan === 'Sea Freight';
+
+  const showToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const fetchAll = async () => {
     try {
       setLoading(true);
-      let query = supabase.from('far_overseas_tarif_vendor').select('*').order('vendor_name').order('origin');
-      if (!showInactive) query = query.eq('aktif', true);
-      const { data: result, error } = await query;
-      if (error) throw error;
-      setData(result || []);
+      const [vendorRes, quotationRes] = await Promise.all([
+        supabase.from('far_overseas_vendor_master').select('*').order('vendor_name'),
+        supabase.from('far_overseas_tarif_quotation').select('*').order('periode_mulai', { ascending: false }),
+      ]);
+      if (vendorRes.error) throw vendorRes.error;
+      if (quotationRes.error) throw quotationRes.error;
+      const qRows: Quotation[] = quotationRes.data || [];
+      setVendors(vendorRes.data || []);
+      setQuotations(qRows);
+
+      const ids = qRows.map(q => q.id);
+      if (ids.length > 0) {
+        const { data: detailRows, error: detailErr } = await supabase
+          .from('far_overseas_tarif_quotation_detail')
+          .select('*')
+          .in('quotation_id', ids)
+          .order('berat_min');
+        if (detailErr) throw detailErr;
+        const grouped: Record<string, QuotationDetail[]> = {};
+        (detailRows || []).forEach((d: QuotationDetail) => {
+          if (!grouped[d.quotation_id]) grouped[d.quotation_id] = [];
+          grouped[d.quotation_id].push(d);
+        });
+        setDetailsByQuotation(grouped);
+      } else {
+        setDetailsByQuotation({});
+      }
     } catch (e: any) {
       showToast('Gagal memuat data: ' + e.message, 'error');
     } finally {
@@ -71,154 +164,265 @@ export default function FarOverseasVendorTarifPage() {
     }
   };
 
-  useEffect(() => {
-    fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showInactive]);
+  useEffect(() => { fetchAll(); }, []);
 
-  const showToast = (message: string, type: 'success' | 'error') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  };
+  const activeVendors = useMemo(() => vendors.filter(v => v.aktif), [vendors]);
 
-  const filteredData = useMemo(() => {
+  // Kelompokkan quotation per kombinasi vendor+jenis+origin+tujuan+kategori_barang -- 1 grup =
+  // 1 rute layanan, isinya riwayat periode (bisa >1 quotation kalau harga pernah berubah).
+  const groups = useMemo(() => {
     const q = filterSearch.trim().toLowerCase();
-    return data.filter(item => {
-      const matchVendor = filterVendor === 'semua' || item.vendor_name === filterVendor;
-      const matchSearch = !q ||
-        item.origin?.toLowerCase().includes(q) ||
-        item.jenis_layanan?.toLowerCase().includes(q) ||
-        item.kategori_barang?.toLowerCase().includes(q);
-      return matchVendor && matchSearch;
+    const map = new Map<string, Quotation[]>();
+    for (const rec of quotations) {
+      if (!showInactiveQuotations && !rec.aktif) continue;
+      if (filterVendor !== 'semua' && rec.vendor_name !== filterVendor) continue;
+      if (q) {
+        const hay = `${rec.origin} ${rec.tujuan} ${rec.jenis_layanan} ${rec.kategori_barang || ''}`.toLowerCase();
+        if (!hay.includes(q)) continue;
+      }
+      const key = groupKeyOf(rec);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(rec);
+    }
+    const list = Array.from(map.entries()).map(([key, recs]) => {
+      recs.sort((a, b) => (b.periode_mulai || '').localeCompare(a.periode_mulai || ''));
+      return { key, recs, head: recs[0] };
     });
-  }, [data, filterVendor, filterSearch]);
+    list.sort((a, b) => {
+      const va = a.head.vendor_name.localeCompare(b.head.vendor_name);
+      if (va !== 0) return va;
+      const vo = a.head.origin.localeCompare(b.head.origin);
+      if (vo !== 0) return vo;
+      return a.head.tujuan.localeCompare(b.head.tujuan);
+    });
+    return list;
+  }, [quotations, filterVendor, filterSearch, showInactiveQuotations]);
 
-  // Reset ke halaman 1 setiap kali filter berubah -- kalau tidak, bisa nyangkut di halaman
+  // Reset ke halaman 1 tiap kali filter berubah -- kalau tidak, bisa nyangkut di halaman
   // kosong (mis. sedang di hal. 3, lalu filter dipersempit sampai cuma 1 halaman hasil).
   useEffect(() => {
     setPage(1);
-  }, [filterVendor, filterSearch, showInactive]);
+  }, [filterVendor, filterSearch, showInactiveQuotations]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredData.length / pageSize));
+  const totalPages = Math.max(1, Math.ceil(groups.length / pageSize));
   const validPage = Math.min(page, totalPages);
-  const paginatedData = useMemo(() => {
+  const paginatedGroups = useMemo(() => {
     const start = (validPage - 1) * pageSize;
-    return filteredData.slice(start, start + pageSize);
-  }, [filteredData, validPage]);
+    return groups.slice(start, start + pageSize);
+  }, [groups, validPage]);
 
-  const resetForm = () => {
-    setEditingId(null);
-    setVendorName(VENDOR_OPTIONS[0]);
-    setOrigin('');
-    setJenisLayanan(JENIS_LAYANAN_OPTIONS[0]);
-    setTipeLayanan('');
-    setTujuan('');
-    setKategoriBeratLabel('');
-    setBeratMin('');
-    setBeratMax('');
-    setHargaPerKg('');
-    setIsRentangCbm(false);
-    setHargaPerCbm('');
-    setHargaPerCbmMin('');
-    setHargaPerCbmMax('');
-    setMataUang('IDR');
-    setKategoriBarang('');
-    setMinimalBerat('');
-    setMinimalBeratSatuan('');
-    setEstimasiWaktu('');
-    setCatatan('');
-    setAktif(true);
+  const toggleGroup = (key: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
   };
 
-  const openModal = (record?: any) => {
-    if (record) {
-      setEditingId(record.id);
-      setVendorName(record.vendor_name || VENDOR_OPTIONS[0]);
-      setOrigin(record.origin || '');
-      setJenisLayanan(record.jenis_layanan || JENIS_LAYANAN_OPTIONS[0]);
-      setTipeLayanan(record.tipe_layanan || '');
-      setTujuan(record.tujuan || '');
-      setKategoriBeratLabel(record.kategori_berat_label || '');
-      setBeratMin(record.berat_min?.toString() || '');
-      setBeratMax(record.berat_max?.toString() || '');
-      setHargaPerKg(record.harga_per_kg?.toString() || '');
-      const rentang = record.harga_per_cbm_min != null || record.harga_per_cbm_max != null;
-      setIsRentangCbm(rentang);
-      setHargaPerCbm(record.harga_per_cbm?.toString() || '');
-      setHargaPerCbmMin(record.harga_per_cbm_min?.toString() || '');
-      setHargaPerCbmMax(record.harga_per_cbm_max?.toString() || '');
-      setMataUang(record.mata_uang || 'IDR');
-      setKategoriBarang(record.kategori_barang || '');
-      setMinimalBerat(record.minimal_berat?.toString() || '');
-      setMinimalBeratSatuan(record.minimal_berat_satuan || '');
-      setEstimasiWaktu(record.estimasi_waktu || '');
-      setCatatan(record.catatan || '');
-      setAktif(record.aktif !== false);
-    } else {
-      resetForm();
-    }
-    setIsModalOpen(true);
+  const toggleQuotation = (id: string) => {
+    setExpandedQuotations(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
   };
 
-  const handleSave = async (e: React.FormEvent) => {
+  const resetQuotationForm = () => {
+    setQEditingId(null);
+    setQCloseOldId(null);
+    setQVendorName(activeVendors[0]?.vendor_name || '');
+    setQJenisLayanan(JENIS_LAYANAN_OPTIONS[0]);
+    setQOrigin('');
+    setQTujuan('');
+    setQKategoriBarang('');
+    setQMataUang('IDR');
+    setQPeriodeMulai('');
+    setQPeriodeSelesai('');
+  };
+
+  const openNewQuotationModal = () => {
+    resetQuotationForm();
+    setIsQuotationModalOpen(true);
+  };
+
+  const openEditQuotationModal = (rec: Quotation) => {
+    setQEditingId(rec.id);
+    setQCloseOldId(null);
+    setQVendorName(rec.vendor_name);
+    setQJenisLayanan(rec.jenis_layanan);
+    setQOrigin(rec.origin);
+    setQTujuan(rec.tujuan);
+    setQKategoriBarang(rec.kategori_barang || '');
+    setQMataUang(rec.mata_uang);
+    setQPeriodeMulai(rec.periode_mulai);
+    setQPeriodeSelesai(rec.periode_selesai || '');
+    setIsQuotationModalOpen(true);
+  };
+
+  // "Update Harga (Buat Periode Baru)" -- prefill quotation baru dgn kombinasi SAMA persis dari
+  // quotation lama, periode_mulai default = periode tutup + 1 hari. Quotation lama BARU ditutup
+  // saat submit berhasil (2 langkah dijalankan sekaligus di handleSaveQuotation).
+  const openRenewQuotationModal = (rec: Quotation) => {
+    setQEditingId(null);
+    setQCloseOldId(rec.id);
+    setQVendorName(rec.vendor_name);
+    setQJenisLayanan(rec.jenis_layanan);
+    setQOrigin(rec.origin);
+    setQTujuan(rec.tujuan);
+    setQKategoriBarang(rec.kategori_barang || '');
+    setQMataUang(rec.mata_uang);
+    const today = new Date().toISOString().slice(0, 10);
+    setQPeriodeMulai(today);
+    setQPeriodeSelesai('');
+  };
+
+  const handleSaveQuotation = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      setSaving(true);
-      // Kirim SEMUA field (bukan cuma yang berubah) -- RPC mengganti nilai lama dengan apapun
-      // yang dikirim di sini, kecuali vendor_name/jenis_layanan/mata_uang/aktif yang pakai
-      // COALESCE di server jadi aman kalau null.
-      const { error } = await supabase.rpc('upsert_tarif_far_overseas_vendor', {
-        p_id: editingId,
-        p_vendor_name: vendorName || null,
-        p_origin: origin || null,
-        p_jenis_layanan: jenisLayanan || null,
-        p_tipe_layanan: tipeLayanan || null,
-        p_tujuan: tujuan || null,
-        p_kategori_berat_label: kategoriBeratLabel || null,
-        p_berat_min: beratMin !== '' ? Number(beratMin) : null,
-        p_berat_max: beratMax !== '' ? Number(beratMax) : null,
-        p_harga_per_kg: hargaPerKg !== '' ? Number(hargaPerKg) : null,
-        p_harga_per_cbm: isRentangCbm ? null : (hargaPerCbm !== '' ? Number(hargaPerCbm) : null),
-        p_harga_per_cbm_min: isRentangCbm ? (hargaPerCbmMin !== '' ? Number(hargaPerCbmMin) : null) : null,
-        p_harga_per_cbm_max: isRentangCbm ? (hargaPerCbmMax !== '' ? Number(hargaPerCbmMax) : null) : null,
-        p_mata_uang: mataUang || null,
-        p_kategori_barang: showKategoriBarang && kategoriBarang ? kategoriBarang : null,
-        p_minimal_berat: minimalBerat !== '' ? Number(minimalBerat) : null,
-        p_minimal_berat_satuan: minimalBeratSatuan || null,
-        p_estimasi_waktu: estimasiWaktu || null,
-        p_catatan: catatan || null,
-        p_aktif: aktif,
+      setSavingQuotation(true);
+      if (qCloseOldId) {
+        const closeDate = addOneDay(qPeriodeMulai) === qPeriodeMulai ? qPeriodeMulai : (() => {
+          // Tutup quotation lama PERSIS 1 hari sebelum periode_mulai quotation baru.
+          const d = new Date(qPeriodeMulai + 'T00:00:00');
+          d.setDate(d.getDate() - 1);
+          return d.toISOString().slice(0, 10);
+        })();
+        const { error: closeErr } = await supabase.rpc('upsert_far_overseas_tarif_quotation', {
+          p_id: qCloseOldId,
+          p_vendor_name: qVendorName,
+          p_jenis_layanan: qJenisLayanan,
+          p_origin: qOrigin,
+          p_tujuan: qTujuan,
+          p_kategori_barang: showKategoriBarang && qKategoriBarang ? qKategoriBarang : null,
+          p_mata_uang: qMataUang,
+          p_periode_mulai: quotations.find(q => q.id === qCloseOldId)?.periode_mulai,
+          p_periode_selesai: closeDate,
+        });
+        if (closeErr) throw closeErr;
+      }
+
+      const { error } = await supabase.rpc('upsert_far_overseas_tarif_quotation', {
+        p_id: qEditingId,
+        p_vendor_name: qVendorName || null,
+        p_jenis_layanan: qJenisLayanan || null,
+        p_origin: qOrigin || null,
+        p_tujuan: qTujuan || null,
+        p_kategori_barang: showKategoriBarang && qKategoriBarang ? qKategoriBarang : null,
+        p_mata_uang: qMataUang || null,
+        p_periode_mulai: qPeriodeMulai || null,
+        p_periode_selesai: qPeriodeSelesai || null,
       });
-
       if (error) throw error;
 
-      showToast('Tarif berhasil disimpan', 'success');
-      setIsModalOpen(false);
-      fetchData();
+      showToast('Quotation berhasil disimpan', 'success');
+      setIsQuotationModalOpen(false);
+      fetchAll();
     } catch (err: any) {
-      showToast('Gagal menyimpan tarif: ' + err.message, 'error');
+      showToast('Gagal menyimpan quotation: ' + err.message, 'error');
     } finally {
-      setSaving(false);
+      setSavingQuotation(false);
     }
   };
 
-  const handleNonaktifkan = async (id: string) => {
-    if (!window.confirm('Apakah Anda yakin ingin menonaktifkan tarif ini?')) return;
+  const handleNonaktifkanQuotation = async (id: string) => {
+    if (!window.confirm('Nonaktifkan quotation ini? (jarang dipakai, hanya kalau quotation salah total)')) return;
     try {
-      const { error } = await supabase.rpc('nonaktifkan_tarif_far_overseas_vendor', { p_id: id });
+      const { error } = await supabase.rpc('nonaktifkan_far_overseas_tarif_quotation', { p_id: id });
       if (error) throw error;
-      showToast('Tarif dinonaktifkan', 'success');
-      fetchData();
+      showToast('Quotation dinonaktifkan', 'success');
+      fetchAll();
     } catch (err: any) {
-      showToast('Gagal menonaktifkan tarif: ' + err.message, 'error');
+      showToast('Gagal menonaktifkan quotation: ' + err.message, 'error');
     }
   };
 
-  const formatHarga = (val: number | null | undefined, cur: string | null | undefined) => {
-    if (val == null) return '-';
-    const formatted = val.toLocaleString('id-ID');
-    if (!cur) return formatted;
-    return cur === 'IDR' ? 'Rp ' + formatted : cur + ' ' + formatted;
+  const openDetailForm = (quotationId: string, existing?: QuotationDetail) => {
+    setDetailForms(prev => ({
+      ...prev,
+      [quotationId]: existing ? {
+        id: existing.id,
+        berat_min: String(existing.berat_min),
+        berat_max: existing.berat_max != null ? String(existing.berat_max) : '',
+        harga_per_kg: existing.harga_per_kg != null ? String(existing.harga_per_kg) : '',
+        isCbmRange: existing.harga_per_cbm_min != null || existing.harga_per_cbm_max != null,
+        harga_per_cbm: existing.harga_per_cbm != null ? String(existing.harga_per_cbm) : '',
+        harga_per_cbm_min: existing.harga_per_cbm_min != null ? String(existing.harga_per_cbm_min) : '',
+        harga_per_cbm_max: existing.harga_per_cbm_max != null ? String(existing.harga_per_cbm_max) : '',
+        ppn_status: existing.ppn_status || 'Non-PPN',
+        notes: existing.notes || '',
+      } : {
+        id: null, berat_min: '', berat_max: '', harga_per_kg: '',
+        isCbmRange: false, harga_per_cbm: '', harga_per_cbm_min: '', harga_per_cbm_max: '',
+        ppn_status: 'Non-PPN', notes: '',
+      },
+    }));
+  };
+
+  const closeDetailForm = (quotationId: string) => {
+    setDetailForms(prev => ({ ...prev, [quotationId]: null }));
+  };
+
+  const handleSaveDetail = async (quotationId: string) => {
+    const form = detailForms[quotationId];
+    if (!form) return;
+    if (form.berat_min === '') {
+      showToast('Berat Min wajib diisi', 'error');
+      return;
+    }
+    try {
+      setSavingDetailFor(quotationId);
+      const { error } = await supabase.rpc('upsert_far_overseas_tarif_quotation_detail', {
+        p_id: form.id,
+        p_quotation_id: quotationId,
+        p_berat_min: Number(form.berat_min),
+        p_berat_max: form.berat_max !== '' ? Number(form.berat_max) : null,
+        p_harga_per_kg: form.harga_per_kg !== '' ? Number(form.harga_per_kg) : null,
+        p_harga_per_cbm: !form.isCbmRange && form.harga_per_cbm !== '' ? Number(form.harga_per_cbm) : null,
+        p_harga_per_cbm_min: form.isCbmRange && form.harga_per_cbm_min !== '' ? Number(form.harga_per_cbm_min) : null,
+        p_harga_per_cbm_max: form.isCbmRange && form.harga_per_cbm_max !== '' ? Number(form.harga_per_cbm_max) : null,
+        p_ppn_status: form.ppn_status,
+        p_notes: form.notes || null,
+      });
+      if (error) throw error;
+      showToast('Detail harga disimpan', 'success');
+      closeDetailForm(quotationId);
+      fetchAll();
+    } catch (err: any) {
+      showToast('Gagal menyimpan detail harga: ' + err.message, 'error');
+    } finally {
+      setSavingDetailFor(null);
+    }
+  };
+
+  const handleDeleteDetail = async (id: string) => {
+    if (!window.confirm('Hapus rentang berat ini?')) return;
+    try {
+      const { error } = await supabase.rpc('hapus_far_overseas_tarif_quotation_detail', { p_id: id });
+      if (error) throw error;
+      showToast('Rentang berat dihapus', 'success');
+      fetchAll();
+    } catch (err: any) {
+      showToast('Gagal menghapus: ' + err.message, 'error');
+    }
+  };
+
+  const handleSaveVendor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newVendorName.trim()) return;
+    try {
+      setSavingVendor(true);
+      const { error } = await supabase.rpc('upsert_far_overseas_vendor_master', {
+        p_id: null, p_vendor_name: newVendorName.trim(), p_aktif: true,
+      });
+      if (error) throw error;
+      showToast('Vendor baru ditambahkan', 'success');
+      setNewVendorName('');
+      fetchAll();
+    } catch (err: any) {
+      showToast('Gagal menambah vendor: ' + err.message, 'error');
+    } finally {
+      setSavingVendor(false);
+    }
   };
 
   return (
@@ -231,17 +435,16 @@ export default function FarOverseasVendorTarifPage() {
             </div>
             <div>
               <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Tarif Vendor FAR Overseas Air</h1>
-              <p className="text-[#5A305A] font-light text-sm mt-1">Kelola rate card Octagon Logistic & PT. Jianqiao Logistics Indonesia.</p>
+              <p className="text-[#5A305A] font-light text-sm mt-1">Kelola quotation & riwayat harga per vendor, rute, dan periode.</p>
             </div>
           </div>
           <Greeting />
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-3 pt-2 pb-8">
-
+      <main className="px-3 pt-2 pb-8">
         {toast && (
-          <div className={`mb-4 p-3 rounded-lg border font-medium text-sm flex items-center ${
+          <div className={`mb-4 p-3 rounded-lg border font-medium text-sm ${
             toast.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'
           }`}>
             {toast.message}
@@ -256,315 +459,353 @@ export default function FarOverseasVendorTarifPage() {
             className="shrink-0 border border-slate-300 rounded-lg px-3 py-2 text-sm font-semibold text-[#5A305A] bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A] w-56"
           >
             <option value="semua">Semua Vendor</option>
-            {VENDOR_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
+            {vendors.map(v => <option key={v.id} value={v.vendor_name}>{v.vendor_name}</option>)}
           </select>
           <input
             type="text"
-            placeholder="Cari Origin / Jenis Layanan / Kategori Barang..."
+            placeholder="Cari Origin / Tujuan / Jenis Layanan / Kategori..."
             value={filterSearch}
             onChange={(e) => setFilterSearch(e.target.value)}
-            className="shrink-0 w-64 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A]"
+            className="shrink-0 w-72 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A]"
           />
           <label className="shrink-0 flex items-center gap-2 cursor-pointer text-sm text-[#5A305A] font-medium whitespace-nowrap">
-            <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} className="w-4 h-4 rounded text-[#5A305A] focus:ring-[#5A305A]" />
+            <input type="checkbox" checked={showInactiveQuotations} onChange={e => setShowInactiveQuotations(e.target.checked)} className="w-4 h-4 rounded text-[#5A305A] focus:ring-[#5A305A]" />
             Tampilkan yang nonaktif juga
           </label>
           <div className="shrink-0 text-sm text-[#5A305A] font-medium whitespace-nowrap">
-            Total: {filteredData.length} tarif
+            {groups.length} rute
           </div>
           {canEditVendorTarif && (
-            <button
-              onClick={() => openModal()}
-              className="shrink-0 ml-auto bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold py-2.5 px-4 rounded-xl transition-all shadow-sm flex items-center gap-2"
-            >
-              <span>+</span> Tambah Tarif Baru
-            </button>
-          )}
-        </div>
-
-        {/* Table */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200">
-                  <th className="px-4 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider">Vendor</th>
-                  <th className="px-4 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider">Origin</th>
-                  <th className="px-4 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider">Jenis Layanan</th>
-                  <th className="px-4 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider">Tipe Layanan</th>
-                  <th className="px-4 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider">Tujuan</th>
-                  <th className="px-4 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider">Kategori Berat</th>
-                  <th className="px-4 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider">Berat Min-Max</th>
-                  <th className="px-4 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider text-right">Harga/Kg</th>
-                  <th className="px-4 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider text-right">Harga/CBM</th>
-                  <th className="px-4 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider">Kategori Barang</th>
-                  <th className="px-4 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider">Min. Berat</th>
-                  <th className="px-4 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider">Estimasi Waktu</th>
-                  <th className="px-4 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider text-center">Status</th>
-                  <th className="px-4 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider text-center">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {loading ? (
-                  <LoadingTableRow colSpan={14} />
-                ) : filteredData.length === 0 ? (
-                  <tr>
-                    <td colSpan={14} className="px-4 py-8 text-center text-sm text-[#5A305A]">
-                      Tidak ada tarif ditemukan.
-                    </td>
-                  </tr>
-                ) : (
-                  paginatedData.map((rec) => (
-                    <tr key={rec.id} className={`hover:bg-slate-50/50 transition-colors ${!rec.aktif ? 'opacity-50' : ''}`}>
-                      <td className="px-4 py-3 text-sm text-[#5A305A] font-semibold whitespace-nowrap">{rec.vendor_name}</td>
-                      <td className="px-4 py-3 text-sm text-[#5A305A]">{rec.origin || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-[#5A305A]">{rec.jenis_layanan || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-[#5A305A]">{rec.tipe_layanan || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-[#5A305A]">{rec.tujuan || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-[#5A305A]">{rec.kategori_berat_label || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-[#5A305A] font-mono whitespace-nowrap">
-                        {rec.berat_min != null || rec.berat_max != null ? `${rec.berat_min ?? '-'} - ${rec.berat_max ?? '-'}` : '-'}
-                      </td>
-                      <td className="px-4 py-3 text-sm font-mono text-[#5A305A] text-right whitespace-nowrap">{formatHarga(rec.harga_per_kg, rec.mata_uang)}</td>
-                      <td className="px-4 py-3 text-sm font-mono text-[#5A305A] text-right whitespace-nowrap">
-                        {rec.harga_per_cbm_min != null || rec.harga_per_cbm_max != null
-                          ? `${formatHarga(rec.harga_per_cbm_min, rec.mata_uang)} - ${formatHarga(rec.harga_per_cbm_max, rec.mata_uang)}`
-                          : formatHarga(rec.harga_per_cbm, rec.mata_uang)}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-[#5A305A]">{rec.kategori_barang || '-'}</td>
-                      <td className="px-4 py-3 text-sm text-[#5A305A] whitespace-nowrap">{rec.minimal_berat != null ? `${rec.minimal_berat} ${rec.minimal_berat_satuan || ''}`.trim() : '-'}</td>
-                      <td className="px-4 py-3 text-sm text-[#5A305A]">{rec.estimasi_waktu || '-'}</td>
-                      <td className="px-4 py-3 text-center">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${rec.aktif ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-[#5A305A]'}`}>
-                          {rec.aktif ? 'Aktif' : 'Nonaktif'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {canEditVendorTarif ? (
-                          <div className="flex items-center justify-center gap-2">
-                            <button
-                              onClick={() => openModal(rec)}
-                              className="text-xs bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] hover:text-blue-600 font-medium px-2 py-1 rounded transition-colors shadow-sm"
-                            >
-                              Edit
-                            </button>
-                            {rec.aktif && (
-                              <button
-                                onClick={() => handleNonaktifkan(rec.id)}
-                                className="text-xs bg-white border border-slate-200 hover:bg-red-50 text-[#5A305A] hover:text-red-600 font-medium px-2 py-1 rounded transition-colors shadow-sm"
-                              >
-                                Nonaktifkan
-                              </button>
-                            )}
-                          </div>
-                        ) : '—'}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {!loading && filteredData.length > 0 && (
-            <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between gap-3 flex-wrap">
-              <div className="text-xs text-[#5A305A]">
-                Menampilkan <span className="font-bold">{(validPage - 1) * pageSize + 1}</span>–<span className="font-bold">{Math.min(validPage * pageSize, filteredData.length)}</span> dari <span className="font-bold">{filteredData.length}</span> tarif
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={validPage === 1}
-                  className="p-1.5 rounded-lg border border-slate-200 text-[#5A305A] disabled:opacity-40 hover:bg-slate-50 transition-colors"
-                >
-                  <ChevronLeft size={16} />
-                </button>
-                <span className="text-xs text-[#5A305A] font-semibold">Hal. {validPage} / {totalPages}</span>
-                <button
-                  type="button"
-                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                  disabled={validPage === totalPages}
-                  className="p-1.5 rounded-lg border border-slate-200 text-[#5A305A] disabled:opacity-40 hover:bg-slate-50 transition-colors"
-                >
-                  <ChevronRight size={16} />
-                </button>
-              </div>
+            <div className="shrink-0 ml-auto flex items-center gap-2">
+              <button
+                onClick={() => setIsVendorModalOpen(true)}
+                className="bg-white border border-slate-300 hover:bg-slate-50 text-[#5A305A] font-semibold py-2.5 px-4 rounded-xl transition-all shadow-sm flex items-center gap-2"
+              >
+                <Settings2 size={15} /> Kelola Vendor
+              </button>
+              <button
+                onClick={openNewQuotationModal}
+                className="bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold py-2.5 px-4 rounded-xl transition-all shadow-sm flex items-center gap-2"
+              >
+                <Plus size={15} /> Tambah Quotation Baru
+              </button>
             </div>
           )}
         </div>
 
+        {/* List riwayat per rute */}
+        <div className="space-y-3">
+          {loading ? (
+            <LoadingState fullHeight={false} />
+          ) : groups.length === 0 ? (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center text-sm text-[#5A305A]">
+              Tidak ada quotation ditemukan.
+            </div>
+          ) : (
+            paginatedGroups.map(({ key, recs, head }) => {
+              const isOpen = expandedGroups.has(key);
+              const activeRec = recs.find(r => r.aktif && r.periode_selesai == null) || recs[0];
+              return (
+                <div key={key} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                  <button
+                    onClick={() => toggleGroup(key)}
+                    className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-slate-50/60 transition-colors text-left"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      {isOpen ? <ChevronDown size={16} className="text-[#5A305A] shrink-0" /> : <ChevronRightIcon size={16} className="text-[#5A305A] shrink-0" />}
+                      <div className="min-w-0">
+                        <div className="text-sm font-bold text-[#5A305A] truncate">
+                          {head.vendor_name} — {head.origin} → {head.tujuan}
+                        </div>
+                        <div className="text-xs text-[#5A305A] font-light truncate">
+                          {head.jenis_layanan}{head.kategori_barang ? ` · ${head.kategori_barang}` : ''} · {recs.length} periode
+                        </div>
+                      </div>
+                    </div>
+                    <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${
+                      activeRec?.periode_selesai == null && activeRec?.aktif ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-[#5A305A]'
+                    }`}>
+                      {activeRec?.periode_selesai == null && activeRec?.aktif ? 'Berlaku' : 'Semua ditutup'}
+                    </span>
+                  </button>
+
+                  {isOpen && (
+                    <div className="border-t border-slate-100 divide-y divide-slate-100">
+                      {recs.map(rec => {
+                        const isQuotationOpen = expandedQuotations.has(rec.id);
+                        const details = detailsByQuotation[rec.id] || [];
+                        const form = detailForms[rec.id];
+                        const isMasihBerlaku = rec.periode_selesai == null;
+                        return (
+                          <div key={rec.id} className={`px-4 py-3 ${!rec.aktif ? 'opacity-50' : ''}`}>
+                            <div className="flex items-center justify-between gap-3 flex-wrap">
+                              <button
+                                onClick={() => toggleQuotation(rec.id)}
+                                className="flex items-center gap-2 text-left"
+                              >
+                                {isQuotationOpen ? <ChevronDown size={14} className="text-[#5A305A]" /> : <ChevronRightIcon size={14} className="text-[#5A305A]" />}
+                                <span className="text-sm font-semibold text-[#5A305A]">
+                                  {formatDateDMY(rec.periode_mulai)} {'->'} {rec.periode_selesai ? formatDateDMY(rec.periode_selesai) : 'Sekarang'}
+                                </span>
+                                <span className="text-xs text-[#5A305A] font-light">({rec.mata_uang}, {details.length} rentang berat)</span>
+                                {!rec.aktif && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-[#5A305A]">Nonaktif</span>}
+                              </button>
+                              {canEditVendorTarif && rec.aktif && (
+                                <div className="flex items-center gap-2">
+                                  {isMasihBerlaku && (
+                                    <button
+                                      onClick={() => { openRenewQuotationModal(rec); }}
+                                      className="text-xs bg-[#5A305A]/5 hover:bg-[#5A305A]/10 text-[#5A305A] font-semibold px-2.5 py-1 rounded-lg transition-colors"
+                                    >
+                                      Update Harga (Buat Periode Baru)
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => openEditQuotationModal(rec)}
+                                    className="text-xs bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] font-medium px-2.5 py-1 rounded-lg transition-colors shadow-sm"
+                                  >
+                                    Edit Info
+                                  </button>
+                                  <button
+                                    onClick={() => handleNonaktifkanQuotation(rec.id)}
+                                    className="text-xs bg-white border border-slate-200 hover:bg-red-50 text-[#5A305A] hover:text-red-600 font-medium px-2.5 py-1 rounded-lg transition-colors shadow-sm"
+                                  >
+                                    Nonaktifkan
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+
+                            {isQuotationOpen && (
+                              <div className="mt-3 ml-6">
+                                <div className="overflow-x-auto rounded-xl border border-slate-100">
+                                  <table className="w-full text-left border-collapse">
+                                    <thead>
+                                      <tr className="bg-slate-50 border-b border-slate-200">
+                                        <th className="px-3 py-2 text-[11px] font-bold text-[#5A305A] uppercase tracking-wider">Berat (Kg)</th>
+                                        <th className="px-3 py-2 text-[11px] font-bold text-[#5A305A] uppercase tracking-wider">Unit Price</th>
+                                        <th className="px-3 py-2 text-[11px] font-bold text-[#5A305A] uppercase tracking-wider">PPN</th>
+                                        <th className="px-3 py-2 text-[11px] font-bold text-[#5A305A] uppercase tracking-wider">Notes</th>
+                                        {canEditVendorTarif && <th className="px-3 py-2 text-[11px] font-bold text-[#5A305A] uppercase tracking-wider text-center">Aksi</th>}
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                      {details.length === 0 && !form ? (
+                                        <tr><td colSpan={5} className="px-3 py-4 text-center text-xs text-[#5A305A]">Belum ada rentang berat.</td></tr>
+                                      ) : details.map(d => (
+                                        <tr key={d.id} className="hover:bg-slate-50/50">
+                                          <td className="px-3 py-2 text-sm text-[#5A305A] font-mono whitespace-nowrap">{formatWeight(d.berat_min, d.berat_max)}</td>
+                                          <td className="px-3 py-2 text-sm text-[#5A305A] font-mono whitespace-nowrap">
+                                            {d.harga_per_kg != null
+                                              ? formatMoney(d.harga_per_kg, rec.mata_uang)
+                                              : (d.harga_per_cbm_min != null || d.harga_per_cbm_max != null)
+                                                ? `${formatMoney(d.harga_per_cbm_min, rec.mata_uang)} - ${formatMoney(d.harga_per_cbm_max, rec.mata_uang)} /CBM`
+                                                : d.harga_per_cbm != null ? `${formatMoney(d.harga_per_cbm, rec.mata_uang)} /CBM` : '-'}
+                                          </td>
+                                          <td className="px-3 py-2 text-sm text-[#5A305A] whitespace-nowrap">{d.ppn_status}</td>
+                                          <td className="px-3 py-2 text-sm text-[#5A305A]">{d.notes || '-'}</td>
+                                          {canEditVendorTarif && (
+                                            <td className="px-3 py-2 text-center">
+                                              <div className="flex items-center justify-center gap-2">
+                                                <button onClick={() => openDetailForm(rec.id, d)} className="text-xs bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] font-medium px-2 py-1 rounded transition-colors shadow-sm">Edit</button>
+                                                <button onClick={() => handleDeleteDetail(d.id)} className="text-xs bg-white border border-slate-200 hover:bg-red-50 text-[#5A305A] hover:text-red-600 font-medium px-2 py-1 rounded transition-colors shadow-sm">Hapus</button>
+                                              </div>
+                                            </td>
+                                          )}
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+
+                                {canEditVendorTarif && (
+                                  form ? (
+                                    <div className="mt-3 bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-3">
+                                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                        <div>
+                                          <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">Berat Min <span className="text-red-500">*</span></label>
+                                          <input type="number" step="any" value={form.berat_min} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, berat_min: e.target.value } }))} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
+                                        </div>
+                                        <div>
+                                          <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">Berat Max (kosongkan = "+")</label>
+                                          <input type="number" step="any" value={form.berat_max} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, berat_max: e.target.value } }))} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
+                                        </div>
+                                        <div>
+                                          <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">Harga / Kg</label>
+                                          <input type="number" step="any" value={form.harga_per_kg} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, harga_per_kg: e.target.value } }))} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm font-mono" />
+                                        </div>
+                                        <div>
+                                          <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">PPN</label>
+                                          <select value={form.ppn_status} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, ppn_status: e.target.value } }))} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm">
+                                            <option value="Non-PPN">Non-PPN</option>
+                                            <option value="PPN">PPN</option>
+                                          </select>
+                                        </div>
+                                      </div>
+
+                                      <label className="flex items-center gap-2 cursor-pointer text-[11px] font-semibold text-[#5A305A]">
+                                        <input type="checkbox" checked={form.isCbmRange} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, isCbmRange: e.target.checked } }))} className="w-3.5 h-3.5 rounded" />
+                                        Pakai Harga/CBM (bukan Harga/Kg)
+                                      </label>
+                                      {form.isCbmRange ? (
+                                        <div className="grid grid-cols-2 gap-3">
+                                          <div>
+                                            <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">Harga / CBM Min</label>
+                                            <input type="number" step="any" value={form.harga_per_cbm_min} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, harga_per_cbm_min: e.target.value } }))} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm font-mono" />
+                                          </div>
+                                          <div>
+                                            <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">Harga / CBM Max</label>
+                                            <input type="number" step="any" value={form.harga_per_cbm_max} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, harga_per_cbm_max: e.target.value } }))} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm font-mono" />
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div>
+                                          <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">Harga / CBM</label>
+                                          <input type="number" step="any" value={form.harga_per_cbm} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, harga_per_cbm: e.target.value } }))} className="w-full max-w-xs border border-slate-300 rounded-lg px-2 py-1.5 text-sm font-mono" />
+                                        </div>
+                                      )}
+
+                                      <div>
+                                        <label className="block text-[11px] font-semibold text-[#5A305A] mb-1">Notes</label>
+                                        <input type="text" value={form.notes} onChange={e => setDetailForms(p => ({ ...p, [rec.id]: { ...p[rec.id]!, notes: e.target.value } }))} placeholder="Cth: Estimasi 3-7 hari" className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
+                                      </div>
+
+                                      <div className="flex justify-end gap-2">
+                                        <button onClick={() => closeDetailForm(rec.id)} className="px-3 py-1.5 text-xs font-semibold text-[#5A305A] hover:bg-slate-100 rounded-lg transition-colors">Batal</button>
+                                        <button onClick={() => handleSaveDetail(rec.id)} disabled={savingDetailFor === rec.id} className="px-3 py-1.5 text-xs font-semibold bg-[#5A305A] hover:bg-[#73507B] text-white rounded-lg transition-colors">
+                                          {savingDetailFor === rec.id ? 'Menyimpan...' : 'Simpan'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      onClick={() => openDetailForm(rec.id)}
+                                      className="mt-3 text-xs font-semibold text-[#5A305A] bg-[#5A305A]/5 hover:bg-[#5A305A]/10 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
+                                    >
+                                      <Plus size={13} /> Tambah Range Berat
+                                    </button>
+                                  )
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {!loading && groups.length > 0 && (
+          <div className="mt-4 bg-white rounded-2xl shadow-sm border border-slate-200 px-5 py-3 flex items-center justify-between gap-3 flex-wrap">
+            <div className="text-xs text-[#5A305A]">
+              Menampilkan <span className="font-bold">{(validPage - 1) * pageSize + 1}</span>–<span className="font-bold">{Math.min(validPage * pageSize, groups.length)}</span> dari <span className="font-bold">{groups.length}</span> rute
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={validPage === 1}
+                className="p-1.5 rounded-lg border border-slate-200 text-[#5A305A] disabled:opacity-40 hover:bg-slate-50 transition-colors"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <span className="text-xs text-[#5A305A] font-semibold">Hal. {validPage} / {totalPages}</span>
+              <button
+                type="button"
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={validPage === totalPages}
+                className="p-1.5 rounded-lg border border-slate-200 text-[#5A305A] disabled:opacity-40 hover:bg-slate-50 transition-colors"
+              >
+                <ChevronRightIcon size={16} />
+              </button>
+            </div>
+          </div>
+        )}
       </main>
 
-      {/* Form Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto bg-navy-900/70 backdrop-blur-sm pt-10">
-          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl my-6 animate-fade-up">
+      {/* Modal: Informasi Quotation */}
+      {isQuotationModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto bg-slate-900/50 backdrop-blur-sm pt-10">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl my-6">
             <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
-              <div>
-                <h3 className="font-bold text-[#5A305A] text-lg">{editingId ? 'Edit Tarif Vendor' : 'Tambah Tarif Baru'}</h3>
-              </div>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-[#5A305A] text-sm transition-all"
-              >
-                ✕
+              <h3 className="font-bold text-[#5A305A] text-lg">
+                {qCloseOldId ? 'Update Harga (Buat Periode Baru)' : qEditingId ? 'Edit Quotation' : 'Tambah Quotation Baru'}
+              </h3>
+              <button onClick={() => setIsQuotationModalOpen(false)} className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-[#5A305A] transition-all">
+                <X size={16} />
               </button>
             </div>
 
-            <form onSubmit={handleSave} className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+            {qCloseOldId && (
+              <div className="mx-6 mt-4 p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
+                Quotation lama akan otomatis ditutup (periode selesai = sehari sebelum periode mulai baru), lalu quotation baru ini dibuat dgn harga baru.
+              </div>
+            )}
 
-                {/* Kolom 1 */}
-                <div className="space-y-4">
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-4">
-                    <h4 className="text-sm font-bold text-[#5A305A] border-b border-slate-200 pb-2">Informasi Layanan</h4>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-[#5A305A] mb-1">Vendor <span className="text-red-500">*</span></label>
-                      <select required value={vendorName} onChange={e => setVendorName(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
-                        {VENDOR_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-[#5A305A] mb-1">Jenis Layanan <span className="text-red-500">*</span></label>
-                      <select required value={jenisLayanan} onChange={e => setJenisLayanan(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
-                        {JENIS_LAYANAN_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-[#5A305A] mb-1">Tipe Layanan</label>
-                      <input type="text" value={tipeLayanan} onChange={e => setTipeLayanan(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" placeholder="Cth: Consolidation, Direct" />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-semibold text-[#5A305A] mb-1">Origin</label>
-                        <input type="text" value={origin} onChange={e => setOrigin(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" placeholder="Cth: China" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-[#5A305A] mb-1">Tujuan</label>
-                        <input type="text" value={tujuan} onChange={e => setTujuan(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" placeholder="Cth: Jakarta" />
-                      </div>
-                    </div>
-
-                    {showKategoriBarang && (
-                      <div>
-                        <label className="block text-xs font-semibold text-[#5A305A] mb-1">Kategori Barang</label>
-                        <select value={kategoriBarang} onChange={e => setKategoriBarang(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
-                          <option value="">(Tidak spesifik)</option>
-                          {KATEGORI_BARANG_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                        </select>
-                        <p className="text-[11px] text-[#5A305A] leading-tight mt-1">Khusus Jianqiao Sea Freight — kategori barang menentukan tarif yang berbeda.</p>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-4">
-                    <h4 className="text-sm font-bold text-[#5A305A] border-b border-slate-200 pb-2">Kategori & Berat</h4>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-[#5A305A] mb-1">Kategori Berat Label</label>
-                      <input type="text" value={kategoriBeratLabel} onChange={e => setKategoriBeratLabel(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" placeholder="Cth: Semua Berat, 0-100kg" />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-semibold text-[#5A305A] mb-1">Berat Min</label>
-                        <input type="number" step="any" value={beratMin} onChange={e => setBeratMin(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-[#5A305A] mb-1">Berat Max</label>
-                        <input type="number" step="any" value={beratMax} onChange={e => setBeratMax(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-semibold text-[#5A305A] mb-1">Minimal Berat</label>
-                        <input type="number" step="any" value={minimalBerat} onChange={e => setMinimalBerat(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-[#5A305A] mb-1">Satuan Minimal Berat</label>
-                        <input type="text" value={minimalBeratSatuan} onChange={e => setMinimalBeratSatuan(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" placeholder="Cth: KG, CBM" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Kolom 2 */}
-                <div className="space-y-4">
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-4">
-                    <h4 className="text-sm font-bold text-[#5A305A] border-b border-slate-200 pb-2">Harga</h4>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-[#5A305A] mb-1">Mata Uang <span className="text-red-500">*</span></label>
-                      <select required value={mataUang} onChange={e => setMataUang(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
-                        {MATA_UANG_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-[#5A305A] mb-1">Harga / Kg</label>
-                      <input type="number" step="any" value={hargaPerKg} onChange={e => setHargaPerKg(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono" />
-                    </div>
-
-                    <div className="pt-1">
-                      <label className="flex items-center gap-2 cursor-pointer mb-2">
-                        <input type="checkbox" checked={isRentangCbm} onChange={e => setIsRentangCbm(e.target.checked)} className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500" />
-                        <span className="text-xs font-semibold text-[#5A305A]">Harga / CBM berbentuk rentang (bukan angka tunggal)</span>
-                      </label>
-
-                      {!isRentangCbm ? (
-                        <div>
-                          <label className="block text-xs font-semibold text-[#5A305A] mb-1">Harga / CBM</label>
-                          <input type="number" step="any" value={hargaPerCbm} onChange={e => setHargaPerCbm(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono" />
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-xs font-semibold text-[#5A305A] mb-1">Harga / CBM Min</label>
-                            <input type="number" step="any" value={hargaPerCbmMin} onChange={e => setHargaPerCbmMin(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono" />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-semibold text-[#5A305A] mb-1">Harga / CBM Max</label>
-                            <input type="number" step="any" value={hargaPerCbmMax} onChange={e => setHargaPerCbmMax(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 font-mono" />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-4">
-                    <h4 className="text-sm font-bold text-[#5A305A] border-b border-slate-200 pb-2">Tambahan</h4>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-[#5A305A] mb-1">Estimasi Waktu</label>
-                      <input type="text" value={estimasiWaktu} onChange={e => setEstimasiWaktu(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" placeholder="Cth: 7-10 hari" />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-[#5A305A] mb-1">Catatan</label>
-                      <textarea rows={3} value={catatan} onChange={e => setCatatan(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
-                    </div>
-
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={aktif} onChange={e => setAktif(e.target.checked)} className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500" />
-                      <span className="text-sm font-semibold text-[#5A305A]">Aktif</span>
-                    </label>
-                  </div>
-                </div>
-
+            <form onSubmit={handleSaveQuotation} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-[#5A305A] mb-1">Nama Vendor <span className="text-red-500">*</span></label>
+                <select required disabled={!!qCloseOldId} value={qVendorName} onChange={e => setQVendorName(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#5A305A]/30 disabled:bg-slate-100">
+                  <option value="" disabled>Pilih vendor...</option>
+                  {activeVendors.map(v => <option key={v.id} value={v.vendor_name}>{v.vendor_name}</option>)}
+                </select>
               </div>
 
-              <div className="mt-6 flex justify-end gap-3 pt-5 border-t border-slate-100">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-5 py-2.5 text-sm font-semibold text-[#5A305A] hover:bg-slate-100 rounded-xl transition-colors">
-                  Batal
-                </button>
-                <button type="submit" disabled={saving} className="px-5 py-2.5 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm transition-colors flex items-center gap-2">
-                  {saving ? 'Menyimpan...' : 'Simpan Tarif'}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-[#5A305A] mb-1">Periode Mulai <span className="text-red-500">*</span></label>
+                  <input required type="date" value={qPeriodeMulai} onChange={e => setQPeriodeMulai(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#5A305A] mb-1">Periode Selesai (kosongkan = masih berlaku)</label>
+                  <input type="date" value={qPeriodeSelesai} onChange={e => setQPeriodeSelesai(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#5A305A] mb-1">Jenis Layanan <span className="text-red-500">*</span></label>
+                <select required disabled={!!qCloseOldId} value={qJenisLayanan} onChange={e => setQJenisLayanan(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm disabled:bg-slate-100">
+                  {JENIS_LAYANAN_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-[#5A305A] mb-1">Origin <span className="text-red-500">*</span></label>
+                  <input required disabled={!!qCloseOldId} type="text" value={qOrigin} onChange={e => setQOrigin(e.target.value.toUpperCase())} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm disabled:bg-slate-100" placeholder="Cth: GUANGZHOU" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#5A305A] mb-1">Destination <span className="text-red-500">*</span></label>
+                  <input required disabled={!!qCloseOldId} type="text" value={qTujuan} onChange={e => setQTujuan(e.target.value.toUpperCase())} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm disabled:bg-slate-100" placeholder="Cth: JAKARTA" />
+                </div>
+              </div>
+
+              {showKategoriBarang && (
+                <div>
+                  <label className="block text-xs font-semibold text-[#5A305A] mb-1">Kategori Barang</label>
+                  <select disabled={!!qCloseOldId} value={qKategoriBarang} onChange={e => setQKategoriBarang(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm disabled:bg-slate-100">
+                    <option value="">(Tidak spesifik)</option>
+                    {KATEGORI_BARANG_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                  <p className="text-[11px] text-[#5A305A] leading-tight mt-1">Khusus Jianqiao Sea Freight — kategori barang menentukan tarif yang berbeda.</p>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-[#5A305A] mb-1">Kurs <span className="text-red-500">*</span></label>
+                <select required value={qMataUang} onChange={e => setQMataUang(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                  {MATA_UANG_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+                <button type="button" onClick={() => setIsQuotationModalOpen(false)} className="px-5 py-2.5 text-sm font-semibold text-[#5A305A] hover:bg-slate-100 rounded-xl transition-colors">Batal</button>
+                <button type="submit" disabled={savingQuotation} className="px-5 py-2.5 text-sm font-semibold bg-[#5A305A] hover:bg-[#73507B] text-white rounded-xl shadow-sm transition-colors">
+                  {savingQuotation ? 'Menyimpan...' : 'Simpan'}
                 </button>
               </div>
             </form>
@@ -572,6 +813,47 @@ export default function FarOverseasVendorTarifPage() {
         </div>
       )}
 
+      {/* Modal: Kelola Vendor */}
+      {isVendorModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100">
+              <h3 className="font-bold text-[#5A305A] text-lg">Kelola Vendor</h3>
+              <button onClick={() => setIsVendorModalOpen(false)} className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-[#5A305A] transition-all">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <form onSubmit={handleSaveVendor} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={newVendorName}
+                  onChange={e => setNewVendorName(e.target.value)}
+                  placeholder="Nama vendor baru..."
+                  className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#5A305A]/30"
+                />
+                <button type="submit" disabled={savingVendor || !newVendorName.trim()} className="px-4 py-2 text-sm font-semibold bg-[#5A305A] hover:bg-[#73507B] text-white rounded-lg transition-colors disabled:opacity-50">
+                  Tambah
+                </button>
+              </form>
+
+              <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 border border-slate-100 rounded-xl">
+                {vendors.length === 0 ? (
+                  <div className="px-3 py-4 text-center text-xs text-[#5A305A]">Belum ada vendor.</div>
+                ) : vendors.map(v => (
+                  <div key={v.id} className="flex items-center justify-between px-3 py-2">
+                    <span className="text-sm text-[#5A305A]">{v.vendor_name}</span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${v.aktif ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-[#5A305A]'}`}>
+                      {v.aktif ? 'Aktif' : 'Nonaktif'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
