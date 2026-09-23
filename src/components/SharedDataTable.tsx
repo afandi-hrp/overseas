@@ -13,6 +13,7 @@ import SeaAirChecklistModal from '../components/SeaAirChecklistModal'
 import SeaAirValidasiModal from '../components/SeaAirValidasiModal'
 import ValidasiShipmentInvoiceLengkap from '../components/ValidasiShipmentInvoiceLengkap'
 import { computeLiveCostSummary } from '../utils/CostValidationHelpers'
+import { relaxSeaAirDocChecks } from '../utils/SeaAirValidasiHelpers'
 import { SECTIONS, computeStatus } from '../utils/ValidasiHelper'
 import { generateValues } from '../utils/ValidasiFill'
 import { calculatePibStats } from '../utils/ValidasiPibHelper'
@@ -1905,10 +1906,17 @@ const SeaAirAuditRowGroup: React.FC<{
   const [editForm, setEditForm] = useState<any>({});
   const [isSaving, setIsSaving] = useState(false);
   const [showActions, setShowActions] = useState(false);
+  // PO Price Detail (2026-09, permintaan user) -- SATU-SATUNYA dari 3 repeatingCols yang bisa
+  // diedit manual di mode edit (po_ori/vendor_inv_no TETAP read-only, tidak diminta). Karena
+  // `po_harga_detail` 1 kolom DB gabungan banyak nilai (dipisah "+"), tiap nilai split diedit
+  // TERPISAH per baris (array `editHargaSplits`, index selaras `splittedData`), baru digabung
+  // balik jadi 1 string " + "-separated saat Save.
+  const [editHargaSplits, setEditHargaSplits] = useState<string[]>([]);
 
   const handleStartEdit = () => {
     if (onInlineSaveRow) {
       setEditForm(rec);
+      setEditHargaSplits(splittedData.map(d => d.harga));
       setIsEditing(true);
     } else if (onEdit) {
       onEdit(rec);
@@ -1919,11 +1927,13 @@ const SeaAirAuditRowGroup: React.FC<{
     if (!onInlineSaveRow) return;
     setIsSaving(true);
 
+    const updatedForm = { ...editForm, po_harga_detail: editHargaSplits.map(v => (v ?? '').trim()).filter(Boolean).join(' + ') };
+
     // Only send changed fields
     const changes: any = {};
-    Object.keys(editForm).forEach(k => {
-      if (editForm[k] !== rec[k]) {
-        changes[k] = editForm[k];
+    Object.keys(updatedForm).forEach(k => {
+      if (updatedForm[k] !== rec[k]) {
+        changes[k] = updatedForm[k];
       }
     });
 
@@ -1936,6 +1946,7 @@ const SeaAirAuditRowGroup: React.FC<{
     const success = await onInlineSaveRow(rec.id, changes);
     setIsSaving(false);
     if (success) {
+      setEditForm(updatedForm);
       setIsEditing(false);
     }
   };
@@ -1974,12 +1985,26 @@ const SeaAirAuditRowGroup: React.FC<{
               
               if (c.key === 'po_ori' || c.key === 'vendor_inv_no' || c.key === 'po_harga_detail') {
                 const val = c.key === 'po_ori' ? data.po : c.key === 'vendor_inv_no' ? data.inv : data.harga;
+                const isHargaEditable = isEditing && c.key === 'po_harga_detail';
                 content = (
                   <div className="flex items-center gap-2 justify-between">
-                    <span>{val || '—'}</span>
+                    {isHargaEditable ? (
+                      <input
+                        type="text"
+                        value={editHargaSplits[i] ?? val ?? ''}
+                        onChange={e => setEditHargaSplits(prev => {
+                          const next = [...prev];
+                          next[i] = e.target.value;
+                          return next;
+                        })}
+                        className="flex-1 min-w-0 text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A] font-mono"
+                      />
+                    ) : (
+                      <span>{val || '—'}</span>
+                    )}
                     {isFirst && rowCount > 1 && (
-                      <button 
-                        onClick={() => setIsExpanded(!isExpanded)} 
+                      <button
+                        onClick={() => setIsExpanded(!isExpanded)}
                         className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-200 hover:bg-blue-100 font-bold ml-2 whitespace-nowrap"
                         title="Toggle Data Splits"
                       >
@@ -1989,7 +2014,7 @@ const SeaAirAuditRowGroup: React.FC<{
                   </div>
                 );
                 alignClass = 'text-left font-mono text-[#5A305A]';
-              }  
+              }
               
               const additionalClasses = !isRepeating && isFirst && rowCount > 1 && isExpanded ? 'border-r border-slate-200 bg-white group-hover:bg-blue-50/30' : '';
               
@@ -3603,9 +3628,13 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
           // Persentase akurasi Doc Validation -- replika PERSIS formula globalStats di
           // SeaAirValidasiModal.tsx: cuma hitung check yang sudah punya nilai match (true/false),
-          // "Belum dicek" (match null) tidak masuk total.
+          // "Belum dicek" (match null) tidak masuk total. `relaxSeaAirDocChecks()` WAJIB dipanggil
+          // DULU (2026-09, fix bug badge tidak sinkron dgn modal) -- `c.match` MENTAH tersimpan di
+          // DB bisa basi (nilai match versi TERAKHIR DISIMPAN, dari algoritma fuzzy match lama),
+          // sementara modal SELALU hitung ulang `c.match` di client tiap dibuka. Tanpa baris ini,
+          // badge & modal bisa tampil % berbeda walau baca tabel yang sama persis.
           seaAirDocValidationPctMap = Object.fromEntries(allMatriksData.map(m => {
-            const checks = Array.isArray(m.checks) ? m.checks : [];
+            const checks = relaxSeaAirDocChecks(m.checks);
             let total = 0, match = 0;
             checks.forEach((c: any) => {
               if (c.match !== null && c.match !== undefined) {

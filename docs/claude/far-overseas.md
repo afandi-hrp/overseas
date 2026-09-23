@@ -213,6 +213,72 @@ sudah di-share "anyone with link can view".
   kalau user print manual via Ctrl+P/menu browser, TIDAK ADA salahnya dibiarkan nganggur.
   **Kalau diminta lagi ke depan**: ini pekerjaan BARU dari nol (bukan un-revert) — riwayat 2
   iterasi gagal-lalu-reliable di atas TETAP relevan sbg referensi teknis.
+- **Susulan (2026-09) — tombol Print DIKEMBALIKAN, TAPI HANYA di modal `FarOverseasAirDetailModal.tsx`**
+  (permintaan eksplisit user, bukan revert fitur merge-PDF yang dibatalkan di atas) — tombol
+  `window.print()` polos di toolbar modal (`Printer` icon dari lucide-react), pakai `id=
+  "far-overseas-print-area"` & class `print:*` yang sebelumnya SENGAJA dibiarkan nganggur.
+  **Card view (`FarOverseasAirPage.tsx`, tombol "Print memo" + mekanisme `autoPrintRef`/
+  `MutationObserver`) TETAP TIDAK ADA** — cakupan permintaan ini murni modal Approval Memo saja.
+
+## Document Validation — kolom INVOICE + STATUS baris NO PO (2026-09)
+
+`FarOverseasAirCostValidationModal.tsx`, tabel Document Validation baris "PO NO. / PT NAME" —
+kolom **INVOICE** (dulu selalu kosong/`—` muted) sekarang isi `row.po_no_dari_remark_invoice`
+(field BARU dari backend/n8n, di setiap entry array `document_validation` —
+`cost_validasi_far_overseas_air.document_validation` jsonb, BUKAN kolom tabel terpisah) — nomor
+PO PERSIS seperti tertulis di baris "Remark" invoice freight, bisa format singkat (cth
+"2607/0972/WNS"), bisa `null` kalau PO itu tidak disebut balik di remark invoice manapun.
+
+Kolom **STATUS BARU** ditambahkan khusus di baris ini (header tabel jadi 5 kolom: kosong/Invoice/
+PO/KG/Status) — badge hijau "SESUAI"/merah "TIDAK SESUAI"/abu-abu "-" (PO memang tidak
+direferensikan di remark, BUKAN berarti salah). **Logic perbandingan TIDAK bandingkan string
+mentah** — format remark bisa singkat sementara format PO dari dokumen selalu lengkap (cth
+"I.PO/WNS.MDN/2607/0972") — `normalizePoTail()` ambil ekor `"YYMM/NNNN"` dari KEDUA sisi via
+regex `/(\d{3,4}\s*\/\s*\d{3,4})\s*$/` dulu, baru dibandingkan (`getDocumentValidationStatus()`,
+module-level di `FarOverseasAirCostValidationModal.tsx`, SATU-SATUNYA sumber logic ini). Baris
+CONCLUSION (badge MATCH/MISMATCH nama PT) TIDAK ikut berubah, cuma digeser ke kolom Status
+supaya tetap sejajar 5 kolom — kolom KG-nya sekarang kosong di baris itu (dulu 4 kolom, badge
+match ada di posisi kolom KG).
+
+**Field `po_no_dari_remark_invoice` murni DIBACA, TIDAK PERNAH ditulis dari app ini** (read-only,
+sama pola field lain hasil ekstraksi n8n yang belum diberi jalur edit manual) — kalau ke depan
+diminta bisa dikoreksi manual, itu perubahan terpisah (butuh masuk `updateDocField`/RPC
+`update_cost_validasi_far_overseas_manual` param `p_document_validation`, pola sama `po_no`).
+
+## Cost Validation — "Notes (Manual)" WAJIB sebelum approval Exim (2026-09)
+
+`FarOverseasAirCostValidationModal.tsx` — section BARU "Notes (Manual)" di bawah tabel Cost
+Validation, kolom baru `cost_validasi_far_overseas_air.notes_manual` (text). **TERPISAH dari
+`catatan`** (kotak biru info di atas modal — itu read-only, murni tampilan, bukan dari input
+form ini). Editable HANYA saat `isEditMode` aktif (pola sama field Cost Validation lain),
+tersimpan via bar "Simpan Perubahan" yang sudah ada (`handleSaveChanges` → RPC
+`update_cost_validasi_far_overseas_manual`, parameter baru `p_notes_manual`). Badge kuning
+"Empty" + border amber tampil kalau field ini masih kosong/whitespace saja.
+
+**Gating approval** (`FarOverseasAirDetailModal.tsx`) — selama `notes_manual` kosong, tombol
+Approve tahap **Prepared By (Exim/TIER1) SAJA** disembunyikan (diganti pesan amber "Cost
+Validation 'Notes (Manual)' is still empty..."), TIDAK berpengaruh ke tahap PIC/TIER2/TIER3.
+Modal ini fetch `cost_validasi_far_overseas_air.notes_manual` terpisah (`.eq('far_overseas_id',
+rec.id)`) di `useEffect` sendiri, state `costNotesManual`/`costNotesLoaded` (loaded-flag cegah
+blokir "false positive" sesaat sebelum fetch selesai) — `tier1BlockedByNotes = nextStep ===
+'TIER1' && costNotesLoaded && !(costNotesManual?.trim())`.
+
+**BELUM DIJALANKAN ke Supabase production — WAJIB dijalankan manual dulu**
+(`sql/014_cost_validasi_notes_manual.sql`): `alter table cost_validasi_far_overseas_air add
+column if not exists notes_manual text;`. **RPC `update_cost_validasi_far_overseas_manual` JUGA
+WAJIB dipatch manual** supaya terima parameter baru `p_notes_manual` — signature aslinya dibuat
+user sendiri langsung di Supabase, BELUM diverifikasi dari sesi ini (ikuti aturan wajib di bagian
+"Peta RPC function Supabase" CLAUDE.md utama: minta user jalankan `select
+pg_get_functiondef('update_cost_validasi_far_overseas_manual'::regproc)` dulu sebelum menulis
+`CREATE OR REPLACE` apa pun). **Sampai RPC ini dipatch, tombol "Simpan Perubahan" di section Notes
+akan gagal** (Supabase menolak parameter `p_notes_manual` yang tidak dikenal).
+
+**Gating server-side (OPSIONAL, disarankan, BELUM diterapkan)** — pola project ini biasanya
+menegakkan gating approval di frontend DAN server (`approve_far_overseas_air` RPC). Belum
+ditambahkan di sini karena butuh edit ke RPC `approve_far_overseas_air` yang body-nya sudah
+panjang (lihat bagian "FAR Overseas Air — PIC per-memo assignment" di bawah) — draft guard-nya
+ada di komentar `sql/014_...sql`, tinggal disisipkan ke cabang `p_step = 'TIER1'` kalau user minta
+diperkuat ke server juga.
 
 ## FAR Overseas Air — PIC per-memo assignment
 

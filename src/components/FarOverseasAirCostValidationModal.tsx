@@ -7,7 +7,7 @@ import {
   computeExpectedFromRate, computeCostStatus, type RateRow,
 } from '../utils/FarOverseasAirHelpers';
 
-type DocValRow = { po_no?: string | null; company_code?: string | null; po_document_ditemukan?: boolean | null; edited?: boolean };
+type DocValRow = { po_no?: string | null; company_code?: string | null; po_document_ditemukan?: boolean | null; edited?: boolean; po_no_dari_remark_invoice?: string | null };
 type CostValRow = { row_key: string; expected?: any; actual?: any; notes?: string | null; edited?: boolean };
 type PoListEntryLite = { po_no_raw?: string | null; weight_kg?: number | null };
 
@@ -21,6 +21,38 @@ const COST_ROW_ORDER = ['KG', 'UNIT_PRICE_DARI_DESCRIPTION', 'OTHER_CHARGES', 'T
 
 function EditedMark() {
   return <Pencil size={11} className="text-amber-500 shrink-0 inline-block ml-1" />;
+}
+
+// Ambil ekor "YYMM/NNNN" dari format PO apa pun -- remark invoice bisa format singkat
+// ("2607/0972/WNS"), dokumen PO selalu lengkap ("I.PO/WNS.MDN/2607/0972") -- ekor inilah yang
+// dibandingkan, BUKAN string mentah, karena prefix/suffix-nya beda per sumber.
+function normalizePoTail(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const m = String(text).match(/(\d{3,4}\s*\/\s*\d{3,4})\s*$/);
+  return m ? m[1].replace(/\s+/g, '') : null;
+}
+
+// STATUS baris NO PO -- bandingkan `po_no_dari_remark_invoice` (BARU dari backend, nomor PO
+// PERSIS seperti tertulis di baris Remark invoice freight) vs `po_no` (dari dokumen PO).
+// '-' kalau PO ini memang tidak disebut balik di remark invoice manapun (BUKAN berarti salah).
+function getDocumentValidationStatus(entry: DocValRow): 'SESUAI' | 'TIDAK SESUAI' | '-' {
+  if (!entry.po_no_dari_remark_invoice) return '-';
+  const tailRemark = normalizePoTail(entry.po_no_dari_remark_invoice);
+  const tailDokumen = normalizePoTail(entry.po_no);
+  if (!tailRemark || !tailDokumen) return '-';
+  return tailRemark === tailDokumen ? 'SESUAI' : 'TIDAK SESUAI';
+}
+
+function DocStatusBadge({ status }: { status: 'SESUAI' | 'TIDAK SESUAI' | '-' }) {
+  if (status === '-') {
+    return <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-slate-100 text-slate-500 whitespace-nowrap">-</span>;
+  }
+  const isMatch = status === 'SESUAI';
+  return (
+    <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap inline-flex items-center gap-1 ${isMatch ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+      {isMatch ? <CheckCircle2 size={11} /> : <AlertTriangle size={11} />} {status}
+    </span>
+  );
 }
 
 function EditableCell({ value, onChange, editable = false, align = 'right', placeholder = '-', warn = false }: {
@@ -140,6 +172,12 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
   const [dominantCompanyCode, setDominantCompanyCode] = useState<string | null>(null);
   const [selectingRate, setSelectingRate] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  // Notes manual (2026-09, WAJIB diisi) -- SATU-SATUNYA syarat tambahan sebelum memo bisa
+  // di-approve tahap Prepared By (Exim), lihat FarOverseasAirDetailModal.tsx `isEligibleForStep`/
+  // `tier1BlockedByNotes`. Field ini TERPISAH dari `catatan` (info sistem/otomatis, read-only,
+  // ditampilkan di kotak biru atas -- JANGAN gabung ke situ).
+  const [notesManual, setNotesManual] = useState<string | null>(null);
+  const [savedNotesManual, setSavedNotesManual] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -183,6 +221,8 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
         setRateRowUsed(rateRow ?? null);
         setOverallStatus(cvRes.data.status ?? null);
         setCatatan(cvRes.data.catatan ?? null);
+        setNotesManual(cvRes.data.notes_manual ?? null);
+        setSavedNotesManual(cvRes.data.notes_manual ?? null);
         const docArr = Array.isArray(docVal) ? docVal : [];
         const costArr = Array.isArray(costVal) ? costVal : [];
         setDocValidation(docArr);
@@ -212,6 +252,11 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
     setHasUnsavedChanges(true);
   };
 
+  const updateNotesManual = (value: string) => {
+    setNotesManual(value === '' ? null : value);
+    setHasUnsavedChanges(true);
+  };
+
   const handleSaveChanges = async () => {
     if (!cvId) return;
     setSaving(true);
@@ -219,6 +264,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
       p_id: cvId,
       p_document_validation: docValidation,
       p_cost_validation: costValidation,
+      p_notes_manual: notesManual,
     });
     setSaving(false);
     if (error) {
@@ -226,6 +272,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
     } else {
       setSavedDocValidation(docValidation);
       setSavedCostValidation(costValidation);
+      setSavedNotesManual(notesManual);
       setHasUnsavedChanges(false);
       showToast('Changes saved.', 'success');
     }
@@ -234,6 +281,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
   const handleDiscardChanges = () => {
     setDocValidation(savedDocValidation);
     setCostValidation(savedCostValidation);
+    setNotesManual(savedNotesManual);
     setHasUnsavedChanges(false);
   };
 
@@ -415,9 +463,10 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                       <thead>
                         <tr className="text-[10px] text-[#5A305A]/70 uppercase bg-slate-50/50">
                           <th className="text-left font-semibold px-3 py-2 w-1/5"></th>
-                          <th className="text-left font-semibold px-3 py-2 w-[30%]">Invoice</th>
-                          <th className="text-left font-semibold px-3 py-2 w-[30%]">PO</th>
+                          <th className="text-left font-semibold px-3 py-2 w-[25%]">Invoice</th>
+                          <th className="text-left font-semibold px-3 py-2 w-[25%]">PO</th>
                           <th className="text-left font-semibold px-3 py-2">KG</th>
+                          <th className="text-left font-semibold px-3 py-2">Status</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -428,6 +477,10 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                           // hasil recomputeDominantCompany) dengan centang hijau -- biar user tau
                           // PO mana saja yang "menang" jadi nama PT dominan di kolom PO CONCLUSION.
                           const isDominantContributor = !!ptFromPo && !!dominantPtName && looseNameMatch(ptFromPo, dominantPtName);
+                          // Kolom INVOICE/STATUS baris NO PO (2026-09, field baru dari backend) --
+                          // bandingkan No PO tertulis di remark invoice freight vs No PO dokumen,
+                          // lihat getDocumentValidationStatus()/normalizePoTail() di atas.
+                          const docStatus = getDocumentValidationStatus(row);
                           return (
                             <React.Fragment key={idx}>
                               {/* PT Name & PO Number digabung 1 baris (2026-09, permintaan user --
@@ -435,7 +488,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                                   1 <td>, SEKARANG beneran sejajar 1 baris horizontal dgn flex). */}
                               <tr className="border-t border-slate-100">
                                 <td className="px-3 py-1.5 font-semibold text-[#5A305A] align-top">PO NO. / PT NAME</td>
-                                <td className="px-3 py-1.5 align-top text-slate-300">—</td>
+                                <td className="px-3 py-1.5 align-top text-[#5A305A] whitespace-nowrap">{row.po_no_dari_remark_invoice || '-'}</td>
                                 <td className="px-3 py-1.5 align-top">
                                   <div className="flex items-center gap-2 flex-nowrap">
                                     <div className="flex-1 min-w-[140px] whitespace-nowrap">
@@ -448,8 +501,9 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                                   </div>
                                 </td>
                                 <td className="px-3 py-1.5 align-top text-[#5A305A]">{weight != null ? `${weight} KG` : '-'}</td>
+                                <td className="px-3 py-1.5 align-top"><DocStatusBadge status={docStatus} /></td>
                               </tr>
-                              <tr aria-hidden="true"><td colSpan={4} className="h-2 bg-slate-50" /></tr>
+                              <tr aria-hidden="true"><td colSpan={5} className="h-2 bg-slate-50" /></tr>
                             </React.Fragment>
                           );
                         })}
@@ -457,6 +511,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                           <td className="px-3 py-2.5 font-bold text-[#5A305A] align-top whitespace-nowrap">CONCLUSION :</td>
                           <td className="px-3 py-2.5 align-top font-semibold text-[#5A305A]">{invoicePtName || '-'}</td>
                           <td className="px-3 py-2.5 align-top font-semibold text-[#5A305A]">{dominantPtName || '-'}</td>
+                          <td className="px-3 py-2.5 align-top"></td>
                           <td className="px-3 py-2.5 align-top">
                             <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap inline-flex items-center gap-1 ${conclusionMatch ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
                               {conclusionMatch ? <CheckCircle2 size={11} /> : <AlertTriangle size={11} />} {conclusionMatch ? 'MATCH' : 'MISMATCH'}
@@ -523,6 +578,40 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                     </tbody>
                   </table>
                 )}
+              </div>
+
+              {/* Notes (Manual) -- WAJIB diisi (2026-09, permintaan user): selama kosong, memo ini
+                  TIDAK BISA lanjut ke tahap approval Prepared By (Exim) di
+                  FarOverseasAirDetailModal.tsx (`tier1BlockedByNotes`). Field ini murni manual,
+                  TIDAK PERNAH diisi otomasi n8n -- beda dari `catatan` (info sistem read-only di
+                  kotak biru atas). */}
+              <div className={`bg-white rounded-xl border overflow-hidden ${!notesManual || !notesManual.trim() ? 'border-amber-300' : 'border-slate-200'}`}>
+                <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-bold text-[#5A305A]">Notes (Manual) <span className="text-rose-600">*</span></h3>
+                    <p className="text-[11px] font-light text-[#5A305A]/70 mt-0.5">Required before this memo can be approved by Prepared By (Exim)</p>
+                  </div>
+                  {(!notesManual || !notesManual.trim()) && (
+                    <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 flex items-center gap-1 shrink-0">
+                      <AlertTriangle size={11} /> Empty
+                    </span>
+                  )}
+                </div>
+                <div className="p-4">
+                  {isEditMode ? (
+                    <textarea
+                      value={notesManual ?? ''}
+                      onChange={e => updateNotesManual(e.target.value)}
+                      rows={3}
+                      placeholder="Write cost validation notes here..."
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A]"
+                    />
+                  ) : notesManual && notesManual.trim() ? (
+                    <p className="text-sm text-[#5A305A] whitespace-pre-wrap">{notesManual}</p>
+                  ) : (
+                    <p className="text-xs text-amber-700 italic">Not filled in yet — Exim approval is blocked until this is filled in.</p>
+                  )}
+                </div>
               </div>
             </div>
           )}

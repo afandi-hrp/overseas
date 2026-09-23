@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
-import { X, Stamp, Ban, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, Stamp, Ban, ChevronDown, ChevronUp, Printer } from 'lucide-react';
 import { formatMoney, formatDateID, formatDateMemo, APPROVAL_STATUS_META, LOGO_ASSETS, parseJsonField } from '../utils/FarOverseasAirHelpers';
 
 type SignerConfig = {
@@ -134,6 +134,13 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
   const [showReject, setShowReject] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  // Notes (Manual) dari Cost Validation (`FarOverseasAirCostValidationModal.tsx`, kolom
+  // `cost_validasi_far_overseas_air.notes_manual`) -- SATU-SATUNYA syarat tambahan sebelum
+  // tahap Prepared By (Exim/TIER1) bisa approve, lihat `tier1BlockedByNotes` di bawah. Fetch
+  // TERPISAH dari `rec` (tabel beda) -- `costNotesLoaded` mencegah pesan blokir sempat tampil
+  // keliru sebelum fetch ini selesai.
+  const [costNotesManual, setCostNotesManual] = useState<string | null>(null);
+  const [costNotesLoaded, setCostNotesLoaded] = useState(false);
 
   useEffect(() => {
     const loadSigner = async () => {
@@ -143,6 +150,16 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
     };
     loadSigner();
   }, [rec?.dominant_company_code]);
+
+  useEffect(() => {
+    const loadCostNotes = async () => {
+      setCostNotesLoaded(false);
+      const { data } = await supabase.from('cost_validasi_far_overseas_air').select('notes_manual').eq('far_overseas_id', rec.id).maybeSingle();
+      setCostNotesManual(data?.notes_manual ?? null);
+      setCostNotesLoaded(true);
+    };
+    loadCostNotes();
+  }, [rec?.id]);
 
   const showToast = (msg: string, type: 'success' | 'error') => {
     setToast({ msg, type });
@@ -191,6 +208,12 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
   // utk `nextStep`), jadi Reject & Approve SELALU muncul/hilang bareng utk siapa pun yang buka
   // memo ini -- kalau `nextStep` null (sudah APPROVED/REJECTED) otomatis false juga.
   const canReject = nextStep != null && isEligibleForStep(nextStep);
+
+  // Gating tambahan (2026-09, permintaan user): tahap Prepared By (Exim/TIER1) TIDAK BISA
+  // approve selama "Notes (Manual)" di Cost Validation masih kosong. HANYA berlaku utk TIER1 --
+  // PIC/TIER2/TIER3 TIDAK terpengaruh. `costNotesLoaded` cegah blokir "false positive" sesaat
+  // sebelum fetch `cost_validasi_far_overseas_air` selesai.
+  const tier1BlockedByNotes = nextStep === 'TIER1' && costNotesLoaded && !(costNotesManual && costNotesManual.trim());
 
   const roleForStep = (step: ApprovalStep) => step === 'TIER1' ? signer?.tier1_role : step === 'PIC' ? 'PIC' : step === 'TIER2' ? signer?.tier2_role : signer?.tier3_role;
   const defaultNamaForStep = (step: ApprovalStep) => step === 'TIER1' || step === 'PIC' ? (profile?.nama || user?.email || '') : step === 'TIER2' ? (signer?.tier2_name || '') : (signer?.tier3_name || '');
@@ -264,6 +287,12 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
             <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${statusMeta.badgeClass}`}>{statusMeta.label}</span>
+            <button
+              onClick={() => window.print()}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-slate-200 text-[#5A305A] hover:bg-slate-50 transition-colors"
+            >
+              <Printer size={15} /> Print
+            </button>
             <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-[#5A305A] transition-colors">
               <X size={20} />
             </button>
@@ -412,6 +441,11 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
                         : `You don't have the "${STEP_LABEL[nextStep]}" approval role for this step.`}
                     </span>
                   )}
+                  {nextStep != null && isEligibleForStep(nextStep) && tier1BlockedByNotes && (
+                    <span className="block text-amber-700 font-medium mt-0.5">
+                      Cost Validation "Notes (Manual)" is still empty — fill it in first (open Cost Validation) before this memo can be approved.
+                    </span>
+                  )}
                 </p>
                 <div className="flex items-center gap-2">
                   {canReject && (
@@ -419,7 +453,7 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
                       <Ban size={15} /> Reject
                     </button>
                   )}
-                  {nextStep != null && isEligibleForStep(nextStep) && (
+                  {nextStep != null && isEligibleForStep(nextStep) && !tier1BlockedByNotes && (
                     <button
                       onClick={() => handleApprove(nextStep, defaultNamaForStep(nextStep))}
                       disabled={submitting}

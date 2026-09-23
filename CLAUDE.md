@@ -536,19 +536,48 @@ bagian "Accounting Rekap" di atas soal gap INSERT/UPDATE/DELETE).
 
 ## Peta RPC function Supabase
 
+**WAJIB dibaca sebelum bikin RPC/function BARU apa pun** (2026-09, insiden nyata terjadi 2x dalam
+sesi yang sama — lihat "Tarif Vendor FAR Overseas Air" di `docs/claude/far-overseas.md`): project
+Supabase ini **DIPAKAI BERSAMA n8n** (workflow otomasi baca/tulis tabel & bisa saja punya
+RPC/function sendiri yang TIDAK tercermin di kode frontend ini sama sekali) DAN oleh user
+LANGSUNG lewat SQL Editor (RPC bisa dibuat user sendiri tanpa lewat sesi Claude Code). Akibatnya:
+**sebelum membuat RPC/function baru, WAJIB tanya ke user dulu apakah fungsi dgn
+nama/tujuan serupa sudah ada** — JANGAN asumsikan "belum pernah dibuat" hanya krn tidak ada di
+daftar bawah ini atau tidak ada file SQL lokal utk itu. Insiden nyata yang sudah terjadi: (1)
+sesi ini pernah bikin ulang RPC Tarif Vendor FAR Overseas dgn signature beda dari yang user SUDAH
+buat sendiri duluan, gagal `CREATE OR REPLACE` (`42P13: cannot remove parameter defaults from
+existing function`); (2) whitelist kolom `v_allowed_columns` di RPC yang dibuat user sendiri bisa
+saja BEDA/basi dari asumsi dokumen ini. **Cara aman**: minta user jalankan
+`select pg_get_functiondef('nama_fungsi'::regproc)` di SQL Editor dulu (kalau fungsi belum ada,
+querynya akan error "does not exist" — itu sinyal aman utk lanjut bikin baru) SEBELUM menulis
+`CREATE (OR REPLACE) FUNCTION` apa pun, terutama utk nama yang generik/mirip fungsi umum (`upsert_*`,
+`update_*`, `get_*`) yang berpotensi sudah dipakai n8n atau dibuat user di sesi lain. Tidak ada
+akses DB langsung dari sesi Claude Code manapun ke Supabase — daftar di bawah ini **disimpulkan
+dari `grep -rhoE ".rpc\\('[a-zA-Z_0-9]+'" src/` di kode frontend, BUKAN dari `information_schema`
+Supabase** — bisa saja sudah basi (RPC lain ditambahkan user langsung tanpa tercermin di sini).
+
 - Auth: `get_my_access()`, `get_my_approval_tiers()`.
-- FAR Overseas Air: `update_rekapan_far_overseas_manual`,
+- FAR Overseas Air (List Memo & approval): `update_rekapan_far_overseas_manual`,
   `update_cost_validasi_far_overseas_manual`, `fn_delete_far_overseas_air`,
-  `upsert_tarif_far_overseas_vendor`, `nonaktifkan_tarif_far_overseas_vendor`,
   `approve_far_overseas_air`, `reject_far_overseas_air`, `get_users_with_approval_tier`.
+- FAR Overseas Air — Tarif Vendor (struktur quotation+periode, 2026-09; RPC LAMA
+  `upsert_tarif_far_overseas_vendor`/`nonaktifkan_tarif_far_overseas_vendor` SUDAH TIDAK DIPAKAI,
+  lihat `docs/claude/far-overseas.md`): `upsert_far_overseas_vendor_master`,
+  `upsert_far_overseas_tarif_quotation`, `upsert_far_overseas_tarif_quotation_detail`,
+  `nonaktifkan_far_overseas_tarif_quotation`, `hapus_far_overseas_tarif_quotation_detail`.
 - Sea & Air: `insert_seaair_row`, `update_seaair_row`, `update_rekapan_po_vessel`,
   `update_validasi_matriks_manual`, `update_cost_validasi_manual`, `get_kurs_efektif`,
   `upsert_kurs_rule_vendor`, `upsert_kurs_bi`, `nonaktifkan_tarif_kontrak`.
+- Courier Audit — Draft/Archive lifecycle (`SharedDataTable.tsx`, nama RPC dipilih dinamis via
+  `isPib ? '..._pib' : '..._cn'`): `fn_delete_pib`/`fn_delete_cn`, `fn_archive_pib`/
+  `fn_archive_cn`, `fn_undraft_pib`/`fn_undraft_cn`.
 - Courier cost validation (`CostValidationModal.tsx`): `fn_hitung_storage`,
   `fn_save_storage_estimate`, `fn_update_actual_value`, `fn_apply_credit_note`,
   `fn_recompute_totals`, `fn_revise_credit_note`.
+- Reporting (skalabilitas dropdown/stats, lihat `docs/claude/reporting.md`/`audit-po.md`):
+  `fn_reporting_distinct_pt`, `fn_reporting_vendor_stats`, `fn_reporting_kategori_stats`,
+  `fn_reporting_courier_distinct`.
 
-Tidak ada akses DB langsung dari sesi Claude Code manapun — daftar di atas disimpulkan dari
-pemanggilan kode frontend, BUKAN `information_schema` Supabase. Kalau ragu soal signature/param
-exact suatu RPC (terutama param baru dari sisi frontend), cek dulu di Supabase SQL editor
-sebelum ubah pemanggilannya.
+Kalau ragu soal signature/param exact suatu RPC (terutama param baru dari sisi frontend), cek
+dulu di Supabase SQL editor sebelum ubah pemanggilannya — jangan tebak dari nama parameter yang
+"kelihatan masuk akal".

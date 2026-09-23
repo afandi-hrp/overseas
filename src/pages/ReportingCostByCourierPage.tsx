@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Truck, Download, ChevronDown, TrendingUp, TrendingDown } from 'lucide-react';
 import Greeting from '../components/Greeting';
 import { LoadingState } from '../components/LoadingState';
+import { useAuth } from '../lib/AuthContext';
 import ExcelJS from 'exceljs';
 import {
   CourierRow, PeriodMode, YearMonth, PeriodColumn, fetchCourierYear, fetchDistinctAn, fetchDistinctPpjk, fetchDistinctOrigin,
@@ -20,6 +21,45 @@ const ACCENT = '#F58C77'; // coral -- KHUSUS warna bar/line chart (bukan elemen 
 // tombol/toggle aktif pakai `#5A305A` brand ungu, samakan dgn halaman lain -- lihat CLAUDE.md).
 const PPJK_COLORS = ['#F58C77', '#5A305A', '#73507B', '#0EA5E9', '#D97706', '#0284C7', '#16A34A'];
 const OTHERS_COLOR = '#E2E8F0';
+
+type DonutSegType = { label: string; value: number; color: string; isOthers?: boolean };
+
+// Generik utk ketiga tab Donut (PPJK/Origin/Weight Range, 2026-09) -- SATU-SATUNYA tempat logic
+// "item terpilih di posisi asli + sisanya digabung 1 slice Others". `entriesAll` = SEMUA item
+// (BUKAN cuma yang terpilih) supaya "Others" bisa dihitung benar & supaya kondisi "tidak ada
+// yang dipilih" bisa menampilkan seluruh item apa adanya.
+function buildDonutSegments(entriesAll: [string, number][], selected: Set<string>, showZeroCost: boolean): DonutSegType[] {
+  if (selected.size === 0) {
+    let entries = entriesAll;
+    if (!showZeroCost) entries = entries.filter(([, v]) => v !== 0);
+    return entries.map(([label, value], i) => ({ label, value, color: PPJK_COLORS[i % PPJK_COLORS.length] })).sort((a, b) => b.value - a.value);
+  }
+  const selectedEntries: [string, number][] = [];
+  selected.forEach(k => {
+    const found = entriesAll.find(([l]) => l === k);
+    const v = found ? found[1] : 0;
+    if (showZeroCost || v !== 0) selectedEntries.push([k, v]);
+  });
+  let othersValue = 0;
+  entriesAll.forEach(([k, v]) => { if (!selected.has(k)) othersValue += v; });
+  const segs: DonutSegType[] = selectedEntries.map(([label, value], i) => ({ label, value, color: PPJK_COLORS[i % PPJK_COLORS.length] }));
+  if (othersValue > 0) segs.push({ label: 'Others', value: othersValue, color: OTHERS_COLOR, isOthers: true });
+  return segs;
+}
+
+// Total tengah donut (2026-09) -- "All" (tidak ada item dipilih) = total SELURUH item;
+// 1/lebih item dipilih = total item terpilih SAJA (BUKAN disembunyikan, lihat komentar `Donut`).
+function donutCenterTotal(entriesAll: [string, number][], selected: Set<string>): number {
+  if (selected.size === 0) return entriesAll.reduce((a, [, v]) => a + v, 0);
+  return entriesAll.reduce((a, [k, v]) => selected.has(k) ? a + v : a, 0);
+}
+
+// Toggle keanggotaan 1 label di Set seleksi -- dipakai `onToggle` ketiga Donut.
+function toggleInSet<T>(set: Set<T>, value: T): Set<T> {
+  const next = new Set(set);
+  if (next.has(value)) next.delete(value); else next.add(value);
+  return next;
+}
 
 // ─── Dropdown multi-select generik (portal ke body, pola sama ReportingCostPerVesselPage.tsx) ──
 function MultiSelect({ label, options, selected, onChange, emptyMeansAll }: {
@@ -117,10 +157,16 @@ function ComponentLine({ label, value, prevValue, compareLabel }: { label: strin
   );
 }
 
-// ─── Donut -- 1 slice highlight per PPJK terpilih pada posisi ASLI, sisanya digabung 1 slice
-// "Others" abu (2026-09 revisi: dulu tiap PPJK non-terpilih tetap tampil nama+dimmed satu-satu,
-// SEKARANG digabung jadi 1 "Others: %" TANPA rincian nama). ────────────────────────────────────
-function Donut({ segments, centerLabel, centerValue, hideCenterValue }: { segments: { label: string; value: number; color: string; isOthers?: boolean }[]; centerLabel: string; centerValue: string; hideCenterValue?: boolean }) {
+// ─── Donut -- 1 slice highlight per item terpilih pada posisi ASLI, sisanya digabung 1 slice
+// "Others" abu (2026-09 revisi: dulu tiap item non-terpilih tetap tampil nama+dimmed satu-satu,
+// SEKARANG digabung jadi 1 "Others: %" TANPA rincian nama). Total di tengah donut SELALU
+// tampil (2026-09 revisi lanjutan -- SEBELUMNYA `hideCenterValue` menyembunyikan total
+// saat ada item terpilih, SEKARANG `centerValue` yang dikirim pemanggil sendiri yang berganti
+// isi (Total keseluruhan saat "All", Total item terpilih saat 1/lebih item dipilih -- lihat
+// `donutCenterTotal()`), Donut TIDAK PERNAH lagi menyembunyikan angka). `onToggle` opsional --
+// klik legend/slice toggle keanggotaan label itu di Set seleksi pemanggil (dipakai ketiga tab
+// PPJK/Origin/Weight Range, lihat `buildDonutSegments()`). ────────────────────────────────────
+function Donut({ segments, centerLabel, centerValue, onToggle }: { segments: { label: string; value: number; color: string; isOthers?: boolean }[]; centerLabel: string; centerValue: string; onToggle?: (label: string) => void }) {
   const total = segments.reduce((a, s) => a + s.value, 0);
   const R = 40, CX = 50, CY = 50, STROKE = 16;
   const circumference = 2 * Math.PI * R;
@@ -139,21 +185,22 @@ function Donut({ segments, centerLabel, centerValue, hideCenterValue }: { segmen
           <circle cx={CX} cy={CY} r={R} fill="none" stroke="#F1F5F9" strokeWidth={STROKE} />
           {drawn.map((s, i) => (
             <circle key={i} cx={CX} cy={CY} r={R} fill="none" stroke={s.isOthers ? OTHERS_COLOR : s.color} strokeWidth={STROKE}
-              strokeDasharray={s.dashArray} strokeDashoffset={s.dashOffset} strokeLinecap="butt">
+              strokeDasharray={s.dashArray} strokeDashoffset={s.dashOffset} strokeLinecap="butt"
+              onClick={onToggle && !s.isOthers ? () => onToggle(s.label) : undefined}
+              className={onToggle && !s.isOthers ? 'cursor-pointer' : undefined}>
               <title>{s.label}: {fmtIdr(s.value)}</title>
             </circle>
           ))}
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span className="text-[9px] font-bold uppercase text-[#5A305A]/60">{centerLabel}</span>
-          {!hideCenterValue && (
-            <span className="text-sm font-black text-center px-2 break-words" style={{ color: '#8A7415' }}>{centerValue}</span>
-          )}
+          <span className="text-sm font-black text-center px-2 break-words" style={{ color: '#8A7415' }}>{centerValue}</span>
         </div>
       </div>
       <div className="flex-1 w-full space-y-2">
         {segments.map((s, i) => (
-          <div key={i} className="flex items-center gap-2">
+          <div key={i} onClick={onToggle && !s.isOthers ? () => onToggle(s.label) : undefined}
+            className={`flex items-center gap-2 ${onToggle && !s.isOthers ? 'cursor-pointer hover:bg-slate-50 rounded px-1 -mx-1' : ''}`}>
             <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: s.isOthers ? OTHERS_COLOR : s.color }} />
             <span className={`text-xs font-semibold flex-1 ${s.isOthers ? 'text-slate-400' : 'text-[#5A305A]'}`}>{s.label}</span>
             <span className={`text-xs font-bold w-12 text-right shrink-0 ${s.isOthers ? 'text-slate-400' : 'text-[#5A305A]/70'}`}>{total > 0 ? Math.round((s.value / total) * 100) : 0}%</span>
@@ -267,12 +314,22 @@ type DetailRow = { name: string; sums: CourierSums; shipment: number; po: number
 
 export default function ReportingCostByCourierPage() {
   useEffect(() => { document.title = 'Overseas Cost by Courier · BeeHive'; }, []);
+  const { user } = useAuth();
 
   const today = new Date();
+  // 6 tahun pilihan dropdown (today-3..+2) -- SATU-SATUNYA sumber "seluruh tahun" saat filter
+  // Year kosong (lihat `effectiveYears` di bawah), pola sama `selectedMonths` kosong = seluruh
+  // 12 bulan (2026-09, disamakan atas permintaan user -- SEBELUMNYA default `selectedYears`
+  // terisi tahun berjalan & TIDAK ADA fallback "All", bikin uncheck semua tahun = data kosong
+  // total karena `buildSelectedPeriods`/fetch effect/`currentRows` iterasi `selectedYears`
+  // langsung, Set kosong = 0 periode).
+  const yearOptions = Array.from({ length: 6 }, (_, i) => today.getFullYear() - 3 + i);
   const [periodMode, setPeriodMode] = useState<PeriodMode>('MONTHLY');
   // Multi-select Bulan+Tahun (2026-09 revisi, GANTI dari single year/month/quarter) -- pola
   // SAMA `ReportingCostPerVesselPage.tsx`. Bulan kosong = seluruh 12 bulan tahun terpilih.
-  const [selectedYears, setSelectedYears] = useState<Set<number>>(new Set([today.getFullYear()]));
+  // Year kosong = SEMUA tahun di `yearOptions` (2026-09, lihat komentar `yearOptions` di atas) --
+  // default sekarang kosong ("Year: All"), BUKAN tahun berjalan.
+  const [selectedYears, setSelectedYears] = useState<Set<number>>(new Set());
   const [selectedMonths, setSelectedMonths] = useState<Set<number>>(new Set([today.getMonth() + 1]));
   // Dropdown Monthly/Quarterly/Yearly KHUSUS section "Trend & Performance" (2026-09 revisi,
   // dipindah dari filter bar utama) -- SENGAJA state terpisah dari `periodMode` di atas, supaya
@@ -286,6 +343,13 @@ export default function ReportingCostByCourierPage() {
   const [originOptions, setOriginOptions] = useState<string[]>([]);
   const [selectedAn, setSelectedAn] = useState<Set<string>>(new Set());
   const [selectedPpjk, setSelectedPpjk] = useState<Set<string>>(new Set());
+  // Item terpilih di Donut tab Origin/Weight Range (2026-09 BARU) -- MURNI mempengaruhi Donut
+  // (Total tengah + grouping "Others"), TIDAK memfilter Summary Cards/Breakdown/Detail Data
+  // lain (beda dari `selectedPpjk` yang MEMANG sudah jadi filter global sejak awal via dropdown
+  // PPJK di filter bar -- disengaja tetap begitu, klik Donut PPJK toggle Set YANG SAMA supaya
+  // dropdown & Donut selalu sinkron). Lihat `buildDonutSegments`/`donutCenterTotal` di bawah.
+  const [selectedOriginDonut, setSelectedOriginDonut] = useState<Set<string>>(new Set());
+  const [selectedWeightDonut, setSelectedWeightDonut] = useState<Set<string>>(new Set());
   // "Show zero-cost" (2026-09 BARU, pola sama Cost per Vessel) -- default DISEMBUNYIKAN.
   const [showZeroCost, setShowZeroCost] = useState(false);
 
@@ -299,13 +363,60 @@ export default function ReportingCostByCourierPage() {
   const [loading, setLoading] = useState(true);
   const [showExportPreview, setShowExportPreview] = useState(false);
 
+  // ─── Persist Last State (2026-09 BARU) ──────────────────────────────────────────────────────
+  // Filter/toggle/collapse/Donut-selection halaman ini disimpan ke localStorage per-user (pola
+  // sama `beehive_customize_view:${user.id}:...` di SharedDataTable.tsx -- localStorage, BUKAN
+  // Supabase, murni preferensi tampilan, tidak sinkron lintas device/browser, disengaja) supaya
+  // auto-load balik saat logout/login, session expired, atau pindah-balik menu (remount
+  // komponen). `hydrated` guard 2 arah: (1) cegah efek Save menimpa localStorage dgn state
+  // DEFAULT sebelum proses Load sempat jalan; (2) Load HANYA jalan sekali per mount.
+  const storageKey = user?.id ? `beehive_cost_by_courier:${user.id}` : null;
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    if (!storageKey || hydrated) { if (!storageKey) setHydrated(true); return; }
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        if (Array.isArray(saved.selectedAn)) setSelectedAn(new Set(saved.selectedAn));
+        if (Array.isArray(saved.selectedYears)) setSelectedYears(new Set(saved.selectedYears));
+        if (Array.isArray(saved.selectedMonths)) setSelectedMonths(new Set(saved.selectedMonths));
+        if (Array.isArray(saved.selectedPpjk)) setSelectedPpjk(new Set(saved.selectedPpjk));
+        if (Array.isArray(saved.selectedOriginDonut)) setSelectedOriginDonut(new Set(saved.selectedOriginDonut));
+        if (Array.isArray(saved.selectedWeightDonut)) setSelectedWeightDonut(new Set(saved.selectedWeightDonut));
+        if (saved.trendPeriodMode === 'MONTHLY' || saved.trendPeriodMode === 'QUARTERLY' || saved.trendPeriodMode === 'YEARLY') setTrendPeriodMode(saved.trendPeriodMode);
+        if (saved.viewMode === 'PPJK' || saved.viewMode === 'ORIGIN' || saved.viewMode === 'WEIGHT') setViewMode(saved.viewMode);
+        if (typeof saved.showZeroCost === 'boolean') setShowZeroCost(saved.showZeroCost);
+        if (saved.compareMode === 'MTM' || saved.compareMode === 'YOY') setCompareMode(saved.compareMode);
+        if (typeof saved.trendOpen === 'boolean') setTrendOpen(saved.trendOpen);
+      }
+    } catch { /* localStorage korup/diblokir -- diamkan, pakai default */ }
+    setHydrated(true);
+  }, [storageKey, hydrated]);
+
+  useEffect(() => {
+    if (!storageKey || !hydrated) return;
+    const payload = {
+      selectedAn: Array.from(selectedAn), selectedYears: Array.from(selectedYears), selectedMonths: Array.from(selectedMonths),
+      selectedPpjk: Array.from(selectedPpjk), selectedOriginDonut: Array.from(selectedOriginDonut), selectedWeightDonut: Array.from(selectedWeightDonut),
+      trendPeriodMode, viewMode, showZeroCost, compareMode, trendOpen,
+    };
+    try { localStorage.setItem(storageKey, JSON.stringify(payload)); } catch { /* quota/private mode -- diamkan */ }
+  }, [storageKey, hydrated, selectedAn, selectedYears, selectedMonths, selectedPpjk, selectedOriginDonut, selectedWeightDonut, trendPeriodMode, viewMode, showZeroCost, compareMode, trendOpen]);
+
+  // Tahun EFEKTIF utk semua komputasi (fetch/agregasi) -- `selectedYears` mentah (bisa kosong)
+  // TETAP dipakai APA ADANYA di kontrol UI filter (supaya MultiSelect tampil "Year: All" saat
+  // kosong, lihat `emptyMeansAll`), TIDAK PERNAH di sini.
+  const effectiveYears = useMemo(() => selectedYears.size > 0 ? selectedYears : new Set(yearOptions), [selectedYears]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     fetchDistinctAn().then(setAnOptions).catch(() => {});
     fetchDistinctPpjk().then(setPpjkOptions).catch(() => {});
     fetchDistinctOrigin().then(setOriginOptions).catch(() => {});
   }, []);
 
-  const selectedPeriods: YearMonth[] = useMemo(() => buildSelectedPeriods(selectedYears, selectedMonths), [selectedYears, selectedMonths]);
+  const selectedPeriods: YearMonth[] = useMemo(() => buildSelectedPeriods(effectiveYears, selectedMonths), [effectiveYears, selectedMonths]);
   const earliestPeriod = useMemo(() => {
     if (selectedPeriods.length === 0) return { year: today.getFullYear(), month: today.getMonth() + 1 };
     return selectedPeriods.reduce((a, b) => (a.year * 100 + a.month) <= (b.year * 100 + b.month) ? a : b);
@@ -318,7 +429,7 @@ export default function ReportingCostByCourierPage() {
   // Fetch tahun yg dibutuhkan (semua tahun terpilih + tahun anchor periode sebelumnya) -- cache
   // key gabungan tahun+filter PT supaya refetch benar saat filter PT berubah.
   useEffect(() => {
-    const neededYears = Array.from(new Set([...Array.from(selectedYears), prevAnchor.year]));
+    const neededYears = Array.from(new Set([...Array.from(effectiveYears), prevAnchor.year]));
     const cacheKey = `${neededYears.sort().join(',')}|${Array.from(selectedAn).sort().join(',')}`;
     if (cacheKey === yearsDataKeyRef.current) { setLoading(false); return; }
     let active = true;
@@ -332,14 +443,14 @@ export default function ReportingCostByCourierPage() {
       setLoading(false);
     }).catch(() => active && setLoading(false));
     return () => { active = false; };
-  }, [selectedYears, prevAnchor.year, selectedAn]);
+  }, [effectiveYears, prevAnchor.year, selectedAn]);
 
   const currentRows = useMemo(() => {
     const keySet = new Set(selectedPeriods.map(p => `${p.year}-${String(p.month).padStart(2, '0')}`));
     const out: CourierRow[] = [];
-    selectedYears.forEach(y => (yearsData.get(y) || []).forEach(r => { const mk = monthKeyOf(r); if (mk && keySet.has(mk)) out.push(r); }));
+    effectiveYears.forEach(y => (yearsData.get(y) || []).forEach(r => { const mk = monthKeyOf(r); if (mk && keySet.has(mk)) out.push(r); }));
     return out;
-  }, [yearsData, selectedYears, selectedPeriods]);
+  }, [yearsData, effectiveYears, selectedPeriods]);
 
   const previousRows = useMemo(() => {
     const range = periodRange(periodMode, prevAnchor.year, prevAnchor.month, prevAnchor.quarter);
@@ -374,31 +485,16 @@ export default function ReportingCostByCourierPage() {
   const comparePeriodLabel = periodLabel(periodMode, prevAnchor.year, prevAnchor.month, prevAnchor.quarter);
   const ppjkSuffix = selectedPpjk.size === 1 ? ` (${Array.from(selectedPpjk)[0]})` : selectedPpjk.size > 1 ? ` (${selectedPpjk.size} PPJK)` : '';
 
-  // ─── Donut PPJK -- selected PPJK di posisi ASLI + "Others" gabungan (2026-09 revisi) ──────────
+  // ─── Donut PPJK/Origin/Weight Range -- item terpilih di posisi ASLI + "Others" gabungan
+  // (2026-09 revisi, generik lewat `buildDonutSegments`/`donutCenterTotal`, lihat komentarnya) ──
   const ppjkTotalsAll = useMemo(() => {
     const map = new Map<string, number>();
     currentRows.forEach(r => { const k = normalizePpjk(r.ppjk) || 'Unknown'; map.set(k, (map.get(k) || 0) + Number(r.total_amount || 0)); });
     return map;
   }, [currentRows]);
-  type DonutSeg = { label: string; value: number; color: string; isOthers?: boolean };
-  const donutSegments = useMemo((): DonutSeg[] => {
-    const entriesAll: [string, number][] = Array.from(ppjkTotalsAll.entries());
-    if (selectedPpjk.size === 0) {
-      let entries = entriesAll;
-      if (!showZeroCost) entries = entries.filter(([, v]) => v !== 0);
-      return entries.map(([label, value], i) => ({ label, value, color: PPJK_COLORS[i % PPJK_COLORS.length] })).sort((a, b) => b.value - a.value);
-    }
-    const selectedEntries: [string, number][] = [];
-    selectedPpjk.forEach(k => {
-      const v = ppjkTotalsAll.get(k) || 0;
-      if (showZeroCost || v !== 0) selectedEntries.push([k, v]);
-    });
-    let othersValue = 0;
-    entriesAll.forEach(([k, v]) => { if (!selectedPpjk.has(k)) othersValue += v; });
-    const segs: DonutSeg[] = selectedEntries.map(([label, value], i) => ({ label, value, color: PPJK_COLORS[i % PPJK_COLORS.length] }));
-    if (othersValue > 0) segs.push({ label: 'Others', value: othersValue, color: OTHERS_COLOR, isOthers: true });
-    return segs;
-  }, [ppjkTotalsAll, selectedPpjk, showZeroCost]);
+  const ppjkEntriesAll = useMemo((): [string, number][] => Array.from(ppjkTotalsAll.entries()), [ppjkTotalsAll]);
+  const donutSegments = useMemo(() => buildDonutSegments(ppjkEntriesAll, selectedPpjk, showZeroCost), [ppjkEntriesAll, selectedPpjk, showZeroCost]);
+  const ppjkDonutTotal = useMemo(() => donutCenterTotal(ppjkEntriesAll, selectedPpjk), [ppjkEntriesAll, selectedPpjk]);
 
   // `periodColumns` (ikut `periodMode` filter UTAMA, BUKAN `trendPeriodMode`) -- dipakai HANYA
   // utk label rentang periode aktif (`activePeriodLabel`, judul Breakdown/nama file export),
@@ -460,6 +556,9 @@ export default function ReportingCostByCourierPage() {
     if (!showZeroCost) arr = arr.filter(d => d.sums.totalCost !== 0 || d.shipment > 0);
     return arr.sort((a, b) => b.sums.totalCost - a.sums.totalCost);
   }, [currentRowsSelected, showZeroCost, originOptions]);
+  const originEntriesAll = useMemo((): [string, number][] => byOriginDetail.map(d => [d.name, d.sums.totalCost]), [byOriginDetail]);
+  const originDonutSegments = useMemo(() => buildDonutSegments(originEntriesAll, selectedOriginDonut, showZeroCost), [originEntriesAll, selectedOriginDonut, showZeroCost]);
+  const originDonutTotal = useMemo(() => donutCenterTotal(originEntriesAll, selectedOriginDonut), [originEntriesAll, selectedOriginDonut]);
 
   // ─── By Weight Range ─────────────────────────────────────────────────────
   const weightBucketsFull = useMemo((): (DetailRow & { weight: number })[] => {
@@ -495,6 +594,13 @@ export default function ReportingCostByCourierPage() {
     () => showZeroCost ? weightBucketsFull : weightBucketsFull.filter(b => b.sums.totalCost !== 0 || b.shipment > 0),
     [weightBucketsFull, showZeroCost]
   );
+  // entriesAll dari `weightBucketsFull` (SEMUA 5 rentang, BUKAN `weightBuckets` yang sudah
+  // difilter Show zero-cost) -- Total "All" di tengah donut tetap grand total SELURUH rentang
+  // berat terlepas toggle Show zero-cost (sama semantik `sumsAll.totalCost` PPJK), sementara
+  // slice mana yang TAMPIL tetap ikut `showZeroCost` lewat `buildDonutSegments`.
+  const weightEntriesAll = useMemo((): [string, number][] => weightBucketsFull.map(b => [b.name, b.sums.totalCost]), [weightBucketsFull]);
+  const weightDonutSegments = useMemo(() => buildDonutSegments(weightEntriesAll, selectedWeightDonut, showZeroCost), [weightEntriesAll, selectedWeightDonut, showZeroCost]);
+  const weightDonutTotal = useMemo(() => donutCenterTotal(weightEntriesAll, selectedWeightDonut), [weightEntriesAll, selectedWeightDonut]);
   const highestRangeBucket = useMemo(
     () => weightBucketsFull.reduce((best, b) => (b.shipment > (best?.shipment ?? -1) ? b : best), null as null | typeof weightBucketsFull[number]),
     [weightBucketsFull]
@@ -583,8 +689,6 @@ export default function ReportingCostByCourierPage() {
     setShowExportPreview(false);
   };
 
-  const yearOptions = Array.from({ length: 6 }, (_, i) => today.getFullYear() - 3 + i);
-
   return (
     <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
       <header className="px-3 pt-1 pb-1">
@@ -608,7 +712,7 @@ export default function ReportingCostByCourierPage() {
           <div className="flex flex-nowrap items-center gap-2.5 overflow-x-auto">
             <MultiSelect label="PT" options={anOptions.map(a => ({ value: a, text: a }))} selected={selectedAn} onChange={setSelectedAn} />
             <MultiSelect label="Year" options={yearOptions.map(y => ({ value: String(y), text: String(y) }))}
-              selected={new Set(Array.from(selectedYears).map(String))} onChange={s => setSelectedYears(new Set(Array.from(s).map(Number)))} />
+              selected={new Set(Array.from(selectedYears).map(String))} onChange={s => setSelectedYears(new Set(Array.from(s).map(Number)))} emptyMeansAll />
             <MultiSelect label="Month" options={MONTH_ABBR.map((m, i) => ({ value: String(i + 1), text: m }))}
               selected={new Set(Array.from(selectedMonths).map(String))} onChange={s => setSelectedMonths(new Set(Array.from(s).map(Number)))} emptyMeansAll />
             <MultiSelect label="PPJK" options={ppjkOptions.map(p => ({ value: p, text: p }))} selected={selectedPpjk} onChange={setSelectedPpjk} />
@@ -695,13 +799,13 @@ export default function ReportingCostByCourierPage() {
                     <p className="text-[11px] font-bold text-[#5A305A]/60 uppercase mb-2">Cost Distribution by {activeDetailNameLabel}</p>
                     {viewMode === 'PPJK' && (donutSegments.length === 0
                       ? <p className="text-xs text-slate-400 italic">No data.</p>
-                      : <Donut segments={donutSegments} centerLabel="Total" centerValue={fmtIdr(sumsAll.totalCost)} hideCenterValue={selectedPpjk.size > 0} />)}
-                    {viewMode === 'ORIGIN' && (byOriginDetail.length === 0
+                      : <Donut segments={donutSegments} centerLabel="Total" centerValue={fmtIdr(ppjkDonutTotal)} onToggle={label => setSelectedPpjk(prev => toggleInSet(prev, label))} />)}
+                    {viewMode === 'ORIGIN' && (originDonutSegments.length === 0
                       ? <p className="text-xs text-slate-400 italic">No data.</p>
-                      : <Donut segments={byOriginDetail.map((d, i) => ({ label: d.name, value: d.sums.totalCost, color: PPJK_COLORS[i % PPJK_COLORS.length] }))} centerLabel="Total" centerValue={fmtIdr(sumsSelected.totalCost)} hideCenterValue={selectedPpjk.size > 0} />)}
-                    {viewMode === 'WEIGHT' && (weightBuckets.length === 0
+                      : <Donut segments={originDonutSegments} centerLabel="Total" centerValue={fmtIdr(originDonutTotal)} onToggle={label => setSelectedOriginDonut(prev => toggleInSet(prev, label))} />)}
+                    {viewMode === 'WEIGHT' && (weightDonutSegments.length === 0
                       ? <p className="text-xs text-slate-400 italic">No data.</p>
-                      : <Donut segments={weightBuckets.map((b, i) => ({ label: b.name, value: b.sums.totalCost, color: PPJK_COLORS[i % PPJK_COLORS.length] }))} centerLabel="Total" centerValue={fmtIdr(weightBucketsFull.reduce((a, b) => a + b.sums.totalCost, 0))} hideCenterValue={selectedPpjk.size > 0} />)}
+                      : <Donut segments={weightDonutSegments} centerLabel="Total" centerValue={fmtIdr(weightDonutTotal)} onToggle={label => setSelectedWeightDonut(prev => toggleInSet(prev, label))} />)}
                   </div>
                   <div>
                     <p className="text-[11px] font-bold text-[#5A305A]/60 uppercase mb-2">

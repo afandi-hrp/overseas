@@ -264,6 +264,53 @@ modul — MINTA DIKONFIRMASI kalau mau diselesaikan.
 **Gap diketahui**: Weight Range breakpoint (0-5/5-25/25-70/70-150/>150) HARDCODE di
 `WEIGHT_RANGES`, belum ada UI utk mengubahnya; Conclusion box teksnya template string sederhana.
 
+## Cost by Courier — Filter Year default "All", Donut ikut item terpilih, Persist Last State (2026-09)
+
+`ReportingCostByCourierPage.tsx`, 3 perubahan sekaligus (1 sesi, saling terkait):
+
+1. **Filter Year default "All"** — `selectedYears` default `new Set()` (dulu tahun berjalan),
+   `MultiSelect label="Year"` sekarang py `emptyMeansAll` (pola sama `Month`). **`effectiveYears`**
+   (BARU, `useMemo`) = `selectedYears` apa adanya kalau ada isinya, fallback ke SEMUA
+   `yearOptions` (6 tahun dropdown, `today-3..+2`) kalau kosong — SATU-SATUNYA yang dipakai di
+   `buildSelectedPeriods`/fetch effect/`currentRows`. `selectedYears` MENTAH tetap dipakai apa
+   adanya HANYA di kontrol `MultiSelect` (supaya tampil "Year: All" saat kosong). **Root cause
+   bug lama**: `selectedYears`/`buildSelectedPeriods`/`currentRows` semua iterasi `selectedYears`
+   langsung — Set kosong = 0 periode = card "IDR 0"/"No data" total, BEDA dari `Month` yang
+   MEMANG sudah py fallback 12 bulan sejak awal.
+2. **Donut Total ikut item terpilih (BUKAN disembunyikan)** — berlaku 3 tab (PPJK/Origin/Weight
+   Range). `Donut` komponen: prop `hideCenterValue` DIHAPUS TOTAL (Total SELALU tampil), ganti
+   prop `onToggle?: (label)=>void` (klik legend ATAU slice SVG toggle keanggotaan Set seleksi).
+   **`buildDonutSegments(entriesAll, selected, showZeroCost)`/`donutCenterTotal(entriesAll,
+   selected)`** (module-level, generik) — SATU-SATUNYA sumber logic "item terpilih di posisi
+   asli + sisanya 1 slice Others abu" (diekstrak dari logic PPJK yang sudah ada, TIDAK diubah
+   perilakunya) DAN "Total = seluruh entriesAll kalau `selected` kosong, SUM item terpilih SAJA
+   kalau tidak" — dipakai ketiga tab.
+   - **Tab PPJK** — `onToggle` toggle Set **`selectedPpjk`** YANG SAMA dgn dropdown filter PPJK
+     di filter bar (SENGAJA, sudah jadi filter GLOBAL sejak awal — klik Donut & pilih dropdown
+     sekarang 2 cara akses 1 state yang sama, selalu sinkron).
+   - **Tab Origin/Weight Range** — 2 state BARU **`selectedOriginDonut`/`selectedWeightDonut`**
+     (Set), MURNI mempengaruhi Donut tab itu (Total tengah + grouping Others) — **TIDAK
+     memfilter** Summary Cards/Breakdown/Detail Data/Trend (beda dari `selectedPpjk` yang MEMANG
+     filter global) — cakupan requirement SENGAJA dibatasi ke Donut saja (tidak ada dropdown
+     filter Origin/Weight di halaman ini, jadi tidak ada "sinkronisasi 2 arah" spt PPJK).
+   - `weightEntriesAll` sumbernya `weightBucketsFull` (SEMUA 5 rentang, BUKAN `weightBuckets`
+     yang sudah difilter Show zero-cost) — Total "All" tetap grand total SELURUH rentang berat
+     terlepas toggle Show zero-cost (konsisten `sumsAll.totalCost` PPJK), slice yang TAMPIL tetap
+     ikut `showZeroCost` lewat `buildDonutSegments`.
+3. **Persist Last State** — localStorage key `beehive_cost_by_courier:${user.id}` (pola sama
+   `beehive_customize_view:${user.id}:...` SharedDataTable.tsx — localStorage per-user, BUKAN
+   Supabase, TIDAK sinkron lintas device, murni preferensi tampilan). 2 effect: Load (sekali per
+   mount, guard `hydrated`) & Save (tiap state relevan berubah, guard `!hydrated` supaya tidak
+   menimpa localStorage dgn default SEBELUM Load sempat jalan). **Field yang dipersist**:
+   `selectedAn`/`selectedYears`/`selectedMonths`/`selectedPpjk` (Set→array), `selectedOriginDonut`/
+   `selectedWeightDonut` (item Donut terpilih, BARU), `trendPeriodMode` (Monthly/Quarterly/Yearly
+   Trend & Performance), `viewMode` (Group by PPJK/Origin/Weight Range), `showZeroCost`,
+   `compareMode` (tombol Conclusion MTM/YOY), `trendOpen` (collapse/expand panel Trend &
+   Performance — SATU-SATUNYA panel collapsible di halaman ini saat ini). **Nominal Total yang
+   mengikuti item Donut terpilih TIDAK disimpan terpisah** — otomatis re-derive dari
+   `selectedPpjk`/`selectedOriginDonut`/`selectedWeightDonut` yang di-restore (`donutCenterTotal`
+   dihitung ulang reaktif, bukan snapshot angka beku).
+
 ## Skalabilitas >100rb baris — paginasi penuh & dropdown distinct via RPC (2026-09)
 
 Analisa (diminta user, sama pola sesi Audit AP sebelumnya): ke-3 halaman/tab (Dashboard, Cost per

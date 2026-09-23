@@ -1,3 +1,50 @@
+## Sea & Air Audit — "PO Price Detail" bisa diedit manual (2026-09)
+
+`SeaAirAuditRowGroup` (`SharedDataTable.tsx`) — dari 3 `repeatingCols` (`po_ori`/`vendor_inv_no`/
+`po_harga_detail`, kolom gabungan banyak nilai dipisah `+`, direplika per baris split via
+`splittedData`), **HANYA `po_harga_detail` (PO Price Detail) yang dibuat bisa diedit** saat mode
+Edit baris aktif — `po_ori`/`vendor_inv_no` TETAP read-only (tidak diminta user, JANGAN ikut
+dibuka tanpa diminta ulang). Sebelumnya SEMUA 3 kolom ini sengaja dikecualikan total dari
+rendering input edit (`c.key !== 'po_harga_detail'` dkk di kondisi `isEditing`) — ketiganya cuma
+tampil teks + tombol toggle "+N Data"/"Hide", tidak pernah masuk textbox apapun.
+
+- **State terpisah `editHargaSplits: string[]`** (BUKAN bagian `editForm`) — index selaras
+  `splittedData` (1 split = 1 elemen array). Diinisialisasi dari `splittedData.map(d=>d.harga)`
+  saat `handleStartEdit` diklik. Tiap baris split (termasuk yang baru kelihatan setelah klik
+  "+N Data") py `<input>` sendiri terikat `editHargaSplits[i]`.
+- **Commit ke DB** — `handleSave` gabung balik array jadi 1 string `" + "`-separated
+  (`editHargaSplits.map(v=>v.trim()).filter(Boolean).join(' + ')`) sebelum dibandingkan ke
+  `rec.po_harga_detail` & dikirim `onInlineSaveRow` — format string tersimpan TETAP sama persis
+  format lama (bisa di-split ulang dgn regex yang sama `/\s*\+\s*|,\s+/` di semua titik baca).
+- **Klik "+N Data" saat edit** — tombol expand TETAP tampil terlepas mode edit (tidak digate
+  `isEditing`), jadi split ke-2/3/dst bisa dibuka & diedit dalam sesi edit yang sama, bukan cuma
+  split pertama.
+
+## Bug fix: badge % Doc Validation Rekapan Sea & Air tidak sinkron dgn modal (2026-09)
+
+Laporan user: badge tombol "Doc Validation" tampil 93%, tapi modal `SeaAirValidasiModal.tsx`
+tampil "Overall Accuracy 87%" utk shipment yang SAMA. **Root cause**: modal itu TIDAK PERNAH
+percaya `c.match` mentah tersimpan di `dokumen_validasi_matriks_seaair.checks` apa adanya --
+`useEffect` load-nya SELALU hitung ulang `c.match` tiap baris non-manual di CLIENT pakai
+fuzzyMatch/comparePoSet/matchLocation/strictAlnumMatch (evaluasi "relaxed", lihat kode lama),
+HASIL HITUNG ULANG itu TIDAK otomatis ditulis balik ke DB (cuma state lokal `checks`, persist
+kalau user klik Simpan). Badge `SharedDataTable.tsx` (`fetchRecords`, tab `sea_air_rekapan`)
+sebelumnya baca `m.checks` MENTAH langsung dari DB tanpa evaluasi ulang ini -- kalau algoritma
+fuzzy-nya sempat berubah/diperbaiki SETELAH baris itu terakhir disimpan, nilai `match` versi lama
+di DB & versi baru hasil hitung ulang modal bisa BEDA, badge & modal jadi tampil % berbeda walau
+baca tabel persis sama.
+
+**Fix**: logic evaluasi ulang itu DIEKSTRAK ke `src/utils/SeaAirValidasiHelpers.ts` (fungsi
+`relaxSeaAirDocChecks(checks)`, REPLIKA PERSIS -- `toNum`/`strictAlnumMatch`/`comparePoSet`/
+`matchLocation`/`fuzzyMatch` ikut pindah ke situ, DIHAPUS dari `SeaAirValidasiModal.tsx` yang
+sekarang `import` dari file ini, kecuali `toNum` LOKAL tetap ada di `SeaAirValidasiModal.tsx`
+krn dipakai luas di tempat lain file itu yang tidak terkait match-evaluation). Badge
+`SharedDataTable.tsx` (`seaAirDocValidationPctMap`) SEKARANG panggil `relaxSeaAirDocChecks()`
+DULU sebelum hitung total/match -- badge & modal SELALU pakai nilai `match` yang identik sejak
+saat itu. **JANGAN duplikat logic pencocokan ini di tempat ketiga** -- kalau algoritma fuzzy
+perlu diubah lagi ke depan, ubah SATU-SATUNYA di `SeaAirValidasiHelpers.ts`, otomatis ikut ke
+badge & modal.
+
 ## Sea & Air — kolom khusus
 
 - **Audit, "No. PIB" dari `no_aju`** (bukan `no_pib`) — permintaan eksplisit HANYA Sea & Air,

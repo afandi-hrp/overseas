@@ -2,6 +2,7 @@ import React from 'react';
 import { useState, useEffect, useMemo } from 'react';
 import { X, CheckCircle2, Edit3, Printer, XCircle, Clock, Info, Plus, Trash2, Receipt, Percent, Landmark, FileText, Ship, ClipboardList } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { relaxSeaAirDocChecks } from '../utils/SeaAirValidasiHelpers';
 
 // ─── Helper umum ──────────────────────────────────────────────────────────────
 
@@ -78,140 +79,9 @@ const toNum = (v: any) => {
   return isNaN(n) ? 0 : n;
 };
 
-// Untuk field nomor referensi murni (mis. No. Aju/No PIB) -- fuzzyMatch terlalu longgar karena
-// salah satu cabangnya membandingkan HURUF SAJA (angka dibuang), jadi dua nomor aju berbeda yang
-// kebetulan sama-sama punya kode kantor "JAJ" bisa dianggap match walau angkanya jelas beda.
-// Comparator ini butuh kecocokan alfanumerik persis (tanpa toleransi huruf-saja/fuzzy).
-const strictAlnumMatch = (val1: any, val2: any): boolean => {
-  if (val1 === null || val2 === null || val1 === undefined || val2 === undefined) return false;
-  const norm = (s: any) => String(s).toLowerCase().trim().replace(/[^a-z0-9]/g, '');
-  const n1 = norm(val1);
-  const n2 = norm(val2);
-  if (n1 === '' || n2 === '') return false;
-  return n1 === n2;
-};
-
-// Untuk baris "NO PO" -- nomor PO digabung "+" bisa beda urutan & beda format prefix antar dokumen
-// (mis. "2603/0074/IMI" vs "I.PO/IMI.MDN/2603/0074") padahal nomornya sama. Pecah per "+", normalisasi
-// tiap item jadi digit-only (biar prefix beda tidak masalah), lalu bandingkan sebagai set (urutan bebas).
-const comparePoSet = (refVal: any, docVal: any): boolean => {
-  const toDigitSet = (val: any) => String(val).split(/\s*\+\s*/).map(s => s.replace(/[^0-9]/g, '')).filter(Boolean).sort();
-  const a = toDigitSet(refVal);
-  const b = toDigitSet(docVal);
-  if (a.length === 0 || b.length === 0 || a.length !== b.length) return false;
-  return a.every((v, i) => v === b[i]);
-};
-
-// Untuk baris ORIGIN/DESTINATION -- fuzzyMatch (perbandingan teks murni) tidak cukup di sini
-// karena dua alasan: (1) satu dokumen kadang nulis nama pelabuhan lama pakai notasi "(EX ...)"
-// (mis. "BUSAN (EX PUSAN)") yang harus diabaikan saat dibanding versi tanpa keterangan itu
-// (mis. "BUSAN, KOREA"), dan (2) satu dokumen nulis nama pelabuhan (mis. "TANJUNG PRIOK")
-// sementara dokumen lain nulis kota+negara administratifnya (mis. "JAKARTA, INDONESIA") --
-// keduanya sama-sama benar & merujuk lokasi yang sama, cuma beda level detail, dan fuzzyMatch
-// teks tidak akan pernah menganggap dua kata yang beda total itu mirip. Tambahkan pelabuhan
-// lain ke peta ini kalau nanti muncul kasus serupa.
-const PORT_TO_CITY_COUNTRY: Record<string, string[]> = {
-  'TANJUNG PRIOK': ['JAKARTA', 'INDONESIA'],
-  'TANJUNG PERAK': ['SURABAYA', 'INDONESIA'],
-  'TANJUNG EMAS': ['SEMARANG', 'INDONESIA'],
-  'BELAWAN': ['MEDAN', 'INDONESIA'],
-};
-
-const stripPortNotes = (s: string) => s.replace(/\(ex[^)]*\)/gi, '').trim();
-
-const locationParts = (val: any): string[] => {
-  const cleaned = stripPortNotes(String(val ?? '')).toLowerCase();
-  return cleaned.split(',').map(p => p.trim().replace(/[^a-z0-9 ]/g, '').trim()).filter(Boolean);
-};
-
-const matchLocation = (val1: any, val2: any): boolean => {
-  if (val1 === null || val2 === null || val1 === undefined || val2 === undefined) return false;
-  const parts1 = locationParts(val1);
-  const parts2 = locationParts(val2);
-  if (parts1.length === 0 || parts2.length === 0) return false;
-
-  // Cocok kalau ada bagian yang identik (nama kota/pelabuhan/negara persis sama, mis. "busan")
-  if (parts1.some(p1 => parts2.includes(p1))) return true;
-
-  // Cocok lewat pemetaan pelabuhan -> kota+negara (mis. "TANJUNG PRIOK" == "JAKARTA, INDONESIA")
-  const expandPorts = (parts: string[]) => parts.flatMap(p => PORT_TO_CITY_COUNTRY[p.toUpperCase()]?.map(m => m.toLowerCase()) || []);
-  const expanded1 = [...parts1, ...expandPorts(parts1)];
-  const expanded2 = [...parts2, ...expandPorts(parts2)];
-  return expanded1.some(p => expanded2.includes(p));
-};
-
-const fuzzyMatch = (val1: any, val2: any): boolean => {
-  if (val1 === null || val2 === null || val1 === undefined || val2 === undefined) return false;
-  
-  let s1 = String(val1).toLowerCase().trim();
-  let s2 = String(val2).toLowerCase().trim();
-  
-  if (s1 === "" || s2 === "") return false;
-
-  const normalize = (s: string) => s.replace(/[^a-z0-9]/g, '');
-  const normalizeNoDigits = (s: string) => s.replace(/[^a-z]/g, '');
-  
-  let n1 = normalize(s1);
-  let n2 = normalize(s2);
-  
-  if (n1 === n2 && n1.length > 0) return true;
-  
-  if (n1.length > 5 && n2.length > 5) {
-     if (n1.includes(n2) || n2.includes(n1)) return true;
-  }
-  
-  let str1 = normalizeNoDigits(s1);
-  let str2 = normalizeNoDigits(s2);
-  
-  if (str1 === str2 && str1.length > 0) return true;
-
-  if (str1.length > 4 && str2.length > 4) {
-      if (str1.includes(str2) || str2.includes(str1)) return true;
-  }
-
-  // Nama vendor/PT kadang disingkat jadi akronim di salah satu dokumen (mis. "SURYA CEMERLANG
-  // LOGISTIK" vs "SCL Trans") -- kalau akronim dari huruf pertama tiap kata di satu sisi persis
-  // sama dengan salah satu kata di sisi lain, anggap match. Butuh >=2 kata biar tidak longgar.
-  const words1 = s1.split(/\s+/).filter(Boolean);
-  const words2 = s2.split(/\s+/).filter(Boolean);
-  const acronym1 = words1.map(w => w[0]).join('');
-  const acronym2 = words2.map(w => w[0]).join('');
-  if (words1.length >= 2 && acronym1.length >= 2 && words2.includes(acronym1)) return true;
-  if (words2.length >= 2 && acronym2.length >= 2 && words1.includes(acronym2)) return true;
-
-  const getEditDistance = (a: string, b: string) => {
-      if(a.length === 0) return b.length; 
-      if(b.length === 0) return a.length; 
-      const matrix = [];
-      for(let i = 0; i <= b.length; i++){
-          matrix[i] = [i];
-      }
-      for(let j = 0; j <= a.length; j++){
-          matrix[0][j] = j;
-      }
-      for(let i = 1; i <= b.length; i++){
-          for(let j = 1; j <= a.length; j++){
-              if(b.charAt(i-1) == a.charAt(j-1)){
-                  matrix[i][j] = matrix[i-1][j-1];
-              } else {
-                  matrix[i][j] = Math.min(matrix[i-1][j-1] + 1, Math.min(matrix[i][j-1] + 1, matrix[i-1][j] + 1));
-              }
-          }
-      }
-      return matrix[b.length][a.length];
-  };
-
-  const dist = getEditDistance(str1, str2);
-  if (str1.length > 4 && str2.length > 4 && dist <= Math.max(1, Math.floor(Math.min(str1.length, str2.length) / 6))) {
-      return true;
-  }
-  
-  let isNum1 = /^[0-9.,\-]+$/.test(s1.replace(/\s/g, ''));
-  let isNum2 = /^[0-9.,\-]+$/.test(s2.replace(/\s/g, ''));
-  if (isNum1 && isNum2 && Math.abs(toNum(s1) - toNum(s2)) <= 1) return true;
-
-  return false;
-};
+// strictAlnumMatch/comparePoSet/matchLocation/fuzzyMatch (dipakai evaluasi ulang `c.match` saat
+// load) DIPINDAH ke `relaxSeaAirDocChecks()` (SeaAirValidasiHelpers.ts, 2026-09) supaya badge %
+// Doc Validation SharedDataTable.tsx bisa reuse logic yang PERSIS SAMA -- lihat import di atas.
 
 const fmtIDR = (val: any) => {
   if (val === null || val === undefined || val === "" || val === "—") return "—";
@@ -1326,42 +1196,11 @@ export default function SeaAirValidasiModal({ record, onClose, canEdit = true }:
       if (data) {
         setMatriksId(data.id);
         if (data.checks) {
-            // Evaluasi ulang menggunakan fuzzyMatch pada client
-            const relaxedChecks = data.checks.map((c: any) => {
-               if (!c.manual && c.values) {
-                   const docEmpty = c.values.doc === null || c.values.doc === undefined || String(c.values.doc).trim() === "";
-                   let effectiveRef = c.values.ref;
-                   let refEmpty = effectiveRef === null || effectiveRef === undefined || String(effectiveRef).trim() === "";
-                   if (c.row === "NO PO" && c.col === "PO" && refEmpty) {
-                       // Kolom PO kadang tidak dikirim ref-nya sendiri oleh backend -- pinjam ref dari
-                       // kolom lain (CIPL/Final Invoice) di baris yang sama, karena rujukannya sama-sama dari PIB.
-                       const sibling = data.checks.find((sc: any) => sc.row === "NO PO" && sc.values && sc.values.ref !== null && sc.values.ref !== undefined && String(sc.values.ref).trim() !== "");
-                       if (sibling) {
-                           effectiveRef = sibling.values.ref;
-                           refEmpty = false;
-                       }
-                   }
-                   if (refEmpty || docEmpty) {
-                       // Salah satu sisi datanya belum ada -- "Belum dicek", bukan "Tidak sesuai".
-                       c.match = null;
-                   } else {
-                       if (c.row === "TOTAL DUTY (PIB No. 44)") {
-                           const refNum = toNum(effectiveRef);
-                           const docNum = toNum(c.values.doc);
-                           c.match = Math.abs(refNum - docNum) <= 1000;
-                       } else if (c.row === "NO PIB (No Pengajuan)") {
-                           c.match = strictAlnumMatch(effectiveRef, c.values.doc);
-                       } else if (c.row === "NO PO") {
-                           c.match = comparePoSet(effectiveRef, c.values.doc);
-                       } else if (["ORIGIN", "DESTINATION", "Origin", "Destination"].includes(c.row)) {
-                           c.match = matchLocation(effectiveRef, c.values.doc);
-                       } else {
-                           c.match = fuzzyMatch(effectiveRef, c.values.doc);
-                       }
-                   }
-               }
-               return c;
-            });
+            // Evaluasi ulang menggunakan fuzzyMatch pada client -- REPLIKA PERSIS dipakai jadi
+            // `relaxSeaAirDocChecks()` (SeaAirValidasiHelpers.ts, 2026-09 diekstrak keluar) supaya
+            // badge % Doc Validation di SharedDataTable.tsx bisa pakai logic yang SAMA PERSIS,
+            // bukan cuma baca `c.match` mentah tersimpan (JANGAN duplikat logic ini lagi di sini).
+            const relaxedChecks = relaxSeaAirDocChecks(data.checks);
             setChecks(relaxedChecks);
         }
         const toStr = (val: any) => {
