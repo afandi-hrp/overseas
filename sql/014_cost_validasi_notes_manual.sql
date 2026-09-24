@@ -12,6 +12,21 @@ alter table public.cost_validasi_far_overseas_air
 -- `p_notes_manual` (di akhir, default NULL -- aman utk pemanggil lama yg belum kirim parameter
 -- ini) + 1 baris assignment kolom. Tidak ada logic lain yang diubah (termasuk TIDAK menambah
 -- guard has_edit_access -- versi asli memang belum punya, konsisten dgn yang sudah ada).
+--
+-- KRITIS -- WAJIB drop versi 6-parameter LAMA dulu sebelum create versi baru: identitas fungsi
+-- di Postgres = nama + DAFTAR TIPE PARAMETER, `CREATE OR REPLACE FUNCTION` dgn parameter
+-- BERTAMBAH (bukan cuma ganti isi body) TIDAK mengganti fungsi lama, malah bikin OVERLOAD BARU
+-- di samping yang lama (identitas signature-nya beda: 6 param vs 7 param). Insiden nyata
+-- (2026-09): patch ini SEMPAT dijalankan TANPA baris drop di bawah -- akibatnya 2 versi fungsi
+-- hidup berdampingan, pemanggilan `supabase.rpc(...)` dgn named-parameter yg tidak mengirim
+-- SEMUA parameter (mis. `handleSelectRate` di FarOverseasAirCostValidationModal.tsx, cuma kirim
+-- p_id/p_cost_validation/p_status/p_rate_row_used) jadi AMBIGU -- Postgres tidak bisa milih
+-- overload mana yg dimaksud (keduanya sama2 valid krn sisa parameter dipenuhi default), error
+-- "Could not choose the best candidate function between: ...(6 param), ...(7 param)". **Kalau
+-- ke depan nambah parameter baru lagi ke RPC APA PUN di project ini (bukan cuma yang ini) --
+-- SELALU drop signature lama dulu, JANGAN cuma CREATE OR REPLACE.**
+DROP FUNCTION IF EXISTS public.update_cost_validasi_far_overseas_manual(uuid, jsonb, jsonb, text, text, jsonb);
+
 CREATE OR REPLACE FUNCTION public.update_cost_validasi_far_overseas_manual(
   p_id uuid,
   p_document_validation jsonb DEFAULT NULL::jsonb,

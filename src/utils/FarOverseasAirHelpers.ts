@@ -113,6 +113,23 @@ export async function updateRekapanFarOverseasAir(id: string | number, updates: 
   return supabase.rpc('update_rekapan_far_overseas_manual', { p_id: id, p_updates: updates });
 }
 
+// "Add Manual Entry" (2026-09) -- pola SAMA "Tambah Data" Audit AP Local/Overseas/PI Local
+// (dokumen yang GAGAL diproses otomasi n8n sama sekali, jadi tidak pernah masuk
+// `rekapan_far_overseas_air` lewat jalur normal). BEDA dari 3 halaman itu: field FAR Overseas Air
+// terlalu banyak (~25 kolom List Memo) utk 1 form insert sekali jalan, jadi alurnya 2 langkah --
+// (1) RPC INI cuma insert 1 baris KOSONG (approval_status='PENDING', SAMA seperti shipment hasil
+// otomasi normal supaya ikut alur approval biasa, TIDAK ADA penanda "manual" terpisah), (2) UI
+// (FarOverseasAirPage.tsx) langsung buka `FarOverseasAirCardEditModal` (REUSE PERSIS LIST_COLUMNS,
+// field editor yang SUDAH ADA) utk baris baru itu, isi via `update_rekapan_far_overseas_manual`
+// SEPERTI EDIT BIASA. Kalau user Cancel SEBELUM sempat Save apa pun, baris kosong ini WAJIB
+// dihapus balik (`fn_delete_far_overseas_air`, lihat FarOverseasAirPage.tsx) -- jangan biarkan
+// baris kosong nyangkut di DB.
+export async function insertRekapanFarOverseasManual(): Promise<{ data: any | null; error: string | null }> {
+  const { data, error } = await supabase.rpc('insert_rekapan_far_overseas_manual');
+  if (error) return { data: null, error: error.message };
+  return { data, error: null };
+}
+
 export type PicEligibleUser = { id: string; nama: string | null; email: string | null };
 
 // Daftar user yang boleh dipilih sbg PIC per-baris di List Memo FAR Overseas (2026-09, DIPERSEMPIT

@@ -1,13 +1,19 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
-import { PlaneTakeoff, ChevronDown, ChevronRight as ChevronRightIcon, ChevronLeft, Plus, Settings2, X } from 'lucide-react';
+import { PlaneTakeoff, ChevronDown, ChevronRight as ChevronRightIcon, ChevronLeft, Plus, Settings2, X, RotateCcw } from 'lucide-react';
 import Greeting from '../components/Greeting';
 import { LoadingState } from '../components/LoadingState';
 
 const JENIS_LAYANAN_OPTIONS = ['Air Freight', 'Sea Freight', 'Reguler Freight', 'Express', 'Economy'];
 const MATA_UANG_OPTIONS = ['IDR', 'USD', 'RMB'];
-const KATEGORI_BARANG_OPTIONS = ['BATTERY', 'SHAMPOO (CAIRAN LIQUID)', 'REGULER ITEM'];
+// "BATTERY" -> "ELECTRONICS" (2026-09, permintaan user) -- lingkup diperluas dari cuma baterai
+// jadi barang elektronik pada umumnya (sensor/controller/relay/dst). Value ini disimpan APA
+// ADANYA ke kolom `kategori_barang` (text) -- quotation LAMA yang masih tersimpan 'BATTERY'
+// diselaraskan via `sql/016_...sql` (UPDATE data), WAJIB dijalankan manual dulu supaya dropdown
+// Edit quotation lama tidak mismatch (value 'BATTERY' tidak lagi ada di opsi -- <select> native
+// akan tampil kosong kalau value-nya tidak cocok opsi manapun).
+const KATEGORI_BARANG_OPTIONS = ['ELECTRONICS', 'SHAMPOO (CAIRAN LIQUID)', 'REGULER ITEM'];
 const JIANQIAO_VENDOR_NAME = 'PT. JIANQIAO LOGISTICS INDONESIA';
 
 type VendorMaster = { id: string; vendor_name: string; aktif: boolean };
@@ -517,7 +523,7 @@ export default function FarOverseasVendorTarifPage() {
           <select
             value={filterVendor}
             onChange={(e) => setFilterVendor(e.target.value)}
-            className="shrink-0 border border-slate-300 rounded-lg px-3 py-2 text-sm font-semibold text-[#5A305A] bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A] w-56"
+            className="shrink-0 border border-slate-300 rounded-xl px-3 py-2.5 text-sm font-semibold text-[#5A305A] bg-white focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A] w-56"
           >
             <option value="semua">Semua Vendor</option>
             {vendors.map(v => <option key={v.id} value={v.vendor_name}>{v.vendor_name}</option>)}
@@ -527,11 +533,23 @@ export default function FarOverseasVendorTarifPage() {
             placeholder="Cari Origin / Tujuan / Jenis Layanan / Kategori..."
             value={filterSearch}
             onChange={(e) => setFilterSearch(e.target.value)}
-            className="shrink-0 w-72 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A]"
+            className="shrink-0 w-72 border border-slate-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A]"
           />
+          {/* Reset pencarian (2026-09, permintaan user) -- reset HANYA filter vendor+search
+              (pola sama "Reset Filter" Audit AP Local: TIDAK reset toggle
+              `showInactiveQuotations`, itu preferensi tampilan bukan pencarian). Ukuran SAMA
+              dgn tombol "Kelola Vendor"/"Tambah Quotation Baru" di kanan (py-2.5, rounded-xl). */}
+          <button
+            onClick={() => { setFilterVendor('semua'); setFilterSearch(''); }}
+            disabled={filterVendor === 'semua' && !filterSearch}
+            title="Reset pencarian"
+            className="shrink-0 flex items-center gap-1.5 border border-slate-300 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-[#5A305A] font-semibold py-2.5 px-4 rounded-xl text-sm transition-all whitespace-nowrap"
+          >
+            <RotateCcw size={15} /> Reset
+          </button>
           <label className="shrink-0 flex items-center gap-2 cursor-pointer text-sm text-[#5A305A] font-medium whitespace-nowrap">
             <input type="checkbox" checked={showInactiveQuotations} onChange={e => setShowInactiveQuotations(e.target.checked)} className="w-4 h-4 rounded text-[#5A305A] focus:ring-[#5A305A]" />
-            Tampilkan yang nonaktif juga
+            Tampilkan Nonaktif
           </label>
           <div className="shrink-0 text-sm text-[#5A305A] font-medium whitespace-nowrap">
             {routeGroups.length} rute

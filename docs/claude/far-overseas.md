@@ -104,6 +104,39 @@ py RLS aktif per screenshot, ikon beda dari "UNRESTRICTED").
 Modal "Kelola Vendor" belum punya tombol nonaktifkan vendor dari UI (kalau diminta, tambah
 RPC/tombol baru, `aktif` di tabel sudah siap dipakai).
 
+## Tarif Vendor — Tombol Reset pencarian di panel filter (2026-09)
+
+`FarOverseasVendorTarifPage.tsx`, panel filter atas — tombol **"Reset"** (ikon `RotateCcw`) baru
+di antara input Search dan checkbox "Tampilkan Nonaktif" (label diringkas dari "Tampilkan yang
+nonaktif juga", permintaan user). Reset HANYA `filterVendor` (balik ke `'semua'`) +
+`filterSearch` (kosongkan) — **TIDAK** reset `showInactiveQuotations` (pola sama "Reset Filter"
+Audit AP Local: itu preferensi tampilan, bukan bagian pencarian). Disabled otomatis kalau kedua
+filter itu sudah default (tidak ada yang perlu di-reset).
+
+**Ukuran panel kiri (dropdown Vendor/input Search/tombol Reset) DISAMAKAN dgn panel kanan**
+("Kelola Vendor"/"Tambah Quotation Baru") — SEMUA pakai `py-2.5`/`rounded-xl` yang sama, BUKAN
+`py-2`/`rounded-lg` versi awal. **Percobaan pertama (susulan menyusutkan ukuran KHUSUS di bawah
+1600px via `max-[1600px]:`) DITOLAK user & DIREVERT TOTAL** — ukuran tombol/input/dropdown
+SEKARANG SAMA di semua lebar layar (TIDAK ADA lagi override breakpoint 14" untuk kontrol ini),
+cukup ikut zoom global `html{zoom:90%}` (`src/index.css`) seperti kontrol lain di halaman ini.
+**JANGAN reintroduce pola `max-[1600px]:` di sini tanpa diminta ulang.**
+
+## Tarif Vendor — Kategori Barang "BATTERY" -> "ELECTRONICS" (2026-09)
+
+`FarOverseasVendorTarifPage.tsx` `KATEGORI_BARANG_OPTIONS` (dropdown "Kategori Barang" di form
+quotation, khusus vendor Jianqiao + Jenis Layanan Sea Freight) — opsi "BATTERY" diganti
+**"ELECTRONICS"** (lingkup diperluas dari cuma baterai jadi barang elektronik pada umumnya —
+sensor/controller/relay/dst). "SHAMPOO (CAIRAN LIQUID)"/"REGULER ITEM" TIDAK berubah.
+
+Value ini disimpan APA ADANYA ke kolom `kategori_barang` (text, `far_overseas_tarif_quotation`)
+— bukan enum DB, jadi rename di frontend TIDAK otomatis menyelaraskan data lama. **BELUM
+DIJALANKAN ke Supabase production — WAJIB dijalankan manual dulu**
+(`sql/016_kategori_barang_battery_to_electronics.sql`): `update far_overseas_tarif_quotation set
+kategori_barang='ELECTRONICS' where kategori_barang='BATTERY'`. Tanpa migrasi ini, quotation lama
+yang masih tersimpan `'BATTERY'` TETAP tampil di badge/label tabel quotation (dibaca apa adanya,
+tidak dibatasi ke `KATEGORI_BARANG_OPTIONS`), TAPI dropdown Edit quotation-nya akan tampil KOSONG
+(value `'BATTERY'` sudah tidak cocok opsi manapun di `<select>` native).
+
 ## Bug fix: dropdown NOTE 1 kosong pasca perombakan struktur Tarif Vendor (2026-09)
 
 Perombakan tabel Tarif Vendor (`far_overseas_tarif_vendor` flat → `far_overseas_tarif_quotation`+
@@ -272,6 +305,21 @@ user sendiri langsung di Supabase, BELUM diverifikasi dari sesi ini (ikuti atura
 pg_get_functiondef('update_cost_validasi_far_overseas_manual'::regproc)` dulu sebelum menulis
 `CREATE OR REPLACE` apa pun). **Sampai RPC ini dipatch, tombol "Simpan Perubahan" di section Notes
 akan gagal** (Supabase menolak parameter `p_notes_manual` yang tidak dikenal).
+
+**Insiden nyata (2026-09) — `sql/014_...sql` SEMPAT dijalankan TANPA `DROP FUNCTION` versi lama
+dulu**: `CREATE OR REPLACE FUNCTION` dgn parameter BERTAMBAH (6→7 param) TIDAK mengganti fungsi
+lama — identitas fungsi Postgres = nama + daftar TIPE parameter, beda jumlah param = signature
+beda = dianggap OVERLOAD BARU, bukan replace. Akibatnya 2 versi fungsi hidup berdampingan, tombol
+"Select This Rate" (`handleSelectRate`, panggil RPC ini cuma dgn
+p_id/p_cost_validation/p_status/p_rate_row_used, sisanya default) jadi AMBIGU — Postgres tidak
+bisa pilih overload mana, error "Could not choose the best candidate function between: ...(6
+param), ...(7 param)". **Fix**: `sql/014_...sql` SEKARANG sudah py `DROP FUNCTION IF EXISTS
+...(uuid, jsonb, jsonb, text, text, jsonb)` SEBELUM `CREATE OR REPLACE` versi 7-param — WAJIB
+dijalankan ulang (aman dijalankan berkali-kali, idempotent) kalau situs masih menunjukkan error
+di atas. **Pelajaran berlaku ke SEMUA RPC project ini, bukan cuma yang ini**: nambah parameter ke
+RPC yang SUDAH ADA HARUS didahului `DROP FUNCTION` signature lama, `CREATE OR REPLACE` SAJA tidak
+cukup begitu jumlah parameter berubah (beda dari sekadar ubah isi body dgn signature identik,
+yang memang aman pakai `CREATE OR REPLACE` polos).
 
 **Gating server-side (OPSIONAL, disarankan, BELUM diterapkan)** — pola project ini biasanya
 menegakkan gating approval di frontend DAN server (`approve_far_overseas_air` RPC). Belum
@@ -472,6 +520,42 @@ error).
 - **User TIDAK BISA lagi ketik bebas ke NOTE 3 lewat form ini** — kalau perlu teks bebas
   tambahan ke depan, bikin field baru terpisah (pola NOTE 2), JANGAN kembalikan ke free-text.
 
+## FAR Overseas Air — "Add Manual Entry" (2026-09, pola sama "Tambah Data" Audit AP)
+
+Tombol **"+ Add Manual Entry"** di toolbar List Memo (`FarOverseasAirPage.tsx`, sebelah kiri
+"Upload Document", outline putih — pola sama tombol "Tambah Data" Audit AP Local, gated
+`canEditDirectLoading`) — untuk shipment yang **GAGAL diproses otomasi upload sama sekali**
+(tidak pernah masuk `rekapan_far_overseas_air` lewat jalur normal n8n).
+
+**BEDA arsitektur dari "Tambah Data" Audit AP Local/Overseas/PI Local** (yang 1 form isi
+langsung insert) — field List Memo FAR Overseas Air jauh lebih banyak (~25 kolom), jadi alurnya
+**2 langkah**:
+1. Klik tombol → `handleAddManualEntry()` panggil RPC BARU `insert_rekapan_far_overseas_manual()`
+   (TANPA parameter) — insert 1 baris KOSONG, `approval_status='PENDING'` (SAMA seperti shipment
+   hasil otomasi normal, **TIDAK ADA** kolom/penanda "manual" terpisah — sesuai keputusan
+   eksplisit user, baris ini ikut alur approval biasa apa adanya).
+2. Baris baru itu LANGSUNG dibuka lewat `FarOverseasAirCardEditModal` (modal yang SUDAH ADA,
+   REUSE PERSIS `LIST_COLUMNS` — **field editor SAMA PERSIS dgn Edit biasa/Card view, TIDAK ADA
+   form terpisah baru dibuat**) — user isi Ship Via/Vendor/Invoice/NOTE 1/NOTE 2/PIC/dst, simpan
+   lewat `handleSaveAllEdits([row.id])` (RPC `update_rekapan_far_overseas_manual` yang SUDAH ADA)
+   persis seperti alur Edit biasa.
+
+**`isNewManualRow`** (state BARU) — menandai baris yang lagi dibuka di `cardEditRow` itu BELUM
+PERNAH disimpan. `handleCardEditCancel()` (GANTI `onClose`/`onCancel` modal ini, sebelumnya cuma
+`handleDiscardRowEdit`) — kalau `isNewManualRow`, baris kosong tadi DIHAPUS BALIK via RPC
+`fn_delete_far_overseas_air` (yang SUDAH ADA, dipakai juga tombol Delete biasa) supaya tidak
+nyangkut sbg baris kosong permanen di DB kalau user batal isi. `onSave` — kalau `isNewManualRow`,
+`refreshList()` dipanggil setelah save (baris baru belum ada di state `rows` sebelumnya, beda
+dari edit baris existing yang sudah ada di list).
+
+**RPC BARU `insert_rekapan_far_overseas_manual()`** (`sql/015_insert_rekapan_far_overseas_manual.sql`,
+**BELUM DIJALANKAN ke Supabase production — WAJIB dijalankan manual dulu**) — `SECURITY DEFINER`,
+guard `has_edit_access('direct_loading')`, TANPA parameter (sengaja tidak duplikasi whitelist
+~25 kolom yang sudah ada di `update_rekapan_far_overseas_manual`, pengisian field dilakukan lewat
+RPC itu SETELAH baris dibuat). **Ini RPC BARU (belum pernah dibuat sebelumnya)** — ikuti aturan
+wajib CLAUDE.md utama ("Peta RPC function Supabase"): pastikan dulu nama ini belum dipakai user
+sendiri di Supabase sebelum menjalankan file SQL-nya.
+
 ## FAR Overseas Air — toggle tampilan List/Card (`FarOverseasAirPage.tsx`)
 
 Toolbar List Memo toggle **List/Card** (state `viewMode`, default **CARD**, tidak disimpan).
@@ -515,24 +599,26 @@ TIDAK disentuh** oleh fitur Card ini sama sekali — cuma DIPANGGIL via deep-lin
   className="flex-1">`, baris tombol `mt-auto`. Kalau nambah field baru ke card, WAJIB taruh DI
   DALAM wrapper `flex-1` ini, bukan sejajar baris tombol.
 
-## FAR Overseas Air — Search + Sort di toolbar List Memo (`FarOverseasAirPage.tsx`)
+## FAR Overseas Air — Search + Filter Tanggal di toolbar List Memo (`FarOverseasAirPage.tsx`)
 
-Dropdown "Items" (pageSize selector) DIGANTI **Search box + dropdown Sort + toggle arah**.
-`pageSize` state TETAP ADA, cuma UI selector-nya dihilangkan.
+Dropdown "Items" (pageSize selector) DIGANTI **Search box + Filter rentang tanggal**. `pageSize`
+state TETAP ADA, cuma UI selector-nya dihilangkan.
 
 - **Search** (debounced 400ms) — `.or()` ilike server-side ke `ship_via`, `vendor`, `route_note`
   (NOTE 1), `item_description_manual` (NOTE 2 Manual). `%`/`_` di-escape sebelum masuk pattern.
-- **Sort** — 5 opsi: Date (`invoice_date`, default DESC), Ship Via, Vendor, Notes 1 (Origin),
-  Notes 2 (Manual). **Batasan disengaja "Notes 1 (Origin)"**: ORDER BY kolom `route_note` APA
-  ADANYA (bukan hasil ekstrak origin) — karena SEMUA nilai berformat baku "PENGIRIMAN DARI
-  {asal} KE {tujuan}...", prefix yang sama di semua baris bikin ORDER BY teks mentah otomatis
-  ekuivalen dgn sort by kota/negara asal. Data non-standar tetap ikut ter-sort, cuma kurang
-  presisi — diterima, tidak ada kolom "origin" terpisah di DB.
-- `page` reset ke 1 otomatis tiap search/sort berubah.
-- Ukuran kontrol toolbar SAMA dgn kontrol lain di baris itu (`h-[34px]`/`text-xs`/`size={13-14}`)
-  — HANYA lebar yang beda: Search `w-[125px]`, Sort `w-[150px]`. Placeholder "Search..." (detail
-  4 kolom yang dicari ada di `title` tooltip).
-- Berlaku sama ke List & Card (state search/sort tidak dibedakan per viewMode).
+- **Filter tanggal** (2026-09, GANTI dari dropdown "Sort" 5 opsi + tombol arah
+  Ascending/Descending — permintaan user, "diganti jadi filter berdasarkan tanggal saja") — 2
+  `<input type="date">` (`filterStartDate`/`filterEndDate`), **MENYARING** baris server-side
+  (`.gte()`/`.lte()` ke `invoice_date`), **BUKAN mengurutkan**. Tombol "✕" muncul kalau salah
+  satu terisi, reset keduanya sekaligus. Urutan tampil SEKARANG FIXED — selalu `invoice_date`
+  DESC (terbaru dulu), sama seperti default sort lama, TIDAK ADA lagi kontrol UI utk ubah urutan
+  atau sort by kolom lain (Ship Via/Vendor/Notes 1/Notes 2 — opsi2 itu DIHAPUS TOTAL, bukan cuma
+  disembunyikan).
+- `page` reset ke 1 otomatis tiap search/filter tanggal berubah.
+- Ukuran kontrol toolbar SAMA dgn kontrol lain di baris itu (`h-[34px]`/`text-xs`/`size={13-14}`).
+  Placeholder Search "Search..." (detail 4 kolom yang dicari ada di `title` tooltip); 2 input
+  tanggal masing2 `w-[110px]`, dipisah "–", dalam 1 pill container yang sama.
+- Berlaku sama ke List & Card (state search/filter tanggal tidak dibedakan per viewMode).
 
 ## FAR Overseas Air — arsitektur cost validation
 

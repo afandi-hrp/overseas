@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
-import { CheckCircle2, FileCheck2, UploadCloud, X, AlertTriangle, Clock, ClipboardCheck, ClipboardList, Edit3, Save, Scale, Trash2, RefreshCw, ChevronDown, LayoutGrid, List as ListIcon, Search, ArrowUp, ArrowDown, FolderOpen } from 'lucide-react';
-import { formatMoney, formatDateID, APPROVAL_STATUS_META, COST_STATUS_META, REKAPAN_EDITABLE_FIELDS, updateRekapanFarOverseasAir, parseRouteNote, rematchTarif, mapModeToJenisLayanan, vendorTargetFromShipVia, computeExpectedFromRate, computeCostStatus, parseJsonField, fetchPicEligibleUsers, fetchDistinctMemoTitles, fetchSignerCompanyOptions, fetchActiveTarifRateRows, type PoListEntry, type PicEligibleUser, type RateRow, type CompanyOption } from '../utils/FarOverseasAirHelpers';
+import { CheckCircle2, FileCheck2, UploadCloud, X, AlertTriangle, Clock, ClipboardCheck, ClipboardList, Edit3, Save, Scale, Trash2, RefreshCw, ChevronDown, LayoutGrid, List as ListIcon, Search, CalendarDays, FolderOpen, Plus } from 'lucide-react';
+import { formatMoney, formatDateID, APPROVAL_STATUS_META, COST_STATUS_META, REKAPAN_EDITABLE_FIELDS, updateRekapanFarOverseasAir, insertRekapanFarOverseasManual, parseRouteNote, rematchTarif, mapModeToJenisLayanan, vendorTargetFromShipVia, computeExpectedFromRate, computeCostStatus, parseJsonField, fetchPicEligibleUsers, fetchDistinctMemoTitles, fetchSignerCompanyOptions, fetchActiveTarifRateRows, type PoListEntry, type PicEligibleUser, type RateRow, type CompanyOption } from '../utils/FarOverseasAirHelpers';
 import { EditableCell } from '../components/FarOverseasAirEditableField';
 import FarOverseasAirDetailModal from '../components/FarOverseasAirDetailModal';
 import FarOverseasAirCostValidationModal from '../components/FarOverseasAirCostValidationModal';
@@ -780,30 +780,25 @@ export default function FarOverseasAirPage() {
   // Director, 2026-09) -- lihat APPROVAL_FILTER_STATUS di dekat fetchList.
   const [approvalFilter, setApprovalFilter] = useState<'ALL' | 'PIC' | 'TIER1' | 'TIER2' | 'TIER3'>('ALL');
   const [approvalCounts, setApprovalCounts] = useState({ pic: 0, tier1: 0, tier2: 0, tier3: 0 });
-  // Search + Sort (2026-09, GANTI dari dropdown "Items" pageSize di toolbar -- permintaan user).
+  // Search (2026-09, GANTI dari dropdown "Items" pageSize di toolbar -- permintaan user).
   // `searchInput` = nilai mentah <input>, `searchTerm` = versi debounced 400ms yang beneran
   // dipakai query (pola sama Audit AP Local, lihat CLAUDE.md) -- supaya tidak fetch tiap
   // keystroke. Search cari di 4 kolom sekaligus via `.or()` ilike: Ship Via, Vendor, NOTE 1
-  // (`route_note`, mengandung negara asal -- lihat catatan `sortBy` soal batasan "sort by
-  // negara asal"), NOTE 2 Manual (`item_description_manual`).
+  // (`route_note`), NOTE 2 Manual (`item_description_manual`).
   const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   useEffect(() => {
     const t = setTimeout(() => setSearchTerm(searchInput.trim()), 400);
     return () => clearTimeout(t);
   }, [searchInput]);
-  // Sort by -- default TETAP tanggal (invoice_date) terbaru dulu, sama seperti urutan lama
-  // (`created_at` desc). "NOTE 1 (Negara Asal)" SENGAJA sort by kolom `route_note` APA ADANYA
-  // (bukan hasil extract origin-nya doang) -- SEMUA nilai `route_note` berformat baku
-  // "PENGIRIMAN DARI {asal} KE {tujuan} (...)" (lihat `parseRouteNote`/CLAUDE.md), jadi prefix
-  // "PENGIRIMAN DARI " selalu SAMA di semua baris -- ORDER BY teks mentahnya otomatis
-  // ekuivalen dgn sort by nama negara/kota asal (karakter pertama yang BEDA antar baris justru
-  // mulai persis dari situ). Baris yang formatnya TIDAK cocok pola itu (data lama/tidak standar)
-  // tetap ikut ter-sort, cuma urutannya relatif terhadap baris lain jadi kurang presisi --
-  // diterima, TIDAK ada kolom "origin" terpisah di DB untuk sort yang 100% akurat.
-  const [sortBy, setSortBy] = useState<'invoice_date' | 'ship_via' | 'vendor' | 'route_note' | 'item_description_manual'>('invoice_date');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  useEffect(() => { setPage(1); }, [searchTerm, sortBy, sortDir]);
+  // Filter rentang tanggal Invoice Date (2026-09, GANTI dari dropdown "Sort" 5 opsi + tombol
+  // arah Ascending/Descending -- permintaan user, "diganti jadi filter berdasarkan tanggal
+  // saja"). Urutan tampil SEKARANG TETAP (tidak ada UI sort lagi) -- fixed `invoice_date` DESC
+  // (terbaru dulu), sama seperti default lama, lihat `fetchList()`. `filterStartDate`/
+  // `filterEndDate` MURNI MENYARING baris (server-side `.gte()`/`.lte()`), BUKAN mengurutkan.
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
+  useEffect(() => { setPage(1); }, [searchTerm, filterStartDate, filterEndDate]);
   const [queue, setQueue] = useState<any[]>([]);
   const [picUsers, setPicUsers] = useState<PicEligibleUser[]>([]);
   // Opsi dropdown "Nama PT" (2026-09, kolom manual BARU) -- di-fetch sekali saat halaman
@@ -849,6 +844,44 @@ export default function FarOverseasAirPage() {
   // (row id yang sama), jadi "Save Changes" di modal ini cukup panggil `handleSaveAllEdits([row.id])`
   // (lihat perluasan parameter opsional di situ).
   const [cardEditRow, setCardEditRow] = useState<any | null>(null);
+  // "Add Manual Entry" (2026-09) -- pola SAMA "Tambah Data" Audit AP Local/Overseas/PI Local
+  // (dokumen yang gagal diproses otomasi n8n sama sekali). BEDA implementasi krn field List Memo
+  // FAR Overseas Air jauh lebih banyak (~25 kolom): tombol ini insert 1 baris KOSONG dulu lewat
+  // RPC `insert_rekapan_far_overseas_manual` (approval_status='PENDING', SAMA seperti shipment
+  // normal), lalu LANGSUNG buka `cardEditRow` (modal edit yang SUDAH ADA, REUSE PERSIS
+  // LIST_COLUMNS) utk baris baru itu -- user isi semua field lewat form yang SAMA PERSIS dgn Edit
+  // biasa, TIDAK ADA form terpisah baru. `isNewManualRow` menandai baris yang lagi dibuka di
+  // `cardEditRow` itu BELUM PERNAH disimpan sama sekali -- kalau user klik Cancel di kondisi ini,
+  // baris kosong tadi WAJIB dihapus balik (`fn_delete_far_overseas_air`) supaya tidak nyangkut
+  // sbg baris kosong permanen di DB.
+  const [isNewManualRow, setIsNewManualRow] = useState(false);
+  const [creatingManualEntry, setCreatingManualEntry] = useState(false);
+
+  const handleAddManualEntry = async () => {
+    setCreatingManualEntry(true);
+    const { data, error } = await insertRekapanFarOverseasManual();
+    setCreatingManualEntry(false);
+    if (error || !data) {
+      setToastMessage('Failed to create manual entry: ' + (error || 'unknown error'));
+      setTimeout(() => setToastMessage(null), 4000);
+      return;
+    }
+    setIsNewManualRow(true);
+    setCardEditRow(data);
+  };
+
+  // Cancel modal edit -- BEDA perilaku tergantung `isNewManualRow`: baris baru (belum pernah
+  // disimpan) dihapus balik ke DB, baris existing cukup buang pending edit lokal (perilaku lama).
+  const handleCardEditCancel = async () => {
+    const row = cardEditRow;
+    const wasNew = isNewManualRow;
+    handleDiscardRowEdit(cardEditRow.id);
+    setCardEditRow(null);
+    setIsNewManualRow(false);
+    if (wasNew && row) {
+      await supabase.rpc('fn_delete_far_overseas_air', { p_far_overseas_id: row.id });
+    }
+  };
 
   // Scrollbar geser horizontal ganda (atas + bawah tabel, tersinkron) -- pola yang sama
   // dipakai di SharedDataTable.tsx supaya user tidak perlu scroll ke bawah dulu untuk
@@ -949,9 +982,11 @@ export default function FarOverseasAirPage() {
       const pattern = `%${escaped}%`;
       query = query.or(`ship_via.ilike.${pattern},vendor.ilike.${pattern},route_note.ilike.${pattern},item_description_manual.ilike.${pattern}`);
     }
+    if (filterStartDate) query = query.gte('invoice_date', filterStartDate);
+    if (filterEndDate) query = query.lte('invoice_date', filterEndDate);
 
     const { data, error, count } = await query
-      .order(sortBy, { ascending: sortDir === 'asc', nullsFirst: false })
+      .order('invoice_date', { ascending: false, nullsFirst: false })
       .range(startIndex, startIndex + pageSize - 1);
     if (!error && data) {
       setRows(data);
@@ -959,7 +994,7 @@ export default function FarOverseasAirPage() {
       await fetchCostStatusMap(data.map((r: any) => r.id).filter(Boolean));
     }
     setLoadingList(false);
-  }, [page, pageSize, approvalFilter, searchTerm, sortBy, sortDir, fetchCostStatusMap]);
+  }, [page, pageSize, approvalFilter, searchTerm, filterStartDate, filterEndDate, fetchCostStatusMap]);
 
   // Hitung berapa memo yang pending di masing-masing level approval -- dipanggil sekali di awal
   // & tiap kali ada aksi yang mungkin mengubah status approval (lihat refreshList). Semua count
@@ -1397,11 +1432,11 @@ export default function FarOverseasAirPage() {
                     <option value="TIER3">Pending Director ({approvalCounts.tier3})</option>
                   </select>
                 </div>
-                {/* Search + Sort (2026-09) -- GANTI dropdown "Items" pageSize (`pageSize` state
-                    TETAP ada, dipakai apa adanya sbg default 10, cuma UI-nya dihilangkan sesuai
-                    permintaan user). Search cari di 4 kolom (Ship Via/Vendor/NOTE 1/NOTE 2
-                    Manual, lihat catatan `searchTerm`), Sort by 5 opsi (lihat catatan `sortBy`
-                    soal batasan sort "NOTE 1 (Negara Asal)"). */}
+                {/* Search + Filter Tanggal (2026-09) -- GANTI dropdown "Items" pageSize (`pageSize`
+                    state TETAP ada, dipakai apa adanya sbg default 10, cuma UI-nya dihilangkan
+                    sesuai permintaan user). Search cari di 4 kolom (Ship Via/Vendor/NOTE 1/NOTE 2
+                    Manual, lihat catatan `searchTerm`). Filter tanggal (GANTI dari dropdown Sort
+                    5 opsi + tombol arah, lihat catatan `filterStartDate`) MENYARING Invoice Date. */}
                 <div className="flex items-center gap-1.5 rounded-full pl-3 pr-1.5 py-1 h-[34px] border border-slate-200 bg-white flex-1 min-w-[160px]">
                   <Search size={13} className="text-[#5A305A]/50 shrink-0" />
                   <input
@@ -1418,27 +1453,30 @@ export default function FarOverseasAirPage() {
                     </button>
                   )}
                 </div>
-                <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0 w-[210px]">
-                  <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide whitespace-nowrap shrink-0">Sort</span>
-                  <select
-                    value={sortBy}
-                    onChange={e => setSortBy(e.target.value as typeof sortBy)}
-                    className="border-0 bg-transparent text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer min-w-0 flex-1"
-                  >
-                    <option value="invoice_date">Date</option>
-                    <option value="ship_via">Ship Via</option>
-                    <option value="vendor">Vendor</option>
-                    <option value="route_note">Notes 1 (Origin)</option>
-                    <option value="item_description_manual">Notes 2 (Manual)</option>
-                  </select>
+                <div className="flex items-center gap-1.5 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0">
+                  <CalendarDays size={13} className="text-[#5A305A]/50 shrink-0" />
+                  <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide whitespace-nowrap shrink-0">Date</span>
+                  <input
+                    type="date"
+                    value={filterStartDate}
+                    onChange={e => setFilterStartDate(e.target.value)}
+                    title="Invoice Date from"
+                    className="border-0 bg-transparent text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer w-[110px]"
+                  />
+                  <span className="text-[#5A305A]/40 text-xs shrink-0">–</span>
+                  <input
+                    type="date"
+                    value={filterEndDate}
+                    onChange={e => setFilterEndDate(e.target.value)}
+                    title="Invoice Date to"
+                    className="border-0 bg-transparent text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer w-[110px]"
+                  />
+                  {(filterStartDate || filterEndDate) && (
+                    <button onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }} title="Clear date filter" className="text-[#5A305A]/40 hover:text-[#5A305A] shrink-0">
+                      <X size={12} />
+                    </button>
+                  )}
                 </div>
-                <button
-                  onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
-                  title={sortDir === 'asc' ? 'Ascending' : 'Descending'}
-                  className="p-2 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] transition-all shadow-sm flex items-center justify-center shrink-0 h-[34px] w-[34px]"
-                >
-                  {sortDir === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
-                </button>
               </div>
             </div>
 
@@ -1473,6 +1511,16 @@ export default function FarOverseasAirPage() {
                   </span>
                 )}
               </button>
+              {canEditDirectLoading && (
+                <button
+                  onClick={handleAddManualEntry}
+                  disabled={creatingManualEntry}
+                  title="For shipments that were never processed by the upload automation at all"
+                  className="px-3 py-2 rounded-full bg-white/70 backdrop-blur-md border border-white/60 hover:bg-white/90 text-[#5A305A] font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px] whitespace-nowrap disabled:opacity-50"
+                >
+                  <Plus size={14} /> {creatingManualEntry ? 'Creating...' : 'Add Manual Entry'}
+                </button>
+              )}
               {canEditDirectLoading && (
                 <button
                   onClick={() => setShowUploadModal(true)}
@@ -1831,9 +1879,15 @@ export default function FarOverseasAirPage() {
           costStatus={costStatusMap[cardEditRow.id]}
           ctx={{ onOpenWeightModal: setWeightModalRow, editingRowId: cardEditRow.id, getVal, setVal, expandedPoRows, togglePoExpanded, picUsers, costCityMap, memoTitleOptions, addMemoTitleOption, tarifVendorRows, companyOptions }}
           saving={savingEdits}
-          onClose={() => setCardEditRow(null)}
-          onCancel={() => { handleDiscardRowEdit(cardEditRow.id); setCardEditRow(null); }}
-          onSave={async () => { await handleSaveAllEdits([cardEditRow.id]); setCardEditRow(null); }}
+          onClose={handleCardEditCancel}
+          onCancel={handleCardEditCancel}
+          onSave={async () => {
+            const wasNew = isNewManualRow;
+            await handleSaveAllEdits([cardEditRow.id]);
+            setCardEditRow(null);
+            setIsNewManualRow(false);
+            if (wasNew) refreshList();
+          }}
         />
       )}
 
