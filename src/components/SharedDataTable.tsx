@@ -4711,7 +4711,14 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan') ? 'sea_air_rekapan' :
                         (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') ? 'courier_rekapan' :
                         undefined;
-                      setExportModalState({ title, cols: activeCols, dateFieldLabel, splitByPoDetail })
+                      // `visibleCols` (BUKAN `activeCols` mentah) -- Export Excel sekarang ikut
+                      // Customize View aktif (2026-09, permintaan user: "export = cerminan persis
+                      // tampilan layar"). `visibleCols` SUDAH otomatis fallback ke `activeCols`
+                      // penuh (SEMUA kolom default) kalau user belum pernah kustomisasi apa pun
+                      // ATAU utk tab yang tidak punya Customize View (Sea & Air Audit/Rekapan,
+                      // Document Validation) -- lihat definisinya di atas, TIDAK perlu cabang
+                      // kondisi tambahan di sini.
+                      setExportModalState({ title, cols: visibleCols, dateFieldLabel, splitByPoDetail })
                     }}
                     className="px-3 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold border border-emerald-700 transition-all h-[38px] flex justify-center items-center gap-1.5 shadow-sm shrink-0"
                   >

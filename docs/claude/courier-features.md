@@ -1,3 +1,29 @@
+## Export Excel — ikut Customize View & PPJK tanpa prefix "OWN" (2026-09)
+
+**Kolom export ikut Customize View aktif** — tombol Export (panel filter, semua tab) SEBELUMNYA
+selalu kirim `cols: activeCols` (SEMUA kolom default, TIDAK PERNAH ikut Customize View) ke
+`ExportModal`. **Fix**: diganti `cols: visibleCols` (variable yang SUDAH ADA, dipakai thead+row
+tabel Customize View -- lihat bagian "Customize View" di bawah) -- SATU baris ini otomatis
+membuat Export mengikuti kolom+urutan yang SEDANG TAMPIL di layar utk `courier_audit` (SEMUA tab
+Draft/PIB/CN, hidden-set SAMA lintas ketiganya) & `courier_rekapan` (Invoice Recap). Tab lain
+(Sea & Air Audit/Rekapan, Document Validation) TIDAK punya Customize View sama sekali --
+`visibleCols` di situ otomatis `=== activeCols` (fallback bawaan, TIDAK ADA perubahan perilaku).
+"Reset to Default"/hidden-set kosong (belum pernah kustomisasi) → `visibleCols === activeCols` →
+export otomatis balik ke SEMUA kolom default, tanpa kode tambahan. Header Excel = `c.label`
+persis, sumber SAMA dgn `<th>` tabel (SATU array `cols` yang sama dipakai keduanya) -- tidak
+mungkin drift. Baris export SUDAH lebih dulu ikut filter aktif (tanggal/company/PPJK/search,
+lihat `getExportData()`) -- tidak disentuh, cakupan perbaikan ini MURNI soal kolom.
+
+**PPJK export buang prefix "OWN "** — kolom PPJK Rekapan Courier di layar SUDAH buang prefix
+"OWN " (`getCellData()`, lihat komentar "Kolom AWB ... Sama pola dgn kolom ppjk" di atas), TAPI
+`ExportModal.tsx` (Excel + preview + filter kolom "contains") SEBELUMNYA baca nilai MENTAH
+apa adanya ("OWN DHL" bukan "DHL") -- export tidak cerminan persis tampilan layar. Fix:
+`stripDisplayPrefix(key, val)` (module-level, `ExportModal.tsx`, BARU) -- dipakai di 3 titik:
+`buildCellValue` (isi Excel), blok render preview table, DAN `rawColVal` (dasar filter kolom
+"contains", supaya cocokkan teks jg terhadap versi tanpa "OWN"). SATU-SATUNYA tempat strip prefix
+ini di file export -- kalau ke depan ada kolom lain yang JUGA di-strip prefix internal serupa di
+tampilan tabel, tambahkan case baru di fungsi yang sama, JANGAN duplikat logic strip di titik lain.
+
 ## Customize View — Audit Courier & Rekapan Courier (`SharedDataTable.tsx`)
 
 Pilih kolom tampil, terpisah 2 menu (Sea & Air/Validasi/Audit Trail tidak ikut).

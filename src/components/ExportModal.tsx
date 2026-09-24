@@ -67,6 +67,18 @@ const fmtDateTime = (v: any) => {
 // jadi satu sel (karena nilainya sama utk semua PO dalam 1 shipment).
 const SEA_AIR_SPLIT_REPEATING_COLS = ['po_no', 'vessel', 'emkl_split', 'split_biaya_origin', 'split_biaya_destination', 'pbm_split', 'lift_off_split', 'inspeksi_split', 'handling_split', 'other_split', 'duty_split', 'bm_split', 'ppn_split', 'pph_split'];
 
+// Kolom PPJK (Rekapan Courier) -- data mentah bisa berprefix "OWN " (mis. "OWN DHL", vendor
+// internal "own courier"), tapi tabel di layar SUDAH buang prefix ini (lihat `getCellData()`
+// `SharedDataTable.tsx`, komentar "Gemini extract PPJK 'OWN' jadi 'OWN <nama>'"). Export
+// SEBELUMNYA tidak tahu soal ini -- Excel/preview export tampil "OWN DHL" walau tabel di layar
+// cuma tampil "DHL" (2026-09 fix, laporan user "nilai export harus sama dgn tampilan UI").
+// Prinsip: export = cerminan PERSIS apa yang dilihat user, JADI kalau ada kolom lain ke depan yang
+// juga di-strip prefix internal serupa di tampilan tabel, tambahkan case yang sama di sini.
+const stripDisplayPrefix = (key: string, val: any): any => {
+  if (key === 'ppjk' && typeof val === 'string') return val.replace(/^OWN\s+/i, '').trim();
+  return val;
+}
+
 const isNumType = (type: string, key: string) => key === 'cek_selisih' || type.startsWith('num')
 const isPctType = (type: string) => type.startsWith('pct')
 
@@ -211,7 +223,7 @@ export default function ExportModal({
     if ((colKey === 'po_no' || colKey === 'vessel') && (item[colKey] === null || item[colKey] === undefined || item[colKey] === '') && item.po_detail) {
       return extractPoDetailField(item, colKey as 'po_no' | 'vessel')
     }
-    return item[colKey]
+    return stripDisplayPrefix(colKey, item[colKey])
   }
 
   const filteredData = useMemo(() => {
@@ -313,6 +325,7 @@ export default function ExportModal({
         } else if (c.key === 'no_aju' || c.key === 'no_pib') {
           val = formatNoAju(val);
         }
+        val = stripDisplayPrefix(c.key, val)
 
         const type = c.type || ''
         const numericVal = Number(val)
@@ -571,6 +584,7 @@ export default function ExportModal({
                           } else if (c.key === 'no_aju' || c.key === 'no_pib') {
                             val = formatNoAju(val);
                           }
+                          val = stripDisplayPrefix(c.key, val)
 
                           let display = formatValue(val, c.type || '', c.key);
                           
