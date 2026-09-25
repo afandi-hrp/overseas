@@ -219,6 +219,90 @@ dari batch query `dokumen_checklist_seaair`.
     for select using (tabel = 'bunker_dokumen' and public.has_page_access('bunker'));
   ```
 
+## Courier — Document Validation, bug fix tooltip "Nilai dari ..." salah label (2026-09)
+
+`getSrcTooltipLabel()` (module-level, `ValidasiModal.tsx`) — fungsi ini nentuin label tooltip
+hover ("Nilai dari X") di kolom Src tiap sel, section `s_inv_freight_duty` (INVOICE FREIGHT &
+INVOICE DUTY), baris "No. AWB". Ditemukan (via analisa lengkap src/cmp per sel diminta user)
+**3 tooltip SALAH** karena logic-nya cuma cocokkan prefix id generik (`startsWith('if')`/
+`startsWith('id')`), padahal 3 row id ini KEBETULAN cocok prefix itu tapi src-nya BUKAN dari
+dokumen yang prefix-nya sugestikan:
+- `if01` (kolom "Invoice Duty") — tooltip lama "Invoice Freight", SEHARUSNYA "Invoice Duty"
+  (`fill("if01", invD.awb, invF.awb)` — src dari `raw.invoice_duty_v.awb`).
+- `id06` (kolom "AWB") — tooltip lama "Invoice Duty", SEHARUSNYA "AWB" (`fill("id06", docAwb,
+  cmpAwbFisik)` — src dari `dokumen_validasi.awb`, dokumen fisik AWB, BUKAN Invoice Duty sama
+  sekali).
+- `pib02` (kolom "SPPB/SPPBMCP") — tooltip lama "PIB", SEHARUSNYA "Invoice Freight / Invoice
+  Duty" (`fill("pib02", invF.awb || invD.awb, sppbV.no_awb)` — src TIDAK PERNAH dari PIB).
+
+**Fix**: 3 pengecualian eksplisit `if (rowMatch.id === '...')` ditambahkan SEBELUM cabang prefix
+generik di `getSrcTooltipLabel()`. **Kalau nambah row id baru ke section `s_inv_freight_duty`
+yang src-nya TIDAK sesuai pola prefix "if"="Invoice Freight"/"id"="Invoice Duty" (mis. row id
+baru yang kebetulan diawali "if"/"id" tapi datanya dari dokumen lain) — WAJIB tambah
+pengecualian eksplisit yang sama di sini, JANGAN andalkan prefix matching apa adanya.**
+
+## Courier — Document Validation, revisi kolom & baris tabel INVOICE FREIGHT & INVOICE DUTY (2026-09)
+
+Susulan dari analisa src/cmp mentahan di atas, 4 revisi eksplisit dari user ke section
+`s_inv_freight_duty` (`ValidasiModal.tsx`):
+
+1. **Rename kolom** (`compareDoc` row config) — "SPPB" → **"SPPB/SPPBMCP"** (row `pib02`, HANYA
+   di section ini — row `pib01` di section `s_pib` juga py `compareDoc: "SPPB"` tapi itu kolom
+   BEDA di tabel PIB terpisah, SENGAJA TIDAK ikut diubah); "PIB / SPPBMCP" → **"PIB"** (row
+   `id07`, satu-satunya row yg pakai string itu).
+2. **Baris "No. AWB", kolom "Invoice Duty" (`if01`)** — Cmp diganti dari `docAwb` jadi
+   **`invoice_freight_v.awb`** (`fill("if01", invD.awb, invF.awb)`, GANTI dari
+   `fill("if01", invD.awb, docAwb)`).
+3. **Baris "Berat (kg)", kolom "AWB" (`id04`)** — Src diganti jadi fallback 2 tahap:
+   **`invoice_freight_cost.actual_weight_kg` kalau ada Invoice Freight (`hasInvoiceFreight`),
+   else `invoice_duty_cost.actual_weight_kg`** (`fill("id04", hasInvoiceFreight ?
+   idOther.actual_weight_kg : invDutyCost.actual_weight_kg, hasInvoiceFreight ? awbDet.weight :
+   null)` — `idOther` = alias `raw.invoice_freight_cost`, `invDutyCost` = `raw.invoice_duty_cost`,
+   KEDUANYA sudah dideklarasikan di scope yang sama, TIDAK perlu variable baru). Cmp TIDAK
+   berubah (tetap `awbDet.weight` kalau `hasInvoiceFreight`, else kosong).
+4. **Row `id04` `hint`** — "(dari Invoice Freight)" → **"(dari Invoice Freight / Invoice Duty)"**
+   (menyusul perubahan #3, label baris ikut mencerminkan sumber fallback barunya).
+
+Tooltip `getSrcTooltipLabel()` utk `id04` (special-case top-level, SEBELUM cabang
+`section.id === 's_inv_freight_duty'`) ikut disesuaikan jadi **"Invoice Freight / Invoice Duty"**
+(GANTI dari "Invoice Freight" statis) — konsisten dgn pola fix tooltip di atas, cegah label jadi
+basi lagi krn logic src-nya sekarang bercabang.
+
+**Mapping src/cmp mentahan (Supabase) LENGKAP section `s_inv_freight_duty`** (SUDAH REFLEK 4
+revisi di atas) — `raw` = `dokumen_validasi.data_validasi_raw` (jsonb, di-parse), `docAwb` =
+`dokumen_validasi.awb` (kolom biasa). Semua path di bawah adalah `raw.<key>` kecuali disebut lain:
+
+| Baris (Validasi Field) | Kolom (Cmp) | Src (raw.*) | Cmp (raw.*) |
+|---|---|---|---|
+| No. AWB | Invoice Duty | `invoice_duty_v.awb` | `invoice_freight_v.awb` |
+| No. AWB | CN INVOICE FREIGHT | `credit_note_freight_v.awb_no` | `docAwb` |
+| No. AWB | CN INVOICE DUTY | `credit_note_duty_v.awb_no` | `docAwb` |
+| No. AWB | SPPB/SPPBMCP | `invoice_freight_v.awb \|\| invoice_duty_v.awb` | `sppb_v.no_awb` |
+| No. AWB | PIB | `invoice_freight_v.awb \|\| invoice_duty_v.awb` | `pib_v.no_awb` |
+| No. AWB | BPN/HTBK | `bpn_v.awb` | `invoice_freight_v.awb` |
+| No. AWB | AWB | `docAwb` | `docAwb` kalau `awb_detail_v` ada isi, else kosong |
+| No Invoice PPJK | FP Freight | `faktur_pajak_freight.no_referensi` | `invoice_freight_v.no_invoice` |
+| No Invoice PPJK | FP Duty | `faktur_pajak_duty.no_referensi` | `invoice_duty_v.no_invoice` |
+| No Invoice PPJK | FP Revisi Freight | `fp_revisi_freight.no_referensi` | `invoice_freight_v.no_invoice` |
+| No Invoice PPJK | FP Revisi Duty | `fp_revisi_duty.no_referensi` | `invoice_duty_v.no_invoice` |
+| Subtotal/After CN | FP Freight | `invoice_freight_v.subtotal` | `faktur_pajak_freight.subtotal` |
+| Subtotal/After CN | FP Duty | `invoice_duty_cost.vat_duty_basis_idr` | `faktur_pajak_duty.harga_jual` |
+| Subtotal/After CN | FP Revisi Freight | hitung: `invoice_freight_v.subtotal − credit_note_freight_v.subtotal` | `fp_revisi_freight.subtotal` |
+| Subtotal/After CN | FP Revisi Duty | hitung: `faktur_pajak_duty.harga_jual − credit_note_duty_v.subtotal` | `fp_revisi_duty.subtotal` |
+| DPP/After CN | FP Freight | `faktur_pajak_freight.dpp` | hitung dari `faktur_pajak_freight.subtotal`+`.no_seri` |
+| DPP/After CN | FP Duty | `faktur_pajak_duty.dpp` | hitung dari `faktur_pajak_duty.harga_jual`+`.no_seri` |
+| DPP/After CN | FP Revisi Freight | `fp_revisi_freight.dpp` | hitung dari `fp_revisi_freight.subtotal`+`.no_seri` |
+| DPP/After CN | FP Revisi Duty | `fp_revisi_duty.dpp` | hitung dari `fp_revisi_duty.subtotal`+`.no_seri` |
+| PPN/After CN | FP Freight | `invoice_freight_v.ppn` | `faktur_pajak_freight.ppn` |
+| PPN/After CN | FP Duty | `invoice_duty_v.ppn` | `faktur_pajak_duty.ppn` |
+| PPN/After CN | FP Revisi Freight | hitung: `faktur_pajak_freight.ppn − credit_note_freight_v.ppn` | `fp_revisi_freight.ppn` |
+| PPN/After CN | FP Revisi Duty | hitung: `faktur_pajak_duty.ppn − credit_note_duty_v.ppn` | `fp_revisi_duty.ppn` |
+| Berat (kg) (dari Invoice Freight / Invoice Duty) | AWB | `invoice_freight_cost.actual_weight_kg` kalau ada Invoice Freight, else `invoice_duty_cost.actual_weight_kg` | `awb_detail_v.weight` kalau ada Invoice Freight, else kosong |
+
+**Fungsi `hitungDppCmp(subtotal, no_seri)`**: dipakai di semua baris "DPP/After CN" kolom Cmp —
+hitung DPP dari nilai subtotal/harga_jual dokumen tsb + nomor seri faktur pajaknya (bukan field
+mentah tunggal, JANGAN dicari sbg 1 kolom `raw.*` langsung).
+
 ## Courier — Document Validation (`ValidasiModal.tsx`)
 
 **Konteks penting**: file ini punya SECTIONS + `fill()`/`generateValues` SENDIRI, TERPISAH dari

@@ -131,14 +131,25 @@ type SectionConfig = {
 // Beberapa section menggabungkan baris dari sumber dokumen berbeda-beda (lihat komentar
 // rowLabel di atas), jadi label sumber tidak selalu sama dengan section.srcLabel.
 function getSrcTooltipLabel(rowMatch: RowConfig, section: SectionConfig): string {
-  if (rowMatch.id === 'id04') return 'Invoice Freight';
+  // id04 (Berat (kg)) src-nya fallback Invoice Freight -> Invoice Duty (2026-09, lihat
+  // fill("id04", ...) di buildValidationValues()) -- tooltip generik tunggal tidak cukup lagi.
+  if (rowMatch.id === 'id04') return 'Invoice Freight / Invoice Duty';
 
   if (section.id === 's_inv_freight_duty') {
+    // 3 pengecualian (2026-09, bug fix) -- id "if01"/"id06" KEBETULAN cocok prefix generik
+    // "if"/"id" di bawah tapi src-nya BUKAN dari Invoice Freight/Invoice Duty (lihat
+    // buildValidationValues() -- fill("if01", invD.awb, invF.awb) & fill("id06", docAwb,
+    // cmpAwbFisik)), dan "pib02" TIDAK diisi dari PIB sama sekali (fill("pib02", invF.awb ||
+    // invD.awb, sppbV.no_awb)) -- tooltip lama salah label utk ketiganya, WAJIB dicek eksplisit
+    // di sini SEBELUM cabang prefix generik.
     if (rowMatch.id === 'bpn_awb_vs_freight_awb') return 'BPN/HTBK';
+    if (rowMatch.id === 'if01') return 'Invoice Duty';
+    if (rowMatch.id === 'id06') return 'AWB';
+    if (rowMatch.id === 'pib02') return 'Invoice Freight / Invoice Duty';
     if (rowMatch.id.startsWith('if')) return 'Invoice Freight';
     if (rowMatch.id.startsWith('id')) return 'Invoice Duty';
     if (rowMatch.id.startsWith('fpfd') || rowMatch.id.startsWith('fpr') || rowMatch.id.startsWith('cnf') || rowMatch.id.startsWith('cnd')) return rowMatch.compareDoc;
-    return 'PIB'; // pib02, pib05
+    return 'PIB'; // pib05 dkk (sisa fallback lain di section ini)
   }
 
   if (section.id === 's_pib' && rowMatch.id.startsWith('bdjbc')) {
@@ -175,8 +186,8 @@ const SECTIONS: SectionConfig[] = [
       { id: "cnd01_a", compareDoc: "CN INVOICE DUTY",    field: "AWB", rowLabel: "No. AWB" },
       { id: "fpr06",  compareDoc: "FP Revisi Freight", field: "Referensi (Freight)",  rowLabel: "No Invoice PPJK" },
       { id: "fpr08",  compareDoc: "FP Revisi Duty",    field: "Referensi (Duty)",     rowLabel: "No Invoice PPJK" },
-      { id: "pib02", compareDoc: "SPPB",                 field: "No. AWB" },
-      { id: "id07", compareDoc: "PIB / SPPBMCP",         field: "No. AWB" },
+      { id: "pib02", compareDoc: "SPPB/SPPBMCP",         field: "No. AWB" },
+      { id: "id07", compareDoc: "PIB",                   field: "No. AWB" },
       { id: "bpn_awb_vs_freight_awb", compareDoc: "BPN/HTBK", field: "Nomor AWB", rowLabel: "No. AWB" },
       { id: "id06", compareDoc: "AWB",                   field: "No. AWB" },
       { id: "if02", compareDoc: "FP Freight",            field: "Subtotal", rowLabel: "Subtotal / Subtotal After CN" },
@@ -191,7 +202,7 @@ const SECTIONS: SectionConfig[] = [
       { id: "id02", compareDoc: "FP Duty",               field: "PPN", rowLabel: "PPN / PPN After CN" },
       { id: "cnf03_b", compareDoc: "FP Revisi Freight",  field: "PPN", rowLabel: "PPN / PPN After CN" },
       { id: "cnd03_b", compareDoc: "FP Revisi Duty",     field: "PPN", rowLabel: "PPN / PPN After CN" },
-      { id: "id04", compareDoc: "AWB",                   field: "Berat (kg)", hint: "(dari Invoice Freight)" },
+      { id: "id04", compareDoc: "AWB",                   field: "Berat (kg)", hint: "(dari Invoice Freight / Invoice Duty)" },
     ]
   },
   {
@@ -509,7 +520,7 @@ function buildValidationValues(raw: any, docAwb: string, localNpwps: any[]): Rec
   const hasInvoiceFreight = invF.subtotal != null || invF.ppn != null || invF.pt_penerima != null;
   const cmpAwbFisik = Object.keys(awbDet).length > 0 ? docAwb : "";
 
-  fill("if01", invD.awb, docAwb);
+  fill("if01", invD.awb, invF.awb);
   fill("bpn_awb_vs_freight_awb", bpnV.awb, invF.awb);
   fill("if02", hasInvoiceFreight ? invF.subtotal : "", fpF.subtotal);
   fill("if03", hasInvoiceFreight ? invF.ppn : "", fpF.ppn);
@@ -520,7 +531,7 @@ function buildValidationValues(raw: any, docAwb: string, localNpwps: any[]): Rec
   fill("id01", invDutyCost.vat_duty_basis_idr || "", fpD.harga_jual || "");
   fill("id02", invD.ppn, fpD.ppn);
   fill("id03", fpD.pt_pembeli || "", findNpwpByName(fpD.pt_pembeli)?.nama || "");
-  fill("id04", hasInvoiceFreight ? idOther.actual_weight_kg : null, hasInvoiceFreight ? awbDet.weight : null);
+  fill("id04", hasInvoiceFreight ? idOther.actual_weight_kg : invDutyCost.actual_weight_kg, hasInvoiceFreight ? awbDet.weight : null);
 
   fill("id06", docAwb, cmpAwbFisik);
   fill("id07", invF.awb || invD.awb, pibV.no_awb || "");
