@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { CheckCircle2, XCircle, X, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays, AlertTriangle, Save, SlidersHorizontal, RotateCcw, SquareX, UploadCloud, Pencil } from 'lucide-react'
+import { CheckCircle2, XCircle, X, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays, AlertTriangle, Save, SlidersHorizontal, RotateCcw, SquareX, UploadCloud, Pencil, GripVertical, ArrowUpDown } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { DndContext, DragOverlay, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core'
+import { SortableContext, useSortable, arrayMove, verticalListSortingStrategy, horizontalListSortingStrategy } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
+import { restrictToVerticalAxis, restrictToHorizontalAxis } from '@dnd-kit/modifiers'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import Greeting from './Greeting'
@@ -152,6 +156,52 @@ const fmtDateTime = (v: any) => {
   const time = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
   return `${fmtDate(v)}, ${time}`
 }
+
+// ─── Drag & Drop Reorder -- Audit Courier (Draft/PIB/CN) & Invoice Recap Courier (2026-09) ────
+// Lihat docs/claude/courier-features.md & sql/022_.../023_... utk arsitektur lengkap (GLOBAL utk
+// semua user, bukan per-user -- dikonfirmasi eksplisit user).
+
+// State "belum ada sort eksplisit dari user" -- default `sortColumn`/`sortDirection` app ini.
+// Selama tuple ini tidak berubah (klik header kolom lain menjauhkannya), urutan tampilan pakai
+// `sort_order` (hasil drag) BUKAN `created_at` polos lagi -- lihat pemakaian di fetchRecords()/
+// getExportData().
+const isDefaultSortState = (sortColumn: string, sortDirection: 'asc' | 'desc') =>
+  sortColumn === 'created_at' && sortDirection === 'desc';
+
+// Jarak antar sort_order baris bersebelahan yang BELUM pernah di-drag (default value = negatif
+// epoch created_at, lihat sql/022_...) SELALU >> GAP ini (beda antar-detik upload dokumen jauh
+// lebih besar dari 1000) -- aman dipakai sbg "loncatan" saat drop di ujung paling atas/bawah
+// tanpa nabrak baris lain.
+const SORT_ORDER_GAP = 1000;
+
+// Hitung sort_order BARU utk 1 baris yang di-drop di antara `before`/`after` (posisi barunya di
+// array hasil drag, urut ASCENDING) -- titik tengah dari 2 tetangga, atau loncat GAP kalau di
+// ujung. Dipakai SATU-SATUNYA di handleRowDragEnd, TIDAK ada RPC/reindex massal -- keterbatasan
+// diterima: drag berulang-ulang PERSIS di titik yang sama bisa menghabiskan presisi float lama2,
+// belum di-renormalize otomatis (pola project ini: trade-off minor diterima kecuali ada laporan).
+const computeDroppedSortOrder = (before: number | null | undefined, after: number | null | undefined): number => {
+  if (before == null && after == null) return 0;
+  if (before == null) return (after as number) - SORT_ORDER_GAP;
+  if (after == null) return (before as number) + SORT_ORDER_GAP;
+  return (before + after) / 2;
+};
+
+// Rekonsiliasi urutan kolom hasil drag (tersimpan `table_column_order.column_order`, array key
+// string) dgn definisi kolom yang SEDANG aktif (`activeCols`, bisa beda2 antar tab Draft/PIB/CN
+// krn field opsional spt kurs_bi/sanksi_adm) -- kolom `type==='index'` SELALU dipaksa posisi
+// PERTAMA (struktural, tidak ikut di-drag). Key tersimpan yang sudah tidak ada di `baseCols`
+// (kolom dihapus dari kode) di-skip; kolom BARU di `baseCols` yang belum pernah ada di
+// `storedKeys` (field baru ditambah developer) di-APPEND di akhir -- graceful, tidak hilang diam2.
+const reorderCols = (baseCols: any[], storedKeys: string[] | null): any[] => {
+  const indexCol = baseCols.find(c => c.type === 'index');
+  const dataCols = baseCols.filter(c => c.type !== 'index');
+  if (!storedKeys || storedKeys.length === 0) return baseCols;
+  const byKey = new Map(dataCols.map(c => [c.key, c]));
+  const ordered: any[] = [];
+  storedKeys.forEach(k => { const c = byKey.get(k); if (c) { ordered.push(c); byKey.delete(k); } });
+  byKey.forEach(c => ordered.push(c));
+  return indexCol ? [indexCol, ...ordered] : ordered;
+};
 
 // ─── Status Badge ─────────────────────────────────────────────
 // Nilai `status` di bawah ini APA ADANYA dari database (ditulis otomasi n8n) -- JANGAN pernah
@@ -2144,6 +2194,55 @@ const SeaAirAuditRowGroup: React.FC<{
 };
 
 
+// Drag & Drop Reorder -- header kolom (2026-09). Komponen terpisah (bukan inline di dalam
+// `.map()`) krn butuh panggil `useSortable()` per kolom -- hooks TIDAK boleh dipanggil di dalam
+// callback `.map()` biasa (Rules of Hooks). `draggable` (kolom data & `reorderMode` aktif) HANYA
+// mempengaruhi apakah drag handle+listener dipasang -- klik-utk-sort (perilaku existing) tetap
+// dipakai HANYA saat TIDAK reorderMode (2 mode ini sengaja saling eksklusif, cegah drag & sort
+// klik ketuker/konflik di gesture yang sama).
+const SortableColumnHeader: React.FC<{
+  col: any;
+  sortColumn: string;
+  sortDirection: 'asc' | 'desc';
+  onHeaderClick: () => void;
+  reorderMode: boolean;
+}> = ({ col, sortColumn, sortDirection, onHeaderClick, reorderMode }) => {
+  const isComputed = col.key.startsWith('breakdown_') || col.key === 'cek_selisih';
+  const draggable = reorderMode && col.type !== 'index';
+  const sortable = useSortable({ id: col.key, disabled: !draggable });
+  const style: React.CSSProperties = draggable ? {
+    transform: CSS.Transform.toString(sortable.transform),
+    transition: sortable.transition || 'transform 220ms cubic-bezier(0.25, 1, 0.5, 1)',
+    opacity: sortable.isDragging ? 0.4 : 1,
+  } : {};
+  return (
+    <th
+      ref={draggable ? sortable.setNodeRef : undefined}
+      style={style}
+      onClick={() => { if (!reorderMode && !isComputed && col.type !== 'index') onHeaderClick(); }}
+      className={`px-4 py-3 text-[10px] font-bold text-[#5A305A] uppercase tracking-wider whitespace-nowrap bg-slate-50 ${
+        col.type === 'index' ? 'text-center' : (col.type === 'num' || col.type === 'pct') ? 'text-right' : 'text-left'
+      } ${(!isComputed && col.type !== 'index' && !reorderMode) ? 'cursor-pointer hover:bg-slate-100 hover:text-[#5A305A] transition-colors' : ''} ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
+      {...(draggable ? sortable.attributes : {})}
+      {...(draggable ? sortable.listeners : {})}
+    >
+      <div className={`flex items-center gap-1 ${col.type === 'index' ? 'justify-center' : (col.type === 'num' || col.type === 'pct') ? 'justify-end' : 'justify-start'}`}>
+        {draggable && <GripVertical size={11} className="text-slate-400 shrink-0" />}
+        {col.label}
+        {!reorderMode && sortColumn === col.key && (
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-500">
+            {sortDirection === 'asc' ? (
+              <path d="m18 15-6-6-6 6"/>
+            ) : (
+              <path d="m6 9 6 6 6-6"/>
+            )}
+          </svg>
+        )}
+      </div>
+    </th>
+  );
+};
+
 const CourierAuditRowGroup: React.FC<{
   rec: any, index: number, cols: any[],
   onChecklist?: (r: any) => void,
@@ -2156,8 +2255,25 @@ const CourierAuditRowGroup: React.FC<{
   getVal?: (r: any, field: string) => any,
   setVal?: (r: any, field: string, value: any) => void,
   onSaveRow?: (id: number | string) => Promise<boolean>,
-}> = ({ rec, index, cols, onChecklist, onValidasi, onCostValidasi, onArchive, onUndraft, onDelete, editMode, getVal, setVal, onSaveRow }) => {
+  reorderMode?: boolean,
+}> = ({ rec, index, cols, onChecklist, onValidasi, onCostValidasi, onArchive, onUndraft, onDelete, editMode, getVal, setVal, onSaveRow, reorderMode }) => {
   const repeatingCols = ['po_ori', 'vendor_inv_no', 'po_harga_detail'];
+  // Drag & Drop Reorder (2026-09) -- hook dipanggil TANPA SYARAT (Rules of Hooks), tapi
+  // listeners/transform HANYA dipakai saat `reorderMode` true (`disabled` mematikan drag-nya,
+  // bukan skip pemanggilan hook). Cuma baris PERTAMA (`isFirst`) yang jadi anchor drag -- baris
+  // split PO lanjutan (`i>0`, lihat displayData di bawah) TIDAK ikut ter-transform saat drag,
+  // keterbatasan diterima (kasus jarang, PO split biasanya tidak sedang di-reorder).
+  const sortable = useSortable({ id: rec.id, disabled: !reorderMode });
+  // Transisi eksplisit (fallback kalau `sortable.transition` kosong) -- easing lebih halus (2026-09,
+  // permintaan user "bisa dibuat lebih smooth") drpd default dnd-kit polos, dipakai KONSISTEN di
+  // baris & kolom (lihat sortableStyle SortableColumnHeader) supaya "rasa" animasi sama semua.
+  const sortableStyle: React.CSSProperties = reorderMode ? {
+    transform: CSS.Transform.toString(sortable.transform),
+    transition: sortable.transition || 'transform 220ms cubic-bezier(0.25, 1, 0.5, 1)',
+    opacity: sortable.isDragging ? 0.4 : 1,
+    zIndex: sortable.isDragging ? 10 : undefined,
+    position: 'relative',
+  } : {};
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [showActions, setShowActions] = useState(false);
@@ -2168,7 +2284,17 @@ const CourierAuditRowGroup: React.FC<{
   const [savingRow, setSavingRow] = useState(false);
 
   const canBulkEdit = !!(getVal && setVal);
-  const editingThisRow = (!!editMode || rowEditOn) && canBulkEdit && rec.status !== 'LENGKAP';
+  // Baris status LENGKAP (tab PIB/CN, sudah di-Undraft) DULU tidak bisa diedit sama sekali di
+  // sini (restriksi `rec.status !== 'LENGKAP'`) -- SEKARANG DIHAPUS (2026-09, permintaan user:
+  // tabel PIB & CN perlu tombol Edit yg bisa koreksi semua kolom termasuk NAS Submit Date, dulu
+  // hanya tombol Unarchived yg muncul). Tab Draft TIDAK terdampak (baris di situ status-nya
+  // SELALU ARCHIVED, tidak pernah LENGKAP).
+  const editingThisRow = (!!editMode || rowEditOn) && canBulkEdit;
+  // NAS Submit Date terisi = proses submit NAS sudah selesai utk baris ini (2026-09) -- dipakai
+  // utk highlight baris & badge "Archived" di bawah. Pakai getVal() (bukan rec.tgl_submit_nas
+  // mentah) supaya ikut nilai pending-edit yg BELUM disimpan juga (indikator visual langsung
+  // responsif saat user mengetik tanggalnya, konsisten dgn effectiveRec di atas).
+  const nasSubmitted = !!(canBulkEdit ? getVal!(rec, 'tgl_submit_nas') : rec.tgl_submit_nas);
 
   let splittedData: { po: string, inv: string, harga: string }[] = [];
   const pos = typeof rec.po_ori === 'string' ? rec.po_ori.split(/\s*\+\s*|,\s+/).map((s: string) => s.trim()).filter(Boolean) : [];
@@ -2199,10 +2325,30 @@ const CourierAuditRowGroup: React.FC<{
       {displayData.map((data, i: number) => {
         const isFirst = i === 0;
         return (
-          <tr key={`${rec.id}-${i}`} className={`transition-colors group ${(isExpanded ? i === rowCount - 1 : true) ? 'border-b-[3px] border-slate-300' : 'border-b border-slate-100'} ${!isFirst ? 'border-t-0 bg-slate-50/40' : ''} ${editingThisRow ? 'bg-blue-50/50 hover:bg-blue-50/60' : 'hover:bg-blue-50/30'}`}>
+          <tr
+            key={`${rec.id}-${i}`}
+            ref={isFirst ? sortable.setNodeRef : undefined}
+            style={isFirst ? sortableStyle : undefined}
+            className={`transition-colors group ${(isExpanded ? i === rowCount - 1 : true) ? 'border-b-[3px] border-slate-300' : 'border-b border-slate-100'} ${!isFirst ? 'border-t-0 bg-slate-50/40' : ''} ${
+              editingThisRow ? 'bg-blue-50/50 hover:bg-blue-50/60' : nasSubmitted ? 'bg-emerald-50/70 hover:bg-emerald-50 border-l-[3px] border-l-emerald-400' : 'hover:bg-blue-50/30'
+            }`}
+          >
             {cols.map(c => {
               const isRepeating = repeatingCols.includes(c.key);
               if (!isRepeating && !isFirst) return null;
+
+              if (c.type === 'index' && reorderMode) {
+                return (
+                  <td key={c.key} className="px-2 py-3 align-top" rowSpan={isExpanded ? rowCount : 1}>
+                    <div className="flex items-center justify-center gap-1.5">
+                      <button type="button" ref={sortable.setActivatorNodeRef} className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-[#5A305A] touch-none" {...sortable.attributes} {...sortable.listeners}>
+                        <GripVertical size={15} />
+                      </button>
+                      <span className="w-6 h-6 rounded-full bg-orange-500 text-white text-[11px] font-bold flex items-center justify-center shrink-0">{index + 1}</span>
+                    </div>
+                  </td>
+                );
+              }
 
               let { content, alignClass } = getCellData(c, effectiveRec, index);
 
@@ -2265,6 +2411,14 @@ const CourierAuditRowGroup: React.FC<{
             {isFirst && (
               <td className="px-4 py-3 text-center sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.03)] z-10 transition-colors border-l border-slate-100" rowSpan={isExpanded ? rowCount : 1}>
                 <div className="flex flex-col items-center gap-1.5">
+                  {nasSubmitted && (
+                    <span
+                      title="NAS Submit Date is filled in -- this row's NAS submission is complete"
+                      className="w-[80px] flex items-center justify-center gap-1 bg-emerald-100 text-emerald-700 border border-emerald-300 text-[10px] font-bold px-2 py-1 rounded-md"
+                    >
+                      🗄️ Archived
+                    </span>
+                  )}
                   <>
                     <button
                       onClick={() => setShowActions(!showActions)}
@@ -2279,7 +2433,7 @@ const CourierAuditRowGroup: React.FC<{
                     </button>
                     {showActions && (
                       <div className="flex flex-col gap-1.5 items-center bg-slate-50 border border-slate-200 rounded-lg p-1.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
-                          {canBulkEdit && rec.status !== 'LENGKAP' && (
+                          {canBulkEdit && (
                             <button
                               onClick={() => setRowEditOn(v => !v)}
                               className={`w-[80px] text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm border ${
@@ -2289,7 +2443,7 @@ const CourierAuditRowGroup: React.FC<{
                               ✏️ {rowEditOn ? 'Editing' : 'Edit'}
                             </button>
                           )}
-                          {rowEditOn && onSaveRow && rec.status !== 'LENGKAP' && (
+                          {rowEditOn && onSaveRow && (
                             <button
                               disabled={savingRow}
                               onClick={async () => {
@@ -2384,8 +2538,21 @@ const CourierRekapanRowGroup: React.FC<{
   getVal?: (r: any, field: string) => any,
   setVal?: (r: any, field: string, value: any) => void,
   onSaveRow?: (id: number | string) => Promise<boolean>,
-}> = ({ rec, index, cols, onDelete, editMode, getVal, setVal, onSaveRow }) => {
+  reorderMode?: boolean,
+}> = ({ rec, index, cols, onDelete, editMode, getVal, setVal, onSaveRow, reorderMode }) => {
   const repeatingCols = ['po_pt_imi', 'vessel', 'breakdown_courier_adm_vessel', 'breakdown_duty_vessel', 'breakdown_freight_vessel', 'breakdown_bm_vessel', 'breakdown_ppnpph_vessel'];
+  // Drag & Drop Reorder (2026-09) -- pola sama persis CourierAuditRowGroup, lihat komentarnya.
+  const sortable = useSortable({ id: rec.id, disabled: !reorderMode });
+  // Transisi eksplisit (fallback kalau `sortable.transition` kosong) -- easing lebih halus (2026-09,
+  // permintaan user "bisa dibuat lebih smooth") drpd default dnd-kit polos, dipakai KONSISTEN di
+  // baris & kolom (lihat sortableStyle SortableColumnHeader) supaya "rasa" animasi sama semua.
+  const sortableStyle: React.CSSProperties = reorderMode ? {
+    transform: CSS.Transform.toString(sortable.transform),
+    transition: sortable.transition || 'transform 220ms cubic-bezier(0.25, 1, 0.5, 1)',
+    opacity: sortable.isDragging ? 0.4 : 1,
+    zIndex: sortable.isDragging ? 10 : undefined,
+    position: 'relative',
+  } : {};
 
   const [isExpanded, setIsExpanded] = useState(false);
   const [showActions, setShowActions] = useState(false);
@@ -2444,10 +2611,28 @@ const CourierRekapanRowGroup: React.FC<{
           ? 'bg-slate-50/40 hover:bg-blue-50/30'
           : 'hover:bg-blue-50/30';
         return (
-          <tr key={`${rec.id}-${i}`} className={`transition-colors group ${hasSubmitDate ? 'border-l-[3px] border-l-[#E6C25C]' : ''} ${(isExpanded ? i === rowCount - 1 : true) ? 'border-b-[3px] border-slate-300' : 'border-b border-slate-100'} ${!isFirst ? 'border-t-0' : ''} ${rowBgClass}`}>
+          <tr
+            key={`${rec.id}-${i}`}
+            ref={isFirst ? sortable.setNodeRef : undefined}
+            style={isFirst ? sortableStyle : undefined}
+            className={`transition-colors group ${hasSubmitDate ? 'border-l-[3px] border-l-[#E6C25C]' : ''} ${(isExpanded ? i === rowCount - 1 : true) ? 'border-b-[3px] border-slate-300' : 'border-b border-slate-100'} ${!isFirst ? 'border-t-0' : ''} ${rowBgClass}`}
+          >
             {cols.map(c => {
               const isRepeating = repeatingCols.includes(c.key);
               if (!isRepeating && !isFirst) return null;
+
+              if (c.type === 'index' && reorderMode) {
+                return (
+                  <td key={c.key} className="px-2 py-3 align-top" rowSpan={isExpanded ? rowCount : 1}>
+                    <div className="flex items-center justify-center gap-1.5">
+                      <button type="button" ref={sortable.setActivatorNodeRef} className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-[#5A305A] touch-none" {...sortable.attributes} {...sortable.listeners}>
+                        <GripVertical size={15} />
+                      </button>
+                      <span className="w-6 h-6 rounded-full bg-orange-500 text-white text-[11px] font-bold flex items-center justify-center shrink-0">{index + 1}</span>
+                    </div>
+                  </td>
+                );
+              }
 
               let { content, alignClass } = getCellData(c, effectiveRec, index);
 
@@ -3126,6 +3311,41 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     setShowCustomizeView(null);
   };
 
+  // ── Drag & Drop Reorder -- urutan KOLOM (2026-09) ──────────────────────────
+  // GLOBAL (semua user, bukan per-user seperti hidden-set di atas) -- disimpan tabel Supabase
+  // `table_column_order` (sql/023_...), 1 baris per "menu" (SAMA partisi dgn Customize View:
+  // 'courier_audit' mewakili Draft+PIB+CN, 'courier_rekapan' mewakili Invoice Recap semua PPJK).
+  const [courierAuditColumnOrder, setCourierAuditColumnOrder] = useState<string[] | null>(null)
+  const [courierRekapanColumnOrder, setCourierRekapanColumnOrder] = useState<string[] | null>(null)
+  const fetchColumnOrder = useCallback(async () => {
+    const { data, error } = await supabase.from('table_column_order').select('menu, column_order');
+    if (error || !data) return;
+    data.forEach((row: any) => {
+      if (row.menu === 'courier_audit' && Array.isArray(row.column_order)) setCourierAuditColumnOrder(row.column_order);
+      if (row.menu === 'courier_rekapan' && Array.isArray(row.column_order)) setCourierRekapanColumnOrder(row.column_order);
+    });
+  }, []);
+  useEffect(() => { fetchColumnOrder(); }, [fetchColumnOrder]);
+
+  // ── Drag & Drop Reorder -- urutan BARIS (2026-09) ──────────────────────────
+  // Aktif via toggle "Reorder Mode" (toolbar) -- SAAT AKTIF, `reorderRows` menampung SEMUA baris
+  // cocok filter aktif (tanpa `.range()`, lihat handleToggleReorderMode) supaya drag bisa ke
+  // posisi manapun lintas seluruh tabel (dikonfirmasi user), MENGGANTIKAN `records`/paginasi
+  // biasa sementara mode ini aktif. `reorderTooMany` = guard performa render DOM (>2000 baris
+  // cocok filter -- minta user persempit filter dulu, bukan fetch semua & bikin browser berat).
+  const [reorderMode, setReorderMode] = useState(false)
+  const [reorderRows, setReorderRows] = useState<any[] | null>(null)
+  const [reorderLoading, setReorderLoading] = useState(false)
+  const [reorderTooMany, setReorderTooMany] = useState<number | null>(null)
+  // CSS `transform` pada elemen `<tr>`/`<th>` TIDAK reliable di semua browser (keterbatasan
+  // dikenal luas dnd-kit + tabel HTML) -- baris/kolom sumber TETAP di tempat selama drag (cuma
+  // opacity redup), feedback visual "mengikuti kursor" SEPENUHNYA dari `DragOverlay` (portal ke
+  // `document.body`, div biasa, transform-nya SELALU jalan). `draggingRowId`/`draggingColKey`
+  // HANYA state UI (transform/isi overlay), TIDAK dipakai logic reorder (`handleRowDragEnd`/
+  // `handleColumnDragEnd` baca `event.active`/`event.over` langsung dari dnd-kit).
+  const [draggingRowId, setDraggingRowId] = useState<string | number | null>(null)
+  const [draggingColKey, setDraggingColKey] = useState<string | null>(null)
+
   useEffect(() => {
     setActiveMainTab(defaultMainTab);
     setActiveSubTab(defaultSubTab);
@@ -3156,6 +3376,16 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   const [search,        setSearch]        = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [fetchError,    setFetchError]    = useState<string | null>(null)
+
+  // Reorder Mode (2026-09) keluar otomatis begitu tab/filter berubah -- `reorderRows` adalah
+  // snapshot lengkap SESUAI filter yang aktif SAAT toggle diklik, ganti tab/filter bikin
+  // snapshot itu basi (bisa salah scope, mis. drag baris PIB nyasar ke query CN).
+  useEffect(() => {
+    setReorderMode(false);
+    setReorderRows(null);
+    setReorderTooMany(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMainTab, activeSubTab, courierAuditType, activePpjkFilter, activeCourierAnFilter, activeCourierImporAnFilter, debouncedSearch, filterStartDate, filterEndDate])
 
   useEffect(() => {
     const fetchPpjks = async () => {
@@ -3417,8 +3647,14 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           r.cost_validation_pct = draftCostPctMap[badgeKey] ?? 0;
         });
 
-        // Apply Ordering locally
-        if (sortColumn) {
+        // Apply Ordering locally -- state default (belum ada sort eksplisit dari user, lihat
+        // isDefaultSortState()) pakai `sort_order` (hasil drag reorder, 2026-09) BUKAN
+        // `created_at` polos -- AMAN digabung PIB+CN krn ke-2 tabel pakai skala epoch yang sama
+        // persis (lihat sql/022_courier_row_sort_order.sql). Sort eksplisit by kolom lain TIDAK
+        // berubah (perilaku existing).
+        if (isDefaultSortState(sortColumn, sortDirection)) {
+          combined.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+        } else if (sortColumn) {
           combined.sort((a, b) => {
             const valA = a[sortColumn] || '';
             const valB = b[sortColumn] || '';
@@ -3536,8 +3772,17 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       }
     }
 
-    // Apply Ordering
-    if (sortColumn) {
+    // Apply Ordering -- state default (2026-09, lihat isDefaultSortState()) pakai `sort_order`
+    // (hasil drag reorder) di tab yang punya kolom ini (Audit Courier PIB/CN & Invoice Recap
+    // Courier, lihat sql/022_courier_row_sort_order.sql) -- tab lain (Sea & Air/Trail/dll) TIDAK
+    // punya kolom ini, TETAP pakai perilaku lama. Sort eksplisit by kolom lain TIDAK berubah.
+    const usesRowSortOrder = isDefaultSortState(sortColumn, sortDirection) && (
+      (activeMainTab === 'courier' && activeSubTab === 'courier_audit' && (courierAuditType === 'pib' || courierAuditType === 'cn')) ||
+      (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan')
+    );
+    if (usesRowSortOrder) {
+      query = query.order('sort_order', { ascending: true });
+    } else if (sortColumn) {
       let actualSortCol = sortColumn;
       if (actualSortCol === 'po_no' && tab?.table === 'rekapan_seaair') {
          actualSortCol = 'po_detail';
@@ -3731,12 +3976,15 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
   // ── Indikator "Outstanding" (badge angka di pojok tab) ──────────────────────
   // Rekapan Courier: jumlah baris per-tab PPJK yang Submit Date-nya masih kosong (key 'All' =
-  // total gabungan, dipakai di tab "Semua PPJK"). Audit Courier: jumlah baris (PIB+CN, status
-  // ARCHIVED) yang Tgl Submit Nas-nya masih kosong, badge-nya nempel cuma di tab Draft.
-  // Dihitung terpisah dari `records` karena tabel dipaginasi -- `records` cuma berisi 1 halaman,
-  // tidak merepresentasikan total keseluruhan.
+  // total gabungan, dipakai di tab "Semua PPJK"). Audit Courier: jumlah baris yang Tgl Submit
+  // Nas-nya masih kosong -- Draft (PIB+CN status ARCHIVED), PIB (tabel_audit_pib non-ARCHIVED),
+  // CN (tabel_audit_cn non-ARCHIVED). Rule counter ini WAJIB SERAGAM di ketiga tab (2026-09,
+  // permintaan eksplisit user -- badge tab PIB/CN dulu tidak ada sama sekali, HARUS pakai logika
+  // "outstanding" yang sama persis dengan tab Draft: hitung dari NAS Submit Date kosong, BUKAN
+  // total seluruh baris). Dihitung terpisah dari `records` karena tabel dipaginasi -- `records`
+  // cuma berisi 1 halaman, tidak merepresentasikan total keseluruhan.
   const [ppjkOutstandingMap, setPpjkOutstandingMap] = useState<Record<string, number>>({})
-  const [draftOutstandingCount, setDraftOutstandingCount] = useState<number | null>(null)
+  const [courierAuditOutstandingCounts, setCourierAuditOutstandingCounts] = useState<{ archive: number | null, pib: number | null, cn: number | null }>({ archive: null, pib: null, cn: null })
 
   const fetchOutstandingCount = useCallback(async () => {
     if (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') {
@@ -3767,26 +4015,31 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     setPpjkOutstandingMap({});
 
     if (activeMainTab === 'courier' && activeSubTab === 'courier_audit') {
-      const buildQuery = (table: string, searchCols: string[]) => {
-        let q = supabase.from(table).select('id', { count: 'exact', head: true }).eq('status', 'ARCHIVED').is('tgl_submit_nas', null)
+      const buildQuery = (table: string, searchCols: string[], statusMode: 'archived' | 'active') => {
+        let q = supabase.from(table).select('id', { count: 'exact', head: true }).is('tgl_submit_nas', null)
+        q = statusMode === 'archived' ? q.eq('status', 'ARCHIVED') : q.neq('status', 'ARCHIVED');
         if (activeCourierImporAnFilter !== 'All') q = q.eq('impor_an', activeCourierImporAnFilter);
         if (debouncedSearch) {
           q = q.or(searchCols.map(col => `${col}.ilike.%${debouncedSearch}%`).join(','));
         }
         return q;
       }
-      const [pibRes, cnRes] = await Promise.all([
-        buildQuery('tabel_audit_pib', ['awb', 'vendor_inv_no', 'no_pib', 'po_ori', 'vendor']),
-        buildQuery('tabel_audit_cn', ['awb', 'vendor_inv_no', 'po_ori', 'vendor']),
+      const pibSearchCols = ['awb', 'vendor_inv_no', 'no_pib', 'po_ori', 'vendor'];
+      const cnSearchCols = ['awb', 'vendor_inv_no', 'po_ori', 'vendor'];
+      const [pibArchiveRes, cnArchiveRes, pibActiveRes, cnActiveRes] = await Promise.all([
+        buildQuery('tabel_audit_pib', pibSearchCols, 'archived'),
+        buildQuery('tabel_audit_cn', cnSearchCols, 'archived'),
+        buildQuery('tabel_audit_pib', pibSearchCols, 'active'),
+        buildQuery('tabel_audit_cn', cnSearchCols, 'active'),
       ]);
-      if (pibRes.error || cnRes.error) {
-        setDraftOutstandingCount(null);
-      } else {
-        setDraftOutstandingCount((pibRes.count ?? 0) + (cnRes.count ?? 0));
-      }
+      setCourierAuditOutstandingCounts({
+        archive: (pibArchiveRes.error || cnArchiveRes.error) ? null : (pibArchiveRes.count ?? 0) + (cnArchiveRes.count ?? 0),
+        pib: pibActiveRes.error ? null : (pibActiveRes.count ?? 0),
+        cn: cnActiveRes.error ? null : (cnActiveRes.count ?? 0),
+      });
       return;
     }
-    setDraftOutstandingCount(null);
+    setCourierAuditOutstandingCounts({ archive: null, pib: null, cn: null });
   }, [activeMainTab, activeSubTab, activeCourierAnFilter, activeCourierImporAnFilter, filterStartDate, filterEndDate, debouncedSearch])
 
   useEffect(() => {
@@ -3848,6 +4101,22 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       combined.forEach(r => Object.assign(r, computeCourierAuditCalc(r, r.jenis_dokumen, r.manual_override_fields)));
 
       await mergeChecklistData(combined);
+
+      // Export ikut urutan hasil drag reorder (2026-09) -- SAMA logic dgn fetchRecords() Draft
+      // branch (sort_order kalau belum ada sort eksplisit, else by sortColumn) -- sebelumnya
+      // branch ini TIDAK sort sama sekali (order Supabase apa adanya), export Draft jadi tidak
+      // konsisten dgn urutan yang tampil di layar.
+      if (isDefaultSortState(sortColumn, sortDirection)) {
+        combined.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+      } else if (sortColumn) {
+        combined.sort((a, b) => {
+          const valA = a[sortColumn] || '';
+          const valB = b[sortColumn] || '';
+          if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+          if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+          return 0;
+        });
+      }
       return combined;
     }
 
@@ -3944,8 +4213,14 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       }
     }
 
-    // Apply Ordering
-    if (sortColumn) {
+    // Apply Ordering -- pola sama fetchRecords() (2026-09, lihat isDefaultSortState()).
+    const usesRowSortOrderExport = isDefaultSortState(sortColumn, sortDirection) && (
+      (activeMainTab === 'courier' && activeSubTab === 'courier_audit' && (courierAuditType === 'pib' || courierAuditType === 'cn')) ||
+      (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan')
+    );
+    if (usesRowSortOrderExport) {
+      query = query.order('sort_order', { ascending: true });
+    } else if (sortColumn) {
       let actualSortCol = sortColumn;
       if (actualSortCol === 'po_no' && tab?.table === 'rekapan_seaair') {
          actualSortCol = 'po_detail';
@@ -4293,11 +4568,164 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       const rpcName = isPib ? 'fn_undraft_pib' : 'fn_undraft_cn';
       const { error } = await supabase.rpc(rpcName, { [isPib ? 'p_pib_id' : 'p_cn_id']: record.id });
       if (error) throw error;
+      // Doc Acceptance diisi OTOMATIS tanggal sistem saat Undraft diklik (2026-09, permintaan
+      // user -- PIC Invoice Recap & PIC Audit orang berbeda, isi manual menyulitkan tracking).
+      // Update terpisah (bukan parameter RPC fn_undraft_pib/cn yg sudah ada -- RPC ini dibuat
+      // user sendiri di Supabase, JANGAN diubah signature-nya tanpa konfirmasi) via .update()
+      // langsung, pola sama handleInlineSaveRow (RLS courier_audit yg menggerbangi, bukan RPC).
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const targetTable = isPib ? 'tabel_audit_pib' : 'tabel_audit_cn';
+      const { error: docAcceptanceError } = await supabase.from(targetTable).update({ doc_acceptance: todayIso }).eq('id', record.id);
+      if (docAcceptanceError) console.error('Failed to auto-fill Doc Acceptance on undraft:', docAcceptanceError);
       fetchRecords();
     } catch (e: any) {
       alert('Failed to undraft data: ' + e.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ── Drag & Drop Reorder -- BARIS (2026-09) ──────────────────────────────────────────────────
+  // HANYA aktif utk Audit Courier (Draft/PIB/CN) & Invoice Recap Courier, gated `canEdit`, lihat
+  // docs/claude/courier-features.md & plan "Drag & Drop Reorder" utk arsitektur lengkap.
+  // Fetch SEMUA baris cocok filter aktif TANPA `.range()` (drag bebas ke posisi manapun lintas
+  // seluruh tabel, dikonfirmasi user) -- REPLIKA filter yang sama dgn fetchRecords() (pola sama
+  // duplikasi filter yang sudah ada antara fetchRecords()/getExportData() di file ini). Guard
+  // >2000 baris: minta user persempit filter dulu drpd fetch semua & bikin browser berat.
+  const fetchAllForReorder = async (): Promise<any[] | null> => {
+    if (activeMainTab === 'courier' && activeSubTab === 'courier_audit' && courierAuditType === 'archive') {
+      const buildQ = (table: string, searchCols: string[]) => {
+        let q = supabase.from(table).select('*').eq('status', 'ARCHIVED');
+        if (activeCourierImporAnFilter !== 'All') q = q.eq('impor_an', activeCourierImporAnFilter);
+        if (debouncedSearch) q = q.or(searchCols.map(col => `${col}.ilike.%${debouncedSearch}%`).join(','));
+        return q.order('sort_order', { ascending: true });
+      };
+      const [resPib, resCn] = await Promise.all([
+        buildQ('tabel_audit_pib', ['awb', 'vendor_inv_no', 'no_pib', 'po_ori', 'vendor']),
+        buildQ('tabel_audit_cn', ['awb', 'vendor_inv_no', 'po_ori', 'vendor']),
+      ]);
+      if (resPib.error) throw resPib.error;
+      if (resCn.error) throw resCn.error;
+      const combined = [
+        ...(resPib.data || []).map(r => ({ ...r, jenis_dokumen: 'PIB' })),
+        ...(resCn.data || []).map(r => ({ ...r, jenis_dokumen: 'CN' })),
+      ];
+      if (combined.length > 2000) { setReorderTooMany(combined.length); return null; }
+      combined.sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+      return combined;
+    }
+
+    let table = '';
+    let build = (q: any) => q;
+    if (activeMainTab === 'courier' && activeSubTab === 'courier_audit') {
+      table = courierAuditType === 'pib' ? 'tabel_audit_pib' : 'tabel_audit_cn';
+      const searchCols = courierAuditType === 'pib' ? ['awb', 'vendor_inv_no', 'no_pib', 'po_ori', 'vendor'] : ['awb', 'vendor_inv_no', 'po_ori', 'vendor'];
+      build = (q: any) => {
+        q = q.neq('status', 'ARCHIVED');
+        if (activeCourierImporAnFilter !== 'All') q = q.eq('impor_an', activeCourierImporAnFilter);
+        if (filterStartDate) q = q.gte('tgl_ppjk', filterStartDate);
+        if (filterEndDate) q = q.lte('tgl_ppjk', `${filterEndDate} 23:59:59`);
+        if (debouncedSearch) q = q.or(searchCols.map(col => `${col}.ilike.%${debouncedSearch}%`).join(','));
+        return q;
+      };
+    } else if (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') {
+      table = 'rekapan_courier';
+      const searchCols = ['awb', 'no_invoice', 'vendor', 'po_pt_imi', 'ppjk'];
+      build = (q: any) => {
+        if (activeCourierAnFilter !== 'All') q = q.eq('an', activeCourierAnFilter);
+        if (activePpjkFilter && activePpjkFilter !== 'All') q = q.ilike('ppjk', `%${activePpjkFilter}%`);
+        if (filterStartDate) q = q.gte('tgl_terima_email', filterStartDate);
+        if (filterEndDate) q = q.lte('tgl_terima_email', `${filterEndDate} 23:59:59`);
+        if (debouncedSearch) q = q.or(searchCols.map(col => `${col}.ilike.%${debouncedSearch}%`).join(','));
+        return q;
+      };
+    } else {
+      return [];
+    }
+
+    const countRes = await build(supabase.from(table).select('id', { count: 'exact', head: true }));
+    if (countRes.error) throw countRes.error;
+    if ((countRes.count ?? 0) > 2000) { setReorderTooMany(countRes.count ?? 0); return null; }
+
+    const dataRes = await build(supabase.from(table).select('*')).order('sort_order', { ascending: true });
+    if (dataRes.error) throw dataRes.error;
+    return dataRes.data || [];
+  };
+
+  const handleToggleReorderMode = async () => {
+    if (reorderMode) {
+      setReorderMode(false);
+      setReorderRows(null);
+      setReorderTooMany(null);
+      return;
+    }
+    setReorderLoading(true);
+    setReorderTooMany(null);
+    try {
+      const rows = await fetchAllForReorder();
+      if (rows === null) return; // terlalu banyak baris, pesan sudah di-set (reorderTooMany)
+      setReorderRows(rows);
+      setReorderMode(true);
+      // Reorder Mode SELALU mulai dari urutan default (sort_order) -- reset sort eksplisit kalau
+      // user kebetulan lagi sort by kolom lain, supaya drag terjadi di atas baseline yang masuk akal.
+      setSortColumn('created_at');
+      setSortDirection('desc');
+    } catch (e: any) {
+      alert('Failed to load rows for reorder: ' + e.message);
+    } finally {
+      setReorderLoading(false);
+    }
+  };
+
+  const handleRowDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id || !reorderRows) return;
+    const oldIndex = reorderRows.findIndex(r => String(r.id) === String(active.id));
+    const newIndex = reorderRows.findIndex(r => String(r.id) === String(over.id));
+    if (oldIndex === -1 || newIndex === -1) return;
+    const newRows: any[] = arrayMove(reorderRows, oldIndex, newIndex);
+    setReorderRows(newRows); // optimistic
+
+    const movedRow = newRows[newIndex];
+    const newSortOrder = computeDroppedSortOrder(newRows[newIndex - 1]?.sort_order, newRows[newIndex + 1]?.sort_order);
+
+    const targetTable = (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan')
+      ? 'rekapan_courier'
+      : (courierAuditType === 'archive'
+          ? (movedRow.jenis_dokumen === 'PIB' ? 'tabel_audit_pib' : 'tabel_audit_cn')
+          : (courierAuditType === 'pib' ? 'tabel_audit_pib' : 'tabel_audit_cn'));
+
+    const { error } = await supabase.from(targetTable).update({ sort_order: newSortOrder }).eq('id', movedRow.id);
+    if (error) {
+      console.error('Failed to persist row reorder:', error);
+      alert('Failed to save new row order: ' + error.message);
+    } else {
+      setReorderRows(prev => prev ? prev.map(r => String(r.id) === String(movedRow.id) ? { ...r, sort_order: newSortOrder } : r) : prev);
+    }
+  };
+
+  // ── Drag & Drop Reorder -- KOLOM (2026-09) ──────────────────────────────────────────────────
+  // GLOBAL (tabel Supabase `table_column_order`, sql/023_...), 1 baris per "menu" (SAMA partisi
+  // dgn Customize View -- lihat `activeCourierCustomizeMenu`/`orderedActiveCols` di render body,
+  // AMAN direferensikan di sini walau dideklarasikan lebih bawah krn closure ini baru dieksekusi
+  // saat event drag beneran terjadi, bukan saat definisi).
+  const handleColumnDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id || !activeCourierCustomizeMenu) return;
+    const dataCols = orderedActiveCols.filter((c: any) => c.type !== 'index');
+    const oldIndex = dataCols.findIndex((c: any) => c.key === active.id);
+    const newIndex = dataCols.findIndex((c: any) => c.key === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    const newKeys = arrayMove(dataCols, oldIndex, newIndex).map((c: any) => c.key);
+    if (activeCourierCustomizeMenu === 'courier_audit') setCourierAuditColumnOrder(newKeys);
+    else setCourierRekapanColumnOrder(newKeys);
+    const { error } = await supabase.from('table_column_order').upsert(
+      { menu: activeCourierCustomizeMenu, column_order: newKeys, updated_by: user?.id },
+      { onConflict: 'menu' }
+    );
+    if (error) {
+      console.error('Failed to persist column reorder:', error);
+      alert('Failed to save new column order: ' + error.message);
     }
   };
 
@@ -4402,9 +4830,25 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     : activeCourierCustomizeMenu === 'courier_rekapan'
     ? courierRekapanHiddenCols
     : null;
-  const visibleCols = activeCourierHiddenCols
-    ? activeCols.filter(c => c.type === 'index' || !activeCourierHiddenCols.has(c.key))
+  // Urutan kolom GLOBAL hasil drag (2026-09, lihat table_column_order/reorderCols()) -- DIPAKAI
+  // DULU sebelum filter hidden-set, 2 concern independen (urutan vs visibility) TIDAK saling
+  // ganggu. Kalau belum pernah di-drag (`storedKeys` null), reorderCols() balikin `activeCols`
+  // apa adanya (urutan array literal PIB_COLS/CN_COLS/COURIER_COLS, perilaku lama).
+  const orderedActiveCols = activeCourierCustomizeMenu === 'courier_audit'
+    ? reorderCols(activeCols, courierAuditColumnOrder)
+    : activeCourierCustomizeMenu === 'courier_rekapan'
+    ? reorderCols(activeCols, courierRekapanColumnOrder)
     : activeCols;
+  const visibleCols = activeCourierHiddenCols
+    ? orderedActiveCols.filter(c => c.type === 'index' || !activeCourierHiddenCols.has(c.key))
+    : orderedActiveCols;
+
+  // Drag & Drop Reorder (2026-09) -- SAAT Reorder Mode aktif, tabel render dari `reorderRows`
+  // (full-fetch tanpa paginasi, lihat fetchAllForReorder()) MENGGANTIKAN `records`/paginasi
+  // biasa. Sensor pointer dgn `activationConstraint` kecil (8px) -- cegah klik biasa (mis. buka
+  // panel Action baris lain) kesenggol jadi drag tidak sengaja.
+  const displayRows = reorderMode && reorderRows ? reorderRows : records;
+  const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
   return (
     <>
@@ -4611,24 +5055,27 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   {/* Courier Audit Type Filter */}
                   {(activeMainTab === 'courier' && activeSubTab === 'courier_audit') && (
                     <div className="flex gap-1 items-center pb-1 pt-1.5 pr-3 overflow-x-auto max-w-[60vw]">
-                      {[{id: 'archive', label: '🗄️ Draft'}, {id: 'pib', label: 'PIB'}, {id: 'cn', label: 'CN'}].map(type => (
-                        <span key={type.id} className="relative inline-flex shrink-0">
-                          <button
-                            onClick={() => { setCourierAuditType(type.id); setPage(1); }}
-                            className={toolbarPillClass(courierAuditType === type.id)}
-                          >
-                            {type.label}
-                          </button>
-                          {type.id === 'archive' && !!draftOutstandingCount && (
-                            <span
-                              title="Number of rows with an empty NAS Submit Date"
-                              className="absolute -top-1.5 -right-1.5 z-10 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center shadow-sm border-2 border-white"
+                      {[{id: 'archive', label: '🗄️ Draft'}, {id: 'pib', label: 'PIB'}, {id: 'cn', label: 'CN'}].map(type => {
+                        const badgeCount = courierAuditOutstandingCounts[type.id as 'archive' | 'pib' | 'cn'];
+                        return (
+                          <span key={type.id} className="relative inline-flex shrink-0">
+                            <button
+                              onClick={() => { setCourierAuditType(type.id); setPage(1); }}
+                              className={toolbarPillClass(courierAuditType === type.id)}
                             >
-                              {draftOutstandingCount > 99 ? '99+' : draftOutstandingCount}
-                            </span>
-                          )}
-                        </span>
-                      ))}
+                              {type.label}
+                            </button>
+                            {!!badgeCount && (
+                              <span
+                                title="Number of rows with an empty NAS Submit Date"
+                                className="absolute -top-1.5 -right-1.5 z-10 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center shadow-sm border-2 border-white"
+                              >
+                                {badgeCount > 99 ? '99+' : badgeCount}
+                              </span>
+                            )}
+                          </span>
+                        );
+                      })}
                     </div>
                   )}
 
@@ -4752,7 +5199,9 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                       // kondisi tambahan di sini.
                       setExportModalState({ title, cols: visibleCols, dateFieldLabel, splitByPoDetail })
                     }}
-                    className="px-3 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold border border-emerald-700 transition-all h-[38px] flex justify-center items-center gap-1.5 shadow-sm shrink-0"
+                    disabled={reorderMode}
+                    title={reorderMode ? 'Exit Reorder Mode first' : undefined}
+                    className="px-3 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold border border-emerald-700 transition-all h-[38px] flex justify-center items-center gap-1.5 shadow-sm shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
                     Export
@@ -4795,6 +5244,38 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   >
                     ✏️ {courierRekapanEditMode ? 'Editing All Rows' : 'Edit Mode'}
                   </button>
+                )}
+
+                {/* Drag & Drop Reorder (2026-09) -- Audit Courier & Invoice Recap Courier saja.
+                    "Reorder Mode" fetch SEMUA baris cocok filter (tanpa paginasi) supaya bisa
+                    di-drag ke posisi manapun; urutan hasil drag GLOBAL (semua user), tersimpan
+                    via kolom `sort_order` (baris) / tabel `table_column_order` (kolom). Lihat
+                    docs/claude/courier-features.md. */}
+                {((activeMainTab === 'courier' && activeSubTab === 'courier_audit' && canEdit('courier_audit')) ||
+                  (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan' && canEdit('courier_rekapan'))) && (
+                  <>
+                    <button
+                      onClick={handleToggleReorderMode}
+                      disabled={reorderLoading}
+                      title="Drag rows/columns to reorder manually -- order is saved for everyone"
+                      className={`px-3 py-2 rounded-full text-xs font-semibold border transition-all h-[38px] flex justify-center items-center gap-1.5 shadow-sm shrink-0 disabled:opacity-60 ${
+                        reorderMode ? 'bg-orange-500 hover:bg-orange-600 text-white border-orange-600' : 'bg-white text-[#5A305A] border-slate-200 hover:border-[#5A305A] hover:bg-[#5A305A]/5'
+                      }`}
+                    >
+                      <GripVertical size={14} />
+                      {reorderLoading ? 'Loading...' : reorderMode ? 'Exit Reorder Mode' : 'Reorder Mode'}
+                    </button>
+                    {!reorderMode && !isDefaultSortState(sortColumn, sortDirection) && (
+                      <button
+                        onClick={() => { setSortColumn('created_at'); setSortDirection('desc'); }}
+                        title="Return to the manually reordered display (clears the active column sort)"
+                        className="px-3 py-2 rounded-full bg-white text-[#5A305A] border border-slate-200 hover:border-[#5A305A] hover:bg-[#5A305A]/5 text-xs font-semibold transition-all h-[38px] flex justify-center items-center gap-1.5 shadow-sm shrink-0"
+                      >
+                        <ArrowUpDown size={14} />
+                        Reset to Manual Order
+                      </button>
+                    )}
+                  </>
                 )}
 
                 {activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan' ? (
@@ -4871,7 +5352,13 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
           {/* ── Tabel ── */}
           <div className="relative bg-white rounded-2xl border border-slate-200 shadow-sm isolate flex-1 flex flex-col min-h-0 overflow-hidden">
-            {loading && records.length === 0 ? (
+            {reorderTooMany != null && (
+              <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-200 text-amber-800 text-xs flex items-center gap-2">
+                <AlertTriangle size={14} className="shrink-0" />
+                {reorderTooMany.toLocaleString('id-ID')} rows match the current filter -- please narrow the filter/search first before reordering (limit: 2,000 rows).
+              </div>
+            )}
+            {(loading || reorderLoading) && displayRows.length === 0 ? (
               <LoadingState />
             ) : fetchError ? (
               <div className="text-center py-24 text-red-500">
@@ -4880,7 +5367,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 <p className="text-sm mt-1 max-w-lg mx-auto bg-red-50 p-4 rounded-lg break-words">{fetchError}</p>
                 <p className="text-xs text-[#5A305A] mt-4">Tip: If you recently deleted/renamed a column in the Supabase table, make sure the code referencing that column has been updated.</p>
               </div>
-            ) : records.length === 0 ? (
+            ) : displayRows.length === 0 ? (
               <div className="text-center py-24 text-[#5A305A]">
                 <p className="text-4xl mb-3">📭</p>
                 <p className="font-semibold text-[#5A305A]">No data yet</p>
@@ -4920,46 +5407,58 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   <table ref={tableRef} className="w-full text-sm min-w-max relative border-collapse">
                   <thead className="sticky top-0 z-20">
                     <tr className="bg-slate-50 shadow-sm border-b border-slate-200">
-                      {visibleCols.map(col => (
-                        <th
-                          key={col.key}
-                          onClick={() => {
-                            const isComputed = col.key.startsWith('breakdown_') || col.key === 'cek_selisih';
-                            if (!isComputed && col.type !== 'index') {
-                              if (sortColumn === col.key) {
-                                setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
-                              } else {
-                                setSortColumn(col.key)
-                                setSortDirection('asc')
-                              }
-                            }
-                          }}
-                          className={`px-4 py-3 text-[10px] font-bold text-[#5A305A] uppercase tracking-wider whitespace-nowrap bg-slate-50 ${
-                            col.type === 'index' ? 'text-center' : (col.type === 'num' || col.type === 'pct') ? 'text-right' : 'text-left'
-                          } ${(!col.key.startsWith('breakdown_') && col.key !== 'cek_selisih' && col.type !== 'index') ? 'cursor-pointer hover:bg-slate-100 hover:text-[#5A305A] transition-colors' : ''}`}
-                        >
-                          <div className={`flex items-center gap-1 ${col.type === 'index' ? 'justify-center' : (col.type === 'num' || col.type === 'pct') ? 'justify-end' : 'justify-start'}`}>
-                            {col.label}
-                            {sortColumn === col.key && (
-                              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-500">
-                                {sortDirection === 'asc' ? (
-                                  <path d="m18 15-6-6-6 6"/>
-                                ) : (
-                                  <path d="m6 9 6 6 6-6"/>
-                                )}
-                              </svg>
-                            )}
-                          </div>
-                        </th>
-                      ))}
+                      {/* Drag & Drop Reorder (2026-09) -- DndContext/SortableContext SELALU
+                          bungkus header (bukan cuma saat reorderMode) krn tidak render DOM
+                          tambahan apa pun (murni context provider) DAN drag cuma bisa dipicu
+                          lewat handle yg cuma di-render `SortableColumnHeader` saat `reorderMode`
+                          true -- lebih simpel drpd percabangan render 2 jalur terpisah. */}
+                      <DndContext
+                        sensors={dndSensors}
+                        collisionDetection={closestCenter}
+                        modifiers={[restrictToHorizontalAxis]}
+                        onDragStart={(e: DragStartEvent) => setDraggingColKey(String(e.active.id))}
+                        onDragEnd={(e: DragEndEvent) => { setDraggingColKey(null); handleColumnDragEnd(e); }}
+                        onDragCancel={() => setDraggingColKey(null)}
+                      >
+                        <SortableContext items={visibleCols.filter(c => c.type !== 'index').map(c => c.key)} strategy={horizontalListSortingStrategy}>
+                          {visibleCols.map(col => (
+                            <SortableColumnHeader key={col.key} col={col} sortColumn={sortColumn} sortDirection={sortDirection} reorderMode={reorderMode} onHeaderClick={() => {
+                              if (sortColumn === col.key) setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                              else { setSortColumn(col.key); setSortDirection('asc'); }
+                            }} />
+                          ))}
+                        </SortableContext>
+                        {/* DragOverlay -- portal ke document.body, transform-nya SELALU jalan
+                            (beda dari `<th>` yang tidak reliable, lihat catatan draggingColKey).
+                            `dropAnimation` default dnd-kit (transisi balik ke posisi akhir) TETAP
+                            dipakai (tidak di-override) -- sudah cukup halus, `modifiers`
+                            (restrict ke 1 sumbu) yang paling berpengaruh ke "rasa" smooth-nya. */}
+                        <DragOverlay>
+                          {draggingColKey ? (
+                            <div className="flex items-center gap-1.5 bg-white shadow-lg border border-[#5A305A] rounded-md px-3 py-2 text-[10px] font-bold text-[#5A305A] uppercase tracking-wider">
+                              <GripVertical size={12} />
+                              {(visibleCols.find(c => c.key === draggingColKey)?.label) || draggingColKey}
+                            </div>
+                          ) : null}
+                        </DragOverlay>
+                      </DndContext>
                       {/* Sticky Right Column Header */}
                       <th className="px-4 py-3 text-[10px] font-bold text-[#5A305A] uppercase tracking-wider text-center sticky right-0 top-0 bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.03)] z-30 border-l border-slate-100">
                         Action
                       </th>
                     </tr>
                   </thead>
+                  <DndContext
+                    sensors={dndSensors}
+                    collisionDetection={closestCenter}
+                    modifiers={[restrictToVerticalAxis]}
+                    onDragStart={(e: DragStartEvent) => setDraggingRowId(e.active.id)}
+                    onDragEnd={(e: DragEndEvent) => { setDraggingRowId(null); handleRowDragEnd(e); }}
+                    onDragCancel={() => setDraggingRowId(null)}
+                  >
+                  <SortableContext items={displayRows.map(r => r.id)} strategy={verticalListSortingStrategy}>
                   <tbody>
-                    {records.map((rec, index) => {
+                    {displayRows.map((rec, index) => {
                       if (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit') {
                         const canEditSeaAirAudit = canEdit('sea_air_audit');
                         return (
@@ -4999,7 +5498,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                           <CourierAuditRowGroup
                             key={rec.id}
                             rec={rec}
-                            index={startIndex + index}
+                            index={reorderMode ? index : startIndex + index}
                             cols={visibleCols}
                             onChecklist={canSee('courier_checklist_dokumen') ? setChkRecord : undefined}
                             onValidasi={canSee('courier_dokumen_validation') ? setValidasiRecord : undefined}
@@ -5011,6 +5510,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                             getVal={canEditCourierAudit ? getCourierAuditVal : undefined}
                             setVal={canEditCourierAudit ? setCourierAuditVal : undefined}
                             onSaveRow={canEditCourierAudit ? handleSaveOneCourierAuditRow : undefined}
+                            reorderMode={reorderMode}
                           />
                         );
                       }
@@ -5020,13 +5520,14 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                           <CourierRekapanRowGroup
                             key={rec.id}
                             rec={rec}
-                            index={startIndex + index}
+                            index={reorderMode ? index : startIndex + index}
                             cols={visibleCols}
                             onDelete={canEditCourierRekapan ? handleDelete : undefined}
                             editMode={canEditCourierRekapan ? courierRekapanEditMode : undefined}
                             getVal={canEditCourierRekapan ? getCourierRekapanVal : undefined}
                             setVal={canEditCourierRekapan ? setCourierRekapanVal : undefined}
                             onSaveRow={canEditCourierRekapan ? handleSaveOneCourierRekapanRow : undefined}
+                            reorderMode={reorderMode}
                           />
                         );
                       }
@@ -5052,13 +5553,31 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                       );
                     })}
                   </tbody>
+                  </SortableContext>
+                  {/* DragOverlay -- portal ke document.body, transform-nya SELALU jalan (beda
+                      dari `<tr>`/`<td>` yang tidak reliable ikut CSS transform di semua browser,
+                      lihat catatan draggingRowId di atas). */}
+                  <DragOverlay>
+                    {draggingRowId != null ? (() => {
+                      const draggedIdx = displayRows.findIndex(r => String(r.id) === String(draggingRowId));
+                      return (
+                        <div className="flex items-center gap-2 bg-white shadow-lg border border-[#5A305A] rounded-lg px-3 py-2 text-xs font-semibold text-[#5A305A]">
+                          <GripVertical size={14} />
+                          <span className="w-6 h-6 rounded-full bg-orange-500 text-white text-[11px] font-bold flex items-center justify-center shrink-0">{draggedIdx + 1}</span>
+                          Moving row...
+                        </div>
+                      );
+                    })() : null}
+                  </DragOverlay>
+                  </DndContext>
                 </table>
               </div>
               </div>
             )}
 
-            {/* Footer Pagination */}
-            {records.length > 0 && (
+            {/* Footer Pagination -- disembunyikan SELAMA Reorder Mode (paginasi ditiadakan
+                sementara, `displayRows` = SEMUA baris cocok filter, bukan 1 halaman). */}
+            {!reorderMode && records.length > 0 && (
               <div className="flex max-sm:flex-col justify-between items-center px-5 py-3 border-t border-slate-200 bg-slate-50 gap-3 shrink-0 relative z-20">
                 <div className="text-xs text-[#5A305A]">
                   Showing <span className="font-semibold text-[#5A305A]">{startIndex + 1}-{Math.min(startIndex + pageSize, totalRecords)}</span> of <span className="font-semibold text-[#5A305A]">{totalRecords}</span> records

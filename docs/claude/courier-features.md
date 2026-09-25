@@ -1,3 +1,157 @@
+## Drag & Drop Reorder — Audit Courier (Draft/PIB/CN) & Invoice Recap Courier (2026-09)
+
+Fitur susun ulang urutan BARIS & KOLOM secara manual via drag-and-drop, `SharedDataTable.tsx`
+(SATU-SATUNYA file kode yang disentuh). Scope **GLOBAL** (1 urutan sama utk SEMUA user, bukan
+per-user — dikonfirmasi eksplisit user, BEDA dari "Customize View"/visibility kolom yang tetap
+per-user via localStorage) — dikonfirmasi via 2 pertanyaan ke user sebelum development (scope
+penyimpanan Global vs Per-user; drag baris bebas ke posisi manapun lintas SELURUH tabel meski
+tab PIB/CN & Invoice Recap pakai server-side pagination `.range()`, bukan dibatasi 1 halaman).
+Library: `@dnd-kit/core` + `@dnd-kit/sortable` + `@dnd-kit/utilities` + `@dnd-kit/modifiers` (baru
+ditambahkan, React 19 compatible).
+
+**Urutan BARIS — 1 kolom `sort_order` (BUKAN 2 kolom + `COALESCE`)** di `tabel_audit_pib`,
+`tabel_audit_cn`, `rekapan_courier` (`sql/022_courier_row_sort_order.sql`, **BELUM DIJALANKAN ke
+Supabase production — WAJIB dijalankan manual dulu**) — SELALU terisi (PostgREST `.order()`
+tidak bisa ekspresi/`COALESCE`, makanya didesain 1 kolom yang selalu ada nilainya, bukan
+komputasi di query):
+- **Default (baris baru dari n8n, tidak tahu kolom ini sama sekali)**: trigger generik
+  `fn_set_default_sort_order()` (`BEFORE INSERT`, dipasang di ke-3 tabel) —
+  `sort_order := -extract(epoch from created_at)` kalau `NULL`. Nilai NEGATIF epoch → `ORDER BY
+  sort_order ASC` otomatis taruh baris TERBARU di paling atas (rule default "CREATED AT, terbaru
+  di atas" TIDAK berubah) — baris upload SETELAH user reorder otomatis nempel ATAS TANPA app
+  campur tangan (nilainya pasti lebih negatif dari baris manapun yang sudah ada).
+- **Drag manual**: `sort_order` baru = titik tengah 2 tetangga di posisi baru
+  (`computeDroppedSortOrder()`, `SORT_ORDER_GAP=1000` kalau didrop di ujung) — commit
+  `.update({sort_order}).eq('id',id)` LANGSUNG (bukan RPC, cukup RLS UPDATE `has_edit_access`
+  yang SUDAH ADA di ke-3 tabel). **Keterbatasan diterima**: drag berulang PERSIS di titik yang
+  sama bisa habiskan presisi float lama-lama, belum di-renormalize otomatis — tangani kalau ada
+  laporan nyata (pola project ini).
+
+**Kapan `sort_order` dipakai vs sort-by-kolom (existing)** — `isDefaultSortState(sortColumn,
+sortDirection)` = `sortColumn==='created_at' && sortDirection==='desc'` (state SEBELUM user klik
+header kolom manapun, default `useState`). Selama tuple ini TIDAK berubah → urutan pakai
+`sort_order` ASC (server `.order('sort_order',...)` utk PIB/CN/Invoice Recap; JS
+`combined.sort()` utk Draft yang client-side combine PIB+CN — AMAN digabung krn skala epoch
+sama persis). Klik header kolom lain → PERILAKU EXISTING TIDAK BERUBAH (urutan manual TETAP
+tersimpan DB, cuma "tertutup sementara"). Tombol toolbar **"Reset to Manual Order"** (muncul
+kalau state bukan tuple default) = jalan pintas `setSortColumn('created_at');
+setSortDirection('desc')`. `getExportData()` ikut logic yang SAMA (`usesRowSortOrderExport`) —
+export SEKARANG konsisten dgn urutan layar, Draft branch-nya BARU ditambah sort sama sekali
+(sebelumnya tidak sort apa pun).
+
+**Mode Reorder (`reorderMode` toggle toolbar, gated `canEdit('courier_audit')`/
+`('courier_rekapan')`)** — drag lintas SELURUH tabel butuh SEMUA baris ter-fetch tanpa
+`.range()`, TIDAK match dgn paginasi hemat default. `handleToggleReorderMode()` →
+`fetchAllForReorder()` (REPLIKA filter `fetchRecords()`, pola duplikasi yang sudah ada antara
+`fetchRecords()`/`getExportData()` di file ini) fetch semua baris cocok filter aktif, order
+`sort_order` ASC, ke `reorderRows` state. **Guard >2000 baris** (`reorderTooMany`) — minta user
+persempit filter dulu drpd fetch semua & bikin browser berat (banner amber di atas tabel).
+`displayRows = reorderMode && reorderRows ? reorderRows : records` — SATU-SATUNYA sumber baris
+yang dirender tbody, otomatis fallback ke `records`/paginasi normal saat mode tidak aktif.
+Footer pagination & tombol Export **disembunyikan/disabled** selama mode aktif. **Keluar
+otomatis** begitu tab/filter berubah (`useEffect` deps `activeMainTab`/`activeSubTab`/
+`courierAuditType`/filter — `reorderRows` snapshot jadi basi kalau scope berubah, cegah drag
+"nyasar" ke query yang salah).
+
+Kolom "No." (`type==='index'`) render **grip handle (⋮⋮) + badge bulat oranye** (nomor urut LIVE
+posisi array) SAAT `reorderMode` — di luar mode, tampilan TETAP seperti sebelumnya (teks biasa).
+`CourierAuditRowGroup`/`CourierRekapanRowGroup` panggil `useSortable({id:rec.id,
+disabled:!reorderMode})` TANPA SYARAT (Rules of Hooks — hook selalu dipanggil, listener/transform
+yang kondisional), ref/style HANYA dipasang ke `<tr>` PERTAMA (baris split PO lanjutan TIDAK ikut
+ter-transform saat drag, keterbatasan diterima, kasus jarang). `handleRowDragEnd()` — `arrayMove`
++ hitung `sort_order` baru + `.update()` (tabel target: `rekapan_courier` utk Invoice Recap;
+`tabel_audit_pib`/`cn` utk Audit Courier, ditentukan dari `jenis_dokumen` (Draft) atau
+`courierAuditType` (PIB/CN tab), pola sama `handleUndraft`).
+
+**Bug fix — drag tidak bisa dipicu sama sekali (2026-09, laporan user setelah versi awal)**:
+root cause CSS `transform` TIDAK reliable diterapkan ke elemen `<tr>`/`<th>` (keterbatasan
+dikenal luas dnd-kit + tabel HTML, beda browser beda hasil) — versi awal cuma andalkan
+`transform`+`ref` LANGSUNG di `<tr>`/`<th>`, tanpa preview terpisah. **Fix**: `<DragOverlay>`
+(dnd-kit, portal ke `document.body` — div biasa, BUKAN elemen tabel, `transform`-nya SELALU
+jalan) ditambahkan di KEDUA `DndContext` (baris & kolom) sbg preview yang mengikuti kursor;
+`ref={sortable.setActivatorNodeRef}` ditambahkan ke tombol grip (pola resmi dnd-kit saat drag
+handle beda elemen dari node yang di-sort). Baris/kolom SUMBER (bukan overlay) cuma diredupkan
+(`opacity`) saat `isDragging`, TIDAK lagi andalkan `transform` utk elemen tabel aslinya.
+
+**Susulan — animasi drag dihaluskan (2026-09, permintaan user "bisa dibuat lebih smooth")**:
+(1) `@dnd-kit/modifiers` (`restrictToVerticalAxis` utk `DndContext` baris,
+`restrictToHorizontalAxis` utk kolom) — overlay preview dipaksa bergerak PERSIS 1 sumbu (vertikal
+utk baris, horizontal utk header kolom) drpd bebas diagonal, kesan gerakannya jadi jauh lebih
+"terkontrol"/smooth. (2) `transition` (baris/kolom SUMBER, `sortableStyle`/`SortableColumnHeader`
+`style`) diberi fallback eksplisit `'transform 220ms cubic-bezier(0.25, 1, 0.5, 1)'` kalau
+`sortable.transition` kosong (dnd-kit default), easing lebih halus & KONSISTEN di baris & kolom.
+`opacity` baris/kolom yg di-drag diredupkan sedikit lebih (0.5→0.4) biar kontras dgn overlay
+lebih jelas.
+
+**Urutan KOLOM — tabel global BARU `table_column_order`** (`sql/023_table_column_order.sql`,
+**BELUM DIJALANKAN ke Supabase production**) — `menu` (`'courier_audit'`|`'courier_rekapan'`,
+SAMA partisi dgn `activeCourierCustomizeMenu` Customize View yang sudah ada — `courier_audit`
+mewakili Draft+PIB+CN sekaligus, `courier_rekapan` semua sub-tab PPJK) + `column_order` (jsonb
+array key). RLS: SELECT via `has_page_access`, INSERT/UPDATE/DELETE via `has_edit_access` (per
+menu). `reorderCols(baseCols, storedKeys)` (module-level, pure) — kolom `type==='index'` SELALU
+posisi PERTAMA (struktural, tidak ikut drag); key tersimpan yang sudah tidak ada di kode di-skip,
+kolom BARU yang belum pernah ada di `storedKeys` di-APPEND akhir (graceful). Dipakai SEBELUM
+filter hidden-set Customize View (`orderedActiveCols` → `visibleCols`, 2 concern independen,
+tidak saling ganggu). `SortableColumnHeader` (komponen terpisah, WAJIB krn `useSortable()` tidak
+boleh dipanggil di dalam callback `.map()` biasa — Rules of Hooks) — draggable (whole `<th>`,
+BUKAN handle kecil spt baris) HANYA kolom data (bukan `index`) SAAT `reorderMode`; klik-utk-sort
+(existing) HANYA aktif saat BUKAN `reorderMode` (2 gesture sengaja saling eksklusif).
+`handleColumnDragEnd()` → `.upsert({menu, column_order, updated_by}, {onConflict:'menu'})`.
+**Export kolom OTOMATIS ikut** — `ExportModal` sudah terima `cols: visibleCols` (lihat bagian
+"Export Excel — ikut Customize View" di bawah), tidak perlu sentuh `ExportModal.tsx` sama sekali.
+
+## Audit Courier — revisi rule Undraft, tombol Edit PIB/CN, highlight/badge NAS Submit Date, counter outstanding PIB/CN (2026-09)
+
+Konteks user: PIC Invoice Recap & PIC Audit orang BERBEDA, isi manual "Doc Acceptance" nyulitkan
+tracking siapa yang proses. 4 revisi, SEMUA di `CourierAuditRowGroup`/`fetchOutstandingCount`
+(`SharedDataTable.tsx`), tab Draft/PIB/CN (`courierAuditType`). Alur upload dokumen (otomatis
+kebagi ke Draft & Invoice Recap) & menu Action tab Draft (Edit/Checklist/Doc Validation/Cost
+Validation/Undraft/Delete) **TIDAK BERUBAH SAMA SEKALI** — cakupan revisi ini murni 4 poin di
+bawah.
+
+1. **`handleUndraft` — Doc Acceptance auto-isi tanggal sistem**. Setelah RPC
+   `fn_undraft_pib`/`fn_undraft_cn` (SUDAH ADA, dibuat user sendiri — TIDAK diubah signature-nya)
+   sukses mindah status ARCHIVED→LENGKAP (baris otomatis "pindah" ke tab PIB/CN krn query tab itu
+   sudah `.neq('status','ARCHIVED')`), langsung susul 1 `.update({doc_acceptance: todayIso})`
+   langsung ke `tabel_audit_pib`/`tabel_audit_cn` (pola sama `handleInlineSaveRow`, BUKAN
+   parameter RPC — RPC tsb dibuat user sendiri, jangan diubah tanpa konfirmasi ulang, lihat bagian
+   "Peta RPC function Supabase" CLAUDE.md utama). `todayIso = new Date().toISOString().slice(0,10)`
+   — TANPA input manual apa pun.
+2. **Tabel PIB & CN — tombol Edit ditambahkan, bisa edit semua kolom termasuk NAS Submit Date**.
+   Root cause lama: `editingThisRow` (mengontrol SEMUA rendering kolom jadi input) DAN visibility
+   tombol Edit/Save di panel Action sama-sama digerbangi `rec.status !== 'LENGKAP'` — begitu baris
+   di-Undraft (status jadi LENGKAP), SATU-SATUNYA tombol yang muncul di tab PIB/CN cuma
+   "📦 Unarchived" (`onArchive`). **Fix**: syarat `rec.status !== 'LENGKAP'` DIHAPUS dari
+   `editingThisRow` dan dari kondisi tombol Edit/Save — tab Draft TIDAK terdampak (baris di situ
+   status-nya SELALU `ARCHIVED`, restriksi itu memang tidak pernah kena di sana). Tombol
+   Checklist/Doc Validation/Cost Validation/Delete TETAP tersembunyi utk status LENGKAP (TIDAK
+   diminta ikut dibuka — kalau diminta lagi, itu perubahan terpisah). `tgl_submit_nas` (NAS Submit
+   Date) SUDAH ada di `PIB_COLS`/`CN_COLS` & TIDAK dikecualikan `isInlineEditable()`, jadi otomatis
+   ikut ter-edit (`<input type="date">`) begitu tombol Edit baris ini dipakai — tidak perlu kode
+   tambahan lagi.
+3. **Auto-highlight baris + badge "🗄️ Archived"** — `nasSubmitted = !!getVal(rec,
+   'tgl_submit_nas')` (pakai `getVal()`, BUKAN `rec.tgl_submit_nas` mentah, supaya ikut
+   pending-edit yang BELUM disimpan juga — highlight langsung berubah saat user mengetik
+   tanggalnya). Baris dgn `nasSubmitted` true → `bg-emerald-50/70` + `border-l-[3px]
+   border-l-emerald-400` (SENGAJA warna hijau/emerald, BUKAN kuning `#FFF5C5` yg sudah dipakai
+   fitur BEDA "Highlight baris Submit Date — Rekapan Courier" di bawah — field beda
+   (`tgl_submit_nas` tabel PIB/CN vs `submit_date` `rekapan_courier`), warna disengajakan beda
+   supaya 2 fitur highlight ini tidak tertukar makna di mata user) — kalah prioritas dari highlight
+   edit aktif (`bg-blue-50/50` tetap menang kalau `editingThisRow`). Badge chip "🗄️ Archived"
+   (hijau, `w-[80px]`) muncul di atas tombol "Action" pada kolom sticky kanan, kondisi sama
+   `nasSubmitted`. Diterapkan di `CourierAuditRowGroup` (dipakai bersama ketiga tab Draft/PIB/CN —
+   satu implementasi, otomatis berlaku ke semua tabel Audit Courier yang punya konsep archive).
+4. **Badge counter outstanding — diseragamkan ke tab PIB & CN** (SEBELUMNYA cuma tab Draft yang
+   py badge). State `draftOutstandingCount` (single number) DIGANTI
+   `courierAuditOutstandingCounts: {archive, pib, cn}` — `fetchOutstandingCount()` sekarang
+   query 4 kombinasi paralel (Promise.all): PIB+CN `status='ARCHIVED'` (Draft, TIDAK BERUBAH dari
+   formula lama) DAN PIB+CN `status<>'ARCHIVED'` (PIB/CN tab, BARU) — SEMUANYA
+   `.is('tgl_submit_nas', null)` (outstanding = NAS Submit Date masih kosong, BUKAN total baris —
+   rule ini WAJIB SAMA di ketiga tab, permintaan eksplisit user). Render toolbar pill Courier
+   Audit Type di-refactor dari kondisi hardcode `type.id === 'archive'` jadi lookup
+   `courierAuditOutstandingCounts[type.id]` generik — badge otomatis muncul di ketiga tab tanpa
+   percabangan tambahan.
+
 ## Export Excel — ikut Customize View & PPJK tanpa prefix "OWN" (2026-09)
 
 **Kolom export ikut Customize View aktif** — tombol Export (panel filter, semua tab) SEBELUMNYA
