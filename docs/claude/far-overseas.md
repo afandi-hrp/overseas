@@ -252,6 +252,20 @@ sudah di-share "anyone with link can view".
   "far-overseas-print-area"` & class `print:*` yang sebelumnya SENGAJA dibiarkan nganggur.
   **Card view (`FarOverseasAirPage.tsx`, tombol "Print memo" + mekanisme `autoPrintRef`/
   `MutationObserver`) TETAP TIDAK ADA** — cakupan permintaan ini murni modal Approval Memo saja.
+- **Susulan lagi (2026-09) — border memo cetak jadi ungu brand + ukuran kertas cetak A5 (2026-09)**:
+  (1) SEMUA border kotak memo (`border-[#FFF5C5]` di 6 titik — bingkai luar, garis header
+  logo/judul, garis bawah field Ship Via dst, garis atas blok tanda tangan, garis bawah nama di
+  kolom tanda tangan `SignatureColumn`) diganti `border-[#5A305A]` (ungu brand app ini) — WARNA
+  ISI/latar kotak TIDAK disentuh (memang tidak ada `bg-[#FFF5C5]` di file ini, hanya border).
+  (2) **Ukuran kertas print/print-preview dipaksa A5** (148×210mm, PERSIS setengah A4 — A4
+  dilipat 2 di sisi pendeknya) via `<style>@media print{@page{size:A5;margin:8mm;}}</style>`
+  yang DITARUH DI DALAM tree portal modal ini (bukan `index.css` global) — SENGAJA, supaya cuma
+  aktif selama modal ini terbuka & TIDAK ikut mengubah ukuran kertas print modal/halaman lain
+  manapun (mis. `PreviewModal` Audit AP Local yang print lewat `iframe.contentWindow` terpisah,
+  sama sekali tidak tersentuh). Cakupan "preview" di sini = print-preview browser (dialog
+  Ctrl+P/`window.print()`), **BUKAN** ukuran tampilan modal saat dibuka biasa di layar (sebelum
+  klik Print) — itu TETAP `max-w-4xl h-[92vh]` seperti sebelumnya, tidak ikut dipaksa proporsi
+  A5.
 
 ## Document Validation — kolom INVOICE + STATUS baris NO PO (2026-09)
 
@@ -278,23 +292,38 @@ sama pola field lain hasil ekstraksi n8n yang belum diberi jalur edit manual) �
 diminta bisa dikoreksi manual, itu perubahan terpisah (butuh masuk `updateDocField`/RPC
 `update_cost_validasi_far_overseas_manual` param `p_document_validation`, pola sama `po_no`).
 
-## Cost Validation — "Notes (Manual)" WAJIB sebelum approval Exim (2026-09)
+## Cost Validation — "Notes (Manual)" WAJIB sebelum approval Exim, HANYA kalau Unit Price mismatch (2026-09)
 
-`FarOverseasAirCostValidationModal.tsx` — section BARU "Notes (Manual)" di bawah tabel Cost
-Validation, kolom baru `cost_validasi_far_overseas_air.notes_manual` (text). **TERPISAH dari
+`FarOverseasAirCostValidationModal.tsx` — section "Notes (Manual)" di bawah tabel Cost
+Validation, kolom `cost_validasi_far_overseas_air.notes_manual` (text). **TERPISAH dari
 `catatan`** (kotak biru info di atas modal — itu read-only, murni tampilan, bukan dari input
 form ini). Editable HANYA saat `isEditMode` aktif (pola sama field Cost Validation lain),
 tersimpan via bar "Simpan Perubahan" yang sudah ada (`handleSaveChanges` → RPC
-`update_cost_validasi_far_overseas_manual`, parameter baru `p_notes_manual`). Badge kuning
-"Empty" + border amber tampil kalau field ini masih kosong/whitespace saja.
+`update_cost_validasi_far_overseas_manual`, parameter `p_notes_manual`).
 
-**Gating approval** (`FarOverseasAirDetailModal.tsx`) — selama `notes_manual` kosong, tombol
-Approve tahap **Prepared By (Exim/TIER1) SAJA** disembunyikan (diganti pesan amber "Cost
-Validation 'Notes (Manual)' is still empty..."), TIDAK berpengaruh ke tahap PIC/TIER2/TIER3.
-Modal ini fetch `cost_validasi_far_overseas_air.notes_manual` terpisah (`.eq('far_overseas_id',
-rec.id)`) di `useEffect` sendiri, state `costNotesManual`/`costNotesLoaded` (loaded-flag cegah
-blokir "false positive" sesaat sebelum fetch selesai) — `tier1BlockedByNotes = nextStep ===
-'TIER1' && costNotesLoaded && !(costNotesManual?.trim())`.
+**Wajib diisi HANYA kalau baris "Unit Price (from Description)" TIDAK match** (2026-09, GANTI
+dari versi awal "selalu wajib diisi terlepas apa pun" — permintaan user: kalau baris itu MATCH,
+approval boleh LANGSUNG tanpa notes sama sekali). Status baris itu dihitung LIVE dari
+`expected`/`actual` (`unitPriceRowLive`/`unitPriceCostStatus`, via `computeCostStatus()` —
+SATU-SATUNYA fungsi hitung status cost di app ini, toleransi 3%, SAMA dipakai `handleSelectRate`
+di modal ini) — ikut nilai yang SEDANG diedit (belum tentu tersimpan), bukan cuma `overallStatus`
+tersimpan. Header section, badge "Empty", placeholder teks kosong, dan border amber SEMUA
+kondisional ikut `notesRequired = unitPriceCostStatus !== 'MATCH'` — kalau MATCH, header tampil
+tanpa tanda `*`/badge, teks placeholder "Not filled in — optional...".
+
+**Gating approval** (`FarOverseasAirDetailModal.tsx`) — SAMA syarat: tombol Approve tahap
+**Prepared By (Exim/TIER1) SAJA** disembunyikan HANYA kalau baris Unit Price TIDAK match DAN
+`notes_manual` kosong (pesan amber "Unit Price (from Description) in Cost Validation is not a
+match — fill in the 'Notes (Manual)' field first..."), TIDAK berpengaruh ke tahap PIC/TIER2/
+TIER3. Modal ini fetch `cost_validasi_far_overseas_air.notes_manual, cost_validation` terpisah
+(`.eq('far_overseas_id', rec.id)`) di `useEffect` sendiri, cari baris `UNIT_PRICE_DARI_DESCRIPTION`
+dari array `cost_validation`, hitung `unitPriceCostStatus` via `computeCostStatus()` yang SAMA —
+state `costNotesManual`/`unitPriceCostStatus`/`costNotesLoaded` (loaded-flag cegah blokir "false
+positive" sesaat sebelum fetch selesai) — `tier1BlockedByNotes = nextStep === 'TIER1' &&
+costNotesLoaded && unitPriceCostStatus !== 'MATCH' && !(costNotesManual?.trim())`. **PENTING**:
+status di sini SNAPSHOT dari data TERSIMPAN terakhir (beda dari live-edit di
+`FarOverseasAirCostValidationModal.tsx`) — kalau user sedang edit Cost Validation tapi belum
+Simpan Perubahan, gating approval TETAP pakai status yang tersimpan, bukan yang lagi diketik.
 
 **BELUM DIJALANKAN ke Supabase production — WAJIB dijalankan manual dulu**
 (`sql/014_cost_validasi_notes_manual.sql`): `alter table cost_validasi_far_overseas_air add
@@ -467,6 +496,33 @@ Tombol **"✕ Clear Completed/Failed"** di header modal Processing Queue (`FarOv
 & `BunkerPage.tsx`, implementasi independen masing2, TIDAK shared) — muncul kalau ada ≥1 item
 SUCCESS/FAILED, hapus semua sekaligus. Tombol "×" per-kartu (`dismissQueueItem`) tetap ada.
 PENDING/PROCESSING tidak ikut kehapus.
+
+## FAR Overseas Air — `EditableCell` mode multiline utk field teks panjang (2026-09)
+
+`FarOverseasAirEditableField.tsx` `EditableCell` — prop BARU `multiline?: boolean`. Sebelumnya
+mode edit SELALU render `<input>` 1 baris apa pun panjang teksnya — field teks panjang (NOTE 2
+"From Document"/"Manual Note", NOTE 4/`other_note`) jadi susah dibaca/diedit saat isinya
+beberapa kalimat (scroll horizontal sempit di kotak kecil, laporan user "row nya kecil" baik di
+modal Edit List/Card MAUPUN alur "Add Manual Entry" — keduanya SAMA-SAMA lewat komponen ini,
+lihat "Add Manual Entry"/toggle List-Card di atas). Fix: `multiline` render `<textarea rows={4}
+resize-y>` saat edit (Enter bikin baris baru, HANYA Escape yang batalkan edit — beda dari mode
+`<input>` biasa yang Enter = commit). Mode TAMPIL (bukan edit) TIDAK berubah sama sekali.
+
+- Diset `true` di 7 titik total (susulan diperluas ke SEMUA field teks bebas yang berpotensi
+  panjang, bukan cuma NOTE 2/4): `EditableCell` custom render **NO PO** (`po_ori`, bisa gabungan
+  "PO1 + PO2 + ..."), **VESSEL** (`vessel_internal_note`, bisa gabungan beberapa nama kapal),
+  NOTE 2 (`item_description`/`item_description_manual`) — keempatnya di JSX `render` langsung.
+  `ListColumn.multiline` (field BARU) di-set utk **VENDOR** (`vendor`, nama supplier bisa
+  panjang, cth "JINJIANG CAIXU MACHINERY EQUIPMENT CO., LTD / YIWU"), **BUYER** (`buyer_name`),
+  NOTE 4 (`other_note`) — dipakai path generik non-`render`.
+- `ListColumn.multiline` diteruskan di KEDUA titik generik yang merender field via `col.field`
+  (bukan `col.render`): tabel List inline edit DAN `FarOverseasAirCardEditModal` (List modal Edit
+  Card + "Add Manual Entry", keduanya REUSE `LIST_COLUMNS` yang sama — lihat catatan arsitektur
+  di bagian "toggle tampilan List/Card"/"Add Manual Entry" di atas, jadi 1 perubahan di
+  `ListColumn` otomatis berlaku ke semua jalur input).
+- Kolom lain yang pakai `col.render` custom (NOTE 1/NOTE 3/MEMO TITLE/NAMA PT/PIC/VESSEL) TIDAK
+  ikut — field-field itu memang dropdown/composed, bukan teks bebas panjang, di luar cakupan
+  laporan ini.
 
 ## FAR Overseas Air — NOTE 2 "From Document" + "Manual Note" + tampil di memo cetak
 
@@ -648,7 +704,8 @@ jsonb, `status`, `catatan`, `cost_validation` jsonb array).
   `reject_far_overseas_air`, JANGAN `.update()` langsung.
 - **Document Validation** (`FarOverseasAirCostValidationModal.tsx`) — baris NAMA PT yg cocok
   `dominantPtName` dikasih centang hijau. PT Name & PO Number 1 baris horizontal (PO No. dulu
-  baru PT Name, `whitespace-nowrap`). Modal `max-w-5xl`.
+  baru PT Name, `whitespace-nowrap`). Modal `max-w-7xl` (2026-09, dilebarkan dari `max-w-5xl`
+  atas permintaan user).
 - **RPC-only mutation** — JANGAN `.update()`/`.insert()` mentah ke 2 tabel ini. Selalu
   `update_rekapan_far_overseas_manual(p_id, p_updates)` &
   `update_cost_validasi_far_overseas_manual(...)`.

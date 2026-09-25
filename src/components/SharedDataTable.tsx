@@ -14,6 +14,7 @@ import SeaAirValidasiModal from '../components/SeaAirValidasiModal'
 import ValidasiShipmentInvoiceLengkap from '../components/ValidasiShipmentInvoiceLengkap'
 import { computeLiveCostSummary } from '../utils/CostValidationHelpers'
 import { relaxSeaAirDocChecks } from '../utils/SeaAirValidasiHelpers'
+import { computeSeaAirCostGlobalStats } from '../utils/SeaAirCostValidasiHelpers'
 import { SECTIONS, computeStatus } from '../utils/ValidasiHelper'
 import { generateValues } from '../utils/ValidasiFill'
 import { calculatePibStats } from '../utils/ValidasiPibHelper'
@@ -169,6 +170,14 @@ const STATUS_LABELS: Record<string, string> = {
   ARCHIVED: 'Archived',
 }
 const getStatusLabel = (status: string) => STATUS_LABELS[status] || status
+
+// Audit Sea & Air -- Delivery Term mengandung "CIF" (case-insensitive substring, bukan exact
+// match -- nilainya bisa "CIF" polos atau gabungan spt "CIF JAKARTA") -> Balance & Asuransi
+// dipaksa 0 (2026-09, permintaan user: shipment CIF asuransinya sudah ditanggung
+// seller/freight, jadi kolom Balance/Asuransi TIDAK relevan lagi utk term ini). SATU-SATUNYA
+// tempat definisi ini -- dipakai di 4 titik hitung Balance/Asuransi (EditModal, fetchRecords,
+// getExportData, handleInlineSaveRow), JANGAN duplikat logic-nya di tempat lain.
+const isCifDeliveryTerm = (deliveryTerm: any) => String(deliveryTerm || '').toUpperCase().includes('CIF')
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
@@ -412,8 +421,9 @@ function EditModal({ record, tab, cols, onClose, onSaved, isCreate, createDefaul
       const totalInvFreight = getNum('total_inv_freight');
       const itemPriceIdr = getNum('item_price_idr');
 
-      const expectedBalance = Number((valasDpp * kursNdpbm - (totalInvFreight + itemPriceIdr)).toFixed(2));
-      const expectedAsuransi = Number(((totalInvFreight + itemPriceIdr) * 0.005).toFixed(2));
+      const isCif = isCifDeliveryTerm(form.delivery_term);
+      const expectedBalance = isCif ? 0 : Number((valasDpp * kursNdpbm - (totalInvFreight + itemPriceIdr)).toFixed(2));
+      const expectedAsuransi = isCif ? 0 : Number(((totalInvFreight + itemPriceIdr) * 0.005).toFixed(2));
 
       setForm(prev => {
         let updates: any = {};
@@ -434,7 +444,7 @@ function EditModal({ record, tab, cols, onClose, onSaved, isCreate, createDefaul
         return prev;
       });
     }
-  }, [tab.id, form.valas_dpp, form.kurs_ndpbm, form.total_inv_freight, form.item_price_idr]);
+  }, [tab.id, form.valas_dpp, form.kurs_ndpbm, form.total_inv_freight, form.item_price_idr, form.delivery_term]);
 
   const handleSave = async () => {
     setSaving(true)
@@ -754,7 +764,11 @@ const SEA_AIR_AUDIT_COLS = [
   { key: 'tgl_ppjk', label: 'PPJK Date', type: 'date' },
   { key: 'tgl_sptnp', label: 'SPTNP Date', type: 'date_dash_if_null' },
   { key: 'status', label: 'Status', type: 'status' },
-  { key: 'balance', label: 'Balance', type: 'num_dash_null' },
+  // 'num' (BUKAN 'num_dash_null' lagi, 2026-09) -- disamakan dgn Insurance: value 0 (mis. hasil
+  // pengecualian Delivery Term CIF, lihat isCifDeliveryTerm) TETAP tampil "0", bukan "-".
+  // 'num_dash_null' dulu SATU-SATUNYA dipakai kolom ini, jadi ganti di sini TIDAK mempengaruhi
+  // kolom lain (mis. sptnp_total pakai 'num_dash_if_null', beda string, sengaja tetap "-" saat 0).
+  { key: 'balance', label: 'Balance', type: 'num' },
   { key: 'asuransi', label: 'Insurance', type: 'num' },
   { key: 'notes', label: 'Notes' },
 ]
@@ -3606,6 +3620,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           let allMatriksData: any[] = [];
           let allCostValidasiData: any[] = [];
           let allChecklistData: any[] = [];
+          let allCatatanKonfirmasiData: any[] = [];
           for (let i = 0; i < seaairIds.length; i += chunkSize) {
             const chunkIds = seaairIds.slice(i, i + chunkSize);
             const { data: statusChunk } = await supabase.from('tabel_audit_seaair').select('id, status').in('id', chunkIds);
@@ -3616,6 +3631,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
             if (costChunk) allCostValidasiData = [...allCostValidasiData, ...costChunk];
             const { data: checklistChunk } = await supabase.from('dokumen_checklist_seaair').select('seaair_id, pct_kelengkapan').in('seaair_id', chunkIds);
             if (checklistChunk) allChecklistData = [...allChecklistData, ...checklistChunk];
+            // Catatan Konfirmasi Manual per-Segmen (2026-09) -- lihat catatan di bawah dekat
+            // seaAirCostValidationPctMap, dipakai supaya badge % ikut memperhitungkan segmen
+            // yang sudah dikonfirmasi manual, SAMA persis dgn ValidasiShipmentInvoiceLengkap.tsx.
+            const { data: catatanChunk } = await supabase.from('cost_validasi_catatan_seaair').select('seaair_id, section, status_konfirmasi').in('seaair_id', chunkIds);
+            if (catatanChunk) allCatatanKonfirmasiData = [...allCatatanKonfirmasiData, ...catatanChunk];
           }
           seaAirAuditStatusMap = Object.fromEntries(allStatusData.map(r => [r.id, r.status]));
 
@@ -3645,13 +3665,21 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
             return [m.seaair_id, total > 0 ? Math.round((match / total) * 100) : 0];
           }));
 
-          // Persentase akurasi Cost Validation -- replika PERSIS formula globalStats di
-          // ValidasiShipmentInvoiceLengkap.tsx: baris tabel INVOICE SURVEYOR (OPSIONAL)
-          // dikecualikan dari total (lihat catatan CLAUDE.md soal ini).
+          // Persentase akurasi Cost Validation -- `computeSeaAirCostGlobalStats()`
+          // (SeaAirCostValidasiHelpers.ts) SATU-SATUNYA sumber formula ini, SAMA PERSIS dipakai
+          // globalStats di ValidasiShipmentInvoiceLengkap.tsx -- termasuk pengecualian segmen
+          // SURVEYOR dari total & segmen yang SUDAH dikonfirmasi manual (2026-09, lihat
+          // `allCatatanKonfirmasiData`) ikut status_konfirmasi (MATCH/MISMATCH) yang DIPILIH
+          // staf, bukan otomatis MATCH semua. Badge % di sini WAJIB tetap sinkron dgn modal,
+          // JANGAN duplikat logic hitungnya lagi di tempat ketiga manapun.
+          const confirmationBySeaairId = new Map<string, Map<string, 'MATCH' | 'MISMATCH'>>();
+          allCatatanKonfirmasiData.forEach((c: any) => {
+            if (!confirmationBySeaairId.has(c.seaair_id)) confirmationBySeaairId.set(c.seaair_id, new Map());
+            confirmationBySeaairId.get(c.seaair_id)!.set(c.section, c.status_konfirmasi);
+          });
           seaAirCostValidationPctMap = Object.fromEntries(allCostValidasiData.map(cv => {
-            const checks = (Array.isArray(cv.checks) ? cv.checks : []).filter((c: any) => c.section !== 'SURVEYOR');
-            const match = checks.filter((c: any) => c.status === 'MATCH').length;
-            return [cv.seaair_id, checks.length > 0 ? Math.round((match / checks.length) * 100) : 0];
+            const confirmation = confirmationBySeaairId.get(cv.seaair_id) || new Map();
+            return [cv.seaair_id, computeSeaAirCostGlobalStats(cv.checks, confirmation).pct];
           }));
         }
       }
@@ -3687,8 +3715,9 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           const kursNdpbm = Number(r.kurs_ndpbm) || 0;
           const totalInvFreight = Number(r.total_inv_freight) || 0;
           const itemPriceIdr = Number(r.item_price_idr) || 0;
-          r.balance = Number((valasDpp * kursNdpbm - (totalInvFreight + itemPriceIdr)).toFixed(2));
-          r.asuransi = Number(((totalInvFreight + itemPriceIdr) * 0.005).toFixed(2));
+          const isCif = isCifDeliveryTerm(r.delivery_term);
+          r.balance = isCif ? 0 : Number((valasDpp * kursNdpbm - (totalInvFreight + itemPriceIdr)).toFixed(2));
+          r.asuransi = isCif ? 0 : Number(((totalInvFreight + itemPriceIdr) * 0.005).toFixed(2));
         }
         return r;
       });
@@ -3966,8 +3995,9 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         const kursNdpbm = Number(r.kurs_ndpbm) || 0;
         const totalInvFreight = Number(r.total_inv_freight) || 0;
         const itemPriceIdr = Number(r.item_price_idr) || 0;
-        r.balance = Number((valasDpp * kursNdpbm - (totalInvFreight + itemPriceIdr)).toFixed(2));
-        r.asuransi = Number(((totalInvFreight + itemPriceIdr) * 0.005).toFixed(2));
+        const isCif = isCifDeliveryTerm(r.delivery_term);
+        r.balance = isCif ? 0 : Number((valasDpp * kursNdpbm - (totalInvFreight + itemPriceIdr)).toFixed(2));
+        r.asuransi = isCif ? 0 : Number(((totalInvFreight + itemPriceIdr) * 0.005).toFixed(2));
       }
       return r;
     });
@@ -4022,7 +4052,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         // Inline edit cuma kirim field yang berubah (bukan seluruh record) -- jadi kalau salah
         // satu dari 4 kolom sumber formula ini diubah, hitung ulang balance/asuransi dari
         // gabungan record lama + perubahan baru, lalu ikut disisipkan ke payload yang dikirim.
-        const depKeys = ['valas_dpp', 'kurs_ndpbm', 'total_inv_freight', 'item_price_idr'];
+        const depKeys = ['valas_dpp', 'kurs_ndpbm', 'total_inv_freight', 'item_price_idr', 'delivery_term'];
         if (depKeys.some(k => k in cleanedPayload)) {
           const record = records.find(r => String(r.id) === String(id));
           const getNum = (key: string) => {
@@ -4033,9 +4063,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           const kursNdpbm = getNum('kurs_ndpbm');
           const totalInvFreight = getNum('total_inv_freight');
           const itemPriceIdr = getNum('item_price_idr');
+          const deliveryTerm = 'delivery_term' in cleanedPayload ? cleanedPayload.delivery_term : record?.delivery_term;
+          const isCif = isCifDeliveryTerm(deliveryTerm);
 
-          cleanedPayload.balance = Number((valasDpp * kursNdpbm - (totalInvFreight + itemPriceIdr)).toFixed(2));
-          cleanedPayload.asuransi = Number(((totalInvFreight + itemPriceIdr) * 0.005).toFixed(2));
+          cleanedPayload.balance = isCif ? 0 : Number((valasDpp * kursNdpbm - (totalInvFreight + itemPriceIdr)).toFixed(2));
+          cleanedPayload.asuransi = isCif ? 0 : Number(((totalInvFreight + itemPriceIdr) * 0.005).toFixed(2));
         }
 
         const res = await supabase.rpc('update_seaair_row', { p_id: id, p_updates: cleanedPayload });

@@ -138,6 +138,9 @@ type ListColumn = {
   inputType?: 'text' | 'number' | 'date';
   inputPlaceholder?: string;
   wide?: boolean;
+  // Field teks bebas yang bisa panjang (mis. NOTE 4/other_note, 2026-09) -- textarea saat edit,
+  // bukan input 1 baris (lihat `EditableCell` multiline).
+  multiline?: boolean;
   format?: (v: any, r: any) => React.ReactNode;
   render?: (r: any, idx: number, costStatus: string | undefined, ctx: ListRenderCtx) => React.ReactNode;
 };
@@ -310,6 +313,7 @@ const LIST_COLUMNS: ListColumn[] = [
               value={val}
               editable
               edited={edited}
+              multiline
               className="w-[300px] whitespace-normal break-words"
               onChange={(v) => ctx.setVal(r, 'po_ori', v)}
             />
@@ -345,7 +349,7 @@ const LIST_COLUMNS: ListColumn[] = [
         );
       }
     },
-    { header: 'VENDOR', field: 'vendor', wide: true },
+    { header: 'VENDOR', field: 'vendor', wide: true, multiline: true },
     { header: 'SHIP VIA', field: 'ship_via' },
     { header: 'INVOICE NO', field: 'no_invoice' },
     { header: 'INVOICE DATE', field: 'invoice_date', inputType: 'date', format: v => formatDateID(v) },
@@ -422,6 +426,7 @@ const LIST_COLUMNS: ListColumn[] = [
                 value={fromDocVal}
                 editable={editingThisRow}
                 edited={fromDocEdited}
+                multiline
                 className="whitespace-normal break-words"
                 onChange={(v) => ctx.setVal(r, 'item_description', v)}
               />
@@ -433,6 +438,7 @@ const LIST_COLUMNS: ListColumn[] = [
                 value={manualVal}
                 editable={editingThisRow}
                 edited={edited}
+                multiline
                 className="whitespace-normal break-words"
                 onChange={(v) => ctx.setVal(r, 'item_description_manual', v)}
               />
@@ -483,7 +489,7 @@ const LIST_COLUMNS: ListColumn[] = [
         );
       }
     },
-    { header: 'NOTE 4', field: 'other_note', wide: true },
+    { header: 'NOTE 4', field: 'other_note', wide: true, multiline: true },
     // MEMO TITLE jadi dropdown (2026-09, permintaan user) -- isi opsi dari `ctx.memoTitleOptions`
     // (nilai UNIK yg SUDAH pernah dipakai di data, lihat `fetchDistinctMemoTitles()`). Pilih
     // "+ Add new..." -> switch ke `<input>` teks biasa (state lokal `addingNew`) supaya user
@@ -585,7 +591,7 @@ const LIST_COLUMNS: ListColumn[] = [
         );
       }
     },
-    { header: 'BUYER', field: 'buyer_name' },
+    { header: 'BUYER', field: 'buyer_name', multiline: true },
     { header: 'EXPECTED PAYMENT DATE', field: 'expected_payment_date', inputType: 'date', format: v => formatDateID(v) },
     {
       header: 'VESSEL',
@@ -600,6 +606,7 @@ const LIST_COLUMNS: ListColumn[] = [
               value={val}
               editable
               edited={edited}
+              multiline
               className="w-[300px] whitespace-normal break-words"
               onChange={(v) => ctx.setVal(r, 'vessel_internal_note', v)}
             />
@@ -720,6 +727,7 @@ function FarOverseasAirCardEditModal({ row, costStatus, ctx, onClose, onCancel, 
                   editable
                   edited={edited}
                   type={col.inputType || 'text'}
+                  multiline={col.multiline}
                   inputPlaceholder={col.inputPlaceholder}
                   className="w-full"
                   onChange={(v) => ctx.setVal(row, field, col.inputType === 'number' ? (v === null ? null : Number(v)) : v)}
@@ -1587,6 +1595,7 @@ export default function FarOverseasAirPage() {
                                   edited={edited}
                                   type={col.inputType || 'text'}
                                   align={col.align === 'right' ? 'right' : 'left'}
+                                  multiline={col.multiline}
                                   inputPlaceholder={col.inputPlaceholder}
                                   className={`${widthClass} ${col.wide ? 'whitespace-normal break-words' : ''}`}
                                   onChange={(v) => setVal(r, field, col.inputType === 'number' ? (v === null ? null : Number(v)) : v)}

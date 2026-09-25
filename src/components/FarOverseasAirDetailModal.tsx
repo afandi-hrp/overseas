@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
 import { X, Stamp, Ban, ChevronDown, ChevronUp, Printer } from 'lucide-react';
-import { formatMoney, formatDateID, formatDateMemo, APPROVAL_STATUS_META, LOGO_ASSETS, parseJsonField } from '../utils/FarOverseasAirHelpers';
+import { formatMoney, formatDateID, formatDateMemo, APPROVAL_STATUS_META, LOGO_ASSETS, parseJsonField, computeCostStatus } from '../utils/FarOverseasAirHelpers';
 
 type SignerConfig = {
   company_code: string;
@@ -57,7 +57,7 @@ function nextStepForStatus(status: string | null | undefined): ApprovalStep | nu
 function CompanyLogo({ signer }: { signer: SignerConfig | null }) {
   const asset = signer?.company_code ? LOGO_ASSETS[signer.company_code] : null;
   if (asset) {
-    return <img src={asset} alt={signer?.company_name_full || 'Logo'} className="h-14 object-contain shrink-0" />;
+    return <img src={asset} alt={signer?.company_name_full || 'Logo'} className="h-16 object-contain shrink-0" />;
   }
   // Fallback teks nama perusahaan hanya kalau logonya belum ada -- supaya header tidak kosong.
   return (
@@ -83,7 +83,7 @@ function SignatureColumn({ label, role, entry, defaultNama, nameOverride }: { la
   return (
     <div className="flex-1 text-center px-3">
       <p className="text-xs text-[#5A305A] mb-14">{label}</p>
-      <div className="border-b border-[#FFF5C5] mb-1 h-10 flex items-end justify-center pb-1">
+      <div className="border-b border-[#5A305A] mb-1 h-10 flex items-end justify-center pb-1">
         <span className="text-sm font-semibold text-[#5A305A] uppercase">{nama || ''}</span>
       </div>
       <p className="text-xs font-bold text-[#5A305A] uppercase">{nama || '( _______________ )'}</p>
@@ -135,11 +135,17 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   // Notes (Manual) dari Cost Validation (`FarOverseasAirCostValidationModal.tsx`, kolom
-  // `cost_validasi_far_overseas_air.notes_manual`) -- SATU-SATUNYA syarat tambahan sebelum
-  // tahap Prepared By (Exim/TIER1) bisa approve, lihat `tier1BlockedByNotes` di bawah. Fetch
-  // TERPISAH dari `rec` (tabel beda) -- `costNotesLoaded` mencegah pesan blokir sempat tampil
-  // keliru sebelum fetch ini selesai.
+  // `cost_validasi_far_overseas_air.notes_manual`) -- syarat tambahan sebelum tahap Prepared By
+  // (Exim/TIER1) bisa approve, TAPI HANYA kalau baris "Unit Price (from Description)" di Cost
+  // Validation TIDAK match (2026-09, GANTI dari "selalu wajib diisi" -- permintaan user: kalau
+  // baris itu MATCH, approval boleh langsung tanpa notes). Status match/tidak dihitung dari
+  // `expected`/`actual` baris `UNIT_PRICE_DARI_DESCRIPTION` (`cost_validation` jsonb array) via
+  // `computeCostStatus()` (SATU-SATUNYA fungsi hitung status cost di app ini, toleransi 3%,
+  // SAMA dipakai `handleSelectRate` di modal Cost Validation -- JANGAN duplikat logic ini).
+  // Fetch TERPISAH dari `rec` (tabel beda) -- `costNotesLoaded` mencegah pesan blokir sempat
+  // tampil keliru sebelum fetch ini selesai.
   const [costNotesManual, setCostNotesManual] = useState<string | null>(null);
+  const [unitPriceCostStatus, setUnitPriceCostStatus] = useState<string | null>(null);
   const [costNotesLoaded, setCostNotesLoaded] = useState(false);
 
   useEffect(() => {
@@ -154,8 +160,13 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
   useEffect(() => {
     const loadCostNotes = async () => {
       setCostNotesLoaded(false);
-      const { data } = await supabase.from('cost_validasi_far_overseas_air').select('notes_manual').eq('far_overseas_id', rec.id).maybeSingle();
+      const { data } = await supabase.from('cost_validasi_far_overseas_air').select('notes_manual, cost_validation').eq('far_overseas_id', rec.id).maybeSingle();
       setCostNotesManual(data?.notes_manual ?? null);
+      const checks = parseJsonField(data?.cost_validation);
+      const unitPriceRow = Array.isArray(checks) ? checks.find((c: any) => c?.row_key === 'UNIT_PRICE_DARI_DESCRIPTION') : null;
+      const expected = unitPriceRow?.expected != null && unitPriceRow.expected !== '' ? Number(unitPriceRow.expected) : null;
+      const actual = unitPriceRow?.actual != null && unitPriceRow.actual !== '' ? Number(unitPriceRow.actual) : null;
+      setUnitPriceCostStatus(computeCostStatus(expected, actual));
       setCostNotesLoaded(true);
     };
     loadCostNotes();
@@ -209,11 +220,14 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
   // memo ini -- kalau `nextStep` null (sudah APPROVED/REJECTED) otomatis false juga.
   const canReject = nextStep != null && isEligibleForStep(nextStep);
 
-  // Gating tambahan (2026-09, permintaan user): tahap Prepared By (Exim/TIER1) TIDAK BISA
-  // approve selama "Notes (Manual)" di Cost Validation masih kosong. HANYA berlaku utk TIER1 --
-  // PIC/TIER2/TIER3 TIDAK terpengaruh. `costNotesLoaded` cegah blokir "false positive" sesaat
-  // sebelum fetch `cost_validasi_far_overseas_air` selesai.
-  const tier1BlockedByNotes = nextStep === 'TIER1' && costNotesLoaded && !(costNotesManual && costNotesManual.trim());
+  // Gating tambahan (2026-09, GANTI dari "selalu wajib diisi" -- permintaan user): tahap
+  // Prepared By (Exim/TIER1) TIDAK BISA approve selama baris "Unit Price (from Description)" di
+  // Cost Validation TIDAK match DAN "Notes (Manual)" masih kosong. Kalau baris itu MATCH,
+  // approval boleh LANGSUNG tanpa notes sama sekali. HANYA berlaku utk TIER1 -- PIC/TIER2/TIER3
+  // TIDAK terpengaruh. `costNotesLoaded` cegah blokir "false positive" sesaat sebelum fetch
+  // `cost_validasi_far_overseas_air` selesai.
+  const unitPriceIsMatch = unitPriceCostStatus === 'MATCH';
+  const tier1BlockedByNotes = nextStep === 'TIER1' && costNotesLoaded && !unitPriceIsMatch && !(costNotesManual && costNotesManual.trim());
 
   const roleForStep = (step: ApprovalStep) => step === 'TIER1' ? signer?.tier1_role : step === 'PIC' ? 'PIC' : step === 'TIER2' ? signer?.tier2_role : signer?.tier3_role;
   const defaultNamaForStep = (step: ApprovalStep) => step === 'TIER1' || step === 'PIC' ? (profile?.nama || user?.email || '') : step === 'TIER2' ? (signer?.tier2_name || '') : (signer?.tier3_name || '');
@@ -277,6 +291,13 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
   // body menghilangkan ambiguitas itu sepenuhnya -- tidak ada ancestor apapun selain <body>.
   return createPortal(
     <div id="far-overseas-print-area" className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[60] flex justify-center items-center p-2 sm:p-4 md:p-6 print:static print:bg-white print:p-0 print:block">
+      {/* Ukuran kertas cetak = A5 (148 x 210mm, PERSIS setengah A4 -- A4 dilipat 2 di sisi
+          pendeknya jadi A5), permintaan user. `<style>` ini DITARUH DI DALAM tree portal (bukan
+          `index.css` global) SENGAJA -- cuma ada di DOM selama modal ini terbuka, jadi HANYA
+          memengaruhi print preview/output SAAT modal ini yang aktif, tidak ikut mengubah ukuran
+          kertas print halaman/modal lain manapun di app ini (mis. PreviewModal Audit AP Local
+          yang print via iframe terpisah, sama sekali tidak tersentuh). */}
+      <style>{`@media print { @page { size: A5; margin: 8mm; } }`}</style>
       <div className="bg-slate-50 w-full max-w-4xl h-[92vh] max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden print:shadow-none print:w-full print:m-0 print:rounded-none print:h-auto print:max-h-none print:overflow-visible print:block">
 
         {/* Toolbar */}
@@ -309,15 +330,19 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
           <div className="p-4 md:p-8 print:p-0">
 
             {/* ── Memo cetak (replika dokumen asli) ── */}
-            <div className="bg-white border-2 border-[#FFF5C5] text-[#5A305A] font-sans print:border-[#FFF5C5]">
+            <div className="bg-white border-2 border-[#5A305A] text-[#5A305A] font-sans print:border-[#5A305A]">
 
-              {/* Header: logo + judul */}
-              <div className="flex flex-col sm:flex-row border-b-2 border-[#FFF5C5]">
-                <div className="sm:w-2/5 border-b-2 sm:border-b-0 sm:border-r-2 border-[#FFF5C5] p-3 flex items-center">
+              {/* Header: logo + judul -- baris dipersempit (2026-09, permintaan user). Sel logo
+                  SENGAJA `p-0` (mepet ke garis border, susulan permintaan user "logo mepet
+                  border biar row-nya kecil") -- ukuran logo (`CompanyLogo`, `h-16`) TIDAK ikut
+                  dikecilkan, cuma padding di sekelilingnya yang dihilangkan. Logo tetap
+                  di-tengah-kan penuh (horizontal+vertikal) di sel-nya. */}
+              <div className="flex flex-col sm:flex-row border-b-2 border-[#5A305A]">
+                <div className="sm:w-2/5 border-b-2 sm:border-b-0 sm:border-r-2 border-[#5A305A] p-0 flex items-center justify-center">
                   <CompanyLogo signer={signer} />
                 </div>
-                <div className="flex-1 flex items-center justify-center p-3">
-                  <h1 className="text-lg md:text-2xl font-bold uppercase tracking-wide text-center">{rec.memo_title || '-'}</h1>
+                <div className="flex-1 flex items-center justify-center p-1.5">
+                  <h1 className="text-base md:text-lg font-bold uppercase tracking-wide text-center">{rec.memo_title || '-'}</h1>
                 </div>
               </div>
 
@@ -355,7 +380,7 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
                   null sama sekali tidak dirender. Tiap baris dikasih nomor sumbernya (1/2/3/4,
                   sesuai NOTE 1-4 di List Memo) di depan teksnya -- permintaan user supaya jelas
                   baris mana berasal dari NOTE keberapa. */}
-              <div className="border-t-2 border-[#FFF5C5] p-4 text-sm flex gap-2">
+              <div className="border-t-2 border-[#5A305A] p-4 text-sm flex gap-2">
                 <span className="underline font-semibold shrink-0">NOTE :</span>
                 <div className="space-y-1">
                   {rec.route_note && <p><span className="font-semibold">1.</span> {rec.route_note}</p>}
@@ -374,7 +399,7 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
               {/* Signature table -- PIC (nama manual `pic_name`, jabatan tetap "PIC") ditaruh
                   bersebelahan dengan "Disiapkan Oleh" -- persetujuannya INDEPENDEN dari tahap
                   1/2/3, lihat tombol "Setujui — PIC" terpisah di bawah. */}
-              <div className="flex border-t-2 border-[#FFF5C5] pt-6 pb-4 px-4">
+              <div className="flex border-t-2 border-[#5A305A] pt-6 pb-4 px-4">
                 <SignatureColumn label="Disiapkan Oleh," role={signer?.tier1_role || null} entry={entryFor(1)} nameOverride={disiapkanNama} />
                 <SignatureColumn label="Diperiksa Oleh," role={signer?.tier2_role || null} entry={entryFor(2)} defaultNama={signer?.tier2_name} />
                 <SignatureColumn label="Diperiksa Oleh," role={signer?.tier3_role || null} entry={entryFor(3)} defaultNama={signer?.tier3_name} />
@@ -443,7 +468,7 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
                   )}
                   {nextStep != null && isEligibleForStep(nextStep) && tier1BlockedByNotes && (
                     <span className="block text-amber-700 font-medium mt-0.5">
-                      Cost Validation "Notes (Manual)" is still empty — fill it in first (open Cost Validation) before this memo can be approved.
+                      Unit Price (from Description) in Cost Validation is not a match — fill in the "Notes (Manual)" field first (open Cost Validation) before this memo can be approved.
                     </span>
                   )}
                 </p>

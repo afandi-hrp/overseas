@@ -51,10 +51,23 @@ badge & modal.
   `PIB_COLS` Courier TIDAK ikut diubah (tetap `no_pib`). `searchCols` sudah cakup kedua kolom.
 - **Audit, kolom Balance & Asuransi** — formula hardcode frontend:
   `BALANCE = VALAS_DPP*KURS_NDPBM - (TOTAL_INV_FREIGHT+ITEM_PRICE_IDR)`,
-  `ASURANSI = 0.5%*(TOTAL_INV_FREIGHT+ITEM_PRICE_IDR)`. Diimplementasi di 3 tempat HARUS sinkron:
+  `ASURANSI = 0.5%*(TOTAL_INV_FREIGHT+ITEM_PRICE_IDR)`. Diimplementasi di 4 tempat HARUS sinkron:
   `EditModal` useEffect, `handleInlineSaveRow` (diff-based), `fetchRecords`'s `enrichedData` DAN
   `getExportData` (live-computed tiap fetch, krn n8n tidak pernah isi kolom ini). `balance`/
   `asuransi` DIKELUARKAN dari `isInlineEditable()`.
+  **Pengecualian Delivery Term CIF (2026-09, permintaan user)**: kalau kolom `delivery_term`
+  mengandung "CIF" (case-insensitive substring via `isCifDeliveryTerm()`, module-level SATU-SATUNYA
+  tempat definisi ini — cocokkan juga "CIF JAKARTA" dkk, bukan cuma exact "CIF" polos), KEDUA
+  formula di atas DIABAIKAN, `balance`/`asuransi` dipaksa **0** — asuransi shipment CIF sudah
+  ditanggung seller/freight, jadi kolom ini tidak relevan lagi utk term itu. Berlaku di SEMUA 4
+  titik implementasi yang sama (termasuk `depKeys`/dependency re-kalkulasi `EditModal` &
+  `handleInlineSaveRow` ikut ditambah `delivery_term`, supaya ganti Delivery Term SENDIRIAN --
+  susulan: kolom `balance` diganti `type: 'num'` (SAMA dgn `asuransi`, dulu `'num_dash_null'` --
+  SATU-SATUNYA kolom yang pakai string type itu, beda dari `num_dash_if_null` yang dipakai
+  `sptnp_total` dkk & SENGAJA TETAP tampil "-" saat 0, TIDAK disentuh) supaya baris CIF (Balance
+  DAN Insurance sama2 dipaksa 0) tampil KONSISTEN "0" di kedua kolom, bukan Balance "-" vs
+  Insurance "0"
+  — tanpa menyentuh 4 kolom angka sumber formula — tetap memicu Balance/Asuransi ke-reset ke 0).
 - **Rekapan, badge % Doc/Cost Validation** di tombol (bulat, hijau≥90%/kuning≥60%/merah).
   Dihitung batch di `fetchRecords`, disimpan `r.doc_validation_pct`/`r.cost_validation_pct`.
   Formula REPLIKA PERSIS `globalStats` `SeaAirValidasiModal.tsx` (Doc, exclude `match===null`) &
@@ -277,6 +290,72 @@ ke-persist ke DB sbg baris checklist baru.
 Tab Draft (gabung PIB+CN) pakai `activeCols=PIB_COLS` yg tidak punya `kurs_bi` — `activeCols`
 Draft dibangun via IIFE, sisip `{key:'kurs_bi', label:'Kurs BI (Rp)', type:'num'}` setelah
 `kurs_ndpbm`.
+
+## Sea & Air — Catatan Konfirmasi Manual per-Segmen Cost Validation (2026-09, VERSI FINAL)
+
+`ValidasiShipmentInvoiceLengkap.tsx` — tabel `cost_validasi_catatan_seaair` (id, seaair_id,
+section, **status_konfirmasi** [`'MATCH'`/`'MISMATCH'`, dipilih EKSPLISIT staf lewat
+toggle/dropdown -- BUKAN lagi sekadar "ada baris = confirmed" spt iterasi awal], catatan,
+dikonfirmasi_oleh, dikonfirmasi_at). **BELUM PY RLS SAMA SEKALI saat tabel ini pertama ditemukan**
+-- **BELUM DIJALANKAN ke Supabase production, WAJIB dijalankan manual dulu, URUTAN**:
+1. `sql/017_cost_validasi_catatan_seaair_rls.sql` -- `enable row level security` + 4 policy
+   (SELECT via `has_page_access('sea_air_cost_validation')`, INSERT/UPDATE/DELETE via
+   `has_edit_access` page_key yang sama -- SATU-SATUNYA page_key yang menggerbangi modal ini,
+   lihat `canEdit={canEdit('sea_air_cost_validation')}` di `SharedDataTable.tsx`).
+2. `sql/018_cost_validasi_catatan_seaair_unique_constraint.sql` -- `create unique index ...
+   (seaair_id, section)` (BUKAN `alter table add constraint if not exists`, Postgres TIDAK
+   dukung sintaks itu utk constraint) -- **WAJIB** supaya `.upsert({...}, {onConflict:
+   'seaair_id,section'})` di frontend berfungsi (Postgres butuh unique index/constraint di
+   kolom conflict target).
+
+Keduanya idempotent, aman dijalankan ulang. Sampai kedua file ini dijalankan, upsert dari modal
+akan gagal (error "there is no unique or exclusion constraint matching the ON CONFLICT
+specification") ATAU (sebelum RLS aktif) tabel bisa diakses siapa saja tanpa login.
+
+**Konsep fitur**: staf bisa menandai 1 segmen sebagai MATCH atau MISMATCH secara manual, TANPA
+mengubah data `checks` asli di `cost_validasi_seaair` -- 1 baris `cost_validasi_catatan_seaair`
+= 1 konfirmasi AKTIF per (seaair_id, section), disimpan via **UPSERT** (staf ubah kapan saja =
+menimpa baris lama, bukan numpuk baris baru) atau **DELETE total** (hapus konfirmasi kapan saja).
+
+- **HANYA aktif utk 7 segmen**: EMKL, TRUCKING, FREIGHT_ORIGIN, FREIGHT_DESTINATION, STORAGE,
+  LOLO, SURVEYOR — `ValidationTable` prop `enableManualConfirmation` (default `false`).
+  **"INVOICE CUSTOM" SENGAJA TIDAK ikut** (tidak diminta di requirement fitur ini) — dirender
+  tanpa prop ini, badge & blok konfirmasi TOTAL tidak tampil. `renderConfirmableTable(title,
+  section)` (helper lokal di komponen utama) hindari duplikasi wiring props yang sama tiap segmen.
+- **Blok konfirmasi SELALU tampil** (bukan cuma saat ada mismatch lagi, GANTI dari iterasi awal)
+  di bawah tabel tiap 1 dari 7 segmen, kalau `canEdit`: toggle **Match/Mismatch** + textarea
+  catatan (placeholder berubah ikut toggle: "Wajib diisi..." saat Mismatch, "(opsional)..." saat
+  Match) + tombol **"Simpan Konfirmasi"/"Perbarui Konfirmasi"** (disabled kalau status=Mismatch
+  DAN catatan kosong -- validasi FORM SEBELUM submit, dicek ULANG di `handleSaveConfirmation`
+  sbg jaring pengaman kedua) + tombol **"Hapus Konfirmasi"** (muncul HANYA kalau sudah ada
+  konfirmasi tersimpan). User tanpa `canEdit` yang segmennya SUDAH dikonfirmasi lihat versi
+  read-only (status+catatan+oleh siapa, tanpa form). `getConfirmDraft(section)`: draft form pakai
+  `catatanDraft[section]` kalau staf SUDAH menyentuh form sesi ini, kalau belum derive dari
+  `catatanMap` (konfirmasi tersimpan) atau default `{status:'MATCH', catatan:''}`.
+- **Badge header segmen** (di sebelah judul tabel `ValidationTable`) — mengikuti
+  `catatan.status_konfirmasi` PILIHAN STAF kalau sudah dikonfirmasi (MATCH=hijau "Match
+  (Dikonfirmasi)", MISMATCH=**merah** "Mismatch (Dikonfirmasi)", SAMA warna `StatusBadge` baris
+  detail -- BUKAN selalu dipaksa hijau lagi spt iterasi awal). Belum dikonfirmasi -> fallback ke
+  hasil hitung otomatis (hijau "Match" kalau semua baris cocok, amber "Perlu Konfirmasi Manual"
+  kalau ada baris OVERCHARGE/UNDERCHARGE yg belum ditinjau staf). **Baris DETAIL individual
+  (`StatusBadge` per-baris expected/actual/selisih) TIDAK PERNAH ikut berubah** — TETAP tampil
+  status asli (merah/kuning) apa adanya, HANYA badge header segmen & persentase keseluruhan yang
+  terpengaruh konfirmasi manual.
+- **Persentase keseluruhan (globalStats)** — `computeSeaAirCostGlobalStats(checks,
+  confirmationBySection)` (`src/utils/SeaAirCostValidasiHelpers.ts`, SATU-SATUNYA sumber formula
+  ini) — `confirmationBySection: Map<section, 'MATCH'|'MISMATCH'>` (BUKAN `Set` lagi). Section
+  dgn konfirmasi MATCH -> SEMUA baris `checks`-nya dihitung match; MATCH konfirmasi MISMATCH ->
+  baris-baris di section itu dihitung tidak-match (pertahankan klasifikasi OVERCHARGE/UNDERCHARGE
+  asli baris kalau memang sudah begitu, fallback 'OVERCHARGE' kalau baris itu justru
+  komputasinya MATCH tapi segmennya sengaja ditandai Mismatch -- kasus tepi). Section TANPA
+  konfirmasi -> `c.status` masing2 baris apa adanya (perilaku lama). SURVEYOR TETAP dikecualikan
+  dari total. **TANPA mengubah `checks` yang tersimpan** (murni komputasi tampilan).
+- **Badge % Cost Validation di Rekapan Sea & Air (`SharedDataTable.tsx`)** — DIWAJIBKAN sinkron
+  dgn modal (pola sama fix badge Doc Validation). `fetchRecords` fetch `cost_validasi_catatan_seaair`
+  (kolom `seaair_id, section, status_konfirmasi`, batch chunk 50), bangun
+  `Map<seaair_id, Map<section, 'MATCH'|'MISMATCH'>>`, panggil `computeSeaAirCostGlobalStats()`
+  yang SAMA PERSIS. **JANGAN duplikat logic hitung Cost Validation % di tempat ketiga manapun** —
+  kalau formula perlu diubah, ubah SATU-SATUNYA di `SeaAirCostValidasiHelpers.ts`.
 
 ## Sea & Air — Modal Cost Validasi Shipment & Invoice (`ValidasiShipmentInvoiceLengkap.tsx`)
 

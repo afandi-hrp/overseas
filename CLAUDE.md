@@ -132,39 +132,23 @@ Password benar → halaman hidup lagi tanpa reload. TAPI kalau tab BENERAN ditut
   sebelumnya terbukti beneran tertutup, `signOut()` dipanggil DULU sebelum `getSession()` supaya
   sesi basi tidak pernah sempat kelihatan truthy (`hadSessionRef` tidak pernah ke-set salah).
 
-### Diagnostik idle-logout tidak jalan (2026-09, log tetap ada, JANGAN dihapus)
+### Catatan permanen — lock screen & idle-logout (final, JANGAN diubah tanpa alasan baru)
 
-Ditemukan via baca source `@supabase/auth-js` `GoTrueClient._signOut`: dulu `signOut()` dipanggil
-fire-and-forget (tanpa await/cek) — kalau revoke ke server GAGAL (network/firewall, bukan
-404/401/403), `_signOut()` return awal TANPA `_removeSession()` — sesi lokal tidak pernah
-terhapus, TANPA error terlihat. Fix: SEMUA titik panggil `signOut()` (idle-timeout,
-resolveStaleCloseTrace, tab-lain-tertutup) sekarang `await` + `console.error('[Auto-logout] ...
-gagal', error)`. Log diagnostik `[Auto-logout]` (idle threshold reached, lockScreenActive jadi
-true, unlock gagal/berhasil) SENGAJA DIBIARKAN — berguna kalau ada laporan serupa lagi.
-`IDLE_TIMEOUT_MS` sempat diturunkan ke 5 menit utk testing, SUDAH DIKEMBALIKAN ke 30 menit
-setelah user konfirmasi mekanismenya terbukti benar (root cause "30 menit tidak jalan" adalah
-soal durasi tes, bukan bug).
-
-### Audit keamanan lock screen — 3 celah ditemukan & diperbaiki
-
-1. **Modal via React Portal ke `document.body` tidak ikut ter-blur** (`FarOverseasAirDetailModal`/
-   `BunkerCompareDocModal` preview cetak) — DOM-nya sibling dari `#root`, bukan child `<Outlet/>`.
-   Fix: blur+`inert` diterapkan via DOM API langsung ke SEMUA child langsung `<body>` KECUALI
-   node portal LockScreen sendiri (`LOCKSCREEN_PORTAL_ID`) — generik, otomatis cover portal baru
-   manapun. `ProtectedRoute` disederhanakan balik ke `<Outlet/>` polos. Limitasi diterima: effect
-   cuma jalan sekali saat lock aktif, portal BARU yg muncul SETELAH lock aktif tidak ikut
-   tertutup (risiko rendah karena `#root` sudah inert, tidak bisa klik trigger apa pun).
-2. **bfcache restore snapshot SEBELUM lock aktif** (Back dari situs lain) — fix: listener
-   `pageshow` (effect terpisah, TIDAK di-gate `isAuthed`), kalau `event.persisted===true` paksa
-   `window.location.reload()`.
-3. **`frozenRef` menyimpan `access_token`/`refresh_token` mentah** selama lock aktif (JWT tetap
-   valid ~1 jam walau `signOut()` sukses) — fix: `access_token`/`refresh_token`/`provider_token`/
-   `provider_refresh_token` di-REDACT (`'[redacted-while-locked]'`) sebelum simpan ke `frozenRef`
-   (dikonfirmasi tidak ada kode yg baca field itu dari context manapun).
-
-Keterbatasan INHEREN diterima: blur+inert cuma visual, DevTools (F12) tetap bisa baca DOM mentah
-— ini batas semua lock-screen client-side, bukan spesifik implementasi ini. Threat model: "orang
-lewat tanpa sengaja", bukan "penyerang teknis + akses fisik + DevTools".
+- Semua panggilan `signOut()` (idle-timeout, `resolveStaleCloseTrace`, tab-lain-tertutup) WAJIB
+  `await` + `console.error('[Auto-logout] ... gagal', error)` — fire-and-forget lama bikin sesi
+  lokal tidak kehapus diam2 kalau revoke ke server gagal (root cause insiden lama, sudah fix).
+  Log `[Auto-logout]` SENGAJA DIBIARKAN utk diagnosa laporan serupa ke depan. `IDLE_TIMEOUT_MS`
+  = 30 menit (final, PERNAH diturunkan ke 5 menit utk testing lalu dikembalikan).
+- Modal via React Portal ke `document.body` (mis. `FarOverseasAirDetailModal`,
+  `BunkerCompareDocModal`) ikut ter-blur+`inert` saat lock aktif lewat DOM API generik ke semua
+  child `<body>` KECUALI portal LockScreen sendiri — cover portal apa pun otomatis, TAPI portal
+  BARU yg muncul SETELAH lock aktif tidak ikut ter-lock (risiko rendah, `#root` sudah inert).
+- bfcache restore (tombol Back dari situs lain) dipaksa `window.location.reload()` via listener
+  `pageshow` (`event.persisted===true`) supaya tidak menampilkan snapshot sebelum lock aktif.
+- `frozenRef` REDACT `access_token`/`refresh_token`/`provider_token`/`provider_refresh_token`
+  (`'[redacted-while-locked]'`) — JWT lama tetap valid ~1 jam walau `signOut()` sukses.
+- Keterbatasan INHEREN diterima: blur+inert murni visual, DevTools (F12) tetap bisa baca DOM
+  mentah. Threat model: "orang lewat tanpa sengaja", BUKAN penyerang teknis+akses fisik+DevTools.
 
 ## RBAC (role & akses per halaman)
 
@@ -222,30 +206,9 @@ ganda `canEdit(pageKey) && canApproveTier(pageKey, step)`). Daftar tier/label va
 `PAGE_REGISTRY[].approvalTiers` (`src/lib/permissions.ts`) — `RoleManagementPage.tsx` otomatis
 render dropdown baru tanpa ubah kode (`APPROVAL_TIER_PAGES` export).
 
-**BELUM DIJALANKAN ke Supabase production — WAJIB dijalankan manual dulu**:
-```sql
-create table if not exists public.user_approval_tiers (
-  user_id uuid not null references public.profiles(id) on delete cascade,
-  page_key text not null,
-  tier text not null,
-  primary key (user_id, page_key)
-);
-alter table public.user_approval_tiers enable row level security;
-create policy "Admins manage user_approval_tiers" on public.user_approval_tiers
-  for all using (public.is_admin()) with check (public.is_admin());
-create policy "Users read own approval tiers" on public.user_approval_tiers
-  for select using (auth.uid() = user_id);
-
-create or replace function public.get_my_approval_tiers()
-returns jsonb language sql security definer stable as $$
-  select coalesce(jsonb_object_agg(uat.page_key, uat.tier), '{}'::jsonb)
-  from public.user_approval_tiers uat where uat.user_id = auth.uid();
-$$;
-grant execute on function public.get_my_approval_tiers() to authenticated;
-```
-(Kolom `roles.approval_tier`/`profiles.approval_tier` iterasi lama aman didiamkan/di-drop, sudah
-tidak dipakai.) RPC ini SENGAJA terpisah dari `get_my_access()` (supaya tidak menulis ulang body
-yg battle-tested tanpa akses DB langsung).
+**BELUM DIJALANKAN ke Supabase production — WAJIB dijalankan manual dulu**: SQL lengkap dipindah
+ke `sql/021_user_approval_tiers.sql` (tabel `user_approval_tiers` + RPC `get_my_approval_tiers()`,
+terpisah dari `get_my_access()` supaya tidak menulis ulang body yg battle-tested).
 
 - `AuthContext.tsx` panggil paralel dgn `get_my_access()`, expose `approvalTiersByPage:
   Record<string,string>` + `canApproveTier(pageKey, tier)` (`isAdmin` selalu lolos). Fail-closed
@@ -278,15 +241,10 @@ JANGAN translate `field`/`rowLabel`/`compareDoc`/`label`/`srcLabel` di SECTIONS 
 refactor `computeStatus()` dulu (pindah ke matching berbasis `id` stabil). `label`/`srcLabel`
 aman diubah (murni display); `field`/`rowLabel`/`compareDoc` HARUS dicek dulu.
 
-**Progress**: Sidebar/Greeting/Bunker/AccountPage/RoleManagementPage/Courier Upload (+Sea&Air
-Upload otomatis ikut, file sama)/Courier Audit&Rekapan (STATUS_LABELS mapping display, sentinel
-`'Semua'`→`'All'`)/Courier Validasi (HANYA UI chrome, SECTIONS lokal TIDAK disentuh — lihat
-pengecualian `s_no_vessel_imo` rowLabel di bawah)/Sea & Air (SEA_AIR_*_COLS, SeaAirChecklistModal,
-SeaAirValidasiModal UI chrome saja — `SeaAirValidasiModal.tsx` py SECTIONS-style data sendiri
-`INVOICE_FCL_COLS` dkk, TIDAK disentuh)/FAR Overseas Air (SELESAI, KECUALI badan memo cetak
-`FarOverseasAirDetailModal.tsx` — pengecualian PERMANEN, lihat bawah)/Zoom 90%/dst — SELESAI.
-BELUM: Bunker page sendiri sudah selesai; Audit AP Local, Audit Trail, Settings hub, halaman
-admin, AccountPage, LoginPage — BELUM.
+**Progress**: SELESAI — Sidebar/Greeting/Bunker/AccountPage/RoleManagementPage/Courier
+Upload+Sea&Air Upload/Courier Audit&Rekapan/Courier Validasi (UI chrome saja)/Sea & Air (UI
+chrome saja)/FAR Overseas Air (kecuali badan memo cetak, permanen)/Zoom 90%. **BELUM**: Audit AP
+Local, Audit Trail, Settings hub, halaman admin, LoginPage.
 
 **Pengecualian PERMANEN — badan memo cetak `FarOverseasAirDetailModal.tsx`**: istilah dalam kotak
 border `#FFF5C5` (replika dokumen fisik) SENGAJA TETAP Indonesia ("Disiapkan Oleh,"/"Diperiksa
@@ -390,16 +348,15 @@ bagian tersendiri di bawah.
 
 ## Dokumentasi modul terpisah (2026-09, CLAUDE.md dipecah krn kepanjangan)
 
-CLAUDE.md ini awalnya 1 file ~3300 baris — dipecah (2026-09, permintaan user "file kekecilan")
-supaya lebih ringkas & gampang dinavigasi. Bagian di ATAS (Tech stack s/d Pola UI wajib) + BAWAH
-(Navigasi mobile s/d Peta RPC) TETAP di sini (aturan lintas-modul/app-wide, sering dirujuk dari
-banyak modul). Detail per-modul dipindah ke file terpisah via `@import` — Claude Code otomatis
-memuat isinya sbg bagian dari instruksi proyek ini, JADI TETAP DIBACA PENUH tiap sesi, cuma
-lokasinya dipisah. **Ini MURNI pemindahan lokasi, TIDAK ADA konten yang dihapus/diringkas** —
-riwayat iterasi lama, SQL migrasi belum dijalankan, & aturan arsitektur semuanya tetap utuh
-persis seperti sebelumnya di file barunya masing2. Kalau ke depan mau memangkas isi (bukan cuma
-pindah lokasi) — mis. riwayat iterasi v1->v2->v3 yang sudah closed diringkas jadi kondisi final
-saja — itu pekerjaan terpisah, belum dikerjakan di sesi ini.
+CLAUDE.md ini awalnya 1 file ~3300 baris — dipecah (2026-09) supaya lebih ringkas. Bagian di ATAS
+(Tech stack s/d Pola UI wajib) + BAWAH (Navigasi mobile s/d Peta RPC) TETAP di sini (aturan
+lintas-modul/app-wide). Detail per-modul dipindah ke file terpisah via `@import` — Claude Code
+otomatis memuat isinya sbg bagian dari instruksi proyek ini, JADI TETAP DIBACA PENUH tiap sesi,
+cuma lokasinya dipisah. **Susulan (2026-09) — dipadatkan lagi**: beberapa bagian narasi panjang
+(riwayat diagnosa idle-logout, audit keamanan lock screen, progress translasi) diringkas jadi
+kondisi final saja (SQL migrasi belum dijalankan & aturan arsitektur tetap dipertahankan utuh di
+tiap file modul, TIDAK ikut dipangkas). Kalau butuh detail riwayat lengkap versi lama, cek git
+history file ini.
 
 @docs/claude/far-overseas.md
 @docs/claude/bunker-courier-seaair.md
@@ -449,55 +406,27 @@ s.path))`. `PAGE_REGISTRY` groups TIDAK ikut digabung (beda concern dari struktu
 
 ## Loading state dibakukan — `LoadingState`/`LoadingTableRow` (`src/components/LoadingState.tsx`, 2026-09)
 
-Sebelum ini, teks "sedang memuat data" tersebar di ~35 titik/file dengan variasi tidak konsisten
-— campuran Inggris ("Loading data...", "Loading...") & Indonesia ("Memuat data...", "Memuat data
-dokumen...", "Memuat data validasi cost...", "Memperbarui data..."), sebagian TANPA spinner sama
-sekali (teks polos), warna spinner juga campur (`blue-500`/`blue-600` vs brand ungu `#5A305A`).
-**Ditemukan 1 titik yang bocor nama backend ke user** — `SharedDataTable.tsx` sempat tampil
-literal **"Loading data from Supabase..."** — SUDAH DIPERBAIKI (user TIDAK PERNAH boleh lihat
-nama teknologi backend).
+Semua teks loading data (dulu ~35 titik tidak konsisten, campur Inggris/Indonesia, 1 titik
+sempat bocor nama backend "Loading data from Supabase...") dibakukan jadi **Inggris, "Loading
+data..."**, spinner brand ungu — SENGAJA jadi pengecualian dari program Translasi UI (berlaku ke
+SEMUA modul termasuk yang UI-nya sendiri belum diterjemahkan; **JANGAN anggap itu berarti modul
+itu sudah selesai diterjemahkan penuh**, cuma teks loading-nya saja).
 
-**Keputusan user (2026-09)**: SEMUA teks loading dibakukan ke **Inggris, "Loading data..."**
-— TERLEPAS dari status program terjemahan modul lain yang masih berjalan bertahap per-modul
-(lihat bagian "Translasi UI ke Bahasa Inggris" di atas) — teks loading SENGAJA jadi
-**pengecualian**, dibakukan duluan di SEMUA modul (termasuk yang UI-nya sendiri belum
-diterjemahkan, mis. Audit AP Local/Overseas/PI Local, Tarif Kontrak, Kurs BI/Rule Vendor, admin
-Rate/Surcharge). **JANGAN anggap ini berarti modul-modul itu "sudah selesai" diterjemahkan
-penuh** — cuma teks loading-nya saja yang ikut dibakukan, sisa UI modul itu TETAP mengikuti
-status terjemahan modul masing-masing seperti sebelumnya.
-
-- **`LoadingState`** (blok penuh — halaman/kartu/modal) — spinner brand ungu (`border-[#5A305A]/20
-  border-t-[#5A305A]`) + teks "Loading data..." (bisa di-override via prop `label` kalau ada
-  konteks yang benar-benar perlu lebih spesifik — SEMUA titik yang diganti kemarin SENGAJA
-  dibiarkan pakai default, tidak ada yang pakai `label` custom, demi konsistensi maksimal).
-  Prop `fullHeight` (default `true`, pakai `h-full`) — di-set `false` utk konteks yang parent-nya
-  TIDAK py tinggi eksplisit (mis. `<main>` halaman biasa) supaya tidak collapse jadi 0px.
-- **`LoadingTableRow`** — varian utk `<tbody>` (`<tr><td colSpan={N}>`), `colSpan` WAJIB diisi
-  sama dengan jumlah kolom tabel itu (`activeCols.length`/hitung manual sesuai `<th>` yang ada).
-- **Cakupan yang SUDAH diganti** — SEMUA halaman/modal yang py loading state tabel/blok utama:
-  `SharedDataTable.tsx` (termasuk overlay "Updating data..." saat refresh & modal checklist),
-  `ExportModal.tsx`, `ValidasiModal.tsx`, `ValidasiShipmentInvoiceLengkap.tsx`,
-  `CostValidationModal.tsx`, `FarOverseasAirCostValidationModal.tsx`, `SeaAirChecklistModal.tsx`,
-  `SeaAirValidasiModal.tsx`, `AccountingRekapPage.tsx`, `AuditPoPage.tsx`,
-  `AuditPoOverseasPage.tsx`, `PiLocalPage.tsx`, `BunkerPage.tsx`, `FarOverseasAirPage.tsx`,
-  `KursBIPage.tsx`, `KursRuleVendorPage.tsx`, `FarOverseasVendorTarifPage.tsx`,
-  `TarifKontrakPage.tsx`, `MasterVesselAdminPage.tsx`, `RoleManagementPage.tsx`,
-  `CourierValidasiPage.tsx`, `ReportingDashboardPage.tsx`, `ReportingCostPerVesselPage.tsx`,
-  `ReportingCostByCourierPage.tsx`, admin `PPJKCostRule.tsx`/`RateSheetDHL.tsx`/
-  `RateSheetFedEx.tsx`/`RateSheetUPS.tsx`/`SurchargeDHL.tsx`/`SurchargeFedEx.tsx`/
-  `SurchargeCIPLRule.tsx`/`ZoneMappingEditor.tsx`/`NPWPEditor.tsx`.
-- **SENGAJA TIDAK diganti** — spinner kecil INLINE di tombol aksi (Save/Submit/Refresh icon
-  `RefreshCw` yang berputar, tombol Login/Lock Screen, dsb) — itu indikator "sedang memproses
-  AKSI" (submit/save), BUKAN "sedang memuat data awal dari database", beda konteks/beda tujuan
-  visual, di luar cakupan permintaan user ("loading data dari database").
-- **Halaman baru ke depan yang butuh loading state data awal WAJIB pakai `LoadingState`/
-  `LoadingTableRow`** — JANGAN bikin blok spinner+teks manual baru lagi (apalagi sampai ada teks
-  Indonesia lagi atau warna spinner selain brand ungu) — akan merusak konsistensi yang baru
-  dibakukan ini.
+- **`LoadingState`** (blok penuh) — prop `label` opsional utk override teks (default dipakai di
+  semua titik existing, demi konsistensi), prop `fullHeight` (default `true`) di-set `false`
+  kalau parent tidak py tinggi eksplisit.
+- **`LoadingTableRow`** — varian `<tbody><tr><td colSpan={N}>`, `colSpan` WAJIB = jumlah kolom.
+- Sudah diterapkan ke SEMUA halaman/modal yang py loading state tabel/blok utama (Courier/Sea &
+  Air/FAR Overseas/Bunker/Audit AP/Reporting/admin rate — cek `LoadingState.tsx` usage kalau perlu
+  daftar lengkap). SENGAJA TIDAK diganti: spinner INLINE di tombol aksi (Save/Refresh/Login) —
+  itu indikator "memproses aksi", beda konteks dari "memuat data awal".
+- **Halaman baru WAJIB pakai `LoadingState`/`LoadingTableRow`** — jangan bikin blok spinner+teks
+  manual baru (apalagi teks Indonesia/warna spinner selain ungu).
 
 ## Peta tabel Supabase (per modul)
 
-**Auth & RBAC**: `profiles`, `roles`, `user_roles`, `role_page_access`.
+**Auth & RBAC**: `profiles`, `roles`, `user_roles`, `role_page_access`, `user_approval_tiers`
+(jabatan approval per user per halaman).
 
 **Courier**: `rekapan_courier`, `tabel_audit_pib`, `tabel_audit_cn`, `tabel_cost_validasi`,
 `dokumen_checklist`, `dokumen_validasi`, `tabel_checklist_validasi`, `tabel_npwp`,
@@ -507,12 +436,16 @@ kelengkapan di-merge manual di JS dari `dokumen_checklist` via `mergeChecklistDa
 `pib_id`/`cn_id`=`id`; cabang fallback `awb`-only lama sudah dead code, dicek 0 baris NULL).
 
 **Sea & Air**: `rekapan_seaair`, `tabel_audit_seaair`, `cost_validasi_seaair`,
+`cost_validasi_catatan_seaair` (catatan konfirmasi manual per-segmen Cost Validation, 2026-09),
 `dokumen_checklist_seaair`, `dokumen_validasi_seaair`, `dokumen_validasi_matriks_seaair`,
 `kurs_bi_seaair`, `kurs_rule_vendor_seaair`, `tarif_kontrak_seaair`.
 
 **FAR Overseas Air (Direct Loading)**: `rekapan_far_overseas_air`,
-`cost_validasi_far_overseas_air`, `far_overseas_tarif_vendor`, `far_overseas_signer_config`,
-`far_overseas_air_processing_queue`.
+`cost_validasi_far_overseas_air`, `far_overseas_signer_config`,
+`far_overseas_air_processing_queue`. Tarif vendor (struktur quotation+periode, 2026-09):
+`far_overseas_vendor_master`, `far_overseas_tarif_quotation`,
+`far_overseas_tarif_quotation_detail` (`far_overseas_tarif_vendor` LAMA sudah TIDAK dipakai,
+sisa backup `far_overseas_tarif_vendor_legacy_backup`).
 
 **Bunker**: `bunker_dokumen`, `bunker_processing_queue`.
 
@@ -558,6 +491,7 @@ Supabase** — bisa saja sudah basi (RPC lain ditambahkan user langsung tanpa te
 
 - Auth: `get_my_access()`, `get_my_approval_tiers()`.
 - FAR Overseas Air (List Memo & approval): `update_rekapan_far_overseas_manual`,
+  `insert_rekapan_far_overseas_manual` (Add Manual Entry, 2026-09),
   `update_cost_validasi_far_overseas_manual`, `fn_delete_far_overseas_air`,
   `approve_far_overseas_air`, `reject_far_overseas_air`, `get_users_with_approval_tier`.
 - FAR Overseas Air — Tarif Vendor (struktur quotation+periode, 2026-09; RPC LAMA

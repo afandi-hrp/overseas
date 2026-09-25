@@ -11,7 +11,7 @@ export function EditedMark({ className = '' }: { className?: string }) {
 // oleh toggle "Mode Edit" di halaman/modal pemanggil). Perubahan TIDAK langsung tersimpan ke DB;
 // pemanggil menerima nilai baru lewat onChange dan menampungnya sampai tombol "Simpan" diklik.
 export function EditableCell({
-  value, displayValue, onChange, editable = false, edited = false, type = 'text', align = 'left', placeholder = '-', inputPlaceholder, className = '',
+  value, displayValue, onChange, editable = false, edited = false, type = 'text', align = 'left', placeholder = '-', inputPlaceholder, className = '', multiline = false,
 }: {
   value: any;
   displayValue?: React.ReactNode;
@@ -23,6 +23,12 @@ export function EditableCell({
   placeholder?: string;
   inputPlaceholder?: string;
   className?: string;
+  // Field teks bebas yang bisa panjang (NOTE 2/NOTE 4 dkk, 2026-09) -- render <textarea>
+  // beberapa baris saat edit alih-alih <input> 1 baris. Teks panjang di <input> 1 baris jadi
+  // scroll horizontal sempit & susah dibaca/edit (laporan user), <textarea> auto-wrap + resizable
+  // jauh lebih mudah. Mode TAMPIL (bukan edit) TIDAK berubah -- sudah wrap normal via className
+  // `whitespace-normal break-words` yang dikirim pemanggil.
+  multiline?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [temp, setTemp] = useState('');
@@ -41,6 +47,20 @@ export function EditableCell({
     // instrinsik kecil bawaan browser. Lebar PIKSEL TETAP (w-[300px]) tidak kena masalah ini
     // sama sekali karena tidak bergantung pada hasil perhitungan tabel.
     const hasOwnWidth = /(^|\s)w-/.test(className);
+    if (multiline) {
+      return (
+        <textarea
+          autoFocus
+          rows={4}
+          value={temp}
+          placeholder={inputPlaceholder}
+          onChange={e => setTemp(e.target.value)}
+          onBlur={commit}
+          onKeyDown={e => { if (e.key === 'Escape') setEditing(false); }}
+          className={`border border-blue-400 rounded px-2 py-1.5 text-xs outline-none bg-white shadow-inner resize-y leading-relaxed ${hasOwnWidth ? '' : 'w-full'} ${className}`}
+        />
+      );
+    }
     return (
       <input
         autoFocus

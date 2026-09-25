@@ -336,6 +336,15 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
   const rateIsAmbiguous = Array.isArray(rateRowUsed) && rateRowUsed.length > 1;
   const statusMeta = overallStatus ? COST_STATUS_META[overallStatus] : null;
 
+  // Status baris "Unit Price (from Description)" -- dipakai gating wajib-tidaknya "Notes
+  // (Manual)" (2026-09, lihat komentar di section Notes di bawah). Live dari `costValidation`
+  // (ikut nilai yang lagi diedit, belum tentu tersimpan) -- SAMA `expected`/`actual` yang tampil
+  // di tabel Cost Validation.
+  const unitPriceRowLive = costValidation.find(r => r.row_key === 'UNIT_PRICE_DARI_DESCRIPTION');
+  const unitPriceExpectedLive = unitPriceRowLive?.expected != null && unitPriceRowLive.expected !== '' ? Number(unitPriceRowLive.expected) : null;
+  const unitPriceActualLive = unitPriceRowLive?.actual != null && unitPriceRowLive.actual !== '' ? Number(unitPriceRowLive.actual) : null;
+  const unitPriceCostStatus = computeCostStatus(unitPriceExpectedLive, unitPriceActualLive);
+
   // Lookup berat per PO (dari po_list milik rekapan_far_overseas_air) & nama PT lengkap dari
   // dominant_company_code -- dipakai baris CONCLUSION di tabel Document Validation.
   const weightForPo = (poNo: string | null | undefined): number | null => {
@@ -348,7 +357,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
 
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[70] flex justify-center items-center p-2 sm:p-4 md:p-6">
-      <div className="bg-slate-50 w-full max-w-5xl h-[92vh] max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+      <div className="bg-slate-50 w-full max-w-7xl h-[92vh] max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
 
         {/* Header */}
         <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-slate-200 bg-white shrink-0">
@@ -580,39 +589,55 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                 )}
               </div>
 
-              {/* Notes (Manual) -- WAJIB diisi (2026-09, permintaan user): selama kosong, memo ini
-                  TIDAK BISA lanjut ke tahap approval Prepared By (Exim) di
-                  FarOverseasAirDetailModal.tsx (`tier1BlockedByNotes`). Field ini murni manual,
+              {/* Notes (Manual) -- WAJIB diisi HANYA kalau baris "Unit Price (from Description)"
+                  TIDAK match (2026-09, GANTI dari "selalu wajib" -- permintaan user: kalau baris
+                  itu MATCH, memo boleh langsung ke approval Prepared By (Exim) tanpa notes sama
+                  sekali). Status dihitung dari `expected`/`actual` baris itu via
+                  `computeCostStatus()` (SATU-SATUNYA fungsi hitung status cost, SAMA dipakai
+                  `handleSelectRate` di atas & gating approval `FarOverseasAirDetailModal.tsx`
+                  `tier1BlockedByNotes` -- JANGAN duplikat logic ini). Field ini murni manual,
                   TIDAK PERNAH diisi otomasi n8n -- beda dari `catatan` (info sistem read-only di
                   kotak biru atas). */}
-              <div className={`bg-white rounded-xl border overflow-hidden ${!notesManual || !notesManual.trim() ? 'border-amber-300' : 'border-slate-200'}`}>
-                <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between gap-2">
-                  <div>
-                    <h3 className="text-sm font-bold text-[#5A305A]">Notes (Manual) <span className="text-rose-600">*</span></h3>
-                    <p className="text-[11px] font-light text-[#5A305A]/70 mt-0.5">Required before this memo can be approved by Prepared By (Exim)</p>
+              {(() => {
+                const notesRequired = unitPriceCostStatus !== 'MATCH';
+                const notesEmpty = !notesManual || !notesManual.trim();
+                return (
+                  <div className={`bg-white rounded-xl border overflow-hidden ${notesRequired && notesEmpty ? 'border-amber-300' : 'border-slate-200'}`}>
+                    <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-sm font-bold text-[#5A305A]">Notes (Manual) {notesRequired && <span className="text-rose-600">*</span>}</h3>
+                        <p className="text-[11px] font-light text-[#5A305A]/70 mt-0.5">
+                          {notesRequired
+                            ? 'Required before this memo can be approved by Prepared By (Exim) — Unit Price (from Description) is not a match'
+                            : 'Not required — Unit Price (from Description) is a match, approval can proceed without notes'}
+                        </p>
+                      </div>
+                      {notesRequired && notesEmpty && (
+                        <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 flex items-center gap-1 shrink-0">
+                          <AlertTriangle size={11} /> Empty
+                        </span>
+                      )}
+                    </div>
+                    <div className="p-4">
+                      {isEditMode ? (
+                        <textarea
+                          value={notesManual ?? ''}
+                          onChange={e => updateNotesManual(e.target.value)}
+                          rows={3}
+                          placeholder="Write cost validation notes here..."
+                          className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A]"
+                        />
+                      ) : notesManual && notesManual.trim() ? (
+                        <p className="text-sm text-[#5A305A] whitespace-pre-wrap">{notesManual}</p>
+                      ) : notesRequired ? (
+                        <p className="text-xs text-amber-700 italic">Not filled in yet — Exim approval is blocked until this is filled in.</p>
+                      ) : (
+                        <p className="text-xs text-slate-400 italic">Not filled in — optional, Unit Price (from Description) is a match.</p>
+                      )}
+                    </div>
                   </div>
-                  {(!notesManual || !notesManual.trim()) && (
-                    <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 flex items-center gap-1 shrink-0">
-                      <AlertTriangle size={11} /> Empty
-                    </span>
-                  )}
-                </div>
-                <div className="p-4">
-                  {isEditMode ? (
-                    <textarea
-                      value={notesManual ?? ''}
-                      onChange={e => updateNotesManual(e.target.value)}
-                      rows={3}
-                      placeholder="Write cost validation notes here..."
-                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A]"
-                    />
-                  ) : notesManual && notesManual.trim() ? (
-                    <p className="text-sm text-[#5A305A] whitespace-pre-wrap">{notesManual}</p>
-                  ) : (
-                    <p className="text-xs text-amber-700 italic">Not filled in yet — Exim approval is blocked until this is filled in.</p>
-                  )}
-                </div>
-              </div>
+                );
+              })()}
             </div>
           )}
         </div>

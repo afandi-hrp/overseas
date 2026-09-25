@@ -1,6 +1,26 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { X, CheckCircle2, Edit3, Printer, XCircle, Clock, Info, Receipt, Save } from 'lucide-react';
+import { useAuth } from '../lib/AuthContext';
+import { X, CheckCircle2, Edit3, Printer, XCircle, Clock, Info, Receipt, Save, MessageSquareWarning } from 'lucide-react';
+import { computeSeaAirCostGlobalStats, type SectionConfirmation } from '../utils/SeaAirCostValidasiHelpers';
+
+// Catatan konfirmasi manual per-segmen Cost Validation (2026-09) -- tabel
+// `cost_validasi_catatan_seaair` (id, seaair_id, section, status_konfirmasi ['MATCH'/
+// 'MISMATCH'], catatan, dikonfirmasi_oleh, dikonfirmasi_at). 1 baris AKTIF per (seaair_id,
+// section) -- staf UPSERT (ganti nilai kapan saja) atau HAPUS baris ini kapan saja, lihat
+// `handleSaveConfirmation`/`handleDeleteConfirmation`.
+type CatatanKonfirmasi = {
+  id: number | string;
+  seaair_id: any;
+  section: string;
+  status_konfirmasi: SectionConfirmation;
+  catatan: string | null;
+  dikonfirmasi_oleh: string | null;
+  dikonfirmasi_at: string | null;
+};
+
+// Draft form per-segmen (status dropdown + textarea) SEBELUM disimpan.
+type ConfirmDraft = { status: SectionConfirmation; catatan: string };
 
 export const EditModeContext = React.createContext(false);
 
@@ -155,7 +175,31 @@ const EditableIDR = ({ val, onSave, isUSD, isKurs }: any) => {
   );
 };
 
-const ValidationTable = ({ title, rows, updateCheck }: { title: string, rows: any[], updateCheck: any }) => {
+const ValidationTable = ({
+  title, rows, updateCheck,
+  enableManualConfirmation = false, catatan = null, draft, onDraftChange, onSaveConfirmation, onDeleteConfirmation, savingConfirmation = false, canEdit = false,
+}: {
+  title: string;
+  rows: any[];
+  updateCheck: any;
+  // Konfirmasi manual per-segmen (2026-09) -- HANYA aktif utk 7 segmen yang diminta (EMKL/
+  // TRUCKING/FREIGHT_ORIGIN/FREIGHT_DESTINATION/STORAGE/LOLO/SURVEYOR), SENGAJA TIDAK utk
+  // "INVOICE CUSTOM" (tidak diminta, tidak ada di daftar segmen requirement fitur ini) --
+  // `enableManualConfirmation=false` (default) menyembunyikan badge & blok konfirmasi TOTAL.
+  // `catatan` null = segmen ini BELUM dikonfirmasi manual (baris di
+  // `cost_validasi_catatan_seaair` belum ada/sudah dihapus). `draft` = state form
+  // (dropdown+textarea) SEBELUM disimpan, SELALU terisi (prefill dari `catatan` kalau ada,
+  // default {status:'MATCH', catatan:''} kalau belum) -- lihat `getConfirmDraft()` di komponen
+  // utama.
+  enableManualConfirmation?: boolean;
+  catatan?: CatatanKonfirmasi | null;
+  draft?: ConfirmDraft;
+  onDraftChange?: (draft: ConfirmDraft) => void;
+  onSaveConfirmation?: () => void;
+  onDeleteConfirmation?: () => void;
+  savingConfirmation?: boolean;
+  canEdit?: boolean;
+}) => {
   const [isJalurMerah, setIsJalurMerah] = useState(false);
 
   if (!rows || rows.length === 0) return null;
@@ -184,13 +228,44 @@ const ValidationTable = ({ title, rows, updateCheck }: { title: string, rows: an
     return row;
   });
 
-
+  // Status segmen (2026-09, header badge) -- "tidak match" kalau ADA baris (termasuk
+  // TOTAL/TOTAL KESELURUHAN) berstatus OVERCHARGE/UNDERCHARGE. Badge header SEKARANG mengikuti
+  // `catatan.status_konfirmasi` PILIHAN STAF kalau sudah ada (MATCH=hijau, MISMATCH=merah, SAMA
+  // warna `StatusBadge` baris detail) -- TANPA mengubah status baris detail individual manapun
+  // (`displayRows`/`StatusBadge` di tabel bawah TETAP apa adanya). Belum ada konfirmasi -> badge
+  // fallback ke hasil hitung otomatis biasa (hijau kalau semua baris match, amber "perlu
+  // konfirmasi" kalau ada baris OVERCHARGE/UNDERCHARGE yg belum ditinjau staf).
+  const hasMismatch = displayRows.some(r => r.status === 'OVERCHARGE' || r.status === 'UNDERCHARGE');
+  const isConfirmed = !!catatan;
 
   return (
     <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6 overflow-x-auto">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4 border-b pb-2">
-        <h2 className="text-lg font-bold text-[#5A305A]">{title}</h2>
-        
+        <div className="flex items-center gap-2 flex-wrap">
+          <h2 className="text-lg font-bold text-[#5A305A]">{title}</h2>
+          {enableManualConfirmation && (
+            isConfirmed ? (
+              catatan!.status_konfirmasi === 'MATCH' ? (
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold whitespace-nowrap bg-emerald-100 text-emerald-700">
+                  <CheckCircle2 size={12} /> Match (Dikonfirmasi)
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold whitespace-nowrap bg-rose-100 text-rose-700">
+                  <XCircle size={12} /> Mismatch (Dikonfirmasi)
+                </span>
+              )
+            ) : hasMismatch ? (
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold whitespace-nowrap bg-amber-100 text-amber-700">
+                <MessageSquareWarning size={12} /> Perlu Konfirmasi Manual
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold whitespace-nowrap bg-emerald-100 text-emerald-700">
+                <CheckCircle2 size={12} /> Match
+              </span>
+            )
+          )}
+        </div>
+
         {hasJalurMerahOption && (
           <div className="flex flex-col items-end">
             <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200">
@@ -331,11 +406,87 @@ const ValidationTable = ({ title, rows, updateCheck }: { title: string, rows: an
 
           </tbody>
         </table>
+
+        {/* Konfirmasi manual per-segmen (2026-09) -- SELALU tampil utk 7 segmen yang didukung
+            (`enableManualConfirmation`), TERLEPAS status hitung otomatis segmen ini match atau
+            tidak (staf boleh menandai MATCH ATAU MISMATCH kapan saja). Catatan textarea WAJIB
+            diisi HANYA kalau dropdown dipilih MISMATCH (divalidasi di tombol Simpan, `submitDisabled`
+            di bawah) -- opsional kalau MATCH. Bisa diubah/dihapus kapan saja (`onSaveConfirmation`
+            = upsert by seaair_id+section, `onDeleteConfirmation` = hapus baris total). */}
+        {enableManualConfirmation && canEdit && draft && (
+          <div className="mt-4 pt-4 border-t border-slate-200">
+            <p className="text-xs font-bold text-[#5A305A] mb-2">Konfirmasi Manual Segmen Ini</p>
+            {/* 1 baris (2026-09, permintaan user): toggle Match/Mismatch (oval penuh,
+                `rounded-full`) + textarea + tombol Simpan semua sejajar, BUKAN tombol Simpan di
+                baris terpisah di bawah lagi. `items-start` (bukan `items-center`) supaya toggle
+                & tombol tetap sejajar ke ATAS textarea walau textarea di-resize tinggi. */}
+            <div className="flex flex-col md:flex-row md:items-start gap-3">
+              <div className="flex items-center rounded-full border border-slate-200 p-1 shrink-0 h-fit">
+                <button
+                  onClick={() => onDraftChange?.({ ...draft, status: 'MATCH' })}
+                  className={`px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-wide rounded-full transition-all ${
+                    draft.status === 'MATCH' ? 'bg-emerald-600 text-white shadow-sm' : 'text-[#5A305A] hover:bg-slate-50'
+                  }`}
+                >
+                  Match
+                </button>
+                <button
+                  onClick={() => onDraftChange?.({ ...draft, status: 'MISMATCH' })}
+                  className={`px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-wide rounded-full transition-all ${
+                    draft.status === 'MISMATCH' ? 'bg-rose-600 text-white shadow-sm' : 'text-[#5A305A] hover:bg-slate-50'
+                  }`}
+                >
+                  Mismatch
+                </button>
+              </div>
+              <textarea
+                value={draft.catatan}
+                onChange={e => onDraftChange?.({ ...draft, catatan: e.target.value })}
+                rows={1}
+                placeholder={draft.status === 'MISMATCH' ? 'Wajib diisi -- jelaskan alasan selisih ini...' : 'Catatan (opsional)...'}
+                className="flex-1 min-w-0 border border-slate-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A] resize-y"
+              />
+              <button
+                onClick={() => onSaveConfirmation?.()}
+                disabled={savingConfirmation || (draft.status === 'MISMATCH' && !draft.catatan.trim())}
+                className="shrink-0 px-3.5 py-2 rounded-lg bg-[#5A305A] hover:bg-[#73507B] text-white text-xs font-bold disabled:opacity-50 transition-colors whitespace-nowrap"
+              >
+                {savingConfirmation ? 'Menyimpan...' : isConfirmed ? 'Perbarui Konfirmasi' : 'Simpan Konfirmasi'}
+              </button>
+              {isConfirmed && (
+                <button
+                  onClick={() => onDeleteConfirmation?.()}
+                  disabled={savingConfirmation}
+                  className="shrink-0 text-[11px] font-bold text-rose-600 hover:underline disabled:opacity-50 whitespace-nowrap self-center"
+                >
+                  Hapus Konfirmasi
+                </button>
+              )}
+            </div>
+            {isConfirmed && (
+              <p className="text-[10px] text-[#5A305A]/60 mt-2">
+                Terakhir dikonfirmasi oleh {catatan!.dikonfirmasi_oleh || '—'} pada {catatan!.dikonfirmasi_at ? new Date(catatan!.dikonfirmasi_at).toLocaleString('id-ID') : '—'}
+              </p>
+            )}
+          </div>
+        )}
+        {enableManualConfirmation && !canEdit && isConfirmed && (
+          <div className="mt-4 pt-4 border-t border-slate-200">
+            <p className={`text-xs font-bold flex items-center gap-1.5 ${catatan!.status_konfirmasi === 'MATCH' ? 'text-emerald-700' : 'text-rose-700'}`}>
+              {catatan!.status_konfirmasi === 'MATCH' ? <CheckCircle2 size={13} /> : <XCircle size={13} />} Dikonfirmasi Manual — {catatan!.status_konfirmasi}
+            </p>
+            {catatan!.catatan && <p className="text-xs text-[#5A305A] mt-1.5 whitespace-pre-wrap">{catatan!.catatan}</p>}
+            <p className="text-[10px] text-[#5A305A]/60 mt-1.5">
+              Oleh {catatan!.dikonfirmasi_oleh || '—'} pada {catatan!.dikonfirmasi_at ? new Date(catatan!.dikonfirmasi_at).toLocaleString('id-ID') : '—'}
+            </p>
+          </div>
+        )}
       </div>
   );
 };
 
 export default function ValidasiShipmentInvoiceLengkap({ record, onClose, canEdit = true }: { record: any, onClose: () => void, canEdit?: boolean }) {
+  const { user, profile } = useAuth();
   const [checks, setChecks] = useState<any[]>([]);
   const [costValidasiId, setCostValidasiId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -348,20 +499,40 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose, canEdi
   const [shipmentInfo, setShipmentInfo] = useState<any>(null);
   const [kursSaatItu, setKursSaatItu] = useState<number | null>(null);
   const [showKursTooltip, setShowKursTooltip] = useState(false);
+  // Catatan konfirmasi manual per-segmen (2026-09) -- `catatanMap` key = `section`
+  // (EMKL/TRUCKING/FREIGHT_ORIGIN/dst), value = baris `cost_validasi_catatan_seaair` yang
+  // SEDANG aktif utk segmen itu (1 baris aktif per section, UPSERT by seaair_id+section --
+  // lihat `handleSaveConfirmation`). `catatanDraft` = state FORM (dropdown+textarea) PER SEGMEN
+  // yang belum disimpan -- key HANYA terisi kalau staf sudah menyentuh form-nya (belum
+  // disentuh = derive default dari `catatanMap` via `getConfirmDraft()`, JANGAN diprefill
+  // otomatis ke state ini supaya tidak "nyangkut" draft basi setelah save/delete). `catatanSaving`
+  // = flag loading tombol Simpan/Hapus PER SEGMEN (independen antar segmen).
+  const [catatanMap, setCatatanMap] = useState<Record<string, CatatanKonfirmasi>>({});
+  const [catatanDraft, setCatatanDraft] = useState<Record<string, ConfirmDraft>>({});
+  const [catatanSaving, setCatatanSaving] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const fetchValidasi = async () => {
       try {
         setLoading(true);
         
-        const [validasiRes, auditRes, rekapRes, matriksRes] = await Promise.all([
+        const [validasiRes, auditRes, rekapRes, matriksRes, catatanRes] = await Promise.all([
            supabase.from('cost_validasi_seaair').select('*').eq('seaair_id', (record.seaair_id || record.id)).maybeSingle(),
            supabase.from('tabel_audit_seaair').select('awb, via, cbm').eq('id', (record.seaair_id || record.id)).maybeSingle(),
            supabase.from('rekapan_seaair').select('vendor, emkl_vendor, etd, atd, eta, ata, notes, weight_kg, tgl_invoice_freight, tgl_storage_mulai, tgl_storage_selesai, origin, destination').eq('seaair_id', (record.seaair_id || record.id)).maybeSingle(),
-           supabase.from('dokumen_validasi_matriks_seaair').select('checks').eq('seaair_id', (record.seaair_id || record.id)).maybeSingle()
+           supabase.from('dokumen_validasi_matriks_seaair').select('checks').eq('seaair_id', (record.seaair_id || record.id)).maybeSingle(),
+           supabase.from('cost_validasi_catatan_seaair').select('*').eq('seaair_id', (record.seaair_id || record.id)),
         ]);
-        
+
         console.log("rekapRes.data:", rekapRes.data);
+
+        if (catatanRes.error) {
+          console.error('Gagal fetch cost_validasi_catatan_seaair:', catatanRes.error);
+        } else {
+          const map: Record<string, CatatanKonfirmasi> = {};
+          (catatanRes.data || []).forEach((c: any) => { map[c.section] = c; });
+          setCatatanMap(map);
+        }
 
         if (rekapRes.data?.tgl_invoice_freight) {
            const kursRes = await supabase
@@ -535,22 +706,101 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose, canEdi
     }
   };
 
-  const globalStats = useMemo(() => {
-    // Tabel INVOICE SURVEYOR (OPSIONAL) dikecualikan dari statistik -- opsional, jadi tidak
-    // ikut menentukan persentase akurasi keseluruhan (baris SURVEYOR yang kosong/belum diisi
-    // seharusnya tidak menurunkan skor validasi cost yang wajib).
-    const countedChecks = checks.filter(c => c.section !== 'SURVEYOR');
-    let match = 0, overcharge = 0, undercharge = 0, total = countedChecks.length;
-    countedChecks.forEach(c => {
-      if (c.status === "MATCH") match++;
-      else if (c.status === "OVERCHARGE") overcharge++;
-      else if (c.status === "UNDERCHARGE") undercharge++;
-    });
-    const mismatch = overcharge + undercharge;
-    return { match, mismatch, overcharge, undercharge, total, pct: total > 0 ? Math.round((match / total) * 100) : 0 };
-  }, [checks]);
+  // Konfirmasi manual per-segmen (2026-09) -- UPSERT 1 baris ke `cost_validasi_catatan_seaair`
+  // by (seaair_id, section) -- 1 segmen cuma boleh py 1 catatan aktif, staf bisa ubah kapan
+  // saja (upsert menimpa baris lama). Ditulis LANGSUNG (bukan RPC) -- tabel ini murni
+  // catatan/anotasi, bukan data cost inti (yang tetap RPC-only lewat `update_cost_validasi_manual`
+  // di atas). Validasi "catatan wajib kalau MISMATCH" sudah dicek di tombol Simpan
+  // (`ValidationTable`, `disabled` prop) -- dicek ULANG di sini sbg jaring pengaman kedua.
+  const handleSaveConfirmation = async (section: string) => {
+    const draft = getConfirmDraft(section);
+    if (draft.status === 'MISMATCH' && !draft.catatan.trim()) {
+      showToast('Catatan wajib diisi untuk status Mismatch.', 'error');
+      return;
+    }
+    setCatatanSaving(prev => ({ ...prev, [section]: true }));
+    const { data, error } = await supabase
+      .from('cost_validasi_catatan_seaair')
+      .upsert({
+        seaair_id: record.seaair_id || record.id,
+        section,
+        status_konfirmasi: draft.status,
+        catatan: draft.catatan.trim() || null,
+        dikonfirmasi_oleh: profile?.nama || user?.email || null,
+        dikonfirmasi_at: new Date().toISOString(),
+      }, { onConflict: 'seaair_id,section' })
+      .select()
+      .single();
+    setCatatanSaving(prev => ({ ...prev, [section]: false }));
+    if (error) {
+      showToast('Gagal menyimpan konfirmasi: ' + error.message, 'error');
+      return;
+    }
+    setCatatanMap(prev => ({ ...prev, [section]: data }));
+    setCatatanDraft(prev => { const next = { ...prev }; delete next[section]; return next; }); // re-derive dari catatanMap
+    showToast('Konfirmasi tersimpan.', 'success');
+  };
+
+  // Hapus konfirmasi -- HAPUS baris catatan total (bukan ubah status_konfirmasi), boleh
+  // dilakukan kapan saja sesuai requirement eksplisit fitur ini.
+  const handleDeleteConfirmation = async (section: string) => {
+    const row = catatanMap[section];
+    if (!row) return;
+    setCatatanSaving(prev => ({ ...prev, [section]: true }));
+    const { error } = await supabase.from('cost_validasi_catatan_seaair').delete().eq('id', row.id);
+    setCatatanSaving(prev => ({ ...prev, [section]: false }));
+    if (error) {
+      showToast('Gagal menghapus konfirmasi: ' + error.message, 'error');
+      return;
+    }
+    setCatatanMap(prev => { const next = { ...prev }; delete next[section]; return next; });
+    setCatatanDraft(prev => { const next = { ...prev }; delete next[section]; return next; });
+    showToast('Konfirmasi dihapus.', 'success');
+  };
+
+  // Section yang SUDAH dikonfirmasi manual (2026-09) -- ikut status_konfirmasi (MATCH/MISMATCH)
+  // PILIHAN STAF utk statistik global, TANPA mengubah `checks` (status baris detail individual
+  // TETAP apa adanya, lihat `ValidationTable`/`StatusBadge`). `computeSeaAirCostGlobalStats()`
+  // (SeaAirCostValidasiHelpers.ts) SATU-SATUNYA sumber formula ini -- SAMA dipakai badge %
+  // Cost Validation di SharedDataTable.tsx, JANGAN duplikat logic-nya di sini lagi.
+  const confirmationBySection = useMemo(() => {
+    const map = new Map<string, SectionConfirmation>();
+    (Object.values(catatanMap) as CatatanKonfirmasi[]).forEach(c => map.set(c.section, c.status_konfirmasi));
+    return map;
+  }, [catatanMap]);
+  const globalStats = useMemo(() => computeSeaAirCostGlobalStats(checks, confirmationBySection), [checks, confirmationBySection]);
 
   const getRowsFor = (section: string) => checks.filter(c => c.section?.trim().toUpperCase() === section.trim().toUpperCase());
+
+  // Draft form efektif utk 1 segmen -- pakai `catatanDraft[section]` kalau staf SUDAH menyentuh
+  // form-nya di sesi ini, kalau belum derive dari `catatanMap` (konfirmasi tersimpan) atau
+  // default {status:'MATCH', catatan:''} kalau belum pernah dikonfirmasi sama sekali.
+  const getConfirmDraft = (section: string): ConfirmDraft => {
+    if (catatanDraft[section]) return catatanDraft[section];
+    const existing = catatanMap[section];
+    if (existing) return { status: existing.status_konfirmasi, catatan: existing.catatan || '' };
+    return { status: 'MATCH', catatan: '' };
+  };
+
+  // Helper render `ValidationTable` + wiring "Catatan Konfirmasi Manual per-Segmen" sekaligus
+  // (2026-09) -- HINDARI duplikasi props yang sama tiap 1 dari 7 segmen yang didukung fitur ini.
+  // `section` WAJIB persis sama dgn nilai `c.section`/kolom `section` di
+  // `cost_validasi_catatan_seaair` (dipakai key `catatanMap`/`catatanDraft`/`catatanSaving`).
+  const renderConfirmableTable = (title: string, section: string) => (
+    <ValidationTable
+      title={title}
+      rows={getRowsFor(section)}
+      updateCheck={updateCheck}
+      enableManualConfirmation
+      catatan={catatanMap[section] ?? null}
+      draft={getConfirmDraft(section)}
+      onDraftChange={(d) => setCatatanDraft(prev => ({ ...prev, [section]: d }))}
+      onSaveConfirmation={() => handleSaveConfirmation(section)}
+      onDeleteConfirmation={() => handleDeleteConfirmation(section)}
+      savingConfirmation={!!catatanSaving[section]}
+      canEdit={canEdit}
+    />
+  );
 
   if (loading) {
     return (
@@ -712,46 +962,23 @@ export default function ValidasiShipmentInvoiceLengkap({ record, onClose, canEdi
                 </div>
 
                 <div className="flex flex-col gap-6">
-                <ValidationTable
-                  title="INVOICE EMKL"
-                  rows={getRowsFor("EMKL")}
-                  updateCheck={updateCheck}
-                />
+                {/* Catatan Konfirmasi Manual per-Segmen (2026-09) -- `renderConfirmableTable()`
+                    (helper lokal) merender ValidationTable + wiring konfirmasi sekaligus, HANYA
+                    dipakai 7 segmen yang diminta requirement fitur ini. "INVOICE CUSTOM" SENGAJA
+                    TIDAK ikut (tidak ada di daftar requirement) -- tetap dirender langsung tanpa
+                    `enableManualConfirmation`, urutan section TIDAK berubah dari sebelumnya. */}
+                {renderConfirmableTable('INVOICE EMKL', 'EMKL')}
                 <ValidationTable
                   title="INVOICE CUSTOM"
                   rows={getRowsFor("CUSTOM")}
                   updateCheck={updateCheck}
                 />
-                <ValidationTable
-                  title="INVOICE TRUCKING"
-                  rows={getRowsFor("TRUCKING")}
-                  updateCheck={updateCheck}
-                />
-                <ValidationTable
-                  title="INVOICE FREIGHT (ORIGIN)"
-                  rows={getRowsFor("FREIGHT_ORIGIN")}
-                  updateCheck={updateCheck}
-                />
-                <ValidationTable
-                  title="INVOICE FREIGHT (DESTINATION)"
-                  rows={getRowsFor("FREIGHT_DESTINATION")}
-                  updateCheck={updateCheck}
-                />
-                <ValidationTable
-                  title="INVOICE STORAGE"
-                  rows={getRowsFor("STORAGE")}
-                  updateCheck={updateCheck}
-                />
-                <ValidationTable
-                  title="INVOICE LOLO"
-                  rows={getRowsFor("LOLO")}
-                  updateCheck={updateCheck}
-                />
-                <ValidationTable
-                  title="INVOICE SURVEYOR (OPSIONAL)"
-                  rows={getRowsFor("SURVEYOR")}
-                  updateCheck={updateCheck}
-                />
+                {renderConfirmableTable('INVOICE TRUCKING', 'TRUCKING')}
+                {renderConfirmableTable('INVOICE FREIGHT (ORIGIN)', 'FREIGHT_ORIGIN')}
+                {renderConfirmableTable('INVOICE FREIGHT (DESTINATION)', 'FREIGHT_DESTINATION')}
+                {renderConfirmableTable('INVOICE STORAGE', 'STORAGE')}
+                {renderConfirmableTable('INVOICE LOLO', 'LOLO')}
+                {renderConfirmableTable('INVOICE SURVEYOR (OPSIONAL)', 'SURVEYOR')}
                 </div>
               </div>
               </div>
