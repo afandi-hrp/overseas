@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { apiFetch } from '../lib/apiFetch';
 import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
@@ -606,7 +607,7 @@ function PreviewModal({ target, onClose }: { target: PreviewTarget; onClose: () 
 
     (async () => {
       try {
-        const res = await fetch(target.src);
+        const res = await apiFetch(target.src);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         if (cancelled) return;
         if (target.kind === 'html') {

@@ -1,4 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
+import { apiFetch } from '../lib/apiFetch';
 import { UploadCloud, FolderOpen, CheckCircle2, FileText, Sparkles, X, AlertTriangle, RotateCcw } from 'lucide-react';
 
 function humanizeUploadError(raw: string): string {
@@ -78,7 +79,7 @@ export default function FarOverseasAirUploadModal({ onClose, onJobStarted, onSen
       const headers: HeadersInit = { 'X-Webhook-Type': 'far_overseas_air' };
       if (customWebhook) headers['X-Webhook-Url'] = customWebhook;
 
-      const res = await fetch('/api/n8n-proxy-start', { method: 'POST', body: formData, headers });
+      const res = await apiFetch('/api/n8n-proxy-start', { method: 'POST', body: formData, headers });
       const data = await res.json();
       if (!res.ok || data.status === 'error') throw new Error(data.pesan || 'Failed to start the process on the automation server.');
 

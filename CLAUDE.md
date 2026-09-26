@@ -25,6 +25,35 @@ approval-nya.
   (atau `index.html` default utk halaman yg tidak override, mis. `/login`). Halaman baru ikuti
   pola `'<Judul Halaman> · BeeHive'`.
 
+## Keamanan — hasil audit 2026-09 (WAJIB dipatuhi kode baru)
+
+- **Semua endpoint `server.ts` `/api/*` WAJIB login**: frontend memanggil lewat `apiFetch()`
+  (`src/lib/apiFetch.ts`, tempel bearer token Supabase HANYA ke URL relatif `/api/`), server
+  verifikasi token + hak akses via RPC `get_my_access()` pakai token user itu (`authorize()`,
+  aturan per fitur `UPLOAD_ACCESS`/`DRIVE_PREVIEW_ACCESS` = sama dgn gating UI). **Endpoint `/api`
+  baru WAJIB panggil `authorize()`; pemanggil baru WAJIB `apiFetch`, JANGAN `fetch` polos.**
+  Env RUNTIME server wajib: `SUPABASE_URL`+`SUPABASE_ANON_KEY` (fallback `VITE_*`) — tanpa ini
+  semua `/api/*` fail-closed 503. `x-webhook-url` hanya boleh ke origin n8n yg terdaftar (origin
+  `VITE_N8N_*` + `N8N_ALLOWED_ORIGINS`) — dulu SSRF penuh. `N8N_WEBHOOK_SECRET` (opsional) dikirim
+  sbg header `X-Webhook-Secret` ke n8n. Upload dibatasi multer 50MB/file, 30 file.
+- **HTML dari backend/n8n WAJIB disanitasi `DOMPurify`** sebelum `dangerouslySetInnerHTML`
+  (nilai di dalamnya hasil ekstraksi AI dari dokumen upload = input tak tepercaya). Satu-satunya
+  titik saat ini: `HtmlValue` `BunkerCompareDocModal.tsx`.
+- **Folder `sql/` DIHAPUS (2026-09-26)** — semua file migrasi (001–026) SUDAH dijalankan ke
+  production (konfirmasi user). Semua catatan "BELUM DIJALANKAN" di file ini & `docs/claude/*.md`
+  TIDAK berlaku lagi; isi SQL lama ada di git history (001–023; 024–026 tidak pernah di-commit).
+- **Kondisi DB production (stack `supabase3`, audit 2026-09-26)**: role `anon` tanpa hak apa pun
+  di schema public (tabel, fungsi, default privileges); GraphQL ditutup; semua tabel RLS dgn
+  policy `has_page_access`/`has_edit_access` (tidak ada `using (true)`); semua view
+  `security_invoker`; semua RPC `SECURITY DEFINER` punya `search_path`; RPC tulis ber-guard.
+  **Aturan objek baru**: tabel WAJIB RLS 4 policy; RPC `SECURITY DEFINER` WAJIB guard +
+  `set search_path = public, extensions, pg_temp` + `revoke ... from public, anon`; view WAJIB
+  `security_invoker`. Catatan "sudah ada guard" di dokumen lama PERNAH terbukti salah — selalu cek
+  `pg_get_functiondef` live dulu.
+- Signup publik (email & phone) DITUTUP di ketiga stack Supabase via env GoTrue
+  (`DISABLE_SIGNUP=true`, phone signup/autoconfirm `false`). Stack `supabase`/`supabase2` BELUM
+  diaudit level DB.
+
 ## Struktur routing & halaman (`src/App.tsx`)
 
 Semua route (kecuali `/login`) dibungkus `<ProtectedRoute>` → `<MainLayout>` (sidebar) →

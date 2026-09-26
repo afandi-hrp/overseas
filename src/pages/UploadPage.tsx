@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
+import { apiFetch } from '../lib/apiFetch';
 import { Link } from 'react-router-dom'
 import { UploadCloud, FolderOpen, CheckCircle2, FileText, Sparkles, Plane, Ship, X, AlertTriangle, RotateCcw } from 'lucide-react'
 import ProcessingQueue from '../components/ProcessingQueue'
@@ -307,7 +308,7 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
         headers['X-Webhook-Url'] = customWebhook;
       }
 
-      const res  = await fetch('/api/n8n-proxy-start', { method: 'POST', body: formData, headers })
+      const res  = await apiFetch('/api/n8n-proxy-start', { method: 'POST', body: formData, headers })
       const data = await res.json()
 
       if (!res.ok) throw new Error(data.pesan || 'Failed to start the process on the automation server.')

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { apiFetch } from '../lib/apiFetch';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
 import { ClipboardCheck, Search, RefreshCw, FileDown, ChevronDown, Pencil, Trash2, X, ArrowUp, ArrowDown, ArrowUpDown, LayoutDashboard, CalendarDays, Download, Printer, FilterX } from 'lucide-react';
@@ -284,7 +285,7 @@ function PreviewModal({ target, onClose }: { target: PreviewTarget; onClose: () 
 
     (async () => {
       try {
-        const res = await fetch(target.src);
+        const res = await apiFetch(target.src);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         if (cancelled) return;
         if (target.kind === 'html') {

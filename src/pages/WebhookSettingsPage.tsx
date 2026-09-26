@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiFetch } from '../lib/apiFetch';
 import { Webhook, Plane, Ship, FileCheck2, Fuel, CheckCircle2, XCircle } from 'lucide-react';
 import Greeting from '../components/Greeting';
 
@@ -119,7 +120,7 @@ export default function WebhookSettingsPage() {
         headers['X-Webhook-Url'] = urlToTest.trim();
       }
 
-      const res = await fetch('/api/n8n-proxy-start', {
+      const res = await apiFetch('/api/n8n-proxy-start', {
         method: 'POST',
         headers
       });

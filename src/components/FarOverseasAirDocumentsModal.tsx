@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { apiFetch } from '../lib/apiFetch';
 import { X, FileText, Eye, Download, Printer, FolderOpen } from 'lucide-react';
 import { parseJsonField } from '../utils/FarOverseasAirHelpers';
 
@@ -47,7 +48,7 @@ function PreviewModal({ target, onClose }: { target: PreviewTarget; onClose: () 
 
     (async () => {
       try {
-        const res = await fetch(target.src);
+        const res = await apiFetch(target.src);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         if (cancelled) return;
         if (target.kind === 'html') {

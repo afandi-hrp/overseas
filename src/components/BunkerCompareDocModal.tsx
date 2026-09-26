@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { apiFetch } from '../lib/apiFetch';
+import DOMPurify from 'dompurify';
 import { createPortal } from 'react-dom';
 import { X, AlertTriangle, ListChecks, ClipboardList, Save, ShieldCheck, CheckCircle2, XCircle, RotateCcw, Printer, FileText, Eye, Download } from 'lucide-react';
 import {
@@ -36,12 +38,23 @@ function highlightCalcMarker(html: string): string {
     `<span class="bunker-calc-marker">⚙️ Calc:</span><br/><span class="bunker-calc-marker">${num}</span>`);
 }
 
+// SANITASI WAJIB (audit keamanan 2026-09): HTML ini memang dirakit backend, TAPI nilai di
+// dalamnya (vendor, kapal, nomor dokumen, dst) hasil ekstraksi AI dari DOKUMEN UPLOAD -- teks
+// dokumen yang dirancang jahat (mis. berisi `<img src=x onerror=...>`) bisa ikut tersalin apa
+// adanya ke HTML ini lalu dieksekusi di origin aplikasi (stored XSS -> curi sesi login). DOMPurify
+// hanya meloloskan tag format teks + class/style, semua script/event handler/URL dibuang.
+const BUNKER_HTML_PURIFY_CONFIG = {
+  ALLOWED_TAGS: ['span', 'br', 'b', 'strong', 'i', 'em', 'u', 'small', 'sup', 'sub', 'div', 'p', 'ul', 'ol', 'li'],
+  ALLOWED_ATTR: ['class', 'style', 'title'],
+};
+
 function HtmlValue({ html }: { html: string | null | undefined }) {
   if (html == null || html === '') return <span className="italic text-slate-400">-</span>;
   // class "bunker-html-value" (lihat index.css) memaksa semua teks di dalam HTML mentah ini
   // pakai #5A305A -- KECUALI span yang backend sendiri warnai pakai var(--success)/
   // var(--error)/var(--warning-color), supaya badge hijau/merah/kuningnya tetap kebaca.
-  return <span className="bunker-html-value" dangerouslySetInnerHTML={{ __html: highlightCalcMarker(html) }} />;
+  const safeHtml = DOMPurify.sanitize(highlightCalcMarker(html), BUNKER_HTML_PURIFY_CONFIG);
+  return <span className="bunker-html-value" dangerouslySetInnerHTML={{ __html: safeHtml }} />;
 }
 
 // no_po/vendor/kapal di bunker_dokumen kadang ikut membawa suffix "(Hal N)" -- referensi nomor
@@ -297,7 +310,7 @@ function BunkerPreviewModal({ target, onClose }: { target: BunkerPreviewTarget; 
 
     (async () => {
       try {
-        const res = await fetch(target.src);
+        const res = await apiFetch(target.src);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         if (cancelled) return;
         if (target.kind === 'html') {
