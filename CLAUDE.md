@@ -50,6 +50,10 @@ approval-nya.
   `set search_path = public, extensions, pg_temp` + `revoke ... from public, anon`; view WAJIB
   `security_invoker`. Catatan "sudah ada guard" di dokumen lama PERNAH terbukti salah — selalu cek
   `pg_get_functiondef` live dulu.
+  **Sebelum `revoke execute` fungsi dari `authenticated`, cek pemanggil DI DALAM DB** (trigger/fungsi
+  lain, `pg_proc.prosrc ilike '%nama%'`), bukan cuma grep frontend — insiden 2026-09-26:
+  `fn_normalize_awb_courier` dicabut krn "tidak dipakai frontend", ternyata dipanggil trigger UPDATE
+  `tabel_audit_pib`/`cn` -> semua save Audit Courier gagal "permission denied for function".
 - Signup publik (email & phone) DITUTUP di ketiga stack Supabase via env GoTrue
   (`DISABLE_SIGNUP=true`, phone signup/autoconfirm `false`). Stack `supabase`/`supabase2` BELUM
   diaudit level DB.

@@ -4657,6 +4657,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       setReorderMode(false);
       setReorderRows(null);
       setReorderTooMany(null);
+      // `records` (daftar berpaginasi) masih snapshot SEBELUM masuk Reorder Mode -- drag cuma
+      // meng-update `reorderRows` + DB. Tanpa refetch, tabel balik menampilkan urutan lama sampai
+      // halaman di-refresh manual.
+      fetchRecords();
       return;
     }
     setReorderLoading(true);

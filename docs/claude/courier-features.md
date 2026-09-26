@@ -48,7 +48,9 @@ export SEKARANG konsisten dgn urutan layar, Draft branch-nya BARU ditambah sort 
 persempit filter dulu drpd fetch semua & bikin browser berat (banner amber di atas tabel).
 `displayRows = reorderMode && reorderRows ? reorderRows : records` — SATU-SATUNYA sumber baris
 yang dirender tbody, otomatis fallback ke `records`/paginasi normal saat mode tidak aktif.
-Footer pagination & tombol Export **disembunyikan/disabled** selama mode aktif. **Keluar
+Footer pagination & tombol Export **disembunyikan/disabled** selama mode aktif. Tombol "Exit
+Reorder Mode" WAJIB `fetchRecords()` (fix 2026-09-26: tanpa ini tabel balik ke snapshot `records`
+lama, urutan baru baru tampil setelah refresh manual). **Keluar
 otomatis** begitu tab/filter berubah (`useEffect` deps `activeMainTab`/`activeSubTab`/
 `courierAuditType`/filter — `reorderRows` snapshot jadi basi kalau scope berubah, cegah drag
 "nyasar" ke query yang salah).
