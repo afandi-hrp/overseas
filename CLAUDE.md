@@ -105,8 +105,10 @@ Audit/Rekapan, Sea & Air Audit/Rekapan, Audit Trail — dipilih via prop
   apa datanya (`tgl_ppjk` kosong/beda), bukan otomatis curigai kode.
 - **Padding halaman** — lihat "Pola UI yang harus diikuti" di bawah (standar `px-3`/`pt-2`/`pb-1`
   di semua halaman termasuk file ini).
-- Dropdown Company Audit Courier (`activeCourierImporAnFilter`) — `w-[48px] truncate` (dipersempit
-  drastis, layar 14" toolbar filter kepotong sampai tab CN tidak kelihatan tanpa scroll).
+- Dropdown Company Audit Courier (`activeCourierImporAnFilter`) — `max-w-[160px]` (2026-09, dulu
+  `w-[48px] truncate` krn toolbar 1 baris kepotong di layar 14"; sejak toolbar Courier jadi 2
+  baris, Company pindah ke baris 1 & ruangnya cukup — lihat "Toolbar 2 baris" di
+  `docs/claude/courier-features.md`).
 - Input tanggal filter (`filterStartDate`/`filterEndDate`) — `w-[82px]`, dipakai
   Courier/Sea & Air Audit/Rekapan + Audit Trail.
 - **`CourierRekapanRowGroup`**: pairing PO↔Vessel dari `rec.po_pt_imi`/`rec.vessel` jalan kalau
@@ -455,6 +457,15 @@ itu sudah selesai diterjemahkan penuh**, cuma teks loading-nya saja).
   itu indikator "memproses aksi", beda konteks dari "memuat data awal".
 - **Halaman baru WAJIB pakai `LoadingState`/`LoadingTableRow`** — jangan bikin blok spinner+teks
   manual baru (apalagi teks Indonesia/warna spinner selain ungu).
+- **Spinner KAPSUL `LoadingSpinner` (2026-09-28, permintaan user)** — `w-8 h-4 shrink-0 border-4
+  rounded-full animate-spin` (kapsul berputar, BUKAN lingkaran). Asalnya bug tak disengaja di
+  `CourierValidasiPage` (`className="h-40 py-0"` bentrok `py-14` bawaan → spinner tergencet
+  flexbox jadi 32×16), user suka tampilannya → dibakukan SENGAJA. SATU-SATUNYA definisi spinner
+  loading data, dipakai `LoadingState`/`LoadingTableRow` + loading auth/akses halaman
+  (`App.tsx`/`RequirePageAccess.tsx`, `variant="solid"` utk latar gradient) + overlay "Updating
+  data..." `SharedDataTable.tsx` + 6 modal (Validasi/Checklist/Cost Validation Courier, Sea & Air,
+  FAR Overseas). TIDAK ikut: spinner inline tombol aksi, indikator antrian proses (amber) Bunker/
+  FAR, animasi UploadPage, ikon `RefreshCw` berputar. Loading data baru WAJIB pakai komponen ini.
 
 ## Peta tabel Supabase (per modul)
 

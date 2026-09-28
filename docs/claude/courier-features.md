@@ -1,4 +1,56 @@
+## Toolbar 2 baris + rule Reorder saat filter aktif — Audit Courier & Invoice Recap (2026-09)
+
+`SharedDataTable.tsx` — toolbar KHUSUS `courier_audit`/`courier_rekapan` (`isCourierToolbar`)
+sekarang 2 baris dalam 1 kartu (dipisah `border-t` tipis); tab lain (Sea & Air/Audit Trail/
+Validasi) TETAP toolbar 1 baris lama (cabang `else`). Elemen yang dipakai kedua cabang diekstrak
+jadi const di render body (`dateRangeEl`/`searchEl`/`refreshBtnEl`/`renderExportBtn(outline)`/
+`addDataBtnEl`) — fungsi/handler TIDAK berubah, murni tata letak.
+- **Baris 1**: kiri tab (Draft/PIB/CN atau PPJK) + badge; kanan dropdown Company
+  (`max-w-[160px]`, dulu Audit `w-[48px]`).
+- **Baris 2** (`flex-nowrap`, `overflow-x-auto` sbg fallback layar sempit, TIDAK wrap): kiri
+  tanggal → Search → Refresh (ikon) → Customize View (ikon saja + tooltip); kanan Edit Mode →
+  Reorder Mode → (Reset to Manual Order, kondisi lama) → pemisah `w-px` → Export → Add Data.
+- **Hierarki**: Add Data SATU-SATUNYA solid ungu; Export outline hijau (`renderExportBtn(true)`,
+  tab lain tetap hijau solid); Edit Mode aktif biru "Editing All Rows"; Reorder aktif oranye
+  "Reordering…".
+- **Edit ↔ Reorder saling menonaktifkan**: `toggleCourierEditMode()` keluar Reorder dulu kalau
+  aktif; `handleToggleReorderMode()` saat masuk mematikan kedua Edit Mode (pending edit TIDAK
+  dibuang, sama perilaku toggle Edit Mode off biasa).
+- **Tombol Reorder Mode tampil** HANYA kalau `reorderTabEligible` (Audit: PIB/CN, BUKAN Draft;
+  Invoice Recap: tab per-PPJK, BUKAN "All PPJK"; + `canEdit`) DAN `!courierFilterActive`
+  (Search terisi — `search` mentah, bukan debounced —, tanggal terisi, atau Company ≠ "All").
+  Filter aktif → tombol DISEMBUNYIKAN TOTAL (bukan disabled); `useEffect([reorderMode,
+  courierFilterActive])` keluar otomatis (`exitReorderMode()`) kalau filter diisi saat mode aktif.
+  Alasan: drag di data terfilter menghitung `sort_order` dari tetangga yang KELIHATAN saja.
+- **Saat Reorder aktif**: banner oranye di atas tabel ("Reorder Mode aktif — drag ikon di kolom
+  No. untuk mengubah urutan" + tombol "Selesai" = `exitReorderMode()`), Export disabled (tooltip
+  "Selesaikan Reorder dulu"), sort klik header sudah nonaktif (`SortableColumnHeader`). Teks
+  banner/tooltip ini SENGAJA Bahasa Indonesia persis spek user (pengecualian program translasi).
+- Batas 2.000 baris (`reorderTooMany`) SUDAH DIHAPUS 2026-09-28 — Reorder Mode sekarang PER
+  HALAMAN, lihat "Mode Reorder" di bawah.
+
+## Audit Courier tab Draft — jalur fetch client-side (fix 2026-09-28)
+
+Tab Draft (`courierAuditType==='archive'`) di `fetchRecords()` punya jalur SENDIRI (gabung
+PIB+CN `status='ARCHIVED'` di browser, sort & paginasi `slice()` di JS — BELUM server-side, tanpa
+`.range()`/`.limit()`), `return` duluan sebelum blok "Apply Date Filter" jalur PIB/CN.
+- **Bug fix**: filter tanggal dulu TIDAK diterapkan di jalur ini (input tanggal di tab Draft tidak
+  menyaring apa pun) — sekarang `.gte/.lte('tgl_ppjk', ...)` di kedua query, sama kolom dgn tab
+  PIB/CN & `getExportData()` Draft (yang sudah benar dari awal).
+- Query ulang `sptnp_total` per-50-id (dobel, kolom sudah ikut `select('*')` dari
+  `tabel_audit_pib`) DIBUANG dari `fetchRecords()` & `getExportData()` jalur Draft. Pola loop yang
+  sama MASIH ADA di jalur PIB/CN normal (belum disentuh, di luar cakupan fix ini).
+- **Gap tersisa (belum dikerjakan)**: tanpa limit/paginasi server, Draft >1.000 baris per tabel
+  berisiko terpotong diam-diam oleh max-rows PostgREST; badge %/checklist dihitung utk SEMUA baris
+  Draft, bukan cuma halaman aktif. Server-side penuh butuh view/RPC gabungan PIB+CN (tanya user
+  dulu apakah sudah ada — aturan "Peta RPC function Supabase").
+
 ## Drag & Drop Reorder — Audit Courier (Draft/PIB/CN) & Invoice Recap Courier (2026-09)
+
+**CATATAN (2026-09)**: scope tombol Reorder Mode dipersempit — lihat "Toolbar 2 baris" di atas
+(Draft & "All PPJK" tidak lagi punya Reorder Mode; filter aktif = tombol hilang). Sejak
+2026-09-28 Reorder Mode PER HALAMAN (bukan fetch semua baris) + respace otomatis — lihat "Mode
+Reorder" di bawah. Urutan kolom TIDAK berubah.
 
 Fitur susun ulang urutan BARIS & KOLOM secara manual via drag-and-drop, `SharedDataTable.tsx`
 (SATU-SATUNYA file kode yang disentuh). Scope **GLOBAL** (1 urutan sama utk SEMUA user, bukan
@@ -23,9 +75,20 @@ komputasi di query):
 - **Drag manual**: `sort_order` baru = titik tengah 2 tetangga di posisi baru
   (`computeDroppedSortOrder()`, `SORT_ORDER_GAP=1000` kalau didrop di ujung) — commit
   `.update({sort_order}).eq('id',id)` LANGSUNG (bukan RPC, cukup RLS UPDATE `has_edit_access`
-  yang SUDAH ADA di ke-3 tabel). **Keterbatasan diterima**: drag berulang PERSIS di titik yang
-  sama bisa habiskan presisi float lama-lama, belum di-renormalize otomatis — tangani kalau ada
-  laporan nyata (pola project ini).
+  yang SUDAH ADA di ke-3 tabel).
+- **Respace otomatis (2026-09-28)** — kalau 2 tetangga jaraknya `< SORT_ORDER_MIN_GAP` (1e-3):
+  nilai KEMBAR (baris n8n di detik `created_at` yang sama — trigger default isi nilai identik)
+  ATAU presisi float habis krn drag berulang di titik sama → `respaceSortOrder()` ambil SEMUA
+  baris TABEL (lintas scope PPJK/status) dgn nilai di rentang [before, after], lalu dibagi rata di
+  antara nilai distinct terdekat di luar rentang (`lo`/`hi`), baris yg dipindah disisipkan tepat
+  setelah `before` — urutan relatif baris lain tidak berubah. Guard `SORT_ORDER_RESPACE_MAX=500`
+  baris per blok (error kalau lebih). Update per baris (batch 50 paralel).
+- **Tiebreak `id` WAJIB** di semua order `sort_order` (`fetchRecords`/`getExportData`
+  `.order('sort_order').order('id')`; Draft `combined.sort` tiebreak `jenis_dokumen`+`id`) —
+  tanpa ini urutan baris kembar tidak stabil antar-halaman `.range()` (baris dobel/terlewat).
+- **Efek samping diketahui**: tiap UPDATE `sort_order` memicu trigger audit DB (`fn_audit_pib`/
+  `cn`/`courier`) → baris `audit_trail` dump mentah (tersaring dari tampilan oleh
+  `TRAIL_APP_WRITTEN_FILTER`, tapi tetap tersimpan). Respace bisa menulis banyak baris sekaligus.
 
 **Kapan `sort_order` dipakai vs sort-by-kolom (existing)** — `isDefaultSortState(sortColumn,
 sortDirection)` = `sortColumn==='created_at' && sortDirection==='desc'` (state SEBELUM user klik
@@ -39,31 +102,40 @@ setSortDirection('desc')`. `getExportData()` ikut logic yang SAMA (`usesRowSortO
 export SEKARANG konsisten dgn urutan layar, Draft branch-nya BARU ditambah sort sama sekali
 (sebelumnya tidak sort apa pun).
 
-**Mode Reorder (`reorderMode` toggle toolbar, gated `canEdit('courier_audit')`/
-`('courier_rekapan')`)** — drag lintas SELURUH tabel butuh SEMUA baris ter-fetch tanpa
-`.range()`, TIDAK match dgn paginasi hemat default. `handleToggleReorderMode()` →
-`fetchAllForReorder()` (REPLIKA filter `fetchRecords()`, pola duplikasi yang sudah ada antara
-`fetchRecords()`/`getExportData()` di file ini) fetch semua baris cocok filter aktif, order
-`sort_order` ASC, ke `reorderRows` state. **Guard >2000 baris** (`reorderTooMany`) — minta user
-persempit filter dulu drpd fetch semua & bikin browser berat (banner amber di atas tabel).
-`displayRows = reorderMode && reorderRows ? reorderRows : records` — SATU-SATUNYA sumber baris
-yang dirender tbody, otomatis fallback ke `records`/paginasi normal saat mode tidak aktif.
-Footer pagination & tombol Export **disembunyikan/disabled** selama mode aktif. Tombol "Exit
-Reorder Mode" WAJIB `fetchRecords()` (fix 2026-09-26: tanpa ini tabel balik ke snapshot `records`
-lama, urutan baru baru tampil setelah refresh manual). **Keluar
-otomatis** begitu tab/filter berubah (`useEffect` deps `activeMainTab`/`activeSubTab`/
-`courierAuditType`/filter — `reorderRows` snapshot jadi basi kalau scope berubah, cegah drag
-"nyasar" ke query yang salah).
+**Mode Reorder — PER HALAMAN (2026-09-28, GANTI fetch-semua-baris + batas 2.000)** — toggle
+toolbar, hanya tab PIB/CN & per-PPJK, filter dilarang (lihat "Toolbar 2 baris"). Karena tanpa
+filter & urutan default, 1 halaman `fetchRecords()` = potongan UTUH urutan global scope tab, posisi
+cukup dihitung dari tetangga. `fetchAllForReorder`/`reorderRows`/`reorderTooMany` DIHAPUS —
+tabel SELALU render `records` (`displayRows` cuma alias).
+- `handleToggleReorderMode()` simpan pageSize user di `prevPageSizeRef`, paksa
+  `REORDER_PAGE_SIZE=100` (halaman dipilih supaya baris pertama yg terlihat tetap di layar), reset
+  sort ke default, matikan Edit Mode. `exitReorderMode()` kembalikan pageSize — SENGAJA TIDAK
+  panggil `fetchRecords()` manual (`records` sudah sinkron DB; fetch manual bisa balapan dgn
+  closure pageSize lama, fetch ulang jalan otomatis lewat deps). Effect tab/filter-change juga
+  mengembalikan pageSize.
+- `getReorderScope()` — tabel + kondisi scope tab (PIB/CN: `neq status ARCHIVED`; per-PPJK:
+  `ilike ppjk`), HARUS sama persis dgn `fetchRecords()`. `fetchScopeRowAt(pos)` ambil 1 baris di
+  posisi global (`.range(pos,pos)`, order `sort_order`+`id`).
+- `handleRowDragEnd()` — drag di dalam halaman; drop di baris paling atas/bawah halaman ambil
+  tetangga dari halaman sebelah via `fetchScopeRowAt(pageStart-1)`/`(pageStart+len)`.
+  `placeRowBetween()` → titik tengah biasa (update `sort_order` lokal, tanpa refetch) atau
+  respace (refetch). Gagal → alert + `fetchRecords()` utk kembalikan tampilan.
+- **Pindah lintas halaman**: klik badge nomor (`ReorderIndexCell`, popover portal `fixed`) → "To
+  top" / "To bottom" / "Move" ke No. N (1-based, posisi GLOBAL). `handleMoveRowTo()` — tetangga
+  di urutan akhir: naik `[t-1, t]`, turun `[t, t+1]` (posisi sekarang), lalu loncat ke halaman
+  tempat baris mendarat. Badge nomor = posisi GLOBAL (`startIndex + index`), bukan nomor di
+  halaman.
+- `reorderSaving` — drag/move berikutnya diabaikan selama simpan berjalan ("Saving…" di banner).
+- Footer pagination TETAP tampil; Export tetap disabled selama mode aktif.
 
-Kolom "No." (`type==='index'`) render **grip handle (⋮⋮) + badge bulat oranye** (nomor urut LIVE
-posisi array) SAAT `reorderMode` — di luar mode, tampilan TETAP seperti sebelumnya (teks biasa).
+Kolom "No." (`type==='index'`) render **grip handle (⋮⋮) + badge oranye** (`ReorderIndexCell`,
+nomor posisi GLOBAL, klik = popover "Move to") SAAT `reorderMode` — di luar mode, tampilan TETAP seperti sebelumnya (teks biasa).
 `CourierAuditRowGroup`/`CourierRekapanRowGroup` panggil `useSortable({id:rec.id,
 disabled:!reorderMode})` TANPA SYARAT (Rules of Hooks — hook selalu dipanggil, listener/transform
 yang kondisional), ref/style HANYA dipasang ke `<tr>` PERTAMA (baris split PO lanjutan TIDAK ikut
 ter-transform saat drag, keterbatasan diterima, kasus jarang). `handleRowDragEnd()` — `arrayMove`
 + hitung `sort_order` baru + `.update()` (tabel target: `rekapan_courier` utk Invoice Recap;
-`tabel_audit_pib`/`cn` utk Audit Courier, ditentukan dari `jenis_dokumen` (Draft) atau
-`courierAuditType` (PIB/CN tab), pola sama `handleUndraft`).
+`tabel_audit_pib`/`cn` utk Audit Courier dari `courierAuditType`, lewat `getReorderScope()`).
 
 **Bug fix — drag tidak bisa dipicu sama sekali (2026-09, laporan user setelah versi awal)**:
 root cause CSS `transform` TIDAK reliable diterapkan ke elemen `<tr>`/`<th>` (keterbatasan

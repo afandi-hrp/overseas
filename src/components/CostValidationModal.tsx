@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { LoadingSpinner } from './LoadingState';
 import { supabase } from '../lib/supabase';
 import { computeLiveCostSummary, isRowVisible } from '../utils/CostValidationHelpers';
 
@@ -821,7 +822,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
         <div className="flex-1 overflow-y-auto bg-slate-50/50">
           {loading ? (
             <div className="flex flex-col items-center justify-center h-full text-[#5A305A] py-10 px-6">
-              <div className="w-8 h-8 border-4 border-[#5A305A]/20 border-t-[#5A305A] rounded-full animate-spin mb-4" />
+              <LoadingSpinner className="mb-4" />
               <span className="text-sm font-medium">Loading data...</span>
             </div>
           ) : !data ? (

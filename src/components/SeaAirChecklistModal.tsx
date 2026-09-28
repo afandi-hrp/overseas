@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { LoadingSpinner } from './LoadingState';
 import { CheckCircle2, XCircle, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -61,7 +62,7 @@ export default function SeaAirChecklistModal({ record, onClose }: { record: any,
     return (
       <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center h-full w-full">
         <div className="bg-white p-6 rounded-2xl shadow-xl">
-           <div className="animate-spin h-8 w-8 border-4 border-[#5A305A]/20 border-t-[#5A305A] rounded-full mx-auto mb-4"></div>
+           <LoadingSpinner className="mx-auto mb-4" />
            <p className="text-[#5A305A] font-medium">Loading data...</p>
         </div>
       </div>

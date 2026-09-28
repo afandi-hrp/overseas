@@ -1,4 +1,5 @@
 import React from 'react';
+import { LoadingSpinner } from './LoadingState';
 import { Link } from 'react-router-dom';
 import { ShieldAlert } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
@@ -24,7 +25,7 @@ export default function RequirePageAccess({ pageKey, adminOnly, children }: {
   if (loading) {
     return (
       <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-[#FFF5C5] to-[#F58C77]">
-        <div className="w-8 h-8 border-4 border-[#5A305A] border-t-transparent rounded-full animate-spin" />
+        <LoadingSpinner variant="solid" />
       </div>
     );
   }

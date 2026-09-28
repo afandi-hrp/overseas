@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import { LoadingSpinner } from './LoadingState';
 import { supabase } from '../lib/supabase';
 import { Receipt, FileText, Landmark, Ship, Sailboat, FileCheck2, FileDigit, IdCard, Scale, ClipboardList, Edit3, CheckCircle2, XCircle, Clock, Building2, Plane, CalendarDays, UserCheck, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import ValidasiPerhitunganPIB from './ValidasiPerhitunganPIB';
@@ -1371,7 +1372,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     return (
       <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center h-full w-full">
         <div className="bg-white p-6 rounded-2xl shadow-xl">
-           <div className="animate-spin h-8 w-8 border-4 border-[#5A305A]/20 border-t-[#5A305A] rounded-full mx-auto mb-4"></div>
+           <LoadingSpinner className="mx-auto mb-4" />
            <p className="text-[#5A305A] font-medium">Loading data...</p>
         </div>
       </div>

@@ -4,6 +4,7 @@
  */
 
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
+import { LoadingSpinner } from './components/LoadingState';
 import UploadPage from './pages/UploadPage';
 import SettingsPage from './pages/SettingsPage';
 import AccountPage from './pages/AccountPage';
@@ -47,7 +48,7 @@ function ProtectedRoute() {
   if (loading) {
     return (
       <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-[#FFF5C5] to-[#F58C77]">
-        <div className="w-8 h-8 border-4 border-[#5A305A] border-t-transparent rounded-full animate-spin" />
+        <LoadingSpinner variant="solid" />
       </div>
     );
   }
