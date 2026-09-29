@@ -187,6 +187,14 @@ const computeDroppedSortOrder = (before: number | null | undefined, after: numbe
   return (before + after) / 2;
 };
 
+// Urutan default tab Draft Audit Courier (2026-09-29): Created At TERBARU di atas (gabungan PIB+CN
+// di-sort di browser). Tiebreak jenis dokumen + id supaya urutan stabil antar-halaman `slice()`.
+const compareCreatedAtDesc = (a: any, b: any): number => {
+  const ta = a.created_at ? Date.parse(a.created_at) : 0;
+  const tb = b.created_at ? Date.parse(b.created_at) : 0;
+  return (tb - ta) || String(a.jenis_dokumen).localeCompare(String(b.jenis_dokumen)) || (Number(b.id) - Number(a.id));
+};
+
 // Reorder Mode PER HALAMAN (2026-09-28, ganti fetch-semua-baris + batas 2.000) -- aman krn filter
 // DILARANG selama Reorder (lihat `showReorderButton`), jadi 1 halaman = potongan UTUH urutan global
 // scope tab. Halaman lebih besar dari default (100) supaya jarang perlu pindah halaman.
@@ -3649,6 +3657,14 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     setSearch('');
     setDebouncedSearch('');
   }, [activeMainTab, activeSubTab, activeTrailFilter])
+
+  // Sort hasil klik header kembali ke default tiap pindah tab PPJK (Invoice Recap) atau tab
+  // Draft/PIB/CN (Audit) -- 2026-09-29, default urutan kini BEDA per tab (All PPJK = Created At,
+  // per-PPJK = sort_order dari Email Received Date), sort 1 tab tidak boleh terbawa ke tab lain.
+  useEffect(() => {
+    setSortColumn('created_at');
+    setSortDirection('desc');
+  }, [activePpjkFilter, courierAuditType])
   const tableRef = useRef<HTMLTableElement>(null)
   const [tableWidth, setTableWidth] = useState(0)
 
@@ -3748,12 +3764,12 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         });
 
         // Apply Ordering locally -- state default (belum ada sort eksplisit dari user, lihat
-        // isDefaultSortState()) pakai `sort_order` (hasil drag reorder, 2026-09) BUKAN
-        // `created_at` polos -- AMAN digabung PIB+CN krn ke-2 tabel pakai skala epoch yang sama
-        // persis (lihat sql/022_courier_row_sort_order.sql). Sort eksplisit by kolom lain TIDAK
-        // berubah (perilaku existing).
+        // isDefaultSortState()) = Created At TERBARU di atas LANGSUNG (2026-09-29, keputusan user),
+        // BUKAN `sort_order` lagi -- `sort_order` tabel_audit_pib/cn kini diturunkan dari Doc
+        // Acceptance (utk tab PIB/CN), tidak relevan utk Draft (Draft juga tanpa Reorder Mode).
+        // Sort eksplisit by kolom lain TIDAK berubah (perilaku existing).
         if (isDefaultSortState(sortColumn, sortDirection)) {
-          combined.sort((a, b) => ((a.sort_order ?? 0) - (b.sort_order ?? 0)) || String(a.jenis_dokumen).localeCompare(String(b.jenis_dokumen)) || (Number(a.id) - Number(b.id)));
+          combined.sort(compareCreatedAtDesc);
         } else if (sortColumn) {
           combined.sort((a, b) => {
             const valA = a[sortColumn] || '';
@@ -3878,7 +3894,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     // punya kolom ini, TETAP pakai perilaku lama. Sort eksplisit by kolom lain TIDAK berubah.
     const usesRowSortOrder = isDefaultSortState(sortColumn, sortDirection) && (
       (activeMainTab === 'courier' && activeSubTab === 'courier_audit' && (courierAuditType === 'pib' || courierAuditType === 'cn')) ||
-      (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan')
+      // Invoice Recap tab "All PPJK" SENGAJA TIDAK pakai sort_order (2026-09-29) -- default-nya
+      // Created At terbaru LANGSUNG (jatuh ke cabang `.order(sortColumn)` di bawah, sortColumn
+      // default = 'created_at' desc). Tab per-PPJK tetap sort_order, yg nilai awalnya sekarang
+      // diturunkan dari Email Received Date oleh trigger DB (fn_set_default_sort_order).
+      (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan' && activePpjkFilter !== 'All')
     );
     if (usesRowSortOrder) {
       // Tiebreak `id` WAJIB -- baris n8n di detik yg sama punya `sort_order` kembar; tanpa ini
@@ -4189,12 +4209,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
       await mergeChecklistData(combined);
 
-      // Export ikut urutan hasil drag reorder (2026-09) -- SAMA logic dgn fetchRecords() Draft
-      // branch (sort_order kalau belum ada sort eksplisit, else by sortColumn) -- sebelumnya
-      // branch ini TIDAK sort sama sekali (order Supabase apa adanya), export Draft jadi tidak
-      // konsisten dgn urutan yang tampil di layar.
+      // Export ikut urutan layar -- SAMA logic dgn fetchRecords() Draft branch (Created At
+      // terbaru kalau belum ada sort eksplisit, else by sortColumn).
       if (isDefaultSortState(sortColumn, sortDirection)) {
-        combined.sort((a, b) => ((a.sort_order ?? 0) - (b.sort_order ?? 0)) || String(a.jenis_dokumen).localeCompare(String(b.jenis_dokumen)) || (Number(a.id) - Number(b.id)));
+        combined.sort(compareCreatedAtDesc);
       } else if (sortColumn) {
         combined.sort((a, b) => {
           const valA = a[sortColumn] || '';
@@ -4303,7 +4321,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     // Apply Ordering -- pola sama fetchRecords() (2026-09, lihat isDefaultSortState()).
     const usesRowSortOrderExport = isDefaultSortState(sortColumn, sortDirection) && (
       (activeMainTab === 'courier' && activeSubTab === 'courier_audit' && (courierAuditType === 'pib' || courierAuditType === 'cn')) ||
-      (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan')
+      // Invoice Recap tab "All PPJK" SENGAJA TIDAK pakai sort_order (2026-09-29) -- default-nya
+      // Created At terbaru LANGSUNG (jatuh ke cabang `.order(sortColumn)` di bawah, sortColumn
+      // default = 'created_at' desc). Tab per-PPJK tetap sort_order, yg nilai awalnya sekarang
+      // diturunkan dari Email Received Date oleh trigger DB (fn_set_default_sort_order).
+      (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan' && activePpjkFilter !== 'All')
     );
     if (usesRowSortOrderExport) {
       // Tiebreak `id` WAJIB -- baris n8n di detik yg sama punya `sort_order` kembar; tanpa ini
@@ -5017,6 +5039,12 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   const isCourierAuditTab = activeMainTab === 'courier' && activeSubTab === 'courier_audit';
   const isCourierRekapanTab = activeMainTab === 'courier' && activeSubTab === 'courier_rekapan';
   const isCourierToolbar = isCourierAuditTab || isCourierRekapanTab;
+  // Tab yg urutan DEFAULT-nya dari kolom `sort_order` (Audit PIB/CN = Doc Acceptance, Invoice Recap
+  // per-PPJK = Email Received Date, + drag manual), BUKAN kolom Created At langsung (Audit Draft &
+  // Invoice Recap "All PPJK", 2026-09-29). Di state default, panah sort di header "Created At"
+  // disembunyikan (`headerSortColumn`) supaya tidak menyesatkan di tab ber-`sort_order`.
+  const courierDefaultUsesSortOrder = (isCourierAuditTab && courierAuditType !== 'archive') || (isCourierRekapanTab && activePpjkFilter !== 'All');
+  const headerSortColumn = courierDefaultUsesSortOrder && isDefaultSortState(sortColumn, sortDirection) ? '' : sortColumn;
   const courierEditModeCanEdit = (isCourierAuditTab && canEdit('courier_audit')) || (isCourierRekapanTab && canEdit('courier_rekapan'));
   const courierEditModeOn = isCourierAuditTab ? courierAuditEditMode : isCourierRekapanTab ? courierRekapanEditMode : false;
   // Edit Mode & Reorder Mode saling menonaktifkan -- nyalakan Edit Mode = keluar Reorder Mode dulu.
@@ -5422,11 +5450,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                       {courierEditModeCanEdit && !reorderMode && !isDefaultSortState(sortColumn, sortDirection) && (
                         <button
                           onClick={() => { setSortColumn('created_at'); setSortDirection('desc'); }}
-                          title="Return to the manually reordered display (clears the active column sort)"
+                          title={courierDefaultUsesSortOrder ? 'Return to the manually reordered display (clears the active column sort)' : 'Return to the default sort (Created At, newest first)'}
                           className="px-3 py-2 rounded-full bg-white text-[#5A305A] border border-slate-200 hover:border-[#5A305A] hover:bg-[#5A305A]/5 text-xs font-semibold transition-all h-[38px] flex justify-center items-center gap-1.5 shadow-sm shrink-0"
                         >
                           <ArrowUpDown size={14} />
-                          Reset to Manual Order
+                          {courierDefaultUsesSortOrder ? 'Reset to Manual Order' : 'Reset to Default Sort'}
                         </button>
                       )}
 
@@ -5641,7 +5669,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                       >
                         <SortableContext items={visibleCols.filter(c => c.type !== 'index').map(c => c.key)} strategy={horizontalListSortingStrategy}>
                           {visibleCols.map(col => (
-                            <SortableColumnHeader key={col.key} col={col} sortColumn={sortColumn} sortDirection={sortDirection} reorderMode={reorderMode} onHeaderClick={() => {
+                            <SortableColumnHeader key={col.key} col={col} sortColumn={headerSortColumn} sortDirection={sortDirection} reorderMode={reorderMode} onHeaderClick={() => {
                               if (sortColumn === col.key) setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
                               else { setSortColumn(col.key); setSortDirection('asc'); }
                             }} />

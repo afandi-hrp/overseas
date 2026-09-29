@@ -1,3 +1,53 @@
+## Sort default per tab Courier (2026-09-29)
+
+| Menu / tab | Urutan default | Sumber |
+|---|---|---|
+| Audit — Draft | `created_at` DESC LANGSUNG (sort di browser, `compareCreatedAtDesc`) | tidak pakai `sort_order` (tab ini tanpa Reorder) |
+| Audit — PIB / CN | `sort_order` ASC (+`id`) | trigger: Doc Acceptance (kosong paling atas), + drag manual |
+| Invoice Recap — All PPJK | `created_at` DESC LANGSUNG | tidak pakai `sort_order` (tab ini tanpa Reorder) |
+| Invoice Recap — per-PPJK (DHL/FEDEX/...) | `sort_order` ASC (+`id`) | trigger: Email Received Date (kosong paling atas), + drag manual |
+
+**Frontend** (`SharedDataTable.tsx`):
+- `usesRowSortOrder`/`usesRowSortOrderExport` mengecualikan `activePpjkFilter==='All'` → jatuh
+  ke `.order('created_at', desc)` biasa. Draft (fetch & export) state default → `compareCreatedAtDesc`
+  (dulu `sort_order`).
+- Sort hasil klik header DI-RESET tiap pindah tab PPJK / Draft-PIB-CN
+  (`useEffect([activePpjkFilter, courierAuditType])`) — dulu terbawa antar-tab.
+- `courierDefaultUsesSortOrder` (PIB/CN & per-PPJK) → tombol reset "Reset to Manual Order", tab
+  lain "Reset to Default Sort"; `headerSortColumn` sembunyikan panah ↓ header "Created At" saat
+  state default di tab ber-`sort_order` (urutannya bukan Created At).
+
+**DB — `fn_set_default_sort_order()`** (1 fungsi dipakai 3 trigger INSERT
+`trg_set_sort_order_pib`/`_cn`/`_rekapan_courier`; isi versi lama dikonfirmasi user via
+`pg_get_functiondef` 2026-09-29 = `-epoch(coalesce(created_at, now()))` kalau NULL):
+- Kolom tanggal per tabel via `TG_TABLE_NAME`: `rekapan_courier` → `tgl_terima_email`;
+  `tabel_audit_pib`/`cn` → `doc_acceptance`. Dibaca lewat `to_jsonb(new)->>kolom` (fungsi dipakai
+  bersama, akses field langsung ke kolom yg tidak ada di tabel lain akan error). Tabel lain (kalau
+  kelak dipasang) → perilaku lama.
+- **Kosong (NULL/''/'-') → PALING ATAS**: `-(epoch(created_at) + 1e10)` — offset 1e10 dtk (~317 thn)
+  menjamin lebih negatif dari baris bertanggal mana pun; sesama kosong urut Created At terbaru.
+- **Ada tanggal**: `-(epoch(tengah malam WIB hari itu) + clamp(created_at − tengah malam,
+  0..8.639.999 dtk)/100)` — offset dibagi 100 & di-clamp supaya SELALU < 86.400 (tidak nyebrang
+  ke "ember" hari lain), resolusi 0,01/detik (> `SORT_ORDER_MIN_GAP`).
+- **Isi tidak kosong tapi gagal di-cast ke date** → fallback `-epoch(created_at)` (TIDAK ikut ke atas).
+- Trigger UPDATE BARU `BEFORE UPDATE OF <kolom tanggal>, sort_order`
+  (`trg_resort_on_email_date_rekapan_courier`, `trg_resort_on_doc_acceptance_pib`/`_cn`) → hitung
+  ulang kalau `sort_order` di-set NULL, ATAU kolom tanggal berubah TANPA `sort_order` ikut diubah
+  di statement yg sama (drag manual = ubah `sort_order` saja → dihormati). Undraft (isi Doc
+  Acceptance otomatis) → baris masuk PIB/CN langsung di posisi tanggalnya.
+- **Konsekuensi (dikonfirmasi user)**: ubah tanggal = baris pindah posisi (urutan manual baris itu
+  hilang); backfill `update ... set sort_order = null` MERESET semua urutan manual 3 tabel.
+- **Status SQL (2026-09-29)**: paket final (fungsi + 3 trigger UPDATE + backfill 3 tabel)
+  diberikan ke user, dijalankan manual oleh user — belum ada konfirmasi sudah jalan. Daftar trigger
+  ke-3 tabel SUDAH dicek (hasil `pg_trigger` dari user): selain trigger sort_order, hanya ada
+  `trg_audit_pib`/`_cn`/`_courier` (AFTER, ber-guard `auth.email() IS NULL` → dilewati saat backfill
+  dari SQL Editor; `fn_normalize_awb_courier` dipanggil DI DALAM fungsi audit ini, bukan trigger
+  sendiri) & `trg_calc_item_price_idr_cn` (`UPDATE OF item_price, other_cost, kurs, tgl_ppjk` →
+  TIDAK terpicu backfill `sort_order`). Trigger `trg_resort_on_email_date_rekapan_courier` SUDAH
+  ADA di production (versi awal SQL rekapan pernah dijalankan user). Sebelum paket ini jalan,
+  PIB/CN masih urut Created At (frontend aman di-deploy duluan). Kalau ada laporan "urutan masih
+  Created At", cek dulu SQL ini sudah jalan.
+
 ## Toolbar 2 baris + rule Reorder saat filter aktif — Audit Courier & Invoice Recap (2026-09)
 
 `SharedDataTable.tsx` — toolbar KHUSUS `courier_audit`/`courier_rekapan` (`isCourierToolbar`)

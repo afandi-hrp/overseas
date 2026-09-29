@@ -106,6 +106,11 @@ Audit/Rekapan, Sea & Air Audit/Rekapan, Audit Trail — dipilih via prop
 - **Filter tanggal Audit Courier** — berdasar `tgl_ppjk` ("PPJK Date"), BUKAN `created_at`.
   Rekapan Courier pakai `tgl_terima_email`. Kalau ada laporan "filter salah kolom", cek dulu
   apa datanya (`tgl_ppjk` kosong/beda), bukan otomatis curigai kode.
+- **Sort default BEDA per tab Courier (2026-09-29)** — Audit Draft & Invoice Recap All PPJK =
+  Created At langsung; Audit PIB/CN & Invoice Recap per-PPJK = kolom `sort_order` (drag manual),
+  nilai awalnya dari trigger DB: Doc Acceptance (PIB/CN) / Email Received Date (per-PPJK), yang
+  KOSONG selalu paling atas. Detail: "Sort default per tab Courier" di
+  `docs/claude/courier-features.md`.
 - **Padding halaman** — lihat "Pola UI yang harus diikuti" di bawah (standar `px-3`/`pt-2`/`pb-1`
   di semua halaman termasuk file ini).
 - Dropdown Company Audit Courier (`activeCourierImporAnFilter`) — `max-w-[160px]` (2026-09, dulu
