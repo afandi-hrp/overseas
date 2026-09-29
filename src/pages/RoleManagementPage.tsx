@@ -199,12 +199,21 @@ export default function RoleManagementPage() {
   const toggleRolePageAccess = async (role: Role, pageKey: string) => {
     if (role.is_protected) return; // Admin selalu akses penuh, tidak bisa diubah lewat matrix
     const has = rolePageAccess[role.id]?.has(pageKey);
+    // `.select()` WAJIB (2026-09-29) -- INSERT/DELETE yg TIDAK mengenai baris apa pun tidak error
+    // di PostgREST, matrix dulu tetap mengubah centang tanpa konfirmasi DB. Kasus nyata: role
+    // AP OVS, akses Courier Audit/Rekapan "tercentang" di matrix tapi TIDAK ada di DB -> menu
+    // Courier tidak muncul. Penyebab pastinya tidak ketemu (role_page_access TIDAK punya
+    // trigger/rule; policy cuma `is_admin()` utk semua operasi -- dicek 2026-09-29), dugaan: state
+    // matrix basi (halaman lama tidak di-refresh / diubah dari tab-sesi lain). Pengecekan ini
+    // memastikan matrix hanya berubah kalau DB benar-benar berubah.
     if (has) {
-      const { error } = await supabase.from('role_page_access').delete().eq('role_id', role.id).eq('page_key', pageKey);
+      const { data, error } = await supabase.from('role_page_access').delete().eq('role_id', role.id).eq('page_key', pageKey).select('role_id');
       if (error) { showToast('Failed to save: ' + error.message, 'error'); return; }
+      if (!data || data.length === 0) { showToast('Access was NOT removed -- no matching row was deleted in the database. Refresh this page to see the real state.', 'error'); return; }
     } else {
-      const { error } = await supabase.from('role_page_access').insert({ role_id: role.id, page_key: pageKey });
+      const { data, error } = await supabase.from('role_page_access').insert({ role_id: role.id, page_key: pageKey }).select('role_id');
       if (error) { showToast('Failed to save: ' + error.message, 'error'); return; }
+      if (!data || data.length === 0) { showToast(`Access to "${pageKey}" was NOT saved -- the database did not confirm the new row. Refresh this page and try again.`, 'error'); return; }
     }
     setRolePageAccess(prev => {
       const next = { ...prev };
@@ -230,8 +239,14 @@ export default function RoleManagementPage() {
   // ditambahkan di kode otomatis ikut tampil utk role tanpa batasan).
   const saveRoleVisibleColumns = async (role: Role, pageKey: string, cols: string[] | null) => {
     if (role.is_protected) return; // Admin selalu semua kolom
-    const { error } = await supabase.from('role_page_access').update({ visible_columns: cols }).eq('role_id', role.id).eq('page_key', pageKey);
+    // `.select()` WAJIB -- UPDATE yg tidak mengenai baris apa pun (baris akses tidak ada / ditolak
+    // RLS) TIDAK error di PostgREST, dulu tetap tampil "saved" padahal DB tidak berubah.
+    const { data, error } = await supabase.from('role_page_access').update({ visible_columns: cols }).eq('role_id', role.id).eq('page_key', pageKey).select('role_id');
     if (error) { showToast('Failed to save visible columns: ' + error.message, 'error'); return; }
+    if (!data || data.length === 0) {
+      showToast('Visible columns were NOT saved -- the page access row for this role was not found in the database. Refresh this page and try again.', 'error');
+      return;
+    }
     setRoleVisibleColumns(prev => ({ ...prev, [role.id]: { ...(prev[role.id] || {}), [pageKey]: cols } }));
     setColumnModal(null);
     showToast(`Visible columns for "${role.name}" saved. Users see the change after refreshing the page.`, 'success');
@@ -241,8 +256,10 @@ export default function RoleManagementPage() {
     if (role.is_protected) return; // Admin selalu akses penuh, tidak bisa diubah lewat matrix
     if (!rolePageAccess[role.id]?.has(pageKey)) return; // Belum punya akses halaman -- edit tidak relevan
     const canEditNow = rolePageCanEdit[role.id]?.has(pageKey) ?? true;
-    const { error } = await supabase.from('role_page_access').update({ can_edit: !canEditNow }).eq('role_id', role.id).eq('page_key', pageKey);
+    // `.select()` -- UPDATE tanpa baris ter-update tidak error di PostgREST (lihat saveRoleVisibleColumns).
+    const { data, error } = await supabase.from('role_page_access').update({ can_edit: !canEditNow }).eq('role_id', role.id).eq('page_key', pageKey).select('role_id');
     if (error) { showToast('Failed to save: ' + error.message, 'error'); return; }
+    if (!data || data.length === 0) { showToast('NOT saved -- the page access row for this role was not found in the database. Refresh this page and try again.', 'error'); return; }
     setRolePageCanEdit(prev => {
       const next = { ...prev };
       const set = new Set(next[role.id] || []);
