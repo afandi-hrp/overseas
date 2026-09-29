@@ -2,9 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
 import { PAGE_REGISTRY, PAGE_GROUPS, APPROVAL_TIER_PAGES } from '../lib/permissions';
-import { Plus, Trash2, ShieldCheck, Users, LayoutGrid, Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
+import { Plus, Trash2, ShieldCheck, Users, LayoutGrid, Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns3, X, Search } from 'lucide-react';
 import Greeting from '../components/Greeting';
 import { LoadingState } from '../components/LoadingState';
+import { COLUMN_ACCESS_PAGES } from '../components/SharedDataTable';
 
 type Role = { id: string; name: string; description: string | null; is_protected: boolean };
 type ProfileRow = { id: string; email: string | null; nama: string | null };
@@ -34,6 +35,14 @@ export default function RoleManagementPage() {
   // Kolom can_edit di role_page_access -- lihat has_edit_access() di Supabase & canEdit() di
   // AuthContext. BELUM semua tabel menegakkan ini lewat RLS, baru pilot Courier Audit & Rekapan.
   const [rolePageCanEdit, setRolePageCanEdit] = useState<Record<string, Set<string>>>({});
+  // Kolom yang boleh dilihat per role per halaman (2026-09-29, `role_page_access.visible_columns`,
+  // jsonb array key kolom; NULL/tidak ada = semua kolom). HANYA utk halaman di COLUMN_ACCESS_PAGES
+  // (Audit & Rekapan Courier). Tujuan merapikan tampilan (role Finance), BUKAN keamanan -- lihat
+  // getAllowedColumns() di AuthContext. `columnAccessAvailable` false = kolom DB belum dibuat
+  // (migration belum dijalankan) -> tombol "Columns" disembunyikan, matrix lain tetap normal.
+  const [roleVisibleColumns, setRoleVisibleColumns] = useState<Record<string, Record<string, string[] | null>>>({});
+  const [columnAccessAvailable, setColumnAccessAvailable] = useState(true);
+  const [columnModal, setColumnModal] = useState<{ role: Role; pageKey: string } | null>(null);
   const [profiles, setProfiles] = useState<ProfileRow[]>([]);
   const [userRoles, setUserRoles] = useState<Record<string, Set<string>>>({});
   // Jabatan approval per user PER HALAMAN -- userId -> { page_key: tier }. Lihat catatan besar
@@ -65,7 +74,7 @@ export default function RoleManagementPage() {
     setLoading(true);
     const [rolesRes, accessRes, profilesRes, userRolesRes, approvalTiersRes] = await Promise.all([
       supabase.from('roles').select('id, name, description, is_protected').order('is_protected', { ascending: false }).order('name'),
-      supabase.from('role_page_access').select('role_id, page_key, can_edit'),
+      supabase.from('role_page_access').select('role_id, page_key, can_edit, visible_columns'),
       supabase.from('profiles').select('id, email, nama').order('nama'),
       supabase.from('user_roles').select('user_id, role_id'),
       supabase.from('user_approval_tiers').select('user_id, page_key, tier'),
@@ -77,9 +86,23 @@ export default function RoleManagementPage() {
 
     setRoles(rolesRes.data || []);
 
+    // Kolom `visible_columns` butuh migration manual (2026-09-29) -- kalau belum ada, query di
+    // atas gagal TOTAL; ulangi tanpa kolom itu supaya matrix akses tetap tampil normal.
+    let accessRows: any[] = accessRes.data || [];
+    const colAvailable = !accessRes.error;
+    if (accessRes.error) {
+      const retry = await supabase.from('role_page_access').select('role_id, page_key, can_edit');
+      accessRows = retry.data || [];
+      if (retry.error) showToast('Failed to load page access: ' + retry.error.message, 'error');
+    }
+    setColumnAccessAvailable(colAvailable);
+
     const accessMap: Record<string, Set<string>> = {};
     const canEditMap: Record<string, Set<string>> = {};
-    (accessRes.data || []).forEach((r: any) => {
+    const visibleColsMap: Record<string, Record<string, string[] | null>> = {};
+    accessRows.forEach((r: any) => {
+      if (!visibleColsMap[r.role_id]) visibleColsMap[r.role_id] = {};
+      visibleColsMap[r.role_id][r.page_key] = Array.isArray(r.visible_columns) ? r.visible_columns : null;
       if (!accessMap[r.role_id]) accessMap[r.role_id] = new Set();
       accessMap[r.role_id].add(r.page_key);
       // Kolom can_edit baru ada setelah migration -- kalau belum di-run, field ini undefined dari
@@ -92,6 +115,7 @@ export default function RoleManagementPage() {
     });
     setRolePageAccess(accessMap);
     setRolePageCanEdit(canEditMap);
+    setRoleVisibleColumns(visibleColsMap);
 
     setProfiles(profilesRes.data || []);
 
@@ -189,6 +213,8 @@ export default function RoleManagementPage() {
       next[role.id] = set;
       return next;
     });
+    // Baris role_page_access dihapus/dibuat baru -> batasan kolom otomatis kembali "semua kolom".
+    setRoleVisibleColumns(prev => ({ ...prev, [role.id]: { ...(prev[role.id] || {}), [pageKey]: null } }));
     // Cabut akses -> can_edit ikut tercabut (baris role_page_access-nya terhapus). Kasih akses
     // baru -> default can_edit dari kolom DB adalah true, samakan di state lokal.
     setRolePageCanEdit(prev => {
@@ -198,6 +224,17 @@ export default function RoleManagementPage() {
       next[role.id] = set;
       return next;
     });
+  };
+
+  // `cols === null` = semua kolom (simpan NULL, bukan array penuh -- supaya kolom BARU yang kelak
+  // ditambahkan di kode otomatis ikut tampil utk role tanpa batasan).
+  const saveRoleVisibleColumns = async (role: Role, pageKey: string, cols: string[] | null) => {
+    if (role.is_protected) return; // Admin selalu semua kolom
+    const { error } = await supabase.from('role_page_access').update({ visible_columns: cols }).eq('role_id', role.id).eq('page_key', pageKey);
+    if (error) { showToast('Failed to save visible columns: ' + error.message, 'error'); return; }
+    setRoleVisibleColumns(prev => ({ ...prev, [role.id]: { ...(prev[role.id] || {}), [pageKey]: cols } }));
+    setColumnModal(null);
+    showToast(`Visible columns for "${role.name}" saved. Users see the change after refreshing the page.`, 'success');
   };
 
   const toggleRoleCanEdit = async (role: Role, pageKey: string) => {
@@ -261,6 +298,16 @@ export default function RoleManagementPage() {
 
       <main className="max-w-7xl mx-auto px-3 pt-2 pb-8 space-y-6">
 
+        {columnModal && (
+          <ColumnAccessModal
+            roleName={columnModal.role.name}
+            pageLabel={PAGE_REGISTRY.find(p => p.key === columnModal.pageKey)?.label || columnModal.pageKey}
+            allCols={COLUMN_ACCESS_PAGES[columnModal.pageKey] || []}
+            initial={roleVisibleColumns[columnModal.role.id]?.[columnModal.pageKey] ?? null}
+            onCancel={() => setColumnModal(null)}
+            onSave={(cols) => saveRoleVisibleColumns(columnModal.role, columnModal.pageKey, cols)}
+          />
+        )}
         {toast && (
           <div className={`p-3 rounded-xl border text-sm font-medium ${toast.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'}`}>
             {toast.msg}
@@ -391,6 +438,24 @@ export default function RoleManagementPage() {
                                           {canEditPage ? 'EDIT' : 'VIEW'}
                                         </button>
                                       )}
+                                      {checked && !role.is_protected && columnAccessAvailable && COLUMN_ACCESS_PAGES[page.key] && (() => {
+                                        const restricted = roleVisibleColumns[role.id]?.[page.key];
+                                        const total = COLUMN_ACCESS_PAGES[page.key].length;
+                                        return (
+                                          <button
+                                            onClick={() => setColumnModal({ role, pageKey: page.key })}
+                                            title="Visible columns for this role"
+                                            className={`text-[9px] font-bold px-1.5 h-6 rounded-md border inline-flex items-center justify-center gap-1 transition-all whitespace-nowrap hover:opacity-90 cursor-pointer ${
+                                              restricted
+                                                ? 'bg-[#5A305A] border-[#5A305A] text-white shadow-sm'
+                                                : 'bg-white border-slate-300 text-slate-500'
+                                            }`}
+                                          >
+                                            <Columns3 size={11} />
+                                            {restricted ? `${restricted.length}/${total}` : 'ALL'}
+                                          </button>
+                                        );
+                                      })()}
                                     </div>
                                   </td>
                                 );
@@ -502,6 +567,92 @@ export default function RoleManagementPage() {
           </>
         )}
       </main>
+    </div>
+  );
+}
+
+// Modal pilih kolom yang boleh dilihat 1 role di 1 halaman (2026-09-29). Semua dicentang = simpan
+// NULL ("semua kolom"). Minimal 1 kolom harus dicentang.
+function ColumnAccessModal({ roleName, pageLabel, allCols, initial, onCancel, onSave }: {
+  roleName: string;
+  pageLabel: string;
+  allCols: { key: string; label: string }[];
+  initial: string[] | null;
+  onCancel: () => void;
+  onSave: (cols: string[] | null) => void | Promise<void>;
+}) {
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(initial ?? allCols.map(c => c.key)));
+  const [query, setQuery] = useState('');
+  const [saving, setSaving] = useState(false);
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? allCols.filter(c => c.label.toLowerCase().includes(q) || c.key.toLowerCase().includes(q)) : allCols;
+  }, [allCols, query]);
+
+  const toggle = (key: string) => setSelected(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+
+  const handleSave = async () => {
+    if (selected.size === 0) return;
+    setSaving(true);
+    // Simpan urutan sesuai daftar kolom (bukan urutan klik) supaya rapi dibaca di DB.
+    const cols = allCols.map(c => c.key).filter(k => selected.has(k));
+    await onSave(cols.length === allCols.length ? null : cols);
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
+        <div className="flex items-start justify-between gap-3 px-5 pt-4 pb-3 border-b border-slate-100">
+          <div>
+            <h3 className="font-bold text-[#5A305A] flex items-center gap-2"><Columns3 size={16} /> Visible Columns</h3>
+            <p className="text-xs text-[#5A305A]/70 mt-0.5">Role <span className="font-semibold">{roleName}</span> · {pageLabel}</p>
+          </div>
+          <button onClick={onCancel} className="text-[#5A305A]/60 hover:text-[#5A305A]" aria-label="Close"><X size={18} /></button>
+        </div>
+        <div className="px-5 py-3 flex items-center gap-2 border-b border-slate-100">
+          <div className="relative flex-1">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#5A305A]/60 pointer-events-none" />
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search column..."
+              className="w-full pl-8 pr-2 py-1.5 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-[#5A305A]"
+            />
+          </div>
+          <button onClick={() => setSelected(new Set(allCols.map(c => c.key)))} className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-[11px] font-semibold text-[#5A305A] hover:bg-slate-50">Select All</button>
+          <button onClick={() => setSelected(new Set())} className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-[11px] font-semibold text-[#5A305A] hover:bg-slate-50">Uncheck All</button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-5 py-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+          {shown.map(c => (
+            <label key={c.key} className="flex items-center gap-2 py-1.5 text-xs text-[#5A305A] cursor-pointer">
+              <input type="checkbox" checked={selected.has(c.key)} onChange={() => toggle(c.key)} className="accent-[#5A305A]" />
+              {c.label}
+            </label>
+          ))}
+          {shown.length === 0 && <p className="text-xs text-[#5A305A]/60 italic py-3">No column matches.</p>}
+        </div>
+        <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-slate-100">
+          <span className="text-[11px] text-[#5A305A]/70">
+            {selected.size === allCols.length ? 'All columns visible' : `${selected.size} of ${allCols.length} columns visible`}
+            {selected.size === 0 && <span className="text-rose-600 font-semibold"> · select at least 1</span>}
+          </span>
+          <div className="flex gap-2">
+            <button onClick={onCancel} className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-[#5A305A] hover:bg-slate-50">Cancel</button>
+            <button
+              onClick={handleSave}
+              disabled={saving || selected.size === 0}
+              className="px-3 py-1.5 rounded-lg bg-[#5A305A] hover:bg-[#73507B] text-white text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {saving ? 'Saving...' : 'Save'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

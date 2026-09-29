@@ -1146,6 +1146,15 @@ const COURIER_AUDIT_CUSTOMIZABLE_COLS: { key: string; label: string }[] = (() =>
 const COURIER_REKAPAN_CUSTOMIZABLE_COLS: { key: string; label: string }[] =
   COURIER_COLS.filter(c => c.type !== 'index').map(c => ({ key: c.key, label: c.label }));
 
+// Halaman yg kolomnya bisa DIBATASI PER ROLE (2026-09-29, `role_page_access.visible_columns`,
+// diatur di RoleManagementPage.tsx) -> daftar kolom pilihan. SATU-SATUNYA sumber, dipakai
+// RoleManagementPage (checklist) & SharedDataTable (filter tampilan) -- JANGAN duplikat daftar
+// kolom di tempat lain. Tujuan murni merapikan tampilan (role Finance), BUKAN keamanan.
+export const COLUMN_ACCESS_PAGES: Record<string, { key: string; label: string }[]> = {
+  courier_audit: COURIER_AUDIT_CUSTOMIZABLE_COLS,
+  courier_rekapan: COURIER_REKAPAN_CUSTOMIZABLE_COLS,
+};
+
 const TRAIL_COLS = [
   { key: 'index', label: 'No.', type: 'index' },
   { key: 'created_at', label: 'Waktu', type: 'datetime' },
@@ -3383,7 +3392,19 @@ const toolbarPillClass = (isActive: boolean) => `${TOOLBAR_PILL_BASE} ${isActive
 const TOOLBAR_GLASS = 'bg-white/70 backdrop-blur-md border-slate-200/80 shadow-sm'
 
 export default function SharedDataTable({ defaultMainTab = 'courier', defaultSubTab = 'courier_audit' }: { defaultMainTab?: string, defaultSubTab?: string }) {
-  const { allowedPageKeys, isAdmin, canEdit, user } = useAuth();
+  const { allowedPageKeys, isAdmin, canEdit, user, getAllowedColumns, columnAccessByPage } = useAuth();
+  // Search Audit/Rekapan Courier HANYA mencari di kolom yang boleh dilihat role user (2026-09-29,
+  // lihat COLUMN_ACCESS_PAGES) -- supaya baris tidak "muncul tanpa alasan kelihatan" krn cocok di
+  // kolom tersembunyi. Kalau TIDAK ADA satu pun kolom search yang diizinkan, pakai daftar asli
+  // (Search tetap berfungsi, bukan mati diam-diam). Deps = state mentah (bukan getAllowedColumns
+  // yg identitasnya berubah tiap render) supaya useCallback pemakainya tidak refetch terus.
+  const restrictSearchCols = useCallback((menu: 'courier_audit' | 'courier_rekapan', cols: string[]) => {
+    const allowed = getAllowedColumns(menu);
+    if (!allowed) return cols;
+    const kept = cols.filter(c => allowed.has(c));
+    return kept.length > 0 ? kept : cols;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [columnAccessByPage, isAdmin]);
   const canSee = (pageKey: string) => isAdmin || allowedPageKeys.has(pageKey);
   const [activeMainTab, setActiveMainTab] = useState(defaultMainTab)
   const [activeSubTab,  setActiveSubTab]  = useState(defaultSubTab)
@@ -3732,8 +3753,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         }
 
         if (debouncedSearch) {
-          const searchColsPib = ['awb', 'vendor_inv_no', 'no_pib', 'po_ori', 'vendor'];
-          const searchColsCn = ['awb', 'vendor_inv_no', 'po_ori', 'vendor'];
+          const searchColsPib = restrictSearchCols('courier_audit', ['awb', 'vendor_inv_no', 'no_pib', 'po_ori', 'vendor']);
+          const searchColsCn = restrictSearchCols('courier_audit', ['awb', 'vendor_inv_no', 'po_ori', 'vendor']);
           queryPib = queryPib.or(searchColsPib.map(col => `${col}.ilike.%${debouncedSearch}%`).join(','));
           queryCn = queryCn.or(searchColsCn.map(col => `${col}.ilike.%${debouncedSearch}%`).join(','));
         }
@@ -3872,11 +3893,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     if (debouncedSearch) {
       let searchCols: string[] = [];
       if ((activeMainTab === 'courier' && activeSubTab === 'courier_audit') || (activeMainTab === 'courier' && activeSubTab === 'courier_audit' && courierAuditType === 'archive')) {
-        searchCols = (courierAuditType === 'pib') ? ['awb', 'vendor_inv_no', 'no_pib', 'po_ori', 'vendor'] : ['awb', 'vendor_inv_no', 'po_ori', 'vendor'];
+        searchCols = restrictSearchCols('courier_audit', (courierAuditType === 'pib') ? ['awb', 'vendor_inv_no', 'no_pib', 'po_ori', 'vendor'] : ['awb', 'vendor_inv_no', 'po_ori', 'vendor']);
       } else if (activeMainTab === 'sea_air') {
         searchCols = activeSubTab === 'sea_air_audit' ? ['no_aju', 'no_pib', 'awb', 'po_ori', 'vendor'] : ['no_aju', 'no_invoice', 'vendor', 'awb'];
       } else if ((activeMainTab === 'courier' && activeSubTab === 'courier_rekapan')) {
-        searchCols = ['awb', 'no_invoice', 'vendor', 'po_pt_imi', 'ppjk'];
+        searchCols = restrictSearchCols('courier_rekapan', ['awb', 'no_invoice', 'vendor', 'po_pt_imi', 'ppjk']);
       } else if ((activeMainTab === 'courier' && activeSubTab === 'courier_validasi')) {
         searchCols = ['awb', 'jenis_dokumen', 'status_validasi'];
       } else if (activeMainTab === 'trail') {
@@ -4094,7 +4115,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       setFetchError(error.message);
     }
     setLoading(false)
-  }, [tab, activeMainTab, activeSubTab, courierAuditType, seaAirAuditType, activeTrailFilter, activeTrailUserFilter, activePpjkFilter, activeShipmentTypeFilter, activeAnFilter, activeImporAnFilter, activeCourierAnFilter, activeCourierImporAnFilter, debouncedSearch, sortColumn, sortDirection, page, pageSize, filterStartDate, filterEndDate])
+  }, [tab, activeMainTab, activeSubTab, courierAuditType, seaAirAuditType, activeTrailFilter, activeTrailUserFilter, activePpjkFilter, activeShipmentTypeFilter, activeAnFilter, activeImporAnFilter, activeCourierAnFilter, activeCourierImporAnFilter, debouncedSearch, sortColumn, sortDirection, page, pageSize, filterStartDate, filterEndDate, restrictSearchCols])
 
   // ── Indikator "Outstanding" (badge angka di pojok tab) ──────────────────────
   // Rekapan Courier: jumlah baris per-tab PPJK yang Submit Date-nya masih kosong (key 'All' =
@@ -4117,7 +4138,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       if (filterStartDate) query = query.gte('tgl_terima_email', filterStartDate);
       if (filterEndDate) query = query.lte('tgl_terima_email', `${filterEndDate} 23:59:59`);
       if (debouncedSearch) {
-        const searchCols = ['awb', 'no_invoice', 'vendor', 'po_pt_imi', 'ppjk'];
+        const searchCols = restrictSearchCols('courier_rekapan', ['awb', 'no_invoice', 'vendor', 'po_pt_imi', 'ppjk']);
         query = query.or(searchCols.map(col => `${col}.ilike.%${debouncedSearch}%`).join(','));
       }
       const { data, error } = await query;
@@ -4162,7 +4183,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       return;
     }
     setCourierAuditOutstandingCounts({ archive: null, pib: null, cn: null });
-  }, [activeMainTab, activeSubTab, activeCourierAnFilter, activeCourierImporAnFilter, filterStartDate, filterEndDate, debouncedSearch])
+  }, [activeMainTab, activeSubTab, activeCourierAnFilter, activeCourierImporAnFilter, filterStartDate, filterEndDate, debouncedSearch, restrictSearchCols])
 
   useEffect(() => {
     fetchOutstandingCount()
@@ -4191,8 +4212,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         queryCn = queryCn.lte('tgl_ppjk', endOfDay);
       }
       if (debouncedSearch) {
-        const searchColsPib = ['awb', 'vendor_inv_no', 'no_pib', 'po_ori', 'vendor'];
-        const searchColsCn = ['awb', 'vendor_inv_no', 'po_ori', 'vendor'];
+        const searchColsPib = restrictSearchCols('courier_audit', ['awb', 'vendor_inv_no', 'no_pib', 'po_ori', 'vendor']);
+        const searchColsCn = restrictSearchCols('courier_audit', ['awb', 'vendor_inv_no', 'po_ori', 'vendor']);
         queryPib = queryPib.or(searchColsPib.map(col => `${col}.ilike.%${debouncedSearch}%`).join(','));
         queryCn = queryCn.or(searchColsCn.map(col => `${col}.ilike.%${debouncedSearch}%`).join(','));
       }
@@ -4302,11 +4323,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     if (debouncedSearch) {
       let searchCols: string[] = [];
       if ((activeMainTab === 'courier' && activeSubTab === 'courier_audit') || (activeMainTab === 'courier' && activeSubTab === 'courier_audit' && courierAuditType === 'archive')) {
-        searchCols = (courierAuditType === 'pib') ? ['awb', 'vendor_inv_no', 'no_pib', 'po_ori', 'vendor'] : ['awb', 'vendor_inv_no', 'po_ori', 'vendor'];
+        searchCols = restrictSearchCols('courier_audit', (courierAuditType === 'pib') ? ['awb', 'vendor_inv_no', 'no_pib', 'po_ori', 'vendor'] : ['awb', 'vendor_inv_no', 'po_ori', 'vendor']);
       } else if (activeMainTab === 'sea_air') {
         searchCols = activeSubTab === 'sea_air_audit' ? ['no_aju', 'no_pib', 'awb', 'po_ori', 'vendor'] : ['no_aju', 'no_invoice', 'vendor', 'awb'];
       } else if ((activeMainTab === 'courier' && activeSubTab === 'courier_rekapan')) {
-        searchCols = ['awb', 'no_invoice', 'vendor', 'po_pt_imi', 'ppjk'];
+        searchCols = restrictSearchCols('courier_rekapan', ['awb', 'no_invoice', 'vendor', 'po_pt_imi', 'ppjk']);
       } else if ((activeMainTab === 'courier' && activeSubTab === 'courier_validasi')) {
         searchCols = ['awb', 'jenis_dokumen', 'status_validasi'];
       } else if (activeMainTab === 'trail') {
@@ -5024,13 +5045,27 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     : activeCourierCustomizeMenu === 'courier_rekapan'
     ? reorderCols(activeCols, courierRekapanColumnOrder)
     : activeCols;
-  const visibleCols = activeCourierHiddenCols
-    ? orderedActiveCols.filter(c => c.type === 'index' || !activeCourierHiddenCols.has(c.key))
+  // Batas kolom PER ROLE (2026-09-29, `role_page_access.visible_columns` via getAllowedColumns) --
+  // diterapkan SEBELUM Customize View (per-user) supaya user tidak bisa membuka lagi kolom di luar
+  // izin role-nya. Kolom 'index' (No.) selalu tampil. `null` = semua kolom (Admin / role tanpa
+  // batasan). Otomatis ikut ke tabel & Export (keduanya pakai `visibleCols`).
+  const roleAllowedCols = activeCourierCustomizeMenu ? getAllowedColumns(activeCourierCustomizeMenu) : null;
+  const roleVisibleCols = roleAllowedCols
+    ? orderedActiveCols.filter(c => c.type === 'index' || roleAllowedCols.has(c.key))
     : orderedActiveCols;
+  const visibleCols = activeCourierHiddenCols
+    ? roleVisibleCols.filter(c => c.type === 'index' || !activeCourierHiddenCols.has(c.key))
+    : roleVisibleCols;
+  // Form Edit/Add Data ikut dibatasi kolom role (kalau role terbatas kebetulan juga punya akses
+  // EDIT -- keputusan user 2026-09-29, konsisten dgn tabel). Tanpa batasan = `activeCols` utuh
+  // (perilaku lama: form tetap tampilkan kolom yg disembunyikan via Customize View).
+  const editFormCols = roleAllowedCols
+    ? activeCols.filter(c => c.type === 'index' || roleAllowedCols.has(c.key))
+    : activeCols;
 
   // Drag & Drop Reorder (2026-09) -- sejak 2026-09-28 Reorder Mode PER HALAMAN, tabel SELALU render
   // dari `records` (paginasi server biasa); alias `displayRows` dipertahankan utk render di bawah.
-  // biasa. Sensor pointer dgn `activationConstraint` kecil (8px) -- cegah klik biasa (mis. buka
+  // Sensor pointer dgn `activationConstraint` kecil (8px) -- cegah klik biasa (mis. buka
   // panel Action baris lain) kesenggol jadi drag tidak sengaja.
   const displayRows = records;
   const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
@@ -5187,7 +5222,12 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       {showCustomizeView && (
         <CustomizeViewModal
           title="Customize View"
-          allCols={showCustomizeView === 'courier_audit' ? COURIER_AUDIT_CUSTOMIZABLE_COLS : COURIER_REKAPAN_CUSTOMIZABLE_COLS}
+          allCols={(() => {
+            // Pilihan Customize View dibatasi kolom yg diizinkan role user (2026-09-29).
+            const base = showCustomizeView === 'courier_audit' ? COURIER_AUDIT_CUSTOMIZABLE_COLS : COURIER_REKAPAN_CUSTOMIZABLE_COLS;
+            const allowed = getAllowedColumns(showCustomizeView);
+            return allowed ? base.filter(c => allowed.has(c.key)) : base;
+          })()}
           hiddenKeys={showCustomizeView === 'courier_audit' ? courierAuditHiddenCols : courierRekapanHiddenCols}
           onCancel={() => setShowCustomizeView(null)}
           onSave={(newHiddenKeys) => saveHiddenCols(showCustomizeView, newHiddenKeys)}
@@ -5198,7 +5238,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         <EditModal
           record={editRecord}
           tab={tab}
-          cols={activeCols}
+          cols={editFormCols}
           onClose={() => setEditRecord(null)}
           onSaved={fetchRecords}
         />
@@ -5208,7 +5248,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         <EditModal
           record={(activeMainTab === 'courier' && activeSubTab === 'courier_audit') ? { jenis_dokumen: courierAuditType === 'cn' ? 'CN' : 'PIB' } : {}}
           tab={tab}
-          cols={activeCols}
+          cols={editFormCols}
           isCreate
           createDefaults={(activeMainTab === 'courier' && activeSubTab === 'courier_audit') ? { status: 'ARCHIVED' } : undefined}
           onClose={() => setShowAddRowModal(false)}

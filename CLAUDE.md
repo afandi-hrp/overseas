@@ -215,6 +215,21 @@ Password benar → halaman hidup lagi tanpa reload. TAPI kalau tab BENERAN ditut
   sebelah checkbox akses. Granularitas TETAP per page_key terpisah (Audit Courier
   Checklist/Doc Validation/Cost Validation punya page_key sendiri, TIDAK otomatis ikut toggle
   edit halaman utama).
+- **Kolom per role (2026-09-29, utk role Finance)** — `role_page_access.visible_columns` (jsonb
+  array key kolom; NULL = semua kolom). HANYA Audit Courier & Rekapan Courier (`COLUMN_ACCESS_PAGES`,
+  export dari `SharedDataTable.tsx` — SATU-SATUNYA daftar kolom pilihan). Matrix UI: tombol
+  `ALL`/`n/total` (ikon kolom) di sebelah badge EDIT/VIEW → `ColumnAccessModal` (checklist; semua
+  dicentang = simpan NULL). RPC baca `get_my_column_access()` → `AuthContext.getAllowedColumns
+  (pageKey)` (union antar role; salah satu role NULL = semua; Admin selalu semua). Di
+  `SharedDataTable.tsx` filter `roleVisibleCols` diterapkan SEBELUM Customize View → otomatis ke
+  tabel, Export, pilihan Customize View; form Edit/Add pakai `editFormCols`; Search hanya ke kolom
+  diizinkan (`restrictSearchCols`, termasuk badge counter PPJK). Filter tanggal & badge % kolom
+  Action TIDAK ikut dibatasi (keputusan user). **MURNI MERAPIKAN TAMPILAN, BUKAN KEAMANAN**: data
+  kolom lain tetap terkirim ke browser (`select('*')`) → sengaja FAIL-OPEN (RPC gagal/kolom DB
+  belum ada = semua kolom). Kalau kelak ada kolom yg harus RAHASIA, butuh redesain level DB
+  (RPC/view per role), bukan fitur ini. Perubahan berlaku setelah user refresh (sama `get_my_access`).
+  SQL (kolom + RPC) diberikan ke user 2026-09-29, dijalankan manual — isi lengkap di
+  `docs/claude/courier-features.md` "Kolom per role".
   **Cakupan final: 20 dari 23 page_key** (semua 32 tabel RLS `policy_count=4`, semua 15 RPC
   penulis data — 14 unik+1 overload — punya guard `has_edit_access`+`SECURITY DEFINER`).
   3 page_key TIDAK ikut: `courier_upload`/`sea_air_upload` (upload lewat proxy Express ke n8n,
@@ -542,7 +557,8 @@ akses DB langsung dari sesi Claude Code manapun ke Supabase — daftar di bawah 
 dari `grep -rhoE ".rpc\\('[a-zA-Z_0-9]+'" src/` di kode frontend, BUKAN dari `information_schema`
 Supabase** — bisa saja sudah basi (RPC lain ditambahkan user langsung tanpa tercermin di sini).
 
-- Auth: `get_my_access()`, `get_my_approval_tiers()`.
+- Auth: `get_my_access()`, `get_my_approval_tiers()`, `get_my_column_access()` (2026-09-29, batas
+  kolom per role — lihat "Kolom per role" di bagian RBAC).
 - FAR Overseas Air (List Memo & approval): `update_rekapan_far_overseas_manual`,
   `insert_rekapan_far_overseas_manual` (Add Manual Entry, 2026-09),
   `update_cost_validasi_far_overseas_manual`, `fn_delete_far_overseas_air`,

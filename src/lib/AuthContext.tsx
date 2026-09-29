@@ -41,6 +41,16 @@ type AuthContextValue = {
   // (src/lib/permissions.ts), bukan di sini -- di sini cuma nyimpen jabatan user apa adanya.
   approvalTiersByPage: Record<string, string>;
   canApproveTier: (pageKey: string, tier: string) => boolean;
+  // Kolom yang BOLEH DILIHAT per halaman (2026-09-29) -- dari `role_page_access.visible_columns`
+  // via RPC TERPISAH `get_my_column_access()` (pola sama get_my_approval_tiers). Bentuk
+  // `{page_key: string[]}`; page_key yang TIDAK ada di map = semua kolom. Gabungan (union) semua
+  // role user; salah satu role "semua kolom" => semua kolom. TUJUAN MURNI MERAPIKAN TAMPILAN
+  // (dikonfirmasi user -- role Finance), BUKAN keamanan: data kolom lain tetap terkirim ke browser
+  // (`select('*')`). Karena itu SENGAJA fail-OPEN (RPC gagal/belum ada => semua kolom), beda dari
+  // allowedPageKeys/editPageKeys yang fail-closed.
+  columnAccessByPage: Record<string, string[]>;
+  // `null` = semua kolom boleh dilihat (Admin selalu null).
+  getAllowedColumns: (pageKey: string) => Set<string> | null;
   isAdmin: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -154,6 +164,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [allowedPageKeys, setAllowedPageKeys] = useState<Set<string>>(new Set());
   const [editPageKeys, setEditPageKeys] = useState<Set<string>>(new Set());
   const [approvalTiersByPage, setApprovalTiersByPage] = useState<Record<string, string>>({});
+  const [columnAccessByPage, setColumnAccessByPage] = useState<Record<string, string[]>>({});
   const [isAdmin, setIsAdmin] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(true);
   // Loading akses (get_my_access) DIPISAH dari loading sesi -- kalau digabung jadi satu flag
@@ -218,6 +229,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     allowedPageKeys: Set<string>;
     editPageKeys: Set<string>;
     approvalTiersByPage: Record<string, string>;
+    columnAccessByPage: Record<string, string[]>;
     isAdmin: boolean;
   } | null>(null);
 
@@ -246,7 +258,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         provider_token: session.provider_token ? '[redacted-while-locked]' : session.provider_token,
         provider_refresh_token: session.provider_refresh_token ? '[redacted-while-locked]' : session.provider_refresh_token,
       },
-      profile, allowedPageKeys, editPageKeys, approvalTiersByPage, isAdmin,
+      profile, allowedPageKeys, editPageKeys, approvalTiersByPage, columnAccessByPage, isAdmin,
     };
   }
 
@@ -256,6 +268,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const exposedAllowedPageKeys = lockScreenActive ? frozenRef.current!.allowedPageKeys : allowedPageKeys;
   const exposedEditPageKeys = lockScreenActive ? frozenRef.current!.editPageKeys : editPageKeys;
   const exposedApprovalTiersByPage = lockScreenActive ? frozenRef.current!.approvalTiersByPage : approvalTiersByPage;
+  const exposedColumnAccessByPage = lockScreenActive ? frozenRef.current!.columnAccessByPage : columnAccessByPage;
   const exposedIsAdmin = lockScreenActive ? frozenRef.current!.isAdmin : isAdmin;
 
   // DIAGNOSTIK SEMENTARA (2026-09) -- dipasang setelah user lapor lock screen "seperti tidak
@@ -356,6 +369,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // menggagalkan fetchAccess keseluruhan.
     const { data: tierData, error: tierError } = await supabase.rpc('get_my_approval_tiers');
     setApprovalTiersByPage(!tierError && tierData && typeof tierData === 'object' && !Array.isArray(tierData) ? tierData : {});
+
+    // Kolom yang boleh dilihat per halaman -- RPC TERPISAH, fail-OPEN (lihat komentar
+    // columnAccessByPage di atas): gagal/belum ada => objek kosong => semua kolom tampil.
+    const { data: colData, error: colError } = await supabase.rpc('get_my_column_access');
+    if (colError) console.warn('[Column access] get_my_column_access gagal, semua kolom ditampilkan:', colError.message);
+    const colMap: Record<string, string[]> = {};
+    if (!colError && colData && typeof colData === 'object' && !Array.isArray(colData)) {
+      Object.entries(colData as Record<string, unknown>).forEach(([pageKey, cols]) => {
+        if (Array.isArray(cols)) colMap[pageKey] = cols.filter((c): c is string => typeof c === 'string');
+      });
+    }
+    setColumnAccessByPage(colMap);
   };
 
   // Lacak user id terakhir yang diketahui -- dipakai buat bedakan "login/ganti user
@@ -415,6 +440,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setAllowedPageKeys(new Set());
         setEditPageKeys(new Set());
         setApprovalTiersByPage({});
+        setColumnAccessByPage({});
         setIsAdmin(false);
         setAccessLoading(false);
       }
@@ -569,6 +595,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // eksplisit user: Admin TIDAK otomatis boleh approve semua tahap, harus tetap di-assign jabatan
   // approval-nya sendiri (baris user_approval_tiers) sama seperti user lain, per halaman.
   const canApproveTier = (pageKey: string, tier: string) => exposedApprovalTiersByPage[pageKey] === tier;
+  // Admin SELALU semua kolom. Page_key tidak ada di map = semua kolom.
+  const getAllowedColumns = (pageKey: string): Set<string> | null => {
+    if (exposedIsAdmin) return null;
+    const cols = exposedColumnAccessByPage[pageKey];
+    return cols ? new Set(cols) : null;
+  };
 
   return (
     <AuthContext.Provider value={{
@@ -580,6 +612,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       canEdit,
       approvalTiersByPage: exposedApprovalTiersByPage,
       canApproveTier,
+      columnAccessByPage: exposedColumnAccessByPage,
+      getAllowedColumns,
       isAdmin: exposedIsAdmin,
       loading,
       signOut,

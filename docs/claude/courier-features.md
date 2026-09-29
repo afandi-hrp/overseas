@@ -1,3 +1,48 @@
+## Kolom per role — Audit Courier & Rekapan Courier (2026-09-29, role Finance)
+
+Ringkasan arsitektur ada di CLAUDE.md bagian RBAC ("Kolom per role"). SQL yang diberikan ke user
+(nama RPC dicek user dulu: "does not exist" 2026-09-29):
+```sql
+alter table public.role_page_access add column if not exists visible_columns jsonb;
+
+create or replace function public.get_my_column_access()
+returns jsonb
+language sql
+security definer
+stable
+set search_path = public, extensions, pg_temp
+as $$
+  with my_rows as (
+    select rpa.page_key, rpa.visible_columns
+    from public.user_roles ur
+    join public.role_page_access rpa on rpa.role_id = ur.role_id
+    where ur.user_id = auth.uid()
+  ),
+  restricted_pages as (
+    select page_key from my_rows group by page_key
+    having bool_and(visible_columns is not null and jsonb_typeof(visible_columns) = 'array')
+  ),
+  cols as (
+    select m.page_key, jsonb_agg(distinct c.value) as cols
+    from my_rows m
+    join restricted_pages rp on rp.page_key = m.page_key
+    cross join lateral jsonb_array_elements_text(m.visible_columns) as c(value)
+    group by m.page_key
+  )
+  select case when public.is_admin() then '{}'::jsonb
+              else coalesce((select jsonb_object_agg(page_key, cols) from cols), '{}'::jsonb) end;
+$$;
+revoke execute on function public.get_my_column_access() from public, anon;
+grant execute on function public.get_my_column_access() to authenticated;
+```
+- Hasil `{page_key: [kolom]}`; page_key TIDAK ada = semua kolom. Page yg salah satu role user-nya
+  NULL (semua kolom) → tidak masuk `restricted_pages` → semua kolom (union).
+- RPC baca-saja milik user sendiri (`auth.uid()`), tanpa guard `has_edit_access` (tidak menulis).
+- `RoleManagementPage.tsx` menulis `visible_columns` via `.update()` langsung ke `role_page_access`
+  (pola sama toggle `can_edit`, RLS admin yg menggerbangi). Fetch matrix tahan kolom belum ada
+  (query ulang tanpa `visible_columns`, tombol "Columns" disembunyikan).
+- Kolom `index` (No.) selalu tampil. Urutan kolom tetap ikut `table_column_order` global.
+
 ## Sort default per tab Courier (2026-09-29)
 
 | Menu / tab | Urutan default | Sumber |
