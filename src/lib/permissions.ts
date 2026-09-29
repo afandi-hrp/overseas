@@ -56,6 +56,10 @@ export const PAGE_REGISTRY: PageEntry[] = [
       { value: 'TIER3', label: 'Director' },
     ],
   },
+  // Tab "Finance Handover" di halaman FAR Overseas (bukan route sendiri) -- EDIT = boleh Accept &
+  // Mark paid (RPC fn_far_overseas_finance_accept/mark_paid, sql/027). Role Finance JUGA butuh
+  // akses lihat `direct_loading` (RLS tabel memo).
+  { key: 'far_overseas_finance', label: 'Finance Handover (FAR Overseas)', group: 'FAR Overseas' },
 
   { key: 'bunker', label: 'Bunker', path: '/bunker', group: 'Bunker' },
 

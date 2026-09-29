@@ -1,18 +1,45 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
-import { CheckCircle2, FileCheck2, UploadCloud, X, AlertTriangle, Clock, ClipboardCheck, ClipboardList, Edit3, Save, Scale, Trash2, RefreshCw, ChevronDown, LayoutGrid, List as ListIcon, Search, CalendarDays, FolderOpen, Plus } from 'lucide-react';
-import { formatMoney, formatDateID, APPROVAL_STATUS_META, COST_STATUS_META, REKAPAN_EDITABLE_FIELDS, updateRekapanFarOverseasAir, insertRekapanFarOverseasManual, parseRouteNote, rematchTarif, mapModeToJenisLayanan, vendorTargetFromShipVia, computeExpectedFromRate, computeCostStatus, parseJsonField, fetchPicEligibleUsers, fetchDistinctMemoTitles, fetchSignerCompanyOptions, fetchActiveTarifRateRows, type PoListEntry, type PicEligibleUser, type RateRow, type CompanyOption } from '../utils/FarOverseasAirHelpers';
-import { EditableCell } from '../components/FarOverseasAirEditableField';
+import {
+  CheckCircle2, FileCheck2, UploadCloud, X, AlertTriangle, Clock, ClipboardList, Edit3, Trash2, RefreshCw, LayoutGrid,
+  List as ListIcon, Search, FolderOpen, Plus, Bell, Download, SlidersHorizontal, Lock, FileText, ExternalLink, Eye,
+} from 'lucide-react';
+import {
+  formatMoney, APPROVAL_STATUS_META, COST_STATUS_META, REKAPAN_EDITABLE_FIELDS, updateRekapanFarOverseasAir, insertRekapanFarOverseasManual,
+  parseRouteNote, rematchTarif, mapModeToJenisLayanan, computeExpectedFromRate, computeCostStatus, fetchPicEligibleUsers,
+  fetchDistinctMemoTitles, fetchSignerCompanyOptions, fetchActiveTarifRateRows, fetchCostInfoMap, deriveMemoWarnings, getDueInfo,
+  isPaymentAlarmActive, getMemoDueValue, getStatusLabel, getFinanceStage, fetchStepSigners, mySignableSteps, canSignStep, probePhase2,
+  allocateByVessel, memoRefLabel, isMemoLocked, completedStepCount, nextStepForStatus, getRouteDisplay, getPoNumbers, totalInIdr, formatIdr,
+  formatDateShort, implicitFxRate, toLocalDay, STEP_ORDER, ensureFarFont, FAR_FONT_FAMILY, getApprovalEntries, getPoList,
+  type PicEligibleUser, type RateRow, type CompanyOption, type CostInfo, type ApprovalStep, type MemoWarning, type StepSignerMap,
+} from '../utils/FarOverseasAirHelpers';
 import FarOverseasAirDetailModal from '../components/FarOverseasAirDetailModal';
 import FarOverseasAirCostValidationModal from '../components/FarOverseasAirCostValidationModal';
 import FarOverseasAirWeightBreakdownModal from '../components/FarOverseasAirWeightBreakdownModal';
-import FarOverseasAirDocumentsModal from '../components/FarOverseasAirDocumentsModal';
+import FarOverseasAirDocumentsModal, { getMemoDocs } from '../components/FarOverseasAirDocumentsModal';
 import FarOverseasAirUploadModal from '../components/FarOverseasAirUploadModal';
+import FarOverseasAirEditMemoModal, { validateMemoEdits } from '../components/FarOverseasAirEditMemoModal';
+import FarOverseasAirFinanceHandover from '../components/FarOverseasAirFinanceHandover';
+import FarOverseasAirMyApprovals from '../components/FarOverseasAirMyApprovals';
 import ExportModal from '../components/ExportModal';
 import Greeting from '../components/Greeting';
 import { LoadingState, LoadingTableRow } from '../components/LoadingState';
+
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// FAR Overseas — halaman Memos + My Approvals (REDESAIN TAHAP 1, 2026-09-28).
+// - Card/List MURNI tampilan ringkas; SEMUA edit lewat modal "Edit memo"
+//   (FarOverseasAirEditMemoModal.tsx) -- tabel inline-edit ~25 kolom & tombol "Save All" lama
+//   DIGANTI. State edit tetap `pendingEdits`/`getVal`/`setVal` (key = id baris), simpan lewat RPC
+//   `update_rekapan_far_overseas_manual` (field terbatas `REKAPAN_EDITABLE_FIELDS`).
+// - Approval, Cost Validation, Documents, Weight breakdown: modal masing-masing (logika
+//   approval/RPC TIDAK berubah, lihat header FarOverseasAirDetailModal.tsx).
+// - Lock (spek): Edit/Delete/KG terkunci setelah Prepared By sign (`isMemoLocked`) -- baru di
+//   frontend, penegakan server di draft SQL tahap 2.
+// - Fitur yang butuh kolom/RPC baru (Finance Handover, Non-PO, kurs terkunci, Undo sign, nomor
+//   memo FAR/YYMM/NNN, pengingat, alokasi biaya per kapal) = TAHAP 2, tidak ditampilkan.
+// ════════════════════════════════════════════════════════════════════════════════════════════
 
 const QueueCard: React.FC<{ item: any; onDismiss: (id: string) => void }> = ({ item, onDismiss }) => {
   let filenames: string[] = [];
@@ -42,19 +69,18 @@ const QueueCard: React.FC<{ item: any; onDismiss: (id: string) => void }> = ({ i
   if (item.status === 'FAILED') {
     return (
       <div className="relative bg-rose-50 border border-rose-200 rounded-xl p-4 text-sm flex flex-col gap-2 shadow-sm pr-8">
-        <button onClick={() => onDismiss(item.id)} className="absolute top-2.5 right-3 text-rose-400 hover:text-rose-600 font-bold text-lg leading-none">&times;</button>
-        <div className="font-bold text-rose-800 flex items-center gap-2">❌ Processing failed</div>
+        <button onClick={() => onDismiss(item.id)} aria-label="Dismiss" className="absolute top-2.5 right-3 text-rose-400 hover:text-rose-600"><X size={16} /></button>
+        <div className="font-bold text-rose-800 flex items-center gap-2"><AlertTriangle size={15} /> Processing failed</div>
         <div className="text-rose-900 truncate" title={filesStr}>File: {filesStr || '-'}</div>
         <div className="text-rose-700/80 text-xs break-words">Error: {item.error_message || '-'}{item.error_step ? ` (${item.error_step})` : ''}</div>
       </div>
     );
   }
 
-  // SUCCESS unread
   return (
     <div className="relative bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm flex flex-col gap-2 shadow-sm pr-8">
-      <button onClick={() => onDismiss(item.id)} className="absolute top-2.5 right-3 text-emerald-500 hover:text-emerald-700 font-bold text-lg leading-none">&times;</button>
-      <div className="font-bold text-emerald-800 flex items-center gap-2">✅ Processed successfully</div>
+      <button onClick={() => onDismiss(item.id)} aria-label="Dismiss" className="absolute top-2.5 right-3 text-emerald-500 hover:text-emerald-700"><X size={16} /></button>
+      <div className="font-bold text-emerald-800 flex items-center gap-2"><CheckCircle2 size={15} /> Processed successfully</div>
       <div className="text-emerald-900 truncate" title={filesStr}>File: {filesStr || '-'}</div>
     </div>
   );
@@ -64,34 +90,24 @@ function DeleteConfirmModal({ record, onConfirm, onClose, deleting, error }: {
   record: any; onConfirm: () => void; onClose: () => void; deleting: boolean; error: string | null;
 }) {
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-[#2A1A2C]/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4" style={{ fontFamily: FAR_FONT_FAMILY }}>
       <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-11 h-11 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
             <Trash2 size={20} />
           </div>
           <div className="min-w-0">
-            <h3 className="font-bold text-[#5A305A] leading-tight">Delete This Memo?</h3>
-            <p className="text-xs font-light text-[#5A305A]/70 mt-0.5 truncate">{record.po_ori || record.id}</p>
+            <h3 className="font-bold text-[#2A1A2C] leading-tight">Delete this memo?</h3>
+            <p className="text-xs text-[#6E5E70] mt-0.5 truncate">{record.memo_title || 'Memo'} · {record.ship_via || '—'} · Invoice {record.no_invoice || '—'}</p>
           </div>
         </div>
-        <p className="text-sm text-[#5A305A] leading-relaxed mb-1">
-          Deleting this memo will also delete its related cost validation data.
-        </p>
-        <p className="text-sm font-bold text-rose-600 mb-4">This action cannot be undone.</p>
-        {error && (
-          <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 break-words">{error}</div>
-        )}
+        <p className="text-sm text-[#2A1A2C] leading-relaxed mb-1">Its cost validation data is deleted too.</p>
+        <p className="text-sm font-bold text-rose-600 mb-4">This cannot be undone.</p>
+        {error && <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-700 break-words">{error}</div>}
         <div className="grid grid-cols-2 gap-2">
-          <button onClick={onClose} disabled={deleting} className="py-2.5 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all disabled:opacity-50">
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            disabled={deleting}
-            className="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
-          >
-            <Trash2 size={14} /> {deleting ? 'Deleting...' : 'Yes, Delete'}
+          <button onClick={onClose} disabled={deleting} className="py-2.5 rounded-xl border border-[#EADFD6] text-[#2A1A2C] font-semibold text-sm hover:bg-[#F5EDF3] transition-all disabled:opacity-50">Cancel</button>
+          <button onClick={onConfirm} disabled={deleting} className="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-sm transition-all disabled:opacity-50 flex items-center justify-center gap-1.5">
+            <Trash2 size={14} /> {deleting ? 'Deleting...' : 'Yes, delete'}
           </button>
         </div>
       </div>
@@ -99,1046 +115,607 @@ function DeleteConfirmModal({ record, onConfirm, onClose, deleting, error }: {
   );
 }
 
-function ApprovalBadge({ status, compact }: { status: string | null; compact?: boolean }) {
-  const meta = APPROVAL_STATUS_META[status || 'PENDING'] || APPROVAL_STATUS_META.PENDING;
-  const cls = compact ? 'text-[8.5px] font-bold px-1.5 py-0.5 rounded-full leading-tight' : 'text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap';
-  return <span className={`${cls} ${meta.badgeClass}`}>{meta.label}</span>;
-}
+// ── Komponen tampilan kecil ──────────────────────────────────────────────────────────────────
 
-function CostBadge({ status, compact }: { status: string | null | undefined; compact?: boolean }) {
-  const cls = compact ? 'text-[8.5px] font-bold px-1.5 py-0.5 rounded-full leading-tight' : 'text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap';
-  if (!status) return <span className={`${cls} bg-slate-100 text-[#5A305A]`}>No Data Yet</span>;
+function AiChip({ status }: { status: string | null | undefined }) {
+  if (!status) return <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#F5EDF3] text-[#6E5E70] whitespace-nowrap"><span className="w-1.5 h-1.5 rounded-full bg-[#6E5E70]/50" />No AI check</span>;
   const meta = COST_STATUS_META[status];
-  if (!meta) return <span className={`${cls} bg-slate-100 text-[#5A305A]`}>{status}</span>;
-  return <span className={`${cls} ${meta.badgeClass}`}>{meta.label}</span>;
+  const dot = status === 'MATCH' ? 'bg-emerald-500' : status === 'OVERCHARGE' ? 'bg-rose-500' : 'bg-amber-500';
+  return <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${meta?.badgeClass || 'bg-[#F5EDF3] text-[#6E5E70]'}`}><span className={`w-1.5 h-1.5 rounded-full ${dot}`} />{meta?.label || status}</span>;
 }
 
-// Replika urutan kolom sheet Excel acuan — 1 kolom = 1 field database, jangan diringkas.
-// Kolom yang punya `field` bisa diedit inline (baris yang sedang di Mode Edit); kolom yang
-// cuma punya `render` murni tampilan (badge, tombol, hasil hitungan) dan tidak bisa diedit langsung.
-type ListRenderCtx = {
-  onOpenWeightModal: (r: any) => void;
-  editingRowId: string | null;
-  getVal: (r: any, field: string) => any;
-  setVal: (r: any, field: string, value: any) => void;
-  expandedPoRows: Set<string>;
-  togglePoExpanded: (id: string) => void;
-  picUsers: PicEligibleUser[];
-  costCityMap: Record<string, string>;
-  memoTitleOptions: string[];
-  addMemoTitleOption: (title: string) => void;
-  tarifVendorRows: RateRow[];
-  companyOptions: CompanyOption[];
-};
-
-type ListColumn = {
-  header: string;
-  align?: 'left' | 'right';
-  field?: string;
-  inputType?: 'text' | 'number' | 'date';
-  inputPlaceholder?: string;
-  wide?: boolean;
-  // Field teks bebas yang bisa panjang (mis. NOTE 4/other_note, 2026-09) -- textarea saat edit,
-  // bukan input 1 baris (lihat `EditableCell` multiline).
-  multiline?: boolean;
-  format?: (v: any, r: any) => React.ReactNode;
-  render?: (r: any, idx: number, costStatus: string | undefined, ctx: ListRenderCtx) => React.ReactNode;
-};
-
-// po_list (array po_no_raw/vessel_raw per PO) adalah SATU-SATUNYA sumber pasangan PO<->Vessel
-// yang presisi -- vessel_internal_note cuma string ringkas nama kapal (sejak formatnya berubah,
-// TIDAK ada lagi info nomor PO di teks itu), jadi tidak bisa dipakai untuk breakdown baris-per-baris.
-const getPoListEntries = (r: any): PoListEntry[] => {
-  const parsed = parseJsonField(r.po_list);
-  return Array.isArray(parsed) ? parsed : [];
-};
-
-const fmtWithCurrency = (currencyField: string) => (v: any, r: any) => formatMoney(v, r[currencyField]);
-
-// NOTE 3 (status_note) format baku (2026-09, permintaan user): "BARANG DITERIMA LOG {KOTA}
-// {DD/MM/YYYY}" -- kota otomatis dari `cost_validasi_far_overseas_air.rate_row_used.tujuan`
-// (ctx.costCityMap), tanggal dipilih manual via date picker. Disimpan sebagai 1 string utuh ke
-// `status_note` (SATU-SATUNYA kolom DB, tidak ada kolom tanggal terpisah) -- saat edit dibuka
-// lagi, tanggalnya di-parse balik dari akhir string via STATUS_NOTE_DATE_RE.
-const STATUS_NOTE_DATE_RE = /(\d{2})\/(\d{2})\/(\d{4})\s*$/;
-const composeStatusNote = (city: string, isoDate: string): string => {
-  const [y, m, d] = isoDate.split('-');
-  return `BARANG DITERIMA LOG ${city} ${d}/${m}/${y}`;
-};
-const parseStatusNoteDateIso = (text: string | null | undefined): string => {
-  const m = STATUS_NOTE_DATE_RE.exec(text || '');
-  if (!m) return '';
-  return `${m[3]}-${m[2]}-${m[1]}`;
-};
-
-const fmtTotalAmount = (v: any, r: any) => {
-  const showIdrHint = r.total_amount_currency && r.total_amount_currency !== 'IDR' && r.total_amount_idr != null;
-  return (
-    <span>
-      {formatMoney(v, r.total_amount_currency)}
-      {showIdrHint && <span className="text-[#5A305A]/60 ml-1">(≈ Rp {Number(r.total_amount_idr).toLocaleString('id-ID')})</span>}
-    </span>
-  );
-};
-
-// Lebar PIKSEL TETAP (bukan persen) per kolom field -- lihat catatan panjang di render <td>
-// di bawah: lebar persen ("w-full") pada <input> di dalam tabel "table-layout: auto" tidak
-// bisa dihitung andal, jadi SEMUA kolom field (bukan cuma yang wide) butuh lebar tetap eksplisit
-// supaya inputnya selalu tampil besar & teks yang diedit selalu kebaca saat mode edit.
-const colWidthClass = (col: ListColumn): string => {
-  if (col.wide) return 'w-[300px]';
-  if (col.inputType === 'date') return 'w-[130px]';
-  if (col.inputType === 'number') return 'w-[120px]';
-  return 'w-[150px]';
-};
-
-// Dropdown MEMO TITLE + opsi "+ Add new..." (2026-09) -- dipakai kolom MEMO TITLE di LIST_COLUMNS
-// & FarOverseasAirCardEditModal (reuse otomatis krn keduanya lewat `col.render`). Mode "tambah
-// baru" pakai state lokal (`addingNew`) yg beralih tampilan dari <select> ke <input> teks biasa.
-const ADD_NEW_MEMO_TITLE = '__ADD_NEW__';
-function MemoTitleEditCell({ value, options, onChange, onAddOption }: {
-  value: string | null; options: string[]; onChange: (v: string | null) => void; onAddOption: (title: string) => void;
-}) {
-  const [addingNew, setAddingNew] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-
-  if (addingNew) {
-    const commit = () => {
-      const v = newTitle.trim();
-      setAddingNew(false);
-      if (!v) return;
-      onAddOption(v);
-      onChange(v);
-    };
-    return (
-      <input
-        autoFocus
-        type="text"
-        value={newTitle}
-        placeholder="New memo title..."
-        onChange={e => setNewTitle(e.target.value)}
-        onBlur={commit}
-        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); else if (e.key === 'Escape') setAddingNew(false); }}
-        className="w-[160px] text-xs p-1.5 border border-blue-400 rounded outline-none text-[#5A305A] bg-white"
-      />
-    );
-  }
-
-  return (
-    <select
-      value={value && options.includes(value) ? value : ''}
-      onChange={e => {
-        if (e.target.value === ADD_NEW_MEMO_TITLE) { setNewTitle(''); setAddingNew(true); return; }
-        onChange(e.target.value || null);
-      }}
-      className="w-[160px] text-xs p-1.5 border border-blue-400 rounded outline-none text-[#5A305A] bg-white"
-    >
-      <option value="">— None —</option>
-      {value && !options.includes(value) && <option value={value}>{value}</option>}
-      {options.map(o => <option key={o} value={o}>{o}</option>)}
-      <option value={ADD_NEW_MEMO_TITLE}>+ Add new...</option>
-    </select>
-  );
+function PtChip({ code }: { code: string | null | undefined }) {
+  if (!code) return <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 whitespace-nowrap">PT?</span>;
+  return <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-[#3B1B3D] text-white whitespace-nowrap">{code}</span>;
 }
 
-// 3 dropdown terpisah utk NOTE 1 (route_note) -- GANTI dari edit teks bebas (2026-09, permintaan
-// user). Opsi tiap dropdown = nilai UNIK origin/tujuan/jenis_layanan dari
-// `far_overseas_tarif_vendor` yg vendor_name-nya cocok `ship_via` baris ini (`vendorTargetFromShipVia`,
-// SATU-SATUNYA fungsi pemetaan OCTAGON/JIANQIAO, sama yg dipakai `rematchTarif`). Nilai AWAL
-// tiap dropdown di-parse dari `route_note` yg sudah tersimpan (`parseRouteNote` + case-insensitive
-// match ke opsi -- kalau tidak cocok satu pun opsi, dropdown itu dibiarkan KOSONG/unselected,
-// TIDAK dipaksakan pilih salah satu, sesuai permintaan user). `route_note` BARU hanya
-// dikomposisi & di-commit (`onChange`) kalau KETIGA dropdown sudah terisi -- kalau baru sebagian
-// yg dipilih, belum ada teks valid utk disimpan (format baku butuh ketiganya).
-function RouteNoteEditCell({ value, shipVia, tarifVendorRows, onChange }: {
-  value: string | null; shipVia: string | null | undefined; tarifVendorRows: RateRow[]; onChange: (v: string | null) => void;
-}) {
-  const vendorTarget = vendorTargetFromShipVia(shipVia);
-  const vendorRows = tarifVendorRows.filter(t => t.vendor_name === vendorTarget && t.aktif !== false);
-  const originOptions = Array.from(new Set(vendorRows.map(t => t.origin).filter(Boolean) as string[])).sort();
-  const tujuanOptions = Array.from(new Set(vendorRows.map(t => t.tujuan).filter(Boolean) as string[])).sort();
-  const jenisOptions = Array.from(new Set(vendorRows.map(t => t.jenis_layanan).filter(Boolean) as string[])).sort();
+function warningCls(level: MemoWarning['level']) {
+  return level === 'red' ? 'bg-rose-50 text-rose-700' : level === 'amber' ? 'bg-amber-50 text-amber-800' : 'bg-[#F5EDF3] text-[#6E5E70]';
+}
+function warningDot(level: MemoWarning['level']) {
+  return level === 'red' ? 'bg-rose-500' : level === 'amber' ? 'bg-amber-500' : 'bg-[#6E5E70]/50';
+}
 
-  const parsed = parseRouteNote(value);
-  const findMatch = (options: string[], parsedVal: string | undefined): string => {
-    if (!parsedVal) return '';
-    const found = options.find(o => o.toUpperCase() === parsedVal.toUpperCase());
-    return found || '';
-  };
-  const originSel = findMatch(originOptions, parsed?.origin);
-  const tujuanSel = findMatch(tujuanOptions, parsed?.destination);
-  // Jenis Layanan: NOTE 1 lama bisa berisi abbreviation ("AIR"/"SEA"/dst, lihat
-  // `mapModeToJenisLayanan`) -- coba cocokkan langsung dulu (data BARU hasil dropdown ini),
-  // fallback ke hasil terjemahan abbreviation (data LAMA).
-  const jenisSel = findMatch(jenisOptions, parsed?.mode) || findMatch(jenisOptions, mapModeToJenisLayanan(parsed?.mode) || undefined);
-
-  const commit = (o: string, t: string, j: string) => {
-    if (!o || !t || !j) return; // belum lengkap -- jangan commit dulu, format baku butuh ketiganya.
-    onChange(`PENGIRIMAN DARI ${o.toUpperCase()} KE ${t.toUpperCase()} (${j.toUpperCase()})`);
-  };
-
-  const selectClass = "w-full text-xs p-1.5 border border-blue-400 rounded outline-none text-[#5A305A] bg-white";
+function MainWarning({ warnings }: { warnings: MemoWarning[] }) {
+  if (warnings.length === 0) return null;
+  const [first, ...rest] = warnings;
   return (
-    <div className="flex flex-col gap-1 w-[220px]">
-      <select value={originSel} onChange={e => commit(e.target.value, tujuanSel, jenisSel)} className={selectClass}>
-        <option value="">— Origin —</option>
-        {originOptions.map(o => <option key={o} value={o}>{o}</option>)}
-      </select>
-      <select value={tujuanSel} onChange={e => commit(originSel, e.target.value, jenisSel)} className={selectClass}>
-        <option value="">— Destination —</option>
-        {tujuanOptions.map(o => <option key={o} value={o}>{o}</option>)}
-      </select>
-      <select value={jenisSel} onChange={e => commit(originSel, tujuanSel, e.target.value)} className={selectClass}>
-        <option value="">— Service Type —</option>
-        {jenisOptions.map(o => <option key={o} value={o}>{o}</option>)}
-      </select>
+    <div className="flex items-center gap-1.5 min-w-0" title={warnings.map(w => '• ' + w.text).join('\n')}>
+      <span className={`flex items-center gap-1.5 min-w-0 text-[11px] px-2 py-1 rounded-lg ${warningCls(first.level)}`}>
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${warningDot(first.level)}`} />
+        <span className="truncate">{first.text}</span>
+      </span>
+      {rest.length > 0 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[#F5EDF3] text-[#6B3470] shrink-0">+{rest.length} more</span>}
     </div>
   );
 }
 
-const LIST_COLUMNS: ListColumn[] = [
-    { header: 'NO', render: (_r, idx) => idx + 1 },
-    {
-      // Sama seperti pola PO. No di halaman Audit Sea & Air: tampilkan 1 PO paling atas,
-      // sisanya disembunyikan di balik tombol "+N PO" -- po_ori di sini adalah 1 string
-      // gabungan "PO1 + PO2 + ...", jadi di-split dulu baru dipotong tampilannya.
-      header: 'NO PO',
-      render: (r, _idx, _costStatus, ctx) => {
-        const editing = ctx.editingRowId === r.id;
-        const val = ctx.getVal(r, 'po_ori');
-        const edited = Array.isArray(r.edited_fields) && r.edited_fields.includes('po_ori');
-        if (editing) {
-          return (
-            <EditableCell
-              value={val}
-              editable
-              edited={edited}
-              multiline
-              className="w-[300px] whitespace-normal break-words"
-              onChange={(v) => ctx.setVal(r, 'po_ori', v)}
-            />
-          );
-        }
-        const parts = typeof val === 'string' ? val.split('+').map((s: string) => s.trim()).filter(Boolean) : [];
-        if (parts.length === 0) {
-          return <span className="italic text-slate-400 text-xs">-</span>;
-        }
-        const isExpanded = ctx.expandedPoRows.has(r.id);
-        const poListEntries = getPoListEntries(r);
-        return (
-          <div className="w-[260px] flex items-start gap-1.5">
-            <div className="whitespace-normal break-words leading-snug flex-1">
-              {isExpanded
-                ? (poListEntries.length > 0
-                    ? poListEntries.map((po, i) => (
-                        <div key={i} className={i > 0 ? 'mt-1' : ''}>{po.po_no_raw || '-'}</div>
-                      ))
-                    : parts.join(' + '))
-                : parts[0]}
-            </div>
-            {parts.length > 1 && (
-              <button
-                onClick={() => ctx.togglePoExpanded(r.id)}
-                className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-200 hover:bg-blue-100 font-bold whitespace-nowrap shrink-0"
-              >
-                {isExpanded ? 'Hide' : `+${parts.length - 1} PO`}
-              </button>
-            )}
-            {edited && <Edit3 size={11} className="text-amber-500 shrink-0 mt-0.5" />}
-          </div>
-        );
-      }
-    },
-    { header: 'VENDOR', field: 'vendor', wide: true, multiline: true },
-    { header: 'SHIP VIA', field: 'ship_via' },
-    { header: 'INVOICE NO', field: 'no_invoice' },
-    { header: 'INVOICE DATE', field: 'invoice_date', inputType: 'date', format: v => formatDateID(v) },
-    { header: 'QTY', field: 'qty', inputType: 'number', align: 'right' },
-    { header: 'WEIGHT', field: 'weight_unit' },
-    {
-      header: 'WEIGHT BREAKDOWN',
-      render: (r, _idx, _costStatus, ctx) => {
-        const edited = Array.isArray(r.edited_fields) && r.edited_fields.includes('weight_breakdown');
-        return (
-          <div className="w-[260px] flex flex-col gap-1.5">
-            <div className="whitespace-normal break-words leading-snug flex items-start gap-1">
-              <span>{r.weight_breakdown || <span className="italic text-slate-400">Not filled in yet</span>}</span>
-              {edited && <span className="shrink-0"><Edit3 size={11} className="text-amber-500 inline-block" /></span>}
-            </div>
-            <button onClick={() => ctx.onOpenWeightModal(r)} className="self-start text-[10px] font-semibold text-blue-600 hover:text-blue-800 underline flex items-center gap-1">
-              <Scale size={11} /> {r.weight_breakdown ? 'Edit Breakdown' : 'Fill In Breakdown'}
-            </button>
-          </div>
-        );
-      }
-    },
-    { header: 'UNIT PRICE', field: 'unit_price', inputType: 'number', align: 'right', format: fmtWithCurrency('unit_price_currency') },
-    { header: 'AMOUNT', field: 'freight_amount', inputType: 'number', align: 'right', format: fmtWithCurrency('total_amount_currency') },
-    { header: 'CLEARANCE', field: 'clearance_amount', inputType: 'number', align: 'right', format: fmtWithCurrency('total_amount_currency') },
-    { header: 'OTHER', field: 'other_amount', inputType: 'number', align: 'right', format: fmtWithCurrency('total_amount_currency') },
-    { header: 'AMOUNT', field: 'clearance_other_total', inputType: 'number', align: 'right', format: fmtWithCurrency('total_amount_currency') },
-    { header: 'TOTAL AMOUNT', field: 'total_amount', inputType: 'number', align: 'right', format: fmtTotalAmount },
-    // NOTE 1 jadi 3 dropdown terpisah (2026-09, GANTI dari edit teks bebas, permintaan user
-    // "hindari typo/tidak match, ketiganya simetris") -- lihat `RouteNoteEditCell` di atas.
-    {
-      header: 'NOTE 1',
-      wide: true,
-      render: (r, _idx, _costStatus, ctx) => {
-        const editingThisRow = ctx.editingRowId === r.id;
-        const val = ctx.getVal(r, 'route_note');
-        const edited = Array.isArray(r.edited_fields) && r.edited_fields.includes('route_note');
-        if (editingThisRow) {
-          return <RouteNoteEditCell value={val} shipVia={r.ship_via} tarifVendorRows={ctx.tarifVendorRows} onChange={v => ctx.setVal(r, 'route_note', v)} />;
-        }
-        return (
-          <div className="w-[300px] flex items-start gap-1.5">
-            <span className="whitespace-normal break-words leading-snug flex-1">{val || <span className="italic text-slate-400">-</span>}</span>
-            {edited && <Edit3 size={11} className="text-amber-500 shrink-0 mt-0.5" />}
-          </div>
-        );
-      }
-    },
-    // NOTE 2 dipecah 2 (2026-09): KIRI = `item_description` hasil ekstraksi otomatis n8n --
-    // SEMPAT dikunci read-only total (dikeluarkan dari REKAPAN_EDITABLE_FIELDS), TAPI susulan
-    // (2026-09, permintaan user) DIBUKA JUGA jadi bisa diedit & disimpan spt kolom lain --
-    // `item_description` DIKEMBALIKAN ke `REKAPAN_EDITABLE_FIELDS` (FarOverseasAirHelpers.ts).
-    // KANAN = kolom `item_description_manual`, murni catatan manual user, terikat ke
-    // pendingEdits/getVal/setVal spt kolom lain. Memo cetak (FarOverseasAirDetailModal.tsx)
-    // SENGAJA TIDAK ikut menampilkan `item_description_manual` -- baris "2." di NOTE memo cetak
-    // resmi TETAP hanya dari `item_description` DB (skrng bisa dikoreksi manual dari sini juga).
-    // **PENTING**: kalau nilai TIDAK tersimpan (toast sukses tapi balik kosong saat refresh),
-    // cek dulu `v_allowed_columns` RPC `update_rekapan_far_overseas_manual` sudah include
-    // `item_description` -- whitelist RPC TERPISAH dari `REKAPAN_EDITABLE_FIELDS` frontend
-    // (lihat CLAUDE.md bagian "arsitektur cost validation" — pola sama bug `pic_user_id` dulu).
-    {
-      header: 'NOTE 2',
-      render: (r, _idx, _costStatus, ctx) => {
-        const editingThisRow = ctx.editingRowId === r.id;
-        const fromDocVal = ctx.getVal(r, 'item_description');
-        const fromDocEdited = Array.isArray(r.edited_fields) && r.edited_fields.includes('item_description');
-        const manualVal = ctx.getVal(r, 'item_description_manual');
-        const edited = Array.isArray(r.edited_fields) && r.edited_fields.includes('item_description_manual');
-        return (
-          <div className="w-[360px] flex items-start gap-2">
-            <div className="flex-1 min-w-0">
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wide mb-1">From Document</p>
-              <EditableCell
-                value={fromDocVal}
-                editable={editingThisRow}
-                edited={fromDocEdited}
-                multiline
-                className="whitespace-normal break-words"
-                onChange={(v) => ctx.setVal(r, 'item_description', v)}
-              />
-            </div>
-            <div className="w-px self-stretch bg-slate-200 shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wide mb-1">Manual Note</p>
-              <EditableCell
-                value={manualVal}
-                editable={editingThisRow}
-                edited={edited}
-                multiline
-                className="whitespace-normal break-words"
-                onChange={(v) => ctx.setVal(r, 'item_description_manual', v)}
-              />
-            </div>
-          </div>
-        );
-      }
-    },
-    {
-      // Format baku "BARANG DITERIMA LOG {KOTA} {DD/MM/YYYY}" -- kota READ-ONLY (ikut kota
-      // tujuan di Cost Validation, ctx.costCityMap), tanggal dipilih via <input type="date">
-      // (kalender bawaan browser). Kalau belum ada Cost Validation matched (kota kosong), date
-      // picker disabled dulu -- tidak ada kota valid untuk dikomposisi.
-      header: 'NOTE 3',
-      wide: true,
-      render: (r, _idx, _costStatus, ctx) => {
-        const editingThisRow = ctx.editingRowId === r.id;
-        const city = ctx.costCityMap[r.id] || '';
-        const currentVal = ctx.getVal(r, 'status_note');
-        const edited = Array.isArray(r.edited_fields) && r.edited_fields.includes('status_note');
-        if (editingThisRow) {
-          const isoDate = parseStatusNoteDateIso(currentVal);
-          return (
-            <div className="w-[300px] flex flex-col gap-1">
-              <div className="text-[11px] leading-snug">
-                <span className="font-semibold">BARANG DITERIMA LOG</span>{' '}
-                {city ? <span>{city}</span> : <span className="italic text-slate-400">(no destination city yet)</span>}
-              </div>
-              <input
-                type="date"
-                value={isoDate}
-                disabled={!city}
-                onChange={(e) => {
-                  if (!e.target.value || !city) return;
-                  ctx.setVal(r, 'status_note', composeStatusNote(city, e.target.value));
-                }}
-                className="w-[160px] text-xs p-1.5 border border-blue-400 rounded outline-none text-[#5A305A] bg-white disabled:bg-slate-100 disabled:text-slate-400"
-              />
-              {edited && <span className="flex items-center gap-1 text-[10px] text-amber-500"><Edit3 size={11} /> Edited</span>}
-            </div>
-          );
-        }
-        return (
-          <div className="w-[300px] flex items-start gap-1.5">
-            <span className="whitespace-normal break-words leading-snug flex-1">{currentVal || <span className="italic text-slate-400">-</span>}</span>
-            {edited && <Edit3 size={11} className="text-amber-500 shrink-0 mt-0.5" />}
-          </div>
-        );
-      }
-    },
-    { header: 'NOTE 4', field: 'other_note', wide: true, multiline: true },
-    // MEMO TITLE jadi dropdown (2026-09, permintaan user) -- isi opsi dari `ctx.memoTitleOptions`
-    // (nilai UNIK yg SUDAH pernah dipakai di data, lihat `fetchDistinctMemoTitles()`). Pilih
-    // "+ Add new..." -> switch ke `<input>` teks biasa (state lokal `addingNew`) supaya user
-    // bisa ketik judul BENAR-BENAR baru -- begitu di-commit, langsung ditambahkan ke
-    // `ctx.memoTitleOptions` in-memory (`addMemoTitleOption`) supaya baris lain di sesi yg sama
-    // bisa langsung pilih judul itu juga tanpa perlu refresh halaman.
-    {
-      header: 'MEMO TITLE',
-      render: (r, _idx, _costStatus, ctx) => {
-        const editingThisRow = ctx.editingRowId === r.id;
-        const val = ctx.getVal(r, 'memo_title');
-        const edited = Array.isArray(r.edited_fields) && r.edited_fields.includes('memo_title');
-        if (editingThisRow) {
-          return <MemoTitleEditCell value={val} options={ctx.memoTitleOptions} onChange={v => ctx.setVal(r, 'memo_title', v)} onAddOption={ctx.addMemoTitleOption} />;
-        }
-        return (
-          <div className="w-[160px] flex items-start gap-1.5">
-            <span className="whitespace-normal break-words leading-snug flex-1">{val || <span className="italic text-slate-400">-</span>}</span>
-            {edited && <Edit3 size={11} className="text-amber-500 shrink-0 mt-0.5" />}
-          </div>
-        );
-      }
-    },
-    // Kolom "Nama PT" (BARU, 2026-09) -- override MANUAL `dominant_company_code` (field yang
-    // SAMA dipakai `recomputeDominantCompany()` dari breakdown PO, BUKAN kolom baru di DB).
-    // Dibuat krn baris TANPA PO (`po_list` kosong) tidak pernah punya "pemenang" company_code
-    // dari formula PO -- header modal Approval Memo (logo + nama PT) jadi tidak pernah terisi.
-    // `fetchSignerCompanyOptions()` (FarOverseasAirHelpers.ts) sumber dropdown-nya
-    // `far_overseas_signer_config` (tabel yang SAMA dipakai modal Approval Memo cari signer).
-    {
-      header: 'NAMA PT',
-      render: (r, _idx, _costStatus, ctx) => {
-        const editingThisRow = ctx.editingRowId === r.id;
-        const code = ctx.getVal(r, 'dominant_company_code');
-        const edited = Array.isArray(r.edited_fields) && r.edited_fields.includes('dominant_company_code');
-        if (editingThisRow) {
-          return (
-            <select
-              value={code || ''}
-              onChange={(e) => ctx.setVal(r, 'dominant_company_code', e.target.value || null)}
-              className="w-[170px] text-xs p-1.5 border border-blue-400 rounded outline-none text-[#5A305A] bg-white"
-            >
-              <option value="">— Not set —</option>
-              {ctx.companyOptions.map(c => (
-                <option key={c.company_code} value={c.company_code}>{c.company_name_full}</option>
-              ))}
-            </select>
-          );
-        }
-        const resolvedName = ctx.companyOptions.find(c => c.company_code === code)?.company_name_full;
-        return (
-          <div className="w-[160px] flex items-start gap-1.5">
-            <span className="whitespace-normal break-words leading-snug flex-1">{resolvedName || code || <span className="italic text-slate-400">-</span>}</span>
-            {edited && <Edit3 size={11} className="text-amber-500 shrink-0 mt-0.5" />}
-          </div>
-        );
-      }
-    },
-    // Kolom PIC (2026-09, GANTI dari free-text `pic_name` jadi dropdown user) -- admin/ops pilih
-    // SIAPA yang berhak approve tahap PIC utk memo ini, dibatasi ke user yg punya page access
-    // `direct_loading` (`ctx.picUsers`, dari RPC `get_users_with_page_access`). Field baru
-    // `pic_user_id` jadi SATU-SATUNYA sumber otorisasi tahap PIC (lihat
-    // `FarOverseasAirDetailModal.tsx` `isEligibleForStep` & CLAUDE.md) -- dropdown "Jabatan
-    // Approval PIC" di Kelola Role & Akses TIDAK LAGI dipakai utk tahap ini. `pic_name` (teks)
-    // TETAP disinkronkan otomatis dari nama user yang dipilih (lihat onChange di bawah) supaya
-    // memo cetak (`FarOverseasAirDetailModal.tsx`, kolom "Disiapkan Oleh") TIDAK PERLU diubah
-    // sama sekali -- tetap baca `rec.pic_name` seperti sebelumnya.
-    {
-      header: 'PIC',
-      render: (r, _idx, _costStatus, ctx) => {
-        const editingThisRow = ctx.editingRowId === r.id;
-        const picUserId = ctx.getVal(r, 'pic_user_id');
-        const edited = Array.isArray(r.edited_fields) && r.edited_fields.includes('pic_user_id');
-        if (editingThisRow) {
-          return (
-            <select
-              value={picUserId || ''}
-              onChange={(e) => {
-                const selectedId = e.target.value || null;
-                const selectedUser = ctx.picUsers.find(u => u.id === selectedId);
-                ctx.setVal(r, 'pic_user_id', selectedId);
-                ctx.setVal(r, 'pic_name', selectedUser ? (selectedUser.nama || selectedUser.email || '') : null);
-              }}
-              className="w-[170px] text-xs p-1.5 border border-blue-400 rounded outline-none text-[#5A305A] bg-white"
-            >
-              <option value="">— Not assigned —</option>
-              {ctx.picUsers.map(u => (
-                <option key={u.id} value={u.id}>{u.nama || u.email}</option>
-              ))}
-            </select>
-          );
-        }
-        const resolvedName = ctx.picUsers.find(u => u.id === picUserId)?.nama || r.pic_name;
-        return (
-          <div className="w-[150px] flex items-center gap-1">
-            {resolvedName ? <span>{resolvedName}</span> : <span className="italic text-slate-400">Not assigned</span>}
-            {edited && <Edit3 size={11} className="text-amber-500 shrink-0" />}
-          </div>
-        );
-      }
-    },
-    { header: 'BUYER', field: 'buyer_name', multiline: true },
-    { header: 'EXPECTED PAYMENT DATE', field: 'expected_payment_date', inputType: 'date', format: v => formatDateID(v) },
-    {
-      header: 'VESSEL',
-      wide: true,
-      render: (r, _idx, _costStatus, ctx) => {
-        const editing = ctx.editingRowId === r.id;
-        const val = ctx.getVal(r, 'vessel_internal_note');
-        const edited = Array.isArray(r.edited_fields) && r.edited_fields.includes('vessel_internal_note');
-        if (editing) {
-          return (
-            <EditableCell
-              value={val}
-              editable
-              edited={edited}
-              multiline
-              className="w-[300px] whitespace-normal break-words"
-              onChange={(v) => ctx.setVal(r, 'vessel_internal_note', v)}
-            />
-          );
-        }
-        const isExpanded = ctx.expandedPoRows.has(r.id);
-        const poListEntries = getPoListEntries(r);
-        if (isExpanded && poListEntries.length > 0) {
-          return (
-            <div className="w-[260px] whitespace-normal break-words leading-snug">
-              {poListEntries.map((po, i) => (
-                <div key={i} className={i > 0 ? 'mt-1' : ''}>{po.vessel_raw || '-'}</div>
-              ))}
-              {edited && <Edit3 size={11} className="text-amber-500 shrink-0 mt-0.5 inline-block ml-1" />}
-            </div>
-          );
-        }
-        return (
-          <div className="w-[260px] flex items-start gap-1.5">
-            <span className="whitespace-normal break-words leading-snug flex-1">{val || <span className="italic text-slate-400">-</span>}</span>
-            {edited && <Edit3 size={11} className="text-amber-500 shrink-0 mt-0.5" />}
-          </div>
-        );
-      }
-    },
-    { header: 'APPROVAL STATUS', render: r => <ApprovalBadge status={r.approval_status} /> },
-    { header: 'COST STATUS', render: (_r, _idx, costStatus) => <CostBadge status={costStatus} /> },
-    // departure_date SELALU kosong dari hasil ekstraksi otomatis (Gemini tidak pernah isi ini) --
-    // wajib diisi manual oleh user di sini. Dipakai sebagai field "Departure Date" di memo cetak
-    // (FarOverseasAirDetailModal.tsx), TERPISAH dari invoice_date. Dipindah ke posisi PALING
-    // BELAKANG tabel (2026-09, permintaan user) -- BUKAN lagi setelah INVOICE DATE.
-    { header: 'DEPARTURE DATE', field: 'departure_date', inputType: 'date', format: v => formatDateID(v) },
-];
+function ProgressBar({ status }: { status: string | null | undefined }) {
+  const done = completedStepCount(status);
+  const next = nextStepForStatus(status);
+  const nextIdx = next ? STEP_ORDER.indexOf(next) : -1;
+  return (
+    <div className="flex gap-1">
+      {STEP_ORDER.map((_, i) => {
+        let cls = 'bg-[#EADFD6]';
+        if (status === 'REJECTED') cls = i === 0 ? 'bg-rose-500' : 'bg-[#EADFD6]';
+        else if (status === 'APPROVED') cls = 'bg-emerald-500';
+        else if (i < done) cls = 'bg-[#6B3470]';
+        else if (i === nextIdx) cls = 'bg-amber-400';
+        return <span key={i} className={`h-1 flex-1 rounded-full ${cls}`} />;
+      })}
+    </div>
+  );
+}
 
-// Kolom export Excel -- 1:1 dengan LIST_COLUMNS di atas (semua kolom yang tampil di tabel list
-// ikut ter-export), pola/method/tampilan sama seperti tombol Export di halaman Audit Sea & Air
-// (ExportModal.tsx yang sama, dipanggil dengan konfigurasi kolom khusus FAR Overseas Air).
-// Kolom gabungan (harga+mata uang, breakdown, dst) sudah diformat jadi teks siap tampil oleh
-// getExportData di bawah -- ExportModal generik tidak tahu cara gabungkan field-field itu.
+function StatusLine({ rec }: { rec: any }) {
+  const status = rec?.approval_status;
+  const fin = getFinanceStage(rec);
+  const dot = fin === 'PAID' ? 'bg-emerald-500' : status === 'APPROVED' ? 'bg-[#6E5E70]' : status === 'REJECTED' ? 'bg-rose-500' : 'bg-amber-500';
+  return <span className="flex items-center gap-1.5 text-[11px] font-semibold text-[#2A1A2C] whitespace-nowrap min-w-0"><span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} /><span className="truncate">{getStatusLabel(rec)}</span></span>;
+}
+
+function DueStrip({ rec, dueWindow }: { rec: any; dueWindow: number }) {
+  if (!isPaymentAlarmActive(rec)) return null;
+  if (rec.on_hold === true) {
+    return <div className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-white bg-[#6E5E70]"><Clock size={11} /> On hold · goods not received</div>;
+  }
+  const due = getDueInfo(getMemoDueValue(rec), dueWindow);
+  if (!due || due.level === 'later') return null;
+  const text = due.level === 'overdue' ? `Overdue by ${-due.daysLeft} day${due.daysLeft === -1 ? '' : 's'}` : due.level === 'today' ? 'Due today' : `Due in ${due.daysLeft} day${due.daysLeft === 1 ? '' : 's'}`;
+  return (
+    <div className={`flex items-center gap-1.5 px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-white ${due.level === 'overdue' ? 'bg-rose-600' : 'bg-[#B7791F]'}`}>
+      <Bell size={11} /> {text}
+    </div>
+  );
+}
+
+type RowActions = {
+  canEdit: boolean;
+  onMemo: (r: any) => void;
+  onEdit: (r: any) => void;
+  onCost: (r: any) => void;
+  onDocs: (r: any) => void;
+  onDelete: (r: any) => void;
+};
+
+function editButtonState(r: any, canEdit: boolean): { label: string; muted: boolean } {
+  if (!canEdit) return { label: 'View only', muted: true };
+  if (isMemoLocked(r.approval_status)) return { label: 'Locked', muted: true };
+  return { label: 'Edit', muted: false };
+}
+
+const MemoCard: React.FC<{ r: any; cost: CostInfo | undefined; dueWindow: number; actions: RowActions }> = ({ r, cost, dueWindow, actions }) => {
+  const route = getRouteDisplay(r.route_note);
+  const pos = getPoNumbers(r);
+  const warnings = deriveMemoWarnings(r, cost);
+  const due = getDueInfo(getMemoDueValue(r), dueWindow);
+  const fx = implicitFxRate(r);
+  const locked = isMemoLocked(r.approval_status);
+  const editState = editButtonState(r, actions.canEdit);
+  const docCount = getMemoDocs(r).length;
+  const dueStrip = isPaymentAlarmActive(r) && r.on_hold !== true && due && due.level !== 'later';
+  const border = dueStrip && due?.level === 'overdue' ? 'border-rose-300' : dueStrip ? 'border-[#E9C98B]' : 'border-[#EADFD6]';
+  return (
+    <div className={`bg-white rounded-2xl border ${border} shadow-sm flex flex-col overflow-hidden hover:shadow-md transition-shadow`}>
+      <DueStrip rec={r} dueWindow={dueWindow} />
+      <div className="p-3.5 flex flex-col gap-2.5 flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            {r.memo_no && <p className="text-sm font-extrabold text-[#2A1A2C] leading-tight">{r.memo_no}</p>}
+            <p className={r.memo_no ? 'inline-block mt-0.5 text-[9px] font-extrabold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[#F5EDF3] text-[#6B3470]' : 'text-sm font-extrabold text-[#2A1A2C] leading-tight break-words'}>{r.memo_title || <span className="italic font-semibold text-[#6E5E70]">Untitled memo</span>}</p>
+          </div>
+          <AiChip status={cost?.status} />
+        </div>
+
+        <div className="rounded-xl bg-[#F5EDF3] px-3 py-2">
+          <p className="text-[9px] font-extrabold uppercase tracking-[0.12em] text-[#6B3470]">Payable to</p>
+          <p className="text-sm font-extrabold text-[#2A1A2C] uppercase leading-tight break-words">{r.ship_via || <span className="italic normal-case font-semibold text-[#6E5E70]">Ship via not set</span>}</p>
+          <p className="text-[11px] text-[#6E5E70] mt-0.5 truncate">Invoice <span className="font-semibold text-[#2A1A2C]">{r.no_invoice || '—'}</span> · {r.invoice_date ? formatDateShort(r.invoice_date) : '—'}</p>
+        </div>
+
+        <div className="flex items-center gap-2 min-w-0">
+          <PtChip code={r.dominant_company_code} />
+          <span className="text-xs font-semibold text-[#2A1A2C] truncate">{route ? `${route.origin} → ${route.destination}` : <span className="italic text-[#6E5E70] font-normal">Route not set</span>}</span>
+          {route && <span className="text-[9px] font-extrabold text-[#6B3470] shrink-0">{route.mode}</span>}
+        </div>
+
+        <div className="flex items-end justify-between gap-2">
+          <span className="text-[11px] text-[#6E5E70] uppercase">{r.qty != null && r.qty !== '' ? `${r.qty} ${r.weight_unit || ''}` : '—'}</span>
+          <div className="text-right">
+            <p className="text-lg font-extrabold text-[#2A1A2C] leading-none">{formatMoney(r.total_amount, r.total_amount_currency)}</p>
+            {fx != null && <p className="text-[11px] text-[#6E5E70] mt-1">≈ {formatIdr(Number(r.total_amount_idr))}</p>}
+            {fx != null && <p className="text-[10px] text-[#6E5E70]">FX 1 {r.total_amount_currency} = Rp {fx.toLocaleString('id-ID', { maximumFractionDigits: 2 })}</p>}
+          </div>
+        </div>
+
+        <div className="text-[11px] min-w-0">
+          <p className="text-[9px] font-extrabold uppercase tracking-[0.12em] text-[#6E5E70]">Vendor</p>
+          <p className="text-[#2A1A2C] break-words leading-snug">{r.vendor || <span className="italic text-[#6E5E70]">—</span>}</p>
+          <p className="text-[#6E5E70] mt-0.5 flex items-center gap-1.5 min-w-0">
+            <span className="truncate">{pos[0] || 'No PO'}</span>
+            {pos.length > 1 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#F5EDF3] text-[#6B3470] shrink-0">+{pos.length - 1} PO</span>}
+            {r.item_description_manual && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 shrink-0 truncate max-w-[40%]" title="Remark">{r.item_description_manual}</span>}
+          </p>
+        </div>
+
+        <MainWarning warnings={warnings} />
+
+        <div className="mt-auto space-y-1.5 pt-1">
+          <div className="flex items-center justify-between gap-2">
+            <StatusLine rec={r} />
+            <span className="text-[11px] text-[#6E5E70] whitespace-nowrap">Due {due ? formatDateShort(due.date) : '—'}</span>
+          </div>
+          <ProgressBar status={r.approval_status} />
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5 px-3.5 pb-3.5">
+        <button onClick={() => actions.onMemo(r)} className="flex-1 h-9 rounded-xl bg-[#F5EDF3] text-[#6B3470] text-xs font-bold hover:bg-[#EADFD6] transition-colors">Memo</button>
+        <button onClick={() => actions.onEdit(r)} title={editState.muted ? (locked ? 'Locked after Prepared By signed — opens read-only' : 'You have view access only') : 'Edit memo'}
+          className={`flex-1 h-9 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition-colors ${editState.muted ? 'bg-[#FBF3EC] text-[#6E5E70] hover:bg-[#F5EDF3]' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}>
+          {editState.muted && <Lock size={11} />} {editState.label}
+        </button>
+        <button onClick={() => actions.onCost(r)} title="Cost Validation" aria-label="Cost Validation" className="w-9 h-9 flex items-center justify-center rounded-xl border border-[#EADFD6] text-[#6B3470] hover:bg-[#F5EDF3]"><ClipboardList size={14} /></button>
+        <button onClick={() => actions.onDocs(r)} title={`Docs (${docCount})`} aria-label="Docs" className="w-9 h-9 flex items-center justify-center rounded-xl border border-[#EADFD6] text-[#6B3470] hover:bg-[#F5EDF3]"><FolderOpen size={14} /></button>
+        {actions.canEdit && (
+          <button onClick={() => { if (!locked) actions.onDelete(r); }} disabled={locked} title={locked ? 'Cannot delete after Prepared By signed' : 'Delete memo'} aria-label="Delete"
+            className="w-9 h-9 flex items-center justify-center rounded-xl border border-[#EADFD6] text-rose-600 hover:bg-rose-50 disabled:opacity-35 disabled:hover:bg-transparent disabled:cursor-not-allowed"><Trash2 size={14} /></button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ── Filter / sort / group ─────────────────────────────────────────────────────────────────────
+
+// FINANCE/PAID = status Finance (tahap 2): APPROVED & belum dibayar / sudah dibayar.
+type StatusFilter = 'ALL' | ApprovalStep | 'APPROVED' | 'REJECTED' | 'FINANCE' | 'PAID';
+const STATUS_FILTER_VALUE: Record<Exclude<StatusFilter, 'ALL'>, string> = {
+  TIER1: 'PENDING', PIC: 'TIER1_DONE', TIER2: 'PIC_DONE', TIER3: 'TIER2_DONE', APPROVED: 'APPROVED', REJECTED: 'REJECTED', FINANCE: 'APPROVED', PAID: 'APPROVED',
+};
+// Batas kandidat mode "Show them" (alarm due) -- disaring & dipaginasi di client.
+const DUE_CANDIDATE_LIMIT = 1000;
+type SortBy = 'NEWEST' | 'OLDEST' | 'DUE_SOON' | 'INVOICE_NEW';
+const SORT_LABEL: Record<SortBy, string> = { NEWEST: 'Newest upload', OLDEST: 'Oldest upload', DUE_SOON: 'Due date soonest', INVOICE_NEW: 'Invoice date newest' };
+type GroupBy = 'DATE' | 'MONTH' | 'YEAR' | 'OFF';
+const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+type Filters = { shipVia: string; pt: string; origin: string; destination: string; mode: string; remark: string; startDate: string; endDate: string };
+const EMPTY_FILTERS: Filters = { shipVia: '', pt: '', origin: '', destination: '', mode: '', remark: '', startDate: '', endDate: '' };
+
+// Escape wildcard LIKE (% _) dari input user.
+const escLike = (s: string) => s.replace(/[\\%_]/g, c => `\\${c}`);
+
+const localIso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+function groupKeyOf(r: any, g: GroupBy): { key: string; label: string } {
+  const d = toLocalDay(r.created_at);
+  if (!d || g === 'OFF') return { key: 'all', label: '' };
+  if (g === 'YEAR') return { key: String(d.getFullYear()), label: String(d.getFullYear()) };
+  if (g === 'MONTH') return { key: `${d.getFullYear()}-${d.getMonth()}`, label: `${MONTHS_LONG[d.getMonth()]} ${d.getFullYear()}` };
+  return { key: localIso(d), label: formatDateShort(d) };
+}
+
+// Kolom export -- label Bahasa Inggris (spek). Nilai gabungan diformat di `getExportData`.
 const FAR_EXPORT_COLS = [
-  { key: 'po_ori', label: 'NO PO' },
-  { key: 'vendor', label: 'VENDOR' },
-  { key: 'ship_via', label: 'SHIP VIA' },
+  { key: 'memo_no', label: 'MEMO NO' },
+  { key: 'memo_title', label: 'MEMO TITLE' },
+  { key: 'created_at', label: 'UPLOAD DATE', type: 'date' },
+  { key: 'approval_status_display', label: 'APPROVAL STATUS' },
+  { key: 'ship_via', label: 'PAYABLE TO (SHIP VIA)' },
   { key: 'no_invoice', label: 'INVOICE NO' },
   { key: 'invoice_date', label: 'INVOICE DATE', type: 'date' },
-  { key: 'qty', label: 'QTY', type: 'num' },
-  { key: 'weight_unit', label: 'WEIGHT' },
-  { key: 'weight_breakdown', label: 'WEIGHT BREAKDOWN' },
+  { key: 'nama_pt_display', label: 'PAYING PT' },
+  { key: 'vendor', label: 'VENDOR' },
+  { key: 'po_ori', label: 'PO' },
+  { key: 'weight_breakdown', label: 'KG PER PO' },
+  { key: 'vessel_internal_note', label: 'VESSEL' },
+  { key: 'qty', label: 'WEIGHT', type: 'num' },
+  { key: 'weight_unit', label: 'UNIT' },
   { key: 'unit_price_display', label: 'UNIT PRICE' },
-  { key: 'freight_amount_display', label: 'AMOUNT' },
+  { key: 'freight_amount_display', label: 'FREIGHT' },
   { key: 'clearance_amount_display', label: 'CLEARANCE' },
   { key: 'other_amount_display', label: 'OTHER' },
-  { key: 'clearance_other_total_display', label: 'AMOUNT' },
-  { key: 'total_amount_display', label: 'TOTAL AMOUNT' },
+  { key: 'clearance_other_total_display', label: 'OTHER CHARGES TOTAL' },
+  { key: 'total_amount_display', label: 'TOTAL' },
+  { key: 'total_amount_currency', label: 'CURRENCY' },
+  { key: 'fx_display', label: 'FX RATE' },
+  { key: 'total_idr_display', label: 'TOTAL IDR' },
   { key: 'route_note', label: 'NOTE 1' },
   { key: 'item_description', label: 'NOTE 2' },
-  { key: 'item_description_manual', label: 'NOTE 2 (MANUAL)' },
+  { key: 'item_description_manual', label: 'REMARK' },
   { key: 'status_note', label: 'NOTE 3' },
   { key: 'other_note', label: 'NOTE 4' },
-  { key: 'memo_title', label: 'JUDUL MEMO' },
-  { key: 'nama_pt_display', label: 'NAMA PT' },
-  { key: 'pic_name', label: 'PIC' },
+  { key: 'pic_name', label: 'PIC SHIPMENT' },
   { key: 'buyer_name', label: 'BUYER' },
-  { key: 'expected_payment_date', label: 'EXPECTED PAYMENT DATE', type: 'date' },
-  { key: 'vessel_internal_note', label: 'VESSEL' },
-  { key: 'approval_status_display', label: 'STATUS APPROVAL' },
-  { key: 'cost_status_display', label: 'STATUS COST' },
+  { key: 'due_display', label: 'DUE DATE', type: 'date' },
+  { key: 'expected_payment_date', label: 'PAYMENT DATE (PRINTED)', type: 'date' },
   { key: 'departure_date', label: 'DEPARTURE DATE', type: 'date' },
+  { key: 'cost_status_display', label: 'AI CHECK' },
+  { key: 'pic_create_display', label: 'PIC CREATE (PREPARED BY)' },
+  { key: 'finance_received_at', label: 'RECEIVED BY FINANCE', type: 'date' },
+  { key: 'paid_at', label: 'PAID', type: 'date' },
 ];
 
-// Modal Edit dari Card view (2026-09) -- REUSE PERSIS `LIST_COLUMNS` (field editor & custom
-// render NOTE 2/NOTE 3/PIC/VESSEL/Weight Breakdown yang SUDAH ADA utk List), TIDAK menduplikasi
-// logic input per field. `ctx` yang dioper ke sini WAJIB `editingRowId` dipaksa `=== row.id`
-// (dilakukan pemanggil, lihat `cardEditRow` di komponen utama) supaya semua `col.render` yang
-// mengecek itu otomatis tampil varian edit-nya. Kolom "NO"/"APPROVAL STATUS"/"COST STATUS"
-// dikeluarkan (bukan field yang bisa diedit, murni info/badge).
-const CARD_EDIT_EXCLUDED_HEADERS = new Set(['NO', 'APPROVAL STATUS', 'COST STATUS']);
-
-function FarOverseasAirCardEditModal({ row, costStatus, ctx, onClose, onCancel, onSave, saving }: {
-  row: any;
-  costStatus: string | undefined;
-  ctx: ListRenderCtx;
-  onClose: () => void;
-  onCancel: () => void;
-  onSave: () => void;
-  saving: boolean;
-}) {
-  const fieldCols = LIST_COLUMNS.filter(col => !CARD_EDIT_EXCLUDED_HEADERS.has(col.header));
-  return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[65] flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-2xl max-h-[85vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 shrink-0">
-          <div>
-            <h3 className="text-sm font-bold text-[#5A305A]">Edit Memo</h3>
-            <p className="text-xs text-[#5A305A]/60 mt-0.5">{row.vendor || '-'} &middot; {row.no_invoice || '-'}</p>
-          </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 shrink-0"><X size={18} /></button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
-          {fieldCols.map((col, i) => {
-            if (col.render) {
-              return (
-                <div key={i}>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">{col.header}</p>
-                  {col.render(row, 0, costStatus, ctx)}
-                </div>
-              );
-            }
-            const field = col.field as string;
-            const val = ctx.getVal(row, field);
-            const edited = Array.isArray(row.edited_fields) && row.edited_fields.includes(field);
-            return (
-              <div key={i}>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">{col.header}</p>
-                <EditableCell
-                  value={val}
-                  displayValue={col.format ? col.format(val, row) : undefined}
-                  editable
-                  edited={edited}
-                  type={col.inputType || 'text'}
-                  multiline={col.multiline}
-                  inputPlaceholder={col.inputPlaceholder}
-                  className="w-full"
-                  onChange={(v) => ctx.setVal(row, field, col.inputType === 'number' ? (v === null ? null : Number(v)) : v)}
-                />
-              </div>
-            );
-          })}
-        </div>
-        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-slate-200 shrink-0">
-          <button onClick={onCancel} className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-semibold text-[#5A305A] hover:bg-slate-50 transition-colors">
-            Cancel
-          </button>
-          <button
-            onClick={onSave}
-            disabled={saving}
-            className="px-4 py-2 rounded-lg bg-[#5A305A] hover:bg-[#73507B] text-white text-xs font-semibold disabled:opacity-50 flex items-center gap-1.5 transition-colors"
-          >
-            <Save size={13} /> {saving ? 'Saving...' : 'Save Changes'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// Export 1 baris per PO (spek) -- alokasi IDR per PO via `allocateByVessel` (dasar KG kalau KG
+// semua PO terisi, else rata), jumlahnya selalu = total memo.
+const FAR_EXPORT_PO_COLS = [
+  { key: 'memo_no', label: 'MEMO NO' },
+  { key: 'memo_title', label: 'MEMO TITLE' },
+  { key: 'created_at', label: 'UPLOAD DATE', type: 'date' },
+  { key: 'status_display', label: 'STATUS' },
+  { key: 'ship_via', label: 'PAYABLE TO (SHIP VIA)' },
+  { key: 'no_invoice', label: 'INVOICE NO' },
+  { key: 'invoice_date', label: 'INVOICE DATE', type: 'date' },
+  { key: 'nama_pt_display', label: 'PAYING PT' },
+  { key: 'vendor', label: 'VENDOR' },
+  { key: 'po_display', label: 'PO' },
+  { key: 'po_pt_display', label: 'PT FROM PO' },
+  { key: 'vessel_display', label: 'VESSEL' },
+  { key: 'po_kg_display', label: 'KG PER PO' },
+  { key: 'alloc_basis_display', label: 'ALLOCATION BASIS' },
+  { key: 'alloc_idr_display', label: 'ALLOCATION IDR' },
+  { key: 'qty', label: 'WEIGHT', type: 'num' },
+  { key: 'weight_unit', label: 'UNIT' },
+  { key: 'unit_price_display', label: 'UNIT PRICE' },
+  { key: 'freight_amount_display', label: 'FREIGHT' },
+  { key: 'clearance_other_total_display', label: 'OTHER' },
+  { key: 'total_amount_display', label: 'TOTAL' },
+  { key: 'total_amount_currency', label: 'CURRENCY' },
+  { key: 'fx_display', label: 'FX RATE' },
+  { key: 'total_idr_display', label: 'TOTAL IDR' },
+  { key: 'route_note', label: 'NOTE 1' },
+  { key: 'item_description', label: 'NOTE 2' },
+  { key: 'status_note', label: 'NOTE 3' },
+  { key: 'other_note', label: 'NOTE 4' },
+  { key: 'item_description_manual', label: 'REMARK' },
+  { key: 'pic_create_display', label: 'PIC CREATE' },
+  { key: 'pic_name', label: 'PIC SHIPMENT' },
+  { key: 'due_display', label: 'DUE DATE', type: 'date' },
+  { key: 'finance_received_at', label: 'RECEIVED BY FINANCE', type: 'date' },
+];
 
 export default function FarOverseasAirPage() {
-  useEffect(() => { document.title = 'FAR Overseas · BeeHive'; }, []);
+  useEffect(() => { document.title = 'FAR Overseas · BeeHive'; ensureFarFont(); }, []);
 
-  // Link langsung ke satu memo: /direct-loading/:id -- buka detail modal otomatis begitu
-  // halaman dimuat, tanpa perlu cari-cari di daftar (URL berubah otomatis saat tombol
-  // "Approval" di kolom AKSI diklik).
+  // Link langsung ke satu memo: /direct-loading/:id -- buka modal Memo otomatis.
   const { id: deepLinkId } = useParams<{ id?: string }>();
   const navigate = useNavigate();
-  const { canEdit: canEditPage } = useAuth();
+  const { user, profile, canEdit: canEditPage, approvalTiersByPage, allowedPageKeys, isAdmin } = useAuth();
   const canEditDirectLoading = canEditPage('direct_loading');
+  const rawTier = approvalTiersByPage['direct_loading'];
+  const myTier: ApprovalStep | null = (STEP_ORDER as string[]).includes(rawTier) ? (rawTier as ApprovalStep) : null;
+  const canOpenVendorRates = isAdmin || allowedPageKeys.has('settings_tarif_far_overseas_vendor');
 
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [tab, setTab] = useState<'MEMOS' | 'MY_APPROVALS' | 'FINANCE'>('MEMOS');
+  // Tahap 2 terpasang? (sql/027) & penandatangan per PT -- dicek sekali saat halaman dibuka.
+  const [phase2, setPhase2] = useState(false);
+  const [stepSigners, setStepSigners] = useState<StepSignerMap | null>(null);
+  const [rolesReady, setRolesReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([probePhase2(), fetchStepSigners()]).then(([p2, sg]) => {
+      if (cancelled) return;
+      setPhase2(p2);
+      setStepSigners(sg);
+      setRolesReady(true);
+    });
+    return () => { cancelled = true; };
+  }, []);
+  const mySteps = useMemo(() => mySignableSteps(user?.id, myTier, stepSigners), [user?.id, myTier, stepSigners]);
+  const canSeeFinance = phase2 && (isAdmin || allowedPageKeys.has('far_overseas_finance'));
+  const canActFinance = canEditPage('far_overseas_finance');
+  const [editSaveError, setEditSaveError] = useState<string | null>(null);
+  const [detailRefreshToken, setDetailRefreshToken] = useState(0);
+  const [exportMode, setExportMode] = useState<'MEMO' | 'PO' | null>(null);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [toastMessage, setToastMessage] = useState<{ text: string; warn: boolean } | null>(null);
+  const showToast = (text: string, warn = false, ms = 5000) => { setToastMessage({ text, warn }); setTimeout(() => setToastMessage(null), ms); };
+
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [activeJobStatus, setActiveJobStatus] = useState<'PENDING' | 'SUCCESS' | 'FAILED' | null>(null);
   const [activeJobError, setActiveJobError] = useState<string | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showQueuePanel, setShowQueuePanel] = useState(false);
-  const [showExportModal, setShowExportModal] = useState(false);
 
   const [rows, setRows] = useState<any[]>([]);
-  const [costStatusMap, setCostStatusMap] = useState<Record<string, string>>({});
-  // Kota tujuan per memo, dari `cost_validasi_far_overseas_air.rate_row_used.tujuan` -- dipakai
-  // NOTE 3 (`status_note`) supaya format "BARANG DITERIMA LOG {kota} {tanggal}" bisa mengisi
-  // kota otomatis. Di-fetch bareng costStatusMap (query yang sama), TIDAK live-refresh saat
-  // rate_row_used berubah di modal Cost Validation -- ikut ter-refresh tiap fetchList berikutnya.
-  const [costCityMap, setCostCityMap] = useState<Record<string, string>>({});
+  const [costMap, setCostMap] = useState<Record<string, CostInfo>>({});
   const [loadingList, setLoadingList] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const pageSize = 12;
   const [totalRecords, setTotalRecords] = useState(0);
-  // Filter approval per level -- ALL = tanpa filter, TIER1/PIC/TIER2/TIER3 semuanya map ke
-  // `approval_status` biasa (rantai approval sekarang WAJIB berurutan Prepared By->PIC->SPV->
-  // Director, 2026-09) -- lihat APPROVAL_FILTER_STATUS di dekat fetchList.
-  const [approvalFilter, setApprovalFilter] = useState<'ALL' | 'PIC' | 'TIER1' | 'TIER2' | 'TIER3'>('ALL');
-  const [approvalCounts, setApprovalCounts] = useState({ pic: 0, tier1: 0, tier2: 0, tier3: 0 });
-  // Search (2026-09, GANTI dari dropdown "Items" pageSize di toolbar -- permintaan user).
-  // `searchInput` = nilai mentah <input>, `searchTerm` = versi debounced 400ms yang beneran
-  // dipakai query (pola sama Audit AP Local, lihat CLAUDE.md) -- supaya tidak fetch tiap
-  // keystroke. Search cari di 4 kolom sekaligus via `.or()` ilike: Ship Via, Vendor, NOTE 1
-  // (`route_note`), NOTE 2 Manual (`item_description_manual`).
+
+  const [viewMode, setViewMode] = useState<'LIST' | 'CARD'>('CARD');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
+  const [sortBy, setSortBy] = useState<SortBy>('NEWEST');
+  const [groupBy, setGroupBy] = useState<GroupBy>('MONTH');
+  const [approvalCounts, setApprovalCounts] = useState<Record<ApprovalStep, number>>({ TIER1: 0, PIC: 0, TIER2: 0, TIER3: 0 });
+
+  // Search debounced 400ms (pola Audit AP) -- cari invoice, vendor, PO, ship via, notes, vessel.
   const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   useEffect(() => {
     const t = setTimeout(() => setSearchTerm(searchInput.trim()), 400);
     return () => clearTimeout(t);
   }, [searchInput]);
-  // Filter rentang tanggal Invoice Date (2026-09, GANTI dari dropdown "Sort" 5 opsi + tombol
-  // arah Ascending/Descending -- permintaan user, "diganti jadi filter berdasarkan tanggal
-  // saja"). Urutan tampil SEKARANG TETAP (tidak ada UI sort lagi) -- fixed `invoice_date` DESC
-  // (terbaru dulu), sama seperti default lama, lihat `fetchList()`. `filterStartDate`/
-  // `filterEndDate` MURNI MENYARING baris (server-side `.gte()`/`.lte()`), BUKAN mengurutkan.
-  const [filterStartDate, setFilterStartDate] = useState('');
-  const [filterEndDate, setFilterEndDate] = useState('');
-  useEffect(() => { setPage(1); }, [searchTerm, filterStartDate, filterEndDate]);
+
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const activeFilterCount = Object.values(filters).filter(Boolean).length;
+  // Alarm pembayaran: memo yang MASIH di rantai approval & due <= N hari (spek N = 1/3/5/7).
+  const [dueWindow, setDueWindow] = useState(3);
+  const [dueOnly, setDueOnly] = useState(false);
+  const [dueAlert, setDueAlert] = useState<{ overdue: number; soon: number; onHold: number }>({ overdue: 0, soon: 0, onHold: 0 });
+  const [myApprovalsCount, setMyApprovalsCount] = useState(0);
+  const [myApprovalsRefreshKey, setMyApprovalsRefreshKey] = useState(0);
+
+  useEffect(() => { setPage(1); }, [searchTerm, filters, statusFilter, sortBy, dueOnly, dueWindow]);
+
   const [queue, setQueue] = useState<any[]>([]);
   const [picUsers, setPicUsers] = useState<PicEligibleUser[]>([]);
-  // Opsi dropdown "Nama PT" (2026-09, kolom manual BARU) -- di-fetch sekali saat halaman
-  // dibuka (pola sama `picUsers`), dari `far_overseas_signer_config` (SUDAH ADA, dipakai juga
-  // sbg sumber logo/nama PT header modal Approval Memo).
   const [companyOptions, setCompanyOptions] = useState<CompanyOption[]>([]);
-  // Opsi dropdown MEMO TITLE (2026-09) -- di-fetch sekali saat halaman dibuka (pola sama
-  // `picUsers`), TIDAK perlu tabel master terpisah (lihat catatan `fetchDistinctMemoTitles`).
   const [memoTitleOptions, setMemoTitleOptions] = useState<string[]>([]);
+  const [tarifVendorRows, setTarifVendorRows] = useState<RateRow[]>([]);
   const addMemoTitleOption = (title: string) => {
     const v = title.trim();
     if (!v) return;
     setMemoTitleOptions(prev => prev.includes(v) ? prev : [...prev, v].sort());
   };
+
   const [selected, setSelected] = useState<any | null>(null);
   const [costModalRow, setCostModalRow] = useState<any | null>(null);
   const [weightModalRow, setWeightModalRow] = useState<any | null>(null);
   const [docsModalRow, setDocsModalRow] = useState<any | null>(null);
-
-  const [editingRowId, setEditingRowId] = useState<string | null>(null);
-  const [openActionsRowId, setOpenActionsRowId] = useState<string | null>(null);
-  const [pendingEdits, setPendingEdits] = useState<Record<string, Record<string, any>>>({});
-  const [savingEdits, setSavingEdits] = useState(false);
-  const [expandedPoRows, setExpandedPoRows] = useState<Set<string>>(new Set());
-
-  // Toggle List/Card (2026-09, permintaan user) -- state lokal, TIDAK disimpan (reset tiap buka
-  // halaman, sama pola preferensi tampilan sesaat lain di app ini). Card MURNI tampilan ringkas
-  // untuk browsing cepat -- TIDAK ada form edit LANGSUNG di dalam card sama sekali (row yang
-  // sama tetap dipakai/di-render dari `rows`/pagination yang sama, cuma cara render-nya beda).
-  // Approval (buka `FarOverseasAirDetailModal.tsx` via deep-link route, SENGAJA TIDAK diubah
-  // struktur internalnya) & Cost Validation dipanggil apa adanya dari card, sama seperti tombol
-  // Action di List.
-  const [viewMode, setViewMode] = useState<'LIST' | 'CARD'>('CARD');
-
-  // Edit dari Card (2026-09, GANTI dari versi awal yang pindah ke mode List -- user minta modal
-  // tersendiri, TIDAK mengarah ke List sama sekali). `cardEditRow` = baris yang lagi diedit lewat
-  // modal ini (null = tertutup). Modal-nya (`FarOverseasAirCardEditModal`, di bawah) REUSE PERSIS
-  // `LIST_COLUMNS` (field editor & custom render NOTE 2/NOTE 3/PIC/VESSEL/dst yang SUDAH ADA
-  // utk List) -- TIDAK menduplikasi logic input per field. Trik-nya: `ctx` yang dioper ke modal
-  // py `editingRowId` DIPAKSA sama dengan `row.id` (`{...ctx, editingRowId: row.id}`) supaya
-  // SEMUA `col.render` yang mengecek `ctx.editingRowId === r.id` otomatis render varian edit-nya
-  // -- state `pendingEdits`/`getVal`/`setVal` SAMA PERSIS dgn yang dipakai List/edit massal
-  // (row id yang sama), jadi "Save Changes" di modal ini cukup panggil `handleSaveAllEdits([row.id])`
-  // (lihat perluasan parameter opsional di situ).
-  const [cardEditRow, setCardEditRow] = useState<any | null>(null);
-  // "Add Manual Entry" (2026-09) -- pola SAMA "Tambah Data" Audit AP Local/Overseas/PI Local
-  // (dokumen yang gagal diproses otomasi n8n sama sekali). BEDA implementasi krn field List Memo
-  // FAR Overseas Air jauh lebih banyak (~25 kolom): tombol ini insert 1 baris KOSONG dulu lewat
-  // RPC `insert_rekapan_far_overseas_manual` (approval_status='PENDING', SAMA seperti shipment
-  // normal), lalu LANGSUNG buka `cardEditRow` (modal edit yang SUDAH ADA, REUSE PERSIS
-  // LIST_COLUMNS) utk baris baru itu -- user isi semua field lewat form yang SAMA PERSIS dgn Edit
-  // biasa, TIDAK ADA form terpisah baru. `isNewManualRow` menandai baris yang lagi dibuka di
-  // `cardEditRow` itu BELUM PERNAH disimpan sama sekali -- kalau user klik Cancel di kondisi ini,
-  // baris kosong tadi WAJIB dihapus balik (`fn_delete_far_overseas_air`) supaya tidak nyangkut
-  // sbg baris kosong permanen di DB.
+  const [editRow, setEditRow] = useState<any | null>(null);
+  // Baris hasil "Add manual entry" yang BELUM pernah disimpan -- kalau Cancel, baris kosong itu
+  // dihapus balik (`fn_delete_far_overseas_air`) supaya tidak nyangkut di DB.
   const [isNewManualRow, setIsNewManualRow] = useState(false);
   const [creatingManualEntry, setCreatingManualEntry] = useState(false);
 
-  const handleAddManualEntry = async () => {
-    setCreatingManualEntry(true);
-    const { data, error } = await insertRekapanFarOverseasManual();
-    setCreatingManualEntry(false);
-    if (error || !data) {
-      setToastMessage('Failed to create manual entry: ' + (error || 'unknown error'));
-      setTimeout(() => setToastMessage(null), 4000);
-      return;
-    }
-    setIsNewManualRow(true);
-    setCardEditRow(data);
-  };
-
-  // Cancel modal edit -- BEDA perilaku tergantung `isNewManualRow`: baris baru (belum pernah
-  // disimpan) dihapus balik ke DB, baris existing cukup buang pending edit lokal (perilaku lama).
-  const handleCardEditCancel = async () => {
-    const row = cardEditRow;
-    const wasNew = isNewManualRow;
-    handleDiscardRowEdit(cardEditRow.id);
-    setCardEditRow(null);
-    setIsNewManualRow(false);
-    if (wasNew && row) {
-      await supabase.rpc('fn_delete_far_overseas_air', { p_far_overseas_id: row.id });
-    }
-  };
-
-  // Scrollbar geser horizontal ganda (atas + bawah tabel, tersinkron) -- pola yang sama
-  // dipakai di SharedDataTable.tsx supaya user tidak perlu scroll ke bawah dulu untuk
-  // menemukan scrollbar-nya di tabel yang lebar.
-  const topScrollRef = useRef<HTMLDivElement>(null);
-  const bottomScrollRef = useRef<HTMLDivElement>(null);
-  const tableRef = useRef<HTMLTableElement>(null);
-  const [tableWidth, setTableWidth] = useState(0);
-
-  useEffect(() => {
-    if (!tableRef.current) return;
-    const resizeObserver = new ResizeObserver(entries => {
-      for (const entry of entries) setTableWidth(entry.target.scrollWidth);
-    });
-    resizeObserver.observe(tableRef.current);
-    return () => resizeObserver.disconnect();
-    // `viewMode` WAJIB ikut dependency (2026-09, sejak Card jadi default) -- <table> HANYA ada di
-    // DOM saat viewMode==='LIST' (lihat blok Card view di bawah), jadi `tableRef.current` masih
-    // null saat effect ini pertama jalan (halaman dibuka default Card). Tanpa `viewMode` di sini,
-    // pindah ke List belakangan TIDAK memicu effect lagi (dependency `rows` tidak berubah) --
-    // observer tidak pernah ter-attach, `tableWidth` tetap 0, scrollbar geser atas jadi hilang
-    // (lebarnya 0px) -- laporan user "bar scroll atas hilang" di List.
-  }, [rows, viewMode]);
-
-  const handleTopScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    if (bottomScrollRef.current) bottomScrollRef.current.scrollLeft = e.currentTarget.scrollLeft;
-  };
-  const handleBottomScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    if (topScrollRef.current) topScrollRef.current.scrollLeft = e.currentTarget.scrollLeft;
-  };
-
-  const toggleEditRow = (id: string) => setEditingRowId(prev => prev === id ? null : id);
-  const togglePoExpanded = (id: string) => setExpandedPoRows(prev => {
-    const next = new Set(prev);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    return next;
-  });
+  const fetchSeqRef = useRef(0);
+  const [pendingEdits, setPendingEdits] = useState<Record<string, Record<string, any>>>({});
+  const [savingEdits, setSavingEdits] = useState(false);
 
   const [deleteConfirmRow, setDeleteConfirmRow] = useState<any | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const openDeleteConfirm = (r: any) => { setDeleteConfirmRow(r); setDeleteError(null); };
-
-  // Hapus WAJIB lewat RPC (bukan .delete() langsung ke tabel) -- RPC yang urus urutan hapus
-  // data terkait (cost_validasi_far_overseas_air, dll) dengan benar supaya tidak kena error
-  // foreign key.
-  const confirmDelete = async () => {
-    if (!deleteConfirmRow) return;
-    setDeleting(true);
-    setDeleteError(null);
-    const { error } = await supabase.rpc('fn_delete_far_overseas_air', { p_far_overseas_id: deleteConfirmRow.id });
-    setDeleting(false);
-    if (error) {
-      setDeleteError(error.message);
-      return;
-    }
-    setRows(prev => prev.filter(row => row.id !== deleteConfirmRow.id));
-    setToastMessage('Memo deleted successfully.');
-    setTimeout(() => setToastMessage(null), 4000);
-    setDeleteConfirmRow(null);
-    refreshList();
-  };
-
-  const fetchCostStatusMap = useCallback(async (ids: string[]) => {
-    if (!ids.length) { setCostStatusMap({}); setCostCityMap({}); return; }
-    const { data: cvData } = await supabase.from('cost_validasi_far_overseas_air').select('far_overseas_id, status, rate_row_used').in('far_overseas_id', ids);
-    const map: Record<string, string> = {};
-    const cityMap: Record<string, string> = {};
-    (cvData || []).forEach((c: any) => {
-      map[c.far_overseas_id] = c.status;
-      const rate = parseJsonField(c.rate_row_used);
-      const tujuan = Array.isArray(rate) ? null : rate?.tujuan;
-      if (tujuan) cityMap[c.far_overseas_id] = tujuan;
-    });
-    setCostStatusMap(map);
-    setCostCityMap(cityMap);
-  }, []);
-
-  // Rantai approval WAJIB berurutan (2026-09): Prepared By(TIER1) -> PIC -> SPV(TIER2) ->
-  // Director(TIER3). PIC SEKARANG bagian `approval_status` biasa (bukan lagi independen di
-  // array `approvals`), jadi SEMUA level filter di bawah bisa server-side .eq() biasa --
-  // "Pending X" berarti `approval_status` masih di status SEBELUM X selesai:
-  // PENDING = pending TIER1, TIER1_DONE = pending PIC, PIC_DONE = pending TIER2 (SPV),
-  // TIER2_DONE = pending TIER3 (Director).
-  const APPROVAL_FILTER_STATUS: Record<'TIER1' | 'PIC' | 'TIER2' | 'TIER3', string> = {
-    TIER1: 'PENDING', PIC: 'TIER1_DONE', TIER2: 'PIC_DONE', TIER3: 'TIER2_DONE',
-  };
+  // ── Data fetch ──────────────────────────────────────────────────────────────────────────────
 
   const fetchList = useCallback(async () => {
     setLoadingList(true);
+    setListError(null);
     const startIndex = (page - 1) * pageSize;
-
     let query = supabase.from('rekapan_far_overseas_air').select('*', { count: 'exact' });
-    if (approvalFilter !== 'ALL') query = query.eq('approval_status', APPROVAL_FILTER_STATUS[approvalFilter]);
+    if (statusFilter !== 'ALL') query = query.eq('approval_status', STATUS_FILTER_VALUE[statusFilter]);
+    if (statusFilter === 'FINANCE') query = query.is('paid_at', null);
+    if (statusFilter === 'PAID') query = query.not('paid_at', 'is', null);
     if (searchTerm) {
-      const escaped = searchTerm.replace(/[%_]/g, c => `\\${c}`);
-      const pattern = `%${escaped}%`;
-      query = query.or(`ship_via.ilike.${pattern},vendor.ilike.${pattern},route_note.ilike.${pattern},item_description_manual.ilike.${pattern}`);
+      // Karakter pemisah sintaks `.or()` PostgREST (koma, kurung, kutip, backslash) diganti
+      // wildcard `_` (cocok 1 karakter apa pun) supaya query tidak pecah.
+      const safe = escLike(searchTerm).replace(/[,()"]/g, '_');
+      const p = `%${safe}%`;
+      query = query.or(`ship_via.ilike.${p},vendor.ilike.${p},no_invoice.ilike.${p},po_ori.ilike.${p},route_note.ilike.${p},item_description_manual.ilike.${p},vessel_internal_note.ilike.${p},memo_title.ilike.${p}${phase2 ? `,memo_no.ilike.${p}` : ''}`);
     }
-    if (filterStartDate) query = query.gte('invoice_date', filterStartDate);
-    if (filterEndDate) query = query.lte('invoice_date', filterEndDate);
+    if (filters.shipVia) query = query.ilike('ship_via', `%${escLike(filters.shipVia)}%`);
+    if (filters.pt) query = query.eq('dominant_company_code', filters.pt);
+    if (filters.origin) query = query.ilike('route_note', `%DARI ${escLike(filters.origin)} KE %`);
+    if (filters.destination) query = query.ilike('route_note', `% KE ${escLike(filters.destination)} (%`);
+    if (filters.mode) query = query.ilike('route_note', `%(%${escLike(filters.mode)}%)`);
+    if (filters.remark) query = query.ilike('item_description_manual', `%${escLike(filters.remark)}%`);
+    if (filters.startDate) query = query.gte('invoice_date', filters.startDate);
+    if (filters.endDate) query = query.lte('invoice_date', filters.endDate);
+    const dueLimitIso = (() => { const d = new Date(); d.setDate(d.getDate() + dueWindow); return localIso(d); })();
+    if (dueOnly) {
+      // Kandidat longgar di server, disaring & dipaginasi di client (`isPaymentAlarmActive` +
+      // due efektif `due_date ?? expected_payment_date` tidak bisa diekspresikan 1 filter REST).
+      query = query.neq('approval_status', 'REJECTED');
+      if (phase2) query = query.is('paid_at', null);
+      else query = query.not('expected_payment_date', 'is', null).lte('expected_payment_date', dueLimitIso);
+    }
+    if (sortBy === 'NEWEST') query = query.order('created_at', { ascending: false });
+    else if (sortBy === 'OLDEST') query = query.order('created_at', { ascending: true });
+    else if (sortBy === 'DUE_SOON') query = query.order('expected_payment_date', { ascending: true, nullsFirst: false }).order('created_at', { ascending: false });
+    else query = query.order('invoice_date', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false });
 
-    const { data, error, count } = await query
-      .order('invoice_date', { ascending: false, nullsFirst: false })
-      .range(startIndex, startIndex + pageSize - 1);
-    if (!error && data) {
-      setRows(data);
+    const seq = ++fetchSeqRef.current;
+    let data: any[] | null; let error: any; let count: number | null;
+    if (dueOnly) {
+      const res = await query.limit(DUE_CANDIDATE_LIMIT);
+      const all = (res.data || []).filter((r: any) => {
+        if (!isPaymentAlarmActive(r) || r.on_hold === true) return false;
+        const d = getDueInfo(getMemoDueValue(r), dueWindow);
+        return !!d && d.level !== 'later';
+      });
+      data = all.slice(startIndex, startIndex + pageSize); error = res.error; count = all.length;
+    } else {
+      const res = await query.range(startIndex, startIndex + pageSize - 1);
+      data = res.data; error = res.error; count = res.count;
+    }
+    // Respons filter LAMA yang datang belakangan tidak boleh menimpa hasil filter terbaru.
+    if (seq !== fetchSeqRef.current) return;
+    if (error) {
+      setListError(error.message);
+      setRows([]);
+      setTotalRecords(0);
+    } else {
+      // Cost info di-set BARENG baris -- kalau tidak, card sempat tampil peringatan "cost
+      // validation not available" sesaat sebelum map-nya datang.
+      const cm = await fetchCostInfoMap((data || []).map((r: any) => r.id).filter(Boolean));
+      if (seq !== fetchSeqRef.current) return;
+      setCostMap(cm);
+      setRows(data || []);
       setTotalRecords(count || 0);
-      await fetchCostStatusMap(data.map((r: any) => r.id).filter(Boolean));
     }
     setLoadingList(false);
-  }, [page, pageSize, approvalFilter, searchTerm, filterStartDate, filterEndDate, fetchCostStatusMap]);
+  }, [page, statusFilter, searchTerm, filters, dueOnly, dueWindow, sortBy, phase2]);
 
-  // Hitung berapa memo yang pending di masing-masing level approval -- dipanggil sekali di awal
-  // & tiap kali ada aksi yang mungkin mengubah status approval (lihat refreshList). Semua count
-  // server-side (`head: true`, murah) karena approval_status kolom biasa.
   const fetchApprovalCounts = useCallback(async () => {
-    const [tier1Res, picRes, tier2Res, tier3Res] = await Promise.all([
-      supabase.from('rekapan_far_overseas_air').select('id', { count: 'exact', head: true }).eq('approval_status', APPROVAL_FILTER_STATUS.TIER1),
-      supabase.from('rekapan_far_overseas_air').select('id', { count: 'exact', head: true }).eq('approval_status', APPROVAL_FILTER_STATUS.PIC),
-      supabase.from('rekapan_far_overseas_air').select('id', { count: 'exact', head: true }).eq('approval_status', APPROVAL_FILTER_STATUS.TIER2),
-      supabase.from('rekapan_far_overseas_air').select('id', { count: 'exact', head: true }).eq('approval_status', APPROVAL_FILTER_STATUS.TIER3),
-    ]);
-    setApprovalCounts({
-      tier1: tier1Res.count || 0,
-      pic: picRes.count || 0,
-      tier2: tier2Res.count || 0,
-      tier3: tier3Res.count || 0,
-    });
+    const res = await Promise.all(STEP_ORDER.map(step =>
+      supabase.from('rekapan_far_overseas_air').select('id', { count: 'exact', head: true }).eq('approval_status', STATUS_FILTER_VALUE[step])
+    ));
+    setApprovalCounts({ TIER1: res[0].count || 0, PIC: res[1].count || 0, TIER2: res[2].count || 0, TIER3: res[3].count || 0 });
   }, []);
+
+  const fetchDueAlert = useCallback(async () => {
+    const limit = new Date(); limit.setDate(limit.getDate() + dueWindow);
+    const limitIso = localIso(limit);
+    // Tahap 2: due efektif = due_date ?? expected_payment_date; berhenti setelah Paid; on hold
+    // dihitung terpisah (abu). Tahap 1: hanya memo di rantai approval.
+    let res: { data: any[] | null; error: any };
+    if (phase2) {
+      res = await supabase.from('rekapan_far_overseas_air').select('id, approval_status, expected_payment_date, due_date, on_hold, finance_received_at, paid_at')
+        .neq('approval_status', 'REJECTED').is('paid_at', null)
+        .or(`due_date.lte.${limitIso},expected_payment_date.lte.${limitIso},on_hold.eq.true`)
+        .limit(2000);
+    } else {
+      res = await supabase.from('rekapan_far_overseas_air').select('id, approval_status, expected_payment_date')
+        .not('approval_status', 'in', '(APPROVED,REJECTED)').not('expected_payment_date', 'is', null).lte('expected_payment_date', limitIso)
+        .limit(2000);
+    }
+    const { data, error } = res;
+    if (error) { console.error('fetchDueAlert failed:', error); return; }
+    let overdue = 0; let soon = 0; let onHold = 0;
+    (data || []).forEach((r: any) => {
+      if (!isPaymentAlarmActive(r)) return;
+      if (r.on_hold === true) { onHold++; return; }
+      const due = getDueInfo(getMemoDueValue(r), dueWindow);
+      if (!due) return;
+      if (due.level === 'overdue') overdue++;
+      else if (due.level === 'today' || due.level === 'soon') soon++;
+    });
+    setDueAlert({ overdue, soon, onHold });
+  }, [dueWindow, phase2]);
+
+  // Hitungan "menunggu saya" -- aturan SAMA dgn tab My Approvals (PIC per memo, penandatangan
+  // per PT utk TIER2/TIER3, memo REJECTED kembali ke Prepared By di tahap 2).
+  const fetchMyApprovalsCount = useCallback(async () => {
+    if (!rolesReady || mySteps.length === 0) { setMyApprovalsCount(0); return; }
+    const ids = new Set<string>();
+    await Promise.all(mySteps.map(async step => {
+      const statuses = step === 'TIER1' && phase2 ? ['PENDING', 'REJECTED'] : [STATUS_FILTER_VALUE[step]];
+      let q = supabase.from('rekapan_far_overseas_air').select('id, pic_user_id, dominant_company_code').in('approval_status', statuses);
+      if (step === 'PIC') q = q.eq('pic_user_id', user?.id || '00000000-0000-0000-0000-000000000000');
+      const { data } = await q.limit(1000);
+      (data || []).forEach((r: any) => { if (canSignStep(r, step, user?.id, myTier, stepSigners)) ids.add(r.id); });
+    }));
+    setMyApprovalsCount(ids.size);
+  }, [rolesReady, mySteps, phase2, myTier, stepSigners, user?.id]);
+
+  // Tab awal per peran (spek): Finance -> Finance Handover; SPV/Director -> My Approvals.
+  const initialTabDone = useRef(false);
+  useEffect(() => {
+    if (!rolesReady || initialTabDone.current) return;
+    initialTabDone.current = true;
+    if (deepLinkId) return;
+    if (canSeeFinance && !canEditDirectLoading) setTab('FINANCE');
+    else if (mySteps.length > 0 && !mySteps.includes('TIER1') && mySteps.some(st => st === 'TIER2' || st === 'TIER3')) setTab('MY_APPROVALS');
+  }, [rolesReady, canSeeFinance, canEditDirectLoading, mySteps, deepLinkId]);
 
   const refreshList = useCallback(() => {
     fetchList();
     fetchApprovalCounts();
-  }, [fetchList, fetchApprovalCounts]);
-
-  // Data untuk Export Excel -- ambil SEMUA baris yang cocok filter tanggal (bukan cuma
-  // halaman yang lagi ditampilkan), lalu format kolom gabungan (harga+mata uang, dst) jadi
-  // teks siap tampil supaya ExportModal generik tidak perlu tahu logic format khusus FAR.
-  const getExportData = useCallback(async (startDate?: string, endDate?: string) => {
-    let query = supabase.from('rekapan_far_overseas_air').select('*').order('created_at', { ascending: false }).limit(50000);
-    if (startDate) query = query.gte('invoice_date', startDate);
-    if (endDate) query = query.lte('invoice_date', endDate);
-    const { data, error } = await query;
-    if (error) throw new Error(error.message);
-    const exportRows = data || [];
-
-    const ids = exportRows.map((r: any) => r.id).filter(Boolean);
-    const costMap: Record<string, string> = {};
-    if (ids.length) {
-      const { data: cvData } = await supabase.from('cost_validasi_far_overseas_air').select('far_overseas_id, status').in('far_overseas_id', ids);
-      (cvData || []).forEach((c: any) => { costMap[c.far_overseas_id] = c.status; });
-    }
-
-    return exportRows.map((r: any) => {
-      const showIdrHint = r.total_amount_currency && r.total_amount_currency !== 'IDR' && r.total_amount_idr != null;
-      const costStatus = costMap[r.id];
-      const costMeta = costStatus ? (COST_STATUS_META[costStatus]?.label || costStatus) : 'No Data Yet';
-      return {
-        ...r,
-        unit_price_display: formatMoney(r.unit_price, r.unit_price_currency),
-        freight_amount_display: formatMoney(r.freight_amount, r.total_amount_currency),
-        clearance_amount_display: formatMoney(r.clearance_amount, r.total_amount_currency),
-        other_amount_display: formatMoney(r.other_amount, r.total_amount_currency),
-        clearance_other_total_display: formatMoney(r.clearance_other_total, r.total_amount_currency),
-        total_amount_display: formatMoney(r.total_amount, r.total_amount_currency) + (showIdrHint ? ` (≈ Rp ${Number(r.total_amount_idr).toLocaleString('id-ID')})` : ''),
-        approval_status_display: (APPROVAL_STATUS_META[r.approval_status] || APPROVAL_STATUS_META.PENDING).label,
-        cost_status_display: costMeta,
-        nama_pt_display: companyOptions.find(c => c.company_code === r.dominant_company_code)?.company_name_full || r.dominant_company_code || '',
-      };
-    });
-  }, [companyOptions]);
+    fetchDueAlert();
+    fetchMyApprovalsCount();
+    setMyApprovalsRefreshKey(k => k + 1);
+  }, [fetchList, fetchApprovalCounts, fetchDueAlert, fetchMyApprovalsCount]);
 
   const fetchQueue = useCallback(async () => {
-    const { data } = await supabase
-      .from('far_overseas_air_processing_queue')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(20);
-    if (data) {
-      setQueue(data.filter((q: any) => q.status === 'PENDING' || q.status === 'PROCESSING' || q.status === 'FAILED' || (q.status === 'SUCCESS' && !q.is_read)));
-    }
+    const { data } = await supabase.from('far_overseas_air_processing_queue').select('*').order('created_at', { ascending: false }).limit(20);
+    if (data) setQueue(data.filter((q: any) => q.status === 'PENDING' || q.status === 'PROCESSING' || q.status === 'FAILED' || (q.status === 'SUCCESS' && !q.is_read)));
   }, []);
 
-  // Kalau halaman dibuka lewat link langsung (/direct-loading/:id), langsung ambil baris itu
-  // dan buka detail modal-nya -- tidak perlu tunggu daftar penuh selesai dimuat.
   useEffect(() => {
     if (!deepLinkId) return;
     const loadDeepLink = async () => {
       const { data, error } = await supabase.from('rekapan_far_overseas_air').select('*').eq('id', deepLinkId).maybeSingle();
       if (error || !data) {
-        setToastMessage('⚠️ No memo found for this link.');
-        setTimeout(() => setToastMessage(null), 6000);
+        showToast('No memo found for this link.', true, 6000);
         navigate('/direct-loading', { replace: true });
         return;
       }
       setSelected(data);
     };
     loadDeepLink();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deepLinkId, navigate]);
 
+  useEffect(() => { fetchList(); }, [fetchList]);
   useEffect(() => {
-    fetchList();
     fetchQueue();
     const iv = setInterval(fetchQueue, 5000);
     return () => clearInterval(iv);
-  }, [fetchList, fetchQueue]);
-
+  }, [fetchQueue]);
   useEffect(() => { fetchApprovalCounts(); }, [fetchApprovalCounts]);
-
-  // Daftar user yang boleh dipilih sbg PIC di kolom List Memo -- di-fetch sekali saat halaman
-  // dibuka (bukan tiap render), lihat CLAUDE.md "PIC per-memo assignment".
+  useEffect(() => { fetchDueAlert(); }, [fetchDueAlert]);
+  useEffect(() => { fetchMyApprovalsCount(); }, [fetchMyApprovalsCount]);
   useEffect(() => { fetchPicEligibleUsers().then(setPicUsers); }, []);
   useEffect(() => { fetchSignerCompanyOptions().then(setCompanyOptions); }, []);
   useEffect(() => { fetchDistinctMemoTitles().then(setMemoTitleOptions); }, []);
-  // Opsi 3 dropdown NOTE 1 (2026-09) -- di-fetch sekali, dipakai `RouteNoteEditCell` (filter
-  // per-baris via vendor_name di dalam komponen itu, lihat `vendorTargetFromShipVia`).
-  const [tarifVendorRows, setTarifVendorRows] = useState<RateRow[]>([]);
   useEffect(() => { fetchActiveTarifRateRows().then(setTarifVendorRows); }, []);
 
-  // Nilai efektif sebuah field: kalau ada edit lokal yang belum disimpan, pakai itu -- kalau
-  // tidak, pakai nilai dari server. Perubahan HANYA disimpan ke DB saat "Simpan Semua" diklik.
+  const originOptions = useMemo(() => Array.from(new Set(tarifVendorRows.map(t => t.origin).filter(Boolean) as string[])).sort(), [tarifVendorRows]);
+  const destinationOptions = useMemo(() => Array.from(new Set(tarifVendorRows.map(t => t.tujuan).filter(Boolean) as string[])).sort(), [tarifVendorRows]);
+
+  // ── Edit state (pendingEdits) ────────────────────────────────────────────────────────────────
+
   const getVal = useCallback((r: any, field: string) => {
     const rowEdits = pendingEdits[r.id];
     if (rowEdits && field in rowEdits) return rowEdits[field];
     return r[field];
   }, [pendingEdits]);
 
+  // Kalau nilai dikembalikan ke nilai tersimpan, field DIBUANG dari pending (tidak dikirim).
   const setVal = useCallback((r: any, field: string, value: any) => {
     if (!REKAPAN_EDITABLE_FIELDS.has(field)) return;
-    setPendingEdits(prev => ({ ...prev, [r.id]: { ...(prev[r.id] || {}), [field]: value } }));
+    setPendingEdits(prev => {
+      const rowEdits = { ...(prev[r.id] || {}) };
+      const original = r[field] ?? null;
+      const same = (value ?? null) === original || (value != null && original != null && String(value) === String(original));
+      if (same) delete rowEdits[field]; else rowEdits[field] = value;
+      const next = { ...prev };
+      if (Object.keys(rowEdits).length === 0) delete next[r.id]; else next[r.id] = rowEdits;
+      return next;
+    });
   }, []);
 
-  const changedRowIds = Object.keys(pendingEdits).filter(id => Object.keys(pendingEdits[id]).length > 0);
-  const hasUnsavedChanges = changedRowIds.length > 0;
+  const discardRowEdit = (id: string) => setPendingEdits(prev => {
+    if (!(id in prev)) return prev;
+    const next = { ...prev };
+    delete next[id];
+    return next;
+  });
 
-  // Dipanggil HANYA saat NOTE 1 (route_note) diedit & di-save -- berlaku generik utk KEDUA
-  // vendor (Octagon maupun Jianqiao, vendor ditentukan dari `ship_via` di dalam `rematchTarif`).
-  // Parse ulang kota asal/tujuan hasil koreksi manual user -> cocokkan ulang tarif -> hitung ulang
-  // cost validation. HARUS pakai rematchTarif/computeExpectedFromRate apa adanya (SATU-SATUNYA
-  // fungsi pencocokan tarif di app ini, replika persis logic n8n) -- jangan diubah sendirian di sini.
-  const reMatchAfterRouteNoteEdit = async (rekapanId: string, newRouteNote: string) => {
+  // Dipanggil HANYA kalau NOTE 1 (route_note) berubah & tersimpan -- cocokkan ulang tarif dan
+  // hitung ulang cost validation. WAJIB pakai `rematchTarif`/`computeExpectedFromRate` apa adanya
+  // (replika logic n8n). `shipVia`/`qty` diambil dari edit yang BARU tersimpan kalau ada.
+  const reMatchAfterRouteNoteEdit = async (rekapanId: string, newRouteNote: string, savedEdits: Record<string, any>, baseRow: any) => {
     const parsed = parseRouteNote(newRouteNote);
     if (!parsed) return { skipped: true as const, reason: 'format_tidak_dikenali' as const };
 
-    const rekapanRow = rows.find(r => r.id === rekapanId);
-    const shipVia = rekapanRow?.ship_via ?? null;
-    const qtyRaw = pendingEdits[rekapanId]?.qty ?? rekapanRow?.qty;
+    const shipVia = ('ship_via' in savedEdits ? savedEdits.ship_via : baseRow?.ship_via) ?? null;
+    const qtyRaw = 'qty' in savedEdits ? savedEdits.qty : baseRow?.qty;
     const qty = qtyRaw != null && qtyRaw !== '' ? Number(qtyRaw) : null;
 
     const { data: cvRow, error: cvErr } = await supabase
@@ -1148,15 +725,13 @@ export default function FarOverseasAirPage() {
       .maybeSingle();
     if (cvErr || !cvRow) return { skipped: true as const, reason: 'no_cost_validasi' as const };
 
-    const costValidation: any[] = Array.isArray(cvRow.cost_validation)
-      ? cvRow.cost_validation
-      : (typeof cvRow.cost_validation === 'string' ? (JSON.parse(cvRow.cost_validation || '[]') || []) : []);
+    let costValidation: any[] = [];
+    if (Array.isArray(cvRow.cost_validation)) costValidation = cvRow.cost_validation;
+    else if (typeof cvRow.cost_validation === 'string') {
+      try { costValidation = JSON.parse(cvRow.cost_validation || '[]') || []; } catch { costValidation = []; }
+    }
 
-    const rateRowRaw = cvRow.rate_row_used;
-    const existingRate = Array.isArray(rateRowRaw) ? null : rateRowRaw;
-    // Kata kunci mode di NOTE 1 (bagian dalam kurung) bisa dikoreksi user juga -- PRIORITASKAN
-    // hasil parsing NOTE 1 yang baru; kalau kata kuncinya tidak dikenali, fallback ke jenis_layanan
-    // yang sudah tersimpan sebelumnya (object tunggal, bukan array/ambigu).
+    const existingRate = Array.isArray(cvRow.rate_row_used) ? null : cvRow.rate_row_used;
     const jenisDariNote = mapModeToJenisLayanan(parsed.mode);
     const jenisLayananSaatIni = jenisDariNote ?? (existingRate?.jenis_layanan ?? null);
 
@@ -1166,15 +741,7 @@ export default function FarOverseasAirPage() {
     const actualTotal = totalRow?.actual != null && totalRow.actual !== '' ? Number(totalRow.actual) : null;
 
     const tarifRows = await fetchActiveTarifRateRows();
-
-    const candidates = rematchTarif({
-      vendorRows: tarifRows,
-      shipVia,
-      jenisLayananSaatIni,
-      origin: parsed.origin,
-      tujuan: parsed.destination,
-      qty,
-    });
+    const candidates = rematchTarif({ vendorRows: tarifRows, shipVia, jenisLayananSaatIni, origin: parsed.origin, tujuan: parsed.destination, qty });
 
     let newCostValidation = costValidation;
     let newRateRowUsed: any = null;
@@ -1183,9 +750,7 @@ export default function FarOverseasAirPage() {
 
     if (candidates.length === 0) {
       newCostValidation = costValidation.map((row: any) => (
-        row.row_key === 'KG' || row.row_key === 'UNIT_PRICE_DARI_DESCRIPTION' || row.row_key === 'TOTAL'
-          ? { ...row, expected: null, edited: true }
-          : row
+        row.row_key === 'KG' || row.row_key === 'UNIT_PRICE_DARI_DESCRIPTION' || row.row_key === 'TOTAL' ? { ...row, expected: null, edited: true } : row
       ));
       newRateRowUsed = null;
       newStatus = 'BELUM_LENGKAP';
@@ -1218,741 +783,687 @@ export default function FarOverseasAirPage() {
     return { skipped: false as const, candidateCount: candidates.length };
   };
 
-  // `idsOverride` (2026-09) -- opsional, dipakai modal Edit Card (`FarOverseasAirCardEditModal`)
-  // utk commit HANYA 1 baris (`handleSaveAllEdits([row.id])`) tanpa ikut menyimpan pending edit
-  // baris lain yang mungkin sedang berjalan di List/edit massal. Default (tanpa argumen) TETAP
-  // simpan SEMUA `changedRowIds` seperti sebelumnya -- dipakai tombol "Save All" floating bar.
-  const handleSaveAllEdits = async (idsOverride?: string[]) => {
-    // Filter ulang ke id yang BENERAN py pending edit -- perlu utk kasus modal Edit Card:
-    // `idsOverride=[row.id]` dikirim apa adanya tiap klik "Save Changes", termasuk saat user
-    // buka modal tanpa mengubah apa pun (pendingEdits[row.id] belum ada sama sekali).
-    const targetIds = (idsOverride ?? changedRowIds).filter(id => pendingEdits[id] && Object.keys(pendingEdits[id]).length > 0);
-    if (targetIds.length === 0) return;
+  // Simpan pending edit 1 baris. Pending HANYA dibuang kalau RPC sukses (dulu ikut dibuang walau
+  // gagal -> perubahan hilang diam-diam). Return true kalau sukses.
+  const saveRowEdits = async (id: string, baseRow: any): Promise<boolean> => {
+    const edits = pendingEdits[id];
+    if (!edits || Object.keys(edits).length === 0) return true;
     setSavingEdits(true);
-    const results = await Promise.all(targetIds.map(id => updateRekapanFarOverseasAir(id, pendingEdits[id])));
-
-    const routeNoteChangedIds = targetIds.filter(id => 'route_note' in pendingEdits[id]);
-    let formatWarningCount = 0;
-    if (routeNoteChangedIds.length > 0) {
-      const rematchResults = await Promise.all(
-        routeNoteChangedIds.map(id => reMatchAfterRouteNoteEdit(id, pendingEdits[id].route_note))
-      );
-      formatWarningCount = rematchResults.filter(r => r.skipped && r.reason === 'format_tidak_dikenali').length;
+    const { error } = await updateRekapanFarOverseasAir(id, edits);
+    if (error) {
+      setSavingEdits(false);
+      showToast('Failed to save changes: ' + error.message, true, 8000);
+      return false;
     }
-
+    let msg = 'Changes saved.';
+    let warn = false;
+    if ('route_note' in edits && edits.route_note) {
+      const res = await reMatchAfterRouteNoteEdit(id, edits.route_note, edits, baseRow);
+      if (res.skipped && res.reason === 'format_tidak_dikenali') { msg = 'Changes saved. NOTE 1 format was not recognized — cost validation was not recalculated.'; warn = true; }
+      else if (!res.skipped && 'error' in res && res.error) { msg = 'Changes saved, but cost validation could not be recalculated: ' + res.error; warn = true; }
+      else if (!res.skipped) msg = 'Changes saved. Cost validation was recalculated for the new route.';
+    }
     setSavingEdits(false);
-    const firstError = results.find(r => r.error);
-    if (firstError?.error) {
-      setToastMessage('⚠️ Failed to save some changes: ' + firstError.error.message);
-      setTimeout(() => setToastMessage(null), 8000);
-    } else if (formatWarningCount > 0) {
-      setToastMessage(`Changes saved. ${formatWarningCount} NOTE 1 field(s) had an unrecognized format -- cost validation was not automatically updated for those rows.`);
-      setTimeout(() => setToastMessage(null), 8000);
-    } else if (routeNoteChangedIds.length > 0) {
-      setToastMessage('Changes saved. Cost validation has been recalculated following the new NOTE 1.');
-      setTimeout(() => setToastMessage(null), 6000);
-    } else {
-      setToastMessage('Changes saved successfully.');
-      setTimeout(() => setToastMessage(null), 4000);
-    }
-    setPendingEdits(prev => {
-      const next = { ...prev };
-      targetIds.forEach(id => { delete next[id]; });
-      return next;
-    });
-    fetchList();
+    discardRowEdit(id);
+    showToast(msg, warn, warn ? 8000 : 4000);
+    return true;
   };
 
-  const handleDiscardAllEdits = () => setPendingEdits({});
-  // Discard KHUSUS 1 baris -- dipakai tombol "Cancel" di `FarOverseasAirCardEditModal`.
-  const handleDiscardRowEdit = (id: string) => setPendingEdits(prev => {
-    if (!(id in prev)) return prev;
-    const next = { ...prev };
-    delete next[id];
-    return next;
-  });
+  // ── Aksi ────────────────────────────────────────────────────────────────────────────────────
 
-  // Polling job spesifik untuk feedback langsung setelah submit upload di halaman ini
+  const handleAddManualEntry = async () => {
+    setCreatingManualEntry(true);
+    const { data, error } = await insertRekapanFarOverseasManual();
+    setCreatingManualEntry(false);
+    if (error || !data) {
+      showToast('Failed to create manual entry: ' + (error || 'unknown error'), true);
+      return;
+    }
+    setIsNewManualRow(true);
+    setEditRow(data);
+  };
+
+  const closeEditModal = async () => {
+    const row = editRow;
+    const wasNew = isNewManualRow;
+    if (row) discardRowEdit(row.id);
+    setEditRow(null);
+    setIsNewManualRow(false);
+    if (wasNew && row) {
+      const { error } = await supabase.rpc('fn_delete_far_overseas_air', { p_far_overseas_id: row.id });
+      if (error) console.error('[FAR] failed to remove unsaved manual entry:', error);
+    }
+  };
+
+  const saveEditModal = async () => {
+    if (!editRow) return;
+    const merged = { ...editRow, ...(pendingEdits[editRow.id] || {}) };
+    const problem = validateMemoEdits(merged, phase2);
+    if (problem) { setEditSaveError(problem); return; }
+    setEditSaveError(null);
+    const wasNew = isNewManualRow;
+    const ok = await saveRowEdits(editRow.id, editRow);
+    if (!ok) return;
+    setEditRow(null);
+    setIsNewManualRow(false);
+    setDetailRefreshToken(t => t + 1);
+    refreshList();
+    if (wasNew) fetchList();
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirmRow) return;
+    setDeleting(true);
+    setDeleteError(null);
+    const { error } = await supabase.rpc('fn_delete_far_overseas_air', { p_far_overseas_id: deleteConfirmRow.id });
+    setDeleting(false);
+    if (error) { setDeleteError(error.message); return; }
+    setDeleteConfirmRow(null);
+    showToast('Memo deleted.');
+    refreshList();
+  };
+
+  const getExportData = useCallback(async (startDate?: string, endDate?: string) => {
+    let query = supabase.from('rekapan_far_overseas_air').select('*').order('created_at', { ascending: false }).limit(50000);
+    if (startDate) query = query.gte('invoice_date', startDate);
+    if (endDate) query = query.lte('invoice_date', endDate);
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+    const exportRows = data || [];
+    const ids = exportRows.map((r: any) => r.id).filter(Boolean);
+    const costStatus: Record<string, string> = {};
+    for (let i = 0; i < ids.length; i += 500) {
+      const { data: cvData } = await supabase.from('cost_validasi_far_overseas_air').select('far_overseas_id, status').in('far_overseas_id', ids.slice(i, i + 500));
+      (cvData || []).forEach((c: any) => { costStatus[c.far_overseas_id] = c.status; });
+    }
+    const base = (r: any) => {
+      const fx = implicitFxRate(r);
+      const idr = totalInIdr(r);
+      const cs = costStatus[r.id];
+      const tier1 = getApprovalEntries(r).find(e => e.tier === 1);
+      return {
+        ...r,
+        status_display: getStatusLabel(r),
+        due_display: getMemoDueValue(r),
+        pic_create_display: tier1?.nama || '',
+        unit_price_display: formatMoney(r.unit_price, r.unit_price_currency),
+        freight_amount_display: formatMoney(r.freight_amount, r.total_amount_currency),
+        clearance_amount_display: formatMoney(r.clearance_amount, r.total_amount_currency),
+        other_amount_display: formatMoney(r.other_amount, r.total_amount_currency),
+        clearance_other_total_display: formatMoney(r.clearance_other_total, r.total_amount_currency),
+        total_amount_display: formatMoney(r.total_amount, r.total_amount_currency),
+        fx_display: fx != null ? fx.toLocaleString('id-ID', { maximumFractionDigits: 2 }) : '',
+        total_idr_display: idr != null ? formatIdr(idr) : '',
+        approval_status_display: (APPROVAL_STATUS_META[r.approval_status] || APPROVAL_STATUS_META.PENDING).label,
+        cost_status_display: cs ? (COST_STATUS_META[cs]?.label || cs) : 'No AI check',
+        nama_pt_display: companyOptions.find(c => c.company_code === r.dominant_company_code)?.company_name_full || r.dominant_company_code || '',
+      };
+    };
+    if (exportMode !== 'PO') return exportRows.map(base);
+    // 1 baris per PO (memo tanpa PO tetap 1 baris).
+    const out: any[] = [];
+    exportRows.forEach((r: any) => {
+      const b = base(r);
+      const alloc = allocateByVessel(r);
+      const poList = getPoList(r);
+      const basis = alloc.basis === 'KG' ? 'By KG per PO' : alloc.basis === 'EVEN' ? 'Split evenly (KG incomplete)' : alloc.basis === 'SINGLE' ? 'Whole memo' : '—';
+      alloc.rows.forEach((a, i) => {
+        out.push({
+          ...b,
+          po_display: a.po,
+          po_pt_display: poList[i]?.company_code || (poList.length === 0 ? (r.non_po_billed_company_code || r.dominant_company_code || '') : ''),
+          vessel_display: a.vessel,
+          po_kg_display: a.kg != null ? String(a.kg) : '',
+          alloc_basis_display: basis,
+          alloc_idr_display: a.idr != null ? formatIdr(a.idr) : '',
+        });
+      });
+    });
+    return out;
+  }, [companyOptions, exportMode]);
+
   useEffect(() => {
     if (!activeJobId || activeJobStatus !== 'PENDING') return;
     const iv = setInterval(async () => {
       const { data } = await supabase.from('far_overseas_air_processing_queue').select('*').eq('id', activeJobId).maybeSingle();
       if (data) {
-        if (data.status === 'SUCCESS') {
-          setActiveJobStatus('SUCCESS');
-          fetchList();
-          fetchQueue();
-        } else if (data.status === 'FAILED') {
-          setActiveJobStatus('FAILED');
-          setActiveJobError(data.error_message || 'Failed to process document.');
-          fetchQueue();
-        }
+        if (data.status === 'SUCCESS') { setActiveJobStatus('SUCCESS'); refreshList(); fetchQueue(); }
+        else if (data.status === 'FAILED') { setActiveJobStatus('FAILED'); setActiveJobError(data.error_message || 'Failed to process document.'); fetchQueue(); }
       }
     }, 4000);
     return () => clearInterval(iv);
-  }, [activeJobId, activeJobStatus, fetchList, fetchQueue]);
+  }, [activeJobId, activeJobStatus, refreshList, fetchQueue]);
 
-  const handleJobStarted = (jobId: string) => {
-    setActiveJobId(jobId);
-    setActiveJobStatus('PENDING');
-    setActiveJobError(null);
-    fetchQueue();
-  };
-
-  const handleSentNoJob = (message: string, isWarning: boolean) => {
-    setToastMessage((isWarning ? '⚠️ ' : '') + message);
-    setTimeout(() => setToastMessage(null), isWarning ? 8000 : 6000);
-    fetchQueue();
-  };
+  const handleJobStarted = (jobId: string) => { setActiveJobId(jobId); setActiveJobStatus('PENDING'); setActiveJobError(null); fetchQueue(); };
+  const handleSentNoJob = (message: string, isWarning: boolean) => { showToast(message, isWarning, isWarning ? 8000 : 6000); fetchQueue(); };
 
   const dismissQueueItem = async (id: string) => {
     await supabase.from('far_overseas_air_processing_queue').delete().eq('id', id);
     setQueue(prev => prev.filter(i => i.id !== id));
   };
-
-  // Clear massal (2026-09, permintaan user) -- hapus SEMUA item SUCCESS/FAILED sekaligus, biar
-  // tidak perlu klik "x" satu-satu per kartu. Item PENDING/PROCESSING TIDAK ikut kehapus (masih
-  // berjalan). Pola replika `ProcessingQueue.tsx` (`handleDismiss`/"Clear Completed/Failed"),
-  // komponen generik Courier/Sea & Air yang TIDAK dipakai di halaman ini (FAR Overseas punya
-  // modal antrian sendiri, `QueueCard`/`fetchQueue` di file ini).
   const clearCompletedFailedQueue = async () => {
     const idsToDismiss = queue.filter(i => i.status === 'SUCCESS' || i.status === 'FAILED').map(i => i.id);
     if (idsToDismiss.length === 0) return;
     if (!confirm('Clear all completed/failed queue items?')) return;
-    try {
-      const { error } = await supabase.from('far_overseas_air_processing_queue').delete().in('id', idsToDismiss);
-      if (error) throw error;
-      setQueue(prev => prev.filter(i => i.status !== 'SUCCESS' && i.status !== 'FAILED'));
-      setToastMessage('Queue cleared successfully.');
-      setTimeout(() => setToastMessage(null), 4000);
-    } catch (err: any) {
-      setToastMessage('⚠️ Failed to clear queue: ' + (err.message || String(err)));
-      setTimeout(() => setToastMessage(null), 6000);
-    }
+    const { error } = await supabase.from('far_overseas_air_processing_queue').delete().in('id', idsToDismiss);
+    if (error) { showToast('Failed to clear queue: ' + error.message, true, 6000); return; }
+    setQueue(prev => prev.filter(i => i.status !== 'SUCCESS' && i.status !== 'FAILED'));
+    showToast('Queue cleared.');
   };
 
-  const totalPages = Math.ceil(totalRecords / pageSize) || 1;
+  const openMemo = (r: any) => navigate(`/direct-loading/${r.id}`);
+  const rowActions: RowActions = {
+    canEdit: canEditDirectLoading,
+    onMemo: openMemo,
+    onEdit: (r) => { setIsNewManualRow(false); setEditRow(r); },
+    onCost: (r) => setCostModalRow(r),
+    onDocs: (r) => setDocsModalRow(r),
+    onDelete: (r) => { setDeleteConfirmRow(r); setDeleteError(null); },
+  };
+
+  const totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
   const validPage = Math.min(page, totalPages);
   const listStartIndex = (validPage - 1) * pageSize;
+  const pageIdr = rows.reduce((s, r) => s + (totalInIdr(r) || 0), 0);
+  const groupingActive = groupBy !== 'OFF' && (sortBy === 'NEWEST' || sortBy === 'OLDEST');
+  const anyFilterActive = activeFilterCount > 0 || statusFilter !== 'ALL' || !!searchInput || dueOnly;
+
+  // Kelompok berurutan (rows sudah terurut upload) -- total per kelompok = memo di halaman ini.
+  const groups = useMemo(() => {
+    const out: { key: string; label: string; rows: any[] }[] = [];
+    rows.forEach(r => {
+      const g = groupingActive ? groupKeyOf(r, groupBy) : { key: 'all', label: '' };
+      const last = out[out.length - 1];
+      if (last && last.key === g.key) last.rows.push(r);
+      else out.push({ key: g.key, label: g.label, rows: [r] });
+    });
+    return out;
+  }, [rows, groupBy, groupingActive]);
+
+  const clearAllFilters = () => { setFilters(EMPTY_FILTERS); setStatusFilter('ALL'); setSearchInput(''); setDueOnly(false); };
+
+  const selectCls = 'h-9 border border-[#EADFD6] rounded-xl px-2.5 text-xs text-[#2A1A2C] bg-white focus:outline-none focus:ring-2 focus:ring-[#6B3470]/25';
+
+  const renderListTable = () => (
+    <table className="w-full text-[11px] bg-white min-w-[1450px]">
+      <thead className="sticky top-0 z-20">
+        <tr className="text-[10px] text-[#6E5E70] uppercase tracking-wide bg-[#FBF3EC] shadow-[0_1px_0_#EADFD6]">
+          {['Memo', 'PT', 'Payable to (ship via)', 'Route', 'Invoice', 'Due date', 'Vendor', 'No PO', 'Vessel', 'Cost per vessel', 'Total', 'AI check', 'Approval'].map(h => (
+            <th key={h} className={`font-bold px-3 py-2.5 whitespace-nowrap ${h === 'Total' ? 'text-right' : 'text-left'}`}>{h}</th>
+          ))}
+          <th className="text-left font-bold px-3 py-2.5 whitespace-nowrap sticky right-0 bg-[#FBF3EC] border-l border-[#EADFD6] z-20">Actions</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-[#EADFD6]">
+        {loadingList ? (
+          <LoadingTableRow colSpan={14} />
+        ) : rows.length === 0 ? (
+          <tr><td colSpan={14} className="text-center py-10 text-[#6E5E70] text-sm italic">No memos match.</td></tr>
+        ) : rows.map(r => {
+          const cost = costMap[r.id];
+          const route = getRouteDisplay(r.route_note);
+          const pos = getPoNumbers(r);
+          const due = getDueInfo(getMemoDueValue(r), dueWindow);
+          const dueAlarm = isPaymentAlarmActive(r) && r.on_hold !== true && due && due.level !== 'later';
+          const warnings = deriveMemoWarnings(r, cost);
+          const fx = implicitFxRate(r);
+          const locked = isMemoLocked(r.approval_status);
+          const editState = editButtonState(r, canEditDirectLoading);
+          return (
+            <tr key={r.id} className="group hover:bg-[#FBF3EC]/60 align-top">
+              <td className="px-3 py-2.5 w-[140px]">{r.memo_no && <p className="font-extrabold text-[#2A1A2C] whitespace-nowrap">{r.memo_no}</p>}<p className={r.memo_no ? 'text-[10px] font-bold text-[#6B3470] break-words' : 'font-bold text-[#2A1A2C] break-words'}>{r.memo_title || '—'}</p><p className="text-[10px] text-[#6E5E70]">Uploaded {formatDateShort(r.created_at)}</p></td>
+              <td className="px-3 py-2.5"><PtChip code={r.dominant_company_code} /></td>
+              <td className="px-3 py-2.5 w-[170px]"><span className="inline-block rounded-lg bg-[#F5EDF3] px-2 py-1 font-bold text-[#2A1A2C] uppercase break-words">{r.ship_via || '—'}</span></td>
+              <td className="px-3 py-2.5 w-[150px] text-[#2A1A2C]">{route ? <>{route.origin} → {route.destination} <span className="text-[9px] font-extrabold text-[#6B3470]">{route.mode}</span></> : <span className="italic text-[#6E5E70]">—</span>}</td>
+              <td className="px-3 py-2.5 whitespace-nowrap"><p className="font-semibold text-[#2A1A2C]">{r.no_invoice || '—'}</p><p className="text-[10px] text-[#6E5E70]">{r.invoice_date ? formatDateShort(r.invoice_date) : '—'}</p></td>
+              <td className="px-3 py-2.5 whitespace-nowrap"><span className={dueAlarm ? (due?.level === 'overdue' ? 'font-bold text-rose-700' : 'font-bold text-amber-800') : 'text-[#2A1A2C]'}>{due ? formatDateShort(due.date) : '—'}</span></td>
+              <td className="px-3 py-2.5 w-[170px] text-[#2A1A2C] break-words">{r.vendor || '—'}</td>
+              <td className="px-3 py-2.5 w-[170px] text-[#2A1A2C]"><span className="break-all">{pos[0] || '—'}</span>{pos.length > 1 && <span className="ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#F5EDF3] text-[#6B3470] whitespace-nowrap">+{pos.length - 1} PO</span>}</td>
+              <td className="px-3 py-2.5 w-[160px] text-[#6E5E70] break-words">{r.vessel_internal_note || '—'}</td>
+              <td className="px-3 py-2.5 w-[200px]">{(() => {
+                const alloc = allocateByVessel(r);
+                if (alloc.basis === 'NONE') return <span className="italic text-[#6E5E70]">No IDR total</span>;
+                const shown = alloc.vessels.slice(0, 2);
+                return (
+                  <div className="space-y-0.5">
+                    {shown.map(v => <p key={v.vessel} className="flex justify-between gap-2"><span className="truncate text-[#2A1A2C]">{v.vessel}</span><span className="font-semibold text-[#2A1A2C] whitespace-nowrap">{formatIdr(v.idr)}</span></p>)}
+                    {alloc.vessels.length > 2 && <p className="text-[10px] text-[#6B3470] font-bold">+{alloc.vessels.length - 2} more vessels</p>}
+                    <p className="text-[10px] text-[#6E5E70]">{alloc.basis === 'KG' ? 'Split by KG per PO' : alloc.basis === 'EVEN' ? 'Split evenly (KG incomplete)' : 'Whole memo'}</p>
+                  </div>
+                );
+              })()}</td>
+              <td className="px-3 py-2.5 text-right whitespace-nowrap"><p className="font-extrabold text-[#2A1A2C]">{formatMoney(r.total_amount, r.total_amount_currency)}</p>{fx != null && <p className="text-[10px] text-[#6E5E70]">≈ {formatIdr(Number(r.total_amount_idr))}</p>}</td>
+              <td className="px-3 py-2.5"><AiChip status={cost?.status} /></td>
+              <td className="px-3 py-2.5 w-[230px] space-y-1"><StatusLine rec={r} /><ProgressBar status={r.approval_status} /><MainWarning warnings={warnings} /></td>
+              <td className="px-3 py-2.5 sticky right-0 bg-white group-hover:bg-[#FBF3EC] border-l border-[#EADFD6] z-10">
+                <div className="flex items-center gap-1">
+                  <button onClick={() => openMemo(r)} title="Memo" aria-label="Memo" className="w-8 h-8 flex items-center justify-center rounded-lg bg-[#F5EDF3] text-[#6B3470] hover:bg-[#EADFD6]"><FileText size={13} /></button>
+                  <button onClick={() => rowActions.onEdit(r)} title={editState.label} aria-label={editState.label} className={`w-8 h-8 flex items-center justify-center rounded-lg ${editState.muted ? 'bg-[#FBF3EC] text-[#6E5E70]' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}>{editState.muted ? (locked ? <Lock size={13} /> : <Eye size={13} />) : <Edit3 size={13} />}</button>
+                  <button onClick={() => setCostModalRow(r)} title="Cost Validation" aria-label="Cost Validation" className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#EADFD6] text-[#6B3470] hover:bg-[#F5EDF3]"><ClipboardList size={13} /></button>
+                  <button onClick={() => setDocsModalRow(r)} title="Docs" aria-label="Docs" className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#EADFD6] text-[#6B3470] hover:bg-[#F5EDF3]"><FolderOpen size={13} /></button>
+                  {canEditDirectLoading && (
+                    <button onClick={() => { if (!locked) rowActions.onDelete(r); }} disabled={locked} title={locked ? 'Cannot delete after Prepared By signed' : 'Delete'} aria-label="Delete" className="w-8 h-8 flex items-center justify-center rounded-lg border border-[#EADFD6] text-rose-600 hover:bg-rose-50 disabled:opacity-35 disabled:cursor-not-allowed"><Trash2 size={13} /></button>
+                  )}
+                </div>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
 
   return (
     <>
       {toastMessage && (
-        <div className="fixed top-5 right-5 bg-slate-900 border border-slate-700 text-white px-5 py-3.5 rounded-xl shadow-2xl flex items-center justify-between animate-in fade-in slide-in-from-top-4 font-medium text-sm z-[9999] min-w-[300px]">
+        <div className="fixed top-5 right-5 bg-[#2A1A2C] text-white px-5 py-3.5 rounded-xl shadow-2xl flex items-center justify-between gap-3 font-medium text-sm z-[9999] min-w-[300px] max-w-[460px]" style={{ fontFamily: FAR_FONT_FAMILY }}>
           <div className="flex items-center gap-3">
-            {toastMessage.includes('⚠️') ? <span className="text-amber-400 text-lg">⚠️</span> : <span className="text-emerald-400 text-lg">✅</span>}
-            <span className="leading-tight max-w-[400px]">{toastMessage.replace('⚠️ ', '')}</span>
+            {toastMessage.warn ? <AlertTriangle size={18} className="text-amber-400 shrink-0" /> : <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />}
+            <span className="leading-tight">{toastMessage.text}</span>
           </div>
-          <button onClick={() => setToastMessage(null)} className="text-[#5A305A] hover:text-white p-1 ml-4">&times;</button>
+          <button onClick={() => setToastMessage(null)} aria-label="Dismiss" className="text-white/60 hover:text-white p-1"><X size={14} /></button>
         </div>
       )}
 
-      <div className="flex-1 h-full overflow-hidden min-w-0 flex flex-col">
+      <div className="flex-1 h-full overflow-hidden min-w-0 flex flex-col" style={{ fontFamily: FAR_FONT_FAMILY }}>
         <header className="px-3 pt-1 pb-1 shrink-0">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0 shadow-sm">
-                <FileCheck2 size={20} />
+              <div className="w-9 h-9 rounded-xl bg-[#6B3470] text-white flex items-center justify-center shrink-0">
+                <FileCheck2 size={17} />
               </div>
               <div>
-                <h1 className="font-bold text-[#5A305A] text-base leading-tight">FAR Overseas</h1>
-                <p className="text-xs font-light text-[#5A305A] mt-0.5">Combined PO informal freight approval memo</p>
+                <h1 className="font-extrabold text-2xl text-[#2A1A2C] leading-tight">FAR Overseas</h1>
+                <p className="text-[#6E5E70] text-sm mt-0.5">Combined PO informal freight approval memo</p>
               </div>
             </div>
             <Greeting />
           </div>
         </header>
 
-        <main className="px-3 pt-2 pb-2 flex-1 flex flex-col overflow-hidden gap-5">
-
-          {/* Banner job aktif */}
-          {activeJobId && activeJobStatus === 'PENDING' && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3 shrink-0">
-              <div className="w-9 h-9 rounded-full border-2 border-amber-400 border-t-transparent animate-spin shrink-0" />
-              <div>
-                <p className="text-sm font-bold text-amber-800">AI is processing the document...</p>
-                <p className="text-xs text-amber-700 mt-0.5">This page will automatically refresh the list once it's done.</p>
-              </div>
+        <main className="px-3 pt-2 pb-2 flex-1 flex flex-col overflow-hidden gap-3 min-h-0">
+          {/* Tab + aksi utama */}
+          <div className="flex items-center justify-between gap-2 flex-wrap shrink-0">
+            <div className="flex items-center gap-1 bg-white border border-[#EADFD6] rounded-xl p-1">
+              <button onClick={() => setTab('MEMOS')} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${tab === 'MEMOS' ? 'bg-[#3B1B3D] text-white' : 'text-[#6E5E70] hover:text-[#2A1A2C]'}`}>Memos</button>
+              {mySteps.length > 0 && (
+                <button onClick={() => setTab('MY_APPROVALS')} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold ${tab === 'MY_APPROVALS' ? 'bg-[#3B1B3D] text-white' : 'text-[#6E5E70] hover:text-[#2A1A2C]'}`}>
+                  My Approvals {myApprovalsCount > 0 && <span className={`text-[10px] px-1.5 rounded-full ${tab === 'MY_APPROVALS' ? 'bg-white text-[#3B1B3D]' : 'bg-rose-600 text-white'}`}>{myApprovalsCount}</span>}
+                </button>
+              )}
+              {canSeeFinance && (
+                <button onClick={() => setTab('FINANCE')} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${tab === 'FINANCE' ? 'bg-[#3B1B3D] text-white' : 'text-[#6E5E70] hover:text-[#2A1A2C]'}`}>Finance Handover</button>
+              )}
+              {canOpenVendorRates && (
+                <button onClick={() => navigate('/settings/tarif-far-overseas-vendor')} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-[#6E5E70] hover:text-[#2A1A2C]">
+                  Vendor Rates <ExternalLink size={11} />
+                </button>
+              )}
             </div>
-          )}
-          {activeJobId && activeJobStatus === 'SUCCESS' && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between gap-3 shrink-0">
-              <div className="flex items-center gap-3">
-                <CheckCircle2 size={22} className="text-emerald-600 shrink-0" />
-                <p className="text-sm font-bold text-emerald-800">Document processed successfully and now appears in the list.</p>
-              </div>
-              <button onClick={() => { setActiveJobId(null); setActiveJobStatus(null); }} className="text-emerald-600 hover:text-emerald-800"><X size={16} /></button>
-            </div>
-          )}
-          {activeJobId && activeJobStatus === 'FAILED' && (
-            <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-center justify-between gap-3 shrink-0">
-              <div className="flex items-center gap-3">
-                <AlertTriangle size={20} className="text-rose-600 shrink-0" />
-                <div>
-                  <p className="text-sm font-bold text-rose-800">Failed to process document.</p>
-                  <p className="text-xs text-rose-700 mt-0.5">{activeJobError}</p>
-                </div>
-              </div>
-              <button onClick={() => { setActiveJobId(null); setActiveJobStatus(null); }} className="text-rose-600 hover:text-rose-800"><X size={16} /></button>
-            </div>
-          )}
-
-          {/* List -- flex-1 min-h-0 supaya kartu ini yang mengisi sisa tinggi layar, dan HANYA
-              area tabel di dalamnya yang scroll (pola sama seperti SharedDataTable.tsx di
-              halaman Audit Sea & Air / Courier) -- bukan seluruh halaman yang discroll panjang. */}
-          <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
-            {/* Baris 1: filter tampilan (List/Card, Approval, Search, Sort) -- terpisah dari
-                baris aksi di bawahnya (2026-09, permintaan user "4 tombol aksi menempel ke
-                tabel"). Jarak dirapatkan (py-1.5, bukan py-2) + susulan permintaan user "buat
-                seperti ada pembedanya" -- baris ini dikasih `bg-white/40` (baris aksi TETAP
-                transparan) supaya ada kontras visual tipis antar baris, bukan cuma garis. */}
-            <div className="px-5 py-1.5 bg-white/40 flex items-center justify-between gap-3 flex-nowrap shrink-0">
-              <div className="flex items-center gap-2 flex-nowrap overflow-x-auto py-2 min-w-0 flex-1">
-                {/* Toggle List/Card (2026-09) -- lihat catatan panjang di deklarasi state
-                    `viewMode` soal batasan Card (view-only + tombol Edit pindah ke List). */}
-                <div className="flex items-center rounded-full border border-slate-200 bg-white p-0.5 shrink-0 h-[34px]">
-                  <button
-                    onClick={() => setViewMode('LIST')}
-                    title="List view"
-                    className={`flex items-center gap-1 px-2.5 h-[27px] rounded-full text-[10px] font-bold uppercase tracking-wide transition-colors ${viewMode === 'LIST' ? 'bg-[#5A305A] text-white' : 'text-[#5A305A]/60 hover:text-[#5A305A]'}`}
-                  >
-                    <ListIcon size={13} /> List
-                  </button>
-                  <button
-                    onClick={() => setViewMode('CARD')}
-                    title="Card view"
-                    className={`flex items-center gap-1 px-2.5 h-[27px] rounded-full text-[10px] font-bold uppercase tracking-wide transition-colors ${viewMode === 'CARD' ? 'bg-[#5A305A] text-white' : 'text-[#5A305A]/60 hover:text-[#5A305A]'}`}
-                  >
-                    <LayoutGrid size={13} /> Card
-                  </button>
-                </div>
-                <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0">
-                  <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide whitespace-nowrap">Approval</span>
-                  <select
-                    value={approvalFilter}
-                    onChange={e => { setApprovalFilter(e.target.value as typeof approvalFilter); setPage(1); }}
-                    className="border-0 bg-transparent text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer"
-                  >
-                    <option value="ALL">All Statuses</option>
-                    <option value="TIER1">Pending Prepared By ({approvalCounts.tier1})</option>
-                    <option value="PIC">Pending PIC ({approvalCounts.pic})</option>
-                    <option value="TIER2">Pending SPV ({approvalCounts.tier2})</option>
-                    <option value="TIER3">Pending Director ({approvalCounts.tier3})</option>
-                  </select>
-                </div>
-                {/* Search + Filter Tanggal (2026-09) -- GANTI dropdown "Items" pageSize (`pageSize`
-                    state TETAP ada, dipakai apa adanya sbg default 10, cuma UI-nya dihilangkan
-                    sesuai permintaan user). Search cari di 4 kolom (Ship Via/Vendor/NOTE 1/NOTE 2
-                    Manual, lihat catatan `searchTerm`). Filter tanggal (GANTI dari dropdown Sort
-                    5 opsi + tombol arah, lihat catatan `filterStartDate`) MENYARING Invoice Date. */}
-                <div className="flex items-center gap-1.5 rounded-full pl-3 pr-1.5 py-1 h-[34px] border border-slate-200 bg-white flex-1 min-w-[160px]">
-                  <Search size={13} className="text-[#5A305A]/50 shrink-0" />
-                  <input
-                    type="text"
-                    value={searchInput}
-                    onChange={e => setSearchInput(e.target.value)}
-                    placeholder="Search..."
-                    title="Search ship via, vendor, notes"
-                    className="border-0 bg-transparent text-xs text-[#5A305A] focus:outline-none min-w-0 flex-1 placeholder:text-[#5A305A]/40"
-                  />
-                  {searchInput && (
-                    <button onClick={() => setSearchInput('')} className="text-[#5A305A]/40 hover:text-[#5A305A] shrink-0">
-                      <X size={12} />
-                    </button>
-                  )}
-                </div>
-                <div className="flex items-center gap-1.5 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0">
-                  <CalendarDays size={13} className="text-[#5A305A]/50 shrink-0" />
-                  <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide whitespace-nowrap shrink-0">Date</span>
-                  <input
-                    type="date"
-                    value={filterStartDate}
-                    onChange={e => setFilterStartDate(e.target.value)}
-                    title="Invoice Date from"
-                    className="border-0 bg-transparent text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer w-[110px]"
-                  />
-                  <span className="text-[#5A305A]/40 text-xs shrink-0">–</span>
-                  <input
-                    type="date"
-                    value={filterEndDate}
-                    onChange={e => setFilterEndDate(e.target.value)}
-                    title="Invoice Date to"
-                    className="border-0 bg-transparent text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer w-[110px]"
-                  />
-                  {(filterStartDate || filterEndDate) && (
-                    <button onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }} title="Clear date filter" className="text-[#5A305A]/40 hover:text-[#5A305A] shrink-0">
-                      <X size={12} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Baris 2: aksi (Refresh/Export/Processing Queue/Upload Document) -- SENGAJA
-                dipisah ke baris sendiri yang menempel LANGSUNG di atas tabel/grid card
-                (border-b di sini, bukan lagi di baris filter di atas), supaya keempatnya
-                jelas terasosiasi dgn tabel di bawahnya, bukan bercampur dgn filter tampilan. */}
-            <div className="px-5 py-1.5 border-b border-white/60 flex items-center justify-end gap-2 flex-nowrap overflow-x-auto shrink-0">
-              <button
-                onClick={() => { fetchList(); fetchQueue(); fetchApprovalCounts(); }}
-                disabled={loadingList}
-                title="Refresh"
-                className="p-2 rounded-full bg-white/70 backdrop-blur-md border border-white/60 hover:bg-white/90 text-[#5A305A] transition-all shadow-sm flex items-center justify-center shrink-0 disabled:opacity-50 h-[34px] w-[34px]"
-              >
-                <RefreshCw size={14} className={loadingList ? 'animate-spin' : ''} />
-              </button>
-              <button
-                onClick={() => setShowExportModal(true)}
-                className="px-3 py-2 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold border border-emerald-700 transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px] whitespace-nowrap"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
-                Export
-              </button>
-              <button
-                onClick={() => setShowQueuePanel(o => !o)}
-                className="relative px-3 py-2 rounded-full bg-white/70 backdrop-blur-md border border-white/60 hover:bg-white/90 text-[#5A305A] font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px] whitespace-nowrap"
-              >
+            <div className="flex items-center gap-2 flex-wrap">
+              {mySteps.length > 0 && (
+                <button onClick={() => setTab('MY_APPROVALS')} title="Waiting for your approval" aria-label="Waiting for your approval" className="relative h-9 w-9 flex items-center justify-center rounded-xl bg-white border border-[#EADFD6] text-[#2A1A2C] hover:bg-[#F5EDF3]">
+                  <Bell size={15} />
+                  {myApprovalsCount > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-rose-600 text-[10px] font-bold text-white">{myApprovalsCount}</span>}
+                </button>
+              )}
+              <button onClick={() => setShowQueuePanel(true)} className="h-9 flex items-center gap-1.5 px-3 rounded-xl bg-white border border-[#EADFD6] text-xs font-semibold text-[#2A1A2C] hover:bg-[#F5EDF3]">
                 <Clock size={14} /> Processing Queue
-                {queue.length > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">
-                    {queue.length}
-                  </span>
-                )}
+                <span className={`text-[10px] font-bold px-1.5 rounded-full ${queue.length > 0 ? 'bg-rose-600 text-white' : 'bg-[#F5EDF3] text-[#6E5E70]'}`}>{queue.length}</span>
               </button>
+              <div className="relative">
+                <button onClick={() => setShowExportMenu(m => !m)} className="h-9 flex items-center gap-1.5 px-3 rounded-xl bg-white border border-[#EADFD6] text-xs font-semibold text-[#2A1A2C] hover:bg-[#F5EDF3]">
+                  <Download size={14} /> Export
+                </button>
+                {showExportMenu && (
+                  <div className="absolute right-0 top-10 z-30 w-56 bg-white border border-[#EADFD6] rounded-xl shadow-lg py-1 text-xs">
+                    <button onClick={() => { setShowExportMenu(false); setExportMode('PO'); }} className="w-full text-left px-3 py-2 hover:bg-[#F5EDF3]"><span className="font-bold text-[#2A1A2C]">1 row per PO</span><span className="block text-[#6E5E70]">Full data incl. vessel & IDR allocation</span></button>
+                    <button onClick={() => { setShowExportMenu(false); setExportMode('MEMO'); }} className="w-full text-left px-3 py-2 hover:bg-[#F5EDF3]"><span className="font-bold text-[#2A1A2C]">1 row per memo</span></button>
+                  </div>
+                )}
+              </div>
               {canEditDirectLoading && (
-                <button
-                  onClick={handleAddManualEntry}
-                  disabled={creatingManualEntry}
-                  title="For shipments that were never processed by the upload automation at all"
-                  className="px-3 py-2 rounded-full bg-white/70 backdrop-blur-md border border-white/60 hover:bg-white/90 text-[#5A305A] font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px] whitespace-nowrap disabled:opacity-50"
-                >
-                  <Plus size={14} /> {creatingManualEntry ? 'Creating...' : 'Add Manual Entry'}
+                <button onClick={handleAddManualEntry} disabled={creatingManualEntry} title="For shipments that the upload automation never processed" className="h-9 flex items-center gap-1.5 px-3 rounded-xl bg-white border border-[#EADFD6] text-xs font-semibold text-[#2A1A2C] hover:bg-[#F5EDF3] disabled:opacity-50">
+                  <Plus size={14} /> {creatingManualEntry ? 'Creating...' : 'Add manual entry'}
                 </button>
               )}
               {canEditDirectLoading && (
-                <button
-                  onClick={() => setShowUploadModal(true)}
-                  className="px-3 py-2 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-xs transition-all shadow-sm flex items-center gap-1.5 shrink-0 h-[34px] whitespace-nowrap"
-                >
+                <button onClick={() => setShowUploadModal(true)} className="h-9 flex items-center gap-1.5 px-3.5 rounded-xl bg-[#6B3470] hover:bg-[#5A2A5E] text-white text-xs font-bold shadow-sm">
                   <UploadCloud size={14} /> Upload Document
                 </button>
               )}
             </div>
-            {viewMode === 'LIST' && (
-            <div ref={topScrollRef} onScroll={handleTopScroll} className="overflow-x-auto w-full shrink-0 scrollbar-visible">
-              <div style={{ width: tableWidth, height: '1px' }} />
+          </div>
+
+          {/* Banner job upload aktif */}
+          {activeJobId && activeJobStatus === 'PENDING' && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center gap-3 shrink-0">
+              <div className="w-7 h-7 rounded-full border-2 border-amber-400 border-t-transparent animate-spin shrink-0" />
+              <div>
+                <p className="text-sm font-bold text-amber-900">AI is processing the document...</p>
+                <p className="text-xs text-amber-800 mt-0.5">The list refreshes automatically when it's done.</p>
+              </div>
             </div>
-            )}
-            {viewMode === 'LIST' && (
-            <div ref={bottomScrollRef} onScroll={handleBottomScroll} className="flex-1 min-h-0 overflow-x-auto overflow-y-auto scrollbar-x-visible">
-              <table ref={tableRef} className="w-full text-[11px] bg-white">
-                <thead className="sticky top-0 z-20">
-                  <tr className="text-[10px] text-[#5A305A]/70 uppercase bg-slate-50 shadow-sm">
-                    {LIST_COLUMNS.map((col, i) => (
-                      <th key={i} className={`font-bold tracking-wider px-4 py-3 whitespace-nowrap ${col.align === 'right' ? 'text-right' : 'text-left'}`}>{col.header}</th>
-                    ))}
-                    <th className="text-left font-bold tracking-wider px-4 py-3 whitespace-nowrap sticky right-0 top-0 bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-20 border-l border-slate-200">AKSI</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {loadingList ? (
-                    <LoadingTableRow colSpan={LIST_COLUMNS.length + 1} />
-                  ) : rows.length === 0 ? (
-                    <tr><td colSpan={LIST_COLUMNS.length + 1} className="text-center py-10 text-[#5A305A] text-sm italic">No FAR Overseas data yet. Click "Upload Document" to get started.</td></tr>
-                  ) : (
-                    rows.map((r, idx) => {
-                      const costStatus = costStatusMap[r.id];
-                      const editingThisRow = editingRowId === r.id;
-                      const ctx: ListRenderCtx = { onOpenWeightModal: setWeightModalRow, editingRowId, getVal, setVal, expandedPoRows, togglePoExpanded, picUsers, costCityMap, memoTitleOptions, addMemoTitleOption, tarifVendorRows, companyOptions };
-                      return (
-                        <tr key={r.id} id={`far-row-${r.id}`} className="group bg-white hover:bg-slate-50 transition-colors">
-                          {LIST_COLUMNS.map((col, i) => {
-                            if (col.render) {
-                              return (
-                                <td key={i} className={`px-4 py-3 align-top text-[#5A305A] ${col.align === 'right' ? 'text-right' : 'text-left'}`}>
-                                  {col.render(r, idx, costStatus, ctx)}
-                                </td>
-                              );
-                            }
-                            const field = col.field as string;
-                            const val = getVal(r, field);
-                            const edited = Array.isArray(r.edited_fields) && r.edited_fields.includes(field);
-                            const widthClass = colWidthClass(col);
-                            return (
-                              // SEMUA kolom field (bukan cuma yang wide) dikasih lebar PIKSEL TETAP,
-                              // dipasang di <td> ITU SENDIRI sebagai hint lebar kolom, DAN di
-                              // EditableCell (lewat className, lihat FarOverseasAirEditableField.tsx)
-                              // sebagai lebar tetap pada input-nya saat mode edit -- lebar persen
-                              // ("w-full") pada <input> di dalam tabel "table-layout: auto" tidak bisa
-                              // dihitung andal (lebar <td>-nya sendiri belum pasti saat browser
-                              // menghitung ukuran kolom), jadi kalau dibiarkan persen, input malah
-                              // menyusut ke ukuran instrinsik kecil bawaan browser.
-                              <td key={i} className={`px-4 py-3 align-top text-[#5A305A] ${col.align === 'right' ? 'text-right' : 'text-left'} ${widthClass}`}>
-                                <EditableCell
-                                  value={val}
-                                  displayValue={col.format ? col.format(val, r) : undefined}
-                                  editable={editingThisRow}
-                                  edited={edited}
-                                  type={col.inputType || 'text'}
-                                  align={col.align === 'right' ? 'right' : 'left'}
-                                  multiline={col.multiline}
-                                  inputPlaceholder={col.inputPlaceholder}
-                                  className={`${widthClass} ${col.wide ? 'whitespace-normal break-words' : ''}`}
-                                  onChange={(v) => setVal(r, field, col.inputType === 'number' ? (v === null ? null : Number(v)) : v)}
-                                />
-                              </td>
-                            );
-                          })}
-                          <td className="px-4 py-3 align-top sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-10 border-l border-slate-200 transition-colors">
-                            <div className="flex flex-col items-center gap-1.5 w-[104px]">
-                              <button
-                                onClick={() => setOpenActionsRowId(openActionsRowId === r.id ? null : r.id)}
-                                className={`w-full flex items-center justify-center gap-1 text-[10px] font-bold px-2 py-2 rounded-lg border transition-all ${
-                                  openActionsRowId === r.id
-                                    ? 'bg-[#5A305A] text-white border-[#5A305A] shadow-md'
-                                    : 'bg-white text-[#5A305A] border-slate-200 shadow-sm hover:border-[#5A305A] hover:bg-[#5A305A]/5'
-                                }`}
-                              >
-                                Action
-                                <ChevronDown size={13} className={`transition-transform duration-200 ${openActionsRowId === r.id ? 'rotate-180' : ''}`} />
-                              </button>
-                              {openActionsRowId === r.id && (
-                                <div className="flex flex-col gap-1.5 items-stretch w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
-                                  <button
-                                    onClick={() => { navigate(`/direct-loading/${r.id}`); setOpenActionsRowId(null); }}
-                                    title="Approval"
-                                    className="w-full flex flex-col items-start gap-0.5 px-1.5 py-1 rounded-md border border-slate-200 bg-white hover:bg-slate-100 transition-colors"
-                                  >
-                                    <span className="flex items-center gap-1 text-[9px] font-semibold text-[#5A305A]"><ClipboardCheck size={10} /> Approval</span>
-                                    <ApprovalBadge status={r.approval_status} compact />
-                                  </button>
-                                  <button
-                                    onClick={() => { setCostModalRow(r); setOpenActionsRowId(null); }}
-                                    title="Cost Validation"
-                                    className="w-full flex flex-col items-start gap-0.5 px-1.5 py-1 rounded-md border border-slate-200 bg-white hover:bg-slate-100 transition-colors"
-                                  >
-                                    <span className="flex items-center gap-1 text-[9px] font-semibold text-[#5A305A]"><ClipboardList size={10} /> Cost</span>
-                                    <CostBadge status={costStatus} compact />
-                                  </button>
-                                  <button
-                                    onClick={() => { setDocsModalRow(r); setOpenActionsRowId(null); }}
-                                    title="Dokumen"
-                                    className="w-full flex items-center gap-1 px-1.5 py-1 rounded-md border border-slate-200 bg-white hover:bg-slate-100 transition-colors"
-                                  >
-                                    <span className="flex items-center gap-1 text-[9px] font-semibold text-[#5A305A]"><FolderOpen size={10} /> Dokumen</span>
-                                  </button>
-                                  {canEditDirectLoading && (
-                                    <button
-                                      onClick={() => { toggleEditRow(r.id); setOpenActionsRowId(null); }}
-                                      title="Edit baris ini"
-                                      className={`w-full flex items-center gap-1 px-1.5 py-1 rounded-md border text-[9px] font-semibold transition-colors ${editingThisRow ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700' : 'border-slate-200 bg-white text-[#5A305A] hover:bg-slate-100'}`}
-                                    >
-                                      <Edit3 size={10} /> {editingThisRow ? 'Editing' : 'Edit'}
-                                    </button>
-                                  )}
-                                  {canEditDirectLoading && (
-                                    <button
-                                      onClick={() => { openDeleteConfirm(r); setOpenActionsRowId(null); }}
-                                      title="Delete this memo"
-                                      className="w-full flex items-center gap-1 px-1.5 py-1 rounded-md border border-rose-200 bg-rose-50 text-[9px] font-semibold text-rose-600 hover:bg-rose-100 hover:border-rose-300 transition-colors"
-                                    >
-                                      <Trash2 size={10} /> Delete
-                                    </button>
-                                  )}
+          )}
+          {activeJobId && activeJobStatus === 'SUCCESS' && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-3"><CheckCircle2 size={20} className="text-emerald-600 shrink-0" /><p className="text-sm font-bold text-emerald-800">Document processed — it now appears in the list.</p></div>
+              <button onClick={() => { setActiveJobId(null); setActiveJobStatus(null); }} aria-label="Dismiss" className="text-emerald-600 hover:text-emerald-800"><X size={16} /></button>
+            </div>
+          )}
+          {activeJobId && activeJobStatus === 'FAILED' && (
+            <div className="bg-rose-50 border border-rose-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-3"><AlertTriangle size={20} className="text-rose-600 shrink-0" /><div><p className="text-sm font-bold text-rose-800">Failed to process document.</p><p className="text-xs text-rose-700 mt-0.5">{activeJobError}</p></div></div>
+              <button onClick={() => { setActiveJobId(null); setActiveJobStatus(null); }} aria-label="Dismiss" className="text-rose-600 hover:text-rose-800"><X size={16} /></button>
+            </div>
+          )}
+
+          {tab === 'FINANCE' && canSeeFinance ? (
+            <div className="flex-1 min-h-0">
+              <FarOverseasAirFinanceHandover
+                canAct={canActFinance}
+                defaultReceiverName={profile?.nama || user?.email || ''}
+                refreshKey={myApprovalsRefreshKey}
+                onOpenMemo={(id) => navigate(`/direct-loading/${id}`)}
+                onOpenDocs={(r) => setDocsModalRow(r)}
+                onOpenCost={(r) => setCostModalRow(r)}
+                onChanged={refreshList}
+              />
+            </div>
+          ) : tab === 'MY_APPROVALS' && mySteps.length > 0 ? (
+            <div className="flex-1 min-h-0">
+              <FarOverseasAirMyApprovals
+                mySteps={mySteps}
+                signers={stepSigners}
+                phase2={phase2}
+                myTier={myTier}
+                userId={user?.id || null}
+                userEmail={user?.email || null}
+                greetingName={profile?.nama || user?.email || ''}
+                canSign={canEditDirectLoading}
+                refreshKey={myApprovalsRefreshKey}
+                onOpenMemo={(id) => navigate(`/direct-loading/${id}`)}
+                onOpenDocs={(r) => setDocsModalRow(r)}
+                onOpenCost={(r) => setCostModalRow(r)}
+                onOpenMemosList={() => { setTab('MEMOS'); setStatusFilter(mySteps[0] || 'ALL'); }}
+              />
+            </div>
+          ) : (
+            <>
+              {/* PANEL FILTER -- 1 kartu putih solid (toolbar + filter lanjutan + alarm due, dipisah
+                  garis tipis). SENGAJA beda tampilan dari kartu konten di bawahnya (permintaan user:
+                  panel filter & tabel harus jelas terpisah). */}
+              <div className="bg-white rounded-2xl border border-[#EADFD6] shadow-sm shrink-0 overflow-hidden">
+              <div className="px-3 py-2 flex items-center gap-2 flex-nowrap overflow-x-auto">
+                <div className="flex items-center rounded-xl bg-[#FBF3EC] p-1 shrink-0">
+                  <button onClick={() => setViewMode('LIST')} className={`flex items-center gap-1 px-2.5 h-7 rounded-lg text-xs font-bold ${viewMode === 'LIST' ? 'bg-[#3B1B3D] text-white' : 'text-[#6E5E70]'}`}><ListIcon size={13} /> List</button>
+                  <button onClick={() => setViewMode('CARD')} className={`flex items-center gap-1 px-2.5 h-7 rounded-lg text-xs font-bold ${viewMode === 'CARD' ? 'bg-[#3B1B3D] text-white' : 'text-[#6E5E70]'}`}><LayoutGrid size={13} /> Card</button>
+                </div>
+                <div className="flex items-center gap-2 h-9 px-3 rounded-xl border border-[#EADFD6] flex-1 min-w-[220px]">
+                  <Search size={14} className="text-[#6E5E70] shrink-0" />
+                  <input type="text" value={searchInput} onChange={e => setSearchInput(e.target.value)} placeholder="Search invoice, vendor, PO number, ship via..." className="flex-1 min-w-0 text-xs bg-transparent text-[#2A1A2C] placeholder:text-[#6E5E70]/70 focus:outline-none" />
+                  {searchInput && <button onClick={() => setSearchInput('')} aria-label="Clear search" className="text-[#6E5E70] hover:text-[#2A1A2C]"><X size={13} /></button>}
+                </div>
+                <button onClick={() => setShowFilters(s => !s)} className={`relative h-9 flex items-center gap-1.5 px-3 rounded-xl border text-xs font-bold shrink-0 ${showFilters || activeFilterCount > 0 ? 'border-[#6B3470] text-[#6B3470] bg-[#F5EDF3]' : 'border-[#EADFD6] text-[#2A1A2C]'}`}>
+                  <SlidersHorizontal size={14} /> Filter
+                  {activeFilterCount > 0 && <span className="text-[10px] px-1.5 rounded-full bg-[#6B3470] text-white">{activeFilterCount}</span>}
+                </button>
+                <label className="flex items-center gap-2 h-9 pl-3 pr-1 rounded-xl border border-[#EADFD6] shrink-0">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#6E5E70]">Status</span>
+                  <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as StatusFilter)} className="h-8 text-xs font-semibold text-[#2A1A2C] bg-transparent focus:outline-none cursor-pointer">
+                    <option value="ALL">All statuses</option>
+                    <option value="TIER1">Waiting on Prepared By ({approvalCounts.TIER1})</option>
+                    <option value="PIC">Waiting on PIC Shipment ({approvalCounts.PIC})</option>
+                    <option value="TIER2">Waiting on Exim Supervisor ({approvalCounts.TIER2})</option>
+                    <option value="TIER3">Waiting on Director ({approvalCounts.TIER3})</option>
+                    <option value="APPROVED">Approved</option>
+                    <option value="REJECTED">Rejected</option>
+                    {phase2 && <option value="FINANCE">Waiting on Finance</option>}
+                    {phase2 && <option value="PAID">Paid</option>}
+                  </select>
+                </label>
+                <label className="flex items-center gap-2 h-9 pl-3 pr-1 rounded-xl border border-[#EADFD6] shrink-0">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#6E5E70]">Sort</span>
+                  <select value={sortBy} onChange={e => setSortBy(e.target.value as SortBy)} className="h-8 text-xs font-semibold text-[#2A1A2C] bg-transparent focus:outline-none cursor-pointer">
+                    {(Object.keys(SORT_LABEL) as SortBy[]).map(k => <option key={k} value={k}>{SORT_LABEL[k]}</option>)}
+                  </select>
+                </label>
+                <button onClick={refreshList} disabled={loadingList} title="Refresh" aria-label="Refresh" className="h-9 w-9 flex items-center justify-center rounded-xl border border-[#EADFD6] text-[#2A1A2C] hover:bg-[#F5EDF3] shrink-0 disabled:opacity-50">
+                  <RefreshCw size={14} className={loadingList ? 'animate-spin' : ''} />
+                </button>
+              </div>
+
+              {showFilters && (
+                <div className="border-t border-[#EADFD6] bg-[#F5EDF3]/40 px-3 py-2.5 flex items-end gap-2 flex-wrap">
+                  <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wider text-[#6E5E70] mb-1">Ship via</span>
+                    <select value={filters.shipVia} onChange={e => setFilters(f => ({ ...f, shipVia: e.target.value }))} className={selectCls}>
+                      <option value="">All</option><option value="OCTAGON">Octagon</option><option value="JIANQIAO">Jianqiao</option>
+                    </select>
+                  </label>
+                  <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wider text-[#6E5E70] mb-1">Paying PT</span>
+                    <select value={filters.pt} onChange={e => setFilters(f => ({ ...f, pt: e.target.value }))} className={selectCls}>
+                      <option value="">All</option>{companyOptions.map(c => <option key={c.company_code} value={c.company_code}>{c.company_code}</option>)}
+                    </select>
+                  </label>
+                  <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wider text-[#6E5E70] mb-1">Origin</span>
+                    <select value={filters.origin} onChange={e => setFilters(f => ({ ...f, origin: e.target.value }))} className={selectCls}>
+                      <option value="">All</option>{originOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </label>
+                  <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wider text-[#6E5E70] mb-1">Destination</span>
+                    <select value={filters.destination} onChange={e => setFilters(f => ({ ...f, destination: e.target.value }))} className={selectCls}>
+                      <option value="">All</option>{destinationOptions.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  </label>
+                  <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wider text-[#6E5E70] mb-1">Mode</span>
+                    <select value={filters.mode} onChange={e => setFilters(f => ({ ...f, mode: e.target.value }))} className={selectCls}>
+                      <option value="">All</option><option value="AIR">Air</option><option value="SEA">Sea</option>
+                    </select>
+                  </label>
+                  <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wider text-[#6E5E70] mb-1">Remark</span>
+                    <input value={filters.remark} onChange={e => setFilters(f => ({ ...f, remark: e.target.value }))} placeholder="LARTAS..." className={`${selectCls} w-28`} />
+                  </label>
+                  <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wider text-[#6E5E70] mb-1">Invoice date from</span>
+                    <input type="date" value={filters.startDate} onChange={e => setFilters(f => ({ ...f, startDate: e.target.value }))} className={selectCls} />
+                  </label>
+                  <label className="block"><span className="block text-[10px] font-bold uppercase tracking-wider text-[#6E5E70] mb-1">to</span>
+                    <input type="date" value={filters.endDate} onChange={e => setFilters(f => ({ ...f, endDate: e.target.value }))} className={selectCls} />
+                  </label>
+                  {activeFilterCount > 0 && <button onClick={() => setFilters(EMPTY_FILTERS)} className="h-9 px-3 text-xs font-bold text-[#6B3470] hover:underline">Clear</button>}
+                </div>
+              )}
+
+              {canEditDirectLoading && (dueAlert.overdue > 0 || dueAlert.soon > 0 || dueAlert.onHold > 0 || dueOnly) && (
+                <div className="border-t border-rose-200 bg-rose-50/70 px-4 py-2 flex items-center justify-between gap-3 flex-wrap">
+                  <p className="text-xs text-rose-800 flex items-center gap-2 flex-wrap">
+                    <Bell size={14} className="shrink-0" />
+                    <span className="font-bold">Payment due alert:</span>
+                    {dueAlert.overdue} overdue · {dueAlert.soon} due within
+                    <select value={dueWindow} onChange={e => setDueWindow(Number(e.target.value))} className="border border-rose-200 bg-white rounded-md px-1 py-0.5 text-xs">
+                      {[1, 3, 5, 7].map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                    days{dueAlert.onHold > 0 ? ` · ${dueAlert.onHold} on hold (goods)` : ''} <span className="text-rose-700/70">{phase2 ? '(stops once paid)' : '(memos still in approval)'}</span>
+                  </p>
+                  <button onClick={() => { const next = !dueOnly; setDueOnly(next); if (next) setSortBy('DUE_SOON'); }} className="px-3 py-1 rounded-lg border border-rose-300 bg-white text-xs font-bold text-rose-700 hover:bg-rose-100">
+                    {dueOnly ? 'Show all memos' : 'Show them'}
+                  </button>
+                </div>
+              )}
+
+              </div>
+
+              {/* KARTU KONTEN (tabel/card) -- header ringkasan + group by, area scroll, pagination. */}
+              <div className="flex-1 min-h-0 flex flex-col bg-white/70 backdrop-blur-md rounded-2xl border border-white/70 shadow-sm overflow-hidden">
+                {/* Ringkasan + group by */}
+                <div className="px-4 py-2.5 border-b border-[#EADFD6] bg-white flex items-center justify-between gap-2 flex-wrap shrink-0">
+                  <p className="text-xs text-[#6E5E70]">
+                    <span className="font-bold text-[#2A1A2C]">{totalRecords} memo{totalRecords === 1 ? '' : 's'}</span>
+                    {rows.length > 0 && <> · this page {formatIdr(pageIdr)}</>}
+                    {anyFilterActive && <button onClick={clearAllFilters} className="ml-2 font-bold text-[#6B3470] hover:underline">Clear filters</button>}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#6E5E70]">Group by</span>
+                    <div className={`flex items-center rounded-xl bg-white border border-[#EADFD6] p-0.5 ${groupingActive || groupBy === 'OFF' ? '' : 'opacity-60'}`} title={sortBy === 'NEWEST' || sortBy === 'OLDEST' ? undefined : 'Grouping works with upload-date sorting'}>
+                      {(['DATE', 'MONTH', 'YEAR', 'OFF'] as GroupBy[]).map(g => (
+                        <button key={g} onClick={() => setGroupBy(g)} className={`px-2.5 h-7 rounded-lg text-xs font-bold ${groupBy === g ? 'bg-[#6B3470] text-white' : 'text-[#6E5E70] hover:text-[#2A1A2C]'}`}>
+                          {g === 'DATE' ? 'Date' : g === 'MONTH' ? 'Month' : g === 'YEAR' ? 'Year' : 'Off'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                {listError ? (
+                  <div className="m-4 p-4 rounded-xl bg-rose-50 text-sm text-rose-700">Failed to load memos: {listError}</div>
+                ) : viewMode === 'LIST' ? (
+                  <div className="flex-1 min-h-0 overflow-auto">{renderListTable()}</div>
+                ) : (
+                  <div className="flex-1 min-h-0 overflow-y-auto p-3">
+                    {loadingList ? (
+                      <LoadingState fullHeight={false} />
+                    ) : rows.length === 0 ? (
+                      <div className="text-center py-12 text-[#6E5E70]">
+                        <p className="text-sm font-semibold text-[#2A1A2C]">{anyFilterActive ? 'No memos match these filters.' : 'No FAR Overseas memos yet.'}</p>
+                        <p className="text-xs mt-1">{anyFilterActive ? 'Try clearing the filters.' : 'Click "Upload Document" to get started.'}</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {groups.map(g => {
+                          const gIdr = g.rows.reduce((s, r) => s + (totalInIdr(r) || 0), 0);
+                          return (
+                            <div key={g.key}>
+                              {groupingActive && (
+                                <div className="flex items-baseline justify-between gap-2 mb-2 px-0.5">
+                                  <p className="text-base font-extrabold text-[#2A1A2C]">{g.label} <span className="text-xs font-medium text-[#6E5E70] ml-1">{g.rows.length} memo{g.rows.length === 1 ? '' : 's'} on this page</span></p>
+                                  <p className="text-xs text-[#6E5E70]">Total ≈ <span className="font-bold text-[#2A1A2C]">{formatIdr(gIdr)}</span></p>
                                 </div>
                               )}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+                                {g.rows.map(r => <MemoCard key={r.id} r={r} cost={costMap[r.id]} dueWindow={dueWindow} actions={rowActions} />)}
+                              </div>
                             </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-            )}
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
 
-            {/* Card view (2026-09) -- tampilan ringkas grid, area scroll TERPISAH dari List (List
-                punya scroll ganda horizontal, Card cukup scroll vertikal biasa). Field yang
-                ditampilkan SENGAJA subset dari LIST_COLUMNS (bukan semua ~25 kolom) -- lihat
-                penjelasan di state `viewMode`: Card untuk browsing cepat, detail lengkap tetap
-                lewat "Approval" (modal `FarOverseasAirDetailModal.tsx`, TIDAK disentuh) atau
-                pindah ke List. */}
-            {viewMode === 'CARD' && (
-              <div className="flex-1 min-h-0 overflow-y-auto p-4">
-                {loadingList ? (
-                  <LoadingState fullHeight={false} />
-                ) : rows.length === 0 ? (
-                  <div className="text-center py-10 text-[#5A305A] text-sm italic">No FAR Overseas data yet. Click "Upload Document" to get started.</div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2.5">
-                    {rows.map((r) => {
-                      const costStatus = costStatusMap[r.id];
-                      const poParts = typeof r.po_ori === 'string' ? r.po_ori.split('+').map((s: string) => s.trim()).filter(Boolean) : [];
-                      return (
-                        <div key={r.id} className="bg-white border border-slate-200 rounded-xl shadow-sm p-3 flex flex-col gap-2 hover:border-[#5A305A]/40 transition-colors">
-                          {/* Wrapper `flex-1` di sekitar konten (No PO + info grid) supaya baris
-                              tombol di bawah SELALU nempel di tepi bawah card (`mt-auto`) --
-                              tanpa ini, tombol posisinya ikut naik-turun tergantung berapa
-                              banyak teks (Vendor/Vessel dst bisa 1-3 baris), padahal CSS Grid
-                              menstretch semua card 1 baris ke tinggi yang sama (card tertinggi
-                              di baris itu) -- laporan user "tombol tidak seragam". */}
-                          <div className="flex-1">
-                          {/* Urutan baris field KHUSUS card (2026-09, permintaan user) --
-                              BEDA dari urutan kolom LIST_COLUMNS di tabel List, JANGAN
-                              disamakan otomatis kalau List_COLUMNS berubah urutan ke depan:
-                              Ship Via (+badge) -> Invoice No/Date -> No PO -> Vendor ->
-                              Total Amount -> NOTE 1 (route_note). */}
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Ship Via</p>
-                              <p className="text-xs font-semibold text-[#5A305A] break-words leading-snug">{r.ship_via || <span className="italic text-slate-400 font-normal">-</span>}</p>
-                            </div>
-                            <div className="shrink-0 flex flex-col items-end gap-1 max-w-[55%]">
-                              {r.memo_title && <p className="text-[10px] font-semibold text-[#5A305A]/70 text-right break-words leading-snug">{r.memo_title}</p>}
-                              <ApprovalBadge status={r.approval_status} compact />
-                              <CostBadge status={costStatus} compact />
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-xs mt-2">
-                            <div>
-                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Invoice No</p>
-                              <p className="text-[#5A305A] break-words">{r.no_invoice || <span className="italic text-slate-400">-</span>}</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Inv Date</p>
-                              <p className="text-[#5A305A]">{formatDateID(r.invoice_date)}</p>
-                            </div>
-                            <div className="col-span-2">
-                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Vendor</p>
-                              <p className="text-[#5A305A] break-words">{r.vendor || <span className="italic text-slate-400">-</span>}</p>
-                            </div>
-                            <div className="col-span-2">
-                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">No PO</p>
-                              <p className="text-[#5A305A] break-words leading-snug">
-                                {poParts.length > 0 ? poParts[0] : <span className="italic text-slate-400">-</span>}
-                                {poParts.length > 1 && <span className="text-slate-400"> (+{poParts.length - 1} more)</span>}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Total Amount</p>
-                              <p className="text-[#5A305A] font-semibold">{fmtTotalAmount(r.total_amount, r)}</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Qty/Weight</p>
-                              <p className="text-[#5A305A] break-words">{r.qty ?? <span className="italic text-slate-400">-</span>}/{r.weight_unit || <span className="italic text-slate-400">-</span>}</p>
-                            </div>
-                            <div className="col-span-2">
-                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Notes 1</p>
-                              <p className="text-[#5A305A] break-words leading-snug">{r.route_note || <span className="italic text-slate-400">-</span>}</p>
-                            </div>
-                          </div>
-                          </div>
-                          {/* Tombol jadi icon-only (2026-09, "buat lebih compact") -- label teks
-                              dihapus, `title` tooltip tetap dipertahankan utk aksesibilitas --
-                              supaya 5 tombol tetap muat 1 baris walau card menyempit
-                              (xl:grid-cols-4, lihat di atas). */}
-                          <div className="flex items-center gap-1 pt-1.5 border-t border-slate-100 mt-auto">
-                            <button
-                              onClick={() => navigate(`/direct-loading/${r.id}`)}
-                              title="Approval"
-                              className="flex-1 flex items-center justify-center px-2 py-1 rounded-lg border border-slate-200 bg-white text-[#5A305A] hover:bg-slate-50 transition-colors"
-                            >
-                              <ClipboardCheck size={13} />
-                            </button>
-                            <button
-                              onClick={() => setCostModalRow(r)}
-                              title="Cost Validation"
-                              className="flex-1 flex items-center justify-center px-2 py-1 rounded-lg border border-slate-200 bg-white text-[#5A305A] hover:bg-slate-50 transition-colors"
-                            >
-                              <ClipboardList size={13} />
-                            </button>
-                            <button
-                              onClick={() => setDocsModalRow(r)}
-                              title="Dokumen"
-                              className="flex-1 flex items-center justify-center px-2 py-1 rounded-lg border border-slate-200 bg-white text-[#5A305A] hover:bg-slate-50 transition-colors"
-                            >
-                              <FolderOpen size={13} />
-                            </button>
-                            {canEditDirectLoading && (
-                              <button
-                                onClick={() => setCardEditRow(r)}
-                                title="Edit this memo"
-                                className="flex-1 flex items-center justify-center px-2 py-1 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
-                              >
-                                <Edit3 size={13} />
-                              </button>
-                            )}
-                            {canEditDirectLoading && (
-                              <button
-                                onClick={() => openDeleteConfirm(r)}
-                                title="Delete this memo"
-                                className="flex-1 flex items-center justify-center px-2 py-1 rounded-lg border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 transition-colors"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+                {rows.length > 0 && (
+                  <div className="flex max-sm:flex-col justify-between items-center px-4 py-2.5 border-t border-[#EADFD6] bg-white gap-3 shrink-0">
+                    <div className="text-xs text-[#6E5E70]">
+                      Showing <span className="font-bold text-[#2A1A2C]">{listStartIndex + 1}–{Math.min(listStartIndex + pageSize, totalRecords)}</span> of <span className="font-bold text-[#2A1A2C]">{totalRecords}</span> records
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={validPage === 1} className="px-3 py-1.5 rounded-lg border border-[#EADFD6] bg-white text-[#2A1A2C] text-xs font-semibold hover:bg-[#F5EDF3] disabled:opacity-50 disabled:cursor-not-allowed">Prev</button>
+                      <span className="text-xs text-[#6E5E70] min-w-[80px] text-center">Page <span className="font-bold text-[#2A1A2C]">{validPage}</span> of {totalPages}</span>
+                      <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={validPage === totalPages} className="px-3 py-1.5 rounded-lg border border-[#EADFD6] bg-white text-[#2A1A2C] text-xs font-semibold hover:bg-[#F5EDF3] disabled:opacity-50 disabled:cursor-not-allowed">Next</button>
+                    </div>
                   </div>
                 )}
               </div>
-            )}
-
-            {/* Footer Pagination -- pola sama seperti SharedDataTable.tsx (halaman Audit Sea & Air) */}
-            {rows.length > 0 && (
-              <div className="flex max-sm:flex-col justify-between items-center px-5 py-3 border-t border-slate-200 bg-slate-50 gap-3 shrink-0">
-                <div className="text-xs text-[#5A305A]">
-                  Menampilkan <span className="font-semibold text-[#5A305A]">{listStartIndex + 1}-{Math.min(listStartIndex + pageSize, totalRecords)}</span> dari <span className="font-semibold text-[#5A305A]">{totalRecords}</span> record
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                    disabled={validPage === 1}
-                    className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[#5A305A] text-xs font-semibold hover:bg-slate-100 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
-                  >
-                    Prev
-                  </button>
-                  <span className="text-xs text-[#5A305A] font-medium min-w-[80px] text-center">
-                    Page <span className="font-bold text-[#5A305A]">{validPage}</span> of {totalPages}
-                  </span>
-                  <button
-                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                    disabled={validPage === totalPages}
-                    className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[#5A305A] text-xs font-semibold hover:bg-slate-100 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+            </>
+          )}
         </main>
       </div>
 
-      {hasUnsavedChanges && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] bg-white rounded-full shadow-[0_8px_30px_rgba(0,0,0,0.12)] border border-slate-200 p-2 flex items-center gap-3 pr-4">
-          <div className="w-10 h-10 rounded-full bg-amber-100 flex justify-center items-center text-amber-600 shrink-0">
-            <AlertTriangle size={18} />
-          </div>
-          <div>
-            <p className="text-sm font-bold text-[#5A305A] leading-none">{changedRowIds.length} row(s) have unsaved changes</p>
-            <p className="text-[10px] text-[#5A305A]/70 mt-1">Click save to update the database</p>
-          </div>
-          <button
-            onClick={handleDiscardAllEdits}
-            disabled={savingEdits}
-            className="ml-2 px-3 py-2 rounded-full border border-slate-200 text-[#5A305A] text-xs font-semibold hover:bg-slate-50 disabled:opacity-50 transition-all"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSaveAllEdits}
-            disabled={savingEdits}
-            className="px-4 py-2 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white text-xs font-bold disabled:opacity-50 transition-all flex items-center gap-1.5"
-          >
-            <Save size={14} /> {savingEdits ? 'Saving...' : 'Save All'}
-          </button>
-        </div>
+      {selected && (
+        // Fragment ber-key: memo lain dibuka (deep link berubah) -> modal di-mount ulang dgn
+        // state bersih (state `rec` internalnya diinisialisasi dari `record` sekali saja).
+        <React.Fragment key={selected.id}>
+          <FarOverseasAirDetailModal
+            record={selected}
+            onClose={() => { setSelected(null); if (deepLinkId) navigate('/direct-loading', { replace: true }); }}
+            onChanged={refreshList}
+            onOpenEdit={(rec) => { setIsNewManualRow(false); setEditSaveError(null); setEditRow(rec); }}
+            refreshToken={detailRefreshToken}
+          />
+        </React.Fragment>
       )}
 
-      {selected && (
-        <FarOverseasAirDetailModal
-          record={selected}
-          onClose={() => { setSelected(null); if (deepLinkId) navigate('/direct-loading', { replace: true }); }}
+      {costModalRow && (
+        <FarOverseasAirCostValidationModal
+          farOverseasId={costModalRow.id}
+          approvalStatus={costModalRow.approval_status}
+          onClose={() => setCostModalRow(null)}
           onChanged={refreshList}
         />
       )}
 
-      {costModalRow && (
-        <FarOverseasAirCostValidationModal farOverseasId={costModalRow.id} onClose={() => setCostModalRow(null)} />
-      )}
+      {docsModalRow && <FarOverseasAirDocumentsModal record={docsModalRow} onClose={() => setDocsModalRow(null)} />}
 
-      {docsModalRow && (
-        <FarOverseasAirDocumentsModal record={docsModalRow} onClose={() => setDocsModalRow(null)} />
+      {editRow && (
+        <FarOverseasAirEditMemoModal
+          row={editRow}
+          ctx={{
+            getVal, setVal, pendingForRow: pendingEdits[editRow.id], picUsers, companyOptions, memoTitleOptions, addMemoTitleOption,
+            tarifVendorRows, costCity: costMap[editRow.id]?.destinationCity || '', phase2,
+          }}
+          readOnly={!canEditDirectLoading || isMemoLocked(editRow.approval_status)}
+          readOnlyReason={!canEditDirectLoading ? 'View only — you do not have edit access to FAR Overseas.' : 'Locked — Prepared By has signed. The memo opens again only after a Reject.'}
+          receiptEditable={phase2 && canEditDirectLoading && isMemoLocked(editRow.approval_status) && !editRow.paid_at}
+          isNew={isNewManualRow}
+          saving={savingEdits}
+          saveError={editSaveError}
+          onCancel={() => { setEditSaveError(null); closeEditModal(); }}
+          onSave={saveEditModal}
+          onOpenWeight={(r) => setWeightModalRow(r)}
+        />
       )}
 
       {weightModalRow && (
         <FarOverseasAirWeightBreakdownModal
           record={weightModalRow}
+          readOnly={!canEditDirectLoading}
           onClose={() => setWeightModalRow(null)}
-          onSaved={() => fetchList()}
-        />
-      )}
-
-      {cardEditRow && (
-        <FarOverseasAirCardEditModal
-          row={cardEditRow}
-          costStatus={costStatusMap[cardEditRow.id]}
-          ctx={{ onOpenWeightModal: setWeightModalRow, editingRowId: cardEditRow.id, getVal, setVal, expandedPoRows, togglePoExpanded, picUsers, costCityMap, memoTitleOptions, addMemoTitleOption, tarifVendorRows, companyOptions }}
-          saving={savingEdits}
-          onClose={handleCardEditCancel}
-          onCancel={handleCardEditCancel}
-          onSave={async () => {
-            const wasNew = isNewManualRow;
-            await handleSaveAllEdits([cardEditRow.id]);
-            setCardEditRow(null);
-            setIsNewManualRow(false);
-            if (wasNew) refreshList();
+          onSaved={(updates) => {
+            setEditRow((prev: any) => (prev && prev.id === weightModalRow.id ? { ...prev, ...updates } : prev));
+            // Kalau kapal per PO sedang diedit (po_list pending), KG yang baru disimpan WAJIB ikut
+            // dimasukkan ke po_list pending -- kalau tidak, Save memo menimpa KG dgn nilai lama.
+            setPendingEdits(prev => {
+              const rowEdits = prev[weightModalRow.id];
+              if (!rowEdits || !Array.isArray(rowEdits.po_list)) return prev;
+              const merged = rowEdits.po_list.map((p: any, i: number) => ({ ...p, weight_kg: updates.po_list[i]?.weight_kg ?? p.weight_kg }));
+              return { ...prev, [weightModalRow.id]: { ...rowEdits, po_list: merged, dominant_company_code: updates.dominant_company_code } };
+            });
+            setDetailRefreshToken(t => t + 1);
+            fetchList();
           }}
         />
       )}
 
       {deleteConfirmRow && (
-        <DeleteConfirmModal
-          record={deleteConfirmRow}
-          deleting={deleting}
-          error={deleteError}
-          onClose={() => setDeleteConfirmRow(null)}
-          onConfirm={confirmDelete}
-        />
+        <DeleteConfirmModal record={deleteConfirmRow} deleting={deleting} error={deleteError} onClose={() => setDeleteConfirmRow(null)} onConfirm={confirmDelete} />
       )}
 
       {showUploadModal && (
-        <FarOverseasAirUploadModal
-          onClose={() => setShowUploadModal(false)}
-          onJobStarted={handleJobStarted}
-          onSentNoJob={handleSentNoJob}
-        />
+        <FarOverseasAirUploadModal onClose={() => setShowUploadModal(false)} onJobStarted={handleJobStarted} onSentNoJob={handleSentNoJob} />
       )}
 
-      {showExportModal && (
-        <ExportModal
-          title="FAR Overseas"
-          cols={FAR_EXPORT_COLS}
+      {exportMode && (
+        <React.Fragment key={exportMode}><ExportModal
+          title={exportMode === 'PO' ? 'FAR Overseas (per PO)' : 'FAR Overseas'}
+          cols={exportMode === 'PO' ? FAR_EXPORT_PO_COLS : FAR_EXPORT_COLS}
           fetchData={getExportData}
-          dateFieldLabel="Filter Tgl. Invoice"
-          onClose={() => setShowExportModal(false)}
-        />
+          dateFieldLabel="Invoice date filter"
+          onClose={() => setExportMode(null)}
+        /></React.Fragment>
       )}
 
-      {/* Antrian proses (PENDING/FAILED global) -- modal, bukan panel inline, supaya posisi
-          munculnya selalu konsisten di tengah layar (bukan "menggantung" di atas tombolnya). */}
       {showQueuePanel && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-[#2A1A2C]/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4" style={{ fontFamily: FAR_FONT_FAMILY }}>
           <div className="bg-white rounded-2xl shadow-2xl w-[85vw] max-w-6xl max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0">
+            <div className="flex items-center justify-between p-5 border-b border-[#EADFD6] shrink-0">
               <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2.5">
-                  <Clock size={19} className="text-[#5A305A]" />
-                  <h2 className="text-lg font-bold text-[#5A305A]">Processing Queue</h2>
-                </div>
+                <div className="flex items-center gap-2.5"><Clock size={19} className="text-[#6B3470]" /><h2 className="text-lg font-bold text-[#2A1A2C]">Processing Queue</h2></div>
                 {queue.some(i => i.status === 'SUCCESS' || i.status === 'FAILED') && (
-                  <button
-                    onClick={clearCompletedFailedQueue}
-                    className="text-[11px] font-semibold text-[#5A305A] hover:text-[#5A305A] bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-lg transition-colors"
-                  >
-                    ✕ Clear Completed/Failed
-                  </button>
+                  <button onClick={clearCompletedFailedQueue} className="text-[11px] font-semibold text-[#6B3470] bg-[#F5EDF3] hover:bg-[#EADFD6] px-2.5 py-1 rounded-lg transition-colors">Clear completed/failed</button>
                 )}
               </div>
-              <button onClick={() => setShowQueuePanel(false)} className="text-[#5A305A] hover:text-[#5A305A] p-1"><X size={20} /></button>
+              <button onClick={() => setShowQueuePanel(false)} aria-label="Close" className="text-[#6E5E70] hover:text-[#2A1A2C] p-1"><X size={20} /></button>
             </div>
             <div className="p-5 overflow-y-auto">
               {queue.length === 0 ? (
-                <p className="text-sm text-[#5A305A] italic text-center py-8">No documents in the queue.</p>
+                <p className="text-sm text-[#6E5E70] italic text-center py-8">No documents in the queue.</p>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                   {queue.map(item => <QueueCard key={item.id} item={item} onDismiss={dismissQueueItem} />)}

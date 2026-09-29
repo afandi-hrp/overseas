@@ -4662,9 +4662,20 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       // Update terpisah (bukan parameter RPC fn_undraft_pib/cn yg sudah ada -- RPC ini dibuat
       // user sendiri di Supabase, JANGAN diubah signature-nya tanpa konfirmasi) via .update()
       // langsung, pola sama handleInlineSaveRow (RLS courier_audit yg menggerbangi, bukan RPC).
-      const todayIso = new Date().toISOString().slice(0, 10);
+      // Revisi 2026-09-28: HANYA kalau masih kosong -- nilai yg sudah ada (mis. diisi via Edit di
+      // tab Draft, tanggal lama/baru apa pun) TIDAK BOLEH ditimpa. Syarat `.is(null)` ada DI DALAM
+      // 1 perintah UPDATE yg sama (atomik, bukan baca-dulu-lalu-tulis); baris yg sudah terisi =
+      // 0 baris ter-update, bukan error. "Kosong" = NULL saja -- app selalu simpan '' sbg null
+      // (EditModal/handleInlineSaveRow).
+      // Tanggal LOKAL (bukan toISOString() = UTC -- dulu Undraft jam 00:00-06:59 WIB terisi
+      // tanggal kemarin).
+      const now = new Date();
+      const todayIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       const targetTable = isPib ? 'tabel_audit_pib' : 'tabel_audit_cn';
-      const { error: docAcceptanceError } = await supabase.from(targetTable).update({ doc_acceptance: todayIso }).eq('id', record.id);
+      const { error: docAcceptanceError } = await supabase.from(targetTable)
+        .update({ doc_acceptance: todayIso })
+        .eq('id', record.id)
+        .is('doc_acceptance', null);
       if (docAcceptanceError) console.error('Failed to auto-fill Doc Acceptance on undraft:', docAcceptanceError);
       fetchRecords();
     } catch (e: any) {

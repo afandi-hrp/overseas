@@ -1,121 +1,64 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
-import { X, Stamp, Ban, ChevronDown, ChevronUp, Printer } from 'lucide-react';
-import { formatMoney, formatDateID, formatDateMemo, APPROVAL_STATUS_META, LOGO_ASSETS, parseJsonField, computeCostStatus } from '../utils/FarOverseasAirHelpers';
+import { X, Stamp, Ban, ChevronDown, ChevronUp, Printer, FolderOpen, ClipboardList, MoreHorizontal, CheckCircle2, AlertTriangle, Clock, Info, Undo2, History, Bell, Lock, Pencil, Wallet } from 'lucide-react';
+import {
+  formatMoney, formatDateShort, formatDateTimeID, COST_STATUS_META, parseJsonField, computeCostStatus,
+  nextStepForStatus, STEP_LABEL, STEP_ORDER, getApprovalEntries, findApprovalEntry, getWaitInfo, completedStepCount,
+  getStatusLabel, getFinanceStage, isMemoLocked, fetchCanSign, fetchPreparedByBlockers, fetchMemoLog, implicitFxRate,
+  ensureFarFont, FAR_FONT_FAMILY, type ApprovalStep, type SignerConfig, type MemoLogEntry,
+} from '../utils/FarOverseasAirHelpers';
+import FarOverseasMemoPaper, { MemoPaymentLine } from './FarOverseasMemoPaper';
+import FarOverseasAirCostValidationModal from './FarOverseasAirCostValidationModal';
+import FarOverseasAirDocumentsModal, { getMemoDocs } from './FarOverseasAirDocumentsModal';
 
-type SignerConfig = {
-  company_code: string;
-  company_name_full: string;
-  logo_asset_key: string | null;
-  tier1_role: string | null;
-  tier2_name: string | null;
-  tier2_role: string | null;
-  tier3_name: string | null;
-  tier3_role: string | null;
-};
+// Modal Approval memo FAR Overseas Air. ATURAN (jangan dilonggarkan):
+// - Rantai WAJIB berurutan Prepared By (TIER1) -> PIC Shipment -> SPV (TIER2) -> Director (TIER3).
+// - Gating GANDA: `canEdit('direct_loading')` DAN eligible tahap aktif. Eligible diambil dari RPC
+//   `fn_far_overseas_can_sign` (tahap 2: termasuk penandatangan per PT/rantai IMI); kalau RPC itu
+//   belum ada (sql/027 belum dijalankan) fallback ke aturan lama: PIC = `pic_user_id`, lainnya
+//   `canApproveTier` (TANPA bypass Admin). Server menegakkan ulang di `approve_far_overseas_air`.
+// - Satu klik sign; nama = `defaultNamaForStep`. Reject hanya utk eligible tahap AKTIF.
+// - Syarat Prepared By: tahap 2 dari `fn_far_overseas_prepared_by_blockers` (SAMA dgn guard RPC);
+//   fallback tahap 1 = Notes (Manual) wajib kalau unit price tidak MATCH (`tier1BlockedByNotes`).
+// - Tahap 2: memo REJECTED kembali ke Prepared By (boleh sign ulang), Undo last sign (hanya
+//   penanda tangan terakhir), Remind (tercatat di audit trail, belum kirim notifikasi), audit trail.
 
-type ApprovalTier = number | 'PIC';
-type ApprovalEntry = { tier: ApprovalTier; nama: string; jabatan: string; approved_at: string; user_email?: string | null };
-
-// Alur approval FAR Overseas Air (2026-09, VERSI FINAL) -- PIC SEKARANG BAGIAN dari rantai utama
-// & WAJIB berurutan: Prepared By (Exim) -> PIC -> SPV -> Director. Setiap tahap gating-nya
-// GANDA: (1) `canEditDirectLoading` (akses edit halaman ini, RBAC biasa) DAN (2)
-// `canApproveTier('direct_loading', step)` dari AuthContext -- user ITU SENDIRI (bukan role-nya)
-// harus punya baris `user_approval_tiers` utk halaman `direct_loading` yang tier-nya PERSIS
-// cocok dgn tahap yang sedang menunggu (diatur di halaman Kelola Role & Akses, panel "Role per
-// User"). Admin TIDAK otomatis lolos gerbang ke-2 ini (SENGAJA, atas permintaan user) -- Admin
-// tetap harus di-assign jabatan approval-nya sendiri kalau mau bisa approve. Gating ini ditegakkan DI DUA
-// TEMPAT: (a) frontend (tombolnya disembunyikan/diganti pesan kalau tidak eligible, lihat render
-// di bawah) DAN (b) server, lewat RPC `approve_far_overseas_air` (SECURITY DEFINER, cek jabatan +
-// urutan status di dalamnya) yang dipanggil `handleApprove` -- BUKAN `.update()` langsung lagi ke
-// `rekapan_far_overseas_air` (lihat CLAUDE.md utk SQL migration RPC ini, WAJIB dijalankan manual
-// dulu di Supabase sebelum approval bisa jalan sama sekali). SATU KLIK LANGSUNG approve (2026-09,
-// permintaan user) -- TIDAK ADA lagi modal konfirmasi nama di tengah (`ApprovalConfirmModal`
-// DIHAPUS TOTAL, jangan reintroduce), nama diambil langsung dari `defaultNamaForStep(step)` saat
-// tombol diklik.
-type ApprovalStep = 'TIER1' | 'PIC' | 'TIER2' | 'TIER3';
-const STEP_LABEL: Record<ApprovalStep, string> = { TIER1: 'Prepared By (Exim)', PIC: 'PIC', TIER2: 'SPV', TIER3: 'Director' };
 const STEP_ACTION_LABEL: Record<ApprovalStep, string> = {
-  TIER1: 'Approve — Prepared By',
-  PIC: 'Approve — PIC',
-  TIER2: 'Approve — SPV',
-  TIER3: 'Approve — Director',
+  TIER1: 'Sign as Prepared By',
+  PIC: 'Sign as PIC Shipment',
+  TIER2: 'Sign as Exim Supervisor',
+  TIER3: 'Sign as Director',
 };
-
-// Status "menunggu tahap apa" -- lihat juga APPROVAL_STATUS_META (FarOverseasAirHelpers.ts) utk
-// label badge-nya. null = tidak ada tahap tersisa (APPROVED/REJECTED).
-function nextStepForStatus(status: string | null | undefined): ApprovalStep | null {
-  if (!status || status === 'PENDING') return 'TIER1';
-  if (status === 'TIER1_DONE') return 'PIC';
-  if (status === 'PIC_DONE') return 'TIER2';
-  if (status === 'TIER2_DONE') return 'TIER3';
-  return null;
-}
-
-function CompanyLogo({ signer }: { signer: SignerConfig | null }) {
-  const asset = signer?.company_code ? LOGO_ASSETS[signer.company_code] : null;
-  if (asset) {
-    return <img src={asset} alt={signer?.company_name_full || 'Logo'} className="h-16 object-contain shrink-0" />;
-  }
-  // Fallback teks nama perusahaan hanya kalau logonya belum ada -- supaya header tidak kosong.
-  return (
-    <div className="text-base font-black text-[#5A305A] leading-tight uppercase">
-      {signer?.company_name_full || '-'}
-    </div>
-  );
-}
-
-// Baris "Label : Value" ala dokumen memo cetak resmi -- label lebar tetap supaya titik dua sejajar.
-function MemoField({ label, value, bold, labelWidth = 'w-32' }: { label: string; value: React.ReactNode; bold?: boolean; labelWidth?: string }) {
-  return (
-    <div className="flex items-start gap-2">
-      <span className={`${labelWidth} shrink-0 text-[#5A305A]`}>{label}</span>
-      <span className="shrink-0 text-[#5A305A]">:</span>
-      <span className={`text-[#5A305A] break-words ${bold ? 'font-bold' : ''}`}>{value}</span>
-    </div>
-  );
-}
-
-function SignatureColumn({ label, role, entry, defaultNama, nameOverride }: { label: string; role: string | null; entry?: ApprovalEntry; defaultNama?: string | null; nameOverride?: string | null }) {
-  const nama = nameOverride !== undefined ? nameOverride : (entry?.nama || defaultNama || null);
-  return (
-    <div className="flex-1 text-center px-3">
-      <p className="text-xs text-[#5A305A] mb-14">{label}</p>
-      <div className="border-b border-[#5A305A] mb-1 h-10 flex items-end justify-center pb-1">
-        <span className="text-sm font-semibold text-[#5A305A] uppercase">{nama || ''}</span>
-      </div>
-      <p className="text-xs font-bold text-[#5A305A] uppercase">{nama || '( _______________ )'}</p>
-      <p className="text-[11px] text-[#5A305A]/70 mt-0.5">{role || '-'}</p>
-      <p className="text-[10px] text-[#5A305A]/60 mt-2">Tanggal: {entry?.approved_at ? formatDateID(entry.approved_at) : '-'}</p>
-    </div>
-  );
-}
+// Status -> tahap yang BARU SAJA ditandatangani (utk Undo last sign).
+const LAST_SIGNED_STEP: Record<string, ApprovalStep> = { TIER1_DONE: 'TIER1', PIC_DONE: 'PIC', TIER2_DONE: 'TIER2', APPROVED: 'TIER3' };
 
 function RejectModal({ onConfirm, onClose, submitting }: { onConfirm: (reason: string) => void; onClose: () => void; submitting: boolean }) {
   const [reason, setReason] = useState('');
+  const tooShort = reason.trim().length < 5;
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
-        <h3 className="font-bold text-[#5A305A] mb-1">Reject Memo</h3>
-        <p className="text-xs text-[#5A305A] mb-4">The rejection reason will be saved in the memo notes.</p>
+    <div className="fixed inset-0 bg-[#2A1A2C]/50 backdrop-blur-sm z-[80] flex items-end sm:items-center justify-center sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl sm:max-w-sm w-full p-6">
+        <h3 className="font-bold text-[#2A1A2C] mb-1">Reject memo</h3>
+        <p className="text-xs text-[#6E5E70] mb-4">The memo goes back to Prepared By and all signatures are removed. The reason is shown on the memo.</p>
         <textarea
           value={reason}
           onChange={e => setReason(e.target.value)}
           autoFocus
           rows={3}
-          placeholder="Explain the reason for rejection..."
-          className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm mb-5 focus:outline-none focus:ring-2 focus:ring-rose-200 focus:border-rose-400"
+          placeholder="Reason for rejection (min. 5 characters)..."
+          className="w-full border border-[#EADFD6] rounded-xl px-3 py-2 text-sm mb-1 focus:outline-none focus:ring-2 focus:ring-rose-200 focus:border-rose-400"
         />
+        <p className={`text-[11px] mb-4 ${tooShort && reason.length > 0 ? 'text-rose-600' : 'text-[#6E5E70]'}`}>{reason.trim().length}/5 characters minimum</p>
         <div className="grid grid-cols-2 gap-2">
-          <button onClick={onClose} disabled={submitting} className="py-2.5 rounded-xl border border-slate-200 text-[#5A305A] font-semibold text-sm hover:bg-slate-50 transition-all disabled:opacity-50">
+          <button onClick={onClose} disabled={submitting} className="min-h-[44px] rounded-xl border border-[#EADFD6] text-[#2A1A2C] font-semibold text-sm hover:bg-[#F5EDF3] transition-all disabled:opacity-50">
             Cancel
           </button>
           <button
             onClick={() => onConfirm(reason.trim())}
-            disabled={submitting || !reason.trim()}
-            className="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-sm transition-all disabled:opacity-50"
+            disabled={submitting || tooShort}
+            className="min-h-[44px] rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-sm transition-all disabled:opacity-50"
           >
             {submitting ? 'Saving...' : 'Reject'}
           </button>
@@ -125,28 +68,82 @@ function RejectModal({ onConfirm, onClose, submitting }: { onConfirm: (reason: s
   );
 }
 
-export default function FarOverseasAirDetailModal({ record, onClose, onChanged }: { record: any; onClose: () => void; onChanged?: () => void }) {
+function Banner({ tone, icon, children, action }: { tone: 'red' | 'amber' | 'grey' | 'green'; icon: React.ReactNode; children: React.ReactNode; action?: React.ReactNode }) {
+  const cls = tone === 'red' ? 'bg-rose-50 border-rose-200 text-rose-800'
+    : tone === 'amber' ? 'bg-amber-50 border-amber-200 text-amber-900'
+    : tone === 'green' ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+    : 'bg-white border-[#EADFD6] text-[#6E5E70]';
+  return (
+    <div className={`flex items-start justify-between gap-3 rounded-xl border px-4 py-2.5 text-xs print:hidden ${cls}`}>
+      <div className="flex items-start gap-2 min-w-0"><span className="shrink-0 mt-0.5">{icon}</span><div className="min-w-0">{children}</div></div>
+      {action && <div className="shrink-0 flex items-center gap-1.5">{action}</div>}
+    </div>
+  );
+}
+
+const LOG_ACTION_LABEL: Record<string, string> = {
+  UPLOAD: 'Uploaded', EDIT: 'Edited', SIGN: 'Signed', UNDO_SIGN: 'Undid last sign', REJECT: 'Rejected',
+  CONFIRM_AI: 'Confirmed AI finding', REMIND: 'Reminder', FINANCE_ACCEPT: 'Received by Finance', PAID: 'Paid',
+};
+function describeLog(e: MemoLogEntry): string {
+  if (e.action === 'EDIT') return `${e.field}: ${e.old_value ?? '—'} → ${e.new_value ?? '—'}`;
+  if (e.action === 'SIGN' || e.action === 'REJECT' || e.action === 'REMIND') return `${e.field ? STEP_LABEL[e.field as ApprovalStep] || e.field : ''}${e.note ? ` — ${e.note}` : ''}`;
+  if (e.action === 'CONFIRM_AI') return `${e.field || ''}${e.note ? ` — ${e.note}` : ''}`;
+  return e.note || '';
+}
+
+export default function FarOverseasAirDetailModal({ record, onClose, onChanged, onOpenEdit, refreshToken }: {
+  record: any;
+  onClose: () => void;
+  onChanged?: () => void;
+  onOpenEdit?: (rec: any) => void;
+  refreshToken?: number;
+}) {
   const { user, profile, canEdit, canApproveTier } = useAuth();
   const canEditDirectLoading = canEdit('direct_loading');
   const [rec, setRec] = useState(record);
   const [signer, setSigner] = useState<SignerConfig | null>(null);
   const [showPoDetail, setShowPoDetail] = useState(false);
   const [showReject, setShowReject] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showCost, setShowCost] = useState(false);
+  const [showDocs, setShowDocs] = useState(false);
+  const [showLog, setShowLog] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
-  // Notes (Manual) dari Cost Validation (`FarOverseasAirCostValidationModal.tsx`, kolom
-  // `cost_validasi_far_overseas_air.notes_manual`) -- syarat tambahan sebelum tahap Prepared By
-  // (Exim/TIER1) bisa approve, TAPI HANYA kalau baris "Unit Price (from Description)" di Cost
-  // Validation TIDAK match (2026-09, GANTI dari "selalu wajib diisi" -- permintaan user: kalau
-  // baris itu MATCH, approval boleh langsung tanpa notes). Status match/tidak dihitung dari
-  // `expected`/`actual` baris `UNIT_PRICE_DARI_DESCRIPTION` (`cost_validation` jsonb array) via
-  // `computeCostStatus()` (SATU-SATUNYA fungsi hitung status cost di app ini, toleransi 3%,
-  // SAMA dipakai `handleSelectRate` di modal Cost Validation -- JANGAN duplikat logic ini).
-  // Fetch TERPISAH dari `rec` (tabel beda) -- `costNotesLoaded` mencegah pesan blokir sempat
-  // tampil keliru sebelum fetch ini selesai.
   const [costNotesManual, setCostNotesManual] = useState<string | null>(null);
   const [unitPriceCostStatus, setUnitPriceCostStatus] = useState<string | null>(null);
+  const [costStatus, setCostStatus] = useState<string | null>(null);
+  const [costCatatan, setCostCatatan] = useState<string | null>(null);
+  const [costExists, setCostExists] = useState(false);
   const [costNotesLoaded, setCostNotesLoaded] = useState(false);
+  const [costReloadKey, setCostReloadKey] = useState(0);
+  const [rpcEligible, setRpcEligible] = useState<boolean | null>(null);
+  const [serverBlockers, setServerBlockers] = useState<{ available: boolean; blockers: string[] } | null>(null);
+  const [log, setLog] = useState<MemoLogEntry[] | null>(null);
+  const [logReloadKey, setLogReloadKey] = useState(0);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const firstRefresh = useRef(true);
+
+  const phase2 = rec != null && 'payment_type' in rec;
+  const nextStep = nextStepForStatus(rec.approval_status);
+  // Tahap yang bisa DITANDATANGANI sekarang: tahap 2 -> memo REJECTED kembali ke Prepared By.
+  const signStep: ApprovalStep | null = rec.approval_status === 'REJECTED' && phase2 ? 'TIER1' : nextStep;
+
+  useEffect(() => { ensureFarFont(); }, []);
+
+  const reloadRec = async () => {
+    const { data } = await supabase.from('rekapan_far_overseas_air').select('*').eq('id', rec.id).maybeSingle();
+    if (data) setRec(data);
+  };
+  // Halaman menaikkan `refreshToken` setelah Edit memo disimpan -> ambil ulang memo ini.
+  useEffect(() => {
+    if (firstRefresh.current) { firstRefresh.current = false; return; }
+    reloadRec();
+    setCostReloadKey(k => k + 1);
+    setLogReloadKey(k => k + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshToken]);
 
   useEffect(() => {
     const loadSigner = async () => {
@@ -158,10 +155,13 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
   }, [rec?.dominant_company_code]);
 
   useEffect(() => {
-    const loadCostNotes = async () => {
+    const loadCost = async () => {
       setCostNotesLoaded(false);
-      const { data } = await supabase.from('cost_validasi_far_overseas_air').select('notes_manual, cost_validation').eq('far_overseas_id', rec.id).maybeSingle();
+      const { data } = await supabase.from('cost_validasi_far_overseas_air').select('notes_manual, cost_validation, status, catatan').eq('far_overseas_id', rec.id).maybeSingle();
+      setCostExists(!!data);
       setCostNotesManual(data?.notes_manual ?? null);
+      setCostStatus(data?.status ?? null);
+      setCostCatatan(data?.catatan ?? null);
       const checks = parseJsonField(data?.cost_validation);
       const unitPriceRow = Array.isArray(checks) ? checks.find((c: any) => c?.row_key === 'UNIT_PRICE_DARI_DESCRIPTION') : null;
       const expected = unitPriceRow?.expected != null && unitPriceRow.expected !== '' ? Number(unitPriceRow.expected) : null;
@@ -169,99 +169,77 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
       setUnitPriceCostStatus(computeCostStatus(expected, actual));
       setCostNotesLoaded(true);
     };
-    loadCostNotes();
-  }, [rec?.id]);
+    loadCost();
+  }, [rec?.id, costReloadKey]);
+
+  // Eligibility & syarat dari SERVER (tahap 2). null/available=false -> fallback lokal.
+  useEffect(() => {
+    let cancelled = false;
+    if (!signStep) { setRpcEligible(null); return; }
+    fetchCanSign(rec.id, signStep).then(v => { if (!cancelled) setRpcEligible(v); });
+    return () => { cancelled = true; };
+  }, [rec.id, signStep, rec.pic_user_id, rec.dominant_company_code]);
+  useEffect(() => {
+    let cancelled = false;
+    if (signStep !== 'TIER1') { setServerBlockers(null); return; }
+    fetchPreparedByBlockers(rec.id).then(v => { if (!cancelled) setServerBlockers(v); });
+    return () => { cancelled = true; };
+  }, [rec.id, signStep, rec.updated_at, costReloadKey]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!phase2) { setLog(null); return; }
+    fetchMemoLog(rec.id).then(v => { if (!cancelled) setLog(v); });
+    return () => { cancelled = true; };
+  }, [rec.id, phase2, logReloadKey]);
+
+  useEffect(() => {
+    if (!showMenu) return;
+    const onDoc = (e: MouseEvent) => { if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowMenu(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [showMenu]);
 
   const showToast = (msg: string, type: 'success' | 'error') => {
     setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
+    setTimeout(() => setToast(null), 4000);
   };
 
-  const approvals: ApprovalEntry[] = Array.isArray(rec.approvals) ? rec.approvals : [];
-  const entryFor = (tier: ApprovalTier) => approvals.find(a => a.tier === tier);
-  const picEntry = entryFor('PIC');
-  const statusMeta = APPROVAL_STATUS_META[rec.approval_status] || APPROVAL_STATUS_META.PENDING;
+  const entries = getApprovalEntries(rec);
+  const doneCount = completedStepCount(rec.approval_status);
+  const wait = getWaitInfo(rec);
+  const fin = getFinanceStage(rec);
 
-  // Kolom "Disiapkan Oleh" tampilkan nama Exim Officer (approval tahap 1) DAN nama PIC
-  // berdampingan format "exim/pic" -- KEDUANYA HANYA muncul setelah tahap itu BENERAN di-approve
-  // (entryFor(1)/picEntry, dari `approvals` jsonb), TIDAK ADA fallback ke `rec.pic_name` lagi
-  // (2026-09, FIX -- SEBELUMNYA fallback ke `rec.pic_name` bikin nama PIC langsung nongol di
-  // memo cetak begitu admin/ops PILIH user di dropdown PIC List Memo, PADAHAL PIC-nya belum
-  // approve apa-apa. `pic_name` sekarang disinkronkan OTOMATIS dari dropdown -- lihat
-  // FarOverseasAirPage.tsx -- jadi tidak lagi aman dipakai sbg fallback tampilan pre-approval
-  // spt dulu waktu masih teks manual bebas. Konsisten dgn `eximName` yg dari awal MEMANG tidak
-  // py fallback serupa). Kalau salah satunya belum approve, tampilkan yang sudah approve saja.
-  const eximName = entryFor(1)?.nama || null;
-  const picDisplayName = picEntry?.nama || null;
-  const disiapkanNama = eximName && picDisplayName ? `${eximName}/${picDisplayName}` : (eximName || picDisplayName || null);
-
-  const nextStep = nextStepForStatus(rec.approval_status);
-
-  // Eligibility per tahap (2026-09, PIC digeser jadi assignment PER-MEMO): TIER1/TIER2/TIER3
-  // TETAP lewat `canApproveTier` (jabatan approval global dari Kelola Role & Akses, tidak
-  // berubah). TAHAP PIC SEKARANG BEDA MEKANISME TOTAL -- BUKAN lagi lewat `user_approval_tiers`
-  // sama sekali (dropdown "Jabatan Approval PIC" di Kelola Role & Akses TIDAK LAGI berpengaruh
-  // ke tahap ini, permintaan eksplisit user), cukup `auth.uid()` user yang login = `pic_user_id`
-  // yang DIPILIH ADMIN/OPS di kolom PIC List Memo (`FarOverseasAirPage.tsx`, dropdown terbatas ke
-  // user yang punya page access `direct_loading`, lihat CLAUDE.md). Kalau `pic_user_id` belum
-  // di-assign sama sekali, TIDAK ADA SIAPAPUN yang eligible utk tahap ini (termasuk Admin) sampai
-  // di-assign lewat List Memo. Guard yang sama DITEGAKKAN ULANG di server lewat RPC
-  // `approve_far_overseas_air`/`reject_far_overseas_air` (lihat CLAUDE.md) -- JANGAN cuma andalkan
-  // pengecekan di sini.
-  const isEligibleForStep = (step: ApprovalStep) =>
+  const localEligible = (step: ApprovalStep) =>
     step === 'PIC' ? (!!rec.pic_user_id && rec.pic_user_id === user?.id) : canApproveTier('direct_loading', step);
+  const isEligibleForStep = (step: ApprovalStep) => (step === signStep && rpcEligible != null ? rpcEligible : localEligible(step));
 
-  // Reject HANYA boleh dilakukan user yang eligible approve TAHAP YANG SEDANG AKTIF saat ini
-  // (2026-09, VERSI FINAL -- SEBELUMNYA cukup "punya jabatan approval apa saja utk halaman ini",
-  // TERNYATA itu bikin tombol Reject tetap kelihatan buat user yang tahapnya sendiri SUDAH
-  // selesai, mis. PIC yang sudah approve masih lihat tombol Reject pas memo sudah lanjut nunggu
-  // SPV -- jangan reintroduce versi lama itu). Sama syaratnya dgn tombol Approve (`isEligibleForStep`
-  // utk `nextStep`), jadi Reject & Approve SELALU muncul/hilang bareng utk siapa pun yang buka
-  // memo ini -- kalau `nextStep` null (sudah APPROVED/REJECTED) otomatis false juga.
-  const canReject = nextStep != null && isEligibleForStep(nextStep);
+  const canReject = nextStep != null && canEditDirectLoading && isEligibleForStep(nextStep);
 
-  // Gating tambahan (2026-09, GANTI dari "selalu wajib diisi" -- permintaan user): tahap
-  // Prepared By (Exim/TIER1) TIDAK BISA approve selama baris "Unit Price (from Description)" di
-  // Cost Validation TIDAK match DAN "Notes (Manual)" masih kosong. Kalau baris itu MATCH,
-  // approval boleh LANGSUNG tanpa notes sama sekali. HANYA berlaku utk TIER1 -- PIC/TIER2/TIER3
-  // TIDAK terpengaruh. `costNotesLoaded` cegah blokir "false positive" sesaat sebelum fetch
-  // `cost_validasi_far_overseas_air` selesai.
   const unitPriceIsMatch = unitPriceCostStatus === 'MATCH';
-  const tier1BlockedByNotes = nextStep === 'TIER1' && costNotesLoaded && !unitPriceIsMatch && !(costNotesManual && costNotesManual.trim());
+  const tier1BlockedByNotes = signStep === 'TIER1' && costNotesLoaded && !unitPriceIsMatch && !(costNotesManual && costNotesManual.trim());
+  const blockerList: string[] = signStep !== 'TIER1' ? []
+    : serverBlockers?.available ? serverBlockers.blockers
+    : tier1BlockedByNotes ? [costExists ? 'Unit price in Cost Validation is not a match — fill in "Notes (Manual)" first' : 'Cost validation for this memo is not available yet'] : [];
+  const prepBlocked = blockerList.length > 0;
 
   const roleForStep = (step: ApprovalStep) => step === 'TIER1' ? signer?.tier1_role : step === 'PIC' ? 'PIC' : step === 'TIER2' ? signer?.tier2_role : signer?.tier3_role;
   const defaultNamaForStep = (step: ApprovalStep) => step === 'TIER1' || step === 'PIC' ? (profile?.nama || user?.email || '') : step === 'TIER2' ? (signer?.tier2_name || '') : (signer?.tier3_name || '');
 
-  // Rantai approval WAJIB berurutan Prepared By -> PIC -> SPV -> Director (2026-09) -- SETIAP
-  // tahap sekarang mengubah `approval_status` (beda dari versi lama, PIC dulu independen &
-  // TIDAK mengubah status). Lewat RPC `approve_far_overseas_air` (SECURITY DEFINER, guard jabatan
-  // + urutan status DI DALAM function-nya, lihat CLAUDE.md) -- BUKAN `.update()` langsung lagi,
-  // supaya gating jabatan approval ditegakkan di server juga (bukan cuma sembunyikan tombol di
-  // frontend). RPC ini balikin `{approval_status, approvals}` hasil akhir, dipakai APA ADANYA
-  // buat update state lokal (bukan dihitung ulang di client) supaya selalu sinkron persis dgn DB.
   const handleApprove = async (step: ApprovalStep, nama: string) => {
     setSubmitting(true);
     const jabatan = step === 'PIC' ? 'PIC' : (roleForStep(step) || '-');
-    const { data, error } = await supabase.rpc('approve_far_overseas_air', {
-      p_id: rec.id,
-      p_step: step,
-      p_nama: nama,
-      p_jabatan: jabatan,
-    });
+    const { data, error } = await supabase.rpc('approve_far_overseas_air', { p_id: rec.id, p_step: step, p_nama: nama, p_jabatan: jabatan });
     setSubmitting(false);
     if (error || !data) {
-      showToast('Failed to save approval: ' + (error?.message || 'unknown error'), 'error');
+      showToast('Failed to sign: ' + (error?.message || 'unknown error'), 'error');
     } else {
-      setRec({ ...rec, approval_status: data.approval_status, approvals: data.approvals });
-      showToast(STEP_LABEL[step] + ' approval saved successfully.', 'success');
+      setRec({ ...rec, approval_status: data.approval_status, approvals: data.approvals, ...(step === 'TIER1' && phase2 ? { fx_locked_at: new Date().toISOString() } : {}) });
+      showToast(`Signed as ${STEP_LABEL[step]}.`, 'success');
+      setLogReloadKey(k => k + 1);
       onChanged?.();
     }
   };
 
-  // Lewat RPC `reject_far_overseas_air` (SECURITY DEFINER, guard jabatan approval + status
-  // saat ini DI DALAM function-nya, lihat CLAUDE.md) -- BUKAN `.update()` langsung lagi, supaya
-  // batasan "cuma user berjabatan approval yang boleh reject" ditegakkan di server juga (bukan
-  // cuma sembunyikan tombol di frontend), sama pola dengan `handleApprove`.
   const handleReject = async (reason: string) => {
     setSubmitting(true);
     const { data, error } = await supabase.rpc('reject_far_overseas_air', { p_id: rec.id, p_reason: reason });
@@ -269,235 +247,310 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged }
     if (error || !data) {
       showToast('Failed to reject memo: ' + (error?.message || 'unknown error'), 'error');
     } else {
-      setRec({ ...rec, approval_status: data.approval_status, notes: data.notes });
+      // Tahap 2: RPC mengosongkan tanda tangan -- ambil ulang baris supaya kertas memo sinkron.
+      setRec({ ...rec, approval_status: data.approval_status, notes: data.notes, ...(data.approvals ? { approvals: data.approvals, rejected_step: data.rejected_step } : {}) });
       setShowReject(false);
-      showToast('Memo rejected.', 'success');
+      showToast('Memo rejected — it goes back to Prepared By.', 'success');
+      if (phase2) reloadRec();
+      setLogReloadKey(k => k + 1);
       onChanged?.();
     }
   };
 
+  const lastStep = LAST_SIGNED_STEP[rec.approval_status || ''];
+  const lastEntry = lastStep ? findApprovalEntry(entries, lastStep) : undefined;
+  const canUndo = phase2 && canEditDirectLoading && !!lastEntry && !!user?.email && lastEntry.user_email === user.email && !rec.finance_received_at;
+  const handleUndo = async () => {
+    setShowMenu(false);
+    if (!window.confirm(`Undo your ${STEP_LABEL[lastStep]} signature?`)) return;
+    setSubmitting(true);
+    const { data, error } = await supabase.rpc('fn_far_overseas_undo_last_sign', { p_id: rec.id });
+    setSubmitting(false);
+    if (error || !data) { showToast('Failed to undo: ' + (error?.message || 'unknown error'), 'error'); return; }
+    setRec({ ...rec, approval_status: data.approval_status, approvals: data.approvals });
+    if (data.approval_status === 'PENDING') reloadRec();
+    showToast('Your signature was removed.', 'success');
+    setLogReloadKey(k => k + 1);
+    onChanged?.();
+  };
+
+  const handleRemind = async () => {
+    const { error } = await supabase.rpc('fn_far_overseas_log_reminder', { p_id: rec.id, p_note: null });
+    if (error) { showToast('Failed to record reminder: ' + error.message, 'error'); return; }
+    showToast('Reminder recorded in the audit trail. (No email/WhatsApp is sent yet.)', 'success');
+    setLogReloadKey(k => k + 1);
+  };
+
   const parsedPoList = parseJsonField(rec.po_list);
   const poList: any[] = Array.isArray(parsedPoList) ? parsedPoList : [];
-  const showIdrHint = rec.total_amount_currency && rec.total_amount_currency !== 'IDR' && rec.total_amount_idr != null;
-  // Kurs implisit = total_amount_idr / total_amount (bukan field tersimpan terpisah -- `kurs_used`
-  // ada di tabel tapi TIDAK SELALU sinkron dgn rasio total_amount_idr/total_amount aktual yang
-  // tercetak, jadi dihitung ulang langsung dari 2 angka yang sama-sama tampil di baris ini).
-  const kursValue = showIdrHint && rec.total_amount ? Number(rec.total_amount_idr) / Number(rec.total_amount) : null;
+  const docCount = getMemoDocs(rec).length;
+  const costMeta = costStatus ? COST_STATUS_META[costStatus] : null;
+  const locked = isMemoLocked(rec.approval_status);
+  const fx = implicitFxRate(rec);
+  const statusLabel = getStatusLabel(rec);
 
-  // Portal langsung ke document.body: kalau modal ini dirender inline di dalam tree halaman
-  // (bukan portal), print CSS #far-overseas-print-area jadi berpotensi ke-posisi relatif ke
-  // ancestor "relative" milik halaman itu sendiri (bukan ke halaman cetak), dan ancestor itu
-  // masih ikut terdorong ruang kosong dari konten lain yang cuma visibility:hidden. Portal ke
-  // body menghilangkan ambiguitas itu sepenuhnya -- tidak ada ancestor apapun selain <body>.
+  const stepInfo = (step: ApprovalStep): { name: string; sub: string } => {
+    const entry = findApprovalEntry(entries, step);
+    if (entry) return { name: entry.nama || '—', sub: `Signed ${formatDateShort(entry.approved_at)}` };
+    if (step === 'TIER1') return { name: 'Exim Officer', sub: signStep === 'TIER1' ? 'Waiting' : '—' };
+    if (step === 'PIC') return rec.pic_name ? { name: rec.pic_name, sub: signStep === 'PIC' ? 'Waiting' : 'Assigned' } : { name: 'Not assigned', sub: 'PIC shipment' };
+    if (step === 'TIER2') return { name: signer?.tier2_name || 'Exim Supervisor', sub: signer?.tier2_role || 'Checked By' };
+    return { name: signer?.tier3_name || 'Director', sub: signer?.tier3_role || 'Checked By' };
+  };
+
+  let signLabel: string | null = null;
+  let signDisabled = true;
+  if (signStep) {
+    if (!canEditDirectLoading) signLabel = 'View only';
+    else if (!isEligibleForStep(signStep)) signLabel = `Waiting for ${STEP_LABEL[signStep]}`;
+    else if (signStep === 'TIER1' && prepBlocked) signLabel = phase2 ? 'Complete the memo first' : 'Complete Cost Validation notes first';
+    else { signLabel = STEP_ACTION_LABEL[signStep]; signDisabled = false; }
+  }
+  const signBtn = (extra: string) => signLabel && (
+    <button
+      onClick={() => { if (!signDisabled && signStep) handleApprove(signStep, defaultNamaForStep(signStep)); }}
+      disabled={signDisabled || submitting}
+      title={signDisabled ? signLabel : undefined}
+      className={`${extra} flex items-center justify-center gap-1.5 px-3.5 rounded-xl text-xs font-bold transition-all ${signDisabled ? 'bg-[#EADFD6] text-[#6E5E70] cursor-not-allowed' : 'bg-[#6B3470] hover:bg-[#5A2A5E] text-white shadow-sm'} disabled:opacity-90`}
+    >
+      <Stamp size={14} /> {submitting ? 'Saving...' : signLabel}
+    </button>
+  );
+  const rejectBtn = (extra: string) => canReject && (
+    <button onClick={() => setShowReject(true)} disabled={submitting} className={`${extra} flex items-center justify-center gap-1.5 px-3 rounded-xl border border-rose-300 text-rose-600 text-xs font-semibold hover:bg-rose-50 disabled:opacity-50`}>
+      <Ban size={14} /> Reject
+    </button>
+  );
+  const openEditBtn = onOpenEdit && canEditDirectLoading && !locked && (
+    <button onClick={() => onOpenEdit(rec)} className="px-2.5 py-1 rounded-lg border border-current/30 bg-white text-[11px] font-bold hover:opacity-80 flex items-center gap-1"><Pencil size={11} /> Open Edit</button>
+  );
+
   return createPortal(
-    <div id="far-overseas-print-area" className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[60] flex justify-center items-center p-2 sm:p-4 md:p-6 print:static print:bg-white print:p-0 print:block">
-      {/* Ukuran kertas cetak = A5 (148 x 210mm, PERSIS setengah A4 -- A4 dilipat 2 di sisi
-          pendeknya jadi A5), permintaan user. `<style>` ini DITARUH DI DALAM tree portal (bukan
-          `index.css` global) SENGAJA -- cuma ada di DOM selama modal ini terbuka, jadi HANYA
-          memengaruhi print preview/output SAAT modal ini yang aktif, tidak ikut mengubah ukuran
-          kertas print halaman/modal lain manapun di app ini (mis. PreviewModal Audit AP Local
-          yang print via iframe terpisah, sama sekali tidak tersentuh). */}
+    <div id="far-overseas-print-area" style={{ fontFamily: FAR_FONT_FAMILY }} className="fixed inset-0 bg-[#2A1A2C]/50 backdrop-blur-sm z-[60] flex justify-center items-center p-0 sm:p-4 md:p-6 print:static print:bg-white print:p-0 print:block">
+      {/* Ukuran kertas cetak A5 -- <style> di dalam tree portal ini, HANYA saat modal terbuka. */}
       <style>{`@media print { @page { size: A5; margin: 8mm; } }`}</style>
-      <div className="bg-slate-50 w-full max-w-4xl h-[92vh] max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden print:shadow-none print:w-full print:m-0 print:rounded-none print:h-auto print:max-h-none print:overflow-visible print:block">
+      <div className="bg-[#FBF3EC] w-full max-w-4xl h-full sm:h-[94vh] sm:max-h-[94vh] sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden print:shadow-none print:w-full print:m-0 print:rounded-none print:h-auto print:max-h-none print:overflow-visible print:block print:bg-white">
 
-        {/* Toolbar */}
-        <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-slate-200 bg-white shrink-0 print:hidden">
-          <div>
-            <h2 className="text-lg font-bold tracking-tight text-[#5A305A]">Approval Memo — FAR Overseas Air</h2>
-            <p className="text-xs font-light text-[#5A305A] mt-0.5">{rec.memo_title || '-'}</p>
+        <div className="flex justify-between items-center gap-3 px-4 sm:px-6 py-3 border-b border-[#EADFD6] bg-white shrink-0 print:hidden">
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-[#6E5E70]">Memo no</p>
+            <h2 className="text-base font-extrabold text-[#2A1A2C] truncate">{rec.memo_no || rec.memo_title || 'Untitled memo'}</h2>
+            <p className="text-[11px] text-[#6E5E70] truncate">{rec.memo_no && rec.memo_title ? `${rec.memo_title} · ` : ''}Uploaded {formatDateShort(rec.created_at)} · <span className="font-semibold text-[#2A1A2C]">{statusLabel}</span></p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap justify-end">
-            <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${statusMeta.badgeClass}`}>{statusMeta.label}</span>
-            <button
-              onClick={() => window.print()}
-              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg border border-slate-200 text-[#5A305A] hover:bg-slate-50 transition-colors"
-            >
-              <Printer size={15} /> Print
+          <div className="flex items-center gap-1.5 flex-wrap justify-end">
+            <div className="relative" ref={menuRef}>
+              <button onClick={() => setShowMenu(m => !m)} aria-label="More actions" className="h-9 w-9 flex items-center justify-center rounded-xl border border-[#EADFD6] text-[#2A1A2C] hover:bg-[#F5EDF3]">
+                <MoreHorizontal size={16} />
+              </button>
+              {showMenu && (
+                <div className="absolute right-0 top-10 z-10 w-48 bg-white border border-[#EADFD6] rounded-xl shadow-lg py-1 text-xs">
+                  <button onClick={() => { setShowMenu(false); window.print(); }} className="w-full flex items-center gap-2 px-3 py-2 text-left text-[#2A1A2C] hover:bg-[#F5EDF3]"><Printer size={13} /> Print memo</button>
+                  {phase2 && (
+                    <button onClick={handleUndo} disabled={!canUndo} title={canUndo ? undefined : 'Only the person who signed last can undo (not after Finance received it)'}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-[#2A1A2C] hover:bg-[#F5EDF3] disabled:opacity-40 disabled:hover:bg-transparent">
+                      <Undo2 size={13} /> Undo last sign
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            <button onClick={() => setShowDocs(true)} className="h-9 flex items-center gap-1.5 px-3 rounded-xl border border-[#EADFD6] text-xs font-semibold text-[#2A1A2C] hover:bg-[#F5EDF3]">
+              <FolderOpen size={14} /> <span className="hidden sm:inline">Documents</span>{docCount > 0 ? ` · ${docCount}` : ''}
             </button>
-            <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-[#5A305A] transition-colors">
-              <X size={20} />
+            {phase2 && (
+              <button onClick={() => setShowLog(s => !s)} className={`h-9 flex items-center gap-1.5 px-3 rounded-xl border text-xs font-semibold hover:bg-[#F5EDF3] ${showLog ? 'border-[#6B3470] text-[#6B3470]' : 'border-[#EADFD6] text-[#2A1A2C]'}`}>
+                <History size={14} /> <span className="hidden sm:inline">Audit trail</span>{log ? ` · ${log.length}` : ''}
+              </button>
+            )}
+            <button onClick={() => setShowCost(true)} className="h-9 flex items-center gap-1.5 px-3 rounded-xl border border-[#EADFD6] text-xs font-semibold text-[#2A1A2C] hover:bg-[#F5EDF3]">
+              <ClipboardList size={14} /> <span className="hidden sm:inline">Cost Validation</span>
+            </button>
+            <div className="hidden sm:flex items-center gap-1.5">
+              {rejectBtn('h-9')}
+              {signBtn('h-9')}
+            </div>
+            <button onClick={onClose} aria-label="Close" className="h-9 w-9 flex items-center justify-center rounded-xl hover:bg-[#F5EDF3] text-[#6E5E70]">
+              <X size={18} />
             </button>
           </div>
         </div>
 
         {toast && (
-          <div className={`mx-6 mt-4 p-3 rounded-lg border text-sm font-medium shrink-0 print:hidden ${toast.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+          <div className={`mx-4 sm:mx-6 mt-3 p-3 rounded-xl border text-sm font-medium shrink-0 print:hidden ${toast.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'}`}>
             {toast.msg}
           </div>
         )}
 
         <div className="flex-1 overflow-y-auto custom-scrollbar print:overflow-visible">
-          <div className="p-4 md:p-8 print:p-0">
+          <div className="p-4 md:p-6 space-y-3 print:p-0 print:space-y-0">
 
-            {/* ── Memo cetak (replika dokumen asli) ── */}
-            <div className="bg-white border-2 border-[#5A305A] text-[#5A305A] font-sans print:border-[#5A305A]">
-
-              {/* Header: logo + judul -- baris dipersempit (2026-09, permintaan user). Sel logo
-                  SENGAJA `p-0` (mepet ke garis border, susulan permintaan user "logo mepet
-                  border biar row-nya kecil") -- ukuran logo (`CompanyLogo`, `h-16`) TIDAK ikut
-                  dikecilkan, cuma padding di sekelilingnya yang dihilangkan. Logo tetap
-                  di-tengah-kan penuh (horizontal+vertikal) di sel-nya. */}
-              <div className="flex flex-col sm:flex-row border-b-2 border-[#5A305A]">
-                <div className="sm:w-2/5 border-b-2 sm:border-b-0 sm:border-r-2 border-[#5A305A] p-0 flex items-center justify-center">
-                  <CompanyLogo signer={signer} />
-                </div>
-                <div className="flex-1 flex items-center justify-center p-1.5">
-                  <h1 className="text-base md:text-lg font-bold uppercase tracking-wide text-center">{rec.memo_title || '-'}</h1>
-                </div>
+            {showLog && phase2 && (
+              <div className="bg-white rounded-2xl border border-[#EADFD6] p-4 print:hidden">
+                <p className="text-sm font-bold text-[#2A1A2C] mb-2">Audit trail <span className="text-xs font-normal text-[#6E5E70]">(newest first)</span></p>
+                {log == null ? <p className="text-xs text-[#6E5E70] italic">Could not load the audit trail.</p> : log.length === 0 ? <p className="text-xs text-[#6E5E70] italic">No entries yet.</p> : (
+                  <ol className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+                    {log.map(e => (
+                      <li key={e.id} className="text-xs flex gap-2">
+                        <span className="text-[#6E5E70] shrink-0 w-36">{formatDateTimeID(e.created_at)}</span>
+                        <span className="min-w-0"><span className="font-bold text-[#2A1A2C]">{LOG_ACTION_LABEL[e.action] || e.action}</span> {describeLog(e)} <span className="text-[#6E5E70]">· {e.user_email || 'system / AI'}</span></span>
+                      </li>
+                    ))}
+                  </ol>
+                )}
               </div>
+            )}
 
-              {/* Field baris -- PO.No/Supplier (kiri) & Inv.No/Date (kanan) SENGAJA dipisah jadi
-                  2 kolom independen (bukan 2 baris flex-row PO.No+Inv.No lalu Supplier+Date)
-                  supaya Inv.No & Date tetap rapat berdekatan walau PO.No isinya panjang/wrap
-                  banyak baris (mis. gabungan banyak PO) -- kalau digabung 1 baris, tinggi baris
-                  itu ikut ketarik setinggi PO.No, jadi Date jadi jauh dari Inv.No di baris bawah. */}
-              <div className="p-4 space-y-2 text-sm">
-                <div className="flex flex-col md:flex-row print:flex-row md:items-start print:items-start gap-1 md:gap-6 print:gap-6">
-                  <div className="flex-1 space-y-2"><MemoField label="PO. No." value={rec.po_ori || '-'} /><MemoField label="Supplier" value={rec.vendor || '-'} /></div>
-                  <div className="md:w-56 print:w-56 space-y-2"><MemoField label="Inv. No" labelWidth="w-20" value={rec.no_invoice || '-'} /><MemoField label="Date" labelWidth="w-20" value={formatDateMemo(rec.created_at)} /></div>
-                </div>
-                <MemoField label="Buyer" value={rec.buyer_name || '-'} />
-                <MemoField label="Ship Via" value={rec.ship_via || '-'} bold />
-                <MemoField label="Departure Date" value={formatDateMemo(rec.departure_date)} />
-                <MemoField label="Weight" value={rec.qty != null ? <>{rec.qty}<span className="ml-6">{rec.weight_unit || ''}</span></> : '-'} />
-                <MemoField label="Price /Kg" value={formatMoney(rec.unit_price, rec.unit_price_currency)} />
-                <MemoField
-                  label="TOTAL AMOUNT"
-                  bold
-                  value={
-                    <>
-                      {formatMoney(rec.total_amount, rec.total_amount_currency)}
-                      {showIdrHint && <span className="font-normal text-xs ml-2">(≈ Rp {Number(rec.total_amount_idr).toLocaleString('id-ID')})</span>}
-                      {kursValue != null && <span className="font-normal italic text-[10px] text-[#5A305A]/70 ml-2">(Kurs: {kursValue.toLocaleString('id-ID', { maximumFractionDigits: 2 })})</span>}
-                    </>
-                  }
-                />
-              </div>
+            {rec.approval_status === 'REJECTED' && (
+              <Banner tone="red" icon={<Ban size={14} />} action={openEditBtn}>
+                <span className="font-bold">Rejected{rec.rejected_step ? ` by ${STEP_LABEL[rec.rejected_step as ApprovalStep] || rec.rejected_step}` : ''}</span>{rec.notes ? <> — {rec.notes}</> : null}
+                {phase2 && <span className="block mt-0.5">Back to Prepared By — revise and sign again.</span>}
+              </Banner>
+            )}
+            {fin === 'PAID' && (
+              <Banner tone="green" icon={<Wallet size={14} />}>
+                <span className="font-bold">Paid · {formatDateShort(rec.paid_at)}</span>{rec.paid_reference ? ` · Ref ${rec.paid_reference}` : ''} — the payment proof is in Documents.
+              </Banner>
+            )}
+            {fin === 'RECEIVED' && (
+              <Banner tone="grey" icon={<CheckCircle2 size={14} />}>
+                <span className="font-bold text-[#2A1A2C]">Received by Finance</span> · {rec.finance_received_by || '—'} · {formatDateShort(rec.finance_received_at)} · unpaid
+              </Banner>
+            )}
+            {rec.approval_status === 'APPROVED' && fin !== 'PAID' && fin !== 'RECEIVED' && (
+              <Banner tone="green" icon={<CheckCircle2 size={14} />}>
+                <span className="font-bold">Approved</span> — all four signatures are complete{phase2 ? '; sent to Finance.' : '.'}
+              </Banner>
+            )}
+            {signStep === 'TIER1' && prepBlocked && (
+              <Banner
+                tone="amber"
+                icon={<AlertTriangle size={14} />}
+                action={<>
+                  {openEditBtn}
+                  <button onClick={() => setShowCost(true)} className="px-2.5 py-1 rounded-lg border border-amber-300 bg-white text-[11px] font-bold text-amber-900 hover:bg-amber-100">Open Cost Validation</button>
+                </>}
+              >
+                <span className="font-bold">Cannot sign yet.</span>
+                <ul className="list-disc list-inside mt-0.5">{blockerList.map(b => <li key={b}>{b}</li>)}</ul>
+              </Banner>
+            )}
+            {phase2 && rec.fx_locked_at && fx != null && (
+              <Banner tone="grey" icon={<Lock size={14} />}>
+                FX rate locked since Prepared By signed: <span className="font-bold text-[#2A1A2C]">1 {rec.total_amount_currency} = IDR {fx.toLocaleString('id-ID', { maximumFractionDigits: 2 })}</span>. It opens again after an undo or a reject.
+              </Banner>
+            )}
+            {rec.on_hold === true && rec.approval_status !== 'REJECTED' && fin !== 'PAID' && (
+              <Banner tone="grey" icon={<Clock size={14} />}>
+                <span className="font-bold text-[#2A1A2C]">On hold</span> — goods not received yet, so payment waits.
+              </Banner>
+            )}
+            {wait && wait.step !== 'TIER1' && (
+              <Banner
+                tone={wait.overLimit ? 'red' : 'grey'}
+                icon={<Clock size={14} />}
+                action={phase2 && wait.overLimit ? <button onClick={handleRemind} className="px-2.5 py-1 rounded-lg border border-rose-300 bg-white text-[11px] font-bold text-rose-700 hover:bg-rose-100 flex items-center gap-1"><Bell size={11} /> Send reminder</button> : undefined}
+              >
+                Waiting for <span className="font-bold">{STEP_LABEL[wait.step]}</span>
+                {wait.days != null && <> · {wait.days} working day{wait.days === 1 ? '' : 's'}</>}
+                {wait.limit != null && <> · limit {wait.limit}</>}
+                {wait.overLimit && <span className="font-bold"> — past the approval limit</span>}
+              </Banner>
+            )}
+            {signStep && canEditDirectLoading && !isEligibleForStep(signStep) && (
+              <Banner tone="grey" icon={<Info size={14} />}>
+                {signStep === 'PIC'
+                  ? (rec.pic_user_id ? 'Only the PIC Shipment assigned to this memo can sign this step.' : 'No PIC Shipment is assigned yet — set it in Edit memo (Prepared By section).')
+                  : `This step needs the "${STEP_LABEL[signStep]}" approval role${signStep === 'TIER2' || signStep === 'TIER3' ? ' for this PT' : ''}.`}
+              </Banner>
+            )}
 
-              {/* NOTE -- NOTE 1 (route_note) & NOTE 2 (item_description) datang dari ekstraksi
-                  otomatis, NOTE 3 (status_note) & NOTE 4 (other_note) diisi manual dari List Memo.
-                  Baris NOTE 3/4 HANYA muncul kalau diisi (bukan tampil kosong/"-") -- baris yang
-                  null sama sekali tidak dirender. Tiap baris dikasih nomor sumbernya (1/2/3/4,
-                  sesuai NOTE 1-4 di List Memo) di depan teksnya -- permintaan user supaya jelas
-                  baris mana berasal dari NOTE keberapa. */}
-              <div className="border-t-2 border-[#5A305A] p-4 text-sm flex gap-2">
-                <span className="underline font-semibold shrink-0">NOTE :</span>
-                <div className="space-y-1">
-                  {rec.route_note && <p><span className="font-semibold">1.</span> {rec.route_note}</p>}
-                  {rec.item_description && (
-                    <p>
-                      <span className="font-semibold">2. ITEMS :</span> {rec.item_description}
-                      {rec.item_description_manual && <span> ({rec.item_description_manual})</span>}
-                    </p>
-                  )}
-                  {rec.status_note && <p><span className="font-semibold">3.</span> {rec.status_note}</p>}
-                  {rec.other_note && <p><span className="font-semibold">4.</span> {rec.other_note}</p>}
-                  {!rec.route_note && !rec.item_description && !rec.status_note && !rec.other_note && <p className="text-[#5A305A]/50 italic">-</p>}
-                </div>
-              </div>
+            <div className="bg-white rounded-2xl border border-[#EADFD6] px-4 py-3 grid grid-cols-2 md:grid-cols-4 gap-3 print:hidden">
+              {STEP_ORDER.map((step, i) => {
+                const info = stepInfo(step);
+                const done = i < doneCount;
+                const current = signStep === step;
+                return (
+                  <div key={step} className="flex items-start gap-2.5 min-w-0">
+                    <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 border-2 ${done ? 'bg-emerald-600 border-emerald-600 text-white' : current ? 'border-amber-500 text-amber-700 bg-amber-50' : 'border-[#EADFD6] text-[#6E5E70] bg-white'}`}>
+                      {done ? <CheckCircle2 size={14} /> : i + 1}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-[#2A1A2C]">{i < 2 ? (i === 0 ? 'Prepared By' : 'PIC Shipment') : 'Checked By'}</p>
+                      <p className={`text-[11px] truncate ${current ? 'text-amber-700' : 'text-[#6E5E70]'}`}>{info.name} · {info.sub}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
 
-              {/* Signature table -- PIC (nama manual `pic_name`, jabatan tetap "PIC") ditaruh
-                  bersebelahan dengan "Disiapkan Oleh" -- persetujuannya INDEPENDEN dari tahap
-                  1/2/3, lihat tombol "Setujui — PIC" terpisah di bawah. */}
-              <div className="flex border-t-2 border-[#5A305A] pt-6 pb-4 px-4">
-                <SignatureColumn label="Disiapkan Oleh," role={signer?.tier1_role || null} entry={entryFor(1)} nameOverride={disiapkanNama} />
-                <SignatureColumn label="Diperiksa Oleh," role={signer?.tier2_role || null} entry={entryFor(2)} defaultNama={signer?.tier2_name} />
-                <SignatureColumn label="Diperiksa Oleh," role={signer?.tier3_role || null} entry={entryFor(3)} defaultNama={signer?.tier3_name} />
+            <div className={`flex items-start justify-between gap-3 rounded-xl px-4 py-2.5 text-xs print:hidden ${costStatus === 'MATCH' ? 'bg-emerald-50 text-emerald-800' : costStatus === 'OVERCHARGE' ? 'bg-rose-50 text-rose-800' : costStatus ? 'bg-amber-50 text-amber-900' : 'bg-white border border-[#EADFD6] text-[#6E5E70]'}`}>
+              <p className="min-w-0">
+                <span className="font-bold">AI check: {costMeta?.label || (costExists ? (costStatus || 'No status') : 'Not available')}.</span>{' '}
+                {costCatatan || (costStatus === 'MATCH' ? 'Invoice matches the vendor rate.' : '')}
+              </p>
+              <span className="shrink-0 text-[10px] font-semibold opacity-70">Not printed</span>
+            </div>
+
+            <div className="bg-white rounded-2xl p-3 md:p-6 shadow-sm print:shadow-none print:p-0 print:rounded-none overflow-x-auto">
+              <div className="min-w-[560px] print:min-w-0">
+                <FarOverseasMemoPaper rec={rec} signer={signer} />
+                <MemoPaymentLine rec={rec} />
               </div>
             </div>
 
-            {/* Note pembayaran -- DI LUAR tabel/kotak memo (bukan bagian replika resmi), tapi
-                TETAP ikut tercetak (bukan print:hidden) & tampil di modal. Sengaja teks kecil. */}
-            <p className="text-[11px] text-[#5A305A] mt-2 px-1">
-              Note:
-              <br />
-              MOHON DIBANTU BAYARKAN PADA TANGGAL : <span className="font-semibold">{formatDateMemo(rec.expected_payment_date)}</span>
-            </p>
-
-            {/* ── Rincian PO (opsional, tidak masuk memo cetak) ── */}
             {poList.length > 0 && (
-              <div className="bg-white rounded-xl border border-slate-200 mt-5 overflow-hidden print:hidden">
-                <button onClick={() => setShowPoDetail(s => !s)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors">
-                  <span className="text-sm font-bold text-[#5A305A]">PO Details ({poList.length})</span>
-                  {showPoDetail ? <ChevronUp size={16} className="text-[#5A305A]" /> : <ChevronDown size={16} className="text-[#5A305A]" />}
+              <div className="bg-white rounded-2xl border border-[#EADFD6] overflow-hidden print:hidden">
+                <button onClick={() => setShowPoDetail(s => !s)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-[#F5EDF3]/50 transition-colors">
+                  <span className="text-sm font-bold text-[#2A1A2C]">PO details ({poList.length})</span>
+                  {showPoDetail ? <ChevronUp size={16} className="text-[#6E5E70]" /> : <ChevronDown size={16} className="text-[#6E5E70]" />}
                 </button>
                 {showPoDetail && (
-                  <div className="border-t border-slate-200 divide-y divide-slate-100">
+                  <div className="border-t border-[#EADFD6] divide-y divide-[#EADFD6]">
                     {poList.map((po, i) => (
-                      <div key={i} className="px-4 py-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-                        <div><p className="text-[#5A305A]/60">PO No.</p><p className="font-semibold text-[#5A305A]">{po.po_no_raw || '-'}</p></div>
-                        <div><p className="text-[#5A305A]/60">Company</p><p className="font-semibold text-[#5A305A]">{po.company_code || '-'}</p></div>
-                        <div><p className="text-[#5A305A]/60">Vendor</p><p className="font-semibold text-[#5A305A]">{po.vendor_name || '-'}</p></div>
-                        <div><p className="text-[#5A305A]/60">Value</p><p className="font-semibold text-[#5A305A]">{formatMoney(po.total_value, po.currency)}</p></div>
-                        <div><p className="text-[#5A305A]/60">Weight</p><p className="font-semibold text-[#5A305A]">{po.weight_kg != null ? `${po.weight_kg} KG` : '-'}</p></div>
-                        {po.item_summary && <div className="col-span-2 md:col-span-4"><p className="text-[#5A305A]/60">Item</p><p className="text-[#5A305A]">{po.item_summary}</p></div>}
+                      <div key={i} className="px-4 py-3 grid grid-cols-2 md:grid-cols-6 gap-2 text-xs">
+                        <div className="col-span-2 md:col-span-1"><p className="text-[#6E5E70]">PO</p><p className="font-semibold text-[#2A1A2C] break-all">{po.po_no_raw || '—'}</p></div>
+                        <div><p className="text-[#6E5E70]">PT</p><p className="font-semibold text-[#2A1A2C]">{po.company_code || '—'}</p></div>
+                        <div><p className="text-[#6E5E70]">Vendor</p><p className="font-semibold text-[#2A1A2C]">{po.vendor_name || '—'}</p></div>
+                        <div><p className="text-[#6E5E70]">Value</p><p className="font-semibold text-[#2A1A2C]">{formatMoney(po.total_value, po.currency)}</p></div>
+                        <div><p className="text-[#6E5E70]">KG</p><p className="font-semibold text-[#2A1A2C]">{po.weight_kg != null ? `${po.weight_kg} KG` : '—'}</p></div>
+                        <div><p className="text-[#6E5E70]">Vessel</p><p className="font-semibold text-[#2A1A2C]">{po.vessel_raw || '—'}</p></div>
+                        {po.item_summary && <div className="col-span-2 md:col-span-6"><p className="text-[#6E5E70]">Items</p><p className="text-[#2A1A2C]">{po.item_summary}</p></div>}
                       </div>
                     ))}
                   </div>
                 )}
               </div>
             )}
-
-            {/* Catatan: vessel_internal_note SENGAJA TIDAK pernah dirender di sini atau di
-                manapun pada memo cetak, field itu HANYA boleh tampil di kolom VESSEL tabel List
-                Memo. Expected Payment Date sekarang sudah tercetak lewat note "MOHON DIBANTU
-                BAYARKAN..." di atas, tidak perlu blok "Catatan Internal" terpisah lagi. */}
-
-            {rec.approval_status === 'REJECTED' && rec.notes && (
-              <div className="bg-rose-50 border border-rose-200 rounded-xl mt-5 p-4 print:hidden">
-                <p className="text-[10px] font-bold text-rose-700 uppercase tracking-wider mb-1.5">Rejection Reason</p>
-                <p className="text-sm text-rose-800">{rec.notes}</p>
-              </div>
-            )}
-
-            {/* ── Aksi persetujuan -- rantai WAJIB berurutan Prepared By -> PIC -> SPV -> Director
-                (2026-09). Tombol approve tahap berjalan HANYA muncul kalau user-nya eligible
-                (`canApproveTier`, dari jabatan approval role-nya) -- kalau tidak eligible, tampil
-                pesan penjelas (bukan disembunyikan total, supaya user tahu kenapa tidak ada
-                tombol & tahap apa yang sedang ditunggu). ── */}
-            {canEditDirectLoading && rec.approval_status !== 'APPROVED' && rec.approval_status !== 'REJECTED' && (
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white rounded-xl border border-slate-200 mt-5 p-4 print:hidden">
-                <p className="text-xs text-[#5A305A]">
-                  {nextStep != null ? `Awaiting ${STEP_LABEL[nextStep]} approval.` : 'No action available.'}
-                  {nextStep != null && !isEligibleForStep(nextStep) && (
-                    <span className="block text-[#5A305A]/60 italic mt-0.5">
-                      {nextStep === 'PIC'
-                        ? (rec.pic_user_id ? "You are not the PIC assigned to this memo." : "This memo doesn't have a PIC assigned yet — set it in the PIC column on the List Memo page.")
-                        : `You don't have the "${STEP_LABEL[nextStep]}" approval role for this step.`}
-                    </span>
-                  )}
-                  {nextStep != null && isEligibleForStep(nextStep) && tier1BlockedByNotes && (
-                    <span className="block text-amber-700 font-medium mt-0.5">
-                      Unit Price (from Description) in Cost Validation is not a match — fill in the "Notes (Manual)" field first (open Cost Validation) before this memo can be approved.
-                    </span>
-                  )}
-                </p>
-                <div className="flex items-center gap-2">
-                  {canReject && (
-                    <button onClick={() => setShowReject(true)} className="px-4 py-2 rounded-xl border border-rose-300 text-rose-600 font-semibold text-sm hover:bg-rose-50 transition-all flex items-center gap-1.5">
-                      <Ban size={15} /> Reject
-                    </button>
-                  )}
-                  {nextStep != null && isEligibleForStep(nextStep) && !tier1BlockedByNotes && (
-                    <button
-                      onClick={() => handleApprove(nextStep, defaultNamaForStep(nextStep))}
-                      disabled={submitting}
-                      className="px-4 py-2 rounded-xl bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-sm transition-all disabled:opacity-50 flex items-center gap-1.5"
-                    >
-                      <Stamp size={15} /> {submitting ? 'Saving...' : STEP_ACTION_LABEL[nextStep]}
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-
           </div>
         </div>
+
+        {/* Bar bawah HP: Reject + Sign (tombol >= 44px, spek tampilan HP). */}
+        {(canReject || signLabel) && (
+          <div className="sm:hidden shrink-0 border-t border-[#EADFD6] bg-white px-3 py-2 flex gap-2 print:hidden">
+            {rejectBtn('min-h-[44px] flex-1')}
+            {signBtn('min-h-[44px] flex-[2]')}
+          </div>
+        )}
       </div>
 
       {showReject && (
         <RejectModal submitting={submitting} onClose={() => setShowReject(false)} onConfirm={handleReject} />
       )}
+      {showCost && (
+        <FarOverseasAirCostValidationModal
+          farOverseasId={rec.id}
+          approvalStatus={rec.approval_status}
+          onClose={async () => {
+            setShowCost(false);
+            setCostReloadKey(k => k + 1);
+            setLogReloadKey(k => k + 1);
+            // KG per PO / konfirmasi AI bisa berubah di Cost Validation -> ambil ulang memo.
+            await reloadRec();
+          }}
+          onChanged={onChanged}
+        />
+      )}
+      {showDocs && <FarOverseasAirDocumentsModal record={rec} onClose={() => setShowDocs(false)} />}
     </div>,
     document.body
   );

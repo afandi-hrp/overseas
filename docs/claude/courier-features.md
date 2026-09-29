@@ -189,8 +189,16 @@ bawah.
    sudah `.neq('status','ARCHIVED')`), langsung susul 1 `.update({doc_acceptance: todayIso})`
    langsung ke `tabel_audit_pib`/`tabel_audit_cn` (pola sama `handleInlineSaveRow`, BUKAN
    parameter RPC — RPC tsb dibuat user sendiri, jangan diubah tanpa konfirmasi ulang, lihat bagian
-   "Peta RPC function Supabase" CLAUDE.md utama). `todayIso = new Date().toISOString().slice(0,10)`
-   — TANPA input manual apa pun.
+   "Peta RPC function Supabase" CLAUDE.md utama) — TANPA input manual apa pun.
+   **Revisi 2026-09-28 — HANYA kalau kosong**: `.update({doc_acceptance: todayIso}).eq('id', id)
+   .is('doc_acceptance', null)` — syarat "kosong" DI DALAM 1 perintah UPDATE (atomik, BUKAN
+   baca-dulu-lalu-tulis). Doc Acceptance yang sudah terisi (mis. via Edit di tab Draft — kolom ini
+   ada di `PIB_COLS`/`CN_COLS` type `date` & lolos `isInlineEditable`), tanggal lama/baru apa
+   pun, TIDAK ditimpa & ikut terbawa ke tab PIB/CN. "Kosong" = NULL saja (app selalu simpan `''`
+   sbg null). `todayIso` = tanggal LOKAL browser (dulu `toISOString()` = UTC → Undraft jam
+   00:00–06:59 WIB terisi tanggal kemarin). **Belum diverifikasi**: apakah RPC `fn_undraft_pib`/
+   `cn` (buatan user) sendiri menyentuh `doc_acceptance` — kalau iya, nilai lama bisa hilang
+   SEBELUM update ini jalan (cek `pg_get_functiondef` kalau uji "tanggal lama tetap" gagal).
 2. **Tabel PIB & CN — tombol Edit ditambahkan, bisa edit semua kolom termasuk NAS Submit Date**.
    Root cause lama: `editingThisRow` (mengontrol SEMUA rendering kolom jadi input) DAN visibility
    tombol Edit/Save di panel Action sama-sama digerbangi `rec.status !== 'LENGKAP'` — begitu baris

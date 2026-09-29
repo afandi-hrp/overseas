@@ -42,6 +42,9 @@ approval-nya.
 - **Folder `sql/` DIHAPUS (2026-09-26)** — semua file migrasi (001–026) SUDAH dijalankan ke
   production (konfirmasi user). Semua catatan "BELUM DIJALANKAN" di file ini & `docs/claude/*.md`
   TIDAK berlaku lagi; isi SQL lama ada di git history (001–023; 024–026 tidak pernah di-commit).
+  **Pengecualian**: `sql/027_far_overseas_phase2_DRAFT.sql` (2026-09-28) = redesain FAR tahap 2,
+  **BELUM DIJALANKAN** (bagian E ditulis dari body live approve/reject/update_rekapan kiriman user;
+  diuji di PGlite). WAJIB di-deploy BARENG frontend tahap 2 — lihat `docs/claude/far-overseas.md`.
 - **Kondisi DB production (stack `supabase3`, audit 2026-09-26)**: role `anon` tanpa hak apa pun
   di schema public (tabel, fungsi, default privileges); GraphQL ditutup; semua tabel RLS dgn
   policy `has_page_access`/`has_edit_access` (tidak ada `using (true)`); semua view
@@ -70,7 +73,7 @@ Semua route (kecuali `/login`) dibungkus `<ProtectedRoute>` → `<MainLayout>` (
 | `/courier/rekapan` | `CourierRekapanPage` → `SharedDataTable` | |
 | `/courier/validasi` | `CourierValidasiPage` | halaman mandiri, bukan `SharedDataTable` |
 | `/sea-air/audit`, `/sea-air/rekapan` | → `SharedDataTable` | |
-| `/direct-loading`, `/direct-loading/:id` | `FarOverseasAirPage` | modul "FAR Overseas" di sidebar; `page_key`/route TETAP `direct_loading`/`/direct-loading` (label tampil "FAR Overseas") |
+| `/direct-loading`, `/direct-loading/:id` | `FarOverseasAirPage` | modul "FAR Overseas" di sidebar; `page_key`/route TETAP `direct_loading`/`/direct-loading` (label tampil "FAR Overseas"). Redesain tahap 1 (2026-09-28, tab Memos/My Approvals, gaya visual & font sendiri) — lihat `docs/claude/far-overseas.md`; tahap 2 = `sql/027_far_overseas_phase2_DRAFT.sql` (BELUM DIJALANKAN) |
 | `/bunker` | `BunkerPage` | |
 | `/audit-po` | `AuditPoPage` | read-only judul card, label menu "Audit AP Local" |
 | `/audit-po-overseas` | `AuditPoOverseasPage` | label "Audit AP Overseas", DUPLIKASI SENGAJA `AuditPoPage` (tabel `audit_po_apovs_comp`) |
@@ -278,14 +281,15 @@ aman diubah (murni display); `field`/`rowLabel`/`compareDoc` HARUS dicek dulu.
 
 **Progress**: SELESAI — Sidebar/Greeting/Bunker/AccountPage/RoleManagementPage/Courier
 Upload+Sea&Air Upload/Courier Audit&Rekapan/Courier Validasi (UI chrome saja)/Sea & Air (UI
-chrome saja)/FAR Overseas Air (kecuali badan memo cetak, permanen)/Zoom 90%. **BELUM**: Audit AP
-Local, Audit Trail, Settings hub, halaman admin, LoginPage.
+chrome saja)/FAR Overseas Air (TERMASUK label kertas memo cetak, lihat di bawah)/Zoom 90%.
+**BELUM**: Audit AP Local, Audit Trail, Settings hub, halaman admin, LoginPage.
 
-**Pengecualian PERMANEN — badan memo cetak `FarOverseasAirDetailModal.tsx`**: istilah dalam kotak
-border `#FFF5C5` (replika dokumen fisik) SENGAJA TETAP Indonesia ("Disiapkan Oleh,"/"Diperiksa
-Oleh,", "Tanggal:", "NOTE :", "MOHON DIBANTU BAYARKAN...") — dokumen resmi dikirim ke pihak
-eksternal, beda risiko dari teks UI biasa. `TIER_ACTION_LABEL`/`PIC_ACTION_LABEL` & teks PIC juga
-ikut Indonesia utk konsistensi. **Satu-satunya bagian UI yg sengaja TIDAK ikut program translasi.**
+**Kertas memo cetak FAR Overseas (`FarOverseasMemoPaper.tsx`) — pengecualian lama DICABUT
+(2026-09-28)**: dulu label memo sengaja tetap Indonesia ("Disiapkan Oleh,"/"MOHON DIBANTU
+BAYARKAN..."); spek redesain dari user menetapkan label Bahasa Inggris (Prepared By/Checked By/
+PLEASE ARRANGE PAYMENT ON) dan HANYA isi Notes 1-4 yang tetap format baku Bahasa Indonesia (teks
+dari DB, jangan ditranslate — regex `parseRouteNote` & format NOTE 3 bergantung padanya). Detail:
+`docs/claude/far-overseas.md` bagian "REDESAIN FAR Overseas — TAHAP 1".
 
 **Pengecualian lain yg dikonfirmasi eksplisit user**: `ValidasiModal.tsx` section
 `s_no_vessel_imo` — `section.label`/`srcLabel` DITERJEMAHKAN ("NO VESSEL NAME AND IMO NUMBER"),
@@ -538,6 +542,11 @@ Supabase** — bisa saja sudah basi (RPC lain ditambahkan user langsung tanpa te
   `insert_rekapan_far_overseas_manual` (Add Manual Entry, 2026-09),
   `update_cost_validasi_far_overseas_manual`, `fn_delete_far_overseas_air`,
   `approve_far_overseas_air`, `reject_far_overseas_air`, `get_users_with_approval_tier`.
+  Tahap 2 (sql/027, BELUM dijalankan): `fn_far_overseas_can_sign`,
+  `fn_far_overseas_prepared_by_blockers`, `fn_far_overseas_undo_last_sign`,
+  `fn_far_overseas_confirm_ai_finding`, `fn_far_overseas_log_reminder`,
+  `fn_far_overseas_finance_accept`, `fn_far_overseas_mark_paid` (+ trigger nomor memo/log upload);
+  tabel `far_overseas_memo_log`, `far_overseas_memo_counter`, `far_overseas_step_signers`.
 - FAR Overseas Air — Tarif Vendor (struktur quotation+periode, 2026-09; RPC LAMA
   `upsert_tarif_far_overseas_vendor`/`nonaktifkan_tarif_far_overseas_vendor` SUDAH TIDAK DIPAKAI,
   lihat `docs/claude/far-overseas.md`): `upsert_far_overseas_vendor_master`,

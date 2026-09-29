@@ -1,3 +1,159 @@
+## REDESAIN FAR Overseas — TAHAP 1 (2026-09-28, spek "BeeHive AI · FAR Overseas") — BACA DULU
+
+User memberi spek redesain lengkap (Memos/My Approvals/Finance Handover/Vendor Rates, tampilan HP,
+Non-PO, kurs RMB terkunci, due date otomatis, undo sign, rantai IMI, audit trail per memo). Keputusan
+user: **dikerjakan BERTAHAP di app asli**; tahap 1 = UI + logika yang bisa jalan dgn kolom DB yang
+SUDAH ADA; fitur yang butuh DB baru disiapkan sbg **draft SQL** `sql/027_far_overseas_phase2_DRAFT.sql`
+(**BELUM DIJALANKAN** — bagian E-nya menunggu user kirim `pg_get_functiondef` approve/reject/
+update_rekapan). Logika approval/RPC TIDAK diubah di tahap 1.
+
+**Gaya visual KHUSUS halaman/modal FAR** (spek): font Plus Jakarta Sans (disuntik `ensureFarFont()`,
+app lain tetap Sora; modal portal pakai `style={{fontFamily: FAR_FONT_FAMILY}}`). **Latar HALAMAN
+TIDAK diberi warna** (2026-09-28, permintaan user -- latar peach `#FBF3EC` di root halaman DIHAPUS,
+halaman ikut gradient MainLayout spt halaman lain; `#FBF3EC` hanya dipakai elemen kecil/modal).
+**Panel filter & konten WAJIB 2 kartu terpisah** (permintaan user "harus jelas bedanya"): kartu
+filter putih solid (`shadow-sm`, toolbar + panel Filter + alarm due dipisah `border-t`), lalu kartu
+konten `bg-white/70 backdrop-blur-md` dgn header putih (ringkasan "N memos" + Group by) di atas
+area scroll & pagination; jarak `gap-3`. JANGAN gabungkan lagi jadi 1 blok. Kartu putih, sidebar-chip `#3B1B3D`, primer `#6B3470` (hover `#5A2A5E`), tint `#F5EDF3`,
+garis `#EADFD6`, teks `#2A1A2C`, teks samar `#6E5E70`. Arti warna tetap: MERAH = tindak sekarang,
+KUNING = perlu dilengkapi, ABU = info, HIJAU = beres. (Beda dari brand app `#5A305A` — SENGAJA,
+hanya di modul ini.)
+
+**File (semua FAR-only)**:
+- `FarOverseasAirPage.tsx` — DITULIS ULANG. Tab Memos | My Approvals (muncul hanya kalau user py
+  jabatan `approvalTiersByPage.direct_loading`) | Vendor Rates (link ke `/settings/tarif-far-overseas-vendor`).
+  Toolbar 1 baris: List/Card, Search (ship_via/vendor/no_invoice/po_ori/route_note/remark/vessel/
+  memo_title, debounce 400ms, karakter `,()"` diganti wildcard `_` supaya `.or()` tidak pecah),
+  tombol Filter (panel: Ship via/Paying PT/Origin/Destination/Mode/Remark/rentang Invoice date —
+  **filter tanggal lama PINDAH ke sini, bukan dihapus**), STATUS (nama jabatan), SORT (Newest/Oldest
+  upload, Due date soonest, Invoice date newest — Amount/Weight SENGAJA belum: `total_amount` campur
+  mata uang & `qty` campur KG/CBM), Refresh. Banner "Payment due alert" (memo MASIH di rantai
+  approval yang `expected_payment_date` <= N hari, N=1/3/5/7) + "Show them". Group by Date/Month/
+  Year/Off (by `created_at`, kelompok berurutan di HALAMAN aktif — aktif hanya saat sort by upload).
+  pageSize 12. `fetchSeqRef` cegah respons filter lama menimpa hasil baru.
+- **Card** (`MemoCard`) & **List** (tabel ringkas read-only, kolom Memo/PT/Payable to/Route/Invoice/
+  Due/Vendor/No PO/Vessel/Total/AI check/Approval) — **inline-edit ~25 kolom & tombol "Save All"
+  DIHAPUS**; `LIST_COLUMNS`/`FarOverseasAirCardEditModal`/`FarOverseasAirEditableField.tsx` DIHAPUS.
+  Card: strip alarm due, judul memo + chip AI, kotak PAYABLE TO (= `ship_via`), chip PT + rute,
+  berat kecil + total besar (RMB: ≈ IDR + FX di baris terpisah), Vendor + PO "+N PO" + tag Remark,
+  1 peringatan utama + "+N more" (`deriveMemoWarnings`), status + Due + progress 4 bagian, tombol
+  Memo/Edit/Cost/Docs/Delete. Nomor memo belum ada (kolom `memo_no` di draft SQL — kertas memo
+  otomatis menampilkannya kalau kolom itu sudah terisi).
+- `FarOverseasAirEditMemoModal.tsx` (BARU) — SATU-SATUNYA editor memo. Kiri (desktop saja): tab
+  dokumen sumber (`DrivePreviewFrame`) + "Memo preview" (kertas memo dgn pending edit, zoom).
+  Kanan: Document / Shipment & cost (rumus berat×harga+other vs total) / KG per PO (buka Weight
+  breakdown) / Prepared By (PIC Shipment = `pic_user_id`+`pic_name`) / Receipt & due date (Goods
+  received date -> NOTE 3, Due date = `expected_payment_date`) / Reporting data · vessel / Notes 1-4
+  dgn preview. State TETAP `pendingEdits`/`getVal`/`setVal` halaman; `setVal` MEMBUANG field yang
+  dikembalikan ke nilai tersimpan (tidak dikirim ke RPC). `saveRowEdits()` hanya membuang pending
+  kalau RPC SUKSES (versi lama ikut membuang walau gagal). Re-match tarif saat `route_note` berubah
+  TETAP jalan (`reMatchAfterRouteNoteEdit`, sekarang pakai `ship_via`/`qty` dari edit yang sama).
+- **Lock (frontend saja)**: `isMemoLocked()` — status TIER1_DONE/PIC_DONE/TIER2_DONE/APPROVED ->
+  Edit jadi "Locked" (buka read-only), Delete disabled, KG terkunci. REJECTED tidak terkunci.
+  Penegakan server = bagian E draft SQL.
+- `FarOverseasAirDetailModal.tsx` — logika approve/reject/eligibility/`tier1BlockedByNotes` SAMA
+  PERSIS; tampilan baru: header (⋯ Print, Documents, Cost Validation, Reject, tombol Sign — kalau
+  bukan giliran jadi abu "Waiting for <jabatan>"/"View only"), banner (Rejected/Approved/Cannot sign
+  yet + Open Cost Validation/waktu tunggu hari kerja vs batas), stepper 4 tahap, kotak AI check
+  (tidak dicetak). Reject alasan min. 5 karakter. Setelah modal Cost ditutup, baris memo di-fetch
+  ulang (KG bisa mengubah PT pembayar).
+- `FarOverseasMemoPaper.tsx` (BARU, diekstrak dari Detail modal) — **label kertas memo sekarang
+  Bahasa Inggris** (Prepared By/Checked By/Date/PLEASE ARRANGE PAYMENT ON) sesuai spek user —
+  **MENGGANTI pengecualian "badan memo cetak tetap Indonesia"** yang dulu dicatat permanen; isi
+  NOTE 1-4 tetap teks Indonesia dari DB. Tanda tangan **4 kolom** (Prepared By ×2 Exim & PIC
+  Shipment, Checked By ×2) — MENGGANTI aturan lama "3 kolom, PIC digabung". Total non-IDR 1 baris
+  "RMB 170 (Rp 455.600 · 1 RMB = IDR 2.680)". Cetak TETAP A5.
+- `FarOverseasAirCostValidationModal.tsx` — logika lama sama (edit Expected/Actual/Notes, pilih rate
+  ambigu via `computeExpectedFromRate`, Notes Manual). BARU: panel Paying PT + "How it was decided"
+  (`explainDominantCompany`, pemenang SELALU dari `recomputeDominantCompany`, rule 3 = default WNS
+  versi sistem saat ini), input KG per PO + Save KG/Cancel + preview PT (`savePoWeights`, SAMA dgn
+  Weight breakdown), kolom Check (Match/Above/Below via `computeCostStatus`), link Vendor Rates.
+  Sekarang portal ke body & menerima `approvalStatus`/`onChanged`.
+- `FarOverseasAirWeightBreakdownModal.tsx` — Split evenly/Clear, KG terisi vs berat memo, auto split
+  (>=5 PO & berat <=1 KG -> dibagi rata & dikunci, tetap perlu Save), locked setelah sign.
+- `FarOverseasAirDocumentsModal.tsx` — 2 panel (daftar file kiri, preview kanan, file pertama
+  langsung terbuka). `DrivePreviewFrame`/`getDokumenList` diekspor utk modal Edit.
+- `FarOverseasAirMyApprovals.tsx` (BARU) — query MENGIKUTI aturan eligibility modal Memo (PIC =
+  TIER1_DONE & `pic_user_id` = saya). Kotak Waiting for you / Past approval limit / Coming next /
+  Signed by you (`approvals @> [{user_email}]`), daftar urut paling lama menunggu, panel samping.
+- Helper baru di `FarOverseasAirHelpers.ts` (SATU-SATUNYA sumber): `nextStepForStatus` (dipindah
+  dari Detail modal), `STEP_*`, `workingDaysBetween` (Senin–Jumat), `getWaitInfo` (batas PIC 1, SPV 3,
+  Director 3 hari kerja sejak tanda tangan sebelumnya), `getDueInfo`, `toLocalDay` (date-only tanpa
+  geser zona), `splitEvenly` (jumlah selalu persis total), `explainDominantCompany`, `savePoWeights`,
+  `fetchCostInfoMap`, `deriveMemoWarnings`, `totalInIdr`, `implicitFxRate`, `isMemoLocked`.
+  `APPROVAL_STATUS_META` label jadi "Pending Prepared By/PIC Shipment/SPV/Director".
+
+**Diuji (2026-09-28)**: `tsc --noEmit` bersih, `vite build` sukses, 61 unit test helper (UTC, UTC+7,
+UTC−7, UTC+14), 99 asersi uji render jsdom dgn Supabase tiruan di 5 peran (Exim, PIC, Director
+view-only, viewer, deep link) — 0 gagal, 0 console error. Belum dites ke Supabase production (tidak
+ada akses DB dari sesi Claude Code).
+
+**Bagian di bawah file ini yang TIDAK berlaku lagi** (riwayat, jangan dijadikan acuan): "toggle
+tampilan List/Card" (Card lama, `FarOverseasAirCardEditModal`, tombol Print di card), "EditableCell
+mode multiline", "Search + Filter Tanggal di toolbar" (sort kembali ada, tanggal pindah ke panel
+Filter), klaim "kolom tanda tangan cetak cuma 3", dan "Dokumen — 1 shipment langsung PreviewModal"
+(sekarang modal 2 panel). Aturan data/RPC di bagian-bagian itu (whitelist RPC, NOTE 1/3 format
+baku, PIC per memo, re-match tarif) TETAP berlaku.
+
+## REDESAIN FAR Overseas — TAHAP 2 (2026-09-28) — SQL `sql/027_far_overseas_phase2_DRAFT.sql`
+
+**BELUM DIJALANKAN ke production.** Bagian E ditulis dari body LIVE `approve_far_overseas_air`/
+`reject_far_overseas_air`/`update_rekapan_far_overseas_manual` yang dikirim user (signature &
+return type SAMA -> `CREATE OR REPLACE` aman). Diuji di PGlite (Postgres) dgn skema tiruan: 53
+cek lulus, idempotent (dijalankan 2x). `fn_delete_far_overseas_air` BELUM diberi guard lock
+(body-nya belum dikirim user).
+
+**Temuan dari body live yang diperbaiki di 027**: (1) approve TIER1 hanya menerima `PENDING` ->
+memo REJECTED/NULL tidak pernah bisa ditandatangani ulang; (2) reject tidak menghapus
+`approvals` -> tanda tangan lama ikut tercetak setelah sign ulang; (3) update RPC tidak cek
+status -> memo yang sudah sign bisa diubah dari console; (4) update RPC diam2 return NULL kalau
+id tidak ada.
+
+**Isi 027**: kolom baru (payment_type/_ai/_ai_reason, non_po_*, fx_locked_at, invoice/goods
+received date, due_date/_note, on_hold, rejected_step/_at, ai_duplicate_of, ai_findings_confirmed,
+finance_received_*, paid_at/reference, payment_proof_path; FX = kolom LAMA `kurs_used`), tabel
+`far_overseas_memo_log` (audit trail per memo, append-only), `far_overseas_memo_counter` +
+trigger nomor `FAR/YYMM/NNN` (YYMM dari tanggal UPLOAD Asia/Jakarta, backfill memo lama),
+`far_overseas_step_signers` (penandatangan tahap 3/4 PER PT -> Director per PT & rantai IMI:
+kalau PT punya baris utk tahap itu, HANYA user terdaftar yang boleh sign), helper
+`fn_far_overseas_can_sign` & `fn_far_overseas_prepared_by_blockers` (SATU sumber syarat Prepared
+By, dipakai RPC approve DAN UI), RPC baru undo/confirm_ai_finding/log_reminder/finance_accept/
+mark_paid, bucket Storage bukti bayar (bagian G opsional). Lock server: setelah sign hanya
+`goods_received_date, status_note, due_date, due_date_note, on_hold` yang boleh berubah.
+
+**Frontend tahap 2 (SUDAH di kode, aktif otomatis setelah SQL jalan)** — `probePhase2()` cek kolom
+`memo_no`; sebelum SQL jalan UI = tahap 1 persis (diuji regresi). Kalau SQL dijalankan TANPA
+frontend ini, SEMUA memo Pending tertahan (payment type wajib) — deploy BARENG.
+- Edit memo: Payment type With PO/Non-PO (prefill saran AI, "AI DETECTED" + alasan, UNSURE kuning),
+  blok Non-PO (jenis, pemilik, PT ditagih; barang pribadi -> kapal "BARANG PRIBADI <PEMILIK>"),
+  FX rate (default RMB 2680, total IDR dihitung ulang), Invoice received date -> `computeDueDate`
+  (Octagon +13 hari, Jianqiao H+1, Sabtu/Minggu mundur ke Jumat + catatan) & `computeOnHold`,
+  kapal per PO (tulis `po_list[i].vessel_raw`), validasi With PO wajib nomor PO. Memo terkunci:
+  hanya Goods received date yang bisa diisi (`receiptEditable`). Field baru ada di
+  `REKAPAN_EDITABLE_FIELDS` (sama dgn whitelist 027).
+- Modal Memo: nomor memo, syarat Prepared By dari server (fallback aturan notes lama), eligibility
+  via `fn_far_overseas_can_sign`, REJECTED -> Sign ulang Prepared By, Undo last sign (menu ⋯, hanya
+  penanda tangan terakhir, tidak setelah Finance terima), Send reminder (HANYA dicatat di audit
+  trail — belum ada kirim email/WA), panel Audit trail, banner Paid/Received/FX locked/On hold,
+  bar Reject+Sign 44px di HP.
+- Cost Validation: kotak konfirmasi temuan AI (Overcharge / Duplicate, catatan min. 5).
+- Tab **Finance Handover** (`FarOverseasAirFinanceHandover.tsx`, page_key BARU
+  `far_overseas_finance` di `PAGE_REGISTRY`): kotak Waiting/Accepted·unpaid(overdue)/Paid/All,
+  stepper Sent→Received→Paid, Accept & Mark paid (bottom sheet di HP, bukti bayar -> Storage ->
+  otomatis di Docs). Role Finance juga butuh akses LIHAT `direct_loading`.
+- My Approvals: gabung jabatan global + `far_overseas_step_signers`; memo REJECTED muncul lagi utk
+  Prepared By. Tab awal per peran: Finance -> Finance Handover, SPV/Director -> My Approvals.
+- Status Finance/Paid di filter STATUS & label card, alarm due berhenti setelah Paid (memo APPROVED
+  hanya ikut alarm setelah Finance menerimanya — memo lama tidak jadi "overdue" selamanya), kolom
+  List "Cost per vessel" (`allocateByVessel`, per KG kalau lengkap else rata, largest remainder),
+  Export "1 row per PO" (alokasi IDR per PO) & "1 row per memo".
+
+**Diuji**: 18 unit test helper tahap 2 (+61 tahap 1), 144 asersi render jsdom (100 regresi tanpa
+SQL tahap 2 + 44 dgn tahap 2: Exim, PIC, penandatangan per PT, Finance), 0 console error.
+**Belum**: n8n belum mengisi `payment_type_ai`/`ai_duplicate_of`; Vendor Rates masih halaman
+Settings terpisah; notifikasi pengingat sungguhan; admin UI utk `far_overseas_step_signers`
+(isi via SQL/Table Editor dulu).
+
 ## Tarif Vendor FAR Overseas Air — dirombak total ke struktur quotation+periode (2026-09)
 
 `FarOverseasVendorTarifPage.tsx` (`/settings/tarif-far-overseas-vendor`, page_key
