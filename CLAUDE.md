@@ -42,9 +42,11 @@ approval-nya.
 - **Folder `sql/` DIHAPUS (2026-09-26)** — semua file migrasi (001–026) SUDAH dijalankan ke
   production (konfirmasi user). Semua catatan "BELUM DIJALANKAN" di file ini & `docs/claude/*.md`
   TIDAK berlaku lagi; isi SQL lama ada di git history (001–023; 024–026 tidak pernah di-commit).
-  **Pengecualian**: `sql/027_far_overseas_phase2_DRAFT.sql` (2026-09-28) = redesain FAR tahap 2,
-  **BELUM DIJALANKAN** (bagian E ditulis dari body live approve/reject/update_rekapan kiriman user;
-  diuji di PGlite). WAJIB di-deploy BARENG frontend tahap 2 — lihat `docs/claude/far-overseas.md`.
+  `sql/027_far_overseas_phase2_DRAFT.sql` (2026-09-28) = redesain FAR tahap 2 — **SUDAH DIJALANKAN
+  ke production (konfirmasi user 2026-09-30)**, termasuk kolom `prepared_by_user_id`. Frontend tahap
+  2 aktif otomatis (`probePhase2()`) — lihat `docs/claude/far-overseas.md`.
+  `sql/029_fn_delete_far_overseas_air_lock.sql` (2026-09-30) = guard lock hapus memo FAR yang sudah
+  sign Prepared By, **SUDAH DIJALANKAN (konfirmasi user 2026-09-30)**.
   `sql/028_dokumen_checklist_catatan.sql` (2026-09-30) = kolom `dokumen_checklist.catatan_checklist`
   (Catatan Checklist jendela Validation Audit Courier), **BELUM DIJALANKAN** — frontend aman duluan
   (deteksi kolom otomatis), lihat "Jendela Validation" di `docs/claude/courier-features.md`.
@@ -76,7 +78,7 @@ Semua route (kecuali `/login`) dibungkus `<ProtectedRoute>` → `<MainLayout>` (
 | `/courier/rekapan` | `CourierRekapanPage` → `SharedDataTable` | |
 | `/courier/validasi` | `CourierValidasiPage` | halaman mandiri, bukan `SharedDataTable` |
 | `/sea-air/audit`, `/sea-air/rekapan` | → `SharedDataTable` | |
-| `/direct-loading`, `/direct-loading/:id` | `FarOverseasAirPage` | modul "FAR Overseas" di sidebar; `page_key`/route TETAP `direct_loading`/`/direct-loading` (label tampil "FAR Overseas"). Redesain tahap 1 (2026-09-28, tab Memos/My Approvals, gaya visual & font sendiri) — lihat `docs/claude/far-overseas.md`; tahap 2 = `sql/027_far_overseas_phase2_DRAFT.sql` (BELUM DIJALANKAN) |
+| `/direct-loading`, `/direct-loading/:id` | `FarOverseasAirPage` | modul "FAR Overseas" di sidebar; `page_key`/route TETAP `direct_loading`/`/direct-loading` (label tampil "FAR Overseas"). Redesain tahap 1 (2026-09-28, tab Memos/My Approvals, gaya visual & font sendiri) — lihat `docs/claude/far-overseas.md`; tahap 2 = `sql/027_far_overseas_phase2_DRAFT.sql` (SUDAH DIJALANKAN 2026-09-30) |
 | `/bunker` | `BunkerPage` | |
 | `/audit-po` | `AuditPoPage` | read-only judul card, label menu "Audit AP Local" |
 | `/audit-po-overseas` | `AuditPoOverseasPage` | label "Audit AP Overseas", DUPLIKASI SENGAJA `AuditPoPage` (tabel `audit_po_apovs_comp`) |
@@ -566,7 +568,7 @@ Supabase** — bisa saja sudah basi (RPC lain ditambahkan user langsung tanpa te
   `insert_rekapan_far_overseas_manual` (Add Manual Entry, 2026-09),
   `update_cost_validasi_far_overseas_manual`, `fn_delete_far_overseas_air`,
   `approve_far_overseas_air`, `reject_far_overseas_air`, `get_users_with_approval_tier`.
-  Tahap 2 (sql/027, BELUM dijalankan): `fn_far_overseas_can_sign`,
+  Tahap 2 (sql/027, SUDAH dijalankan 2026-09-30): `fn_far_overseas_can_sign`,
   `fn_far_overseas_prepared_by_blockers`, `fn_far_overseas_undo_last_sign`,
   `fn_far_overseas_confirm_ai_finding`, `fn_far_overseas_log_reminder`,
   `fn_far_overseas_finance_accept`, `fn_far_overseas_mark_paid` (+ trigger nomor memo/log upload);

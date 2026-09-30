@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import {
   formatMoney, APPROVAL_STATUS_META, COST_STATUS_META, REKAPAN_EDITABLE_FIELDS, updateRekapanFarOverseasAir, insertRekapanFarOverseasManual,
-  parseRouteNote, rematchTarif, mapModeToJenisLayanan, computeExpectedFromRate, computeCostStatus, fetchPicEligibleUsers,
+  parseRouteNote, rematchTarif, mapModeToJenisLayanan, computeExpectedFromRate, computeCostStatus, fetchPicEligibleUsers, fetchPreparedByEligibleUsers,
   fetchDistinctMemoTitles, fetchSignerCompanyOptions, fetchActiveTarifRateRows, fetchCostInfoMap, deriveMemoWarnings, getDueInfo,
   isPaymentAlarmActive, getMemoDueValue, getStatusLabel, getFinanceStage, fetchStepSigners, mySignableSteps, canSignStep, probePhase2,
   allocateByVessel, memoRefLabel, isMemoLocked, completedStepCount, nextStepForStatus, getRouteDisplay, getPoNumbers, totalInIdr, formatIdr,
@@ -584,6 +584,7 @@ export default function FarOverseasAirPage() {
 
   const [queue, setQueue] = useState<any[]>([]);
   const [picUsers, setPicUsers] = useState<PicEligibleUser[]>([]);
+  const [preparedByUsers, setPreparedByUsers] = useState<PicEligibleUser[]>([]);
   const [companyOptions, setCompanyOptions] = useState<CompanyOption[]>([]);
   const [memoTitleOptions, setMemoTitleOptions] = useState<string[]>([]);
   const [tarifVendorRows, setTarifVendorRows] = useState<RateRow[]>([]);
@@ -724,7 +725,7 @@ export default function FarOverseasAirPage() {
     const ids = new Set<string>();
     await Promise.all(mySteps.map(async step => {
       const statuses = step === 'TIER1' && phase2 ? ['PENDING', 'REJECTED'] : [STATUS_FILTER_VALUE[step]];
-      let q = supabase.from('rekapan_far_overseas_air').select('id, pic_user_id, dominant_company_code').in('approval_status', statuses);
+      let q = supabase.from('rekapan_far_overseas_air').select(phase2 ? 'id, pic_user_id, prepared_by_user_id, dominant_company_code' : 'id, pic_user_id, dominant_company_code').in('approval_status', statuses);
       if (step === 'PIC') q = q.eq('pic_user_id', user?.id || '00000000-0000-0000-0000-000000000000');
       const { data } = await q.limit(1000);
       (data || []).forEach((r: any) => { if (canSignStep(r, step, user?.id, myTier, stepSigners)) ids.add(r.id); });
@@ -779,7 +780,7 @@ export default function FarOverseasAirPage() {
   useEffect(() => { fetchApprovalCounts(); }, [fetchApprovalCounts]);
   useEffect(() => { fetchDueAlert(); }, [fetchDueAlert]);
   useEffect(() => { fetchMyApprovalsCount(); }, [fetchMyApprovalsCount]);
-  useEffect(() => { fetchPicEligibleUsers().then(setPicUsers); }, []);
+  useEffect(() => { fetchPicEligibleUsers().then(setPicUsers); fetchPreparedByEligibleUsers().then(setPreparedByUsers); }, []);
   useEffect(() => { fetchSignerCompanyOptions().then(setCompanyOptions); }, []);
   useEffect(() => { fetchDistinctMemoTitles().then(setMemoTitleOptions); }, []);
   useEffect(() => { fetchActiveTarifRateRows().then(setTarifVendorRows); }, []);
@@ -1507,7 +1508,7 @@ export default function FarOverseasAirPage() {
         <FarOverseasAirEditMemoModal
           row={editRow}
           ctx={{
-            getVal, setVal, pendingForRow: pendingEdits[editRow.id], picUsers, companyOptions, memoTitleOptions, addMemoTitleOption,
+            getVal, setVal, pendingForRow: pendingEdits[editRow.id], picUsers, preparedByUsers, companyOptions, memoTitleOptions, addMemoTitleOption,
             tarifVendorRows, costCity: costMap[editRow.id]?.destinationCity || '', phase2,
           }}
           readOnly={!canEditDirectLoading || isMemoLocked(editRow.approval_status)}

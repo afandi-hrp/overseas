@@ -113,6 +113,8 @@ export const REKAPAN_EDITABLE_FIELDS = new Set([
   // SQL itu dijalankan, UI tidak pernah mengirim field ini (disembunyikan saat `phase2` false).
   'payment_type', 'non_po_kind', 'non_po_goods_owner', 'non_po_billed_company_code',
   'invoice_received_date', 'goods_received_date', 'due_date', 'due_date_note', 'on_hold',
+  // 2026-09-30: Prepared By (Exim) per memo -- juga ditambahkan ke whitelist RPC di sql/027.
+  'prepared_by_user_id',
 ]);
 
 export async function updateRekapanFarOverseasAir(id: string | number, updates: Record<string, any>) {
@@ -154,6 +156,14 @@ export type PicEligibleUser = { id: string; nama: string | null; email: string |
 export async function fetchPicEligibleUsers(): Promise<PicEligibleUser[]> {
   const { data, error } = await supabase.rpc('get_users_with_approval_tier', { p_page_key: 'direct_loading', p_tier: 'PIC' });
   if (error) { console.error('fetchPicEligibleUsers failed:', error); return []; }
+  return Array.isArray(data) ? data : [];
+}
+
+// Pilihan dropdown "PIC who creates the memo" (Prepared By per memo, 2026-09-30) -- user yang
+// punya jabatan TIER1 "Prepared By (Exim)" di direct_loading (RPC SAMA dgn dropdown PIC).
+export async function fetchPreparedByEligibleUsers(): Promise<PicEligibleUser[]> {
+  const { data, error } = await supabase.rpc('get_users_with_approval_tier', { p_page_key: 'direct_loading', p_tier: 'TIER1' });
+  if (error) { console.error('fetchPreparedByEligibleUsers failed:', error); return []; }
   return Array.isArray(data) ? data : [];
 }
 
@@ -1025,6 +1035,8 @@ export async function fetchStepSigners(): Promise<StepSignerMap | null> {
 export function canSignStep(rec: any, step: ApprovalStep, userId: string | null | undefined, myTier: ApprovalStep | null, signers: StepSignerMap | null): boolean {
   if (!userId) return false;
   if (step === 'PIC') return !!rec?.pic_user_id && rec.pic_user_id === userId;
+  // Prepared By ditunjuk per memo (sql/027) -> HANYA user itu; kosong -> jabatan global TIER1.
+  if (step === 'TIER1' && rec?.prepared_by_user_id) return rec.prepared_by_user_id === userId;
   if ((step === 'TIER2' || step === 'TIER3') && rec?.dominant_company_code && signers) {
     const listed = signers[rec.dominant_company_code]?.[step];
     if (listed && listed.length > 0) return listed.includes(userId);

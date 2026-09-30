@@ -210,7 +210,9 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
   const fin = getFinanceStage(rec);
 
   const localEligible = (step: ApprovalStep) =>
-    step === 'PIC' ? (!!rec.pic_user_id && rec.pic_user_id === user?.id) : canApproveTier('direct_loading', step);
+    step === 'PIC' ? (!!rec.pic_user_id && rec.pic_user_id === user?.id)
+      : step === 'TIER1' && rec.prepared_by_user_id ? rec.prepared_by_user_id === user?.id
+      : canApproveTier('direct_loading', step);
   const isEligibleForStep = (step: ApprovalStep) => (step === signStep && rpcEligible != null ? rpcEligible : localEligible(step));
 
   const canReject = nextStep != null && canEditDirectLoading && isEligibleForStep(nextStep);
@@ -498,6 +500,8 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
               <Banner tone="grey" icon={<Info size={14} />}>
                 {signStep === 'PIC'
                   ? (rec.pic_user_id ? 'Only the PIC Shipment assigned to this memo can sign this step.' : 'No PIC Shipment is assigned yet — set it in Edit memo (Prepared By section).')
+                  : signStep === 'TIER1' && rec.prepared_by_user_id
+                  ? 'Only the Prepared By (Exim) assigned to this memo can sign this step — change it in Edit memo (Prepared By section).'
                   : `This step needs the "${STEP_LABEL[signStep]}" approval role${signStep === 'TIER2' || signStep === 'TIER3' ? ' for this PT' : ''}.`}
               </Banner>
             )}

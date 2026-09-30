@@ -4,8 +4,8 @@ User memberi spek redesain lengkap (Memos/My Approvals/Finance Handover/Vendor R
 Non-PO, kurs RMB terkunci, due date otomatis, undo sign, rantai IMI, audit trail per memo). Keputusan
 user: **dikerjakan BERTAHAP di app asli**; tahap 1 = UI + logika yang bisa jalan dgn kolom DB yang
 SUDAH ADA; fitur yang butuh DB baru disiapkan sbg **draft SQL** `sql/027_far_overseas_phase2_DRAFT.sql`
-(**BELUM DIJALANKAN** — bagian E-nya menunggu user kirim `pg_get_functiondef` approve/reject/
-update_rekapan). Logika approval/RPC TIDAK diubah di tahap 1.
+(**SUDAH DIJALANKAN ke production 2026-09-30**, konfirmasi user). Logika approval/RPC TIDAK diubah
+di tahap 1.
 
 **Gaya visual KHUSUS halaman/modal FAR** (spek): font Plus Jakarta Sans (disuntik `ensureFarFont()`,
 app lain tetap Sora; modal portal pakai `style={{fontFamily: FAR_FONT_FAMILY}}`). **Latar HALAMAN
@@ -125,13 +125,37 @@ baku, PIC per memo, re-match tarif) TETAP berlaku.
    modal ini saja. Belum dites ke printer fisik.
 6. **Modal Memo: blok "PO details" DIHAPUS** (tidak tercetak juga sebelumnya).
 
+## Update 2026-09-30 (b) — Prepared By per memo & tabel "PO · Vessel · KG"
+
+1. **"PIC who creates the memo" bisa dipilih per memo** (Edit memo, section Prepared By) —
+   kolom BARU `prepared_by_user_id` (uuid -> profiles), DITAMBAHKAN ke draft
+   `sql/027_far_overseas_phase2_DRAFT.sql` (bagian A kolom, `fn_far_overseas_can_sign` cabang
+   TIER1, whitelist `update_rekapan_far_overseas_manual`) — SUDAH DIJALANKAN bareng 027 (2026-09-30).
+   Opsi dropdown = user berjabatan TIER1 "Prepared By (Exim)" (`fetchPreparedByEligibleUsers`,
+   RPC `get_users_with_approval_tier`). Kosong = semua pemegang TIER1 boleh sign (perilaku lama);
+   terisi = HANYA user itu (pola sama `pic_user_id`; dipakai saat Exim utama cuti). Frontend:
+   `REKAPAN_EDITABLE_FIELDS`, `canSignStep` (My Approvals + hitungan tab), `localEligible` +
+   banner modal Memo. Dropdown tampil hanya kalau `phase2` & kolomnya ada di baris.
+2. **Tabel "PO · Vessel · KG"** (`PoVesselWeightTable`, di ATAS Memo title) — GABUNGAN weight
+   breakdown + section "Reporting data · vessel" (section itu DIHAPUS). Kolom # / No PO (read-only,
+   chip PT) / Vendor (read-only, `po_list[i].vendor_name`) / Vessel (input) / KG|CBM (input), tombol Clear & Split evenly, toggle KG|CBM, chip "AI"
+   kalau po_list belum pernah diedit manual.
+   **Tampilan final mengikuti mockup user (2026-09-30)**: kartu ringkas, header "PO · Vessel · KG" + chip
+   AI + "N PO · N vendor · x / N vessels", tombol Clear/Split evenly kecil di kanan, toggle KG|CBM di
+   header kolom berat, semua sel kotak h-8 (PO & Vendor read-only, truncate + tooltip; PT di
+   tooltip PO), footer HANYA "Total X KG = memo weight ✓" (hijau) / selisih (kuning); preview
+   Paying PT & teks bantuan DIHAPUS dari tabel ini. Edit kapal -> `po_list[i].vessel_raw` DAN
+   `vessel_internal_note` disinkronkan otomatis = kapal unik digabung " + " (dibaca Reporting Cost
+   by Vessel / kolom VESSEL list). Memo tanpa po_list -> 1 input kapal (`vessel_internal_note`).
+
 ## REDESAIN FAR Overseas — TAHAP 2 (2026-09-28) — SQL `sql/027_far_overseas_phase2_DRAFT.sql`
 
-**BELUM DIJALANKAN ke production.** Bagian E ditulis dari body LIVE `approve_far_overseas_air`/
+**SUDAH DIJALANKAN ke production (konfirmasi user 2026-09-30).** Bagian E ditulis dari body LIVE `approve_far_overseas_air`/
 `reject_far_overseas_air`/`update_rekapan_far_overseas_manual` yang dikirim user (signature &
 return type SAMA -> `CREATE OR REPLACE` aman). Diuji di PGlite (Postgres) dgn skema tiruan: 53
-cek lulus, idempotent (dijalankan 2x). `fn_delete_far_overseas_air` BELUM diberi guard lock
-(body-nya belum dikirim user).
+cek lulus, idempotent (dijalankan 2x). Guard lock `fn_delete_far_overseas_air` (memo yang sudah
+sign Prepared By ditolak dihapus) = `sql/029_fn_delete_far_overseas_air_lock.sql` (replika body live
+kiriman user 2026-09-30 + cek status) — **SUDAH DIJALANKAN (konfirmasi user 2026-09-30)**.
 
 **Temuan dari body live yang diperbaiki di 027**: (1) approve TIER1 hanya menerima `PENDING` ->
 memo REJECTED/NULL tidak pernah bisa ditandatangani ulang; (2) reject tidak menghapus

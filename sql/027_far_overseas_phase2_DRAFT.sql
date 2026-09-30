@@ -45,7 +45,10 @@ alter table public.rekapan_far_overseas_air
   add column if not exists finance_received_user_id    uuid,
   add column if not exists paid_at                     date,
   add column if not exists paid_reference              text,
-  add column if not exists payment_proof_path          text;        -- path di bucket Storage (bagian G)
+  add column if not exists payment_proof_path          text,        -- path di bucket Storage (bagian G)
+  -- 2026-09-30: Prepared By (Exim) ditunjuk per memo (mis. pengganti saat cuti). NULL = semua
+  -- user berjabatan TIER1 boleh sign (perilaku lama); terisi = HANYA user ini (fn_far_overseas_can_sign).
+  add column if not exists prepared_by_user_id         uuid references public.profiles(id);
 
 do $$ begin
   alter table public.rekapan_far_overseas_air add constraint rekapan_far_payment_type_chk
@@ -169,7 +172,8 @@ $$;
 
 -- C3. Boleh sign/reject tahap ini? SATU-SATUNYA aturan eligibility (dipakai approve, reject,
 --     dan boleh dipanggil frontend). PIC = assignment per memo; TIER2/TIER3 = penandatangan per
---     PT kalau diatur (B3), else jabatan global; TIER1 = jabatan global. TANPA bypass Admin.
+--     PT kalau diatur (B3), else jabatan global; TIER1 = `prepared_by_user_id` kalau diisi, else
+--     jabatan global. TANPA bypass Admin.
 create or replace function public.fn_far_overseas_can_sign(p_id uuid, p_step text)
 returns boolean
 language plpgsql
@@ -180,13 +184,17 @@ as $$
 declare
   v_company text;
   v_pic uuid;
+  v_prep uuid;
 begin
   if auth.uid() is null then return false; end if;
-  select dominant_company_code, pic_user_id into v_company, v_pic
+  select dominant_company_code, pic_user_id, prepared_by_user_id into v_company, v_pic, v_prep
     from public.rekapan_far_overseas_air where id = p_id;
   if not found then return false; end if;
   if p_step = 'PIC' then
     return v_pic is not null and v_pic = auth.uid();
+  end if;
+  if p_step = 'TIER1' and v_prep is not null then
+    return v_prep = auth.uid();
   end if;
   if p_step in ('TIER2', 'TIER3') and v_company is not null
      and exists (select 1 from public.far_overseas_step_signers s where s.company_code = v_company and s.step = p_step) then
@@ -593,7 +601,9 @@ declare
     'buyer_name', 'weight_breakdown', 'pic_name', 'pic_user_id', 'dokumen_urls',
     -- tahap 2
     'payment_type', 'non_po_kind', 'non_po_goods_owner', 'non_po_billed_company_code',
-    'invoice_received_date', 'goods_received_date', 'due_date', 'due_date_note', 'on_hold'
+    'invoice_received_date', 'goods_received_date', 'due_date', 'due_date_note', 'on_hold',
+    -- 2026-09-30
+    'prepared_by_user_id'
   ];
   v_after_sign_columns text[] := array['goods_received_date', 'status_note', 'due_date', 'due_date_note', 'on_hold'];
   v_status           text;

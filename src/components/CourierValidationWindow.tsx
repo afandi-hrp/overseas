@@ -76,6 +76,17 @@ const InfoCell: React.FC<{ label: string; children: React.ReactNode }> = ({ labe
 const pctPillClass = (pct: number | null) =>
   pct === null ? 'bg-slate-100 text-slate-500' : pct >= 100 ? 'bg-emerald-50 text-emerald-700' : 'bg-orange-50 text-orange-700';
 
+// Warna tab ikut status persen (permintaan user 2026-09-30) -- aturan sama titik status:
+// hijau 100%, oranye <100%, abu null. Warna SELALU tampil di semua tab (bukan cuma yang aktif,
+// permintaan user): teks & latar tipis berwarna di tiap tab; tab AKTIF dibedakan lewat latar
+// sedikit lebih pekat + huruf tebal + garis bawah.
+const tabTone = (pct: number | null) =>
+  pct === null
+    ? { active: 'text-slate-700 bg-slate-200/70', idle: 'text-slate-600 bg-slate-100/70 hover:bg-slate-200/60', bar: 'bg-slate-500' }
+    : pct >= 100
+      ? { active: 'text-emerald-700 bg-emerald-100/80', idle: 'text-emerald-700 bg-emerald-50/80 hover:bg-emerald-100/60', bar: 'bg-emerald-500' }
+      : { active: 'text-orange-700 bg-orange-100/80', idle: 'text-orange-700 bg-orange-50/80 hover:bg-orange-100/60', bar: 'bg-orange-500' };
+
 export default function CourierValidationWindow({
   record, mainTab, subTab, jenisDokumen, access, editAccess, renderChecklist, onClose,
 }: {
@@ -202,6 +213,7 @@ export default function CourierValidationWindow({
           {tabs.map(t => {
             const active = activeTab === t;
             const p = pct[t];
+            const tone = tabTone(p);
             return (
               <button
                 key={t}
@@ -209,8 +221,8 @@ export default function CourierValidationWindow({
                 aria-selected={active}
                 onClick={() => setActiveTab(t)}
                 title={`${VALIDATION_TAB_LABEL[t]}: ${validationDotLabel(p)}`}
-                className={`relative shrink-0 flex items-center gap-2 px-3 pt-2 pb-2.5 text-[13px] font-semibold transition-colors ${
-                  active ? 'text-[#5A305A]' : 'text-slate-500 hover:text-[#5A305A]'
+                className={`relative shrink-0 flex items-center gap-2 px-3 pt-2 pb-2.5 rounded-t-lg text-[13px] transition-colors ${
+                  active ? `${tone.active} font-bold` : `${tone.idle} font-semibold`
                 }`}
               >
                 <span className={`w-2 h-2 rounded-full shrink-0 ${validationDotClass(p)}`} />
@@ -218,7 +230,7 @@ export default function CourierValidationWindow({
                 {p !== null && (
                   <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-bold leading-none ${pctPillClass(p)}`}>{p}%</span>
                 )}
-                {active && <span className="absolute left-2 right-2 -bottom-px h-[2px] rounded-full bg-[#5A305A]" />}
+                {active && <span className={`absolute left-2 right-2 -bottom-px h-[2px] rounded-full ${tone.bar}`} />}
               </button>
             );
           })}
