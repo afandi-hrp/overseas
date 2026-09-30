@@ -7,8 +7,9 @@ import { useAuth } from '../lib/AuthContext';
 import { X, Info, Pencil, Edit3, Save, CheckCircle2, AlertTriangle, HelpCircle, ChevronDown, ChevronUp, CheckCircle, Lock, ExternalLink } from 'lucide-react';
 import {
   looseNameMatch, COST_STATUS_META, parseJsonField, formatMoney, formatDateShort,
-  computeExpectedFromRate, computeCostStatus, explainDominantCompany, savePoWeights, isMemoLocked, memoWeightKg,
-  ensureFarFont, FAR_FONT_FAMILY, type RateRow, type PoListEntry,
+  computeExpectedFromRate, computeCostStatus, explainDominantCompany, savePoWeights, isMemoLocked,
+  getBreakdownUnit, memoWeightIn, withBreakdownUnit, WEIGHT_UNITS,
+  ensureFarFont, FAR_FONT_FAMILY, type RateRow, type PoListEntry, type WeightUnit,
 } from '../utils/FarOverseasAirHelpers';
 import { isAutoSplitCase } from '../utils/FarOverseasAirHelpers';
 
@@ -173,7 +174,7 @@ const RateCandidateCard: React.FC<{ rate: RateRow; onSelect: () => void; selecti
 
 const RULE_TEXT: Record<string, string> = {
   MOST_PO: 'Rule 1 — most POs',
-  HEAVIEST_KG: 'Rule 2 — tied on POs, heaviest total KG',
+  HEAVIEST_KG: 'Rule 2 — tied on POs, heaviest total weight',
   TIE_DEFAULT_WNS: 'Rule 3 — still tied, system default WNS',
   TIE_FIRST: 'Rule 3 — still tied, first PT in the list (please confirm)',
 };
@@ -218,6 +219,9 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
   // Draft KG per PO (index selaras `poList`) -- null = belum diubah. Disimpan lewat
   // `savePoWeights()` (SAMA dgn modal Weight breakdown), terpisah dari bar "Save changes".
   const [kgDraft, setKgDraft] = useState<(number | null)[] | null>(null);
+  // Satuan breakdown per PO KG/CBM (2026-09-30) -- null = belum diubah (pakai `getBreakdownUnit`).
+  // Tersimpan bareng angka per PO lewat "Save" yang sama (`weight_unit` tiap entry po_list).
+  const [unitDraft, setUnitDraft] = useState<WeightUnit | null>(null);
   // Konfirmasi temuan AI (tahap 2): draft catatan per temuan.
   const [findingNotes, setFindingNotes] = useState<Record<string, string>>({});
   const [confirmingFinding, setConfirmingFinding] = useState<string | null>(null);
@@ -372,9 +376,15 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
 
   const effectiveStatus = memoRow?.approval_status ?? approvalStatus ?? null;
   const kgLocked = isMemoLocked(effectiveStatus);
-  const memoKg = memoRow ? memoWeightKg(memoRow) : null;
-  const autoSplit = isAutoSplitCase(poList.length, memoKg);
+  const savedUnit: WeightUnit = memoRow ? getBreakdownUnit(memoRow, poList) : 'KG';
+  const unit: WeightUnit = unitDraft ?? savedUnit;
+  const memoKg = memoRow ? memoWeightIn(memoRow, unit) : null;
+  const autoSplit = isAutoSplitCase(poList.length, unit === 'KG' ? memoKg : null);
   const canEditKg = canEditDirectLoading && !kgLocked && !autoSplit;
+  const canChangeUnit = canEditDirectLoading && !kgLocked && poList.length > 0;
+  const weightDirty = kgDraft != null || (unitDraft != null && unitDraft !== savedUnit);
+  // Label baris "KG" tabel biaya ikut satuan berat memo (invoice CBM -> "CBM").
+  const memoQtyUnit = String(memoRow?.weight_unit || '').toUpperCase().includes('CBM') ? 'CBM' : 'KG';
 
   const kgValue = (i: number): number | null => (kgDraft ? kgDraft[i] : (poList[i]?.weight_kg ?? null));
   const setKgAt = (i: number, raw: string) => {
@@ -385,7 +395,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
       return base.map((v, idx) => idx === i ? clamped : v);
     });
   };
-  const draftPoList: PoListEntry[] = poList.map((p, i) => ({ ...p, weight_kg: kgValue(i) }));
+  const draftPoList: PoListEntry[] = withBreakdownUnit(poList.map((p, i) => ({ ...p, weight_kg: kgValue(i) })), unit);
 
   const handleSaveKg = async () => {
     if (!memoRow) return;
@@ -393,13 +403,14 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
     const res = await savePoWeights(memoRow.id, draftPoList);
     setSavingKg(false);
     if (res.error) {
-      showToast('Failed to save KG: ' + res.error, 'error');
+      showToast(`Failed to save ${unit}: ` + res.error, 'error');
       return;
     }
     setPoList(draftPoList);
     setDominantCompanyCode(res.dominantCompanyCode);
     setKgDraft(null);
-    showToast('KG per PO saved. Paying PT recalculated.', 'success');
+    setUnitDraft(null);
+    showToast(`${unit} per PO saved. Paying PT recalculated.`, 'success');
     onChanged?.();
   };
 
@@ -434,7 +445,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
 
   const kgCell = (idx: number) => {
     if (idx < 0) return <span className="text-[#6E5E70]/70 italic" title="PO not found in the memo's PO list">—</span>;
-    if (!canEditKg) return <span className="text-[#2A1A2C] font-semibold">{kgValue(idx) != null ? `${kgValue(idx)} KG` : '—'}</span>;
+    if (!canEditKg) return <span className="text-[#2A1A2C] font-semibold">{kgValue(idx) != null ? `${kgValue(idx)} ${unit}` : '—'}</span>;
     return (
       <div className="flex items-center gap-1">
         <input
@@ -446,7 +457,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
           className="w-20 border border-[#EADFD6] rounded-lg px-2 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-[#6B3470]/30"
           placeholder="—"
         />
-        <span className="text-[10px] text-[#6E5E70]">KG</span>
+        <span className="text-[10px] text-[#6E5E70]">{unit}</span>
       </div>
     );
   };
@@ -624,7 +635,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                   <p className="text-[10px] font-bold text-[#6E5E70] uppercase tracking-wider mb-2">How it was decided</p>
                   <ol className="text-xs text-[#2A1A2C] space-y-0.5 mb-3 list-decimal list-inside">
                     <li>The PT with the <span className="font-bold">most POs</span> pays.</li>
-                    <li>If tied, the PT with the <span className="font-bold">heaviest total KG</span> pays.</li>
+                    <li>If tied, the PT with the <span className="font-bold">heaviest total {savedUnit}</span> pays.</li>
                     <li>If still tied, the system defaults to WNS (when WNS is among them) — please confirm.</li>
                   </ol>
                   {savedExplanation.stats.length === 0 ? (
@@ -644,7 +655,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                                 <div className={`h-full rounded-full ${isWinner ? 'bg-emerald-600' : 'bg-[#6B3470]/40'}`} style={{ width: `${(s.count / maxCount) * 100}%` }} />
                               </div>
                               <span className="text-[11px] font-semibold text-[#2A1A2C] w-14 text-right">{s.count} PO{s.count === 1 ? '' : 's'}</span>
-                              <span className="text-[11px] text-[#6E5E70] w-16 text-right">{s.hasWeight ? `${Math.round(s.weight * 1000) / 1000} KG` : '— KG'}</span>
+                              <span className="text-[11px] text-[#6E5E70] w-16 text-right">{s.hasWeight ? `${Math.round(s.weight * 1000) / 1000} ${savedUnit}` : `— ${savedUnit}`}</span>
                             </div>
                           </div>
                         );
@@ -665,12 +676,22 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                 <div className="px-4 py-3 border-b border-[#EADFD6] flex items-center justify-between gap-2 flex-wrap">
                   <div>
                     <h3 className="text-sm font-bold text-[#2A1A2C]">Document Validation</h3>
-                    <p className="text-[11px] text-[#6E5E70] mt-0.5">Per PO — which PT owns it and how many KG. KG is used for Rule 2.</p>
+                    <p className="text-[11px] text-[#6E5E70] mt-0.5">Per PO — which PT owns it and how much weight (KG or CBM). The weight is used for Rule 2.</p>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
-                    <span className="text-[#6E5E70]">KG filled: <span className={`font-bold ${memoKg != null && Math.abs(kgFilledSum - memoKg) < 0.0005 ? 'text-emerald-700' : 'text-[#2A1A2C]'}`}>{kgFilledSum} / {memoKg ?? '—'} KG</span></span>
-                    {kgLocked && <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#F5EDF3] text-[#6B3470]"><Lock size={10} /> KG locked</span>}
-                    {autoSplit && !kgLocked && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700" title="Use Weight breakdown to save the auto split">Auto split</span>}
+                    {canChangeUnit ? (
+                      <div className="flex items-center rounded-lg border border-[#EADFD6] p-0.5" title="Unit of the weight per PO">
+                        {WEIGHT_UNITS.map(u => (
+                          <button key={u} type="button" onClick={() => setUnitDraft(u === savedUnit ? null : u)}
+                            className={`px-2 h-6 rounded-md text-[11px] font-bold ${unit === u ? 'bg-[#3B1B3D] text-white' : 'text-[#6E5E70] hover:text-[#2A1A2C]'}`}>
+                            {u}
+                          </button>
+                        ))}
+                      </div>
+                    ) : poList.length > 0 && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#F5EDF3] text-[#6B3470]">{unit}</span>}
+                    <span className="text-[#6E5E70]">{unit} filled: <span className={`font-bold ${memoKg != null && Math.abs(kgFilledSum - memoKg) < 0.0005 ? 'text-emerald-700' : 'text-[#2A1A2C]'}`}>{kgFilledSum} / {memoKg ?? '—'} {unit}</span></span>
+                    {kgLocked && <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#F5EDF3] text-[#6B3470]"><Lock size={10} /> {unit} locked</span>}
+                    {autoSplit && !kgLocked && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700" title="Open Edit memo (Weight breakdown) to save the auto split">Auto split</span>}
                   </div>
                 </div>
                 {docValidation.length === 0 && poList.length === 0 ? (
@@ -683,7 +704,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                           <th className="text-left font-semibold px-3 py-2">PO</th>
                           <th className="text-left font-semibold px-3 py-2">Ref on invoice</th>
                           <th className="text-left font-semibold px-3 py-2">PT (from PO code)</th>
-                          <th className="text-left font-semibold px-3 py-2">KG</th>
+                          <th className="text-left font-semibold px-3 py-2">{unit}</th>
                           <th className="text-left font-semibold px-3 py-2">Status</th>
                         </tr>
                       </thead>
@@ -737,16 +758,16 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                     </table>
                   </div>
                 )}
-                {kgDraft && (
+                {weightDirty && (
                   <div className="border-t border-amber-200 bg-amber-50 px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
                     <p className="text-xs text-amber-900">
-                      Unsaved KG. Paying PT preview: <span className="font-bold">{draftExplanation.winner || '—'}</span>
+                      Unsaved {unit} per PO. Paying PT preview: <span className="font-bold">{draftExplanation.winner || '—'}</span>
                       {draftExplanation.winner && ` (${RULE_TEXT[draftExplanation.rule] || ''})`}
                     </p>
                     <div className="flex items-center gap-2">
-                      <button onClick={() => setKgDraft(null)} disabled={savingKg} className="px-3 py-1.5 rounded-lg border border-[#EADFD6] bg-white text-[#2A1A2C] font-semibold text-xs hover:bg-[#F5EDF3] disabled:opacity-50">Cancel</button>
+                      <button onClick={() => { setKgDraft(null); setUnitDraft(null); }} disabled={savingKg} className="px-3 py-1.5 rounded-lg border border-[#EADFD6] bg-white text-[#2A1A2C] font-semibold text-xs hover:bg-[#F5EDF3] disabled:opacity-50">Cancel</button>
                       <button onClick={handleSaveKg} disabled={savingKg} className="px-3 py-1.5 rounded-lg bg-[#6B3470] hover:bg-[#5A2A5E] text-white font-semibold text-xs disabled:opacity-50 flex items-center gap-1.5">
-                        <Save size={13} /> {savingKg ? 'Saving...' : 'Save KG'}
+                        <Save size={13} /> {savingKg ? 'Saving...' : `Save ${unit}`}
                       </button>
                     </div>
                   </div>
@@ -784,7 +805,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                             <tr key={row.row_key} className={isTotal ? 'bg-[#F5EDF3]/60 font-bold' : ''}>
                               <td className="px-3 py-1.5 align-top">
                                 <div className="flex items-center gap-1.5">
-                                  <span className="text-[#2A1A2C]">{COST_ROW_LABELS[row.row_key] || row.row_key}</span>
+                                  <span className="text-[#2A1A2C]">{row.row_key === 'KG' ? memoQtyUnit : (COST_ROW_LABELS[row.row_key] || row.row_key)}</span>
                                   {row.edited && <EditedMark />}
                                 </div>
                               </td>

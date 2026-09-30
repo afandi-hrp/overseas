@@ -182,7 +182,7 @@ export type CompanyOption = { company_code: string; company_name_full: string };
 // tanpa PO, `dominant_company_code` tetap null selamanya & header modal Approval Memo (logo +
 // nama PT) tidak pernah terisi. Kolom ini kasih jalan MANUAL override `dominant_company_code`
 // langsung (field yang SAMA, bukan kolom baru di DB) -- aman krn field ini HANYA di-recompute
-// otomatis oleh `WeightBreakdownModal.tsx` (saat breakdown berat per-PO disimpan), TIDAK ada
+// otomatis saat breakdown berat per-PO disimpan (Cost Validation / Weight breakdown di Edit memo), TIDAK ada
 // proses lain yang menimpa balik nilai manual ini diam-diam.
 export async function fetchSignerCompanyOptions(): Promise<CompanyOption[]> {
   const { data, error } = await supabase.from('far_overseas_signer_config').select('company_code, company_name_full').order('company_name_full');
@@ -199,15 +199,47 @@ export type PoListEntry = {
   total_value?: number | null;
   currency?: string | null;
   source?: string | null;
+  // Nama field TETAP `weight_kg` (dibaca n8n/export/allocateByVessel) walau isinya bisa CBM --
+  // satuannya di `weight_unit` (2026-09-30, breakdown per PO bisa KG ATAU CBM). Kosong = KG
+  // (data lama). Semua PO dalam 1 memo SELALU 1 satuan yang sama (lihat `withBreakdownUnit`).
   weight_kg?: number | null;
+  weight_unit?: WeightUnit | null;
 };
 
+export type WeightUnit = 'KG' | 'CBM';
+export const WEIGHT_UNITS: WeightUnit[] = ['KG', 'CBM'];
+
+// Satuan breakdown berat per PO: dari po_list tersimpan (kalau pernah diisi), else ikut satuan
+// berat memo (`weight_unit` memo mengandung CBM -> CBM), default KG.
+export function getBreakdownUnit(rec: any, poList?: PoListEntry[]): WeightUnit {
+  const list = poList ?? getPoList(rec);
+  const saved = list.find(p => p?.weight_unit)?.weight_unit;
+  if (saved) return String(saved).toUpperCase() === 'CBM' ? 'CBM' : 'KG';
+  return String(rec?.weight_unit || '').toUpperCase().includes('CBM') ? 'CBM' : 'KG';
+}
+
+// Berat memo dalam satuan `unit` (null kalau satuan memo beda -- tidak bisa dibandingkan dgn
+// jumlah breakdown per PO). Satuan memo kosong dianggap KG (perilaku lama `memoWeightKg`).
+export function memoWeightIn(rec: any, unit: WeightUnit): number | null {
+  const u = String(rec?.weight_unit || '').toUpperCase();
+  const memoUnit: WeightUnit | null = u.includes('CBM') ? 'CBM' : (!u || u.includes('KG')) ? 'KG' : null;
+  if (memoUnit !== unit) return null;
+  if (rec?.qty == null || rec.qty === '') return null;
+  const n = Number(rec.qty);
+  return isNaN(n) ? null : n;
+}
+
+export function withBreakdownUnit(poList: PoListEntry[], unit: WeightUnit): PoListEntry[] {
+  return poList.map(p => ({ ...p, weight_unit: unit }));
+}
+
 // String tampilan breakdown berat per PO, dipakai di kolom WEIGHT BREAKDOWN tabel list.
-// Format persis: "I.PO/AMT.MDN/2607/0247: 50 KG + I.PO/GMI.MDN/2607/0333: 30 KG"
+// Format persis: "I.PO/AMT.MDN/2607/0247: 50 KG + I.PO/GMI.MDN/2607/0333: 30 KG" (satuan ikut
+// `weight_unit` per PO, default KG).
 export function buildWeightBreakdownDisplay(poList: PoListEntry[]): string | null {
   const withWeight = poList.filter(po => po.weight_kg != null);
   if (withWeight.length === 0) return null;
-  return withWeight.map(po => `${po.po_no_raw}: ${po.weight_kg} KG`).join(' + ');
+  return withWeight.map(po => `${po.po_no_raw}: ${po.weight_kg} ${po.weight_unit === 'CBM' ? 'CBM' : 'KG'}`).join(' + ');
 }
 
 // Hitung ulang dominant_company_code -- menang berdasarkan jumlah PO, tie-break pakai total
@@ -716,6 +748,7 @@ export function memoWeightKg(rec: any): number | null {
 }
 
 // Auto split (spek): >= 5 PO DAN total berat memo <= 1 kg -> berat dibagi rata otomatis & dikunci.
+// HANYA utk breakdown satuan KG (pemanggil kirim `null` kalau satuan breakdown CBM).
 export function isAutoSplitCase(poCount: number, memoKg: number | null): boolean {
   return poCount >= 5 && memoKg != null && memoKg > 0 && memoKg <= 1;
 }
@@ -765,9 +798,9 @@ export function explainDominantCompany(poList: PoListEntry[]): DominantExplanati
   return { winner, rule: winner === 'WNS' && top.some(s => s.code === 'WNS') ? 'TIE_DEFAULT_WNS' : 'TIE_FIRST', stats };
 }
 
-// Simpan KG per PO -- SATU-SATUNYA jalur tulis berat per PO (dipakai Weight Breakdown modal DAN
-// Cost Validation, spek "angka di kedua tempat harus selalu sama"). po_list/weight_breakdown/
-// dominant_company_code dikirim SEKALIGUS (lihat `recomputeDominantCompany`).
+// Simpan berat (KG/CBM) per PO LANGSUNG -- dipakai Cost Validation. Weight breakdown di Edit memo
+// menulis 3 field yang SAMA (po_list/weight_breakdown/dominant_company_code) lewat pendingEdits &
+// Save memo (`WeightBreakdownInline`) -- spek "angka di kedua tempat harus selalu sama".
 export async function savePoWeights(recordId: string | number, poList: PoListEntry[]) {
   const weightBreakdown = buildWeightBreakdownDisplay(poList);
   const dominantCompanyCode = recomputeDominantCompany(poList);
@@ -873,7 +906,8 @@ export function deriveMemoWarnings(rec: any, cost: CostInfo | undefined, now: Da
   if ((pending || status === 'TIER1_DONE') && !rec?.pic_user_id) w.push({ level: 'amber', text: 'PIC Shipment not assigned' });
   if (!rec?.dominant_company_code && status !== 'REJECTED') w.push({ level: 'amber', text: 'Paying PT not set' });
   const poList = getPoList(rec);
-  if (beforeSign && poList.length > 1 && !isAutoSplitCase(poList.length, memoWeightKg(rec)) && poList.some(p => p.weight_kg == null)) w.push({ level: 'amber', text: 'KG per PO not filled' });
+  const bdUnit = getBreakdownUnit(rec, poList);
+  if (beforeSign && poList.length > 1 && !isAutoSplitCase(poList.length, bdUnit === 'KG' ? memoWeightIn(rec, 'KG') : null) && poList.some(p => p.weight_kg == null)) w.push({ level: 'amber', text: `${bdUnit} per PO not filled` });
   const fin = getFinanceStage(rec);
   if (fin === 'WAITING_FINANCE') w.push({ level: 'grey', text: 'Approved — waiting for Finance to accept' });
   if (fin === 'RECEIVED') w.push({ level: 'grey', text: `Received by Finance ${formatDateShort(rec.finance_received_at)} · unpaid` });

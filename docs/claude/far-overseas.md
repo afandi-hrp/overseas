@@ -69,8 +69,8 @@ hanya di modul ini.)
   versi sistem saat ini), input KG per PO + Save KG/Cancel + preview PT (`savePoWeights`, SAMA dgn
   Weight breakdown), kolom Check (Match/Above/Below via `computeCostStatus`), link Vendor Rates.
   Sekarang portal ke body & menerima `approvalStatus`/`onChanged`.
-- `FarOverseasAirWeightBreakdownModal.tsx` — Split evenly/Clear, KG terisi vs berat memo, auto split
-  (>=5 PO & berat <=1 KG -> dibagi rata & dikunci, tetap perlu Save), locked setelah sign.
+- ~~`FarOverseasAirWeightBreakdownModal.tsx`~~ — DIHAPUS 2026-09-30, diganti `WeightBreakdownInline`
+  statis di modal Edit memo (lihat "Update 2026-09-30" di bawah).
 - `FarOverseasAirDocumentsModal.tsx` — 2 panel (daftar file kiri, preview kanan, file pertama
   langsung terbuka). `DrivePreviewFrame`/`getDokumenList` diekspor utk modal Edit.
 - `FarOverseasAirMyApprovals.tsx` (BARU) — query MENGIKUTI aturan eligibility modal Memo (PIC =
@@ -94,6 +94,36 @@ mode multiline", "Search + Filter Tanggal di toolbar" (sort kembali ada, tanggal
 Filter), klaim "kolom tanda tangan cetak cuma 3", dan "Dokumen — 1 shipment langsung PreviewModal"
 (sekarang modal 2 panel). Aturan data/RPC di bagian-bagian itu (whitelist RPC, NOTE 1/3 format
 baku, PIC per memo, re-match tarif) TETAP berlaku.
+
+## Update 2026-09-30 — popover card, KG/CBM per PO, weight breakdown statis, cetak ½ A4
+
+1. **Card: chip "+N PO" & "+N more" bisa diklik** (`CardPopover`, `FarOverseasAirPage.tsx`) —
+   daftar lengkap PO (`PoListPopoverBody`: nomor + PT + kapal dari `po_list`, fallback `po_ori`) /
+   semua peringatan tampil MELAYANG (portal ke body, `position:fixed`, pola `KategoriPicker`),
+   ukuran card TIDAK berubah. Tutup: klik chip lagi, tombol X, klik di luar, Escape. List view
+   BELUM ikut (chip "+N PO" di tabel List masih teks biasa).
+2. **Berat per PO KG ATAU CBM** — `PoListEntry.weight_unit` (`'KG'|'CBM'`, di jsonb `po_list`,
+   TANPA kolom/SQL baru; field angka TETAP `weight_kg` demi n8n/export). Semua PO 1 memo 1 satuan
+   (`withBreakdownUnit`). `getBreakdownUnit(rec)` = satuan tersimpan, else ikut `weight_unit` memo
+   (CBM -> CBM), default KG. `memoWeightIn(rec, unit)` ganti `memoWeightKg` utk pembanding jumlah.
+   Auto split (<=1 KG) HANYA utk satuan KG. `buildWeightBreakdownDisplay` tulis satuan per PO.
+   Toggle KG|CBM di Cost Validation (Document Validation, `unitDraft`, disimpan bareng tombol
+   "Save KG/CBM" via `savePoWeights`) & di Edit memo. Label baris "KG" tabel biaya ikut satuan
+   berat memo (CBM kalau invoice CBM).
+3. **Edit memo: Non-PO -> field "PO number(s)" disembunyikan** (nilai lama TIDAK dihapus).
+4. **Weight breakdown statis di Edit memo** (`WeightBreakdownInline`) — tabel PO/PT/Vendor/berat +
+   KG|CBM + Split evenly/Clear + preview Paying PT. Masuk `pendingEdits` (`po_list`,
+   `weight_breakdown`, `dominant_company_code` — yang terakhir HANYA ditimpa kalau rumus PO punya
+   pemenang) & tersimpan lewat "Save changes" memo. Auto split = perubahan UNSAVED otomatis.
+   **Bug fix terkait**: `setVal` halaman membandingkan object/array via `JSON.stringify` — dulu
+   `String()` membuat 2 array objek sepanjang sama dianggap "sama" -> edit po_list (KG/kapal per
+   PO) bisa terbuang diam-diam.
+5. **Cetak memo = ½ A4 portrait** (GANTI A5) — `@page A4 portrait margin 0`, memo di kotak atas
+   `.far-memo-half` 210×148,5 mm (padding 7/8 mm), `.far-memo-sheet` diperkecil otomatis
+   (`--far-memo-zoom`, dihitung di `beforeprint` dari tinggi memo pada lebar 194 mm) kalau tidak
+   muat. `html:has(#far-overseas-print-area){zoom:1}` menetralkan zoom global 90% saat cetak
+   modal ini saja. Belum dites ke printer fisik.
+6. **Modal Memo: blok "PO details" DIHAPUS** (tidak tercetak juga sebelumnya).
 
 ## REDESAIN FAR Overseas — TAHAP 2 (2026-09-28) — SQL `sql/027_far_overseas_phase2_DRAFT.sql`
 

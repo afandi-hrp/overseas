@@ -3,6 +3,7 @@ import { LoadingSpinner } from './LoadingState';
 import { supabase } from '../lib/supabase';
 import { Receipt, FileText, Landmark, Ship, Sailboat, FileCheck2, FileDigit, IdCard, Scale, ClipboardList, Edit3, CheckCircle2, XCircle, Clock, Building2, Plane, CalendarDays, UserCheck, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import ValidasiPerhitunganPIB from './ValidasiPerhitunganPIB';
+import { VW_LABEL, VW_BTN_PRIMARY, VW_BTN_SECONDARY, VW_BTN_SUCCESS, VW_BTN_DANGER, vwPctBar, vwPctText } from './validationWindowStyles';
 
 // Format tanggal seragam di seluruh aplikasi: DD-MMMM-YYYY, nama bulan Bahasa Inggris.
 const MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -823,7 +824,13 @@ const STATUS_CONFIG: any = {
   mismatch: { label: "Mismatch",    bg: "var(--color-background-danger)",    color: "var(--color-text-danger)",   icon: "ti-x" },
 };
 
-export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdit = true }: { record: any, mainTab: string, subTab?: string, onClose: () => void, canEdit?: boolean }) {
+// `embedded` (2026-09-30) -- dirender sbg tab "Doc Validation" di CourierValidationWindow: tanpa
+// overlay/judul/tombol X/Print sendiri (Print & tutup ada di level jendela), chip Document Type/
+// No. PIB/Vendor disembunyikan (sudah ada di Shipment Info jendela). `onPctChange` melaporkan %
+// live (null = belum ada dokumen_validasi & belum ada checklist tersimpan). `checklistVersion`
+// naik tiap Checklist disimpan di tab sebelah -> flag PO/CIPL/Final Invoice dibaca ulang TANPA
+// reload penuh (edit yang sedang berjalan & autosave tidak terganggu).
+export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdit = true, embedded = false, onPctChange, checklistVersion = 0 }: { record: any, mainTab: string, subTab?: string, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, checklistVersion?: number }) {
   const [docType, setDocType] = useState<'PIB'|'CN'|null>(null);
   const [debugData, setDebugData] = useState<any>({ raw: {}, doc: {} });
 
@@ -876,6 +883,9 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   // logic lama (kosong/null = Match, ada isi = Mismatch). Default `false` (belum fetch/belum ada
   // baris checklist sama sekali = dianggap belum dicentang, lihat `getDocChecklistFlag()`).
   const [docCompletenessFlags, setDocCompletenessFlags] = useState<{ ada_po?: boolean; ada_cipl?: boolean; ada_final_invoice?: boolean }>({});
+  // Ada data sumber (baris dokumen_validasi ATAU checklist tersimpan) -- dipakai `onPctChange`
+  // supaya titik status abu-abu (bukan oranye 0%) kalau memang belum ada yang bisa divalidasi.
+  const [hasSourceData, setHasSourceData] = useState(false);
 
   // Ref "salinan terbaru" -- dibaca saat auto-save benar-benar jalan, tapi TIDAK memicu
   // ulang timer debounce-nya (beda dari taruh langsung di dependency array useEffect di bawah).
@@ -986,6 +996,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
           }
           docAwb = docs[0].awb || "";
           setDebugData({ doc: docs[0], raw });
+          setHasSourceData(true);
         }
       }
 
@@ -1015,6 +1026,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
         const { data: checklist } = await supabase.from('tabel_checklist_validasi').select('*').or(queryStr).order('created_at', { ascending: false }).limit(1);
         if (checklist && checklist.length > 0) {
            const cl = checklist[0];
+           setHasSourceData(true);
            if (cl.values_json) setValues(cl.values_json);
            if (cl.tanggal_cek) setTanggal(cl.tanggal_cek);
            if (cl.nama_checker) setNamaChecker(cl.nama_checker);
@@ -1226,6 +1238,31 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     return { match, mismatch, partial, empty, checked, pct, total: totalItems };
   }, [values, activeSections, computeStatus, pibStats, debugData, docCompletenessFlags]);
 
+  useEffect(() => {
+    if (!onPctChange || loading) return;
+    onPctChange(hasSourceData ? stats.pct : null);
+  }, [onPctChange, loading, hasSourceData, stats.pct]);
+
+  // Checklist disimpan di tab sebelah (jendela Validation) -> baca ulang HANYA flag
+  // PO/CIPL/Final Invoice dari dokumen_checklist (gating tabel "NO VESSEL NAME AND IMO NUMBER").
+  // Sengaja bukan reload doLoad() penuh: itu menimpa values & bisa memotong autosave 2 detik.
+  useEffect(() => {
+    if (!checklistVersion) return;
+    const isPib = record.jenis_dokumen === 'PIB' || record.tabel === 'tabel_audit_pib' || (mainTab === 'audit' && subTab === 'pib');
+    const isCn = record.jenis_dokumen === 'CN' || record.tabel === 'tabel_audit_cn' || (mainTab === 'audit' && subTab === 'cn');
+    if (!isPib && !isCn) return;
+    let cancelled = false;
+    supabase.from('dokumen_checklist')
+      .select('ada_po, ada_cipl, ada_final_invoice')
+      .eq(isPib ? 'pib_id' : 'cn_id', record.id)
+      .maybeSingle()
+      .then(({ data: dc }) => {
+        if (cancelled) return;
+        setDocCompletenessFlags({ ada_po: !!dc?.ada_po, ada_cipl: !!dc?.ada_cipl, ada_final_invoice: !!dc?.ada_final_invoice });
+      });
+    return () => { cancelled = true; };
+  }, [checklistVersion]);
+
   const sectionStats = (section: any) => {
     let m = 0, mm = 0, tot = section.rows.length;
     section.rows.forEach((r: any) => {
@@ -1369,6 +1406,14 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   };
 
   if (loading) {
+    if (embedded) {
+      return (
+        <div className="flex flex-col items-center justify-center py-14 text-[#5A305A]">
+          <LoadingSpinner className="mb-4" />
+          <p className="font-medium text-sm">Loading data...</p>
+        </div>
+      );
+    }
     return (
       <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center h-full w-full">
         <div className="bg-white p-6 rounded-2xl shadow-xl">
@@ -1396,10 +1441,117 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     return { label: "Not checked yet", bg: "#EEEAF3", color: "#5A305A", icon: "ti-clock" };
   }
 
+  const startEdit = () => {
+    setSnapshotValues({ values: JSON.parse(JSON.stringify(values)), awbNo, tanggal, namaChecker, catatanManual });
+    setIsEditMode(true);
+  };
+  const cancelEdit = () => {
+    if (snapshotValues) {
+      setValues(snapshotValues.values);
+      setAwbNo(snapshotValues.awbNo);
+      setTanggal(snapshotValues.tanggal);
+      setNamaChecker(snapshotValues.namaChecker);
+      setCatatanManual(snapshotValues.catatanManual ?? "");
+    }
+    setIsEditMode(false);
+  };
+
+  // Toolbar tab "Doc Validation" di jendela Validation (mode embedded) -- MENGGANTIKAN bar judul
+  // + panel gradient "Import Document Validation Table" (dulu tampil seperti header kedua di bawah
+  // Shipment Info). Isi & fungsi sama: Check date, Checked by, No. AWB (saat Edit), Manual Change
+  // Notes, skor Match/Mismatch/Not filled + akurasi, tombol Edit/Recompute/Save/Cancel.
+  const embeddedToolbar = embedded && (
+    <div className="shrink-0 bg-white border-b border-slate-200">
+      <div className="px-4 pt-2.5 pb-2 flex items-center gap-x-5 gap-y-2 flex-wrap">
+        <div className="flex items-center gap-2 min-w-0">
+          <CalendarDays size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
+          <div>
+            <div className={VW_LABEL}>Check date</div>
+            {isEditMode ? <input type="date" style={S.metaInput} className="mt-0.5" value={tanggal || ""} onChange={e => { userActionRef.current = true; setTanggal(e.target.value); }} /> : <div className="text-[13px] font-semibold text-[#5A305A] mt-0.5">{fmtDateEN(tanggal)}</div>}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 min-w-0">
+          <UserCheck size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
+          <div>
+            <div className={VW_LABEL}>Checked by</div>
+            {isEditMode ? <input style={S.metaInput} className="mt-0.5" value={namaChecker || ""} onChange={e => { userActionRef.current = true; setNamaChecker(e.target.value); }} placeholder="Checker's name" /> : <div className="text-[13px] font-semibold text-[#5A305A] mt-0.5">{namaChecker || "—"}</div>}
+          </div>
+        </div>
+        {isEditMode && (
+          <div className="flex items-center gap-2 min-w-0">
+            <Plane size={14} className="text-[#8b5fa8] shrink-0" />
+            <div>
+              <div className={VW_LABEL}>No. AWB (checker)</div>
+              <input style={S.metaInput} className="mt-0.5" value={awbNo || ""} onChange={e => { userActionRef.current = true; setAwbNo(e.target.value); }} placeholder="e.g. 1234567890" />
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center gap-3 print:hidden">
+          <div className="flex items-center gap-1.5">
+            <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 text-emerald-700 px-2 py-1 text-[11px] font-semibold"><b className="text-[13px]">{stats.match}</b> Match</span>
+            <span className="inline-flex items-center gap-1 rounded-md bg-red-50 text-red-700 px-2 py-1 text-[11px] font-semibold"><b className="text-[13px]">{stats.mismatch}</b> Mismatch</span>
+            <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 text-slate-600 px-2 py-1 text-[11px] font-semibold"><b className="text-[13px]">{stats.empty + stats.partial}</b> Not filled</span>
+          </div>
+          <div className="w-36">
+            <div className="flex justify-between items-baseline mb-1">
+              <span className="text-[10px] text-slate-500">Accuracy</span>
+              <span className={`text-[11px] font-bold ${vwPctText(stats.pct)}`}>{stats.match}/{stats.checked} ({stats.pct}%)</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
+              <div className={`h-full transition-all duration-500 ${vwPctBar(stats.pct)}`} style={{ width: `${stats.pct}%` }} />
+            </div>
+          </div>
+        </div>
+
+        {canEdit && (
+          <div className="ml-auto flex items-center gap-2 print:hidden">
+            {!isEditMode ? (
+              <button className={VW_BTN_PRIMARY} onClick={startEdit}>
+                <Edit3 size={14} /> Edit
+              </button>
+            ) : (
+              <>
+                <button className={VW_BTN_SECONDARY} onClick={handleRecomputeMissing} title="Isi ulang field yang masih kosong dari data dokumen terbaru, tanpa menimpa field yang sudah terisi/diedit">
+                  <RefreshCw size={14} /> Recompute Missing Data
+                </button>
+                <button className={VW_BTN_DANGER} onClick={cancelEdit}>
+                  <XCircle size={14} /> Cancel
+                </button>
+                <button className={VW_BTN_SUCCESS} onClick={() => setIsEditMode(false)}>
+                  <CheckCircle2 size={14} /> Save
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="px-4 pb-2.5 flex items-start gap-3 print:hidden">
+        <div className={`${VW_LABEL} pt-1.5 shrink-0 w-[132px]`}>Manual Change Notes</div>
+        {isEditMode ? (
+          <textarea
+            value={catatanManual}
+            onChange={e => { userActionRef.current = true; setCatatanManual(e.target.value); }}
+            placeholder="Enter the reason or notes for any manually changed values..."
+            rows={1}
+            className="flex-1 min-w-0 border border-purple-100 bg-white rounded-lg px-2.5 py-1.5 text-[12px] text-[#5A305A] focus:outline-none focus:ring-2 focus:ring-purple-200 resize-y"
+          />
+        ) : (
+          <div className="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-[12px] text-[#5A305A] whitespace-pre-wrap [overflow-wrap:anywhere]">
+            {catatanManual || <span className="italic text-[#5A305A]/50">No notes yet.</span>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center p-2 sm:p-4 md:p-6 w-full h-full print:bg-white print:p-0">
-      <div className="bg-white w-full h-full rounded-2xl shadow-xl flex flex-col relative overflow-hidden print:shadow-none print:w-full print:m-0 print:border-none print:rounded-none">
-        
+    <div className={embedded ? 'flex flex-col flex-1 min-h-0 w-full cvw-fill' : 'fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center p-2 sm:p-4 md:p-6 w-full h-full print:bg-white print:p-0'}>
+      <div className={embedded ? 'bg-white w-full flex-1 min-h-0 flex flex-col relative overflow-hidden cvw-fill' : 'bg-white w-full h-full rounded-2xl shadow-xl flex flex-col relative overflow-hidden print:shadow-none print:w-full print:m-0 print:border-none print:rounded-none'}>
+
+        {embeddedToolbar}
+        {!embedded && (
         <div className="flex justify-between items-center p-3 sm:px-4 sm:py-2.5 border-b border-slate-100 shrink-0 print:hidden">
           <div>
             <h2 className="text-lg font-bold tracking-tight text-[#5A305A]">Document Validation <span className="text-sm font-normal text-[#5A305A] ml-2 hidden sm:inline-block">Validation results for the related document</span></h2>
@@ -1413,10 +1565,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
             )}
             {!isEditMode ? (
               canEdit && (
-                <button style={{ ...S.printBtn, color: '#0369a1', borderColor: '#bae6fd', background: '#f0f9ff' }} onClick={() => {
-                    setSnapshotValues({ values: JSON.parse(JSON.stringify(values)), awbNo, tanggal, namaChecker, catatanManual });
-                    setIsEditMode(true);
-                  }}>
+                <button style={{ ...S.printBtn, color: '#0369a1', borderColor: '#bae6fd', background: '#f0f9ff' }} onClick={startEdit}>
                   <Edit3 size={14} />
                   <span className="hidden sm:inline">Edit</span>
                 </button>
@@ -1440,16 +1589,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                   <CheckCircle2 size={14} />
                   <span className="hidden sm:inline">Save</span>
                 </button>
-                <button style={{ ...S.printBtn, color: '#b91c1c', borderColor: '#fecaca', background: '#fef2f2' }} onClick={() => {
-                  if (snapshotValues) {
-                    setValues(snapshotValues.values);
-                    setAwbNo(snapshotValues.awbNo);
-                    setTanggal(snapshotValues.tanggal);
-                    setNamaChecker(snapshotValues.namaChecker);
-                    setCatatanManual(snapshotValues.catatanManual ?? "");
-                  }
-                  setIsEditMode(false);
-                }}>
+                <button style={{ ...S.printBtn, color: '#b91c1c', borderColor: '#fecaca', background: '#fef2f2' }} onClick={cancelEdit}>
                   <XCircle size={14} />
                   <span className="hidden sm:inline">Cancel</span>
                 </button>
@@ -1460,6 +1600,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
             </button>
           </div>
         </div>
+        )}
 
         {recomputeMsg && (
           <div className="px-3 md:px-4 py-2 text-xs font-medium text-[#0369a1] bg-[#f0f9ff] border-b border-[#bae6fd] shrink-0 print:hidden">
@@ -1467,6 +1608,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
           </div>
         )}
 
+        {!embedded && (
         <div className="bg-gradient-to-r from-[#FFF5C5]/55 to-[#F58C77]/35 px-3 md:px-4 pt-2 md:pt-2.5 pb-2 border-b border-[#5A305A]/15 shrink-0 z-10 print:p-0 print:bg-white">
           <div style={S.page}>
             <div style={{...S.header, marginBottom: 0, paddingBottom: 0, borderBottom: 'none', gap: '10px'}}>
@@ -1593,8 +1735,9 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
             </div>
           </div>
         </div>
+        )}
         
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 pt-4 md:pt-6 pb-12 print:p-0 print:overflow-visible">
+        <div className={`flex-1 overflow-y-auto print:p-0 print:overflow-visible ${embedded ? 'bg-slate-50/70 p-4 pb-8' : 'p-4 md:p-6 pt-4 md:pt-6 pb-12'}`}>
           <div style={S.page}>
             {activeSections.map((section) => {
               const ss = sectionStats(section);

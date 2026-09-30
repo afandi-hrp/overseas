@@ -263,3 +263,48 @@
     width: 100% !important;
   }
 }
+
+/* Print jendela "Validation" Audit Courier (CourierValidationWindow, 2026-09-30) -- pola sama
+   #bunker-print-area/#far-overseas-print-area di atas (semua elemen body lain sudah
+   visibility:hidden oleh aturan print di atas). Yang tercetak: Shipment Info + tab AKTIF saja
+   (tab lain `hidden` = display:none, tab bar & toolbar print:hidden). Semua pembatas tinggi/
+   scroll internal (h-full, flex-1, overflow-y-auto, max-h, sticky) dilepas supaya isi tab
+   mengalir penuh ke beberapa halaman, bukan terpotong 1 layar. */
+@media print {
+  #courier-validation-print-area,
+  #courier-validation-print-area * {
+    visibility: visible;
+  }
+  #courier-validation-print-area {
+    position: absolute !important;
+    inset: auto !important;
+    left: 0 !important;
+    top: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  #courier-validation-print-area .cvw-fill {
+    height: auto !important;
+    min-height: 0 !important;
+    flex: none !important;
+    overflow: visible !important;
+  }
+  #courier-validation-print-area .overflow-y-auto,
+  #courier-validation-print-area .overflow-auto,
+  #courier-validation-print-area .overflow-hidden {
+    overflow: visible !important;
+  }
+  #courier-validation-print-area [class*="max-h-"] {
+    max-height: none !important;
+  }
+  #courier-validation-print-area .sticky {
+    position: static !important;
+  }
+  #courier-validation-print-area tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}

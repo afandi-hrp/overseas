@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
-import { X, Save, Lock, Scale, ChevronDown, ChevronUp, Minus, Plus, FileText, Eye } from 'lucide-react';
+import { X, Save, Lock, Scale, ChevronDown, ChevronUp, Minus, Plus, FileText, Eye, Divide, Eraser } from 'lucide-react';
 import {
   parseRouteNote, mapModeToJenisLayanan, vendorTargetFromShipVia, formatMoney, formatDateShort, getDueInfo,
-  getPoList, memoWeightKg, implicitFxRate, ensureFarFont, FAR_FONT_FAMILY, computeDueDate, computeOnHold, getMemoDueValue,
-  getPoNumbers, parseJsonField, DEFAULT_FX,
-  type PicEligibleUser, type RateRow, type CompanyOption, type SignerConfig, type PoListEntry,
+  getPoList, implicitFxRate, ensureFarFont, FAR_FONT_FAMILY, computeDueDate, computeOnHold, getMemoDueValue,
+  getPoNumbers, parseJsonField, DEFAULT_FX, getBreakdownUnit, memoWeightIn, withBreakdownUnit, buildWeightBreakdownDisplay,
+  recomputeDominantCompany, explainDominantCompany, isAutoSplitCase, splitEvenly, WEIGHT_UNITS,
+  type PicEligibleUser, type RateRow, type CompanyOption, type SignerConfig, type PoListEntry, type WeightUnit,
 } from '../utils/FarOverseasAirHelpers';
 import FarOverseasMemoPaper, { MemoPaymentLine } from './FarOverseasMemoPaper';
 import { DrivePreviewFrame, getDokumenList } from './FarOverseasAirDocumentsModal';
@@ -179,11 +180,142 @@ function RouteNoteSelects({ value, shipVia, tarifVendorRows, onChange, disabled 
   );
 }
 
+// Weight breakdown per PO -- STATIS di modal Edit memo (2026-09-30, GANTI modal terpisah
+// `FarOverseasAirWeightBreakdownModal` yang dihapus). Satuan KG ATAU CBM (`getBreakdownUnit`).
+// Perubahan masuk `pendingEdits` (po_list + weight_breakdown + dominant_company_code) & tersimpan
+// bareng tombol "Save changes" memo -- SAMA isi yang dulu dikirim `savePoWeights()`, kecuali
+// dominant_company_code hanya ditimpa kalau rumus PO menghasilkan pemenang (memo tanpa kode PT
+// tidak menghapus pilihan Paying PT manual). Auto split (>= 5 PO & <= 1 KG): dibagi rata &
+// dikunci, masuk sbg perubahan UNSAVED (perilaku modal lama: tetap perlu Save).
+const RULE_LABEL: Record<string, string> = {
+  MOST_PO: 'Rule 1 (most POs)',
+  HEAVIEST_KG: 'Rule 2 (tied on POs, heaviest weight)',
+  TIE_DEFAULT_WNS: 'still tied, system default WNS',
+  TIE_FIRST: 'still tied, first PT in the list (please confirm)',
+};
+function WeightBreakdownInline({ row, merged, poList, readOnly, setVal, badge }: {
+  row: any; merged: any; poList: PoListEntry[]; readOnly: boolean;
+  setVal: (r: any, field: string, value: any) => void; badge: React.ReactNode;
+}) {
+  const unit = getBreakdownUnit(merged, poList);
+  const memoW = memoWeightIn(merged, unit);
+  const autoSplit = isAutoSplitCase(poList.length, unit === 'KG' ? memoW : null);
+  const inputsDisabled = readOnly || autoSplit;
+
+  const commit = (next: PoListEntry[], nextUnit: WeightUnit = unit) => {
+    const list = withBreakdownUnit(next, nextUnit);
+    setVal(row, 'po_list', list);
+    setVal(row, 'weight_breakdown', buildWeightBreakdownDisplay(list));
+    const winner = recomputeDominantCompany(list);
+    if (winner) setVal(row, 'dominant_company_code', winner);
+  };
+
+  useEffect(() => {
+    if (readOnly || !autoSplit || memoW == null) return;
+    const parts = splitEvenly(memoW, poList.length);
+    if (poList.every((p, i) => p.weight_kg != null && Number(p.weight_kg) === parts[i])) return;
+    commit(poList.map((p, i) => ({ ...p, weight_kg: parts[i] })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [row.id]);
+
+  const updateWeight = (idx: number, raw: string) => {
+    const n = raw === '' ? null : Number(raw);
+    const v = n != null && isNaN(n) ? null : n != null && n < 0 ? 0 : n;
+    commit(poList.map((p, i) => (i === idx ? { ...p, weight_kg: v } : p)));
+  };
+  const handleSplit = () => {
+    if (memoW == null) return;
+    const parts = splitEvenly(memoW, poList.length);
+    commit(poList.map((p, i) => ({ ...p, weight_kg: parts[i] })));
+  };
+  const handleClear = () => commit(poList.map(p => ({ ...p, weight_kg: null })));
+
+  const sum = Math.round(poList.reduce((s, p) => s + (p.weight_kg != null ? Number(p.weight_kg) || 0 : 0), 0) * 1000) / 1000;
+  const filled = poList.filter(p => p.weight_kg != null).length;
+  const sumMatches = memoW != null && Math.abs(sum - memoW) < 0.0005;
+  const preview = explainDominantCompany(poList);
+
+  return (
+    <div className="mt-3 rounded-2xl border border-[#EADFD6] px-4 py-3">
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+        <div className="text-xs min-w-0">
+          <p className="font-semibold text-[#2A1A2C] flex items-center gap-1.5"><Scale size={13} className="text-[#6B3470]" /> Weight breakdown · {unit} per PO {badge}</p>
+          <p className="text-[#6E5E70] mt-0.5">
+            {poList.length === 0 ? 'This memo has no PO.' : <>{filled} of {poList.length} POs filled · <span className={`font-bold ${memoW == null ? 'text-[#2A1A2C]' : sumMatches ? 'text-emerald-700' : 'text-amber-700'}`}>{sum} / {memoW ?? '—'} {unit}</span>{memoW == null && merged.qty != null && merged.qty !== '' && <span className="italic"> — memo weight is not in {unit}</span>}</>}
+          </p>
+        </div>
+        {poList.length > 0 && (
+          <div className="flex items-center gap-1.5">
+            <div className="flex items-center rounded-lg border border-[#EADFD6] p-0.5" title="Unit of the weight per PO">
+              {WEIGHT_UNITS.map(u => (
+                <button key={u} type="button" disabled={readOnly} onClick={() => { if (u !== unit) commit(poList, u); }}
+                  className={`px-2 h-6 rounded-md text-[11px] font-bold ${unit === u ? 'bg-[#3B1B3D] text-white' : 'text-[#6E5E70] hover:text-[#2A1A2C]'} disabled:cursor-not-allowed`}>
+                  {u}
+                </button>
+              ))}
+            </div>
+            {!inputsDisabled && (
+              <>
+                <button type="button" onClick={handleSplit} disabled={memoW == null} title={memoW == null ? `Memo weight is not in ${unit}` : 'Divide the memo weight evenly'}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[#EADFD6] text-[11px] font-semibold text-[#6B3470] hover:bg-[#F5EDF3] disabled:opacity-40">
+                  <Divide size={12} /> Split evenly
+                </button>
+                <button type="button" onClick={handleClear} className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[#EADFD6] text-[11px] font-semibold text-[#6B3470] hover:bg-[#F5EDF3]">
+                  <Eraser size={12} /> Clear
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+      {autoSplit && !readOnly && (
+        <p className="text-[11px] bg-emerald-50 text-emerald-800 rounded-lg px-2.5 py-1.5 mb-2">
+          Auto split: {poList.length} POs with a total of {memoW} KG — the weight is divided evenly and locked. Save the memo to store it.
+        </p>
+      )}
+      {poList.length > 0 && (
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-[10px] text-[#6E5E70] uppercase tracking-wide">
+              <th className="text-left font-semibold pb-1.5">PO</th>
+              <th className="text-left font-semibold pb-1.5">PT</th>
+              <th className="text-left font-semibold pb-1.5">Vendor</th>
+              <th className="text-right font-semibold pb-1.5 w-32">{unit}</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#EADFD6]">
+            {poList.map((po, idx) => (
+              <tr key={idx}>
+                <td className="py-1.5 pr-2 text-[#2A1A2C] font-semibold align-middle break-all">{po.po_no_raw || '—'}</td>
+                <td className="py-1.5 pr-2 align-middle"><span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#3B1B3D] text-white">{po.company_code || '—'}</span></td>
+                <td className="py-1.5 pr-2 text-[#6E5E70] align-middle">{po.vendor_name || '—'}</td>
+                <td className="py-1.5 align-middle">
+                  <div className="flex items-center gap-1">
+                    <input type="number" step="any" min="0" value={po.weight_kg ?? ''} disabled={inputsDisabled} placeholder="—"
+                      onChange={e => updateWeight(idx, e.target.value)}
+                      className="w-full border border-[#EADFD6] rounded-lg px-2 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-[#6B3470]/30 disabled:bg-[#FBF3EC] disabled:text-[#6E5E70]" />
+                    <span className="text-[10px] text-[#6E5E70] w-7">{unit}</span>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {preview.winner && (
+        <p className="text-[11px] text-[#6E5E70] mt-2">
+          Paying PT preview: <span className="font-bold text-[#2A1A2C]">{preview.winner}</span>{RULE_LABEL[preview.rule] ? ` — ${RULE_LABEL[preview.rule]}` : ''}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function NotePreview({ children }: { children: React.ReactNode }) {
   return <p className="mt-1.5 text-[11px] font-mono bg-[#FBF3EC] text-[#2A1A2C] rounded-lg px-2.5 py-1.5 break-words">{children}</p>;
 }
 
-export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOnlyReason, receiptEditable = false, isNew, saving, saveError, onCancel, onSave, onOpenWeight }: {
+export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOnlyReason, receiptEditable = false, isNew, saving, saveError, onCancel, onSave }: {
   row: any;
   ctx: EditMemoCtx;
   readOnly: boolean;
@@ -196,7 +328,6 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
   saveError?: string | null;
   onCancel: () => void;
   onSave: () => void;
-  onOpenWeight: (r: any) => void;
 }) {
   const { getVal, setVal } = ctx;
   const merged = { ...row, ...(ctx.pendingForRow || {}) };
@@ -322,8 +453,9 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
   const nonPoOwner = String(merged.non_po_goods_owner || '');
   const aiType: string | null = row.payment_type_ai || null;
   const aiFindings = parseJsonField(row.ai_findings_confirmed);
-  const memoKg = memoWeightKg(merged);
-  const kgSum = Math.round(poList.reduce((s, p) => s + (p.weight_kg != null ? Number(p.weight_kg) || 0 : 0), 0) * 1000) / 1000;
+  const bdUnit = getBreakdownUnit(merged, poList);
+  // Non-PO (tahap 2): field PO number disembunyikan (nilai lama TIDAK dihapus).
+  const hidePoNumber = ctx.phase2 && merged.payment_type === 'NON_PO';
   const due = getDueInfo(merged.expected_payment_date, 3);
 
   const city = ctx.costCity;
@@ -470,7 +602,9 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
                 <label className="block md:col-span-2"><Label field="memo_title">Memo title</Label>
                   <MemoTitleSelect value={getVal(row, 'memo_title')} options={ctx.memoTitleOptions} disabled={readOnly} onChange={v => setVal(row, 'memo_title', v)} onAddOption={ctx.addMemoTitleOption} />
                 </label>
-                <label className="block md:col-span-2"><Label field="po_ori" hint="(joined with “ + ”)">PO number(s)</Label>{area('po_ori', 2, 'I.PO/WNS.MDN/2608/0349 + ...')}</label>
+                {!hidePoNumber && (
+                  <label className="block md:col-span-2"><Label field="po_ori" hint="(joined with “ + ”)">PO number(s)</Label>{area('po_ori', 2, 'I.PO/WNS.MDN/2608/0349 + ...')}</label>
+                )}
                 <label className="block"><Label field="vendor">Vendor</Label>{text('vendor')}</label>
                 <label className="block"><Label field="ship_via" hint="Payable to">Ship via</Label>
                   <input type="text" list="far-known-forwarders" value={getVal(row, 'ship_via') ?? ''} disabled={readOnly}
@@ -535,19 +669,8 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
                   </span>
                 )}
               </div>
-              <div className="mt-3 rounded-2xl border border-[#EADFD6] px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
-                <div className="text-xs">
-                  <p className="font-semibold text-[#2A1A2C]">Weight breakdown · KG per PO</p>
-                  <p className="text-[#6E5E70] mt-0.5">
-                    {poList.length === 0 ? 'This memo has no PO.' : <>{poList.filter(p => p.weight_kg != null).length} of {poList.length} POs filled · <span className={memoKg != null && Math.abs(kgSum - memoKg) < 0.0005 ? 'text-emerald-700 font-bold' : 'font-bold text-[#2A1A2C]'}>{kgSum} / {memoKg ?? '—'} KG</span></>}
-                  </p>
-                </div>
-                {poList.length > 0 && (
-                  <button onClick={() => onOpenWeight(row)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#EADFD6] text-xs font-semibold text-[#6B3470] hover:bg-[#F5EDF3]">
-                    <Scale size={13} /> {readOnly ? 'View KG per PO' : 'Edit KG per PO'}
-                  </button>
-                )}
-              </div>
+              <WeightBreakdownInline row={row} merged={merged} poList={poList} readOnly={readOnly} setVal={setVal}
+                badge={isPending('po_list') ? <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#6B3470] text-white">UNSAVED</span> : null} />
             </section>
 
             <section>
@@ -626,12 +749,12 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
                   <label className="block"><Label field="vessel_internal_note" hint="(joined with “ + ”)">Vessel</Label>{area('vessel_internal_note', 2)}</label>
                   {poList.length > 0 && (
                     <table className="w-full text-xs">
-                      <thead><tr className="text-[10px] uppercase tracking-wide text-[#6E5E70]"><th className="text-left pb-1 font-semibold">PO</th><th className="text-left pb-1 font-semibold">KG</th><th className="text-left pb-1 font-semibold">Vessel per PO</th></tr></thead>
+                      <thead><tr className="text-[10px] uppercase tracking-wide text-[#6E5E70]"><th className="text-left pb-1 font-semibold">PO</th><th className="text-left pb-1 font-semibold">{bdUnit}</th><th className="text-left pb-1 font-semibold">Vessel per PO</th></tr></thead>
                       <tbody className="divide-y divide-[#EADFD6]">
                         {poList.map((p, i) => (
                           <tr key={i}>
                             <td className="py-1.5 pr-2 font-semibold text-[#2A1A2C] break-all">{p.po_no_raw || '—'}</td>
-                            <td className="py-1.5 pr-2 text-[#6E5E70] whitespace-nowrap">{p.weight_kg != null ? `${p.weight_kg} KG` : '—'}</td>
+                            <td className="py-1.5 pr-2 text-[#6E5E70] whitespace-nowrap">{p.weight_kg != null ? `${p.weight_kg} ${bdUnit}` : '—'}</td>
                             <td className="py-1.5">
                               <input type="text" value={p.vessel_raw || ''} disabled={readOnly} placeholder="Vessel name"
                                 onChange={e => setPoVessel(i, e.target.value)}

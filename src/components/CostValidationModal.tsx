@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { LoadingSpinner } from './LoadingState';
 import { supabase } from '../lib/supabase';
 import { computeLiveCostSummary, isRowVisible } from '../utils/CostValidationHelpers';
+import { VW_TOOLBAR, VW_LABEL, VW_BTN_PRIMARY, VW_BTN_SECONDARY, VW_BTN_SUCCESS, vwPctBar, vwPctText } from './validationWindowStyles';
 
 const formatRp = (num: any) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(Number(num) || 0);
 
@@ -66,7 +67,12 @@ const ActualInlineInput = ({
 };
 
 
-export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecord, onClose, canEdit = true }: { awb: string, jenisDokumen: string, docId?: string, rawRecord?: any, onClose: () => void, canEdit?: boolean }) {
+// `embedded` (2026-09-30) -- dirender sbg tab "Cost Validation" di CourierValidationWindow: tanpa
+// overlay/judul/tombol X. Panel Shipment Info dipindah ke level jendela; selama Edit Cost Validasi
+// aktif, 3 field Shipment Info yang memang bisa diedit (Ship Date, Origin, Chargeable Weight)
+// tetap muncul di panel ringkas supaya fungsinya tidak hilang. `onPctChange` = % tab (null =
+// belum ada baris tabel_cost_validasi), `onDataChange` = baris terbaru utk Shipment Info jendela.
+export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecord, onClose, canEdit = true, embedded = false, onPctChange, onDataChange }: { awb: string, jenisDokumen: string, docId?: string, rawRecord?: any, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, onDataChange?: (data: any) => void }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
@@ -525,6 +531,20 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
   // duplikat logic ini lagi di sini -- ubah di CostValidationHelpers.ts kalau perlu.
   const liveSummary = useMemo(() => computeLiveCostSummary(data, jenisDokumen), [data, jenisDokumen]);
 
+  // % utk label tab jendela Validation -- selama Edit, ikut isian form (status yang sedang
+  // dipilih) supaya label berubah live; formula tetap computeLiveCostSummary (satu sumber).
+  const reportedPct = useMemo(() => {
+    if (!data) return null;
+    return computeLiveCostSummary(isEditing && editForm ? editForm : data, jenisDokumen).pct;
+  }, [data, editForm, isEditing, jenisDokumen]);
+  useEffect(() => {
+    if (!onPctChange || loading) return;
+    onPctChange(reportedPct);
+  }, [onPctChange, loading, reportedPct]);
+  useEffect(() => {
+    if (onDataChange && data) onDataChange(data);
+  }, [onDataChange, data]);
+
   const renderOtherChargesRows = (dataArrayRaw: any, type: 'freight' | 'duty') => {
     const arrField = type === 'freight' ? 'cv_other_charges_freight' : 'cv_other_charges_duty';
     // Saat mode edit dan array ini sudah pernah disentuh, pakai versi editForm (bukan
@@ -784,8 +804,53 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
           </div>
         </div>
       )}
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 bg-slate-900/50 backdrop-blur-sm shadow-2xl">
-      <div className="bg-white rounded-2xl w-full max-w-6xl overflow-hidden shadow-2xl flex flex-col max-h-[97vh]">
+    <div className={embedded ? 'flex flex-col flex-1 min-h-0 w-full cvw-fill' : 'fixed inset-0 z-50 flex items-center justify-center p-2 bg-slate-900/50 backdrop-blur-sm shadow-2xl'}>
+      <div className={embedded ? 'bg-white w-full flex-1 min-h-0 overflow-hidden flex flex-col cvw-fill' : 'bg-white rounded-2xl w-full max-w-6xl overflow-hidden shadow-2xl flex flex-col max-h-[97vh]'}>
+        {embedded ? (
+          /* Toolbar tab "Cost Validation" (jendela Validation) -- ringkasan status/akurasi di kiri,
+             tombol Edit Cost Validasi / Batal / Simpan di kanan. Beda isi dari toolbar Doc
+             Validation, gaya sama (lihat validationWindowStyles.ts). */
+          data && (
+          <div className={VW_TOOLBAR}>
+            <div className="flex items-center gap-3 flex-wrap min-w-0">
+              <span className={VW_LABEL}>Status</span>
+              {formatStatus(liveSummary.status_cost)}
+              {data.is_edited && !isEditing && <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider">✏️ Edited</span>}
+              <div className="flex items-center gap-1.5 print:hidden">
+                <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 text-emerald-700 px-2 py-1 text-[11px] font-semibold"><b className="text-[13px]">{liveSummary.total_ok}</b> OK</span>
+                <span className="inline-flex items-center gap-1 rounded-md bg-red-50 text-red-700 px-2 py-1 text-[11px] font-semibold"><b className="text-[13px]">{liveSummary.total_selisih}</b> Selisih</span>
+                <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 text-slate-600 px-2 py-1 text-[11px] font-semibold"><b className="text-[13px]">{liveSummary.total_na}</b> N/A</span>
+              </div>
+              <div className="w-36 print:hidden">
+                <div className="flex justify-between items-baseline mb-1">
+                  <span className="text-[10px] text-slate-500">Accuracy</span>
+                  <span className={`text-[11px] font-bold ${vwPctText(liveSummary.pct)}`}>{liveSummary.pct}%</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                  <div className={`h-full transition-all duration-500 ${vwPctBar(liveSummary.pct)}`} style={{ width: `${liveSummary.pct}%` }} />
+                </div>
+              </div>
+              {isEditing && <span className="text-[11px] font-medium text-amber-700 print:hidden">Editing — summary updates after saving</span>}
+            </div>
+            {canEdit && (
+              <div className="ml-auto flex items-center gap-2 print:hidden">
+                {!isEditing ? (
+                  <button onClick={handleEditClick} className={VW_BTN_PRIMARY}>
+                    <span>✏️</span> Edit Cost Validasi
+                  </button>
+                ) : (
+                  <>
+                    <button onClick={handleCancelEdit} className={VW_BTN_SECONDARY}>Batal</button>
+                    <button onClick={handleSaveEdit} disabled={savingEdit} className={VW_BTN_SUCCESS}>
+                      {savingEdit ? 'Menyimpan...' : '💾 Simpan'}
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+          )
+        ) : (
         <div className="px-5 py-2.5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
           <div>
             <h3 className="text-base font-bold text-[#5A305A] flex items-center gap-3 leading-tight">
@@ -818,8 +883,9 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
             </button>
           </div>
         </div>
+        )}
 
-        <div className="flex-1 overflow-y-auto bg-slate-50/50">
+        <div className={`flex-1 overflow-y-auto ${embedded ? 'bg-slate-50/70' : 'bg-slate-50/50'}`}>
           {loading ? (
             <div className="flex flex-col items-center justify-center h-full text-[#5A305A] py-10 px-6">
               <LoadingSpinner className="mb-4" />
@@ -838,19 +904,22 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                   bawahnya tidak "tembus" kelihatan pas nge-freeze. Spacing internal dirapatkan
                   (p-6->p-4, gap-4->gap-3, mb-1->mb-0.5) sesuai permintaan -- biar tetap enak
                   dilihat walau areanya sekarang lebih sempit (nempel di atas, bukan card biasa). */}
+              {/* Mode embedded: Shipment Info tampil di level jendela (CourierValidationWindow).
+                  Saat Edit, hanya 3 field yang memang bisa diedit yang muncul di sini. */}
+              {!embedded ? (
               <div className="sticky top-0 z-20 bg-slate-50/95 backdrop-blur-sm px-5 pt-2 pb-1.5 border-b border-slate-200/80 shadow-sm">
                 <div className="bg-gradient-to-r from-[#FFF5C5]/55 to-[#F58C77]/35 p-2.5 rounded-xl shadow-sm border border-[#5A305A]/15">
                   <h2 className="text-sm font-bold mb-1 text-[#5A305A] border-b pb-1">Shipment Info</h2>
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-x-3 gap-y-1.5 text-sm">
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-[#5A305A] mb-0.5 font-medium text-xs">AWB</p>
-                    <p className="font-semibold">{data.awb}</p>
+                    <p className="[overflow-wrap:anywhere] font-semibold">{data.awb}</p>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-[#5A305A] mb-0.5 font-medium text-xs">Vendor</p>
-                    <p className="font-semibold text-[#5A305A]">{data.vendor || '-'}</p>
+                    <p className="[overflow-wrap:anywhere] font-semibold text-[#5A305A]">{data.vendor || '-'}</p>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-[#5A305A] mb-0.5 font-medium text-xs">Jalur</p>
                     <p>
                       {(data.jenis_dokumen || jenisDokumen)?.toUpperCase() === 'PIB' ? (
@@ -862,15 +931,15 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                       )}
                     </p>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-[#5A305A] mb-0.5 font-medium text-xs">Courier</p>
-                    <p className="font-semibold">{data.cv_courier || '-'}</p>
+                    <p className="[overflow-wrap:anywhere] font-semibold">{data.cv_courier || '-'}</p>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-[#5A305A] mb-0.5 font-medium text-xs">Direction / Type</p>
-                    <p className="font-semibold">{data.cv_direction || '-'} / {data.cv_shipment_type || '-'}</p>
+                    <p className="[overflow-wrap:anywhere] font-semibold">{data.cv_direction || '-'} / {data.cv_shipment_type || '-'}</p>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-[#5A305A] mb-0.5 font-medium text-xs">Ship Date</p>
                     {isEditing ? (
                       <input 
@@ -880,10 +949,10 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                         className="w-full border border-slate-300 rounded px-2 py-1 text-xs"
                       />
                     ) : (
-                      <p className="font-semibold">{fmtDateEN(data.cv_ship_date)}</p>
+                      <p className="[overflow-wrap:anywhere] font-semibold">{fmtDateEN(data.cv_ship_date)}</p>
                     )}
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-[#5A305A] mb-0.5 font-medium text-xs">Origin / Zone</p>
                     {isEditing ? (
                        <div className="flex gap-2 items-center">
@@ -898,10 +967,10 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                           <span className="text-xs text-[#5A305A]">(Zone {data.cv_zone || '-'})</span>
                        </div>
                     ) : (
-                      <p className="font-semibold">{data.cv_origin_country_code || '-'} (Zone {data.cv_zone || '-'})</p>
+                      <p className="[overflow-wrap:anywhere] font-semibold">{data.cv_origin_country_code || '-'} (Zone {data.cv_zone || '-'})</p>
                     )}
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-[#5A305A] mb-0.5 font-medium text-xs">Chargeable Weight</p>
                     {isEditing ? (
                         <div className="flex items-center gap-1">
@@ -914,16 +983,60 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                           <span className="text-xs font-semibold text-[#5A305A]">kg</span>
                         </div>
                     ) : (
-                      <p className="font-semibold">{data.cv_chargeable_kg ? `${data.cv_chargeable_kg} kg` : '-'}</p>
+                      <p className="[overflow-wrap:anywhere] font-semibold">{data.cv_chargeable_kg ? `${data.cv_chargeable_kg} kg` : '-'}</p>
                     )}
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-[#5A305A] mb-0.5 font-medium text-xs">Service</p>
-                    <p className="font-semibold">{data.cv_service_type || '-'}</p>
+                    <p className="[overflow-wrap:anywhere] font-semibold">{data.cv_service_type || '-'}</p>
                   </div>
                 </div>
                 </div>
               </div>
+              ) : isEditing ? (
+              <div className="sticky top-0 z-20 bg-slate-50/95 backdrop-blur-sm px-5 pt-2 pb-2 border-b border-slate-200/80 shadow-sm print:hidden">
+                <div className="bg-white p-2.5 rounded-xl border border-[#5A305A]/15">
+                  <h2 className="text-xs font-bold mb-1.5 text-[#5A305A]">Edit Shipment Info</h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                    <div className="min-w-0">
+                      <p className="text-[#5A305A] mb-0.5 font-medium text-xs">Ship Date</p>
+                      <input
+                        type="date"
+                        value={editForm?.cv_ship_date?.split('T')[0] || ''}
+                        onChange={(e) => handleFieldChange('cv_ship_date', e.target.value)}
+                        className="w-full border border-slate-300 rounded px-2 py-1 text-xs"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[#5A305A] mb-0.5 font-medium text-xs">Origin / Zone</p>
+                      <div className="flex gap-2 items-center">
+                        <input
+                          type="text"
+                          value={editForm?.cv_origin_country_code || ''}
+                          onChange={(e) => handleFieldChange('cv_origin_country_code', e.target.value)}
+                          className="w-16 border border-slate-300 rounded px-2 py-1 text-xs"
+                          placeholder="CC"
+                          maxLength={2}
+                        />
+                        <span className="text-xs text-[#5A305A]">(Zone {data.cv_zone || '-'})</span>
+                      </div>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[#5A305A] mb-0.5 font-medium text-xs">Chargeable Weight</p>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          value={editForm?.cv_chargeable_kg || ''}
+                          onChange={(e) => handleFieldChange('cv_chargeable_kg', Number(e.target.value))}
+                          className="w-full border border-slate-300 rounded px-2 py-1 text-xs"
+                        />
+                        <span className="text-xs font-semibold text-[#5A305A]">kg</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              ) : null}
 
               <div className="px-5 pb-5 pt-3">
 

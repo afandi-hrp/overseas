@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
@@ -17,7 +18,6 @@ import {
 } from '../utils/FarOverseasAirHelpers';
 import FarOverseasAirDetailModal from '../components/FarOverseasAirDetailModal';
 import FarOverseasAirCostValidationModal from '../components/FarOverseasAirCostValidationModal';
-import FarOverseasAirWeightBreakdownModal from '../components/FarOverseasAirWeightBreakdownModal';
 import FarOverseasAirDocumentsModal, { getMemoDocs } from '../components/FarOverseasAirDocumentsModal';
 import FarOverseasAirUploadModal from '../components/FarOverseasAirUploadModal';
 import FarOverseasAirEditMemoModal, { validateMemoEdits } from '../components/FarOverseasAirEditMemoModal';
@@ -33,7 +33,7 @@ import { LoadingState, LoadingTableRow } from '../components/LoadingState';
 //   (FarOverseasAirEditMemoModal.tsx) -- tabel inline-edit ~25 kolom & tombol "Save All" lama
 //   DIGANTI. State edit tetap `pendingEdits`/`getVal`/`setVal` (key = id baris), simpan lewat RPC
 //   `update_rekapan_far_overseas_manual` (field terbatas `REKAPAN_EDITABLE_FIELDS`).
-// - Approval, Cost Validation, Documents, Weight breakdown: modal masing-masing (logika
+// - Approval, Cost Validation, Documents: modal masing-masing; Weight breakdown statis di Edit memo (logika
 //   approval/RPC TIDAK berubah, lihat header FarOverseasAirDetailModal.tsx).
 // - Lock (spek): Edit/Delete/KG terkunci setelah Prepared By sign (`isMemoLocked`) -- baru di
 //   frontend, penegakan server di draft SQL tahap 2.
@@ -136,17 +136,123 @@ function warningDot(level: MemoWarning['level']) {
   return level === 'red' ? 'bg-rose-500' : level === 'amber' ? 'bg-amber-500' : 'bg-[#6E5E70]/50';
 }
 
+// Popover card (2026-09-30): chip "+N PO" / "+N more" bisa diklik -> daftar LENGKAP tampil
+// MELAYANG (portal ke body, `position: fixed`, pola `KategoriPicker` AuditPoPage) supaya ukuran
+// card TIDAK berubah. Tutup lewat klik chip lagi, tombol X, klik di luar, atau Escape. Arah buka
+// (bawah/atas) dihitung dari sisa ruang viewport, posisi ikut diperbarui saat scroll/resize.
+const CARD_POPOVER_W = 320;
+const CARD_POPOVER_MAX_H = 260;
+function CardPopover({ label, heading, className, children }: { label: React.ReactNode; heading: string; className: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState<{ left: number; top?: number; bottom?: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  const updateCoords = useCallback(() => {
+    if (!btnRef.current) return;
+    const rect = btnRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const down = spaceBelow >= CARD_POPOVER_MAX_H || spaceBelow >= rect.top;
+    const w = Math.min(CARD_POPOVER_W, window.innerWidth - 16);
+    let left = rect.left;
+    if (left + w > window.innerWidth - 8) left = window.innerWidth - w - 8;
+    if (left < 8) left = 8;
+    setCoords(down ? { left, top: rect.bottom + 4 } : { left, bottom: window.innerHeight - rect.top + 4 });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updateCoords();
+    window.addEventListener('scroll', updateCoords, true);
+    window.addEventListener('resize', updateCoords);
+    return () => {
+      window.removeEventListener('scroll', updateCoords, true);
+      window.removeEventListener('resize', updateCoords);
+    };
+  }, [open, updateCoords]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || panelRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <button ref={btnRef} type="button" onClick={e => { e.stopPropagation(); setOpen(o => !o); }} aria-expanded={open}
+        title={open ? 'Hide' : 'Show all'} className={`${className} cursor-pointer hover:bg-[#EADFD6] transition-colors ${open ? 'ring-1 ring-[#6B3470]/40' : ''}`}>
+        {label}
+      </button>
+      {open && coords && createPortal(
+        <div ref={panelRef} style={{ position: 'fixed', left: coords.left, top: coords.top, bottom: coords.bottom, width: Math.min(CARD_POPOVER_W, window.innerWidth - 16), fontFamily: FAR_FONT_FAMILY }}
+          className="z-[55] bg-white border border-[#EADFD6] rounded-xl shadow-xl overflow-hidden">
+          <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-[#EADFD6] bg-[#FBF3EC]">
+            <p className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-[#6B3470]">{heading}</p>
+            <button type="button" onClick={() => setOpen(false)} aria-label="Hide" className="p-0.5 rounded hover:bg-[#F5EDF3] text-[#6E5E70]"><X size={13} /></button>
+          </div>
+          <div className="overflow-y-auto" style={{ maxHeight: CARD_POPOVER_MAX_H - 40 }}>{children}</div>
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
 function MainWarning({ warnings }: { warnings: MemoWarning[] }) {
   if (warnings.length === 0) return null;
   const [first, ...rest] = warnings;
   return (
-    <div className="flex items-center gap-1.5 min-w-0" title={warnings.map(w => '• ' + w.text).join('\n')}>
-      <span className={`flex items-center gap-1.5 min-w-0 text-[11px] px-2 py-1 rounded-lg ${warningCls(first.level)}`}>
+    <div className="flex items-center gap-1.5 min-w-0">
+      <span className={`flex items-center gap-1.5 min-w-0 text-[11px] px-2 py-1 rounded-lg ${warningCls(first.level)}`} title={first.text}>
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${warningDot(first.level)}`} />
         <span className="truncate">{first.text}</span>
       </span>
-      {rest.length > 0 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[#F5EDF3] text-[#6B3470] shrink-0">+{rest.length} more</span>}
+      {rest.length > 0 && (
+        <CardPopover label={`+${rest.length} more`} heading={`All warnings (${warnings.length})`} className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[#F5EDF3] text-[#6B3470] shrink-0">
+          <ul className="p-2 space-y-1.5">
+            {warnings.map((w, i) => (
+              <li key={i} className={`flex items-start gap-1.5 text-[11px] px-2 py-1.5 rounded-lg ${warningCls(w.level)}`}>
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1 ${warningDot(w.level)}`} />
+                <span className="break-words min-w-0">{w.text}</span>
+              </li>
+            ))}
+          </ul>
+        </CardPopover>
+      )}
     </div>
+  );
+}
+
+// Isi popover "+N PO": semua PO memo (po_list presisi -> PT & kapal ikut tampil; fallback daftar
+// nomor dari `po_ori`).
+function PoListPopoverBody({ r }: { r: any }) {
+  const list = getPoList(r);
+  const rows = list.length > 0
+    ? list.map(p => ({ po: (p.po_no_raw || '').trim() || '—', pt: p.company_code || null, vessel: (p.vessel_raw || '').trim() || null }))
+    : getPoNumbers(r).map(po => ({ po, pt: null as string | null, vessel: null as string | null }));
+  return (
+    <ol className="divide-y divide-[#EADFD6]">
+      {rows.map((p, i) => (
+        <li key={i} className="flex items-start gap-2 px-3 py-1.5 text-[11px]">
+          <span className="w-4 shrink-0 text-right text-[#6E5E70]">{i + 1}.</span>
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold text-[#2A1A2C] break-all">{p.po}</p>
+            {p.vessel && <p className="text-[10px] text-[#6E5E70] break-words">{p.vessel}</p>}
+          </div>
+          {p.pt && <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-[#3B1B3D] text-white shrink-0">{p.pt}</span>}
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -254,7 +360,11 @@ const MemoCard: React.FC<{ r: any; cost: CostInfo | undefined; dueWindow: number
           <p className="text-[#2A1A2C] break-words leading-snug">{r.vendor || <span className="italic text-[#6E5E70]">—</span>}</p>
           <p className="text-[#6E5E70] mt-0.5 flex items-center gap-1.5 min-w-0">
             <span className="truncate">{pos[0] || 'No PO'}</span>
-            {pos.length > 1 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#F5EDF3] text-[#6B3470] shrink-0">+{pos.length - 1} PO</span>}
+            {pos.length > 1 && (
+              <CardPopover label={`+${pos.length - 1} PO`} heading={`All POs (${pos.length})`} className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#F5EDF3] text-[#6B3470] shrink-0">
+                <PoListPopoverBody r={r} />
+              </CardPopover>
+            )}
             {r.item_description_manual && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 shrink-0 truncate max-w-[40%]" title="Remark">{r.item_description_manual}</span>}
           </p>
         </div>
@@ -485,7 +595,6 @@ export default function FarOverseasAirPage() {
 
   const [selected, setSelected] = useState<any | null>(null);
   const [costModalRow, setCostModalRow] = useState<any | null>(null);
-  const [weightModalRow, setWeightModalRow] = useState<any | null>(null);
   const [docsModalRow, setDocsModalRow] = useState<any | null>(null);
   const [editRow, setEditRow] = useState<any | null>(null);
   // Baris hasil "Add manual entry" yang BELUM pernah disimpan -- kalau Cancel, baris kosong itu
@@ -692,7 +801,10 @@ export default function FarOverseasAirPage() {
     setPendingEdits(prev => {
       const rowEdits = { ...(prev[r.id] || {}) };
       const original = r[field] ?? null;
-      const same = (value ?? null) === original || (value != null && original != null && String(value) === String(original));
+      // Object/array (mis. po_list jsonb) dibandingkan via JSON -- String() polos membuat 2 array
+      // objek sepanjang sama dianggap "sama" ("[object Object],...") & edit KG/kapal per PO terbuang.
+      const norm = (v: any) => (v != null && typeof v === 'object' ? JSON.stringify(v) : v);
+      const same = (value ?? null) === original || (value != null && original != null && String(norm(value)) === String(norm(original)));
       if (same) delete rowEdits[field]; else rowEdits[field] = value;
       const next = { ...prev };
       if (Object.keys(rowEdits).length === 0) delete next[r.id]; else next[r.id] = rowEdits;
@@ -1406,28 +1518,6 @@ export default function FarOverseasAirPage() {
           saveError={editSaveError}
           onCancel={() => { setEditSaveError(null); closeEditModal(); }}
           onSave={saveEditModal}
-          onOpenWeight={(r) => setWeightModalRow(r)}
-        />
-      )}
-
-      {weightModalRow && (
-        <FarOverseasAirWeightBreakdownModal
-          record={weightModalRow}
-          readOnly={!canEditDirectLoading}
-          onClose={() => setWeightModalRow(null)}
-          onSaved={(updates) => {
-            setEditRow((prev: any) => (prev && prev.id === weightModalRow.id ? { ...prev, ...updates } : prev));
-            // Kalau kapal per PO sedang diedit (po_list pending), KG yang baru disimpan WAJIB ikut
-            // dimasukkan ke po_list pending -- kalau tidak, Save memo menimpa KG dgn nilai lama.
-            setPendingEdits(prev => {
-              const rowEdits = prev[weightModalRow.id];
-              if (!rowEdits || !Array.isArray(rowEdits.po_list)) return prev;
-              const merged = rowEdits.po_list.map((p: any, i: number) => ({ ...p, weight_kg: updates.po_list[i]?.weight_kg ?? p.weight_kg }));
-              return { ...prev, [weightModalRow.id]: { ...rowEdits, po_list: merged, dominant_company_code: updates.dominant_company_code } };
-            });
-            setDetailRefreshToken(t => t + 1);
-            fetchList();
-          }}
         />
       )}
 

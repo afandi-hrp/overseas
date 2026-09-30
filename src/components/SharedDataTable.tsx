@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { CheckCircle2, XCircle, X, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays, AlertTriangle, Save, SlidersHorizontal, RotateCcw, SquareX, UploadCloud, Pencil, GripVertical, ArrowUpDown } from 'lucide-react'
+import { CheckCircle2, XCircle, X, Circle, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays, AlertTriangle, Save, SlidersHorizontal, RotateCcw, SquareX, UploadCloud, Pencil, GripVertical, ArrowUpDown } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { DndContext, DragOverlay, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core'
 import { SortableContext, useSortable, arrayMove, verticalListSortingStrategy, horizontalListSortingStrategy } from '@dnd-kit/sortable'
@@ -12,8 +12,8 @@ import Greeting from './Greeting'
 import { LoadingState, LoadingSpinner } from '../components/LoadingState'
 import ExportModal from '../components/ExportModal'
 import CourierUploadSusulanModal from '../components/CourierUploadSusulanModal'
-import ValidasiModal from '../components/ValidasiModal'
-import CostValidationModal from '../components/CostValidationModal'
+import { VW_TOOLBAR, VW_BODY, VW_CARD, VW_CARD_TITLE, VW_BTN_PRIMARY, VW_BTN_SECONDARY, vwPctBar, vwPctText } from '../components/validationWindowStyles'
+import CourierValidationWindow, { rowValidationPct, validationDotClass, validationDotLabel, VALIDATION_TAB_LABEL, VALIDATION_TAB_ORDER, type ValidationTabKey } from '../components/CourierValidationWindow'
 import SeaAirChecklistModal from '../components/SeaAirChecklistModal'
 import SeaAirValidasiModal from '../components/SeaAirValidasiModal'
 import ValidasiShipmentInvoiceLengkap from '../components/ValidasiShipmentInvoiceLengkap'
@@ -1391,12 +1391,24 @@ async function fetchCourierValidationBadgePct(rows: any[]): Promise<{ docPctMap:
   return { docPctMap, costPctMap };
 }
 
-function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true }: { record: any, tab: any, onClose: () => void, onSaved?: () => void, canEdit?: boolean }) {
+// `embedded` (2026-09-30) -- dirender sbg tab "Checklist" di dalam CourierValidationWindow (tanpa
+// overlay/judul sendiri, Save Checklist TIDAK menutup jendela). `onPctChange` melaporkan % live
+// ke label tab (null = belum ada baris dokumen_checklist & belum ada perubahan).
+function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, embedded = false, onPctChange }: { record: any, tab: any, onClose: () => void, onSaved?: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void }) {
   const [form, setForm] = useState<Record<string, boolean>>({})
   const [existingId, setExistingId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  // Catatan Checklist -- kolom BARU dokumen_checklist.catatan_checklist (sql/028). Selama SQL
+  // belum dijalankan, `hasCatatanCol` false: textarea nonaktif & kolom TIDAK ikut payload.
+  const [catatan, setCatatan] = useState('')
+  const [hasCatatanCol, setHasCatatanCol] = useState(false)
+  // Snapshot nilai tersimpan terakhir -- dipakai tombol Cancel mode embedded (kembalikan isian
+  // yang belum di-Save, bukan menutup jendela).
+  const [savedForm, setSavedForm] = useState<Record<string, boolean>>({})
+  const [savedCatatan, setSavedCatatan] = useState('')
+  const [savedMsg, setSavedMsg] = useState(false)
 
   // Upload dokumen susulan (2026-09) -- tombol "Upload Additional Doc" di footer modal ini,
   // kirim ulang dokumen yang belum terupload saat upload pertama di halaman Upload Courier,
@@ -1422,6 +1434,7 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true }: { rec
         const updated: Record<string, boolean> = {}
         CHECKLIST_FIELDS.forEach(f => { updated[f.key] = !!data[f.key] })
         setForm(updated)
+        setSavedForm(updated)
         setExistingId(data.id)
       }
     } catch (e) {
@@ -1468,18 +1481,28 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true }: { rec
         initForm[f.key] = !!record[f.key]
       })
       setForm(initForm)
+      setSavedForm(initForm)
 
       try {
-        const { data, error } = await supabase
-          .from('dokumen_checklist')
-          .select('id')
-          .eq(isPib ? 'pib_id' : 'cn_id', record.id)
-          .maybeSingle()
+        const idCol = isPib ? 'pib_id' : 'cn_id'
+        // Coba sekalian ambil catatan_checklist; kalau kolomnya belum ada (sql/028 belum
+        // dijalankan) PostgREST error -> ulang tanpa kolom itu & tandai hasCatatanCol=false.
+        let colExists = true
+        let res: any = await supabase.from('dokumen_checklist').select('id, catatan_checklist').eq(idCol, record.id).maybeSingle()
+        if (res.error && /catatan_checklist/i.test(res.error.message || '')) {
+          colExists = false
+          res = await supabase.from('dokumen_checklist').select('id').eq(idCol, record.id).maybeSingle()
+        }
+        const { data, error } = res
 
         if (error) throw error
+        setHasCatatanCol(colExists)
 
         if (data) {
           setExistingId(data.id)
+          const c = colExists ? (data.catatan_checklist || '') : ''
+          setCatatan(c)
+          setSavedCatatan(c)
         }
       } catch (e: any) {
         setErr(e.message || 'Failed to load checklist id.')
@@ -1520,17 +1543,28 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true }: { rec
       
       const dokumen_kurang = mandatoryFields.filter(f => !form[f.key]).map(f => f.label).join(', ')
       payload.dokumen_kurang = dokumen_kurang || '-'
+      if (hasCatatanCol) payload.catatan_checklist = catatan.trim() ? catatan : null
 
       if (existingId) {
         const { error } = await supabase.from('dokumen_checklist').update(payload).eq('id', existingId)
         if (error) throw error
       } else {
-        const { error } = await supabase.from('dokumen_checklist').insert(payload)
+        // `.select('id')` -- mode embedded jendela tetap terbuka setelah Save, jadi id baris
+        // baru WAJIB disimpan supaya Save berikutnya jadi UPDATE (bukan insert baris kembar).
+        const { data: inserted, error } = await supabase.from('dokumen_checklist').insert(payload).select('id').maybeSingle()
         if (error) throw error
+        if (inserted?.id) setExistingId(inserted.id)
       }
 
       if (onSaved) onSaved()
-      onClose()
+      if (embedded) {
+        setSavedForm(form)
+        setSavedCatatan(catatan)
+        setSavedMsg(true)
+        setTimeout(() => setSavedMsg(false), 3000)
+      } else {
+        onClose()
+      }
     } catch (e: any) {
       setErr(e.message || 'Failed to save checklist.')
     } finally {
@@ -1548,6 +1582,14 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true }: { rec
   const pct = mandatoryCount > 0 ? Math.round((checkedMandatoryCount / mandatoryCount) * 100) : 100;
   const status = pct === 100 ? 'LENGKAP' : 'BELUM LENGKAP';
   const missingDocs = mandatoryFields.filter(f => !form[f.key]).map(f => f.label);
+  const isDirty = catatan !== savedCatatan || CHECKLIST_FIELDS.some(f => !!form[f.key] !== !!savedForm[f.key]);
+
+  // Label tab jendela Validation: null (titik abu) kalau belum pernah ada baris checklist
+  // tersimpan & belum ada perubahan -- sama arti dgn badge baris (pct_kelengkapan NULL).
+  useEffect(() => {
+    if (!onPctChange || loading) return
+    onPctChange(existingId == null && !isDirty ? null : pct)
+  }, [onPctChange, loading, existingId, isDirty, pct])
 
   const mapStatusColor: Record<string, string> = {
     LENGKAP: 'bg-emerald-100 text-emerald-700',
@@ -1556,6 +1598,7 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true }: { rec
   }
 
   if (loading) {
+    if (embedded) return <LoadingState />
     return (
       <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center h-full w-full">
         <div className="bg-white p-6 rounded-2xl shadow-xl">
@@ -1564,6 +1607,188 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true }: { rec
         </div>
       </div>
     );
+  }
+
+  const revertUnsaved = () => {
+    setForm(savedForm)
+    setCatatan(savedCatatan)
+    setErr(null)
+  }
+
+  // Banner status job "Upload Additional Doc" -- dipakai kedua mode (embedded & standalone).
+  const jobBanners = (
+    <>
+      {activeJobStatus === 'PENDING' && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-center gap-2.5">
+          <div className="w-6 h-6 rounded-full border-2 border-amber-400 border-t-transparent animate-spin shrink-0" />
+          <p className="text-xs font-semibold text-amber-800">Additional document being processed by AI...</p>
+        </div>
+      )}
+      {activeJobStatus === 'SUCCESS' && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 mb-4 flex items-center gap-2.5">
+          <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
+          <p className="text-xs font-semibold text-emerald-800">Additional document merged into this record successfully.</p>
+        </div>
+      )}
+      {activeJobStatus === 'FAILED' && (
+        <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 mb-4 flex items-start gap-2.5">
+          <AlertTriangle size={18} className="text-rose-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-xs font-semibold text-rose-800">Failed to process the additional document.</p>
+            <p className="text-[11px] text-rose-700 mt-0.5">{activeJobError}</p>
+          </div>
+        </div>
+      )}
+      {activeJobStatus === 'SENT' && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4 flex items-start gap-2.5">
+          <UploadCloud size={18} className="text-blue-600 shrink-0 mt-0.5" />
+          <p className="text-xs font-semibold text-blue-800">Document sent to the processing queue. Reopen this checklist in a moment to see the update.</p>
+        </div>
+      )}
+    </>
+  )
+
+  const catatanInput = canEdit ? (
+    <textarea
+      value={catatan}
+      onChange={e => setCatatan(e.target.value)}
+      disabled={!hasCatatanCol}
+      rows={embedded ? 4 : 3}
+      placeholder={hasCatatanCol ? 'No notes yet.' : 'Notes are unavailable until database migration 028 is applied.'}
+      className="w-full border border-slate-200 bg-white rounded-lg px-3 py-2 text-sm text-[#5A305A] focus:outline-none focus:ring-2 focus:ring-purple-200 resize-y disabled:bg-slate-50 disabled:cursor-not-allowed [overflow-wrap:anywhere]"
+    />
+  ) : (
+    <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-[#5A305A] whitespace-pre-wrap [overflow-wrap:anywhere]">
+      {catatan || <span className="italic text-[#5A305A]/50">No notes yet.</span>}
+    </div>
+  )
+
+  const uploadSusulanModal = showUploadSusulan && (
+    <CourierUploadSusulanModal
+      awbHint={record.awb || undefined}
+      onClose={() => setShowUploadSusulan(false)}
+      onJobStarted={handleUploadJobStarted}
+      onSentNoJob={handleUploadSentNoJob}
+    />
+  )
+
+  // ── Mode embedded: tab "Checklist" jendela Validation -- lebar penuh, toolbar tab di atas
+  //    (status + tombol), isi 2 kolom (daftar dokumen | dokumen kurang + catatan). ──
+  if (embedded) {
+    const optionalChecked = optionalFields.filter(f => form[f.key]).length
+    const docTile = (field: typeof CHECKLIST_FIELDS[number]) => {
+      const val = !!form[field.key]
+      return (
+        <button
+          type="button"
+          key={field.key}
+          onClick={canEdit ? () => toggle(field.key) : undefined}
+          disabled={!canEdit}
+          className={`w-full min-w-0 flex items-center justify-between gap-2 px-3 py-2 rounded-lg border text-left transition-colors ${
+            val ? 'border-emerald-200 bg-emerald-50/70' : 'border-slate-200 bg-white'
+          } ${canEdit ? (val ? 'hover:border-emerald-300 cursor-pointer' : 'hover:border-[#5A305A]/30 hover:bg-[#5A305A]/[0.03] cursor-pointer') : 'cursor-default'}`}
+        >
+          <span className={`text-[13px] font-medium [overflow-wrap:anywhere] ${val ? 'text-emerald-900' : 'text-[#5A305A]'}`}>{field.label}</span>
+          {val
+            ? <CheckCircle2 size={17} className="text-emerald-500 shrink-0" />
+            : <Circle size={17} className="text-slate-300 shrink-0" />}
+        </button>
+      )
+    }
+    return (
+      <div className="flex flex-col flex-1 min-h-0 cvw-fill">
+        <div className={VW_TOOLBAR}>
+          <div className="flex items-center gap-3 min-w-0">
+            <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${mapStatusColor[status] || 'bg-slate-100 text-[#5A305A]'}`}>
+              {getStatusLabel(status)}
+            </span>
+            <div className="w-40 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+              <div className={`h-full transition-all duration-500 ${vwPctBar(pct)}`} style={{ width: `${pct}%` }} />
+            </div>
+            <span className={`text-sm font-bold ${vwPctText(pct)}`}>{pct}%</span>
+            <span className="text-xs text-slate-500 whitespace-nowrap">{checkedMandatoryCount}/{mandatoryCount} required</span>
+          </div>
+          <div className="ml-auto flex items-center gap-2 print:hidden">
+            {savedMsg && (
+              <span className="flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                <CheckCircle2 size={14} /> Checklist saved
+              </span>
+            )}
+            {canEdit ? (
+              <>
+                <button onClick={() => setShowUploadSusulan(true)} className={VW_BTN_SECONDARY}>
+                  <UploadCloud size={14} /> Upload Additional Doc
+                </button>
+                <button onClick={revertUnsaved} disabled={!isDirty} title="Discard unsaved checklist changes" className={VW_BTN_SECONDARY}>
+                  Cancel
+                </button>
+                <button onClick={handleSave} disabled={saving} className={VW_BTN_PRIMARY}>
+                  <Save size={14} /> {saving ? 'Saving...' : 'Save Checklist'}
+                </button>
+              </>
+            ) : (
+              <span className="text-xs font-medium text-slate-500 bg-slate-100 rounded-full px-2.5 py-1">View only</span>
+            )}
+          </div>
+        </div>
+
+        <div className={VW_BODY}>
+          {jobBanners}
+          {err && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700 mb-4">⚠️ {err}</div>
+          )}
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-4 items-start">
+            <div className="space-y-4 min-w-0">
+              <section className={`${VW_CARD} p-4`}>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className={VW_CARD_TITLE}>Required Documents</h3>
+                  <span className="text-[11px] font-semibold text-slate-500">{checkedMandatoryCount}/{mandatoryCount}</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+                  {mandatoryFields.map(docTile)}
+                </div>
+              </section>
+              {optionalFields.length > 0 && (
+                <section className={`${VW_CARD} p-4`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className={VW_CARD_TITLE}>Optional Documents</h3>
+                    <span className="text-[11px] font-semibold text-slate-500">{optionalChecked}/{optionalFields.length}</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+                    {optionalFields.map(docTile)}
+                  </div>
+                </section>
+              )}
+            </div>
+
+            <div className="space-y-4 min-w-0">
+              <section className={`${VW_CARD} p-4`}>
+                <h3 className={`${VW_CARD_TITLE} mb-2.5`}>Missing Documents</h3>
+                {missingDocs.length > 0 ? (
+                  <ul className="space-y-1.5">
+                    {missingDocs.map((d: string, i: number) => (
+                      <li key={i} className="flex items-start gap-2 text-[13px] text-red-700">
+                        <XCircle size={15} className="text-red-400 shrink-0 mt-0.5" />
+                        <span className="[overflow-wrap:anywhere]">{d}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="flex items-center gap-2 text-[13px] font-medium text-emerald-700">
+                    <CheckCircle2 size={15} /> All required documents are complete.
+                  </p>
+                )}
+              </section>
+              <section className={`${VW_CARD} p-4`}>
+                <h3 className={`${VW_CARD_TITLE} mb-2.5`}>Catatan Checklist</h3>
+                {catatanInput}
+              </section>
+            </div>
+          </div>
+        </div>
+        {uploadSusulanModal}
+      </div>
+    )
   }
 
   return (
@@ -1575,35 +1800,9 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true }: { rec
             <X size={20} />
           </button>
         </div>
-        
+
         <div className="flex-1 overflow-y-auto p-6">
-          {activeJobStatus === 'PENDING' && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-5 flex items-center gap-2.5">
-              <div className="w-6 h-6 rounded-full border-2 border-amber-400 border-t-transparent animate-spin shrink-0" />
-              <p className="text-xs font-semibold text-amber-800">Additional document being processed by AI...</p>
-            </div>
-          )}
-          {activeJobStatus === 'SUCCESS' && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 mb-5 flex items-center gap-2.5">
-              <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
-              <p className="text-xs font-semibold text-emerald-800">Additional document merged into this record successfully.</p>
-            </div>
-          )}
-          {activeJobStatus === 'FAILED' && (
-            <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 mb-5 flex items-start gap-2.5">
-              <AlertTriangle size={18} className="text-rose-600 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-xs font-semibold text-rose-800">Failed to process the additional document.</p>
-                <p className="text-[11px] text-rose-700 mt-0.5">{activeJobError}</p>
-              </div>
-            </div>
-          )}
-          {activeJobStatus === 'SENT' && (
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-5 flex items-start gap-2.5">
-              <UploadCloud size={18} className="text-blue-600 shrink-0 mt-0.5" />
-              <p className="text-xs font-semibold text-blue-800">Document sent to the processing queue. Reopen this checklist in a moment to see the update.</p>
-            </div>
-          )}
+          {jobBanners}
 
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 mb-6">
             <div className="flex justify-between items-center mb-4">
@@ -1680,13 +1879,20 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true }: { rec
             )}
           </div>
 
+          {/* Catatan Checklist -- kolom dokumen_checklist.catatan_checklist (sql/028), ikut
+              tersimpan lewat tombol Save Checklist. */}
+          <div className="mt-6">
+            <label className="block text-xs font-bold text-[#5A305A] mb-1.5">Catatan Checklist</label>
+            {catatanInput}
+          </div>
+
           {err && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700 mt-5">
               ⚠️ {err}
             </div>
           )}
         </div>
-        
+
         {/* Footer Modal */}
         <div className="flex gap-3 px-6 py-5 border-t border-slate-100 bg-slate-50">
           {canEdit && (
@@ -1724,14 +1930,7 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true }: { rec
         </div>
       </div>
 
-      {showUploadSusulan && (
-        <CourierUploadSusulanModal
-          awbHint={record.awb || undefined}
-          onClose={() => setShowUploadSusulan(false)}
-          onJobStarted={handleUploadJobStarted}
-          onSentNoJob={handleUploadSentNoJob}
-        />
-      )}
+      {uploadSusulanModal}
     </div>
   )
 }
@@ -2359,9 +2558,8 @@ const SortableColumnHeader: React.FC<{
 
 const CourierAuditRowGroup: React.FC<{
   rec: any, index: number, cols: any[],
-  onChecklist?: (r: any) => void,
-  onValidasi?: (r: any) => void,
-  onCostValidasi?: (r: any) => void,
+  onValidation?: (r: any) => void,
+  validationTabs?: ValidationTabKey[],
   onArchive?: (r: any) => void,
   onUndraft?: (r: any) => void,
   onDelete?: (r: any) => void,
@@ -2372,7 +2570,7 @@ const CourierAuditRowGroup: React.FC<{
   reorderMode?: boolean,
   totalRows?: number,
   onMoveTo?: (r: any, position: number) => void,
-}> = ({ rec, index, cols, onChecklist, onValidasi, onCostValidasi, onArchive, onUndraft, onDelete, editMode, getVal, setVal, onSaveRow, reorderMode, totalRows, onMoveTo }) => {
+}> = ({ rec, index, cols, onValidation, validationTabs = [], onArchive, onUndraft, onDelete, editMode, getVal, setVal, onSaveRow, reorderMode, totalRows, onMoveTo }) => {
   const repeatingCols = ['po_ori', 'vendor_inv_no', 'po_harga_detail'];
   // Drag & Drop Reorder (2026-09) -- hook dipanggil TANPA SYARAT (Rules of Hooks), tapi
   // listeners/transform HANYA dipakai saat `reorderMode` true (`disabled` mematikan drag-nya,
@@ -2573,51 +2771,29 @@ const CourierAuditRowGroup: React.FC<{
                               💾 {savingRow ? 'Saving...' : 'Save'}
                             </button>
                           )}
-                          {onChecklist && rec.status !== 'LENGKAP' && (
-                            <span className="relative inline-flex shrink-0">
-                              <button onClick={() => { onChecklist(rec); setShowActions(false); }} className="w-[80px] bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 hover:border-amber-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
-                                📋 Checklist
-                              </button>
-                              {(() => {
-                                const pct = Number(rec.pct_kelengkapan) || 0;
-                                return (
-                                  <span className={`absolute -top-1.5 -right-1.5 z-10 min-w-[26px] h-[15px] px-1 rounded-full text-[9px] font-bold flex items-center justify-center shadow-sm border-2 border-white ${
-                                    pct >= 90 ? 'bg-emerald-500 text-white' : pct >= 60 ? 'bg-amber-500 text-white' : 'bg-red-500 text-white'
-                                  }`}>
-                                    {pct}%
-                                  </span>
-                                );
-                              })()}
-                            </span>
-                          )}
-                          {onValidasi && rec.status !== 'LENGKAP' && (
-                            <span className="relative inline-flex shrink-0">
-                              <button onClick={() => { onValidasi(rec); setShowActions(false); }} className="w-[80px] bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
-                                🔍 Doc Validation
-                              </button>
-                              {rec.doc_validation_pct !== null && rec.doc_validation_pct !== undefined && (
-                                <span className={`absolute -top-1.5 -right-1.5 z-10 min-w-[26px] h-[15px] px-1 rounded-full text-[9px] font-bold flex items-center justify-center shadow-sm border-2 border-white ${
-                                  rec.doc_validation_pct >= 90 ? 'bg-emerald-500 text-white' : rec.doc_validation_pct >= 60 ? 'bg-amber-500 text-white' : 'bg-red-500 text-white'
-                                }`}>
-                                  {rec.doc_validation_pct}%
+                          {/* Tombol "Validation" (2026-09-30) -- menggantikan 3 tombol lama Checklist/Doc
+                              Validation/Cost Validation; membuka CourierValidationWindow (3 tab). 3 titik
+                              = status tiap tab (hijau 100%, oranye <100%, abu belum ada data), hanya tab
+                              yang boleh dilihat user. */}
+                          {onValidation && validationTabs.length > 0 && rec.status !== 'LENGKAP' && (() => {
+                            const vp = rowValidationPct(rec);
+                            return (
+                              <span className="relative inline-flex shrink-0">
+                                <button
+                                  onClick={() => { onValidation(rec); setShowActions(false); }}
+                                  title={validationTabs.map(t => `${VALIDATION_TAB_LABEL[t]}: ${validationDotLabel(vp[t])}`).join(' · ')}
+                                  className="w-[80px] bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm"
+                                >
+                                  ✅ Validation
+                                </button>
+                                <span className="pointer-events-none absolute -top-1.5 -right-1.5 z-10 h-[13px] px-1 rounded-full bg-white border border-slate-200 shadow-sm flex items-center gap-[3px]">
+                                  {validationTabs.map(t => (
+                                    <span key={t} className={`w-[6px] h-[6px] rounded-full ${validationDotClass(vp[t])}`} />
+                                  ))}
                                 </span>
-                              )}
-                            </span>
-                          )}
-                          {onCostValidasi && rec.status !== 'LENGKAP' && (
-                            <span className="relative inline-flex shrink-0">
-                              <button onClick={() => { onCostValidasi(rec); setShowActions(false); }} className="w-[80px] bg-purple-50 border border-purple-200 text-purple-700 hover:bg-purple-100 hover:border-purple-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
-                                💲 Cost. Validation
-                              </button>
-                              {rec.cost_validation_pct !== null && rec.cost_validation_pct !== undefined && (
-                                <span className={`absolute -top-1.5 -right-1.5 z-10 min-w-[26px] h-[15px] px-1 rounded-full text-[9px] font-bold flex items-center justify-center shadow-sm border-2 border-white ${
-                                  rec.cost_validation_pct >= 90 ? 'bg-emerald-500 text-white' : rec.cost_validation_pct >= 60 ? 'bg-amber-500 text-white' : 'bg-red-500 text-white'
-                                }`}>
-                                  {rec.cost_validation_pct}%
-                                </span>
-                              )}
-                            </span>
-                          )}
+                              </span>
+                            );
+                          })()}
                           {onArchive && (
                             <button onClick={() => { onArchive(rec); setShowActions(false); }} className="w-[80px] bg-orange-50 text-orange-600 hover:bg-orange-100 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all border border-orange-200 shadow-sm">
                               {rec.status === 'LENGKAP' ? '📦 Unarchived' : '🗄️ Draft'}
@@ -3406,6 +3582,13 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [columnAccessByPage, isAdmin]);
   const canSee = (pageKey: string) => isAdmin || allowedPageKeys.has(pageKey);
+  // Tab jendela Validation yang boleh DILIHAT user (per page_key lama masing2 tombol).
+  const courierValidationAccess: Record<ValidationTabKey, boolean> = {
+    checklist: canSee('courier_checklist_dokumen'),
+    doc: canSee('courier_dokumen_validation'),
+    cost: canSee('courier_cost_validation'),
+  };
+  const courierValidationTabs = VALIDATION_TAB_ORDER.filter(t => courierValidationAccess[t]);
   const [activeMainTab, setActiveMainTab] = useState(defaultMainTab)
   const [activeSubTab,  setActiveSubTab]  = useState(defaultSubTab)
 
@@ -3610,13 +3793,12 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   // Remove debouncedPpjkFilter logic
   const [editRecord,    setEditRecord]    = useState<any>(null)
   const [showAddRowModal, setShowAddRowModal] = useState(false)
-  const [chkRecord,     setChkRecord]     = useState<any>(null)
   const [seaAirChecklistRecord, setSeaAirChecklistRecord] = useState<any>(null)
   const [deleteRecord,  setDeleteRecord]  = useState<any>(null)
-  const [validasiRecord, setValidasiRecord] = useState<any>(null)
   const [seaAirValidasiRecord, setSeaAirValidasiRecord] = useState<any>(null)
   const [seaAirCostValidasiRecord, setSeaAirCostValidasiRecord] = useState<any>(null)
-  const [costValidasiRecord, setCostValidasiRecord] = useState<any>(null)
+  // Jendela "Validation" Audit Courier (Checklist + Doc Validation + Cost Validation, 2026-09-30)
+  const [courierValidationRecord, setCourierValidationRecord] = useState<any>(null)
 
   // Edit massal (Audit Courier & Rekapan Courier) -- 1 tombol "Edit Mode" di toolbar membuka
   // mode input di SEMUA baris yang lagi tampil sekaligus (bukan toggle per baris), tiap baris/
@@ -5256,13 +5438,28 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         />
       )}
 
-      {chkRecord && tab && (
-        <ChecklistModal
-          record={chkRecord}
-          tab={tab}
-          onClose={() => setChkRecord(null)}
-          onSaved={fetchRecords}
-          canEdit={canEdit('courier_checklist_dokumen')}
+      {courierValidationRecord && tab && (
+        <CourierValidationWindow
+          record={courierValidationRecord}
+          mainTab={activeMainTab}
+          subTab={activeSubTab}
+          jenisDokumen={courierValidationRecord.jenis_dokumen || (courierValidationRecord.tabel === 'tabel_audit_pib' || courierAuditType === 'pib' ? 'PIB' : (courierValidationRecord.tabel === 'tabel_audit_cn' || courierAuditType === 'cn' ? 'CN' : ''))}
+          access={courierValidationAccess}
+          editAccess={{ checklist: canEdit('courier_checklist_dokumen'), doc: canEdit('courier_dokumen_validation'), cost: canEdit('courier_cost_validation') }}
+          renderChecklist={({ onPctChange, onSaved }) => (
+            <ChecklistModal
+              record={courierValidationRecord}
+              tab={tab}
+              embedded
+              onClose={() => { setCourierValidationRecord(null); fetchRecords(); }}
+              onSaved={onSaved}
+              onPctChange={onPctChange}
+              canEdit={canEdit('courier_checklist_dokumen')}
+            />
+          )}
+          // Refetch 1x saat jendela ditutup -> titik status/badge baris ikut data terbaru
+          // (Checklist/Doc/Cost semua bisa berubah selama jendela terbuka, Doc via autosave).
+          onClose={() => { setCourierValidationRecord(null); fetchRecords(); }}
         />
       )}
 
@@ -5292,15 +5489,6 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         />
       )}
 
-      {validasiRecord && (
-        <ValidasiModal
-          record={validasiRecord}
-          mainTab={activeMainTab}
-          subTab={activeSubTab}
-          onClose={() => setValidasiRecord(null)}
-          canEdit={canEdit('courier_dokumen_validation')}
-        />
-      )}
       
       {seaAirChecklistRecord && (
         <SeaAirChecklistModal
@@ -5326,16 +5514,6 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         />
       )}
 
-      {costValidasiRecord && (
-        <CostValidationModal
-          awb={costValidasiRecord.awb}
-          jenisDokumen={costValidasiRecord.jenis_dokumen || (costValidasiRecord.tabel === 'tabel_audit_pib' || ((activeMainTab === 'courier' && activeSubTab === 'courier_audit') && (courierAuditType === 'pib')) ? 'PIB' : (costValidasiRecord.tabel === 'tabel_audit_cn' || ((activeMainTab === 'courier' && activeSubTab === 'courier_audit') && (courierAuditType === 'cn')) ? 'CN' : ''))}
-          docId={costValidasiRecord.id}
-          rawRecord={costValidasiRecord}
-          onClose={() => setCostValidasiRecord(null)}
-          canEdit={canEdit('courier_cost_validation')}
-        />
-      )}
 
       {/* ── Main Content ── */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
@@ -5787,9 +5965,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                             rec={rec}
                             index={startIndex + index}
                             cols={visibleCols}
-                            onChecklist={canSee('courier_checklist_dokumen') ? setChkRecord : undefined}
-                            onValidasi={canSee('courier_dokumen_validation') ? setValidasiRecord : undefined}
-                            onCostValidasi={canSee('courier_cost_validation') ? (r) => setCostValidasiRecord(r) : undefined}
+                            onValidation={setCourierValidationRecord}
+                            validationTabs={courierValidationTabs}
                             onArchive={canEditCourierAudit && courierAuditType !== 'archive' ? handleArchive : undefined}
                             onUndraft={canEditCourierAudit && courierAuditType === 'archive' ? handleUndraft : undefined}
                             onDelete={canEditCourierAudit ? handleDelete : undefined}

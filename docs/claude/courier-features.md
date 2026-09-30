@@ -1,3 +1,63 @@
+## Jendela "Validation" — Audit Courier Draft/PIB/CN (2026-09-30, `CourierValidationWindow.tsx`)
+
+3 tombol Action lama (Checklist / Doc Validation / Cost Validation) DIGABUNG jadi 1 tombol
+**"✅ Validation"** di `CourierAuditRowGroup` (Draft, PIB, CN — syarat tampil sama spt dulu:
+`rec.status !== 'LENGKAP'`) + pil kecil 3 titik status di pojok (hanya tab yang boleh dilihat).
+Aturan titik (keputusan user): **hijau = 100%, oranye = <100%, abu = null/belum ada data** —
+`validationDotClass()` di `CourierValidationWindow.tsx` SATU-SATUNYA definisi (dipakai tombol & tab).
+Sumber % di baris = badge lama (`pct_kelengkapan`, `doc_validation_pct`, `cost_validation_pct`,
+`rowValidationPct()`); formula TIDAK diubah.
+
+- **Jendela 3 tab** (Checklist | Doc Validation | Cost Validation), label "Checklist 83%" + titik.
+  Tab muncul per hak LIHAT page_key lama (`courier_checklist_dokumen`/`courier_dokumen_validation`/
+  `courier_cost_validation`), hak edit tetap per page_key. **Tab awal** = tab pertama yang belum
+  hijau; semua hijau -> Checklist.
+- **Isi tab = modal LAMA dalam mode `embedded`** (`ChecklistModal` di SharedDataTable.tsx,
+  `ValidasiModal.tsx`, `CostValidationModal.tsx`) — tanpa overlay/judul/X sendiri; semua tombol &
+  fungsi tetap. Mode non-embedded masih utuh (tidak dipakai lagi di Audit Courier).
+- **Ketiga tab SELALU terpasang** (tab tidak aktif `hidden`) supaya edit belum-disimpan tidak hilang
+  saat pindah tab. Konsekuensi: 3 query jalan saat jendela dibuka.
+- **% label tab live**: tiap modal kirim `onPctChange` (Checklist dari isian form; Doc dari `stats.pct`,
+  null kalau tidak ada `dokumen_validasi` & checklist tersimpan; Cost dari `computeLiveCostSummary`
+  atas `editForm` selama Edit, null kalau belum ada baris `tabel_cost_validasi`).
+- **Save Checklist mode embedded TIDAK menutup jendela** (insert pakai `.select('id')` supaya save
+  berikutnya UPDATE, bukan baris kembar); Cancel = kembalikan isian ke nilai tersimpan. Setelah save
+  -> `checklistVersion` naik -> Doc Validation baca ulang HANYA flag `ada_po/ada_cipl/ada_final_invoice`
+  (gating "NO VESSEL NAME AND IMO NUMBER"), BUKAN reload penuh (reload memotong autosave 2 dtk).
+- **Tata letak (revisi 2026-09-30, laporan user "header jelek, Doc Validation header dobel, isi
+  Checklist sempit")**: Shipment Info = kartu grid garis-rambut (bukan gradient peach), tab bar gaya
+  garis bawah + pil persen. **Tiap tab punya TOOLBAR TAB putih sendiri** (isi beda, gaya sama —
+  `src/components/validationWindowStyles.ts`, SATU-SATUNYA sumber kelas `VW_*`): Checklist = status
+  + progres + Upload Additional Doc/Cancel/Save Checklist; Doc Validation = Check date/Checked by/
+  No. AWB (saat Edit) + skor Match/Mismatch/Not filled + akurasi + Edit/Recompute/Save/Cancel +
+  baris Manual Change Notes (MENGGANTIKAN bar judul + panel gradient "Import Document Validation
+  Table" saat embedded; teks bantuan "PT Indo Mulia Indah — enter the value..." tidak ditampilkan);
+  Cost = Status + Edited + OK/Selisih/N/A + akurasi + Edit Cost Validasi/Batal/Simpan. Checklist
+  embedded lebar penuh 2 kolom (kartu Required/Optional Documents | kartu Missing Documents +
+  Catatan Checklist), BUKAN kolom sempit `max-w-3xl`. Mode standalone ketiga modal TIDAK berubah.
+- **Tutup jendela** (satu tombol X) -> `fetchRecords()` 1x supaya titik/badge baris ikut data terbaru.
+- **Shipment Info SATU di level jendela** (grid 5 kolom, 10 field, "—" kalau kosong, nilai
+  `[overflow-wrap:anywhere]` + `min-w-0`, tanpa nowrap/ellipsis). Sumber: AWB/Vendor/Jalur
+  (`jenis_dokumen`)/No. PIB (`no_pib`, CN selalu "—") dari baris `tabel_audit_pib/cn`; Courier/
+  Direction-Type/Ship Date/Origin-Zone/Chargeable Weight/Service dari baris terbaru
+  `tabel_cost_validasi` (fetch sendiri, lalu disinkron dari tab Cost via `onDataChange`). Saat
+  embedded: panel Shipment Info Cost Validation disembunyikan — KECUALI saat Edit Cost Validasi,
+  3 field yang bisa diedit (Ship Date/Origin/Chargeable Weight) muncul di panel "Edit Shipment Info";
+  chip Document Type/No. PIB/Vendor Doc Validation disembunyikan, No. AWB (isian checker) hanya
+  saat Edit.
+- **Catatan per tab**: Checklist = kolom BARU `dokumen_checklist.catatan_checklist`
+  (`sql/028_dokumen_checklist_catatan.sql`, BELUM DIJALANKAN; selama kolom belum ada -> textarea
+  nonaktif & tidak ikut payload, deteksi via error select); Doc Validation = "Manual Change Notes"
+  (`tabel_checklist_validasi.catatan_manual`, tidak berubah); Cost = "Catatan Perubahan Manual"
+  (`tabel_cost_validasi.catatan`, tidak berubah).
+- **Print** (1 tombol di bar jendela; tombol Print lama Doc Validation disembunyikan saat embedded)
+  = Shipment Info + tab AKTIF saja — `#courier-validation-print-area` + class `cvw-fill` di
+  `src/index.css` (pola `#bunker-print-area`). Catatan: aturan print global `body *
+  {visibility:hidden}` di index.css membuat Print Doc Validation versi LAMA (standalone) kemungkinan
+  tercetak kosong — tidak relevan lagi krn Audit Courier sekarang lewat jendela ini.
+- Diuji (jsdom + Supabase tiruan, di luar repo): 73 cek (jendela 37, Checklist embedded 27, tombol
+  baris 9), 0 console error; `tsc --noEmit` bersih, `vite build` sukses. Belum dites ke production.
+
 ## Kolom per role — Audit Courier & Rekapan Courier (2026-09-29, role Finance)
 
 Ringkasan arsitektur ada di CLAUDE.md bagian RBAC ("Kolom per role"). SQL yang diberikan ke user

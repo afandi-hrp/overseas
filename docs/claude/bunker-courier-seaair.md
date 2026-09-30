@@ -170,6 +170,10 @@ ASLI) sbg fallback.
 
 ## Courier — Audit, badge % + footer % Cost Validation
 
+**Sejak 2026-09-30 badge % di 3 tombol Audit Courier DIGANTI titik status tombol "Validation"**
+(nilai % yang sama, lihat "Jendela Validation" di `docs/claude/courier-features.md`) — perhitungan
+di bawah TETAP berlaku.
+
 Pola sama Sea & Air Rekapan di atas, diterapkan ke `CourierAuditRowGroup`.
 **`src/utils/CostValidationHelpers.ts`** — `isRowVisible()`/`computeLiveCostSummary()`
 SATU-SATUNYA sumber kebenaran (dipakai `CostValidationModal.tsx` DAN `SharedDataTable.tsx`

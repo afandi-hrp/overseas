@@ -45,6 +45,9 @@ approval-nya.
   **Pengecualian**: `sql/027_far_overseas_phase2_DRAFT.sql` (2026-09-28) = redesain FAR tahap 2,
   **BELUM DIJALANKAN** (bagian E ditulis dari body live approve/reject/update_rekapan kiriman user;
   diuji di PGlite). WAJIB di-deploy BARENG frontend tahap 2 — lihat `docs/claude/far-overseas.md`.
+  `sql/028_dokumen_checklist_catatan.sql` (2026-09-30) = kolom `dokumen_checklist.catatan_checklist`
+  (Catatan Checklist jendela Validation Audit Courier), **BELUM DIJALANKAN** — frontend aman duluan
+  (deteksi kolom otomatis), lihat "Jendela Validation" di `docs/claude/courier-features.md`.
 - **Kondisi DB production (stack `supabase3`, audit 2026-09-26)**: role `anon` tanpa hak apa pun
   di schema public (tabel, fungsi, default privileges); GraphQL ditutup; semua tabel RLS dgn
   policy `has_page_access`/`has_edit_access` (tidak ada `using (true)`); semua view

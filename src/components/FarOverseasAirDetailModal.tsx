@@ -2,9 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
-import { X, Stamp, Ban, ChevronDown, ChevronUp, Printer, FolderOpen, ClipboardList, MoreHorizontal, CheckCircle2, AlertTriangle, Clock, Info, Undo2, History, Bell, Lock, Pencil, Wallet } from 'lucide-react';
+import { X, Stamp, Ban, Printer, FolderOpen, ClipboardList, MoreHorizontal, CheckCircle2, AlertTriangle, Clock, Info, Undo2, History, Bell, Lock, Pencil, Wallet } from 'lucide-react';
 import {
-  formatMoney, formatDateShort, formatDateTimeID, COST_STATUS_META, parseJsonField, computeCostStatus,
+  formatDateShort, formatDateTimeID, COST_STATUS_META, parseJsonField, computeCostStatus,
   nextStepForStatus, STEP_LABEL, STEP_ORDER, getApprovalEntries, findApprovalEntry, getWaitInfo, completedStepCount,
   getStatusLabel, getFinanceStage, isMemoLocked, fetchCanSign, fetchPreparedByBlockers, fetchMemoLog, implicitFxRate,
   ensureFarFont, FAR_FONT_FAMILY, type ApprovalStep, type SignerConfig, type MemoLogEntry,
@@ -103,7 +103,6 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
   const canEditDirectLoading = canEdit('direct_loading');
   const [rec, setRec] = useState(record);
   const [signer, setSigner] = useState<SignerConfig | null>(null);
-  const [showPoDetail, setShowPoDetail] = useState(false);
   const [showReject, setShowReject] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showCost, setShowCost] = useState(false);
@@ -123,6 +122,7 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
   const [log, setLog] = useState<MemoLogEntry[] | null>(null);
   const [logReloadKey, setLogReloadKey] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
+  const memoSheetRef = useRef<HTMLDivElement>(null);
   const firstRefresh = useRef(true);
 
   const phase2 = rec != null && 'payment_type' in rec;
@@ -281,8 +281,40 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
     setLogReloadKey(k => k + 1);
   };
 
-  const parsedPoList = parseJsonField(rec.po_list);
-  const poList: any[] = Array.isArray(parsedPoList) ? parsedPoList : [];
+  // Cetak memo = 1/2 kertas A4 PORTRAIT (2026-09-30, GANTI @page A5): halaman A4 portrait, memo
+  // menempati kotak atas 210 x 148,5 mm (padding 7/8 mm -> area isi 194 x 134,5 mm), bagian bawah
+  // kosong. Tinggi memo bervariasi (PO/notes panjang) -> sebelum dialog cetak (`beforeprint`,
+  // juga Ctrl+P) tinggi memo diukur pada lebar 194 mm lalu diperkecil (`--far-memo-zoom`) kalau
+  // tidak muat. Lebar tata letak dibagi zoom yang sama, jadi lebar cetak tetap 194 mm & tinggi
+  // hasil <= ukuran terukur x zoom (lebih lebar = baris wrap lebih sedikit). Zoom global
+  // `html{zoom:90%}` (index.css) DINETRALKAN saat cetak modal ini (lewat `:has`) supaya ukuran mm
+  // tidak ikut mengecil 10%.
+  useEffect(() => {
+    const MM = 96 / 25.4;
+    const onBefore = () => {
+      const el = memoSheetRef.current;
+      if (!el) return;
+      const prevW = el.style.width;
+      const prevMin = el.style.minWidth;
+      el.style.removeProperty('--far-memo-zoom');
+      el.style.width = `${194 * MM}px`;
+      el.style.minWidth = '0';
+      const h = el.scrollHeight;
+      el.style.width = prevW;
+      el.style.minWidth = prevMin;
+      const avail = 134.5 * MM;
+      const z = h > avail ? Math.floor((avail / h) * 100) / 100 : 1;
+      el.style.setProperty('--far-memo-zoom', String(z));
+    };
+    const onAfter = () => { memoSheetRef.current?.style.removeProperty('--far-memo-zoom'); };
+    window.addEventListener('beforeprint', onBefore);
+    window.addEventListener('afterprint', onAfter);
+    return () => {
+      window.removeEventListener('beforeprint', onBefore);
+      window.removeEventListener('afterprint', onAfter);
+    };
+  }, []);
+
   const docCount = getMemoDocs(rec).length;
   const costMeta = costStatus ? COST_STATUS_META[costStatus] : null;
   const locked = isMemoLocked(rec.approval_status);
@@ -327,8 +359,14 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
 
   return createPortal(
     <div id="far-overseas-print-area" style={{ fontFamily: FAR_FONT_FAMILY }} className="fixed inset-0 bg-[#2A1A2C]/50 backdrop-blur-sm z-[60] flex justify-center items-center p-0 sm:p-4 md:p-6 print:static print:bg-white print:p-0 print:block">
-      {/* Ukuran kertas cetak A5 -- <style> di dalam tree portal ini, HANYA saat modal terbuka. */}
-      <style>{`@media print { @page { size: A5; margin: 8mm; } }`}</style>
+      {/* Cetak 1/2 A4 portrait -- <style> di dalam tree portal ini, HANYA aktif saat modal terbuka
+          (lihat komentar efek `beforeprint` di atas). */}
+      <style>{`@media print {
+        @page { size: A4 portrait; margin: 0; }
+        html:has(#far-overseas-print-area) { zoom: 1 !important; }
+        #far-overseas-print-area .far-memo-half { width: 210mm; height: 148.5mm; padding: 7mm 8mm; box-sizing: border-box; overflow: visible; }
+        #far-overseas-print-area .far-memo-sheet { width: calc(194mm / var(--far-memo-zoom, 1)); min-width: 0; zoom: var(--far-memo-zoom, 1); }
+      }`}</style>
       <div className="bg-[#FBF3EC] w-full max-w-4xl h-full sm:h-[94vh] sm:max-h-[94vh] sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden print:shadow-none print:w-full print:m-0 print:rounded-none print:h-auto print:max-h-none print:overflow-visible print:block print:bg-white">
 
         <div className="flex justify-between items-center gap-3 px-4 sm:px-6 py-3 border-b border-[#EADFD6] bg-white shrink-0 print:hidden">
@@ -491,36 +529,13 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
               <span className="shrink-0 text-[10px] font-semibold opacity-70">Not printed</span>
             </div>
 
-            <div className="bg-white rounded-2xl p-3 md:p-6 shadow-sm print:shadow-none print:p-0 print:rounded-none overflow-x-auto">
-              <div className="min-w-[560px] print:min-w-0">
+            <div className="far-memo-half bg-white rounded-2xl p-3 md:p-6 shadow-sm print:shadow-none print:p-0 print:rounded-none overflow-x-auto">
+              <div ref={memoSheetRef} className="far-memo-sheet min-w-[560px] print:min-w-0">
                 <FarOverseasMemoPaper rec={rec} signer={signer} />
                 <MemoPaymentLine rec={rec} />
               </div>
             </div>
 
-            {poList.length > 0 && (
-              <div className="bg-white rounded-2xl border border-[#EADFD6] overflow-hidden print:hidden">
-                <button onClick={() => setShowPoDetail(s => !s)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-[#F5EDF3]/50 transition-colors">
-                  <span className="text-sm font-bold text-[#2A1A2C]">PO details ({poList.length})</span>
-                  {showPoDetail ? <ChevronUp size={16} className="text-[#6E5E70]" /> : <ChevronDown size={16} className="text-[#6E5E70]" />}
-                </button>
-                {showPoDetail && (
-                  <div className="border-t border-[#EADFD6] divide-y divide-[#EADFD6]">
-                    {poList.map((po, i) => (
-                      <div key={i} className="px-4 py-3 grid grid-cols-2 md:grid-cols-6 gap-2 text-xs">
-                        <div className="col-span-2 md:col-span-1"><p className="text-[#6E5E70]">PO</p><p className="font-semibold text-[#2A1A2C] break-all">{po.po_no_raw || '—'}</p></div>
-                        <div><p className="text-[#6E5E70]">PT</p><p className="font-semibold text-[#2A1A2C]">{po.company_code || '—'}</p></div>
-                        <div><p className="text-[#6E5E70]">Vendor</p><p className="font-semibold text-[#2A1A2C]">{po.vendor_name || '—'}</p></div>
-                        <div><p className="text-[#6E5E70]">Value</p><p className="font-semibold text-[#2A1A2C]">{formatMoney(po.total_value, po.currency)}</p></div>
-                        <div><p className="text-[#6E5E70]">KG</p><p className="font-semibold text-[#2A1A2C]">{po.weight_kg != null ? `${po.weight_kg} KG` : '—'}</p></div>
-                        <div><p className="text-[#6E5E70]">Vessel</p><p className="font-semibold text-[#2A1A2C]">{po.vessel_raw || '—'}</p></div>
-                        {po.item_summary && <div className="col-span-2 md:col-span-6"><p className="text-[#6E5E70]">Items</p><p className="text-[#2A1A2C]">{po.item_summary}</p></div>}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         </div>
 
