@@ -1,3 +1,49 @@
+## Audit Courier — tampilan baru "PIB & CN Audit" (2026-10-01)
+
+Mengikuti Audit PIB Sea & Air (token `SeaAirAuditUi.tsx`, font Sora). Keputusan user: samakan dgn Audit PIB
+Sea & Air + sesuaikan perbedaan (tab Draft/PIB/CN, Admin penalty CN, NAS Submit Date, batas kolom role
+Finance); fitur tabel lama (Reorder drag, Edit Mode massal, Customize View, Export) TETAP di mode **List**
+(tabel & toolbar 2 baris lama APA ADANYA + toggle Card|List); Open = jendela Validation + tab Overview;
+label "Undraft" -> **Mark as audited**, "📦 Unarchived/Draft" -> **Move back to Draft** (logika sama, RPC
+`fn_undraft_*` + Doc Acceptance otomatis / `fn_archive_*`); form Edit/Add baru dgn auto-calc 7 kolom; badge
+Draft di sidebar; **TIDAK ADA kunci validasi** (validasi = info saja); tab Draft/PIB/CN (tanpa All).
+
+- **File**: `src/utils/CourierAuditHelpers.ts` (SATU sumber: auto-calc dipindah dari SharedDataTable,
+  `courierDocType`, `computeCourierBuildUp`/`computeCourierDutyRows`, `fetchCourierAuditSummary`,
+  `fetchCourierAuditLog`, badge sidebar), `CourierAuditCardList.tsx` (5 KPI + kartu), `CourierAuditOverview.tsx`
+  (tab Overview), `CourierAuditEditModal.tsx` (Edit/Add). `CourierValidationWindow.tsx` diperluas prop opsional
+  `overview`/`initialTab`/`title`/`subtitle`/`headerActions` (tanpa prop itu = perilaku lama persis).
+  SharedDataTable: cabang `isCourierAuditView` (header, toolbar Card, area kartu, modal) +
+  `undraftCourierRecord`/`archiveCourierRecord` (return boolean, dipakai tombol lama & jendela Open).
+- **KPI** (`fetchCourierAuditSummary`, filter SAMA daftar: Company/tanggal PPJK/search kolom yg diizinkan
+  role, tanpa filter tab; auto-calc di-apply): Records (draft·PIB·CN), Customs value, Duties & taxes (BM/PPN/
+  PPh/Adm), Not submitted to NAS, Validation incomplete (Draft dgn tab validasi yg boleh dilihat <100%/belum
+  ada — dihitung dgn `mergeChecklistData` + `fetchCourierValidationBadgePct` yg SAMA tombol Validation).
+- **Kartu**: jenis dokumen + tgl PPJK, No. PIB / No. SPPBMCP, Via/Term, AWB apa adanya | PT + supplier + PO
+  (+N) + chip Accepted (Doc Acceptance) & NAS submitted | Duty & tax (`total_pib_cn`) + BM/PPN/PPh % +
+  "incl. admin penalty" (CN) | pill Draft/Audited + 3 titik validasi (klik = buka tab itu) + Open. Garis kiri:
+  amber Draft, hijau NAS submitted, ungu audited. Urutan = urutan `records` (sort_order PIB/CN).
+- **Jendela Open** (`CourierValidationWindow` + `overview`): tab Overview (Validation info-only, Document,
+  Goods per PO As recorded/Split evenly, Customs value + Check difference, Duties & taxes + Admin penalty +
+  invoice duty, Checks, Audit trail) · Checklist · Doc Validation · Cost Validation. Validasi bisa DIEDIT hanya
+  saat Draft (sama tombol lama); Audited = lihat saja. Header: Edit, Mark as audited / Move back to Draft,
+  Delete (hanya Draft di tab Draft — DeleteModal jalur Draft). Setelah aksi, baris dibaca ulang
+  (`reloadCourierRow`, enrich sama fetchRecords) & jendela tetap terbuka.
+- **Form Edit/Add** (`CourierAuditEditModal`): menulis kolom yg sama form lama langsung ke tabel_audit_pib/cn,
+  hanya field yg berubah; 7 kolom auto-calc tampil "AUTO", mengetik = manual biru (+ tombol kembali ke otomatis),
+  `manual_override_fields` ikut tersimpan; PPN/PPh % ditampilkan persen (DB pecahan). Add = Draft (status
+  ARCHIVED, jenis PIB/CN dipilih), wajib AWB + tgl PPJK; "Save & mark as audited" = insert/update lalu
+  `undraftCourierRecord`. Tombol "Add Data" mode List juga membuka form baru ini.
+- **Batas kolom role** (`makeColOk(getAllowedColumns('courier_audit'))`): kolom tak diizinkan TIDAK tampil di
+  kartu/Overview/KPI ("Hidden for your role") & TIDAK ada/dikirim di form.
+- **Bug fix ikut**: key React baris tabel List Audit Courier kini `${jenis}-${id}` (dulu `id` saja -> PIB & CN
+  ber-id sama di tab Draft bentrok key, baris bisa dobel/hilang). Saat membangun fitur ini sempat ketemu bug
+  key kembar jendela Open vs form Edit (jendela terduplikasi -> Delete mengenai baris salah) — sudah diberi
+  awalan `courier-open-`/`courier-edit-`; JANGAN pakai key `${jenis}-${id}` polos utk 2 elemen sibling.
+- **Diuji**: jsdom 39 cek (KPI, tab, kartu PIB/CN, List↔Card, Open/Overview/tab validasi, Mark as audited &
+  Move back (RPC+DB+Doc Acceptance), Edit (field berubah saja, auto-calc, override), Add CN + Save & mark as
+  audited, Delete draft CN benar, role Finance, view-only, badge sidebar). Belum dites di production.
+
 ## Jendela "Validation" — Audit Courier Draft/PIB/CN (2026-09-30, `CourierValidationWindow.tsx`)
 
 3 tombol Action lama (Checklist / Doc Validation / Cost Validation) DIGABUNG jadi 1 tombol
@@ -481,8 +527,9 @@ bawah pakai hasil field atas), berlaku di SEMUA jalur input — Add Data, Edit, 
 DAN data hasil isian n8n (live-compute saat tampil). Field yg PERNAH diedit manual TIDAK PERNAH
 ditimpa otomatis lagi (ditandai biru+ikon pensil di form).
 
-**Formula** (`computeCourierAuditCalc()`, fungsi pure module-level — SATU-SATUNYA sumber
-kebenaran, JANGAN duplikat logic ini di tempat lain):
+**Formula** (`computeCourierAuditCalc()`, fungsi pure — SATU-SATUNYA sumber kebenaran, JANGAN duplikat
+logic ini di tempat lain; sejak 2026-10-01 tinggal di `src/utils/CourierAuditHelpers.ts`, di-import
+SharedDataTable & form baru `CourierAuditEditModal`):
 1. `total_nilai_pabean` (Total Customs Value) = `valas_dpp` × `kurs_ndpbm`
 2. `total_nilai_pabean_bm` (T N.Pabean + BM) = (1) + `bm`
 3. `ppn_pct` = `ppn_nilai` / (2), `""` kalau (2) kosong/0 (guard pembagi nol)

@@ -7,6 +7,7 @@ import { useAuth } from '../lib/AuthContext';
 import { supabase } from '../lib/supabase';
 import { SEA_AIR_AUDIT_CHANGED_EVENT } from '../utils/SeaAirAuditHelpers';
 import { SEA_AIR_RECAP_CHANGED_EVENT, fetchRecapNeedsAttentionCount } from '../utils/SeaAirRecapHelpers';
+import { COURIER_AUDIT_CHANGED_EVENT, fetchCourierDraftCount } from '../utils/CourierAuditHelpers';
 
 // Tipe eksplisit (2026-09, ditambahkan saat "Cost by Vessel" butuh `pageKeys` array di beberapa
 // entry) -- tanpa ini TS infer union literal per-anggota array yg TIDAK saling exchangeable
@@ -218,7 +219,25 @@ export default function MainLayout() {
     window.addEventListener(SEA_AIR_AUDIT_CHANGED_EVENT, load);
     return () => { cancelled = true; window.removeEventListener(SEA_AIR_RECAP_CHANGED_EVENT, load); window.removeEventListener(SEA_AIR_AUDIT_CHANGED_EVENT, load); };
   }, [canSeeSeaAirRecap, inSeaAir]);
-  const subTabBadge = (subId: string) => (subId === 'sea_air_audit' && seaAirDraftCount ? (
+  // Badge jumlah Draft Audit Courier (PIB + CN status ARCHIVED, 2026-10-01) -- pola sama badge Sea & Air.
+  const canSeeCourierAudit = isAdmin || allowedPageKeys.has('courier_audit');
+  const [courierDraftCount, setCourierDraftCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!canSeeCourierAudit) { setCourierDraftCount(null); return; }
+    let cancelled = false;
+    const load = async () => {
+      const n = await fetchCourierDraftCount();
+      if (!cancelled) setCourierDraftCount(n);
+    };
+    load();
+    window.addEventListener(COURIER_AUDIT_CHANGED_EVENT, load);
+    return () => { cancelled = true; window.removeEventListener(COURIER_AUDIT_CHANGED_EVENT, load); };
+  }, [canSeeCourierAudit, location.pathname]);
+  const subTabBadge = (subId: string) => (subId === 'courier_audit' && courierDraftCount ? (
+    <span title="Draft PIB / CN" className="ml-auto min-w-[20px] h-[18px] px-1.5 rounded-full bg-amber-400 text-[#3B1B3D] text-[10.5px] font-bold flex items-center justify-center">
+      {courierDraftCount > 99 ? '99+' : courierDraftCount}
+    </span>
+  ) : subId === 'sea_air_audit' && seaAirDraftCount ? (
     <span title="Draft PIB" className="ml-auto min-w-[20px] h-[18px] px-1.5 rounded-full bg-amber-400 text-[#3B1B3D] text-[10.5px] font-bold flex items-center justify-center">
       {seaAirDraftCount > 99 ? '99+' : seaAirDraftCount}
     </span>

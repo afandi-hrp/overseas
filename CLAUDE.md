@@ -75,7 +75,7 @@ Semua route (kecuali `/login`) dibungkus `<ProtectedRoute>` → `<MainLayout>` (
 | Route | Komponen | Catatan |
 |---|---|---|
 | `/courier/upload`, `/sea-air/upload` | `UploadPage` (`fixedType`) | form upload dokumen ke n8n |
-| `/courier/audit` | `CourierAuditPage` → `SharedDataTable` | |
+| `/courier/audit` | `CourierAuditPage` → `SharedDataTable` | tampilan "PIB & CN Audit" kartu/Open (2026-10-01) + toggle List ke tabel lama — lihat "Audit Courier — tampilan baru" di `docs/claude/courier-features.md` |
 | `/courier/rekapan` | `CourierRekapanPage` → `SharedDataTable` | |
 | `/courier/validasi` | `CourierValidasiPage` | halaman mandiri, bukan `SharedDataTable` |
 | `/finance-handover` | `FinanceHandoverPage` | Finance Handover GABUNGAN FAR Overseas + Sea & Air (2026-10-01, `RequirePageAccess pageKeys=[far_overseas_finance, sea_air_finance]`, sql/034+035). `/sea-air/finance` lama -> redirect ke sini; tab Finance Handover di halaman FAR -> link ke sini. Lihat "Finance Handover gabungan" di bawah |
@@ -495,9 +495,14 @@ user di production** (testing bagian 2 + Finance Handover dijadwalkan user bersa
 **Umum:** semua halaman di atas belum diuji user di production; `kurs` text bug SUDAH diperbaiki; badge
 sidebar needs attention SUDAH; pindah tab browser tidak refresh SUDAH (lihat bagian AuthContext).
 
-## ANALISA (BELUM DIPUTUSKAN, 2026-10-01) — redesain Audit Courier & Rekapan Courier mengikuti Sea & Air
+## Redesain Courier mengikuti Sea & Air — STATUS (2026-10-01)
 
-Diminta user: analisa saja, TANPA perubahan. Ringkasan (detail ada di jawaban sesi 2026-10-01):
+**Tahap 1 Audit Courier SELESAI** (tampilan kartu/Open/Edit, lihat "Audit Courier — tampilan baru" di
+`docs/claude/courier-features.md`). **Keputusan user permanen**: Mark as audited TIDAK PERNAH dikunci walau
+validasi belum lengkap (ada kasus invoice freight memang tidak ditagihkan) — JANGAN tambah gerbang validasi
+Courier. Tab tetap Draft/PIB/CN (tanpa "All"). Fitur tabel lama tetap di mode List.
+**Berikutnya (belum)**: (2) Rekapan Courier tampilan (perlu keputusan kartu per invoice vs per AWB),
+(3) relasi Audit↔Rekapan Courier + sumber Courier di Finance Handover. Analisa awal (sebelum tahap 1):
 - **Bisa** dibuat tampilan sama (kartu + jendela Open + form Edit + KPI, toggle List = tabel lama tetap
   utuh dgn Reorder/Edit Mode/Customize View/Export). Token `SeaAirAuditUi.tsx` & pola komponen bisa dipakai.
 - **Audit Courier paling cocok**: kolom PIB_COLS/CN_COLS hampir identik `SEA_AIR_AUDIT_COLS` (customs value,

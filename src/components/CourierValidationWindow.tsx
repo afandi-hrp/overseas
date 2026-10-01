@@ -13,6 +13,10 @@ import CostValidationModal from './CostValidationModal';
 // - Tab muncul sesuai hak akses lihat masing2 page_key; hak edit tetap per page_key.
 // - Shipment Info SATU di level jendela (dulu cuma ada di Cost Validation), sama di semua tab.
 // - Print: hanya Shipment Info + tab aktif (#courier-validation-print-area, lihat index.css).
+// - Jendela "Open" tampilan kartu Audit Courier (2026-10-01) memakai komponen INI juga: prop
+//   opsional `overview` menambah tab "Overview" paling depan (isi CourierAuditOverview), `title`/
+//   `subtitle`/`headerActions` mengganti judul & menambah tombol aksi (Edit, Mark as audited, Move back
+//   to Draft, Delete). Tanpa prop itu perilaku SAMA PERSIS versi lama (tombol Validation mode List).
 
 export type ValidationTabKey = 'checklist' | 'doc' | 'cost';
 
@@ -87,8 +91,11 @@ const tabTone = (pct: number | null) =>
       ? { active: 'text-emerald-700 bg-emerald-100/80', idle: 'text-emerald-700 bg-emerald-50/80 hover:bg-emerald-100/60', bar: 'bg-emerald-500' }
       : { active: 'text-orange-700 bg-orange-100/80', idle: 'text-orange-700 bg-orange-50/80 hover:bg-orange-100/60', bar: 'bg-orange-500' };
 
+export type WindowTabKey = 'overview' | ValidationTabKey;
+
 export default function CourierValidationWindow({
   record, mainTab, subTab, jenisDokumen, access, editAccess, renderChecklist, onClose,
+  overview, initialTab, title, subtitle, headerActions,
 }: {
   record: any;
   mainTab: string;
@@ -98,10 +105,20 @@ export default function CourierValidationWindow({
   editAccess: Record<ValidationTabKey, boolean>;
   renderChecklist: (api: { onPctChange: (pct: number | null) => void; onSaved: () => void }) => React.ReactNode;
   onClose: () => void;
+  overview?: React.ReactNode;
+  initialTab?: WindowTabKey;
+  title?: React.ReactNode;
+  subtitle?: React.ReactNode;
+  headerActions?: React.ReactNode;
 }) {
   const tabs = useMemo(() => VALIDATION_TAB_ORDER.filter(t => access[t]), [access]);
   const [pct, setPct] = useState<Record<ValidationTabKey, number | null>>(() => rowValidationPct(record));
-  const [activeTab, setActiveTab] = useState<ValidationTabKey>(() => pickDefaultTab(tabs, rowValidationPct(record)));
+  const [activeTab, setActiveTab] = useState<WindowTabKey>(() => {
+    if (initialTab === 'overview' && overview) return 'overview';
+    if (initialTab && initialTab !== 'overview' && access[initialTab]) return initialTab;
+    if (overview) return 'overview';
+    return pickDefaultTab(tabs, rowValidationPct(record));
+  });
   // Naik tiap Checklist disimpan -> tab Doc Validation baca ulang flag PO/CIPL/Final Invoice.
   const [checklistVersion, setChecklistVersion] = useState(0);
   // Baris tabel_cost_validasi utk Shipment Info (Courier, Direction/Type, Ship Date, Origin/Zone,
@@ -159,11 +176,12 @@ export default function CourierValidationWindow({
               <ShieldCheck size={16} />
             </div>
             <div className="min-w-0">
-              <h2 className="text-[15px] font-bold text-[#5A305A] leading-tight">Validation</h2>
-              <p className="text-[11px] text-slate-500 leading-tight">Checklist, document &amp; cost validation for this shipment</p>
+              <h2 className="text-[15px] font-bold text-[#5A305A] leading-tight [overflow-wrap:anywhere]">{title ?? 'Validation'}</h2>
+              <div className="text-[11px] text-slate-500 leading-tight">{subtitle ?? 'Checklist, document & cost validation for this shipment'}</div>
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+            {headerActions}
             <button
               onClick={() => window.print()}
               title="Print Shipment Info + active tab"
@@ -181,7 +199,7 @@ export default function CourierValidationWindow({
             beda). Grid 5 kolom dgn garis rambut; nilai wrap di kotaknya (overflow-wrap:anywhere,
             min-w-0), tanpa nowrap/ellipsis. Sumber: record = baris tabel_audit_pib/cn,
             cv = baris terbaru tabel_cost_validasi. */}
-        <div className="shrink-0 px-4 pt-3 pb-3 print:px-0">
+        <div className={activeTab === 'overview' ? 'hidden' : 'shrink-0 px-4 pt-3 pb-3 print:px-0'}>
           <div className="rounded-xl border border-slate-200 overflow-hidden print:border-slate-300">
             <div className="flex items-center gap-2 px-3 py-1.5 bg-[#5A305A]/[0.05] border-b border-slate-200">
               <Package size={13} className="text-[#5A305A]/70" />
@@ -210,6 +228,19 @@ export default function CourierValidationWindow({
 
         {/* Tab bar -- gaya garis bawah; titik status + pil persen per tab. */}
         <div className="shrink-0 flex items-end gap-1 px-4 border-b border-slate-200 overflow-x-auto print:hidden" role="tablist">
+          {overview && (
+            <button
+              role="tab"
+              aria-selected={activeTab === 'overview'}
+              onClick={() => setActiveTab('overview')}
+              className={`relative shrink-0 flex items-center gap-2 px-3 pt-2 pb-2.5 rounded-t-lg text-[13px] transition-colors ${
+                activeTab === 'overview' ? 'text-[#3B1B3D] bg-[#F5EDF3] font-bold' : 'text-[#6E5E70] hover:bg-slate-100 font-semibold'
+              }`}
+            >
+              Overview
+              {activeTab === 'overview' && <span className="absolute left-2 right-2 -bottom-px h-[2px] rounded-full bg-[#6B3470]" />}
+            </button>
+          )}
           {tabs.map(t => {
             const active = activeTab === t;
             const p = pct[t];
@@ -238,6 +269,9 @@ export default function CourierValidationWindow({
 
         {/* Isi tab -- semua terpasang, yang tidak aktif `hidden` (juga tidak ikut tercetak). */}
         <div className="flex-1 min-h-0 flex flex-col cvw-fill">
+          {overview && (
+            <div className={activeTab === 'overview' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'} role="tabpanel">{overview}</div>
+          )}
           {access.checklist && tabBody('checklist', renderChecklist({ onPctChange: onChecklistPct, onSaved: onChecklistSaved }))}
           {access.doc && tabBody('doc', (
             <ValidasiModal
