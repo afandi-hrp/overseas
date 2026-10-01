@@ -39,29 +39,18 @@ approval-nya.
 - **HTML dari backend/n8n WAJIB disanitasi `DOMPurify`** sebelum `dangerouslySetInnerHTML`
   (nilai di dalamnya hasil ekstraksi AI dari dokumen upload = input tak tepercaya). Satu-satunya
   titik saat ini: `HtmlValue` `BunkerCompareDocModal.tsx`.
-- **Folder `sql/` DIHAPUS (2026-09-26)** — semua file migrasi (001–026) SUDAH dijalankan ke
-  production (konfirmasi user). Semua catatan "BELUM DIJALANKAN" di file ini & `docs/claude/*.md`
-  TIDAK berlaku lagi; isi SQL lama ada di git history (001–023; 024–026 tidak pernah di-commit).
-  `sql/027_far_overseas_phase2_DRAFT.sql` (2026-09-28) = redesain FAR tahap 2 — **SUDAH DIJALANKAN
-  ke production (konfirmasi user 2026-09-30)**, termasuk kolom `prepared_by_user_id`. Frontend tahap
-  2 aktif otomatis (`probePhase2()`) — lihat `docs/claude/far-overseas.md`.
-  `sql/029_fn_delete_far_overseas_air_lock.sql` (2026-09-30) = guard lock hapus memo FAR yang sudah
-  sign Prepared By, **SUDAH DIJALANKAN (konfirmasi user 2026-09-30)**.
-  `sql/028_dokumen_checklist_catatan.sql` (2026-09-30) = kolom `dokumen_checklist.catatan_checklist`
-  (Catatan Checklist jendela Validation Audit Courier), **BELUM DIJALANKAN** — frontend aman duluan
-  (deteksi kolom otomatis), lihat "Jendela Validation" di `docs/claude/courier-features.md`.
-  `sql/031_seaair_relasi_audit_recap.sql` (2026-10-01, relasi Audit PIB ↔ Invoice Recap Sea & Air)
-  & `sql/032_seaair_auto_draft_pib.sql` (PIB baru dari AI otomatis Draft) **SUDAH DIJALANKAN ke
-  production (konfirmasi user 2026-10-01)**. `030`/`030b` = query inspeksi baca
-  saja. Lihat "Relasi Audit PIB ↔ Invoice Recap Sea & Air" di bawah.
-  `sql/033_fix_update_cost_validasi_manual_status.sql` (2026-10-01, hitung ringkasan RPC pakai
-  MATCH/OVERCHARGE/UNDERCHARGE) & `sql/034_seaair_finance_handover.sql` (Finance Handover Sea & Air)
-  **SUDAH DIJALANKAN ke production (konfirmasi user 2026-10-01)**; backfill opsional di 033 (dikomentari)
-  TIDAK ikut dijalankan. Kalau `031` dijalankan ULANG, jalankan `034` lalu `035` lagi sesudahnya (031 menimpa 2
-  fungsi yg diperbarui 034; 034 menimpa mark_paid Sea & Air yg diperbarui 035).
-  `sql/035_finance_handover_unified.sql` (2026-10-01, Finance Handover gabungan FAR + Sea & Air) **BELUM
-  DIJALANKAN** — lihat "Finance Handover gabungan" di bawah. Sebelum 035 jalan, Receive Sea & Air GAGAL
-  (signature RPC baru) & Mark paid FAR minta bukti bayar (RPC lama 027).
+- **Folder `sql/` DIHAPUS (2026-09-26, lalu LAGI 2026-10-01)** — SEMUA file migrasi SUDAH dijalankan ke
+  production: 001–026 (konfirmasi user 2026-09-26) dan 027–035 (diverifikasi dgn 1 query baca terhadap
+  DB live 2026-10-01, semua cek `true`). Semua catatan "BELUM DIJALANKAN" di file ini & `docs/claude/*.md`
+  utk file 001–035 TIDAK berlaku lagi. Isi SQL ada di git history (027–035 di commit `a013011`/`e070654`
+  & sebelumnya; 024–026 tidak pernah di-commit). Ringkas: 027 = FAR tahap 2 (termasuk
+  `prepared_by_user_id`; bagian G bucket bukti bayar SENGAJA tidak dijalankan), 028 = kolom
+  `dokumen_checklist.catatan_checklist`, 029 = lock hapus memo FAR, 030/030b = query inspeksi baca saja,
+  031/032 = relasi Audit PIB ↔ Invoice Recap Sea & Air + auto Draft PIB, 033 = fix hitung ringkasan RPC
+  `update_cost_validasi_manual`, 034 = Finance Handover Sea & Air (versi pertama), 035 = Finance Handover
+  gabungan (backfill opsional 033 TIDAK dijalankan). **Urutan kalau perlu dijalankan ulang dari git
+  history: 031 -> 034 -> 035** (031 menimpa 2 fungsi yg diperbarui 034; 034 menimpa mark_paid Sea & Air yg
+  diperbarui 035). SQL baru ke depan: buat file `sql/NNN_*.sql` baru lagi.
 - **Kondisi DB production (stack `supabase3`, audit 2026-09-26)**: role `anon` tanpa hak apa pun
   di schema public (tabel, fungsi, default privileges); GraphQL ditutup; semua tabel RLS dgn
   policy `has_page_access`/`has_edit_access` (tidak ada `using (true)`); semua view
@@ -629,7 +618,7 @@ bukti transfer** (FAR & Sea & Air; Mark paid = tanggal + referensi bank opsional
   PIB/SPPB/Billing DJBC/BPN/SPTNP, % & "Missing" dihitung ulang dari dokumen non-duty, section PIB & kartu
   Duty disembunyikan; Cost tanpa segmen CUSTOM & kartu Duty & tax + ringkasan "N of M invoices match the
   contract rate"). **Aturan: jangan tampilkan angka/dokumen duty di halaman ini.**
-- **DB `sql/035`** (BELUM DIJALANKAN): lihat Peta RPC; kolom `rekapan_far_overseas_air.is_urgent`; tabel
+- **DB `sql/035`** (SUDAH DIJALANKAN 2026-10-01): lihat Peta RPC; kolom `rekapan_far_overseas_air.is_urgent`; tabel
   `seaair_vendor_master` (RLS 4 policy, unik `upper(btrim(vendor_code))`, diisi awal kode `emkl_vendor` yg
   ada); policy SELECT tambahan `sea_air_finance` ke `dokumen_checklist_seaair`, `dokumen_validasi_matriks_seaair`,
   `cost_validasi_seaair`, `cost_validasi_catatan_seaair`, `tabel_audit_seaair` (catatan: tabel Audit PIB
@@ -798,7 +787,7 @@ Supabase** — bisa saja sudah basi (RPC lain ditambahkan user langsung tanpa te
   `upsert_kurs_rule_vendor`, `upsert_kurs_bi`, `nonaktifkan_tarif_kontrak`. Bagian 2 (sql/031,
   SUDAH DIJALANKAN 2026-10-01): `fn_seaair_unlock_submit`, `fn_seaair_reread_from_ai`, helper
   `fn_seaair_recap_issue_count` (+ 6 fungsi trigger `fn_seaair_*`). Finance Handover (sql/034, SUDAH
-  DIJALANKAN 2026-10-01): `fn_seaair_finance_accept`, `fn_seaair_finance_mark_paid`. **sql/035 (BELUM DIJALANKAN)**:
+  DIJALANKAN 2026-10-01): `fn_seaair_finance_accept`, `fn_seaair_finance_mark_paid`. **sql/035 (SUDAH DIJALANKAN 2026-10-01)**:
   `fn_seaair_finance_accept(uuid, text, date)` (signature BARU: nama + tanggal terima; versi 1-arg DI-DROP),
   `fn_seaair_finance_mark_paid` referensi opsional, `fn_seaair_finance_undo` DI-DROP (tanpa Undo, keputusan
   user), FAR `fn_far_overseas_set_urgent(uuid, boolean)` BARU, `fn_far_overseas_mark_paid` bukti bayar opsional.

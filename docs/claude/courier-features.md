@@ -46,7 +46,7 @@ Sumber % di baris = badge lama (`pct_kelengkapan`, `doc_validation_pct`, `cost_v
   chip Document Type/No. PIB/Vendor Doc Validation disembunyikan, No. AWB (isian checker) hanya
   saat Edit.
 - **Catatan per tab**: Checklist = kolom BARU `dokumen_checklist.catatan_checklist`
-  (`sql/028_dokumen_checklist_catatan.sql`, BELUM DIJALANKAN; selama kolom belum ada -> textarea
+  (`sql/028_dokumen_checklist_catatan.sql`, SUDAH DIJALANKAN — diverifikasi 2026-10-01; kalau kolom tidak ada -> textarea
   nonaktif & tidak ikut payload, deteksi via error select); Doc Validation = "Manual Change Notes"
   (`tabel_checklist_validasi.catatan_manual`, tidak berubah); Cost = "Catatan Perubahan Manual"
   (`tabel_cost_validasi.catatan`, tidak berubah).
