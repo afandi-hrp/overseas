@@ -1350,7 +1350,7 @@ async function fetchCourierValidationBadgePct(rows: any[]): Promise<{ docPctMap:
 // `embedded` (2026-09-30) -- dirender sbg tab "Checklist" di dalam CourierValidationWindow (tanpa
 // overlay/judul sendiri, Save Checklist TIDAK menutup jendela). `onPctChange` melaporkan % live
 // ke label tab (null = belum ada baris dokumen_checklist & belum ada perubahan).
-function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, embedded = false, onPctChange }: { record: any, tab: any, onClose: () => void, onSaved?: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void }) {
+function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, embedded = false, onPctChange, onDirtyChange }: { record: any, tab: any, onClose: () => void, onSaved?: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, onDirtyChange?: (dirty: boolean) => void }) {
   const [form, setForm] = useState<Record<string, boolean>>({})
   const [existingId, setExistingId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
@@ -1546,6 +1546,8 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, embedde
     if (!onPctChange || loading) return
     onPctChange(existingId == null && !isDirty ? null : pct)
   }, [onPctChange, loading, existingId, isDirty, pct])
+  // Jendela Open: konfirmasi tutup kalau ada perubahan checklist belum disimpan.
+  useEffect(() => { onDirtyChange?.(!loading && isDirty) }, [onDirtyChange, loading, isDirty])
 
   const mapStatusColor: Record<string, string> = {
     LENGKAP: 'bg-emerald-100 text-emerald-700',
@@ -1554,7 +1556,7 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, embedde
   }
 
   if (loading) {
-    if (embedded) return <LoadingState />
+    if (embedded) return <div className="bg-white rounded-[14px] border border-[#EADFD6]"><LoadingState fullHeight={false} /></div>
     return (
       <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center h-full w-full">
         <div className="bg-white p-6 rounded-2xl shadow-xl">
@@ -1609,13 +1611,13 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, embedde
       value={catatan}
       onChange={e => setCatatan(e.target.value)}
       disabled={!hasCatatanCol}
-      rows={embedded ? 4 : 3}
+      rows={embedded ? 2 : 3}
       placeholder={hasCatatanCol ? 'No notes yet.' : 'Notes are unavailable until database migration 028 is applied.'}
-      className="w-full border border-slate-200 bg-white rounded-lg px-3 py-2 text-sm text-[#5A305A] focus:outline-none focus:ring-2 focus:ring-purple-200 resize-y disabled:bg-slate-50 disabled:cursor-not-allowed [overflow-wrap:anywhere]"
+      className="w-full border border-[#EADFD6] bg-white rounded-lg px-3 py-2 text-[12.5px] text-[#3B1B3D] focus:outline-none focus:border-[#6B3470] focus:ring-2 focus:ring-[#6B3470]/15 resize-y disabled:bg-[#F6EFEA] disabled:cursor-not-allowed [overflow-wrap:anywhere]"
     />
   ) : (
-    <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-[#5A305A] whitespace-pre-wrap [overflow-wrap:anywhere]">
-      {catatan || <span className="italic text-[#5A305A]/50">No notes yet.</span>}
+    <div className="bg-[#FBF7F4] border border-[#F1E8E1] rounded-lg px-3 py-2 text-[12.5px] text-[#3B1B3D] whitespace-pre-wrap [overflow-wrap:anywhere]">
+      {catatan || <span className="italic text-[#8A7A8B]">No notes yet.</span>}
     </div>
   )
 
@@ -1628,11 +1630,13 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, embedde
     />
   )
 
-  // ── Mode embedded: tab "Checklist" jendela Validation -- lebar penuh, toolbar tab di atas
-  //    (status + tombol), isi 2 kolom (daftar dokumen | dokumen kurang + catatan). ──
+  // ── Mode embedded: kolom kiri tab "Documents" jendela Open (2026-10-01, pola kartu Checklist Invoice
+  //    Recap Sea & Air). Beda dgn Sea & Air: checklist Courier BISA diedit (klik dokumen = centang/
+  //    hapus centang, Save checklist, Upload additional doc) -- fungsi & payload simpan SAMA versi lama. ──
   if (embedded) {
     const optionalChecked = optionalFields.filter(f => form[f.key]).length
-    const docTile = (field: typeof CHECKLIST_FIELDS[number]) => {
+    const complete = pct === 100
+    const docTile = (field: typeof CHECKLIST_FIELDS[number], required: boolean) => {
       const val = !!form[field.key]
       return (
         <button
@@ -1640,108 +1644,77 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, embedde
           key={field.key}
           onClick={canEdit ? () => toggle(field.key) : undefined}
           disabled={!canEdit}
-          className={`w-full min-w-0 flex items-center justify-between gap-2 px-3 py-2 rounded-lg border text-left transition-colors ${
-            val ? 'border-emerald-200 bg-emerald-50/70' : 'border-slate-200 bg-white'
-          } ${canEdit ? (val ? 'hover:border-emerald-300 cursor-pointer' : 'hover:border-[#5A305A]/30 hover:bg-[#5A305A]/[0.03] cursor-pointer') : 'cursor-default'}`}
+          title={canEdit ? (val ? 'Click to mark as not received' : 'Click to mark as received') : undefined}
+          className={`w-full min-w-0 flex items-center gap-1.5 px-2.5 py-2 rounded-lg border text-left text-[12px] transition-colors ${
+            required
+              ? (val ? 'border-[#D6EEDF] bg-[#F5FBF7]' : 'border-[#F4C3BC] bg-[#FFF6F4]')
+              : 'border-[#EADFD6] bg-white'
+          } ${canEdit ? 'cursor-pointer hover:border-[#6B3470]/40' : 'cursor-default'}`}
         >
-          <span className={`text-[13px] font-medium [overflow-wrap:anywhere] ${val ? 'text-emerald-900' : 'text-[#5A305A]'}`}>{field.label}</span>
-          {val
-            ? <CheckCircle2 size={17} className="text-emerald-500 shrink-0" />
-            : <Circle size={17} className="text-slate-300 shrink-0" />}
+          {required
+            ? (val ? <CheckCircle2 size={13} className="text-[#17663D] shrink-0" /> : <XCircle size={13} className="text-[#A8231A] shrink-0" />)
+            : (val ? <CheckCircle2 size={13} className="text-[#17663D] shrink-0" /> : <Circle size={13} className="text-[#B7A9B8] shrink-0" />)}
+          <span className="font-semibold text-[#3B1B3D] [overflow-wrap:anywhere]">{field.label}</span>
         </button>
       )
     }
     return (
-      <div className="flex flex-col flex-1 min-h-0 cvw-fill">
-        <div className={VW_TOOLBAR}>
-          <div className="flex items-center gap-3 min-w-0">
-            <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${mapStatusColor[status] || 'bg-slate-100 text-[#5A305A]'}`}>
-              {getStatusLabel(status)}
-            </span>
-            <div className="w-40 h-1.5 bg-slate-200 rounded-full overflow-hidden">
-              <div className={`h-full transition-all duration-500 ${vwPctBar(pct)}`} style={{ width: `${pct}%` }} />
-            </div>
-            <span className={`text-sm font-bold ${vwPctText(pct)}`}>{pct}%</span>
-            <span className="text-xs text-slate-500 whitespace-nowrap">{checkedMandatoryCount}/{mandatoryCount} required</span>
+      <div className="bg-white rounded-[14px] border border-[#EADFD6] shadow-[0_1px_2px_rgba(59,27,61,0.04)] p-4">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <h3 className="text-[14px] font-bold text-[#3B1B3D]">Checklist</h3>
+            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold ${complete ? 'bg-[#EAF6EF] text-[#17663D]' : 'bg-[#FDE7E4] text-[#A8231A]'}`}>{complete ? 'Complete' : 'Incomplete'}</span>
           </div>
-          <div className="ml-auto flex items-center gap-2 print:hidden">
-            {savedMsg && (
-              <span className="flex items-center gap-1 text-xs font-semibold text-emerald-700">
-                <CheckCircle2 size={14} /> Checklist saved
+          <span className="text-[16px] font-bold text-[#3B1B3D]">{pct}%</span>
+        </div>
+        <div className="h-2 rounded-full bg-[#F3EEEA] overflow-hidden mt-2">
+          <div className={`h-full transition-all duration-500 ${complete ? 'bg-[#17663D]' : 'bg-[#E0A526]'}`} style={{ width: `${pct}%` }} />
+        </div>
+        <div className="text-[11px] text-[#6E5E70] mt-1">{checkedMandatoryCount} of {mandatoryCount} required documents{existingId == null ? ' · not saved yet' : ''}</div>
+
+        <div className="mt-3 print:hidden">{jobBanners}</div>
+        {err && <div className="mt-2 rounded-lg bg-[#FDE7E4] text-[#A8231A] text-[12px] font-semibold px-3 py-1.5">⚠️ {err}</div>}
+        {missingDocs.length > 0 && (
+          <div className="mt-2 rounded-lg bg-[#FDE7E4] text-[#A8231A] text-[12px] font-semibold px-3 py-1.5 [overflow-wrap:anywhere]">Missing: {missingDocs.join(', ')}</div>
+        )}
+
+        <div className="flex items-center justify-between mt-3 mb-1.5">
+          <span className="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B]">Required</span>
+          <span className="text-[10.5px] text-[#8A7A8B]">{checkedMandatoryCount}/{mandatoryCount}</span>
+        </div>
+        <div className="grid grid-cols-2 gap-1.5">{mandatoryFields.map(f => docTile(f, true))}</div>
+
+        {optionalFields.length > 0 && (
+          <>
+            <div className="flex items-center justify-between mt-3 mb-1.5">
+              <span className="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B]">Optional</span>
+              <span className="text-[10.5px] text-[#8A7A8B]">{optionalChecked}/{optionalFields.length}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">{optionalFields.map(f => docTile(f, false))}</div>
+          </>
+        )}
+
+        <div className="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B] mt-3 mb-1.5">Checklist notes</div>
+        {catatanInput}
+
+        {canEdit ? (
+          <div className="mt-3 pt-3 border-t border-[#EADFD6] flex flex-wrap items-center gap-2 print:hidden">
+            <button onClick={() => setShowUploadSusulan(true)} className={VW_BTN_SECONDARY}>
+              <UploadCloud size={13} /> Upload additional doc
+            </button>
+            {savedMsg && <span className="flex items-center gap-1 text-[11.5px] font-semibold text-[#17663D]"><CheckCircle2 size={13} /> Saved</span>}
+            {isDirty && (
+              <span className="ml-auto flex items-center gap-2">
+                <button onClick={revertUnsaved} title="Discard unsaved checklist changes" className={VW_BTN_SECONDARY}>Discard</button>
+                <button onClick={handleSave} disabled={saving} className={VW_BTN_PRIMARY}>
+                  <Save size={13} /> {saving ? 'Saving…' : 'Save checklist'}
+                </button>
               </span>
             )}
-            {canEdit ? (
-              <>
-                <button onClick={() => setShowUploadSusulan(true)} className={VW_BTN_SECONDARY}>
-                  <UploadCloud size={14} /> Upload Additional Doc
-                </button>
-                <button onClick={revertUnsaved} disabled={!isDirty} title="Discard unsaved checklist changes" className={VW_BTN_SECONDARY}>
-                  Cancel
-                </button>
-                <button onClick={handleSave} disabled={saving} className={VW_BTN_PRIMARY}>
-                  <Save size={14} /> {saving ? 'Saving...' : 'Save Checklist'}
-                </button>
-              </>
-            ) : (
-              <span className="text-xs font-medium text-slate-500 bg-slate-100 rounded-full px-2.5 py-1">View only</span>
-            )}
           </div>
-        </div>
-
-        <div className={VW_BODY}>
-          {jobBanners}
-          {err && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700 mb-4">⚠️ {err}</div>
-          )}
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-4 items-start">
-            <div className="space-y-4 min-w-0">
-              <section className={`${VW_CARD} p-4`}>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className={VW_CARD_TITLE}>Required Documents</h3>
-                  <span className="text-[11px] font-semibold text-slate-500">{checkedMandatoryCount}/{mandatoryCount}</span>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
-                  {mandatoryFields.map(docTile)}
-                </div>
-              </section>
-              {optionalFields.length > 0 && (
-                <section className={`${VW_CARD} p-4`}>
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className={VW_CARD_TITLE}>Optional Documents</h3>
-                    <span className="text-[11px] font-semibold text-slate-500">{optionalChecked}/{optionalFields.length}</span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
-                    {optionalFields.map(docTile)}
-                  </div>
-                </section>
-              )}
-            </div>
-
-            <div className="space-y-4 min-w-0">
-              <section className={`${VW_CARD} p-4`}>
-                <h3 className={`${VW_CARD_TITLE} mb-2.5`}>Missing Documents</h3>
-                {missingDocs.length > 0 ? (
-                  <ul className="space-y-1.5">
-                    {missingDocs.map((d: string, i: number) => (
-                      <li key={i} className="flex items-start gap-2 text-[13px] text-red-700">
-                        <XCircle size={15} className="text-red-400 shrink-0 mt-0.5" />
-                        <span className="[overflow-wrap:anywhere]">{d}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="flex items-center gap-2 text-[13px] font-medium text-emerald-700">
-                    <CheckCircle2 size={15} /> All required documents are complete.
-                  </p>
-                )}
-              </section>
-              <section className={`${VW_CARD} p-4`}>
-                <h3 className={`${VW_CARD_TITLE} mb-2.5`}>Catatan Checklist</h3>
-                {catatanInput}
-              </section>
-            </div>
-          </div>
-        </div>
+        ) : (
+          <div className="mt-3 text-[11px] text-[#8A7A8B]">View only</div>
+        )}
         {uploadSusulanModal}
       </div>
     )
@@ -5708,7 +5681,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           jenisDokumen={courierValidationRecord.jenis_dokumen || (courierValidationRecord.tabel === 'tabel_audit_pib' || courierAuditType === 'pib' ? 'PIB' : (courierValidationRecord.tabel === 'tabel_audit_cn' || courierAuditType === 'cn' ? 'CN' : ''))}
           access={courierValidationAccess}
           editAccess={{ checklist: canEdit('courier_checklist_dokumen'), doc: canEdit('courier_dokumen_validation'), cost: canEdit('courier_cost_validation') }}
-          renderChecklist={({ onPctChange, onSaved }) => (
+          renderChecklist={({ onPctChange, onSaved, onDirtyChange }) => (
             <ChecklistModal
               record={courierValidationRecord}
               tab={tab}
@@ -5716,6 +5689,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
               onClose={() => { setCourierValidationRecord(null); fetchRecords(); }}
               onSaved={onSaved}
               onPctChange={onPctChange}
+              onDirtyChange={onDirtyChange}
               canEdit={canEdit('courier_checklist_dokumen')}
             />
           )}
@@ -5799,8 +5773,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
             access={courierValidationAccess}
             // Validasi hanya bisa diubah selama Draft (sama tombol Validation tabel lama); baris Audited = lihat saja.
             editAccess={{ checklist: draft && canEdit('courier_checklist_dokumen'), doc: draft && canEdit('courier_dokumen_validation'), cost: draft && canEdit('courier_cost_validation') }}
-            renderChecklist={({ onPctChange, onSaved }) => (
-              <ChecklistModal record={rec} tab={tab} embedded onClose={closeOpen} onSaved={onSaved} onPctChange={onPctChange} canEdit={draft && canEdit('courier_checklist_dokumen')} />
+            renderChecklist={({ onPctChange, onSaved, onDirtyChange }) => (
+              <ChecklistModal record={rec} tab={tab} embedded onClose={closeOpen} onSaved={onSaved} onPctChange={onPctChange} onDirtyChange={onDirtyChange} canEdit={draft && canEdit('courier_checklist_dokumen')} />
             )}
             initialTab={courierOpen.tab}
             title={<span className="flex items-center gap-2 flex-wrap">{t} {docNo || (courierColOk('awb') ? rec.awb : '') || ''}<span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${draft ? 'bg-[#FFF1D6] text-[#7A4F00]' : 'bg-[#EAF6EF] text-[#17663D]'}`}>{draft ? 'Draft' : 'Audited'}</span></span>}
@@ -5818,7 +5792,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 )}
               </>
             ) : null}
-            overview={openTab => (
+            overview={({ openTab, cv }) => (
               <CourierAuditOverview
                 rec={rec}
                 docType={t}
@@ -5827,6 +5801,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 validationTabs={courierValidationTabs}
                 canEdit={canEditAudit}
                 onOpenTab={openTab}
+                cv={cv}
               />
             )}
             trail={<CourierAuditTrail rec={rec} docType={t} />}

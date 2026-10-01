@@ -8,7 +8,7 @@ import { CheckCircle2, XCircle, Circle } from 'lucide-react'
 import { SA_LABEL, Chip, SectionCard } from './SeaAirAuditUi'
 import { fmtRp, fmtValas, fmtDateShort, fmtPctShort, buildGoodsLines, parseLooseNumber, splitMoneyEvenly, companyFullName } from '../utils/SeaAirAuditHelpers'
 import { computeCourierBuildUp, computeCourierDutyRows, courierDocNo, type CourierDocType } from '../utils/CourierAuditHelpers'
-import { VALIDATION_TAB_LABEL, rowValidationPct, validationDotClass, type ValidationTabKey } from './CourierValidationWindow'
+import { VALIDATION_TAB_LABEL, rowValidationPct, validationDotClass, courierShipmentInfo, type ValidationTabKey } from './CourierValidationWindow'
 
 const hasVal = (v: any) => v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim() !== '-'
 
@@ -30,7 +30,7 @@ const CheckRow: React.FC<{ ok: boolean | null; label: string; hint?: string }> =
   </div>
 )
 
-export default function CourierAuditOverview({ rec, docType, companyNames, colOk, validationTabs, canEdit, onOpenTab }: {
+export default function CourierAuditOverview({ rec, docType, companyNames, colOk, validationTabs, canEdit, onOpenTab, cv }: {
   rec: any
   docType: CourierDocType
   companyNames: Record<string, string>
@@ -38,7 +38,9 @@ export default function CourierAuditOverview({ rec, docType, companyNames, colOk
   validationTabs: ValidationTabKey[]
   canEdit: boolean
   onOpenTab: (t: ValidationTabKey) => void
+  cv?: any  // baris terbaru tabel_cost_validasi (Shipment Info, dipindah dari strip jendela 2026-10-01)
 }) {
+  const ship = courierShipmentInfo(cv)
   const build = computeCourierBuildUp(rec)
   const duty = computeCourierDutyRows(rec, docType)
   const lines = colOk('po_ori') ? buildGoodsLines(rec) : []
@@ -106,6 +108,12 @@ export default function CourierAuditOverview({ rec, docType, companyNames, colOk
             {colOk('awb') && <Fact label="AWB">{rec.awb || '—'}</Fact>}
             {colOk('impor_an') && <Fact label="Importer">{ptName}{ptName !== String(rec.impor_an || '') && rec.impor_an ? <span className="text-[#8A7A8B] font-medium"> ({rec.impor_an})</span> : null}</Fact>}
             {colOk('vendor') && <Fact label="Supplier">{rec.vendor || '—'}</Fact>}
+            {/* Shipment Info (tabel_cost_validasi) -- dulu strip di atas tab validasi. */}
+            <Fact label="Courier · service">{ship.courier || '—'} · {ship.service || '—'}</Fact>
+            <Fact label="Direction / type">{ship.direction || '—'}</Fact>
+            <Fact label="Ship date">{ship.shipDate || '—'}</Fact>
+            <Fact label="Origin / zone">{ship.origin || '—'}</Fact>
+            <Fact label="Chargeable weight">{ship.chargeable || '—'}</Fact>
             {colOk('hs_code') && <Fact label="HS code">{rec.hs_code || '—'}</Fact>}
             {colOk('remarks') && <Fact label="Remarks">{rec.remarks || '—'}</Fact>}
             {colOk('marking') && <Fact label="Marking">{rec.marking || '—'}</Fact>}

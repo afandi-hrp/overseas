@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { LoadingSpinner } from './LoadingState';
 import { supabase } from '../lib/supabase';
-import { Receipt, FileText, Landmark, Ship, Sailboat, FileCheck2, FileDigit, IdCard, Scale, ClipboardList, Edit3, CheckCircle2, XCircle, Clock, Building2, Plane, CalendarDays, UserCheck, ChevronDown, ChevronUp, ChevronRight, RefreshCw } from 'lucide-react';
+import { Receipt, FileText, Landmark, Ship, Sailboat, FileCheck2, FileDigit, IdCard, Scale, ClipboardList, Edit3, CheckCircle2, XCircle, Clock, Building2, Plane, CalendarDays, UserCheck, ChevronDown, ChevronUp, ChevronRight, RefreshCw, RotateCcw } from 'lucide-react';
 import ValidasiPerhitunganPIB from './ValidasiPerhitunganPIB';
 import { VW_LABEL, VW_BTN_PRIMARY, VW_BTN_SECONDARY, VW_BTN_SUCCESS, VW_BTN_DANGER, VW_CARD, VW_INPUT, VW_TILE, VW_TILE_TONE, vwPctBar, vwPctText } from './validationWindowStyles';
 import { Pill } from './SeaAirAuditUi';
@@ -114,6 +114,18 @@ const SECTION_TITLE: Record<string, string> = {
   s_no_vessel_imo: 'No vessel name & IMO number',
   s_sptnp: 'SPTNP',
   s_tabel_npwp: 'NPWP table',
+};
+
+// Subjudul kartu section (tampilan saja, pola Sea & Air "AI compares ...").
+const SECTION_SUB: Record<string, string> = {
+  s_inv_freight_duty: 'AWB, invoice no., subtotal, DPP & PPN across the freight/duty invoices, faktur pajak & credit notes',
+  s_pib: 'The PIB values must match every related document',
+  s_sppbmcp: 'SPPBMCP values vs the related documents',
+  s_billing: 'Billing DJBC vs BPN',
+  s_cipl: 'CIPL vs PO & final invoice',
+  s_no_vessel_imo: 'CIPL, PO & final invoice must not contain a vessel name / IMO number',
+  s_sptnp: 'SPTNP vs billing & BPN SPTNP',
+  s_tabel_npwp: 'Company names checked against the NPWP master',
 };
 
 // Input sel tabel (mode Edit) -- gaya Sea & Air.
@@ -847,7 +859,7 @@ const STATUS_CONFIG: any = {
 // live (null = belum ada dokumen_validasi & belum ada checklist tersimpan). `checklistVersion`
 // naik tiap Checklist disimpan di tab sebelah -> flag PO/CIPL/Final Invoice dibaca ulang TANPA
 // reload penuh (edit yang sedang berjalan & autosave tidak terganggu).
-export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdit = true, embedded = false, onPctChange, checklistVersion = 0 }: { record: any, mainTab: string, subTab?: string, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, checklistVersion?: number }) {
+export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdit = true, embedded = false, onPctChange, onDirtyChange, checklistVersion = 0 }: { record: any, mainTab: string, subTab?: string, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, onDirtyChange?: (dirty: boolean) => void, checklistVersion?: number }) {
   const [docType, setDocType] = useState<'PIB'|'CN'|null>(null);
   const [debugData, setDebugData] = useState<any>({ raw: {}, doc: {} });
 
@@ -932,6 +944,13 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   // dimuat, section yg punya mismatch terbuka otomatis (pola Documents Invoice Recap Sea & Air) &
   // TIDAK menutup sendiri saat mismatch-nya dikoreksi.
   const [openSections, setOpenSections] = useState<Record<string, boolean> | null>(null);
+  // Mode embedded (2026-10-01, pola Sea & Air): tanpa mode Edit & tanpa autosave -- perubahan dikumpulkan,
+  // disimpan lewat bar "Save changes" (persistChecklist, payload SAMA autosave lama) / "Discard".
+  const [docSnap, setDocSnap] = useState<any>(null);
+  const [docSaving, setDocSaving] = useState(false);
+  const [docToast, setDocToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  const [correcting, setCorrecting] = useState<string | null>(null);
+  const [calcEdit, setCalcEdit] = useState(false);
   // Cegah checklist baru KEBUAT hanya krn user MEMBUKA/MELIHAT modal ini tanpa mengedit apa pun
   // (2026-09, laporan user -- ikon pensil "sudah diedit" tidak muncul, artinya field itu memang
   // TIDAK PERNAH disentuh, tapi baris checklist tetap kebuat/keupdate). Diset `true` HANYA di
@@ -1073,12 +1092,9 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     doLoad();
   }, [record, mainTab, subTab]);
 
-  useEffect(() => {
-    if (loading) return;
-    const shouldSkip = skipNextAutosaveRef.current;
-    skipNextAutosaveRef.current = false;
-    if (shouldSkip) return;
-    const tid = setTimeout(async () => {
+  // Simpan checklist dokumen ke tabel_checklist_validasi -- isi SAMA PERSIS autosave lama (dipakai
+  // autosave mode standalone & tombol "Save changes" mode embedded). Return pesan error / null.
+  const persistChecklist = async (): Promise<string | null> => {
        const activeSectionsNow = activeSectionsRef.current;
        const pibStatsNow = pibStatsRef.current;
        const debugDataNow = debugDataRef.current;
@@ -1121,7 +1137,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
           }
        }
 
-       if (!pib_id && !cn_id) return;
+       if (!pib_id && !cn_id) return null;
        
        const queryPib_cnid = [];
        if (pib_id) queryPib_cnid.push(`pib_id.eq.${pib_id}`);
@@ -1133,7 +1149,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
        // Belum pernah ada baris checklist SAMA SEKALI utk shipment ini, DAN belum ada aksi user
        // apa pun (murni buka/lihat) -- JANGAN insert baris baru. Baris yang SUDAH ADA tetap
        // diupdate seperti biasa (tidak diblokir oleh guard ini).
-       if (!(existing && existing.length > 0) && !userActionRef.current) return;
+       if (!(existing && existing.length > 0) && !userActionRef.current) return null;
 
        const payload: any = {
           pib_id, cn_id, awb: awbNo, tanggal_cek: tanggal, nama_checker: namaChecker,
@@ -1143,13 +1159,67 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
        };
 
        if (existing && existing.length > 0) {
-          await supabase.from('tabel_checklist_validasi').update(payload).eq('id', existing[0].id);
+          const { error } = await supabase.from('tabel_checklist_validasi').update(payload).eq('id', existing[0].id);
+          if (error) return error.message || 'Failed to save';
        } else {
-          await supabase.from('tabel_checklist_validasi').insert([payload]);
+          const { error } = await supabase.from('tabel_checklist_validasi').insert([payload]);
+          if (error) return error.message || 'Failed to save';
        }
-    }, 2000);
+       return null;
+  };
+
+  useEffect(() => {
+    if (loading) return;
+    // Mode embedded: TANPA autosave (disimpan eksplisit lewat bar Save changes, keputusan user 2026-10-01).
+    if (embedded) return;
+    const shouldSkip = skipNextAutosaveRef.current;
+    skipNextAutosaveRef.current = false;
+    if (shouldSkip) return;
+    const tid = setTimeout(() => { persistChecklist(); }, 2000);
     return () => clearTimeout(tid);
   }, [values, awbNo, tanggal, namaChecker, catatanManual, loading, mainTab, subTab, record]);
+
+  // ── Snapshot tersimpan & dirty (mode embedded) ──
+  const makeDocSnap = () => JSON.parse(JSON.stringify({ values, awbNo, tanggal, namaChecker, catatanManual }));
+  useEffect(() => {
+    if (!embedded || loading) return;
+    setDocSnap(makeDocSnap());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+  const docDirty = useMemo(() => {
+    if (!embedded || loading || !docSnap) return false;
+    return JSON.stringify({ values, awbNo, tanggal, namaChecker, catatanManual }) !== JSON.stringify(docSnap);
+  }, [embedded, loading, docSnap, values, awbNo, tanggal, namaChecker, catatanManual]);
+  useEffect(() => { onDirtyChange?.(docDirty); }, [onDirtyChange, docDirty]);
+  const showDocToast = (msg: string, type: 'success' | 'error') => { setDocToast({ msg, type }); setTimeout(() => setDocToast(null), 3000); };
+  const saveDoc = async () => {
+    userActionRef.current = true;
+    setDocSaving(true);
+    try {
+      const err = await persistChecklist();
+      if (err) { showDocToast('Failed to save: ' + err, 'error'); return; }
+      setDocSnap(makeDocSnap());
+      setCorrecting(null);
+      showDocToast('Document validation saved.', 'success');
+    } catch (e: any) {
+      console.error('[ValidasiModal] simpan gagal', e);
+      showDocToast('Failed to save: ' + (e?.message || ''), 'error');
+    } finally {
+      setDocSaving(false);
+    }
+  };
+  const discardDoc = () => {
+    if (!docSnap) return;
+    const snap = JSON.parse(JSON.stringify(docSnap));
+    setValues(snap.values); setAwbNo(snap.awbNo); setTanggal(snap.tanggal); setNamaChecker(snap.namaChecker); setCatatanManual(snap.catatanManual ?? "");
+    setCorrecting(null);
+  };
+  // "✓ Checked — accept" / "Mark mismatch" (pola Sea & Air) -- menulis manual_status yg SAMA dgn klik
+  // pil status mode Edit lama (toggleManualStatus), tanpa syarat mode Edit.
+  const applyManualStatus = (id: string, st: 'match' | 'mismatch') => {
+    userActionRef.current = true;
+    setValues((prev: any) => ({ ...prev, [id]: { ...prev[id], manual_status: st } }));
+  };
 
   const hasNpwpError = (id: string, val: string) => {
      if (!val) return false;
@@ -1437,7 +1507,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   if (loading) {
     if (embedded) {
       return (
-        <div className="flex flex-col items-center justify-center py-14 text-[#5A305A]">
+        <div className="bg-white rounded-[14px] border border-[#EADFD6] flex flex-col items-center justify-center py-14 text-[#5A305A]">
           <LoadingSpinner className="mb-4" />
           <p className="font-medium text-sm">Loading data...</p>
         </div>
@@ -1590,6 +1660,279 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
       </div>
     </div>
   );
+
+  // ── Mode embedded (2026-10-01, keputusan user): kolom kanan tab "Documents" jendela Open -- pola
+  //    "Document validation" Invoice Recap Sea & Air: TANPA tabel & TANPA mode Edit. Per section kartu
+  //    lipat, per field daftar dokumen + chip status + "✓ Checked — accept" / "Mark mismatch" / "Correct"
+  //    (2 kotak: nilai dokumen sumber & nilai pembanding). Perubahan dikumpulkan lalu disimpan lewat bar
+  //    "Unsaved changes · Discard / Save changes" -> `persistChecklist` (isi payload SAMA autosave lama).
+  if (embedded) {
+    const openMismatch = (() => {
+      let n = 0;
+      activeSections.forEach(s => s.rows.forEach(r => {
+        const v = values[r.id] || { src: '', cmp: '' };
+        const st = v.manual_status || computeStatus(v.src, v.cmp, r.isFormat, r.field, debugData.raw?.is_po_non_imi, getDocChecklistFlag(r.compareDoc, docCompletenessFlags));
+        if (st === 'mismatch' && !v.manual_status) n++;
+      }));
+      return n;
+    })();
+    const allOpen = activeSections.length > 0 && activeSections.every(s => !!openSections?.[s.id]);
+    const isCellChanged = (id: string) => !!docSnap && JSON.stringify(docSnap.values?.[id] ?? null) !== JSON.stringify(values[id] ?? null);
+    const undoCell = (id: string) => {
+      if (!docSnap) return;
+      // Sel yang belum ada di data tersimpan (values_json hanya berisi id yang pernah terisi) -> hapus key-nya.
+      setValues((prev: any) => {
+        const next = { ...prev };
+        if (docSnap.values?.[id] === undefined) delete next[id];
+        else next[id] = JSON.parse(JSON.stringify(docSnap.values[id]));
+        return next;
+      });
+    };
+    const chip = (st: string, manual?: boolean) => {
+      const cfg = getCfg(st);
+      const StatusIcon = st === 'match' ? CheckCircle2 : st === 'mismatch' ? XCircle : Clock;
+      return (
+        <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-bold whitespace-nowrap" style={{ backgroundColor: cfg.bg, color: cfg.color }}>
+          <StatusIcon size={11} />{cfg.label}{manual ? ' ✎' : ''}
+        </span>
+      );
+    };
+
+    return (
+      <div className="flex flex-col gap-3 min-w-0">
+        {docToast && <div className={`px-3 py-2 rounded-xl border text-[12.5px] font-semibold ${docToast.type === 'success' ? 'bg-[#EAF6EF] border-[#BFE3CD] text-[#17663D]' : 'bg-[#FDE7E4] border-[#F4C3BC] text-[#A8231A]'}`}>{docToast.msg}</div>}
+
+        {/* Ringkasan */}
+        <div className={`${VW_CARD} px-4 py-3`}>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="mr-auto min-w-0">
+              <div className="text-[14px] font-bold text-[#3B1B3D]">Document validation</div>
+              <div className="text-[11.5px] text-[#6E5E70]">The same field compared across the documents{hasSourceData ? ` · ${stats.pct}% match` : ''}</div>
+            </div>
+            {([
+              ['Match', stats.match, VW_TILE_TONE.green],
+              ['Mismatch', stats.mismatch, VW_TILE_TONE.red],
+              ['Not filled', stats.empty + stats.partial, VW_TILE_TONE.grey],
+            ] as const).map(([label, value, cls]) => (
+              <div key={label} className={`${VW_TILE} ${cls}`}>
+                <div className="text-[17px] font-bold leading-tight tabular-nums">{value}</div>
+                <div className="text-[10px] font-semibold">{label}</div>
+              </div>
+            ))}
+            <div className="w-36 print:hidden">
+              <div className="flex justify-between items-baseline mb-1 text-[11px] text-[#6E5E70]"><span>Accuracy</span><b className={vwPctText(stats.pct)}>{stats.match}/{stats.checked}</b></div>
+              <div className="h-2 rounded-full bg-[#F3EEEA] overflow-hidden"><div className={`h-full transition-all duration-500 ${vwPctBar(stats.pct)}`} style={{ width: `${stats.pct}%` }} /></div>
+            </div>
+          </div>
+          <div className="mt-3 pt-3 border-t border-[#F1E8E1] flex flex-wrap items-end gap-x-4 gap-y-2">
+            <div className="min-w-0">
+              <div className={VW_LABEL}>Check date</div>
+              {canEdit ? <input type="date" aria-label="Check date" className={`${VW_INPUT} mt-1 w-40`} value={tanggal || ""} onChange={e => { userActionRef.current = true; setTanggal(e.target.value); }} />
+                : <div className="text-[12.5px] font-semibold text-[#3B1B3D] mt-1">{fmtDateEN(tanggal)}</div>}
+            </div>
+            <div className="min-w-0">
+              <div className={VW_LABEL}>Checked by</div>
+              {canEdit ? <input aria-label="Checked by" className={`${VW_INPUT} mt-1 w-44`} value={namaChecker || ""} onChange={e => { userActionRef.current = true; setNamaChecker(e.target.value); }} placeholder="Checker's name" />
+                : <div className="text-[12.5px] font-semibold text-[#3B1B3D] mt-1">{namaChecker || "—"}</div>}
+            </div>
+            <div className="min-w-0">
+              <div className={VW_LABEL}>No. AWB (checker)</div>
+              {canEdit ? <input aria-label="No. AWB (checker)" className={`${VW_INPUT} mt-1 w-44`} value={awbNo || ""} onChange={e => { userActionRef.current = true; setAwbNo(e.target.value); }} placeholder="e.g. 1234567890" />
+                : <div className="text-[12.5px] font-semibold text-[#3B1B3D] mt-1">{awbNo || "—"}</div>}
+            </div>
+            <div className="flex-1 min-w-[220px]">
+              <div className={VW_LABEL}>Manual change notes</div>
+              {canEdit ? (
+                <textarea aria-label="Manual change notes" value={catatanManual} rows={1}
+                  onChange={e => { userActionRef.current = true; setCatatanManual(e.target.value); }}
+                  placeholder="Reason or notes for any value changed manually…"
+                  className="mt-1 w-full rounded-lg border border-[#EADFD6] bg-white px-2.5 py-1.5 text-[12px] text-[#3B1B3D] focus:outline-none focus:border-[#6B3470] focus:ring-2 focus:ring-[#6B3470]/15 resize-y" />
+              ) : (
+                <div className="mt-1 rounded-lg border border-[#F1E8E1] bg-[#FBF7F4] px-2.5 py-1.5 text-[12px] text-[#3B1B3D] whitespace-pre-wrap [overflow-wrap:anywhere]">{catatanManual || <span className="italic text-[#8A7A8B]">No notes yet.</span>}</div>
+              )}
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2 print:hidden">
+            {canEdit && (
+              <button type="button" className={VW_BTN_SECONDARY} onClick={handleRecomputeMissing} title="Isi ulang field yang masih kosong dari data dokumen terbaru, tanpa menimpa field yang sudah terisi/diedit">
+                <RefreshCw size={13} /> Recompute missing data
+              </button>
+            )}
+            <button type="button" className={`${VW_BTN_SECONDARY} ml-auto`} onClick={() => {
+              const next: Record<string, boolean> = {};
+              if (!allOpen) activeSections.forEach(s => { next[s.id] = true; });
+              setOpenSections(next);
+            }}>
+              {allOpen ? <><ChevronUp size={13} /> Collapse all</> : <><ChevronDown size={13} /> Expand all</>}
+            </button>
+          </div>
+          {recomputeMsg && <div className="mt-2 rounded-lg bg-[#EEF1FA] text-[#2F4FA8] text-[12px] font-semibold px-3 py-1.5">{recomputeMsg}</div>}
+        </div>
+
+        {!hasSourceData && (
+          <div className={`${VW_CARD} px-4 py-4 text-[12.5px] text-[#6E5E70]`}>No AI document reading for this shipment yet — values can still be filled in manually.</div>
+        )}
+        {openMismatch > 0 ? (
+          <div className="rounded-[14px] border border-[#F4C3BC] bg-[#FDE7E4] px-4 py-2 text-[12.5px] font-semibold text-[#A8231A]">{openMismatch} mismatch{openMismatch === 1 ? '' : 'es'} not yet confirmed — accept, correct the value, or keep as mismatch.</div>
+        ) : stats.mismatch > 0 ? (
+          <div className="rounded-[14px] border border-[#BFE3CD] bg-[#EAF6EF] px-4 py-2 text-[12.5px] font-semibold text-[#17663D]">✓ Mismatch reviewed manually</div>
+        ) : null}
+
+        {activeSections.map(section => {
+          const ss = sectionStats(section);
+          const groupKey = (r: any) => r.rowLabel || r.field;
+          const uniqueFields: string[] = [];
+          section.rows.forEach((r: any) => { const k = groupKey(r); if (!uniqueFields.includes(k)) uniqueFields.push(k); });
+          const isOpen = !!openSections?.[section.id];
+          const allMatch = ss.match === ss.total && ss.total > 0;
+          const notChecked = ss.total - ss.match - ss.mismatch;
+          return (
+            <div key={section.id} className={`${VW_CARD} overflow-hidden`}>
+              <button type="button" onClick={() => setOpenSections(p => ({ ...(p || {}), [section.id]: !isOpen }))}
+                className="w-full flex flex-wrap items-center gap-3 px-4 py-2.5 text-left hover:bg-[#FBF7F4] print:pointer-events-none">
+                {ss.mismatch > 0 ? <XCircle size={16} className="text-[#A8231A] shrink-0" /> : allMatch ? <CheckCircle2 size={16} className="text-[#17663D] shrink-0" /> : <Clock size={16} className="text-[#B7A9B8] shrink-0" />}
+                <div className="mr-auto min-w-0">
+                  <div className="text-[13px] font-bold text-[#3B1B3D]">{SECTION_TITLE[section.id] || section.label}</div>
+                  <div className="text-[11px] text-[#6E5E70]">{section.id === 's_sptnp' ? 'If applicable — PIB path only · ' : ''}{SECTION_SUB[section.id] || ''}</div>
+                </div>
+                <span className="text-[11.5px] text-[#6E5E70] tabular-nums">{ss.match} / {ss.total} match</span>
+                <Pill tone={ss.mismatch > 0 ? 'red' : allMatch ? 'green' : 'grey'}>{ss.mismatch > 0 ? `${ss.mismatch} mismatch` : allMatch ? 'All match' : `${notChecked} not checked`}</Pill>
+                <span className="text-[11.5px] text-[#6B3470] font-semibold flex items-center gap-1 print:hidden">{isOpen ? 'Hide' : `Show all ${uniqueFields.length} field${uniqueFields.length === 1 ? '' : 's'}`}{isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
+              </button>
+
+              <div className={isOpen ? 'border-t border-[#EADFD6] divide-y divide-[#F1E8E1]' : 'hidden print:block border-t border-[#EADFD6] divide-y divide-[#F1E8E1]'}>
+                {uniqueFields.map(field => {
+                  const rowsOfField = section.rows.filter((r: any) => groupKey(r) === field);
+                  const hints = Array.from(new Set(rowsOfField.filter((r: any) => r.hint).map((r: any) => r.hint)));
+                  const refRow: any = rowsOfField[0];
+                  const refV = refRow ? (values[refRow.id] || { src: '', cmp: '' }) : null;
+                  return (
+                    <div key={field} className="px-4 py-2.5 grid grid-cols-1 md:grid-cols-[200px_minmax(0,1fr)] gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[12.5px] font-semibold text-[#3B1B3D]">{field}</div>
+                        {hints.map((h, i) => <div key={i} className="text-[10.5px] text-[#8A7A8B]">{h as string}</div>)}
+                        {section.id === 's_pib' && refV && (
+                          <div className="text-[11px] text-[#6E5E70] [overflow-wrap:anywhere] mt-0.5">
+                            Reference: <span className={refV.src_edited ? 'text-[#2F4FA8] font-bold' : 'text-[#3B1B3D] font-semibold'}>{refV.srcDisplay ? refV.srcDisplay : formatViewValue(refV.src, field)}</span>{refV.src_edited ? ' ✎' : ''}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-1.5 min-w-0">
+                        {rowsOfField.map((rowMatch: any) => {
+                          const v = values[rowMatch.id] || { src: '', cmp: '' };
+                          const otherCostVal = v.otherCost !== undefined && v.otherCost !== null && v.otherCost !== ''
+                            ? v.otherCost
+                            : (debugData.raw?.other_cost_valas ?? '');
+                          const stComputed = computeStatus(v.src, v.cmp, rowMatch.isFormat, rowMatch.field, debugData.raw?.is_po_non_imi, getDocChecklistFlag(rowMatch.compareDoc, docCompletenessFlags));
+                          const st = v.manual_status || stComputed;
+                          const errNpwp = v.cmp && hasNpwpError(rowMatch.id, v.cmp);
+                          const colorObj = getHeaderColor(rowMatch.compareDoc);
+                          const changed = isCellChanged(rowMatch.id);
+                          const isCorrecting = correcting === rowMatch.id;
+                          const hasOtherCost = rowMatch.id === 'po_item_value_vs_pib' || rowMatch.id === 'cipl01';
+                          return (
+                            <div key={rowMatch.id} className={`rounded-lg border px-2.5 py-1.5 ${st === 'mismatch' ? 'border-[#F4C3BC] bg-[#FFF8F7]' : 'border-[#F1E8E1] bg-white'}`}>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-[11px] font-semibold text-[#6E5E70] w-[150px] shrink-0 inline-flex items-center gap-1.5 min-w-0" title={getColumnDisplayLabel(rowMatch.compareDoc, docType)}>
+                                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: colorObj.text }} />
+                                  <span className="truncate">{getColumnDisplayLabel(rowMatch.compareDoc, docType)}</span>
+                                </span>
+                                <span className="flex-1 min-w-0 text-[12px] text-[#3B1B3D] [overflow-wrap:anywhere]">
+                                  {section.id === 's_pib' ? (
+                                    <span className={v.cmp_edited ? 'text-[#2F4FA8] font-bold' : 'font-semibold'}>{formatViewValue(v.cmp, field)}{v.cmp_edited ? ' ✎' : ''}</span>
+                                  ) : (
+                                    <>
+                                      <span className={v.src_edited ? 'text-[#2F4FA8] font-bold' : 'font-semibold'}>{v.srcDisplay ? v.srcDisplay : formatViewValue(v.src, field)}{v.src_edited ? ' ✎' : ''}</span>
+                                      {!rowMatch.isFormat && (
+                                        <span className={`text-[11px] ml-1 ${v.cmp_edited ? 'text-[#2F4FA8] font-bold' : 'text-[#6E5E70]'}`}>({formatViewValue(v.cmp, field)}){v.cmp_edited ? ' ✎' : ''}</span>
+                                      )}
+                                    </>
+                                  )}
+                                  {v.srcNote && <span className="text-[10.5px] text-[#8A7A8B]"> · {v.srcNote}</span>}
+                                  {hasOtherCost && Number(otherCostVal) !== 0 && (
+                                    <span className="text-[10.5px] italic text-[#6E5E70]"> · Other cost {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 4 }).format(Number(otherCostVal))}{v.otherCost_edited ? ' ✎' : ''}</span>
+                                  )}
+                                </span>
+                                {chip(st, !!v.manual_status)}
+                                {(errNpwp || v.npwp_status === 'not_found') && <span className="text-[9.5px] text-[#7A4F00] bg-[#FFF1D6] px-2 py-0.5 rounded-md font-bold uppercase">NPWP tidak terdaftar</span>}
+                                {canEdit && !isCorrecting && (
+                                  <span className="flex items-center gap-2 text-[11px] font-semibold print:hidden">
+                                    {st === 'match'
+                                      ? <button type="button" className="text-[#A8231A] hover:underline" onClick={() => applyManualStatus(rowMatch.id, 'mismatch')}>Mark mismatch</button>
+                                      : <button type="button" className="text-[#17663D] hover:underline" onClick={() => applyManualStatus(rowMatch.id, 'match')}>✓ Checked — accept</button>}
+                                    <button type="button" className="text-[#6B3470] hover:underline inline-flex items-center gap-0.5" title="AI read it wrong — correct the values" onClick={() => setCorrecting(rowMatch.id)}><Edit3 size={10} />Correct</button>
+                                    {changed && <button type="button" className="text-[#6E5E70] hover:underline inline-flex items-center gap-0.5" onClick={() => undoCell(rowMatch.id)}><RotateCcw size={10} />Undo</button>}
+                                  </span>
+                                )}
+                              </div>
+                              {canEdit && isCorrecting && (
+                                <div className="mt-2 flex flex-wrap items-end gap-2 print:hidden">
+                                  <label className="flex flex-col gap-1 min-w-[180px] flex-1">
+                                    <span className={VW_LABEL}>{section.id === 's_pib' ? 'Reference (PIB) — all documents in this row' : `Value from ${getSrcTooltipLabel(rowMatch, section)}`}</span>
+                                    <input aria-label="Correct source value" className={`${VW_INPUT} w-full`} value={v.src || ""}
+                                      placeholder={rowMatch.isFormat ? "Format..." : ""}
+                                      onChange={e => section.id === 's_pib' ? setSrcForGroup(section, field, e.target.value) : setObj(rowMatch.id, 'src', e.target.value)} />
+                                  </label>
+                                  {!rowMatch.isFormat && (
+                                    <label className="flex flex-col gap-1 min-w-[180px] flex-1">
+                                      <span className={VW_LABEL}>Value from {getColumnDisplayLabel(rowMatch.compareDoc, docType)}</span>
+                                      <input aria-label="Correct compared value" className={`${VW_INPUT} w-full ${(errNpwp || v.npwp_status === 'not_found') ? '!border-[#E0A526] !bg-[#FFF8EB]' : ''}`} value={v.cmp || ""}
+                                        onChange={e => {
+                                          setObj(rowMatch.id, 'cmp', e.target.value);
+                                          setValues((prev: any) => ({ ...prev, [rowMatch.id]: { ...prev[rowMatch.id], npwp_status: null } }));
+                                        }} />
+                                    </label>
+                                  )}
+                                  {hasOtherCost && (
+                                    <label className="flex flex-col gap-1 w-36">
+                                      <span className={VW_LABEL}>Other cost</span>
+                                      <input aria-label="Other cost" className={`${VW_INPUT} w-full`} value={otherCostVal} onChange={e => setObj(rowMatch.id, 'otherCost', e.target.value)} />
+                                    </label>
+                                  )}
+                                  <button type="button" className={VW_BTN_SECONDARY} onClick={() => setCorrecting(null)}>Done</button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Kalkulasi PIB / SPPBMCP (komponen lama) -- nilai bisa dikoreksi lewat tombol di bawah. */}
+        <div className="min-w-0">
+          {canEdit && (
+            <div className="flex justify-end mb-1.5 print:hidden">
+              <button type="button" className={VW_BTN_SECONDARY} onClick={() => setCalcEdit(v => !v)}>
+                <Edit3 size={12} /> {calcEdit ? 'Done editing calculation' : 'Edit calculation values'}
+              </button>
+            </div>
+          )}
+          <ValidasiPerhitunganPIB
+            dataValidasiRaw={debugData?.raw}
+            jenisDokumen={record?.jenis_dokumen || (mainTab === 'audit' && subTab === 'pib' ? 'PIB' : (mainTab === 'audit' && subTab === 'cn' ? 'CN' : ''))}
+            onStatsChange={setPibStats}
+            isEditMode={canEdit && calcEdit}
+          />
+        </div>
+
+        <div className="text-[11px] text-[#8A7A8B] px-1">Value in brackets = the compared document · ✎ = changed manually · Format pass = vessel no. must contain " - " (dash).</div>
+
+        {docDirty && canEdit && (
+          <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 px-4 py-3 rounded-[14px] bg-white border border-[#E0A526] shadow-lg print:hidden">
+            <span className="text-[12.5px] font-bold text-[#7A4F00] mr-auto">Unsaved changes in document validation</span>
+            <button type="button" className={VW_BTN_SECONDARY} disabled={docSaving} onClick={() => { if (window.confirm('Discard the unsaved changes?')) discardDoc() }}>Discard</button>
+            <button type="button" className={VW_BTN_PRIMARY} disabled={docSaving} onClick={saveDoc}>{docSaving ? 'Saving…' : 'Save changes'}</button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className={embedded ? 'flex flex-col flex-1 min-h-0 w-full cvw-fill' : 'fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center p-2 sm:p-4 md:p-6 w-full h-full print:bg-white print:p-0'}>

@@ -4,19 +4,18 @@ import { supabase } from '../lib/supabase';
 import ValidasiModal from './ValidasiModal';
 import CostValidationModal from './CostValidationModal';
 
-// Jendela "Validation" Audit Courier (Draft/PIB/CN, 2026-09-30) -- menggabungkan 3 tombol lama
-// (Checklist, Doc Validation, Cost Validation) jadi 1 jendela ber-tab. Isi tiap tab = modal LAMA
-// yang sama persis dalam mode `embedded` (tidak ditulis ulang), jadi semua fungsi tetap ada.
-//
-// - Ketiga tab SELALU terpasang (tab tidak aktif cuma `hidden`), supaya edit yang belum disimpan
-//   (Cost Validation mode Edit, Doc Validation mode Edit/autosave) tidak hilang saat pindah tab.
-// - Tab muncul sesuai hak akses lihat masing2 page_key; hak edit tetap per page_key.
-// - Shipment Info SATU di level jendela (dulu cuma ada di Cost Validation), sama di semua tab.
-// - Print: hanya Shipment Info + tab aktif (#courier-validation-print-area, lihat index.css).
-// - Jendela "Open" tampilan kartu Audit Courier (2026-10-01) memakai komponen INI juga: prop
-//   opsional `overview` menambah tab "Overview" paling depan (isi CourierAuditOverview), `title`/
-//   `subtitle`/`headerActions` mengganti judul & menambah tombol aksi (Edit, Mark as audited, Move back
-//   to Draft, Delete). Tanpa prop itu perilaku SAMA PERSIS versi lama (tombol Validation mode List).
+// Jendela "Validation"/"Open" Audit Courier.
+// - 2026-09-30: 3 tombol lama (Checklist, Doc Validation, Cost Validation) digabung jadi 1 jendela.
+// - 2026-10-01 (keputusan user, ikut jendela Open Invoice Recap Sea & Air): tab = Overview | Documents |
+//   Costs | Audit trail. Documents = Checklist (kiri) + Document validation (kanan, BUKAN tabel); Costs =
+//   kartu per invoice. Isi tab tetap komponen lama (ChecklistModal / ValidasiModal / CostValidationModal
+//   mode `embedded`) -- data & cara simpan sama, cuma tampilannya yang dibangun ulang.
+// - Tab yang sudah dipasang TETAP terpasang (tidak aktif = `hidden`) supaya perubahan belum disimpan
+//   tidak hilang saat pindah tab; tutup jendela dgn perubahan belum disimpan -> konfirmasi.
+// - Tab muncul sesuai hak LIHAT page_key lama (Documents = checklist ATAU doc), hak edit tetap per page_key.
+// - Shipment Info (Courier, Service, Ship date, Origin/Zone, Chargeable weight) pindah ke kartu Document di
+//   Overview (keputusan user); strip Shipment Info hanya masih tampil di jendela mode List (tanpa Overview).
+// - Print: tab aktif saja (#courier-validation-print-area, lihat index.css).
 
 export type ValidationTabKey = 'checklist' | 'doc' | 'cost';
 
@@ -49,13 +48,8 @@ export const validationDotClass = (pct: number | null): string =>
 export const validationDotLabel = (pct: number | null): string =>
   pct === null ? 'no data yet' : pct >= 100 ? `${pct}% (complete/match)` : `${pct}% (incomplete/mismatch)`;
 
-// Tab awal: tab pertama (urutan Checklist -> Doc -> Cost, yang boleh dilihat) yang belum hijau;
-// kalau semua hijau -> Checklist (atau tab pertama yang boleh dilihat).
-const pickDefaultTab = (tabs: ValidationTabKey[], pct: Record<ValidationTabKey, number | null>): ValidationTabKey =>
-  tabs.find(t => pct[t] === null || (pct[t] as number) < 100) || tabs[0];
-
 const MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const fmtDate = (v: any): string => {
+export const fmtCourierDate = (v: any): string => {
   if (!v) return '';
   const d = new Date(v);
   if (isNaN(d.getTime())) return '';
@@ -69,8 +63,21 @@ const hasVal = (v: any) => {
   return t !== '' && t !== '-' && t !== '—';
 };
 
-// Sel Shipment Info -- grid dgn garis rambut (gap-px di atas latar garis), nilai wrap di kotaknya.
-// Gaya ikut Sea & Air (2026-10-01): label kecil abu-ungu, nilai plum.
+// Ringkasan Shipment Info dari baris tabel_cost_validasi -- dipakai kartu Document Overview & strip
+// Shipment Info mode List. SATU sumber format.
+export const courierShipmentInfo = (cv: any) => ({
+  courier: hasVal(cv?.cv_courier) ? String(cv.cv_courier) : '',
+  service: hasVal(cv?.cv_service_type) ? String(cv.cv_service_type) : '',
+  direction: hasVal(cv?.cv_direction) || hasVal(cv?.cv_shipment_type)
+    ? `${hasVal(cv?.cv_direction) ? cv.cv_direction : '—'} / ${hasVal(cv?.cv_shipment_type) ? cv.cv_shipment_type : '—'}`
+    : '',
+  shipDate: fmtCourierDate(cv?.cv_ship_date),
+  origin: hasVal(cv?.cv_origin_country_code) || hasVal(cv?.cv_zone)
+    ? `${hasVal(cv?.cv_origin_country_code) ? cv.cv_origin_country_code : '—'} (Zone ${hasVal(cv?.cv_zone) ? cv.cv_zone : '—'})`
+    : '',
+  chargeable: hasVal(cv?.cv_chargeable_kg) ? `${cv.cv_chargeable_kg} kg` : '',
+});
+
 const InfoCell: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
   <div className="min-w-0 bg-white px-3 py-2">
     <p className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B] leading-none mb-1">{label}</p>
@@ -78,11 +85,17 @@ const InfoCell: React.FC<{ label: string; children: React.ReactNode }> = ({ labe
   </div>
 );
 
-// Pil persen di tab -- aturan sama titik status: hijau 100%, kuning <100%, abu belum ada data.
-const pctPillClass = (pct: number | null) =>
+// Pil skor kanan tab bar (pola "Doc match · Cost · Doc complete" Invoice Recap Sea & Air).
+const scorePillClass = (pct: number | null) =>
   pct === null ? 'bg-[#F3EEEA] text-[#6E5E70]' : pct >= 100 ? 'bg-[#EAF6EF] text-[#17663D]' : 'bg-[#FFF1D6] text-[#7A4F00]';
+// Titik tab Documents = yang terburuk dari Checklist & Doc Validation.
+const worstPct = (a: number | null, b: number | null) => (a === null ? b : b === null ? a : Math.min(a, b));
 
+type MainTab = 'overview' | 'documents' | 'costs' | 'trail';
 export type WindowTabKey = 'overview' | ValidationTabKey | 'trail';
+const toMainTab = (t: WindowTabKey): MainTab => (t === 'checklist' || t === 'doc' ? 'documents' : t === 'cost' ? 'costs' : t);
+
+export type CourierOverviewApi = { openTab: (t: ValidationTabKey) => void; cv: any };
 
 export default function CourierValidationWindow({
   record, mainTab, subTab, jenisDokumen, access, editAccess, renderChecklist, onClose,
@@ -94,35 +107,45 @@ export default function CourierValidationWindow({
   jenisDokumen: string;
   access: Record<ValidationTabKey, boolean>;
   editAccess: Record<ValidationTabKey, boolean>;
-  renderChecklist: (api: { onPctChange: (pct: number | null) => void; onSaved: () => void }) => React.ReactNode;
+  renderChecklist: (api: { onPctChange: (pct: number | null) => void; onSaved: () => void; onDirtyChange: (dirty: boolean) => void }) => React.ReactNode;
   onClose: () => void;
-  // Boleh node biasa, atau fungsi yg menerima `openTab` (supaya isi Overview bisa pindah ke tab
-  // validasi -- dulu lewat prop initialTab yg tidak berefek setelah jendela terbuka).
-  overview?: React.ReactNode | ((openTab: (t: ValidationTabKey) => void) => React.ReactNode);
+  // Node biasa, atau fungsi yg menerima { openTab, cv } (pindah tab dari Overview & data Shipment Info).
+  overview?: React.ReactNode | ((api: CourierOverviewApi) => React.ReactNode);
   initialTab?: WindowTabKey;
   title?: React.ReactNode;
   subtitle?: React.ReactNode;
   headerActions?: React.ReactNode;
-  // Tab "Audit trail" (2026-10-01, pola tab Audit trail Invoice Recap Sea & Air) -- dipasang hanya
-  // saat tab itu dibuka (fetch log terjadi saat dibuka, sama seperti Sea & Air).
+  // Tab "Audit trail" -- dipasang hanya saat tab itu dibuka (fetch log saat dibuka, sama Sea & Air).
   trail?: React.ReactNode;
 }) {
-  const tabs = useMemo(() => VALIDATION_TAB_ORDER.filter(t => access[t]), [access]);
+  const showDocuments = access.checklist || access.doc;
+  const showCosts = access.cost;
   const [pct, setPct] = useState<Record<ValidationTabKey, number | null>>(() => rowValidationPct(record));
-  const [activeTab, setActiveTab] = useState<WindowTabKey>(() => {
-    if (initialTab === 'overview' && overview) return 'overview';
-    if (initialTab === 'trail' && trail) return 'trail';
-    if (initialTab && initialTab !== 'overview' && initialTab !== 'trail' && access[initialTab]) return initialTab;
-    if (overview) return 'overview';
-    return pickDefaultTab(tabs, rowValidationPct(record));
-  });
-  // Naik tiap Checklist disimpan -> tab Doc Validation baca ulang flag PO/CIPL/Final Invoice.
-  const [checklistVersion, setChecklistVersion] = useState(0);
-  // Baris tabel_cost_validasi utk Shipment Info (Courier, Direction/Type, Ship Date, Origin/Zone,
-  // Chargeable Weight, Service). Di-fetch sendiri (tab Cost bisa saja tidak boleh dilihat),
-  // lalu disinkronkan dari tab Cost setelah Edit Cost Validasi disimpan (onDataChange).
-  const [cv, setCv] = useState<any>(null);
 
+  const allowed = useCallback((t: MainTab) =>
+    t === 'overview' ? !!overview : t === 'trail' ? !!trail : t === 'documents' ? showDocuments : showCosts,
+  [overview, trail, showDocuments, showCosts]);
+
+  const pickInitial = (): MainTab => {
+    if (initialTab && allowed(toMainTab(initialTab))) return toMainTab(initialTab);
+    if (overview) return 'overview';
+    // Mode List (tanpa Overview): tab pertama yang belum hijau.
+    const p = rowValidationPct(record);
+    const docOk = worstPct(access.checklist ? p.checklist : null, access.doc ? p.doc : null);
+    if (showDocuments && (docOk === null || docOk < 100)) return 'documents';
+    if (showCosts && (p.cost === null || p.cost < 100)) return 'costs';
+    return showDocuments ? 'documents' : 'costs';
+  };
+  const [activeTab, setActiveTab] = useState<MainTab>(pickInitial);
+  // Tab Documents/Costs dipasang saat pertama dibuka, lalu tetap terpasang (perubahan tidak hilang).
+  const [visited, setVisited] = useState<Record<MainTab, boolean>>(() => ({ overview: true, documents: false, costs: false, trail: false, [pickInitial()]: true } as Record<MainTab, boolean>));
+  const goTab = useCallback((t: MainTab) => { if (!allowed(t)) return; setActiveTab(t); setVisited(v => (v[t] ? v : { ...v, [t]: true })); }, [allowed]);
+
+  // Naik tiap Checklist disimpan -> Doc validation baca ulang flag PO/CIPL/Final Invoice.
+  const [checklistVersion, setChecklistVersion] = useState(0);
+  // Baris tabel_cost_validasi utk Shipment Info (di-fetch sendiri krn tab Costs bisa tidak boleh dilihat;
+  // disinkronkan dari tab Costs setelah disimpan lewat onDataChange).
+  const [cv, setCv] = useState<any>(null);
   const isPib = (jenisDokumen || record?.jenis_dokumen || '').toUpperCase() === 'PIB';
 
   useEffect(() => {
@@ -148,43 +171,49 @@ export default function CourierValidationWindow({
   const onChecklistSaved = useCallback(() => setChecklistVersion(v => v + 1), []);
   const onCostData = useCallback((d: any) => setCv(d), []);
 
-  const jalur = (record?.jenis_dokumen || jenisDokumen || '').toUpperCase();
-  const direction = hasVal(cv?.cv_direction) || hasVal(cv?.cv_shipment_type)
-    ? `${hasVal(cv?.cv_direction) ? cv.cv_direction : '—'} / ${hasVal(cv?.cv_shipment_type) ? cv.cv_shipment_type : '—'}`
-    : '';
-  const origin = hasVal(cv?.cv_origin_country_code) || hasVal(cv?.cv_zone)
-    ? `${hasVal(cv?.cv_origin_country_code) ? cv.cv_origin_country_code : '—'} (Zone ${hasVal(cv?.cv_zone) ? cv.cv_zone : '—'})`
-    : '';
-  const dash = (v: any) => (hasVal(v) ? v : '—');
+  // Perubahan belum disimpan per bagian -> konfirmasi saat jendela ditutup (pola Sea & Air).
+  const [dirty, setDirty] = useState<Record<ValidationTabKey, boolean>>({ checklist: false, doc: false, cost: false });
+  const setDirtyOf = useCallback((key: ValidationTabKey) => (d: boolean) => setDirty(p => (p[key] === d ? p : { ...p, [key]: d })), []);
+  const onChecklistDirty = useMemo(() => setDirtyOf('checklist'), [setDirtyOf]);
+  const onDocDirty = useMemo(() => setDirtyOf('doc'), [setDirtyOf]);
+  const onCostDirty = useMemo(() => setDirtyOf('cost'), [setDirtyOf]);
+  const anyDirty = dirty.checklist || dirty.doc || dirty.cost;
+  const requestClose = useCallback(() => {
+    if (anyDirty && !window.confirm('You have unsaved changes. Close and discard them?')) return;
+    onClose();
+  }, [anyDirty, onClose]);
 
-  const tabBody = (key: ValidationTabKey, node: React.ReactNode) => (
-    <div key={key} className={activeTab === key ? 'flex-1 min-h-0 flex flex-col cvw-fill' : 'hidden'} role="tabpanel">
-      {node}
-    </div>
-  );
-
-  // Pindah tab dari isi Overview (klik titik validasi) & saat prop initialTab berubah dari luar.
-  const openTab = useCallback((t: ValidationTabKey) => { if (access[t]) setActiveTab(t); }, [access]);
+  // Pindah tab dari Overview (klik titik validasi) & saat prop initialTab berubah dari luar.
+  const openTab = useCallback((t: ValidationTabKey) => goTab(toMainTab(t)), [goTab]);
   const firstInitial = useRef(true);
   useEffect(() => {
     if (firstInitial.current) { firstInitial.current = false; return; }
-    if (initialTab === 'overview' && overview) setActiveTab('overview');
-    else if (initialTab === 'trail' && trail) setActiveTab('trail');
-    else if (initialTab && initialTab !== 'overview' && initialTab !== 'trail' && access[initialTab]) setActiveTab(initialTab);
+    if (initialTab) goTab(toMainTab(initialTab));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTab]);
-  const overviewNode = typeof overview === 'function' ? overview(openTab) : overview;
-  const showShipmentInfo = activeTab !== 'overview' && activeTab !== 'trail';
+  const overviewNode = typeof overview === 'function' ? overview({ openTab, cv }) : overview;
 
+  const info = courierShipmentInfo(cv);
+  const jalur = (record?.jenis_dokumen || jenisDokumen || '').toUpperCase();
+  const dash = (v: any) => (hasVal(v) ? v : '—');
+
+  const docPct = worstPct(access.checklist ? pct.checklist : null, access.doc ? pct.doc : null);
   const tabBtnClass = (active: boolean) =>
     `relative shrink-0 flex items-center gap-1.5 px-3 pt-1 pb-2 text-[13px] font-semibold border-b-2 transition-colors ${
       active ? 'border-[#6B3470] text-[#3B1B3D]' : 'border-transparent text-[#6E5E70] hover:text-[#3B1B3D]'
     }`;
+  const tabs: { key: MainTab; label: string; dot?: number | null; dirty?: boolean; icon?: React.ReactNode }[] = [
+    ...(overview ? [{ key: 'overview' as MainTab, label: 'Overview' }] : []),
+    ...(showDocuments ? [{ key: 'documents' as MainTab, label: 'Documents', dot: docPct, dirty: dirty.checklist || dirty.doc }] : []),
+    ...(showCosts ? [{ key: 'costs' as MainTab, label: 'Costs', dot: pct.cost, dirty: dirty.cost }] : []),
+    ...(trail ? [{ key: 'trail' as MainTab, label: 'Audit trail', icon: <History size={13} /> }] : []),
+  ];
 
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center p-2 sm:p-4 print:bg-white print:p-0">
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center p-2 sm:p-4 print:bg-white print:p-0"
+      onMouseDown={e => { if (e.target === e.currentTarget) requestClose(); }}>
       <div id="courier-validation-print-area" className="bg-white w-full h-full rounded-2xl shadow-2xl flex flex-col overflow-hidden print:shadow-none print:rounded-none">
-        {/* Header + tab -- gaya jendela Open Sea & Air (judul plum, tab garis bawah). */}
+        {/* Header + tab -- gaya jendela Open Invoice Recap Sea & Air. */}
         <div className="shrink-0 px-5 pt-4 border-b border-[#EADFD6] print:px-0 print:pt-0">
           <div className="flex flex-wrap items-start justify-between gap-3 print:hidden">
             <div className="min-w-0 flex items-start gap-2.5">
@@ -195,123 +224,122 @@ export default function CourierValidationWindow({
               )}
               <div className="min-w-0">
                 <h2 className="text-[18px] font-bold text-[#3B1B3D] leading-tight [overflow-wrap:anywhere]">{title ?? 'Validation'}</h2>
-                <div className="text-[12px] text-[#6E5E70] mt-0.5 [overflow-wrap:anywhere]">{subtitle ?? 'Checklist, document & cost validation for this shipment'}</div>
+                <div className="text-[12px] text-[#6E5E70] mt-0.5 [overflow-wrap:anywhere]">{subtitle ?? 'Documents & cost validation for this shipment'}</div>
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
               {headerActions}
               <button
                 onClick={() => window.print()}
-                title="Print Shipment Info + active tab"
+                title="Print the active tab"
                 className="h-9 inline-flex items-center gap-1.5 text-xs font-semibold px-3.5 rounded-xl border border-[#EADFD6] bg-white text-[#3B1B3D] hover:border-[#6B3470]/40 hover:bg-[#FBF7F4] transition-colors"
               >
                 <Printer size={14} /> <span className="hidden sm:inline">Print</span>
               </button>
-              <button onClick={onClose} title="Close" aria-label="Close" className="w-9 h-9 inline-flex items-center justify-center hover:bg-[#F6EFEA] rounded-xl text-[#6E5E70] transition-colors">
+              <button onClick={requestClose} title="Close" aria-label="Close" className="w-9 h-9 inline-flex items-center justify-center hover:bg-[#F6EFEA] rounded-xl text-[#6E5E70] transition-colors">
                 <X size={18} />
               </button>
             </div>
           </div>
 
-          {/* Tab bar -- titik status + pil persen per tab validasi. */}
-          <div className="flex items-end gap-1 mt-3 overflow-x-auto print:hidden" role="tablist">
-            {overview && (
-              <button role="tab" aria-selected={activeTab === 'overview'} onClick={() => setActiveTab('overview')} className={tabBtnClass(activeTab === 'overview')}>
-                Overview
-              </button>
-            )}
-            {tabs.map(t => {
-              const active = activeTab === t;
-              const p = pct[t];
-              return (
-                <button
-                  key={t}
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => setActiveTab(t)}
-                  title={`${VALIDATION_TAB_LABEL[t]}: ${validationDotLabel(p)}`}
-                  className={tabBtnClass(active)}
-                >
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${validationDotClass(p)}`} />
-                  {VALIDATION_TAB_LABEL[t]}
-                  {p !== null && (
-                    <span className={`rounded-full px-1.5 py-0.5 text-[10.5px] font-bold leading-none ${pctPillClass(p)}`}>{p}%</span>
-                  )}
+          <div className="flex flex-wrap items-end justify-between gap-2 mt-3 print:hidden">
+            <div className="flex items-end gap-1 overflow-x-auto" role="tablist">
+              {tabs.map(t => (
+                <button key={t.key} role="tab" aria-selected={activeTab === t.key} onClick={() => goTab(t.key)} className={tabBtnClass(activeTab === t.key)}
+                  title={t.dot !== undefined ? `${t.label}: ${validationDotLabel(t.dot ?? null)}` : undefined}>
+                  {t.dot !== undefined && <span className={`w-2 h-2 rounded-full shrink-0 ${validationDotClass(t.dot ?? null)}`} />}
+                  {t.icon}
+                  {t.label}
+                  {t.dirty && <span className="w-1.5 h-1.5 rounded-full bg-[#E0A526]" title="Unsaved changes" />}
                 </button>
-              );
-            })}
-            {trail && (
-              <button role="tab" aria-selected={activeTab === 'trail'} onClick={() => setActiveTab('trail')} className={tabBtnClass(activeTab === 'trail')}>
-                <History size={13} /> Audit trail
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Shipment Info -- SATU untuk ketiga tab validasi (header tiap tab = toolbar putih masing2,
-            isinya beda). Grid 5 kolom dgn garis rambut; nilai wrap di kotaknya. Sumber: record =
-            baris tabel_audit_pib/cn, cv = baris terbaru tabel_cost_validasi. */}
-        <div className={showShipmentInfo ? 'shrink-0 px-4 pt-3 pb-3 bg-[#FBF7F4] print:px-0 print:bg-white' : 'hidden'}>
-          <div className="rounded-[14px] border border-[#EADFD6] overflow-hidden bg-white print:border-slate-300">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-[#FBF7F4] border-b border-[#EADFD6]">
-              <Package size={13} className="text-[#6B3470]" />
-              <h3 className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#3B1B3D]">Shipment info</h3>
+              ))}
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-px bg-[#EADFD6]">
-              <InfoCell label="AWB">{dash(record?.awb)}</InfoCell>
-              <InfoCell label="Vendor">{dash(record?.vendor)}</InfoCell>
-              <InfoCell label="Jalur">
-                {jalur === 'PIB' ? (
-                  <span className="px-2 py-0.5 bg-[#EEF1FA] text-[#2F4FA8] rounded-md font-bold text-[10.5px] inline-block">PIB</span>
-                ) : jalur === 'CN' ? (
-                  <span className="px-2 py-0.5 bg-[#EFE7F7] text-[#5B2E8C] rounded-md font-bold text-[10.5px] inline-block">CN</span>
-                ) : '—'}
-              </InfoCell>
-              <InfoCell label="No. PIB">{dash(record?.no_pib)}</InfoCell>
-              <InfoCell label="Courier">{dash(cv?.cv_courier)}</InfoCell>
-              <InfoCell label="Direction / Type">{dash(direction)}</InfoCell>
-              <InfoCell label="Ship Date">{dash(fmtDate(cv?.cv_ship_date))}</InfoCell>
-              <InfoCell label="Origin / Zone">{dash(origin)}</InfoCell>
-              <InfoCell label="Chargeable Weight">{hasVal(cv?.cv_chargeable_kg) ? `${cv.cv_chargeable_kg} kg` : '—'}</InfoCell>
-              <InfoCell label="Service">{dash(cv?.cv_service_type)}</InfoCell>
+            <div className="flex flex-wrap items-center gap-1.5 pb-2">
+              {access.checklist && <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold ${scorePillClass(pct.checklist)}`}>Doc complete {pct.checklist === null ? '—' : `${pct.checklist}%`}</span>}
+              {access.doc && <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold ${scorePillClass(pct.doc)}`}>Doc match {pct.doc === null ? '—' : `${pct.doc}%`}</span>}
+              {access.cost && <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold ${scorePillClass(pct.cost)}`}>Cost {pct.cost === null ? '—' : `${pct.cost}%`}</span>}
             </div>
           </div>
         </div>
 
-        {/* Isi tab -- semua terpasang, yang tidak aktif `hidden` (juga tidak ikut tercetak). */}
+        {/* Strip Shipment Info -- HANYA jendela mode List (tanpa Overview); jendela Open menampilkannya
+            di kartu Document Overview (keputusan user 2026-10-01). */}
+        {!overview && (activeTab === 'documents' || activeTab === 'costs') && (
+          <div className="shrink-0 px-4 pt-3 pb-0 bg-[#FBF7F4] print:px-0 print:bg-white">
+            <div className="rounded-[14px] border border-[#EADFD6] overflow-hidden bg-white">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[#FBF7F4] border-b border-[#EADFD6]">
+                <Package size={13} className="text-[#6B3470]" />
+                <h3 className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#3B1B3D]">Shipment info</h3>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-px bg-[#EADFD6]">
+                <InfoCell label="AWB">{dash(record?.awb)}</InfoCell>
+                <InfoCell label="Vendor">{dash(record?.vendor)}</InfoCell>
+                <InfoCell label="Jalur">{jalur || '—'}</InfoCell>
+                <InfoCell label="No. PIB">{dash(record?.no_pib)}</InfoCell>
+                <InfoCell label="Courier">{dash(info.courier)}</InfoCell>
+                <InfoCell label="Direction / Type">{dash(info.direction)}</InfoCell>
+                <InfoCell label="Ship Date">{dash(info.shipDate)}</InfoCell>
+                <InfoCell label="Origin / Zone">{dash(info.origin)}</InfoCell>
+                <InfoCell label="Chargeable Weight">{dash(info.chargeable)}</InfoCell>
+                <InfoCell label="Service">{dash(info.service)}</InfoCell>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Isi tab -- yang sudah dibuka tetap terpasang, yang tidak aktif `hidden` (tidak ikut tercetak). */}
         <div className="flex-1 min-h-0 flex flex-col cvw-fill">
           {overview && (
             <div className={activeTab === 'overview' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'} role="tabpanel">{overviewNode}</div>
           )}
+
+          {showDocuments && visited.documents && (
+            <div className={activeTab === 'documents' ? 'flex-1 min-h-0 overflow-y-auto bg-[#FBF7F4] p-4 cvw-fill print:overflow-visible' : 'hidden'} role="tabpanel">
+              <div className={access.checklist && access.doc ? 'grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-3 items-start' : 'flex flex-col gap-3'}>
+                {access.checklist && (
+                  <div className="min-w-0 lg:sticky lg:top-0">
+                    {renderChecklist({ onPctChange: onChecklistPct, onSaved: onChecklistSaved, onDirtyChange: onChecklistDirty })}
+                  </div>
+                )}
+                {access.doc && (
+                  <div className="min-w-0">
+                    <ValidasiModal
+                      record={record}
+                      mainTab={mainTab}
+                      subTab={subTab}
+                      onClose={onClose}
+                      canEdit={editAccess.doc}
+                      embedded
+                      onPctChange={onDocPct}
+                      onDirtyChange={onDocDirty}
+                      checklistVersion={checklistVersion}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {showCosts && visited.costs && (
+            <div className={activeTab === 'costs' ? 'flex-1 min-h-0 overflow-y-auto bg-[#FBF7F4] p-4 cvw-fill print:overflow-visible' : 'hidden'} role="tabpanel">
+              <CostValidationModal
+                awb={record.awb}
+                jenisDokumen={jenisDokumen}
+                docId={record.id}
+                rawRecord={record}
+                onClose={onClose}
+                canEdit={editAccess.cost}
+                embedded
+                onPctChange={onCostPct}
+                onDataChange={onCostData}
+                onDirtyChange={onCostDirty}
+              />
+            </div>
+          )}
+
           {trail && activeTab === 'trail' && (
             <div className="flex-1 min-h-0 flex flex-col cvw-fill" role="tabpanel">{trail}</div>
           )}
-          {access.checklist && tabBody('checklist', renderChecklist({ onPctChange: onChecklistPct, onSaved: onChecklistSaved }))}
-          {access.doc && tabBody('doc', (
-            <ValidasiModal
-              record={record}
-              mainTab={mainTab}
-              subTab={subTab}
-              onClose={onClose}
-              canEdit={editAccess.doc}
-              embedded
-              onPctChange={onDocPct}
-              checklistVersion={checklistVersion}
-            />
-          ))}
-          {access.cost && tabBody('cost', (
-            <CostValidationModal
-              awb={record.awb}
-              jenisDokumen={jenisDokumen}
-              docId={record.id}
-              rawRecord={record}
-              onClose={onClose}
-              canEdit={editAccess.cost}
-              embedded
-              onPctChange={onCostPct}
-              onDataChange={onCostData}
-            />
-          ))}
         </div>
       </div>
     </div>

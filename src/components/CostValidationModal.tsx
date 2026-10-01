@@ -69,12 +69,74 @@ const ActualInlineInput = ({
 };
 
 
+// ── Sel tampilan tab Costs (2026-10-01, pola Sea & Air) ──
+// Angka: klik utk mengisi/mengoreksi ("Click to fill"), Enter/blur = simpan ke editForm, Escape = batal.
+const AmountCell: React.FC<{ editable: boolean; value: any; onCommit: (v: number) => void }> = ({ editable, value, onCommit }) => {
+  const [editing, setEditing] = useState(false);
+  const [temp, setTemp] = useState('');
+  if (editing) {
+    const commit = () => { setEditing(false); if (temp.trim() !== String(value ?? '')) onCommit(Number(temp) || 0); };
+    return (
+      <input
+        autoFocus
+        type="number"
+        aria-label="Amount"
+        value={temp}
+        onChange={e => setTemp(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === 'Enter') commit(); else if (e.key === 'Escape') setEditing(false); }}
+        className="w-36 h-8 px-2 rounded-lg border border-[#6B3470] text-right text-[12.5px] tabular-nums focus:outline-none"
+      />
+    );
+  }
+  const empty = value === null || value === undefined || value === '';
+  return (
+    <span
+      onClick={() => { if (editable) { setTemp(empty ? '' : String(value)); setEditing(true); } }}
+      title={editable ? 'Click to correct' : undefined}
+      className={`inline-block min-w-[90px] text-right tabular-nums whitespace-nowrap ${editable ? 'cursor-pointer px-2 py-1 rounded-md bg-white ring-1 ring-[#EADFD6] hover:ring-[#6B3470]/50' : ''}`}
+    >
+      {!empty ? formatRp(value) : editable ? <span className="italic font-normal text-[#8A7A8B]">Click to fill</span> : '—'}
+    </span>
+  );
+};
+
+// Status: chip; kalau boleh edit, klik chip -> pilih status manual (nilai SAMA dropdown mode Edit lama).
+const StatusCell: React.FC<{ editable: boolean; value: string; chip: React.ReactNode; options: { value: string; label: string }[]; onCommit: (v: string) => void }> = ({ editable, value, chip, options, onCommit }) => {
+  const [open, setOpen] = useState(false);
+  if (editable && open) {
+    return (
+      <select autoFocus aria-label="Status" value={value} onBlur={() => setOpen(false)}
+        onChange={e => { onCommit(e.target.value); setOpen(false); }}
+        className="h-8 px-2 rounded-lg border border-[#6B3470] bg-white text-[12px] text-[#3B1B3D] focus:outline-none">
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    );
+  }
+  return editable
+    ? <button type="button" title="Click to set the status manually" onClick={() => setOpen(true)} className="inline-flex rounded-md hover:ring-2 hover:ring-[#6B3470]/25">{chip}</button>
+    : <>{chip}</>;
+};
+
+const FREIGHT_STATUS_OPTIONS = [
+  { value: '', label: '- Select -' }, { value: 'OK', label: 'OK' }, { value: 'OVERCHARGE', label: 'Overcharge' }, { value: 'UNDERCHARGE', label: 'Undercharge' },
+  { value: 'SELISIH', label: 'Difference' }, { value: 'N/A', label: 'N/A' }, { value: 'RATE_NOT_FOUND', label: 'Rate not found' },
+];
+const DUTY_STATUS_OPTIONS = [
+  { value: '', label: '- Select -' }, { value: 'OK', label: 'OK' }, { value: 'OVERCHARGE', label: 'Overcharge' }, { value: 'UNDERCHARGE', label: 'Undercharge' },
+  { value: 'SELISIH', label: 'Difference' }, { value: 'N/A', label: 'N/A' }, { value: 'MANUAL', label: 'Manual' },
+];
+const OTHER_STATUS_OPTIONS = [
+  { value: 'OK', label: 'OK' }, { value: 'OVERCHARGE', label: 'Overcharge' }, { value: 'UNDERCHARGE', label: 'Undercharge' },
+  { value: 'SELISIH', label: 'Difference' }, { value: 'N/A', label: 'N/A' },
+];
+
 // `embedded` (2026-09-30) -- dirender sbg tab "Cost Validation" di CourierValidationWindow: tanpa
 // overlay/judul/tombol X. Panel Shipment Info dipindah ke level jendela; selama Edit Cost Validasi
 // aktif, 3 field Shipment Info yang memang bisa diedit (Ship Date, Origin, Chargeable Weight)
 // tetap muncul di panel ringkas supaya fungsinya tidak hilang. `onPctChange` = % tab (null =
 // belum ada baris tabel_cost_validasi), `onDataChange` = baris terbaru utk Shipment Info jendela.
-export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecord, onClose, canEdit = true, embedded = false, onPctChange, onDataChange }: { awb: string, jenisDokumen: string, docId?: string, rawRecord?: any, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, onDataChange?: (data: any) => void }) {
+export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecord, onClose, canEdit = true, embedded = false, onPctChange, onDataChange, onDirtyChange }: { awb: string, jenisDokumen: string, docId?: string, rawRecord?: any, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, onDataChange?: (data: any) => void, onDirtyChange?: (dirty: boolean) => void }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
@@ -565,6 +627,18 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
 
   // Kartu Invoice Freight / Invoice Duty bisa dilipat (tampilan saja; saat cetak selalu terbuka).
   const [openSec, setOpenSec] = useState<{ freight: boolean; duty: boolean }>({ freight: true, duty: true });
+  // Mode embedded: baris kosong (tersembunyi isRowVisible) bisa ditampilkan utk diisi manual.
+  const [showAllLines, setShowAllLines] = useState<{ freight: boolean; duty: boolean }>({ freight: false, duty: false });
+  // Ada perubahan belum disimpan (editForm aktif) -> konfirmasi tutup jendela.
+  useEffect(() => { onDirtyChange?.(isEditing); }, [onDirtyChange, isEditing]);
+  // Koreksi langsung tanpa tombol Edit (pola Sea & Air): perubahan pertama membuat salinan `data` ke
+  // editForm (= handleEditClick lama), berikutnya = handleFieldChange lama. Disimpan via handleSaveEdit.
+  const editField = (field: string, value: any) => {
+    if (!canEdit || !data) return;
+    if (!isEditing) setEditStorageManual(false);
+    setEditForm((prev: any) => ({ ...((isEditing && prev) ? prev : JSON.parse(JSON.stringify(data))), [field]: value }));
+    setIsEditing(true);
+  };
 
   // Total baris TOTAL -- rumus SAMA PERSIS versi lama (dipindah dari IIFE di dalam tabel supaya
   // bisa dipakai juga di header kartu).
@@ -632,7 +706,9 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
     s === 'OK' ? <Pill tone="green">OK</Pill> : s === 'N/A' ? <Pill tone="grey">N/A</Pill> : <Pill tone="red">Has difference</Pill>
   );
 
-  const renderOtherChargesRows = (dataArrayRaw: any, type: 'freight' | 'duty') => {
+  // Model baris Other Charges (status otomatis vs manual, actual dikurangi adjustment) -- SATU sumber,
+  // dipakai tampilan lama (renderOtherChargesRows) & tab Costs baru. Logika TIDAK diubah.
+  const otherRowsModel = (dataArrayRaw: any, type: 'freight' | 'duty') => {
     const arrField = type === 'freight' ? 'cv_other_charges_freight' : 'cv_other_charges_duty';
     // Saat mode edit dan array ini sudah pernah disentuh, pakai versi editForm (bukan
     // dataArrayRaw / `data` mentah) supaya perubahan actual/status yang belum disimpan ikut
@@ -697,6 +773,14 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
     const cnSubtotalKey = type === 'freight' ? 'cv_cn_freight_subtotal' : 'cv_cn_duty_subtotal';
     const cnTotalKey = type === 'freight' ? 'cv_cn_freight_total' : 'cv_cn_duty_total';
     const hasCn = Number(data?.[cnTotalKey]) > 0 && Number(data?.[cnSubtotalKey]) > 0;
+
+    return { arrField, dataArray, filtered, cnSubtotalKey, hasCn };
+  };
+
+  const renderOtherChargesRows = (dataArrayRaw: any, type: 'freight' | 'duty') => {
+    const model = otherRowsModel(dataArrayRaw, type);
+    if (!model) return null;
+    const { arrField, dataArray, filtered, cnSubtotalKey, hasCn } = model;
 
     return (
         <>
@@ -920,6 +1004,445 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
       </button>
     </div>
   );
+
+  // ── Mode embedded: tab "Costs" jendela Open (2026-10-01, keputusan user = pola tab Costs Invoice Recap
+  //    Sea & Air). Tanpa tombol Edit: klik angka Actual ("Click to fill") / chip status utk mengoreksi ->
+  //    perubahan masuk `editForm` (SAMA dgn mode Edit lama) -> bar "Unsaved changes · Discard / Save
+  //    changes" (= handleCancelEdit / handleSaveEdit lama, RPC & payload tidak berubah). Review per invoice
+  //    ala Sea & Air SENGAJA belum ada (opsi A user: status per baris manual seperti dulu). ──
+  if (embedded) {
+    if (loading) return <div className={VW_CARD}><LoadingState fullHeight={false} /></div>;
+    if (!data) {
+      return <div className={`${VW_CARD} px-4 py-6 text-center text-[12.5px] text-[#6E5E70]`}>Cost validation is not available for this shipment yet.</div>;
+    }
+    const cur = isEditing && editForm ? editForm : data;
+    const dirty = isEditing;
+    const liveDiff = (exp: any, act: any, stored: any) => {
+      if (!dirty) return stored;
+      if (act === null || act === undefined || act === '' || exp === null || exp === undefined || exp === '') return stored;
+      return Number(act) - Number(exp);
+    };
+    const invoicesOk = [liveSummary.invoice_freight_status, liveSummary.invoice_duty_status].filter(s => s && s !== 'N/A');
+    const invoicesMatch = invoicesOk.filter(s => s === 'OK').length;
+    const lockedNote = dirty ? <div className="m-4 mt-3 rounded-lg bg-[#F3EEEA] px-3 py-2 text-[11.5px] text-[#6E5E70] print:hidden">Save or discard your changes first to use the credit note tools.</div> : null;
+
+    // Baris utama (Freight charge, Fuel, VAT, Duties, Non-routine, dst.)
+    const mainRow = (o: {
+      label: React.ReactNode; actualField: string; expectedField: string; selisihField: string; statusField: string;
+      kind: 'freight' | 'duty'; expectedEditable?: boolean; expectedDisplay?: (v: any) => React.ReactNode; extra?: React.ReactNode; cnControl?: React.ReactNode;
+    }) => {
+      const exp = cur[o.expectedField];
+      const act = cur[o.actualField];
+      const sel = liveDiff(exp, act, data[o.selisihField]);
+      const st = resolveStatus(cur[o.statusField], sel);
+      return (
+        <tr key={o.actualField} className="border-b border-[#F1E8E1] last:border-b-0">
+          <td className="px-4 py-2 align-top">
+            <div className="text-[12.5px] font-semibold text-[#3B1B3D] flex items-center gap-1.5">
+              {o.label}
+              {dirty && Number(cur[o.actualField] || 0) !== Number(data[o.actualField] || 0) && <Pencil size={11} className="text-[#E0A526]" aria-label="Changed (not saved)" />}
+            </div>
+            {o.extra}
+            {o.cnControl}
+          </td>
+          <td className="px-3 py-2 text-right align-top text-[#6E5E70] text-[12.5px]">
+            {o.expectedEditable
+              ? <AmountCell editable={canEdit} value={exp} onCommit={v => editField(o.expectedField, v)} />
+              : (o.expectedDisplay ? o.expectedDisplay(exp) : (exp === null || exp === undefined || exp === '' ? '—' : formatRp(exp)))}
+          </td>
+          <td className="px-3 py-2 text-right align-top font-semibold text-[#3B1B3D] text-[12.5px]">
+            <AmountCell editable={canEdit} value={act} onCommit={v => editField(o.actualField, v)} />
+          </td>
+          <td className="px-3 py-2 text-right align-top tabular-nums text-[12.5px] whitespace-nowrap">{diffCell(sel, st)}</td>
+          <td className="px-4 py-2 text-right align-top">
+            <StatusCell
+              editable={canEdit}
+              value={cur[o.statusField] || ''}
+              chip={formatStatus(cur[o.statusField], sel)}
+              options={o.kind === 'freight' ? FREIGHT_STATUS_OPTIONS : DUTY_STATUS_OPTIONS}
+              onCommit={v => editField(o.statusField, v)}
+            />
+          </td>
+        </tr>
+      );
+    };
+
+    const otherRows = (raw: any, type: 'freight' | 'duty') => {
+      const m = otherRowsModel(raw, type);
+      if (!m) return null;
+      const { arrField, dataArray, filtered, cnSubtotalKey, hasCn } = m;
+      return filtered.map((row: any) => {
+        const cnKey = type === 'freight' ? `other_freight_${row.original_idx}` : `other_duty_${row.original_idx}`;
+        const cnAmountRaw = type === 'freight' ? cnFreightAmounts[cnKey] : cnDutyAmounts[cnKey];
+        const vCnAmount = cnAmountRaw !== undefined ? cnAmountRaw : (data?.[cnSubtotalKey] || '');
+        let badgeStatus = row.status;
+        if (!row.isManual && badgeStatus === 'SELISIH' && row.selisih != null) {
+          if (row.selisih > 1000) badgeStatus = 'OVERCHARGE';
+          else if (row.selisih < -1000) badgeStatus = 'UNDERCHARGE';
+        }
+        return (
+          <tr key={`other-${row.original_idx}`} className="border-b border-[#F1E8E1] last:border-b-0">
+            <td className="px-4 py-2 align-top">
+              <div className="text-[12.5px] font-semibold text-[#3B1B3D]">{row.name || row.surcharge_name}</div>
+              <div className="text-[11px] text-[#8A7A8B]">Other charge</div>
+              {canEdit && hasCn && !dirty && row.displayed_actual > 0 && (
+                <div className="flex items-center gap-1.5 mt-1.5 print:hidden">
+                  <input type="number" className={CN_INPUT} placeholder={data?.[cnSubtotalKey]} value={vCnAmount}
+                    onChange={e => { if (type === 'freight') setCnFreightAmounts(p => ({ ...p, [cnKey]: e.target.value })); else setCnDutyAmounts(p => ({ ...p, [cnKey]: e.target.value })); }} />
+                  <button disabled={updating} className={CN_BTN}
+                    onClick={() => { if (type === 'freight') handleApplyCNFreight('other_freight', vCnAmount, row.original_idx); else handleApplyCNDuty('other_duty', vCnAmount, row.original_idx); }}>Deduct CN</button>
+                </div>
+              )}
+            </td>
+            <td className="px-3 py-2 text-right align-top text-[#6E5E70] text-[12.5px]">{row.expected == null ? '—' : formatRp(row.expected)}</td>
+            <td className="px-3 py-2 text-right align-top font-semibold text-[#3B1B3D] text-[12.5px]">
+              <AmountCell editable={canEdit} value={row.displayed_actual} onCommit={val => {
+                const newArr = [...dataArray];
+                if (newArr[row.original_idx]) {
+                  newArr[row.original_idx] = { ...newArr[row.original_idx], actual: val };
+                  editField(arrField, newArr);
+                }
+              }} />
+            </td>
+            <td className="px-3 py-2 text-right align-top tabular-nums text-[12.5px] whitespace-nowrap">{row.selisih == null ? '—' : diffCell(row.selisih, badgeStatus)}</td>
+            <td className="px-4 py-2 text-right align-top">
+              <StatusCell
+                editable={canEdit}
+                value={row.isManual ? row.status : ''}
+                chip={statusChip(badgeStatus || 'N/A', row.isManual)}
+                options={[{ value: '', label: `Automatic (${row.autoStatus || 'N/A'})` }, ...OTHER_STATUS_OPTIONS]}
+                onCommit={val => {
+                  const newArr = [...dataArray];
+                  if (newArr[row.original_idx]) {
+                    newArr[row.original_idx] = { ...newArr[row.original_idx], status: val || row.autoStatus, status_manual: !!val };
+                    editField(arrField, newArr);
+                  }
+                }}
+              />
+            </td>
+          </tr>
+        );
+      });
+    };
+
+    const cardHeader = (key: 'freight' | 'duty', title: string, sub: string, total: number | null, pillStatus: string, overSum: number) => {
+      const isOpen = openSec[key];
+      return (
+        <button type="button" onClick={() => setOpenSec(p => ({ ...p, [key]: !p[key] }))} className="w-full flex flex-wrap items-center gap-3 px-4 py-3 text-left hover:bg-[#FBF7F4] print:pointer-events-none">
+          {isOpen ? <ChevronDown size={15} className="text-[#6E5E70] print:hidden" /> : <ChevronRight size={15} className="text-[#6E5E70] print:hidden" />}
+          <div className="mr-auto min-w-0">
+            <div className="text-[13.5px] font-bold text-[#3B1B3D]">{title}</div>
+            <div className="text-[11.5px] text-[#6E5E70] truncate">{sub || '—'}</div>
+          </div>
+          {overSum > 1000 && <span className="text-[12px] font-bold text-[#A8231A] tabular-nums">+{formatRp(overSum).replace(/^Rp\s?/, '')} over</span>}
+          {total !== null && <span className="text-[14px] font-bold text-[#3B1B3D] tabular-nums">{formatRp(total)}</span>}
+          {invoicePill(pillStatus)}
+        </button>
+      );
+    };
+    const theadSA = (
+      <thead>
+        <tr className="bg-[#FBF7F4] border-b border-[#EADFD6]">
+          <th className={`${VW_TH} pl-4 text-left`}>Item</th>
+          <th className={`${VW_TH} text-right w-40`}>Expected</th>
+          <th className={`${VW_TH} text-right w-44`}>Actual</th>
+          <th className={`${VW_TH} text-right w-40`}>Difference</th>
+          <th className={`${VW_TH} pr-4 text-right w-44`}>Status</th>
+        </tr>
+      </thead>
+    );
+    const totalRowSA = (t: { expected: any; actual: number; selisih: number; status: string }) => (
+      <tr className="bg-[#FBF7F4]">
+        <td className="px-4 py-2 text-[12.5px] font-bold text-[#3B1B3D]">Total <span className="font-normal text-[11px] text-[#8A7A8B]">{dirty ? '(updates after saving)' : ''}</span></td>
+        <td className="px-3 py-2 text-right tabular-nums text-[12.5px] text-[#6E5E70] whitespace-nowrap">{formatRp(t.expected)}</td>
+        <td className="px-3 py-2 text-right tabular-nums text-[13px] font-bold text-[#3B1B3D] whitespace-nowrap">{formatRp(t.actual)}</td>
+        <td className="px-3 py-2 text-right tabular-nums text-[12.5px] font-bold whitespace-nowrap">{diffCell(t.selisih, t.status)}</td>
+        <td className="px-4 py-2 text-right">{statusChip(t.status)}</td>
+      </tr>
+    );
+    const showAllToggle = (key: 'freight' | 'duty') => canEdit && (
+      <div className="flex items-center justify-end px-4 pt-2 print:hidden">
+        <button type="button" className="text-[11.5px] font-semibold text-[#6B3470] hover:underline" onClick={() => setShowAllLines(p => ({ ...p, [key]: !p[key] }))}>
+          {showAllLines[key] ? 'Hide empty lines' : 'Show all lines (incl. empty)'}
+        </button>
+      </div>
+    );
+    const overOf = (pairs: [any, any, any][]) => pairs.reduce((sum, [sel, statusField, selField]) => {
+      const st = resolveStatus(cur[statusField], data[selField]);
+      return st === 'OVERCHARGE' && Number(sel) > 0 ? sum + Number(sel) : sum;
+    }, 0);
+
+    const freightOver = overOf([[data.cv_freight_selisih, 'cv_freight_status', 'cv_freight_selisih'], [data.cv_fuel_selisih, 'cv_fuel_status', 'cv_fuel_selisih'], [data.cv_vat_freight_selisih, 'cv_vat_freight_status', 'cv_vat_freight_selisih']]);
+    const dutyOver = overOf([[data.cv_duties_selisih, 'cv_duties_status', 'cv_duties_selisih'], [data.cv_nonroutine_selisih, 'cv_nonroutine_status', 'cv_nonroutine_selisih'], [data.cv_disbursement_selisih, 'cv_disbursement_status', 'cv_disbursement_selisih'], [data.cv_processing_fee_selisih, 'cv_processing_fee_status', 'cv_processing_fee_selisih'], [data.cv_storage_selisih, 'cv_storage_status', 'cv_storage_selisih'], [data.cv_vat_duty_selisih, 'cv_vat_duty_status', 'cv_vat_duty_selisih']]);
+    const cnFreightControl = (key: string, placeholderVal: any, actual: any, disabled = false) => (
+      canEdit && Number(data?.cv_cn_freight_total) > 0 && Number(placeholderVal) > 0 && !dirty && Number(actual) > 0 ? (
+        <div className="flex items-center gap-1.5 mt-1.5 print:hidden">
+          <input type="number" className={CN_INPUT} placeholder={placeholderVal}
+            value={cnFreightAmounts[key] !== undefined ? cnFreightAmounts[key] : placeholderVal}
+            onChange={e => setCnFreightAmounts(p => ({ ...p, [key]: e.target.value }))} />
+          <button disabled={updating || disabled} className={CN_BTN}
+            onClick={() => handleApplyCNFreight(key, cnFreightAmounts[key] !== undefined ? cnFreightAmounts[key] : placeholderVal)}>Deduct CN</button>
+        </div>
+      ) : null
+    );
+
+    return (
+      <div className="flex flex-col gap-3 min-w-0">
+        {reviseConfirm && (
+          <div className="fixed inset-0 z-[9999] bg-slate-900/50 flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-5 border border-[#EADFD6]">
+              <h3 className="text-[15px] font-bold text-[#3B1B3D] mb-2">Revise credit note deduction</h3>
+              <p className="text-[12.5px] text-[#6E5E70] mb-5">
+                Cancel the <span className="font-bold text-[#3B1B3D]">{formatRp(reviseConfirm.log.amount)}</span> deduction from <span className="font-bold text-[#3B1B3D]">{reviseConfirm.log.target}</span>? The amount is restored and can be deducted again.
+              </p>
+              <div className="flex items-center justify-end gap-2">
+                <button onClick={() => setReviseConfirm(null)} disabled={updating} className={VW_BTN_SECONDARY}>Cancel</button>
+                <button onClick={executeReviseCN} disabled={updating} className={VW_BTN_PRIMARY}>{updating ? 'Revising…' : 'Yes, revise'}</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Ringkasan -- pola kartu "Cost validation" Sea & Air */}
+        <div className={`${VW_CARD} px-4 py-3 flex flex-wrap items-center gap-4`}>
+          <div className="mr-auto min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[14px] font-bold text-[#3B1B3D]">Cost validation</span>
+              {data.is_edited && <Chip tone="amber" title="Values were changed manually">Edited</Chip>}
+            </div>
+            <div className="text-[11.5px] text-[#6E5E70]">
+              {dirty ? <span className="text-[#7A4F00] font-semibold">Unsaved changes — the summary updates after saving</span>
+                : invoicesOk.length ? `${invoicesMatch} of ${invoicesOk.length} invoice${invoicesOk.length === 1 ? '' : 's'} match the rate sheet` : 'Each invoice line vs. the rate sheet'}
+            </div>
+          </div>
+          {([
+            ['OK', liveSummary.total_ok, VW_TILE_TONE.green],
+            ['Difference', liveSummary.total_selisih, VW_TILE_TONE.red],
+            ['N/A', liveSummary.total_na, VW_TILE_TONE.grey],
+          ] as const).map(([label, value, cls]) => (
+            <div key={label} className={`${VW_TILE} ${cls}`}>
+              <div className="text-[18px] font-bold leading-tight tabular-nums">{value}</div>
+              <div className="text-[10px] font-semibold">{label}</div>
+            </div>
+          ))}
+          <div className="min-w-[150px]">
+            <div className="flex justify-between text-[11px] text-[#6E5E70] mb-1"><span>Accuracy</span><b className="text-[#3B1B3D]">{liveSummary.pct}%</b></div>
+            <div className="h-2 rounded-full bg-[#F3EEEA] overflow-hidden"><div className={`h-full ${vwPctBar(liveSummary.pct)}`} style={{ width: `${liveSummary.pct}%` }} /></div>
+          </div>
+        </div>
+
+        {/* Dasar tarif -- 3 field yg memang bisa dikoreksi (dulu panel "Edit Shipment Info"). */}
+        <div className={`${VW_CARD} px-4 py-3`}>
+          <div className="flex flex-wrap items-end gap-x-5 gap-y-2">
+            <div className="mr-auto">
+              <div className="text-[13px] font-bold text-[#3B1B3D]">Rate basis</div>
+              <div className="text-[11.5px] text-[#6E5E70]">{[data.cv_courier, data.cv_service_type, `${data.cv_direction || '—'} / ${data.cv_shipment_type || '—'}`].filter(Boolean).join(' · ')}</div>
+            </div>
+            <div>
+              <div className={VW_LABEL}>Ship date</div>
+              {canEdit ? <input type="date" aria-label="Ship date" value={cur?.cv_ship_date ? String(cur.cv_ship_date).split('T')[0] : ''} onChange={e => editField('cv_ship_date', e.target.value)} className={`${VW_INPUT} mt-1 w-40`} />
+                : <div className="text-[12.5px] font-semibold text-[#3B1B3D] mt-1">{fmtDateEN(data.cv_ship_date)}</div>}
+            </div>
+            <div>
+              <div className={VW_LABEL}>Origin / zone</div>
+              {canEdit ? (
+                <div className="flex items-center gap-1.5 mt-1">
+                  <input type="text" aria-label="Origin country code" value={cur?.cv_origin_country_code || ''} onChange={e => editField('cv_origin_country_code', e.target.value)} className={`${VW_INPUT} w-16`} placeholder="CC" maxLength={2} />
+                  <span className="text-[12px] text-[#6E5E70]">Zone {data.cv_zone || '—'}</span>
+                </div>
+              ) : <div className="text-[12.5px] font-semibold text-[#3B1B3D] mt-1">{data.cv_origin_country_code || '—'} (Zone {data.cv_zone || '—'})</div>}
+            </div>
+            <div>
+              <div className={VW_LABEL}>Chargeable weight</div>
+              {canEdit ? (
+                <div className="flex items-center gap-1.5 mt-1">
+                  <input type="number" aria-label="Chargeable weight" value={cur?.cv_chargeable_kg || ''} onChange={e => editField('cv_chargeable_kg', Number(e.target.value))} className={`${VW_INPUT} w-24`} />
+                  <span className="text-[12px] text-[#6E5E70]">kg</span>
+                </div>
+              ) : <div className="text-[12.5px] font-semibold text-[#3B1B3D] mt-1">{data.cv_chargeable_kg ? `${data.cv_chargeable_kg} kg` : '—'}</div>}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Invoice freight ── */}
+        <div className={`${VW_CARD} overflow-hidden`}>
+          {cardHeader('freight', 'Invoice freight', [data.cv_courier, data.cv_service_type].filter(Boolean).join(' · '), freightTotals ? freightTotals.actual : null, liveSummary.invoice_freight_status, freightOver)}
+          <div className={openSec.freight ? 'border-t border-[#EADFD6]' : 'hidden print:block'}>
+            {showAllToggle('freight')}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[660px]">
+                {theadSA}
+                <tbody>
+                  {(showAllLines.freight || isRowVisible(data.cv_freight_status, data.cv_freight_expected, data.cv_freight_actual)) && mainRow({
+                    label: 'Freight charge', actualField: 'cv_freight_actual', expectedField: 'cv_freight_expected', selisihField: 'cv_freight_selisih', statusField: 'cv_freight_status', kind: 'freight',
+                    cnControl: cnFreightControl('freight', data.cv_cn_freight_subtotal, data.cv_freight_actual, Number(data.cv_freight_actual) <= 0),
+                  })}
+                  {(showAllLines.freight || isRowVisible(data.cv_fuel_status, data.cv_fuel_expected, data.cv_fuel_actual)) && mainRow({
+                    label: <>Fuel surcharge{data.cv_fuel_rate_pct ? <span className="font-normal text-[#6E5E70]"> · {data.cv_fuel_rate_pct}%</span> : ''}</>,
+                    actualField: 'cv_fuel_actual', expectedField: 'cv_fuel_expected', selisihField: 'cv_fuel_selisih', statusField: 'cv_fuel_status', kind: 'freight',
+                    cnControl: cnFreightControl('fuel', data.cv_cn_freight_subtotal, data.cv_fuel_actual, Number(data.cv_fuel_actual) <= 0),
+                  })}
+                  {otherRows(data.cv_other_charges_freight, 'freight')}
+                  {(showAllLines.freight || isRowVisible(data.cv_vat_freight_status, data.cv_vat_freight_expected, data.cv_vat_freight_actual_net)) && mainRow({
+                    label: <>VAT{data.cv_vat_freight_pct ? <span className="font-normal text-[#6E5E70]"> · {data.cv_vat_freight_pct}%</span> : ''}</>,
+                    actualField: 'cv_vat_freight_actual_net', expectedField: 'cv_vat_freight_expected', selisihField: 'cv_vat_freight_selisih', statusField: 'cv_vat_freight_status', kind: 'freight',
+                    cnControl: Number(data?.cv_cn_freight_vat) > 0 ? cnFreightControl('vat_freight', data.cv_cn_freight_vat, data.cv_vat_freight_actual_net || data.cv_vat_freight_actual) : null,
+                  })}
+                  {freightTotals && totalRowSA(freightTotals)}
+                </tbody>
+              </table>
+            </div>
+            {Number(data.cv_cn_freight_total) > 0 && (dirty ? lockedNote : (
+              <div className="m-4 p-3 rounded-xl border border-[#F3DDB0] bg-[#FFFAF0]">
+                <h3 className="text-[13px] font-bold text-[#7A4F00] mb-2 flex items-center gap-1.5"><Receipt size={14} /> Credit note · freight</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {cnTile('Remaining CN subtotal', formatRp(data.cv_cn_freight_subtotal))}
+                  {cnTile('Remaining CN VAT', formatRp(data.cv_cn_freight_vat))}
+                  {cnTile('Max total (original)', <span className="text-[#A8231A]">-{formatRp(Math.abs(Number(data.cv_cn_freight_total)))}</span>,
+                    rawRecord?.raw_data?.credit_note_freight_v?.count > 1 ? <div className="text-[10.5px] text-[#8A7A8B] mt-0.5">(sum of {rawRecord.raw_data.credit_note_freight_v.count} credit notes)</div> : null)}
+                </div>
+                {creditNoteLog(data.cv_cn_freight_log, 'freight')}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Invoice duty ── */}
+        <div className={`${VW_CARD} overflow-hidden`}>
+          {cardHeader('duty', 'Invoice duty', (data.cv_courier || '').toUpperCase() === 'DHL' ? 'Import export duties & charges' : 'Duty & tax & charges', dutyTotals ? dutyTotals.actual : null, liveSummary.invoice_duty_status, dutyOver)}
+          <div className={openSec.duty ? 'border-t border-[#EADFD6]' : 'hidden print:block'}>
+            {showAllToggle('duty')}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[660px]">
+                {theadSA}
+                <tbody>
+                  {(showAllLines.duty || data.cv_import_export_duties !== null || data.cv_duties_expected !== null) && mainRow({
+                    label: (data.cv_courier || '').toUpperCase() === 'DHL' ? 'Import export duties' : 'Duty & tax',
+                    actualField: 'cv_import_export_duties', expectedField: 'cv_duties_expected', selisihField: 'cv_duties_selisih', statusField: 'cv_duties_status', kind: 'duty',
+                    expectedDisplay: (v: any) => (dirty ? formatRp(v) : (Number(v) > 0 ? formatRp(v) : '—')),
+                  })}
+                  {(showAllLines.duty || isRowVisible(data.cv_nonroutine_status, data.cv_nonroutine_expected, data.cv_nonroutine_actual)) && mainRow({
+                    label: 'Non-routine entry', actualField: 'cv_nonroutine_actual', expectedField: 'cv_nonroutine_expected', selisihField: 'cv_nonroutine_selisih', statusField: 'cv_nonroutine_status', kind: 'duty',
+                  })}
+                  {(showAllLines.duty || data.cv_disbursement_actual != null || isRowVisible(data.cv_disbursement_status, data.cv_disbursement_expected, data.cv_disbursement_actual)) && mainRow({
+                    label: 'Disbursement', actualField: 'cv_disbursement_actual', expectedField: 'cv_disbursement_expected', selisihField: 'cv_disbursement_selisih', statusField: 'cv_disbursement_status', kind: 'duty',
+                  })}
+                  {(showAllLines.duty || data.cv_processing_fee_actual != null || isRowVisible(data.cv_processing_fee_status, data.cv_processing_fee_expected, data.cv_processing_fee_actual)) && mainRow({
+                    label: 'Processing fee', actualField: 'cv_processing_fee_actual', expectedField: 'cv_processing_fee_expected', selisihField: 'cv_processing_fee_selisih', statusField: 'cv_processing_fee_status', kind: 'duty',
+                  })}
+                  {(showAllLines.duty || data.cv_storage_actual !== null || data.cv_storage_status === 'MANUAL') && mainRow({
+                    label: 'Bonded storage', actualField: 'cv_storage_actual', expectedField: 'cv_storage_expected', selisihField: 'cv_storage_selisih', statusField: 'cv_storage_status', kind: 'duty',
+                    expectedEditable: true,
+                    extra: (
+                      <div className="text-[11px] text-[#8A7A8B] flex items-center gap-2 flex-wrap">
+                        {data.cv_storage_input_manual ? <span>{data.cv_storage_days} days (estimate)</span> : null}
+                        {!dirty && data.cv_storage_input_manual && canEdit && (
+                          <button type="button" onClick={() => setEditStorageManual(!editStorageManual)} className="text-[#6B3470] font-semibold hover:underline print:hidden">Update estimate</button>
+                        )}
+                      </div>
+                    ),
+                  })}
+                  {otherRows(data.cv_other_charges_duty, 'duty')}
+                  {(showAllLines.duty || isRowVisible(data.cv_vat_duty_status, data.cv_vat_duty_expected, data.cv_vat_duty_actual_net)) && mainRow({
+                    label: <>VAT duty{data.cv_vat_duty_pct ? <span className="font-normal text-[#6E5E70]"> · {data.cv_vat_duty_pct}%</span> : ''}</>,
+                    actualField: 'cv_vat_duty_actual_net', expectedField: 'cv_vat_duty_expected', selisihField: 'cv_vat_duty_selisih', statusField: 'cv_vat_duty_status', kind: 'duty',
+                  })}
+                  {dutyTotals && totalRowSA(dutyTotals)}
+                </tbody>
+              </table>
+            </div>
+
+            {Number(data.cv_cn_duty_total) > 0 && (dirty ? lockedNote : (
+              <div className="m-4 p-3 rounded-xl border border-[#F3DDB0] bg-[#FFFAF0]">
+                <h3 className="text-[13px] font-bold text-[#7A4F00] mb-2 flex items-center gap-1.5"><Receipt size={14} /> Credit note · duty</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
+                  {cnTile('Remaining CN subtotal', formatRp(data.cv_cn_duty_subtotal))}
+                  {cnTile('Remaining CN VAT', formatRp(data.cv_cn_duty_vat))}
+                  {cnTile('Max total (original)', <span className="text-[#A8231A]">-{formatRp(Math.abs(Number(data.cv_cn_duty_total)))}</span>,
+                    rawRecord?.raw_data?.credit_note_duty_v?.count > 1 ? <div className="text-[10.5px] text-[#8A7A8B] mt-0.5">(sum of {rawRecord.raw_data.credit_note_duty_v.count} credit notes)</div> : null)}
+                </div>
+                {canEdit && (
+                  <>
+                    <div className="border-t border-[#F3DDB0] pt-3 print:hidden">
+                      <p className="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#7A4F00] mb-2">Deduct CN subtotal from</p>
+                      {Number(data.cv_cn_duty_subtotal) > 0 ? (
+                        <div className="flex flex-col gap-2">
+                          {Number(data.cv_nonroutine_actual) > 0 && cnDeductRow('Non-routine', 'nonroutine', data.cv_cn_duty_subtotal)}
+                          {Number(data.cv_disbursement_actual) > 0 && cnDeductRow('Disbursement', 'disbursement', data.cv_cn_duty_subtotal)}
+                          {Number(data.cv_processing_fee_actual) > 0 && cnDeductRow('Processing fee', 'processing_fee', data.cv_cn_duty_subtotal)}
+                          {Number(data.cv_import_export_duties) > 0 && cnDeductRow('Import export duties', 'duties', data.cv_cn_duty_subtotal)}
+                          {Number(data.cv_storage_actual) > 0 && cnDeductRow('Bonded storage', 'storage', data.cv_cn_duty_subtotal)}
+                        </div>
+                      ) : <Chip tone="green">✓ CN duty subtotal fully deducted</Chip>}
+                    </div>
+                    <div className="border-t border-[#F3DDB0] pt-3 mt-3 print:hidden">
+                      <p className="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#7A4F00] mb-2">Deduct CN VAT from</p>
+                      {Number(data.cv_cn_duty_vat) > 0 ? cnDeductRow('VAT duty', 'vat_duty', data.cv_cn_duty_vat) : <Chip tone="green">✓ CN duty VAT fully deducted</Chip>}
+                    </div>
+                  </>
+                )}
+                {creditNoteLog(data.cv_cn_duty_log, 'duty')}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Hitung ulang estimasi bonded storage (fungsi lama) */}
+        {data.cv_storage_actual !== null && !dirty && canEdit && (!data.cv_storage_input_manual || editStorageManual) && (
+          <div className={`${VW_CARD} p-4 print:hidden`}>
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div>
+                <h3 className="text-[13.5px] font-bold text-[#3B1B3D] flex items-center gap-1.5"><Package size={14} className="text-[#6B3470]" /> Recalculate bonded storage estimate</h3>
+                <div className="text-[11.5px] text-[#6E5E70]">Billing days are calculated by the system from the courier rules</div>
+              </div>
+              {data.cv_storage_input_manual && <button onClick={() => setEditStorageManual(false)} className={VW_BTN_SECONDARY}>Cancel</button>}
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-6 gap-3 items-end">
+              <div><p className={`${VW_LABEL} mb-1.5`}>Storage actual</p><p className="text-[13px] font-bold text-[#3B1B3D] tabular-nums h-8 flex items-center">{formatRp(data.cv_storage_actual)}</p></div>
+              <div>
+                <p className={`${VW_LABEL} mb-1.5`}>Storage weight</p>
+                <div className="flex items-center gap-1.5"><input type="number" step="any" aria-label="Storage weight" value={storageWeightManual} onChange={e => setStorageWeightManual(e.target.value)} placeholder="0" className={`${VW_INPUT} w-24`} /><span className="text-[12px] text-[#6E5E70]">kg</span></div>
+              </div>
+              <div><label className={`${VW_LABEL} block mb-1.5`}>ETA date</label><input type="date" aria-label="ETA date" value={etaDate} onChange={e => setEtaDate(e.target.value)} className={`${VW_INPUT} w-full`} /></div>
+              <div><label className={`${VW_LABEL} block mb-1.5`}>Release date</label><input type="date" aria-label="Release date" value={releaseDate} onChange={e => setReleaseDate(e.target.value)} className={`${VW_INPUT} w-full`} /></div>
+              <div><label className={`${VW_LABEL} block mb-1.5`}>Actual days</label><div className="h-8 rounded-lg bg-[#F3EEEA] text-[#3B1B3D] font-bold text-[13px] flex items-center justify-center">{etaDate && releaseDate ? getActualDays() : '—'}</div></div>
+              <div><label className={`${VW_LABEL} block mb-1.5`}>Billing days</label><div className="h-8 rounded-lg bg-[#F3EEEA] text-[#3B1B3D] font-bold text-[13px] flex items-center justify-center">{etaDate && releaseDate && storageExpectedResult ? storageExpectedResult.billing_days : '—'}</div></div>
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t border-[#EADFD6] pt-3 mt-4 flex-wrap">
+              <div>
+                <span className={`${VW_LABEL} block mb-1`}>Expected storage (calculated)</span>
+                <span className="font-bold text-[18px] text-[#3B1B3D] tabular-nums">{storageExpectedResult ? formatRp(storageExpectedResult.expected_idr) : 'Rp 0'}</span>
+                {debugError && <p className="text-[11.5px] text-[#A8231A] mt-1 font-semibold">{debugError}</p>}
+              </div>
+              <button onClick={handleSimpanValidasi} disabled={updating || !etaDate || !releaseDate || !storageExpectedResult} className={VW_BTN_PRIMARY}>{updating ? 'Saving…' : 'Save new estimate'}</button>
+            </div>
+          </div>
+        )}
+
+        {/* Catatan perubahan manual (kolom `catatan`) */}
+        {(canEdit || data.catatan) && (
+          <div className={`${VW_CARD} px-4 py-3`}>
+            <div className="text-[13px] font-bold text-[#3B1B3D] mb-1.5">Manual change notes</div>
+            {canEdit ? (
+              <textarea aria-label="Manual change notes" value={cur.catatan || ''} onChange={e => editField('catatan', e.target.value)} rows={2}
+                placeholder="Reason or notes for any value changed manually…"
+                className="w-full rounded-lg border border-[#EADFD6] p-2.5 text-[12.5px] text-[#3B1B3D] focus:outline-none focus:border-[#6B3470] focus:ring-2 focus:ring-[#6B3470]/15" />
+            ) : (
+              <div className="rounded-lg bg-[#FBF7F4] border border-[#F1E8E1] px-3 py-2 text-[12.5px] text-[#3B1B3D] whitespace-pre-wrap">{data.catatan}</div>
+            )}
+          </div>
+        )}
+
+        {dirty && canEdit && (
+          <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 px-4 py-3 rounded-[14px] bg-white border border-[#E0A526] shadow-lg print:hidden">
+            <span className="text-[12.5px] font-bold text-[#7A4F00] mr-auto">Unsaved changes in cost validation</span>
+            <button type="button" className={VW_BTN_SECONDARY} disabled={savingEdit} onClick={() => { if (window.confirm('Discard the unsaved changes?')) handleCancelEdit(); }}>Discard</button>
+            <button type="button" className={VW_BTN_PRIMARY} disabled={savingEdit} onClick={handleSaveEdit}>{savingEdit ? 'Saving…' : 'Save changes'}</button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <>
