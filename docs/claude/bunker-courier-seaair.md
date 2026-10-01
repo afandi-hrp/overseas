@@ -105,13 +105,13 @@ Billing DJBC). Alur **Sent** (`tgl_submit_finance`) -> **Received** -> **Paid**.
   Sent→Received→Paid, tombol Receive / Mark paid (dialog tanggal default hari ini + referensi ≥3) /
   Undo (alasan ≥5, mundur 1 langkah) / Details (rincian invoice per segmen + duty sbg info + riwayat
   + "Open in Invoice Recap" kalau punya akses Recap).
-- **DB `sql/034`** (BELUM DIJALANKAN): kolom `finance_received_at/_by`, `paid_date`, `paid_reference`,
+- **DB `sql/034`** (SUDAH DIJALANKAN 2026-10-01): kolom `finance_received_at/_by`, `paid_date`, `paid_reference`,
   `paid_by`, `paid_recorded_at`; policy SELECT `rekapan_seaair_select_finance` (role Finance TIDAK
   perlu akses Invoice Recap); RPC `fn_seaair_finance_accept/_mark_paid/_undo` (SECURITY DEFINER,
   guard `has_edit_access('sea_air_finance')`, lolos kunci submit via flag `app.seaair_unlock`, log
   audit_trail "Finance received/Paid/Finance (undo) — Lama: … → Baru: …"); `fn_seaair_unlock_submit`
   menolak kalau Finance sudah menerima; re-audit PIB TIDAK terpicu kolom Finance.
-  Sebelum 034 jalan: banner amber + tanpa tombol aksi (`probeFinanceColumns`).
+  Kalau kolom 034 tidak ada (mis. stack lain): banner amber + tanpa tombol aksi (`probeFinanceColumns`).
 - **Invoice Recap ikut**: status kartu "✓ Received by Finance" / "✓ Paid dd Mon"; banner jendela Open
   menampilkan Received/Paid; tombol Unlock (Admin) diganti teks kalau Finance sudah menerima.
 - **Belum**: upload bukti bayar (FAR punya bucket sendiri), jatuh tempo, nama legal PPJK.

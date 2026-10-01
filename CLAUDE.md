@@ -56,8 +56,8 @@ approval-nya.
   saja. Lihat "Relasi Audit PIB ↔ Invoice Recap Sea & Air" di bawah.
   `sql/033_fix_update_cost_validasi_manual_status.sql` (2026-10-01, hitung ringkasan RPC pakai
   MATCH/OVERCHARGE/UNDERCHARGE) & `sql/034_seaair_finance_handover.sql` (Finance Handover Sea & Air)
-  **BELUM DIJALANKAN** — frontend aman duluan (halaman Finance tampil read-only + banner sampai 034
-  jalan). Kalau `031` dijalankan ULANG, jalankan `034` lagi sesudahnya (031 menimpa 2 fungsi yg
+  **SUDAH DIJALANKAN ke production (konfirmasi user 2026-10-01)**; backfill opsional di 033 (dikomentari)
+  TIDAK ikut dijalankan. Kalau `031` dijalankan ULANG, jalankan `034` lagi sesudahnya (031 menimpa 2 fungsi yg
   diperbarui 034).
 - **Kondisi DB production (stack `supabase3`, audit 2026-09-26)**: role `anon` tanpa hak apa pun
   di schema public (tabel, fungsi, default privileges); GraphQL ditutup; semua tabel RLS dgn
@@ -748,8 +748,8 @@ Supabase** — bisa saja sudah basi (RPC lain ditambahkan user langsung tanpa te
   `update_validasi_matriks_manual`, `update_cost_validasi_manual`, `get_kurs_efektif`,
   `upsert_kurs_rule_vendor`, `upsert_kurs_bi`, `nonaktifkan_tarif_kontrak`. Bagian 2 (sql/031,
   SUDAH DIJALANKAN 2026-10-01): `fn_seaair_unlock_submit`, `fn_seaair_reread_from_ai`, helper
-  `fn_seaair_recap_issue_count` (+ 6 fungsi trigger `fn_seaair_*`). Finance Handover (sql/034, BELUM
-  DIJALANKAN): `fn_seaair_finance_accept`, `fn_seaair_finance_mark_paid`, `fn_seaair_finance_undo`.
+  `fn_seaair_recap_issue_count` (+ 6 fungsi trigger `fn_seaair_*`). Finance Handover (sql/034, SUDAH
+  DIJALANKAN 2026-10-01): `fn_seaair_finance_accept`, `fn_seaair_finance_mark_paid`, `fn_seaair_finance_undo`.
 - Courier Audit — Draft/Archive lifecycle (`SharedDataTable.tsx`, nama RPC dipilih dinamis via
   `isPib ? '..._pib' : '..._cn'`): `fn_delete_pib`/`fn_delete_cn`, `fn_archive_pib`/
   `fn_archive_cn`, `fn_undraft_pib`/`fn_undraft_cn`.
