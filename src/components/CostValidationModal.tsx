@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { LoadingSpinner } from './LoadingState';
+import { LoadingState } from './LoadingState';
+import { ChevronDown, ChevronRight, Pencil, Receipt, Package } from 'lucide-react';
+import { Chip, Pill, type Tone } from './SeaAirAuditUi';
 import { supabase } from '../lib/supabase';
 import { computeLiveCostSummary, isRowVisible } from '../utils/CostValidationHelpers';
-import { VW_TOOLBAR, VW_LABEL, VW_BTN_PRIMARY, VW_BTN_SECONDARY, VW_BTN_SUCCESS, vwPctBar, vwPctText } from './validationWindowStyles';
+import { VW_TOOLBAR, VW_LABEL, VW_BTN_PRIMARY, VW_BTN_SECONDARY, VW_BTN_SUCCESS, VW_CARD, VW_INPUT, VW_TH, VW_TILE, VW_TILE_TONE, vwPctBar, vwPctText } from './validationWindowStyles';
 
 const formatRp = (num: any) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(Number(num) || 0);
 
@@ -61,7 +63,7 @@ const ActualInlineInput = ({
         onChange(numVal);
       }}
       disabled={disabled}
-      className={`w-full border border-slate-300 rounded px-2 py-1 text-xs ${isFocused ? 'focus:outline-none focus:border-blue-500 bg-blue-50' : ''}`}
+      className={`w-full h-8 px-2 rounded-lg border border-[#EADFD6] bg-white text-right text-[12.5px] tabular-nums text-[#3B1B3D] ${isFocused ? 'focus:outline-none focus:border-[#6B3470] focus:ring-2 focus:ring-[#6B3470]/15' : ''}`}
     />
   );
 };
@@ -508,21 +510,37 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
   };
 
 
-  const formatStatus = (status: string, selisih?: number) => {
+  // ── Tampilan (2026-10-01, gaya Sea & Air) ── MURNI tampilan: chip status, kartu lipat Freight/Duty.
+  // Logika status (SELISIH -> OVER/UNDER di luar ±1000) SAMA PERSIS versi lama.
+  const resolveStatus = (status: string, selisih?: number) => {
     let finalStatus = status;
     if (finalStatus === 'SELISIH' && selisih !== undefined && selisih !== null) {
       if (selisih > 1000) finalStatus = 'OVERCHARGE';
       else if (selisih < -1000) finalStatus = 'UNDERCHARGE';
     }
-
-    if (!finalStatus || finalStatus === 'N/A') return <span className="px-2 py-0.5 bg-slate-100 text-[#5A305A] rounded font-bold text-xs">⬜ N/A</span>;
-    if (finalStatus === 'OK') return <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded font-bold text-xs">✅ OK</span>;
-    if (finalStatus === 'MANUAL') return <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded font-bold text-xs">🔍 MANUAL</span>;
-    if (finalStatus.includes('NOT_FOUND')) return <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded font-bold text-xs">❓ {finalStatus}</span>;
-    if (finalStatus === 'UNDERCHARGE') return <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded font-bold text-xs">⚠️ {finalStatus}</span>;
-    if (finalStatus === 'OVERCHARGE') return <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded font-bold text-xs">⚠️ {finalStatus}</span>;
-    return <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded font-bold text-xs">⚠️ {finalStatus}</span>;
+    return finalStatus;
   };
+
+  const statusChip = (s: string | null | undefined, manual = false) => {
+    const st = s || 'N/A';
+    let tone: Tone = 'red';
+    let label = st;
+    if (st === 'N/A') { tone = 'grey'; label = 'N/A'; }
+    else if (st === 'OK') { tone = 'green'; label = 'OK'; }
+    else if (st === 'MANUAL') { tone = 'blue'; label = 'Manual'; }
+    else if (st === 'OVERCHARGE') { tone = 'red'; label = 'Overcharge'; }
+    else if (st === 'UNDERCHARGE') { tone = 'amber'; label = 'Undercharge'; }
+    else if (st === 'SELISIH') { tone = 'red'; label = 'Difference'; }
+    else if (st === 'ADA SELISIH') { tone = 'red'; label = 'Has difference'; }
+    else if (st.includes('NOT_FOUND')) { tone = 'amber'; label = st.replace(/_/g, ' ').toLowerCase().replace(/^\w/, c => c.toUpperCase()); }
+    return (
+      <Chip tone={tone} title={manual ? 'Status set manually' : undefined}>
+        {label}{manual && <span className="opacity-70"> · manual</span>}
+      </Chip>
+    );
+  };
+
+  const formatStatus = (status: string, selisih?: number) => statusChip(resolveStatus(status, selisih));
 
   // Ringkasan footer (Total Validable/OK/SELISIH/N/A + persentase + badge Other Charges
   // Freight/Duty) -- logic-nya dipindah ke src/utils/CostValidationHelpers.ts
@@ -544,6 +562,75 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
   useEffect(() => {
     if (onDataChange && data) onDataChange(data);
   }, [onDataChange, data]);
+
+  // Kartu Invoice Freight / Invoice Duty bisa dilipat (tampilan saja; saat cetak selalu terbuka).
+  const [openSec, setOpenSec] = useState<{ freight: boolean; duty: boolean }>({ freight: true, duty: true });
+
+  // Total baris TOTAL -- rumus SAMA PERSIS versi lama (dipindah dari IIFE di dalam tabel supaya
+  // bisa dipakai juga di header kartu).
+  const sumAdjustmentsOf = (adjustmentsArray: any) => {
+    let adjustments: any = [];
+    if (typeof adjustmentsArray === 'string') {
+      try { adjustments = JSON.parse(adjustmentsArray); } catch (e) {}
+    } else if (Array.isArray(adjustmentsArray)) {
+      adjustments = adjustmentsArray;
+    } else if (adjustmentsArray !== null && typeof adjustmentsArray === 'object') {
+      adjustments = Object.values(adjustmentsArray);
+    }
+    return adjustments.reduce((acc: number, curr: any) => acc + (Number(curr) || 0), 0);
+  };
+  const freightTotals = (() => {
+    if (!data) return null;
+    let totalActualNum = Number(data.cv_total_freight_actual) || 0;
+    let totalSelisihNum = Number(data.cv_total_freight_selisih) || 0;
+    const sumAdjustments = sumAdjustmentsOf(data?.cv_other_freight_adjustments);
+    totalActualNum -= sumAdjustments;
+    totalSelisihNum -= sumAdjustments;
+    let totalStatusStr = data.cv_total_freight_status || 'N/A';
+    if (totalStatusStr === 'SELISIH' && totalSelisihNum != null) {
+      if (totalSelisihNum > 1000) totalStatusStr = 'OVERCHARGE';
+      else if (totalSelisihNum < -1000) totalStatusStr = 'UNDERCHARGE';
+    }
+    return { expected: data.cv_total_freight_expected, actual: totalActualNum, selisih: totalSelisihNum, status: totalStatusStr };
+  })();
+  const dutyTotals = (() => {
+    if (!data) return null;
+    const dutyExpectedNum = Number(data.cv_total_duty_expected || 0);
+    let dutyActualNum = Number(data.cv_total_duty_actual || 0);
+    let dutySelisihNum = dutyActualNum - dutyExpectedNum;
+    const sumAdjustments = sumAdjustmentsOf(data?.cv_other_duty_adjustments);
+    dutyActualNum -= sumAdjustments;
+    dutySelisihNum -= sumAdjustments;
+    let dutyStatusStr = 'N/A';
+    if (dutyExpectedNum === 0) {
+      dutyStatusStr = 'N/A';
+    } else if (Math.abs(dutySelisihNum) <= dutyExpectedNum * 0.02) {
+      dutyStatusStr = 'OK';
+    } else if (dutyActualNum > dutyExpectedNum) {
+      dutyStatusStr = 'OVERCHARGE';
+    } else {
+      dutyStatusStr = 'UNDERCHARGE';
+    }
+    return { expected: dutyExpectedNum, actual: dutyActualNum, selisih: dutySelisihNum, status: dutyStatusStr };
+  })();
+
+  // ── Kelas tampilan ──
+  const TD = 'px-3 py-2.5 align-top text-[12.5px] border-b border-[#F1E8E1]';
+  const TD_LABEL = `${TD} pl-4 font-semibold text-[#3B1B3D]`;
+  const TD_NUM = `${TD} text-right tabular-nums text-[#6E5E70] whitespace-nowrap`;
+  const TD_ACT = `${TD} text-right tabular-nums font-semibold text-[#3B1B3D] whitespace-nowrap`;
+  const SEL = 'w-full h-8 px-2 rounded-lg border border-[#EADFD6] bg-white text-[12px] text-[#3B1B3D] focus:outline-none focus:border-[#6B3470]';
+  const CN_INPUT = 'h-7 w-28 px-2 rounded-md border border-[#E9C987] bg-white text-[11.5px] font-normal text-[#3B1B3D] focus:outline-none focus:border-[#B7791F]';
+  const CN_BTN = 'h-7 px-2.5 rounded-md border border-[#E9C987] bg-[#FFF8EB] hover:bg-[#FFF1D6] text-[11px] font-semibold text-[#7A4F00] whitespace-nowrap transition-colors disabled:opacity-50';
+  const diffCell = (sel: any, status?: string) => {
+    if (sel === null || sel === undefined || sel === '') return <span>-</span>;
+    const n = Number(sel);
+    const bad = status ? status !== 'OK' && status !== 'N/A' && Math.abs(n) > 1000 : Math.abs(n) > 1000;
+    return <span className={bad ? 'text-[#A8231A] font-bold' : 'text-[#6E5E70]'}>{n > 0 ? '+' : ''}{formatRp(n)}</span>;
+  };
+  const invoicePill = (s: string) => (
+    s === 'OK' ? <Pill tone="green">OK</Pill> : s === 'N/A' ? <Pill tone="grey">N/A</Pill> : <Pill tone="red">Has difference</Pill>
+  );
 
   const renderOtherChargesRows = (dataArrayRaw: any, type: 'freight' | 'duty') => {
     const arrField = type === 'freight' ? 'cv_other_charges_freight' : 'cv_other_charges_duty';
@@ -601,7 +688,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
     const filtered = rowsWithIndex.filter((row: any) => {
         // Tampilkan semua data dari API (meskipun 0) kecuali jika jenisnya STORAGE
         // Storage sudah dirender secara terpisah di baris "Bonded Storage"
-        if (row.status === 'STORAGE') return false; 
+        if (row.status === 'STORAGE') return false;
         return true;
     });
 
@@ -610,10 +697,6 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
     const cnSubtotalKey = type === 'freight' ? 'cv_cn_freight_subtotal' : 'cv_cn_duty_subtotal';
     const cnTotalKey = type === 'freight' ? 'cv_cn_freight_total' : 'cv_cn_duty_total';
     const hasCn = Number(data?.[cnTotalKey]) > 0 && Number(data?.[cnSubtotalKey]) > 0;
-    
-    // Instead of using cnFreightAmounts logic here, we'll implement it inline
-    // Actually we need to make sure the inputs work. I will use the setCnFreightAmounts/setCnDutyAmounts state from the component
-    // Wait, the parent component needs to handle it. The 'cnFreightAmounts' state is accessible because this function is defined inside the component.
 
     return (
         <>
@@ -622,17 +705,24 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                 const cnAmountRaw = type === 'freight' ? cnFreightAmounts[cnKey] : cnDutyAmounts[cnKey];
                 const vCnAmount = cnAmountRaw !== undefined ? cnAmountRaw : (data?.[cnSubtotalKey] || '');
                 const maxActual = row.displayed_actual;
-                
+
+                // Badge status -- SAMA logika lama (SELISIH -> OVER/UNDER kalau bukan manual).
+                let badgeStatus = row.status;
+                if (!row.isManual && badgeStatus === 'SELISIH' && row.selisih != null) {
+                    if (row.selisih > 1000) badgeStatus = 'OVERCHARGE';
+                    else if (row.selisih < -1000) badgeStatus = 'UNDERCHARGE';
+                }
+
                 return (
                     <tr key={`other-${row.original_idx}`}>
-                        <td className="px-4 py-3 text-[#5A305A] font-medium bg-white">
-                            <div className="flex flex-col gap-2">
+                        <td className={TD_LABEL}>
+                            <div className="flex flex-col gap-1.5">
                                 <span>{row.name || row.surcharge_name}</span>
                                 {hasCn && !isEditing && maxActual > 0 && (
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <input 
-                                          type="number" 
-                                          className="border border-orange-300 rounded px-2 py-1 text-xs w-28 focus:outline-none focus:border-orange-500 font-normal" 
+                                    <div className="flex items-center gap-1.5 print:hidden">
+                                        <input
+                                          type="number"
+                                          className={CN_INPUT}
                                           placeholder={data?.[cnSubtotalKey]}
                                           value={vCnAmount}
                                           onChange={(e) => {
@@ -643,7 +733,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                                               }
                                           }}
                                         />
-                                        <button 
+                                        <button
                                           disabled={updating}
                                           onClick={() => {
                                               if (type === 'freight') {
@@ -652,16 +742,16 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                                                   handleApplyCNDuty('other_duty', vCnAmount, row.original_idx);
                                               }
                                           }}
-                                          className="text-[10px] px-2 py-1 bg-white border border-orange-300 rounded hover:bg-orange-100 text-orange-800 transition-colors disabled:opacity-50 font-medium whitespace-nowrap"
+                                          className={CN_BTN}
                                         >
-                                          Potong CN
+                                          Deduct CN
                                         </button>
                                     </div>
                                 )}
                             </div>
                         </td>
-                        <td className="px-4 py-3 bg-white text-[#5A305A] align-top">{row.expected == null ? '-' : formatRp(row.expected)}</td>
-                        <td className="px-4 py-3 bg-white text-[#5A305A] align-top">
+                        <td className={TD_NUM}>{row.expected == null ? '-' : formatRp(row.expected)}</td>
+                        <td className={TD_ACT}>
                             <ActualInlineInput
                                initialValue={row.displayed_actual}
                                isEditing={isEditing}
@@ -675,8 +765,8 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                                }}
                             />
                         </td>
-                        {!isEditing && <td className="px-4 py-3 text-[#5A305A] bg-white align-top">{row.selisih == null ? '-' : formatRp(row.selisih)}</td>}
-                        <td className="px-4 py-3 bg-white align-top">
+                        {!isEditing && <td className={`${TD} text-right tabular-nums whitespace-nowrap`}>{row.selisih == null ? '-' : diffCell(row.selisih, badgeStatus)}</td>}
+                        <td className={`${TD} pr-4 text-right`}>
                             {isEditing ? (
                                 <select
                                   value={row.isManual ? row.status : ''}
@@ -692,42 +782,18 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                                           handleFieldChange(arrField, newArr);
                                       }
                                   }}
-                                  className="w-full border border-slate-300 rounded px-2 py-1 text-xs"
+                                  className={SEL}
                                 >
-                                  <option value="">Otomatis ({row.autoStatus || 'N/A'})</option>
-                                  <option value="OK">✅ OK</option>
-                                  <option value="OVERCHARGE">⚠️ OVERCHARGE</option>
-                                  <option value="UNDERCHARGE">⚠️ UNDERCHARGE</option>
-                                  <option value="SELISIH">⚠️ SELISIH</option>
-                                  <option value="N/A">⬜ N/A</option>
+                                  <option value="">Automatic ({row.autoStatus || 'N/A'})</option>
+                                  <option value="OK">OK</option>
+                                  <option value="OVERCHARGE">Overcharge</option>
+                                  <option value="UNDERCHARGE">Undercharge</option>
+                                  <option value="SELISIH">Difference</option>
+                                  <option value="N/A">N/A</option>
                                 </select>
-                            ) : (() => {
-                                let badgeStatus = row.status;
-                                if (!row.isManual && badgeStatus === 'SELISIH' && row.selisih != null) {
-                                    if (row.selisih > 1000) badgeStatus = 'OVERCHARGE';
-                                    else if (row.selisih < -1000) badgeStatus = 'UNDERCHARGE';
-                                }
-                                return (
-                                  <span className={`px-2 py-1 rounded font-bold text-xs border ${
-                                      badgeStatus === 'OK' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
-                                      badgeStatus === 'OVERCHARGE' ? 'bg-red-100 text-red-700 border-red-200' :
-                                      badgeStatus === 'UNDERCHARGE' ? 'bg-blue-100 text-blue-700 border-blue-200' :
-                                      badgeStatus === 'SELISIH' ? 'bg-rose-100 text-rose-700 border-rose-200' :
-                                      badgeStatus === 'N/A' || !badgeStatus ? 'bg-slate-100 text-[#5A305A] border-slate-200' :
-                                      badgeStatus === 'RULE_NOT_FOUND' ? 'bg-slate-100 text-[#5A305A] border-slate-200' :
-                                      'bg-slate-100 text-[#5A305A] border-slate-200'
-                                  }`}>
-                                      {badgeStatus === 'OK' ? '✅ OK' :
-                                       badgeStatus === 'OVERCHARGE' ? '⚠️ OVERCHARGE' :
-                                       badgeStatus === 'UNDERCHARGE' ? '⚠️ UNDERCHARGE' :
-                                       badgeStatus === 'SELISIH' ? '⚠️ SELISIH' :
-                                       badgeStatus === 'N/A' || !badgeStatus ? '⬜ N/A' :
-                                       badgeStatus === 'RULE_NOT_FOUND' ? '❓ RULE NOT FOUND' :
-                                       badgeStatus}
-                                      {row.isManual && <span className="ml-1" title="Status diatur manual">🔍</span>}
-                                  </span>
-                                );
-                            })()}
+                            ) : (
+                                statusChip(badgeStatus || 'N/A', row.isManual)
+                            )}
                         </td>
                     </tr>
                 );
@@ -736,23 +802,21 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
     );
   };
 
-
-
   const FreightStatusDropdown = ({ field }: { field: string }) => {
     if (!isEditing) return formatStatus(data[field], data[field.replace('_status', '_selisih')]);
     return (
-      <select 
-        value={editForm[field] || ''} 
+      <select
+        value={editForm[field] || ''}
         onChange={(e) => handleFieldChange(field, e.target.value)}
-        className="w-full border border-slate-300 rounded px-2 py-1 text-xs"
+        className={SEL}
       >
         <option value="">- Select -</option>
-        <option value="OK">✅ OK</option>
-        <option value="OVERCHARGE">⚠️ OVERCHARGE</option>
-        <option value="UNDERCHARGE">⚠️ UNDERCHARGE</option>
-        <option value="SELISIH">⚠️ SELISIH</option>
-        <option value="N/A">⬜ N/A</option>
-        <option value="RATE_NOT_FOUND">❓ RATE_NOT_FOUND</option>
+        <option value="OK">OK</option>
+        <option value="OVERCHARGE">Overcharge</option>
+        <option value="UNDERCHARGE">Undercharge</option>
+        <option value="SELISIH">Difference</option>
+        <option value="N/A">N/A</option>
+        <option value="RATE_NOT_FOUND">Rate not found</option>
       </select>
     )
   }
@@ -760,45 +824,126 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
   const DutyStatusDropdown = ({ field }: { field: string }) => {
     if (!isEditing) return formatStatus(data[field], data[field.replace('_status', '_selisih')]);
     return (
-      <select 
-        value={editForm[field] || ''} 
+      <select
+        value={editForm[field] || ''}
         onChange={(e) => handleFieldChange(field, e.target.value)}
-        className="w-full border border-slate-300 rounded px-2 py-1 text-xs"
+        className={SEL}
       >
         <option value="">- Select -</option>
-        <option value="OK">✅ OK</option>
-        <option value="OVERCHARGE">⚠️ OVERCHARGE</option>
-        <option value="UNDERCHARGE">⚠️ UNDERCHARGE</option>
-        <option value="SELISIH">⚠️ SELISIH</option>
-        <option value="N/A">⬜ N/A</option>
-        <option value="MANUAL">🔍 MANUAL</option>
+        <option value="OK">OK</option>
+        <option value="OVERCHARGE">Overcharge</option>
+        <option value="UNDERCHARGE">Undercharge</option>
+        <option value="SELISIH">Difference</option>
+        <option value="N/A">N/A</option>
+        <option value="MANUAL">Manual</option>
       </select>
     )
   }
+
+  // Header tabel (sama utk Freight & Duty).
+  const tableHead = (
+    <thead>
+      <tr className="bg-[#FBF7F4] border-b border-[#EADFD6]">
+        <th className={`${VW_TH} pl-4 text-left`}>Item</th>
+        <th className={`${VW_TH} text-right w-40`}>Expected</th>
+        <th className={`${VW_TH} text-right w-44`}>Actual</th>
+        {!isEditing && <th className={`${VW_TH} text-right w-40`}>Difference</th>}
+        <th className={`${VW_TH} pr-4 text-right w-44`}>Status</th>
+      </tr>
+    </thead>
+  );
+  const totalRow = (t: { expected: any; actual: number; selisih: number; status: string }) => (
+    <tr className="bg-[#FBF7F4]">
+      <td className="px-3 pl-4 py-2.5 text-[12.5px] font-bold text-[#3B1B3D]">Total</td>
+      <td className="px-3 py-2.5 text-right tabular-nums text-[12.5px] font-semibold text-[#6E5E70] whitespace-nowrap">{formatRp(t.expected)}</td>
+      <td className="px-3 py-2.5 text-right tabular-nums text-[13px] font-bold text-[#3B1B3D] whitespace-nowrap">{formatRp(t.actual)}</td>
+      {!isEditing && <td className="px-3 py-2.5 text-right tabular-nums text-[12.5px] font-bold whitespace-nowrap">{diffCell(t.selisih, t.status)}</td>}
+      <td className="px-3 pr-4 py-2.5 text-right">{statusChip(t.status)}</td>
+    </tr>
+  );
+  const sectionHeader = (key: 'freight' | 'duty', title: string, sub: string, total: number | null, pillStatus: string) => {
+    const isOpen = openSec[key];
+    return (
+      <button type="button" onClick={() => setOpenSec(p => ({ ...p, [key]: !p[key] }))} className="w-full flex flex-wrap items-center gap-3 px-4 py-3 text-left hover:bg-[#FBF7F4] print:pointer-events-none">
+        {isOpen ? <ChevronDown size={15} className="text-[#6E5E70] print:hidden" /> : <ChevronRight size={15} className="text-[#6E5E70] print:hidden" />}
+        <div className="mr-auto min-w-0">
+          <div className="text-[13.5px] font-bold text-[#3B1B3D]">{title}</div>
+          <div className="text-[11.5px] text-[#6E5E70] truncate">{sub || '—'}</div>
+        </div>
+        {total !== null && <span className="text-[14px] font-bold text-[#3B1B3D] tabular-nums">{formatRp(total)}</span>}
+        {invoicePill(pillStatus)}
+      </button>
+    );
+  };
+
+  const creditNoteLog = (logs: any, side: 'freight' | 'duty') => (
+    logs && Array.isArray(logs) && logs.length > 0 && (
+      <div className="mt-3 pt-3 border-t border-[#F3DDB0]">
+        <h4 className="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#7A4F00] mb-1.5">Deduction history</h4>
+        <ul className="text-[12px] text-[#3B1B3D] space-y-1">
+          {logs.map((log: any, idx: number) => {
+            const dateStr = fmtDateTimeEN(log.at || log.created_at);
+            return (
+              <li key={idx} className="flex items-center justify-between gap-3">
+                <span className="[overflow-wrap:anywhere]"><span className="text-[#17663D] font-bold">✓</span> {formatRp(log.amount)} deducted from <b>{log.target}{log.index != null ? ' #' + log.index : ''}</b> · <span className="text-[#6E5E70]">{dateStr}</span></span>
+                <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setReviseConfirm({ side, logIndex: idx, log: log }); }} disabled={updating} className="shrink-0 text-[11px] font-semibold text-[#6B3470] hover:underline disabled:opacity-50 print:hidden">Revise</button>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    )
+  );
+  const cnTile = (label: string, value: React.ReactNode, extra?: React.ReactNode) => (
+    <div className="bg-white px-3 py-2 rounded-lg border border-[#F3DDB0]">
+      <span className="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B] block mb-0.5">{label}</span>
+      <span className="text-[13px] font-bold text-[#3B1B3D] tabular-nums">{value}</span>
+      {extra}
+    </div>
+  );
+  const cnDeductRow = (label: string, key: string, placeholderVal: any) => (
+    <div className="flex items-center gap-2 flex-wrap">
+      <span className="text-[12px] text-[#3B1B3D] w-40 font-semibold">{label}</span>
+      <input
+        type="number"
+        className={`${CN_INPUT} w-32`}
+        placeholder={placeholderVal}
+        value={cnDutyAmounts[key] !== undefined ? cnDutyAmounts[key] : placeholderVal}
+        onChange={(e) => setCnDutyAmounts(prev => ({ ...prev, [key]: e.target.value }))}
+      />
+      <button
+        disabled={updating}
+        onClick={() => handleApplyCNDuty(key, cnDutyAmounts[key] !== undefined ? cnDutyAmounts[key] : placeholderVal)}
+        className={CN_BTN}
+      >
+        Deduct
+      </button>
+    </div>
+  );
 
   return (
     <>
       {reviseConfirm && (
         <div className="fixed inset-0 z-[9999] bg-slate-900/50 flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 animate-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-bold text-[#5A305A] mb-2">Konfirmasi Revisi</h3>
-            <p className="text-sm text-[#5A305A] mb-6">
-              Batalkan pemotongan <span className="font-bold text-[#5A305A]">Rp {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(Number(reviseConfirm.log.amount) || 0).replace('Rp', '').trim()}</span> dari <span className="font-bold text-[#5A305A]">{reviseConfirm.log.target}</span>? Nilai akan dikembalikan dan bisa dipotong ulang.
+          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-5 border border-[#EADFD6]">
+            <h3 className="text-[15px] font-bold text-[#3B1B3D] mb-2">Revise credit note deduction</h3>
+            <p className="text-[12.5px] text-[#6E5E70] mb-5">
+              Cancel the <span className="font-bold text-[#3B1B3D]">{formatRp(reviseConfirm.log.amount)}</span> deduction from <span className="font-bold text-[#3B1B3D]">{reviseConfirm.log.target}</span>? The amount is restored and can be deducted again.
             </p>
-            <div className="flex items-center justify-end gap-3">
-              <button 
+            <div className="flex items-center justify-end gap-2">
+              <button
                 onClick={() => setReviseConfirm(null)}
                 disabled={updating}
-                className="px-4 py-2 text-sm font-semibold text-[#5A305A] hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
+                className={VW_BTN_SECONDARY}
               >
-                Batal
+                Cancel
               </button>
-              <button 
+              <button
                 onClick={executeReviseCN}
                 disabled={updating}
-                className="px-4 py-2 text-sm font-semibold bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors shadow-sm disabled:opacity-50"
+                className={VW_BTN_PRIMARY}
               >
-                {updating ? 'Merevisi...' : 'Ya, Revisi'}
+                {updating ? 'Revising…' : 'Yes, revise'}
               </button>
             </div>
           </div>
@@ -807,42 +952,53 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
     <div className={embedded ? 'flex flex-col flex-1 min-h-0 w-full cvw-fill' : 'fixed inset-0 z-50 flex items-center justify-center p-2 bg-slate-900/50 backdrop-blur-sm shadow-2xl'}>
       <div className={embedded ? 'bg-white w-full flex-1 min-h-0 overflow-hidden flex flex-col cvw-fill' : 'bg-white rounded-2xl w-full max-w-6xl overflow-hidden shadow-2xl flex flex-col max-h-[97vh]'}>
         {embedded ? (
-          /* Toolbar tab "Cost Validation" (jendela Validation) -- ringkasan status/akurasi di kiri,
-             tombol Edit Cost Validasi / Batal / Simpan di kanan. Beda isi dari toolbar Doc
-             Validation, gaya sama (lihat validationWindowStyles.ts). */
+          /* Toolbar tab "Cost Validation" (jendela Validation) -- ringkasan gaya Sea & Air: judul,
+             kotak angka OK/Difference/N/A, akurasi, tombol Edit / Cancel / Save di kanan. */
           data && (
           <div className={VW_TOOLBAR}>
-            <div className="flex items-center gap-3 flex-wrap min-w-0">
-              <span className={VW_LABEL}>Status</span>
-              {formatStatus(liveSummary.status_cost)}
-              {data.is_edited && !isEditing && <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider">✏️ Edited</span>}
-              <div className="flex items-center gap-1.5 print:hidden">
-                <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 text-emerald-700 px-2 py-1 text-[11px] font-semibold"><b className="text-[13px]">{liveSummary.total_ok}</b> OK</span>
-                <span className="inline-flex items-center gap-1 rounded-md bg-red-50 text-red-700 px-2 py-1 text-[11px] font-semibold"><b className="text-[13px]">{liveSummary.total_selisih}</b> Selisih</span>
-                <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 text-slate-600 px-2 py-1 text-[11px] font-semibold"><b className="text-[13px]">{liveSummary.total_na}</b> N/A</span>
+            <div className="mr-auto min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[14px] font-bold text-[#3B1B3D]">Cost validation</span>
+                {formatStatus(liveSummary.status_cost)}
+                {data.is_edited && !isEditing && <Chip tone="amber" title="Values were changed manually">Edited</Chip>}
               </div>
-              <div className="w-36 print:hidden">
-                <div className="flex justify-between items-baseline mb-1">
-                  <span className="text-[10px] text-slate-500">Accuracy</span>
-                  <span className={`text-[11px] font-bold ${vwPctText(liveSummary.pct)}`}>{liveSummary.pct}%</span>
-                </div>
-                <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
-                  <div className={`h-full transition-all duration-500 ${vwPctBar(liveSummary.pct)}`} style={{ width: `${liveSummary.pct}%` }} />
-                </div>
+              <div className="text-[11.5px] text-[#6E5E70]">
+                {isEditing ? <span className="text-[#7A4F00] font-semibold">Editing — the summary updates after saving</span> : 'Invoice freight & invoice duty vs. the rate sheet'}
               </div>
-              {isEditing && <span className="text-[11px] font-medium text-amber-700 print:hidden">Editing — summary updates after saving</span>}
+            </div>
+            <div className="flex items-center gap-1.5 print:hidden">
+              {([
+                ['OK', liveSummary.total_ok, VW_TILE_TONE.green],
+                ['Difference', liveSummary.total_selisih, VW_TILE_TONE.red],
+                ['N/A', liveSummary.total_na, VW_TILE_TONE.grey],
+              ] as const).map(([label, value, cls]) => (
+                <div key={label} className={`${VW_TILE} ${cls}`}>
+                  <div className="text-[17px] font-bold leading-tight tabular-nums">{value}</div>
+                  <div className="text-[10px] font-semibold">{label}</div>
+                </div>
+              ))}
+            </div>
+            <div className="w-40 print:hidden">
+              <div className="flex justify-between items-baseline mb-1 text-[11px] text-[#6E5E70]">
+                <span>Accuracy</span>
+                <b className={vwPctText(liveSummary.pct)}>{liveSummary.pct}%</b>
+              </div>
+              <div className="h-2 rounded-full bg-[#F3EEEA] overflow-hidden">
+                <div className={`h-full transition-all duration-500 ${vwPctBar(liveSummary.pct)}`} style={{ width: `${liveSummary.pct}%` }} />
+              </div>
+              <div className="text-[10px] text-[#8A7A8B] mt-0.5">{liveSummary.total_cost_cek} line{liveSummary.total_cost_cek === 1 ? '' : 's'} checked</div>
             </div>
             {canEdit && (
-              <div className="ml-auto flex items-center gap-2 print:hidden">
+              <div className="flex items-center gap-2 print:hidden">
                 {!isEditing ? (
                   <button onClick={handleEditClick} className={VW_BTN_PRIMARY}>
-                    <span>✏️</span> Edit Cost Validasi
+                    <Pencil size={13} /> Edit cost validation
                   </button>
                 ) : (
                   <>
-                    <button onClick={handleCancelEdit} className={VW_BTN_SECONDARY}>Batal</button>
+                    <button onClick={handleCancelEdit} className={VW_BTN_SECONDARY}>Cancel</button>
                     <button onClick={handleSaveEdit} disabled={savingEdit} className={VW_BTN_SUCCESS}>
-                      {savingEdit ? 'Menyimpan...' : '💾 Simpan'}
+                      {savingEdit ? 'Saving…' : 'Save changes'}
                     </button>
                   </>
                 )}
@@ -885,152 +1041,101 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
         </div>
         )}
 
-        <div className={`flex-1 overflow-y-auto ${embedded ? 'bg-slate-50/70' : 'bg-slate-50/50'}`}>
+        <div className="flex-1 overflow-y-auto bg-[#FBF7F4]">
           {loading ? (
-            <div className="flex flex-col items-center justify-center h-full text-[#5A305A] py-10 px-6">
-              <LoadingSpinner className="mb-4" />
-              <span className="text-sm font-medium">Loading data...</span>
-            </div>
+            <LoadingState fullHeight={false} />
           ) : !data ? (
-            <div className="text-center py-10 text-[#5A305A] px-6">
-              <div className="text-4xl mb-4">🔍</div>
-              <p>Belum ada hasil validasi untuk AWB ini.</p>
+            <div className="px-4 py-4">
+              <div className={`${VW_CARD} px-4 py-8 text-center text-[12.5px] text-[#6E5E70]`}>
+                No cost validation result for this AWB yet.
+              </div>
             </div>
           ) : (
             <div>
-              {/* Basic Info -- SENGAJA sticky di atas area scroll (freeze) supaya tetap kelihatan
-                  walau tabel Freight/Duty Validation di bawahnya sudah panjang & di-scroll.
-                  Background diberi backdrop-blur + border-b supaya konten yang lewat di
-                  bawahnya tidak "tembus" kelihatan pas nge-freeze. Spacing internal dirapatkan
-                  (p-6->p-4, gap-4->gap-3, mb-1->mb-0.5) sesuai permintaan -- biar tetap enak
-                  dilihat walau areanya sekarang lebih sempit (nempel di atas, bukan card biasa). */}
               {/* Mode embedded: Shipment Info tampil di level jendela (CourierValidationWindow).
                   Saat Edit, hanya 3 field yang memang bisa diedit yang muncul di sini. */}
               {!embedded ? (
               <div className="sticky top-0 z-20 bg-slate-50/95 backdrop-blur-sm px-5 pt-2 pb-1.5 border-b border-slate-200/80 shadow-sm">
-                <div className="bg-gradient-to-r from-[#FFF5C5]/55 to-[#F58C77]/35 p-2.5 rounded-xl shadow-sm border border-[#5A305A]/15">
-                  <h2 className="text-sm font-bold mb-1 text-[#5A305A] border-b pb-1">Shipment Info</h2>
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-x-3 gap-y-1.5 text-sm">
-                  <div className="min-w-0">
-                    <p className="text-[#5A305A] mb-0.5 font-medium text-xs">AWB</p>
-                    <p className="[overflow-wrap:anywhere] font-semibold">{data.awb}</p>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[#5A305A] mb-0.5 font-medium text-xs">Vendor</p>
-                    <p className="[overflow-wrap:anywhere] font-semibold text-[#5A305A]">{data.vendor || '-'}</p>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[#5A305A] mb-0.5 font-medium text-xs">Jalur</p>
-                    <p>
-                      {(data.jenis_dokumen || jenisDokumen)?.toUpperCase() === 'PIB' ? (
-                        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded font-bold text-xs inline-block shadow-sm">PIB</span>
-                      ) : (data.jenis_dokumen || jenisDokumen)?.toUpperCase() === 'CN' ? (
-                        <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded font-bold text-xs inline-block shadow-sm">CN</span>
+                <div className="bg-white p-2.5 rounded-xl shadow-sm border border-[#EADFD6]">
+                  <h2 className="text-sm font-bold mb-1 text-[#3B1B3D] border-b border-[#EADFD6] pb-1">Shipment Info</h2>
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-x-3 gap-y-1.5 text-sm text-[#3B1B3D]">
+                    <div className="min-w-0"><p className={VW_LABEL}>AWB</p><p className="[overflow-wrap:anywhere] font-semibold mt-1">{data.awb}</p></div>
+                    <div className="min-w-0"><p className={VW_LABEL}>Vendor</p><p className="[overflow-wrap:anywhere] font-semibold mt-1">{data.vendor || '-'}</p></div>
+                    <div className="min-w-0"><p className={VW_LABEL}>Jalur</p><p className="font-semibold mt-1">{(data.jenis_dokumen || jenisDokumen)?.toUpperCase() || '-'}</p></div>
+                    <div className="min-w-0"><p className={VW_LABEL}>Courier</p><p className="[overflow-wrap:anywhere] font-semibold mt-1">{data.cv_courier || '-'}</p></div>
+                    <div className="min-w-0"><p className={VW_LABEL}>Direction / Type</p><p className="[overflow-wrap:anywhere] font-semibold mt-1">{data.cv_direction || '-'} / {data.cv_shipment_type || '-'}</p></div>
+                    <div className="min-w-0">
+                      <p className={VW_LABEL}>Ship Date</p>
+                      {isEditing ? (
+                        <input type="date" value={editForm?.cv_ship_date?.split('T')[0] || ''} onChange={(e) => handleFieldChange('cv_ship_date', e.target.value)} className={`${VW_INPUT} w-full mt-1`} />
                       ) : (
-                        <span className="font-semibold">-</span>
+                        <p className="[overflow-wrap:anywhere] font-semibold mt-1">{fmtDateEN(data.cv_ship_date)}</p>
                       )}
-                    </p>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[#5A305A] mb-0.5 font-medium text-xs">Courier</p>
-                    <p className="[overflow-wrap:anywhere] font-semibold">{data.cv_courier || '-'}</p>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[#5A305A] mb-0.5 font-medium text-xs">Direction / Type</p>
-                    <p className="[overflow-wrap:anywhere] font-semibold">{data.cv_direction || '-'} / {data.cv_shipment_type || '-'}</p>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[#5A305A] mb-0.5 font-medium text-xs">Ship Date</p>
-                    {isEditing ? (
-                      <input 
-                        type="date" 
-                        value={editForm?.cv_ship_date?.split('T')[0] || ''} 
-                        onChange={(e) => handleFieldChange('cv_ship_date', e.target.value)}
-                        className="w-full border border-slate-300 rounded px-2 py-1 text-xs"
-                      />
-                    ) : (
-                      <p className="[overflow-wrap:anywhere] font-semibold">{fmtDateEN(data.cv_ship_date)}</p>
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[#5A305A] mb-0.5 font-medium text-xs">Origin / Zone</p>
-                    {isEditing ? (
-                       <div className="flex gap-2 items-center">
-                         <input 
-                            type="text" 
-                            value={editForm?.cv_origin_country_code || ''} 
-                            onChange={(e) => handleFieldChange('cv_origin_country_code', e.target.value)}
-                            className="w-16 border border-slate-300 rounded px-2 py-1 text-xs"
-                            placeholder="CC"
-                            maxLength={2}
-                          />
-                          <span className="text-xs text-[#5A305A]">(Zone {data.cv_zone || '-'})</span>
-                       </div>
-                    ) : (
-                      <p className="[overflow-wrap:anywhere] font-semibold">{data.cv_origin_country_code || '-'} (Zone {data.cv_zone || '-'})</p>
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[#5A305A] mb-0.5 font-medium text-xs">Chargeable Weight</p>
-                    {isEditing ? (
-                        <div className="flex items-center gap-1">
-                          <input 
-                            type="number" 
-                            value={editForm?.cv_chargeable_kg || ''} 
-                            onChange={(e) => handleFieldChange('cv_chargeable_kg', Number(e.target.value))}
-                            className="w-full border border-slate-300 rounded px-2 py-1 text-xs"
-                          />
-                          <span className="text-xs font-semibold text-[#5A305A]">kg</span>
+                    </div>
+                    <div className="min-w-0">
+                      <p className={VW_LABEL}>Origin / Zone</p>
+                      {isEditing ? (
+                        <div className="flex gap-2 items-center mt-1">
+                          <input type="text" value={editForm?.cv_origin_country_code || ''} onChange={(e) => handleFieldChange('cv_origin_country_code', e.target.value)} className={`${VW_INPUT} w-16`} placeholder="CC" maxLength={2} />
+                          <span className="text-xs text-[#6E5E70]">(Zone {data.cv_zone || '-'})</span>
                         </div>
-                    ) : (
-                      <p className="[overflow-wrap:anywhere] font-semibold">{data.cv_chargeable_kg ? `${data.cv_chargeable_kg} kg` : '-'}</p>
-                    )}
+                      ) : (
+                        <p className="[overflow-wrap:anywhere] font-semibold mt-1">{data.cv_origin_country_code || '-'} (Zone {data.cv_zone || '-'})</p>
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className={VW_LABEL}>Chargeable Weight</p>
+                      {isEditing ? (
+                        <div className="flex items-center gap-1 mt-1">
+                          <input type="number" value={editForm?.cv_chargeable_kg || ''} onChange={(e) => handleFieldChange('cv_chargeable_kg', Number(e.target.value))} className={`${VW_INPUT} w-full`} />
+                          <span className="text-xs font-semibold">kg</span>
+                        </div>
+                      ) : (
+                        <p className="[overflow-wrap:anywhere] font-semibold mt-1">{data.cv_chargeable_kg ? `${data.cv_chargeable_kg} kg` : '-'}</p>
+                      )}
+                    </div>
+                    <div className="min-w-0"><p className={VW_LABEL}>Service</p><p className="[overflow-wrap:anywhere] font-semibold mt-1">{data.cv_service_type || '-'}</p></div>
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-[#5A305A] mb-0.5 font-medium text-xs">Service</p>
-                    <p className="[overflow-wrap:anywhere] font-semibold">{data.cv_service_type || '-'}</p>
-                  </div>
-                </div>
                 </div>
               </div>
               ) : isEditing ? (
-              <div className="sticky top-0 z-20 bg-slate-50/95 backdrop-blur-sm px-5 pt-2 pb-2 border-b border-slate-200/80 shadow-sm print:hidden">
-                <div className="bg-white p-2.5 rounded-xl border border-[#5A305A]/15">
-                  <h2 className="text-xs font-bold mb-1.5 text-[#5A305A]">Edit Shipment Info</h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+              <div className="sticky top-0 z-20 bg-[#FBF7F4]/95 backdrop-blur-sm px-4 pt-3 pb-2 print:hidden">
+                <div className={`${VW_CARD} px-4 py-3`}>
+                  <h2 className="text-[13px] font-bold text-[#3B1B3D] mb-2">Edit shipment info</h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="min-w-0">
-                      <p className="text-[#5A305A] mb-0.5 font-medium text-xs">Ship Date</p>
+                      <p className={`${VW_LABEL} mb-1`}>Ship Date</p>
                       <input
                         type="date"
                         value={editForm?.cv_ship_date?.split('T')[0] || ''}
                         onChange={(e) => handleFieldChange('cv_ship_date', e.target.value)}
-                        className="w-full border border-slate-300 rounded px-2 py-1 text-xs"
+                        className={`${VW_INPUT} w-full`}
                       />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[#5A305A] mb-0.5 font-medium text-xs">Origin / Zone</p>
+                      <p className={`${VW_LABEL} mb-1`}>Origin / Zone</p>
                       <div className="flex gap-2 items-center">
                         <input
                           type="text"
                           value={editForm?.cv_origin_country_code || ''}
                           onChange={(e) => handleFieldChange('cv_origin_country_code', e.target.value)}
-                          className="w-16 border border-slate-300 rounded px-2 py-1 text-xs"
+                          className={`${VW_INPUT} w-16`}
                           placeholder="CC"
                           maxLength={2}
                         />
-                        <span className="text-xs text-[#5A305A]">(Zone {data.cv_zone || '-'})</span>
+                        <span className="text-[12px] text-[#6E5E70]">(Zone {data.cv_zone || '-'})</span>
                       </div>
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[#5A305A] mb-0.5 font-medium text-xs">Chargeable Weight</p>
-                      <div className="flex items-center gap-1">
+                      <p className={`${VW_LABEL} mb-1`}>Chargeable Weight</p>
+                      <div className="flex items-center gap-1.5">
                         <input
                           type="number"
                           value={editForm?.cv_chargeable_kg || ''}
                           onChange={(e) => handleFieldChange('cv_chargeable_kg', Number(e.target.value))}
-                          className="w-full border border-slate-300 rounded px-2 py-1 text-xs"
+                          className={`${VW_INPUT} w-full`}
                         />
-                        <span className="text-xs font-semibold text-[#5A305A]">kg</span>
+                        <span className="text-[12px] font-semibold text-[#6E5E70]">kg</span>
                       </div>
                     </div>
                   </div>
@@ -1038,237 +1143,157 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
               </div>
               ) : null}
 
-              <div className="px-5 pb-5 pt-3">
+              <div className="px-4 pb-6 pt-3 flex flex-col gap-3">
 
-              {/* Freight Validation Table */}
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6 overflow-x-auto">
-                <h2 className="text-lg font-bold mb-4 text-[#5A305A] border-b pb-2">Invoice Freight Validation</h2>
-                <table className="w-full text-sm text-left">
-                  <thead className="text-xs text-[#5A305A] bg-slate-50 uppercase border-b border-slate-200">
-                    <tr>
-                      <th className="px-4 py-3 font-semibold rounded-tl-lg">Validasi</th>
-                      <th className="px-4 py-3 font-semibold">Expected</th>
-                      <th className="px-4 py-3 font-semibold w-40">Actual</th>
-                      {!isEditing && <th className="px-4 py-3 font-semibold">Selisih</th>}
-                      <th className="px-4 py-3 font-semibold rounded-tr-lg w-40">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
+              {/* ── Invoice Freight ── */}
+              <div className={`${VW_CARD} overflow-hidden`}>
+                {sectionHeader('freight', 'Invoice freight', [data.cv_courier, data.cv_service_type].filter(Boolean).join(' · '), freightTotals ? freightTotals.actual : null, liveSummary.invoice_freight_status)}
+                <div className={openSec.freight ? 'border-t border-[#EADFD6]' : 'hidden print:block'}>
+                <div className="overflow-x-auto">
+                <table className="w-full min-w-[680px]">
+                  {tableHead}
+                  <tbody>
                     {(isEditing || isRowVisible(data.cv_freight_status, data.cv_freight_expected, data.cv_freight_actual)) && (
                       <tr>
-                        <td className="px-4 py-3 text-[#5A305A] font-medium bg-white align-top">
-                          <div className="flex flex-col gap-2">
-                             <span>Freight Charge</span>
+                        <td className={TD_LABEL}>
+                          <div className="flex flex-col gap-1.5">
+                             <span>Freight charge</span>
                              {(Number(data?.cv_cn_freight_total) > 0 && Number(data?.cv_cn_freight_subtotal) > 0) && !isEditing && Number(data.cv_freight_actual) > 0 && (
-                                <div className="flex items-center gap-2 mt-1">
-                                    <input 
-                                      type="number" 
-                                      className="border border-orange-300 rounded px-2 py-1 text-xs w-28 focus:outline-none focus:border-orange-500 font-normal" 
+                                <div className="flex items-center gap-1.5 print:hidden">
+                                    <input
+                                      type="number"
+                                      className={CN_INPUT}
                                       placeholder={data.cv_cn_freight_subtotal}
                                       value={cnFreightAmounts['freight'] !== undefined ? cnFreightAmounts['freight'] : data.cv_cn_freight_subtotal}
                                       onChange={(e) => setCnFreightAmounts(prev => ({...prev, freight: e.target.value}))}
                                     />
-                                    <button 
+                                    <button
                                       disabled={updating || Number(data.cv_freight_actual) <= 0}
                                       onClick={() => handleApplyCNFreight('freight', cnFreightAmounts['freight'] !== undefined ? cnFreightAmounts['freight'] : data.cv_cn_freight_subtotal)}
-                                      className="text-[10px] px-2 py-1 bg-white border border-orange-300 rounded hover:bg-orange-100 text-orange-800 transition-colors disabled:opacity-50 font-medium whitespace-nowrap"
+                                      className={CN_BTN}
                                     >
-                                      Potong CN
+                                      Deduct CN
                                     </button>
                                 </div>
                              )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 bg-white text-[#5A305A] align-top">{formatRp(isEditing ? editForm.cv_freight_expected : data.cv_freight_expected)}</td>
-                        <td className="px-4 py-3 bg-white align-top"><ActualInlineInput initialValue={isEditing ? editForm.cv_freight_actual : data.cv_freight_actual} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_freight_actual', val)} /></td>
-                        {!isEditing && <td className="px-4 py-3 text-[#5A305A] bg-white align-top">{formatRp(data.cv_freight_selisih)}</td>}
-                        <td className="px-4 py-3 bg-white align-top"><FreightStatusDropdown field="cv_freight_status" /></td>
+                        <td className={TD_NUM}>{formatRp(isEditing ? editForm.cv_freight_expected : data.cv_freight_expected)}</td>
+                        <td className={TD_ACT}><ActualInlineInput initialValue={isEditing ? editForm.cv_freight_actual : data.cv_freight_actual} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_freight_actual', val)} /></td>
+                        {!isEditing && <td className={`${TD} text-right tabular-nums whitespace-nowrap`}>{diffCell(data.cv_freight_selisih, resolveStatus(data.cv_freight_status, data.cv_freight_selisih))}</td>}
+                        <td className={`${TD} pr-4 text-right`}><FreightStatusDropdown field="cv_freight_status" /></td>
                       </tr>
                     )}
                     {(isEditing || isRowVisible(data.cv_fuel_status, data.cv_fuel_expected, data.cv_fuel_actual)) && (
                       <tr>
-                        <td className="px-4 py-3 text-[#5A305A] font-medium bg-white align-top">
-                          <div className="flex flex-col gap-2">
-                             <span>Fuel Surcharge ({data.cv_fuel_rate_pct ? data.cv_fuel_rate_pct + '%' : ''})</span>
+                        <td className={TD_LABEL}>
+                          <div className="flex flex-col gap-1.5">
+                             <span>Fuel surcharge{data.cv_fuel_rate_pct ? <span className="font-normal text-[#6E5E70]"> · {data.cv_fuel_rate_pct}%</span> : ''}</span>
                              {(Number(data?.cv_cn_freight_total) > 0 && Number(data?.cv_cn_freight_subtotal) > 0) && !isEditing && Number(data.cv_fuel_actual) > 0 && (
-                                <div className="flex items-center gap-2 mt-1">
-                                    <input 
-                                      type="number" 
-                                      className="border border-orange-300 rounded px-2 py-1 text-xs w-28 focus:outline-none focus:border-orange-500 font-normal" 
+                                <div className="flex items-center gap-1.5 print:hidden">
+                                    <input
+                                      type="number"
+                                      className={CN_INPUT}
                                       placeholder={data.cv_cn_freight_subtotal}
                                       value={cnFreightAmounts['fuel'] !== undefined ? cnFreightAmounts['fuel'] : data.cv_cn_freight_subtotal}
                                       onChange={(e) => setCnFreightAmounts(prev => ({...prev, fuel: e.target.value}))}
                                     />
-                                    <button 
+                                    <button
                                       disabled={updating || Number(data.cv_fuel_actual) <= 0}
                                       onClick={() => handleApplyCNFreight('fuel', cnFreightAmounts['fuel'] !== undefined ? cnFreightAmounts['fuel'] : data.cv_cn_freight_subtotal)}
-                                      className="text-[10px] px-2 py-1 bg-white border border-orange-300 rounded hover:bg-orange-100 text-orange-800 transition-colors disabled:opacity-50 font-medium whitespace-nowrap"
+                                      className={CN_BTN}
                                     >
-                                      Potong CN
+                                      Deduct CN
                                     </button>
                                 </div>
                              )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 bg-white text-[#5A305A] align-top">{formatRp(isEditing ? editForm.cv_fuel_expected : data.cv_fuel_expected)}</td>
-                        <td className="px-4 py-3 bg-white align-top"><ActualInlineInput initialValue={isEditing ? editForm.cv_fuel_actual : data.cv_fuel_actual} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_fuel_actual', val)} /></td>
-                        {!isEditing && <td className="px-4 py-3 text-[#5A305A] bg-white align-top">{formatRp(data.cv_fuel_selisih)}</td>}
-                        <td className="px-4 py-3 bg-white align-top"><FreightStatusDropdown field="cv_fuel_status" /></td>
+                        <td className={TD_NUM}>{formatRp(isEditing ? editForm.cv_fuel_expected : data.cv_fuel_expected)}</td>
+                        <td className={TD_ACT}><ActualInlineInput initialValue={isEditing ? editForm.cv_fuel_actual : data.cv_fuel_actual} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_fuel_actual', val)} /></td>
+                        {!isEditing && <td className={`${TD} text-right tabular-nums whitespace-nowrap`}>{diffCell(data.cv_fuel_selisih, resolveStatus(data.cv_fuel_status, data.cv_fuel_selisih))}</td>}
+                        <td className={`${TD} pr-4 text-right`}><FreightStatusDropdown field="cv_fuel_status" /></td>
                       </tr>
                     )}
                     {renderOtherChargesRows(data.cv_other_charges_freight, 'freight')}
                     {(isEditing || isRowVisible(data.cv_vat_freight_status, data.cv_vat_freight_expected, data.cv_vat_freight_actual_net)) && (
                       <tr>
-                        <td className="px-4 py-3 text-[#5A305A] font-medium bg-white align-top">
-                          <div className="flex flex-col gap-2">
-                             <span>VAT ({data.cv_vat_freight_pct ? data.cv_vat_freight_pct + '%' : ''})</span>
+                        <td className={TD_LABEL}>
+                          <div className="flex flex-col gap-1.5">
+                             <span>VAT{data.cv_vat_freight_pct ? <span className="font-normal text-[#6E5E70]"> · {data.cv_vat_freight_pct}%</span> : ''}</span>
                              {(Number(data?.cv_cn_freight_total) > 0 && Number(data?.cv_cn_freight_vat) > 0) && !isEditing && Number(data.cv_vat_freight_actual_net || data.cv_vat_freight_actual) > 0 && (
-                                <div className="flex items-center gap-2 mt-1">
-                                    <input 
-                                      type="number" 
-                                      className="border border-orange-300 rounded px-2 py-1 text-xs w-28 focus:outline-none focus:border-orange-500 font-normal" 
+                                <div className="flex items-center gap-1.5 print:hidden">
+                                    <input
+                                      type="number"
+                                      className={CN_INPUT}
                                       placeholder={data.cv_cn_freight_vat}
                                       value={cnFreightAmounts['vat_freight'] !== undefined ? cnFreightAmounts['vat_freight'] : data.cv_cn_freight_vat}
                                       onChange={(e) => setCnFreightAmounts(prev => ({...prev, vat_freight: e.target.value}))}
                                     />
-                                    <button 
+                                    <button
                                       disabled={updating}
                                       onClick={() => handleApplyCNFreight('vat_freight', cnFreightAmounts['vat_freight'] !== undefined ? cnFreightAmounts['vat_freight'] : data.cv_cn_freight_vat)}
-                                      className="text-[10px] px-2 py-1 bg-white border border-orange-300 rounded hover:bg-orange-100 text-orange-800 transition-colors disabled:opacity-50 font-medium whitespace-nowrap"
+                                      className={CN_BTN}
                                     >
-                                      Potong CN
+                                      Deduct CN
                                     </button>
                                 </div>
                              )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 bg-white text-[#5A305A] align-top">{formatRp(isEditing ? editForm.cv_vat_freight_expected : data.cv_vat_freight_expected)}</td>
-                        <td className="px-4 py-3 bg-white align-top"><ActualInlineInput initialValue={isEditing ? editForm.cv_vat_freight_actual_net : data.cv_vat_freight_actual_net} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_vat_freight_actual_net', val)} /></td>
-                        {!isEditing && <td className="px-4 py-3 text-[#5A305A] bg-white align-top">{formatRp(data.cv_vat_freight_selisih)}</td>}
-                        <td className="px-4 py-3 bg-white align-top"><FreightStatusDropdown field="cv_vat_freight_status" /></td>
+                        <td className={TD_NUM}>{formatRp(isEditing ? editForm.cv_vat_freight_expected : data.cv_vat_freight_expected)}</td>
+                        <td className={TD_ACT}><ActualInlineInput initialValue={isEditing ? editForm.cv_vat_freight_actual_net : data.cv_vat_freight_actual_net} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_vat_freight_actual_net', val)} /></td>
+                        {!isEditing && <td className={`${TD} text-right tabular-nums whitespace-nowrap`}>{diffCell(data.cv_vat_freight_selisih, resolveStatus(data.cv_vat_freight_status, data.cv_vat_freight_selisih))}</td>}
+                        <td className={`${TD} pr-4 text-right`}><FreightStatusDropdown field="cv_vat_freight_status" /></td>
                       </tr>
                     )}
-                    {(() => {
-                      let totalActualNum = Number(data.cv_total_freight_actual) || 0;
-                      let totalSelisihNum = Number(data.cv_total_freight_selisih) || 0;
-                      
-                      let adjustmentsArray = data?.cv_other_freight_adjustments;
-                      let adjustments: any = [];
-                      if (typeof adjustmentsArray === 'string') {
-                          try { adjustments = JSON.parse(adjustmentsArray); } catch(e) {}
-                      } else if (Array.isArray(adjustmentsArray)) {
-                          adjustments = adjustmentsArray;
-                      } else if (adjustmentsArray !== null && typeof adjustmentsArray === 'object') {
-                          adjustments = Object.values(adjustmentsArray);
-                      }
-                      const sumAdjustments = adjustments.reduce((acc: number, curr: any) => acc + (Number(curr) || 0), 0);
-                      
-                      totalActualNum -= sumAdjustments;
-                      totalSelisihNum -= sumAdjustments;
-
-                      let totalStatusStr = data.cv_total_freight_status || 'N/A';
-                      if (totalStatusStr === 'SELISIH' && totalSelisihNum != null) {
-                        if (totalSelisihNum > 1000) totalStatusStr = 'OVERCHARGE';
-                        else if (totalSelisihNum < -1000) totalStatusStr = 'UNDERCHARGE';
-                      }
-
-                      return (
-                        <tr className="bg-slate-50 font-bold border-t-2 border-slate-200">
-                          <td className="px-4 py-3 text-[#5A305A]">TOTAL</td>
-                          <td className="px-4 py-3 text-[#5A305A]">{formatRp(data.cv_total_freight_expected)}</td>
-                          <td className="px-4 py-3 text-[#5A305A]">{formatRp(totalActualNum)}</td>
-                          {!isEditing && <td className="px-4 py-3 text-[#5A305A]">{formatRp(totalSelisihNum)}</td>}
-                          <td className="px-4 py-3 text-center">
-                             <span className={`inline-flex items-center rounded-md font-bold border whitespace-nowrap uppercase ${
-                               totalStatusStr === 'OK' ? 'px-2.5 py-1 text-[11px] bg-emerald-50 text-emerald-700 border-emerald-200' :
-                               totalStatusStr === 'UNDERCHARGE' ? 'px-3 py-1.5 text-[14px] bg-blue-100 text-blue-700 border-blue-300 shadow-sm' :
-                               totalStatusStr === 'OVERCHARGE' ? 'px-3 py-1.5 text-[14px] bg-red-100 text-red-700 border-red-300 shadow-sm' :
-                               (!totalStatusStr || totalStatusStr === 'N/A') ? 'px-2.5 py-1 text-[11px] bg-slate-100 text-[#5A305A] border-slate-200' :
-                               'px-2.5 py-1 text-[11px] bg-rose-50 text-rose-700 border-rose-200'
-                             }`}>
-                               <span className="mr-1">{totalStatusStr === 'OK' ? '✅' : (!totalStatusStr || totalStatusStr === 'N/A') ? '⬜' : '⚠️'}</span> {totalStatusStr}
-                             </span>
-                          </td>
-                        </tr>
-                      );
-                    })()}
+                    {freightTotals && totalRow(freightTotals)}
                   </tbody>
                 </table>
-                
+                </div>
+
                 {!isEditing && Number(data.cv_cn_freight_total) > 0 && (
-                  <div className="mt-4 p-4 bg-orange-50 border border-orange-200 rounded-lg">
-                    <h3 className="font-bold text-orange-900 mb-2 flex items-center">
-                      <span className="mr-2">📋</span> Credit Note Freight
+                  <div className="m-4 p-3 rounded-xl border border-[#F3DDB0] bg-[#FFFAF0]">
+                    <h3 className="text-[13px] font-bold text-[#7A4F00] mb-2 flex items-center gap-1.5">
+                      <Receipt size={14} /> Credit note · freight
                     </h3>
-                    <div className="grid grid-cols-3 gap-4 mb-4 text-sm">
-                      <div className="bg-white p-2 rounded border border-orange-100">
-                        <span className="text-orange-600/70 text-xs block mb-1">Sisa Subtotal CN</span>
-                        <span className="font-bold text-orange-900">{formatRp(data.cv_cn_freight_subtotal)}</span>
-                      </div>
-                      <div className="bg-white p-2 rounded border border-orange-100">
-                        <span className="text-orange-600/70 text-xs block mb-1">Sisa VAT CN</span>
-                        <span className="font-bold text-orange-900">{formatRp(data.cv_cn_freight_vat)}</span>
-                      </div>
-                      <div className="bg-white p-2 rounded border border-orange-100">
-                        <span className="text-orange-600/70 text-xs block mb-1">Max Total (Original)</span>
-                        <span className="font-bold text-red-600">-{formatRp(Math.abs(Number(data.cv_cn_freight_total)))}</span>
-                        {rawRecord?.raw_data?.credit_note_freight_v?.count > 1 && (
-                          <div style={{ color: "var(--color-text-tertiary)", fontSize: "10px", marginTop: "2px" }}>(jumlah dari {rawRecord.raw_data.credit_note_freight_v.count} credit note)</div>
-                        )}
-                      </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {cnTile('Remaining CN subtotal', formatRp(data.cv_cn_freight_subtotal))}
+                      {cnTile('Remaining CN VAT', formatRp(data.cv_cn_freight_vat))}
+                      {cnTile('Max total (original)', <span className="text-[#A8231A]">-{formatRp(Math.abs(Number(data.cv_cn_freight_total)))}</span>,
+                        rawRecord?.raw_data?.credit_note_freight_v?.count > 1
+                          ? <div className="text-[10.5px] text-[#8A7A8B] mt-0.5">(sum of {rawRecord.raw_data.credit_note_freight_v.count} credit notes)</div>
+                          : null)}
                     </div>
-                    
-                    <div className="border-t border-orange-200/50 pt-3 mt-3">
-                      {data.cv_cn_freight_log && Array.isArray(data.cv_cn_freight_log) && data.cv_cn_freight_log.length > 0 && (
-                        <div className="mt-1">
-                          <h4 className="text-xs font-bold text-orange-900 mb-2">Riwayat Pemotongan CN:</h4>
-                          <ul className="text-xs text-orange-800 space-y-1">
-                            {data.cv_cn_freight_log.map((log: any, idx: number) => {
-                              const dateStr = fmtDateTimeEN(log.at || log.created_at);
-                              return (
-                                <li key={idx} className="flex items-center justify-between group">
-                                  <span>✅ Rp {formatRp(log.amount).replace('Rp', '').trim()} dipotong dari {log.target}{log.index != null ? ' #'+log.index : ''} pada {dateStr}</span>
-                                  <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setReviseConfirm({side: 'freight', logIndex: idx, log: log}); }} disabled={updating} className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] bg-orange-100 hover:bg-orange-200 text-orange-800 px-2 py-0.5 rounded font-medium disabled:opacity-50">Revisi</button>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
+                    {creditNoteLog(data.cv_cn_freight_log, 'freight')}
                   </div>
                 )}
+                </div>
               </div>
 
-              {/* Duty Validation Table */}
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6 overflow-x-auto">
-                <h2 className="text-lg font-bold mb-4 text-[#5A305A] border-b pb-2">Invoice Duty Validation</h2>
-                <table className="w-full text-sm text-left mb-4">
-                  <thead className="text-xs text-[#5A305A] bg-slate-50 uppercase border-b border-slate-200">
-                    <tr>
-                      <th className="px-4 py-3 font-semibold rounded-tl-lg">Validasi</th>
-                      <th className="px-4 py-3 font-semibold w-40">Expected</th>
-                      <th className="px-4 py-3 font-semibold w-40">Actual</th>
-                      {!isEditing && <th className="px-4 py-3 font-semibold">Selisih</th>}
-                      <th className="px-4 py-3 font-semibold rounded-tr-lg w-40">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
+              {/* ── Invoice Duty ── */}
+              <div className={`${VW_CARD} overflow-hidden`}>
+                {sectionHeader('duty', 'Invoice duty', (data.cv_courier || '').toUpperCase() === 'DHL' ? 'Import export duties & charges' : 'Duty & tax & charges', dutyTotals ? dutyTotals.actual : null, liveSummary.invoice_duty_status)}
+                <div className={openSec.duty ? 'border-t border-[#EADFD6]' : 'hidden print:block'}>
+                <div className="overflow-x-auto">
+                <table className="w-full min-w-[680px]">
+                  {tableHead}
+                  <tbody>
                     {/* IMPORT EXPORT DUTIES / DUTY & TAX INFO ROW */}
                     {(isEditing || data.cv_import_export_duties !== null || data.cv_duties_expected !== null) && (
-                      <tr className="bg-slate-50 border-b border-slate-100">
-                        <td className="px-4 py-3 text-[#5A305A] font-medium">
-                          {(data.cv_courier || '').toUpperCase() === 'DHL' ? 'IMPORT EXPORT DUTIES' : 'DUTY & TAX'}
+                      <tr className="bg-[#FFFCFA]">
+                        <td className={TD_LABEL}>
+                          {(data.cv_courier || '').toUpperCase() === 'DHL' ? 'Import export duties' : 'Duty & tax'}
                         </td>
-                        <td className="px-4 py-3 text-[#5A305A]">
-                          {isEditing 
-                            ? formatRp(editForm.cv_duties_expected) 
+                        <td className={TD_NUM}>
+                          {isEditing
+                            ? formatRp(editForm.cv_duties_expected)
                             : (Number(data.cv_duties_expected) > 0 ? formatRp(data.cv_duties_expected) : '-')}
                         </td>
-                        <td className="px-4 py-3 text-[#5A305A]"><ActualInlineInput initialValue={isEditing ? editForm.cv_import_export_duties : data.cv_import_export_duties} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_import_export_duties', val)} /></td>
-                        {!isEditing && <td className="px-4 py-3 text-[#5A305A]">{formatRp(data.cv_duties_selisih)}</td>}
-                        <td className="px-4 py-3">
-                          <DutyStatusDropdown field="cv_duties_status" /> 
+                        <td className={TD_ACT}><ActualInlineInput initialValue={isEditing ? editForm.cv_import_export_duties : data.cv_import_export_duties} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_import_export_duties', val)} /></td>
+                        {!isEditing && <td className={`${TD} text-right tabular-nums whitespace-nowrap`}>{diffCell(data.cv_duties_selisih, resolveStatus(data.cv_duties_status, data.cv_duties_selisih))}</td>}
+                        <td className={`${TD} pr-4 text-right`}>
+                          <DutyStatusDropdown field="cv_duties_status" />
                         </td>
                       </tr>
                     )}
@@ -1277,66 +1302,65 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                         isRowVisible() saja sudah cukup buat sembunyikan baris ini otomatis di CN
                         tanpa syarat tambahan. Syarat jenisDokumen yang lama itu justru sumber bug
                         (prop jenisDokumen kadang salah resolve, beda dari kolom data.jenis_dokumen
-                        yang selalu benar -- lihat baris 887 yang urutannya kebalik & tidak kena
-                        bug ini). */}
+                        yang selalu benar). */}
                     {(isEditing || isRowVisible(data.cv_nonroutine_status, data.cv_nonroutine_expected, data.cv_nonroutine_actual)) && (
                       <tr>
-                        <td className="px-4 py-3 text-[#5A305A] font-medium bg-white">Non-Routine Entry</td>
-                        <td className="px-4 py-3 bg-white text-[#5A305A]">{formatRp(isEditing ? editForm.cv_nonroutine_expected : data.cv_nonroutine_expected)}</td>
-                        <td className="px-4 py-3 bg-white"><ActualInlineInput initialValue={isEditing ? editForm.cv_nonroutine_actual : data.cv_nonroutine_actual} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_nonroutine_actual', val)} /></td>
-                        {!isEditing && <td className="px-4 py-3 text-[#5A305A] bg-white">{formatRp(data.cv_nonroutine_selisih)}</td>}
-                        <td className="px-4 py-3 bg-white"><DutyStatusDropdown field="cv_nonroutine_status" /></td>
+                        <td className={TD_LABEL}>Non-routine entry</td>
+                        <td className={TD_NUM}>{formatRp(isEditing ? editForm.cv_nonroutine_expected : data.cv_nonroutine_expected)}</td>
+                        <td className={TD_ACT}><ActualInlineInput initialValue={isEditing ? editForm.cv_nonroutine_actual : data.cv_nonroutine_actual} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_nonroutine_actual', val)} /></td>
+                        {!isEditing && <td className={`${TD} text-right tabular-nums whitespace-nowrap`}>{diffCell(data.cv_nonroutine_selisih, resolveStatus(data.cv_nonroutine_status, data.cv_nonroutine_selisih))}</td>}
+                        <td className={`${TD} pr-4 text-right`}><DutyStatusDropdown field="cv_nonroutine_status" /></td>
                       </tr>
                     )}
                     {(isEditing || data.cv_disbursement_actual != null || isRowVisible(data.cv_disbursement_status, data.cv_disbursement_expected, data.cv_disbursement_actual)) && (
                       <tr>
-                        <td className="px-4 py-3 text-[#5A305A] font-medium bg-white">Disbursement</td>
-                        <td className="px-4 py-3 bg-white text-[#5A305A]">{formatRp(isEditing ? editForm.cv_disbursement_expected : data.cv_disbursement_expected)}</td>
-                        <td className="px-4 py-3 bg-white"><ActualInlineInput initialValue={isEditing ? editForm.cv_disbursement_actual : data.cv_disbursement_actual} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_disbursement_actual', val)} /></td>
-                        {!isEditing && <td className="px-4 py-3 text-[#5A305A] bg-white">{formatRp(data.cv_disbursement_selisih)}</td>}
-                        <td className="px-4 py-3 bg-white"><DutyStatusDropdown field="cv_disbursement_status" /></td>
+                        <td className={TD_LABEL}>Disbursement</td>
+                        <td className={TD_NUM}>{formatRp(isEditing ? editForm.cv_disbursement_expected : data.cv_disbursement_expected)}</td>
+                        <td className={TD_ACT}><ActualInlineInput initialValue={isEditing ? editForm.cv_disbursement_actual : data.cv_disbursement_actual} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_disbursement_actual', val)} /></td>
+                        {!isEditing && <td className={`${TD} text-right tabular-nums whitespace-nowrap`}>{diffCell(data.cv_disbursement_selisih, resolveStatus(data.cv_disbursement_status, data.cv_disbursement_selisih))}</td>}
+                        <td className={`${TD} pr-4 text-right`}><DutyStatusDropdown field="cv_disbursement_status" /></td>
                       </tr>
                     )}
                     {(isEditing || data.cv_processing_fee_actual != null || isRowVisible(data.cv_processing_fee_status, data.cv_processing_fee_expected, data.cv_processing_fee_actual)) && (
                       <tr>
-                        <td className="px-4 py-3 text-[#5A305A] font-medium bg-white">Processing Fee</td>
-                        <td className="px-4 py-3 bg-white text-[#5A305A]">{formatRp(isEditing ? editForm.cv_processing_fee_expected : data.cv_processing_fee_expected)}</td>
-                        <td className="px-4 py-3 bg-white"><ActualInlineInput initialValue={isEditing ? editForm.cv_processing_fee_actual : data.cv_processing_fee_actual} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_processing_fee_actual', val)} /></td>
-                        {!isEditing && <td className="px-4 py-3 text-[#5A305A] bg-white">{formatRp(data.cv_processing_fee_selisih)}</td>}
-                        <td className="px-4 py-3 bg-white"><DutyStatusDropdown field="cv_processing_fee_status" /></td>
+                        <td className={TD_LABEL}>Processing fee</td>
+                        <td className={TD_NUM}>{formatRp(isEditing ? editForm.cv_processing_fee_expected : data.cv_processing_fee_expected)}</td>
+                        <td className={TD_ACT}><ActualInlineInput initialValue={isEditing ? editForm.cv_processing_fee_actual : data.cv_processing_fee_actual} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_processing_fee_actual', val)} /></td>
+                        {!isEditing && <td className={`${TD} text-right tabular-nums whitespace-nowrap`}>{diffCell(data.cv_processing_fee_selisih, resolveStatus(data.cv_processing_fee_status, data.cv_processing_fee_selisih))}</td>}
+                        <td className={`${TD} pr-4 text-right`}><DutyStatusDropdown field="cv_processing_fee_status" /></td>
                       </tr>
                     )}
                     {(isEditing || data.cv_storage_actual !== null || data.cv_storage_status === 'MANUAL') && (
                       <tr>
-                        <td className="px-4 py-3 text-[#5A305A] font-medium bg-white">
-                          Bonded Storage
+                        <td className={TD_LABEL}>
+                          Bonded storage
                           {!isEditing && data.cv_storage_input_manual && (
-                            <span className="text-xs text-[#5A305A] font-normal ml-1">
-                              ({data.cv_storage_days} hari)
+                            <span className="text-[11.5px] text-[#6E5E70] font-normal ml-1">
+                              · {data.cv_storage_days} days
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3 bg-white text-[#5A305A]">
+                        <td className={TD_NUM}>
                            {isEditing ? (
-                               <input 
-                                 type="number" 
-                                 value={editForm?.cv_storage_expected || ''} 
+                               <input
+                                 type="number"
+                                 value={editForm?.cv_storage_expected || ''}
                                  onChange={(e) => handleFieldChange('cv_storage_expected', Number(e.target.value))}
-                                 className="w-full border border-slate-300 rounded px-2 py-1 text-xs"
+                                 className={`${VW_INPUT} w-full text-right`}
                                />
                            ) : formatRp(data.cv_storage_expected)}
                         </td>
-                        <td className="px-4 py-3 bg-white"><ActualInlineInput initialValue={isEditing ? editForm.cv_storage_actual : data.cv_storage_actual} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_storage_actual', val)} /></td>
-                        {!isEditing && <td className="px-4 py-3 text-[#5A305A] bg-white">{formatRp(data.cv_storage_selisih)}</td>}
-                        <td className="px-4 py-3 bg-white">
-                          <div className="flex items-center gap-2">
+                        <td className={TD_ACT}><ActualInlineInput initialValue={isEditing ? editForm.cv_storage_actual : data.cv_storage_actual} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_storage_actual', val)} /></td>
+                        {!isEditing && <td className={`${TD} text-right tabular-nums whitespace-nowrap`}>{diffCell(data.cv_storage_selisih, resolveStatus(data.cv_storage_status, data.cv_storage_selisih))}</td>}
+                        <td className={`${TD} pr-4 text-right`}>
+                          <div className="flex items-center justify-end gap-2 flex-wrap">
                              <DutyStatusDropdown field="cv_storage_status" />
                              {!isEditing && data.cv_storage_input_manual && (
-                               <button 
+                               <button
                                  onClick={() => setEditStorageManual(!editStorageManual)}
-                                 className="text-xs text-blue-600 hover:underline cursor-pointer font-bold"
+                                 className="text-[11px] text-[#6B3470] hover:underline cursor-pointer font-semibold print:hidden"
                                >
-                                 Update Estimasi
+                                 Update estimate
                                </button>
                              )}
                           </div>
@@ -1346,391 +1370,165 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                     {renderOtherChargesRows(data.cv_other_charges_duty, 'duty')}
                     {(isEditing || isRowVisible(data.cv_vat_duty_status, data.cv_vat_duty_expected, data.cv_vat_duty_actual_net)) && (
                       <tr>
-                        <td className="px-4 py-3 text-[#5A305A] font-medium bg-white">VAT Duty ({data.cv_vat_duty_pct ? data.cv_vat_duty_pct + '%' : ''})</td>
-                        <td className="px-4 py-3 bg-white text-[#5A305A]">{formatRp(isEditing ? editForm.cv_vat_duty_expected : data.cv_vat_duty_expected)}</td>
-                        <td className="px-4 py-3 bg-white"><ActualInlineInput initialValue={isEditing ? editForm.cv_vat_duty_actual_net : data.cv_vat_duty_actual_net} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_vat_duty_actual_net', val)} /></td>
-                        {!isEditing && <td className="px-4 py-3 text-[#5A305A] bg-white">{formatRp(data.cv_vat_duty_selisih)}</td>}
-                        <td className="px-4 py-3 bg-white"><DutyStatusDropdown field="cv_vat_duty_status" /></td>
+                        <td className={TD_LABEL}>VAT duty{data.cv_vat_duty_pct ? <span className="font-normal text-[#6E5E70]"> · {data.cv_vat_duty_pct}%</span> : ''}</td>
+                        <td className={TD_NUM}>{formatRp(isEditing ? editForm.cv_vat_duty_expected : data.cv_vat_duty_expected)}</td>
+                        <td className={TD_ACT}><ActualInlineInput initialValue={isEditing ? editForm.cv_vat_duty_actual_net : data.cv_vat_duty_actual_net} isEditing={isEditing} disabled={updating || !isEditing} onChange={(val) => handleFieldChange('cv_vat_duty_actual_net', val)} /></td>
+                        {!isEditing && <td className={`${TD} text-right tabular-nums whitespace-nowrap`}>{diffCell(data.cv_vat_duty_selisih, resolveStatus(data.cv_vat_duty_status, data.cv_vat_duty_selisih))}</td>}
+                        <td className={`${TD} pr-4 text-right`}><DutyStatusDropdown field="cv_vat_duty_status" /></td>
                       </tr>
                     )}
-                    {(() => {
-                      const dutyExpectedNum = Number(data.cv_total_duty_expected || 0);
-                      let dutyActualNum = Number(data.cv_total_duty_actual || 0);
-                      let dutySelisihNum = dutyActualNum - dutyExpectedNum;
-
-                      let adjustmentsArray = data?.cv_other_duty_adjustments;
-                      let adjustments: any = [];
-                      if (typeof adjustmentsArray === 'string') {
-                          try { adjustments = JSON.parse(adjustmentsArray); } catch(e) {}
-                      } else if (Array.isArray(adjustmentsArray)) {
-                          adjustments = adjustmentsArray;
-                      } else if (adjustmentsArray !== null && typeof adjustmentsArray === 'object') {
-                          adjustments = Object.values(adjustmentsArray);
-                      }
-                      const sumAdjustments = adjustments.reduce((acc: number, curr: any) => acc + (Number(curr) || 0), 0);
-
-                      dutyActualNum -= sumAdjustments;
-                      dutySelisihNum -= sumAdjustments;
-
-                      let dutyStatusStr = 'N/A';
-                      if (dutyExpectedNum === 0) {
-                        dutyStatusStr = 'N/A';
-                      } else if (Math.abs(dutySelisihNum) <= dutyExpectedNum * 0.02) {
-                        dutyStatusStr = 'OK';
-                      } else if (dutyActualNum > dutyExpectedNum) {
-                        dutyStatusStr = 'OVERCHARGE';
-                      } else {
-                        dutyStatusStr = 'UNDERCHARGE';
-                      }
-
-                      return (
-                        <tr className="bg-slate-50 font-bold border-t-2 border-slate-200">
-                          <td className="px-4 py-3 text-[#5A305A]">TOTAL</td>
-                          <td className="px-4 py-3 text-[#5A305A]">{formatRp(dutyExpectedNum)}</td>
-                          <td className="px-4 py-3 text-[#5A305A]">{formatRp(dutyActualNum)}</td>
-                          {!isEditing && <td className="px-4 py-3 text-[#5A305A]">{formatRp(dutySelisihNum)}</td>}
-                          <td className="px-4 py-3 text-center">
-                             <span className={`inline-flex items-center rounded-md font-bold border whitespace-nowrap uppercase ${
-                               dutyStatusStr === 'OK' ? 'px-2.5 py-1 text-[11px] bg-emerald-50 text-emerald-700 border-emerald-200' :
-                               dutyStatusStr === 'UNDERCHARGE' ? 'px-3 py-1.5 text-[14px] bg-blue-100 text-blue-700 border-blue-300 shadow-sm' :
-                               dutyStatusStr === 'OVERCHARGE' ? 'px-3 py-1.5 text-[14px] bg-red-100 text-red-700 border-red-300 shadow-sm' :
-                               dutyStatusStr === 'N/A' ? 'px-2.5 py-1 text-[11px] bg-slate-100 text-[#5A305A] border-slate-200' :
-                               'px-2.5 py-1 text-[11px] bg-rose-50 text-rose-700 border-rose-200'
-                             }`}>
-                               <span className="mr-1">{dutyStatusStr === 'OK' ? '✅' : dutyStatusStr === 'N/A' ? '⬜' : '⚠️'}</span> {dutyStatusStr}
-                             </span>
-                          </td>
-                        </tr>
-                      );
-                    })()}
+                    {dutyTotals && totalRow(dutyTotals)}
                   </tbody>
                 </table>
-                
+                </div>
+
                 {!isEditing && Number(data.cv_cn_duty_total) > 0 && (
-                  <div className="mt-4 p-4 bg-orange-50 border border-orange-200 rounded-lg">
-                    <h3 className="font-bold text-orange-900 mb-2 flex items-center">
-                      <span className="mr-2">📋</span> Credit Note Duty
+                  <div className="m-4 p-3 rounded-xl border border-[#F3DDB0] bg-[#FFFAF0]">
+                    <h3 className="text-[13px] font-bold text-[#7A4F00] mb-2 flex items-center gap-1.5">
+                      <Receipt size={14} /> Credit note · duty
                     </h3>
-                    <div className="grid grid-cols-3 gap-4 mb-4 text-sm">
-                      <div className="bg-white p-2 rounded border border-orange-100">
-                        <span className="text-orange-600/70 text-xs block mb-1">Sisa Subtotal CN</span>
-                        <span className="font-bold text-orange-900">{formatRp(data.cv_cn_duty_subtotal)}</span>
-                      </div>
-                      <div className="bg-white p-2 rounded border border-orange-100">
-                        <span className="text-orange-600/70 text-xs block mb-1">Sisa VAT CN</span>
-                        <span className="font-bold text-orange-900">{formatRp(data.cv_cn_duty_vat)}</span>
-                      </div>
-                      <div className="bg-white p-2 rounded border border-orange-100">
-                        <span className="text-orange-600/70 text-xs block mb-1">Max Total (Original)</span>
-                        <span className="font-bold text-red-600">-{formatRp(Math.abs(Number(data.cv_cn_duty_total)))}</span>
-                        {rawRecord?.raw_data?.credit_note_duty_v?.count > 1 && (
-                          <div style={{ color: "var(--color-text-tertiary)", fontSize: "10px", marginTop: "2px" }}>(jumlah dari {rawRecord.raw_data.credit_note_duty_v.count} credit note)</div>
-                        )}
-                      </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
+                      {cnTile('Remaining CN subtotal', formatRp(data.cv_cn_duty_subtotal))}
+                      {cnTile('Remaining CN VAT', formatRp(data.cv_cn_duty_vat))}
+                      {cnTile('Max total (original)', <span className="text-[#A8231A]">-{formatRp(Math.abs(Number(data.cv_cn_duty_total)))}</span>,
+                        rawRecord?.raw_data?.credit_note_duty_v?.count > 1
+                          ? <div className="text-[10.5px] text-[#8A7A8B] mt-0.5">(sum of {rawRecord.raw_data.credit_note_duty_v.count} credit notes)</div>
+                          : null)}
                     </div>
-                    
-                    <div className="border-t border-orange-200/50 pt-3">
-                      <p className="text-sm font-medium text-orange-800 mb-2">Potong Subtotal CN dari:</p>
+
+                    <div className="border-t border-[#F3DDB0] pt-3 print:hidden">
+                      <p className="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#7A4F00] mb-2">Deduct CN subtotal from</p>
                       {Number(data.cv_cn_duty_subtotal) > 0 ? (
                         <div className="flex flex-col gap-2">
-                          {Number(data.cv_nonroutine_actual) > 0 && (
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm text-orange-900 w-36 font-medium">Non-Routine:</span>
-                              <input 
-                                type="number" 
-                                className="border border-orange-300 rounded px-2 py-1 text-sm w-32 focus:outline-none focus:border-orange-500" 
-                                placeholder={data.cv_cn_duty_subtotal}
-                                value={cnDutyAmounts['nonroutine'] !== undefined ? cnDutyAmounts['nonroutine'] : data.cv_cn_duty_subtotal}
-                                onChange={(e) => setCnDutyAmounts(prev => ({...prev, nonroutine: e.target.value}))}
-                              />
-                              <button 
-                                disabled={updating}
-                                onClick={() => handleApplyCNDuty('nonroutine', cnDutyAmounts['nonroutine'] !== undefined ? cnDutyAmounts['nonroutine'] : data.cv_cn_duty_subtotal)}
-                                className="text-xs px-3 py-1.5 bg-white border border-orange-300 rounded hover:bg-orange-100 text-orange-800 transition-colors disabled:opacity-50 font-medium"
-                              >
-                                Potong
-                              </button>
-                            </div>
-                          )}
-                          {Number(data.cv_disbursement_actual) > 0 && (
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm text-orange-900 w-36 font-medium">Disbursement:</span>
-                              <input 
-                                type="number" 
-                                className="border border-orange-300 rounded px-2 py-1 text-sm w-32 focus:outline-none focus:border-orange-500" 
-                                placeholder={data.cv_cn_duty_subtotal}
-                                value={cnDutyAmounts['disbursement'] !== undefined ? cnDutyAmounts['disbursement'] : data.cv_cn_duty_subtotal}
-                                onChange={(e) => setCnDutyAmounts(prev => ({...prev, disbursement: e.target.value}))}
-                              />
-                              <button 
-                                disabled={updating}
-                                onClick={() => handleApplyCNDuty('disbursement', cnDutyAmounts['disbursement'] !== undefined ? cnDutyAmounts['disbursement'] : data.cv_cn_duty_subtotal)}
-                                className="text-xs px-3 py-1.5 bg-white border border-orange-300 rounded hover:bg-orange-100 text-orange-800 transition-colors disabled:opacity-50 font-medium"
-                              >
-                                Potong
-                              </button>
-                            </div>
-                          )}
-                          {Number(data.cv_processing_fee_actual) > 0 && (
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm text-orange-900 w-36 font-medium">Processing Fee:</span>
-                              <input 
-                                type="number" 
-                                className="border border-orange-300 rounded px-2 py-1 text-sm w-32 focus:outline-none focus:border-orange-500" 
-                                placeholder={data.cv_cn_duty_subtotal}
-                                value={cnDutyAmounts['processing_fee'] !== undefined ? cnDutyAmounts['processing_fee'] : data.cv_cn_duty_subtotal}
-                                onChange={(e) => setCnDutyAmounts(prev => ({...prev, processing_fee: e.target.value}))}
-                              />
-                              <button 
-                                disabled={updating}
-                                onClick={() => handleApplyCNDuty('processing_fee', cnDutyAmounts['processing_fee'] !== undefined ? cnDutyAmounts['processing_fee'] : data.cv_cn_duty_subtotal)}
-                                className="text-xs px-3 py-1.5 bg-white border border-orange-300 rounded hover:bg-orange-100 text-orange-800 transition-colors disabled:opacity-50 font-medium"
-                              >
-                                Potong
-                              </button>
-                            </div>
-                          )}
-                          {Number(data.cv_import_export_duties) > 0 && (
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm text-orange-900 w-36 font-medium">Import Export Duties:</span>
-                              <input 
-                                type="number" 
-                                className="border border-orange-300 rounded px-2 py-1 text-sm w-32 focus:outline-none focus:border-orange-500" 
-                                placeholder={data.cv_cn_duty_subtotal}
-                                value={cnDutyAmounts['duties'] !== undefined ? cnDutyAmounts['duties'] : data.cv_cn_duty_subtotal}
-                                onChange={(e) => setCnDutyAmounts(prev => ({...prev, duties: e.target.value}))}
-                              />
-                              <button 
-                                disabled={updating}
-                                onClick={() => handleApplyCNDuty('duties', cnDutyAmounts['duties'] !== undefined ? cnDutyAmounts['duties'] : data.cv_cn_duty_subtotal)}
-                                className="text-xs px-3 py-1.5 bg-white border border-orange-300 rounded hover:bg-orange-100 text-orange-800 transition-colors disabled:opacity-50 font-medium"
-                              >
-                                Potong
-                              </button>
-                            </div>
-                          )}
-                          {Number(data.cv_storage_actual) > 0 && (
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm text-orange-900 w-36 font-medium">Bonded Storage:</span>
-                              <input 
-                                type="number" 
-                                className="border border-orange-300 rounded px-2 py-1 text-sm w-32 focus:outline-none focus:border-orange-500" 
-                                placeholder={data.cv_cn_duty_subtotal}
-                                value={cnDutyAmounts['storage'] !== undefined ? cnDutyAmounts['storage'] : data.cv_cn_duty_subtotal}
-                                onChange={(e) => setCnDutyAmounts(prev => ({...prev, storage: e.target.value}))}
-                              />
-                              <button 
-                                disabled={updating}
-                                onClick={() => handleApplyCNDuty('storage', cnDutyAmounts['storage'] !== undefined ? cnDutyAmounts['storage'] : data.cv_cn_duty_subtotal)}
-                                className="text-xs px-3 py-1.5 bg-white border border-orange-300 rounded hover:bg-orange-100 text-orange-800 transition-colors disabled:opacity-50 font-medium"
-                              >
-                                Potong
-                              </button>
-                            </div>
-                          )}
+                          {Number(data.cv_nonroutine_actual) > 0 && cnDeductRow('Non-routine', 'nonroutine', data.cv_cn_duty_subtotal)}
+                          {Number(data.cv_disbursement_actual) > 0 && cnDeductRow('Disbursement', 'disbursement', data.cv_cn_duty_subtotal)}
+                          {Number(data.cv_processing_fee_actual) > 0 && cnDeductRow('Processing fee', 'processing_fee', data.cv_cn_duty_subtotal)}
+                          {Number(data.cv_import_export_duties) > 0 && cnDeductRow('Import export duties', 'duties', data.cv_cn_duty_subtotal)}
+                          {Number(data.cv_storage_actual) > 0 && cnDeductRow('Bonded storage', 'storage', data.cv_cn_duty_subtotal)}
                         </div>
                       ) : (
-                        <div className="flex items-center">
-                          <span className="text-sm font-bold text-emerald-700 bg-emerald-100 px-3 py-1.5 rounded-md border border-emerald-200">
-                            ✅ Subtotal CN Duty sudah habis dipotong.
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="border-t border-orange-200/50 pt-3 mt-3">
-                      <p className="text-sm font-medium text-orange-800 mb-2">Potong VAT CN dari:</p>
-                      {Number(data.cv_cn_duty_vat) > 0 ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-orange-900 w-36 font-medium">VAT Duty:</span>
-                          <input 
-                            type="number" 
-                            className="border border-orange-300 rounded px-2 py-1 text-sm w-32 focus:outline-none focus:border-orange-500" 
-                            placeholder={data.cv_cn_duty_vat}
-                            value={cnDutyAmounts['vat_duty'] !== undefined ? cnDutyAmounts['vat_duty'] : data.cv_cn_duty_vat}
-                            onChange={(e) => setCnDutyAmounts(prev => ({...prev, vat_duty: e.target.value}))}
-                          />
-                          <button 
-                            disabled={updating}
-                            onClick={() => handleApplyCNDuty('vat_duty', cnDutyAmounts['vat_duty'] !== undefined ? cnDutyAmounts['vat_duty'] : data.cv_cn_duty_vat)}
-                            className="text-xs px-3 py-1.5 bg-white border border-orange-300 rounded hover:bg-orange-100 text-orange-800 transition-colors disabled:opacity-50 font-medium"
-                          >
-                            Potong
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center">
-                          <span className="text-sm font-bold text-emerald-700 bg-emerald-100 px-3 py-1.5 rounded-md border border-emerald-200">
-                            ✅ VAT CN Duty sudah habis dipotong.
-                          </span>
-                        </div>
+                        <Chip tone="green">✓ CN duty subtotal fully deducted</Chip>
                       )}
                     </div>
 
-                    {data.cv_cn_duty_log && Array.isArray(data.cv_cn_duty_log) && data.cv_cn_duty_log.length > 0 && (
-                      <div className="mt-4 pt-3 border-t border-orange-200/50">
-                        <h4 className="text-xs font-bold text-orange-900 mb-2">Riwayat Pemotongan CN:</h4>
-                        <ul className="text-xs text-orange-800 space-y-1">
-                          {data.cv_cn_duty_log.map((log: any, idx: number) => {
-                            const dateStr = fmtDateTimeEN(log.at || log.created_at);
-                            return (
-                              <li key={idx} className="flex items-center justify-between group">
-                                <span>✅ Rp {formatRp(log.amount).replace('Rp', '').trim()} dipotong dari {log.target}{log.index != null ? ' #'+log.index : ''} pada {dateStr}</span>
-                                <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setReviseConfirm({side: 'duty', logIndex: idx, log: log}); }} disabled={updating} className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] bg-orange-100 hover:bg-orange-200 text-orange-800 px-2 py-0.5 rounded font-medium disabled:opacity-50">Revisi</button>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      </div>
+                    <div className="border-t border-[#F3DDB0] pt-3 mt-3 print:hidden">
+                      <p className="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#7A4F00] mb-2">Deduct CN VAT from</p>
+                      {Number(data.cv_cn_duty_vat) > 0 ? (
+                        cnDeductRow('VAT duty', 'vat_duty', data.cv_cn_duty_vat)
+                      ) : (
+                        <Chip tone="green">✓ CN duty VAT fully deducted</Chip>
+                      )}
+                    </div>
+
+                    {creditNoteLog(data.cv_cn_duty_log, 'duty')}
+                  </div>
+                )}
+                </div>
+              </div>
+
+              {/* ── Catatan perubahan manual ── */}
+              {isEditing ? (
+                <div className={`${VW_CARD} px-4 py-3`}>
+                   <label className="block text-[13px] font-bold text-[#3B1B3D] mb-2">Manual change notes</label>
+                   <textarea
+                     value={editForm.catatan || ''}
+                     onChange={e => handleFieldChange('catatan', e.target.value)}
+                     placeholder="Reason or notes for any value changed manually…"
+                     className="w-full rounded-lg border border-[#EADFD6] p-3 text-[12.5px] text-[#3B1B3D] focus:outline-none focus:border-[#6B3470] focus:ring-2 focus:ring-[#6B3470]/15 min-h-[90px]"
+                   />
+                </div>
+              ) : data.catatan ? (
+                <div className={`${VW_CARD} px-4 py-3`}>
+                   <div className="text-[13px] font-bold text-[#3B1B3D] mb-1.5">Manual change notes</div>
+                   <div className="rounded-lg bg-[#FBF7F4] border border-[#F1E8E1] px-3 py-2 text-[12.5px] text-[#3B1B3D] whitespace-pre-wrap">
+                     {data.catatan}
+                   </div>
+                </div>
+              ) : null}
+
+              {/* ── Hitung ulang estimasi bonded storage ── */}
+              {data.cv_storage_actual !== null && !isEditing && (!data.cv_storage_input_manual || editStorageManual) && (
+                <div className={`${VW_CARD} p-4 print:hidden`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h3 className="text-[13.5px] font-bold text-[#3B1B3D] flex items-center gap-1.5"><Package size={14} className="text-[#6B3470]" /> Recalculate bonded storage estimate</h3>
+                      <div className="text-[11.5px] text-[#6E5E70]">Billing days are calculated by the system from the courier rules</div>
+                    </div>
+                    {data.cv_storage_input_manual && (
+                      <button onClick={() => setEditStorageManual(false)} className={VW_BTN_SECONDARY}>Cancel</button>
                     )}
                   </div>
-                )}
-                
-                {isEditing ? (
-                  <div className="mt-6 border-t border-slate-100 pt-6">
-                     <label className="block text-sm font-bold text-[#5A305A] mb-2">Catatan Perubahan Manual:</label>
-                     <textarea 
-                       value={editForm.catatan || ''} 
-                       onChange={e => handleFieldChange('catatan', e.target.value)}
-                       placeholder="Masukkan alasan atau catatan jika ada perubahan nilai secara manual..."
-                       className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring focus:ring-blue-100 min-h-[100px]"
-                     />
-                  </div>
-                ) : data.catatan ? (
-                  <div className="mt-6 border-t border-slate-100 pt-6">
-                     <label className="block text-sm font-bold text-[#5A305A] mb-2">Catatan Perubahan Manual:</label>
-                     <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-sm text-[#5A305A] whitespace-pre-wrap">
-                       {data.catatan}
-                     </div>
-                  </div>
-                ) : null}
 
-                {data.cv_storage_actual !== null && !isEditing && (!data.cv_storage_input_manual || editStorageManual) && (
-                  <div className="bg-orange-50 border border-orange-200 p-4 rounded-xl mt-4">
-                    <div className="flex items-center justify-between mb-3 border-b border-orange-200 pb-2">
-                       {/* This is the existing storage estimation manual component */}
-                      <h3 className="font-bold text-orange-800 text-sm">📦 Hitung Ulang Estimasi Bonded Storage</h3>
-                      {data.cv_storage_input_manual && (
-                        <button onClick={() => setEditStorageManual(false)} className="text-xs text-[#5A305A] hover:text-[#5A305A] font-bold">Batal</button>
-                      )}
+                  <div className="grid grid-cols-2 md:grid-cols-6 gap-3 items-end">
+                    <div>
+                      <p className={`${VW_LABEL} mb-1.5`}>Storage actual</p>
+                      <p className="text-[13px] font-bold text-[#3B1B3D] tabular-nums h-8 flex items-center">{formatRp(data.cv_storage_actual)}</p>
                     </div>
-                    
-                    <div className="mb-4 text-sm text-[#5A305A] bg-white/50 p-3 rounded-lg border border-orange-100 grid grid-cols-2">
-                      <div>
-                        <p className="text-xs text-[#5A305A] mb-0.5">Storage Actual</p>
-                        <p className="font-semibold">{formatRp(data.cv_storage_actual)}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-[#5A305A] mb-0.5">Storage Weight (bisa diedit manual)</p>
-                        <div className="flex items-center gap-1.5">
-                          <input
-                            type="number"
-                            step="any"
-                            value={storageWeightManual}
-                            onChange={e => setStorageWeightManual(e.target.value)}
-                            placeholder="0"
-                            className="w-24 border border-slate-300 rounded-lg px-2 py-1 font-semibold text-[#5A305A] bg-white focus:outline-none focus:ring focus:ring-orange-200"
-                          />
-                          <span className="font-semibold">kg</span>
-                        </div>
+                    <div>
+                      <p className={`${VW_LABEL} mb-1.5`}>Storage weight (editable)</p>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          step="any"
+                          value={storageWeightManual}
+                          onChange={e => setStorageWeightManual(e.target.value)}
+                          placeholder="0"
+                          className={`${VW_INPUT} w-24`}
+                        />
+                        <span className="text-[12px] font-semibold text-[#6E5E70]">kg</span>
                       </div>
                     </div>
-
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 items-end mb-4 text-sm">
-                      <div>
-                        <label className="block text-xs font-semibold text-[#5A305A] mb-1">ETA Date</label>
-                        <input type="date" value={etaDate} onChange={e => setEtaDate(e.target.value)} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 focus:ring focus:ring-orange-200 bg-white" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-[#5A305A] mb-1">Release Date</label>
-                        <input type="date" value={releaseDate} onChange={e => setReleaseDate(e.target.value)} className="w-full border border-slate-300 rounded-lg px-2 py-1.5 focus:ring focus:ring-orange-200 bg-white" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-[#5A305A] mb-1">Actual Days</label>
-                        <div className="bg-slate-100 border border-slate-200 rounded-lg px-2 py-1.5 text-[#5A305A] text-center font-bold">
-                           {etaDate && releaseDate ? getActualDays() : '-'}
-                        </div>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-[#5A305A] mb-1">Billing Days</label>
-                        <div className="bg-slate-100 border border-slate-200 rounded-lg px-2 py-1.5 text-[#5A305A] text-center font-bold">
-                           {etaDate && releaseDate && storageExpectedResult ? storageExpectedResult.billing_days : '-'}
-                        </div>
+                    <div>
+                      <label className={`${VW_LABEL} block mb-1.5`}>ETA date</label>
+                      <input type="date" value={etaDate} onChange={e => setEtaDate(e.target.value)} className={`${VW_INPUT} w-full`} />
+                    </div>
+                    <div>
+                      <label className={`${VW_LABEL} block mb-1.5`}>Release date</label>
+                      <input type="date" value={releaseDate} onChange={e => setReleaseDate(e.target.value)} className={`${VW_INPUT} w-full`} />
+                    </div>
+                    <div>
+                      <label className={`${VW_LABEL} block mb-1.5`}>Actual days</label>
+                      <div className="h-8 rounded-lg bg-[#F3EEEA] text-[#3B1B3D] text-center font-bold text-[13px] flex items-center justify-center">
+                         {etaDate && releaseDate ? getActualDays() : '-'}
                       </div>
                     </div>
-
-                    <div className="bg-white/50 p-3 rounded-lg mb-4 text-xs text-[#5A305A] border border-orange-100">
-                      <p className="font-bold mb-1 text-[#5A305A]">Formula Billing Days:</p>
-                      <ul className="list-disc pl-4 space-y-1">
-                        <li>Dihitung oleh sistem berdasarkan aturan courier</li>
-                      </ul>
-                    </div>
-
-                    <div className="flex items-center justify-between border-t border-orange-200 pt-4 mt-2">
-                      <div>
-                        <span className="text-xs font-semibold text-[#5A305A] block mb-0.5">Expected Storage Calculated</span>
-                        <span className="font-bold text-lg text-[#5A305A]">
-                          {storageExpectedResult ? formatRp(storageExpectedResult.expected_idr) : 'Rp 0'}
-                        </span>
-                        {debugError && <p className="text-xs text-red-600 mt-1 font-bold">{debugError}</p>}
+                    <div>
+                      <label className={`${VW_LABEL} block mb-1.5`}>Billing days</label>
+                      <div className="h-8 rounded-lg bg-[#F3EEEA] text-[#3B1B3D] text-center font-bold text-[13px] flex items-center justify-center">
+                         {etaDate && releaseDate && storageExpectedResult ? storageExpectedResult.billing_days : '-'}
                       </div>
-                      <button 
-                        onClick={handleSimpanValidasi} 
-                        disabled={updating || !etaDate || !releaseDate || !storageExpectedResult} 
-                        className="bg-orange-600 hover:bg-orange-700 text-white font-bold text-sm px-6 py-2.5 rounded-lg shadow-sm disabled:opacity-50 transition-colors"
-                      >
-                        {updating ? 'Menyimpan...' : 'Simpan Estimasi Baru'}
-                      </button>
                     </div>
                   </div>
-                )}
-              </div>
-              
-              {/* Summary Footer */}
-              {!isEditing && (
-                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col gap-4 text-sm mt-4">
-                   <div className="flex justify-between items-center pb-4 border-b border-slate-100">
-                     <div className="flex gap-4">
-                       <span className="font-semibold text-[#5A305A]">Total Validable: {liveSummary.total_cost_cek}</span>
-                       <span className="text-emerald-600 font-semibold">{liveSummary.total_ok} OK</span>
-                       <span className="text-red-600 font-semibold">{liveSummary.total_selisih} SELISIH</span>
-                       <span className="text-[#5A305A] font-semibold">{liveSummary.total_na} N/A</span>
-                     </div>
-                     <div className="flex items-center gap-2">
-                       <span className="font-bold text-[#5A305A]">STATUS:</span>
-                       {formatStatus(liveSummary.status_cost)}
-                     </div>
-                   </div>
 
-                   <div className="flex justify-end">
-                     <div className="min-w-[220px]">
-                       <div className="flex justify-between mb-1.5">
-                         <span className="text-[11px] text-[#5A305A] font-medium">Overall Accuracy</span>
-                         <span className="text-[11px] font-bold text-[#5A305A]">{liveSummary.pct}%</span>
-                       </div>
-                       <div className="h-2 rounded-full bg-slate-100 overflow-hidden shadow-inner">
-                         <div
-                           className={`h-full transition-all duration-500 ${liveSummary.pct >= 90 ? 'bg-emerald-600' : liveSummary.pct >= 60 ? 'bg-amber-500' : 'bg-red-600'}`}
-                           style={{ width: `${liveSummary.pct}%` }}
-                         />
-                       </div>
-                     </div>
-                   </div>
+                  <div className="flex items-center justify-between gap-3 border-t border-[#EADFD6] pt-3 mt-4 flex-wrap">
+                    <div>
+                      <span className={`${VW_LABEL} block mb-1`}>Expected storage (calculated)</span>
+                      <span className="font-bold text-[18px] text-[#3B1B3D] tabular-nums">
+                        {storageExpectedResult ? formatRp(storageExpectedResult.expected_idr) : 'Rp 0'}
+                      </span>
+                      {debugError && <p className="text-[11.5px] text-[#A8231A] mt-1 font-semibold">{debugError}</p>}
+                    </div>
+                    <button
+                      onClick={handleSimpanValidasi}
+                      disabled={updating || !etaDate || !releaseDate || !storageExpectedResult}
+                      className={VW_BTN_PRIMARY}
+                    >
+                      {updating ? 'Saving…' : 'Save new estimate'}
+                    </button>
+                  </div>
+                </div>
+              )}
 
-                   <div className="flex justify-end gap-6">
-                     <div className="flex flex-col items-end gap-1">
-                       <span className="text-[10px] font-bold text-[#5A305A] tracking-wider uppercase">Invoice Freight</span>
-                       <span className={`px-2 py-0.5 rounded font-bold text-xs ${liveSummary.invoice_freight_status === 'OK' ? 'bg-emerald-100 text-emerald-700' : liveSummary.invoice_freight_status === 'N/A' ? 'bg-slate-100 text-[#5A305A]' : 'bg-red-100 text-red-700'}`}>
-                         {liveSummary.invoice_freight_status === 'OK' ? '✅ OK' : liveSummary.invoice_freight_status === 'N/A' ? '⬜ N/A' : '⚠️ ADA SELISIH'}
-                       </span>
-                     </div>
-                     <div className="flex flex-col items-end gap-1">
-                       <span className="text-[10px] font-bold text-[#5A305A] tracking-wider uppercase">Invoice Duty</span>
-                       <span className={`px-2 py-0.5 rounded font-bold text-xs ${liveSummary.invoice_duty_status === 'OK' ? 'bg-emerald-100 text-emerald-700' : liveSummary.invoice_duty_status === 'N/A' ? 'bg-slate-100 text-[#5A305A]' : 'bg-red-100 text-red-700'}`}>
-                         {liveSummary.invoice_duty_status === 'OK' ? '✅ OK' : liveSummary.invoice_duty_status === 'N/A' ? '⬜ N/A' : '⚠️ ADA SELISIH'}
-                       </span>
-                     </div>
-                   </div>
+              {/* Summary Footer -- hanya mode standalone (mode embedded: ringkasan ada di toolbar
+                  & status per invoice ada di header kartu Freight/Duty). */}
+              {!isEditing && !embedded && (
+                 <div className={`${VW_CARD} p-4 flex flex-wrap items-center gap-4 text-[12.5px]`}>
+                   <span className="font-semibold text-[#3B1B3D]">Total validable: {liveSummary.total_cost_cek}</span>
+                   <span className="text-[#17663D] font-semibold">{liveSummary.total_ok} OK</span>
+                   <span className="text-[#A8231A] font-semibold">{liveSummary.total_selisih} difference</span>
+                   <span className="text-[#6E5E70] font-semibold">{liveSummary.total_na} N/A</span>
+                   <span className="ml-auto flex items-center gap-2">Status {formatStatus(liveSummary.status_cost)}</span>
+                   <span>Accuracy <b>{liveSummary.pct}%</b></span>
                  </div>
               )}
               </div>

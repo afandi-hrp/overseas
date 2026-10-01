@@ -38,7 +38,9 @@ import {
 } from '../utils/CourierAuditHelpers'
 import { CourierAuditCardList, CourierAuditKpiCards } from './CourierAuditCardList'
 import CourierAuditOverview from './CourierAuditOverview'
+import CourierAuditTrail from './CourierAuditTrail'
 import CourierAuditEditModal from './CourierAuditEditModal'
+import { SA_BTN_OUTLINE, SA_BTN_GREEN } from './SeaAirAuditUi'
 import { SeaAirRecapCardList, SeaAirRecapKpiCards, CostMixLegend } from './SeaAirRecapCardList'
 import SeaAirRecapDetailModal from './SeaAirRecapDetailModal'
 import SeaAirRecapEditModal from './SeaAirRecapEditModal'
@@ -5805,18 +5807,18 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
             subtitle={[courierColOk('tgl_ppjk') ? fmtDateShortSeaAir(rec.tgl_ppjk) : '', courierColOk('awb') && docNo ? rec.awb : '', courierColOk('impor_an') ? rec.impor_an : '', courierColOk('vendor') ? rec.vendor : ''].filter(Boolean).join(' · ')}
             headerActions={canEditAudit ? (
               <>
-                <button type="button" onClick={() => setCourierEditState({ record: rec, docType: t })} className="h-8 px-3 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-[#5A305A] hover:bg-slate-50">Edit</button>
+                <button type="button" onClick={() => setCourierEditState({ record: rec, docType: t })} className={SA_BTN_OUTLINE}>Edit</button>
                 {draft ? (
-                  <button type="button" disabled={courierBusy} onClick={() => courierSetStatus(rec, 'audited')} className="h-8 px-3 rounded-lg bg-[#17663D] hover:bg-[#12532F] text-white text-xs font-semibold disabled:opacity-50">{courierBusy ? 'Saving…' : 'Mark as audited'}</button>
+                  <button type="button" disabled={courierBusy} onClick={() => courierSetStatus(rec, 'audited')} className={SA_BTN_GREEN}>{courierBusy ? 'Saving…' : 'Mark as audited'}</button>
                 ) : (
-                  <button type="button" disabled={courierBusy} onClick={() => courierSetStatus(rec, 'draft')} className="h-8 px-3 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-[#5A305A] hover:bg-slate-50 disabled:opacity-50">{courierBusy ? 'Saving…' : 'Move back to Draft'}</button>
+                  <button type="button" disabled={courierBusy} onClick={() => courierSetStatus(rec, 'draft')} className={SA_BTN_OUTLINE}>{courierBusy ? 'Saving…' : 'Move back to Draft'}</button>
                 )}
                 {draft && courierAuditType === 'archive' && (
-                  <button type="button" title="Delete this draft" onClick={() => { setCourierOpen(null); setDeleteRecord(rec); }} className="h-8 px-3 rounded-lg border border-red-200 bg-white text-xs font-semibold text-red-600 hover:bg-red-50">Delete</button>
+                  <button type="button" title="Delete this draft" onClick={() => { setCourierOpen(null); setDeleteRecord(rec); }} className="inline-flex items-center justify-center gap-1.5 px-3.5 h-9 rounded-xl border border-[#F4C3BC] bg-white text-[#A8231A] text-xs font-semibold hover:bg-[#FDE7E4] transition-colors">Delete</button>
                 )}
               </>
             ) : null}
-            overview={
+            overview={openTab => (
               <CourierAuditOverview
                 rec={rec}
                 docType={t}
@@ -5824,9 +5826,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 colOk={courierColOk}
                 validationTabs={courierValidationTabs}
                 canEdit={canEditAudit}
-                onOpenTab={vt => setCourierOpen(prev => (prev ? { ...prev, tab: vt } : prev))}
+                onOpenTab={openTab}
               />
-            }
+            )}
+            trail={<CourierAuditTrail rec={rec} docType={t} />}
             onClose={closeOpen}
           />
           </React.Fragment>

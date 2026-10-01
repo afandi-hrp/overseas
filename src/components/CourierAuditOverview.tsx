@@ -1,20 +1,15 @@
 // Tab "Overview" jendela Open Audit Courier (2026-10-01) -- mengikuti jendela Open Audit PIB Sea & Air.
 // MURNI tampilan dari kolom tersimpan (+ auto-calc yg sudah di-apply saat fetch). Kolom yang tidak
 // diizinkan role tidak ditampilkan (`colOk`). Validasi = info saja, TIDAK pernah mengunci (keputusan
-// user: ada kasus invoice freight memang tidak ditagihkan).
+// user: ada kasus invoice freight memang tidak ditagihkan). Audit trail DIPINDAH ke tab sendiri
+// (CourierAuditTrail.tsx, 2026-10-01).
 import React, { useEffect, useState } from 'react'
 import { CheckCircle2, XCircle, Circle } from 'lucide-react'
-import { SA_CARD, SA_LABEL, Chip, SectionCard } from './SeaAirAuditUi'
+import { SA_LABEL, Chip, SectionCard } from './SeaAirAuditUi'
 import { fmtRp, fmtValas, fmtDateShort, fmtPctShort, buildGoodsLines, parseLooseNumber, splitMoneyEvenly, companyFullName } from '../utils/SeaAirAuditHelpers'
-import { computeCourierBuildUp, computeCourierDutyRows, courierDocNo, fetchCourierAuditLog, type CourierAuditLogEntry, type CourierDocType } from '../utils/CourierAuditHelpers'
+import { computeCourierBuildUp, computeCourierDutyRows, courierDocNo, type CourierDocType } from '../utils/CourierAuditHelpers'
 import { VALIDATION_TAB_LABEL, rowValidationPct, validationDotClass, type ValidationTabKey } from './CourierValidationWindow'
 
-const fmtDateTime = (v: any) => {
-  if (!v) return '—'
-  const d = new Date(v)
-  if (isNaN(d.getTime())) return String(v)
-  return `${fmtDateShort(v)} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
 const hasVal = (v: any) => v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim() !== '-'
 
 const Fact: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
@@ -44,14 +39,6 @@ export default function CourierAuditOverview({ rec, docType, companyNames, colOk
   canEdit: boolean
   onOpenTab: (t: ValidationTabKey) => void
 }) {
-  const [log, setLog] = useState<CourierAuditLogEntry[] | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    setLog(null)
-    fetchCourierAuditLog(rec, docType).then(e => { if (!cancelled) setLog(e) })
-    return () => { cancelled = true }
-  }, [rec?.id, rec?.awb, rec?.created_at, docType])
-
   const build = computeCourierBuildUp(rec)
   const duty = computeCourierDutyRows(rec, docType)
   const lines = colOk('po_ori') ? buildGoodsLines(rec) : []
@@ -282,21 +269,6 @@ export default function CourierAuditOverview({ rec, docType, companyNames, colOk
           ))}
         </SectionCard>
       )}
-
-      <div className={SA_CARD}>
-        <div className="px-4 pt-3.5 pb-2 text-[14px] font-bold text-[#3B1B3D]">Audit trail</div>
-        <div className="px-4 pb-3">
-          {log === null ? <div className="text-[12px] text-[#8A7A8B] py-1">Loading…</div>
-            : log.length === 0 ? <div className="text-[12px] text-[#8A7A8B] py-1">No activity recorded</div>
-            : log.map((e, i) => (
-              <div key={i} className="grid grid-cols-[130px_110px_minmax(0,1fr)] gap-3 py-1.5 text-[12px] border-t border-[#F1E8E1] first:border-t-0">
-                <span className="text-[#6E5E70] tabular-nums">{fmtDateTime(e.at)}</span>
-                <span className="font-semibold text-[#3B1B3D] truncate" title={e.who}>{e.who}</span>
-                <span className="text-[#3B1B3D] [overflow-wrap:anywhere]"><b>{e.what}</b>{e.detail ? ` — ${e.detail}` : ''}</span>
-              </div>
-            ))}
-        </div>
-      </div>
     </div>
   )
 }

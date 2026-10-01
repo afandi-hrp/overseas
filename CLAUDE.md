@@ -498,7 +498,9 @@ sidebar needs attention SUDAH; pindah tab browser tidak refresh SUDAH (lihat bag
 ## Redesain Courier mengikuti Sea & Air — STATUS (2026-10-01)
 
 **Tahap 1 Audit Courier SELESAI** (tampilan kartu/Open/Edit, lihat "Audit Courier — tampilan baru" di
-`docs/claude/courier-features.md`). **Keputusan user permanen**: Mark as audited TIDAK PERNAH dikunci walau
+`docs/claude/courier-features.md`). **Susulan 2026-10-01**: tab Cost Validation / Doc Validation / Audit trail
+(tab baru) jendela Open ditata ulang gaya Sea & Air — MURNI tampilan, logika & query tetap (lihat sub-bagian
+"Tampilan Cost Validation / Doc Validation / Audit trail ala Sea & Air" di file yang sama). **Keputusan user permanen**: Mark as audited TIDAK PERNAH dikunci walau
 validasi belum lengkap (ada kasus invoice freight memang tidak ditagihkan) — JANGAN tambah gerbang validasi
 Courier. Tab tetap Draft/PIB/CN (tanpa "All"). Fitur tabel lama tetap di mode List.
 **Berikutnya (belum)**: (2) Rekapan Courier tampilan (perlu keputusan kartu per invoice vs per AWB),

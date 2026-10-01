@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { LoadingSpinner } from './LoadingState';
 import { supabase } from '../lib/supabase';
-import { Receipt, FileText, Landmark, Ship, Sailboat, FileCheck2, FileDigit, IdCard, Scale, ClipboardList, Edit3, CheckCircle2, XCircle, Clock, Building2, Plane, CalendarDays, UserCheck, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
+import { Receipt, FileText, Landmark, Ship, Sailboat, FileCheck2, FileDigit, IdCard, Scale, ClipboardList, Edit3, CheckCircle2, XCircle, Clock, Building2, Plane, CalendarDays, UserCheck, ChevronDown, ChevronUp, ChevronRight, RefreshCw } from 'lucide-react';
 import ValidasiPerhitunganPIB from './ValidasiPerhitunganPIB';
-import { VW_LABEL, VW_BTN_PRIMARY, VW_BTN_SECONDARY, VW_BTN_SUCCESS, VW_BTN_DANGER, vwPctBar, vwPctText } from './validationWindowStyles';
+import { VW_LABEL, VW_BTN_PRIMARY, VW_BTN_SECONDARY, VW_BTN_SUCCESS, VW_BTN_DANGER, VW_CARD, VW_INPUT, VW_TILE, VW_TILE_TONE, vwPctBar, vwPctText } from './validationWindowStyles';
+import { Pill } from './SeaAirAuditUi';
 
 // Format tanggal seragam di seluruh aplikasi: DD-MMMM-YYYY, nama bulan Bahasa Inggris.
 const MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -101,6 +102,22 @@ const headerColors: Record<string, { bg: string, text: string }> = {
   "Invoice Freight": { bg: "#93c5fd", text: "#1e3a8a" },
   "SPPBMCP": { bg: "#a5f3fc", text: "#155e75" },
 };
+
+// Judul section utk TAMPILAN kartu (2026-10-01, gaya Sea & Air) -- murni display. `section.label`
+// asli tetap ada di SECTIONS & tidak diubah (dipakai fallback).
+const SECTION_TITLE: Record<string, string> = {
+  s_inv_freight_duty: 'Invoice freight & invoice duty',
+  s_pib: 'PIB',
+  s_sppbmcp: 'SPPBMCP',
+  s_billing: 'Billing DJBC',
+  s_cipl: 'CIPL (CN path only)',
+  s_no_vessel_imo: 'No vessel name & IMO number',
+  s_sptnp: 'SPTNP',
+  s_tabel_npwp: 'NPWP table',
+};
+
+// Input sel tabel (mode Edit) -- gaya Sea & Air.
+const CELL_INPUT = 'w-full h-8 px-2 rounded-md border border-[#EADFD6] bg-white text-[12px] text-center font-medium text-[#3B1B3D] focus:outline-none focus:border-[#6B3470] focus:ring-2 focus:ring-[#6B3470]/15 transition-all';
 
 function getHeaderColor(doc: string) {
   return headerColors[doc] || { bg: "#f1f5f9", text: "#475569" };
@@ -911,6 +928,10 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   // perlu memicu re-render sendiri.
   const computedValuesRef = useRef<Record<string, any> | null>(null);
   const [recomputeMsg, setRecomputeMsg] = useState<string | null>(null);
+  // Kartu section terbuka/tertutup (tampilan, 2026-10-01). null = belum diinisialisasi; setelah data
+  // dimuat, section yg punya mismatch terbuka otomatis (pola Documents Invoice Recap Sea & Air) &
+  // TIDAK menutup sendiri saat mismatch-nya dikoreksi.
+  const [openSections, setOpenSections] = useState<Record<string, boolean> | null>(null);
   // Cegah checklist baru KEBUAT hanya krn user MEMBUKA/MELIHAT modal ini tanpa mengedit apa pun
   // (2026-09, laporan user -- ikon pensil "sudah diedit" tidak muncul, artinya field itu memang
   // TIDAK PERNAH disentuh, tapi baris checklist tetap kebuat/keupdate). Diset `true` HANYA di
@@ -1353,6 +1374,14 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     }
   };
 
+  useEffect(() => {
+    if (loading || openSections !== null) return;
+    const init: Record<string, boolean> = {};
+    activeSections.forEach(s => { if (sectionStats(s).mismatch > 0) init[s.id] = true; });
+    setOpenSections(init);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+
   const reset = () => {
     const init: any = {};
     SECTIONS.forEach(s => s.rows.forEach(r => { init[r.id] = { src: "", cmp: "" }; }));
@@ -1435,10 +1464,11 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   const txtWarn = "#92400e";
 
   const getCfg = (st: string) => {
-    if (st === 'match') return { label: "Match", bg: bgSuccess, color: txtSuccess, icon: "ti-check" };
-    if (st === 'mismatch') return { label: "Mismatch", bg: bgDanger, color: txtDanger, icon: "ti-x" };
-    if (st === 'partial') return { label: "Incomplete", bg: bgWarning, color: txtWarn, icon: "ti-clock" };
-    return { label: "Not checked yet", bg: "#EEEAF3", color: "#5A305A", icon: "ti-clock" };
+    // Warna chip status = token Sea & Air (2026-10-01).
+    if (st === 'match') return { label: "Match", bg: "#EAF6EF", color: "#17663D", icon: "ti-check" };
+    if (st === 'mismatch') return { label: "Mismatch", bg: "#FDE7E4", color: "#A8231A", icon: "ti-x" };
+    if (st === 'partial') return { label: "Incomplete", bg: "#FFF1D6", color: "#7A4F00", icon: "ti-clock" };
+    return { label: "Not checked yet", bg: "#F3EEEA", color: "#6E5E70", icon: "ti-clock" };
   }
 
   const startEdit = () => {
@@ -1460,66 +1490,54 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   // + panel gradient "Import Document Validation Table" (dulu tampil seperti header kedua di bawah
   // Shipment Info). Isi & fungsi sama: Check date, Checked by, No. AWB (saat Edit), Manual Change
   // Notes, skor Match/Mismatch/Not filled + akurasi, tombol Edit/Recompute/Save/Cancel.
+  // 2026-10-01: gaya ringkasan Sea & Air (kotak angka, akurasi, Expand/Collapse all section).
+  const allSectionsOpen = activeSections.length > 0 && activeSections.every(s => !!openSections?.[s.id]);
   const embeddedToolbar = embedded && (
-    <div className="shrink-0 bg-white border-b border-slate-200">
-      <div className="px-4 pt-2.5 pb-2 flex items-center gap-x-5 gap-y-2 flex-wrap">
-        <div className="flex items-center gap-2 min-w-0">
-          <CalendarDays size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
-          <div>
-            <div className={VW_LABEL}>Check date</div>
-            {isEditMode ? <input type="date" style={S.metaInput} className="mt-0.5" value={tanggal || ""} onChange={e => { userActionRef.current = true; setTanggal(e.target.value); }} /> : <div className="text-[13px] font-semibold text-[#5A305A] mt-0.5">{fmtDateEN(tanggal)}</div>}
+    <div className="shrink-0 bg-white border-b border-[#EADFD6]">
+      <div className="px-4 pt-3 pb-2 flex items-center gap-x-4 gap-y-2 flex-wrap">
+        <div className="mr-auto min-w-0">
+          <div className="text-[14px] font-bold text-[#3B1B3D]">Document validation</div>
+          <div className="text-[11.5px] text-[#6E5E70]">
+            {isEditMode ? <span className="text-[#7A4F00] font-semibold">Editing — click a status to change it manually; changes are saved automatically</span> : 'The same field compared across every document of this shipment'}
           </div>
         </div>
-        <div className="flex items-center gap-2 min-w-0">
-          <UserCheck size={14} className="text-[#8b5fa8] shrink-0 print:hidden" />
-          <div>
-            <div className={VW_LABEL}>Checked by</div>
-            {isEditMode ? <input style={S.metaInput} className="mt-0.5" value={namaChecker || ""} onChange={e => { userActionRef.current = true; setNamaChecker(e.target.value); }} placeholder="Checker's name" /> : <div className="text-[13px] font-semibold text-[#5A305A] mt-0.5">{namaChecker || "—"}</div>}
+        <div className="flex items-center gap-1.5 print:hidden">
+          {([
+            ['Match', stats.match, VW_TILE_TONE.green],
+            ['Mismatch', stats.mismatch, VW_TILE_TONE.red],
+            ['Not filled', stats.empty + stats.partial, VW_TILE_TONE.grey],
+          ] as const).map(([label, value, cls]) => (
+            <div key={label} className={`${VW_TILE} ${cls}`}>
+              <div className="text-[17px] font-bold leading-tight tabular-nums">{value}</div>
+              <div className="text-[10px] font-semibold">{label}</div>
+            </div>
+          ))}
+        </div>
+        <div className="w-40 print:hidden">
+          <div className="flex justify-between items-baseline mb-1 text-[11px] text-[#6E5E70]">
+            <span>Accuracy</span>
+            <b className={vwPctText(stats.pct)}>{stats.match}/{stats.checked} · {stats.pct}%</b>
+          </div>
+          <div className="h-2 rounded-full bg-[#F3EEEA] overflow-hidden">
+            <div className={`h-full transition-all duration-500 ${vwPctBar(stats.pct)}`} style={{ width: `${stats.pct}%` }} />
           </div>
         </div>
-        {isEditMode && (
-          <div className="flex items-center gap-2 min-w-0">
-            <Plane size={14} className="text-[#8b5fa8] shrink-0" />
-            <div>
-              <div className={VW_LABEL}>No. AWB (checker)</div>
-              <input style={S.metaInput} className="mt-0.5" value={awbNo || ""} onChange={e => { userActionRef.current = true; setAwbNo(e.target.value); }} placeholder="e.g. 1234567890" />
-            </div>
-          </div>
-        )}
-
-        <div className="flex items-center gap-3 print:hidden">
-          <div className="flex items-center gap-1.5">
-            <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 text-emerald-700 px-2 py-1 text-[11px] font-semibold"><b className="text-[13px]">{stats.match}</b> Match</span>
-            <span className="inline-flex items-center gap-1 rounded-md bg-red-50 text-red-700 px-2 py-1 text-[11px] font-semibold"><b className="text-[13px]">{stats.mismatch}</b> Mismatch</span>
-            <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 text-slate-600 px-2 py-1 text-[11px] font-semibold"><b className="text-[13px]">{stats.empty + stats.partial}</b> Not filled</span>
-          </div>
-          <div className="w-36">
-            <div className="flex justify-between items-baseline mb-1">
-              <span className="text-[10px] text-slate-500">Accuracy</span>
-              <span className={`text-[11px] font-bold ${vwPctText(stats.pct)}`}>{stats.match}/{stats.checked} ({stats.pct}%)</span>
-            </div>
-            <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
-              <div className={`h-full transition-all duration-500 ${vwPctBar(stats.pct)}`} style={{ width: `${stats.pct}%` }} />
-            </div>
-          </div>
-        </div>
-
         {canEdit && (
-          <div className="ml-auto flex items-center gap-2 print:hidden">
+          <div className="flex items-center gap-2 print:hidden">
             {!isEditMode ? (
               <button className={VW_BTN_PRIMARY} onClick={startEdit}>
-                <Edit3 size={14} /> Edit
+                <Edit3 size={13} /> Edit
               </button>
             ) : (
               <>
                 <button className={VW_BTN_SECONDARY} onClick={handleRecomputeMissing} title="Isi ulang field yang masih kosong dari data dokumen terbaru, tanpa menimpa field yang sudah terisi/diedit">
-                  <RefreshCw size={14} /> Recompute Missing Data
+                  <RefreshCw size={13} /> Recompute missing data
                 </button>
                 <button className={VW_BTN_DANGER} onClick={cancelEdit}>
-                  <XCircle size={14} /> Cancel
+                  <XCircle size={13} /> Cancel
                 </button>
                 <button className={VW_BTN_SUCCESS} onClick={() => setIsEditMode(false)}>
-                  <CheckCircle2 size={14} /> Save
+                  <CheckCircle2 size={13} /> Save
                 </button>
               </>
             )}
@@ -1527,21 +1545,48 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
         )}
       </div>
 
-      <div className="px-4 pb-2.5 flex items-start gap-3 print:hidden">
-        <div className={`${VW_LABEL} pt-1.5 shrink-0 w-[132px]`}>Manual Change Notes</div>
-        {isEditMode ? (
-          <textarea
-            value={catatanManual}
-            onChange={e => { userActionRef.current = true; setCatatanManual(e.target.value); }}
-            placeholder="Enter the reason or notes for any manually changed values..."
-            rows={1}
-            className="flex-1 min-w-0 border border-purple-100 bg-white rounded-lg px-2.5 py-1.5 text-[12px] text-[#5A305A] focus:outline-none focus:ring-2 focus:ring-purple-200 resize-y"
-          />
-        ) : (
-          <div className="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-[12px] text-[#5A305A] whitespace-pre-wrap [overflow-wrap:anywhere]">
-            {catatanManual || <span className="italic text-[#5A305A]/50">No notes yet.</span>}
+      <div className="px-4 pb-3 flex items-start gap-x-5 gap-y-2 flex-wrap">
+        <div className="min-w-0">
+          <div className={VW_LABEL}><CalendarDays size={11} className="inline -mt-0.5 mr-1 print:hidden" />Check date</div>
+          {isEditMode ? <input type="date" className={`${VW_INPUT} mt-1 w-40`} value={tanggal || ""} onChange={e => { userActionRef.current = true; setTanggal(e.target.value); }} /> : <div className="text-[12.5px] font-semibold text-[#3B1B3D] mt-1">{fmtDateEN(tanggal)}</div>}
+        </div>
+        <div className="min-w-0">
+          <div className={VW_LABEL}><UserCheck size={11} className="inline -mt-0.5 mr-1 print:hidden" />Checked by</div>
+          {isEditMode ? <input className={`${VW_INPUT} mt-1 w-44`} value={namaChecker || ""} onChange={e => { userActionRef.current = true; setNamaChecker(e.target.value); }} placeholder="Checker's name" /> : <div className="text-[12.5px] font-semibold text-[#3B1B3D] mt-1">{namaChecker || "—"}</div>}
+        </div>
+        {isEditMode && (
+          <div className="min-w-0">
+            <div className={VW_LABEL}><Plane size={11} className="inline -mt-0.5 mr-1" />No. AWB (checker)</div>
+            <input className={`${VW_INPUT} mt-1 w-44`} value={awbNo || ""} onChange={e => { userActionRef.current = true; setAwbNo(e.target.value); }} placeholder="e.g. 1234567890" />
           </div>
         )}
+        <div className="flex-1 min-w-[240px] print:hidden">
+          <div className={VW_LABEL}>Manual change notes</div>
+          {isEditMode ? (
+            <textarea
+              value={catatanManual}
+              onChange={e => { userActionRef.current = true; setCatatanManual(e.target.value); }}
+              placeholder="Enter the reason or notes for any manually changed values..."
+              rows={1}
+              className="mt-1 w-full rounded-lg border border-[#EADFD6] bg-white px-2.5 py-1.5 text-[12px] text-[#3B1B3D] focus:outline-none focus:border-[#6B3470] focus:ring-2 focus:ring-[#6B3470]/15 resize-y"
+            />
+          ) : (
+            <div className="mt-1 rounded-lg border border-[#F1E8E1] bg-[#FBF7F4] px-2.5 py-1.5 text-[12px] text-[#3B1B3D] whitespace-pre-wrap [overflow-wrap:anywhere]">
+              {catatanManual || <span className="italic text-[#8A7A8B]">No notes yet.</span>}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          className={`${VW_BTN_SECONDARY} self-end print:hidden`}
+          onClick={() => {
+            const next: Record<string, boolean> = {};
+            if (!allSectionsOpen) activeSections.forEach(s => { next[s.id] = true; });
+            setOpenSections(next);
+          }}
+        >
+          {allSectionsOpen ? <><ChevronUp size={13} /> Collapse all</> : <><ChevronDown size={13} /> Expand all</>}
+        </button>
       </div>
     </div>
   );
@@ -1603,7 +1648,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
         )}
 
         {recomputeMsg && (
-          <div className="px-3 md:px-4 py-2 text-xs font-medium text-[#0369a1] bg-[#f0f9ff] border-b border-[#bae6fd] shrink-0 print:hidden">
+          <div className="px-4 py-2 text-[12px] font-semibold text-[#2F4FA8] bg-[#EEF1FA] border-b border-[#D5DCF2] shrink-0 print:hidden">
             {recomputeMsg}
           </div>
         )}
@@ -1737,8 +1782,13 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
         </div>
         )}
         
-        <div className={`flex-1 overflow-y-auto print:p-0 print:overflow-visible ${embedded ? 'bg-slate-50/70 p-4 pb-8' : 'p-4 md:p-6 pt-4 md:pt-6 pb-12'}`}>
+        <div className={`flex-1 overflow-y-auto print:p-0 print:overflow-visible ${embedded ? 'bg-[#FBF7F4] p-4 pb-8' : 'p-4 md:p-6 pt-4 md:pt-6 pb-12'}`}>
           <div style={S.page}>
+            {stats.mismatch > 0 && (
+              <div className="mb-3 rounded-[14px] border border-[#F4C3BC] bg-[#FDE7E4] px-4 py-2 text-[12.5px] font-semibold text-[#A8231A] print:hidden">
+                {stats.mismatch} mismatch{stats.mismatch === 1 ? '' : 'es'} — sections with a mismatch are opened below.{canEdit && !isEditMode ? ' Click Edit to correct a value or set the status manually.' : ''}
+              </div>
+            )}
             {activeSections.map((section) => {
               const ss = sectionStats(section);
               const uniqueCompareDocs = Array.from(new Set(section.rows.map((r: any) => r.compareDoc)));
@@ -1750,45 +1800,57 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                 const key = groupKey(r);
                 if (!uniqueFields.includes(key)) uniqueFields.push(key);
               });
+              const isOpen = !!openSections?.[section.id];
+              const notChecked = ss.total - ss.match - ss.mismatch;
+              const allMatch = ss.match === ss.total && ss.total > 0;
 
               return (
-                <div key={section.id} className="flex flex-col md:flex-row border border-slate-200 rounded-xl overflow-hidden mb-6 bg-white shadow-sm">
-                  {/* Left Sidebar */}
-                  <div className="w-full md:w-40 bg-slate-50 flex flex-row md:flex-col items-center justify-center p-4 border-b md:border-b-0 md:border-r border-slate-200 shrink-0 gap-3">
-                    <div className="w-12 h-12 bg-[#5A305A] text-white rounded-xl shadow-inner flex items-center justify-center shrink-0">
-                       {sectionIcons[section.id] || <FileText size={24} />}
+                <div key={section.id} className={`${VW_CARD} overflow-hidden mb-3`}>
+                  <button
+                    type="button"
+                    onClick={() => setOpenSections(p => ({ ...(p || {}), [section.id]: !isOpen }))}
+                    className="w-full flex flex-wrap items-center gap-3 px-4 py-2.5 text-left hover:bg-[#FBF7F4] print:pointer-events-none"
+                  >
+                    {ss.mismatch > 0 ? <XCircle size={16} className="text-[#A8231A] shrink-0" />
+                      : allMatch ? <CheckCircle2 size={16} className="text-[#17663D] shrink-0" />
+                      : <Clock size={16} className="text-[#B7A9B8] shrink-0" />}
+                    <div className="w-8 h-8 rounded-lg bg-[#F5EDF3] text-[#6B3470] flex items-center justify-center shrink-0 [&_svg]:w-4 [&_svg]:h-4">
+                      {sectionIcons[section.id] || <FileText size={16} />}
                     </div>
-                    <div className="text-center font-bold text-[#5A305A] text-[11px] tracking-wider uppercase">
-                      {section.label}
-                      {section.id === "s_sptnp" && (
-                         <div className="text-[9px] mt-1 text-[#5A305A] normal-case tracking-normal">if applicable — PIB path only</div>
-                      )}
+                    <div className="mr-auto min-w-0">
+                      <div className="text-[13px] font-bold text-[#3B1B3D]">{SECTION_TITLE[section.id] || section.label}</div>
+                      <div className="text-[11px] text-[#6E5E70] [overflow-wrap:anywhere]">
+                        {section.id === 's_sptnp' ? 'If applicable — PIB path only · ' : ''}
+                        Compared across {uniqueCompareDocs.map(d => getColumnDisplayLabel(d as string, docType)).join(', ')}
+                      </div>
                     </div>
-                    <div className="ml-auto md:ml-0 flex items-center justify-center">
-                       <span style={S.sectionBadge(ss.match, ss.mismatch)} className="text-[10px] whitespace-nowrap shadow-sm">
-                          {ss.match === ss.total && ss.total > 0
-                            ? `${ss.total}/${ss.total} match`
-                            : ss.mismatch > 0
-                            ? `${ss.mismatch} mismatch`
-                            : `${ss.match}/${ss.total} match`}
-                       </span>
-                    </div>
-                  </div>
-                  
-                  {/* Right side Table Container */}
+                    <span className="text-[11.5px] text-[#6E5E70] tabular-nums">{ss.match} / {ss.total} match</span>
+                    <Pill tone={ss.mismatch > 0 ? 'red' : allMatch ? 'green' : 'grey'}>
+                      {ss.mismatch > 0 ? `${ss.mismatch} mismatch` : allMatch ? 'All match' : `${notChecked} not checked`}
+                    </Pill>
+                    <span className="text-[11.5px] text-[#6B3470] font-semibold flex items-center gap-1 print:hidden">
+                      {isOpen ? 'Hide' : `Show ${uniqueFields.length} field${uniqueFields.length === 1 ? '' : 's'}`}
+                      {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                    </span>
+                  </button>
+
+                  <div className={isOpen ? 'border-t border-[#EADFD6] flex' : 'hidden print:flex'}>
                   <DualScrollTable>
                     <table className="w-full text-left border-collapse">
                       <thead>
-                        <tr>
-                          <th className="p-3 bg-slate-100 border-b border-r border-slate-300 text-[11px] font-bold text-[#5A305A] uppercase tracking-wide whitespace-normal w-[160px] min-w-[160px] max-w-[160px] sticky left-0 z-10 shadow-[1px_0_0_0_#cbd5e1]">VALIDASI FIELD</th>
+                        <tr className="bg-[#FBF7F4]">
+                          <th className="px-3 py-2 border-b border-r border-[#EADFD6] text-[10.5px] font-semibold text-[#8A7A8B] uppercase tracking-[0.07em] whitespace-normal w-[160px] min-w-[160px] max-w-[160px] sticky left-0 z-10 bg-[#FBF7F4] shadow-[1px_0_0_0_#EADFD6]">Field</th>
                           {section.id === 's_pib' && (
-                            <th className="p-3 border-b border-r border-slate-300 text-[11px] font-bold uppercase tracking-widest text-center min-w-[150px] bg-slate-200 text-[#5A305A]">REFERENCE</th>
+                            <th className="px-3 py-2 border-b border-r border-[#EADFD6] text-[10.5px] font-semibold uppercase tracking-[0.07em] text-center min-w-[150px] bg-[#F5EDF3] text-[#6B3470]">Reference</th>
                           )}
                           {uniqueCompareDocs.map(doc => {
                              const colorObj = getHeaderColor(doc as string);
                              return (
-                               <th key={doc as string} className="p-3 border-b border-r last:border-r-0 border-slate-300 text-[11px] font-bold uppercase tracking-widest text-center min-w-[150px]" style={{ backgroundColor: colorObj.bg, color: colorObj.text }}>
-                                 {getColumnDisplayLabel(doc as string, docType)}
+                               <th key={doc as string} className="px-3 py-2 border-b border-r last:border-r-0 border-[#EADFD6] text-[10.5px] font-semibold uppercase tracking-[0.07em] text-center min-w-[150px] text-[#3B1B3D]">
+                                 <span className="inline-flex items-center gap-1.5">
+                                   <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: colorObj.text }} />
+                                   {getColumnDisplayLabel(doc as string, docType)}
+                                 </span>
                                </th>
                              )
                           })}
@@ -1796,36 +1858,36 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                       </thead>
                       <tbody>
                         {uniqueFields.map(field => (
-                          <tr key={field} className="border-b border-slate-200 last:border-b-0 hover:bg-slate-50/50 transition-colors">
-                            <td className="p-3 border-r border-slate-300 text-xs font-bold text-[#5A305A] bg-white whitespace-normal w-[160px] min-w-[160px] max-w-[160px] break-words sticky left-0 z-10 align-middle shadow-[1px_0_0_0_#cbd5e1]">
+                          <tr key={field} className="border-b border-[#F1E8E1] last:border-b-0 hover:bg-[#FFFCFA] transition-colors">
+                            <td className="px-3 py-2.5 border-r border-[#EADFD6] text-[12px] font-semibold text-[#3B1B3D] bg-white whitespace-normal w-[160px] min-w-[160px] max-w-[160px] break-words sticky left-0 z-10 align-middle shadow-[1px_0_0_0_#EADFD6]">
                               {field}
                               {(() => {
                                  const hints = Array.from(new Set(section.rows.filter((r: any) => groupKey(r) === field && r.hint).map((r: any) => r.hint)));
                                  if (hints.length === 0) return null;
                                  return hints.map((h, i) => (
-                                    <div key={i} className="text-[10px] text-[#5A305A] mt-1 font-medium leading-tight whitespace-normal">{h as string}</div>
+                                    <div key={i} className="text-[10.5px] text-[#8A7A8B] mt-0.5 font-normal leading-tight whitespace-normal">{h as string}</div>
                                  ));
                               })()}
                             </td>
                             {section.id === 's_pib' && (() => {
                                const refMatch = section.rows.find((r: any) => groupKey(r) === field);
-                               if (!refMatch) return <td className="p-3 border-r border-slate-300 text-center text-[#5A305A] align-middle bg-slate-50/30 min-w-[150px]">-</td>;
+                               if (!refMatch) return <td className="px-3 py-2.5 border-r border-[#EADFD6] text-center text-[#8A7A8B] align-middle min-w-[150px]">-</td>;
                                const v = values[refMatch.id] || { src: '', cmp: '' };
                                return (
-                                 <td className="p-3 border-r border-slate-300 align-middle min-w-[150px] bg-slate-50/60">
+                                 <td className="px-3 py-2.5 border-r border-[#EADFD6] align-middle min-w-[150px] bg-[#FBF7F4]/60">
                                    {isEditMode ? (
                                      <input
-                                       className="w-full border border-slate-200 rounded px-2 py-1.5 text-xs text-center focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium text-[#5A305A] bg-white hover:bg-white"
+                                       className={CELL_INPUT}
                                        value={v.src || ""}
                                        onChange={e => setSrcForGroup(section, field, e.target.value)}
                                        placeholder="Referensi"
                                        title="Nilai referensi (PIB) -- berlaku untuk semua kolom dokumen di baris ini"
                                      />
                                    ) : (
-                                     <span className={`flex flex-col items-center justify-center text-xs text-center w-full break-words px-1 ${v.src_edited ? 'text-blue-700 font-bold' : 'text-[#5A305A] font-medium'}`}>
+                                     <span className={`flex flex-col items-center justify-center text-[12px] text-center w-full break-words px-1 ${v.src_edited ? 'text-[#2F4FA8] font-bold' : 'text-[#3B1B3D] font-semibold'}`}>
                                        <div>
                                          {v.srcDisplay ? v.srcDisplay : formatViewValue(v.src, field)}
-                                         {v.src_edited && <Edit3 size={10} className="inline ml-1 text-blue-500 opacity-70" title="Diedit manual" />}
+                                         {v.src_edited && <Edit3 size={10} className="inline ml-1 text-[#2F4FA8] opacity-70" title="Diedit manual" />}
                                        </div>
                                      </span>
                                    )}
@@ -1835,7 +1897,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                             {uniqueCompareDocs.map(doc => {
                                const rowMatch = section.rows.find((r: any) => r.compareDoc === doc && groupKey(r) === field);
                                if (!rowMatch) {
-                                  return <td key={doc as string} className="p-3 border-r border-slate-300 last:border-r-0 text-center text-[#5A305A] align-middle bg-slate-50/30 min-w-[150px]">-</td>;
+                                  return <td key={doc as string} className="px-3 py-2.5 border-r border-[#EADFD6] last:border-r-0 text-center text-[#B7A9B8] align-middle min-w-[150px]">-</td>;
                                }
                                const v = values[rowMatch.id] || {src:'', cmp:''};
                                const otherCostVal = v.otherCost !== undefined && v.otherCost !== null && v.otherCost !== ''
@@ -1844,26 +1906,26 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                                const stComputed = computeStatus(v.src, v.cmp, rowMatch.isFormat, rowMatch.field, debugData.raw?.is_po_non_imi, getDocChecklistFlag(rowMatch.compareDoc, docCompletenessFlags));
                                const st = v.manual_status || stComputed;
                                const errNpwp = v.cmp && hasNpwpError(rowMatch.id, v.cmp);
-                               
+
                                return (
-                                  <td key={doc as string} className="p-3 border-r border-slate-300 last:border-r-0 align-middle min-w-[150px]">
-                                     <div className="flex flex-col gap-2 justify-center items-center w-full">
+                                  <td key={doc as string} className={`px-3 py-2.5 border-r border-[#EADFD6] last:border-r-0 align-middle min-w-[150px] ${st === 'mismatch' ? 'bg-[#FFF8F7]' : ''}`}>
+                                     <div className="flex flex-col gap-1.5 justify-center items-center w-full">
                                        <div className="flex flex-col items-center gap-1 w-full">
                                          {section.id !== 's_pib' && (isEditMode ? (
                                            <input
-                                             className="w-full border border-slate-200 rounded px-2 py-1.5 text-xs text-center focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium text-[#5A305A] bg-slate-50 hover:bg-white"
+                                             className={CELL_INPUT}
                                              value={v.src || ""}
                                              onChange={e => setObj(rowMatch.id, 'src', e.target.value)}
                                              placeholder={rowMatch.isFormat ? "Format..." : ""}
                                              title={`Nilai dari ${getSrcTooltipLabel(rowMatch, section)}`}
                                            />
                                          ) : (
-                                           <span className={`flex flex-col items-center justify-center text-xs text-center w-full break-words px-1 ${v.src_edited ? 'text-blue-700 font-bold' : 'text-[#5A305A] font-medium'}`}>
+                                           <span className={`flex flex-col items-center justify-center text-[12px] text-center w-full break-words px-1 ${v.src_edited ? 'text-[#2F4FA8] font-bold' : 'text-[#3B1B3D] font-semibold'}`}>
                                              <div>
                                                {v.srcDisplay ? v.srcDisplay : formatViewValue(v.src, field)}
-                                               {v.src_edited && <Edit3 size={10} className="inline ml-1 text-blue-500 opacity-70" title="Diedit manual" />}
+                                               {v.src_edited && <Edit3 size={10} className="inline ml-1 text-[#2F4FA8] opacity-70" title="Diedit manual" />}
                                              </div>
-                                             {v.srcNote && <div style={{ color: "var(--color-text-tertiary)", fontSize: "10px", marginTop: "2px", fontWeight: "normal" }}>{v.srcNote}</div>}
+                                             {v.srcNote && <div className="text-[10px] mt-0.5 font-normal text-[#8A7A8B]">{v.srcNote}</div>}
                                            </span>
                                          ))}
 
@@ -1871,7 +1933,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                                            isEditMode ? (
                                              <>
                                                <input
-                                                 className={`w-full border rounded text-center focus:outline-none focus:ring-1 transition-all font-medium text-[#5A305A] ${section.id === 's_pib' ? 'px-2 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'} ${(errNpwp || v.npwp_status === 'not_found') ? 'border-amber-400 bg-amber-50 focus:border-amber-500 focus:ring-amber-500' : 'border-slate-200 bg-slate-50 hover:bg-white focus:border-blue-500 focus:ring-blue-500'}`}
+                                                 className={`${CELL_INPUT} ${section.id === 's_pib' ? '' : '!h-7 !text-[11px]'} ${(errNpwp || v.npwp_status === 'not_found') ? '!border-[#E0A526] !bg-[#FFF8EB]' : ''}`}
                                                  value={v.cmp || ""}
                                                  onChange={e => {
                                                    setObj(rowMatch.id, 'cmp', e.target.value);
@@ -1882,7 +1944,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                                                />
                                                {(rowMatch.id === 'po_item_value_vs_pib' || rowMatch.id === 'cipl01') && (
                                                  <input
-                                                   className="w-full border border-slate-200 rounded px-2 py-1 text-[10px] text-center italic focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-medium text-[#5A305A] bg-slate-50 hover:bg-white mt-1"
+                                                   className={`${CELL_INPUT} !h-7 !text-[10.5px] italic mt-1`}
                                                    value={otherCostVal}
                                                    onChange={e => setObj(rowMatch.id, 'otherCost', e.target.value)}
                                                    placeholder="Other Cost"
@@ -1891,24 +1953,24 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                                                )}
                                              </>
                                            ) : section.id === 's_pib' ? (
-                                             <span className={`text-xs text-center w-full break-words px-1 ${v.cmp_edited ? 'text-blue-700 font-bold' : 'text-[#5A305A] font-medium'}`}>
+                                             <span className={`text-[12px] text-center w-full break-words px-1 ${v.cmp_edited ? 'text-[#2F4FA8] font-bold' : 'text-[#3B1B3D] font-semibold'}`}>
                                                {formatViewValue(v.cmp, field)}
-                                               {v.cmp_edited && <Edit3 size={10} className="inline ml-1 text-blue-500 opacity-70" title="Diedit manual" />}
+                                               {v.cmp_edited && <Edit3 size={10} className="inline ml-1 text-[#2F4FA8] opacity-70" title="Diedit manual" />}
                                                {(rowMatch.id === 'po_item_value_vs_pib' || rowMatch.id === 'cipl01') && Number(otherCostVal) !== 0 && (
-                                                 <div style={{ fontSize: '0.85em', fontStyle: 'italic', color: 'var(--color-text-secondary)', marginTop: 2 }}>
+                                                 <div className="text-[10.5px] italic text-[#6E5E70] mt-0.5 font-normal">
                                                    Other Cost: {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 4 }).format(Number(otherCostVal))}
-                                                   {v.otherCost_edited && <Edit3 size={9} className="inline ml-1 text-blue-500 opacity-70" title="Diedit manual" />}
+                                                   {v.otherCost_edited && <Edit3 size={9} className="inline ml-1 text-[#2F4FA8] opacity-70" title="Diedit manual" />}
                                                  </div>
                                                )}
                                              </span>
                                            ) : (
-                                             <span className={`text-[10px] text-center w-full break-words px-1 ${v.cmp_edited ? 'text-blue-700 font-bold' : 'text-[#5A305A]/70 font-normal'}`}>
+                                             <span className={`text-[10.5px] text-center w-full break-words px-1 ${v.cmp_edited ? 'text-[#2F4FA8] font-bold' : 'text-[#6E5E70] font-normal'}`} title="Compared value">
                                                ({formatViewValue(v.cmp, field)})
-                                               {v.cmp_edited && <Edit3 size={9} className="inline ml-1 text-blue-500 opacity-70" title="Diedit manual" />}
+                                               {v.cmp_edited && <Edit3 size={9} className="inline ml-1 text-[#2F4FA8] opacity-70" title="Diedit manual" />}
                                                {(rowMatch.id === 'po_item_value_vs_pib' || rowMatch.id === 'cipl01') && Number(otherCostVal) !== 0 && (
-                                                 <div style={{ fontSize: '0.85em', fontStyle: 'italic', color: 'var(--color-text-secondary)', marginTop: 2 }}>
+                                                 <div className="text-[10.5px] italic text-[#6E5E70] mt-0.5">
                                                    Other Cost: {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 4 }).format(Number(otherCostVal))}
-                                                   {v.otherCost_edited && <Edit3 size={9} className="inline ml-1 text-blue-500 opacity-70" title="Diedit manual" />}
+                                                   {v.otherCost_edited && <Edit3 size={9} className="inline ml-1 text-[#2F4FA8] opacity-70" title="Diedit manual" />}
                                                  </div>
                                                )}
                                              </span>
@@ -1922,19 +1984,20 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                                          const StatusIcon = st === 'match' ? CheckCircle2 : st === 'mismatch' ? XCircle : Clock;
                                          return (
                                            <div
-                                             className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold whitespace-nowrap ${isEditMode ? 'cursor-pointer hover:opacity-75 transition-opacity' : ''}`}
+                                             className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-bold whitespace-nowrap ${isEditMode ? 'cursor-pointer hover:opacity-75 transition-opacity' : ''}`}
                                              style={{ backgroundColor: cfg.bg, color: cfg.color }}
                                              onClick={() => toggleManualStatus(rowMatch.id, st)}
                                              title={isEditMode ? "Klik untuk merubah status manual" : undefined}
                                            >
-                                             <StatusIcon size={12} />
+                                             <StatusIcon size={11} />
                                              {cfg.label}
+                                             {v.manual_status && <span className="opacity-70">· manual</span>}
                                            </div>
                                          );
                                        })()}
 
                                        {(errNpwp || v.npwp_status === 'not_found') && (
-                                         <div className="text-[9px] text-amber-700 bg-amber-100 px-2 py-0.5 rounded text-center font-bold tracking-wide uppercase border border-amber-200 shadow-sm w-full">
+                                         <div className="text-[9.5px] text-[#7A4F00] bg-[#FFF1D6] px-2 py-0.5 rounded-md text-center font-bold tracking-wide uppercase w-full">
                                            NPWP tidak terdaftar
                                          </div>
                                        )}
@@ -1947,37 +2010,34 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                       </tbody>
                     </table>
                   </DualScrollTable>
+                  </div>
                 </div>
               );
             })}
 
-            <div className="mt-8 mb-4 border-t border-slate-200 pt-6">
-              <ValidasiPerhitunganPIB 
-                dataValidasiRaw={debugData?.raw} 
-                jenisDokumen={record?.jenis_dokumen || (mainTab === 'audit' && subTab === 'pib' ? 'PIB' : (mainTab === 'audit' && subTab === 'cn' ? 'CN' : ''))} 
+            <div className="mt-1">
+              <ValidasiPerhitunganPIB
+                dataValidasiRaw={debugData?.raw}
+                jenisDokumen={record?.jenis_dokumen || (mainTab === 'audit' && subTab === 'pib' ? 'PIB' : (mainTab === 'audit' && subTab === 'cn' ? 'CN' : ''))}
                 onStatsChange={setPibStats}
                 isEditMode={isEditMode}
               />
             </div>
 
-            <div style={{ marginTop: "24px", padding: "14px 16px", borderRadius: "8px", border: "1px solid #e2e8f0", background: "#f8fafc" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "12px" }}>
-                <div>
-                  <p style={{ fontSize: "12px", color: txtSec, margin: 0 }}>
-                    <strong>Keterangan:</strong>{" "}
-                    <span style={{ marginRight: "10px" }}><span style={{ color: txtSuccess, fontWeight: 'bold' }}>✅</span> = Nilai kedua dokumen cocok</span>
-                    <span style={{ marginRight: "10px" }}><span style={{ color: txtDanger, fontWeight: 'bold' }}>❌</span> = Nilai tidak cocok</span>
-                    <span><span style={{ color: txtWarn, fontWeight: 'bold' }}>⏳</span> = Belum lengkap</span>
-                  </p>
-                  <p style={{ fontSize: "11px", color: txtSec, marginTop: "6px", marginBottom: 0 }}>
-                    Format Pass = No. Vessel wajib mengandung tanda " - " (dash). Perbandingan bersifat case-insensitive.
-                  </p>
+            <div className={`${VW_CARD} mt-3 px-4 py-3 flex items-start justify-between flex-wrap gap-3 text-[11.5px] text-[#6E5E70]`}>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold text-[#3B1B3D]">Legend</span>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-bold bg-[#EAF6EF] text-[#17663D]"><CheckCircle2 size={11} />Match</span> values agree
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-bold bg-[#FDE7E4] text-[#A8231A]"><XCircle size={11} />Mismatch</span> values differ
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-bold bg-[#FFF1D6] text-[#7A4F00]"><Clock size={11} />Incomplete</span> one side missing
                 </div>
-                <div style={{ textAlign: "right", fontSize: "11px", color: txtSec }}>
-                  {tanggal && <div>Tanggal: {fmtDateEN(tanggal)}</div>}
-                  {namaChecker && <div>Pemeriksa: {namaChecker}</div>}
-                  {awbNo && <div>AWB: {awbNo}</div>}
-                </div>
+                <p className="mt-1.5 mb-0">Format pass = vessel no. must contain " - " (dash). Comparison is case-insensitive.</p>
+              </div>
+              <div className="text-right">
+                {tanggal && <div>Date: {fmtDateEN(tanggal)}</div>}
+                {namaChecker && <div>Checked by: {namaChecker}</div>}
+                {awbNo && <div>AWB: {awbNo}</div>}
               </div>
             </div>
           </div>

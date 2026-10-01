@@ -99,23 +99,24 @@ function statusOf(actualStr: any, expected: number) {
 
 function StatusBadge({ st, isEditMode, onClick }: { st: string, isEditMode?: boolean, onClick?: () => void }) {
   const baseClasses = isEditMode ? "cursor-pointer hover:opacity-75 transition-opacity" : "";
+  // Chip gaya Sea & Air (2026-10-01) -- murni tampilan.
   if (st === "match") {
     return (
-      <div className={`flex items-center justify-center text-emerald-600 font-bold ${baseClasses}`} onClick={onClick} title={isEditMode ? "Click to change the status manually" : undefined}>
-        <CheckCircle2 size={16} className="mr-1" />
+      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-bold bg-[#EAF6EF] text-[#17663D] ${baseClasses}`} onClick={onClick} title={isEditMode ? "Click to change the status manually" : undefined}>
+        <CheckCircle2 size={11} />
         Match
-      </div>
+      </span>
     );
   } else if (st === "mismatch") {
     return (
-      <div className={`flex items-center justify-center text-rose-600 font-bold ${baseClasses}`} onClick={onClick} title={isEditMode ? "Click to change the status manually" : undefined}>
-        <XCircle size={16} className="mr-1" />
+      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-bold bg-[#FDE7E4] text-[#A8231A] ${baseClasses}`} onClick={onClick} title={isEditMode ? "Click to change the status manually" : undefined}>
+        <XCircle size={11} />
         Mismatch
-      </div>
+      </span>
     );
   }
   return (
-    <div className={`text-center text-[#5A305A] font-bold ${baseClasses}`} onClick={onClick} title={isEditMode ? "Click to change the status manually" : undefined}>-</div>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10.5px] font-bold bg-[#F3EEEA] text-[#6E5E70] ${baseClasses}`} onClick={onClick} title={isEditMode ? "Click to change the status manually" : undefined}>Not checked</span>
   );
 }
 
@@ -131,7 +132,7 @@ function VInput({ value, onChange, placeholder, width, className }: { value: any
       value={value === null || value === undefined ? "" : value}
       onChange={handleChange}
       placeholder={placeholder}
-      className={`w-full p-2 border border-slate-200 rounded-md bg-white text-[#5A305A] focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all placeholder-slate-400 ${className || "text-xs font-medium"}`}
+      className={`w-full h-8 px-2 border border-[#EADFD6] rounded-md bg-white text-[#3B1B3D] text-right tabular-nums focus:border-[#6B3470] focus:ring-2 focus:ring-[#6B3470]/15 outline-none transition-all placeholder-[#B7A9B8] ${className || "text-xs font-medium"}`}
       style={{ width: width || "100%" }}
     />
   );
@@ -452,37 +453,55 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jnsUpper, aktualPIB, aktualSPPBMCP, calc, manualStatus]);
 
+  // `title` = KUNCI LOGIKA ("Validasi SPPBMCP" -> toleransi 1.000) -- jangan diubah; judul tampilan
+  // diambil dari VALIDATION_TITLE (2026-10-01, gaya kartu Sea & Air).
+  const VALIDATION_TITLE: Record<string, { title: string; sub: string }> = {
+    'Validasi PIB': { title: 'PIB calculation check', sub: 'Values on the PIB vs. the recalculation from the customs items' },
+    'Validasi SPPBMCP': { title: 'SPPBMCP calculation check', sub: 'Values on the SPPBMCP vs. the recalculation' },
+  };
   function ValidationTable({ title, rows }: { title: string, rows: any[] }) {
+    const disp = VALIDATION_TITLE[title] || { title, sub: '' };
+    // Ringkasan header kartu -- hitungan SAMA dgn onStatsChange (ignoreForStats dilewati).
+    let m = 0, mm = 0;
+    rows.forEach((r: any) => {
+      if (r.ignoreForStats) return;
+      const stc = r.customStatus ? r.customStatus(r.ak, r.expected) : statusOf(r.ak, r.expected);
+      const s2 = manualStatus[r.id] || stc;
+      if (s2 === 'match') m++; else if (s2 === 'mismatch') mm++;
+    });
+    const TH = 'px-3 py-2 border-b border-[#EADFD6] text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B] whitespace-nowrap';
     return (
-      <div className="flex flex-col md:flex-row border border-slate-200 rounded-xl overflow-hidden mb-6 bg-white shadow-sm">
-        <div className="w-full md:w-40 bg-slate-50 flex flex-row md:flex-col items-center justify-center p-4 border-b md:border-b-0 md:border-r border-slate-200 shrink-0 gap-3">
-          <div className="w-12 h-12 bg-[#5A305A] text-white rounded-xl shadow-inner flex items-center justify-center shrink-0">
-             <Percent size={24} />
+      <div className="bg-white rounded-[14px] border border-[#EADFD6] shadow-[0_1px_2px_rgba(59,27,61,0.04)] overflow-hidden mb-3">
+        <div className="flex flex-wrap items-center gap-3 px-4 py-2.5">
+          {mm > 0 ? <XCircle size={16} className="text-[#A8231A] shrink-0" /> : m > 0 ? <CheckCircle2 size={16} className="text-[#17663D] shrink-0" /> : <Percent size={16} className="text-[#B7A9B8] shrink-0" />}
+          <div className="w-8 h-8 rounded-lg bg-[#F5EDF3] text-[#6B3470] flex items-center justify-center shrink-0"><Calculator size={16} /></div>
+          <div className="mr-auto min-w-0">
+            <div className="text-[13px] font-bold text-[#3B1B3D]">{disp.title}</div>
+            {disp.sub && <div className="text-[11px] text-[#6E5E70]">{disp.sub}</div>}
           </div>
-          <div className="text-center font-bold text-[#5A305A] text-[11px] tracking-wider uppercase">
-            {title}
-          </div>
+          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold ${mm > 0 ? 'bg-[#FDE7E4] text-[#A8231A]' : m > 0 ? 'bg-[#EAF6EF] text-[#17663D]' : 'bg-[#F3EEEA] text-[#6E5E70]'}`}>
+            {mm > 0 ? `${mm} mismatch` : m > 0 ? `${m} match` : 'Not checked'}
+          </span>
         </div>
-      <div className="flex-1 overflow-x-auto">
+      <div className="overflow-x-auto border-t border-[#EADFD6]">
         <table className="w-full text-left border-collapse">
           <thead>
-            <tr>
-              <th className="p-3 bg-slate-100 border-b border-r border-slate-200 text-[11px] font-bold text-[#5A305A] uppercase tracking-wide whitespace-nowrap w-[1%] sticky left-0 z-10 shadow-[1px_0_0_0_#e2e8f0]">FIELD</th>
-              <th className="p-3 border-b border-r border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center bg-blue-50 text-blue-800 w-[12%]">ACTUAL</th>
-              <th className="p-3 border-b border-r border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center bg-emerald-50 text-emerald-800 w-[12%]">EXPECTED</th>
-              <th className="p-3 border-b border-r border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center bg-amber-50 text-amber-800 w-[12%]">DIFFERENCE</th>
-              <th className="p-3 border-b border-r border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center bg-slate-50 text-[#5A305A] w-[20%]">CALCULATION METHOD</th>
-              <th className="p-3 border-b border-slate-200 text-[11px] font-bold uppercase tracking-widest text-center bg-slate-50 text-[#5A305A] w-[12%]">STATUS</th>
+            <tr className="bg-[#FBF7F4]">
+              <th className={`${TH} pl-4 w-[1%] sticky left-0 z-10 bg-[#FBF7F4]`}>Field</th>
+              <th className={`${TH} text-right w-[12%]`}>Actual</th>
+              <th className={`${TH} text-right w-[12%]`}>Expected</th>
+              <th className={`${TH} text-right w-[12%]`}>Difference</th>
+              <th className={`${TH} w-[20%]`}>Calculation method</th>
+              <th className={`${TH} pr-4 text-right w-[12%]`}>Status</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, idx) => {
+            {rows.map((row) => {
               const stComputed = row.customStatus ? row.customStatus(row.ak, row.expected) : statusOf(row.ak, row.expected);
               const st = manualStatus[row.id] || stComputed;
-              
+
               const isSPPBMCP = title === "Validasi SPPBMCP";
-              const toleransi = isSPPBMCP ? 1000 : 1;
-              
+
               let selisih: number | null = null;
               if (row.expected !== null && row.ak !== undefined && row.ak !== null && row.ak !== "" && row.ak !== "—") {
                 const actualValue = row.akNum !== undefined ? row.akNum : toNum(row.ak);
@@ -492,37 +511,37 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
               const isMatch = st === "match";
 
               return (
-                <tr key={row.id} className="border-b border-slate-200 last:border-b-0 hover:bg-slate-50/50 transition-colors">
-                  <td className="p-3 border-r border-slate-200 text-xs font-bold text-[#5A305A] bg-white whitespace-nowrap w-[1%] sticky left-0 z-10 align-middle shadow-[1px_0_0_0_#e2e8f0]">
+                <tr key={row.id} className={`border-b border-[#F1E8E1] last:border-b-0 hover:bg-[#FFFCFA] transition-colors ${st === 'mismatch' ? 'bg-[#FFF8F7]' : ''}`}>
+                  <td className="px-3 pl-4 py-2.5 text-[12px] font-semibold text-[#3B1B3D] bg-white whitespace-nowrap w-[1%] sticky left-0 z-10 align-middle">
                     {row.label}
                   </td>
-                  <td className="p-3 border-r border-slate-200 text-center align-middle bg-slate-50/30">
+                  <td className="px-3 py-2.5 text-right align-middle">
                     {row.isText ? (
-                      <div className="text-[14px] font-bold text-[#5A305A]">{row.ak}</div>
+                      <div className="text-[13px] font-bold text-[#3B1B3D]">{row.ak}</div>
                     ) : isEditMode ? (
-                      <VInput value={row.ak} onChange={row.setAk} placeholder="Dari dokumen" className="text-[14px] font-bold" />
+                      <VInput value={row.ak} onChange={row.setAk} placeholder="Dari dokumen" className="text-[13px] font-bold" />
                     ) : (
-                      <div className="text-[14px] font-bold text-[#5A305A]">{row.ak || "—"}</div>
+                      <div className="text-[13px] font-bold text-[#3B1B3D] tabular-nums">{row.ak || "—"}</div>
                     )}
                   </td>
-                  <td className="p-3 border-r border-slate-200 text-center font-bold text-[#5A305A] align-middle">
+                  <td className="px-3 py-2.5 text-right text-[12.5px] font-semibold text-[#6E5E70] align-middle tabular-nums whitespace-nowrap">
                     {row.fmt(row.expected)}
                   </td>
-                  <td className="p-3 border-r border-slate-200 text-center font-bold align-middle">
+                  <td className="px-3 py-2.5 text-right text-[12.5px] font-bold align-middle tabular-nums whitespace-nowrap">
                     {selisih !== null && st !== "empty" ? (
-                      <span className={isMatch ? "text-emerald-600" : "text-red-600"}>
+                      <span className={isMatch ? "text-[#17663D]" : "text-[#A8231A]"}>
                         {selisih > 0 ? "+" : ""}{row.fmt(selisih)}
                       </span>
                     ) : (
-                      <span className="text-[#5A305A]">—</span>
+                      <span className="text-[#B7A9B8]">—</span>
                     )}
                   </td>
-                  <td className="p-3 border-r border-slate-200 text-[11px] text-[#5A305A] align-middle max-w-[200px]">
+                  <td className="px-3 py-2.5 text-[11px] text-[#6E5E70] align-middle max-w-[220px]">
                     {row.formula}
                   </td>
-                  <td className="p-3 border-slate-200 text-center align-middle">
+                  <td className="px-3 pr-4 py-2.5 text-right align-middle">
                     {['bm', 'ppn', 'pph', 'freight'].includes(row.id) || (isSPPBMCP && row.id === 'ndpbmXnilai') ? (
-                      <span className="text-[#5A305A]">—</span>
+                      <span className="text-[#B7A9B8]">—</span>
                     ) : (
                       <StatusBadge st={st} isEditMode={isEditMode} onClick={() => toggleManualStatus(row.id, st)} />
                     )}
@@ -541,8 +560,8 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
     <div className="w-full">
       {/* Tabel Rincian Item Pabean (Halaman Lanjutan) — berlaku untuk jalur PIB maupun CN (SPPBMCP) */}
       {(jnsUpper === 'PIB' || jnsUpper === 'CN' || jnsUpper === '') && items.length > 0 && (
-        <div className="border border-slate-200 rounded-xl overflow-hidden mb-6 bg-white shadow-sm">
-          <div className="bg-slate-800 text-white p-4 border-b border-slate-700">
+        <div className="bg-white rounded-[14px] border border-[#EADFD6] shadow-[0_1px_2px_rgba(59,27,61,0.04)] overflow-hidden mb-3">
+          <div className="px-4 py-2.5 hover:bg-[#FBF7F4]">
             <button
               type="button"
               onClick={() => setShowItemDetail(!showItemDetail)}
@@ -554,29 +573,29 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
               }}
             >
               {showItemDetail ? (
-                <ChevronDown size={18} className="text-[#5A305A] shrink-0" />
+                <ChevronDown size={15} className="text-[#6E5E70] shrink-0" />
               ) : (
-                <ChevronRight size={18} className="text-[#5A305A] shrink-0" />
+                <ChevronRight size={15} className="text-[#6E5E70] shrink-0" />
               )}
-              <span className="font-bold text-xs md:text-sm tracking-wide uppercase">
-                Customs Item Details (Continued Page)
+              <span className="text-[13px] font-bold text-[#3B1B3D]">
+                Customs item details (continued page)
               </span>
-              <span style={{ fontSize: 11, opacity: 0.6 }}>
+              <span className="text-[11px] text-[#8A7A8B]">
                 ({items.length} item)
               </span>
             </button>
-            <p className="text-[11px] text-[#FFF5C5] mt-1 pl-6">
+            <p className="text-[11px] text-[#6E5E70] mt-0.5 pl-6">
               Automatically extracted from the {jnsUpper === 'CN' ? 'SPPBMCP' : 'PIB'} document — can be manually edited via the form below if corrections are needed
             </p>
           </div>
           {showItemDetail && (
             <div className="overflow-x-auto">
-              <div className="px-4 pt-3" style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
+              <div className="px-4 pt-2 pb-2 text-[11.5px] text-[#6E5E70] border-t border-[#EADFD6]">
                 NDPBM yang digunakan: {ndpbm || "—"}
               </div>
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="bg-slate-100 text-[#5A305A] border-b border-slate-200">
+                  <tr className="bg-[#FBF7F4] text-[#8A7A8B] border-y border-[#EADFD6] [&>th]:!border-[#EADFD6] [&>th]:text-[10.5px]">
                     <th className="p-3 border-r border-slate-200 text-center font-bold uppercase tracking-wider w-12">No</th>
                     <th className="p-3 border-r border-slate-200 text-right font-bold uppercase tracking-wider">Nilai Pabean</th>
                     <th className="p-3 border-r border-slate-200 text-center font-bold uppercase tracking-wider">% BM</th>
@@ -604,7 +623,7 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
                     const pphDisplay = it.phPct ? (String(it.phPct).endsWith('%') ? it.phPct : `${it.phPct}%`) : '0%';
 
                     return (
-                      <tr key={it.id || idx} className="border-b border-slate-200 hover:bg-slate-50/50 transition-colors">
+                      <tr key={it.id || idx} className="border-b border-[#F1E8E1] hover:bg-[#FFFCFA] transition-colors [&>td]:!border-[#F1E8E1] [&>td]:text-[#3B1B3D] [&>td]:tabular-nums">
                         <td className="p-3 border-r border-slate-200 text-center font-medium text-[#5A305A]">{idx + 1}</td>
                         <td className="p-3 border-r border-slate-200 text-right font-medium text-[#5A305A]">{fmtNum(fc)}</td>
                         <td className="p-3 border-r border-slate-200 text-center font-medium text-[#5A305A]">{bmDisplay}</td>
@@ -618,7 +637,7 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
                   })}
                 </tbody>
                 <tfoot>
-                  <tr className="bg-slate-100 font-bold text-[#5A305A] border-t-2 border-slate-300">
+                  <tr className="bg-[#FBF7F4] font-bold text-[#3B1B3D] border-t border-[#EADFD6] [&>td]:!border-[#EADFD6] [&>td]:tabular-nums">
                     <td className="p-3 border-r border-slate-200 text-center">TOTAL</td>
                     <td className="p-3 border-r border-slate-200 text-right">{fmtNum(calc.totalNilaiPabean)}</td>
                     <td className="p-3 border-r border-slate-200 text-center text-[#5A305A]">—</td>

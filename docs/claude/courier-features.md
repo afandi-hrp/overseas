@@ -25,7 +25,8 @@ Draft di sidebar; **TIDAK ADA kunci validasi** (validasi = info saja); tab Draft
   amber Draft, hijau NAS submitted, ungu audited. Urutan = urutan `records` (sort_order PIB/CN).
 - **Jendela Open** (`CourierValidationWindow` + `overview`): tab Overview (Validation info-only, Document,
   Goods per PO As recorded/Split evenly, Customs value + Check difference, Duties & taxes + Admin penalty +
-  invoice duty, Checks, Audit trail) · Checklist · Doc Validation · Cost Validation. Validasi bisa DIEDIT hanya
+  invoice duty, Checks) · Checklist · Doc Validation · Cost Validation · Audit trail (tab sendiri sejak
+  2026-10-01, lihat sub-bagian di bawah). Validasi bisa DIEDIT hanya
   saat Draft (sama tombol lama); Audited = lihat saja. Header: Edit, Mark as audited / Move back to Draft,
   Delete (hanya Draft di tab Draft — DeleteModal jalur Draft). Setelah aksi, baris dibaca ulang
   (`reloadCourierRow`, enrich sama fetchRecords) & jendela tetap terbuka.
@@ -43,6 +44,49 @@ Draft di sidebar; **TIDAK ADA kunci validasi** (validasi = info saja); tab Draft
 - **Diuji**: jsdom 39 cek (KPI, tab, kartu PIB/CN, List↔Card, Open/Overview/tab validasi, Mark as audited &
   Move back (RPC+DB+Doc Acceptance), Edit (field berubah saja, auto-calc, override), Add CN + Save & mark as
   audited, Delete draft CN benar, role Finance, view-only, badge sidebar). Belum dites di production.
+
+### Tampilan Cost Validation / Doc Validation / Audit trail ala Sea & Air (2026-10-01)
+
+Permintaan user: tampilan di-improve mirip Sea & Air, **logika pengambilan data & fungsi TIDAK diubah** (query,
+RPC, autosave, rumus status/akurasi sama persis; yang berubah hanya JSX/kelas & label tampilan).
+- **Token bersama** `validationWindowStyles.ts` (`VW_*`) diganti ke palet Sea & Air (plum `#3B1B3D`, primer
+  `#6B3470`, garis `#EADFD6`, latar warm `#FBF7F4`) + token baru `VW_INPUT`, `VW_TH`, `VW_TILE`/`VW_TILE_TONE`.
+  Ikut mengubah tab Checklist (ChecklistModal embedded) & mode List "Validation". `vwPctBar` tetap aturan
+  hijau = 100%, selain itu kuning.
+- **Jendela** (`CourierValidationWindow`): header & tab garis bawah gaya jendela Open Sea & Air, Shipment Info
+  kartu warm (disembunyikan di tab Overview & Audit trail). Prop baru `trail` (tab **Audit trail**, dipasang hanya
+  saat dibuka) & `overview` boleh berupa fungsi `(openTab) => node` — **bug fix**: klik titik validasi di
+  Overview dulu tidak pindah tab (prop `initialTab` hanya dibaca saat mount); `initialTab` yg berubah dari luar
+  kini juga disinkronkan. Tombol header Edit/Mark as audited/Move back/Delete pakai `SA_BTN_*`.
+- **Cost Validation** (`CostValidationModal.tsx`, hanya dipakai embedded): toolbar = kartu ringkasan (status,
+  chip Edited, kotak OK/Difference/N/A, akurasi + jumlah baris dicek, tombol Edit cost validation/Cancel/Save
+  changes); tabel Freight & Duty jadi **kartu lipat** (header: courier·service, total actual, pill status invoice
+  dari `liveSummary.invoice_*_status`); status per baris = `Chip` Sea & Air (`statusChip`; `resolveStatus` =
+  aturan lama SELISIH→OVER/UNDER ±1000); total baris TOTAL dihitung `freightTotals`/`dutyTotals` (rumus lama
+  dipindah dari IIFE, tidak diubah); panel Credit note, riwayat potong (tombol Revise kini selalu terlihat),
+  catatan, dan Recalculate bonded storage = kartu warm. Footer ringkasan lama HANYA mode standalone (tidak
+  dipakai). Label Indonesia sisa (Potong CN, Batal, Simpan, Riwayat Pemotongan…) diterjemahkan; **alert error
+  lama tidak diubah**.
+- **Doc Validation** (`ValidasiModal.tsx`): toolbar = kartu ringkasan + meta (Check date/Checked by/No. AWB saat
+  Edit/Manual change notes) + tombol **Expand all/Collapse all**; tiap section = **kartu lipat** (judul tampilan
+  `SECTION_TITLE`, subjudul "Compared across …", pill mismatch/All match/not checked). Section yg punya
+  mismatch saat dimuat terbuka otomatis (`openSections`, diinisialisasi sekali setelah load — tidak menutup
+  sendiri saat dikoreksi); kartu tertutup tetap tercetak (`hidden print:flex`). Banner merah jumlah mismatch.
+  Matriks field × dokumen TETAP (header netral + titik warna per dokumen dari `headerColors`), chip status warna
+  Sea & Air (`getCfg`), "· manual" bila status di-override. **Format Cmp "(dalam kurung)" & pengecualian
+  `s_pib` TETAP** (keputusan user lama). `field`/`rowLabel`/`compareDoc`/`section.label` TIDAK diubah.
+  `ValidasiPerhitunganPIB`: kartu "PIB/SPPBMCP calculation check" (judul via `VALIDATION_TITLE`; prop `title`
+  "Validasi SPPBMCP" TETAP kunci logika), chip status, kartu Customs item details.
+- **Audit trail** (`CourierAuditTrail.tsx`, BARU; dipindah dari Overview): data SAMA `fetchCourierAuditLog`
+  (tanpa query baru) + tombol Refresh; timeline per hari (Today/Yesterday/tanggal), ikon & warna per aksi,
+  catatan "X — Lama: A → Baru: B" ditampilkan field + nilai lama (coret merah) → baru (hijau), entri identik
+  berturutan digabung "×N".
+- **Diuji**: jsdom `courier_ui` 43 cek (tab & header, klik titik Overview → tab Cost, kartu & chip Cost, lipat
+  kartu, Deduct CN → `fn_apply_credit_note`, Revise → `fn_revise_credit_note`, Update estimate, Edit → Save →
+  update `tabel_cost_validasi` (payload sama aturan lama), Doc: ringkasan, section mismatch terbuka otomatis,
+  kurung Cmp, Expand/Collapse all, Edit → ubah status manual → Cancel, kartu kalkulasi PIB, Audit trail:
+  parse Lama→Baru, ×2, user, Refresh) + regresi courier 39, render 95, page 51, recap 112, finance 53,
+  urgent 5, authfocus 12 — 0 gagal; `tsc` bersih, `vite build` sukses. Belum dites di production.
 
 ## Jendela "Validation" — Audit Courier Draft/PIB/CN (2026-09-30, `CourierValidationWindow.tsx`)
 
