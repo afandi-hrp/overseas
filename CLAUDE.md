@@ -446,7 +446,74 @@ history file ini.
 @docs/claude/courier-features.md
 @docs/claude/reporting.md
 
-## BACKLOG — Audit PIB Sea & Air, tahap berikutnya (dicatat 2026-09-30, BELUM DIKERJAKAN)
+## STATUS & SISA PEKERJAAN — Audit PIB / Invoice Recap Sea & Air / Finance Handover (per 2026-10-01)
+
+**DAFTAR TERKINI (satu-satunya acuan)** — 2 bagian "BACKLOG" di bawahnya = riwayat (item dicoret = selesai).
+Semua SQL (027–035) SUDAH jalan di production. Kode SELESAI & lolos uji jsdom/PGlite, tapi **BELUM dites
+user di production** (testing bagian 2 + Finance Handover dijadwalkan user bersamaan dgn pekerjaan lain).
+
+**Audit PIB Sea & Air (`/sea-air/audit`) — belum:**
+1. Freight otomatis per delivery term (FOB/FCA = invoice "Freight · destination" BL sama, hanya baris
+   ocean/air freight, THC tidak; EXW = "Freight · origin"; CIF/CFR = 0; tidak ada di Recap = manual + label
+   sumber). Sekarang `total_inv_freight` dipakai apa adanya. Butuh keputusan aturan per baris invoice.
+2. Log Edit per field & Delete PIB format app ("X — Lama: … → Baru: …"). Aksi utama (Mark audited,
+   re-audit, Re-read, submit/unlock, review) SUDAH dicatat trigger sql/031.
+3. Banner "shipment belum tercatat" (Recap tanpa baris Audit PIB) — belum ada cara deteksi; sementara
+   chip "Waiting for …" di kartu Draft.
+4. Status validasi "Shipment still being processed in Invoice Recap" — belum ada sumber data.
+5. Draft otomatis saat 4 dokumen bea cukai lengkap (PIB/SPPB/Billing DJBC/BPN) + log "Recorded
+   automatically…". Sekarang baru: PIB baru dari AI otomatis Draft (sql/032).
+6. Valas per PO kosong kalau n8n tidak mengisi `po_harga_detail` (ditambal tab "Split evenly") — cek
+   workflow n8n ekstraksi PIB.
+7. (Ditahan, keputusan user) Export format workbook 31 kolom — Export TETAP seperti sekarang.
+
+**Invoice Recap Sea & Air (`/sea-air/rekapan`) — belum:**
+1. Quotation freight per BL: tombol "+ Add quotation" SUDAH ada (info "coming soon"); belum ada tabel
+   quotation, pembacaan AI (n8n), tarif berlaku pada ATA, "Save & re-check".
+2. Upload dokumen susulan via n8n (upsert by AWB, hasil AI lama tetap utuh) — pekerjaan sisi n8n.
+3. Checklist per dokumen (tanggal upload, "3/4 · 1 file still missing", "Upload missing file", "Not
+   needed" + alasan) & "Ask vendor for a new document" (perlu keputusan alur: email/WA/catatan).
+4. Vendor payments (barang): termin DP/balance + bukti transfer.
+5. Sort "Cost accuracy · lowest" & search nomor PO (PO di JSON `po_detail`, butuh RPC/kolom bantu).
+6. Gerbang mismatch dokumen HANYA di frontend (DB hanya menegakkan checklist + cost; fuzzy relax ada di JS).
+7. Segmen CUSTOM tidak bisa direview -> tidak dihitung issue walau Over/Under (perlu keputusan).
+8. Indikasi duplikat (`duplicate_of`) baru chip — belum ada aksi "Not a duplicate"/gabung.
+9. Kelompok "PIB value check" di tab Documents — belum ada sumber data terpisah.
+10. (Ditahan, keputusan user) "Export cost data" 5 output — Export TETAP.
+
+**Finance Handover (`/finance-handover`) — belum:**
+1. Sumber **Courier** (tab abu "SOON") — modul belum ada (lihat analisa Courier di bawah).
+2. Font: halaman Finance pakai Sora (keputusan user "semua halaman Sora"), TAPI modal FAR yg dibuka dari
+   viewer masih Plus Jakarta Sans (modul FAR belum diubah) — konfirmasi user apakah FAR ikut Sora.
+3. Keamanan: role Finance bisa membaca `tabel_audit_seaair` (berisi angka duty) lewat API krn policy baca
+   viewer (sql/035). UI menyembunyikan; pengetatan butuh view/RPC khusus kalau diminta.
+4. Master vendor Sea & Air: nama legal & TOP WAJIB diisi user (selama kosong tampil kode + tanda); hanya
+   kode PPJK (`emkl_vendor`); kolom `aktif` belum dipakai saat pencocokan; tanpa tombol hapus.
+5. Viewer FAR berganti modal antar tab -> ukuran dialog berubah (kosmetik).
+6. (Dibatalkan, keputusan user) upload bukti transfer & Undo — TIDAK dibuat.
+
+**Umum:** semua halaman di atas belum diuji user di production; `kurs` text bug SUDAH diperbaiki; badge
+sidebar needs attention SUDAH; pindah tab browser tidak refresh SUDAH (lihat bagian AuthContext).
+
+## ANALISA (BELUM DIPUTUSKAN, 2026-10-01) — redesain Audit Courier & Rekapan Courier mengikuti Sea & Air
+
+Diminta user: analisa saja, TANPA perubahan. Ringkasan (detail ada di jawaban sesi 2026-10-01):
+- **Bisa** dibuat tampilan sama (kartu + jendela Open + form Edit + KPI, toggle List = tabel lama tetap
+  utuh dgn Reorder/Edit Mode/Customize View/Export). Token `SeaAirAuditUi.tsx` & pola komponen bisa dipakai.
+- **Audit Courier paling cocok**: kolom PIB_COLS/CN_COLS hampir identik `SEA_AIR_AUDIT_COLS` (customs value,
+  BM/PPN/PPh, total_pib_cn, SPTNP, PO per baris). Beda: 2 jenis dokumen (PIB & CN/SPPBMCP, `sanksi_adm`),
+  tab Draft/PIB/CN, auto-calc 7 kolom + `manual_override_fields`, NAS Submit Date (highlight + badge
+  outstanding), Doc Acceptance, urutan manual `sort_order`, jendela Validation 3 tab yg SUDAH ada (bisa jadi
+  isi jendela Open), dan **batas kolom per role (Finance)** yg WAJIB ikut di kartu/Open.
+- **Rekapan Courier beda model**: 1 baris = 1 INVOICE (FREIGHT/DUTY/CREDIT NOTE) per AWB, bukan 1 shipment
+  dgn banyak segmen spt Sea & Air; tab per-PPJK; PO↔vessel + breakdown per vessel (auto-calc 6 kolom);
+  sudah punya `submit_date` & `tgl_lunas`. Perlu keputusan: kartu per invoice atau digabung per AWB.
+- **Relasi Audit↔Rekapan Courier** hanya lewat AWB (tanpa FK spt `seaair_id`); validasi Courier menempel di
+  baris PIB/CN Audit. Gerbang/kunci/re-audit ala Sea & Air butuh pencocokan AWB + SQL baru.
+- Saran urutan bila disetujui: (1) Audit Courier tampilan, (2) Rekapan Courier tampilan, (3) relasi &
+  sumber Courier di Finance Handover. Pertanyaan keputusan dicatat di jawaban sesi.
+
+## BACKLOG — Audit PIB Sea & Air, tahap berikutnya (dicatat 2026-09-30) — RIWAYAT, lihat "STATUS & SISA PEKERJAAN" di atas
 
 **DITAHAN (keputusan user 2026-10-01)** — backlog ini BELUM dikerjakan krn berkaitan dgn redesain
 halaman Invoice Recap Sea & Air (spek "BeeHive AI · Invoice Recap" V167: validasi, Submit to
@@ -576,7 +643,7 @@ Belum dites ke production.
 - Belum: freight otomatis per delivery term, quotation per BL (n8n), bukti bayar (upload) di Finance
   Handover, status "still being processed".
 
-## BACKLOG — Invoice Recap Sea & Air, tahap berikutnya (dicatat 2026-10-01, BELUM DIKERJAKAN)
+## BACKLOG — Invoice Recap Sea & Air, tahap berikutnya (dicatat 2026-10-01) — RIWAYAT, lihat "STATUS & SISA PEKERJAAN" di atas
 
 Tahap 1 (tampilan kartu/Open 4 tab + Edit shipment + Submit to Finance, lihat "Invoice Recap Sea &
 Air — tampilan baru" di `docs/claude/bunker-courier-seaair.md`) SUDAH jadi. Item spek V167 yang
