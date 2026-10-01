@@ -46,10 +46,10 @@ export const PAGE_REGISTRY: PageEntry[] = [
   { key: 'sea_air_cost_validation', label: 'Cost Validation (Sea & Air)', group: 'Sea & Air' },
   { key: 'sea_air_dokumen_validation', label: 'Dokumen Validation (Sea & Air)', group: 'Sea & Air' },
   { key: 'sea_air_checklist_validation', label: 'Checklist Validation (Sea & Air)', group: 'Sea & Air' },
-  // Finance Handover Sea & Air (2026-10-01, sql/034): Receive / Mark paid / Undo lewat RPC
-  // fn_seaair_finance_* (guard has_edit_access). Baca rekapan_seaair lewat policy SELECT tambahan
-  // utk page_key ini -- role Finance TIDAK perlu akses Invoice Recap.
-  { key: 'sea_air_finance', label: 'Finance Handover (Sea & Air)', path: '/sea-air/finance', group: 'Sea & Air' },
+  // Finance Handover Sea & Air (2026-10-01, sql/034+035): Receive / Mark paid lewat RPC fn_seaair_finance_*
+  // (guard has_edit_access). Halaman GABUNGAN /finance-handover (FAR + Sea & Air). Baca rekapan_seaair &
+  // tabel validasi lewat policy SELECT tambahan -- role Finance TIDAK perlu akses Invoice Recap.
+  { key: 'sea_air_finance', label: 'Finance Handover (Sea & Air)', path: '/finance-handover', group: 'Sea & Air' },
 
   {
     key: 'direct_loading', label: 'FAR Overseas', path: '/direct-loading', group: 'FAR Overseas',
@@ -60,10 +60,10 @@ export const PAGE_REGISTRY: PageEntry[] = [
       { value: 'TIER3', label: 'Director' },
     ],
   },
-  // Tab "Finance Handover" di halaman FAR Overseas (bukan route sendiri) -- EDIT = boleh Accept &
-  // Mark paid (RPC fn_far_overseas_finance_accept/mark_paid, sql/027). Role Finance JUGA butuh
-  // akses lihat `direct_loading` (RLS tabel memo).
-  { key: 'far_overseas_finance', label: 'Finance Handover (FAR Overseas)', group: 'FAR Overseas' },
+  // Sumber FAR di halaman GABUNGAN /finance-handover (2026-10-01; dulu tab di halaman FAR) -- EDIT =
+  // boleh Accept & Mark paid (RPC fn_far_overseas_finance_accept/mark_paid, sql/027+035, tanpa bukti
+  // bayar). Role Finance JUGA butuh akses lihat `direct_loading` (RLS tabel memo).
+  { key: 'far_overseas_finance', label: 'Finance Handover (FAR Overseas)', path: '/finance-handover', group: 'FAR Overseas' },
 
   { key: 'bunker', label: 'Bunker', path: '/bunker', group: 'Bunker' },
 
@@ -93,6 +93,8 @@ export const PAGE_REGISTRY: PageEntry[] = [
   { key: 'settings_kurs_rule_vendor', label: 'Aturan Kurs Vendor', path: '/settings/kurs-rule-vendor', group: 'Settings' },
   { key: 'settings_tarif_kontrak', label: 'Tarif Kontrak Vendor', path: '/settings/tarif-kontrak', group: 'Settings' },
   { key: 'settings_tarif_far_overseas_vendor', label: 'Tarif Vendor FAR Overseas Air', path: '/settings/tarif-far-overseas-vendor', group: 'Settings' },
+  // Master vendor Sea & Air (2026-10-01, sql/035): kode PPJK -> nama legal + TOP (Finance Handover).
+  { key: 'settings_seaair_vendors', label: 'Sea & Air Vendors (PPJK)', path: '/settings/seaair-vendors', group: 'Settings' },
   // settings_roles sengaja TIDAK dipakai route guard-nya (RoleManagementPage di-gate langsung
   // via isAdmin, bukan lewat matrix page_key ini) -- tapi tetap didaftarkan di sini supaya
   // tetap tampil & konsisten di matrix Kelola Role & Akses utk keperluan dokumentasi/display.

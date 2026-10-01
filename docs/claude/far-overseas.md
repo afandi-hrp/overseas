@@ -191,12 +191,13 @@ frontend ini, SEMUA memo Pending tertahan (payment type wajib) — deploy BARENG
   trail — belum ada kirim email/WA), panel Audit trail, banner Paid/Received/FX locked/On hold,
   bar Reject+Sign 44px di HP.
 - Cost Validation: kotak konfirmasi temuan AI (Overcharge / Duplicate, catatan min. 5).
-- Tab **Finance Handover** (`FarOverseasAirFinanceHandover.tsx`, page_key BARU
-  `far_overseas_finance` di `PAGE_REGISTRY`): kotak Waiting/Accepted·unpaid(overdue)/Paid/All,
-  stepper Sent→Received→Paid, Accept & Mark paid (bottom sheet di HP, bukti bayar -> Storage ->
-  otomatis di Docs). Role Finance juga butuh akses LIHAT `direct_loading`.
+- ~~Tab **Finance Handover**~~ — DIPINDAH 2026-10-01 ke halaman gabungan `/finance-handover` (FAR + Sea &
+  Air, lihat CLAUDE.md "Finance Handover gabungan"); tombol tab di halaman FAR sekarang link ke sana,
+  `FarOverseasAirFinanceHandover.tsx` DIHAPUS. Bukti bayar TIDAK wajib lagi (sql/035, keputusan user).
+  page_key `far_overseas_finance` tetap; role Finance juga butuh akses LIHAT `direct_loading`. Chip
+  **Urgent** (kolom `is_urgent`, toggle di Edit memo) — sql/035.
 - My Approvals: gabung jabatan global + `far_overseas_step_signers`; memo REJECTED muncul lagi utk
-  Prepared By. Tab awal per peran: Finance -> Finance Handover, SPV/Director -> My Approvals.
+  Prepared By. Tab awal per peran: SPV/Director -> My Approvals (Finance -> halaman /finance-handover).
 - Status Finance/Paid di filter STATUS & label card, alarm due berhenti setelah Paid (memo APPROVED
   hanya ikut alarm setelah Finance menerimanya — memo lama tidak jadi "overdue" selamanya), kolom
   List "Cost per vessel" (`allocateByVessel`, per KG kalau lengkap else rata, largest remainder),

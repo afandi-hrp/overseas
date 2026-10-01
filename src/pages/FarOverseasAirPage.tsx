@@ -21,7 +21,6 @@ import FarOverseasAirCostValidationModal from '../components/FarOverseasAirCostV
 import FarOverseasAirDocumentsModal, { getMemoDocs } from '../components/FarOverseasAirDocumentsModal';
 import FarOverseasAirUploadModal from '../components/FarOverseasAirUploadModal';
 import FarOverseasAirEditMemoModal, { validateMemoEdits } from '../components/FarOverseasAirEditMemoModal';
-import FarOverseasAirFinanceHandover from '../components/FarOverseasAirFinanceHandover';
 import FarOverseasAirMyApprovals from '../components/FarOverseasAirMyApprovals';
 import ExportModal from '../components/ExportModal';
 import Greeting from '../components/Greeting';
@@ -330,6 +329,7 @@ const MemoCard: React.FC<{ r: any; cost: CostInfo | undefined; dueWindow: number
           <div className="min-w-0">
             {r.memo_no && <p className="text-sm font-extrabold text-[#2A1A2C] leading-tight">{r.memo_no}</p>}
             <p className={r.memo_no ? 'inline-block mt-0.5 text-[9px] font-extrabold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[#F5EDF3] text-[#6B3470]' : 'text-sm font-extrabold text-[#2A1A2C] leading-tight break-words'}>{r.memo_title || <span className="italic font-semibold text-[#6E5E70]">Untitled memo</span>}</p>
+            {r.is_urgent && <span className="ml-1 inline-block mt-0.5 text-[9px] font-extrabold uppercase tracking-wide px-1.5 py-0.5 rounded bg-rose-100 text-rose-700" title="May be paid before the goods are received">Urgent</span>}
           </div>
           <AiChip status={cost?.status} />
         </div>
@@ -517,7 +517,7 @@ export default function FarOverseasAirPage() {
   const myTier: ApprovalStep | null = (STEP_ORDER as string[]).includes(rawTier) ? (rawTier as ApprovalStep) : null;
   const canOpenVendorRates = isAdmin || allowedPageKeys.has('settings_tarif_far_overseas_vendor');
 
-  const [tab, setTab] = useState<'MEMOS' | 'MY_APPROVALS' | 'FINANCE'>('MEMOS');
+  const [tab, setTab] = useState<'MEMOS' | 'MY_APPROVALS'>('MEMOS');
   // Tahap 2 terpasang? (sql/027) & penandatangan per PT -- dicek sekali saat halaman dibuka.
   const [phase2, setPhase2] = useState(false);
   const [stepSigners, setStepSigners] = useState<StepSignerMap | null>(null);
@@ -534,7 +534,6 @@ export default function FarOverseasAirPage() {
   }, []);
   const mySteps = useMemo(() => mySignableSteps(user?.id, myTier, stepSigners), [user?.id, myTier, stepSigners]);
   const canSeeFinance = phase2 && (isAdmin || allowedPageKeys.has('far_overseas_finance'));
-  const canActFinance = canEditPage('far_overseas_finance');
   const [editSaveError, setEditSaveError] = useState<string | null>(null);
   const [detailRefreshToken, setDetailRefreshToken] = useState(0);
   const [exportMode, setExportMode] = useState<'MEMO' | 'PO' | null>(null);
@@ -733,15 +732,15 @@ export default function FarOverseasAirPage() {
     setMyApprovalsCount(ids.size);
   }, [rolesReady, mySteps, phase2, myTier, stepSigners, user?.id]);
 
-  // Tab awal per peran (spek): Finance -> Finance Handover; SPV/Director -> My Approvals.
+  // Tab awal per peran (spek): SPV/Director -> My Approvals. Finance Handover sejak 2026-10-01 halaman
+  // GABUNGAN sendiri (/finance-handover, FAR + Sea & Air) -- tombolnya di sini cuma link ke sana.
   const initialTabDone = useRef(false);
   useEffect(() => {
     if (!rolesReady || initialTabDone.current) return;
     initialTabDone.current = true;
     if (deepLinkId) return;
-    if (canSeeFinance && !canEditDirectLoading) setTab('FINANCE');
-    else if (mySteps.length > 0 && !mySteps.includes('TIER1') && mySteps.some(st => st === 'TIER2' || st === 'TIER3')) setTab('MY_APPROVALS');
-  }, [rolesReady, canSeeFinance, canEditDirectLoading, mySteps, deepLinkId]);
+    if (mySteps.length > 0 && !mySteps.includes('TIER1') && mySteps.some(st => st === 'TIER2' || st === 'TIER3')) setTab('MY_APPROVALS');
+  }, [rolesReady, mySteps, deepLinkId]);
 
   const refreshList = useCallback(() => {
     fetchList();
@@ -798,7 +797,8 @@ export default function FarOverseasAirPage() {
 
   // Kalau nilai dikembalikan ke nilai tersimpan, field DIBUANG dari pending (tidak dikirim).
   const setVal = useCallback((r: any, field: string, value: any) => {
-    if (!REKAPAN_EDITABLE_FIELDS.has(field)) return;
+    // `is_urgent` (sql/035) TIDAK ada di whitelist RPC update -> disimpan terpisah di saveRowEdits.
+    if (!REKAPAN_EDITABLE_FIELDS.has(field) && field !== 'is_urgent') return;
     setPendingEdits(prev => {
       const rowEdits = { ...(prev[r.id] || {}) };
       const original = r[field] ?? null;
@@ -899,14 +899,26 @@ export default function FarOverseasAirPage() {
   // Simpan pending edit 1 baris. Pending HANYA dibuang kalau RPC sukses (dulu ikut dibuang walau
   // gagal -> perubahan hilang diam-diam). Return true kalau sukses.
   const saveRowEdits = async (id: string, baseRow: any): Promise<boolean> => {
-    const edits = pendingEdits[id];
-    if (!edits || Object.keys(edits).length === 0) return true;
+    const allEdits = pendingEdits[id];
+    if (!allEdits || Object.keys(allEdits).length === 0) return true;
+    // `is_urgent` lewat RPC sendiri (fn_far_overseas_set_urgent, sql/035) -- boleh walau memo terkunci.
+    const { is_urgent: urgentEdit, ...edits } = allEdits;
     setSavingEdits(true);
-    const { error } = await updateRekapanFarOverseasAir(id, edits);
-    if (error) {
-      setSavingEdits(false);
-      showToast('Failed to save changes: ' + error.message, true, 8000);
-      return false;
+    if (urgentEdit !== undefined) {
+      const { error: urgentErr } = await supabase.rpc('fn_far_overseas_set_urgent', { p_id: id, p_urgent: !!urgentEdit });
+      if (urgentErr) {
+        setSavingEdits(false);
+        showToast('Failed to save Urgent: ' + urgentErr.message, true, 8000);
+        return false;
+      }
+    }
+    if (Object.keys(edits).length > 0) {
+      const { error } = await updateRekapanFarOverseasAir(id, edits);
+      if (error) {
+        setSavingEdits(false);
+        showToast('Failed to save changes: ' + error.message, true, 8000);
+        return false;
+      }
     }
     let msg = 'Changes saved.';
     let warn = false;
@@ -1205,7 +1217,9 @@ export default function FarOverseasAirPage() {
                 </button>
               )}
               {canSeeFinance && (
-                <button onClick={() => setTab('FINANCE')} className={`px-3 py-1.5 rounded-lg text-xs font-bold ${tab === 'FINANCE' ? 'bg-[#3B1B3D] text-white' : 'text-[#6E5E70] hover:text-[#2A1A2C]'}`}>Finance Handover</button>
+                <button onClick={() => navigate('/finance-handover')} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-[#6E5E70] hover:text-[#2A1A2C]">
+                  Finance Handover <ExternalLink size={11} />
+                </button>
               )}
               {canOpenVendorRates && (
                 <button onClick={() => navigate('/settings/tarif-far-overseas-vendor')} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-[#6E5E70] hover:text-[#2A1A2C]">
@@ -1271,19 +1285,7 @@ export default function FarOverseasAirPage() {
             </div>
           )}
 
-          {tab === 'FINANCE' && canSeeFinance ? (
-            <div className="flex-1 min-h-0">
-              <FarOverseasAirFinanceHandover
-                canAct={canActFinance}
-                defaultReceiverName={profile?.nama || user?.email || ''}
-                refreshKey={myApprovalsRefreshKey}
-                onOpenMemo={(id) => navigate(`/direct-loading/${id}`)}
-                onOpenDocs={(r) => setDocsModalRow(r)}
-                onOpenCost={(r) => setCostModalRow(r)}
-                onChanged={refreshList}
-              />
-            </div>
-          ) : tab === 'MY_APPROVALS' && mySteps.length > 0 ? (
+          {tab === 'MY_APPROVALS' && mySteps.length > 0 ? (
             <div className="flex-1 min-h-0">
               <FarOverseasAirMyApprovals
                 mySteps={mySteps}

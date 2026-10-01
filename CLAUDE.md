@@ -57,8 +57,11 @@ approval-nya.
   `sql/033_fix_update_cost_validasi_manual_status.sql` (2026-10-01, hitung ringkasan RPC pakai
   MATCH/OVERCHARGE/UNDERCHARGE) & `sql/034_seaair_finance_handover.sql` (Finance Handover Sea & Air)
   **SUDAH DIJALANKAN ke production (konfirmasi user 2026-10-01)**; backfill opsional di 033 (dikomentari)
-  TIDAK ikut dijalankan. Kalau `031` dijalankan ULANG, jalankan `034` lagi sesudahnya (031 menimpa 2 fungsi yg
-  diperbarui 034).
+  TIDAK ikut dijalankan. Kalau `031` dijalankan ULANG, jalankan `034` lalu `035` lagi sesudahnya (031 menimpa 2
+  fungsi yg diperbarui 034; 034 menimpa mark_paid Sea & Air yg diperbarui 035).
+  `sql/035_finance_handover_unified.sql` (2026-10-01, Finance Handover gabungan FAR + Sea & Air) **BELUM
+  DIJALANKAN** — lihat "Finance Handover gabungan" di bawah. Sebelum 035 jalan, Receive Sea & Air GAGAL
+  (signature RPC baru) & Mark paid FAR minta bukti bayar (RPC lama 027).
 - **Kondisi DB production (stack `supabase3`, audit 2026-09-26)**: role `anon` tanpa hak apa pun
   di schema public (tabel, fungsi, default privileges); GraphQL ditutup; semua tabel RLS dgn
   policy `has_page_access`/`has_edit_access` (tidak ada `using (true)`); semua view
@@ -86,7 +89,8 @@ Semua route (kecuali `/login`) dibungkus `<ProtectedRoute>` → `<MainLayout>` (
 | `/courier/audit` | `CourierAuditPage` → `SharedDataTable` | |
 | `/courier/rekapan` | `CourierRekapanPage` → `SharedDataTable` | |
 | `/courier/validasi` | `CourierValidasiPage` | halaman mandiri, bukan `SharedDataTable` |
-| `/sea-air/finance` | `SeaAirFinanceHandoverPage` | Finance Handover Sea & Air (2026-10-01, page_key `sea_air_finance`, sql/034) — lihat "Finance Handover Sea & Air" di `docs/claude/bunker-courier-seaair.md` |
+| `/finance-handover` | `FinanceHandoverPage` | Finance Handover GABUNGAN FAR Overseas + Sea & Air (2026-10-01, `RequirePageAccess pageKeys=[far_overseas_finance, sea_air_finance]`, sql/034+035). `/sea-air/finance` lama -> redirect ke sini; tab Finance Handover di halaman FAR -> link ke sini. Lihat "Finance Handover gabungan" di bawah |
+| `/settings/seaair-vendors` | `SeaAirVendorMasterPage` | Master vendor Sea & Air (PPJK: nama legal + TOP hari), page_key `settings_seaair_vendors`, tabel `seaair_vendor_master` (sql/035) |
 | `/sea-air/audit`, `/sea-air/rekapan` | → `SharedDataTable` | Audit = tampilan "PIB Audit" (2026-09-30), Rekapan = tampilan "Invoice Recap" (2026-10-01) — keduanya kartu/Open + toggle List ke tabel lama; lihat "Audit PIB Sea & Air — tampilan baru" & "Invoice Recap Sea & Air — tampilan baru" di `docs/claude/bunker-courier-seaair.md` |
 | `/direct-loading`, `/direct-loading/:id` | `FarOverseasAirPage` | modul "FAR Overseas" di sidebar; `page_key`/route TETAP `direct_loading`/`/direct-loading` (label tampil "FAR Overseas"). Redesain tahap 1 (2026-09-28, tab Memos/My Approvals, gaya visual & font sendiri) — lihat `docs/claude/far-overseas.md`; tahap 2 = `sql/027_far_overseas_phase2_DRAFT.sql` (SUDAH DIJALANKAN 2026-09-30) |
 | `/bunker` | `BunkerPage` | |
@@ -576,7 +580,7 @@ ditunda (butuh DB/n8n/keputusan) — kerjakan bareng backlog Audit PIB di atas:
 1. ~~**KG per PO**~~ — SELESAI bagian 2 (`po_manual`, Split per PO "By KG").
 2. ~~**Partial PO**~~ — SELESAI bagian 2.
 3. ~~**Submit to Finance terkunci & berpagar**~~ — SELESAI bagian 2; halaman Finance Handover SELESAI
-   2026-10-01 (`/sea-air/finance`, sql/034; upload bukti bayar belum). Lama: sekarang tombol tetap bisa diklik walau ada issue
+   2026-10-01, sekarang halaman GABUNGAN `/finance-handover` (FAR + Sea & Air, sql/034+035). Lama: sekarang tombol tetap bisa diklik walau ada issue
    (konfirmasi dulu), tidak ada kunci setelah submit (tanggal masih bisa dikoreksi di Edit
    shipment/tabel List). Halaman **Finance Handover** Sea & Air belum ada.
 4. **Freight per BL "+ Add quotation"** (tombol SUDAH ada, isi menyusul n8n), tarif berlaku pada ATA, **"Save & re-check"** (n8n).
@@ -593,6 +597,50 @@ ditunda (butuh DB/n8n/keputusan) — kerjakan bareng backlog Audit PIB di atas:
     & event `SEA_AIR_RECAP_CHANGED_EVENT`/`SEA_AIR_AUDIT_CHANGED_EVENT`).
 11. **Review segmen CUSTOM** — tidak bisa dikonfirmasi (keputusan lama), jadi tidak dihitung issue
     walau Over/Under; konfirmasi user kalau mau diubah.
+
+## Finance Handover gabungan FAR Overseas + Sea & Air (`/finance-handover`, 2026-10-01)
+
+Spek user ("Finance Handover", BeeHive) — 1 inbox pengganti tanda terima kertas. **Keputusan user**:
+1 halaman gabungan (menu sidebar sendiri "Finance Handover", ikon `Wallet`; tab FAR & submenu Sea & Air
+lama dihapus/diarahkan); TANPA switch "View as" (peran = hak akses: EDIT page_key sumber = Finance, selain
+itu view only + catatan Exim); nama lengkap PPJK + TOP dari **master vendor Sea & Air baru**; **TANPA upload
+bukti transfer** (FAR & Sea & Air; Mark paid = tanggal + referensi bank opsional); **TANPA Undo**; font
+**Sora** (bukan Plus Jakarta Sans spek); chip **Urgent** FAR = kolom + toggle di Edit memo.
+
+- **File**: `src/pages/FinanceHandoverPage.tsx`, `src/utils/FinanceHandoverHelpers.ts` (SATU sumber
+  `HandoverItem`, fetch, due/overdue, RPC), `src/components/FinanceHandoverViewers.tsx` (viewer FAR & Sea &
+  Air), `src/pages/SeaAirVendorMasterPage.tsx` (Settings). DIHAPUS: `FarOverseasAirFinanceHandover.tsx`,
+  `SeaAirFinanceHandoverPage.tsx`, `SeaAirFinanceHelpers.ts`.
+- **Sumber**: FAR = memo `approval_status='APPROVED'` (Sent = tanggal sign TIER3; payee = `ship_via`; jumlah
+  IDR, non-IDR tampil nilai asli + ≈ IDR; due = `due_date`/`expected_payment_date`). Sea & Air = baris
+  `rekapan_seaair` dgn `tgl_submit_finance` (payee = `seaair_vendor_master.legal_name` via kode `emkl_vendor`,
+  fallback kode + tanda "Full PPJK name not set"; jumlah = `computeLandedCost().landed` tanpa duty; due =
+  submit + `top_days`, default 14 hari "(default)"). "Earlier shipment" = Sea & Air tanpa `seaair_id` atau
+  tanpa Doc/Cost Validation -> hanya view Handover. Courier = tab abu "SOON". Overdue = belum Paid & due < hari
+  ini (tile Received merah "<n> overdue"). Urut Sent terbaru.
+- **UI**: 4 tile status = filter (ring ungu), segmented sumber (hanya sumber yg boleh dilihat), Search, PT,
+  baris berwarna per tahap (amber/putih/hijau), timeline Sent→Received (nama penerima)→Paid. Finance:
+  Accept (dialog "Received by" default nama profil + tanggal, error "Fill in the receiver name and date.") /
+  Mark paid (tanggal transfer + referensi opsional); selama Waiting view diganti "Accept to view". Non-Finance:
+  pill status. Toast "<ref> received." / "<ref> marked as paid.".
+- **Viewer**: FAR = modal LAMA Memo/Documents/Cost dgn prop `tabBar` (tab geser). Sea & Air = dialog
+  Handover (fakta + "Invoices in this handover" + Total payable) · Documents · Cost validation — dua tab
+  terakhir = `SeaAirRecapDocumentsTab`/`SeaAirRecapCostsTab` mode **`financeView`** (baca saja; checklist tanpa
+  PIB/SPPB/Billing DJBC/BPN/SPTNP, % & "Missing" dihitung ulang dari dokumen non-duty, section PIB & kartu
+  Duty disembunyikan; Cost tanpa segmen CUSTOM & kartu Duty & tax + ringkasan "N of M invoices match the
+  contract rate"). **Aturan: jangan tampilkan angka/dokumen duty di halaman ini.**
+- **DB `sql/035`** (BELUM DIJALANKAN): lihat Peta RPC; kolom `rekapan_far_overseas_air.is_urgent`; tabel
+  `seaair_vendor_master` (RLS 4 policy, unik `upper(btrim(vendor_code))`, diisi awal kode `emkl_vendor` yg
+  ada); policy SELECT tambahan `sea_air_finance` ke `dokumen_checklist_seaair`, `dokumen_validasi_matriks_seaair`,
+  `cost_validasi_seaair`, `cost_validasi_catatan_seaair`, `tabel_audit_seaair` (catatan: tabel Audit PIB
+  berisi angka duty — tersembunyi di UI, tapi bisa dibaca role Finance lewat API).
+  Sea & Air Receive menyimpan `finance_received_by` = nama yg diketik, `finance_received_at` = tanggal terima.
+- **Urgent FAR**: toggle di Edit memo (section due date), tampil hanya kalau kolom ada; bisa diubah walau memo
+  terkunci, selama belum Paid; disimpan di `saveRowEdits` lewat RPC `fn_far_overseas_set_urgent` (BUKAN whitelist
+  `update_rekapan_far_overseas_manual`; `setVal` mengizinkan field ini khusus). Chip "Urgent" di kartu memo FAR &
+  Finance Handover.
+- **Diuji**: jsdom 53 cek (tile/filter/search/PT, Accept & Mark paid FAR + Sea & Air + RPC, viewer kedua sumber,
+  view-only, master vendor, status Recap) + 5 cek toggle Urgent; PGlite 22 cek (035).
 
 ## Navigasi mobile -- hamburger + drawer (`src/components/MainLayout.tsx`, 2026-09)
 
@@ -677,7 +725,8 @@ kelengkapan di-merge manual di JS dari `dokumen_checklist` via `mergeChecklistDa
 **Sea & Air**: `rekapan_seaair`, `tabel_audit_seaair`, `cost_validasi_seaair`,
 `cost_validasi_catatan_seaair` (catatan konfirmasi manual per-segmen Cost Validation, 2026-09),
 `dokumen_checklist_seaair`, `dokumen_validasi_seaair`, `dokumen_validasi_matriks_seaair`,
-`kurs_bi_seaair`, `kurs_rule_vendor_seaair`, `tarif_kontrak_seaair`.
+`kurs_bi_seaair`, `kurs_rule_vendor_seaair`, `tarif_kontrak_seaair`. Master vendor PPJK (Finance Handover, sql/035):
+`seaair_vendor_master`.
 
 **FAR Overseas Air (Direct Loading)**: `rekapan_far_overseas_air`,
 `cost_validasi_far_overseas_air`, `far_overseas_signer_config`,
@@ -749,7 +798,10 @@ Supabase** — bisa saja sudah basi (RPC lain ditambahkan user langsung tanpa te
   `upsert_kurs_rule_vendor`, `upsert_kurs_bi`, `nonaktifkan_tarif_kontrak`. Bagian 2 (sql/031,
   SUDAH DIJALANKAN 2026-10-01): `fn_seaair_unlock_submit`, `fn_seaair_reread_from_ai`, helper
   `fn_seaair_recap_issue_count` (+ 6 fungsi trigger `fn_seaair_*`). Finance Handover (sql/034, SUDAH
-  DIJALANKAN 2026-10-01): `fn_seaair_finance_accept`, `fn_seaair_finance_mark_paid`, `fn_seaair_finance_undo`.
+  DIJALANKAN 2026-10-01): `fn_seaair_finance_accept`, `fn_seaair_finance_mark_paid`. **sql/035 (BELUM DIJALANKAN)**:
+  `fn_seaair_finance_accept(uuid, text, date)` (signature BARU: nama + tanggal terima; versi 1-arg DI-DROP),
+  `fn_seaair_finance_mark_paid` referensi opsional, `fn_seaair_finance_undo` DI-DROP (tanpa Undo, keputusan
+  user), FAR `fn_far_overseas_set_urgent(uuid, boolean)` BARU, `fn_far_overseas_mark_paid` bukti bayar opsional.
 - Courier Audit — Draft/Archive lifecycle (`SharedDataTable.tsx`, nama RPC dipilih dinamis via
   `isPib ? '..._pib' : '..._cn'`): `fn_delete_pib`/`fn_delete_cn`, `fn_archive_pib`/
   `fn_archive_cn`, `fn_undraft_pib`/`fn_undraft_cn`.

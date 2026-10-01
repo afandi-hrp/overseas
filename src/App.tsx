@@ -30,7 +30,8 @@ import CourierRekapanPage from './pages/courier/CourierRekapanPage';
 import CourierValidasiPage from './pages/courier/CourierValidasiPage';
 import SeaAirAuditPage from './pages/sea-air/SeaAirAuditPage';
 import SeaAirRekapanPage from './pages/sea-air/SeaAirRekapanPage';
-import SeaAirFinanceHandoverPage from './pages/sea-air/SeaAirFinanceHandoverPage';
+import FinanceHandoverPage from './pages/FinanceHandoverPage';
+import SeaAirVendorMasterPage from './pages/SeaAirVendorMasterPage';
 import AuditTrailPage from './pages/audit-trail/AuditTrailPage';
 import FarOverseasAirPage from './pages/FarOverseasAirPage';
 import BunkerPage from './pages/BunkerPage';
@@ -109,7 +110,10 @@ export default function App() {
               <Route path="/sea-air/upload" element={<RequirePageAccess pageKey="sea_air_upload"><UploadPage fixedType="sea_air" /></RequirePageAccess>} />
               <Route path="/sea-air/audit" element={<RequirePageAccess pageKey="sea_air_audit"><SeaAirAuditPage /></RequirePageAccess>} />
               <Route path="/sea-air/rekapan" element={<RequirePageAccess pageKey="sea_air_rekapan"><SeaAirRekapanPage /></RequirePageAccess>} />
-              <Route path="/sea-air/finance" element={<RequirePageAccess pageKey="sea_air_finance"><SeaAirFinanceHandoverPage /></RequirePageAccess>} />
+              {/* Finance Handover gabungan FAR + Sea & Air (2026-10-01); URL lama Sea & Air diarahkan ke sini. */}
+              <Route path="/finance-handover" element={<RequirePageAccess pageKeys={['far_overseas_finance', 'sea_air_finance']}><FinanceHandoverPage /></RequirePageAccess>} />
+              <Route path="/sea-air/finance" element={<Navigate to="/finance-handover" replace />} />
+              <Route path="/settings/seaair-vendors" element={<RequirePageAccess pageKey="settings_seaair_vendors"><SeaAirVendorMasterPage /></RequirePageAccess>} />
 
               <Route path="/direct-loading" element={<RequirePageAccess pageKey="direct_loading"><FarOverseasAirPage /></RequirePageAccess>} />
               <Route path="/direct-loading/:id" element={<RequirePageAccess pageKey="direct_loading"><FarOverseasAirPage /></RequirePageAccess>} />

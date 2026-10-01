@@ -123,19 +123,22 @@ const OPTIONAL_DOCS = [
   ['ada_billing_sptnp', 'Billing SPTNP'], ['ada_bpn_sptnp', 'BPN SPTNP'],
   ['ada_invoice_surveyor', 'Invoice surveyor'], ['ada_laporan_surveyor', 'Surveyor report'], ['ada_insurance', 'Insurance'],
 ]
+// Mode Finance Handover (financeView): dokumen & matriks duty DISEMBUNYIKAN (spek: Finance tidak perlu).
+const DUTY_DOC_KEYS = new Set(['ada_pib', 'ada_sppb', 'ada_billing_djbc', 'ada_bpn', 'ada_sptnp', 'ada_billing_sptnp', 'ada_bpn_sptnp'])
 const ALWAYS_OPTIONAL = new Set(['ada_form_e', 'ada_e_coo', 'ada_form_ak', 'ada_sptnp', 'ada_billing_sptnp', 'ada_bpn_sptnp'])
 
-export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage, isAdmin = false, locked = false, onChanged, onDirtyChange }: {
+export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage, isAdmin = false, locked = false, financeView = false, onChanged, onDirtyChange }: {
   seaairId: any
   canEdit: boolean
+  financeView?: boolean  // Finance Handover: baca saja, tanpa dokumen/section PIB & kartu Duty
   isAdmin?: boolean   // bagian 2 (sql/031): accept / mismatch / koreksi nilai HANYA Admin
   locked?: boolean    // sudah Submit to Finance -> read-only
   onChanged: () => void
   onDirtyChange?: (dirty: boolean) => void
 }) {
   // canEdit = konfirmasi dokumen (Admin saja); canEditDuty = edit Duty (hak edit halaman biasa).
-  const canEdit = canEditPage && isAdmin && !locked
-  const canEditDuty = canEditPage && !locked
+  const canEdit = canEditPage && isAdmin && !locked && !financeView
+  const canEditDuty = canEditPage && !locked && !financeView
   const [loading, setLoading] = useState(true)
   const [checklist, setChecklist] = useState<any>(null)
   const [matriksId, setMatriksId] = useState<any>(null)
@@ -266,16 +269,17 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
   }
 
   // ── Statistik (sama formula globalStats modal lama) ──
+  const visibleChecks = useMemo(() => (financeView ? checks.filter(c => c.section !== 'PIB') : checks), [checks, financeView])
   const stats = useMemo(() => {
     let match = 0, mismatch = 0, notChecked = 0, open_ = 0
-    checks.forEach(c => {
+    visibleChecks.forEach(c => {
       if (c.match === true) match++
       else if (c.match === false) { mismatch++; if (!c.manual) open_++ }
       else notChecked++
     })
     const total = match + mismatch
     return { match, mismatch, notChecked, openMismatch: open_, pct: total > 0 ? Math.round((match / total) * 100) : 0 }
-  }, [checks])
+  }, [visibleChecks])
 
   const dutyCalc = useMemo(() => {
     const nd = Number(ndpbm) || 0
@@ -295,10 +299,16 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
 
   if (loading) return <LoadingState fullHeight={false} />
 
-  const pct = checklist ? Math.round(Number(checklist.pct_kelengkapan) || 0) : null
-  const complete = checklist?.status_kelengkapan === 'LENGKAP' || pct === 100
+  const requiredDocs = financeView ? REQUIRED_DOCS.filter(([k]) => !DUTY_DOC_KEYS.has(k)) : REQUIRED_DOCS
+  const optionalDocs = financeView ? OPTIONAL_DOCS.filter(([k]) => !DUTY_DOC_KEYS.has(k)) : OPTIONAL_DOCS
+  // Mode Finance: % & "Missing" dihitung dari dokumen NON-duty saja (dokumen_kurang bisa menyebut PIB dkk).
+  const financeMissing = checklist ? requiredDocs.filter(([k]) => !checklist[k]).map(([, l]) => l) : []
+  const pct = !checklist ? null : financeView
+    ? Math.round(((requiredDocs.length - financeMissing.length) / Math.max(1, requiredDocs.length)) * 100)
+    : Math.round(Number(checklist.pct_kelengkapan) || 0)
+  const complete = financeView ? pct === 100 : (checklist?.status_kelengkapan === 'LENGKAP' || pct === 100)
 
-  const sectionData = SECTIONS.map(sec => {
+  const sectionData = SECTIONS.filter(sec => !financeView || sec.key !== 'PIB').map(sec => {
     const secChecks = checks.filter(c => c.section === sec.key)
     const rows = sec.rows.map(r => ({ ...r, cells: r.cols.map(col => secChecks.find(c => c.row === r.db && c.col === col)).filter(Boolean) as any[] }))
       .filter(r => r.cells.length > 0)
@@ -320,10 +330,12 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
           <div className="text-[12px] text-[#6E5E70] mt-3">No checklist recorded for this shipment yet.</div>
         ) : (
           <>
-            {checklist.dokumen_kurang && String(checklist.dokumen_kurang).trim() !== '-' && <div className="mt-2 rounded-lg bg-[#FDE7E4] text-[#A8231A] text-[12px] font-semibold px-3 py-1.5">Missing: {checklist.dokumen_kurang}</div>}
+            {financeView
+              ? financeMissing.length > 0 && <div className="mt-2 rounded-lg bg-[#FDE7E4] text-[#A8231A] text-[12px] font-semibold px-3 py-1.5">Missing: {financeMissing.join(', ')}</div>
+              : checklist.dokumen_kurang && String(checklist.dokumen_kurang).trim() !== '-' && <div className="mt-2 rounded-lg bg-[#FDE7E4] text-[#A8231A] text-[12px] font-semibold px-3 py-1.5">Missing: {checklist.dokumen_kurang}</div>}
             <div className={`${SA_LABEL} mt-3 mb-1.5`}>Required</div>
             <div className="grid grid-cols-2 gap-1.5">
-              {REQUIRED_DOCS.map(([k, label]) => (
+              {requiredDocs.map(([k, label]) => (
                 <div key={k} className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg border text-[12px] ${checklist[k] ? 'border-[#D6EEDF] bg-[#F5FBF7] text-[#17663D]' : 'border-[#F4C3BC] bg-[#FFF6F4] text-[#A8231A]'}`}>
                   {checklist[k] ? <CheckCircle2 size={13} /> : <XCircle size={13} />}<span className="font-semibold text-[#3B1B3D]">{label}</span>
                 </div>
@@ -331,7 +343,7 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
             </div>
             <div className={`${SA_LABEL} mt-3 mb-1.5`}>Optional</div>
             <div className="grid grid-cols-2 gap-1.5">
-              {OPTIONAL_DOCS.filter(([k]) => ALWAYS_OPTIONAL.has(k) || Object.prototype.hasOwnProperty.call(checklist, k)).map(([k, label]) => (
+              {optionalDocs.filter(([k]) => ALWAYS_OPTIONAL.has(k) || Object.prototype.hasOwnProperty.call(checklist, k)).map(([k, label]) => (
                 <div key={k} className="flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#EADFD6] text-[12px]">
                   <span className="text-[#3B1B3D]">{label}</span>{checklist[k] ? <CheckCircle2 size={13} className="text-[#17663D]" /> : <span className="text-[#B7A9B8]">–</span>}
                 </div>
@@ -466,8 +478,8 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
               )
             })}
 
-            {/* ── Duty ── */}
-            <div className={`${SA_CARD} overflow-hidden`}>
+            {/* ── Duty ── (disembunyikan di mode Finance) */}
+            {!financeView && <div className={`${SA_CARD} overflow-hidden`}>
               <div className="px-4 pt-3 pb-2 flex flex-wrap items-center gap-3">
                 <div className="mr-auto">
                   <div className="text-[13px] font-bold text-[#3B1B3D]">Duty</div>
@@ -530,8 +542,8 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
                   })}
                 </tbody>
               </table>
-            </div>
-            <div className="text-[11px] text-[#8A7A8B]">Vendor payments (goods) are not tracked yet.</div>
+            </div>}
+            {!financeView && <div className="text-[11px] text-[#8A7A8B]">Vendor payments (goods) are not tracked yet.</div>}
           </>
         )}
 

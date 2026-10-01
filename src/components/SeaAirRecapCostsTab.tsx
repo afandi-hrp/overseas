@@ -71,9 +71,10 @@ const rowStatusChip = (status: string | null) => {
   return <Chip tone="grey">Incomplete</Chip>
 }
 
-export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, isAdmin = false, locked = false, auditRow, onChanged, onDirtyChange }: {
+export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, isAdmin = false, locked = false, financeView = false, auditRow, onChanged, onDirtyChange }: {
   seaairId: any
   canEdit: boolean
+  financeView?: boolean  // Finance Handover: baca saja, tanpa segmen CUSTOM & kartu Duty & tax
   isAdmin?: boolean   // bagian 2 (sql/031): review & edit nominal HANYA Admin
   locked?: boolean    // sudah Submit to Finance -> read-only
   auditRow: any | null
@@ -83,7 +84,7 @@ export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, is
   const { user, profile } = useAuth()
   // Keputusan user (bagian 2): konfirmasi cost (review per segmen & edit nominal) HANYA Admin, dan
   // tidak bisa sama sekali setelah Submit to Finance. Ditegakkan juga di DB (trigger sql/031 bagian J).
-  const canEdit = canEditPage && isAdmin && !locked
+  const canEdit = canEditPage && isAdmin && !locked && !financeView
   const [checks, setChecks] = useState<any[]>([])
   const [costValidasiId, setCostValidasiId] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -245,19 +246,30 @@ export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, is
     ;(Object.values(catatanMap) as Catatan[]).forEach(c => m.set(c.section, c.status_konfirmasi))
     return m
   }, [catatanMap])
-  const stats = useMemo(() => computeSeaAirCostGlobalStats(checks, confirmationBySection), [checks, confirmationBySection])
+  // Mode Finance: segmen CUSTOM (bea cukai) tidak ditampilkan & tidak dihitung.
+  const statChecks = useMemo(() => (financeView ? checks.filter(c => String(c.section || '').trim().toUpperCase() !== 'CUSTOM') : checks), [checks, financeView])
+  const stats = useMemo(() => computeSeaAirCostGlobalStats(statChecks, confirmationBySection), [statChecks, confirmationBySection])
   // Sisa baris (bukan match/over/under, segmen belum dikonfirmasi): expected kosong = "Not validated"
   // (tidak ada tarif kontrak), selain itu "Incomplete" (actual belum ada).
   const { notValidated, incomplete } = useMemo(() => {
     let nv = 0, inc = 0
-    checks.filter((c: any) => c.section !== 'SURVEYOR' && !confirmationBySection.has(c.section)).forEach((c: any) => {
+    statChecks.filter((c: any) => c.section !== 'SURVEYOR' && !confirmationBySection.has(c.section)).forEach((c: any) => {
       if (c.status === 'MATCH' || c.status === 'OVERCHARGE' || c.status === 'UNDERCHARGE') return
       if (c.expected == null || c.expected === '') nv++; else inc++
     })
     return { notValidated: nv, incomplete: inc }
-  }, [checks, confirmationBySection])
+  }, [statChecks, confirmationBySection])
 
   const rowsFor = (section: string) => checks.filter(c => String(c.section || '').trim().toUpperCase() === section)
+  // "3 of 4 invoices match the contract rate" (spek Finance): per segmen yg punya baris (selain CUSTOM &
+  // SURVEYOR), match = semua baris detail MATCH atau segmen sudah direview "accept difference".
+  const invoiceSummary = (() => {
+    const secs = COST_SECTIONS.filter(sec => sec.key !== 'CUSTOM' && !sec.optional)
+      .map(sec => ({ sec, rows: rowsFor(sec.key).filter(r => !isSummaryCostRow(r)) })).filter(x => x.rows.length > 0)
+    if (secs.length === 0) return ''
+    const ok = secs.filter(x => confirmationBySection.get(x.sec.key) === 'MATCH' || x.rows.every(r => r.status === 'MATCH')).length
+    return `${ok} of ${secs.length} invoice${secs.length === 1 ? '' : 's'} match the contract rate`
+  })()
 
   if (loading) return <LoadingState fullHeight={false} />
 
@@ -275,7 +287,7 @@ export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, is
       <div className={`${SA_CARD} px-4 py-3 flex flex-wrap items-center gap-4`}>
         <div className="mr-auto">
           <div className="text-[14px] font-bold text-[#3B1B3D]">Cost validation</div>
-          <div className="text-[11.5px] text-[#6E5E70]">Each invoice line vs. the contract rate</div>
+          <div className="text-[11.5px] text-[#6E5E70]">{financeView && invoiceSummary ? invoiceSummary : 'Each invoice line vs. the contract rate'}</div>
         </div>
         {([
           ['Match', stats.match, 'bg-[#EAF6EF] text-[#17663D]'],
@@ -307,7 +319,7 @@ export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, is
 
       {loadError ? (
         <div className={`${SA_CARD} px-4 py-6 text-center text-[12.5px] text-[#6E5E70]`}>{loadError}</div>
-      ) : COST_SECTIONS.map(sec => {
+      ) : COST_SECTIONS.filter(sec => !financeView || sec.key !== 'CUSTOM').map(sec => {
         const rawRows = rowsFor(sec.key)
         if (rawRows.length === 0) return null
         // Jalur Merah (EMKL) -- SALINAN logika displayRows modal lama.
@@ -490,7 +502,8 @@ export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, is
         )
       })}
 
-      {/* Duty & tax (PIB) */}
+      {/* Duty & tax (PIB) -- disembunyikan di mode Finance */}
+      {!financeView && (<>
       <div className={`${SA_CARD} overflow-hidden`}>
         <div className="px-4 pt-3 pb-2 flex items-center justify-between gap-3">
           <div>
@@ -537,6 +550,7 @@ export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, is
           </>
         )}
       </div>
+      </>)}
 
       {/* Bar simpan perubahan Expected/Actual */}
       {hasUnsaved && (

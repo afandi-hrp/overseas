@@ -92,12 +92,13 @@ function describeLog(e: MemoLogEntry): string {
   return e.note || '';
 }
 
-export default function FarOverseasAirDetailModal({ record, onClose, onChanged, onOpenEdit, refreshToken }: {
+export default function FarOverseasAirDetailModal({ record, onClose, onChanged, onOpenEdit, refreshToken, tabBar }: {
   record: any;
   onClose: () => void;
   onChanged?: () => void;
   onOpenEdit?: (rec: any) => void;
   refreshToken?: number;
+  tabBar?: React.ReactNode;   // Finance Handover: tab Memo · Documents · Cost di atas isi modal
 }) {
   const { user, profile, canEdit, canApproveTier } = useAuth();
   const canEditDirectLoading = canEdit('direct_loading');
@@ -370,6 +371,7 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
         #far-overseas-print-area .far-memo-sheet { width: calc(194mm / var(--far-memo-zoom, 1)); min-width: 0; zoom: var(--far-memo-zoom, 1); }
       }`}</style>
       <div className="bg-[#FBF3EC] w-full max-w-4xl h-full sm:h-[94vh] sm:max-h-[94vh] sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden print:shadow-none print:w-full print:m-0 print:rounded-none print:h-auto print:max-h-none print:overflow-visible print:block print:bg-white">
+        {tabBar}
 
         <div className="flex justify-between items-center gap-3 px-4 sm:px-6 py-3 border-b border-[#EADFD6] bg-white shrink-0 print:hidden">
           <div className="min-w-0">

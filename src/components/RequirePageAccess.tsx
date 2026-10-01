@@ -15,8 +15,10 @@ import { getDefaultLandingPath, pageLabel } from '../lib/permissions';
 // adminOnly: cek isAdmin langsung, TIDAK lewat allowedPageKeys -- dipakai khusus halaman Kelola
 // Role & Akses supaya tidak ada role non-admin yang bisa diberi akses ke halaman yang bisa
 // menaikkan role dirinya sendiri jadi Admin (lihat sql/001_rbac_and_bunker_rls.sql).
-export default function RequirePageAccess({ pageKey, adminOnly, children }: {
+// pageKeys: lolos kalau punya SALAH SATU (mis. Finance Handover gabungan FAR + Sea & Air).
+export default function RequirePageAccess({ pageKey, pageKeys, adminOnly, children }: {
   pageKey?: string;
+  pageKeys?: string[];
   adminOnly?: boolean;
   children: React.ReactNode;
 }) {
@@ -30,7 +32,7 @@ export default function RequirePageAccess({ pageKey, adminOnly, children }: {
     );
   }
 
-  const hasAccess = adminOnly ? isAdmin : (isAdmin || (pageKey ? allowedPageKeys.has(pageKey) : false));
+  const hasAccess = adminOnly ? isAdmin : (isAdmin || (pageKey ? allowedPageKeys.has(pageKey) : pageKeys ? pageKeys.some(k => allowedPageKeys.has(k)) : false));
 
   if (!hasAccess) {
     const fallbackPath = getDefaultLandingPath(allowedPageKeys, isAdmin);

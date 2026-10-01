@@ -179,11 +179,12 @@ const RULE_TEXT: Record<string, string> = {
   TIE_FIRST: 'Rule 3 — still tied, first PT in the list (please confirm)',
 };
 
-export default function FarOverseasAirCostValidationModal({ farOverseasId, onClose, approvalStatus, onChanged }: {
+export default function FarOverseasAirCostValidationModal({ farOverseasId, onClose, approvalStatus, onChanged, tabBar }: {
   farOverseasId: string | number;
   onClose: () => void;
   approvalStatus?: string | null;
   onChanged?: () => void;
+  tabBar?: React.ReactNode;   // Finance Handover: tab Memo · Documents · Cost di atas isi modal
 }) {
   const { canEdit, allowedPageKeys, isAdmin } = useAuth();
   const navigate = useNavigate();
@@ -465,6 +466,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
   return createPortal(
     <div className="fixed inset-0 bg-[#2A1A2C]/50 backdrop-blur-sm z-[70] flex justify-center items-center p-2 sm:p-4 md:p-6" style={{ fontFamily: FAR_FONT_FAMILY }}>
       <div className="bg-[#FBF3EC] w-full max-w-6xl h-[94vh] max-h-[94vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+        {tabBar}
 
         <div className="flex justify-between items-center gap-3 px-4 sm:px-6 py-3 border-b border-[#EADFD6] bg-white shrink-0">
           <div className="min-w-0">

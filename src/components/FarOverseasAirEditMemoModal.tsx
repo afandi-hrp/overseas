@@ -794,6 +794,20 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
                   </div>
                 );
               })()}
+              {/* Urgent (sql/035): boleh dibayar sebelum barang diterima -- chip "Urgent" di Finance Handover.
+                  Tetap bisa diubah setelah memo terkunci (sign), selama belum Paid. Disimpan lewat
+                  RPC fn_far_overseas_set_urgent saat "Save changes" (bukan whitelist update RPC). */}
+              {Object.prototype.hasOwnProperty.call(row, 'is_urgent') && (
+                <label className={`mt-3 flex items-start gap-2.5 rounded-2xl border px-4 py-3 text-xs ${merged.is_urgent ? 'border-rose-200 bg-rose-50' : 'border-[#EADFD6] bg-white'}`}>
+                  <input type="checkbox" className="mt-0.5 accent-rose-600" checked={!!merged.is_urgent}
+                    disabled={(readOnly && !receiptEditable) || !!row.paid_at}
+                    onChange={e => ctx.setVal(row, 'is_urgent', e.target.checked)} aria-label="Urgent" />
+                  <span>
+                    <span className="font-extrabold text-[#2A1A2C]">Urgent</span>
+                    <span className="block text-[#6E5E70]">May be paid before the goods are received. Shown as an “Urgent” chip in Finance Handover.{row.paid_at ? ' (Already paid — cannot be changed.)' : ''}</span>
+                  </span>
+                </label>
+              )}
             </section>
 
             <section>

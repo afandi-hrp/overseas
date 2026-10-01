@@ -142,9 +142,10 @@ function docKindLabel(filename: string | undefined, idx: number, explicit?: stri
 // LANGSUNG terbuka saat modal dibuka -- tetap memenuhi permintaan lama user "langsung ke preview
 // dokumennya, tanpa modal perantara". Hanya dokumen sumber (`dokumen_urls`); memo & Cost
 // Validation punya tombol sendiri.
-export default function FarOverseasAirDocumentsModal({ record, onClose }: {
+export default function FarOverseasAirDocumentsModal({ record, onClose, tabBar }: {
   record: any;
   onClose: () => void;
+  tabBar?: React.ReactNode;   // Finance Handover: tab Memo · Documents · Cost di atas isi modal
 }) {
   const docs = getMemoDocs(record);
   const [activeIdx, setActiveIdx] = useState(0);
@@ -162,6 +163,7 @@ export default function FarOverseasAirDocumentsModal({ record, onClose }: {
   return createPortal(
     <div className="fixed inset-0 bg-[#2A1A2C]/50 backdrop-blur-sm z-[90] flex items-center justify-center p-2 sm:p-4" style={{ fontFamily: FAR_FONT_FAMILY }}>
       <div className="bg-white rounded-2xl shadow-2xl w-[97vw] max-w-[1500px] h-[94vh] flex flex-col overflow-hidden">
+        {tabBar}
         <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-[#EADFD6] shrink-0">
           <div className="min-w-0">
             <p className="text-[10px] font-bold uppercase tracking-wider text-[#6E5E70]">Docs</p>

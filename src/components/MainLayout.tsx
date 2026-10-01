@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plane, Ship, ScrollText, Settings, ChevronUp, ChevronDown, LogOut, UserCircle, FileCheck2, GitCompare, BarChart3, Menu, X } from 'lucide-react';
+import { Plane, Ship, ScrollText, Settings, ChevronUp, ChevronDown, LogOut, UserCircle, FileCheck2, GitCompare, BarChart3, Menu, X, Wallet } from 'lucide-react';
 import shipmentIcon from '../assets/beehive-icon.png';
 import { useAuth } from '../lib/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -39,7 +39,6 @@ const MAIN_TABS: MainTab[] = [
     subTabs: [
       { id: 'sea_air_audit',   label: 'Audit', path: '/sea-air/audit', pageKey: 'sea_air_audit' },
       { id: 'sea_air_rekapan', label: 'Invoice Recap', path: '/sea-air/rekapan', pageKey: 'sea_air_rekapan' },
-      { id: 'sea_air_finance', label: 'Finance Handover', path: '/sea-air/finance', pageKey: 'sea_air_finance' },
       { id: 'sea_air_upload', label: 'Upload', path: '/sea-air/upload', pageKey: 'sea_air_upload' },
     ]
   },
@@ -50,6 +49,15 @@ const MAIN_TABS: MainTab[] = [
     path: '/direct-loading',
     basePath: '/direct-loading',
     pageKey: 'direct_loading',
+  },
+  {
+    // Finance Handover gabungan FAR Overseas + Sea & Air (2026-10-01) -- tampil kalau punya salah satu.
+    id: 'finance_handover',
+    label: 'Finance Handover',
+    icon: Wallet,
+    path: '/finance-handover',
+    basePath: '/finance-handover',
+    pageKeys: ['far_overseas_finance', 'sea_air_finance'],
   },
   {
     // Posisi TEPAT DI BAWAH "FAR Overseas" (2026-09, permintaan user -- dulu di bawah "Compare

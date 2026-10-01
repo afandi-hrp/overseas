@@ -88,35 +88,14 @@ hanya Admin (`canEdit && isAdmin && !locked`), non-Admin lihat catatan abu; Edit
 `canEdit && !locked`. Chip duplikat (`duplicate_of`) di kartu & header. Split per PO "By KG"
 memakai TOTAL shipment × KG PO / total KG (pembulatan per sel, tampilan saja).
 
-## Finance Handover Sea & Air (`/sea-air/finance`, 2026-10-01)
+## Finance Handover Sea & Air — DIGANTI halaman gabungan (2026-10-01)
 
-Spek V167: setelah "Submit to Finance" -> **1 handover per BL/AWB**, dibayar ke **PPJK**
-(`emkl_vendor`, tampil apa adanya — belum ada sumber nama legal lengkap), berisi semua invoice
-pengiriman (jumlah = `computeLandedCost().landed`, invoice saja), **TANPA duty & tax** (dibayar via
-Billing DJBC). Alur **Sent** (`tgl_submit_finance`) -> **Received** -> **Paid**.
-
-- **File**: `src/pages/sea-air/SeaAirFinanceHandoverPage.tsx`, `src/utils/SeaAirFinanceHelpers.ts`
-  (SATU sumber `financeStage`/fetch/RPC). page_key `sea_air_finance` (PAGE_REGISTRY grup Sea & Air),
-  submenu "Finance Handover" di bawah Invoice Recap. Token tampilan `SeaAirAuditUi.tsx`.
-- **Data**: semua baris `rekapan_seaair` yg sudah submit (`select('*')`, per 1.000), filter tab/
-  search (awb/no_invoice/vendor/emkl_vendor/a_n/paid_reference)/Company di browser supaya angka 4
-  kotak (Waiting / Received · unpaid / Paid / All, jumlah + total Rp) selalu sinkron. Pagination 20.
-- **Kartu**: BL/AWB, tipe, PT, pill tahap, Payable to (PPJK) + jumlah invoice, Amount, stepper
-  Sent→Received→Paid, tombol Receive / Mark paid (dialog tanggal default hari ini + referensi ≥3) /
-  Undo (alasan ≥5, mundur 1 langkah) / Details (rincian invoice per segmen + duty sbg info + riwayat
-  + "Open in Invoice Recap" kalau punya akses Recap).
-- **DB `sql/034`** (SUDAH DIJALANKAN 2026-10-01): kolom `finance_received_at/_by`, `paid_date`, `paid_reference`,
-  `paid_by`, `paid_recorded_at`; policy SELECT `rekapan_seaair_select_finance` (role Finance TIDAK
-  perlu akses Invoice Recap); RPC `fn_seaair_finance_accept/_mark_paid/_undo` (SECURITY DEFINER,
-  guard `has_edit_access('sea_air_finance')`, lolos kunci submit via flag `app.seaair_unlock`, log
-  audit_trail "Finance received/Paid/Finance (undo) — Lama: … → Baru: …"); `fn_seaair_unlock_submit`
-  menolak kalau Finance sudah menerima; re-audit PIB TIDAK terpicu kolom Finance.
-  Kalau kolom 034 tidak ada (mis. stack lain): banner amber + tanpa tombol aksi (`probeFinanceColumns`).
-- **Invoice Recap ikut**: status kartu "✓ Received by Finance" / "✓ Paid dd Mon"; banner jendela Open
-  menampilkan Received/Paid; tombol Unlock (Admin) diganti teks kalau Finance sudah menerima.
-- **Belum**: upload bukti bayar (FAR punya bucket sendiri), jatuh tempo, nama legal PPJK.
-- **Diuji**: jsdom 30 cek (kotak/tab, Receive/Mark paid/Undo + RPC & DB, search ref, Company,
-  view-only, tanpa sql/034, status Recap & kunci mode List), PGlite 29 cek (034 + 033).
+Halaman `/sea-air/finance` versi pertama (sql/034) DIGANTI halaman gabungan FAR + Sea & Air
+`/finance-handover` — lihat "Finance Handover gabungan" di CLAUDE.md. Yang tetap dari 034: kolom
+`finance_received_at/_by`, `paid_date`, `paid_reference`, `paid_by`, `paid_recorded_at`, policy
+`rekapan_seaair_select_finance`, kunci submit (flag `app.seaair_unlock`), Unlock Admin ditolak kalau Finance
+sudah menerima, kolom Finance tidak memicu re-audit. Invoice Recap: status kartu "✓ Received by Finance" /
+"✓ Paid dd Mon", banner jendela Open menampilkan Received/Paid.
 
 ## Audit PIB Sea & Air — tampilan baru "PIB Audit" (2026-09-30)
 

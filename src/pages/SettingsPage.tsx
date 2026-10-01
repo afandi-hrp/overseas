@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../lib/AuthContext';
 import {
   Settings as SettingsIcon, FileCheck2, Fuel, Table2, Flame, Landmark,
-  SlidersHorizontal, FileText, ShieldCheck, ArrowRight, Webhook, Ship,
+  SlidersHorizontal, FileText, ShieldCheck, ArrowRight, Webhook, Ship, Building2,
 } from 'lucide-react';
 import Greeting from '../components/Greeting';
 
@@ -79,6 +79,9 @@ export default function SettingsPage() {
             )}
             {canSee('settings_tarif_kontrak') && (
               <ModuleCard icon={FileText} title="Tarif Kontrak Vendor" description="Kelola master tarif dari vendor (Sea & Air)." to="/settings/tarif-kontrak" actionLabel="Kelola Tarif" />
+            )}
+            {canSee('settings_seaair_vendors') && (
+              <ModuleCard icon={Building2} title="Sea & Air Vendors (PPJK)" description="Nama lengkap PPJK & TOP (hari) yang dipakai Finance Handover Sea & Air." to="/settings/seaair-vendors" actionLabel="Kelola Vendor" />
             )}
             {canSee('settings_tarif_far_overseas_vendor') && (
               <ModuleCard icon={FileCheck2} title="Tarif Vendor FAR Overseas Air" description="Kelola rate card Octagon Logistic & PT. Jianqiao Logistics Indonesia." to="/settings/tarif-far-overseas-vendor" actionLabel="Kelola Tarif" />
