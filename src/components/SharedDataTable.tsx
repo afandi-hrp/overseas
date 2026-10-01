@@ -1672,6 +1672,28 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, embedde
         </div>
         <div className="text-[11px] text-[#6E5E70] mt-1">{checkedMandatoryCount} of {mandatoryCount} required documents{existingId == null ? ' · not saved yet' : ''}</div>
 
+        {/* Tombol aksi DI ATAS kartu (2026-10-01): dulu di bawah kartu -> tidak kelihatan krn kartu lebih
+            tinggi dari layar. "Upload additional doc" = CourierUploadSusulanModal yg SAMA (logika kirim ke
+            n8n tidak berubah). */}
+        {canEdit ? (
+          <div className="mt-3 pb-3 border-b border-[#EADFD6] flex flex-wrap items-center gap-2 print:hidden">
+            <button onClick={() => setShowUploadSusulan(true)} className={VW_BTN_SECONDARY}>
+              <UploadCloud size={13} /> Upload additional doc
+            </button>
+            {savedMsg && <span className="flex items-center gap-1 text-[11.5px] font-semibold text-[#17663D]"><CheckCircle2 size={13} /> Saved</span>}
+            {isDirty && (
+              <span className="ml-auto flex items-center gap-2">
+                <button onClick={revertUnsaved} title="Discard unsaved checklist changes" className={VW_BTN_SECONDARY}>Discard</button>
+                <button onClick={handleSave} disabled={saving} className={VW_BTN_PRIMARY}>
+                  <Save size={13} /> {saving ? 'Saving…' : 'Save checklist'}
+                </button>
+              </span>
+            )}
+          </div>
+        ) : (
+          <div className="mt-2 text-[11px] text-[#8A7A8B]">View only</div>
+        )}
+
         <div className="mt-3 print:hidden">{jobBanners}</div>
         {err && <div className="mt-2 rounded-lg bg-[#FDE7E4] text-[#A8231A] text-[12px] font-semibold px-3 py-1.5">⚠️ {err}</div>}
         {missingDocs.length > 0 && (
@@ -1697,24 +1719,6 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, embedde
         <div className="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B] mt-3 mb-1.5">Checklist notes</div>
         {catatanInput}
 
-        {canEdit ? (
-          <div className="mt-3 pt-3 border-t border-[#EADFD6] flex flex-wrap items-center gap-2 print:hidden">
-            <button onClick={() => setShowUploadSusulan(true)} className={VW_BTN_SECONDARY}>
-              <UploadCloud size={13} /> Upload additional doc
-            </button>
-            {savedMsg && <span className="flex items-center gap-1 text-[11.5px] font-semibold text-[#17663D]"><CheckCircle2 size={13} /> Saved</span>}
-            {isDirty && (
-              <span className="ml-auto flex items-center gap-2">
-                <button onClick={revertUnsaved} title="Discard unsaved checklist changes" className={VW_BTN_SECONDARY}>Discard</button>
-                <button onClick={handleSave} disabled={saving} className={VW_BTN_PRIMARY}>
-                  <Save size={13} /> {saving ? 'Saving…' : 'Save checklist'}
-                </button>
-              </span>
-            )}
-          </div>
-        ) : (
-          <div className="mt-3 text-[11px] text-[#8A7A8B]">View only</div>
-        )}
         {uploadSusulanModal}
       </div>
     )

@@ -61,8 +61,10 @@ page_key lama & hanya selama Draft (TANPA aturan Admin-only Sea & Air); (6) nama
   `({ openTab, cv }) => node`. Strip Shipment Info HANYA di jendela mode List (tanpa Overview); helper
   `courierShipmentInfo(cv)` = satu sumber format (dipakai Overview & strip).
 - **Documents** = grid `[320px | 1fr]`: kiri **ChecklistModal embedded** (kartu Checklist Sea & Air: % + bar,
-  Missing, tile Required merah/hijau & Optional, catatan, tombol Upload additional doc; klik tile = centang; Save
-  checklist/Discard muncul saat ada perubahan — `handleSave` & payload SAMA), kanan **ValidasiModal embedded**:
+  Missing, tile Required merah/hijau & Optional, catatan; klik tile = centang; **baris tombol di ATAS kartu**: Upload
+  additional doc (CourierUploadSusulanModal SAMA, kirim n8n tidak berubah) + Save checklist/Discard saat ada perubahan —
+  `handleSave` & payload SAMA. Kolom kiri TIDAK sticky: versi awal menaruh tombol di bawah kartu sticky yg lebih tinggi
+  dari layar -> tombol Upload tidak kelihatan (laporan user 2026-10-01), JANGAN diulang), kanan **ValidasiModal embedded**:
   kartu ringkasan (Match/Mismatch/Not filled + akurasi + meta Check date/Checked by/No. AWB/Manual change notes yg
   langsung bisa diisi + Recompute missing data + Expand/Collapse all), banner mismatch belum dikonfirmasi, kartu
   section lipat (mismatch terbuka otomatis) berisi **per field** (label + hint + "Reference" utk s_pib) -> daftar

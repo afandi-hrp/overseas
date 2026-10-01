@@ -297,7 +297,7 @@ export default function CourierValidationWindow({
             <div className={activeTab === 'documents' ? 'flex-1 min-h-0 overflow-y-auto bg-[#FBF7F4] p-4 cvw-fill print:overflow-visible' : 'hidden'} role="tabpanel">
               <div className={access.checklist && access.doc ? 'grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-3 items-start' : 'flex flex-col gap-3'}>
                 {access.checklist && (
-                  <div className="min-w-0 lg:sticky lg:top-0">
+                  <div className="min-w-0">
                     {renderChecklist({ onPctChange: onChecklistPct, onSaved: onChecklistSaved, onDirtyChange: onChecklistDirty })}
                   </div>
                 )}
