@@ -153,6 +153,21 @@ hidup → dicek ulang saat tab baru mount (`pending.tabId !== tabId baru` DAN
 `Date.now()-pending.ts > CLOSE_CONFIRM_MS`) → logout saat mount. Keterbatasan diterima:
 force-kill browser tidak terdeteksi (idle-timeout jadi jaring pengaman independen).
 
+## Pindah tab browser TIDAK boleh me-refresh halaman (`AuthContext.tsx`, 2026-10-01)
+
+Supabase memancarkan ulang event `SIGNED_IN` tiap tab browser kembali fokus (user & token sama).
+AuthContext tetap mengecek ulang akses di background (`fetchAccess`/`fetchProfile`), TAPI state hanya
+diganti kalau isinya BENAR-BENAR berubah (`keepSet`/`keepJson`/`sameSession` di atas `AuthProvider`):
+`allowedPageKeys`, `editPageKeys`, `approvalTiersByPage`, `columnAccessByPage`, `profile`, dan `session`
+(sama = user id + `access_token` + `expires_at` sama; token hasil refresh tetap mengganti sesi).
+**Root cause bug lama**: objek baru tiap fokus -> `restrictSearchCols` (bergantung `columnAccessByPage`)
+dibuat ulang -> `fetchRecords` SharedDataTable dibuat ulang -> tabel Courier / Sea & Air ter-refresh.
+**Aturan**: setter state akses/profil/sesi di AuthContext WAJIB lewat helper ini (jangan `setX(new ...)`
+polos lagi); hook di halaman boleh bergantung pada nilai-nilai itu tanpa takut refetch saat pindah tab.
+Perubahan hak akses oleh Admin tetap terbaca saat event berikutnya. Logika lock screen/auto-logout TIDAK
+disentuh. Diuji (AuthContext asli + SharedDataTable, jsdom): SIGNED_IN ulang -> 0 fetch tabel; kode lama
+terbukti gagal di uji yang sama.
+
 ## Lock screen (`AuthContext.tsx`, `App.tsx`, `LockScreen.tsx`)
 
 Auto-logout (idle atau tab-tertutup) SELAGI tab yg sama masih terbuka → JANGAN lempar ke

@@ -158,6 +158,23 @@ async function resolveStaleCloseTrace(tabId: string): Promise<boolean> {
   }
 }
 
+// ── Referensi stabil (2026-10-01) ─────────────────────────────────────────────
+// Supabase memancarkan ulang 'SIGNED_IN' tiap tab browser kembali fokus -> fetchAccess/fetchProfile
+// jalan lagi di background. Dulu hasilnya SELALU disimpan sbg objek BARU walau isinya sama, sehingga
+// semua hook yg bergantung padanya (mis. `restrictSearchCols` -> `fetchRecords` SharedDataTable)
+// ikut dibuat ulang & tabel Courier / Sea & Air ter-refresh cuma krn pindah tab. Sekarang state
+// HANYA diganti kalau isinya benar-benar berubah (perubahan hak akses oleh Admin tetap terbaca).
+const sameSet = (a: Set<string>, b: Set<string>) => a.size === b.size && Array.from(a).every(x => b.has(x));
+const sameJson = (a: unknown, b: unknown) => {
+  try { return JSON.stringify(a) === JSON.stringify(b); } catch { return false; }
+};
+// Sesi dianggap sama kalau user & token-nya sama (event 'SIGNED_IN' ulang saat tab fokus). Token yg
+// di-refresh (TOKEN_REFRESHED) tetap mengganti objek sesi.
+const sameSession = (a: Session | null, b: Session | null) =>
+  a === b || (!!a && !!b && a.user?.id === b.user?.id && a.access_token === b.access_token && a.expires_at === b.expires_at);
+const keepSet = (next: Set<string>) => (prev: Set<string>) => (sameSet(prev, next) ? prev : next);
+const keepJson = <T,>(next: T) => (prev: T) => (sameJson(prev, next) ? prev : next);
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -344,7 +361,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchProfile = async (userId: string) => {
     const { data } = await supabase.from('profiles').select('id, email, nama').eq('id', userId).maybeSingle();
-    setProfile(data || null);
+    setProfile(keepJson<Profile | null>(data || null));
   };
 
   const fetchAccess = async () => {
@@ -352,15 +369,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (error || !data) {
       // RPC belum ada / gagal -- jangan diam-diam anggap admin, cuma kosongkan akses supaya
       // route guard menutup semua halaman gated (fail-closed, bukan fail-open).
-      setAllowedPageKeys(new Set());
-      setEditPageKeys(new Set());
+      setAllowedPageKeys(keepSet(new Set()));
+      setEditPageKeys(keepSet(new Set()));
       setIsAdmin(false);
     } else {
-      setAllowedPageKeys(new Set(Array.isArray(data.page_keys) ? data.page_keys : []));
+      setAllowedPageKeys(keepSet(new Set(Array.isArray(data.page_keys) ? data.page_keys : [])));
       // edit_page_keys baru ada di get_my_access() sejak migration can_edit (2026-09) -- kalau RPC
       // di Supabase belum di-update (belum re-run migration-nya), field ini undefined, treat sbg
       // kosong (fail-closed: dianggap belum boleh edit, bukan diam-diam boleh semua).
-      setEditPageKeys(new Set(Array.isArray(data.edit_page_keys) ? data.edit_page_keys : []));
+      setEditPageKeys(keepSet(new Set(Array.isArray(data.edit_page_keys) ? data.edit_page_keys : [])));
       setIsAdmin(!!data.is_admin);
     }
 
@@ -368,7 +385,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Balikin objek {page_key: tier}. Gagal/belum ada = fail-closed (objek kosong), TIDAK
     // menggagalkan fetchAccess keseluruhan.
     const { data: tierData, error: tierError } = await supabase.rpc('get_my_approval_tiers');
-    setApprovalTiersByPage(!tierError && tierData && typeof tierData === 'object' && !Array.isArray(tierData) ? tierData : {});
+    setApprovalTiersByPage(keepJson<Record<string, string>>(!tierError && tierData && typeof tierData === 'object' && !Array.isArray(tierData) ? tierData : {}));
 
     // Kolom yang boleh dilihat per halaman -- RPC TERPISAH, fail-OPEN (lihat komentar
     // columnAccessByPage di atas): gagal/belum ada => objek kosong => semua kolom tampil.
@@ -380,7 +397,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (Array.isArray(cols)) colMap[pageKey] = cols.filter((c): c is string => typeof c === 'string');
       });
     }
-    setColumnAccessByPage(colMap);
+    setColumnAccessByPage(keepJson(colMap));
   };
 
   // Lacak user id terakhir yang diketahui -- dipakai buat bedakan "login/ganti user
@@ -417,7 +434,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     init();
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession);
+      setSession(prev => (sameSession(prev, newSession) ? prev : newSession));
       const newUserId = newSession?.user?.id ?? null;
       const isRealUserChange = newUserId !== lastUserIdRef.current;
       lastUserIdRef.current = newUserId;
