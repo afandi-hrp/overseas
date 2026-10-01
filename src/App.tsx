@@ -30,6 +30,7 @@ import CourierRekapanPage from './pages/courier/CourierRekapanPage';
 import CourierValidasiPage from './pages/courier/CourierValidasiPage';
 import SeaAirAuditPage from './pages/sea-air/SeaAirAuditPage';
 import SeaAirRekapanPage from './pages/sea-air/SeaAirRekapanPage';
+import SeaAirFinanceHandoverPage from './pages/sea-air/SeaAirFinanceHandoverPage';
 import AuditTrailPage from './pages/audit-trail/AuditTrailPage';
 import FarOverseasAirPage from './pages/FarOverseasAirPage';
 import BunkerPage from './pages/BunkerPage';
@@ -108,6 +109,7 @@ export default function App() {
               <Route path="/sea-air/upload" element={<RequirePageAccess pageKey="sea_air_upload"><UploadPage fixedType="sea_air" /></RequirePageAccess>} />
               <Route path="/sea-air/audit" element={<RequirePageAccess pageKey="sea_air_audit"><SeaAirAuditPage /></RequirePageAccess>} />
               <Route path="/sea-air/rekapan" element={<RequirePageAccess pageKey="sea_air_rekapan"><SeaAirRekapanPage /></RequirePageAccess>} />
+              <Route path="/sea-air/finance" element={<RequirePageAccess pageKey="sea_air_finance"><SeaAirFinanceHandoverPage /></RequirePageAccess>} />
 
               <Route path="/direct-loading" element={<RequirePageAccess pageKey="direct_loading"><FarOverseasAirPage /></RequirePageAccess>} />
               <Route path="/direct-loading/:id" element={<RequirePageAccess pageKey="direct_loading"><FarOverseasAirPage /></RequirePageAccess>} />

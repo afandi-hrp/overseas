@@ -3,7 +3,7 @@ import { LoadingSpinner } from './LoadingState';
 import { useState, useEffect, useMemo } from 'react';
 import { X, CheckCircle2, Edit3, Printer, XCircle, Clock, Info, Plus, Trash2, Receipt, Percent, Landmark, FileText, Ship, ClipboardList } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { relaxSeaAirDocChecks } from '../utils/SeaAirValidasiHelpers';
+import { relaxSeaAirDocChecks, SEA_AIR_PIB_MATRIX_ROWS } from '../utils/SeaAirValidasiHelpers';
 
 // ─── Helper umum ──────────────────────────────────────────────────────────────
 
@@ -485,20 +485,9 @@ const PIB_COLS = [
 // baris tetap sama persis (dirender di kedua tabel), referensi & data tidak berubah.
 const PIB_COLS_A = PIB_COLS.slice(0, 6);
 const PIB_COLS_B = PIB_COLS.slice(6);
-const PIB_ROWS = [
-  { label: "NO PIB", dbRow: "NO PIB (No Pengajuan)",       required: ["SPPB", "Billing DJBC", "BPN"] },
-  { label: "NAMA PT", dbRow: "NAMA PT (PIB No. 2,3)",       required: ["SPPB","AWB","ME/AK/IJEPA (opsional)","ECOO (opsional)","Laporan Surveyor (opsional)","Billing DJBC","BPN","CIPL","PO","Final Invoice","Bukti TF"] },
-  { label: "NAMA VENDOR", dbRow: "NAMA VENDOR (PIB No. 1a)",    required: ["AWB","ME/AK/IJEPA (opsional)","ECOO (opsional)","Laporan Surveyor (opsional)","CIPL","PO","Final Invoice","Bukti TF"] },
-  { label: "AWB", dbRow: "AWB (PIB No. 17)",            required: ["AWB"] },
-  { label: "INVOICE NO", dbRow: "INVOICE NO",                  required: ["ME/AK/IJEPA (opsional)","ECOO (opsional)","Laporan Surveyor (opsional)","Billing DJBC","PO","Final Invoice","CIPL","Bukti TF"] },
-  { label: "KG", dbRow: "KG (PIB No. 29)",             required: ["AWB","ME/AK/IJEPA (opsional)"] },
-  { label: "PACKAGES", dbRow: "PACKAGES (PIB No. 28)",       required: ["AWB","ECOO (opsional)","Laporan Surveyor (opsional)"] },
-  { label: "ORIGIN", dbRow: "ORIGIN",                      required: ["AWB","ECOO (opsional)","Laporan Surveyor (opsional)"] },
-  { label: "DESTINATION", dbRow: "DESTINATION",                 required: ["AWB","ECOO (opsional)","Laporan Surveyor (opsional)"] },
-  { label: "NO PO", dbRow: "NO PO",                       required: ["CIPL", "Final Invoice", "PO"] },
-  { label: "TOTAL DUTY", dbRow: "TOTAL DUTY (PIB No. 44)",     required: ["Billing DJBC","BPN"] },
-  { label: "TOTAL CIPL", dbRow: "TOTAL CIPL (PIB No. 23)",     required: ["CIPL","PO","Final Invoice","Bukti TF"] },
-];
+// Daftar baris dipindah ke SeaAirValidasiHelpers.ts (2026-09-30) -- dipakai juga status
+// "Validated in Invoice Recap" di Audit PIB Sea & Air. Isi TIDAK berubah.
+const PIB_ROWS = SEA_AIR_PIB_MATRIX_ROWS;
 
 // ============================================================================
 // VESSEL SECTION

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { CheckCircle2, XCircle, X, Circle, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays, AlertTriangle, Save, SlidersHorizontal, RotateCcw, SquareX, UploadCloud, Pencil, GripVertical, ArrowUpDown } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { DndContext, DragOverlay, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core'
 import { SortableContext, useSortable, arrayMove, verticalListSortingStrategy, horizontalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -23,6 +23,18 @@ import { computeSeaAirCostGlobalStats } from '../utils/SeaAirCostValidasiHelpers
 import { SECTIONS, computeStatus } from '../utils/ValidasiHelper'
 import { generateValues } from '../utils/ValidasiFill'
 import { calculatePibStats } from '../utils/ValidasiPibHelper'
+import {
+  formatNoAju, computeSeaAirBalanceAsuransi, SEA_AIR_BALANCE_DEP_KEYS, SEA_AIR_AUDIT_SEARCH_COLS,
+  fetchSeaAirAuditSummary, fetchSeaAirAuditLinkInfo, fetchCompanyNameMap, notifySeaAirAuditChanged, fmtRp as fmtRpSeaAir,
+  type SeaAirAuditSummary, type SeaAirAuditLinkInfo,
+} from '../utils/SeaAirAuditHelpers'
+import { SeaAirAuditCardList, SeaAirAuditKpiCards } from './SeaAirAuditCardList'
+import SeaAirAuditDetailModal from './SeaAirAuditDetailModal'
+import SeaAirAuditEditModal from './SeaAirAuditEditModal'
+import { computeRecapIssues, fetchRecapSummary, isRecapLocked, notifySeaAirRecapChanged, type RecapSummary, type RecapIssue } from '../utils/SeaAirRecapHelpers'
+import { SeaAirRecapCardList, SeaAirRecapKpiCards, CostMixLegend } from './SeaAirRecapCardList'
+import SeaAirRecapDetailModal from './SeaAirRecapDetailModal'
+import SeaAirRecapEditModal from './SeaAirRecapEditModal'
 
 // ─── Konfigurasi Tab ──────────────────────────────────────────
 
@@ -117,14 +129,7 @@ const MANUAL_FIELDS = {
 }
 
 // ─── Helper ───────────────────────────────────────────────────
-const formatNoAju = (v: any) => {
-  if (!v || typeof v !== 'string') return v
-  const clean = v.replace(/[\s-]/g, '')
-  if (clean.length === 26) {
-    return `${clean.substring(0, 6)}-${clean.substring(6, 12)}-${clean.substring(12, 20)}-${clean.substring(20, 26)}`
-  }
-  return v
-}
+// formatNoAju dipindah ke SeaAirAuditHelpers.ts (2026-09-30, dipakai juga tampilan kartu Audit PIB).
 
 const fmt = (v: any) => {
   if (v === null || v === undefined || v === '') return '—'
@@ -329,10 +334,10 @@ const getStatusLabel = (status: string) => STATUS_LABELS[status] || status
 // Audit Sea & Air -- Delivery Term mengandung "CIF" (case-insensitive substring, bukan exact
 // match -- nilainya bisa "CIF" polos atau gabungan spt "CIF JAKARTA") -> Balance & Asuransi
 // dipaksa 0 (2026-09, permintaan user: shipment CIF asuransinya sudah ditanggung
-// seller/freight, jadi kolom Balance/Asuransi TIDAK relevan lagi utk term ini). SATU-SATUNYA
-// tempat definisi ini -- dipakai di 4 titik hitung Balance/Asuransi (EditModal, fetchRecords,
-// getExportData, handleInlineSaveRow), JANGAN duplikat logic-nya di tempat lain.
-const isCifDeliveryTerm = (deliveryTerm: any) => String(deliveryTerm || '').toUpperCase().includes('CIF')
+// seller/freight, jadi kolom Balance/Asuransi TIDAK relevan lagi utk term ini). Definisi +
+// rumus Balance/Asuransi DIPINDAH (2026-09-30) ke `SeaAirAuditHelpers.ts`
+// (`isCifDeliveryTerm`/`computeSeaAirBalanceAsuransi`, di-import di atas) -- dipakai 4 titik di
+// file ini (EditModal, fetchRecords, getExportData, handleInlineSaveRow) + form Edit PIB baru.
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, string> = {
@@ -571,14 +576,14 @@ function EditModal({ record, tab, cols, onClose, onSaved, isCreate, createDefaul
         return Number(v) || 0;
       };
 
-      const valasDpp = getNum('valas_dpp');
-      const kursNdpbm = getNum('kurs_ndpbm');
-      const totalInvFreight = getNum('total_inv_freight');
-      const itemPriceIdr = getNum('item_price_idr');
-
-      const isCif = isCifDeliveryTerm(form.delivery_term);
-      const expectedBalance = isCif ? 0 : Number((valasDpp * kursNdpbm - (totalInvFreight + itemPriceIdr)).toFixed(2));
-      const expectedAsuransi = isCif ? 0 : Number(((totalInvFreight + itemPriceIdr) * 0.005).toFixed(2));
+      // Rumus di computeSeaAirBalanceAsuransi (SeaAirAuditHelpers.ts), SATU-SATUNYA definisi.
+      const { balance: expectedBalance, asuransi: expectedAsuransi } = computeSeaAirBalanceAsuransi({
+        valas_dpp: getNum('valas_dpp'),
+        kurs_ndpbm: getNum('kurs_ndpbm'),
+        total_inv_freight: getNum('total_inv_freight'),
+        item_price_idr: getNum('item_price_idr'),
+        delivery_term: form.delivery_term,
+      });
 
       setForm(prev => {
         let updates: any = {};
@@ -891,7 +896,8 @@ const SEA_AIR_AUDIT_COLS = [
   { key: 'po_ori', label: 'PO ORI' },
   { key: 'remarks', label: 'Remarks' },
   { key: 'vendor', label: 'Vendor' },
-  { key: 'kurs', label: 'Kurs', type: 'num' },
+  // kurs = KODE mata uang (TEXT di DB, mis. USD) -- dulu salah type:'num' (Number("USD") = NaN). Fix 2026-10-01.
+  { key: 'kurs', label: 'Kurs' },
   { key: 'item_price', label: 'Item Price', type: 'num' },
   { key: 'other_cost', label: 'Other Cost', type: 'num' },
   { key: 'item_price_idr', label: 'Item Price (Rp)', type: 'num' },
@@ -3076,6 +3082,10 @@ const SeaAirRekapanRowGroup: React.FC<{
   const repeatingCols = ['po_no', 'vessel', 'emkl_split', 'split_biaya_origin', 'split_biaya_destination', 'pbm_split', 'lift_off_split', 'inspeksi_split', 'handling_split', 'other_split', 'duty_split', 'bm_split', 'ppn_split', 'pph_split'];
   // Record ini sudah aktif/pindah ke tab Audit (status audit terkait LENGKAP) -- tandai dengan highlight biru.
   const isAudited = rec.audit_status === 'LENGKAP';
+  // Bagian 2 (sql/031): baris yg sudah Submit to Finance TERKUNCI -- Edit/Delete disembunyikan di
+  // mode List juga (DB menolak juga). "Audit" (undraft PIB) hanya kalau Recap 0 issue.
+  const recapLocked = isRecapLocked(rec);
+  const recapIssueCount = Array.isArray(rec.recap_issues) ? rec.recap_issues.length : 0;
   const auditHighlightClass = 'bg-[#FFF5C5] hover:bg-[#F5E28F]';
 
   const [isEditing, setIsEditing] = useState(false);
@@ -3280,7 +3290,12 @@ const SeaAirRekapanRowGroup: React.FC<{
                       </button>
                       {showActions && (
                         <div className="flex flex-col gap-1.5 items-center bg-slate-50 border border-slate-200 rounded-lg p-1.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
-                          {(onEdit || onInlineSaveRow) && rec.status !== 'LENGKAP' && (
+                          {recapLocked && (
+                            <span className="w-[80px] text-center bg-slate-100 text-slate-500 text-[10px] font-bold px-2 py-1 rounded-md border border-slate-200" title="Submitted to Finance — read-only. Ask an Admin to unlock it (Open › Unlock).">
+                              🔒 Locked
+                            </span>
+                          )}
+                          {(onEdit || onInlineSaveRow) && rec.status !== 'LENGKAP' && !recapLocked && (
                             <button
                               onClick={handleStartEdit}
                               className="w-[80px] bg-white text-blue-600 hover:text-white hover:bg-[#5A305A] text-[10px] font-bold px-2 py-1 rounded-md border border-blue-200 hover:border-blue-600 transition-all"
@@ -3341,7 +3356,9 @@ const SeaAirRekapanRowGroup: React.FC<{
                             ? (onUndraft && (
                                 <button
                                   onClick={() => onUndraft(rec)}
-                                  className="w-[80px] bg-emerald-50 border border-emerald-200 text-emerald-600 hover:bg-emerald-100 hover:border-emerald-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm"
+                                  disabled={recapIssueCount > 0}
+                                  title={recapIssueCount > 0 ? `${recapIssueCount} open issue(s) must be confirmed by an Admin first` : undefined}
+                                  className="w-[80px] bg-emerald-50 border border-emerald-200 text-emerald-600 hover:bg-emerald-100 hover:border-emerald-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
                                   🗄️ Audit
                                 </button>
@@ -3355,7 +3372,7 @@ const SeaAirRekapanRowGroup: React.FC<{
                                 </button>
                               ))
                           }
-                          {onDelete && (
+                          {onDelete && !recapLocked && (
                             <button
                               onClick={() => onDelete(rec)}
                               className="w-[80px] bg-white text-red-600 hover:text-white hover:bg-red-600 text-[10px] font-bold px-2 py-1 rounded-md border border-red-200 hover:border-red-600 transition-all"
@@ -3569,6 +3586,11 @@ const TOOLBAR_GLASS = 'bg-white/70 backdrop-blur-md border-slate-200/80 shadow-s
 
 export default function SharedDataTable({ defaultMainTab = 'courier', defaultSubTab = 'courier_audit' }: { defaultMainTab?: string, defaultSubTab?: string }) {
   const { allowedPageKeys, isAdmin, canEdit, user, getAllowedColumns, columnAccessByPage } = useAuth();
+  const navigate = useNavigate();
+  // `?q=` (2026-09-30) -- isi awal kotak Search, dipakai tombol "Open in Invoice Recap" di Audit PIB
+  // Sea & Air (buka Invoice Recap terfilter BL/AWB shipment itu). Tanpa param = perilaku lama.
+  const [searchParams] = useSearchParams();
+  const initialSearchParam = searchParams.get('q') || '';
   // Search Audit/Rekapan Courier HANYA mencari di kolom yang boleh dilihat role user (2026-09-29,
   // lihat COLUMN_ACCESS_PAGES) -- supaya baris tidak "muncul tanpa alasan kelihatan" krn cocok di
   // kolom tersembunyi. Kalau TIDAK ADA satu pun kolom search yang diizinkan, pakai daftar asli
@@ -3665,7 +3687,13 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   }, [defaultMainTab, defaultSubTab]);
 
   const [courierAuditType, setCourierAuditType] = useState('archive')
-  const [seaAirAuditType, setSeaAirAuditType] = useState('audit')
+  // 'draft' (status ARCHIVED) | 'audit' (Audited, non-ARCHIVED) | 'all' -- default Draft sejak
+  // redesain PIB Audit 2026-09-30 (tab Draft paling kiri & aktif, sesuai mockup user).
+  const [seaAirAuditType, setSeaAirAuditType] = useState('draft')
+  // Invoice Recap (2026-10-01): toggle "Needs attention" -- id baris yg punya issue diambil dari
+  // ringkasan KPI (fetchRecapSummary, SEMUA baris yg lolos filter), lalu daftar difilter `.in('id')`.
+  const [recapNeedsAttentionOnly, setRecapNeedsAttentionOnly] = useState(false)
+  const [recapNeedsAttentionIds, setRecapNeedsAttentionIds] = useState<any[] | null>(null)
   const [activeTrailFilter, setActiveTrailFilter] = useState('ALL')
   const [activeTrailUserFilter, setActiveTrailUserFilter] = useState('All')
   const [trailUserTabs, setTrailUserTabs] = useState<string[]>(['All'])
@@ -3857,8 +3885,9 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     setPage(1);
     setSortColumn('created_at');
     setSortDirection('desc');
-    setSearch('');
-    setDebouncedSearch('');
+    setSearch(initialSearchParam);
+    setDebouncedSearch(initialSearchParam);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeMainTab, activeSubTab, activeTrailFilter])
 
   // Sort hasil klik header kembali ke default tiap pindah tab PPJK (Invoice Recap) atau tab
@@ -4008,9 +4037,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       query = query.neq('status', 'ARCHIVED');
     }
 
-    // Apply Archive Filter (Sea & Air Audit -- Draf berisi status ARCHIVED, Audit menyembunyikannya)
+    // Apply Archive Filter (Sea & Air Audit -- Draf berisi status ARCHIVED, Audited menyembunyikannya,
+    // tab "All" (2026-09-30, redesain PIB Audit) tanpa filter status)
     if (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit') {
-      query = seaAirAuditType === 'draft' ? query.eq('status', 'ARCHIVED') : query.neq('status', 'ARCHIVED');
+      if (seaAirAuditType === 'draft') query = query.eq('status', 'ARCHIVED');
+      else if (seaAirAuditType !== 'all') query = query.neq('status', 'ARCHIVED');
     }
 
     // Apply Filter by Trail -- jenis aksi (Courier / Sea & Air / Bunker / Semua)
@@ -4032,6 +4063,18 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     // Apply Filter by Shipment Type
     if (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan' && activeShipmentTypeFilter !== 'All') {
       query = query.eq('shipment_type', activeShipmentTypeFilter);
+    }
+
+    // Filter "Needs attention" (Invoice Recap kartu, 2026-10-01) -- id dari ringkasan KPI.
+    // Ringkasan belum siap (null) = belum difilter; 0 id = daftar kosong tanpa query.
+    if (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan' && recapNeedsAttentionOnly && recapNeedsAttentionIds) {
+      if (recapNeedsAttentionIds.length === 0) {
+        setRecords([]);
+        setTotalRecords(0);
+        setLoading(false);
+        return;
+      }
+      query = query.in('id', recapNeedsAttentionIds);
     }
 
     // Apply Filter by A/N
@@ -4077,7 +4120,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       if ((activeMainTab === 'courier' && activeSubTab === 'courier_audit') || (activeMainTab === 'courier' && activeSubTab === 'courier_audit' && courierAuditType === 'archive')) {
         searchCols = restrictSearchCols('courier_audit', (courierAuditType === 'pib') ? ['awb', 'vendor_inv_no', 'no_pib', 'po_ori', 'vendor'] : ['awb', 'vendor_inv_no', 'po_ori', 'vendor']);
       } else if (activeMainTab === 'sea_air') {
-        searchCols = activeSubTab === 'sea_air_audit' ? ['no_aju', 'no_pib', 'awb', 'po_ori', 'vendor'] : ['no_aju', 'no_invoice', 'vendor', 'awb'];
+        searchCols = activeSubTab === 'sea_air_audit' ? SEA_AIR_AUDIT_SEARCH_COLS : ['no_aju', 'no_invoice', 'vendor', 'awb'];
       } else if ((activeMainTab === 'courier' && activeSubTab === 'courier_rekapan')) {
         searchCols = restrictSearchCols('courier_rekapan', ['awb', 'no_invoice', 'vendor', 'po_pt_imi', 'ppjk']);
       } else if ((activeMainTab === 'courier' && activeSubTab === 'courier_validasi')) {
@@ -4182,6 +4225,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       let seaAirDocValidationPctMap: Record<string, number | null> = {};
       let seaAirCostValidationPctMap: Record<string, number | null> = {};
       let seaAirChecklistPctMap: Record<string, number | null> = {};
+      // Invoice Recap tampilan kartu (2026-10-01) -- daftar "issues" (needs attention) & penanda
+      // apakah data Doc/Cost/Checklist SUDAH ada (titik abu kalau belum), dari data yg SAMA dgn badge %.
+      let seaAirRecapIssuesMap: Record<string, RecapIssue[]> = {};
+      let seaAirRecapHasMap: Record<string, { doc: boolean; cost: boolean; checklist: boolean }> = {};
       if ((activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan') && data && data.length > 0) {
         const seaairIds = Array.from(new Set(data.map(r => r.seaair_id).filter(Boolean)));
         if (seaairIds.length > 0) {
@@ -4199,7 +4246,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
             if (matriksChunk) allMatriksData = [...allMatriksData, ...matriksChunk];
             const { data: costChunk } = await supabase.from('cost_validasi_seaair').select('seaair_id, checks').in('seaair_id', chunkIds);
             if (costChunk) allCostValidasiData = [...allCostValidasiData, ...costChunk];
-            const { data: checklistChunk } = await supabase.from('dokumen_checklist_seaair').select('seaair_id, pct_kelengkapan').in('seaair_id', chunkIds);
+            const { data: checklistChunk } = await supabase.from('dokumen_checklist_seaair').select('seaair_id, pct_kelengkapan, dokumen_kurang').in('seaair_id', chunkIds);
             if (checklistChunk) allChecklistData = [...allChecklistData, ...checklistChunk];
             // Catatan Konfirmasi Manual per-Segmen (2026-09) -- lihat catatan di bawah dekat
             // seaAirCostValidationPctMap, dipakai supaya badge % ikut memperhitungkan segmen
@@ -4251,6 +4298,22 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
             const confirmation = confirmationBySeaairId.get(cv.seaair_id) || new Map();
             return [cv.seaair_id, computeSeaAirCostGlobalStats(cv.checks, confirmation).pct];
           }));
+
+          // Issues & penanda data (tampilan kartu Invoice Recap) -- computeRecapIssues
+          // (SeaAirRecapHelpers.ts) SATU-SATUNYA definisi "needs attention".
+          const matriksBy = new Map(allMatriksData.map(m => [String(m.seaair_id), m.checks]));
+          const costBy = new Map(allCostValidasiData.map(c => [String(c.seaair_id), c.checks]));
+          const checklistBy = new Map(allChecklistData.map(c => [String(c.seaair_id), c]));
+          seaairIds.forEach(sid => {
+            const k = String(sid);
+            seaAirRecapIssuesMap[k] = computeRecapIssues({
+              checklist: checklistBy.get(k) || null,
+              matriksChecks: matriksBy.has(k) ? matriksBy.get(k) : null,
+              costChecks: costBy.has(k) ? costBy.get(k) : null,
+              confirmations: confirmationBySeaairId.get(sid as any) || confirmationBySeaairId.get(k as any) || new Map(),
+            });
+            seaAirRecapHasMap[k] = { doc: matriksBy.has(k), cost: costBy.has(k), checklist: checklistBy.has(k) };
+          });
         }
       }
 
@@ -4260,6 +4323,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           r.doc_validation_pct = r.seaair_id ? (seaAirDocValidationPctMap[r.seaair_id] ?? 0) : 0;
           r.cost_validation_pct = r.seaair_id ? (seaAirCostValidationPctMap[r.seaair_id] ?? 0) : 0;
           r.checklist_pct = r.seaair_id ? (seaAirChecklistPctMap[r.seaair_id] ?? 0) : 0;
+          r.recap_issues = r.seaair_id ? (seaAirRecapIssuesMap[String(r.seaair_id)] || []) : [];
+          r.recap_has = r.seaair_id ? (seaAirRecapHasMap[String(r.seaair_id)] || { doc: false, cost: false, checklist: false }) : { doc: false, cost: false, checklist: false };
         }
         if ((activeMainTab === 'courier' && activeSubTab === 'courier_rekapan')) {
           const cv = costValidations.find(c => c.awb === r.awb);
@@ -4281,13 +4346,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           // tanpa user harus mengedit salah satu dari 4 kolom sumbernya dulu -- sebelumnya
           // rumus ini CUMA jalan saat trigger edit, jadi baris yang belum pernah diedit selalu
           // tampil "-" walau datanya lengkap.
-          const valasDpp = Number(r.valas_dpp) || 0;
-          const kursNdpbm = Number(r.kurs_ndpbm) || 0;
-          const totalInvFreight = Number(r.total_inv_freight) || 0;
-          const itemPriceIdr = Number(r.item_price_idr) || 0;
-          const isCif = isCifDeliveryTerm(r.delivery_term);
-          r.balance = isCif ? 0 : Number((valasDpp * kursNdpbm - (totalInvFreight + itemPriceIdr)).toFixed(2));
-          r.asuransi = isCif ? 0 : Number(((totalInvFreight + itemPriceIdr) * 0.005).toFixed(2));
+          Object.assign(r, computeSeaAirBalanceAsuransi(r));
         }
         return r;
       });
@@ -4297,7 +4356,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       setFetchError(error.message);
     }
     setLoading(false)
-  }, [tab, activeMainTab, activeSubTab, courierAuditType, seaAirAuditType, activeTrailFilter, activeTrailUserFilter, activePpjkFilter, activeShipmentTypeFilter, activeAnFilter, activeImporAnFilter, activeCourierAnFilter, activeCourierImporAnFilter, debouncedSearch, sortColumn, sortDirection, page, pageSize, filterStartDate, filterEndDate, restrictSearchCols])
+  }, [tab, activeMainTab, activeSubTab, courierAuditType, seaAirAuditType, activeTrailFilter, activeTrailUserFilter, activePpjkFilter, activeShipmentTypeFilter, activeAnFilter, activeImporAnFilter, activeCourierAnFilter, activeCourierImporAnFilter, debouncedSearch, sortColumn, sortDirection, page, pageSize, filterStartDate, filterEndDate, restrictSearchCols, recapNeedsAttentionOnly, recapNeedsAttentionIds])
 
   // ── Indikator "Outstanding" (badge angka di pojok tab) ──────────────────────
   // Rekapan Courier: jumlah baris per-tab PPJK yang Submit Date-nya masih kosong (key 'All' =
@@ -4370,6 +4429,164 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   useEffect(() => {
     fetchOutstandingCount()
   }, [fetchOutstandingCount])
+
+  // ── Audit PIB Sea & Air -- tampilan kartu (2026-09-30, lihat docs/claude/bunker-courier-seaair.md
+  // "Audit PIB Sea & Air -- tampilan baru"). Semua di bawah HANYA aktif di tab sea_air_audit &
+  // HANYA query baca (ringkasan KPI, status validasi Invoice Recap, nama PT). Tulis data tetap
+  // lewat RPC lama (update_seaair_row/insert_seaair_row) dari modal Edit/Open.
+  const isSeaAirAudit = activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit';
+  const [seaAirViewMode, setSeaAirViewMode] = useState<'card' | 'list'>('card')
+  const [seaAirSummary, setSeaAirSummary] = useState<SeaAirAuditSummary | null>(null)
+  const [seaAirSummaryLoading, setSeaAirSummaryLoading] = useState(false)
+  const [seaAirSummaryNonce, setSeaAirSummaryNonce] = useState(0)
+  const [seaAirLinkInfo, setSeaAirLinkInfo] = useState<Record<string, SeaAirAuditLinkInfo>>({})
+  const [seaAirCompanyNames, setSeaAirCompanyNames] = useState<Record<string, string>>({})
+  const [seaAirDetailRecord, setSeaAirDetailRecord] = useState<any>(null)
+  // `record: null` = Add manually, object = Edit PIB
+  const [seaAirEditState, setSeaAirEditState] = useState<{ record: any | null } | null>(null)
+
+  useEffect(() => {
+    if (!isSeaAirAudit) return;
+    let cancelled = false;
+    fetchCompanyNameMap().then(map => { if (!cancelled) setSeaAirCompanyNames(map); });
+    return () => { cancelled = true; };
+  }, [isSeaAirAudit]);
+
+  useEffect(() => {
+    if (!isSeaAirAudit) { setSeaAirSummary(null); return; }
+    let cancelled = false;
+    setSeaAirSummaryLoading(true);
+    fetchSeaAirAuditSummary({ importAn: activeImporAnFilter, startDate: filterStartDate, endDate: filterEndDate, search: debouncedSearch })
+      .then(s => { if (!cancelled) setSeaAirSummary(s); })
+      .finally(() => { if (!cancelled) setSeaAirSummaryLoading(false); });
+    return () => { cancelled = true; };
+  }, [isSeaAirAudit, activeImporAnFilter, filterStartDate, filterEndDate, debouncedSearch, seaAirSummaryNonce]);
+
+  useEffect(() => {
+    if (!isSeaAirAudit || records.length === 0) { setSeaAirLinkInfo({}); return; }
+    let cancelled = false;
+    fetchSeaAirAuditLinkInfo(records.map(r => r.id)).then(info => { if (!cancelled) setSeaAirLinkInfo(info); });
+    return () => { cancelled = true; };
+  }, [isSeaAirAudit, records]);
+
+  // Refresh daftar + ringkasan + badge sidebar setelah aksi tulis apa pun di Audit PIB.
+  const refreshSeaAirAudit = () => {
+    fetchRecords();
+    setSeaAirSummaryNonce(n => n + 1);
+    notifySeaAirAuditChanged();
+  };
+
+  // Baca ulang 1 baris (dipakai jendela Open setelah Edit/ubah status).
+  const reloadSeaAirRow = async (id: any) => {
+    const { data, error } = await supabase.from('tabel_audit_seaair').select('*').eq('id', id).maybeSingle();
+    if (error || !data) return null;
+    return { ...data, ...computeSeaAirBalanceAsuransi(data) };
+  };
+
+  const handleSeaAirSetStatus = async (rec: any, status: 'ARCHIVED' | 'LENGKAP') => {
+    const { error } = await supabase.rpc('update_seaair_row', { p_id: rec.id, p_updates: { status } });
+    if (error) {
+      alert('Failed to update status: ' + error.message);
+      return false;
+    }
+    const fresh = await reloadSeaAirRow(rec.id);
+    if (fresh) setSeaAirDetailRecord(fresh);
+    refreshSeaAirAudit();
+    return true;
+  };
+
+  // ── Invoice Recap Sea & Air -- tampilan kartu (2026-10-01, lihat docs/claude/bunker-courier-seaair.md
+  // "Invoice Recap Sea & Air -- tampilan baru"). HANYA aktif di tab sea_air_rekapan. Query baca
+  // tambahan = ringkasan KPI; tulis data tetap lewat fungsi lama (handleInlineSaveRow, RPC Cost
+  // Validation, Draft/Undraft, DeleteModal).
+  const isSeaAirRekapan = activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan';
+  const [seaAirRecapView, setSeaAirRecapView] = useState<'card' | 'list'>('card')
+  const [recapSummary, setRecapSummary] = useState<RecapSummary | null>(null)
+  const [recapSummaryLoading, setRecapSummaryLoading] = useState(false)
+  const [recapSummaryNonce, setRecapSummaryNonce] = useState(0)
+  const [recapDetailId, setRecapDetailId] = useState<any>(null)
+  const [recapDetailSnapshot, setRecapDetailSnapshot] = useState<any>(null)
+  const [recapEditRec, setRecapEditRec] = useState<any>(null)
+
+  useEffect(() => {
+    if (!isSeaAirRekapan) return;
+    let cancelled = false;
+    fetchCompanyNameMap().then(map => { if (!cancelled) setSeaAirCompanyNames(map); });
+    return () => { cancelled = true; };
+  }, [isSeaAirRekapan]);
+
+  useEffect(() => {
+    if (!isSeaAirRekapan) { setRecapSummary(null); return; }
+    let cancelled = false;
+    setRecapSummaryLoading(true);
+    fetchRecapSummary({ shipmentType: activeShipmentTypeFilter, company: activeAnFilter, startDate: filterStartDate, endDate: filterEndDate, search: debouncedSearch })
+      .then(s => {
+        if (cancelled) return;
+        setRecapSummary(s);
+        const ids = s ? s.needsAttentionIds : null;
+        // Set HANYA kalau isinya berubah -- array baru tiap refetch akan memicu fetchRecords ulang.
+        setRecapNeedsAttentionIds(prev => (prev && ids && prev.length === ids.length && prev.every((v, i) => String(v) === String(ids[i]))) ? prev : ids);
+      })
+      .finally(() => { if (!cancelled) setRecapSummaryLoading(false); });
+    return () => { cancelled = true; };
+  }, [isSeaAirRekapan, activeShipmentTypeFilter, activeAnFilter, filterStartDate, filterEndDate, debouncedSearch, recapSummaryNonce]);
+
+  const refreshRecap = () => {
+    fetchRecords();
+    setRecapSummaryNonce(n => n + 1);
+    notifySeaAirRecapChanged(); // badge sidebar "needs attention"
+  };
+
+  // Baris yg sedang dibuka di jendela Open -- selalu ambil versi terbaru dari `records`; kalau baris
+  // sudah tidak ada di halaman aktif (mis. difilter), pakai snapshot terakhir.
+  const recapDetailRec = recapDetailId !== null
+    ? (records.find(r => String(r.id) === String(recapDetailId)) || recapDetailSnapshot)
+    : null;
+  useEffect(() => {
+    if (recapDetailId === null) return;
+    const fresh = records.find(r => String(r.id) === String(recapDetailId));
+    if (fresh) setRecapDetailSnapshot(fresh);
+  }, [records, recapDetailId]);
+
+  const handleRecapSave = async (rec: any, changes: Record<string, any>) => {
+    const ok = await handleInlineSaveRow(rec.id, changes);
+    if (ok) {
+      setRecapDetailSnapshot((prev: any) => (prev && String(prev.id) === String(rec.id) ? { ...prev, ...changes } : prev));
+      refreshRecap();
+    }
+    return ok;
+  };
+
+  // Buka kunci Submit to Finance (RPC fn_seaair_unlock_submit, sql/031) -- Admin saja, wajib alasan,
+  // tercatat di audit trail oleh RPC-nya.
+  const handleRecapUnlock = async (rec: any, reason: string) => {
+    const { error } = await supabase.rpc('fn_seaair_unlock_submit', { p_rekapan_id: rec.id, p_reason: reason });
+    if (error) {
+      alert('Failed to unlock: ' + error.message);
+      return false;
+    }
+    setRecapDetailSnapshot((prev: any) => (prev && String(prev.id) === String(rec.id) ? { ...prev, tgl_submit_finance: null, submit_unlock_reason: reason, submit_unlocked_at: new Date().toISOString() } : prev));
+    refreshRecap();
+    return true;
+  };
+
+  // Re-read nilai PIB dari snapshot AI (RPC fn_seaair_reread_from_ai, sql/031) -- Draft saja.
+  const handleSeaAirReread = async (rec: any) => {
+    const { error } = await supabase.rpc('fn_seaair_reread_from_ai', { p_seaair_id: rec.id });
+    if (error) {
+      alert('Failed to re-read from AI: ' + error.message);
+      return false;
+    }
+    const fresh = await reloadSeaAirRow(rec.id);
+    if (fresh) setSeaAirDetailRecord(fresh);
+    refreshSeaAirAudit();
+    return true;
+  };
+
+  const handleSeaAirOpenRecap = (rec: any) => {
+    const key = String(rec?.awb || rec?.no_aju || '').trim();
+    navigate(key ? `/sea-air/rekapan?q=${encodeURIComponent(key)}` : '/sea-air/rekapan');
+  };
 
   const getExportData = async (startDate?: string, endDate?: string) => {
     if (!tab) return []
@@ -4455,9 +4672,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       query = query.neq('status', 'ARCHIVED');
     }
 
-    // Apply Archive Filter (Sea & Air Audit -- Draf berisi status ARCHIVED, Audit menyembunyikannya)
+    // Apply Archive Filter (Sea & Air Audit) -- sama persis fetchRecords() (Draft/Audited/All)
     if (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit') {
-      query = seaAirAuditType === 'draft' ? query.eq('status', 'ARCHIVED') : query.neq('status', 'ARCHIVED');
+      if (seaAirAuditType === 'draft') query = query.eq('status', 'ARCHIVED');
+      else if (seaAirAuditType !== 'all') query = query.neq('status', 'ARCHIVED');
     }
 
     // Apply Filter by Trail -- jenis aksi (Courier / Sea & Air / Bunker / Semua)
@@ -4507,7 +4725,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       if ((activeMainTab === 'courier' && activeSubTab === 'courier_audit') || (activeMainTab === 'courier' && activeSubTab === 'courier_audit' && courierAuditType === 'archive')) {
         searchCols = restrictSearchCols('courier_audit', (courierAuditType === 'pib') ? ['awb', 'vendor_inv_no', 'no_pib', 'po_ori', 'vendor'] : ['awb', 'vendor_inv_no', 'po_ori', 'vendor']);
       } else if (activeMainTab === 'sea_air') {
-        searchCols = activeSubTab === 'sea_air_audit' ? ['no_aju', 'no_pib', 'awb', 'po_ori', 'vendor'] : ['no_aju', 'no_invoice', 'vendor', 'awb'];
+        searchCols = activeSubTab === 'sea_air_audit' ? SEA_AIR_AUDIT_SEARCH_COLS : ['no_aju', 'no_invoice', 'vendor', 'awb'];
       } else if ((activeMainTab === 'courier' && activeSubTab === 'courier_rekapan')) {
         searchCols = restrictSearchCols('courier_rekapan', ['awb', 'no_invoice', 'vendor', 'po_pt_imi', 'ppjk']);
       } else if ((activeMainTab === 'courier' && activeSubTab === 'courier_validasi')) {
@@ -4580,13 +4798,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         // jenisDokumenNormalExport) -- JANGAN duplikat formula di sini lagi (lihat catatan sama
         // di fetchRecords/enrichedData).
       } else if ((activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit')) {
-        const valasDpp = Number(r.valas_dpp) || 0;
-        const kursNdpbm = Number(r.kurs_ndpbm) || 0;
-        const totalInvFreight = Number(r.total_inv_freight) || 0;
-        const itemPriceIdr = Number(r.item_price_idr) || 0;
-        const isCif = isCifDeliveryTerm(r.delivery_term);
-        r.balance = isCif ? 0 : Number((valasDpp * kursNdpbm - (totalInvFreight + itemPriceIdr)).toFixed(2));
-        r.asuransi = isCif ? 0 : Number(((totalInvFreight + itemPriceIdr) * 0.005).toFixed(2));
+        Object.assign(r, computeSeaAirBalanceAsuransi(r));
       }
       return r;
     });
@@ -4641,22 +4853,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         // Inline edit cuma kirim field yang berubah (bukan seluruh record) -- jadi kalau salah
         // satu dari 4 kolom sumber formula ini diubah, hitung ulang balance/asuransi dari
         // gabungan record lama + perubahan baru, lalu ikut disisipkan ke payload yang dikirim.
-        const depKeys = ['valas_dpp', 'kurs_ndpbm', 'total_inv_freight', 'item_price_idr', 'delivery_term'];
-        if (depKeys.some(k => k in cleanedPayload)) {
+        if (SEA_AIR_BALANCE_DEP_KEYS.some(k => k in cleanedPayload)) {
           const record = records.find(r => String(r.id) === String(id));
-          const getNum = (key: string) => {
-            const v = key in cleanedPayload ? cleanedPayload[key] : record?.[key];
-            return Number(v) || 0;
-          };
-          const valasDpp = getNum('valas_dpp');
-          const kursNdpbm = getNum('kurs_ndpbm');
-          const totalInvFreight = getNum('total_inv_freight');
-          const itemPriceIdr = getNum('item_price_idr');
-          const deliveryTerm = 'delivery_term' in cleanedPayload ? cleanedPayload.delivery_term : record?.delivery_term;
-          const isCif = isCifDeliveryTerm(deliveryTerm);
-
-          cleanedPayload.balance = isCif ? 0 : Number((valasDpp * kursNdpbm - (totalInvFreight + itemPriceIdr)).toFixed(2));
-          cleanedPayload.asuransi = isCif ? 0 : Number(((totalInvFreight + itemPriceIdr) * 0.005).toFixed(2));
+          const { balance, asuransi } = computeSeaAirBalanceAsuransi({ ...record, ...cleanedPayload });
+          cleanedPayload.balance = balance;
+          cleanedPayload.asuransi = asuransi;
         }
 
         const res = await supabase.rpc('update_seaair_row', { p_id: id, p_updates: cleanedPayload });
@@ -5473,7 +5674,79 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           courierAuditType={courierAuditType}
           onClose={() => setDeleteRecord(null)}
           onSaved={() => {
-            fetchRecords();
+            if (isSeaAirAudit) refreshSeaAirAudit();
+            else if (isSeaAirRekapan) { setRecapDetailId(null); refreshRecap(); }
+            else fetchRecords();
+          }}
+        />
+      )}
+
+      {/* Invoice Recap Sea & Air (2026-10-01) -- jendela Open & Edit shipment. Jendela Open
+          disembunyikan sementara modal Document Validation lama terbuka (modal lama z-50). */}
+      {isSeaAirRekapan && recapDetailRec && !seaAirValidasiRecord && (
+        <SeaAirRecapDetailModal
+          rec={recapDetailRec}
+          companyNames={seaAirCompanyNames}
+          canEdit={canEdit('sea_air_rekapan')}
+          canSeeCosts={canSee('sea_air_cost_validation')}
+          canEditCosts={canEdit('sea_air_cost_validation')}
+          canSeeDocs={canSee('sea_air_dokumen_validation') || canSee('sea_air_checklist_validation')}
+          canEditDocs={canEdit('sea_air_dokumen_validation')}
+          isAdmin={isAdmin}
+          onUnlock={handleRecapUnlock}
+          onClose={() => { setRecapDetailId(null); setRecapDetailSnapshot(null); }}
+          onEdit={rec => setRecapEditRec(rec)}
+          onSubmit={(rec, dateIso) => handleRecapSave(rec, { tgl_submit_finance: dateIso })}
+          onToggleDraft={async rec => {
+            if (rec.audit_status === 'ARCHIVED') await handleUndraftSeaAir(rec);
+            else await handleDraftSeaAir(rec);
+            setRecapSummaryNonce(n => n + 1);
+            notifySeaAirAuditChanged();
+          }}
+          onDelete={rec => { setRecapDetailId(null); setDeleteRecord(rec); }}
+          onChanged={refreshRecap}
+        />
+      )}
+      {isSeaAirRekapan && recapEditRec && (
+        <SeaAirRecapEditModal
+          rec={recapEditRec}
+          onClose={() => setRecapEditRec(null)}
+          onSave={async changes => {
+            const ok = await handleRecapSave(recapEditRec, changes);
+            if (ok) setRecapEditRec(null);
+            return ok;
+          }}
+        />
+      )}
+
+      {/* Audit PIB Sea & Air (2026-09-30) -- jendela Open & form Edit/Add manually */}
+      {isSeaAirAudit && seaAirDetailRecord && (
+        <SeaAirAuditDetailModal
+          rec={seaAirDetailRecord}
+          info={seaAirLinkInfo[String(seaAirDetailRecord.id)]}
+          companyNames={seaAirCompanyNames}
+          canEdit={canEdit('sea_air_audit')}
+          onClose={() => setSeaAirDetailRecord(null)}
+          onEdit={rec => setSeaAirEditState({ record: rec })}
+          onDelete={rec => { setSeaAirDetailRecord(null); setDeleteRecord(rec); }}
+          onSetStatus={handleSeaAirSetStatus}
+          onOpenRecap={handleSeaAirOpenRecap}
+          onReread={handleSeaAirReread}
+        />
+      )}
+      {isSeaAirAudit && seaAirEditState && (
+        <SeaAirAuditEditModal
+          record={seaAirEditState.record}
+          companyNames={seaAirCompanyNames}
+          importAnOptions={importAnTabs}
+          onClose={() => setSeaAirEditState(null)}
+          onSaved={async (id) => {
+            setSeaAirEditState(null);
+            if (id !== undefined && seaAirDetailRecord && String(seaAirDetailRecord.id) === String(id)) {
+              const fresh = await reloadSeaAirRow(id);
+              if (fresh) setSeaAirDetailRecord(fresh);
+            }
+            refreshSeaAirAudit();
           }}
         />
       )}
@@ -5502,15 +5775,18 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         <ValidasiShipmentInvoiceLengkap
           record={seaAirCostValidasiRecord}
           onClose={() => setSeaAirCostValidasiRecord(null)}
-          canEdit={canEdit('sea_air_cost_validation')}
+          // Bagian 2: konfirmasi cost HANYA Admin & tidak setelah Submit to Finance (DB menolak juga).
+          canEdit={canEdit('sea_air_cost_validation') && isAdmin && !isRecapLocked(seaAirCostValidasiRecord)}
         />
       )}
 
       {seaAirValidasiRecord && (
         <SeaAirValidasiModal
           record={seaAirValidasiRecord}
-          onClose={() => setSeaAirValidasiRecord(null)}
-          canEdit={canEdit('sea_air_dokumen_validation')}
+          onClose={() => { setSeaAirValidasiRecord(null); if (isSeaAirRekapan) refreshRecap(); }}
+          // Bagian 2: modal lama = 1 hak edit utk accept/koreksi/duty -> Admin saja & tidak setelah submit
+          // (edit Duty oleh non-Admin tetap bisa lewat tab Documents di jendela Open).
+          canEdit={canEdit('sea_air_dokumen_validation') && isAdmin && !isRecapLocked(seaAirValidasiRecord)}
         />
       )}
 
@@ -5518,6 +5794,52 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       {/* ── Main Content ── */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
         
+        {isSeaAirAudit ? (
+        /* Header Audit PIB Sea & Air (2026-09-30): eyebrow + judul + Export/Add manually. */
+        <header className="px-3 pt-1 pb-1 shrink-0">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#8A7A8B]">Sea &amp; Air</div>
+              <h1 className="font-bold text-2xl text-[#3B1B3D] leading-tight">PIB Audit</h1>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              {renderExportBtn(true)}
+              {canEdit('sea_air_audit') && (
+                <button
+                  type="button"
+                  onClick={() => setSeaAirEditState({ record: null })}
+                  className="px-4 h-[38px] rounded-full bg-[#6B3470] hover:bg-[#5A2A5E] text-white text-xs font-semibold shadow-sm transition-colors shrink-0"
+                >
+                  + Add manually
+                </button>
+              )}
+              <Greeting />
+            </div>
+          </div>
+        </header>
+        ) : isSeaAirRekapan ? (
+        /* Header Invoice Recap Sea & Air (2026-10-01): eyebrow + judul + Export/Upload documents. */
+        <header className="px-3 pt-1 pb-1 shrink-0">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#8A7A8B]">Sea &amp; Air</div>
+              <h1 className="font-bold text-2xl text-[#3B1B3D] leading-tight">Invoice Recap</h1>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              {renderExportBtn(true)}
+              {canSee('sea_air_upload') && (
+                <Link
+                  to="/sea-air/upload"
+                  className="px-4 h-[38px] rounded-full bg-[#6B3470] hover:bg-[#5A2A5E] text-white text-xs font-semibold shadow-sm transition-colors shrink-0 inline-flex items-center gap-1.5"
+                >
+                  <UploadCloud size={14} /> Upload documents
+                </Link>
+              )}
+              <Greeting />
+            </div>
+          </div>
+        </header>
+        ) : (
         <header className="px-3 pt-1 pb-1 shrink-0">
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -5534,6 +5856,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
             <Greeting />
           </div>
         </header>
+        )}
 
         <main className="px-3 pt-2 pb-2 flex-1 flex flex-col overflow-hidden">
 
@@ -5683,6 +6006,182 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                     </div>
                   </div>
                 </div>
+              ) : isSeaAirAudit ? (
+                /* Audit PIB Sea & Air (2026-09-30): 4 kartu KPI + 1 kartu filter (tab Draft/Audited/All,
+                   Search, PIB DATE, COMPANY, List/Card, Refresh). Filter & state SAMA dgn toolbar lama. */
+                <div className="flex flex-col gap-3">
+                  <SeaAirAuditKpiCards summary={seaAirSummary} loading={seaAirSummaryLoading} />
+                  <div className="bg-white rounded-[14px] border border-[#EADFD6] shadow-sm px-3 py-2.5 flex flex-nowrap items-center gap-2.5 overflow-x-auto">
+                    <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[#F5EDF3] shrink-0">
+                      {([
+                        { id: 'draft', label: 'Draft', count: seaAirSummary?.draft },
+                        { id: 'audit', label: 'Audited', count: seaAirSummary?.audited },
+                        { id: 'all', label: 'All', count: seaAirSummary?.total },
+                      ] as const).map(t => {
+                        const active = seaAirAuditType === t.id;
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => { setSeaAirAuditType(t.id); setPage(1); }}
+                            className={`flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-bold transition-colors ${active ? 'bg-[#3B1B3D] text-white shadow-sm' : 'text-[#3B1B3D] hover:bg-white'}`}
+                          >
+                            {t.label}
+                            <span className={`min-w-[20px] px-1.5 h-[18px] rounded-full text-[10.5px] flex items-center justify-center tabular-nums ${active ? 'bg-white/20 text-white' : 'bg-white text-[#6E5E70]'}`}>
+                              {t.count ?? '…'}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="relative flex-1 min-w-[220px]">
+                      <SearchIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A7A8B] pointer-events-none" />
+                      <input
+                        type="text"
+                        placeholder="Search PIB no., BL, PO, supplier, HS code"
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                        className="w-full h-9 rounded-xl pl-8 pr-8 text-[13px] bg-[#FBF7F4] border border-[#EADFD6] text-[#3B1B3D] placeholder:text-[#8A7A8B] focus:outline-none focus:border-[#6B3470] focus:bg-white"
+                      />
+                      {search && (
+                        <button type="button" onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8A7A8B] hover:text-[#3B1B3D]">
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 h-9 px-3 rounded-xl border border-[#EADFD6] bg-white shrink-0">
+                      <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]">PIB date</span>
+                      <input type="date" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} className="w-[108px] text-[12px] bg-transparent focus:outline-none text-[#3B1B3D] cursor-pointer" />
+                      <span className="text-[#8A7A8B] text-xs">–</span>
+                      <input type="date" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} className="w-[108px] text-[12px] bg-transparent focus:outline-none text-[#3B1B3D] cursor-pointer" />
+                      {(filterStartDate || filterEndDate) && (
+                        <button type="button" onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }} className="text-[#8A7A8B] hover:text-[#3B1B3D]"><X size={13} /></button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 h-9 pl-3 pr-2 rounded-xl border border-[#EADFD6] bg-white shrink-0">
+                      <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]">Company</span>
+                      <select
+                        value={activeImporAnFilter}
+                        onChange={e => { setActiveImporAnFilter(e.target.value); setPage(1); }}
+                        className="border-0 bg-transparent text-xs font-bold text-[#3B1B3D] focus:outline-none cursor-pointer max-w-[160px]"
+                      >
+                        {importAnTabs.map(an => (
+                          <option key={an} value={an}>{an}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="inline-flex items-center p-1 rounded-xl bg-[#F5EDF3] shrink-0" role="group" aria-label="View mode">
+                      {(['card', 'list'] as const).map(m => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setSeaAirViewMode(m)}
+                          className={`px-3 h-7 rounded-lg text-xs font-bold transition-colors ${seaAirViewMode === m ? 'bg-white text-[#3B1B3D] shadow-sm' : 'text-[#6E5E70] hover:text-[#3B1B3D]'}`}
+                        >
+                          {m === 'card' ? 'Card' : 'List'}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={refreshSeaAirAudit}
+                      title="Refresh"
+                      aria-label="Refresh"
+                      className="w-9 h-9 rounded-xl border border-[#EADFD6] bg-white text-[#3B1B3D] hover:bg-[#FBF7F4] flex items-center justify-center shrink-0"
+                    >
+                      <RefreshCw size={14} />
+                    </button>
+                  </div>
+                </div>
+              ) : isSeaAirRekapan ? (
+                /* Invoice Recap Sea & Air (2026-10-01): 5 kartu KPI + 1 kartu filter (tipe All/LCL/FCL/AIR,
+                   Search, tanggal, COMPANY, Needs attention, SORT, Card/List, Refresh). */
+                <div className="flex flex-col gap-3">
+                  <SeaAirRecapKpiCards summary={recapSummary} loading={recapSummaryLoading} />
+                  <div className="bg-white rounded-[14px] border border-[#EADFD6] shadow-sm px-3 py-2.5 flex flex-nowrap items-center gap-2.5 overflow-x-auto">
+                    <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[#F5EDF3] shrink-0">
+                      {['All', 'LCL', 'FCL', 'AIR'].map(t => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => { setActiveShipmentTypeFilter(t); setPage(1); }}
+                          className={`px-3 h-8 rounded-lg text-xs font-bold transition-colors ${activeShipmentTypeFilter === t ? 'bg-[#3B1B3D] text-white shadow-sm' : 'text-[#3B1B3D] hover:bg-white'}`}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="relative flex-1 min-w-[220px]">
+                      <SearchIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A7A8B] pointer-events-none" />
+                      <input
+                        type="text"
+                        placeholder="Search BL / AWB, supplier, invoice, PIB no.…"
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                        className="w-full h-9 rounded-xl pl-8 pr-8 text-[13px] bg-[#FBF7F4] border border-[#EADFD6] text-[#3B1B3D] placeholder:text-[#8A7A8B] focus:outline-none focus:border-[#6B3470] focus:bg-white"
+                      />
+                      {search && (
+                        <button type="button" onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8A7A8B] hover:text-[#3B1B3D]"><X size={14} /></button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 h-9 px-3 rounded-xl border border-[#EADFD6] bg-white shrink-0">
+                      <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]">Date</span>
+                      <input type="date" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} className="w-[108px] text-[12px] bg-transparent focus:outline-none text-[#3B1B3D] cursor-pointer" />
+                      <span className="text-[#8A7A8B] text-xs">–</span>
+                      <input type="date" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} className="w-[108px] text-[12px] bg-transparent focus:outline-none text-[#3B1B3D] cursor-pointer" />
+                      {(filterStartDate || filterEndDate) && (
+                        <button type="button" onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }} className="text-[#8A7A8B] hover:text-[#3B1B3D]"><X size={13} /></button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 h-9 pl-3 pr-2 rounded-xl border border-[#EADFD6] bg-white shrink-0">
+                      <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]">Company</span>
+                      <select
+                        value={activeAnFilter}
+                        onChange={e => { setActiveAnFilter(e.target.value); setPage(1); }}
+                        className="border-0 bg-transparent text-xs font-bold text-[#3B1B3D] focus:outline-none cursor-pointer max-w-[160px]"
+                      >
+                        {anTabs.map(an => <option key={an} value={an}>{an === 'All' ? 'All companies' : an}</option>)}
+                      </select>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setRecapNeedsAttentionOnly(v => !v); setPage(1); }}
+                      aria-pressed={recapNeedsAttentionOnly}
+                      className={`h-9 px-3 rounded-xl border text-xs font-bold shrink-0 transition-colors ${recapNeedsAttentionOnly ? 'bg-[#FDE7E4] border-[#F4C3BC] text-[#A8231A]' : 'bg-white border-[#EADFD6] text-[#3B1B3D] hover:bg-[#FBF7F4]'}`}
+                    >
+                      Needs attention{recapSummary ? ` · ${recapSummary.needsAttention}` : ''}
+                    </button>
+                    <div className="flex items-center gap-2 h-9 pl-3 pr-2 rounded-xl border border-[#EADFD6] bg-white shrink-0">
+                      <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]">Sort</span>
+                      <select
+                        value={sortColumn === 'total_invoice' ? 'total_invoice' : sortDirection === 'asc' ? 'oldest' : 'newest'}
+                        onChange={e => {
+                          const v = e.target.value;
+                          if (v === 'total_invoice') { setSortColumn('total_invoice'); setSortDirection('desc'); }
+                          else { setSortColumn('created_at'); setSortDirection(v === 'oldest' ? 'asc' : 'desc'); }
+                          setPage(1);
+                        }}
+                        className="border-0 bg-transparent text-xs font-bold text-[#3B1B3D] focus:outline-none cursor-pointer"
+                      >
+                        <option value="newest">Newest</option>
+                        <option value="oldest">Oldest</option>
+                        <option value="total_invoice">Total invoice · highest</option>
+                      </select>
+                    </div>
+                    <div className="inline-flex items-center p-1 rounded-xl bg-[#F5EDF3] shrink-0" role="group" aria-label="View mode">
+                      {(['card', 'list'] as const).map(m => (
+                        <button key={m} type="button" onClick={() => setSeaAirRecapView(m)}
+                          className={`px-3 h-7 rounded-lg text-xs font-bold transition-colors ${seaAirRecapView === m ? 'bg-white text-[#3B1B3D] shadow-sm' : 'text-[#6E5E70] hover:text-[#3B1B3D]'}`}>
+                          {m === 'card' ? 'Card' : 'List'}
+                        </button>
+                      ))}
+                    </div>
+                    <button type="button" onClick={refreshRecap} title="Refresh" aria-label="Refresh"
+                      className="w-9 h-9 rounded-xl border border-[#EADFD6] bg-white text-[#3B1B3D] hover:bg-[#FBF7F4] flex items-center justify-center shrink-0">
+                      <RefreshCw size={14} />
+                    </button>
+                  </div>
+                </div>
               ) : (
               <div className={`flex flex-nowrap items-center gap-2 rounded-2xl px-3 py-3 border overflow-x-auto ${TOOLBAR_GLASS}`}>
                 <div className="flex-1 flex gap-2 items-center flex-nowrap min-w-0">
@@ -5805,8 +6304,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           </div>
 
 
-          {/* ── Tabel ── */}
-          <div className="relative bg-white rounded-2xl border border-slate-200 shadow-sm isolate flex-1 flex flex-col min-h-0 overflow-hidden">
+          {/* ── Tabel ── (Audit PIB Sea & Air mode Card: kartu melayang di atas latar, tanpa kotak putih) */}
+          <div className={`relative isolate flex-1 flex flex-col min-h-0 overflow-hidden ${(isSeaAirAudit && seaAirViewMode === 'card') || (isSeaAirRekapan && seaAirRecapView === 'card') ?'bg-white/40 rounded-2xl border border-[#EADFD6]/70' : 'bg-white rounded-2xl border border-slate-200 shadow-sm'}`}>
             {reorderMode && (
               <div className="px-4 py-2 bg-orange-50 border-b border-orange-200 text-orange-800 text-xs font-medium flex items-center justify-between gap-3">
                 <span className="flex items-center gap-1.5 flex-wrap">
@@ -5844,6 +6343,49 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                     Upload now →
                   </Link>
                 )}
+              </div>
+            ) : isSeaAirAudit && seaAirViewMode === 'card' ? (
+              <div className="flex-1 min-h-0 relative overflow-y-auto p-2.5">
+                {loading && (
+                  <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-50 flex items-center justify-center">
+                    <div className="flex items-center bg-white px-4 py-2 rounded-xl shadow-md border border-slate-100 text-[#5A305A] font-medium text-sm">
+                      <LoadingSpinner className="mr-3" />
+                      Updating data...
+                    </div>
+                  </div>
+                )}
+                <div className="text-[12px] text-[#6E5E70] px-1 pb-2 tabular-nums">
+                  <b className="text-[#3B1B3D]">{totalRecords}</b> of {seaAirSummary?.total ?? '…'} PIB · duty &amp; tax{' '}
+                  <b className="text-[#3B1B3D]">{seaAirSummary ? fmtRpSeaAir(seaAirAuditType === 'draft' ? seaAirSummary.dutyDraft : seaAirAuditType === 'audit' ? seaAirSummary.dutyAudited : seaAirSummary.dutySum) : '…'}</b>
+                </div>
+                <SeaAirAuditCardList
+                  rows={displayRows}
+                  linkInfo={seaAirLinkInfo}
+                  companyNames={seaAirCompanyNames}
+                  onOpen={rec => setSeaAirDetailRecord(rec)}
+                />
+              </div>
+            ) : isSeaAirRekapan && seaAirRecapView === 'card' ? (
+              <div className="flex-1 min-h-0 relative overflow-y-auto p-2.5">
+                {loading && (
+                  <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-50 flex items-center justify-center">
+                    <div className="flex items-center bg-white px-4 py-2 rounded-xl shadow-md border border-slate-100 text-[#5A305A] font-medium text-sm">
+                      <LoadingSpinner className="mr-3" />
+                      Updating data...
+                    </div>
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-2">
+                  <div className="text-[12px] text-[#6E5E70] tabular-nums">
+                    <b className="text-[#3B1B3D]">{totalRecords}</b> of {recapSummary?.total ?? '…'} shipments · landed cost{' '}
+                    <b className="text-[#3B1B3D]">{recapSummary ? fmtRpSeaAir(recapSummary.landedSum) : '…'}</b>
+                  </div>
+                  <CostMixLegend />
+                </div>
+                <SeaAirRecapCardList
+                  rows={displayRows}
+                  onOpen={rec => { setRecapDetailId(rec.id); setRecapDetailSnapshot(rec); }}
+                />
               </div>
             ) : (
               <div className="flex-1 flex flex-col min-h-0 relative w-full">

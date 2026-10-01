@@ -4,6 +4,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Plane, Ship, ScrollText, Settings, ChevronUp, ChevronDown, LogOut, UserCircle, FileCheck2, GitCompare, BarChart3, Menu, X } from 'lucide-react';
 import shipmentIcon from '../assets/beehive-icon.png';
 import { useAuth } from '../lib/AuthContext';
+import { supabase } from '../lib/supabase';
+import { SEA_AIR_AUDIT_CHANGED_EVENT } from '../utils/SeaAirAuditHelpers';
+import { SEA_AIR_RECAP_CHANGED_EVENT, fetchRecapNeedsAttentionCount } from '../utils/SeaAirRecapHelpers';
 
 // Tipe eksplisit (2026-09, ditambahkan saat "Cost by Vessel" butuh `pageKeys` array di beberapa
 // entry) -- tanpa ini TS infer union literal per-anggota array yg TIDAK saling exchangeable
@@ -36,6 +39,7 @@ const MAIN_TABS: MainTab[] = [
     subTabs: [
       { id: 'sea_air_audit',   label: 'Audit', path: '/sea-air/audit', pageKey: 'sea_air_audit' },
       { id: 'sea_air_rekapan', label: 'Invoice Recap', path: '/sea-air/rekapan', pageKey: 'sea_air_rekapan' },
+      { id: 'sea_air_finance', label: 'Finance Handover', path: '/sea-air/finance', pageKey: 'sea_air_finance' },
       { id: 'sea_air_upload', label: 'Upload', path: '/sea-air/upload', pageKey: 'sea_air_upload' },
     ]
   },
@@ -172,6 +176,50 @@ export default function MainLayout() {
   useEffect(() => { setMobileMenuOpen(false); }, [location.pathname]);
   useEffect(() => { if (mobileMenuOpen) setMobileExpandedTab(activeMainTab); }, [mobileMenuOpen, activeMainTab]);
 
+  // Badge jumlah PIB Draft (status ARCHIVED) di submenu Sea & Air › Audit (2026-09-30, spek PIB
+  // Audit). Query count saja (head), dihitung ulang tiap pindah halaman & saat halaman Audit PIB
+  // mengirim event SEA_AIR_AUDIT_CHANGED_EVENT (simpan/ubah status/hapus).
+  const canSeeSeaAirAudit = isAdmin || allowedPageKeys.has('sea_air_audit');
+  const [seaAirDraftCount, setSeaAirDraftCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!canSeeSeaAirAudit) { setSeaAirDraftCount(null); return; }
+    let cancelled = false;
+    const load = async () => {
+      const { count, error } = await supabase.from('tabel_audit_seaair').select('id', { count: 'exact', head: true }).eq('status', 'ARCHIVED');
+      if (!cancelled) setSeaAirDraftCount(error ? null : (count ?? 0));
+    };
+    load();
+    window.addEventListener(SEA_AIR_AUDIT_CHANGED_EVENT, load);
+    return () => { cancelled = true; window.removeEventListener(SEA_AIR_AUDIT_CHANGED_EVENT, load); };
+  }, [canSeeSeaAirAudit, location.pathname]);
+  // Badge "needs attention" Invoice Recap (2026-10-01, spek V167): jumlah shipment belum submit yg
+  // masih punya issue. Lebih berat dari count biasa (baca issue per shipment), jadi hanya dihitung
+  // saat mount, saat masuk halaman /sea-air/*, & saat halaman Recap/Audit mengirim event perubahan.
+  const canSeeSeaAirRecap = isAdmin || allowedPageKeys.has('sea_air_rekapan');
+  const inSeaAir = location.pathname.startsWith('/sea-air');
+  const [seaAirAttentionCount, setSeaAirAttentionCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!canSeeSeaAirRecap) { setSeaAirAttentionCount(null); return; }
+    let cancelled = false;
+    const load = async () => {
+      const n = await fetchRecapNeedsAttentionCount();
+      if (!cancelled) setSeaAirAttentionCount(n);
+    };
+    load();
+    window.addEventListener(SEA_AIR_RECAP_CHANGED_EVENT, load);
+    window.addEventListener(SEA_AIR_AUDIT_CHANGED_EVENT, load);
+    return () => { cancelled = true; window.removeEventListener(SEA_AIR_RECAP_CHANGED_EVENT, load); window.removeEventListener(SEA_AIR_AUDIT_CHANGED_EVENT, load); };
+  }, [canSeeSeaAirRecap, inSeaAir]);
+  const subTabBadge = (subId: string) => (subId === 'sea_air_audit' && seaAirDraftCount ? (
+    <span title="Draft PIB" className="ml-auto min-w-[20px] h-[18px] px-1.5 rounded-full bg-amber-400 text-[#3B1B3D] text-[10.5px] font-bold flex items-center justify-center">
+      {seaAirDraftCount > 99 ? '99+' : seaAirDraftCount}
+    </span>
+  ) : subId === 'sea_air_rekapan' && seaAirAttentionCount ? (
+    <span title="Shipments needing attention" className="ml-auto min-w-[20px] h-[18px] px-1.5 rounded-full bg-[#C8402F] text-white text-[10.5px] font-bold flex items-center justify-center">
+      {seaAirAttentionCount > 99 ? '99+' : seaAirAttentionCount}
+    </span>
+  ) : null);
+
   return (
     <div className="flex flex-col md:flex-row h-screen overflow-hidden bg-gradient-to-br from-[#FFF5C5] to-[#F58C77] md:p-4 md:gap-4">
       
@@ -252,6 +300,7 @@ export default function MainLayout() {
                               >
                                 <span className={`w-[5px] h-[5px] rounded-full shrink-0 ${isSubActive ? 'bg-white' : 'bg-[#a394a8]'}`}></span>
                                 {sub.label}
+                                {subTabBadge(sub.id)}
                               </Link>
                             );
                           })}
@@ -357,6 +406,7 @@ export default function MainLayout() {
                           >
                             <span className={`w-[5px] h-[5px] rounded-full shrink-0 ${isSubActive ? 'bg-[#5A305A]' : 'bg-[#a394a8]'}`}></span>
                             {sub.label}
+                            {subTabBadge(sub.id)}
                           </Link>
                         );
                       })}

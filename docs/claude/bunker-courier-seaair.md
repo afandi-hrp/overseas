@@ -1,3 +1,210 @@
+## Invoice Recap Sea & Air — tampilan baru "Invoice Recap" (2026-10-01)
+
+Redesain `/sea-air/rekapan` dari spek user ("BeeHive AI · Invoice Recap", V167), pola SAMA dgn Audit
+PIB di bawah (token `SeaAirAuditUi.tsx`, font Sora). Backlog fitur yg ditunda: CLAUDE.md "BACKLOG —
+Invoice Recap Sea & Air". **Keputusan user**: Supplier = kolom `vendor` (supplier BARANG; vendor jasa
+di `*_vendor`); **Landed cost = HANYA biaya invoice, TANPA duty & tax**; kelompok "PPJK & trucking" =
+EMKL; Needs attention = skor rendah & BELUM dikonfirmasi user; Submit to Finance = tombol, tanggal
+otomatis hari ini (lokal); tab Costs DIBANGUN ULANG (opsi A); Card | List (List = tabel lama
+`SeaAirRekapanRowGroup` apa adanya); Export TETAP; menu sidebar tetap.
+
+**File**: `src/utils/SeaAirRecapHelpers.ts` (SATU sumber: `RECAP_SEGMENTS`, `computeLandedCost`,
+`computeRecapIssues`, `recapStatus`, `computeDocStats`, `fetchRecapSummary`, `fetchRecapLog`,
+`todayLocalIso`), `SeaAirRecapCardList.tsx` (5 KPI + kartu + `CostMixBar`/`ScoreDot`),
+`SeaAirRecapDetailModal.tsx` (Open), `SeaAirRecapCostsTab.tsx` (tab Costs), `SeaAirRecapDocumentsTab.tsx`
+(tab Documents), `SeaAirRecapEditModal.tsx`
+(Edit shipment). `SharedDataTable.tsx` disentuh HANYA di cabang `isSeaAirRekapan` + enrichment
+rekapan di `fetchRecords` (checklist kini juga `dokumen_kurang`; `r.recap_issues`, `r.recap_has`) +
+filter `recapNeedsAttentionOnly` (`.in('id', recapNeedsAttentionIds)`).
+
+- **Kelompok biaya** (`RECAP_SEGMENTS`): PPJK & trucking = `emkl_biaya`; Origin = `biaya_origin`;
+  Local = `biaya_destination`+`pbm`+`lift_off`+`inspeksi`+`handling`+`other`. Landed cost = jumlah
+  segmen (fallback `total_invoice` kalau semua segmen kosong). `total_invoice` & `total_keseluruhan_biaya`
+  ditampilkan apa adanya ("recorded") di kartu Landed cost. Duty & tax (`duty_total`, BM/PPN/PPh)
+  ditampilkan terpisah ("not in landed cost").
+- **Issues** (`computeRecapIssues`): checklist `pct_kelengkapan` < 100 ("Missing required document:
+  <dokumen_kurang>"); section Cost Validation (kecuali CUSTOM & SURVEYOR) dgn baris Over/Under &
+  BELUM ada baris `cost_validasi_catatan_seaair`; mismatch Doc Validation (setelah relax) yg
+  `manual` false. Status kartu: Submitted (`tgl_submit_finance` terisi) / ⚠ N issues / Ready.
+- **KPI** (`fetchRecapSummary`): SEMUA baris lolos filter (tipe/company/tanggal `tgl`/search),
+  issue dihitung utk baris belum submit (chunk 50) — juga sumber id utk toggle Needs attention.
+- **Kartu**: BL/AWB, tipe·container, badge PT, Uploaded (`created_at`), rute, ETD/ETA/ATA,
+  supplier, PO +N/Hide, chip status (+tooltip issues), titik Doc match/Cost/Doc complete
+  (`doc_validation_pct`/`cost_validation_pct`/`checklist_pct`, abu kalau datanya belum ada),
+  Landed cost + bar kelompok, Open. Sort: Newest/Oldest/Total invoice · highest.
+- **Open**: header (Edit, Submit to Finance [ada issue -> "· N to fix" + konfirmasi daftar issue,
+  tetap bisa submit], ⋯ = Move PIB Draft/Audited (`handleDraftSeaAir`/`handleUndraftSeaAir` lama) &
+  Delete (`DeleteModal` lama, perilaku TETAP)), chip skor, banner blocker/submitted.
+  Overview: Shipment (Company nama lengkap, Supplier, Invoice no, Recap date, Delivery term dari
+  `tabel_audit_seaair`, berat/CBM, ETD→ETA, ATD→ATA, container, tgl invoice freight/storage,
+  AI note=`notes`), Landed cost (+By vendor), Split per PO (Summary/Per invoice dari `*_split`
+  tersimpan — 1 nilai per shipment = bagi rata; By KG belum).
+- **Tab Costs** (`SeaAirRecapCostsTab`): logika SALINAN PERSIS `ValidasiShipmentInvoiceLengkap.tsx`
+  (toleransi, Jalur Hijau/Merah EMKL `expected_alt`, sisip baris SURVEYOR, `updateCheck`, simpan RPC
+  `update_cost_validasi_manual` seluruh `checks`, review = upsert/hapus `cost_validasi_catatan_seaair`
+  onConflict `seaair_id,section`; Accept difference=MATCH, Ask vendor=MISMATCH wajib note). **Kalau
+  modal lama diubah, WAJIB sinkron ke file ini.** + kartu Duty & tax (PIB) dari baris Audit PIB
+  (`computeDutyRows`) & SPTNP.
+- **Tab Documents** (`SeaAirRecapDocumentsTab`, DIBANGUN ULANG PENUH 2026-10-01 atas permintaan
+  user): kiri Checklist (daftar dokumen SAMA `SeaAirChecklistModal`, baca saja); kanan Document
+  validation per section (`SECTIONS` di file itu = baris/kolom SAMA konstanta modal lama:
+  INVOICE_FCL/FAKTUR_PAJAK/PIB [baris `SEA_AIR_PIB_MATRIX_ROWS`, kolom `required`]/EMKL/ACTUAL/VESSEL)
+  + kartu Duty. Logika SALINAN PERSIS `SeaAirValidasiModal.tsx`: load -> `relaxSeaAirDocChecks`;
+  "✓ Checked — accept"/"Mark mismatch" = toggle 2 arah, PER BARIS utk INVOICE_FCL/EMKL/ACTUAL
+  (`toggleRowStatus`), PER SEL utk FAKTUR_PAJAK/PIB (`toggleCheckStatus`), VESSEL tanpa status
+  ("Has data/Empty"), "Nama Barang Kena Pajak" tanpa status; "Correct" = edit `values.doc` (parser
+  `parseIndoInput`/`parseForeignInput` sama); TOTAL CIPL × Bukti TF dijumlah (tampilan); Duty =
+  NDPBM + item + Actual, status toleransi Rp 3.000; simpan RPC `update_validasi_matriks_manual`
+  (p_checks/p_duty_items/p_duty_aktual/p_duty_ndpbm, `Number()` sama modal lama) + verifikasi
+  panjang checks. "Undo" = kembalikan sel ke kondisi saat dimuat (hanya perubahan BELUM disimpan).
+  Section yg punya mismatch saat dimuat terbuka otomatis & TIDAK menutup sendiri saat di-accept.
+  **Kalau modal lama diubah, WAJIB sinkron ke file ini.**
+- **Hak akses tab** (sama page_key modal lama): Costs tampil kalau `canSee('sea_air_cost_validation')`,
+  edit = `canEdit('sea_air_cost_validation')`; Documents tampil kalau dokumen_validation ATAU
+  checklist_validation bisa dilihat, edit = `canEdit('sea_air_dokumen_validation')`; Edit shipment/
+  Submit/Draft/Delete = `canEdit('sea_air_rekapan')`. Tab Costs/Documents yg sudah dibuka TETAP
+  terpasang (hidden) -> perubahan belum disimpan tidak hilang saat pindah tab; tutup jendela dgn
+  perubahan belum disimpan -> konfirmasi.
+- **Edit shipment**: field yg bisa diedit di tabel lama (EMKL vendor TETAP read-only, `*_split` via
+  List), PO & vessel (`po_detail`), "Submitted to Finance" bisa dikoreksi/Clear. Simpan =
+  `handleInlineSaveRow` lama (cbm -> tabel_audit_seaair).
+- **Diuji (2026-10-01)**: `tsc` bersih, `vite build` sukses, uji integrasi halaman penuh (jsdom +
+  Supabase tiruan yg menyimpan data) 82 cek lulus: KPI, kartu & status, tab tipe, Needs attention,
+  List, Overview, Costs (review simpan/undo, Jalur Merah, edit Actual -> RPC & status MATCH),
+  Documents (accept/undo per sel, toggle per baris, Correct value, Duty, simpan RPC & cek DB,
+  perubahan bertahan saat pindah tab, konfirmasi tutup, Discard), view-only (tanpa tombol tulis),
+  Audit trail, Edit shipment (ETA & vessel tersimpan & tampil), Move Draft, Submit (tanggal hari ini),
+  Delete, Export. Regresi Audit PIB tetap lulus (50 + 83). Satu-satunya
+  console.error = peringatan dnd-kit tabel lama. **Belum dites ke Supabase production.**
+
+### Bagian 2 (2026-10-01) — aturan relasi dengan Audit PIB
+
+Ringkasan lengkap di CLAUDE.md "Relasi Audit PIB ↔ Invoice Recap Sea & Air". Di jendela Open:
+Submit to Finance nonaktif selama ada issue (tanpa "submit anyway"), setelah submit chip "Locked" +
+banner hijau read-only + tombol **Unlock (Admin)** (textarea alasan -> RPC `fn_seaair_unlock_submit`,
+info "Unlocked by Admin … — alasan" tampil setelahnya); Edit & Delete shipment nonaktif saat
+terkunci; menu "Move PIB to Audited" nonaktif selama ada issue. Tab Costs & Documents: konfirmasi
+hanya Admin (`canEdit && isAdmin && !locked`), non-Admin lihat catatan abu; Edit duty tetap
+`canEdit && !locked`. Chip duplikat (`duplicate_of`) di kartu & header. Split per PO "By KG"
+memakai TOTAL shipment × KG PO / total KG (pembulatan per sel, tampilan saja).
+
+## Finance Handover Sea & Air (`/sea-air/finance`, 2026-10-01)
+
+Spek V167: setelah "Submit to Finance" -> **1 handover per BL/AWB**, dibayar ke **PPJK**
+(`emkl_vendor`, tampil apa adanya — belum ada sumber nama legal lengkap), berisi semua invoice
+pengiriman (jumlah = `computeLandedCost().landed`, invoice saja), **TANPA duty & tax** (dibayar via
+Billing DJBC). Alur **Sent** (`tgl_submit_finance`) -> **Received** -> **Paid**.
+
+- **File**: `src/pages/sea-air/SeaAirFinanceHandoverPage.tsx`, `src/utils/SeaAirFinanceHelpers.ts`
+  (SATU sumber `financeStage`/fetch/RPC). page_key `sea_air_finance` (PAGE_REGISTRY grup Sea & Air),
+  submenu "Finance Handover" di bawah Invoice Recap. Token tampilan `SeaAirAuditUi.tsx`.
+- **Data**: semua baris `rekapan_seaair` yg sudah submit (`select('*')`, per 1.000), filter tab/
+  search (awb/no_invoice/vendor/emkl_vendor/a_n/paid_reference)/Company di browser supaya angka 4
+  kotak (Waiting / Received · unpaid / Paid / All, jumlah + total Rp) selalu sinkron. Pagination 20.
+- **Kartu**: BL/AWB, tipe, PT, pill tahap, Payable to (PPJK) + jumlah invoice, Amount, stepper
+  Sent→Received→Paid, tombol Receive / Mark paid (dialog tanggal default hari ini + referensi ≥3) /
+  Undo (alasan ≥5, mundur 1 langkah) / Details (rincian invoice per segmen + duty sbg info + riwayat
+  + "Open in Invoice Recap" kalau punya akses Recap).
+- **DB `sql/034`** (BELUM DIJALANKAN): kolom `finance_received_at/_by`, `paid_date`, `paid_reference`,
+  `paid_by`, `paid_recorded_at`; policy SELECT `rekapan_seaair_select_finance` (role Finance TIDAK
+  perlu akses Invoice Recap); RPC `fn_seaair_finance_accept/_mark_paid/_undo` (SECURITY DEFINER,
+  guard `has_edit_access('sea_air_finance')`, lolos kunci submit via flag `app.seaair_unlock`, log
+  audit_trail "Finance received/Paid/Finance (undo) — Lama: … → Baru: …"); `fn_seaair_unlock_submit`
+  menolak kalau Finance sudah menerima; re-audit PIB TIDAK terpicu kolom Finance.
+  Sebelum 034 jalan: banner amber + tanpa tombol aksi (`probeFinanceColumns`).
+- **Invoice Recap ikut**: status kartu "✓ Received by Finance" / "✓ Paid dd Mon"; banner jendela Open
+  menampilkan Received/Paid; tombol Unlock (Admin) diganti teks kalau Finance sudah menerima.
+- **Belum**: upload bukti bayar (FAR punya bucket sendiri), jatuh tempo, nama legal PPJK.
+- **Diuji**: jsdom 30 cek (kotak/tab, Receive/Mark paid/Undo + RPC & DB, search ref, Company,
+  view-only, tanpa sql/034, status Recap & kunci mode List), PGlite 29 cek (034 + 033).
+
+## Audit PIB Sea & Air — tampilan baru "PIB Audit" (2026-09-30)
+
+Redesain TAMPILAN `/sea-air/audit` dari spek prototipe user ("BeeHive AI · Audit PIB", V165).
+Cakupan yang disepakati = **tahap 1: tampilan + query BACA tambahan** — fitur spek yang butuh
+DB/n8n/logika bisnis baru SENGAJA BELUM dibuat (lihat "Belum" di bawah). Font TETAP Sora (keputusan
+user), warna ikut spek (plum `#3B1B3D`, primer `#6B3470`, garis `#EADFD6`, teks samar `#6E5E70`,
+token di `SeaAirAuditUi.tsx`, KHUSUS halaman ini).
+
+**File**: `src/utils/SeaAirAuditHelpers.ts` (SATU-SATUNYA sumber rumus/format/query modul ini),
+`src/components/SeaAirAuditUi.tsx` (token + chip/pill/kartu), `SeaAirAuditCardList.tsx` (kartu KPI +
+daftar kartu), `SeaAirAuditDetailModal.tsx` (jendela Open), `SeaAirAuditEditModal.tsx` (Edit PIB /
+Add manually). `SharedDataTable.tsx` HANYA disentuh di cabang `isSeaAirAudit` (header, toolbar,
+area daftar, modal) + refactor rumus di bawah.
+
+- **Header** eyebrow "SEA & AIR" + "PIB Audit", Export (sama ExportModal lama, kolom TIDAK berubah)
+  + "+ Add manually" (form baru) + Greeting. **Kartu KPI** (PIB records x draft · y audited /
+  Customs value / Duties & taxes BM·PPN·PPh / Not validated yet) = `fetchSeaAirAuditSummary()`:
+  baca SEMUA baris yg lolos filter (Company/tanggal/search, TANPA filter tab) per 1.000 baris,
+  refetch saat filter berubah atau `seaAirSummaryNonce` naik (aksi tulis/Refresh/Delete).
+- **Kartu filter**: tab **Draft | Audited | All** (+angka dari ringkasan; state `seaAirAuditType`
+  `'draft'|'audit'|'all'`, default SEKARANG `'draft'`; 'all' = tanpa filter status di
+  `fetchRecords`/`getExportData`), Search, PIB DATE (= `tgl_ppjk`, tidak ada kolom tgl PIB lain),
+  COMPANY, toggle **Card | List** (`seaAirViewMode`, default Card; List = tabel lama
+  `SeaAirAuditRowGroup` APA ADANYA), Refresh. Search kini juga `hs_code`
+  (`SEA_AIR_AUDIT_SEARCH_COLS`).
+- **Kartu PIB** (grid 270 | 1fr | 230 | 230): tanggal+No. PIB+chip Via/Term+AWB | PT badge+supplier+PO
+  pertama & "+N PO"/Hide | DUTY & TAX (`total_pib`) + BM/PPN/PPh % | status Draft/Audited + pill
+  validasi + Open. Garis kiri amber=draft, merah=ada PIB differences, hijau=audited. Chip
+  **"Waiting for SPPB/…"** (pengganti banner kuning spek, keputusan user) = Draft yg
+  `dokumen_checklist_seaair` `ada_pib/ada_sppb/ada_billing_djbc/ada_bpn`-nya belum lengkap.
+- **Status validasi** (`fetchSeaAirAuditLinkInfo`, per id audit via `seaair_id`): ada baris
+  `dokumen_validasi_matriks_seaair` → section 'PIB' di-`relaxSeaAirDocChecks` (SAMA modal) & hanya
+  sel `required` `SEA_AIR_PIB_MATRIX_ROWS` (DIPINDAH dari SeaAirValidasiModal ke
+  SeaAirValidasiHelpers, isi tidak berubah) → ada `match===false` = "differences", ada yg dinilai =
+  "validated", else "not validated"; tanpa matriks & tanpa `rekapan_seaair` = "Not in Invoice
+  Recap yet". "Open in Invoice Recap" = navigate `/sea-air/rekapan?q=<awb>` (SharedDataTable kini
+  membaca `?q=` sbg isi awal Search).
+- **Jendela Open**: Document (semua kolom `SEA_AIR_AUDIT_COLS` termasuk Document type/Remarks/
+  SPTNP/Notes), Goods per PO (split `+` SAMA tabel lama; Valas per PO = `po_harga_detail`, IDR per
+  PO = valas × kurs tersirat `item_price_idr ÷ item_price`; `po_harga_detail` KOSONG -> 1 PO pakai
+  Item price valas/Rp; >1 PO (& Item price ada) -> 2 TAB "As recorded" | "Split evenly" (state
+  `goodsView`, tab awal Split evenly kalau `po_harga_detail` kosong, selain itu As recorded).
+  Split evenly = Item price valas/Rp DIBAGI RATA hanya tampilan -- chip "≈ split evenly",
+  `splitMoneyEvenly` valas 2 desimal/Rp bulat, sisa ke PO pertama, TIDAK disimpan -- + keterangan
+  abu & baris "Sum of PO lines" disembunyikan; As recorded kosong = "—" + keterangan kuning yg
+  menunjuk tab Split evenly; form Edit: tombol "Split evenly"
+  mengisi Amount valas tiap PO, baru tersimpan saat Save), Customs value build-up (Goods → Freight → Insurance=`asuransi`
+  → Rounding/"Unexplained balance" >Rp1.000 → CV; header Balance = rumus lama), Duty & tax
+  (calculated vs on PIB, toleransi Rp 1.000; **BM% = BM ÷ customs value, tidak bisa diedit —
+  keputusan user, jadi baris BM "Derived"**), Checks, Audit trail (`v_audit_trail`
+  tabel_audit_seaair cocok awb/no_aju; dump mentah trigger TIDAK ditampilkan). Aksi: Edit & Delete
+  (Draft saja, pola lama: baris LENGKAP tidak bisa diedit), Mark as audited (status LENGKAP,
+  **tanpa syarat validated — keputusan user, "nanti diupdate"**), Reopen as draft (ARCHIVED).
+- **Form Edit/Add**: 5 section + Live check. Menulis kolom yg SAMA lewat `update_seaair_row`
+  (hanya field yg berubah) / `insert_seaair_row`. Customs value/Import value/Total PIB TETAP
+  input manual, hitungan "AUTO/SUM/Reference" cuma pembanding + tombol "Use". Goods per PO ditulis
+  balik " + " HANYA kolom yg berubah (`goodsLinesToFields`). Currency = kolom `kurs` (TEXT di DB).
+  Uncheck "This PIB has an SPTNP" = kosongkan 3 kolom SPTNP saat simpan. Save as draft = ARCHIVED,
+  Save & mark as audited = LENGKAP. Add: wajib PIB no./PIB date/BL, default USD/PPN 11/PPh 2,5.
+- **Rumus Balance/Asuransi + `isCifDeliveryTerm` DIPINDAH** ke `computeSeaAirBalanceAsuransi()`
+  (helper) — 4 titik lama di SharedDataTable (EditModal, fetchRecords, getExportData,
+  handleInlineSaveRow) memanggilnya, hasil identik. `formatNoAju` juga dipindah ke helper.
+- **Sidebar**: badge jumlah Draft (status ARCHIVED, count head) di submenu Sea & Air › Audit
+  (`MainLayout.tsx`), refresh tiap pindah halaman + event `SEA_AIR_AUDIT_CHANGED_EVENT`.
+- Nama PT lengkap dari `far_overseas_signer_config.company_name_full` (keputusan user); gagal/RLS
+  → tampil kode.
+- **Diuji (2026-09-30)**: `tsc --noEmit` bersih, `vite build` sukses, 28 unit test helper (angka
+  mockup GMI cocok persis: Balance 4.967.143, Insurance 4.967.086,29, Rounding 56,71, BM 5%), 65
+  asersi render jsdom + Supabase tiruan (kartu, Open draft/audited/view-only, Edit payload, Add,
+  SPTNP), 0 console error. **Uji integrasi halaman penuh** (SharedDataTable + MainLayout di jsdom,
+  Supabase tiruan yang MENYIMPAN data): 50 cek lulus — tab Draft/Audited/All, +PO, List/Card,
+  Search, Company, Refresh, Open→Edit→simpan (nilai tersimpan & tampil lagi di Open/kartu),
+  Mark as audited/Reopen (status + KPI + badge sidebar ikut berubah), Delete, Add manually, Export,
+  Open in Invoice Recap (`?q=`), edit inline tabel lama (Balance/Asuransi hasil refactor benar).
+  Satu-satunya console.error = peringatan nesting `<div>` di `<table>` dari dnd-kit tabel lama mode
+  List (SUDAH ADA sebelumnya, bukan dari perubahan ini). **Belum dites ke Supabase production**
+  (tidak ada akses DB dari sesi Claude Code) — cek RPC `update_seaair_row`/`insert_seaair_row`
+  menerima semua kolom yg dikirim form baru (termasuk `kurs` teks & `status`).
+- **Belum (spek, butuh DB/n8n/keputusan)**: syarat validated sebelum Mark as audited, re-audit
+  otomatis saat Invoice Recap diedit, "Re-read from Invoice Recap", Partial PO, freight otomatis
+  per delivery term dari Invoice Recap, log aksi rapi per PIB, Export 31 kolom (user: export TETAP
+  seperti sekarang), banner shipment belum tercatat.
+- **Bug lama DICATAT (belum diperbaiki, keputusan user)**: `kurs` bertipe TEXT (kode mata uang)
+  tapi `SEA_AIR_AUDIT_COLS` memberi `type:'num'` → form Add Data/Edit LAMA (tabel List) input angka
+  & `Number("USD")` = NaN → kemungkinan tersimpan null; tampilan tabel bisa "-". Form baru
+  (`SeaAirAuditEditModal`) sudah memperlakukan `kurs` sbg teks.
+
 ## Sea & Air Audit — "PO Price Detail" bisa diedit manual (2026-09)
 
 `SeaAirAuditRowGroup` (`SharedDataTable.tsx`) — dari 3 `repeatingCols` (`po_ori`/`vendor_inv_no`/
@@ -64,7 +271,8 @@ badge & modal.
   `handleInlineSaveRow` ikut ditambah `delivery_term`, supaya ganti Delivery Term SENDIRIAN --
   susulan: kolom `balance` diganti `type: 'num'` (SAMA dgn `asuransi`, dulu `'num_dash_null'` --
   SATU-SATUNYA kolom yang pakai string type itu, beda dari `num_dash_if_null` yang dipakai
-  `sptnp_total` dkk & SENGAJA TETAP tampil "-" saat 0, TIDAK disentuh) supaya baris CIF (Balance
+  `sptnp_total` dkk & SENGAJA TETAP tampil "-" saat 0, TIDAK disentuh) (2026-09-30: rumus 4 titik ini
+  kini SATU fungsi `computeSeaAirBalanceAsuransi()` di `SeaAirAuditHelpers.ts`) supaya baris CIF (Balance
   DAN Insurance sama2 dipaksa 0) tampil KONSISTEN "0" di kedua kolom, bukan Balance "-" vs
   Insurance "0"
   — tanpa menyentuh 4 kolom angka sumber formula — tetap memicu Balance/Asuransi ke-reset ke 0).

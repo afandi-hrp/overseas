@@ -50,6 +50,15 @@ approval-nya.
   `sql/028_dokumen_checklist_catatan.sql` (2026-09-30) = kolom `dokumen_checklist.catatan_checklist`
   (Catatan Checklist jendela Validation Audit Courier), **BELUM DIJALANKAN** — frontend aman duluan
   (deteksi kolom otomatis), lihat "Jendela Validation" di `docs/claude/courier-features.md`.
+  `sql/031_seaair_relasi_audit_recap.sql` (2026-10-01, relasi Audit PIB ↔ Invoice Recap Sea & Air)
+  & `sql/032_seaair_auto_draft_pib.sql` (PIB baru dari AI otomatis Draft) **SUDAH DIJALANKAN ke
+  production (konfirmasi user 2026-10-01)**. `030`/`030b` = query inspeksi baca
+  saja. Lihat "Relasi Audit PIB ↔ Invoice Recap Sea & Air" di bawah.
+  `sql/033_fix_update_cost_validasi_manual_status.sql` (2026-10-01, hitung ringkasan RPC pakai
+  MATCH/OVERCHARGE/UNDERCHARGE) & `sql/034_seaair_finance_handover.sql` (Finance Handover Sea & Air)
+  **BELUM DIJALANKAN** — frontend aman duluan (halaman Finance tampil read-only + banner sampai 034
+  jalan). Kalau `031` dijalankan ULANG, jalankan `034` lagi sesudahnya (031 menimpa 2 fungsi yg
+  diperbarui 034).
 - **Kondisi DB production (stack `supabase3`, audit 2026-09-26)**: role `anon` tanpa hak apa pun
   di schema public (tabel, fungsi, default privileges); GraphQL ditutup; semua tabel RLS dgn
   policy `has_page_access`/`has_edit_access` (tidak ada `using (true)`); semua view
@@ -77,7 +86,8 @@ Semua route (kecuali `/login`) dibungkus `<ProtectedRoute>` → `<MainLayout>` (
 | `/courier/audit` | `CourierAuditPage` → `SharedDataTable` | |
 | `/courier/rekapan` | `CourierRekapanPage` → `SharedDataTable` | |
 | `/courier/validasi` | `CourierValidasiPage` | halaman mandiri, bukan `SharedDataTable` |
-| `/sea-air/audit`, `/sea-air/rekapan` | → `SharedDataTable` | |
+| `/sea-air/finance` | `SeaAirFinanceHandoverPage` | Finance Handover Sea & Air (2026-10-01, page_key `sea_air_finance`, sql/034) — lihat "Finance Handover Sea & Air" di `docs/claude/bunker-courier-seaair.md` |
+| `/sea-air/audit`, `/sea-air/rekapan` | → `SharedDataTable` | Audit = tampilan "PIB Audit" (2026-09-30), Rekapan = tampilan "Invoice Recap" (2026-10-01) — keduanya kartu/Open + toggle List ke tabel lama; lihat "Audit PIB Sea & Air — tampilan baru" & "Invoice Recap Sea & Air — tampilan baru" di `docs/claude/bunker-courier-seaair.md` |
 | `/direct-loading`, `/direct-loading/:id` | `FarOverseasAirPage` | modul "FAR Overseas" di sidebar; `page_key`/route TETAP `direct_loading`/`/direct-loading` (label tampil "FAR Overseas"). Redesain tahap 1 (2026-09-28, tab Memos/My Approvals, gaya visual & font sendiri) — lihat `docs/claude/far-overseas.md`; tahap 2 = `sql/027_far_overseas_phase2_DRAFT.sql` (SUDAH DIJALANKAN 2026-09-30) |
 | `/bunker` | `BunkerPage` | |
 | `/audit-po` | `AuditPoPage` | read-only judul card, label menu "Audit AP Local" |
@@ -428,6 +438,162 @@ history file ini.
 @docs/claude/courier-features.md
 @docs/claude/reporting.md
 
+## BACKLOG — Audit PIB Sea & Air, tahap berikutnya (dicatat 2026-09-30, BELUM DIKERJAKAN)
+
+**DITAHAN (keputusan user 2026-10-01)** — backlog ini BELUM dikerjakan krn berkaitan dgn redesain
+halaman Invoice Recap Sea & Air (spek "BeeHive AI · Invoice Recap" V167: validasi, Submit to
+Finance, Partial PO, freight quotation, log, export). Kerjakan bareng/sesudah redesain Invoice
+Recap, JANGAN dikerjakan terpisah tanpa konfirmasi user.
+
+Tahap 1 (tampilan kartu/Open/Edit + query baca, lihat "Audit PIB Sea & Air — tampilan baru" di
+`docs/claude/bunker-courier-seaair.md`) SUDAH jadi. Item di bawah berasal dari spek prototipe user
+("BeeHive AI · Audit PIB", V165) & SENGAJA ditunda krn butuh DB/n8n/keputusan bisnis. Kerjakan
+satu per satu, konfirmasi user dulu (terutama yg menyentuh SQL/RPC — ikuti aturan "Peta RPC").
+
+1. ~~**Syarat "validated" sebelum Mark as audited**~~ — SELESAI bagian 2 (lihat "Relasi Audit PIB ↔
+   Invoice Recap" di bawah: syarat = Recap 0 issue). Catatan lama: sekarang tombol Mark as audited / "Save & mark
+   as audited" BISA diklik kapan saja (keputusan user: "nanti diupdate"). Spek: hanya boleh kalau
+   status = validated (`fetchSeaAirAuditLinkInfo`), selain itu tampil pesan "<alasan> — the PIB can
+   be marked as audited once it is validated in Invoice Recap". Idealnya juga ditegakkan di server
+   (guard di RPC `update_seaair_row` saat `status` -> LENGKAP; cek `pg_get_functiondef` dulu).
+2. ~~**Re-audit otomatis**~~ — SELESAI bagian 2 (trigger `trg_seaair_reaudit`, sql/031). Lama: PIB Audited kembali Draft + chip ungu "↻ Changed in Invoice Recap —
+   please re-audit" kalau shipment-nya diedit di Invoice Recap. Butuh trigger DB/n8n + kolom
+   penanda (mis. `reaudit`), belum ada.
+3. ~~**"Re-read from Invoice Recap"**~~ — SELESAI bagian 2 sbg "Re-read from AI" (snapshot
+   `ai_snapshot`, RPC `fn_seaair_reread_from_ai`). Lama: timpa edit manual dgn nilai hasil baca AI dari PIB upload
+   (+ dicatat di log). Butuh nilai asli AI tersimpan terpisah (kolom/tabel baru atau n8n ulang).
+4. ~~**Partial PO**~~ — SELESAI bagian 2 (`po_manual`, Edit shipment Recap). Lama: per PO centang Partial + nomor partial + mata uang (diisi di Invoice Recap ›
+   Edit), chip "◐ Partial n · USD x", hint "Invoice lebih kecil dari PO". Butuh field baru.
+5. **Freight otomatis per delivery term** — FOB/FCA dari invoice "Freight · destination" (BL sama,
+   hanya baris ocean/air freight, THC dikecualikan), EXW dari "Freight · origin", CIF/CFR = 0,
+   tidak ada di Recap = manual + label sumber. Sekarang `total_inv_freight` dipakai apa adanya.
+6. **Log aksi rapi per PIB** — tiap aksi (Mark audited, Reopen, Edit + field berubah, Delete,
+   Re-read) ditulis ke log dgn format app (pola `logBunkerAudit`/`logAuditPoAudit`, format
+   "{field} — Lama: X → Baru: Y" supaya lolos `TRAIL_APP_WRITTEN_FILTER`) + policy RLS
+   `audit_trail` utk `tabel_audit_seaair`. Sekarang panel Audit trail hanya menampilkan
+   aksi/waktu/user dari trigger `fn_audit_seaair` (isi dump mentah disembunyikan).
+7. **Export format workbook 31 kolom** (spek §9: NO · PO · VENDOR · REMARKS · KURS · ... · TGL PIB,
+   REMARKS dari partial PO, OTHER COST = DPP valas − item price, TOTAL = TOTAL PIB + SPTNP, CSV
+   "PIB-audit-<tab>.csv") — user memutuskan Export TETAP seperti sekarang; baru dikerjakan kalau
+   diminta ulang (bentrok dgn kolom tersimpan `remarks`/`other_cost`, perlu keputusan).
+8. **Banner shipment belum tercatat** ("GMI · HDMUBSBW2608812 — not recorded yet · Waiting for
+   SPPB") — butuh cara mendeteksi shipment Invoice Recap yang BELUM punya baris audit (checklist
+   Sea & Air terikat `seaair_id` baris audit). Sementara diganti chip "Waiting for …" di kartu Draft.
+9. **(Sebagian: `sql/032` PIB baru dari AI otomatis Draft — SUDAH DIJALANKAN 2026-10-01.)** **Draft dibuat otomatis saat 4 dokumen bea cukai lengkap** (PIB, SPPB, Billing DJBC, BPN) +
+   log "Recorded automatically from Invoice Recap — Last customs document uploaded <tgl>" —
+   perilaku n8n, belum diverifikasi/diubah.
+10. **Status validasi tambahan** "Shipment still being processed in Invoice Recap" (spek §5) —
+    belum ada sumber data yang membedakannya dari "Not validated yet".
+11. ~~**Bug lama `kurs`**~~ — DIPERBAIKI 2026-10-01 (`SEA_AIR_AUDIT_COLS` `kurs` tanpa `type`, jadi
+    teks; label/Export tetap "Kurs"). Catatan lama: kolom `tabel_audit_seaair.kurs` bertipe TEXT (kode mata uang, mis. USD)
+    tapi `SEA_AIR_AUDIT_COLS` memberi `type:'num'` -> form Add Data/inline edit tabel LAMA (mode
+    List) memakai input angka & `Number("USD")` = NaN (kemungkinan tersimpan null), tampilan bisa
+    "-". Keputusan user: DICATAT dulu, belum diperbaiki. Form baru (`SeaAirAuditEditModal`) sudah
+    memperlakukan `kurs` sbg teks.
+12. ~~Delete PIB ikut menghapus Invoice Recap~~ — **KEPUTUSAN USER 2026-09-30: perilaku Delete
+    TETAP SAMA seperti dulu, JANGAN diubah.** `DeleteModal` lama (dipakai juga tombol Delete di
+    jendela Open) memang menghapus `rekapan_seaair`/checklist/validasi yg terhubung `seaair_id`.
+    (Bukan backlog lagi, dicatat supaya tidak "diperbaiki" tanpa diminta.)
+13. **Goods per PO — Valas/IDR per PO kosong** kalau `po_harga_detail` (PO Price Detail) kosong di
+    DB (n8n tidak mengisinya utk sebagian PIB). Sekarang (keputusan user 2026-09-30): 1 PO -> pakai
+    Item price (valas/Rp) sbg nilai PO itu; >1 PO -> **2 tab "As recorded" | "Split evenly"** di
+    kartu Goods per PO jendela Open (tab awal Split evenly kalau PO Price Detail kosong, selain itu
+    As recorded). Split evenly = Item price DIBAGI RATA **HANYA TAMPILAN** (chip "≈ split evenly",
+    `splitMoneyEvenly`, TIDAK disimpan) + keterangan; form Edit punya
+    tombol **"Split evenly"** (isi Amount valas tiap PO, baru tersimpan kalau user klik Save).
+    Nilai asli per PO tetap sebaiknya diisi n8n ke `po_harga_detail` (cek workflow ekstraksi PIB) —
+    begitu terisi, tampilan otomatis pakai nilai asli.
+
+## Relasi Audit PIB ↔ Invoice Recap Sea & Air — "bagian 2" (2026-10-01, kode SELESAI, sql/031+032 SUDAH DIJALANKAN 2026-10-01)
+
+Item yang menyangkut KEDUA halaman dikerjakan bareng. **Pelurusan user**: n8n HANYA membaca dokumen
+dgn AI lalu menulis hasilnya ke Supabase — SEMUA otomatisasi dibuat di DB (trigger/fungsi), BUKAN
+n8n; nama fungsi baru dipastikan belum ada (inspeksi `sql/030`/`030b`, + pre-check di awal 031 yg
+membatalkan kalau ada fungsi bernama sama TANPA komentar `beehive:031`). Export TETAP.
+"Penulis service" = `auth.email() IS NULL` (n8n / SQL Editor) — SELALU lolos semua guard di bawah.
+
+**Keputusan user (jangan diubah tanpa konfirmasi ulang)**:
+1. Konfirmasi validasi (review cost Accept/Ask vendor, edit nominal cost, Accept/Mark mismatch/
+   **Correct** nilai dokumen) **HANYA Admin**. Edit Duty tetap boleh siapa pun yg punya hak edit.
+2. **Submit to Finance** hanya kalau 0 issue (TIDAK ada "submit anyway"). Setelah submit baris
+   **terkunci** (Edit/Delete/review/edit Costs & Documents nonaktif, DB menolak UPDATE/DELETE) —
+   hanya **Admin** bisa **Unlock** dgn alasan (≥5 karakter), tercatat di audit trail.
+3. **Mark as audited** (Audit PIB: tombol, "Save & mark as audited", menu "Move PIB to Audited" di
+   Recap) hanya kalau PIB terhubung ke baris Recap DAN Recap-nya 0 issue (= sudah bisa Submit).
+   PIB manual yg belum terhubung -> hanya bisa disimpan Draft.
+4. Edit shipment di Recap (user) -> PIB terkait otomatis kembali Draft + chip/banner ungu
+   "↻ Changed in Invoice Recap — please re-audit" (kolom `reaudit_reason`/`reaudit_at`).
+5. Upload ulang AWB yg sama tanpa sadar -> ditandai **duplikat** (`duplicate_of`, chip merah) —
+   TIDAK digabung/ditimpa. Upload dokumen susulan nanti via n8n (upsert by AWB) — hasil AI tetap utuh.
+6. Quotation freight per BL: BARU tombol "+ Add quotation" (kartu Freight origin/destination tab
+   Costs) — klik = info "coming soon"; pembacaan quotation oleh n8n menyusul.
+
+**`sql/031`** (idempotent, uji PGlite 45 cek): kolom baru `rekapan_seaair.po_manual jsonb`,
+`duplicate_of`, `submit_unlock_reason/_by/_at`; `tabel_audit_seaair.reaudit_reason/_at`,
+`ai_snapshot jsonb`, `ai_snapshot_at`, `duplicate_of`. Fungsi: `fn_seaair_recap_issue_count`
+(checklist <100 + cost Over/Under belum direview; doc mismatch TIDAK — fuzzy relax hanya ada di JS),
+trigger `trg_seaair_guard_mark_audited`, `trg_seaair_recap_lock`, `trg_seaair_reaudit`,
+`trg_seaair_snapshot_ai` (simpan nilai AI tiap tulis service), `trg_seaair_flag_duplicate`,
+`trg_seaair_validation_admin_only` (catatan cost, `checks` cost, check dokumen `manual` yg
+`match`/`values` berubah atau baru jadi manual), RPC `fn_seaair_unlock_submit(p_rekapan_id,
+p_reason)` & `fn_seaair_reread_from_ai(p_seaair_id)` (Draft saja, kembalikan nilai AI; notes &
+status tidak disentuh). Semua aksi dicatat ke `audit_trail` format app "X — Lama: … → Baru: …".
+**`sql/032`**: `trg_seaair_auto_draft` — PIB baru dari service (status null/LENGKAP) -> ARCHIVED.
+**Efek setelah dijalankan (2026-10-01)**: PIB/Recap LAMA tidak punya `ai_snapshot` (tombol Re-read
+baru muncul utk baris yg ditulis n8n SETELAH 031) & `duplicate_of` hanya terisi utk insert baru;
+baris Recap yg SUDAH punya `tgl_submit_finance` langsung TERKUNCI (perlu Unlock Admin utk dikoreksi);
+insert dari SQL Editor juga dianggap service (ikut jadi Draft, lolos guard).
+
+**Frontend**: `markAuditedBlocker()` (`SeaAirAuditHelpers.ts`, SATU-SATUNYA aturan blokir audited di
+UI) dipakai `SeaAirAuditDetailModal`/`SeaAirAuditEditModal`; `fetchSeaAirAuditLinkInfo` kini juga
+hitung `recapIssues`/`recapPoManual`. Recap: `isRecapLocked`, `parsePoManual`/`poManualFor`
+(`SeaAirRecapHelpers.ts`); Costs/Documents tab terima `isAdmin`/`locked`; Edit shipment: field
+"Submitted to Finance" DIHAPUS, KG/valas/currency/Partial per PO -> `po_manual` (hanya tampil kalau
+kolomnya ada = 031 sudah jalan) + tombol "Split weight evenly"; Split per PO "By KG" otomatis kalau
+SEMUA PO punya KG (toggle "As recorded"); chip Partial di Recap & Audit PIB. Issue `dokumen_kurang`
+'-' (trigger kelengkapan isi '-' kalau lengkap) diabaikan.
+**Uji**: jsdom Recap 112 cek, Audit page 51, render 95, PGlite 031 45 + 032 3 — 0 gagal.
+Belum dites ke production.
+
+**Keterbatasan / catatan**:
+- Gerbang doc mismatch HANYA di frontend (DB cuma menghitung checklist + cost).
+- Mode **List** (tabel lama) — SUDAH digate 2026-10-01: baris terkunci tampil chip "🔒 Locked" tanpa
+  Edit/Delete, tombol "Audit" (undraft) nonaktif selama ada issue, modal lama Cost/Doc Validation
+  `canEdit` = hak edit && Admin && tidak terkunci (edit Duty non-Admin lewat tab Documents jendela Open).
+- (Historis) Sebelum 031 dijalankan: Submit/Mark audited sudah digate di UI, tapi tidak ada kunci DB, kolom
+  `po_manual` tidak ada (form KG per PO tersembunyi), Unlock/Re-read RPC belum ada (error).
+- RPC `update_cost_validasi_manual` dulu menghitung `SESUAI`/`TIDAK_SESUAI` (app memakai `MATCH`/
+  `OVERCHARGE`/`UNDERCHARGE`) -> kolom ringkasan salah; DIPERBAIKI `sql/033` (signature sama, backfill
+  baris lama opsional & dikomentari). Aplikasi tidak membaca kolom ringkasan itu.
+- Belum: freight otomatis per delivery term, quotation per BL (n8n), bukti bayar (upload) di Finance
+  Handover, status "still being processed".
+
+## BACKLOG — Invoice Recap Sea & Air, tahap berikutnya (dicatat 2026-10-01, BELUM DIKERJAKAN)
+
+Tahap 1 (tampilan kartu/Open 4 tab + Edit shipment + Submit to Finance, lihat "Invoice Recap Sea &
+Air — tampilan baru" di `docs/claude/bunker-courier-seaair.md`) SUDAH jadi. Item spek V167 yang
+ditunda (butuh DB/n8n/keputusan) — kerjakan bareng backlog Audit PIB di atas:
+1. ~~**KG per PO**~~ — SELESAI bagian 2 (`po_manual`, Split per PO "By KG").
+2. ~~**Partial PO**~~ — SELESAI bagian 2.
+3. ~~**Submit to Finance terkunci & berpagar**~~ — SELESAI bagian 2; halaman Finance Handover SELESAI
+   2026-10-01 (`/sea-air/finance`, sql/034; upload bukti bayar belum). Lama: sekarang tombol tetap bisa diklik walau ada issue
+   (konfirmasi dulu), tidak ada kunci setelah submit (tanggal masih bisa dikoreksi di Edit
+   shipment/tabel List). Halaman **Finance Handover** Sea & Air belum ada.
+4. **Freight per BL "+ Add quotation"** (tombol SUDAH ada, isi menyusul n8n), tarif berlaku pada ATA, **"Save & re-check"** (n8n).
+5. **Checklist per dokumen** (tanggal upload, "3/4 · 1 file still missing", "Upload missing file",
+   "Not needed" + alasan) & **"Ask vendor for a new document"**.
+6. ~~Tab Documents dibangun ulang penuh~~ — SELESAI 2026-10-01 (`SeaAirRecapDocumentsTab.tsx`,
+   Accept/Mark mismatch/Correct/Undo/Duty inline, simpan RPC lama). Sisa: "Ask vendor for a new
+   document" (item 5) & kelompok "PIB value check" (belum ada sumber data terpisah).
+7. **Vendor payments (goods)** — termin DP/balance & bukti transfer.
+8. **Export "Export cost data"** 5 output (keputusan user: Export TETAP seperti sekarang).
+9. **Sort "Cost accuracy · lowest"** & **Search PO** (PO di JSON `po_detail`, butuh RPC/kolom).
+10. ~~**Badge sidebar "needs attention"**~~ — SELESAI 2026-10-01 (badge merah submenu Invoice Recap,
+    `fetchRecapNeedsAttentionCount`, definisi SAMA KPI halaman; dihitung saat mount, masuk /sea-air/*,
+    & event `SEA_AIR_RECAP_CHANGED_EVENT`/`SEA_AIR_AUDIT_CHANGED_EVENT`).
+11. **Review segmen CUSTOM** — tidak bisa dikonfirmasi (keputusan lama), jadi tidak dihitung issue
+    walau Over/Under; konfirmasi user kalau mau diubah.
+
 ## Navigasi mobile -- hamburger + drawer (`src/components/MainLayout.tsx`, 2026-09)
 
 Permintaan user (+ screenshot): top bar mobile (`md:hidden`) dulu nampilin SEMUA main tab +
@@ -580,7 +746,10 @@ Supabase** — bisa saja sudah basi (RPC lain ditambahkan user langsung tanpa te
   `nonaktifkan_far_overseas_tarif_quotation`, `hapus_far_overseas_tarif_quotation_detail`.
 - Sea & Air: `insert_seaair_row`, `update_seaair_row`, `update_rekapan_po_vessel`,
   `update_validasi_matriks_manual`, `update_cost_validasi_manual`, `get_kurs_efektif`,
-  `upsert_kurs_rule_vendor`, `upsert_kurs_bi`, `nonaktifkan_tarif_kontrak`.
+  `upsert_kurs_rule_vendor`, `upsert_kurs_bi`, `nonaktifkan_tarif_kontrak`. Bagian 2 (sql/031,
+  SUDAH DIJALANKAN 2026-10-01): `fn_seaair_unlock_submit`, `fn_seaair_reread_from_ai`, helper
+  `fn_seaair_recap_issue_count` (+ 6 fungsi trigger `fn_seaair_*`). Finance Handover (sql/034, BELUM
+  DIJALANKAN): `fn_seaair_finance_accept`, `fn_seaair_finance_mark_paid`, `fn_seaair_finance_undo`.
 - Courier Audit — Draft/Archive lifecycle (`SharedDataTable.tsx`, nama RPC dipilih dinamis via
   `isPib ? '..._pib' : '..._cn'`): `fn_delete_pib`/`fn_delete_cn`, `fn_archive_pib`/
   `fn_archive_cn`, `fn_undraft_pib`/`fn_undraft_cn`.

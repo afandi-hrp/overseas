@@ -9,7 +9,9 @@
 // `relaxSeaAirDocChecks()` yang SAMA sebelum hitung %, supaya kedua tempat SELALU pakai match
 // value yang identik. JANGAN duplikat logic pencocokan ini di tempat ketiga -- import dari sini.
 
-const toNum = (v: any) => {
+// Diekspor (2026-09-30) sbg `parseLooseNumber` -- dipakai juga `SeaAirAuditHelpers.ts` utk baca
+// angka teks bebas (mis. `po_harga_detail` "41,175.17"), SATU parser angka longgar yang sama.
+export const toNum = (v: any) => {
   if (typeof v === 'number') return v;
   const s = String(v || "").trim();
   if (!s) return 0;
@@ -183,6 +185,26 @@ const fuzzyMatch = (val1: any, val2: any): boolean => {
 
   return false;
 };
+
+// Baris tabel "PIB MATRIX" Doc Validation Sea & Air -- `dbRow` = nilai `c.row` di
+// `dokumen_validasi_matriks_seaair.checks` (section 'PIB'), `required` = kolom dokumen yang
+// dihitung di ringkasan match/mismatch. DIPINDAH dari `SeaAirValidasiModal.tsx` (2026-09-30)
+// supaya status "Validated in Invoice Recap" di Audit PIB (`SeaAirAuditHelpers.ts`) memakai
+// definisi baris yang SAMA PERSIS dgn modal -- JANGAN duplikat daftar ini.
+export const SEA_AIR_PIB_MATRIX_ROWS = [
+  { label: "NO PIB", dbRow: "NO PIB (No Pengajuan)",       required: ["SPPB", "Billing DJBC", "BPN"] },
+  { label: "NAMA PT", dbRow: "NAMA PT (PIB No. 2,3)",       required: ["SPPB","AWB","ME/AK/IJEPA (opsional)","ECOO (opsional)","Laporan Surveyor (opsional)","Billing DJBC","BPN","CIPL","PO","Final Invoice","Bukti TF"] },
+  { label: "NAMA VENDOR", dbRow: "NAMA VENDOR (PIB No. 1a)",    required: ["AWB","ME/AK/IJEPA (opsional)","ECOO (opsional)","Laporan Surveyor (opsional)","CIPL","PO","Final Invoice","Bukti TF"] },
+  { label: "AWB", dbRow: "AWB (PIB No. 17)",            required: ["AWB"] },
+  { label: "INVOICE NO", dbRow: "INVOICE NO",                  required: ["ME/AK/IJEPA (opsional)","ECOO (opsional)","Laporan Surveyor (opsional)","Billing DJBC","PO","Final Invoice","CIPL","Bukti TF"] },
+  { label: "KG", dbRow: "KG (PIB No. 29)",             required: ["AWB","ME/AK/IJEPA (opsional)"] },
+  { label: "PACKAGES", dbRow: "PACKAGES (PIB No. 28)",       required: ["AWB","ECOO (opsional)","Laporan Surveyor (opsional)"] },
+  { label: "ORIGIN", dbRow: "ORIGIN",                      required: ["AWB","ECOO (opsional)","Laporan Surveyor (opsional)"] },
+  { label: "DESTINATION", dbRow: "DESTINATION",                 required: ["AWB","ECOO (opsional)","Laporan Surveyor (opsional)"] },
+  { label: "NO PO", dbRow: "NO PO",                       required: ["CIPL", "Final Invoice", "PO"] },
+  { label: "TOTAL DUTY", dbRow: "TOTAL DUTY (PIB No. 44)",     required: ["Billing DJBC","BPN"] },
+  { label: "TOTAL CIPL", dbRow: "TOTAL CIPL (PIB No. 23)",     required: ["CIPL","PO","Final Invoice","Bukti TF"] },
+];
 
 // Evaluasi ulang `c.match` tiap baris non-manual berdasar `c.values.ref`/`c.values.doc` yang
 // TERSIMPAN -- REPLIKA PERSIS `useEffect` load `SeaAirValidasiModal.tsx` (SATU-SATUNYA sumber

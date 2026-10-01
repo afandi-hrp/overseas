@@ -46,6 +46,10 @@ export const PAGE_REGISTRY: PageEntry[] = [
   { key: 'sea_air_cost_validation', label: 'Cost Validation (Sea & Air)', group: 'Sea & Air' },
   { key: 'sea_air_dokumen_validation', label: 'Dokumen Validation (Sea & Air)', group: 'Sea & Air' },
   { key: 'sea_air_checklist_validation', label: 'Checklist Validation (Sea & Air)', group: 'Sea & Air' },
+  // Finance Handover Sea & Air (2026-10-01, sql/034): Receive / Mark paid / Undo lewat RPC
+  // fn_seaair_finance_* (guard has_edit_access). Baca rekapan_seaair lewat policy SELECT tambahan
+  // utk page_key ini -- role Finance TIDAK perlu akses Invoice Recap.
+  { key: 'sea_air_finance', label: 'Finance Handover (Sea & Air)', path: '/sea-air/finance', group: 'Sea & Air' },
 
   {
     key: 'direct_loading', label: 'FAR Overseas', path: '/direct-loading', group: 'FAR Overseas',
