@@ -18,13 +18,13 @@ import { SA_CARD, SA_LABEL, Chip, PtBadge } from './SeaAirAuditUi'
 import { fmtRp, fmtDateShort, companyFullName, formatNoAju, computeSeaAirBalanceAsuransi } from '../utils/SeaAirAuditHelpers'
 import { seaAirInvoiceSegments, seaAirPoList, type HandoverItem } from '../utils/FinanceHandoverHelpers'
 import CourierValidationWindow from './CourierValidationWindow'
-import { ChecklistModal, FINANCE_AUDIT_COLS } from './SharedDataTable'
+import { ChecklistModal, FINANCE_AUDIT_COLS, FINANCE_RECAP_COLS, splitFinanceColumns } from './SharedDataTable'
 import { useAuth } from '../lib/AuthContext'
 import { buildRecapGroup, courierAwbNorm, fetchRecapAuditLinks } from '../utils/CourierRecapHelpers'
 import { enrichCourierValidationPct, mergeChecklistFields } from '../utils/CourierValidationPct'
 import { courierDocNo, isCourierDraft, computeCourierAuditCalc, type CourierDocType } from '../utils/CourierAuditHelpers'
 
-export type ViewerTab = 'main' | 'audit' | 'docs' | 'cost'
+export type ViewerTab = 'main' | 'recap' | 'audit' | 'docs' | 'cost'
 
 export function ViewerTabBar({ tabs, active, onSelect }: { tabs: { key: ViewerTab; label: string }[]; active: ViewerTab; onSelect: (t: ViewerTab) => void }) {
   return (
@@ -71,8 +71,9 @@ export function SeaAirHandoverViewer({ item, initialTab, companyNames, onClose }
 }) {
   const rec = item.raw
   const { getAllowedColumns } = useAuth()
+  const cols = splitFinanceColumns(getAllowedColumns('sea_air_finance'))
   const hasAudit = !!rec.seaair_id
-  const startTab: ViewerTab = initialTab === 'audit' ? (hasAudit ? 'audit' : 'main') : item.earlier ? 'main' : initialTab
+  const startTab: ViewerTab = initialTab === 'audit' ? (hasAudit ? 'audit' : 'main') : initialTab === 'recap' ? 'recap' : item.earlier ? 'main' : initialTab
   const [tab, setTab] = useState<ViewerTab>(startTab)
   const [visited, setVisited] = useState<Record<string, boolean>>({ [startTab]: true })
   const [deliveryTerm, setDeliveryTerm] = useState<string | null>(null)
@@ -104,6 +105,7 @@ export function SeaAirHandoverViewer({ item, initialTab, companyNames, onClose }
   const go = (t: ViewerTab) => { setTab(t); setVisited(p => ({ ...p, [t]: true })) }
   const tabs: { key: ViewerTab; label: string }[] = [
     { key: 'main', label: 'Handover' },
+    { key: 'recap', label: 'Invoice Recap' },
     ...(hasAudit ? [{ key: 'audit' as ViewerTab, label: 'Audit PIB' }] : []),
     ...(item.earlier ? [] : [{ key: 'docs' as ViewerTab, label: 'Documents' }, { key: 'cost' as ViewerTab, label: 'Cost validation' }]),
   ]
@@ -173,7 +175,11 @@ export function SeaAirHandoverViewer({ item, initialTab, companyNames, onClose }
           {hasAudit && tab === 'audit' && (
             auditRow === undefined ? <div className="text-[12.5px] text-[#6E5E70] py-6 text-center">Loading Audit PIB…</div>
               : auditRow === null ? <div className="text-[12.5px] text-[#6E5E70] py-6 text-center">The Audit PIB record of this shipment could not be read.</div>
-              : <FinanceAuditFields title="Audit PIB" cols={FINANCE_AUDIT_COLS.seaair} rec={auditRow} allowed={getAllowedColumns('sea_air_finance')} />
+              : <FinanceAuditFields title="Audit PIB" cols={FINANCE_AUDIT_COLS.seaair} rec={auditRow} allowed={cols.audit} />
+          )}
+          {tab === 'recap' && (
+            <FinanceAuditFields kind="recap" title="Invoice Recap" cols={FINANCE_RECAP_COLS.seaair} allowed={cols.recap}
+              rec={{ ...rec, po_no: pos.join(', '), vessel: seaAirVessels(rec) }} />
           )}
           {!item.earlier && visited.docs && (
             <div className={tab === 'docs' ? '' : 'hidden'}>
@@ -195,6 +201,13 @@ export function SeaAirHandoverViewer({ item, initialTab, companyNames, onClose }
 // ── Tab "Audit" (2026-10-02, keputusan user): kolom baris Audit (PIB/CN Courier atau Audit PIB Sea & Air) pasangan
 // handover, BACA SAJA. Kolom yang tampil dipilih Admin PER ROLE di Kelola Role & Akses (page_key Finance
 // `courier_finance` / `sea_air_finance`, fitur "Kolom per role"); NULL = semua kolom. Hanya baris pasangan handover.
+// Vessel Sea & Air ada di po_detail (bukan kolom tersendiri) -- digabung unik utk kolom "Vessel" Invoice Recap.
+const seaAirVessels = (rec: any): string => {
+  let arr: any[] = []
+  try { arr = typeof rec?.po_detail === 'string' ? JSON.parse(rec.po_detail) : (Array.isArray(rec?.po_detail) ? rec.po_detail : []) } catch { arr = [] }
+  return Array.from(new Set(arr.map((d: any) => String(d?.vessel || '').trim()).filter(Boolean))).join(' + ')
+}
+
 const auditValue = (c: { key: string; type?: string }, v: any): string => {
   if (v === null || v === undefined || String(v).trim() === '' || String(v).trim() === '-') return '—'
   const t = c.type || ''
@@ -202,23 +215,25 @@ const auditValue = (c: { key: string; type?: string }, v: any): string => {
   if (t.startsWith('num')) { const n = Number(v); return isNaN(n) ? String(v) : n.toLocaleString('id-ID', { maximumFractionDigits: 2 }) }
   if (t.startsWith('date')) return fmtDateShort(v) || String(v)
   if (t === 'no_aju_format') return String(formatNoAju(v) ?? v)
+  if (c.key === 'ppjk') return String(v).replace(/^\s*OWN\s+/i, '')
   return String(v)
 }
-export function FinanceAuditFields({ title, cols, rec, allowed }: {
+export function FinanceAuditFields({ title, cols, rec, allowed, kind = 'audit' }: {
   title: string
   cols: { key: string; label: string; type?: string }[]
   rec: any
   allowed: Set<string> | null
+  kind?: 'audit' | 'recap'
 }) {
   const shown = cols.filter(c => !allowed || allowed.has(c.key))
   return (
-    <div className={`${SA_CARD} px-4 py-3`} data-finance-audit>
+    <div className={`${SA_CARD} px-4 py-3`} data-finance-fields={kind} {...(kind === 'audit' ? { 'data-finance-audit': '' } : {})}>
       <div className="flex items-baseline justify-between gap-3 mb-1">
         <div className={SA_LABEL}>{title}</div>
         <div className="text-[11px] text-[#8A7A8B]">View only · {shown.length} column{shown.length === 1 ? '' : 's'}{allowed ? ' chosen by Admin for your role' : ''}</div>
       </div>
       {shown.length === 0 ? (
-        <div className="text-[12.5px] text-[#6E5E70] py-2">No Audit columns are enabled for your role — ask an Admin (Settings › Kelola Role &amp; Akses › Columns).</div>
+        <div className="text-[12.5px] text-[#6E5E70] py-2">No {kind === 'audit' ? 'Audit' : 'Invoice Recap'} columns are enabled for your role — ask an Admin (Settings › Kelola Role &amp; Akses › Columns).</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
           {shown.map(c => (
@@ -238,17 +253,14 @@ export function FinanceAuditFields({ title, cols, rec, allowed }: {
 // (CourierValidationWindow + ChecklistModal/ValidasiModal/CostValidationModal) dgn editAccess semua false.
 // Tab Overview = rincian invoice & serah terima. Pasangan Audit dicari SAMA Invoice Recap (pib_id/cn_id, cadangan AWB).
 // Butuh policy baca Finance (sql/039) -- tanpa itu tab validasi kosong.
-const courierInvoiceFacts = (item: HandoverItem, companyNames: Record<string, string>, auditNote: React.ReactNode) => {
+const courierInvoiceFacts = (item: HandoverItem, companyNames: Record<string, string>, auditNote: React.ReactNode, recapAllowed: Set<string> | null) => {
   const r = item.raw
   const fact = (label: string, value: React.ReactNode) => (
-    <div className="grid grid-cols-[150px_minmax(0,1fr)] gap-3 py-1.5 text-[12.5px] border-t border-[#F1E8E1] first:border-t-0">
+    <div className="grid grid-cols-[100px_minmax(0,1fr)] gap-3 py-1.5 text-[12.5px] border-t border-[#F1E8E1]">
       <div className="text-[#6E5E70]">{label}</div>
       <div className="font-semibold text-[#3B1B3D] [overflow-wrap:anywhere]">{value || '—'}</div>
     </div>
   )
-  const amt = (label: string, v: any) => (v === null || v === undefined || v === '' ? null : (
-    <div className="flex justify-between gap-3 py-1.5 text-[12.5px] border-t border-[#F1E8E1] first:border-t-0"><span className="text-[#6E5E70]">{label}</span><span className="tabular-nums font-semibold text-[#3B1B3D]">{fmtRp(v)}</span></div>
-  ))
   return (
     <div className="flex flex-col gap-3">
       <div className="text-[12.5px] text-[#6E5E70]">
@@ -256,32 +268,16 @@ const courierInvoiceFacts = (item: HandoverItem, companyNames: Record<string, st
         {r.an && <> · <PtBadge code={r.an} title={companyFullName(companyNames, r.an)} /></>}
       </div>
       {auditNote}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className={`${SA_CARD} px-4 py-3`}>
-          <div className={`${SA_LABEL} mb-1`}>Invoice</div>
-          {fact('Invoice type', r.invoice_type)}
-          {fact('PPJK', r.ppjk)}
-          {fact('Vendor', r.vendor)}
-          {fact('AWB', r.awb)}
-          {fact('Origin', r.origin)}
-          {fact('Email received', fmtDateShort(r.tgl_terima_email))}
-          {fact('PO PT IMI', r.po_pt_imi)}
-          {fact('PO Non IMI', r.po_shipping)}
-          {fact('Vessel', r.vessel)}
-          {fact('Remarks', r.notes)}
-        </div>
-        <div className={`${SA_CARD} px-4 py-3`}>
-          <div className={`${SA_LABEL} mb-1`}>Amount</div>
-          {amt('Courier adm fee', r.courier_adm_fee)}
-          {amt('Total freight', r.total_freight)}
-          {amt('Total duty tax', r.total_duty_tax)}
-          {amt('Total amount', r.total_amount)}
-          <div className={`${SA_LABEL} mt-3 mb-1`}>Handover</div>
+      <div className={`${SA_CARD} px-4 py-3`}>
+        <div className={`${SA_LABEL} mb-1`}>Handover</div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6">
           {fact('Submitted', fmtDateShort(r.submit_date))}
           {fact('Received', r.finance_received_at ? `${fmtDateShort(r.finance_received_at)}${r.finance_received_by ? ` · ${r.finance_received_by}` : ''}` : '')}
           {fact('Paid', r.tgl_lunas ? `${fmtDateShort(r.tgl_lunas)}${r.paid_reference ? ` · ${r.paid_reference}` : ''}` : '')}
         </div>
       </div>
+      {/* Kolom Invoice Recap yang tampil = pilihan Admin per role (page_key courier_finance, kolom "Invoice Recap · …"). */}
+      <FinanceAuditFields kind="recap" title="Invoice Recap" cols={FINANCE_RECAP_COLS.courier} rec={r} allowed={recapAllowed} />
     </div>
   )
 }
@@ -297,6 +293,7 @@ export function CourierHandoverViewer({ item, initialTab = 'main', companyNames,
 }) {
   const r = item.raw
   const { getAllowedColumns } = useAuth()
+  const cols = splitFinanceColumns(getAllowedColumns('courier_finance'))
   const [audit, setAudit] = useState<{ rec: any; docType: CourierDocType } | null | undefined>(undefined)
   useEffect(() => {
     let cancelled = false
@@ -351,7 +348,7 @@ export function CourierHandoverViewer({ item, initialTab = 'main', companyNames,
               <div className="rounded-[14px] border border-[#F3D9A4] bg-[#FFF8EA] px-4 py-2 text-[12.5px] text-[#7A4F00]">
                 No PIB / CN for this AWB was found in Audit Courier — Checklist, Doc validation & Cost validation are not available.
               </div>
-            ))}
+            ), cols.recap)}
           </div>
         </div>
       </div>,
@@ -375,10 +372,10 @@ export function CourierHandoverViewer({ item, initialTab = 'main', companyNames,
       initialTab={initialTab === 'docs' ? 'checklist' : initialTab === 'cost' ? 'cost' : initialTab === 'audit' ? 'extra' : 'overview'}
       title={<span className="flex items-center gap-2 flex-wrap">{item.ref}<Chip tone="amber">Courier</Chip><span className="text-[11px] font-semibold text-[#8A7A8B]">View only</span></span>}
       subtitle={[r.invoice_type, r.awb ? `AWB ${r.awb}` : '', `${audit.docType} ${docNo || ''}`.trim(), isCourierDraft(rec) ? 'Draft' : 'Audited'].filter(Boolean).join(' · ')}
-      overview={<div className="flex-1 min-h-0 overflow-y-auto bg-[#FBF7F4] p-4">{courierInvoiceFacts(item, companyNames, null)}</div>}
+      overview={<div className="flex-1 min-h-0 overflow-y-auto bg-[#FBF7F4] p-4">{courierInvoiceFacts(item, companyNames, null, cols.recap)}</div>}
       extraTab={{
         label: `Audit ${audit.docType}`,
-        content: <FinanceAuditFields title={`Audit ${audit.docType} ${docNo || ''}`.trim()} cols={audit.docType === 'CN' ? FINANCE_AUDIT_COLS.courierCn : FINANCE_AUDIT_COLS.courierPib} rec={rec} allowed={getAllowedColumns('courier_finance')} />,
+        content: <FinanceAuditFields title={`Audit ${audit.docType} ${docNo || ''}`.trim()} cols={audit.docType === 'CN' ? FINANCE_AUDIT_COLS.courierCn : FINANCE_AUDIT_COLS.courierPib} rec={rec} allowed={cols.audit} />,
       }}
       onClose={onClose}
     />,

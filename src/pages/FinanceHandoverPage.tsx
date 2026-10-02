@@ -311,9 +311,9 @@ export default function FinanceHandoverPage() {
                     ) : it.source === 'courier' ? (
                       <>{viewBtn('main', 'Invoice')}{viewBtn('audit', 'Audit')}{viewBtn('docs', 'Docs')}{viewBtn('cost', 'Cost')}</>
                     ) : it.earlier ? (
-                      <>{viewBtn('main', 'Handover')}{it.raw?.seaair_id ? viewBtn('audit', 'Audit') : null}</>
+                      <>{viewBtn('main', 'Handover')}{viewBtn('recap', 'Recap')}{it.raw?.seaair_id ? viewBtn('audit', 'Audit') : null}</>
                     ) : (
-                      <>{viewBtn('main', 'Handover')}{viewBtn('audit', 'Audit')}{viewBtn('docs', 'Docs')}{viewBtn('cost', 'Cost')}</>
+                      <>{viewBtn('main', 'Handover')}{viewBtn('recap', 'Recap')}{viewBtn('audit', 'Audit')}{viewBtn('docs', 'Docs')}{viewBtn('cost', 'Cost')}</>
                     )}
                   </div>
                 </div>

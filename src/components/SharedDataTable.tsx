@@ -1090,16 +1090,37 @@ export const FINANCE_AUDIT_COLS: Record<'courier' | 'courierPib' | 'courierCn' |
   seaair: SEA_AIR_AUDIT_COLS,
 };
 
+// Kolom Invoice Recap yang bisa ditampilkan ke Finance (2026-10-02, keputusan user) -- SAMA mekanisme kolom Audit.
+export const FINANCE_RECAP_COLS: Record<'courier' | 'seaair', { key: string; label: string; type?: string }[]> = {
+  courier: noIndex(COURIER_COLS),
+  seaair: noIndex(SEA_AIR_REKAPAN_COLS),
+};
+// 1 daftar per page_key Finance (1 tombol "Columns"): kolom Audit (key polos, kompatibel pengaturan sebelumnya) +
+// kolom Invoice Recap (key berawalan `recap:`). Pecah lagi saat ditampilkan dgn `splitFinanceColumns`.
+export const FINANCE_RECAP_PREFIX = 'recap:';
+const financeColumnList = (audit: { key: string; label: string }[], recap: { key: string; label: string }[]) => [
+  ...recap.map(c => ({ key: FINANCE_RECAP_PREFIX + c.key, label: `Invoice Recap · ${c.label}` })),
+  ...audit.map(c => ({ key: c.key, label: `Audit · ${c.label}` })),
+];
+// allowed = getAllowedColumns(page_key Finance): null = semua kolom (belum diatur). Kalau diatur, tiap kelompok
+// hanya kolom yang dicentang (kelompok tanpa centang = tidak ada kolom).
+export function splitFinanceColumns(allowed: Set<string> | null): { audit: Set<string> | null; recap: Set<string> | null } {
+  if (!allowed) return { audit: null, recap: null };
+  const audit = new Set<string>(), recap = new Set<string>();
+  allowed.forEach(k => { if (k.startsWith(FINANCE_RECAP_PREFIX)) recap.add(k.slice(FINANCE_RECAP_PREFIX.length)); else audit.add(k); });
+  return { audit, recap };
+}
+
 export const COLUMN_ACCESS_PAGES: Record<string, { key: string; label: string }[]> = {
   courier_audit: COURIER_AUDIT_CUSTOMIZABLE_COLS,
   courier_rekapan: COURIER_REKAPAN_CUSTOMIZABLE_COLS,
-  courier_finance: FINANCE_AUDIT_COLS.courier.map(c => ({ key: c.key, label: c.label })),
-  sea_air_finance: FINANCE_AUDIT_COLS.seaair.map(c => ({ key: c.key, label: c.label })),
+  courier_finance: financeColumnList(FINANCE_AUDIT_COLS.courier, FINANCE_RECAP_COLS.courier),
+  sea_air_finance: financeColumnList(FINANCE_AUDIT_COLS.seaair, FINANCE_RECAP_COLS.seaair),
 };
-// Keterangan tambahan di dialog pilih kolom (Kelola Role & Akses) -- page_key Finance memilih kolom AUDIT.
+// Keterangan tambahan di dialog pilih kolom (Kelola Role & Akses) -- page_key Finance memilih kolom Recap & Audit.
 export const COLUMN_ACCESS_NOTE: Record<string, string> = {
-  courier_finance: 'Audit Courier (PIB / CN) columns shown in Finance Handover › Audit tab',
-  sea_air_finance: 'Audit PIB Sea & Air columns shown in Finance Handover › Audit tab',
+  courier_finance: 'Invoice Recap & Audit Courier (PIB / CN) columns shown in Finance Handover',
+  sea_air_finance: 'Invoice Recap & Audit PIB Sea & Air columns shown in Finance Handover',
 };
 
 const TRAIL_COLS = [

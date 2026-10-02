@@ -248,7 +248,7 @@ Password benar → halaman hidup lagi tanpa reload. TAPI kalau tab BENERAN ditut
   edit halaman utama).
 - **Kolom per role (2026-09-29, utk role Finance)** — `role_page_access.visible_columns` (jsonb
   array key kolom; NULL = semua kolom). Audit Courier & Rekapan Courier + (2026-10-02) page_key Finance `courier_finance`/
-  `sea_air_finance` = kolom tab "Audit" Finance Handover (lihat "Finance melihat validasi Courier") (`COLUMN_ACCESS_PAGES`,
+  `sea_air_finance` = kolom Invoice Recap (`recap:`) & Audit di Finance Handover (lihat "Finance melihat validasi Courier") (`COLUMN_ACCESS_PAGES`,
   export dari `SharedDataTable.tsx` — SATU-SATUNYA daftar kolom pilihan). Matrix UI: tombol
   `ALL`/`n/total` (ikon kolom) di sebelah badge EDIT/VIEW → `ColumnAccessModal` (checklist; semua
   dicentang = simpan NULL). RPC baca `get_my_column_access()` → `AuthContext.getAllowedColumns
@@ -640,8 +640,13 @@ kelengkapan), kolom `FINANCE_AUDIT_COLS.courierPib/courierCn`; Sea & Air = tab "
 'sea_air_finance')` -> Admin mengatur di Kelola Role & Akses › tombol Columns di baris page_key Finance (dialog diberi
 keterangan `COLUMN_ACCESS_NOTE`); NULL (belum diatur) = SEMUA kolom. **Pengecualian aturan "jangan tampilkan duty"
 Sea & Air**: tab Audit PIB menampilkan kolom duty KALAU Admin tidak membatasinya (keputusan user: Admin yg memilih).
-Tombol baris: Courier Invoice · Audit · Docs · Cost; Sea & Air Handover · Audit · Docs · Cost. Diuji: jsdom
-courier_recap 51, finance 55.
+**Kolom Invoice Recap (2026-10-02, permintaan user)** -- mekanisme SAMA: 1 tombol Columns per page_key Finance berisi
+"Invoice Recap · …" (key berawalan `recap:`, `FINANCE_RECAP_COLS` = COURIER_COLS / SEA_AIR_REKAPAN_COLS) + "Audit · …" (key
+polos, kompatibel pengaturan sebelumnya); `splitFinanceColumns(allowed)` memecah per kelompok (NULL = semua; kalau diatur,
+kelompok tanpa centang = tidak ada kolom -> pesan "ask an Admin"). Courier: tab Overview = kartu Handover (tetap) + kartu
+"Invoice Recap" (kolom per role, menggantikan rincian invoice tetap); Sea & Air: tab BARU "Invoice Recap" (PO & Vessel
+dari `po_detail`), tab Handover tetap. Header "Payable to · jumlah · due" selalu tampil. Tombol baris: Courier Invoice ·
+Audit · Docs · Cost; Sea & Air Handover · Recap · Audit · Docs · Cost. Diuji: jsdom courier_recap 53, finance 57.
 Cek user 2026-10-02: `get_kurs_efektif` SECURITY DEFINER (kurs tampil utk Finance); `fn_hitung_storage` INVOKER tapi hanya
 dipakai panel Recalculate bonded storage yg tersembunyi di mode baca saja -> tidak perlu policy tambahan.
 **Admin di Finance Handover** = diperlakukan sbg Finance (canEdit selalu true): daftar SAMA (hanya yg sudah submit),
