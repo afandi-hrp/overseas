@@ -81,15 +81,15 @@ const scorePillClass = (pct: number | null) =>
 // Titik tab Documents = yang terburuk dari Checklist & Doc Validation.
 const worstPct = (a: number | null, b: number | null) => (a === null ? b : b === null ? a : Math.min(a, b));
 
-type MainTab = 'overview' | 'documents' | 'costs' | 'trail';
-export type WindowTabKey = 'overview' | ValidationTabKey | 'trail';
+type MainTab = 'overview' | 'extra' | 'documents' | 'costs' | 'trail';
+export type WindowTabKey = 'overview' | 'extra' | ValidationTabKey | 'trail';
 const toMainTab = (t: WindowTabKey): MainTab => (t === 'checklist' || t === 'doc' ? 'documents' : t === 'cost' ? 'costs' : t);
 
 export type CourierOverviewApi = { openTab: (t: ValidationTabKey) => void; cv: any };
 
 export default function CourierValidationWindow({
   record, mainTab, subTab, jenisDokumen, access, editAccess, renderChecklist, onClose,
-  overview, initialTab, title, subtitle, headerActions, trail,
+  overview, initialTab, title, subtitle, headerActions, trail, extraTab,
 }: {
   record: any;
   mainTab: string;
@@ -107,14 +107,16 @@ export default function CourierValidationWindow({
   headerActions?: React.ReactNode;
   // Tab "Audit trail" -- dipasang hanya saat tab itu dibuka (fetch log saat dibuka, sama Sea & Air).
   trail?: React.ReactNode;
+  // 1 tab tambahan sesudah Overview (2026-10-02: Finance Handover "Audit PIB/CN"). Tanpa prop ini = perilaku lama.
+  extraTab?: { label: string; content: React.ReactNode };
 }) {
   const showDocuments = access.checklist || access.doc;
   const showCosts = access.cost;
   const [pct, setPct] = useState<Record<ValidationTabKey, number | null>>(() => rowValidationPct(record));
 
   const allowed = useCallback((t: MainTab) =>
-    t === 'overview' ? !!overview : t === 'trail' ? !!trail : t === 'documents' ? showDocuments : showCosts,
-  [overview, trail, showDocuments, showCosts]);
+    t === 'overview' ? !!overview : t === 'extra' ? !!extraTab : t === 'trail' ? !!trail : t === 'documents' ? showDocuments : showCosts,
+  [overview, extraTab, trail, showDocuments, showCosts]);
 
   const pickInitial = (): MainTab => {
     if (initialTab && allowed(toMainTab(initialTab))) return toMainTab(initialTab);
@@ -128,7 +130,7 @@ export default function CourierValidationWindow({
   };
   const [activeTab, setActiveTab] = useState<MainTab>(pickInitial);
   // Tab Documents/Costs dipasang saat pertama dibuka, lalu tetap terpasang (perubahan tidak hilang).
-  const [visited, setVisited] = useState<Record<MainTab, boolean>>(() => ({ overview: true, documents: false, costs: false, trail: false, [pickInitial()]: true } as Record<MainTab, boolean>));
+  const [visited, setVisited] = useState<Record<MainTab, boolean>>(() => ({ overview: true, extra: false, documents: false, costs: false, trail: false, [pickInitial()]: true } as Record<MainTab, boolean>));
   const goTab = useCallback((t: MainTab) => { if (!allowed(t)) return; setActiveTab(t); setVisited(v => (v[t] ? v : { ...v, [t]: true })); }, [allowed]);
 
   // Naik tiap Checklist disimpan -> Doc validation baca ulang flag PO/CIPL/Final Invoice.
@@ -194,6 +196,7 @@ export default function CourierValidationWindow({
     }`;
   const tabs: { key: MainTab; label: string; dot?: number | null; dirty?: boolean; icon?: React.ReactNode }[] = [
     ...(overview ? [{ key: 'overview' as MainTab, label: 'Overview' }] : []),
+    ...(extraTab ? [{ key: 'extra' as MainTab, label: extraTab.label }] : []),
     ...(showDocuments ? [{ key: 'documents' as MainTab, label: 'Documents', dot: docPct, dirty: dirty.checklist || dirty.doc }] : []),
     ...(showCosts ? [{ key: 'costs' as MainTab, label: 'Costs', dot: pct.cost, dirty: dirty.cost }] : []),
     ...(trail ? [{ key: 'trail' as MainTab, label: 'Audit trail', icon: <History size={13} /> }] : []),
@@ -281,6 +284,10 @@ export default function CourierValidationWindow({
         <div className="flex-1 min-h-0 flex flex-col cvw-fill">
           {overview && (
             <div className={activeTab === 'overview' ? 'flex-1 min-h-0 flex flex-col' : 'hidden'} role="tabpanel">{overviewNode}</div>
+          )}
+
+          {extraTab && activeTab === 'extra' && (
+            <div className="flex-1 min-h-0 overflow-y-auto bg-[#FBF7F4] p-4 cvw-fill print:overflow-visible" role="tabpanel">{extraTab.content}</div>
           )}
 
           {showDocuments && visited.documents && (

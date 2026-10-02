@@ -247,7 +247,8 @@ Password benar → halaman hidup lagi tanpa reload. TAPI kalau tab BENERAN ditut
   Checklist/Doc Validation/Cost Validation punya page_key sendiri, TIDAK otomatis ikut toggle
   edit halaman utama).
 - **Kolom per role (2026-09-29, utk role Finance)** — `role_page_access.visible_columns` (jsonb
-  array key kolom; NULL = semua kolom). HANYA Audit Courier & Rekapan Courier (`COLUMN_ACCESS_PAGES`,
+  array key kolom; NULL = semua kolom). Audit Courier & Rekapan Courier + (2026-10-02) page_key Finance `courier_finance`/
+  `sea_air_finance` = kolom tab "Audit" Finance Handover (lihat "Finance melihat validasi Courier") (`COLUMN_ACCESS_PAGES`,
   export dari `SharedDataTable.tsx` — SATU-SATUNYA daftar kolom pilihan). Matrix UI: tombol
   `ALL`/`n/total` (ikon kolom) di sebelah badge EDIT/VIEW → `ColumnAccessModal` (checklist; semua
   dicentang = simpan NULL). RPC baca `get_my_column_access()` → `AuthContext.getAllowedColumns
@@ -624,12 +625,23 @@ mengubah. `CourierHandoverViewer` (`FinanceHandoverViewers.tsx`) = `CourierValid
 (tab Overview = rincian invoice & serah terima · Documents · Costs), `editAccess` semua false, `ChecklistModal` (kini
 diekspor dari SharedDataTable) `canEdit={false}` -> tanpa Upload additional doc / Save / Accept / Correct / Recompute /
 review / Deduct CN. Pasangan PIB/CN dicari SAMA Invoice Recap (`fetchRecapAuditLinks`: pib_id/cn_id, cadangan AWB);
-tidak ketemu -> dialog rincian invoice saja + catatan. Tombol baris Finance Handover Courier: Invoice · Docs · Cost
+tidak ketemu -> dialog rincian invoice saja + catatan. Tombol baris Finance Handover Courier: Invoice · Audit · Docs · Cost
 (tetap "Accept to view" sebelum Finance menerima, sama sumber lain). **Berbeda dari Sea & Air** (angka duty disembunyikan
 di Finance): Courier menampilkan semua krn invoice Duty Courier memang dibayar Finance ke PPJK.
 **`sql/039`**: policy SELECT `<tabel>_select_courier_finance` (`has_page_access('courier_finance')`) di `tabel_audit_pib`,
 `tabel_audit_cn`, `dokumen_checklist`, `dokumen_validasi`, `tabel_checklist_validasi`, `tabel_npwp`, `tabel_cost_validasi`,
 `cost_validasi_review_courier` — TANPA policy tulis (baca saja); role Finance tidak perlu akses halaman Audit Courier.
+**Tab "Audit" (2026-10-02, keputusan user: tab di jendela invoice, kolom dipilih Admin PER ROLE, Courier + Sea & Air,
+hanya baris pasangan handover)**: `FinanceAuditFields` (`FinanceHandoverViewers.tsx`, baca saja) -- Courier = tab "Audit PIB"/
+"Audit CN" (prop BARU `extraTab` di `CourierValidationWindow`, nilai SAMA layar Audit: `computeCourierAuditCalc` + kolom
+kelengkapan), kolom `FINANCE_AUDIT_COLS.courierPib/courierCn`; Sea & Air = tab "Audit PIB" di viewer Sea & Air (baris
+`tabel_audit_seaair` via `seaair_id`, Balance/Insurance `computeSeaAirBalanceAsuransi`), kolom `FINANCE_AUDIT_COLS.seaair`
+(muncul juga utk "earlier shipment" yg punya `seaair_id`). Kolom yg tampil = `getAllowedColumns('courier_finance' |
+'sea_air_finance')` -> Admin mengatur di Kelola Role & Akses › tombol Columns di baris page_key Finance (dialog diberi
+keterangan `COLUMN_ACCESS_NOTE`); NULL (belum diatur) = SEMUA kolom. **Pengecualian aturan "jangan tampilkan duty"
+Sea & Air**: tab Audit PIB menampilkan kolom duty KALAU Admin tidak membatasinya (keputusan user: Admin yg memilih).
+Tombol baris: Courier Invoice · Audit · Docs · Cost; Sea & Air Handover · Audit · Docs · Cost. Diuji: jsdom
+courier_recap 51, finance 55.
 Cek user 2026-10-02: `get_kurs_efektif` SECURITY DEFINER (kurs tampil utk Finance); `fn_hitung_storage` INVOKER tapi hanya
 dipakai panel Recalculate bonded storage yg tersembunyi di mode baca saja -> tidak perlu policy tambahan.
 **Admin di Finance Handover** = diperlakukan sbg Finance (canEdit selalu true): daftar SAMA (hanya yg sudah submit),

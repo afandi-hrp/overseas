@@ -5,7 +5,7 @@ import { PAGE_REGISTRY, PAGE_GROUPS, APPROVAL_TIER_PAGES } from '../lib/permissi
 import { Plus, Trash2, ShieldCheck, Users, LayoutGrid, Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns3, X, Search } from 'lucide-react';
 import Greeting from '../components/Greeting';
 import { LoadingState } from '../components/LoadingState';
-import { COLUMN_ACCESS_PAGES } from '../components/SharedDataTable';
+import { COLUMN_ACCESS_PAGES, COLUMN_ACCESS_NOTE } from '../components/SharedDataTable';
 
 type Role = { id: string; name: string; description: string | null; is_protected: boolean };
 type ProfileRow = { id: string; email: string | null; nama: string | null };
@@ -318,7 +318,7 @@ export default function RoleManagementPage() {
         {columnModal && (
           <ColumnAccessModal
             roleName={columnModal.role.name}
-            pageLabel={PAGE_REGISTRY.find(p => p.key === columnModal.pageKey)?.label || columnModal.pageKey}
+            pageLabel={(PAGE_REGISTRY.find(p => p.key === columnModal.pageKey)?.label || columnModal.pageKey) + (COLUMN_ACCESS_NOTE[columnModal.pageKey] ? ` — ${COLUMN_ACCESS_NOTE[columnModal.pageKey]}` : '')}
             allCols={COLUMN_ACCESS_PAGES[columnModal.pageKey] || []}
             initial={roleVisibleColumns[columnModal.role.id]?.[columnModal.pageKey] ?? null}
             onCancel={() => setColumnModal(null)}

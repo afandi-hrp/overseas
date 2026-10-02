@@ -15,15 +15,16 @@ import FarOverseasAirCostValidationModal from './FarOverseasAirCostValidationMod
 import SeaAirRecapDocumentsTab from './SeaAirRecapDocumentsTab'
 import SeaAirRecapCostsTab from './SeaAirRecapCostsTab'
 import { SA_CARD, SA_LABEL, Chip, PtBadge } from './SeaAirAuditUi'
-import { fmtRp, fmtDateShort, companyFullName } from '../utils/SeaAirAuditHelpers'
+import { fmtRp, fmtDateShort, companyFullName, formatNoAju, computeSeaAirBalanceAsuransi } from '../utils/SeaAirAuditHelpers'
 import { seaAirInvoiceSegments, seaAirPoList, type HandoverItem } from '../utils/FinanceHandoverHelpers'
 import CourierValidationWindow from './CourierValidationWindow'
-import { ChecklistModal } from './SharedDataTable'
+import { ChecklistModal, FINANCE_AUDIT_COLS } from './SharedDataTable'
+import { useAuth } from '../lib/AuthContext'
 import { buildRecapGroup, courierAwbNorm, fetchRecapAuditLinks } from '../utils/CourierRecapHelpers'
-import { enrichCourierValidationPct } from '../utils/CourierValidationPct'
-import { courierDocNo, isCourierDraft, type CourierDocType } from '../utils/CourierAuditHelpers'
+import { enrichCourierValidationPct, mergeChecklistFields } from '../utils/CourierValidationPct'
+import { courierDocNo, isCourierDraft, computeCourierAuditCalc, type CourierDocType } from '../utils/CourierAuditHelpers'
 
-export type ViewerTab = 'main' | 'docs' | 'cost'
+export type ViewerTab = 'main' | 'audit' | 'docs' | 'cost'
 
 export function ViewerTabBar({ tabs, active, onSelect }: { tabs: { key: ViewerTab; label: string }[]; active: ViewerTab; onSelect: (t: ViewerTab) => void }) {
   return (
@@ -69,9 +70,22 @@ export function SeaAirHandoverViewer({ item, initialTab, companyNames, onClose }
   onClose: () => void
 }) {
   const rec = item.raw
-  const [tab, setTab] = useState<ViewerTab>(item.earlier ? 'main' : initialTab)
-  const [visited, setVisited] = useState<Record<string, boolean>>({ [item.earlier ? 'main' : initialTab]: true })
+  const { getAllowedColumns } = useAuth()
+  const hasAudit = !!rec.seaair_id
+  const startTab: ViewerTab = initialTab === 'audit' ? (hasAudit ? 'audit' : 'main') : item.earlier ? 'main' : initialTab
+  const [tab, setTab] = useState<ViewerTab>(startTab)
+  const [visited, setVisited] = useState<Record<string, boolean>>({ [startTab]: true })
   const [deliveryTerm, setDeliveryTerm] = useState<string | null>(null)
+  const [auditRow, setAuditRow] = useState<any | null | undefined>(undefined)
+  useEffect(() => {
+    let cancelled = false
+    if (!hasAudit || !visited.audit || auditRow !== undefined) return
+    supabase.from('tabel_audit_seaair').select('*').eq('id', rec.seaair_id).maybeSingle().then(({ data }) => {
+      if (cancelled) return
+      setAuditRow(data ? { ...data, ...computeSeaAirBalanceAsuransi(data) } : null)
+    })
+    return () => { cancelled = true }
+  }, [hasAudit, visited.audit, auditRow, rec.seaair_id])
 
   useEffect(() => {
     let cancelled = false
@@ -88,9 +102,11 @@ export function SeaAirHandoverViewer({ item, initialTab, companyNames, onClose }
   }, [onClose])
 
   const go = (t: ViewerTab) => { setTab(t); setVisited(p => ({ ...p, [t]: true })) }
-  const tabs: { key: ViewerTab; label: string }[] = item.earlier
-    ? [{ key: 'main', label: 'Handover' }]
-    : [{ key: 'main', label: 'Handover' }, { key: 'docs', label: 'Documents' }, { key: 'cost', label: 'Cost validation' }]
+  const tabs: { key: ViewerTab; label: string }[] = [
+    { key: 'main', label: 'Handover' },
+    ...(hasAudit ? [{ key: 'audit' as ViewerTab, label: 'Audit PIB' }] : []),
+    ...(item.earlier ? [] : [{ key: 'docs' as ViewerTab, label: 'Documents' }, { key: 'cost' as ViewerTab, label: 'Cost validation' }]),
+  ]
   const invoices = seaAirInvoiceSegments(rec)
   const pos = seaAirPoList(rec)
   const ptName = companyFullName(companyNames, rec.a_n)
@@ -154,6 +170,11 @@ export function SeaAirHandoverViewer({ item, initialTab, companyNames, onClose }
               </div>
             </>
           )}
+          {hasAudit && tab === 'audit' && (
+            auditRow === undefined ? <div className="text-[12.5px] text-[#6E5E70] py-6 text-center">Loading Audit PIB…</div>
+              : auditRow === null ? <div className="text-[12.5px] text-[#6E5E70] py-6 text-center">The Audit PIB record of this shipment could not be read.</div>
+              : <FinanceAuditFields title="Audit PIB" cols={FINANCE_AUDIT_COLS.seaair} rec={auditRow} allowed={getAllowedColumns('sea_air_finance')} />
+          )}
           {!item.earlier && visited.docs && (
             <div className={tab === 'docs' ? '' : 'hidden'}>
               <SeaAirRecapDocumentsTab seaairId={rec.seaair_id} canEdit={false} financeView onChanged={() => {}} />
@@ -168,6 +189,47 @@ export function SeaAirHandoverViewer({ item, initialTab, companyNames, onClose }
       </div>
     </div>,
     document.body
+  )
+}
+
+// ── Tab "Audit" (2026-10-02, keputusan user): kolom baris Audit (PIB/CN Courier atau Audit PIB Sea & Air) pasangan
+// handover, BACA SAJA. Kolom yang tampil dipilih Admin PER ROLE di Kelola Role & Akses (page_key Finance
+// `courier_finance` / `sea_air_finance`, fitur "Kolom per role"); NULL = semua kolom. Hanya baris pasangan handover.
+const auditValue = (c: { key: string; type?: string }, v: any): string => {
+  if (v === null || v === undefined || String(v).trim() === '' || String(v).trim() === '-') return '—'
+  const t = c.type || ''
+  if (t === 'pct') { const n = Number(v); if (isNaN(n)) return String(v); return `${(Math.abs(n) <= 1 ? n * 100 : n).toLocaleString('id-ID', { maximumFractionDigits: 2 })} %` }
+  if (t.startsWith('num')) { const n = Number(v); return isNaN(n) ? String(v) : n.toLocaleString('id-ID', { maximumFractionDigits: 2 }) }
+  if (t.startsWith('date')) return fmtDateShort(v) || String(v)
+  if (t === 'no_aju_format') return String(formatNoAju(v) ?? v)
+  return String(v)
+}
+export function FinanceAuditFields({ title, cols, rec, allowed }: {
+  title: string
+  cols: { key: string; label: string; type?: string }[]
+  rec: any
+  allowed: Set<string> | null
+}) {
+  const shown = cols.filter(c => !allowed || allowed.has(c.key))
+  return (
+    <div className={`${SA_CARD} px-4 py-3`} data-finance-audit>
+      <div className="flex items-baseline justify-between gap-3 mb-1">
+        <div className={SA_LABEL}>{title}</div>
+        <div className="text-[11px] text-[#8A7A8B]">View only · {shown.length} column{shown.length === 1 ? '' : 's'}{allowed ? ' chosen by Admin for your role' : ''}</div>
+      </div>
+      {shown.length === 0 ? (
+        <div className="text-[12.5px] text-[#6E5E70] py-2">No Audit columns are enabled for your role — ask an Admin (Settings › Kelola Role &amp; Akses › Columns).</div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
+          {shown.map(c => (
+            <div key={c.key} className="grid grid-cols-[170px_minmax(0,1fr)] gap-3 py-1.5 text-[12.5px] border-t border-[#F1E8E1]">
+              <div className="text-[#6E5E70]">{c.label}</div>
+              <div className="font-semibold text-[#3B1B3D] [overflow-wrap:anywhere] tabular-nums">{auditValue(c, rec?.[c.key])}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -234,6 +296,7 @@ export function CourierHandoverViewer({ item, initialTab = 'main', companyNames,
   onClose: () => void
 }) {
   const r = item.raw
+  const { getAllowedColumns } = useAuth()
   const [audit, setAudit] = useState<{ rec: any; docType: CourierDocType } | null | undefined>(undefined)
   useEffect(() => {
     let cancelled = false
@@ -242,7 +305,12 @@ export function CourierHandoverViewer({ item, initialTab = 'main', companyNames,
         const g = buildRecapGroup(courierAwbNorm(r.awb) || `ID:${r.id}`, [r])
         await fetchRecapAuditLinks([g])
         const rec = g.audit?.rec || null
-        if (rec) await enrichCourierValidationPct([rec])
+        if (rec) {
+          // Nilai SAMA layar Audit: auto-calc 7 kolom + kolom kelengkapan dari dokumen_checklist.
+          Object.assign(rec, computeCourierAuditCalc(rec, g.audit!.docType, rec.manual_override_fields))
+          await mergeChecklistFields([rec], ['status_kelengkapan', 'dokumen_kurang'])
+          await enrichCourierValidationPct([rec])
+        }
         if (!cancelled) setAudit(rec ? { rec, docType: g.audit!.docType } : null)
       } catch (e) {
         console.error('[FinanceHandover] pasangan Audit Courier gagal', e)
@@ -304,10 +372,14 @@ export function CourierHandoverViewer({ item, initialTab = 'main', companyNames,
       renderChecklist={({ onPctChange, onSaved, onDirtyChange }) => (
         <ChecklistModal record={rec} tab={{ id: 'courier_audit' }} embedded canEdit={false} onClose={onClose} onSaved={onSaved} onPctChange={onPctChange} onDirtyChange={onDirtyChange} />
       )}
-      initialTab={initialTab === 'docs' ? 'checklist' : initialTab === 'cost' ? 'cost' : 'overview'}
+      initialTab={initialTab === 'docs' ? 'checklist' : initialTab === 'cost' ? 'cost' : initialTab === 'audit' ? 'extra' : 'overview'}
       title={<span className="flex items-center gap-2 flex-wrap">{item.ref}<Chip tone="amber">Courier</Chip><span className="text-[11px] font-semibold text-[#8A7A8B]">View only</span></span>}
       subtitle={[r.invoice_type, r.awb ? `AWB ${r.awb}` : '', `${audit.docType} ${docNo || ''}`.trim(), isCourierDraft(rec) ? 'Draft' : 'Audited'].filter(Boolean).join(' · ')}
-      overview={courierInvoiceFacts(item, companyNames, null)}
+      overview={<div className="flex-1 min-h-0 overflow-y-auto bg-[#FBF7F4] p-4">{courierInvoiceFacts(item, companyNames, null)}</div>}
+      extraTab={{
+        label: `Audit ${audit.docType}`,
+        content: <FinanceAuditFields title={`Audit ${audit.docType} ${docNo || ''}`.trim()} cols={audit.docType === 'CN' ? FINANCE_AUDIT_COLS.courierCn : FINANCE_AUDIT_COLS.courierPib} rec={rec} allowed={getAllowedColumns('courier_finance')} />,
+      }}
       onClose={onClose}
     />,
     document.body

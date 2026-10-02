@@ -1076,9 +1076,30 @@ const COURIER_REKAPAN_CUSTOMIZABLE_COLS: { key: string; label: string }[] =
 // diatur di RoleManagementPage.tsx) -> daftar kolom pilihan. SATU-SATUNYA sumber, dipakai
 // RoleManagementPage (checklist) & SharedDataTable (filter tampilan) -- JANGAN duplikat daftar
 // kolom di tempat lain. Tujuan murni merapikan tampilan (role Finance), BUKAN keamanan.
+// Kolom tabel Audit yang bisa ditampilkan ke Finance di Finance Handover (tab "Audit PIB/CN", 2026-10-02, keputusan
+// user): dipilih Admin PER ROLE lewat page_key Finance (`courier_finance` / `sea_air_finance`) -- NULL = semua kolom.
+// `courierPib`/`courierCn` = kolom yang memang ada di jenis dokumen itu (dipakai saat menampilkan).
+const noIndex = (cols: { key: string; label: string; type?: string }[]) => cols.filter(c => c.type !== 'index');
+export const FINANCE_AUDIT_COLS: Record<'courier' | 'courierPib' | 'courierCn' | 'seaair', { key: string; label: string; type?: string }[]> = {
+  courier: (() => {
+    const seen = new Set<string>();
+    return noIndex([...PIB_COLS, ...CN_COLS]).filter(c => (seen.has(c.key) ? false : (seen.add(c.key), true)));
+  })(),
+  courierPib: noIndex(PIB_COLS),
+  courierCn: noIndex(CN_COLS),
+  seaair: SEA_AIR_AUDIT_COLS,
+};
+
 export const COLUMN_ACCESS_PAGES: Record<string, { key: string; label: string }[]> = {
   courier_audit: COURIER_AUDIT_CUSTOMIZABLE_COLS,
   courier_rekapan: COURIER_REKAPAN_CUSTOMIZABLE_COLS,
+  courier_finance: FINANCE_AUDIT_COLS.courier.map(c => ({ key: c.key, label: c.label })),
+  sea_air_finance: FINANCE_AUDIT_COLS.seaair.map(c => ({ key: c.key, label: c.label })),
+};
+// Keterangan tambahan di dialog pilih kolom (Kelola Role & Akses) -- page_key Finance memilih kolom AUDIT.
+export const COLUMN_ACCESS_NOTE: Record<string, string> = {
+  courier_finance: 'Audit Courier (PIB / CN) columns shown in Finance Handover › Audit tab',
+  sea_air_finance: 'Audit PIB Sea & Air columns shown in Finance Handover › Audit tab',
 };
 
 const TRAIL_COLS = [

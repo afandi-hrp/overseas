@@ -309,11 +309,11 @@ export default function FinanceHandoverPage() {
                     ) : it.source === 'far' ? (
                       <>{viewBtn('main', 'Memo')}{viewBtn('docs', 'Docs')}{viewBtn('cost', 'Cost')}</>
                     ) : it.source === 'courier' ? (
-                      <>{viewBtn('main', 'Invoice')}{viewBtn('docs', 'Docs')}{viewBtn('cost', 'Cost')}</>
+                      <>{viewBtn('main', 'Invoice')}{viewBtn('audit', 'Audit')}{viewBtn('docs', 'Docs')}{viewBtn('cost', 'Cost')}</>
                     ) : it.earlier ? (
-                      viewBtn('main', 'Handover')
+                      <>{viewBtn('main', 'Handover')}{it.raw?.seaair_id ? viewBtn('audit', 'Audit') : null}</>
                     ) : (
-                      <>{viewBtn('main', 'Handover')}{viewBtn('docs', 'Docs')}{viewBtn('cost', 'Cost')}</>
+                      <>{viewBtn('main', 'Handover')}{viewBtn('audit', 'Audit')}{viewBtn('docs', 'Docs')}{viewBtn('cost', 'Cost')}</>
                     )}
                   </div>
                 </div>
