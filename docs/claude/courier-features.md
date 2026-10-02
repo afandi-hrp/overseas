@@ -114,7 +114,12 @@ Validation, strip Shipment Info, tabel matriks, tombol Edit/Edit Cost Validasi, 
 `ValidasiPerhitunganPIBLegacy`, `validationWindowStylesLegacy.ts`) = SALINAN PERSIS git `9d5d88a` (beda hanya import,
 diverifikasi diff). ChecklistModal prop `legacy` = cabang embedded lama (token `*_L`, `catatanInputLegacy`). Tombol
 "Add Data" toolbar List = form lama (`EditModal`/`showAddRowModal`), "+ Add manually" header mode Card = form baru.
-Header halaman & toggle Card|List tetap baru di kedua mode (sama Sea & Air). **Kalau logika (load/simpan/RPC) salah
+Header halaman & toggle Card|List tetap baru di kedua mode (sama Sea & Air). **Susulan 2026-10-02 (permintaan user: "header tidak boleh berubah saat
+pilih List")**: kartu KPI + panel filter BARU dipakai di Card DAN List (Audit & Invoice Recap Courier); toolbar lama 2 baris
+TIDAK dirender lagi utk Courier (cabang `isCourierToolbar` tak terjangkau, kode dibiarkan). Tombol khusus tabel muncul di
+panel HANYA saat List: Customize View (ikon), Edit Mode, Reset sort ("Manual order"/"Default sort"), Reorder (Recap: tab
+per-PPJK), "+ Add" = form Add Data LAMA (Card = form baru Audit). "Needs attention" Recap hanya di Card. KPI Recap kini juga
+dihitung saat List. **Kalau logika (load/simpan/RPC) salah
 satu versi diubah, WAJIB sinkron ke versi lainnya** (versi baru: ChecklistModal non-legacy, ValidasiModal,
 CostValidationModal, ValidasiPerhitunganPIB). Diuji: `courier_ui` 56 cek (termasuk 6 cek mode List legacy).
 

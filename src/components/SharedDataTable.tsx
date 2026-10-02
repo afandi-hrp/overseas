@@ -4658,7 +4658,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   const isCourierRecapCard = isCourierRecapView && courierRecapView === 'card';
 
   useEffect(() => {
-    if (!isCourierRecapCard) return;
+    if (!isCourierRecapView) return; // KPI tampil di Card & List (2026-10-02)
     let cancelled = false;
     setCourierRecapSummaryLoading(true);
     fetchCourierRecapSummary(courierRecapFilters).then(s => {
@@ -4667,7 +4667,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       setCourierRecapSummaryLoading(false);
     });
     return () => { cancelled = true; };
-  }, [isCourierRecapCard, courierRecapFilters, courierRecapNonce]);
+  }, [isCourierRecapView, courierRecapFilters, courierRecapNonce]);
 
   // % validasi PIB/CN pasangan AWB -- enrich SAMA fetchRecords Audit (auto-calc, kelengkapan, badge %).
   const enrichRecapAudit = useCallback(async (recs: any[]) => {
@@ -6211,8 +6211,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
                               {/* ── Tabs & Search ── */}
             <div className="flex flex-col gap-4 mb-4">
-              {isCourierRecapCard ? (
-                /* Invoice Recap Courier mode Card (2026-10-02): 5 kartu KPI + 1 kartu filter (tab PPJK, Search,
+              {isCourierRecapView ? (
+                /* Invoice Recap Courier (Card & List, 2026-10-02: header SAMA di kedua mode, permintaan user) mode Card (2026-10-02): 5 kartu KPI + 1 kartu filter (tab PPJK, Search,
                    tanggal email, Company, Card/List, Refresh). State filter SAMA toolbar lama. */
                 <div className="flex flex-col gap-3">
                   <CourierRecapKpiCards summary={courierRecapSummary} loading={courierRecapSummaryLoading} colOk={courierRecapColOk} />
@@ -6260,11 +6260,38 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         {courierAnTabs.map(an => <option key={an} value={an}>{an}</option>)}
                       </select>
                     </div>
-                    {courierValidationTabs.length > 0 && (
+                    {courierRecapView === 'card' && courierValidationTabs.length > 0 && (
                       <button type="button" aria-pressed={courierRecapAttentionOnly} onClick={() => setCourierRecapAttentionOnly(v => !v)}
                         title="AWB with open invoices whose PIB / CN validation is not 100%"
                         className={`h-9 px-3 rounded-xl border text-xs font-bold shrink-0 inline-flex items-center gap-1.5 transition-colors ${courierRecapAttentionOnly ? 'bg-[#C8402F] border-[#C8402F] text-white' : 'bg-white border-[#EADFD6] text-[#A8231A] hover:bg-[#FDE7E4]'}`}>
                         <span className={`w-2 h-2 rounded-full ${courierRecapAttentionOnly ? 'bg-white' : 'bg-[#C8402F]'}`} /> <span className="hidden @min-[1500px]:inline">Needs attention</span><span className="@min-[1500px]:hidden" aria-hidden="true">Attention</span>
+                      </button>
+                    )}
+                    {/* Tombol khusus tabel mode List (2026-10-02: dipindah dari toolbar lama ke panel ini). */}
+                    {courierRecapView === 'list' && activeCourierCustomizeMenu && (
+                      <button type="button" onClick={() => setShowCustomizeView(activeCourierCustomizeMenu)} title="Customize View" aria-label="Customize View"
+                        className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 transition-colors ${activeCourierHiddenCols && activeCourierHiddenCols.size > 0 ? 'bg-[#F5EDF3] border-[#D9C7DA] text-[#6B3470]' : 'bg-white border-[#EADFD6] text-[#3B1B3D] hover:bg-[#FBF7F4]'}`}>
+                        <SlidersHorizontal size={14} />
+                      </button>
+                    )}
+                    {courierRecapView === 'list' && courierEditModeCanEdit && (
+                      <button type="button" onClick={toggleCourierEditMode} title="Toggle Edit Mode for all rows"
+                        className={`h-9 px-3 rounded-xl border text-xs font-bold shrink-0 inline-flex items-center gap-1.5 transition-colors ${courierEditModeOn ? 'bg-blue-600 border-blue-700 text-white' : 'bg-white border-[#EADFD6] text-[#3B1B3D] hover:bg-[#FBF7F4]'}`}>
+                        ✏️ {courierEditModeOn ? 'Editing' : 'Edit Mode'}
+                      </button>
+                    )}
+                    {courierRecapView === 'list' && courierEditModeCanEdit && !reorderMode && !isDefaultSortState(sortColumn, sortDirection) && (
+                      <button type="button" onClick={() => { setSortColumn('created_at'); setSortDirection('desc'); }}
+                        title={courierDefaultUsesSortOrder ? 'Return to the manually reordered display (clears the active column sort)' : 'Return to the default sort (Created At, newest first)'}
+                        className="h-9 px-3 rounded-xl border border-[#EADFD6] bg-white text-[#3B1B3D] hover:bg-[#FBF7F4] text-xs font-bold shrink-0 inline-flex items-center gap-1.5">
+                        <ArrowUpDown size={14} /> {courierDefaultUsesSortOrder ? 'Manual order' : 'Default sort'}
+                      </button>
+                    )}
+                    {courierRecapView === 'list' && (showReorderButton || reorderMode) && (
+                      <button type="button" onClick={handleToggleReorderMode} aria-pressed={reorderMode}
+                        title={reorderMode ? 'Finish reordering' : 'Drag rows to change the manual order'}
+                        className={`h-9 px-3 rounded-xl border text-xs font-bold shrink-0 inline-flex items-center gap-1.5 transition-colors ${reorderMode ? 'bg-orange-500 border-orange-600 text-white' : 'bg-white border-[#EADFD6] text-[#3B1B3D] hover:bg-[#FBF7F4]'}`}>
+                        <GripVertical size={14} /> {reorderMode ? 'Done' : 'Reorder'}
                       </button>
                     )}
                     <div className="inline-flex items-center p-1 rounded-xl bg-[#F5EDF3] shrink-0" role="group" aria-label="View mode">
@@ -6282,10 +6309,16 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                     {/* Export (2026-10-02: dipindah dari header ke panel filter, permintaan user -- sama Audit Courier). */}
                     <div className="ml-auto flex items-center gap-2 shrink-0">
                       {renderExportBtn(true, true)}
+                      {courierRecapView === 'list' && canEdit('courier_rekapan') && (
+                        <button type="button" onClick={() => setShowAddRowModal(true)} title="Add invoice (form)"
+                          className="px-4 h-9 rounded-xl bg-[#6B3470] hover:bg-[#5A2A5E] text-white text-xs font-semibold shadow-sm transition-colors shrink-0 whitespace-nowrap">
+                          + Add
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
-              ) : isCourierAuditView && courierAuditView === 'card' ? (
+              ) : isCourierAuditView ? (
                 /* Audit Courier mode Card (2026-10-01): 5 kartu KPI + 1 kartu filter (tab Draft/PIB/CN,
                    Search, PPJK date, Company, Card/List, Refresh). State filter SAMA toolbar lama. */
                 <div className="flex flex-col gap-3">
@@ -6354,6 +6387,26 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         ))}
                       </select>
                     </div>
+                    {/* Tombol khusus tabel mode List (2026-10-02: dipindah dari toolbar lama ke panel ini). */}
+                    {courierAuditView === 'list' && activeCourierCustomizeMenu && (
+                      <button type="button" onClick={() => setShowCustomizeView(activeCourierCustomizeMenu)} title="Customize View" aria-label="Customize View"
+                        className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 transition-colors ${activeCourierHiddenCols && activeCourierHiddenCols.size > 0 ? 'bg-[#F5EDF3] border-[#D9C7DA] text-[#6B3470]' : 'bg-white border-[#EADFD6] text-[#3B1B3D] hover:bg-[#FBF7F4]'}`}>
+                        <SlidersHorizontal size={14} />
+                      </button>
+                    )}
+                    {courierAuditView === 'list' && courierEditModeCanEdit && (
+                      <button type="button" onClick={toggleCourierEditMode} title="Toggle Edit Mode for all rows"
+                        className={`h-9 px-3 rounded-xl border text-xs font-bold shrink-0 inline-flex items-center gap-1.5 transition-colors ${courierEditModeOn ? 'bg-blue-600 border-blue-700 text-white' : 'bg-white border-[#EADFD6] text-[#3B1B3D] hover:bg-[#FBF7F4]'}`}>
+                        ✏️ {courierEditModeOn ? 'Editing' : 'Edit Mode'}
+                      </button>
+                    )}
+                    {courierAuditView === 'list' && courierEditModeCanEdit && !reorderMode && !isDefaultSortState(sortColumn, sortDirection) && (
+                      <button type="button" onClick={() => { setSortColumn('created_at'); setSortDirection('desc'); }}
+                        title={courierDefaultUsesSortOrder ? 'Return to the manually reordered display (clears the active column sort)' : 'Return to the default sort (Created At, newest first)'}
+                        className="h-9 px-3 rounded-xl border border-[#EADFD6] bg-white text-[#3B1B3D] hover:bg-[#FBF7F4] text-xs font-bold shrink-0 inline-flex items-center gap-1.5">
+                        <ArrowUpDown size={14} /> {courierDefaultUsesSortOrder ? 'Manual order' : 'Default sort'}
+                      </button>
+                    )}
                     {/* Reorder Mode di Card (2026-10-02): syarat SAMA List (tab PIB/CN, tanpa filter, hak edit). */}
                     {(showReorderButton || reorderMode) && (
                       <button
@@ -6395,7 +6448,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                       {canEdit('courier_audit') && (
                         <button
                           type="button"
-                          onClick={() => setCourierEditState({ record: null, docType: courierAuditType === 'cn' ? 'CN' : 'PIB' })}
+                          // Mode List = form Add Data LAMA (keputusan user "Mode List = tampilan sebelum rombak"); Card = form baru.
+                          onClick={() => (courierAuditView === 'list' ? setShowAddRowModal(true) : setCourierEditState({ record: null, docType: courierAuditType === 'cn' ? 'CN' : 'PIB' }))}
                           title="Add PIB / CN manually"
                           className="px-4 h-9 rounded-xl bg-[#6B3470] hover:bg-[#5A2A5E] text-white text-xs font-semibold shadow-sm transition-colors shrink-0 whitespace-nowrap"
                         >
