@@ -11,7 +11,8 @@ import BunkerKelengkapanModal from '../components/BunkerKelengkapanModal';
 import BunkerCompareDocModal from '../components/BunkerCompareDocModal';
 import BunkerAuditLogModal from '../components/BunkerAuditLogModal';
 import Greeting from '../components/Greeting';
-import { LoadingTableRow } from '../components/LoadingState';
+import { LoadingState, LoadingTableRow } from '../components/LoadingState';
+import { ViewModeToggle, DocRow, RowEyebrow, RowTitle, RowChip, RowLabel, CardAction, type CompareDocViewMode } from '../components/CompareDocCards';
 
 // ── Kontrak data (Supabase, sudah dibuat backend n8n -- lihat BunkerHelpers.ts) ──
 // bunker_dokumen (1 baris = 1 No PO): no_po, no_po_key(unik, internal), vendor, kapal, lokasi,
@@ -166,6 +167,9 @@ export default function BunkerPage() {
   const [deleteConfirmRow, setDeleteConfirmRow] = useState<any | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Tampilan daftar: Card (default, 2026-10-02 permintaan user, SAMA 4 halaman Compare Doc lain)
+  // | List (tabel lama apa adanya). Data, filter, pagination & semua aksi SAMA di kedua mode.
+  const [viewMode, setViewMode] = useState<CompareDocViewMode>('card');
 
   const fetchList = useCallback(async () => {
     setLoadingList(true);
@@ -368,16 +372,19 @@ export default function BunkerPage() {
               area tabel di dalamnya (overflow-y-auto di bawah) yg scroll, kartu-nya sendiri
               (rounded-2xl) selalu utuh kelihatan (lihat komentar shell di atas). */}
           <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
-            <div className="px-5 py-4 border-b border-white/60 flex items-center justify-between gap-3 flex-wrap shrink-0">
+            {/* Toolbar dinamis (2026-10-02, SAMA 4 halaman Compare Doc lain): `@container` + `flex-wrap`,
+                Search melebar mengisi sisa ruang (min 150px, maks 360px), di bawah lebar toolbar 1450px
+                label "Items" & teks Card/List disembunyikan; tidak muat -> turun ke baris berikutnya. */}
+            <div className="@container px-5 py-4 border-b border-white/60 flex items-center justify-between gap-3 flex-wrap shrink-0">
               <h2 className="text-sm font-bold text-[#5A305A] shrink-0">Bunker Document List</h2>
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="flex items-center gap-2 rounded-full pl-3.5 pr-3 py-1.5 border border-slate-200 bg-white shrink-0">
+              <div className="flex items-center justify-end gap-2 flex-wrap flex-1 min-w-0">
+                <div className="flex items-center gap-2 rounded-full pl-3.5 pr-3 py-1.5 border border-slate-200 bg-white flex-1 min-w-[150px] max-w-[360px]">
                   <Search size={13} className="text-[#5A305A]/50 shrink-0" />
                   <input
                     value={search}
                     onChange={e => { setSearch(e.target.value); setPage(1); }}
                     placeholder="Search No PO / Vendor / Vessel..."
-                    className="border-0 bg-transparent text-xs text-[#5A305A] focus:outline-none w-36"
+                    className="border-0 bg-transparent text-xs text-[#5A305A] focus:outline-none w-full min-w-0"
                   />
                 </div>
                 <select
@@ -416,8 +423,9 @@ export default function BunkerPage() {
                     <UploadCloud size={14} /> Upload Document
                   </button>
                 )}
+                <ViewModeToggle value={viewMode} onChange={setViewMode} />
                 <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0">
-                  <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">Items</span>
+                  <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide @max-[1450px]:hidden">Items</span>
                   <select
                     value={pageSize}
                     onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
@@ -432,6 +440,52 @@ export default function BunkerPage() {
               </div>
             </div>
 
+            {viewMode === 'card' ? (
+              <div className="overflow-y-auto flex-1 min-h-0 px-4 pt-3 pb-4 bg-slate-50/40">
+                {loadingList ? (
+                  <LoadingState fullHeight={false} />
+                ) : rows.length === 0 ? (
+                  <div className="text-center py-10 text-[#5A305A] text-sm italic">No Bunker data yet. Click "Upload Document" to get started.</div>
+                ) : (
+                  <div className="flex flex-col gap-2.5">
+                    {rows.map(r => {
+                      const matchStats = computeMatrixMatchStats(r.matrix_perbandingan);
+                      const pctClass = matchStats.pct >= 90 ? 'text-emerald-600' : matchStats.pct >= 60 ? 'text-amber-600' : 'text-red-600';
+                      return (
+                        <DocRow
+                          key={r.id}
+                          left={<>
+                            <RowEyebrow><StatusBadge status={r.status} /><span>Updated {formatDateTimeID(r.updated_at)}</span></RowEyebrow>
+                            <RowTitle>{r.no_po || '-'}</RowTitle>
+                            {r.lokasi && (
+                              <div className="flex flex-wrap gap-1.5 mt-1.5"><RowChip label="Location">{r.lokasi}</RowChip></div>
+                            )}
+                          </>}
+                          main={<>
+                            <div className="font-bold text-[13px] text-[#5A305A] leading-snug break-words">{r.vendor || '-'}</div>
+                            <div className="flex flex-wrap gap-1.5 mt-1.5"><RowChip label="Vessel">{r.kapal || '-'}</RowChip></div>
+                            <div className="mt-2">
+                              <RowLabel>Workflow Status</RowLabel>
+                              <WorkflowSelect row={r} onChanged={fetchList} canEdit={canEditBunker} />
+                            </div>
+                          </>}
+                          side={<>
+                            <RowLabel>Doc Match</RowLabel>
+                            <div className={`font-bold text-[20px] leading-tight ${pctClass}`}>{matchStats.pct}%</div>
+                          </>}
+                          actions={<>
+                            <CardAction icon={FileCheck2} label="Completeness" title="Document Completeness" onClick={() => setKelengkapanRow(r)} />
+                            <CardAction icon={ClipboardList} label="Compare Doc" onClick={() => setCompareRow(r)} />
+                            <CardAction iconOnly icon={History} label="History" title="Change History" onClick={() => setAuditLogRow(r)} />
+                            {canEditBunker && <CardAction iconOnly icon={Trash2} label="Delete" tone="danger" onClick={() => openDeleteConfirm(r)} />}
+                          </>}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : (
             <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0">
               <table className="w-full text-[11px] bg-white">
                 <thead className="sticky top-0 z-20">
@@ -509,6 +563,7 @@ export default function BunkerPage() {
                 </tbody>
               </table>
             </div>
+            )}
 
             {rows.length > 0 && (
               <div className="flex max-sm:flex-col justify-between items-center px-5 py-3 border-t border-slate-200 bg-slate-50 gap-3 shrink-0">

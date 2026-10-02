@@ -13,7 +13,7 @@ export function ViewModeToggle({ value, onChange }: { value: CompareDocViewMode;
   const btn = (mode: CompareDocViewMode, label: string, Icon: typeof List) => (
     <button
       onClick={() => onChange(mode)}
-      title={`Tampilan ${label}`}
+      title={`${label} view`}
       className={`flex items-center gap-1 px-2.5 @max-[1450px]:px-2 py-1 rounded-full text-[11px] font-semibold transition-all ${
         value === mode ? 'bg-[#5A305A] text-white shadow-sm' : 'text-[#5A305A]/70 hover:text-[#5A305A]'
       }`}

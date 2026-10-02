@@ -338,6 +338,18 @@ tidak"). Guard `auth.email() IS NULL` & cabang DELETE/INSERT TIDAK disentuh. **K
 kolom lain yang JUGA dicatat manual via `logBunkerAudit()` (duplikasi serupa ditemukan lagi),
 tambahkan nama kolomnya ke daftar `- 'kolom'` yang sama di trigger ini.**
 
+## Bunker — tampilan Card | List + toolbar dinamis (2026-10-02)
+
+Permintaan user: samakan dgn 4 halaman Compare Doc (lihat `docs/claude/audit-po.md` "Tampilan Card |
+List" & "Toolbar dinamis"), komponen bersama `src/components/CompareDocCards.tsx`. Toggle Card | List
+(default Card, tidak disimpan) di toolbar sebelum "Items"; List = tabel lama apa adanya. Baris kartu
+(`DocRow`): kiri `StatusBadge` sistem + "Updated <tgl>", No PO besar, chip Location | tengah Vendor tebal,
+chip Vessel, Workflow Status (`WorkflowSelect` SAMA) | kanan "Doc Match" % besar (`computeMatrixMatchStats`,
+warna hijau >=90/kuning >=60/merah, sama badge tombol Compare Doc tabel) | aksi Completeness, Compare Doc,
+ikon History & Delete (gating `canEditBunker`). TANPA bar Urutkan (Bunker memang tanpa sort, selalu
+`updated_at` DESC). Toolbar `@container`, Search `flex-1 min-w-[150px] max-w-[360px]`, label "Items" &
+teks Card/List hilang di bawah lebar toolbar 1450px.
+
 ## Bunker — seksi "Original Documents" (`source_files`) di `BunkerCompareDocModal.tsx`
 
 Kolom `bunker_dokumen.source_files` (jsonb array KUMULATIF, elemen `{filename, file_url,
