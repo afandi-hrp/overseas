@@ -6098,8 +6098,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         <header className="px-3 pt-1 pb-1 shrink-0">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#8A7A8B]">Courier</div>
               <h1 className="font-bold text-2xl text-[#3B1B3D] leading-tight">PIB &amp; CN Audit</h1>
+              <p className="text-[#6E5E70] text-[12.5px] mt-0.5">Courier customs documents (PIB &amp; SPPBMCP) read by AI — check the validation, then mark as audited.</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
               <Greeting />
@@ -6111,8 +6111,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         <header className="px-3 pt-1 pb-1 shrink-0">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#8A7A8B]">Courier</div>
               <h1 className="font-bold text-2xl text-[#3B1B3D] leading-tight">Invoice Recap</h1>
+              <p className="text-[#6E5E70] text-[12.5px] mt-0.5">Courier invoices per AWB (freight, duty &amp; credit notes) — review the amounts, then submit to Finance.</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
               {courierRecapView === 'card' && renderExportBtn(true)}
@@ -6125,8 +6125,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         <header className="px-3 pt-1 pb-1 shrink-0">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#8A7A8B]">Sea &amp; Air</div>
               <h1 className="font-bold text-2xl text-[#3B1B3D] leading-tight">PIB Audit</h1>
+              <p className="text-[#6E5E70] text-[12.5px] mt-0.5">Sea &amp; Air PIB documents read by AI — check against Invoice Recap, then mark as audited.</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
               {renderExportBtn(true)}
@@ -6148,8 +6148,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         <header className="px-3 pt-1 pb-1 shrink-0">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#8A7A8B]">Sea &amp; Air</div>
               <h1 className="font-bold text-2xl text-[#3B1B3D] leading-tight">Invoice Recap</h1>
+              <p className="text-[#6E5E70] text-[12.5px] mt-0.5">Sea &amp; Air shipment invoices per BL / AWB — validate costs &amp; documents, then submit to Finance.</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
               {renderExportBtn(true)}
@@ -6262,7 +6262,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                    Search, PPJK date, Company, Card/List, Refresh). State filter SAMA toolbar lama. */
                 <div className="flex flex-col gap-3">
                   <CourierAuditKpiCards summary={courierSummary} loading={courierSummaryLoading} validationIncomplete={courierValidationIncomplete} colOk={courierColOk} />
-                  <div className="bg-white rounded-[14px] border border-[#EADFD6] shadow-sm px-3 py-2.5 flex flex-wrap items-center gap-2.5">
+                  <div className="@container bg-white rounded-[14px] border border-[#EADFD6] shadow-sm px-3 py-2.5 flex flex-wrap items-center gap-2">
                     <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[#F5EDF3] shrink-0">
                       {([
                         { id: 'archive', label: 'Draft', count: courierSummary?.draft },
@@ -6288,11 +6288,12 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         );
                       })}
                     </div>
-                    <div className="relative flex-1 min-w-[220px]">
+                    <div className="relative flex-1 min-w-[150px]">
                       <SearchIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A7A8B] pointer-events-none" />
                       <input
                         type="text"
                         placeholder="Search AWB, PIB no., PO, supplier, invoice"
+                        title="Search AWB, PIB no., PO, supplier, invoice"
                         value={search}
                         onChange={e => setSearch(e.target.value)}
                         className="w-full h-9 rounded-xl pl-8 pr-8 text-[13px] bg-[#FBF7F4] border border-[#EADFD6] text-[#3B1B3D] placeholder:text-[#8A7A8B] focus:outline-none focus:border-[#6B3470] focus:bg-white"
@@ -6303,22 +6304,22 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         </button>
                       )}
                     </div>
-                    <div className="flex items-center gap-1.5 h-9 px-3 rounded-xl border border-[#EADFD6] bg-white shrink-0">
-                      <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]">PPJK date</span>
-                      <input type="date" aria-label="From date" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} className="w-[108px] text-[12px] bg-transparent focus:outline-none text-[#3B1B3D] cursor-pointer" />
+                    <div className="flex items-center gap-1.5 h-9 px-2.5 rounded-xl border border-[#EADFD6] bg-white shrink-0" title="PPJK date">
+                      <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]">PPJK<span className="hidden @min-[1450px]:inline"> date</span></span>
+                      <input type="date" aria-label="From date" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} className="w-[104px] text-[12px] bg-transparent focus:outline-none text-[#3B1B3D] cursor-pointer" />
                       <span className="text-[#8A7A8B] text-xs">–</span>
-                      <input type="date" aria-label="To date" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} className="w-[108px] text-[12px] bg-transparent focus:outline-none text-[#3B1B3D] cursor-pointer" />
+                      <input type="date" aria-label="To date" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} className="w-[104px] text-[12px] bg-transparent focus:outline-none text-[#3B1B3D] cursor-pointer" />
                       {(filterStartDate || filterEndDate) && (
                         <button type="button" onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }} aria-label="Clear dates" className="text-[#8A7A8B] hover:text-[#3B1B3D]"><X size={13} /></button>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 h-9 pl-3 pr-2 rounded-xl border border-[#EADFD6] bg-white shrink-0">
-                      <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]">Company</span>
+                    <div className="flex items-center gap-2 h-9 pl-2.5 pr-2 rounded-xl border border-[#EADFD6] bg-white shrink-0" title="Company">
+                      <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]"><span className="@min-[1450px]:hidden">PT</span><span className="hidden @min-[1450px]:inline">Company</span></span>
                       <select
                         aria-label="Company"
                         value={activeCourierImporAnFilter}
                         onChange={e => { setActiveCourierImporAnFilter(e.target.value); setPage(1); }}
-                        className="border-0 bg-transparent text-xs font-bold text-[#3B1B3D] focus:outline-none cursor-pointer max-w-[160px]"
+                        className="border-0 bg-transparent text-xs font-bold text-[#3B1B3D] focus:outline-none cursor-pointer max-w-[110px]"
                       >
                         {courierImporAnTabs.map(an => (
                           <option key={an} value={an}>{an}</option>
@@ -6349,15 +6350,16 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                     {/* Export & Add manually (2026-10-02: dipindah dari header ke panel filter, permintaan user). Panel ini
                         `flex-wrap` (BUKAN nowrap + scroll): di laptop 14" (zoom 90%) kelompok tombol turun ke baris
                         kedua rata kanan -- dulu terdorong keluar layar & tidak terlihat (laporan user). */}
-                    <div className="ml-auto flex items-center gap-2.5 shrink-0">
+                    <div className="ml-auto flex items-center gap-2 shrink-0">
                       {renderExportBtn(true, true)}
                       {canEdit('courier_audit') && (
                         <button
                           type="button"
                           onClick={() => setCourierEditState({ record: null, docType: courierAuditType === 'cn' ? 'CN' : 'PIB' })}
+                          title="Add PIB / CN manually"
                           className="px-4 h-9 rounded-xl bg-[#6B3470] hover:bg-[#5A2A5E] text-white text-xs font-semibold shadow-sm transition-colors shrink-0 whitespace-nowrap"
                         >
-                          + Add manually
+                          + Add<span className="hidden @min-[1450px]:inline"> manually</span>
                         </button>
                       )}
                     </div>

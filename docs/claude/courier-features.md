@@ -7,6 +7,11 @@ Recap Sea & Air (token `SeaAirAuditUi.tsx`, font Sora); mode **List** = tabel la
 - **Export & "+ Add manually" mode Card (2026-10-02, permintaan user)**: DIPINDAH dari header ke ujung kanan panel filter
   (kelompok `ml-auto`, tombol `h-9 rounded-xl`, `renderExportBtn(true, true)`). Panel filter Audit Courier mode Card
   `flex-wrap` (BUKAN nowrap + overflow-x) supaya di laptop 14" kelompok tombol turun ke baris 2 & tetap terlihat.
+  **Susulan 2026-10-02 (user: harus 1 baris di laptop 14")**: panel = `@container`; di bawah lebar panel 1450px label
+  dipersingkat ("PPJK date"->"PPJK", "Company"->"PT", "+ Add manually"->"+ Add" + tooltip), Search `min-w-[150px]`,
+  select PT `max-w-[110px]`, input tanggal `w-[104px]`. `flex-wrap` tetap sbg cadangan layar lebih sempit.
+- **Header 4 halaman Courier & Sea & Air (2026-10-02, permintaan user)**: label kecil "COURIER"/"SEA & AIR" di atas judul
+  DIHAPUS, diganti 1 baris keterangan halaman di BAWAH judul (gaya sama Finance Handover).
 - **Header** eyebrow "Courier" + "Invoice Recap". **Kartu filter** (mode Card): tab PPJK (state `activePpjkFilter` SAMA
   toolbar lama, filter `ilike %X%` -> tab per-PPJK hanya invoice PPJK itu), Search (kolom yang diizinkan role), Email
   date (`tgl_terima_email`), Company, Card|List, Refresh. Mode List: toggle Card|List ditambahkan di toolbar lama.
