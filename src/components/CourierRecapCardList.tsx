@@ -136,7 +136,9 @@ export const CourierRecapGroupCard: React.FC<{
 }
 
 // ─── Daftar kartu + pagination per AWB ────────────────────────────────────────
-export const COURIER_RECAP_PAGE_SIZE = 12
+// Default 10 kartu/halaman + pilihan Rows per page (2026-10-02, permintaan user; dulu tetap 12).
+export const COURIER_RECAP_PAGE_SIZE = 10
+export const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 
 export const CourierRecapCardView: React.FC<{
   filters: RecapFilters
@@ -151,7 +153,8 @@ export const CourierRecapCardView: React.FC<{
   // "Needs attention" (2026-10-02): hanya AWB yang perlu perhatian (recapGroupNeedsAttention), dihitung di browser.
   attentionOnly?: boolean
 }> = ({ filters, nonce, companyNames, colOk, validationTabs, enrichAudit, onOpen, onValidation, onLoaded, attentionOnly = false }) => {
-  const filterKey = JSON.stringify(filters) + (attentionOnly ? ':attention' : '')
+  const [pageSize, setPageSize] = useState(COURIER_RECAP_PAGE_SIZE)
+  const filterKey = JSON.stringify(filters) + (attentionOnly ? ':attention' : '') + ':' + pageSize
   const [page, setPage] = useState(1)
   const [groups, setGroups] = useState<RecapGroup[] | null>(null)
   const [total, setTotal] = useState(0)
@@ -171,9 +174,9 @@ export const CourierRecapCardView: React.FC<{
         let res: { total: number; groups: RecapGroup[]; fallback: boolean }
         if (attentionOnly) {
           const all = await fetchCourierRecapAttentionGroups(filters, validationTabs, enrichAudit)
-          res = { total: all.length, groups: all.slice((page - 1) * COURIER_RECAP_PAGE_SIZE, page * COURIER_RECAP_PAGE_SIZE), fallback: false }
+          res = { total: all.length, groups: all.slice((page - 1) * pageSize, page * pageSize), fallback: false }
         } else {
-          res = await fetchCourierRecapPage(filters, (page - 1) * COURIER_RECAP_PAGE_SIZE, COURIER_RECAP_PAGE_SIZE)
+          res = await fetchCourierRecapPage(filters, (page - 1) * pageSize, pageSize)
           await fetchRecapAuditLinks(res.groups)
           await enrichAudit(res.groups.map(g => g.audit?.rec).filter(Boolean))
         }
@@ -191,9 +194,9 @@ export const CourierRecapCardView: React.FC<{
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterKey, page, nonce])
 
-  const pages = Math.max(1, Math.ceil(total / COURIER_RECAP_PAGE_SIZE))
-  const start = total === 0 ? 0 : (page - 1) * COURIER_RECAP_PAGE_SIZE + 1
-  const end = Math.min(page * COURIER_RECAP_PAGE_SIZE, total)
+  const pages = Math.max(1, Math.ceil(total / pageSize))
+  const start = total === 0 ? 0 : (page - 1) * pageSize + 1
+  const end = Math.min(page * pageSize, total)
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
@@ -218,6 +221,13 @@ export const CourierRecapCardView: React.FC<{
         <div className="flex justify-between items-center px-5 py-3 border-t border-[#EADFD6] bg-white/70 gap-3 shrink-0">
           <span className="text-[12px] text-[#6E5E70] tabular-nums">Showing <b className="text-[#3B1B3D]">{start}-{end}</b> of <b className="text-[#3B1B3D]">{total}</b> AWB</span>
           <div className="flex items-center gap-2">
+            <label className="flex items-center gap-1.5 text-[12px] text-[#6E5E70] mr-1">
+              Rows
+              <select aria-label="Rows per page" value={pageSize} onChange={e => setPageSize(Number(e.target.value))}
+                className="h-8 rounded-lg border border-[#EADFD6] bg-white px-2 text-[12px] font-semibold text-[#3B1B3D] focus:outline-none focus:border-[#6B3470] cursor-pointer">
+                {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
             <button type="button" aria-label="Previous page" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1} className="p-1.5 rounded-lg border border-[#EADFD6] bg-white disabled:opacity-40"><ChevronLeft size={15} /></button>
             <span className="text-[12px] text-[#6E5E70] tabular-nums">Page <b className="text-[#3B1B3D]">{page}</b> of {pages}</span>
             <button type="button" aria-label="Next page" onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page >= pages} className="p-1.5 rounded-lg border border-[#EADFD6] bg-white disabled:opacity-40"><ChevronRight size={15} /></button>

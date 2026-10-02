@@ -10,6 +10,9 @@ Recap Sea & Air (token `SeaAirAuditUi.tsx`, font Sora); mode **List** = tabel la
   **Susulan 2026-10-02 (user: harus 1 baris di laptop 14")**: panel = `@container`; di bawah lebar panel 1450px label
   dipersingkat ("PPJK date"->"PPJK", "Company"->"PT", "+ Add manually"->"+ Add" + tooltip), Search `min-w-[150px]`,
   select PT `max-w-[110px]`, input tanggal `w-[104px]`. `flex-wrap` tetap sbg cadangan layar lebih sempit.
+- **Rows per page (2026-10-02, permintaan user)**: pilihan 10/20/50/100, default 10 -- di footer pagination BERSAMA
+  SharedDataTable (Audit Courier, Audit PIB & Invoice Recap Sea & Air, Invoice Recap Courier mode List; nonaktif selama
+  Reorder Mode) & footer kartu Invoice Recap Courier (`CourierRecapCardView`, dulu tetap 12/halaman).
 - **Reorder Mode di tampilan Card Audit Courier (2026-10-02, permintaan user)**: tombol "Reorder"/"Done" di panel filter Card,
   syarat SAMA List (`showReorderButton`: tab PIB/CN bukan Draft, tanpa filter, `canEdit`). Tiap kartu dibungkus
   `SortableCardShell` (useSortable, grip + nomor posisi GLOBAL + popover "Move to" = `ReorderIndexCell` prop `asDiv`), simpan

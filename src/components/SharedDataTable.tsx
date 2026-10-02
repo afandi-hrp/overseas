@@ -7210,6 +7210,19 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   {search && ` (Filter: "${search}")`}
                 </div>
                 <div className="flex items-center gap-2">
+                  {/* Rows per page (2026-10-02, permintaan user): default 10. Nonaktif selama Reorder Mode (pageSize sementara 100). */}
+                  <label className="flex items-center gap-1.5 text-xs text-[#5A305A] mr-1">
+                    Rows
+                    <select
+                      aria-label="Rows per page"
+                      value={pageSize}
+                      disabled={reorderMode}
+                      onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
+                      className="h-[30px] rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {[10, 20, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </label>
                   <button 
                     onClick={() => setPage(p => Math.max(1, p - 1))}
                     disabled={validPage === 1}
