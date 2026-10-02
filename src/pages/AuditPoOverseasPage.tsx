@@ -10,6 +10,7 @@ import {
 } from '../utils/AuditPoOverseasHelpers';
 import { logAuditPoAudit, logAuditPoDelete } from '../utils/AuditPoLogHelpers';
 import Greeting from '../components/Greeting';
+import { ViewModeToggle, CardSortBar, DocCard, CardField, CardAction, type CompareDocViewMode } from '../components/CompareDocCards';
 import { LoadingState, LoadingTableRow } from '../components/LoadingState';
 import AuditPoLogModal from '../components/AuditPoLogModal';
 
@@ -58,6 +59,9 @@ function StatusBadge({ status }: { status: string | null }) {
 }
 
 type SortKey = 'created_at' | 'nama_pt' | 'kategori';
+
+// Pilihan urut di mode Card (pengganti header kolom sortable tabel) -- key SAMA `SortKey`.
+const CARD_SORT_OPTIONS: { key: SortKey; label: string }[] = [{ key: 'created_at', label: 'Tanggal & Waktu' }, { key: 'nama_pt', label: 'Nama PT' }, { key: 'kategori', label: 'Kategori' }];
 
 // Header kolom yang bisa diklik utk sort -- toggle asc/desc, dipakai kolom Tanggal & Waktu dan
 // Nama PT. Sort dilakukan server-side (lihat query.order() di fetchList) karena pagination di
@@ -1311,6 +1315,9 @@ export default function AuditPoOverseasPage() {
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [previewTarget, setPreviewTarget] = useState<PreviewTarget | null>(null);
   const [openActionsRowId, setOpenActionsRowId] = useState<string | null>(null);
+  // Tampilan daftar: Card (default, 2026-10-02 permintaan user) | List (tabel lama apa adanya).
+  // Data, filter, sort, pagination & semua aksi SAMA di kedua mode -- hanya bentuk tampilannya beda.
+  const [viewMode, setViewMode] = useState<CompareDocViewMode>('card');
   const [editRow, setEditRow] = useState<AuditPoOverseasRow | null>(null);
   const [logRow, setLogRow] = useState<AuditPoOverseasRow | null>(null);
   const [deleteConfirmRow, setDeleteConfirmRow] = useState<AuditPoOverseasRow | null>(null);
@@ -1522,6 +1529,7 @@ export default function AuditPoOverseasPage() {
                 >
                   <FilterX size={14} />
                 </button>
+                <ViewModeToggle value={viewMode} onChange={setViewMode} />
                 <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0">
                   <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">Items</span>
                   <select
@@ -1538,6 +1546,55 @@ export default function AuditPoOverseasPage() {
               </div>
           </div>
 
+          {viewMode === 'card' ? (
+            <div className="overflow-y-auto flex-1 min-h-0 px-4 pt-3 pb-4 bg-slate-50/40">
+              <CardSortBar
+                total={totalRecords}
+                options={CARD_SORT_OPTIONS}
+                sortBy={sortBy}
+                sortDir={sortDir}
+                onChange={(k, d) => { setSortBy(k); setSortDir(d); setPage(1); }}
+              />
+              {loadingList ? (
+                <LoadingState fullHeight={false} />
+              ) : rows.length === 0 ? (
+                <div className="text-center py-10 text-[#5A305A] text-sm italic">Belum ada data Audit AP Overseas.</div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+                  {rows.map((r) => (
+                    <DocCard
+                      key={r.id}
+                      header={<>
+                        <PtBadge pt={r.nama_pt} />
+                        <span className="text-[10px] text-[#5A305A]/70 text-right shrink-0">{formatDateTimeID(r.created_at)}</span>
+                      </>}
+                      actions={<>
+                        <CardAction icon={FileDown} label="PDF" title="Preview PDF" onClick={r.url_pdf ? () => {
+                          const src = buildPreviewSrc(r.drive_file_id_pdf, r.url_pdf);
+                          if (src) setPreviewTarget({ title: `PDF — ${r.nomor_po || r.vendor_name || r.id}`, src, externalUrl: r.url_pdf!, kind: 'pdf' });
+                        } : undefined} />
+                        <CardAction icon={FileText} label="Hasil Audit" title="Preview Hasil Audit" onClick={r.url_html ? () => {
+                          const src = buildPreviewSrc(r.drive_file_id_html, r.url_html);
+                          if (src) setPreviewTarget({ title: `Hasil Audit — ${r.nomor_po || r.vendor_name || r.id}`, src, externalUrl: r.url_html!, kind: 'html' });
+                        } : undefined} />
+                        <CardAction icon={History} label="Riwayat" title="Riwayat Perubahan" onClick={() => setLogRow(r)} />
+                        {canEditAuditPoOverseas && <CardAction icon={Pencil} label="Edit" onClick={() => setEditRow(r)} />}
+                        {canEditAuditPoOverseas && <span className="ml-auto"><CardAction icon={Trash2} label="Hapus" tone="danger" onClick={() => openDeleteConfirm(r)} /></span>}
+                      </>}
+                    >
+                        <CardField label="Nomor PO"><span className="font-bold text-[13px] leading-snug">{r.nomor_po || '-'}</span></CardField>
+                        <CardField label="Vendor">{r.vendor_name || '-'}</CardField>
+                        <div className="grid grid-cols-2 gap-2.5">
+                          <CardField label="Status Audit"><StatusBadge status={r.status_audit} /></CardField>
+                          <CardField label="Durasi">{r.durasi_text || '-'}</CardField>
+                        </div>
+                        <CardField label="Kategori"><KategoriCell row={r} onChanged={handleKategoriChanged} canEdit={canEditAuditPoOverseas} /></CardField>
+                    </DocCard>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
           <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0">
             <table className="w-full text-[11px] bg-white table-fixed min-w-[980px]">
               <colgroup>
@@ -1667,6 +1724,7 @@ export default function AuditPoOverseasPage() {
               </tbody>
             </table>
           </div>
+          )}
 
           {rows.length > 0 && (
             <div className="flex max-sm:flex-col justify-between items-center px-5 py-3 border-t border-slate-200 bg-slate-50 gap-3 shrink-0">

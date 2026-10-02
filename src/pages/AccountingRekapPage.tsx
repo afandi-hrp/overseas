@@ -11,6 +11,7 @@ import {
   type AccountingRekapRow,
 } from '../utils/AccountingRekapHelpers';
 import Greeting from '../components/Greeting';
+import { ViewModeToggle, CardSortBar, DocCard, CardField, CardAction, type CompareDocViewMode } from '../components/CompareDocCards';
 import { LoadingState, LoadingTableRow } from '../components/LoadingState';
 
 // ── Kontrak data (Supabase, diisi otomasi backend) ──
@@ -49,6 +50,9 @@ function StatusBadge({ status }: { status: string | null }) {
 }
 
 type SortKey = 'created_at' | 'pt_internal';
+
+// Pilihan urut di mode Card (pengganti header kolom sortable tabel) -- key SAMA `SortKey`.
+const CARD_SORT_OPTIONS: { key: SortKey; label: string }[] = [{ key: 'created_at', label: 'Tanggal & Waktu' }, { key: 'pt_internal', label: 'PT Internal' }];
 
 // Header kolom yang bisa diklik utk sort -- toggle asc/desc, dipakai kolom Tanggal & Waktu dan
 // PT Internal. Sort dilakukan server-side (lihat query.order() di fetchList) karena pagination
@@ -804,6 +808,9 @@ export default function AccountingRekapPage() {
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [previewTarget, setPreviewTarget] = useState<PreviewTarget | null>(null);
   const [openActionsRowId, setOpenActionsRowId] = useState<string | null>(null);
+  // Tampilan daftar: Card (default, 2026-10-02 permintaan user) | List (tabel lama apa adanya).
+  // Data, filter, sort, pagination & semua aksi SAMA di kedua mode -- hanya bentuk tampilannya beda.
+  const [viewMode, setViewMode] = useState<CompareDocViewMode>('card');
   const [editRow, setEditRow] = useState<AccountingRekapRow | null>(null);
   const [deleteConfirmRow, setDeleteConfirmRow] = useState<AccountingRekapRow | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -965,6 +972,7 @@ export default function AccountingRekapPage() {
                 >
                   <FilterX size={14} />
                 </button>
+                <ViewModeToggle value={viewMode} onChange={setViewMode} />
                 <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0">
                   <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">Items</span>
                   <select
@@ -981,6 +989,54 @@ export default function AccountingRekapPage() {
               </div>
           </div>
 
+          {viewMode === 'card' ? (
+            <div className="overflow-y-auto flex-1 min-h-0 px-4 pt-3 pb-4 bg-slate-50/40">
+              <CardSortBar
+                total={totalRecords}
+                options={CARD_SORT_OPTIONS}
+                sortBy={sortBy}
+                sortDir={sortDir}
+                onChange={(k, d) => { setSortBy(k); setSortDir(d); setPage(1); }}
+              />
+              {loadingList ? (
+                <LoadingState fullHeight={false} />
+              ) : rows.length === 0 ? (
+                <div className="text-center py-10 text-[#5A305A] text-sm italic">Belum ada data Accounting Rekap.</div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+                  {rows.map((r) => (
+                    <DocCard
+                      key={r.id}
+                      header={<>
+                        <PtBadge pt={r.pt_internal} />
+                        <span className="text-[10px] text-[#5A305A]/70 text-right shrink-0">{formatDateTimeID(r.created_at)}</span>
+                      </>}
+                      actions={<>
+                        <CardAction icon={FileDown} label="Preview" title="Preview Dokumen" onClick={r.url_view ? () => {
+                          const kind = guessPreviewKind(r.url_view);
+                          const src = buildPreviewSrc(r.drive_file_id, r.url_view);
+                          if (src) setPreviewTarget({ title: `Dokumen — ${r.nomor_po || r.vendor || r.id}`, src, externalUrl: r.url_view!, kind });
+                        } : undefined} />
+                        {canEditAccountingRekap && <CardAction icon={Pencil} label="Edit" onClick={() => setEditRow(r)} />}
+                        {canEditAccountingRekap && <span className="ml-auto"><CardAction icon={Trash2} label="Hapus" tone="danger" onClick={() => openDeleteConfirm(r)} /></span>}
+                      </>}
+                    >
+                        <CardField label="Nomor PO"><span className="font-bold text-[13px] leading-snug">{r.nomor_po || '-'}</span></CardField>
+                        <CardField label="Vendor">{r.vendor || '-'}</CardField>
+                        <div className="grid grid-cols-2 gap-2.5">
+                          <CardField label="Tgl Dokumen">{r.tanggal_dokumen || '-'}</CardField>
+                          <CardField label="Bank">{r.bank || '-'}</CardField>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2.5">
+                          <CardField label="Total Bayar"><span className="font-bold font-mono text-[12px]">{formatRupiah(r.total_bayar)}</span></CardField>
+                          <CardField label="Status Proses"><StatusBadge status={r.status_proses} /></CardField>
+                        </div>
+                    </DocCard>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
           <div className="overflow-x-auto overflow-y-auto flex-1 min-h-0">
             {/* Kolom Waktu Proses disembunyikan (2026-09, permintaan user) -- col/th/td-nya
                 dihapus, min-w disamakan dgn SUM lebar <col> tersisa (lihat aturan wajib
@@ -1091,6 +1147,7 @@ export default function AccountingRekapPage() {
               </tbody>
             </table>
           </div>
+          )}
 
           {rows.length > 0 && (
             <div className="flex max-sm:flex-col justify-between items-center px-5 py-3 border-t border-slate-200 bg-slate-50 gap-3 shrink-0">

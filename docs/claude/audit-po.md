@@ -94,6 +94,25 @@ halaman. Rule ini dinyatakan SEKALI di sini.
     `.order(sortBy,{ascending, nullsFirst:false})` — fix bug baris kosong nongol di atas saat
     sort ASC (Postgres default NULL=largest).
 
+## Tampilan Card | List — Audit AP Local/Overseas, PI Local, Accounting Rekap (2026-10-02)
+
+Permintaan user: daftar dibuat bentuk kartu "tanpa merubah fungsi". Toggle **Card | List** di ujung
+kanan toolbar (sebelum "Items"), default **Card**, tidak disimpan (pola Courier/Sea & Air). List =
+tabel lama APA ADANYA. Kedua mode memakai state/fetch/filter/sort/pagination/handler YANG SAMA —
+cuma bentuk render beda. Komponen bersama `src/components/CompareDocCards.tsx` (`ViewModeToggle`,
+`CardSortBar`, `DocCard`, `CardField`, `CardAction`) — PENGECUALIAN rule "duplikasi sengaja" (murni
+presentational); isi kartu tetap ditulis per halaman.
+- Kartu: header PT badge + Tanggal & Waktu; isi Nomor PO (tebal), Vendor, Status Audit (+ Durasi;
+  PI Local: Nomor SJ/Stock In tanpa Durasi), Kategori = `KategoriCell` yg SAMA (auto-save + log).
+  Accounting: Nomor PO, Vendor, Tgl Dokumen, Bank, Total Bayar, Status Proses. Aksi langsung di baris
+  bawah kartu (bukan dropdown "Aksi"): PDF / Hasil Audit / Riwayat / Edit / Hapus (Accounting:
+  Preview / Edit / Hapus), gating `canEdit*` sama; file belum ada = tombol abu.
+- Sort mode Card: `CardSortBar` di atas grid (`CARD_SORT_OPTIONS`, key = `SortKey`) — pengganti header
+  kolom sortable; ubah sort reset `page` ke 1 (sama klik header).
+- Aksen kiri kartu SERAGAM ungu — SENGAJA tidak diwarnai per status (badge "Selesai Diproses" hijau,
+  padahal Dashboard menghitung status terisi = "bermasalah"; warna per status akan menyesatkan).
+- Grid `grid-cols-1 md:2 xl:3 2xl:4`, scroll internal (pola shell tinggi tetap), footer pagination sama.
+
 ## Audit AP Local/Overseas/PI Local — "Riwayat Perubahan"
 
 Pengecualian dari rule "duplikasi sengaja" di atas — modal & fungsi log **SENGAJA DIBUAT
