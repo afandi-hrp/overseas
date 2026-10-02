@@ -148,6 +148,10 @@ page_key lama & hanya selama Draft (TANPA aturan Admin-only Sea & Air); (6) nama
   `patchCourierRowSilently(rec)` (baca ulang 1 baris lewat `reloadCourierRow` & tempel ke `records`, tanpa overlay
   "Updating data..."); KPI hanya dihitung ulang kalau persen kelengkapan/validasi baris berubah. JANGAN kembali ke
   `fetchRecords()` di sini. Aksi yg memindahkan baris (Mark as audited/Move back/Edit/Delete) tetap refresh penuh.
+- **Checklist membaca centang dari DB (2026-10-02, bug fix)**: `ChecklistModal` load `select('*')` dari `dokumen_checklist`
+  -> form/savedForm dari DB (dulu hanya dari `record` yg di-merge pemanggil -> Finance Handover Courier tampil 0%).
+- **Validation dari Invoice Recap tampil DI DEPAN jendela Open (2026-10-02, bug fix)**: prop `zIndexClass` (default `z-50`);
+  Recap merender jendela Validation lewat `createPortal` ke body + `z-[80]` (jendela Open Recap = portal `z-[70]`).
 - **"Manual change notes"** (tab Documents) = textarea `VW_INPUT` `block` tinggi `h-8` supaya sejajar input
   Check date/Checked by/No. AWB (dulu inline -> turun ~6px).
 - **Diuji**: jsdom `courier_ui` 47 cek (tab/pil/strip, Shipment Info di Overview, chip Overview -> Costs, Costs:

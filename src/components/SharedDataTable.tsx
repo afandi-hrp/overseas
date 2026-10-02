@@ -1326,17 +1326,20 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
         // Coba sekalian ambil catatan_checklist; kalau kolomnya belum ada (sql/028 belum
         // dijalankan) PostgREST error -> ulang tanpa kolom itu & tandai hasCatatanCol=false.
         let colExists = true
-        let res: any = await supabase.from('dokumen_checklist').select('id, catatan_checklist').eq(idCol, record.id).maybeSingle()
-        if (res.error && /catatan_checklist/i.test(res.error.message || '')) {
-          colExists = false
-          res = await supabase.from('dokumen_checklist').select('id').eq(idCol, record.id).maybeSingle()
-        }
+        // 2026-10-02: ambil SEMUA kolom -> centang dari DB (sumber kebenaran), bukan hanya dari `record`. Dulu centang
+        // hanya dari record yg sudah di-merge pemanggil -> pemanggil yg tidak merge (Finance Handover) tampil 0%.
+        const res: any = await supabase.from('dokumen_checklist').select('*').eq(idCol, record.id).maybeSingle()
         const { data, error } = res
 
         if (error) throw error
+        if (data) colExists = Object.prototype.hasOwnProperty.call(data, 'catatan_checklist')
         setHasCatatanCol(colExists)
 
         if (data) {
+          const fromDb: Record<string, boolean> = {}
+          CHECKLIST_FIELDS.forEach(f => { fromDb[f.key] = !!data[f.key] })
+          setForm(fromDb)
+          setSavedForm(fromDb)
           setExistingId(data.id)
           const c = colExists ? (data.catatan_checklist || '') : ''
           setCatatan(c)
@@ -5988,9 +5991,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         const { rec, docType } = courierRecapValidation;
         const draft = isCourierDraft(rec);
         const closeVal = () => { setCourierRecapValidation(null); refreshCourierRecap(); };
-        return (
+        // Portal ke body + z-[80]: dibuka dari jendela Open Recap (portal z-[70]) -> harus tampil DI DEPAN (laporan user 2026-10-02).
+        return createPortal(
           <React.Fragment key={`recap-val-${docType}-${rec.id}`}>
           <CourierValidationWindow
+            zIndexClass="z-[80]"
             record={rec}
             mainTab="courier"
             subTab="courier_audit"
@@ -6006,7 +6011,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
             subtitle={`${rec.awb || ''}${draft ? '' : ' · Audited — view only'}`}
             onClose={closeVal}
           />
-          </React.Fragment>
+          </React.Fragment>,
+          document.body
         );
       })()}
 

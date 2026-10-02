@@ -89,7 +89,7 @@ export type CourierOverviewApi = { openTab: (t: ValidationTabKey) => void; cv: a
 
 export default function CourierValidationWindow({
   record, mainTab, subTab, jenisDokumen, access, editAccess, renderChecklist, onClose,
-  overview, initialTab, title, subtitle, headerActions, trail, extraTab,
+  overview, initialTab, title, subtitle, headerActions, trail, extraTab, zIndexClass = 'z-50',
 }: {
   record: any;
   mainTab: string;
@@ -109,6 +109,8 @@ export default function CourierValidationWindow({
   trail?: React.ReactNode;
   // 1 tab tambahan sesudah Overview (2026-10-02: Finance Handover "Audit PIB/CN"). Tanpa prop ini = perilaku lama.
   extraTab?: { label: string; content: React.ReactNode };
+  // Lapisan overlay (2026-10-02): dibuka di atas jendela lain (mis. Open Invoice Recap z-[70]) -> 'z-[80]'.
+  zIndexClass?: string;
 }) {
   const showDocuments = access.checklist || access.doc;
   const showCosts = access.cost;
@@ -203,7 +205,7 @@ export default function CourierValidationWindow({
   ];
 
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center p-3 md:p-5 max-[1600px]:p-2.5 print:bg-white print:p-0"
+    <div className={`fixed inset-0 bg-slate-900/50 backdrop-blur-sm ${zIndexClass} flex justify-center items-center p-3 md:p-5 max-[1600px]:p-2.5 print:bg-white print:p-0`}
       onMouseDown={e => { if (e.target === e.currentTarget) requestClose(); }}>
       <div id="courier-validation-print-area" className="bg-white w-full max-w-[1320px] h-[94vh] max-[1600px]:max-w-none max-[1600px]:h-full rounded-2xl shadow-2xl flex flex-col overflow-hidden print:shadow-none print:rounded-none">
         {/* Header + tab -- gaya jendela Open Invoice Recap Sea & Air. */}
