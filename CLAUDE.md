@@ -506,10 +506,12 @@ user di production** (testing bagian 2 + Finance Handover dijadwalkan user bersa
 1. (Ditunda, belum dibutuhkan) Audit trail perubahan Checklist/Doc validation/Cost validation & log edit format app.
 2. ~~Review cost per invoice~~ — SELESAI 2026-10-02 (sql/038, belum dijalankan) — lihat "Courier 2026-10-02 bagian 2".
 3. (Diterima user) Tab Draft fetch & paging di browser — Draft hanya sementara, tidak perlu RPC gabungan.
-4. **MENUNGGU KEPUTUSAN**: 7 kolom auto-calc Audit TIDAK dibaca Reporting (hanya app/export, sudah live-calc) -> tidak
-   perlu disimpan. Yang dibaca Reporting APA ADANYA dari DB = 6 kolom auto-calc **Invoice Recap** (`breakdown_*_vessel`
-   utk Cost by Vessel, `total_amount` utk Cost by Courier) — kalau n8n tidak mengisinya, angka Reporting bisa kosong/salah.
-   Opsi: (a) Reporting memanggil `computeCourierRekapanCalc` saat membaca (tanpa SQL), (b) trigger DB menghitung & menyimpan.
+4. ~~Kolom auto-calc & Reporting~~ — TIDAK PERLU TINDAKAN (dicek 2026-10-02): 7 kolom auto-calc Audit TIDAK dibaca
+   Reporting (hanya app/export, sudah live-calc). Reporting membaca APA ADANYA 6 kolom auto-calc **Invoice Recap**
+   (`breakdown_*_vessel` Cost by Vessel, `total_amount` Cost by Courier) — query baca user: 164 invoice, `total_amount`
+   kosong 0, beda dari adm+duty+freight 0, `breakdown_freight_vessel` kosong 0 -> n8n/app sudah mengisi benar. Kalau
+   kelak ada laporan "angka Reporting 0/beda dgn Invoice Recap", ulangi query itu dulu (opsi perbaikan: Reporting memanggil
+   `computeCourierRekapanCalc` saat membaca, atau trigger DB).
 5. Upload additional doc = n8n MENIMPA `dokumen_validasi` (konfirmasi user). Doc validation yang sudah tersimpan diperbarui
    lewat tombol **Recompute document data** (2026-10-02: isi + perbarui field yang belum diedit manual) + banner jumlah
    field yang punya data dokumen lebih baru.
