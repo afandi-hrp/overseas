@@ -6902,10 +6902,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                     </div>
                   </div>
                 )}
-                <div className="text-[12px] text-[#6E5E70] px-1 pb-2 tabular-nums">
-                  <b className="text-[#3B1B3D]">{totalRecords}</b> {courierAuditType === 'archive' ? 'draft' : courierAuditType === 'pib' ? 'PIB' : 'CN'} record{totalRecords === 1 ? '' : 's'}
-                  {courierAuditType !== 'archive' && ' · order follows the manual order (reorder in List view)'}
-                </div>
+                {/* Baris "N draft records" DIHAPUS 2026-10-02 (permintaan user) -- jumlah tetap di footer "Showing … of N". */}
                 <CourierAuditCardList
                   rows={displayRows}
                   docTypeOf={courierDocTypeOf}
