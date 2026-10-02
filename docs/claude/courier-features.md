@@ -37,6 +37,9 @@ Recap Sea & Air (token `SeaAirAuditUi.tsx`, font Sora); mode **List** = tabel la
 - **Batas kolom role** (`getAllowedColumns('courier_rekapan')`): kolom tak diizinkan tidak tampil di kartu/Open/KPI
   ("Amounts hidden for your role" kalau `total_amount` disembunyikan).
 - Re-audit (sql/037): chip "↻ Changed in Invoice Recap — please re-audit" juga di kartu Audit Courier & banner Overview.
+- **Panel filter mode Card (2026-10-02, permintaan user, perlakuan SAMA Audit Courier)**: `@container` + `flex-wrap`; di bawah
+  lebar panel 1500px label dipersingkat ("Email date"->"Email", "Company"->"PT", "Needs attention"->"Attention");
+  **Export DIPINDAH dari header ke ujung kanan panel** (`renderExportBtn(true, true)`, kelompok `ml-auto`).
 - **2026-10-02 bagian 2** (sql/038): tombol filter "Needs attention" + badge sidebar, kunci setelah Submit to Finance
   (List: "🔒 Locked" tanpa Edit/Delete; Open: chip Locked + Unlock (Admin) dgn alasan). Detail: CLAUDE.md
   "Courier 2026-10-02 bagian 2".
