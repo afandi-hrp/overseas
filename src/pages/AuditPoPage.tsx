@@ -803,7 +803,7 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
 
   // Halaman ke-2 modal Dashboard (2026-09) -- "Per Vendor": chart batang jumlah baris PER
-  // `nama_pt` yang `status_audit`-nya SUDAH TERISI (bukan null/kosong) dalam rentang tanggal yang
+  // `nama_pt` (SEMUA dokumen -- koreksi 2026-10-02, dulu hanya `status_audit` terisi) dalam rentang tanggal yang
   // sama dgn tab Overview -- REPLIKA visual slide "Cost Controller - AP Local" yang diberikan
   // user. Tab terpisah (bukan gabung ke halaman Overview) krn beda jenis chart (pie vs batang)
   // & beda skala data (per-PT vs total), disatukan dlm 1 modal ini biar 1 pintu masuk Dashboard.
@@ -821,7 +821,7 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
 
   // Daftar PT DINAMIS (2026-09, lihat `fetchDistinctNamaPt()`) -- dipakai seed tab "Per Vendor"
   // supaya PT yang benar-benar ada di data (bukan cuma 7 nama hardcode `PT_OPTIONS` lama) ikut
-  // tampil sbg batang 0 kalau rentang tanggal tidak py dokumen bermasalah utk PT itu.
+  // tampil sbg batang 0 kalau rentang tanggal tidak py dokumen utk PT itu.
   const [ptOptions, setPtOptions] = useState<string[]>(PT_OPTIONS);
   useEffect(() => {
     fetchDistinctNamaPt('audit_po_ap_comp').then(setPtOptions);
@@ -846,36 +846,29 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
     setStats({ total, bermasalah, sesuai: total - bermasalah });
   }, []);
 
-  // RPC `fn_reporting_vendor_stats` (2026-09) -- GANTI dari fetch SEMUA baris kolom `nama_pt`
-  // (bisa puluhan ribu baris kalau rentang tanggal lebar) + hitung manual di JS, jadi GROUP BY
-  // di Postgres, cuma balikin baris teragregasi (1 baris per nama PT + count). SATU-SATUNYA
-  // yang tetap dihitung di client: seed 0 utk `ptOptions` yang tidak muncul di hasil RPC.
   const fetchVendorStats = useCallback(async (from: string, to: string) => {
     setVendorLoading(true);
     setVendorError(null);
-    const { data, error: fetchError } = await supabase.rpc('fn_reporting_vendor_stats', {
-      p_table: 'audit_po_ap_comp', p_from: from, p_to: to,
-    });
+    // Per Vendor = JUMLAH SEMUA DOKUMEN per `nama_pt` di rentang tanggal (2026-10-02, koreksi
+    // user) -- BUKAN cuma dokumen bermasalah. RPC `fn_reporting_vendor_stats` lama memfilter
+    // `status_audit` terisi, jadi TIDAK dipakai lagi di sini. 1 query `count/head` per PT (paralel,
+    // tanpa menarik baris), filter tanggal SAMA PERSIS `fetchStats` -> jumlah semua batang (+ GENERAL)
+    // = "Total PO Running AI" di tab Overview. Baris tanpa nama PT -> batang "TIDAK DIKETAHUI" (kalau ada).
+    const pts = ptOptions.filter(pt => pt !== 'GENERAL');
+    const countQuery = () => supabase.from('audit_po_ap_comp').select('*', { count: 'exact', head: true })
+      .gte('created_at', `${from}T00:00:00`).lte('created_at', `${to}T23:59:59`);
+    const [ptResults, noPtRes] = await Promise.all([
+      Promise.all(pts.map(pt => countQuery().eq('nama_pt', pt))),
+      countQuery().or('nama_pt.is.null,nama_pt.eq.'),
+    ]);
     setVendorLoading(false);
-    if (fetchError) { setVendorError(fetchError.message); return; }
+    const failed = [...ptResults, noPtRes].find(r => r.error);
+    if (failed?.error) { setVendorError(failed.error.message); return; }
 
-    // Selalu mulai dari SEMUA `ptOptions` (daftar DINAMIS, lihat `fetchDistinctNamaPt()`)
-    // bernilai 0 dulu (2026-09, permintaan user "kalau datanya tidak ada, tetap munculkan
-    // grafiknya, angkanya 0, nama PT-nya tetap muncul") -- supaya chart TETAP tampil dgn semua
-    // nama PT yang BENERAN ada di data + batang setinggi 0, bukan "Tidak ada data" polos,
-    // biarpun rentang tanggal itu kosong/nol dokumen bermasalah.
-    const counts: Record<string, number> = {};
-    // "GENERAL" SENGAJA dikeluarkan dari chart ini (permintaan user 2026-09) -- bukan nama PT
-    // spesifik, jadi tidak relevan ditampilkan sbg batang per-vendor.
-    ptOptions.filter(pt => pt !== 'GENERAL').forEach(pt => { counts[pt] = 0; });
-    (data as { pt: string; cnt: number }[] || []).forEach(r => {
-      const pt = r.pt || 'TIDAK DIKETAHUI';
-      if (pt === 'GENERAL') return;
-      counts[pt] = (counts[pt] || 0) + Number(r.cnt || 0);
-    });
-    const list = Object.entries(counts)
-      .map(([pt, count]) => ({ pt, count }))
-      .sort((a, b) => b.count - a.count);
+    const list = pts.map((pt, i) => ({ pt, count: ptResults[i].count || 0 }));
+    const noPt = noPtRes.count || 0;
+    if (noPt > 0) list.push({ pt: 'TIDAK DIKETAHUI', count: noPt });
+    list.sort((a, b) => b.count - a.count);
     setVendorStats(list);
   }, [ptOptions]);
 
@@ -1142,7 +1135,7 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-// Tab "Per Vendor" modal Dashboard -- chart batang jumlah baris (`status_audit` terisi) per
+// Tab "Per Vendor" modal Dashboard -- chart batang jumlah SEMUA dokumen per
 // `nama_pt`, REPLIKA visual slide "Cost Controller - AP Local" yang diberikan user. Dipisah jadi
 // komponen sendiri (bukan inline di DashboardModal) supaya JSX-nya tidak menumpuk terlalu dalam.
 function VendorTabContent({ loading, error, stats }: { loading: boolean; error: string | null; stats: VendorStat[] | null }) {
@@ -1158,7 +1151,7 @@ function VendorTabContent({ loading, error, stats }: { loading: boolean; error: 
 
   const totalDokumen = rows.reduce((sum, s) => sum + s.count, 0);
   const maxCount = rows.length > 0 ? Math.max(...rows.map(s => s.count)) : 0;
-  // Semua nilai 0 (belum ada dokumen bermasalah di rentang ini) -- tetap tampilkan chart apa
+  // Semua nilai 0 (belum ada dokumen di rentang ini) -- tetap tampilkan chart apa
   // adanya (2026-09, permintaan user), pakai skala placeholder kecil (0-10) supaya gridline-nya
   // tetap rapi, BUKAN skala pecahan aneh hasil `niceAxisStep(0)`.
   const step = maxCount > 0 ? niceAxisStep(maxCount) : 2;
@@ -1176,7 +1169,7 @@ function VendorTabContent({ loading, error, stats }: { loading: boolean; error: 
 
   // Kalimat "PT X dan PT Y yang sering ditemui" -- 2 PT dgn jumlah TERBANYAK (list sudah
   // disortir descending dari fetchVendorStats), REPLIKA kalimat Key Notes di slide contoh user.
-  // Cuma ditampilkan kalau BENERAN ada dokumen bermasalah (maxCount > 0) -- kalau semua 0, klaim
+  // Cuma ditampilkan kalau BENERAN ada dokumen (maxCount > 0) -- kalau semua 0, klaim
   // "sering ditemui" jadi tidak masuk akal (tidak ada satu pun kejadian sama sekali).
   const top2 = maxCount > 0 ? rows.slice(0, 2).map(s => s.pt) : [];
 
@@ -1196,7 +1189,7 @@ function VendorTabContent({ loading, error, stats }: { loading: boolean; error: 
             <line x1={0} y1={plotH} x2={plotW} y2={plotH} stroke="#334155" strokeWidth={1.5} />
 
             {/* Batang + label nilai + label PT -- batang setinggi 0 (belum ada dokumen
-                bermasalah utk PT itu) TETAP dirender apa adanya (tinggi 0 = tidak kelihatan,
+                utk PT itu) TETAP dirender apa adanya (tinggi 0 = tidak kelihatan,
                 cuma garis dasar), label nilai "0" dipindah ke ATAS titik dasar (bukan "di dalam
                 batang dekat puncak" spt batang normal) supaya tidak numpuk sama label nama PT
                 di bawah sumbu X. */}

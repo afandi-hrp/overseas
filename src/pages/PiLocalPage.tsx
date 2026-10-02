@@ -785,7 +785,7 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
 
   // Tab ke-2 modal Dashboard: "Per Vendor" (2026-09, REPLIKA PERSIS AuditPoPage.tsx) -- chart
-  // batang jumlah baris per `nama_pt` yang `status_audit`-nya terisi, dalam rentang tanggal SAMA
+  // batang jumlah baris per `nama_pt` (SEMUA dokumen, bukan cuma bermasalah -- koreksi 2026-10-02), dalam rentang tanggal SAMA
   // dgn tab Overview.
   const [activeTab, setActiveTab] = useState<'overview' | 'vendor' | 'kategori'>('overview');
   const [vendorStats, setVendorStats] = useState<VendorStat[] | null>(null);
@@ -824,28 +824,29 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
     setStats({ total, bermasalah, sesuai: total - bermasalah });
   }, []);
 
-  // RPC `fn_reporting_vendor_stats` (2026-09) -- GANTI dari fetch SEMUA baris kolom `nama_pt` +
-  // hitung manual di JS, jadi GROUP BY di Postgres. "GENERAL" dikeluarkan dari chart ini (bukan
-  // nama PT spesifik) -- semua `PT_OPTIONS` lain selalu jadi baris dgn count default 0.
   const fetchVendorStats = useCallback(async (from: string, to: string) => {
     setVendorLoading(true);
     setVendorError(null);
-    const { data, error: fetchError } = await supabase.rpc('fn_reporting_vendor_stats', {
-      p_table: 'audit_po_pi_local_comp', p_from: from, p_to: to,
-    });
+    // Per Vendor = JUMLAH SEMUA DOKUMEN per `nama_pt` di rentang tanggal (2026-10-02, koreksi
+    // user) -- BUKAN cuma dokumen bermasalah. RPC `fn_reporting_vendor_stats` lama memfilter
+    // `status_audit` terisi, jadi TIDAK dipakai lagi di sini. 1 query `count/head` per PT (paralel,
+    // tanpa menarik baris), filter tanggal SAMA PERSIS `fetchStats` -> jumlah semua batang (+ GENERAL)
+    // = "Total PO Running AI" di tab Overview. Baris tanpa nama PT -> batang "TIDAK DIKETAHUI" (kalau ada).
+    const pts = ptOptions.filter(pt => pt !== 'GENERAL');
+    const countQuery = () => supabase.from('audit_po_pi_local_comp').select('*', { count: 'exact', head: true })
+      .gte('created_at', `${from}T00:00:00`).lte('created_at', `${to}T23:59:59`);
+    const [ptResults, noPtRes] = await Promise.all([
+      Promise.all(pts.map(pt => countQuery().eq('nama_pt', pt))),
+      countQuery().or('nama_pt.is.null,nama_pt.eq.'),
+    ]);
     setVendorLoading(false);
-    if (fetchError) { setVendorError(fetchError.message); return; }
+    const failed = [...ptResults, noPtRes].find(r => r.error);
+    if (failed?.error) { setVendorError(failed.error.message); return; }
 
-    const counts: Record<string, number> = {};
-    ptOptions.filter(pt => pt !== 'GENERAL').forEach(pt => { counts[pt] = 0; });
-    (data as { pt: string; cnt: number }[] || []).forEach(r => {
-      const pt = r.pt || 'TIDAK DIKETAHUI';
-      if (pt === 'GENERAL') return;
-      counts[pt] = (counts[pt] || 0) + Number(r.cnt || 0);
-    });
-    const list = Object.entries(counts)
-      .map(([pt, count]) => ({ pt, count }))
-      .sort((a, b) => b.count - a.count);
+    const list = pts.map((pt, i) => ({ pt, count: ptResults[i].count || 0 }));
+    const noPt = noPtRes.count || 0;
+    if (noPt > 0) list.push({ pt: 'TIDAK DIKETAHUI', count: noPt });
+    list.sort((a, b) => b.count - a.count);
     setVendorStats(list);
   }, [ptOptions]);
 

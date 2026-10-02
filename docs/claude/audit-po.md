@@ -69,7 +69,12 @@ halaman. Rule ini dinyatakan SEKALI di sini.
   - **Tombol "Dashboard" + `DashboardModal`** (paling kiri panel filter). Tab **Overview**: pie
     chart SVG manual dgn efek "3D" (radial gradient + drop-shadow + rim stroke, helper
     `lightenHex`/`darkenHex`), `r=105, cx=300` (JAGA `cx-r=195` konstan kalau resize pie). Tab
-    **Per Vendor**: chart batang vertikal per `nama_pt`, `niceAxisStep()` helper axis. Tab
+    **Per Vendor**: chart batang vertikal per `nama_pt`, `niceAxisStep()` helper axis. **Isi batang =
+    JUMLAH SEMUA DOKUMEN per PT di rentang tanggal** (koreksi user 2026-10-02 — dulu hanya dokumen
+    bermasalah krn RPC `fn_reporting_vendor_stats` memfilter `status_audit` terisi). 3 halaman
+    `audit_po_*` TIDAK memanggil RPC itu lagi: 1 query `count:'exact', head:true` per PT (paralel) +
+    1 utk PT kosong (batang "TIDAK DIKETAHUI" kalau >0), filter `created_at` SAMA `fetchStats` ->
+    jumlah batang (+ GENERAL) = "Total PO Running AI" Overview. Accounting Rekap MASIH pakai RPC. Tab
     **Kategori**: chart batang HORIZONTAL per `kategori`, `wrapKategoriLabel()` word-wrap, TIDAK
     di-seed 0 spt Per Vendor. Wrapper `min-h-[380px] mt-3 flex flex-col justify-center` (SAMA di
     semua tab, cegah modal "meloncat" ukuran). Semua 3 tab + efek 3D + dropdown dinamis PT —
@@ -257,6 +262,8 @@ Supabase production — WAJIB dijalankan manual dulu)**:
 - `fn_reporting_vendor_stats(p_table text, p_from text, p_to text)` — `GROUP BY` nama PT/PT
   internal di Postgres (status terisi, dalam rentang tanggal), balikin `{pt, cnt}` teragregasi
   (biasanya ≤20-50 baris) — bukan ribuan baris mentah dihitung ulang di JS.
+  **Sejak 2026-10-02 hanya dipakai Accounting Rekap** (3 halaman `audit_po_*` tab Per Vendor kini
+  hitung semua dokumen per PT, lihat atas).
 - `fn_reporting_kategori_stats(p_table text, p_from text, p_to text)` — REPLIKA persis logic
   `parseKategoriMulti()`/`KATEGORI_MULTI_SEPARATOR` (` + `) via `unnest(string_to_array(kategori,
   ' + '))` + `GROUP BY` di Postgres (**kalau separator ini berubah di frontend, WAJIB
