@@ -99,12 +99,13 @@ function SortableHeader({ label, sortKey, activeSort, activeDir, onSort }: {
   );
 }
 
-function PtBadge({ pt }: { pt: string | null }) {
+// `highlight` = latar kuning #FFF5C5 (dipakai tampilan Card, 2026-10-02 permintaan user); tabel List tetap abu.
+function PtBadge({ pt, highlight = false }: { pt: string | null; highlight?: boolean }) {
   // rounded-lg break-words (bukan rounded-full whitespace-nowrap) -- nama PT panjang harus enter
   // ke bawah, bukan overflow keluar kolom (2026-09, permintaan user, sama pola dgn fix
   // StatusBadge/Nomor PO/Vendor break-words di halaman ini).
   return (
-    <span className="text-[10px] font-bold px-2 py-1 rounded-lg break-words bg-slate-100 text-[#5A305A]">
+    <span className={`text-[10px] font-bold px-2 py-1 rounded-lg break-words ${highlight ? 'bg-[#FFF5C5]' : 'bg-slate-100'} text-[#5A305A]`}>
       {pt || '-'}
     </span>
   );
@@ -1666,7 +1667,7 @@ export default function AuditPoPage() {
                           </div>
                         </div>
                         <div className="mt-2">
-                          <RowEyebrow><PtBadge pt={r.nama_pt} /><span>{formatDateTimeID(r.created_at)}</span></RowEyebrow>
+                          <RowEyebrow><PtBadge pt={r.nama_pt} highlight /><span>{formatDateTimeID(r.created_at)}</span></RowEyebrow>
                         </div>
                       </>}
                       main={<>

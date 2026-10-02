@@ -107,7 +107,8 @@ presentational); isi kartu tetap ditulis per halaman.
   dikembalikan). **Susunan final 2026-10-02 = SAMA Bunker** (`DocRow alignTop`: kolom kiri & tengah rata
   atas, ringkasan & aksi tetap tengah): kiri = Nomor PO PALING ATAS (sejajar Vendor), lalu label
   "Kategori" + `KategoriCell` SAMA (auto-save + log) sebaris (Accounting: "Status Proses" + badge), lalu
-  badge PT + tanggal PALING BAWAH | tengah = Vendor tebal + chip sejajar (Durasi; PI Local: SJ & Stock In;
+  badge PT (latar kuning `#FFF5C5`, `PtBadge highlight` -- HANYA mode Card, List tetap abu) + tanggal
+  PALING BAWAH | tengah = Vendor tebal + chip sejajar (Durasi; PI Local: SJ & Stock In;
   Accounting: Tgl Dok & Bank) | kanan rata kanan = Status Audit (Accounting: Total Bayar besar) | aksi
   (PDF & Hasil Audit / Preview berlabel, Riwayat/Edit/Hapus ikon saja + tooltip, gating `canEdit*` sama;
   file belum ada = tombol abu). Layar < lg kolom ditumpuk.
