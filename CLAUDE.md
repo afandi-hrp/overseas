@@ -629,8 +629,10 @@ di Finance): Courier menampilkan semua krn invoice Duty Courier memang dibayar F
 **`sql/039`**: policy SELECT `<tabel>_select_courier_finance` (`has_page_access('courier_finance')`) di `tabel_audit_pib`,
 `tabel_audit_cn`, `dokumen_checklist`, `dokumen_validasi`, `tabel_checklist_validasi`, `tabel_npwp`, `tabel_cost_validasi`,
 `cost_validasi_review_courier` — TANPA policy tulis (baca saja); role Finance tidak perlu akses halaman Audit Courier.
-Hasil akhir 039 menampilkan `prosecdef` `get_kurs_efektif`/`fn_hitung_storage` (kalau `get_kurs_efektif` INVOKER &
-kalkulasi PIB di layar Finance tanpa kurs -> perlu policy baca tabel kurs). Diuji: jsdom courier_recap 49 cek, PGlite 039 4.
+Cek user 2026-10-02: `get_kurs_efektif` SECURITY DEFINER (kurs tampil utk Finance); `fn_hitung_storage` INVOKER tapi hanya
+dipakai panel Recalculate bonded storage yg tersembunyi di mode baca saja -> tidak perlu policy tambahan.
+**Admin di Finance Handover** = diperlakukan sbg Finance (canEdit selalu true): daftar SAMA (hanya yg sudah submit),
+bisa Accept/Mark paid, detail tetap "Accept to view" sebelum diterima. Diuji: jsdom courier_recap 49 cek, PGlite 039 4.
 
 ## Invoice Recap Courier per AWB + Finance Handover Courier (2026-10-02, kode SELESAI, sql/037 SUDAH DIJALANKAN 2026-10-02)
 

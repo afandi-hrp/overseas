@@ -140,8 +140,8 @@ page_key lama & hanya selama Draft (TANPA aturan Admin-only Sea & Air); (6) nama
 - **Audit trail** (`CourierAuditTrail.tsx`): timeline per hari, "Lama → Baru" diparse, entri kembar "×N", Refresh;
   data SAMA `fetchCourierAuditLog`.
 - Token warna Sea & Air di `validationWindowStyles.ts` (`VW_*`, `VW_TILE*`, `VW_INPUT`, `VW_TH`).
-- **Ukuran jendela (2026-10-02, permintaan user)**: SAMA jendela Open Invoice Recap Sea & Air di layar besar
-  (`max-w-[1180px] h-[94vh]`, overlay `p-3 md:p-5`); layar <=1600px (laptop 14", zoom 90%) =
+- **Ukuran jendela (2026-10-02, permintaan user)**: layar besar `max-w-[1320px] h-[94vh]` (awalnya 1180px = SAMA Open
+  Invoice Recap Sea & Air, lalu DIPERLEBAR atas permintaan user), overlay `p-3 md:p-5`; layar <=1600px (laptop 14", zoom 90%) =
   `max-[1600px]:max-w-none max-[1600px]:h-full` + overlay `p-2.5` (hampir penuh layar, `vh` tidak ikut zoom).
   Berlaku juga utk jendela Validation dari Invoice Recap Courier; jendela LAMA mode List (`*Legacy`) tidak berubah.
 - **Tutup jendela Open TIDAK reload tabel (2026-10-02, laporan user)**: `closeOpen` memanggil
