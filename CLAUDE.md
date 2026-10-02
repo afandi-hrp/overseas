@@ -593,8 +593,9 @@ ada nama fungsi bentrok. Keputusan:
   MISMATCH, RLS 4 policy page_key `courier_cost_validation`); kolom `rekapan_courier.submit_unlock_reason/_by/_at`; trigger
   `fn_courier_recap_lock` (BEFORE UPDATE/DELETE: baris ber-`submit_date` hanya boleh ubah kolom Finance/`sort_order`, DELETE
   ditolak; submit baru dicatat audit_trail "Submit to Finance — Lama: - → Baru: <tgl>"; service lolos; flag
-  `app.courier_unlock`); RPC `fn_courier_unlock_submit(uuid, text)` (Admin, alasan ≥5, ditolak kalau Finance sudah terima,
-  dicatat audit_trail). RPC Finance Courier (037) tetap jalan di baris terkunci.
+  `app.courier_unlock`); RPC `fn_courier_unlock_submit(uuid, text)` (Admin, alasan ≥5, ditolak kalau Finance sudah terima ATAU sudah
+  lunas -- data lama: `tgl_lunas` terisi tanpa Received; dicatat audit_trail). **Efek saat 038 dijalankan**: SEMUA invoice
+  lama yg sudah punya Submit Date (per 2026-10-02: 84 baris, 68 Waiting + 16 Paid) langsung TERKUNCI. RPC Finance Courier (037) tetap jalan di baris terkunci.
 - **Review cost** (`CourierCostReviewHelpers.ts` SATU-SATUNYA query tabel, `CourierCostReviewBox.tsx` dipakai jendela baru &
   `CostValidationModalLegacy` [prop `legacy`]): kotak per invoice Freight/Duty, muncul kalau invoice ada selisih ATAU sudah
   direview; Accept difference (catatan opsional) / Ask vendor to revise (catatan wajib) / Change / Undo; hak = `canEdit`

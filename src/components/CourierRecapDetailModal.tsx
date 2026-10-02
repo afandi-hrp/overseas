@@ -43,8 +43,8 @@ const UnlockControl: React.FC<{ r: any; busy: boolean; onUnlock: (id: string, re
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState('')
   const [saving, setSaving] = useState(false)
-  if (r.finance_received_at) {
-    return <div className="text-[11px] text-[#8A7A8B] mt-1" title="Finance has already received this invoice">Unlock unavailable — received by Finance</div>
+  if (r.finance_received_at || r.tgl_lunas) {
+    return <div className="text-[11px] text-[#8A7A8B] mt-1" title="Finance has already received or paid this invoice">Unlock unavailable — {r.tgl_lunas ? 'already paid' : 'received by Finance'}</div>
   }
   if (!open) {
     return (

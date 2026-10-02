@@ -6,7 +6,7 @@
 --     validasi Courier lain).
 --   * Invoice Recap Courier: setelah Submit to Finance baris invoice TERKUNCI (sama Sea & Air) -- UPDATE/DELETE
 --     ditolak kecuali kolom Finance / urutan; hanya Admin bisa Unlock (alasan min. 5 karakter, ditolak kalau
---     Finance sudah menerima), tercatat di audit_trail. Submit tetap TANPA syarat (keputusan user).
+--     Finance sudah menerima ATAU sudah lunas), tercatat di audit_trail. Submit tetap TANPA syarat (keputusan user).
 -- Idempotent. Pre-check membatalkan kalau ada fungsi/tabel bernama sama yang BUKAN buatan file ini.
 -- Penulis service (n8n / SQL Editor, auth.email() IS NULL) TIDAK dikunci.
 
@@ -126,8 +126,9 @@ begin
   select * into r from public.rekapan_courier where id = p_id for update;
   if not found then raise exception 'Invoice not found: %', p_id; end if;
   if r.submit_date is null then raise exception 'This invoice is not locked (not submitted to Finance).'; end if;
-  if r.finance_received_at is not null then
-    raise exception 'Finance has already received this invoice — it cannot be unlocked.';
+  if r.finance_received_at is not null or r.tgl_lunas is not null then
+    -- Paid tanpa Received = data lama (Tgl Lunas diisi sebelum Finance Handover ada) -- tetap tidak boleh dibuka.
+    raise exception 'Finance has already received / paid this invoice — it cannot be unlocked.';
   end if;
 
   perform set_config('app.courier_unlock', 'on', true);
