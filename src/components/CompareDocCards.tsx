@@ -67,19 +67,22 @@ export function CardSortBar<K extends string>({ total, options, sortBy, sortDir,
 // 1 data = 1 BARIS kartu lebar penuh (2026-10-02, permintaan user: "tetap seperti list tapi di
 // improve", acuan tampilan kartu Audit Courier). Kolom: identitas (kiri) | isi utama | ringkasan
 // (rata kanan) | tombol aksi. Di layar < lg kolom ditumpuk ke bawah.
-export function DocRow({ left, main, side, actions }: {
+export function DocRow({ left, main, side, actions, alignTop = false }: {
   key?: React.Key;
+  // true = kolom kiri & tengah rata ATAS (baris pertama keduanya sejajar, mis. No PO & Vendor
+  // di Bunker); kolom ringkasan & aksi tetap di tengah vertikal. Default: semua kolom di tengah.
+  alignTop?: boolean;
   left: React.ReactNode;
   main: React.ReactNode;
   side: React.ReactNode;
   actions: React.ReactNode;
 }) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 border-l-[3px] border-l-[#5A305A]/70 shadow-sm hover:shadow-md transition-shadow px-5 py-3.5 grid grid-cols-1 lg:grid-cols-[minmax(220px,290px)_minmax(0,1fr)_minmax(140px,210px)_auto] gap-x-6 gap-y-3 items-center min-w-0">
+    <div className={`bg-white rounded-2xl border border-slate-200 border-l-[3px] border-l-[#5A305A]/70 shadow-sm hover:shadow-md transition-shadow px-5 py-3.5 grid grid-cols-1 lg:grid-cols-[minmax(220px,290px)_minmax(0,1fr)_minmax(140px,210px)_auto] gap-x-6 gap-y-3 ${alignTop ? 'items-start' : 'items-center'} min-w-0`}>
       <div className="min-w-0">{left}</div>
       <div className="min-w-0">{main}</div>
-      <div className="min-w-0 lg:text-right">{side}</div>
-      <div className="flex flex-wrap items-center gap-1.5 lg:justify-end">{actions}</div>
+      <div className="min-w-0 lg:text-right lg:self-center">{side}</div>
+      <div className="flex flex-wrap items-center gap-1.5 lg:justify-end lg:self-center">{actions}</div>
     </div>
   );
 }
@@ -90,8 +93,8 @@ export function RowEyebrow({ children }: { children: React.ReactNode }) {
 }
 
 // Judul baris (Nomor PO) -- tebal & besar, boleh pecah di karakter mana pun (nomor panjang).
-export function RowTitle({ children }: { children: React.ReactNode }) {
-  return <div className="font-bold text-[15px] text-[#5A305A] leading-snug break-all mt-1">{children}</div>;
+export function RowTitle({ children, className = 'mt-1' }: { children: React.ReactNode; className?: string }) {
+  return <div className={`font-bold text-[15px] text-[#5A305A] leading-snug break-all ${className}`}>{children}</div>;
 }
 
 // Chip kecil "label nilai" (mis. "SJ 123", "Durasi 2m").

@@ -454,14 +454,17 @@ export default function BunkerPage() {
                       return (
                         <DocRow
                           key={r.id}
+                          alignTop
                           left={<>
-                            <RowEyebrow><StatusBadge status={r.status} /><span>Updated {formatDateTimeID(r.updated_at)}</span></RowEyebrow>
-                            <RowTitle>{r.no_po || '-'}</RowTitle>
-                            {/* Kiri = identitas & status PO; Workflow Status sebaris dgn labelnya (2026-10-02,
-                                permintaan user: baris kartu ramping & rapi). */}
+                            {/* Kiri (susunan final 2026-10-02, permintaan user): No PO paling atas (sejajar
+                                Vendor), Workflow Status sebaris labelnya, status sistem + Updated paling bawah. */}
+                            <RowTitle className="">{r.no_po || '-'}</RowTitle>
                             <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                               <span className="text-[9px] font-bold uppercase tracking-wide text-[#5A305A]/50">Workflow Status</span>
                               <WorkflowSelect row={r} onChanged={fetchList} canEdit={canEditBunker} />
+                            </div>
+                            <div className="mt-2">
+                              <RowEyebrow><StatusBadge status={r.status} /><span>Updated {formatDateTimeID(r.updated_at)}</span></RowEyebrow>
                             </div>
                           </>}
                           main={<>
