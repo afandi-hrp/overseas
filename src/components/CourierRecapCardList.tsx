@@ -8,7 +8,7 @@ import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, Chip, Pill, PtBadge } from './SeaAir
 import { fmtRp, fmtRpShort, fmtDateShort, companyFullName } from '../utils/SeaAirAuditHelpers'
 import { courierDocNo, isCourierDraft } from '../utils/CourierAuditHelpers'
 import {
-  fetchCourierRecapPage, fetchRecapAuditLinks, recapGroupStatus, ppjkCode, INVOICE_KIND_LABEL,
+  fetchCourierRecapPage, fetchRecapAuditLinks, fetchCourierRecapAttentionGroups, recapGroupStatus, ppjkCode, INVOICE_KIND_LABEL,
   type RecapFilters, type RecapGroup, type RecapSummaryCourier, type InvoiceKind,
 } from '../utils/CourierRecapHelpers'
 import { LoadingState } from './LoadingState'
@@ -148,8 +148,10 @@ export const CourierRecapCardView: React.FC<{
   onOpen: (g: RecapGroup) => void
   onValidation: (g: RecapGroup, tab?: ValidationTabKey) => void
   onLoaded?: (groups: RecapGroup[]) => void
-}> = ({ filters, nonce, companyNames, colOk, validationTabs, enrichAudit, onOpen, onValidation, onLoaded }) => {
-  const filterKey = JSON.stringify(filters)
+  // "Needs attention" (2026-10-02): hanya AWB yang perlu perhatian (recapGroupNeedsAttention), dihitung di browser.
+  attentionOnly?: boolean
+}> = ({ filters, nonce, companyNames, colOk, validationTabs, enrichAudit, onOpen, onValidation, onLoaded, attentionOnly = false }) => {
+  const filterKey = JSON.stringify(filters) + (attentionOnly ? ':attention' : '')
   const [page, setPage] = useState(1)
   const [groups, setGroups] = useState<RecapGroup[] | null>(null)
   const [total, setTotal] = useState(0)
@@ -167,9 +169,15 @@ export const CourierRecapCardView: React.FC<{
     setError(null)
     ;(async () => {
       try {
-        const res = await fetchCourierRecapPage(filters, (page - 1) * COURIER_RECAP_PAGE_SIZE, COURIER_RECAP_PAGE_SIZE)
-        await fetchRecapAuditLinks(res.groups)
-        await enrichAudit(res.groups.map(g => g.audit?.rec).filter(Boolean))
+        let res: { total: number; groups: RecapGroup[]; fallback: boolean }
+        if (attentionOnly) {
+          const all = await fetchCourierRecapAttentionGroups(filters, validationTabs, enrichAudit)
+          res = { total: all.length, groups: all.slice((page - 1) * COURIER_RECAP_PAGE_SIZE, page * COURIER_RECAP_PAGE_SIZE), fallback: false }
+        } else {
+          res = await fetchCourierRecapPage(filters, (page - 1) * COURIER_RECAP_PAGE_SIZE, COURIER_RECAP_PAGE_SIZE)
+          await fetchRecapAuditLinks(res.groups)
+          await enrichAudit(res.groups.map(g => g.audit?.rec).filter(Boolean))
+        }
         if (my !== seq.current) return
         setGroups(res.groups)
         setTotal(res.total)
@@ -195,12 +203,12 @@ export const CourierRecapCardView: React.FC<{
         {groups === null && loading ? <LoadingState /> : error ? (
           <div className="text-center py-16 text-[#A8231A] text-[13px]">Failed to load Invoice Recap: {error}</div>
         ) : (groups || []).length === 0 ? (
-          <div className="text-center py-20 text-[#6E5E70] text-[13px]">No AWB matches the current filters.</div>
+          <div className="text-center py-20 text-[#6E5E70] text-[13px]">{attentionOnly ? 'No AWB needs attention — every open invoice has 100% validation.' : 'No AWB matches the current filters.'}</div>
         ) : (
           <>
             {loading && <div className="absolute top-2 right-3 z-10 text-[11px] text-[#6E5E70] bg-white/90 px-2 py-0.5 rounded-full border border-[#EADFD6]">Updating…</div>}
             <div className="text-[12px] text-[#6E5E70] px-1 pb-2 tabular-nums">
-              <b className="text-[#3B1B3D]">{total}</b> AWB · newest email received first{fallback ? ' · (computed in the browser — run sql/037 for faster loading)' : ''}
+              <b className="text-[#3B1B3D]">{total}</b> AWB{attentionOnly ? ' need attention (open invoices, validation not 100%)' : ''} · newest email received first{fallback ? ' · (computed in the browser — run sql/037 for faster loading)' : ''}
             </div>
             <div className="flex flex-col gap-2.5">
               {(groups || []).map(g => (

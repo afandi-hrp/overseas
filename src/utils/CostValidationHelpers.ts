@@ -44,35 +44,48 @@ export type CostValidationSummary = {
   invoice_freight_status: 'OK' | 'N/A' | 'ADA SELISIH';
   invoice_duty_status: 'OK' | 'N/A' | 'ADA SELISIH';
   pct: number;
+  // Ada selisih per invoice SEBELUM review diterapkan (dipakai utk menampilkan kotak review).
+  section_diff: { FREIGHT: boolean; DUTY: boolean };
 };
+
+// Review cost per invoice (sql/038 `cost_validasi_review_courier`, 2026-10-02): "Accept difference" (MATCH) =
+// semua baris invoice itu dihitung sesuai (pola konfirmasi segmen Sea & Air); "Ask vendor" (MISMATCH) = tetap
+// dihitung selisih. Baris detail di tabel TIDAK berubah, hanya ringkasan/persen.
+export type CostReviewSection = 'FREIGHT' | 'DUTY';
+export type CostReviewMap = Partial<Record<CostReviewSection, 'MATCH' | 'MISMATCH'>>;
 
 // Replika PERSIS `liveSummary` di CostValidationModal.tsx -- dihitung dari status & visibilitas
 // baris yang BENERAN tampil di tabel Invoice Freight Validation & Invoice Duty Validation,
 // bukan dibaca langsung dari kolom tersimpan (total_cost_cek/status_cost dst, yang cuma diisi
 // n8n waktu data pertama dibuat dan tidak ikut ter-update saat user edit manual).
-export function computeLiveCostSummary(data: any, jenisDokumen?: string | null): CostValidationSummary {
+export function computeLiveCostSummary(data: any, jenisDokumen?: string | null, reviews?: CostReviewMap | null): CostValidationSummary {
   if (!data) {
-    return { total_cost_cek: 0, total_ok: 0, total_selisih: 0, total_na: 0, status_cost: 'N/A', invoice_freight_status: 'N/A', invoice_duty_status: 'N/A', pct: 0 };
+    return { total_cost_cek: 0, total_ok: 0, total_selisih: 0, total_na: 0, status_cost: 'N/A', invoice_freight_status: 'N/A', invoice_duty_status: 'N/A', pct: 0, section_diff: { FREIGHT: false, DUTY: false } };
   }
 
   const isPib = (jenisDokumen || data.jenis_dokumen || '').toUpperCase() === 'PIB';
 
   const mainFields = [
-    { visible: isRowVisible(data.cv_freight_status, data.cv_freight_expected, data.cv_freight_actual), status: data.cv_freight_status, selisih: Number(data.cv_freight_selisih) },
-    { visible: isRowVisible(data.cv_fuel_status, data.cv_fuel_expected, data.cv_fuel_actual), status: data.cv_fuel_status, selisih: Number(data.cv_fuel_selisih) },
-    { visible: isRowVisible(data.cv_vat_freight_status, data.cv_vat_freight_expected, data.cv_vat_freight_actual_net), status: data.cv_vat_freight_status, selisih: Number(data.cv_vat_freight_selisih) },
-    { visible: data.cv_import_export_duties !== null || data.cv_duties_expected !== null, status: data.cv_duties_status, selisih: Number(data.cv_duties_selisih) },
-    { visible: isPib && isRowVisible(data.cv_nonroutine_status, data.cv_nonroutine_expected, data.cv_nonroutine_actual), status: data.cv_nonroutine_status, selisih: Number(data.cv_nonroutine_selisih) },
-    { visible: data.cv_disbursement_actual != null || isRowVisible(data.cv_disbursement_status, data.cv_disbursement_expected, data.cv_disbursement_actual), status: data.cv_disbursement_status, selisih: Number(data.cv_disbursement_selisih) },
-    { visible: data.cv_processing_fee_actual != null || isRowVisible(data.cv_processing_fee_status, data.cv_processing_fee_expected, data.cv_processing_fee_actual), status: data.cv_processing_fee_status, selisih: Number(data.cv_processing_fee_selisih) },
-    { visible: data.cv_storage_actual !== null || data.cv_storage_status === 'MANUAL', status: data.cv_storage_status, selisih: Number(data.cv_storage_selisih) },
-    { visible: isRowVisible(data.cv_vat_duty_status, data.cv_vat_duty_expected, data.cv_vat_duty_actual_net), status: data.cv_vat_duty_status, selisih: Number(data.cv_vat_duty_selisih) },
+    { sec: 'FREIGHT', visible: isRowVisible(data.cv_freight_status, data.cv_freight_expected, data.cv_freight_actual), status: data.cv_freight_status, selisih: Number(data.cv_freight_selisih) },
+    { sec: 'FREIGHT', visible: isRowVisible(data.cv_fuel_status, data.cv_fuel_expected, data.cv_fuel_actual), status: data.cv_fuel_status, selisih: Number(data.cv_fuel_selisih) },
+    { sec: 'FREIGHT', visible: isRowVisible(data.cv_vat_freight_status, data.cv_vat_freight_expected, data.cv_vat_freight_actual_net), status: data.cv_vat_freight_status, selisih: Number(data.cv_vat_freight_selisih) },
+    { sec: 'DUTY', visible: data.cv_import_export_duties !== null || data.cv_duties_expected !== null, status: data.cv_duties_status, selisih: Number(data.cv_duties_selisih) },
+    { sec: 'DUTY', visible: isPib && isRowVisible(data.cv_nonroutine_status, data.cv_nonroutine_expected, data.cv_nonroutine_actual), status: data.cv_nonroutine_status, selisih: Number(data.cv_nonroutine_selisih) },
+    { sec: 'DUTY', visible: data.cv_disbursement_actual != null || isRowVisible(data.cv_disbursement_status, data.cv_disbursement_expected, data.cv_disbursement_actual), status: data.cv_disbursement_status, selisih: Number(data.cv_disbursement_selisih) },
+    { sec: 'DUTY', visible: data.cv_processing_fee_actual != null || isRowVisible(data.cv_processing_fee_status, data.cv_processing_fee_expected, data.cv_processing_fee_actual), status: data.cv_processing_fee_status, selisih: Number(data.cv_processing_fee_selisih) },
+    { sec: 'DUTY', visible: data.cv_storage_actual !== null || data.cv_storage_status === 'MANUAL', status: data.cv_storage_status, selisih: Number(data.cv_storage_selisih) },
+    { sec: 'DUTY', visible: isRowVisible(data.cv_vat_duty_status, data.cv_vat_duty_expected, data.cv_vat_duty_actual_net), status: data.cv_vat_duty_status, selisih: Number(data.cv_vat_duty_selisih) },
   ];
 
   let total_ok = 0, total_selisih = 0, total_na = 0;
+  const rowDiff = { FREIGHT: false, DUTY: false };
   mainFields.forEach(f => {
     if (!f.visible) return;
-    const cls = classifyRow(f.status, f.selisih);
+    let cls = classifyRow(f.status, f.selisih);
+    if (cls === 'SELISIH') {
+      rowDiff[f.sec as CostReviewSection] = true;
+      if (reviews?.[f.sec as CostReviewSection] === 'MATCH') cls = 'OK';
+    }
     if (cls === 'OK') total_ok++;
     else if (cls === 'SELISIH') total_selisih++;
     else total_na++;
@@ -96,6 +109,9 @@ export function computeLiveCostSummary(data: any, jenisDokumen?: string | null):
   }
 
   const isOverchargeLike = (s: string) => s === 'OVERCHARGE' || s === 'SELISIH';
+  const section_diff = { FREIGHT: rowDiff.FREIGHT || isOverchargeLike(invoiceFreightStatus), DUTY: rowDiff.DUTY || isOverchargeLike(invoiceDutyStatus) };
+  if (reviews?.FREIGHT === 'MATCH' && isOverchargeLike(invoiceFreightStatus)) invoiceFreightStatus = 'OK';
+  if (reviews?.DUTY === 'MATCH' && isOverchargeLike(invoiceDutyStatus)) invoiceDutyStatus = 'OK';
   const overallStatusCost = (isOverchargeLike(invoiceFreightStatus) || isOverchargeLike(invoiceDutyStatus)) ? 'ADA SELISIH' : 'OK';
 
   const total_cost_cek = total_ok + total_selisih;
@@ -109,5 +125,6 @@ export function computeLiveCostSummary(data: any, jenisDokumen?: string | null):
     invoice_freight_status: classifyRow(invoiceFreightStatus) === 'NA' ? 'N/A' : (classifyRow(invoiceFreightStatus) === 'OK' ? 'OK' : 'ADA SELISIH'),
     invoice_duty_status: classifyRow(invoiceDutyStatus) === 'NA' ? 'N/A' : (classifyRow(invoiceDutyStatus) === 'OK' ? 'OK' : 'ADA SELISIH'),
     pct: total_cost_cek > 0 ? Math.round((total_ok / total_cost_cek) * 100) : 0,
+    section_diff,
   };
 }

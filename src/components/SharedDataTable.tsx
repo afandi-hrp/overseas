@@ -20,6 +20,7 @@ import SeaAirChecklistModal from '../components/SeaAirChecklistModal'
 import SeaAirValidasiModal from '../components/SeaAirValidasiModal'
 import ValidasiShipmentInvoiceLengkap from '../components/ValidasiShipmentInvoiceLengkap'
 import { computeLiveCostSummary } from '../utils/CostValidationHelpers'
+import { mergeChecklistFields, fetchCourierValidationBadgePct } from '../utils/CourierValidationPct'
 import { relaxSeaAirDocChecks } from '../utils/SeaAirValidasiHelpers'
 import { computeSeaAirCostGlobalStats } from '../utils/SeaAirCostValidasiHelpers'
 import { SECTIONS, computeStatus } from '../utils/ValidasiHelper'
@@ -1170,36 +1171,9 @@ const CHECKLIST_MERGE_FIELDS = [
   ...CHECKLIST_FIELDS.map(f => f.key),
 ]
 
-async function mergeChecklistData(records: any[], docTypeHint?: 'pib' | 'cn') {
-  if (!records || records.length === 0) return records
-  const isPibRec = (r: any) => r.jenis_dokumen === 'PIB' || docTypeHint === 'pib'
-  const isCnRec = (r: any) => r.jenis_dokumen === 'CN' || docTypeHint === 'cn'
-  const pibIds = records.filter(isPibRec).map(r => r.id).filter(Boolean)
-  const cnIds = records.filter(isCnRec).map(r => r.id).filter(Boolean)
-
-  const checklistByPibId: Record<string, any> = {}
-  const checklistByCnId: Record<string, any> = {}
-  const chunkSize = 50
-
-  const fetchChunked = async (idKey: 'pib_id' | 'cn_id', ids: any[], target: Record<string, any>) => {
-    for (let i = 0; i < ids.length; i += chunkSize) {
-      const chunkIds = ids.slice(i, i + chunkSize)
-      const { data } = await supabase.from('dokumen_checklist').select('*').in(idKey, chunkIds)
-      if (data) data.forEach((c: any) => { target[c[idKey]] = c })
-    }
-  }
-
-  if (pibIds.length > 0) await fetchChunked('pib_id', pibIds, checklistByPibId)
-  if (cnIds.length > 0) await fetchChunked('cn_id', cnIds, checklistByCnId)
-
-  records.forEach(r => {
-    const c = isPibRec(r) ? checklistByPibId[r.id] : (isCnRec(r) ? checklistByCnId[r.id] : undefined)
-    CHECKLIST_MERGE_FIELDS.forEach(key => {
-      r[key] = c ? c[key] : null
-    })
-  })
-
-  return records
+// Isi dipindah ke src/utils/CourierValidationPct.ts (mergeChecklistFields, 2026-10-02, tidak berubah).
+function mergeChecklistData(records: any[], docTypeHint?: 'pib' | 'cn') {
+  return mergeChecklistFields(records, CHECKLIST_MERGE_FIELDS, docTypeHint)
 }
 
 // Badge persentase Doc Validation/Cost Validation Courier Audit (dipakai di dalam tombol Action
@@ -1210,111 +1184,7 @@ async function mergeChecklistData(records: any[], docTypeHint?: 'pib' | 'cn') {
 // (match+mismatch), SAMA PERSIS formula CourierValidasiPage.tsx). Cost Validation pakai
 // computeLiveCostSummary() (src/utils/CostValidationHelpers.ts) yang sama dipakai
 // CostValidationModal.tsx -- JANGAN duplikat formula di tempat lain.
-async function fetchCourierValidationBadgePct(rows: any[]): Promise<{ docPctMap: Record<string, number>, costPctMap: Record<string, number> }> {
-  const docPctMap: Record<string, number> = {};
-  const costPctMap: Record<string, number> = {};
-  if (!rows || rows.length === 0) return { docPctMap, costPctMap };
-
-  const pibIds = rows.filter(r => r.jenis_dokumen === 'PIB').map(r => r.id).filter(Boolean);
-  const cnIds = rows.filter(r => r.jenis_dokumen === 'CN').map(r => r.id).filter(Boolean);
-  const chunkSize = 50;
-
-  const fetchChecklistPct = async (idKey: 'pib_id' | 'cn_id', ids: any[], keyPrefix: string) => {
-    for (let i = 0; i < ids.length; i += chunkSize) {
-      const chunk = ids.slice(i, i + chunkSize);
-      const { data: chk } = await supabase.from('tabel_checklist_validasi').select(`${idKey}, total_match, total_mismatch`).in(idKey, chunk);
-      (chk || []).forEach((c: any) => {
-        const checked = (c.total_match || 0) + (c.total_mismatch || 0);
-        docPctMap[`${keyPrefix}${c[idKey]}`] = checked > 0 ? Math.round((c.total_match / checked) * 100) : 0;
-      });
-    }
-  };
-  const fetchCostPct = async (idKey: 'pib_id' | 'cn_id', ids: any[], keyPrefix: string, jenisDok: 'PIB' | 'CN') => {
-    for (let i = 0; i < ids.length; i += chunkSize) {
-      const chunk = ids.slice(i, i + chunkSize);
-      const { data: cvRows } = await supabase.from('tabel_cost_validasi').select('*').in(idKey, chunk).order('created_at', { ascending: false });
-      (cvRows || []).forEach((cv: any) => {
-        const mapKey = `${keyPrefix}${cv[idKey]}`;
-        if (costPctMap[mapKey] !== undefined) return; // sudah ada baris LEBIH BARU (order desc), skip
-        costPctMap[mapKey] = computeLiveCostSummary(cv, jenisDok).pct;
-      });
-    }
-  };
-
-  await Promise.all([
-    fetchChecklistPct('pib_id', pibIds, 'pib_'),
-    fetchChecklistPct('cn_id', cnIds, 'cn_'),
-    fetchCostPct('pib_id', pibIds, 'pib_', 'PIB'),
-    fetchCostPct('cn_id', cnIds, 'cn_', 'CN'),
-  ]);
-
-  // FALLBACK live-calc utk Doc Validation -- tabel_checklist_validasi CUMA keisi kalau
-  // seseorang pernah buka ValidasiModal (Doc Validation) dan klik Simpan (lihat ValidasiModal.tsx
-  // ~baris 1001-1013, INSERT/UPDATE manual, BUKAN diisi n8n otomatis). Jadi mayoritas baris yang
-  // belum pernah dibuka modalnya TIDAK punya baris di situ -- sebelumnya badge-nya jadi 0% terus
-  // (bukan krn nilainya beneran 0%, tapi krn datanya belum ada), tidak sinkron sama sekali dgn
-  // yang kelihatan begitu user buka modal Doc Validation-nya. Fix: baris yang belum ada di
-  // docPctMap dihitung ulang live di sini, REPLIKA PERSIS fallback yang sama dipakai
-  // CourierValidasiPage.tsx (SECTIONS/computeStatus/generateValues/calculatePibStats) --
-  // JANGAN duplikat/tulis ulang formula ini lagi di tempat lain, lihat file itu kalau perlu diubah.
-  const missingPibIds = pibIds.filter(id => docPctMap[`pib_${id}`] === undefined);
-  const missingCnIds = cnIds.filter(id => docPctMap[`cn_${id}`] === undefined);
-  if (missingPibIds.length > 0 || missingCnIds.length > 0) {
-    let allDokumenValidasi: any[] = [];
-    for (let i = 0; i < missingPibIds.length; i += chunkSize) {
-      const chunk = missingPibIds.slice(i, i + chunkSize);
-      const { data: dv } = await supabase.from('dokumen_validasi').select('pib_id, cn_id, jenis_dokumen, awb, data_validasi_raw').in('pib_id', chunk);
-      if (dv) allDokumenValidasi = [...allDokumenValidasi, ...dv];
-    }
-    for (let i = 0; i < missingCnIds.length; i += chunkSize) {
-      const chunk = missingCnIds.slice(i, i + chunkSize);
-      const { data: dv } = await supabase.from('dokumen_validasi').select('pib_id, cn_id, jenis_dokumen, awb, data_validasi_raw').in('cn_id', chunk);
-      if (dv) allDokumenValidasi = [...allDokumenValidasi, ...dv];
-    }
-
-    if (allDokumenValidasi.length > 0) {
-      const { data: npwpData } = await supabase.from('tabel_npwp').select('*');
-      const localNpwps = npwpData || [];
-
-      allDokumenValidasi.forEach((r: any) => {
-        let raw: any = {};
-        try {
-          raw = typeof r.data_validasi_raw === 'string' ? JSON.parse(r.data_validasi_raw) : (r.data_validasi_raw || {});
-        } catch (e) {}
-
-        const docType = r.jenis_dokumen || (r.pib_id ? 'PIB' : 'CN');
-        const activeSections = SECTIONS.filter(section => {
-          if (docType === 'CN' && section.id === 's_pib') return false;
-          if (docType === 'CN' && section.id === 's_sptnp') return false;
-          if (docType === 'PIB' && section.id === 's_cipl') return false;
-          if (docType === 'PIB' && section.id === 's_sppbmcp') return false;
-          if (docType === 'PIB' && section.id === 's_billing') return false;
-          return true;
-        });
-
-        const values = generateValues(raw, r.awb || '', localNpwps);
-        let match = 0, mismatch = 0;
-        activeSections.forEach(s => s.rows.forEach(row => {
-          const v = values[row.id] || { src: '', cmp: '' };
-          const st = computeStatus(v.src, v.cmp, (row as any).isFormat, row.field, raw?.is_po_non_imi);
-          if (st === 'match') match++;
-          else if (st === 'mismatch') mismatch++;
-        }));
-
-        const pibStats = calculatePibStats(raw, docType);
-        match += pibStats.match;
-        mismatch += pibStats.mismatch;
-
-        const checked = match + mismatch;
-        const pct = checked > 0 ? Math.round((match / checked) * 100) : 0;
-        if (r.pib_id) docPctMap[`pib_${r.pib_id}`] = pct;
-        if (r.cn_id) docPctMap[`cn_${r.cn_id}`] = pct;
-      });
-    }
-  }
-
-  return { docPctMap, costPctMap };
-}
+// Isi dipindah ke src/utils/CourierValidationPct.ts (2026-10-02, tidak berubah) -- dipakai juga badge sidebar.
 
 // `embedded` (2026-09-30) -- dirender sbg tab "Checklist" di dalam CourierValidationWindow (tanpa
 // overlay/judul sendiri, Save Checklist TIDAK menutup jendela). `onPctChange` melaporkan % live
@@ -2893,7 +2763,10 @@ const CourierRekapanRowGroup: React.FC<{
   const [rowEditOn, setRowEditOn] = useState(false);
   const [savingRow, setSavingRow] = useState(false);
 
-  const canBulkEdit = !!(getVal && setVal);
+  // Kunci Submit to Finance (sql/038, 2026-10-02, sama Sea & Air): invoice yg sudah punya Submit Date tidak bisa
+  // diedit/dihapus (DB juga menolak) -- Admin membuka kunci lewat jendela Open (Unlock + alasan).
+  const recapLocked = !!rec.submit_date;
+  const canBulkEdit = !!(getVal && setVal) && !recapLocked;
   const editingThisRow = (!!editMode || rowEditOn) && canBulkEdit;
 
   let poVesselPairs: { po: string, vessel: string }[] = [];
@@ -3082,10 +2955,13 @@ const CourierRekapanRowGroup: React.FC<{
                               💾 {savingRow ? 'Saving...' : 'Save'}
                             </button>
                           )}
-                          {onDelete && (
+                          {onDelete && !recapLocked && (
                             <button onClick={() => { onDelete(rec); setShowActions(false); }} className="w-[80px] bg-white border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 text-[10px] font-bold px-2 py-1.5 rounded-md transition-all shadow-sm">
                               🗑️ Delete
                             </button>
+                          )}
+                          {recapLocked && (
+                            <span title="Submitted to Finance — locked. An Admin can unlock it from the Card view (Open › Invoices)." className="w-[80px] text-center text-[10px] font-bold px-2 py-1.5 rounded-md border border-slate-200 bg-white text-slate-500">🔒 Locked</span>
                           )}
                         </div>
                       )}
@@ -4660,7 +4536,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     const before = records.find(same);
     setRecords(prev => prev.map(r => (same(r) ? { ...r, ...fresh } : r)));
     const keys = ['pct_kelengkapan', 'doc_validation_pct', 'cost_validation_pct', 'status_kelengkapan'];
-    if (!before || keys.some(k => String(before[k] ?? '') !== String(fresh[k] ?? ''))) setCourierSummaryNonce(n => n + 1);
+    if (!before || keys.some(k => String(before[k] ?? '') !== String(fresh[k] ?? ''))) {
+      setCourierSummaryNonce(n => n + 1);
+      notifyCourierAuditChanged(); // badge sidebar (Draft & needs attention Invoice Recap)
+    }
   };
 
   // Mark as audited / Move back to Draft dari jendela Open (logika SAMA tombol lama Undraft/Draft).
@@ -4689,6 +4568,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   // (CourierRecapCardView: RPC sql/037 / fallback browser) dgn filter SAMA toolbar lama.
   const isCourierRecapView = activeMainTab === 'courier' && activeSubTab === 'courier_rekapan';
   const [courierRecapView, setCourierRecapView] = useState<'card' | 'list'>('card')
+  // Filter "Needs attention" (2026-10-02): definisi SAMA badge sidebar (recapGroupNeedsAttention).
+  const [courierRecapAttentionOnly, setCourierRecapAttentionOnly] = useState(false)
   const [courierRecapNonce, setCourierRecapNonce] = useState(0)
   const [courierRecapSummary, setCourierRecapSummary] = useState<RecapSummaryCourier | null>(null)
   const [courierRecapSummaryLoading, setCourierRecapSummaryLoading] = useState(false)
@@ -4736,16 +4617,25 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     fetchRecords();
     notifyCourierRecapChanged();
   };
-  // Submit to Finance per invoice / "Submit all" -- tanpa syarat & tanpa kunci (keputusan user).
+  // Submit to Finance per invoice / "Submit all" -- tanpa syarat; setelah submit TERKUNCI (sql/038, keputusan user 2026-10-02).
   const handleCourierRecapSubmit = async (ids: string[]) => {
     if (ids.length === 0) return;
     const today = todayLocalIso();
-    if (!window.confirm(`Submit ${ids.length} invoice${ids.length === 1 ? '' : 's'} to Finance?\nSubmit Date: ${fmtDateShortSeaAir(today)}`)) return;
+    if (!window.confirm(`Submit ${ids.length} invoice${ids.length === 1 ? '' : 's'} to Finance?\nSubmit Date: ${fmtDateShortSeaAir(today)}\n\nAfter submitting, the invoice is locked (no edit / delete) — only an Admin can unlock it.`)) return;
     setCourierRecapBusy(true);
     const { error } = await submitRecapInvoices(ids, today);
     setCourierRecapBusy(false);
     if (error) { alert('Failed to submit to Finance: ' + error.message); return; }
     refreshCourierRecap();
+  };
+  // Unlock Submit to Finance (Admin, sql/038) -- pola Sea & Air fn_seaair_unlock_submit.
+  const handleCourierRecapUnlock = async (id: string, reason: string): Promise<boolean> => {
+    setCourierRecapBusy(true);
+    const { error } = await supabase.rpc('fn_courier_unlock_submit', { p_id: id, p_reason: reason });
+    setCourierRecapBusy(false);
+    if (error) { alert('Failed to unlock: ' + error.message); return false; }
+    refreshCourierRecap();
+    return true;
   };
   const switchCourierRecapView = (m: 'card' | 'list') => {
     if (m === 'card') {
@@ -6043,6 +5933,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           busy={courierRecapBusy}
           onClose={() => setCourierRecapOpen(null)}
           onSubmit={handleCourierRecapSubmit}
+          isAdmin={isAdmin}
+          onUnlock={handleCourierRecapUnlock}
           onValidation={t => { const a = courierRecapOpen.audit; if (a) setCourierRecapValidation({ rec: a.rec, docType: a.docType, tab: t }); }}
           onViewInAudit={() => navigate(`/courier/audit?q=${encodeURIComponent(courierRecapOpen.audit?.rec?.awb || courierRecapOpen.awb)}`)}
           onEditInList={() => { const g = courierRecapOpen; setCourierRecapOpen(null); switchCourierRecapView('list'); setSearch(g.awb); }}
@@ -6304,6 +6196,13 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         {courierAnTabs.map(an => <option key={an} value={an}>{an}</option>)}
                       </select>
                     </div>
+                    {courierValidationTabs.length > 0 && (
+                      <button type="button" aria-pressed={courierRecapAttentionOnly} onClick={() => setCourierRecapAttentionOnly(v => !v)}
+                        title="AWB with open invoices whose PIB / CN validation is not 100%"
+                        className={`h-9 px-3 rounded-xl border text-xs font-bold shrink-0 inline-flex items-center gap-1.5 transition-colors ${courierRecapAttentionOnly ? 'bg-[#C8402F] border-[#C8402F] text-white' : 'bg-white border-[#EADFD6] text-[#A8231A] hover:bg-[#FDE7E4]'}`}>
+                        <span className={`w-2 h-2 rounded-full ${courierRecapAttentionOnly ? 'bg-white' : 'bg-[#C8402F]'}`} /> Needs attention
+                      </button>
+                    )}
                     <div className="inline-flex items-center p-1 rounded-xl bg-[#F5EDF3] shrink-0" role="group" aria-label="View mode">
                       {(['card', 'list'] as const).map(m => (
                         <button key={m} type="button" onClick={() => switchCourierRecapView(m)}
@@ -6908,6 +6807,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 onOpen={g => setCourierRecapOpen(g)}
                 onValidation={(g, t) => { if (g.audit) setCourierRecapValidation({ rec: g.audit.rec, docType: g.audit.docType, tab: t }); }}
                 onLoaded={groups => setCourierRecapOpen(prev => (prev ? (groups.find(x => x.key === prev.key) || prev) : prev))}
+                attentionOnly={courierRecapAttentionOnly}
               />
             ) : loading && displayRows.length === 0 ? (
               <LoadingState />

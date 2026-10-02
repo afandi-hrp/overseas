@@ -54,7 +54,8 @@ approval-nya.
   **Setelah penghapusan itu**: `sql/036_courier_recap_inspeksi_READONLY.sql` (baca saja) SUDAH dijalankan user
   2026-10-02 (hasil dipakai merancang 037); **`sql/037_courier_recap.sql` SUDAH DIJALANKAN** (konfirmasi user
   2026-10-02; Invoice Recap Courier per AWB, re-audit otomatis, Finance Handover Courier, master vendor Courier) —
-  lihat "Invoice Recap Courier per AWB" di bawah.
+  lihat "Invoice Recap Courier per AWB" di bawah. **`sql/038_courier_cost_review_and_recap_lock.sql` BELUM DIJALANKAN**
+  (review cost per invoice Audit Courier + kunci Submit to Finance Invoice Recap Courier, lihat "Courier 2026-10-02 bagian 2").
 - **Kondisi DB production (stack `supabase3`, audit 2026-09-26)**: role `anon` tanpa hak apa pun
   di schema public (tabel, fungsi, default privileges); GraphQL ditutup; semua tabel RLS dgn
   policy `has_page_access`/`has_edit_access` (tidak ada `using (true)`); semua view
@@ -501,23 +502,27 @@ user di production** (testing bagian 2 + Finance Handover dijadwalkan user bersa
 8. Keamanan Courier: policy `rekapan_courier_select_finance` membuka SEMUA baris `rekapan_courier` (bukan hanya yg
    sudah submit) utk role Finance lewat API — UI hanya menampilkan yg ber-`submit_date`. Persempit kalau diminta.
 
-**Audit Courier (`/courier/audit`) — belum:**
-1. Audit trail hanya perubahan baris PIB/CN (`v_audit_trail`); perubahan Checklist/Doc validation/Cost validation tidak
-   tampil, & edit field belum dicatat format app "X — Lama: … → Baru: …" (dump trigger disembunyikan).
-2. Costs opsi A: review per invoice ("Accept difference / Ask vendor") belum ada (butuh tabel baru).
-3. Tab Draft masih fetch & paging di browser (risiko terpotong >1.000 baris/tabel PostgREST) — butuh RPC gabungan.
-4. Auto-calc 7 kolom hanya dihitung saat tampil/simpan app; nilai mentah n8n di DB tidak dikoreksi (Reporting baca DB).
-5. Upload additional doc: belum dikonfirmasi workflow n8n Courier memakai `awb_hint` utk MERGE ke record lama.
-6. 2 versi validasi (baru & `*Legacy.tsx` mode List) — logika load/simpan WAJIB disinkron manual tiap diubah.
-7. Badge sidebar Draft SUDAH ada; badge "needs attention" utk Courier belum diputuskan user.
+**Audit Courier (`/courier/audit`) — status (keputusan user 2026-10-02):**
+1. (Ditunda, belum dibutuhkan) Audit trail perubahan Checklist/Doc validation/Cost validation & log edit format app.
+2. ~~Review cost per invoice~~ — SELESAI 2026-10-02 (sql/038, belum dijalankan) — lihat "Courier 2026-10-02 bagian 2".
+3. (Diterima user) Tab Draft fetch & paging di browser — Draft hanya sementara, tidak perlu RPC gabungan.
+4. **MENUNGGU KEPUTUSAN**: 7 kolom auto-calc Audit TIDAK dibaca Reporting (hanya app/export, sudah live-calc) -> tidak
+   perlu disimpan. Yang dibaca Reporting APA ADANYA dari DB = 6 kolom auto-calc **Invoice Recap** (`breakdown_*_vessel`
+   utk Cost by Vessel, `total_amount` utk Cost by Courier) — kalau n8n tidak mengisinya, angka Reporting bisa kosong/salah.
+   Opsi: (a) Reporting memanggil `computeCourierRekapanCalc` saat membaca (tanpa SQL), (b) trigger DB menghitung & menyimpan.
+5. Upload additional doc = n8n MENIMPA `dokumen_validasi` (konfirmasi user). Doc validation yang sudah tersimpan diperbarui
+   lewat tombol **Recompute document data** (2026-10-02: isi + perbarui field yang belum diedit manual) + banner jumlah
+   field yang punya data dokumen lebih baru.
+6. ~~2 versi validasi~~ — logika DISAMAKAN 2026-10-02 (review cost, Recompute, cek error simpan Doc validation); sisa beda
+   hanya tampilan & autosave (mode List) vs tombol Save (jendela baru) — keputusan user sebelumnya.
 
-**Invoice Recap Courier (`/courier/rekapan`) — belum:**
-1. Badge sidebar "needs attention" — menunggu keputusan user (definisi "perlu perhatian" utk Courier).
-2. 3 AWB tanpa pasangan Audit (hasil sql/036: 2 format EMS, 1 nyata) — cek kartu "Not found in Audit" di production;
-   kalau format EMS beda tulis antara Recap & Audit, normalisasi `courierAwbNorm`/`fn_courier_awb_norm` perlu aturan tambahan.
-3. Re-audit otomatis HANYA dari edit user (service/n8n dikecualikan); upload ulang invoice oleh n8n tidak memicu re-audit.
-4. Submit to Finance tanpa kunci (keputusan user) — nominal invoice masih bisa diubah setelah Finance menerima.
-5. Tanpa review cost per invoice / issue count spt Sea & Air (status kartu hanya Submitted/Paid).
+**Invoice Recap Courier (`/courier/rekapan`) — status (keputusan user 2026-10-02):**
+1. ~~Badge "needs attention"~~ — SELESAI 2026-10-02: AWB yang masih punya invoice belum di-submit DAN validasi PIB/CN < 100%
+   (badge merah sidebar + tombol filter "Needs attention").
+2. (Keputusan user) 3 AWB "Not found in Audit" = data tambah manual, bukan n8n — biarkan dgn label itu.
+3. Re-audit otomatis tetap (dijelaskan ke user: tanpa tombol, otomatis saat nominal/AWB/PO invoice diedit setelah Audited).
+4. ~~Submit tanpa kunci~~ — SELESAI 2026-10-02 (sql/038, belum dijalankan): kunci setelah Submit + Unlock Admin, sama Sea & Air.
+5. (Keputusan user) Tanpa issue count / review per invoice di Recap untuk sementara.
 6. (Keputusan user) Edit tetap lewat tabel List; Export TETAP.
 
 **Umum:** semua halaman di atas belum diuji user di production; `kurs` text bug SUDAH diperbaiki; badge
@@ -575,6 +580,36 @@ ada nama fungsi bentrok. Keputusan:
     Draft + alasan (pola Sea & Air). Validasi dari Recap = aturan SAMA Audit (bisa diubah hanya selama PIB/CN Draft).
 15. Finance Handover Courier **per invoice**; kolom baru `finance_received_at/_by` (opsi A); master vendor = **tabel baru
     khusus Courier** `courier_vendor_master` + halaman Settings sendiri.
+
+## Courier 2026-10-02 bagian 2 — review cost, Recompute, needs attention, kunci Submit (sql/038 BELUM DIJALANKAN)
+
+- **sql/038** (idempotent, pre-check nama `beehive:038`, uji PGlite 28 cek): tabel `cost_validasi_review_courier`
+  (`doc_type` PIB/CN + `audit_id` teks + `section` FREIGHT/DUTY unik, `status_konfirmasi` MATCH/MISMATCH, catatan WAJIB utk
+  MISMATCH, RLS 4 policy page_key `courier_cost_validation`); kolom `rekapan_courier.submit_unlock_reason/_by/_at`; trigger
+  `fn_courier_recap_lock` (BEFORE UPDATE/DELETE: baris ber-`submit_date` hanya boleh ubah kolom Finance/`sort_order`, DELETE
+  ditolak; submit baru dicatat audit_trail "Submit to Finance — Lama: - → Baru: <tgl>"; service lolos; flag
+  `app.courier_unlock`); RPC `fn_courier_unlock_submit(uuid, text)` (Admin, alasan ≥5, ditolak kalau Finance sudah terima,
+  dicatat audit_trail). RPC Finance Courier (037) tetap jalan di baris terkunci.
+- **Review cost** (`CourierCostReviewHelpers.ts` SATU-SATUNYA query tabel, `CourierCostReviewBox.tsx` dipakai jendela baru &
+  `CostValidationModalLegacy` [prop `legacy`]): kotak per invoice Freight/Duty, muncul kalau invoice ada selisih ATAU sudah
+  direview; Accept difference (catatan opsional) / Ask vendor to revise (catatan wajib) / Change / Undo; hak = `canEdit`
+  modal (Draft + `courier_cost_validation`). `computeLiveCostSummary(data, jenis, reviews)` — MATCH = baris selisih invoice
+  itu dihitung OK & status invoice OK (baris detail tidak berubah); `section_diff` = ada selisih sebelum review. Badge persen
+  (`fetchCourierValidationBadgePct`) ikut membaca review -> titik kartu, KPI, jendela, versi lama SAMA.
+- **Persen validasi Courier dipindah** ke `src/utils/CourierValidationPct.ts` (isi sama): `mergeChecklistFields`
+  (SharedDataTable `mergeChecklistData` = wrapper dgn `CHECKLIST_MERGE_FIELDS`), `fetchCourierValidationBadgePct`,
+  `rowValidationPct` (re-export dari CourierValidationWindow), `courierValidationIncomplete`, `enrichCourierValidationPct`.
+- **Recompute document data** (`src/utils/CourierDocRecompute.ts`, dipakai ValidasiModal & ValidasiModalLegacy): isi +
+  perbarui sisi src/cmp yang BELUM diedit manual dari data dokumen terbaru (nilai kosong tidak menghapus, `manual_status`
+  tetap); banner "N field(s) have newer document data" (`data-recompute-pending`). Versi lama kini juga cek error simpan.
+- **Needs attention** (`recapGroupNeedsAttention`, `fetchCourierRecapAttentionGroups`, `fetchCourierRecapNeedsAttentionCount`
+  di CourierRecapHelpers): AWB dgn invoice belum submit & PIB/CN validasi (tab yg boleh dilihat) < 100%/belum ada. Badge merah
+  submenu Courier › Invoice Recap (MainLayout, refresh mount/masuk /courier/* & event Recap/Audit) + tombol filter "Needs
+  attention" (kartu dihitung di browser, paging 12 sendiri).
+- **Kunci di UI**: List (`CourierRekapanRowGroup`) baris ber-`submit_date` -> Edit/Delete hilang + "🔒 Locked"; jendela Open:
+  chip Locked per invoice & header, **Unlock (Admin)** + alasan -> RPC, info "Last unlock". Konfirmasi Submit menyebut kunci.
+- **Diuji**: jsdom `courier_lock` 30 cek + regresi render 95/page 51/recap 112/finance 53/urgent 5/authfocus 12/courier 41/
+  courier_ui 56/courier_recap 44, PGlite 038 28 + 037 39 — 0 gagal. Belum dites di production.
 
 ## Invoice Recap Courier per AWB + Finance Handover Courier (2026-10-02, kode SELESAI, sql/037 SUDAH DIJALANKAN 2026-10-02)
 
@@ -875,7 +910,7 @@ itu sudah selesai diterjemahkan penuh**, cuma teks loading-nya saja).
 (jabatan approval per user per halaman).
 
 **Courier**: `rekapan_courier`, `tabel_audit_pib`, `tabel_audit_cn`, `tabel_cost_validasi`, `courier_vendor_master`
-(sql/037, master vendor Finance Handover Courier),
+(sql/037, master vendor Finance Handover Courier), `cost_validasi_review_courier` (sql/038, review cost per invoice),
 `dokumen_checklist`, `dokumen_validasi`, `tabel_checklist_validasi`, `tabel_npwp`,
 `tabel_processing_queue`. View `v_pib_lengkap`/`v_cn_lengkap` MASIH ADA tapi TIDAK DIPAKAI lagi
 di frontend — Audit Courier sekarang query langsung `tabel_audit_pib`/`tabel_audit_cn`, kolom
@@ -962,6 +997,8 @@ Supabase** — bisa saja sudah basi (RPC lain ditambahkan user langsung tanpa te
   `fn_seaair_finance_accept(uuid, text, date)` (signature BARU: nama + tanggal terima; versi 1-arg DI-DROP),
   `fn_seaair_finance_mark_paid` referensi opsional, `fn_seaair_finance_undo` DI-DROP (tanpa Undo, keputusan
   user), FAR `fn_far_overseas_set_urgent(uuid, boolean)` BARU, `fn_far_overseas_mark_paid` bukti bayar opsional.
+- Courier review cost & kunci Submit (sql/038, **BELUM DIJALANKAN**): `fn_courier_unlock_submit(uuid, text)` (+ trigger
+  `fn_courier_recap_lock`); tabel `cost_validasi_review_courier`.
 - Courier Invoice Recap & Finance (sql/037, SUDAH DIJALANKAN 2026-10-02): `fn_courier_recap_awb_page`, `fn_courier_recap_summary`,
   `fn_courier_awb_norm`, `fn_courier_finance_accept(uuid, text, date)`, `fn_courier_finance_mark_paid(uuid, date, text)`
   (+ fungsi trigger `fn_courier_reaudit`, `fn_courier_reaudit_clear`).

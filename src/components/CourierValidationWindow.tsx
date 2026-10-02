@@ -27,19 +27,9 @@ export const VALIDATION_TAB_LABEL: Record<ValidationTabKey, string> = {
   cost: 'Cost Validation',
 };
 
-const toPct = (v: any): number | null => {
-  if (v === null || v === undefined || v === '') return null;
-  const n = Number(v);
-  return isNaN(n) ? null : n;
-};
-
-// % per tab dari data baris tabel (badge lama): pct_kelengkapan (merge dokumen_checklist),
-// doc_validation_pct & cost_validation_pct (fetchCourierValidationBadgePct).
-export const rowValidationPct = (rec: any): Record<ValidationTabKey, number | null> => ({
-  checklist: toPct(rec?.pct_kelengkapan),
-  doc: toPct(rec?.doc_validation_pct),
-  cost: toPct(rec?.cost_validation_pct),
-});
+// rowValidationPct dipindah ke src/utils/CourierValidationPct.ts (2026-10-02, isi sama) -- re-export.
+export { rowValidationPct } from '../utils/CourierValidationPct';
+import { rowValidationPct } from '../utils/CourierValidationPct';
 
 // Aturan titik status (keputusan user 2026-09-30): hijau = 100%, oranye = <100%, abu = null.
 export const validationDotClass = (pct: number | null): string =>

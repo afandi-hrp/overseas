@@ -4,6 +4,8 @@ import { ChevronDown, ChevronRight, Pencil, Receipt, Package } from 'lucide-reac
 import { Chip, Pill, type Tone } from './SeaAirAuditUi';
 import { supabase } from '../lib/supabase';
 import { computeLiveCostSummary, isRowVisible } from '../utils/CostValidationHelpers';
+import { fetchCourierCostReviews, reviewMapOf, type CourierCostReviews, type CourierCostReview } from '../utils/CourierCostReviewHelpers';
+import CourierCostReviewBox from './CourierCostReviewBox';
 import { VW_TOOLBAR, VW_LABEL, VW_BTN_PRIMARY, VW_BTN_SECONDARY, VW_BTN_SUCCESS, VW_CARD, VW_INPUT, VW_TH, VW_TILE, VW_TILE_TONE, vwPctBar, vwPctText } from './validationWindowStyles';
 
 const formatRp = (num: any) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(Number(num) || 0);
@@ -609,14 +611,28 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
   // (`computeLiveCostSummary`) supaya SATU-SATUNYA sumber kebenaran, dipakai juga oleh badge
   // persentase di tombol "Cost Validation" halaman Audit Courier (SharedDataTable.tsx). JANGAN
   // duplikat logic ini lagi di sini -- ubah di CostValidationHelpers.ts kalau perlu.
-  const liveSummary = useMemo(() => computeLiveCostSummary(data, jenisDokumen), [data, jenisDokumen]);
+
+  // Review cost per invoice (sql/038, 2026-10-02) -- kunci = jenis dokumen + id baris Audit. Ikut dihitung di
+  // ringkasan/persen lewat computeLiveCostSummary (satu sumber, sama badge kartu & KPI).
+  const [reviews, setReviews] = useState<CourierCostReviews>({});
+  const reviewAuditId = docId || (String(jenisDokumen || '').toUpperCase() === 'CN' ? data?.cn_id : data?.pib_id) || null;
+  useEffect(() => {
+    let alive = true;
+    if (!reviewAuditId) { setReviews({}); return; }
+    fetchCourierCostReviews(jenisDokumen, reviewAuditId).then(r => { if (alive) setReviews(r); });
+    return () => { alive = false; };
+  }, [jenisDokumen, reviewAuditId]);
+  const reviewMap = useMemo(() => reviewMapOf(reviews), [reviews]);
+  const setReview = (section: 'FREIGHT' | 'DUTY') => (r: CourierCostReview | null) =>
+    setReviews(p => { const n = { ...p }; if (r) n[section] = r; else delete n[section]; return n; });
+  const liveSummary = useMemo(() => computeLiveCostSummary(data, jenisDokumen, reviewMap), [data, jenisDokumen, reviewMap]);
 
   // % utk label tab jendela Validation -- selama Edit, ikut isian form (status yang sedang
   // dipilih) supaya label berubah live; formula tetap computeLiveCostSummary (satu sumber).
   const reportedPct = useMemo(() => {
     if (!data) return null;
-    return computeLiveCostSummary(isEditing && editForm ? editForm : data, jenisDokumen).pct;
-  }, [data, editForm, isEditing, jenisDokumen]);
+    return computeLiveCostSummary(isEditing && editForm ? editForm : data, jenisDokumen, reviewMap).pct;
+  }, [data, editForm, isEditing, jenisDokumen, reviewMap]);
   useEffect(() => {
     if (!onPctChange || loading) return;
     onPctChange(reportedPct);
@@ -1267,6 +1283,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
         {/* ── Invoice freight ── */}
         <div className={`${VW_CARD} overflow-hidden`}>
           {cardHeader('freight', 'Invoice freight', [data.cv_courier, data.cv_service_type].filter(Boolean).join(' · '), freightTotals ? freightTotals.actual : null, liveSummary.invoice_freight_status, freightOver)}
+          <CourierCostReviewBox docType={jenisDokumen} auditId={reviewAuditId} section="FREIGHT" review={reviews.FREIGHT} hasDifference={liveSummary.section_diff.FREIGHT} canEdit={canEdit} onChange={setReview('FREIGHT')} />
           <div className={openSec.freight ? 'border-t border-[#EADFD6]' : 'hidden print:block'}>
             {showAllToggle('freight')}
             <div className="overflow-x-auto">
@@ -1310,6 +1327,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
         {/* ── Invoice duty ── */}
         <div className={`${VW_CARD} overflow-hidden`}>
           {cardHeader('duty', 'Invoice duty', (data.cv_courier || '').toUpperCase() === 'DHL' ? 'Import export duties & charges' : 'Duty & tax & charges', dutyTotals ? dutyTotals.actual : null, liveSummary.invoice_duty_status, dutyOver)}
+          <CourierCostReviewBox docType={jenisDokumen} auditId={reviewAuditId} section="DUTY" review={reviews.DUTY} hasDifference={liveSummary.section_diff.DUTY} canEdit={canEdit} onChange={setReview('DUTY')} />
           <div className={openSec.duty ? 'border-t border-[#EADFD6]' : 'hidden print:block'}>
             {showAllToggle('duty')}
             <div className="overflow-x-auto">

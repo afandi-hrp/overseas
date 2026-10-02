@@ -8,6 +8,8 @@ import { supabase } from '../lib/supabase';
 import { SEA_AIR_AUDIT_CHANGED_EVENT } from '../utils/SeaAirAuditHelpers';
 import { SEA_AIR_RECAP_CHANGED_EVENT, fetchRecapNeedsAttentionCount } from '../utils/SeaAirRecapHelpers';
 import { COURIER_AUDIT_CHANGED_EVENT, fetchCourierDraftCount } from '../utils/CourierAuditHelpers';
+import { COURIER_RECAP_CHANGED_EVENT, fetchCourierRecapNeedsAttentionCount } from '../utils/CourierRecapHelpers';
+import type { ValidationTabKey } from './CourierValidationWindow';
 
 // Tipe eksplisit (2026-09, ditambahkan saat "Cost by Vessel" butuh `pageKeys` array di beberapa
 // entry) -- tanpa ini TS infer union literal per-anggota array yg TIDAK saling exchangeable
@@ -233,7 +235,35 @@ export default function MainLayout() {
     window.addEventListener(COURIER_AUDIT_CHANGED_EVENT, load);
     return () => { cancelled = true; window.removeEventListener(COURIER_AUDIT_CHANGED_EVENT, load); };
   }, [canSeeCourierAudit, location.pathname]);
-  const subTabBadge = (subId: string) => (subId === 'courier_audit' && courierDraftCount ? (
+  // Badge "needs attention" Invoice Recap Courier (2026-10-02, keputusan user): AWB yang masih punya invoice belum
+  // di-Submit to Finance & validasi PIB/CN-nya < 100% (definisi SATU: recapGroupNeedsAttention). Tab validasi =
+  // yang boleh dilihat user (sama jendela Validation). Dihitung saat mount, masuk /courier/*, & event perubahan.
+  const canSeeCourierRecap = isAdmin || allowedPageKeys.has('courier_rekapan');
+  const inCourier = location.pathname.startsWith('/courier');
+  const courierTabsKey = [
+    (isAdmin || allowedPageKeys.has('courier_checklist_dokumen')) ? 'checklist' : '',
+    (isAdmin || allowedPageKeys.has('courier_dokumen_validation')) ? 'doc' : '',
+    (isAdmin || allowedPageKeys.has('courier_cost_validation')) ? 'cost' : '',
+  ].filter(Boolean).join(',');
+  const [courierAttentionCount, setCourierAttentionCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!canSeeCourierRecap || !courierTabsKey) { setCourierAttentionCount(null); return; }
+    const tabs = courierTabsKey.split(',') as ValidationTabKey[];
+    let cancelled = false;
+    const load = async () => {
+      const n = await fetchCourierRecapNeedsAttentionCount(tabs);
+      if (!cancelled) setCourierAttentionCount(n);
+    };
+    load();
+    window.addEventListener(COURIER_RECAP_CHANGED_EVENT, load);
+    window.addEventListener(COURIER_AUDIT_CHANGED_EVENT, load);
+    return () => { cancelled = true; window.removeEventListener(COURIER_RECAP_CHANGED_EVENT, load); window.removeEventListener(COURIER_AUDIT_CHANGED_EVENT, load); };
+  }, [canSeeCourierRecap, courierTabsKey, inCourier]);
+  const subTabBadge = (subId: string) => (subId === 'courier_rekapan' && courierAttentionCount ? (
+    <span title="AWB needing attention (validation not 100%)" className="ml-auto min-w-[20px] h-[18px] px-1.5 rounded-full bg-[#C8402F] text-white text-[10.5px] font-bold flex items-center justify-center">
+      {courierAttentionCount > 99 ? '99+' : courierAttentionCount}
+    </span>
+  ) : subId === 'courier_audit' && courierDraftCount ? (
     <span title="Draft PIB / CN" className="ml-auto min-w-[20px] h-[18px] px-1.5 rounded-full bg-amber-400 text-[#3B1B3D] text-[10.5px] font-bold flex items-center justify-center">
       {courierDraftCount > 99 ? '99+' : courierDraftCount}
     </span>

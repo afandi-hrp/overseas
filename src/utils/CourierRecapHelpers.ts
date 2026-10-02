@@ -8,6 +8,8 @@
 //   ada (SQL belum dijalankan) -> fallback hitung di browser dgn aturan yang SAMA.
 import { supabase } from '../lib/supabase'
 import { courierAuditCalcNum, type CourierDocType } from './CourierAuditHelpers'
+import { enrichCourierValidationPct, courierValidationIncomplete } from './CourierValidationPct'
+import type { ValidationTabKey } from '../components/CourierValidationWindow'
 
 // ─── Auto-calc 6 kolom (DIPINDAH dari SharedDataTable 2026-10-02, isi tidak berubah) ─────────────
 // Sama prinsip dgn COURIER_AUDIT_CALC_FIELDS (override manual permanen, live-compute di semua jalur input).
@@ -358,6 +360,38 @@ export async function fetchRecapCourierLog(g: RecapGroup): Promise<RecapLogEntry
   }
   g.rows.forEach(r => { if (r.created_at) entries.push({ at: r.created_at, who: 'System', what: 'Recorded', detail: `${r.invoice_type || 'Invoice'} ${r.no_invoice || ''} recorded`.trim() }) })
   return entries.sort((a, b) => String(b.at).localeCompare(String(a.at)))
+}
+
+// ─── Needs attention (2026-10-02, keputusan user) ────────────────────────────────────────────────
+// AWB "perlu perhatian" = masih punya invoice yang BELUM di-Submit to Finance DAN PIB/CN pasangannya punya
+// validasi (tab yang boleh dilihat user) < 100% / belum ada data. AWB tanpa pasangan Audit tidak dihitung.
+// SATU definisi: dipakai badge sidebar & tombol filter "Needs attention" halaman Invoice Recap.
+export const recapGroupNeedsAttention = (g: RecapGroup, tabs: ValidationTabKey[]): boolean =>
+  tabs.length > 0 && !!g.audit && g.rows.some(r => !r.submit_date) && courierValidationIncomplete(g.audit.rec, tabs)
+
+// Semua AWB (filter halaman) yang perlu perhatian -- kelompok dihitung di browser (aturan SAMA RPC/fallback),
+// pasangan Audit + persen validasi diisi (enrichCourierValidationPct; `enrich` tambahan opsional utk tampilan).
+export async function fetchCourierRecapAttentionGroups(f: RecapFilters, tabs: ValidationTabKey[], enrich?: (recs: any[]) => Promise<void>): Promise<RecapGroup[]> {
+  if (tabs.length === 0) return []
+  const groups = (await fallbackGroups(f)).map(g => buildRecapGroup(g.key, g.rows.map(applyCalc)))
+  const open = groups.filter(g => g.rows.some(r => !r.submit_date))
+  await fetchRecapAuditLinks(open)
+  const recs = open.map(g => g.audit?.rec).filter(Boolean)
+  await enrichCourierValidationPct(recs)
+  const hits = open.filter(g => recapGroupNeedsAttention(g, tabs))
+  if (enrich) await enrich(hits.map(g => g.audit!.rec))
+  return hits
+}
+
+// Jumlah utk badge sidebar (tanpa filter halaman). Gagal -> null (badge disembunyikan).
+export async function fetchCourierRecapNeedsAttentionCount(tabs: ValidationTabKey[]): Promise<number | null> {
+  try {
+    const all = { ppjk: null, an: null, from: null, to: null, search: '', searchCols: [] }
+    return (await fetchCourierRecapAttentionGroups(all, tabs)).length
+  } catch (e) {
+    console.error('[CourierRecap] badge needs attention gagal', e)
+    return null
+  }
 }
 
 export const COURIER_RECAP_CHANGED_EVENT = 'beehive:courier-recap-changed'

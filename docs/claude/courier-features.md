@@ -29,6 +29,9 @@ Recap Sea & Air (token `SeaAirAuditUi.tsx`, font Sora); mode **List** = tabel la
 - **Batas kolom role** (`getAllowedColumns('courier_rekapan')`): kolom tak diizinkan tidak tampil di kartu/Open/KPI
   ("Amounts hidden for your role" kalau `total_amount` disembunyikan).
 - Re-audit (sql/037): chip "↻ Changed in Invoice Recap — please re-audit" juga di kartu Audit Courier & banner Overview.
+- **2026-10-02 bagian 2** (sql/038): tombol filter "Needs attention" + badge sidebar, kunci setelah Submit to Finance
+  (List: "🔒 Locked" tanpa Edit/Delete; Open: chip Locked + Unlock (Admin) dgn alasan). Detail: CLAUDE.md
+  "Courier 2026-10-02 bagian 2".
 
 ## Audit Courier — tampilan baru "PIB & CN Audit" (2026-10-01)
 
@@ -132,6 +135,8 @@ page_key lama & hanya selama Draft (TANPA aturan Admin-only Sea & Air); (6) nama
   + update tabel tidak berubah). Credit note (Deduct CN, riwayat + Revise) & Recalculate bonded storage tetap,
   dikunci selama ada perubahan belum disimpan (sama dulu: tersembunyi saat Edit) & hanya utk user ber-hak edit.
   `otherRowsModel()` = SATU sumber hitung baris Other Charges (dipakai tampilan lama & baru).
+  **Review per invoice (2026-10-02, sql/038)**: kotak `CourierCostReviewBox` di bawah header kartu Invoice freight/duty
+  (juga di versi lama mode List) — Accept difference / Ask vendor to revise, ikut dihitung di persen (lihat CLAUDE.md).
 - **Audit trail** (`CourierAuditTrail.tsx`): timeline per hari, "Lama → Baru" diparse, entri kembar "×N", Refresh;
   data SAMA `fetchCourierAuditLog`.
 - Token warna Sea & Air di `validationWindowStyles.ts` (`VW_*`, `VW_TILE*`, `VW_INPUT`, `VW_TH`).

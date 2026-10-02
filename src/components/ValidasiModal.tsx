@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import { planCourierDocRecompute, docRecomputeMessage, docRecomputePendingText } from '../utils/CourierDocRecompute';
 import { LoadingSpinner } from './LoadingState';
 import { supabase } from '../lib/supabase';
 import { Receipt, FileText, Landmark, Ship, Sailboat, FileCheck2, FileDigit, IdCard, Scale, ClipboardList, Edit3, CheckCircle2, XCircle, Clock, Building2, Plane, CalendarDays, UserCheck, ChevronDown, ChevronUp, ChevronRight, RefreshCw, RotateCcw } from 'lucide-react';
@@ -940,6 +941,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   // perlu memicu re-render sendiri.
   const computedValuesRef = useRef<Record<string, any> | null>(null);
   const [recomputeMsg, setRecomputeMsg] = useState<string | null>(null);
+  const [computedSnapshot, setComputedSnapshot] = useState<Record<string, any> | null>(null);
   // Kartu section terbuka/tertutup (tampilan, 2026-10-01). null = belum diinisialisasi; setelah data
   // dimuat, section yg punya mismatch terbuka otomatis (pola Documents Invoice Recap Sea & Air) &
   // TIDAK menutup sendiri saat mismatch-nya dikoreksi.
@@ -1060,6 +1062,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
       // Missing Data" bisa pakai versi TERBARU ini kapan saja tanpa fetch ulang.
       const computed = buildValidationValues(raw, docAwb, localNpwps);
       computedValuesRef.current = computed;
+      setComputedSnapshot(computed);
 
       if (pib_id || cn_id) {
         const queryStr = queryPib_cnid.join(',');
@@ -1474,35 +1477,15 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     const computed = computedValuesRef.current;
     if (!computed) return;
     userActionRef.current = true;
-    let filledCount = 0;
-    setValues((prev: any) => {
-      const next: any = { ...prev };
-      Object.keys(computed).forEach(id => {
-        const cur = prev[id] || {};
-        const comp = computed[id] || {};
-        const canFillSrc = !cur.src && !cur.src_edited;
-        const canFillCmp = !cur.cmp && !cur.cmp_edited;
-        if (!canFillSrc && !canFillCmp) return;
-        const newSrc = canFillSrc ? comp.src : cur.src;
-        const newCmp = canFillCmp ? comp.cmp : cur.cmp;
-        if (newSrc === cur.src && newCmp === cur.cmp) return;
-        if (canFillSrc && comp.src) filledCount++;
-        if (canFillCmp && comp.cmp) filledCount++;
-        next[id] = {
-          ...cur,
-          src: newSrc,
-          cmp: newCmp,
-          srcDisplay: canFillSrc ? comp.srcDisplay : cur.srcDisplay,
-          srcNote: canFillSrc ? comp.srcNote : cur.srcNote,
-        };
-      });
-      return next;
-    });
-    setRecomputeMsg(filledCount > 0
-      ? `Recompute selesai: ${filledCount} field terisi dari data terbaru.`
-      : 'Tidak ada field kosong yang bisa diisi ulang -- semua sudah lengkap atau sudah diedit manual.');
+    // Logika bersama versi baru & lama (src/utils/CourierDocRecompute.ts): isi + perbarui field yang BELUM
+    // pernah diedit manual dari data dokumen terbaru (dokumen susulan menimpa dokumen_validasi).
+    const plan = planCourierDocRecompute(values, computed);
+    setValues(plan.next);
+    setRecomputeMsg(docRecomputeMessage(plan));
     setTimeout(() => setRecomputeMsg(null), 6000);
   };
+  // Jumlah field yang punya data dokumen lebih baru (banner "Recompute") -- dihitung dari fungsi yang SAMA.
+  const recomputePending = useMemo(() => (computedSnapshot ? planCourierDocRecompute(values, computedSnapshot).total : 0), [values, computedSnapshot]);
 
   if (loading) {
     if (embedded) {
@@ -1600,8 +1583,8 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
               </button>
             ) : (
               <>
-                <button className={VW_BTN_SECONDARY} onClick={handleRecomputeMissing} title="Isi ulang field yang masih kosong dari data dokumen terbaru, tanpa menimpa field yang sudah terisi/diedit">
-                  <RefreshCw size={13} /> Recompute missing data
+                <button className={VW_BTN_SECONDARY} onClick={handleRecomputeMissing} title="Fill and update fields from the latest document data (e.g. an additional document) — manually edited fields are never overwritten">
+                  <RefreshCw size={13} /> Recompute document data
                 </button>
                 <button className={VW_BTN_DANGER} onClick={cancelEdit}>
                   <XCircle size={13} /> Cancel
@@ -1754,8 +1737,8 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2 print:hidden">
             {canEdit && (
-              <button type="button" className={VW_BTN_SECONDARY} onClick={handleRecomputeMissing} title="Isi ulang field yang masih kosong dari data dokumen terbaru, tanpa menimpa field yang sudah terisi/diedit">
-                <RefreshCw size={13} /> Recompute missing data
+              <button type="button" className={VW_BTN_SECONDARY} onClick={handleRecomputeMissing} title="Fill and update fields from the latest document data (e.g. an additional document) — manually edited fields are never overwritten">
+                <RefreshCw size={13} /> Recompute document data
               </button>
             )}
             <button type="button" className={`${VW_BTN_SECONDARY} ml-auto`} onClick={() => {
@@ -1767,6 +1750,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
             </button>
           </div>
           {recomputeMsg && <div className="mt-2 rounded-lg bg-[#EEF1FA] text-[#2F4FA8] text-[12px] font-semibold px-3 py-1.5">{recomputeMsg}</div>}
+          {!recomputeMsg && recomputePending > 0 && <div data-recompute-pending className="mt-2 rounded-lg bg-[#FFF8EA] border border-[#F3D9A4] text-[#7A4F00] text-[12px] font-semibold px-3 py-1.5">{docRecomputePendingText(recomputePending, canEdit)}</div>}
         </div>
 
         {!hasSourceData && (
@@ -1966,12 +1950,12 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                     ini juga kalau user berubah pikiran). TIDAK MENGHAPUS/MENIMPA field yang
                     sudah terisi ATAU sudah diedit manual -- lihat `handleRecomputeMissing`. */}
                 <button
-                  title="Isi ulang field yang masih kosong dari data dokumen terbaru, tanpa menimpa field yang sudah terisi/diedit"
+                  title="Fill and update fields from the latest document data (e.g. an additional document) — manually edited fields are never overwritten"
                   style={{ ...S.printBtn, color: '#0369a1', borderColor: '#bae6fd', background: '#f0f9ff' }}
                   onClick={handleRecomputeMissing}
                 >
                   <RefreshCw size={14} />
-                  <span className="hidden sm:inline">Recompute Missing Data</span>
+                  <span className="hidden sm:inline">Recompute Document Data</span>
                 </button>
                 <button style={{ ...S.printBtn, color: '#15803d', borderColor: '#bbf7d0', background: '#f0fdf4' }} onClick={() => setIsEditMode(false)}>
                   <CheckCircle2 size={14} />

@@ -7,7 +7,7 @@
 // - Tombol Validation = jendela validasi PIB/CN pasangan AWB (data SAMA dgn Audit Courier).
 import React, { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Send, ShieldCheck, ExternalLink, Pencil, History } from 'lucide-react'
+import { X, Send, ShieldCheck, ExternalLink, Pencil, History, Lock, Unlock } from 'lucide-react'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_GREEN, Chip, Pill, PtBadge, SectionCard } from './SeaAirAuditUi'
 import { fmtRp, fmtDateShort, companyFullName } from '../utils/SeaAirAuditHelpers'
 import { courierDocNo, isCourierDraft } from '../utils/CourierAuditHelpers'
@@ -36,8 +36,43 @@ const financeChips = (r: any) => (
   </span>
 )
 
+// Kunci Submit to Finance (sql/038, 2026-10-02, sama Sea & Air): invoice yang sudah di-submit TERKUNCI (Edit di List
+// & Delete nonaktif, DB menolak perubahan). Hanya Admin bisa Unlock dgn alasan (min. 5 karakter); ditolak kalau Finance
+// sudah menerima. Info unlock terakhir tampil di kartu invoice.
+const UnlockControl: React.FC<{ r: any; busy: boolean; onUnlock: (id: string, reason: string) => Promise<boolean> }> = ({ r, busy, onUnlock }) => {
+  const [open, setOpen] = useState(false)
+  const [reason, setReason] = useState('')
+  const [saving, setSaving] = useState(false)
+  if (r.finance_received_at) {
+    return <div className="text-[11px] text-[#8A7A8B] mt-1" title="Finance has already received this invoice">Unlock unavailable — received by Finance</div>
+  }
+  if (!open) {
+    return (
+      <button type="button" disabled={busy} onClick={() => setOpen(true)} className={`${SA_BTN_OUTLINE} h-8 mt-1`}>
+        <Unlock size={12} /> Unlock (Admin)
+      </button>
+    )
+  }
+  const ok = reason.trim().length >= 5
+  return (
+    <div className="mt-1.5 w-[260px] max-w-full text-left">
+      <textarea aria-label="Unlock reason" value={reason} onChange={e => setReason(e.target.value)} rows={2}
+        placeholder="Reason for unlocking (min. 5 characters)"
+        className="w-full rounded-lg border border-[#EADFD6] bg-white px-2.5 py-1.5 text-[12px] text-[#3B1B3D] focus:outline-none focus:border-[#6B3470]" />
+      <div className="flex justify-end gap-2 mt-1">
+        <button type="button" className={`${SA_BTN_OUTLINE} h-8`} onClick={() => { setOpen(false); setReason('') }}>Cancel</button>
+        <button type="button" disabled={!ok || saving} className={`${SA_BTN_GREEN} h-8`}
+          onClick={async () => { setSaving(true); const done = await onUnlock(String(r.id), reason.trim()); setSaving(false); if (done) { setOpen(false); setReason('') } }}>
+          {saving ? 'Unlocking…' : 'Confirm unlock'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function CourierRecapDetailModal({
   g, companyNames, colOk, canEdit, validationTabs, busy, onClose, onSubmit, onValidation, onViewInAudit, onEditInList,
+  isAdmin = false, onUnlock,
 }: {
   g: RecapGroup
   companyNames: Record<string, string>
@@ -50,6 +85,8 @@ export default function CourierRecapDetailModal({
   onValidation: (tab?: ValidationTabKey) => void
   onViewInAudit: () => void
   onEditInList: () => void
+  isAdmin?: boolean
+  onUnlock?: (id: string, reason: string) => Promise<boolean>
 }) {
   const [tab, setTab] = useState<TabKey>('overview')
   const kinds = (['freight', 'duty', 'cn'] as InvoiceKind[]).filter(k => g.byKind[k].length > 0)
@@ -99,6 +136,12 @@ export default function CourierRecapDetailModal({
             {canEdit && !r.submit_date && (
               <button type="button" disabled={busy} onClick={() => onSubmit([String(r.id)])} className={`${SA_BTN_GREEN} h-8 mt-1`}><Send size={12} /> Submit to Finance</button>
             )}
+            {r.submit_date && (
+              <div className="flex flex-col items-end">
+                <Chip tone="grey" title="Submitted to Finance — editing & deleting are locked"><Lock size={11} className="inline -mt-0.5" /> Locked</Chip>
+                {isAdmin && onUnlock && <UnlockControl r={r} busy={busy} onUnlock={onUnlock} />}
+              </div>
+            )}
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 px-4 pb-3 border-t border-[#F1E8E1] pt-2">
@@ -119,6 +162,9 @@ export default function CourierRecapDetailModal({
             {colOk('notes') && <Fact label="Remarks">{r.notes || '—'}</Fact>}
             {colOk('keterangan') && <Fact label="Internal remarks">{r.keterangan || '—'}</Fact>}
             {r.paid_reference && <Fact label="Payment reference">{r.paid_reference}</Fact>}
+            {!r.submit_date && r.submit_unlock_reason && (
+              <Fact label="Last unlock">{`${r.submit_unlocked_by || 'Admin'}${r.submit_unlocked_at ? ` · ${fmtDateShort(r.submit_unlocked_at)}` : ''} — ${r.submit_unlock_reason}`}</Fact>
+            )}
           </div>
         </div>
         {colOk('vessel') && pairs.length > 0 && (
@@ -168,6 +214,7 @@ export default function CourierRecapDetailModal({
                 {ppjks.map(p => <Chip key={p} tone="grey">{p}</Chip>)}
                 {colOk('an') && g.an && <PtBadge code={g.an} title={companyFullName(companyNames, g.an)} />}
                 <Pill tone={status.tone}>{status.label}</Pill>
+                {g.rows.length > 0 && g.rows.every(r => r.submit_date) && <Chip tone="grey" title="All invoices submitted to Finance — locked"><Lock size={11} className="inline -mt-0.5" /> Locked</Chip>}
               </div>
               <div className="text-[12px] text-[#6E5E70] mt-0.5">{[colOk('origin') ? g.origin : '', colOk('weight_kg') && g.weight !== null ? `${g.weight.toLocaleString('id-ID')} kg` : ''].filter(Boolean).join(' · ') || '—'}</div>
             </div>
