@@ -45,6 +45,19 @@ Draft di sidebar; **TIDAK ADA kunci validasi** (validasi = info saja); tab Draft
   Move back (RPC+DB+Doc Acceptance), Edit (field berubah saja, auto-calc, override), Add CN + Save & mark as
   audited, Delete draft CN benar, role Finance, view-only, badge sidebar). Belum dites di production.
 
+### Mode List = tampilan SEBELUM rombak (2026-10-02, keputusan user)
+
+Pola Invoice Recap Sea & Air: mode **List** Audit Courier memakai tampilan LAMA, mode **Card**/jendela Open memakai yang
+baru. Tombol "✅ Validation" tabel List membuka `CourierValidationWindowLegacy` (tab Checklist | Doc Validation | Cost
+Validation, strip Shipment Info, tabel matriks, tombol Edit/Edit Cost Validasi, autosave Doc Validation) — file
+`*Legacy.tsx` (`CourierValidationWindowLegacy`, `ValidasiModalLegacy`, `CostValidationModalLegacy`,
+`ValidasiPerhitunganPIBLegacy`, `validationWindowStylesLegacy.ts`) = SALINAN PERSIS git `9d5d88a` (beda hanya import,
+diverifikasi diff). ChecklistModal prop `legacy` = cabang embedded lama (token `*_L`, `catatanInputLegacy`). Tombol
+"Add Data" toolbar List = form lama (`EditModal`/`showAddRowModal`), "+ Add manually" header mode Card = form baru.
+Header halaman & toggle Card|List tetap baru di kedua mode (sama Sea & Air). **Kalau logika (load/simpan/RPC) salah
+satu versi diubah, WAJIB sinkron ke versi lainnya** (versi baru: ChecklistModal non-legacy, ValidasiModal,
+CostValidationModal, ValidasiPerhitunganPIB). Diuji: `courier_ui` 56 cek (termasuk 6 cek mode List legacy).
+
 ### Tab Documents / Costs / Audit trail ala Invoice Recap Sea & Air (2026-10-01, VERSI FINAL)
 
 Iterasi 1 (restyle tabel lama) DITOLAK user: harus SAMA dgn jendela Open Invoice Recap Sea & Air (di Sea & Air

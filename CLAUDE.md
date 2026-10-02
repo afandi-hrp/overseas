@@ -501,7 +501,9 @@ sidebar needs attention SUDAH; pindah tab browser tidak refresh SUDAH (lihat bag
 `docs/claude/courier-features.md`). **Susulan 2026-10-01**: jendela Open = tab Overview | Documents (Checklist + Doc validation
 per field, tanpa tabel) | Costs (kartu per invoice, klik angka/status, bar Save/Discard) | Audit trail — SAMA pola
 jendela Open Invoice Recap Sea & Air; data & cara simpan tetap (lihat "Tab Documents / Costs / Audit trail ala
-Invoice Recap Sea & Air" di file yang sama). Doc validation mode embedded TIDAK autosave lagi (keputusan user). **Keputusan user permanen**: Mark as audited TIDAK PERNAH dikunci walau
+Invoice Recap Sea & Air" di file yang sama). Doc validation mode embedded TIDAK autosave lagi (keputusan user).
+**Mode List** (2026-10-02, keputusan user) = tampilan SEBELUM rombak (jendela Validation & form Add Data lama, file
+`*Legacy.tsx`) — lihat "Mode List = tampilan SEBELUM rombak" di `docs/claude/courier-features.md`. **Keputusan user permanen**: Mark as audited TIDAK PERNAH dikunci walau
 validasi belum lengkap (ada kasus invoice freight memang tidak ditagihkan) — JANGAN tambah gerbang validasi
 Courier. Tab tetap Draft/PIB/CN (tanpa "All"). Fitur tabel lama tetap di mode List.
 **Berikutnya (belum)**: (2) Rekapan Courier tampilan (perlu keputusan kartu per invoice vs per AWB),

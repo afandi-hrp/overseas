@@ -13,6 +13,8 @@ import { LoadingState, LoadingSpinner } from '../components/LoadingState'
 import ExportModal from '../components/ExportModal'
 import CourierUploadSusulanModal from '../components/CourierUploadSusulanModal'
 import { VW_TOOLBAR, VW_BODY, VW_CARD, VW_CARD_TITLE, VW_BTN_PRIMARY, VW_BTN_SECONDARY, vwPctBar, vwPctText } from '../components/validationWindowStyles'
+import { VW_TOOLBAR as VW_TOOLBAR_L, VW_BODY as VW_BODY_L, VW_CARD as VW_CARD_L, VW_CARD_TITLE as VW_CARD_TITLE_L, VW_BTN_PRIMARY as VW_BTN_PRIMARY_L, VW_BTN_SECONDARY as VW_BTN_SECONDARY_L, vwPctBar as vwPctBar_L, vwPctText as vwPctText_L } from '../components/validationWindowStylesLegacy'
+import CourierValidationWindowLegacy from './CourierValidationWindowLegacy'
 import CourierValidationWindow, { rowValidationPct, validationDotClass, validationDotLabel, VALIDATION_TAB_LABEL, VALIDATION_TAB_ORDER, type ValidationTabKey, type WindowTabKey } from '../components/CourierValidationWindow'
 import SeaAirChecklistModal from '../components/SeaAirChecklistModal'
 import SeaAirValidasiModal from '../components/SeaAirValidasiModal'
@@ -1350,7 +1352,7 @@ async function fetchCourierValidationBadgePct(rows: any[]): Promise<{ docPctMap:
 // `embedded` (2026-09-30) -- dirender sbg tab "Checklist" di dalam CourierValidationWindow (tanpa
 // overlay/judul sendiri, Save Checklist TIDAK menutup jendela). `onPctChange` melaporkan % live
 // ke label tab (null = belum ada baris dokumen_checklist & belum ada perubahan).
-function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, embedded = false, onPctChange, onDirtyChange }: { record: any, tab: any, onClose: () => void, onSaved?: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, onDirtyChange?: (dirty: boolean) => void }) {
+function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, embedded = false, legacy = false, onPctChange, onDirtyChange }: { record: any, tab: any, onClose: () => void, onSaved?: () => void, canEdit?: boolean, embedded?: boolean, legacy?: boolean, onPctChange?: (pct: number | null) => void, onDirtyChange?: (dirty: boolean) => void }) {
   const [form, setForm] = useState<Record<string, boolean>>({})
   const [existingId, setExistingId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
@@ -1556,6 +1558,7 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, embedde
   }
 
   if (loading) {
+    if (embedded && legacy) return <LoadingState />
     if (embedded) return <div className="bg-white rounded-[14px] border border-[#EADFD6]"><LoadingState fullHeight={false} /></div>
     return (
       <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center h-full w-full">
@@ -1621,6 +1624,21 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, embedde
     </div>
   )
 
+  const catatanInputLegacy = canEdit ? (
+    <textarea
+      value={catatan}
+      onChange={e => setCatatan(e.target.value)}
+      disabled={!hasCatatanCol}
+      rows={embedded ? 4 : 3}
+      placeholder={hasCatatanCol ? 'No notes yet.' : 'Notes are unavailable until database migration 028 is applied.'}
+      className="w-full border border-slate-200 bg-white rounded-lg px-3 py-2 text-sm text-[#5A305A] focus:outline-none focus:ring-2 focus:ring-purple-200 resize-y disabled:bg-slate-50 disabled:cursor-not-allowed [overflow-wrap:anywhere]"
+    />
+  ) : (
+    <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-[#5A305A] whitespace-pre-wrap [overflow-wrap:anywhere]">
+      {catatan || <span className="italic text-[#5A305A]/50">No notes yet.</span>}
+    </div>
+  )
+
   const uploadSusulanModal = showUploadSusulan && (
     <CourierUploadSusulanModal
       awbHint={record.awb || undefined}
@@ -1629,6 +1647,127 @@ function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, embedde
       onSentNoJob={handleUploadSentNoJob}
     />
   )
+
+  // LEGACY (2026-10-02): tampilan embedded SEBELUM rombak (git 9d5d88a) -- dipakai jendela Validation mode
+  // List (CourierValidationWindowLegacy). Fungsi sama (toggle, handleSave, upload susulan).
+  // ── Mode embedded: tab "Checklist" jendela Validation -- lebar penuh, toolbar tab di atas
+  //    (status + tombol), isi 2 kolom (daftar dokumen | dokumen kurang + catatan). ──
+  if (embedded && legacy) {
+    const optionalChecked = optionalFields.filter(f => form[f.key]).length
+    const docTile = (field: typeof CHECKLIST_FIELDS[number]) => {
+      const val = !!form[field.key]
+      return (
+        <button
+          type="button"
+          key={field.key}
+          onClick={canEdit ? () => toggle(field.key) : undefined}
+          disabled={!canEdit}
+          className={`w-full min-w-0 flex items-center justify-between gap-2 px-3 py-2 rounded-lg border text-left transition-colors ${
+            val ? 'border-emerald-200 bg-emerald-50/70' : 'border-slate-200 bg-white'
+          } ${canEdit ? (val ? 'hover:border-emerald-300 cursor-pointer' : 'hover:border-[#5A305A]/30 hover:bg-[#5A305A]/[0.03] cursor-pointer') : 'cursor-default'}`}
+        >
+          <span className={`text-[13px] font-medium [overflow-wrap:anywhere] ${val ? 'text-emerald-900' : 'text-[#5A305A]'}`}>{field.label}</span>
+          {val
+            ? <CheckCircle2 size={17} className="text-emerald-500 shrink-0" />
+            : <Circle size={17} className="text-slate-300 shrink-0" />}
+        </button>
+      )
+    }
+    return (
+      <div className="flex flex-col flex-1 min-h-0 cvw-fill">
+        <div className={VW_TOOLBAR_L}>
+          <div className="flex items-center gap-3 min-w-0">
+            <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${mapStatusColor[status] || 'bg-slate-100 text-[#5A305A]'}`}>
+              {getStatusLabel(status)}
+            </span>
+            <div className="w-40 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+              <div className={`h-full transition-all duration-500 ${vwPctBar_L(pct)}`} style={{ width: `${pct}%` }} />
+            </div>
+            <span className={`text-sm font-bold ${vwPctText_L(pct)}`}>{pct}%</span>
+            <span className="text-xs text-slate-500 whitespace-nowrap">{checkedMandatoryCount}/{mandatoryCount} required</span>
+          </div>
+          <div className="ml-auto flex items-center gap-2 print:hidden">
+            {savedMsg && (
+              <span className="flex items-center gap-1 text-xs font-semibold text-emerald-700">
+                <CheckCircle2 size={14} /> Checklist saved
+              </span>
+            )}
+            {canEdit ? (
+              <>
+                <button onClick={() => setShowUploadSusulan(true)} className={VW_BTN_SECONDARY_L}>
+                  <UploadCloud size={14} /> Upload Additional Doc
+                </button>
+                <button onClick={revertUnsaved} disabled={!isDirty} title="Discard unsaved checklist changes" className={VW_BTN_SECONDARY_L}>
+                  Cancel
+                </button>
+                <button onClick={handleSave} disabled={saving} className={VW_BTN_PRIMARY_L}>
+                  <Save size={14} /> {saving ? 'Saving...' : 'Save Checklist'}
+                </button>
+              </>
+            ) : (
+              <span className="text-xs font-medium text-slate-500 bg-slate-100 rounded-full px-2.5 py-1">View only</span>
+            )}
+          </div>
+        </div>
+
+        <div className={VW_BODY_L}>
+          {jobBanners}
+          {err && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700 mb-4">⚠️ {err}</div>
+          )}
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-4 items-start">
+            <div className="space-y-4 min-w-0">
+              <section className={`${VW_CARD_L} p-4`}>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className={VW_CARD_TITLE_L}>Required Documents</h3>
+                  <span className="text-[11px] font-semibold text-slate-500">{checkedMandatoryCount}/{mandatoryCount}</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+                  {mandatoryFields.map(docTile)}
+                </div>
+              </section>
+              {optionalFields.length > 0 && (
+                <section className={`${VW_CARD_L} p-4`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className={VW_CARD_TITLE_L}>Optional Documents</h3>
+                    <span className="text-[11px] font-semibold text-slate-500">{optionalChecked}/{optionalFields.length}</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+                    {optionalFields.map(docTile)}
+                  </div>
+                </section>
+              )}
+            </div>
+
+            <div className="space-y-4 min-w-0">
+              <section className={`${VW_CARD_L} p-4`}>
+                <h3 className={`${VW_CARD_TITLE_L} mb-2.5`}>Missing Documents</h3>
+                {missingDocs.length > 0 ? (
+                  <ul className="space-y-1.5">
+                    {missingDocs.map((d: string, i: number) => (
+                      <li key={i} className="flex items-start gap-2 text-[13px] text-red-700">
+                        <XCircle size={15} className="text-red-400 shrink-0 mt-0.5" />
+                        <span className="[overflow-wrap:anywhere]">{d}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="flex items-center gap-2 text-[13px] font-medium text-emerald-700">
+                    <CheckCircle2 size={15} /> All required documents are complete.
+                  </p>
+                )}
+              </section>
+              <section className={`${VW_CARD_L} p-4`}>
+                <h3 className={`${VW_CARD_TITLE_L} mb-2.5`}>Catatan Checklist</h3>
+                {catatanInputLegacy}
+              </section>
+            </div>
+          </div>
+        </div>
+        {uploadSusulanModal}
+      </div>
+    )
+  }
 
   // ── Mode embedded: kolom kiri tab "Documents" jendela Open (2026-10-01, pola kartu Checklist Invoice
   //    Recap Sea & Air). Beda dgn Sea & Air: checklist Courier BISA diedit (klik dokumen = centang/
@@ -5630,7 +5769,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan' && canEdit('courier_rekapan'))
   ) ? (
     <button
-      onClick={() => (isCourierAuditView ? setCourierEditState({ record: null, docType: courierAuditType === 'cn' ? 'CN' : 'PIB' }) : setShowAddRowModal(true))}
+      onClick={() => setShowAddRowModal(true)}
       className="px-3 py-2 rounded-full bg-[#5A305A] hover:bg-[#4a2749] text-white text-xs font-semibold border border-[#5A305A] transition-all h-[38px] flex justify-center items-center gap-1.5 shadow-sm shrink-0"
     >
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -5677,23 +5816,25 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         />
       )}
 
+      {/* Mode List (tombol Validation tabel lama): jendela & modal versi SEBELUM rombak (keputusan user
+          2026-10-02, pola Invoice Recap Sea & Air). Jendela Open mode Card = CourierValidationWindow baru. */}
       {courierValidationRecord && tab && (
-        <CourierValidationWindow
+        <CourierValidationWindowLegacy
           record={courierValidationRecord}
           mainTab={activeMainTab}
           subTab={activeSubTab}
           jenisDokumen={courierValidationRecord.jenis_dokumen || (courierValidationRecord.tabel === 'tabel_audit_pib' || courierAuditType === 'pib' ? 'PIB' : (courierValidationRecord.tabel === 'tabel_audit_cn' || courierAuditType === 'cn' ? 'CN' : ''))}
           access={courierValidationAccess}
           editAccess={{ checklist: canEdit('courier_checklist_dokumen'), doc: canEdit('courier_dokumen_validation'), cost: canEdit('courier_cost_validation') }}
-          renderChecklist={({ onPctChange, onSaved, onDirtyChange }) => (
+          renderChecklist={({ onPctChange, onSaved }) => (
             <ChecklistModal
               record={courierValidationRecord}
               tab={tab}
               embedded
+              legacy
               onClose={() => { setCourierValidationRecord(null); fetchRecords(); }}
               onSaved={onSaved}
               onPctChange={onPctChange}
-              onDirtyChange={onDirtyChange}
               canEdit={canEdit('courier_checklist_dokumen')}
             />
           )}
