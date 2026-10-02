@@ -461,7 +461,7 @@ history file ini.
 ## STATUS & SISA PEKERJAAN — Audit & Invoice Recap Sea & Air + Courier / Finance Handover (per 2026-10-02)
 
 **DAFTAR TERKINI (satu-satunya acuan)** — 2 bagian "BACKLOG" di bawahnya = riwayat (item dicoret = selesai).
-Semua SQL (027–035, 037–039) SUDAH jalan di production. Kode SELESAI & lolos uji jsdom/PGlite, tapi **BELUM dites
+Semua SQL (027–035, 037–040) SUDAH jalan di production. Kode SELESAI & lolos uji jsdom/PGlite, tapi **BELUM dites
 user di production** (testing bagian 2 + Finance Handover dijadwalkan user bersamaan dgn pekerjaan lain).
 
 **Audit PIB Sea & Air (`/sea-air/audit`) — belum:**
@@ -503,7 +503,7 @@ user di production** (testing bagian 2 + Finance Handover dijadwalkan user bersa
    kode PPJK (`emkl_vendor`); kolom `aktif` belum dipakai saat pencocokan; tanpa tombol hapus.
 5. Viewer FAR berganti modal antar tab -> ukuran dialog berubah (kosmetik).
 6. (Dibatalkan, keputusan user) upload bukti transfer — TIDAK dibuat. **Undo Accept DIBUAT 2026-10-02** (keputusan user
-   berubah, sql/040 BELUM DIJALANKAN) — lihat "Undo receipt" di bagian Finance Handover gabungan.
+   berubah, sql/040 SUDAH DIJALANKAN 2026-10-02) — lihat "Undo receipt" di bagian Finance Handover gabungan.
 7. Courier: ~~viewer hanya dialog 1 invoice~~ — 2026-10-02 viewer = jendela Validation BACA SAJA (lihat "Finance melihat
    validasi Courier"); master vendor Courier (nama legal + TOP) WAJIB diisi user; page_key `courier_finance`/
    `settings_courier_vendors` WAJIB di-assign ke role.
@@ -875,7 +875,7 @@ receipt oleh Admin, lihat di bawah); font
   `cost_validasi_seaair`, `cost_validasi_catatan_seaair`, `tabel_audit_seaair` (catatan: tabel Audit PIB
   berisi angka duty — tersembunyi di UI, tapi bisa dibaca role Finance lewat API).
   Sea & Air Receive menyimpan `finance_received_by` = nama yg diketik, `finance_received_at` = tanggal terima.
-- **Undo receipt (2026-10-02, keputusan user, `sql/040_finance_undo_receive.sql` BELUM DIJALANKAN)**: membatalkan
+- **Undo receipt (2026-10-02, keputusan user, `sql/040_finance_undo_receive.sql` SUDAH DIJALANKAN 2026-10-02)**: membatalkan
   Accept -> kembali "Waiting for Finance". HANYA **Admin** (`is_admin()`), alasan WAJIB min. 5 karakter, HANYA selama belum
   Paid; berlaku FAR / Sea & Air / Courier. RPC BARU `fn_far_overseas_finance_undo_receive(uuid,text)` (log
   `far_overseas_memo_log` action `FINANCE_UNDO_RECEIVE`), `fn_seaair_finance_undo_receive(uuid,text)` (flag `app.seaair_unlock`
