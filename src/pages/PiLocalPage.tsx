@@ -1587,19 +1587,26 @@ export default function PiLocalPage() {
                   {rows.map((r) => (
                     <DocRow
                       key={r.id}
+                      alignTop
                       left={<>
-                        <RowEyebrow><PtBadge pt={r.nama_pt} /><span>{formatDateTimeID(r.created_at)}</span></RowEyebrow>
-                        <RowTitle>{r.nomor_po || '-'}</RowTitle>
-                        <div className="flex flex-wrap gap-1.5 mt-1.5">
-                          <RowChip label="SJ">{r.nomor_sj || '-'}</RowChip>
-                          <RowChip label="Stock In">{r.nomor_stock_in || '-'}</RowChip>
+                        {/* Susunan SAMA Bunker (2026-10-02, permintaan user): Nomor PO paling atas (sejajar
+                            Vendor), Kategori sebaris labelnya, badge PT + tanggal paling bawah. */}
+                        <RowTitle className="">{r.nomor_po || '-'}</RowTitle>
+                        <div className="mt-1.5 flex items-center gap-2">
+                          <span className="text-[9px] font-bold uppercase tracking-wide text-[#5A305A]/50 shrink-0">Kategori</span>
+                          <div className="flex-1 min-w-0 max-w-[220px]">
+                            <KategoriCell row={r} onChanged={handleKategoriChanged} canEdit={canEditPiLocal} />
+                          </div>
+                        </div>
+                        <div className="mt-2">
+                          <RowEyebrow><PtBadge pt={r.nama_pt} /><span>{formatDateTimeID(r.created_at)}</span></RowEyebrow>
                         </div>
                       </>}
                       main={<>
                         <div className="font-bold text-[13px] text-[#5A305A] leading-snug break-words">{r.vendor_name || '-'}</div>
-                        <div className="mt-2 max-w-[340px]">
-                          <RowLabel>Kategori</RowLabel>
-                          <KategoriCell row={r} onChanged={handleKategoriChanged} canEdit={canEditPiLocal} />
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          <RowChip label="SJ">{r.nomor_sj || '-'}</RowChip>
+                          <RowChip label="Stock In">{r.nomor_stock_in || '-'}</RowChip>
                         </div>
                       </>}
                       side={<>

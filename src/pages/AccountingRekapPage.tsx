@@ -1012,19 +1012,24 @@ export default function AccountingRekapPage() {
                   {rows.map((r) => (
                     <DocRow
                       key={r.id}
+                      alignTop
                       left={<>
-                        <RowEyebrow><PtBadge pt={r.pt_internal} /><span>{formatDateTimeID(r.created_at)}</span></RowEyebrow>
-                        <RowTitle>{r.nomor_po || '-'}</RowTitle>
-                        <div className="flex flex-wrap gap-1.5 mt-1.5">
-                          <RowChip label="Tgl Dok">{r.tanggal_dokumen || '-'}</RowChip>
-                          <RowChip label="Bank">{r.bank || '-'}</RowChip>
+                        {/* Susunan SAMA Bunker (2026-10-02, permintaan user): Nomor PO paling atas (sejajar
+                            Vendor), Status Proses sebaris labelnya, badge PT + tanggal paling bawah. */}
+                        <RowTitle className="">{r.nomor_po || '-'}</RowTitle>
+                        <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                          <span className="text-[9px] font-bold uppercase tracking-wide text-[#5A305A]/50 shrink-0">Status Proses</span>
+                          <StatusBadge status={r.status_proses} />
+                        </div>
+                        <div className="mt-2">
+                          <RowEyebrow><PtBadge pt={r.pt_internal} /><span>{formatDateTimeID(r.created_at)}</span></RowEyebrow>
                         </div>
                       </>}
                       main={<>
                         <div className="font-bold text-[13px] text-[#5A305A] leading-snug break-words">{r.vendor || '-'}</div>
-                        <div className="mt-2">
-                          <RowLabel>Status Proses</RowLabel>
-                          <StatusBadge status={r.status_proses} />
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          <RowChip label="Tgl Dok">{r.tanggal_dokumen || '-'}</RowChip>
+                          <RowChip label="Bank">{r.bank || '-'}</RowChip>
                         </div>
                       </>}
                       side={<>
