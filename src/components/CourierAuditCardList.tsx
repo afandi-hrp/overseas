@@ -167,11 +167,14 @@ export const CourierAuditCardList: React.FC<{
   colOk: (key: string) => boolean
   validationTabs: ValidationTabKey[]
   onOpen: (rec: any, tab?: 'overview' | ValidationTabKey) => void
-}> = ({ rows, docTypeOf, companyNames, colOk, validationTabs, onOpen }) => (
+  // Reorder Mode mode Card (2026-10-02): bungkus tiap kartu (grip drag + nomor posisi). Tanpa prop = tampilan biasa.
+  wrapCard?: (rec: any, index: number, card: React.ReactNode) => React.ReactNode
+}> = ({ rows, docTypeOf, companyNames, colOk, validationTabs, onOpen, wrapCard }) => (
   <div className="flex flex-col gap-2.5">
-    {rows.map(rec => {
+    {rows.map((rec, index) => {
       const t = docTypeOf(rec)
-      return <CourierAuditRowCard key={courierRowKey(rec, t)} rec={rec} docType={t} companyNames={companyNames} colOk={colOk} validationTabs={validationTabs} onOpen={onOpen} />
+      const card = <CourierAuditRowCard rec={rec} docType={t} companyNames={companyNames} colOk={colOk} validationTabs={validationTabs} onOpen={onOpen} />
+      return <React.Fragment key={courierRowKey(rec, t)}>{wrapCard ? wrapCard(rec, index, card) : card}</React.Fragment>
     })}
   </div>
 )

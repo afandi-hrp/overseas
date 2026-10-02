@@ -236,7 +236,8 @@ const ReorderIndexCell: React.FC<{
   rowSpan: number,
   totalRows: number,
   onMoveTo?: (position: number) => void,
-}> = ({ sortable, index, rowSpan, totalRows, onMoveTo }) => {
+  asDiv?: boolean,
+}> = ({ sortable, index, rowSpan, totalRows, onMoveTo, asDiv = false }) => {
   const [open, setOpen] = useState(false);
   const [target, setTarget] = useState('');
   const [popPos, setPopPos] = useState<{ top: number, left: number } | null>(null);
@@ -264,9 +265,10 @@ const ReorderIndexCell: React.FC<{
   const targetNum = Number(target);
   const targetValid = Number.isInteger(targetNum) && targetNum >= 1 && targetNum <= totalRows && targetNum !== index + 1;
 
+  const Wrap: any = asDiv ? 'div' : 'td';
   return (
-    <td className="px-2 py-3 align-top" rowSpan={rowSpan}>
-      <div className="flex items-center justify-center gap-1.5">
+    <Wrap {...(asDiv ? { className: 'px-1.5 py-2' } : { className: 'px-2 py-3 align-top', rowSpan })}>
+      <div className={`flex items-center justify-center gap-1.5 ${asDiv ? 'flex-col' : ''}`}>
         <button type="button" ref={sortable.setActivatorNodeRef} title="Drag to reorder" className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-[#5A305A] touch-none" {...sortable.attributes} {...sortable.listeners}>
           <GripVertical size={15} />
         </button>
@@ -307,7 +309,29 @@ const ReorderIndexCell: React.FC<{
         </div>,
         document.body
       )}
-    </td>
+    </Wrap>
+  );
+};
+
+// Reorder Mode mode Card Audit Courier (2026-10-02, permintaan user): 1 kartu = 1 item sortable (div -> transform
+// CSS berjalan normal, tanpa DragOverlay). Grip + nomor posisi GLOBAL + popover "Move to" = ReorderIndexCell (asDiv).
+// Simpan urutan memakai handler SAMA mode List (handleRowDragEnd / handleMoveRowTo).
+const SortableCardShell: React.FC<{ id: any; index: number; totalRows: number; onMoveTo?: (p: number) => void; children: React.ReactNode }> = ({ id, index, totalRows, onMoveTo, children }) => {
+  const sortable = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(sortable.transform),
+    transition: sortable.transition || 'transform 220ms cubic-bezier(0.25, 1, 0.5, 1)',
+    opacity: sortable.isDragging ? 0.55 : 1,
+    position: 'relative',
+    zIndex: sortable.isDragging ? 10 : undefined,
+  };
+  return (
+    <div ref={sortable.setNodeRef} style={style} className="flex items-stretch gap-2" data-reorder-card>
+      <div className="shrink-0 flex items-center rounded-[14px] bg-white border border-orange-200 shadow-sm">
+        <ReorderIndexCell sortable={sortable} index={index} rowSpan={1} totalRows={totalRows} onMoveTo={onMoveTo} asDiv />
+      </div>
+      <div className="flex-1 min-w-0">{children}</div>
+    </div>
   );
 };
 
@@ -4602,10 +4626,9 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     return ok;
   };
   const switchCourierView = (m: 'card' | 'list') => {
-    if (m === 'card') {
-      if (reorderMode) exitReorderMode();
-      setCourierAuditEditMode(false);
-    }
+    // Reorder Mode kini ada di Card & List (2026-10-02) -- ganti tampilan = keluar Reorder dulu.
+    if (reorderMode) exitReorderMode();
+    if (m === 'card') setCourierAuditEditMode(false);
     setCourierAuditView(m);
   };
 
@@ -6330,6 +6353,18 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         ))}
                       </select>
                     </div>
+                    {/* Reorder Mode di Card (2026-10-02): syarat SAMA List (tab PIB/CN, tanpa filter, hak edit). */}
+                    {(showReorderButton || reorderMode) && (
+                      <button
+                        type="button"
+                        onClick={handleToggleReorderMode}
+                        aria-pressed={reorderMode}
+                        title={reorderMode ? 'Finish reordering' : 'Drag cards to change the manual order'}
+                        className={`h-9 px-3 rounded-xl border text-xs font-bold shrink-0 inline-flex items-center gap-1.5 transition-colors ${reorderMode ? 'bg-orange-500 border-orange-600 text-white' : 'bg-white border-[#EADFD6] text-[#3B1B3D] hover:bg-[#FBF7F4]'}`}
+                      >
+                        <GripVertical size={14} /> {reorderMode ? 'Done' : 'Reorder'}
+                      </button>
+                    )}
                     <div className="inline-flex items-center p-1 rounded-xl bg-[#F5EDF3] shrink-0" role="group" aria-label="View mode">
                       {(['card', 'list'] as const).map(m => (
                         <button
@@ -6845,7 +6880,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
               <div className="px-4 py-2 bg-orange-50 border-b border-orange-200 text-orange-800 text-xs font-medium flex items-center justify-between gap-3">
                 <span className="flex items-center gap-1.5 flex-wrap">
                   <GripVertical size={14} className="shrink-0" />
-                  Reorder Mode aktif — drag ikon di kolom No. untuk mengubah urutan
+                  {isCourierAuditView && courierAuditView === 'card' ? 'Reorder Mode aktif — drag ikon ⋮⋮ di kiri kartu untuk mengubah urutan' : 'Reorder Mode aktif — drag ikon di kolom No. untuk mengubah urutan'}
                   <span className="text-orange-700/70 font-normal">· klik nomor untuk pindah ke posisi/halaman lain</span>
                   {reorderSaving && <span className="text-orange-700/70 font-normal italic">· Saving…</span>}
                 </span>
@@ -6903,14 +6938,26 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   </div>
                 )}
                 {/* Baris "N draft records" DIHAPUS 2026-10-02 (permintaan user) -- jumlah tetap di footer "Showing … of N". */}
-                <CourierAuditCardList
-                  rows={displayRows}
-                  docTypeOf={courierDocTypeOf}
-                  companyNames={courierCompanyNames}
-                  colOk={courierColOk}
-                  validationTabs={courierValidationTabs}
-                  onOpen={(rec, t) => setCourierOpen({ rec, tab: t || 'overview' })}
-                />
+                {(() => {
+                  const list = (
+                    <CourierAuditCardList
+                      rows={displayRows}
+                      docTypeOf={courierDocTypeOf}
+                      companyNames={courierCompanyNames}
+                      colOk={courierColOk}
+                      validationTabs={courierValidationTabs}
+                      onOpen={(rec, t) => setCourierOpen({ rec, tab: t || 'overview' })}
+                      wrapCard={reorderMode ? (rec, index, card) => (
+                        <SortableCardShell id={rec.id} index={startIndex + index} totalRows={totalRecords} onMoveTo={pos => handleMoveRowTo(rec, pos)}>{card}</SortableCardShell>
+                      ) : undefined}
+                    />
+                  );
+                  return reorderMode ? (
+                    <DndContext sensors={dndSensors} collisionDetection={closestCenter} modifiers={[restrictToVerticalAxis]} onDragEnd={handleRowDragEnd}>
+                      <SortableContext items={displayRows.map(r => r.id)} strategy={verticalListSortingStrategy}>{list}</SortableContext>
+                    </DndContext>
+                  ) : list;
+                })()}
               </div>
             ) : isSeaAirAudit && seaAirViewMode === 'card' ? (
               <div className="flex-1 min-h-0 relative overflow-y-auto p-2.5">

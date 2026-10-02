@@ -157,7 +157,6 @@ export const CourierRecapCardView: React.FC<{
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [fallback, setFallback] = useState(false)
   const seq = useRef(0)
   const prevFilterKey = useRef(filterKey)
 
@@ -181,7 +180,6 @@ export const CourierRecapCardView: React.FC<{
         if (my !== seq.current) return
         setGroups(res.groups)
         setTotal(res.total)
-        setFallback(res.fallback)
         onLoaded?.(res.groups)
       } catch (e: any) {
         console.error('[CourierRecap] gagal memuat kartu', e)
@@ -207,9 +205,7 @@ export const CourierRecapCardView: React.FC<{
         ) : (
           <>
             {loading && <div className="absolute top-2 right-3 z-10 text-[11px] text-[#6E5E70] bg-white/90 px-2 py-0.5 rounded-full border border-[#EADFD6]">Updating…</div>}
-            <div className="text-[12px] text-[#6E5E70] px-1 pb-2 tabular-nums">
-              <b className="text-[#3B1B3D]">{total}</b> AWB{attentionOnly ? ' need attention (open invoices, validation not 100%)' : ''} · newest email received first{fallback ? ' · (computed in the browser — run sql/037 for faster loading)' : ''}
-            </div>
+            {/* Baris "N AWB · newest email received first" DIHAPUS 2026-10-02 (permintaan user) -- jumlah ada di footer. */}
             <div className="flex flex-col gap-2.5">
               {(groups || []).map(g => (
                 <CourierRecapGroupCard key={g.key} g={g} companyNames={companyNames} colOk={colOk} validationTabs={validationTabs} onOpen={onOpen} onValidation={onValidation} />
