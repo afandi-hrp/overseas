@@ -115,6 +115,16 @@ presentational); isi kartu tetap ditulis per halaman.
   padahal Dashboard menghitung status terisi = "bermasalah"; warna per status akan menyesatkan).
 - Daftar `flex flex-col gap-2.5`, scroll internal (pola shell tinggi tetap), footer pagination sama.
 
+## Toolbar dinamis laptop 14" / monitor 24" — 4 halaman Compare Doc (2026-10-02)
+
+Laporan user: di laptop 14" kotak Search terpotong. Root cause: grup kontrol kanan `justify-end` +
+`overflow-x-auto` — isi yang meluap di sisi KIRI flex `justify-end` terpotong & tidak bisa di-scroll.
+Fix (AuditPo/AuditPoOverseas/PiLocal/AccountingRekap): toolbar `@container` + `flex-wrap` (tanpa
+overflow-x); Search `flex-1 min-w-[150px] max-w-[360px]`, input `w-full`; di bawah lebar toolbar 1450px
+(`@max-[1450px]:`) label "Items" & teks Card/List (`ViewModeToggle`) disembunyikan, dropdown PT/Kategori
+`max-w-[120px]`, input tanggal `w-[92px]`. Tidak muat juga -> kontrol turun ke baris 2. **JANGAN kembali
+ke `justify-end` + `overflow-x-auto`** di toolbar ini.
+
 ## Audit AP Local/Overseas/PI Local — "Riwayat Perubahan"
 
 Pengecualian dari rule "duplikasi sengaja" di atas — modal & fungsi log **SENGAJA DIBUAT

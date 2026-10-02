@@ -1468,7 +1468,12 @@ export default function PiLocalPage() {
 
       <main className="px-3 pt-2 pb-2 flex-1 flex flex-col overflow-hidden">
         <div className="bg-white/70 backdrop-blur-md rounded-2xl border border-white/60 shadow-sm overflow-hidden flex-1 flex flex-col min-h-0">
-          <div className="px-5 py-4 border-b border-white/60 flex items-center flex-nowrap gap-2 overflow-x-auto shrink-0">
+          {/* Toolbar dinamis (2026-10-02, laporan user: di laptop 14" kotak Search terpotong krn grup kanan
+              `justify-end` + `overflow-x-auto` memotong isi yang meluap di sisi KIRI). Sekarang `@container`
+              + `flex-wrap`: Search melebar mengisi sisa ruang (min 150px, maks 360px), di bawah lebar toolbar
+              1450px label Card/List & "Items" disembunyikan + dropdown/tanggal dipersempit; kalau tetap tidak
+              muat, kontrol turun ke baris ke-2 (tidak pernah terpotong). */}
+          <div className="@container px-5 py-4 border-b border-white/60 flex items-center flex-wrap gap-2 shrink-0">
               <button
                 onClick={() => setDashboardOpen(true)}
                 className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-[#5A305A] hover:bg-[#73507B] text-white font-semibold text-xs transition-all shadow-sm shrink-0"
@@ -1483,20 +1488,20 @@ export default function PiLocalPage() {
                   <Plus size={14} /> Tambah Data
                 </button>
               )}
-              <div className="flex items-center justify-end gap-2 flex-nowrap overflow-x-auto min-w-0 flex-1">
-                <div className="flex items-center gap-2 rounded-full pl-3.5 pr-3 py-1.5 border border-slate-200 bg-white shrink-0">
+              <div className="flex items-center justify-end gap-2 flex-wrap min-w-0 flex-1">
+                <div className="flex items-center gap-2 rounded-full pl-3.5 pr-3 py-1.5 border border-slate-200 bg-white flex-1 min-w-[150px] max-w-[360px]">
                   <Search size={13} className="text-[#5A305A]/50 shrink-0" />
                   <input
                     value={searchInput}
                     onChange={e => setSearchInput(e.target.value)}
                     placeholder="Cari No PO / No Stock In / Vendor..."
-                    className="border-0 bg-transparent text-xs text-[#5A305A] focus:outline-none w-28"
+                    className="border-0 bg-transparent text-xs text-[#5A305A] focus:outline-none w-full min-w-0"
                   />
                 </div>
                 <select
                   value={ptFilter}
                   onChange={e => { setPtFilter(e.target.value); setPage(1); }}
-                  className="rounded-full px-3 py-2 border border-slate-200 bg-white text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer shrink-0 max-w-[160px]"
+                  className="rounded-full px-3 py-2 border border-slate-200 bg-white text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer shrink-0 max-w-[160px] @max-[1450px]:max-w-[120px]"
                 >
                   <option value="">Semua PT</option>
                   {ptOptions.map(pt => <option key={pt} value={pt}>{pt}</option>)}
@@ -1504,7 +1509,7 @@ export default function PiLocalPage() {
                 <select
                   value={kategoriFilter}
                   onChange={e => { setKategoriFilter(e.target.value); setPage(1); }}
-                  className="rounded-full px-3 py-2 border border-slate-200 bg-white text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer shrink-0 max-w-[160px]"
+                  className="rounded-full px-3 py-2 border border-slate-200 bg-white text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer shrink-0 max-w-[160px] @max-[1450px]:max-w-[120px]"
                 >
                   <option value="">SEMUA KATEGORI</option>
                   <option value={NO_KATEGORI_SENTINEL}>TANPA KATEGORI</option>
@@ -1517,14 +1522,14 @@ export default function PiLocalPage() {
                     type="date"
                     value={dateFrom}
                     onChange={e => { setDateFrom(e.target.value); setPage(1); }}
-                    className="w-[100px] text-[11px] bg-transparent focus:outline-none text-[#5A305A] cursor-pointer"
+                    className="w-[100px] @max-[1450px]:w-[92px] text-[11px] bg-transparent focus:outline-none text-[#5A305A] cursor-pointer"
                   />
                   <span className="text-[#5A305A] text-xs">–</span>
                   <input
                     type="date"
                     value={dateTo}
                     onChange={e => { setDateTo(e.target.value); setPage(1); }}
-                    className="w-[100px] text-[11px] bg-transparent focus:outline-none text-[#5A305A] cursor-pointer"
+                    className="w-[100px] @max-[1450px]:w-[92px] text-[11px] bg-transparent focus:outline-none text-[#5A305A] cursor-pointer"
                   />
                   {(dateFrom || dateTo) && (
                     <button onClick={() => { setDateFrom(''); setDateTo(''); setPage(1); }} className="text-[#5A305A] hover:text-[#5A305A] ml-0.5 shrink-0">
@@ -1549,7 +1554,7 @@ export default function PiLocalPage() {
                 </button>
                 <ViewModeToggle value={viewMode} onChange={setViewMode} />
                 <div className="flex items-center gap-2 rounded-full pl-3.5 pr-2.5 py-1 h-[34px] border border-slate-200 bg-white shrink-0">
-                  <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide">Items</span>
+                  <span className="text-[10px] text-[#5A305A] font-bold uppercase tracking-wide @max-[1450px]:hidden">Items</span>
                   <select
                     value={pageSize}
                     onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
