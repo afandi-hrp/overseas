@@ -6,21 +6,25 @@
 //   (master `seaair_vendor_master`, sql/035), jumlah = invoice pengiriman TANPA duty & tax
 //   (`computeLandedCost`), due = tanggal submit + TOP PPJK (default 14 hari).
 // - Overdue = belum Paid & due < hari ini. Urut "Sent" terbaru dulu.
-// Tulis HANYA lewat RPC (FAR: sql/027+035, Sea & Air: sql/034+035). Tanpa upload bukti & tanpa Undo.
+// - Courier (2026-10-02, sql/037): 1 handover per INVOICE rekapan_courier yg sudah punya Submit Date.
+//   Payable to = PPJK nama LENGKAP (master `courier_vendor_master`, kode = PPJK tanpa "OWN"), jumlah =
+//   total invoice (Credit Note = negatif), due = Submit Date + TOP (default 14 hari), Paid = `tgl_lunas`.
+// Tulis HANYA lewat RPC (FAR: sql/027+035, Sea & Air: sql/034+035, Courier: sql/037). Tanpa upload bukti & tanpa Undo.
 import { supabase } from '../lib/supabase'
+import { computeCourierRekapanCalc, invoiceAmount, invoiceKind, ppjkCode, awbDisplay } from './CourierRecapHelpers'
 import { computeLandedCost, parsePoDetail, RECAP_SEGMENTS } from './SeaAirRecapHelpers'
 import {
   getFinanceStage, getMemoDueValue, totalInIdr, implicitFxRate, formatMoney, getApprovalEntries, findApprovalEntry, toLocalDay,
 } from './FarOverseasAirHelpers'
 
-export type HandoverSource = 'far' | 'seaair'
+export type HandoverSource = 'far' | 'seaair' | 'courier'
 export type HandoverStage = 'waiting' | 'received' | 'paid'
 
 export type HandoverItem = {
   key: string
   source: HandoverSource
   id: string
-  refLabel: 'MEMO' | 'BL / AWB'
+  refLabel: 'MEMO' | 'BL / AWB' | 'INVOICE'
   ref: string
   sub: string
   payee: string
@@ -43,6 +47,7 @@ export type HandoverItem = {
 }
 
 export const DEFAULT_SEAAIR_TOP_DAYS = 14
+export const DEFAULT_COURIER_TOP_DAYS = 14
 const PAGE = 1000
 const CHUNK = 50
 
@@ -196,6 +201,64 @@ export async function probeSeaAirFinanceColumns(sample?: any): Promise<boolean> 
   return !error
 }
 
+// ── Courier (per invoice) ────────────────────────────────────────────────────
+export async function fetchCourierVendorMap(): Promise<Record<string, SeaAirVendor>> {
+  const { data, error } = await supabase.from('courier_vendor_master').select('vendor_code, legal_name, top_days, aktif')
+  if (error) { console.warn('[FinanceHandover] master vendor Courier tidak terbaca (sql/037?)', error.message); return {} }
+  const out: Record<string, SeaAirVendor> = {}
+  ;(data || []).forEach((v: any) => { out[vendorKey(v.vendor_code)] = v })
+  return out
+}
+
+export function courierToItem(r0: any, vendors: Record<string, SeaAirVendor>): HandoverItem {
+  const r = { ...r0, ...computeCourierRekapanCalc(r0, r0.manual_override_fields) }
+  const code = ppjkCode(r.ppjk)
+  const v = vendors[vendorKey(code)]
+  const top = v?.top_days ?? null
+  const sent = localDayIso(r.submit_date)
+  const cn = invoiceKind(r) === 'cn'
+  return {
+    key: `courier:${r.id}`,
+    source: 'courier',
+    id: String(r.id),
+    refLabel: 'INVOICE',
+    ref: r.no_invoice || '—',
+    sub: [r.invoice_type || 'Invoice', r.awb ? `AWB ${awbDisplay(r.awb)}` : ''].filter(Boolean).join(' · '),
+    payee: v?.legal_name?.trim() || code || '—',
+    payeeIsCode: !v?.legal_name?.trim(),
+    payeeLine: `Vendor: ${r.vendor || '—'}`,
+    pt: r.an || '',
+    amountIdr: cn ? -invoiceAmount(r) : invoiceAmount(r),
+    amountOriginal: null,
+    sentDate: sent,
+    receivedDate: localDayIso(r.finance_received_at),
+    receivedBy: r.finance_received_by || null,
+    paidDate: localDayIso(r.tgl_lunas),
+    paidReference: r.paid_reference || null,
+    dueDate: sent ? addDaysIso(sent, top ?? DEFAULT_COURIER_TOP_DAYS) : null,
+    topLabel: top != null ? `TOP ${top}d` : `TOP ${DEFAULT_COURIER_TOP_DAYS}d (default)`,
+    urgent: false,
+    earlier: false,
+    stage: hasVal(r.tgl_lunas) ? 'paid' : hasVal(r.finance_received_at) ? 'received' : 'waiting',
+    raw: r,
+  }
+}
+
+export async function fetchCourierHandovers(): Promise<HandoverItem[] | null> {
+  const rows = await fetchAll((a, b) => supabase.from('rekapan_courier').select('*')
+    .not('submit_date', 'is', null).order('submit_date', { ascending: false }).order('id', { ascending: true }).range(a, b))
+  if (!rows) return null
+  const vendors = await fetchCourierVendorMap()
+  return rows.map(r => courierToItem(r, vendors))
+}
+
+// Kolom Finance Courier (sql/037) ada?
+export async function probeCourierFinanceColumns(sample?: any): Promise<boolean> {
+  if (sample) return Object.prototype.hasOwnProperty.call(sample, 'finance_received_at')
+  const { error } = await supabase.from('rekapan_courier').select('finance_received_at').limit(1)
+  return !error
+}
+
 export const sortHandovers = (list: HandoverItem[]) =>
   [...list].sort((a, b) => (b.sentDate || '').localeCompare(a.sentDate || '') || a.ref.localeCompare(b.ref))
 
@@ -203,17 +266,19 @@ export function matchesHandoverSearch(it: HandoverItem, q: string) {
   const s = q.trim().toLowerCase()
   if (!s) return true
   const r = it.raw || {}
-  return [it.ref, it.sub, it.payee, it.payeeLine, it.pt, it.paidReference, r.memo_title, r.vendor, r.no_invoice, r.emkl_vendor, r.ship_via]
+  return [it.ref, it.sub, it.payee, it.payeeLine, it.pt, it.paidReference, r.memo_title, r.vendor, r.no_invoice, r.emkl_vendor, r.ship_via, r.awb, r.ppjk]
     .some(v => String(v ?? '').toLowerCase().includes(s))
 }
 
 // ── RPC ──────────────────────────────────────────────────────────────────────
 export async function receiveHandover(it: HandoverItem, receiverName: string, receivedDate: string) {
   if (it.source === 'far') return supabase.rpc('fn_far_overseas_finance_accept', { p_id: it.id, p_receiver_name: receiverName, p_received_date: receivedDate })
+  if (it.source === 'courier') return supabase.rpc('fn_courier_finance_accept', { p_id: it.id, p_receiver_name: receiverName, p_received_date: receivedDate })
   return supabase.rpc('fn_seaair_finance_accept', { p_rekapan_id: it.id, p_receiver_name: receiverName, p_received_date: receivedDate })
 }
 export async function markHandoverPaid(it: HandoverItem, paidDate: string, reference: string | null) {
   if (it.source === 'far') return supabase.rpc('fn_far_overseas_mark_paid', { p_id: it.id, p_paid_date: paidDate, p_proof_path: null, p_reference: reference })
+  if (it.source === 'courier') return supabase.rpc('fn_courier_finance_mark_paid', { p_id: it.id, p_paid_date: paidDate, p_reference: reference })
   return supabase.rpc('fn_seaair_finance_mark_paid', { p_rekapan_id: it.id, p_paid_date: paidDate, p_reference: reference })
 }
 

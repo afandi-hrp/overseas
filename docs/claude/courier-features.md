@@ -1,3 +1,35 @@
+## Invoice Recap Courier — tampilan baru per AWB (2026-10-02)
+
+Keputusan user & SQL: CLAUDE.md "Rombak Invoice Recap Courier" + "Invoice Recap Courier per AWB". Pola SAMA Invoice
+Recap Sea & Air (token `SeaAirAuditUi.tsx`, font Sora); mode **List** = tabel lama `CourierRekapanRowGroup` APA ADANYA
+(Reorder/Edit Mode/Customize View/Export tetap). Default mode = Card (state `courierRecapView`, tidak disimpan).
+
+- **Header** eyebrow "Courier" + "Invoice Recap". **Kartu filter** (mode Card): tab PPJK (state `activePpjkFilter` SAMA
+  toolbar lama, filter `ilike %X%` -> tab per-PPJK hanya invoice PPJK itu), Search (kolom yang diizinkan role), Email
+  date (`tgl_terima_email`), Company, Card|List, Refresh. Mode List: toggle Card|List ditambahkan di toolbar lama.
+- **5 KPI** (`fetchCourierRecapSummary`, filter sama daftar): AWB, Freight + Duty, Total (− credit notes), Not submitted
+  to Finance, Submitted · unpaid.
+- **Kartu = 1 AWB** (urut email terbaru per AWB; baris tanpa AWB = kartu sendiri "No AWB"): AWB tanpa prefix carrier,
+  chip PPJK (tanpa "OWN"), PT, rentang email; chip jenis invoice (Freight/Duty/Credit Note + jumlah), origin · berat, PO
+  (+N/Hide), vessel; pill status (Not submitted / "n/N submitted" / Submitted to Finance / Paid), chip Audit "PIB · Draft/Audited"
+  + "↻ Re-audit" + titik validasi (klik = buka tab itu) ATAU chip merah "Not found in Audit"; Total = Freight + Duty − CN
+  (baris kecil "charges − CN"); tombol Validation (kalau ada pasangan Audit) & Open. Paging 12 kartu sendiri
+  (`CourierRecapCardView`), refresh lewat `courierRecapNonce` (Submit/tutup Validation/Refresh/simpan di List).
+- **Jendela Open** (`CourierRecapDetailModal`): header Total, Validation, View in Audit (`/courier/audit?q=<awb>`),
+  Edit in List (tutup jendela, pindah ke List, Search = AWB), Submit all to Finance / "Submit all (N left)".
+  Tab **Overview** (Shipment, Audit PIB/CN + "Linked record"/"Same AWB", Total dgn CN terpisah + total akhir, Split per
+  vessel = jumlah breakdown per vessel tiap invoice dikurangi CN, daftar Finance per invoice) · **Invoices (N)** (sub-tab
+  Freight/Duty/Credit Note; kartu per invoice: nominal, NTPN/PO/remarks, chip Sent/Received/Paid, tombol Submit to
+  Finance, tabel PO · Vessel · breakdown) · **Audit trail** (`CourierAuditTrail` + loader `fetchRecapCourierLog`,
+  `v_audit_trail` tabel `rekapan_courier` cocok AWB).
+- **Submit to Finance**: per invoice / semua invoice AWB, konfirmasi, isi `submit_date` = hari ini (lokal) HANYA yang
+  masih kosong; TANPA syarat & TANPA kunci (keputusan user).
+- **Validation dari Recap** = `CourierValidationWindow` baru (tanpa Overview) utk PIB/CN pasangan; bisa diubah HANYA kalau
+  PIB/CN masih Draft (Audited = lihat saja) — aturan SAMA Audit Courier.
+- **Batas kolom role** (`getAllowedColumns('courier_rekapan')`): kolom tak diizinkan tidak tampil di kartu/Open/KPI
+  ("Amounts hidden for your role" kalau `total_amount` disembunyikan).
+- Re-audit (sql/037): chip "↻ Changed in Invoice Recap — please re-audit" juga di kartu Audit Courier & banner Overview.
+
 ## Audit Courier — tampilan baru "PIB & CN Audit" (2026-10-01)
 
 Mengikuti Audit PIB Sea & Air (token `SeaAirAuditUi.tsx`, font Sora). Keputusan user: samakan dgn Audit PIB

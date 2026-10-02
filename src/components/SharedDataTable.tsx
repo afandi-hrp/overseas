@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { CheckCircle2, XCircle, X, Circle, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays, AlertTriangle, Save, SlidersHorizontal, RotateCcw, SquareX, UploadCloud, Pencil, GripVertical, ArrowUpDown } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
@@ -33,12 +33,15 @@ import {
 import { SeaAirAuditCardList, SeaAirAuditKpiCards } from './SeaAirAuditCardList'
 import SeaAirAuditDetailModal from './SeaAirAuditDetailModal'
 import SeaAirAuditEditModal from './SeaAirAuditEditModal'
-import { computeRecapIssues, fetchRecapSummary, isRecapLocked, notifySeaAirRecapChanged, type RecapSummary, type RecapIssue } from '../utils/SeaAirRecapHelpers'
+import { computeRecapIssues, fetchRecapSummary, isRecapLocked, notifySeaAirRecapChanged, todayLocalIso, type RecapSummary, type RecapIssue } from '../utils/SeaAirRecapHelpers'
 import {
   COURIER_AUDIT_CALC_FIELDS, computeCourierAuditCalc, courierAuditCalcNum, fetchCourierAuditSummary, courierDocType, courierDocNo,
   courierTableOf, makeColOk, isCourierDraft, notifyCourierAuditChanged, type CourierAuditSummary, type CourierDocType,
 } from '../utils/CourierAuditHelpers'
 import { CourierAuditCardList, CourierAuditKpiCards } from './CourierAuditCardList'
+import { COURIER_REKAPAN_CALC_FIELDS, computeCourierRekapanCalc, submitRecapInvoices, notifyCourierRecapChanged, fetchCourierRecapSummary, type RecapFilters, type RecapGroup, type RecapSummaryCourier } from '../utils/CourierRecapHelpers'
+import { CourierRecapCardView, CourierRecapKpiCards } from './CourierRecapCardList'
+import CourierRecapDetailModal from './CourierRecapDetailModal'
 import CourierAuditOverview from './CourierAuditOverview'
 import CourierAuditTrail from './CourierAuditTrail'
 import CourierAuditEditModal from './CourierAuditEditModal'
@@ -396,44 +399,8 @@ const NumberInput = ({ value, onChange, placeholder, className, isPct }: { value
 // supaya form baru CourierAuditEditModal memakai fungsi yang sama. Lihat komentar lengkap di sana.
 
 // ─── Rekapan Courier — Auto-Calculate Kolom Turunan (2026-09) ───────────────
-// Sama prinsip dgn COURIER_AUDIT_CALC_FIELDS di atas (override manual permanen, live-compute di
-// semua jalur input). "Jumlah Vessel" = jumlah pemisah '+' pada kolom Vessel + 1 (vessel kosong
-// atau tanpa '+' otomatis = 1, jangan sampai pembagi nol) -- PIC WAJIB pisah vessel dgn '+'
-// (spasi-plus-spasi spt data lama), pemisah lain (koma dst) bikin hitungan ini salah.
-const COURIER_REKAPAN_CALC_FIELDS = ['total_amount', 'breakdown_courier_adm_vessel', 'breakdown_duty_vessel', 'breakdown_freight_vessel', 'breakdown_bm_vessel', 'breakdown_ppnpph_vessel'] as const;
-
-function courierRekapanVesselCount(vesselText: any): number {
-  const text = String(vesselText || '');
-  if (!text) return 1;
-  const plusCount = text.split('+').length - 1;
-  return plusCount + 1;
-}
-
-function computeCourierRekapanCalc(row: Record<string, any>, overrideFields: string[] | Set<string> | null | undefined): Record<string, any> {
-  const ov = overrideFields instanceof Set ? overrideFields : new Set(overrideFields || []);
-  const n = courierAuditCalcNum;
-  const out: Record<string, any> = {};
-
-  const courierAdmFee = n(row.courier_adm_fee);
-  const totalDutyTax = n(row.total_duty_tax);
-  const totalFreight = n(row.total_freight);
-  const bm = n(row.bm);
-  const ppn = n(row.ppn);
-  const pph = n(row.pph);
-  const vesselCount = courierRekapanVesselCount(row.vessel);
-
-  // 1. Total Amount = Courier Adm Fee + Total Duty Tax + Total Freight
-  if (!ov.has('total_amount')) out.total_amount = courierAdmFee + totalDutyTax + totalFreight;
-
-  // 2-6. Breakdown per Vessel
-  if (!ov.has('breakdown_courier_adm_vessel')) out.breakdown_courier_adm_vessel = courierAdmFee / vesselCount;
-  if (!ov.has('breakdown_duty_vessel')) out.breakdown_duty_vessel = totalDutyTax / vesselCount;
-  if (!ov.has('breakdown_freight_vessel')) out.breakdown_freight_vessel = totalFreight / vesselCount;
-  if (!ov.has('breakdown_bm_vessel')) out.breakdown_bm_vessel = bm / vesselCount;
-  if (!ov.has('breakdown_ppnpph_vessel')) out.breakdown_ppnpph_vessel = (ppn + pph) / vesselCount;
-
-  return out;
-}
+// `COURIER_REKAPAN_CALC_FIELDS`, `courierRekapanVesselCount` & `computeCourierRekapanCalc` DIPINDAH
+// (2026-10-02, isi TIDAK berubah) ke src/utils/CourierRecapHelpers.ts -- dipakai juga kartu Invoice Recap.
 
 // ─── Edit Modal ───────────────────────────────────────────────
 function EditModal({ record, tab, cols, onClose, onSaved, isCreate, createDefaults }: { record: any, tab: any, cols: any[], onClose: () => void, onSaved: () => void, isCreate?: boolean, createDefaults?: Record<string, any> }) {
@@ -4621,11 +4588,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   const courierDocTypeOf = (rec: any): CourierDocType => courierDocType(rec, courierAuditType)
 
   useEffect(() => {
-    if (!isCourierAuditView) return;
+    if (!isCourierAuditView && !(activeMainTab === 'courier' && activeSubTab === 'courier_rekapan')) return;
     let cancelled = false;
     fetchCompanyNameMap().then(map => { if (!cancelled) setCourierCompanyNames(map); });
     return () => { cancelled = true; };
-  }, [isCourierAuditView]);
+  }, [isCourierAuditView, activeMainTab, activeSubTab]);
 
   useEffect(() => {
     if (!isCourierAuditView) { setCourierSummary(null); setCourierValidationIncomplete(null); return; }
@@ -4700,6 +4667,77 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       setCourierAuditEditMode(false);
     }
     setCourierAuditView(m);
+  };
+
+  // ── Invoice Recap Courier -- tampilan kartu per AWB (2026-10-02, keputusan user; lihat CLAUDE.md "Rombak
+  // Invoice Recap Courier"). Mode List = tabel & toolbar lama APA ADANYA. Kartu mengambil datanya sendiri
+  // (CourierRecapCardView: RPC sql/037 / fallback browser) dgn filter SAMA toolbar lama.
+  const isCourierRecapView = activeMainTab === 'courier' && activeSubTab === 'courier_rekapan';
+  const [courierRecapView, setCourierRecapView] = useState<'card' | 'list'>('card')
+  const [courierRecapNonce, setCourierRecapNonce] = useState(0)
+  const [courierRecapSummary, setCourierRecapSummary] = useState<RecapSummaryCourier | null>(null)
+  const [courierRecapSummaryLoading, setCourierRecapSummaryLoading] = useState(false)
+  const [courierRecapOpen, setCourierRecapOpen] = useState<RecapGroup | null>(null)
+  const [courierRecapValidation, setCourierRecapValidation] = useState<{ rec: any; docType: CourierDocType; tab?: WindowTabKey } | null>(null)
+  const [courierRecapBusy, setCourierRecapBusy] = useState(false)
+  const courierRecapColOk = makeColOk(isCourierRecapView ? getAllowedColumns('courier_rekapan') : null)
+  const courierRecapFilters: RecapFilters = useMemo(() => ({
+    ppjk: activePpjkFilter && activePpjkFilter !== 'All' ? activePpjkFilter : null,
+    an: activeCourierAnFilter && activeCourierAnFilter !== 'All' ? activeCourierAnFilter : null,
+    from: filterStartDate || null,
+    to: filterEndDate || null,
+    search: debouncedSearch || '',
+    searchCols: restrictSearchCols('courier_rekapan', ['awb', 'no_invoice', 'vendor', 'po_pt_imi', 'ppjk']),
+  }), [activePpjkFilter, activeCourierAnFilter, filterStartDate, filterEndDate, debouncedSearch, restrictSearchCols]);
+  const isCourierRecapCard = isCourierRecapView && courierRecapView === 'card';
+
+  useEffect(() => {
+    if (!isCourierRecapCard) return;
+    let cancelled = false;
+    setCourierRecapSummaryLoading(true);
+    fetchCourierRecapSummary(courierRecapFilters).then(s => {
+      if (cancelled) return;
+      setCourierRecapSummary(s);
+      setCourierRecapSummaryLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [isCourierRecapCard, courierRecapFilters, courierRecapNonce]);
+
+  // % validasi PIB/CN pasangan AWB -- enrich SAMA fetchRecords Audit (auto-calc, kelengkapan, badge %).
+  const enrichRecapAudit = useCallback(async (recs: any[]) => {
+    if (recs.length === 0) return;
+    recs.forEach(r => Object.assign(r, computeCourierAuditCalc(r, r.jenis_dokumen, r.manual_override_fields)));
+    await mergeChecklistData(recs);
+    const { docPctMap, costPctMap } = await fetchCourierValidationBadgePct(recs);
+    recs.forEach(r => {
+      const key = r.jenis_dokumen === 'CN' ? `cn_${r.id}` : `pib_${r.id}`;
+      r.doc_validation_pct = docPctMap[key] ?? 0;
+      r.cost_validation_pct = costPctMap[key] ?? 0;
+    });
+  }, []);
+
+  const refreshCourierRecap = () => {
+    setCourierRecapNonce(n => n + 1);
+    fetchRecords();
+    notifyCourierRecapChanged();
+  };
+  // Submit to Finance per invoice / "Submit all" -- tanpa syarat & tanpa kunci (keputusan user).
+  const handleCourierRecapSubmit = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    const today = todayLocalIso();
+    if (!window.confirm(`Submit ${ids.length} invoice${ids.length === 1 ? '' : 's'} to Finance?\nSubmit Date: ${fmtDateShortSeaAir(today)}`)) return;
+    setCourierRecapBusy(true);
+    const { error } = await submitRecapInvoices(ids, today);
+    setCourierRecapBusy(false);
+    if (error) { alert('Failed to submit to Finance: ' + error.message); return; }
+    refreshCourierRecap();
+  };
+  const switchCourierRecapView = (m: 'card' | 'list') => {
+    if (m === 'card') {
+      if (reorderMode) exitReorderMode();
+      setCourierRekapanEditMode(false);
+    }
+    setCourierRecapView(m);
   };
 
   // Baris yg sedang dibuka di jendela Open -- selalu ambil versi terbaru dari `records`; kalau baris
@@ -5978,6 +6016,50 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         </React.Fragment>
       )}
 
+      {/* Invoice Recap Courier (2026-10-02) -- jendela Open per AWB & jendela Validation PIB/CN pasangannya */}
+      {isCourierRecapView && courierRecapOpen && (
+        <React.Fragment key={`recap-open-${courierRecapOpen.key}`}>
+        <CourierRecapDetailModal
+          g={courierRecapOpen}
+          companyNames={courierCompanyNames}
+          colOk={courierRecapColOk}
+          canEdit={canEdit('courier_rekapan')}
+          validationTabs={courierValidationTabs}
+          busy={courierRecapBusy}
+          onClose={() => setCourierRecapOpen(null)}
+          onSubmit={handleCourierRecapSubmit}
+          onValidation={t => { const a = courierRecapOpen.audit; if (a) setCourierRecapValidation({ rec: a.rec, docType: a.docType, tab: t }); }}
+          onViewInAudit={() => navigate(`/courier/audit?q=${encodeURIComponent(courierRecapOpen.audit?.rec?.awb || courierRecapOpen.awb)}`)}
+          onEditInList={() => { const g = courierRecapOpen; setCourierRecapOpen(null); switchCourierRecapView('list'); setSearch(g.awb); }}
+        />
+        </React.Fragment>
+      )}
+      {isCourierRecapView && courierRecapValidation && tab && (() => {
+        const { rec, docType } = courierRecapValidation;
+        const draft = isCourierDraft(rec);
+        const closeVal = () => { setCourierRecapValidation(null); refreshCourierRecap(); };
+        return (
+          <React.Fragment key={`recap-val-${docType}-${rec.id}`}>
+          <CourierValidationWindow
+            record={rec}
+            mainTab="courier"
+            subTab="courier_audit"
+            jenisDokumen={docType}
+            access={courierValidationAccess}
+            // Aturan SAMA Audit Courier: validasi hanya bisa diubah selama PIB/CN masih Draft (keputusan user).
+            editAccess={{ checklist: draft && canEdit('courier_checklist_dokumen'), doc: draft && canEdit('courier_dokumen_validation'), cost: draft && canEdit('courier_cost_validation') }}
+            renderChecklist={({ onPctChange, onSaved, onDirtyChange }) => (
+              <ChecklistModal record={rec} tab={tab} embedded onClose={closeVal} onSaved={onSaved} onPctChange={onPctChange} onDirtyChange={onDirtyChange} canEdit={draft && canEdit('courier_checklist_dokumen')} />
+            )}
+            initialTab={courierRecapValidation.tab}
+            title={<span>Validation · {docType} {courierDocNo(rec, docType) || ''}</span>}
+            subtitle={`${rec.awb || ''}${draft ? '' : ' · Audited — view only'}`}
+            onClose={closeVal}
+          />
+          </React.Fragment>
+        );
+      })()}
+
       {/* Audit PIB Sea & Air (2026-09-30) -- jendela Open & form Edit/Add manually */}
       {isSeaAirAudit && seaAirDetailRecord && (
         <SeaAirAuditDetailModal
@@ -6077,6 +6159,20 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
             </div>
           </div>
         </header>
+        ) : isCourierRecapView ? (
+        /* Header Invoice Recap Courier (2026-10-02): eyebrow + judul; mode Card + Export (mode List: toolbar lama). */
+        <header className="px-3 pt-1 pb-1 shrink-0">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#8A7A8B]">Courier</div>
+              <h1 className="font-bold text-2xl text-[#3B1B3D] leading-tight">Invoice Recap</h1>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              {courierRecapView === 'card' && renderExportBtn(true)}
+              <Greeting />
+            </div>
+          </div>
+        </header>
         ) : isSeaAirAudit ? (
         /* Header Audit PIB Sea & Air (2026-09-30): eyebrow + judul + Export/Add manually. */
         <header className="px-3 pt-1 pb-1 shrink-0">
@@ -6145,7 +6241,69 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
                               {/* ── Tabs & Search ── */}
             <div className="flex flex-col gap-4 mb-4">
-              {isCourierAuditView && courierAuditView === 'card' ? (
+              {isCourierRecapCard ? (
+                /* Invoice Recap Courier mode Card (2026-10-02): 5 kartu KPI + 1 kartu filter (tab PPJK, Search,
+                   tanggal email, Company, Card/List, Refresh). State filter SAMA toolbar lama. */
+                <div className="flex flex-col gap-3">
+                  <CourierRecapKpiCards summary={courierRecapSummary} loading={courierRecapSummaryLoading} colOk={courierRecapColOk} />
+                  <div className="bg-white rounded-[14px] border border-[#EADFD6] shadow-sm px-3 py-2.5 flex flex-nowrap items-center gap-2.5 overflow-x-auto">
+                    <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[#F5EDF3] shrink-0" role="tablist" aria-label="PPJK">
+                      {ppjkTabs.map(pj => {
+                        const active = activePpjkFilter === pj;
+                        return (
+                          <button key={pj} type="button" role="tab" aria-selected={active} onClick={() => { setActivePpjkFilter(pj); setPage(1); }}
+                            className={`px-3 h-8 rounded-lg text-xs font-bold transition-colors ${active ? 'bg-[#3B1B3D] text-white shadow-sm' : 'text-[#3B1B3D] hover:bg-white'}`}>
+                            {pj === 'All' ? 'All PPJK' : pj}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="relative flex-1 min-w-[220px]">
+                      <SearchIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A7A8B] pointer-events-none" />
+                      <input
+                        type="text"
+                        placeholder="Search AWB, invoice no., PO, vendor"
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                        className="w-full h-9 rounded-xl pl-8 pr-8 text-[13px] bg-[#FBF7F4] border border-[#EADFD6] text-[#3B1B3D] placeholder:text-[#8A7A8B] focus:outline-none focus:border-[#6B3470] focus:bg-white"
+                      />
+                      {search && (
+                        <button type="button" onClick={() => setSearch('')} aria-label="Clear search" className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8A7A8B] hover:text-[#3B1B3D]">
+                          <X size={14} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 h-9 px-3 rounded-xl border border-[#EADFD6] bg-white shrink-0">
+                      <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]">Email date</span>
+                      <input type="date" aria-label="From date" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} className="w-[108px] text-[12px] bg-transparent focus:outline-none text-[#3B1B3D] cursor-pointer" />
+                      <span className="text-[#8A7A8B] text-xs">–</span>
+                      <input type="date" aria-label="To date" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} className="w-[108px] text-[12px] bg-transparent focus:outline-none text-[#3B1B3D] cursor-pointer" />
+                      {(filterStartDate || filterEndDate) && (
+                        <button type="button" onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }} aria-label="Clear dates" className="text-[#8A7A8B] hover:text-[#3B1B3D]"><X size={13} /></button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 h-9 pl-3 pr-2 rounded-xl border border-[#EADFD6] bg-white shrink-0">
+                      <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]">Company</span>
+                      <select aria-label="Company" value={activeCourierAnFilter} onChange={e => { setActiveCourierAnFilter(e.target.value); setPage(1); }}
+                        className="border-0 bg-transparent text-xs font-bold text-[#3B1B3D] focus:outline-none cursor-pointer max-w-[160px]">
+                        {courierAnTabs.map(an => <option key={an} value={an}>{an}</option>)}
+                      </select>
+                    </div>
+                    <div className="inline-flex items-center p-1 rounded-xl bg-[#F5EDF3] shrink-0" role="group" aria-label="View mode">
+                      {(['card', 'list'] as const).map(m => (
+                        <button key={m} type="button" onClick={() => switchCourierRecapView(m)}
+                          className={`px-3 h-7 rounded-lg text-xs font-bold transition-colors ${courierRecapView === m ? 'bg-white text-[#3B1B3D] shadow-sm' : 'text-[#6E5E70] hover:text-[#3B1B3D]'}`}>
+                          {m === 'card' ? 'Card' : 'List'}
+                        </button>
+                      ))}
+                    </div>
+                    <button type="button" onClick={refreshCourierRecap} title="Refresh" aria-label="Refresh"
+                      className="w-9 h-9 rounded-xl border border-[#EADFD6] bg-white text-[#3B1B3D] hover:bg-[#FBF7F4] flex items-center justify-center shrink-0">
+                      <RefreshCw size={14} />
+                    </button>
+                  </div>
+                </div>
+              ) : isCourierAuditView && courierAuditView === 'card' ? (
                 /* Audit Courier mode Card (2026-10-01): 5 kartu KPI + 1 kartu filter (tab Draft/PIB/CN,
                    Search, PPJK date, Company, Card/List, Refresh). State filter SAMA toolbar lama. */
                 <div className="flex flex-col gap-3">
@@ -6287,6 +6445,18 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         );
                       })}
                     </div>
+                    {isCourierRekapanTab && (
+                      <div className="ml-auto shrink-0">
+                        <div className="inline-flex items-center p-1 rounded-xl bg-[#F5EDF3] shrink-0" role="group" aria-label="View mode">
+                          {(['card', 'list'] as const).map(m => (
+                            <button key={m} type="button" onClick={() => switchCourierRecapView(m)}
+                              className={`px-3 h-7 rounded-lg text-xs font-bold transition-colors ${courierRecapView === m ? 'bg-white text-[#3B1B3D] shadow-sm' : 'text-[#6E5E70] hover:text-[#3B1B3D]'}`}>
+                              {m === 'card' ? 'Card' : 'List'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {isCourierAuditTab && (
                       <div className="ml-auto shrink-0">
                         <div className="inline-flex items-center p-1 rounded-xl bg-[#F5EDF3] shrink-0" role="group" aria-label="View mode">
@@ -6695,7 +6865,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
 
           {/* ── Tabel ── (Audit PIB Sea & Air mode Card: kartu melayang di atas latar, tanpa kotak putih) */}
-          <div className={`relative isolate flex-1 flex flex-col min-h-0 overflow-hidden ${(isSeaAirAudit && seaAirViewMode === 'card') || (isSeaAirRekapan && seaAirRecapView === 'card') || (isCourierAuditView && courierAuditView === 'card') ?'bg-white/40 rounded-2xl border border-[#EADFD6]/70' : 'bg-white rounded-2xl border border-slate-200 shadow-sm'}`}>
+          <div className={`relative isolate flex-1 flex flex-col min-h-0 overflow-hidden ${(isSeaAirAudit && seaAirViewMode === 'card') || (isSeaAirRekapan && seaAirRecapView === 'card') || (isCourierAuditView && courierAuditView === 'card') || isCourierRecapCard ?'bg-white/40 rounded-2xl border border-[#EADFD6]/70' : 'bg-white rounded-2xl border border-slate-200 shadow-sm'}`}>
             {reorderMode && (
               <div className="px-4 py-2 bg-orange-50 border-b border-orange-200 text-orange-800 text-xs font-medium flex items-center justify-between gap-3">
                 <span className="flex items-center gap-1.5 flex-wrap">
@@ -6712,7 +6882,19 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 </button>
               </div>
             )}
-            {loading && displayRows.length === 0 ? (
+            {isCourierRecapCard ? (
+              <CourierRecapCardView
+                filters={courierRecapFilters}
+                nonce={courierRecapNonce}
+                companyNames={courierCompanyNames}
+                colOk={courierRecapColOk}
+                validationTabs={courierValidationTabs}
+                enrichAudit={enrichRecapAudit}
+                onOpen={g => setCourierRecapOpen(g)}
+                onValidation={(g, t) => { if (g.audit) setCourierRecapValidation({ rec: g.audit.rec, docType: g.audit.docType, tab: t }); }}
+                onLoaded={groups => setCourierRecapOpen(prev => (prev ? (groups.find(x => x.key === prev.key) || prev) : prev))}
+              />
+            ) : loading && displayRows.length === 0 ? (
               <LoadingState />
             ) : fetchError ? (
               <div className="text-center py-24 text-red-500">
@@ -7001,7 +7183,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
             {/* Footer Pagination -- TETAP tampil saat Reorder Mode (sejak 2026-09-28 Reorder per
                 halaman, pageSize sementara REORDER_PAGE_SIZE). */}
-            {records.length > 0 && (
+            {records.length > 0 && !isCourierRecapCard && (
               <div className="flex max-sm:flex-col justify-between items-center px-5 py-3 border-t border-slate-200 bg-slate-50 gap-3 shrink-0 relative z-20">
                 <div className="text-xs text-[#5A305A]">
                   Showing <span className="font-semibold text-[#5A305A]">{startIndex + 1}-{Math.min(startIndex + pageSize, totalRecords)}</span> of <span className="font-semibold text-[#5A305A]">{totalRecords}</span> records

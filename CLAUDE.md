@@ -51,6 +51,10 @@ approval-nya.
   gabungan (backfill opsional 033 TIDAK dijalankan). **Urutan kalau perlu dijalankan ulang dari git
   history: 031 -> 034 -> 035** (031 menimpa 2 fungsi yg diperbarui 034; 034 menimpa mark_paid Sea & Air yg
   diperbarui 035). SQL baru ke depan: buat file `sql/NNN_*.sql` baru lagi.
+  **Setelah penghapusan itu**: `sql/036_courier_recap_inspeksi_READONLY.sql` (baca saja) SUDAH dijalankan user
+  2026-10-02 (hasil dipakai merancang 037); **`sql/037_courier_recap.sql` BELUM DIJALANKAN** (Invoice Recap
+  Courier per AWB, re-audit otomatis, Finance Handover Courier, master vendor Courier) — frontend tetap jalan
+  tanpanya (fallback), lihat "Invoice Recap Courier per AWB" di bawah.
 - **Kondisi DB production (stack `supabase3`, audit 2026-09-26)**: role `anon` tanpa hak apa pun
   di schema public (tabel, fungsi, default privileges); GraphQL ditutup; semua tabel RLS dgn
   policy `has_page_access`/`has_edit_access` (tidak ada `using (true)`); semua view
@@ -76,10 +80,11 @@ Semua route (kecuali `/login`) dibungkus `<ProtectedRoute>` → `<MainLayout>` (
 |---|---|---|
 | `/courier/upload`, `/sea-air/upload` | `UploadPage` (`fixedType`) | form upload dokumen ke n8n |
 | `/courier/audit` | `CourierAuditPage` → `SharedDataTable` | tampilan "PIB & CN Audit" kartu/Open (2026-10-01) + toggle List ke tabel lama — lihat "Audit Courier — tampilan baru" di `docs/claude/courier-features.md` |
-| `/courier/rekapan` | `CourierRekapanPage` → `SharedDataTable` | |
+| `/courier/rekapan` | `CourierRekapanPage` → `SharedDataTable` | tampilan "Invoice Recap" 1 kartu = 1 AWB (2026-10-02) + toggle List ke tabel lama — lihat "Invoice Recap Courier per AWB" di bawah |
 | `/courier/validasi` | `CourierValidasiPage` | halaman mandiri, bukan `SharedDataTable` |
-| `/finance-handover` | `FinanceHandoverPage` | Finance Handover GABUNGAN FAR Overseas + Sea & Air (2026-10-01, `RequirePageAccess pageKeys=[far_overseas_finance, sea_air_finance]`, sql/034+035). `/sea-air/finance` lama -> redirect ke sini; tab Finance Handover di halaman FAR -> link ke sini. Lihat "Finance Handover gabungan" di bawah |
+| `/finance-handover` | `FinanceHandoverPage` | Finance Handover GABUNGAN FAR Overseas + Sea & Air + Courier (2026-10-01; Courier 2026-10-02 sql/037, `RequirePageAccess pageKeys=[far_overseas_finance, sea_air_finance, courier_finance]`, sql/034+035). `/sea-air/finance` lama -> redirect ke sini; tab Finance Handover di halaman FAR -> link ke sini. Lihat "Finance Handover gabungan" di bawah |
 | `/settings/seaair-vendors` | `SeaAirVendorMasterPage` | Master vendor Sea & Air (PPJK: nama legal + TOP hari), page_key `settings_seaair_vendors`, tabel `seaair_vendor_master` (sql/035) |
+| `/settings/courier-vendors` | `CourierVendorMasterPage` | Master vendor Courier (PPJK tanpa "OWN ": nama legal + TOP hari), page_key `settings_courier_vendors`, tabel `courier_vendor_master` (sql/037). Kedua halaman vendor = komponen generik `VendorMasterPage.tsx` (prop `config`) |
 | `/sea-air/audit`, `/sea-air/rekapan` | → `SharedDataTable` | Audit = tampilan "PIB Audit" (2026-09-30), Rekapan = tampilan "Invoice Recap" (2026-10-01) — keduanya kartu/Open + toggle List ke tabel lama; lihat "Audit PIB Sea & Air — tampilan baru" & "Invoice Recap Sea & Air — tampilan baru" di `docs/claude/bunker-courier-seaair.md` |
 | `/direct-loading`, `/direct-loading/:id` | `FarOverseasAirPage` | modul "FAR Overseas" di sidebar; `page_key`/route TETAP `direct_loading`/`/direct-loading` (label tampil "FAR Overseas"). Redesain tahap 1 (2026-09-28, tab Memos/My Approvals, gaya visual & font sendiri) — lihat `docs/claude/far-overseas.md`; tahap 2 = `sql/027_far_overseas_phase2_DRAFT.sql` (SUDAH DIJALANKAN 2026-09-30) |
 | `/bunker` | `BunkerPage` | |
@@ -482,7 +487,8 @@ user di production** (testing bagian 2 + Finance Handover dijadwalkan user bersa
 10. (Ditahan, keputusan user) "Export cost data" 5 output — Export TETAP.
 
 **Finance Handover (`/finance-handover`) — belum:**
-1. Sumber **Courier** (tab abu "SOON") — modul belum ada (lihat analisa Courier di bawah).
+1. ~~Sumber **Courier**~~ — SELESAI 2026-10-02 (per invoice, lihat "Invoice Recap Courier per AWB"); butuh sql/037
+   (sebelum dijalankan: item Courier tampil baca saja + banner kuning).
 2. Font: halaman Finance pakai Sora (keputusan user "semua halaman Sora"), TAPI modal FAR yg dibuka dari
    viewer masih Plus Jakarta Sans (modul FAR belum diubah) — konfirmasi user apakah FAR ikut Sora.
 3. Keamanan: role Finance bisa membaca `tabel_audit_seaair` (berisi angka duty) lewat API krn policy baca
@@ -506,8 +512,9 @@ Invoice Recap Sea & Air" di file yang sama). Doc validation mode embedded TIDAK 
 `*Legacy.tsx`) — lihat "Mode List = tampilan SEBELUM rombak" di `docs/claude/courier-features.md`. **Keputusan user permanen**: Mark as audited TIDAK PERNAH dikunci walau
 validasi belum lengkap (ada kasus invoice freight memang tidak ditagihkan) — JANGAN tambah gerbang validasi
 Courier. Tab tetap Draft/PIB/CN (tanpa "All"). Fitur tabel lama tetap di mode List.
-**Berikutnya (belum)**: (2) Rekapan Courier tampilan (perlu keputusan kartu per invoice vs per AWB),
-(3) relasi Audit↔Rekapan Courier + sumber Courier di Finance Handover. Analisa awal (sebelum tahap 1):
+**Tahap 2 & 3 SELESAI (kode, 2026-10-02)**: Invoice Recap Courier per AWB + relasi Audit↔Recap (re-audit otomatis)
++ sumber Courier di Finance Handover — lihat "Invoice Recap Courier per AWB" di bawah (**sql/037 BELUM DIJALANKAN**).
+Analisa awal (RIWAYAT, sebelum tahap 1):
 - **Bisa** dibuat tampilan sama (kartu + jendela Open + form Edit + KPI, toggle List = tabel lama tetap
   utuh dgn Reorder/Edit Mode/Customize View/Export). Token `SeaAirAuditUi.tsx` & pola komponen bisa dipakai.
 - **Audit Courier paling cocok**: kolom PIB_COLS/CN_COLS hampir identik `SEA_AIR_AUDIT_COLS` (customs value,
@@ -523,10 +530,11 @@ Courier. Tab tetap Draft/PIB/CN (tanpa "All"). Fitur tabel lama tetap di mode Li
 - Saran urutan bila disetujui: (1) Audit Courier tampilan, (2) Rekapan Courier tampilan, (3) relasi &
   sumber Courier di Finance Handover. Pertanyaan keputusan dicatat di jawaban sesi.
 
-## Rombak Invoice Recap Courier — keputusan user (2026-10-02, BELUM DIKERJAKAN)
+## Rombak Invoice Recap Courier — keputusan user (2026-10-02, SUDAH DIKERJAKAN — lihat bagian berikut)
 
-Menunggu hasil `sql/036_courier_recap_inspeksi_READONLY.sql` (baca saja) + jawaban sisa pertanyaan. JANGAN tulis
-CREATE FUNCTION/TRIGGER/TABLE sebelum hasil inspeksi ada. Keputusan:
+Hasil inspeksi `sql/036` (2026-10-02): rekapan 157 baris, audit 92; 3 AWB Recap tanpa pasangan Audit (2 format EMS,
+1 nyata); 31 AWB punya >1 PPJK; 0 AWB punya PIB & CN sekaligus; kolom `rekapan_courier.pib_id`/`cn_id` ADA; tidak
+ada nama fungsi bentrok. Keputusan:
 1. **1 kartu = 1 AWB** (AWB dinormalisasi tanpa prefix carrier), invoice Freight / Duty / Credit Note = tab di kartu/jendela.
 2. Pagination **opsi B** = view/RPC kelompok per AWB di DB (SQL).
 3. Tab per-PPJK hanya menampilkan invoice PPJK itu; "All PPJK" lengkap.
@@ -540,6 +548,36 @@ CREATE FUNCTION/TRIGGER/TABLE sebelum hasil inspeksi ada. Keputusan:
     `tgl_lunas` yang sudah ada.
 11. Tombol **Validation juga ada di kartu Invoice Recap** (selain di Audit).
 12. Mode List = tampilan lama (pola Sea & Air & Audit Courier). Badge sidebar "needs attention" diputuskan terpisah.
+13. KPI "AWB belum ada di Audit" DIGANTI chip merah "Not found in Audit" di kartu (setelah dijelaskan ke user).
+14. **Re-audit otomatis DIPAKAI**: edit kolom nominal/AWB/PO di Recap oleh user setelah PIB/CN Audited -> PIB/CN kembali
+    Draft + alasan (pola Sea & Air). Validasi dari Recap = aturan SAMA Audit (bisa diubah hanya selama PIB/CN Draft).
+15. Finance Handover Courier **per invoice**; kolom baru `finance_received_at/_by` (opsi A); master vendor = **tabel baru
+    khusus Courier** `courier_vendor_master` + halaman Settings sendiri.
+
+## Invoice Recap Courier per AWB + Finance Handover Courier (2026-10-02, kode SELESAI, sql/037 BELUM DIJALANKAN)
+
+Detail tampilan: "Invoice Recap Courier — tampilan baru per AWB" di `docs/claude/courier-features.md`. Ringkas:
+- **File**: `src/utils/CourierRecapHelpers.ts` (SATU sumber: `courierAwbNorm` [upper, buang prefix huruf+"NO.", sisa
+  A-Z0-9 — SAMA `fn_courier_awb_norm` SQL], `buildRecapGroup`, `invoiceKind`/`invoiceAmount` [CN = nilai absolut],
+  `splitPerVessel`, `fetchCourierRecapPage`/`fetchCourierRecapSummary` [RPC + FALLBACK browser kalau RPC belum ada],
+  `fetchRecapAuditLinks` [`pib_id`/`cn_id` dulu, cadangan AWB ternormalisasi], `submitRecapInvoices`; auto-calc 6
+  kolom `computeCourierRekapanCalc` DIPINDAH ke sini, isi tidak berubah), `CourierRecapCardList.tsx` (5 KPI + kartu,
+  paging 12/halaman sendiri), `CourierRecapDetailModal.tsx` (Open). SharedDataTable: cabang `isCourierRecapView`.
+- **sql/037** (idempotent, pre-check nama berkomentar `beehive:037`, uji PGlite 39 cek): kolom `rekapan_courier.
+  finance_received_at/_by`, `paid_reference`, `paid_by`; `tabel_audit_pib/cn.reaudit_reason/_at`; `fn_courier_awb_norm` +
+  index ekspresi; RPC baca `fn_courier_recap_awb_page` & `fn_courier_recap_summary` (SECURITY INVOKER, ikut RLS);
+  trigger `fn_courier_reaudit` (AFTER UPDATE rekapan_courier, user saja) & `fn_courier_reaudit_clear` (Mark as audited
+  menghapus alasan); tabel `courier_vendor_master` (RLS 4 policy, seed kode PPJK tanpa OWN); policy SELECT
+  `rekapan_courier_select_finance`; RPC `fn_courier_finance_accept(uuid,text,date)` & `fn_courier_finance_mark_paid(uuid,
+  date,text)` (guard `has_edit_access('courier_finance')`, Mark paid mengisi `tgl_lunas`).
+- **Sebelum 037 jalan**: kartu & KPI tetap jalan lewat fallback (semua baris tab PPJK diambil, dikelompokkan di browser;
+  KPI "not in audit" tidak dihitung); re-audit otomatis belum aktif; Finance Handover Courier tampil baca saja + banner.
+- **page_key baru**: `courier_finance` (Finance Handover Courier, EDIT = Accept/Mark paid) & `settings_courier_vendors`
+  — BELUM di-assign ke role mana pun (hanya Admin sampai di-assign di Kelola Role & Akses).
+- **Diuji**: jsdom 44 cek (kartu/grup/urutan/total − CN, tab PPJK, Search, Open Overview/Invoices/Audit trail, Submit per
+  invoice & Submit all, Validation dari Recap, Edit in List, view-only, batas kolom role, Finance Courier Accept/Mark paid
+  + viewer, master vendor Courier & Sea & Air), regresi render 95/page 51/recap 112/finance 53/urgent 5/authfocus 12/
+  courier 39/courier_ui 56 — 0 gagal. Belum dites di production.
 
 ## BACKLOG — Audit PIB Sea & Air, tahap berikutnya (dicatat 2026-09-30) — RIWAYAT, lihat "STATUS & SISA PEKERJAAN" di atas
 
@@ -814,7 +852,8 @@ itu sudah selesai diterjemahkan penuh**, cuma teks loading-nya saja).
 **Auth & RBAC**: `profiles`, `roles`, `user_roles`, `role_page_access`, `user_approval_tiers`
 (jabatan approval per user per halaman).
 
-**Courier**: `rekapan_courier`, `tabel_audit_pib`, `tabel_audit_cn`, `tabel_cost_validasi`,
+**Courier**: `rekapan_courier`, `tabel_audit_pib`, `tabel_audit_cn`, `tabel_cost_validasi`, `courier_vendor_master`
+(sql/037, master vendor Finance Handover Courier),
 `dokumen_checklist`, `dokumen_validasi`, `tabel_checklist_validasi`, `tabel_npwp`,
 `tabel_processing_queue`. View `v_pib_lengkap`/`v_cn_lengkap` MASIH ADA tapi TIDAK DIPAKAI lagi
 di frontend — Audit Courier sekarang query langsung `tabel_audit_pib`/`tabel_audit_cn`, kolom
@@ -901,6 +940,9 @@ Supabase** — bisa saja sudah basi (RPC lain ditambahkan user langsung tanpa te
   `fn_seaair_finance_accept(uuid, text, date)` (signature BARU: nama + tanggal terima; versi 1-arg DI-DROP),
   `fn_seaair_finance_mark_paid` referensi opsional, `fn_seaair_finance_undo` DI-DROP (tanpa Undo, keputusan
   user), FAR `fn_far_overseas_set_urgent(uuid, boolean)` BARU, `fn_far_overseas_mark_paid` bukti bayar opsional.
+- Courier Invoice Recap & Finance (sql/037, **BELUM DIJALANKAN**): `fn_courier_recap_awb_page`, `fn_courier_recap_summary`,
+  `fn_courier_awb_norm`, `fn_courier_finance_accept(uuid, text, date)`, `fn_courier_finance_mark_paid(uuid, date, text)`
+  (+ fungsi trigger `fn_courier_reaudit`, `fn_courier_reaudit_clear`).
 - Courier Audit — Draft/Archive lifecycle (`SharedDataTable.tsx`, nama RPC dipilih dinamis via
   `isPib ? '..._pib' : '..._cn'`): `fn_delete_pib`/`fn_delete_cn`, `fn_archive_pib`/
   `fn_archive_cn`, `fn_undraft_pib`/`fn_undraft_cn`.

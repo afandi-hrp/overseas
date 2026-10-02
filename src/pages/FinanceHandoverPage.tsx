@@ -1,4 +1,4 @@
-// Finance Handover gabungan FAR Overseas + Sea & Air (/finance-handover, 2026-10-01) -- spek user
+// Finance Handover gabungan FAR Overseas + Sea & Air + Courier (Courier: 2026-10-02, sql/037) (/finance-handover, 2026-10-01) -- spek user
 // "Finance Handover" (BeeHive). Pengganti tanda terima kertas: Exim menyerahkan, Finance menerima
 // (Receive: nama + tanggal) lalu mencatat pembayaran (Mark paid: tanggal transfer + referensi bank
 // opsional). TANPA upload bukti transfer & TANPA Undo (keputusan user). Font app (Sora).
@@ -15,17 +15,17 @@ import Greeting from '../components/Greeting'
 import { LoadingState } from '../components/LoadingState'
 import { useAuth } from '../lib/AuthContext'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_BTN_GREEN, SA_INPUT, Chip, Pill, PtBadge } from '../components/SeaAirAuditUi'
-import { FarHandoverViewer, SeaAirHandoverViewer, type ViewerTab } from '../components/FinanceHandoverViewers'
+import { FarHandoverViewer, SeaAirHandoverViewer, CourierHandoverViewer, type ViewerTab } from '../components/FinanceHandoverViewers'
 import { fmtRp, fmtDateShort, fetchCompanyNameMap, companyFullName } from '../utils/SeaAirAuditHelpers'
 import {
-  fetchFarHandovers, fetchSeaAirHandovers, probeSeaAirFinanceColumns, sortHandovers, matchesHandoverSearch, isOverdue,
+  fetchFarHandovers, fetchSeaAirHandovers, fetchCourierHandovers, probeSeaAirFinanceColumns, probeCourierFinanceColumns, sortHandovers, matchesHandoverSearch, isOverdue,
   receiveHandover, markHandoverPaid, todayIso, type HandoverItem, type HandoverSource, type HandoverStage,
 } from '../utils/FinanceHandoverHelpers'
 
 type StageTab = HandoverStage | 'all'
 type SourceTab = 'all' | HandoverSource
 const PAGE_SIZE = 25
-const PAGE_KEY: Record<HandoverSource, string> = { far: 'far_overseas_finance', seaair: 'sea_air_finance' }
+const PAGE_KEY: Record<HandoverSource, string> = { far: 'far_overseas_finance', seaair: 'sea_air_finance', courier: 'courier_finance' }
 const ROW_BG: Record<HandoverStage, string> = { waiting: 'bg-[#FFFBF2]', received: 'bg-white', paid: 'bg-[#F5FBF7]' }
 
 function Timeline({ it }: { it: HandoverItem }) {
@@ -77,11 +77,13 @@ export default function FinanceHandoverPage() {
   const canAct = (s: HandoverSource) => canSee(s) && canEdit(PAGE_KEY[s])
   const seeFar = canSee('far')
   const seeSea = canSee('seaair')
-  const isFinance = (seeFar && canAct('far')) || (seeSea && canAct('seaair'))
+  const seeCourier = canSee('courier')
+  const isFinance = (seeFar && canAct('far')) || (seeSea && canAct('seaair')) || (seeCourier && canAct('courier'))
 
   const [items, setItems] = useState<HandoverItem[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [seaCols, setSeaCols] = useState(true)
+  const [courierCols, setCourierCols] = useState(true)
   const [companyNames, setCompanyNames] = useState<Record<string, string>>({})
   const [stage, setStage] = useState<StageTab>('all')
   const [source, setSource] = useState<SourceTab>('all')
@@ -108,14 +110,20 @@ export default function FinanceHandoverPage() {
 
   const load = useCallback(async () => {
     setLoadError(null)
-    const [far, sea] = await Promise.all([seeFar ? fetchFarHandovers() : Promise.resolve([]), seeSea ? fetchSeaAirHandovers() : Promise.resolve([])])
+    const [far, sea, cou] = await Promise.all([
+      seeFar ? fetchFarHandovers() : Promise.resolve([]),
+      seeSea ? fetchSeaAirHandovers() : Promise.resolve([]),
+      seeCourier ? fetchCourierHandovers() : Promise.resolve([]),
+    ])
     const errs: string[] = []
     if (far === null) errs.push('FAR Overseas')
     if (sea === null) errs.push('Sea & Air')
+    if (cou === null) errs.push('Courier')
     if (errs.length) setLoadError(`Failed to load ${errs.join(' and ')} handovers.`)
     if (seeSea && sea && sea.length > 0) setSeaCols(await probeSeaAirFinanceColumns(sea[0].raw))
-    setItems(sortHandovers([...(far || []), ...(sea || [])]))
-  }, [seeFar, seeSea])
+    if (seeCourier && cou && cou.length > 0) setCourierCols(await probeCourierFinanceColumns(cou[0].raw))
+    setItems(sortHandovers([...(far || []), ...(sea || []), ...(cou || [])]))
+  }, [seeFar, seeSea, seeCourier])
 
   useEffect(() => { load() }, [load])
   useEffect(() => {
@@ -139,7 +147,7 @@ export default function FinanceHandoverPage() {
   const totalPages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE))
   const pageItems = shown.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  const actionsEnabled = (it: HandoverItem) => canAct(it.source) && (it.source === 'far' || seaCols)
+  const actionsEnabled = (it: HandoverItem) => canAct(it.source) && (it.source === 'far' || (it.source === 'seaair' ? seaCols : courierCols))
   const openReceive = (it: HandoverItem) => { setReceiveFor(it); setRecvName(profile?.nama || user?.email || ''); setRecvDate(today); setDialogErr(null) }
   const openPay = (it: HandoverItem) => { setPayFor(it); setPayDate(today); setPayRef(''); setDialogErr(null) }
   const submitReceive = async () => {
@@ -165,17 +173,18 @@ export default function FinanceHandoverPage() {
     load()
   }
 
-  const payeeKind = (it: HandoverItem) => (it.source === 'seaair' ? 'PPJK' : 'forwarder')
+  const payeeKind = (it: HandoverItem) => (it.source === 'far' ? 'forwarder' : 'PPJK')
   const SOURCES: { key: SourceTab; label: string; show: boolean }[] = [
-    { key: 'all', label: 'All sources', show: seeFar && seeSea },
+    { key: 'all', label: 'All sources', show: [seeFar, seeSea, seeCourier].filter(Boolean).length > 1 },
     { key: 'far', label: 'FAR Overseas', show: seeFar },
     { key: 'seaair', label: 'Sea & Air', show: seeSea },
+    { key: 'courier', label: 'Courier', show: seeCourier },
   ]
   const TILES: { key: StageTab; label: string; note: React.ReactNode; tone: string }[] = [
     { key: 'waiting', label: 'Waiting for Finance', note: 'Receive to confirm the documents arrived', tone: 'text-[#7A4F00]' },
     { key: 'received', label: 'Received · unpaid', note: overdueReceived > 0 ? <span className="text-[#A8231A] font-bold">{overdueReceived} overdue</span> : 'Record the transfer to mark paid', tone: overdueReceived > 0 ? 'text-[#A8231A]' : 'text-[#3B1B3D]' },
     { key: 'paid', label: 'Paid', note: 'Transfer recorded', tone: 'text-[#17663D]' },
-    { key: 'all', label: 'All handovers', note: [seeFar && 'FAR Overseas', seeSea && 'Sea & Air'].filter(Boolean).join(' + '), tone: 'text-[#3B1B3D]' },
+    { key: 'all', label: 'All handovers', note: [seeFar && 'FAR Overseas', seeSea && 'Sea & Air', seeCourier && 'Courier'].filter(Boolean).join(' + '), tone: 'text-[#3B1B3D]' },
   ]
 
   return (
@@ -188,7 +197,7 @@ export default function FinanceHandoverPage() {
             <p className="text-[#6E5E70] text-[12.5px] mt-0.5">
               {isFinance
                 ? 'Viewing as Finance — receive each handover, then record the transfer to mark it paid.'
-                : 'Items arrive here automatically when a FAR memo is fully approved or a Sea & Air shipment is submitted. Only Finance can receive or pay.'}
+                : 'Items arrive here automatically when a FAR memo is fully approved, or a Sea & Air shipment / Courier invoice is submitted. Only Finance can receive or pay.'}
             </p>
           </div>
           <Greeting />
@@ -199,6 +208,12 @@ export default function FinanceHandoverPage() {
         {seeSea && !seaCols && (
           <div className="rounded-[14px] border border-[#F3D9A4] bg-[#FFF8EA] px-4 py-2.5 text-[12.5px] text-[#7A4F00] shrink-0">
             Sea &amp; Air Finance Handover database update (<b>sql/034 + sql/035</b>) is not installed — Sea &amp; Air items are read-only.
+          </div>
+        )}
+
+        {seeCourier && !courierCols && (
+          <div className="rounded-[14px] border border-[#F3D9A4] bg-[#FFF8EA] px-4 py-2.5 text-[12.5px] text-[#7A4F00] shrink-0">
+            Courier Finance Handover database update (<b>sql/037</b>) is not installed — Courier items are read-only.
           </div>
         )}
 
@@ -222,11 +237,10 @@ export default function FinanceHandoverPage() {
               <button key={s.key} type="button" role="tab" aria-selected={source === s.key} onClick={() => { setSource(s.key); setPt('All') }}
                 className={`px-3 h-8 rounded-lg text-[12px] font-bold ${source === s.key ? 'bg-[#3B1B3D] text-white' : 'text-[#3B1B3D] hover:bg-white'}`}>{s.label}</button>
             ))}
-            <span className="px-3 h-8 inline-flex items-center gap-1 text-[12px] font-bold text-[#B7A9B8] cursor-not-allowed" title="Courier module is not built yet">Courier <span className="text-[9.5px] tracking-wider">SOON</span></span>
           </div>
           <div className="relative flex-1 min-w-[200px]">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A7A8B]" />
-            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search memo no., BL, vendor, PT" aria-label="Search" className={`${SA_INPUT} pl-8`} />
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search memo no., BL / AWB, invoice, vendor, PT" aria-label="Search" className={`${SA_INPUT} pl-8`} />
           </div>
           <label className="flex items-center gap-2">
             <span className={SA_LABEL}>PT</span>
@@ -260,7 +274,7 @@ export default function FinanceHandoverPage() {
               <div key={it.key} className={`rounded-[14px] border border-[#EADFD6] ${ROW_BG[it.stage]} grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1.3fr)_170px_minmax(0,1.3fr)_auto] gap-x-4 gap-y-3 px-4 py-3 items-center`}>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <Chip tone={it.source === 'far' ? 'plum' : 'blue'}>{it.source === 'far' ? 'FAR Overseas' : 'Sea & Air'}</Chip>
+                    <Chip tone={it.source === 'far' ? 'plum' : it.source === 'courier' ? 'amber' : 'blue'}>{it.source === 'far' ? 'FAR Overseas' : it.source === 'courier' ? 'Courier' : 'Sea & Air'}</Chip>
                     {it.pt && <PtBadge code={it.pt} title={companyFullName(companyNames, it.pt)} />}
                     {it.urgent && <Chip tone="red" title="May be paid before the goods are received">Urgent</Chip>}
                   </div>
@@ -271,7 +285,7 @@ export default function FinanceHandoverPage() {
                 <div className="min-w-0">
                   <div className={SA_LABEL}>Payable to</div>
                   <div className="text-[12.5px] font-bold text-[#3B1B3D] truncate uppercase" title={it.payee}>{it.payee}</div>
-                  {it.payeeIsCode && <div className="text-[10.5px] text-[#7A4F00]" title="Fill in the full legal name in Settings › Sea & Air Vendors">Full PPJK name not set (code shown)</div>}
+                  {it.payeeIsCode && <div className="text-[10.5px] text-[#7A4F00]" title={`Fill in the full legal name in Settings › ${it.source === 'courier' ? 'Courier' : 'Sea & Air'} Vendors`}>Full PPJK name not set (code shown)</div>}
                   <div className="text-[11px] text-[#6E5E70] truncate" title={it.payeeLine}>{it.payeeLine}</div>
                 </div>
                 <div className="xl:text-right min-w-0">
@@ -294,6 +308,8 @@ export default function FinanceHandoverPage() {
                       <span className="px-2.5 h-8 inline-flex items-center rounded-lg bg-[#F3EEEA] text-[#8A7A8B] text-[11.5px] font-bold" title="Accept the handover first to open its memo, documents and cost validation">Accept to view</span>
                     ) : it.source === 'far' ? (
                       <>{viewBtn('main', 'Memo')}{viewBtn('docs', 'Docs')}{viewBtn('cost', 'Cost')}</>
+                    ) : it.source === 'courier' ? (
+                      viewBtn('main', 'Invoice')
                     ) : it.earlier ? (
                       viewBtn('main', 'Handover')
                     ) : (
@@ -360,6 +376,9 @@ export default function FinanceHandoverPage() {
       {viewer && viewer.it.source === 'far' && (
         <FarHandoverViewer item={viewer.it} initialTab={viewer.tab} onClose={() => setViewer(null)} onChanged={load}
           onOpenEdit={rec => navigate(`/direct-loading/${rec.id}`)} />
+      )}
+      {viewer && viewer.it.source === 'courier' && (
+        <CourierHandoverViewer item={viewer.it} companyNames={companyNames} onClose={() => setViewer(null)} />
       )}
       {viewer && viewer.it.source === 'seaair' && (
         <SeaAirHandoverViewer item={viewer.it} initialTab={viewer.tab} companyNames={companyNames} onClose={() => setViewer(null)} />

@@ -84,6 +84,11 @@ export default function CourierAuditOverview({ rec, docType, companyNames, colOk
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-[#FBF7F4] p-4 flex flex-col gap-3">
+      {rec.reaudit_reason && (
+        <div className="rounded-[14px] border border-[#D9C7DA] bg-[#F5EDF3] px-4 py-2 text-[12.5px] font-semibold text-[#5B2E8C]">
+          ↻ {rec.reaudit_reason} — please re-audit{rec.reaudit_at ? ` (${fmtDateShort(rec.reaudit_at)})` : ''}.
+        </div>
+      )}
       {validationTabs.length > 0 && (
         <div className="rounded-[14px] border border-[#EADFD6] bg-white px-4 py-3 flex flex-wrap items-center gap-2">
           <span className="text-[13px] font-bold text-[#3B1B3D] mr-1">Validation</span>

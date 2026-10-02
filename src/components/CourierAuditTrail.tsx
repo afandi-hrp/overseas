@@ -43,16 +43,19 @@ const metaOf = (what: string) => ACTION_META[what] || { icon: <History size={12}
 
 type Row = CourierAuditLogEntry & { count: number }
 
-export default function CourierAuditTrail({ rec, docType }: { rec: any; docType: CourierDocType }) {
+// `loader` (opsional, 2026-10-02) = sumber log lain dgn bentuk entri sama (mis. Invoice Recap Courier per AWB);
+// `loadKey` = kunci ulang-muat loader. Tanpa loader -> log PIB/CN (fetchCourierAuditLog) seperti semula.
+export default function CourierAuditTrail({ rec, docType, loader, loadKey }: { rec?: any; docType?: CourierDocType; loader?: () => Promise<CourierAuditLogEntry[]>; loadKey?: string }) {
   const [log, setLog] = useState<CourierAuditLogEntry[] | null>(null)
   const [nonce, setNonce] = useState(0)
 
   useEffect(() => {
     let cancelled = false
     setLog(null)
-    fetchCourierAuditLog(rec, docType).then(e => { if (!cancelled) setLog(e) })
+    ;(loader ? loader() : fetchCourierAuditLog(rec, docType as CourierDocType)).then(e => { if (!cancelled) setLog(e) })
     return () => { cancelled = true }
-  }, [rec?.id, rec?.awb, rec?.created_at, docType, nonce])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rec?.id, rec?.awb, rec?.created_at, docType, loadKey, nonce])
 
   // Kelompok per hari; entri berturutan yg identik (aksi, user, detail, hari sama) digabung ×N.
   const groups = useMemo(() => {

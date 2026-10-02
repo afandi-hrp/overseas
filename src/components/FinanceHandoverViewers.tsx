@@ -165,3 +165,73 @@ export function SeaAirHandoverViewer({ item, initialTab, companyNames, onClose }
     document.body
   )
 }
+
+// ── Courier (2026-10-02): dialog baca-saja 1 invoice Invoice Recap Courier (sql/037). ──
+export function CourierHandoverViewer({ item, companyNames, onClose }: {
+  item: HandoverItem
+  companyNames: Record<string, string>
+  onClose: () => void
+}) {
+  const r = item.raw
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  const fact = (label: string, value: React.ReactNode) => (
+    <div className="grid grid-cols-[150px_minmax(0,1fr)] gap-3 py-1.5 text-[12.5px] border-t border-[#F1E8E1] first:border-t-0">
+      <div className="text-[#6E5E70]">{label}</div>
+      <div className="font-semibold text-[#3B1B3D] [overflow-wrap:anywhere]">{value || '—'}</div>
+    </div>
+  )
+  const amt = (label: string, v: any) => (v === null || v === undefined || v === '' ? null : (
+    <div className="flex justify-between gap-3 py-1.5 text-[12.5px] border-t border-[#F1E8E1] first:border-t-0"><span className="text-[#6E5E70]">{label}</span><span className="tabular-nums font-semibold text-[#3B1B3D]">{fmtRp(v)}</span></div>
+  ))
+  return createPortal(
+    <div className="fixed inset-0 z-[75] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-3 md:p-5" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-[#FBF7F4] rounded-2xl shadow-2xl w-full max-w-[860px] max-h-[92vh] flex flex-col overflow-hidden">
+        <div className="px-5 pt-4 pb-3 bg-white border-b border-[#EADFD6] shrink-0 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <Chip tone="amber">Courier</Chip>
+              {r.an && <PtBadge code={r.an} title={companyFullName(companyNames, r.an)} />}
+              <span className="text-[11px] text-[#8A7A8B]">View only</span>
+            </div>
+            <h2 className="text-[18px] font-bold text-[#3B1B3D] mt-1 [overflow-wrap:anywhere]">{item.ref}</h2>
+            <div className="text-[12px] text-[#6E5E70]">
+              Payable to <b className="text-[#3B1B3D]">{item.payee}</b> · {fmtRp(item.amountIdr)}{item.dueDate ? ` · Due ${fmtDateShort(item.dueDate)}` : ''}{item.topLabel ? ` · ${item.topLabel}` : ''}
+            </div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close" className="p-2 rounded-xl hover:bg-[#F6EFEA] text-[#6E5E70]"><X size={18} /></button>
+        </div>
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className={`${SA_CARD} px-4 py-3`}>
+            <div className={`${SA_LABEL} mb-1`}>Invoice</div>
+            {fact('Invoice type', r.invoice_type)}
+            {fact('PPJK', r.ppjk)}
+            {fact('Vendor', r.vendor)}
+            {fact('AWB', r.awb)}
+            {fact('Origin', r.origin)}
+            {fact('Email received', fmtDateShort(r.tgl_terima_email))}
+            {fact('PO PT IMI', r.po_pt_imi)}
+            {fact('PO Non IMI', r.po_shipping)}
+            {fact('Vessel', r.vessel)}
+            {fact('Remarks', r.notes)}
+          </div>
+          <div className={`${SA_CARD} px-4 py-3`}>
+            <div className={`${SA_LABEL} mb-1`}>Amount</div>
+            {amt('Courier adm fee', r.courier_adm_fee)}
+            {amt('Total freight', r.total_freight)}
+            {amt('Total duty tax', r.total_duty_tax)}
+            {amt('Total amount', r.total_amount)}
+            <div className={`${SA_LABEL} mt-3 mb-1`}>Handover</div>
+            {fact('Submitted', fmtDateShort(r.submit_date))}
+            {fact('Received', r.finance_received_at ? `${fmtDateShort(r.finance_received_at)}${r.finance_received_by ? ` · ${r.finance_received_by}` : ''}` : '')}
+            {fact('Paid', r.tgl_lunas ? `${fmtDateShort(r.tgl_lunas)}${r.paid_reference ? ` · ${r.paid_reference}` : ''}` : '')}
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}

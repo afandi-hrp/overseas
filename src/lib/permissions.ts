@@ -38,6 +38,10 @@ export const PAGE_REGISTRY: PageEntry[] = [
   { key: 'courier_cost_validation', label: 'Cost Validation (Courier)', group: 'Courier' },
   { key: 'courier_dokumen_validation', label: 'Dokumen Validation (Courier)', group: 'Courier' },
   { key: 'courier_checklist_dokumen', label: 'Checklist Dokumen (Courier)', group: 'Courier' },
+  // Finance Handover Courier (2026-10-02, sql/037): sumber Courier di halaman GABUNGAN /finance-handover.
+  // EDIT = boleh Accept & Mark paid per invoice (RPC fn_courier_finance_*). Baca rekapan_courier lewat
+  // policy SELECT tambahan -- role Finance TIDAK perlu akses Invoice Recap Courier.
+  { key: 'courier_finance', label: 'Finance Handover (Courier)', path: '/finance-handover', group: 'Courier' },
 
   { key: 'sea_air_upload', label: 'Upload (Sea & Air)', path: '/sea-air/upload', group: 'Sea & Air' },
   { key: 'sea_air_audit', label: 'Audit (Sea & Air)', path: '/sea-air/audit', group: 'Sea & Air' },
@@ -95,6 +99,8 @@ export const PAGE_REGISTRY: PageEntry[] = [
   { key: 'settings_tarif_far_overseas_vendor', label: 'Tarif Vendor FAR Overseas Air', path: '/settings/tarif-far-overseas-vendor', group: 'Settings' },
   // Master vendor Sea & Air (2026-10-01, sql/035): kode PPJK -> nama legal + TOP (Finance Handover).
   { key: 'settings_seaair_vendors', label: 'Sea & Air Vendors (PPJK)', path: '/settings/seaair-vendors', group: 'Settings' },
+  // Master vendor Courier (2026-10-02, sql/037): kode PPJK Courier -> nama legal + TOP (Finance Handover Courier).
+  { key: 'settings_courier_vendors', label: 'Courier Vendors (PPJK)', path: '/settings/courier-vendors', group: 'Settings' },
   // settings_roles sengaja TIDAK dipakai route guard-nya (RoleManagementPage di-gate langsung
   // via isAdmin, bukan lewat matrix page_key ini) -- tapi tetap didaftarkan di sini supaya
   // tetap tampil & konsisten di matrix Kelola Role & Akses utk keperluan dokumentasi/display.

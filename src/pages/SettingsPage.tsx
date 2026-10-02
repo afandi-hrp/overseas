@@ -83,6 +83,9 @@ export default function SettingsPage() {
             {canSee('settings_seaair_vendors') && (
               <ModuleCard icon={Building2} title="Sea & Air Vendors (PPJK)" description="Nama lengkap PPJK & TOP (hari) yang dipakai Finance Handover Sea & Air." to="/settings/seaair-vendors" actionLabel="Kelola Vendor" />
             )}
+            {canSee('settings_courier_vendors') && (
+              <ModuleCard icon={Building2} title="Courier Vendors (PPJK)" description="Nama lengkap PPJK Courier & TOP (hari) yang dipakai Finance Handover Courier." to="/settings/courier-vendors" actionLabel="Kelola Vendor" />
+            )}
             {canSee('settings_tarif_far_overseas_vendor') && (
               <ModuleCard icon={FileCheck2} title="Tarif Vendor FAR Overseas Air" description="Kelola rate card Octagon Logistic & PT. Jianqiao Logistics Indonesia." to="/settings/tarif-far-overseas-vendor" actionLabel="Kelola Tarif" />
             )}

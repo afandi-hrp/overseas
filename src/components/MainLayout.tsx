@@ -52,13 +52,13 @@ const MAIN_TABS: MainTab[] = [
     pageKey: 'direct_loading',
   },
   {
-    // Finance Handover gabungan FAR Overseas + Sea & Air (2026-10-01) -- tampil kalau punya salah satu.
+    // Finance Handover gabungan FAR Overseas + Sea & Air + Courier (Courier 2026-10-02) -- tampil kalau punya salah satu.
     id: 'finance_handover',
     label: 'Finance Handover',
     icon: Wallet,
     path: '/finance-handover',
     basePath: '/finance-handover',
-    pageKeys: ['far_overseas_finance', 'sea_air_finance'],
+    pageKeys: ['far_overseas_finance', 'sea_air_finance', 'courier_finance'],
   },
   {
     // Posisi TEPAT DI BAWAH "FAR Overseas" (2026-09, permintaan user -- dulu di bawah "Compare

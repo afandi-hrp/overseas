@@ -151,6 +151,8 @@ const CourierAuditRowCard: React.FC<{
             <Pill tone={draft ? 'amber' : 'green'}>{draft ? 'Draft' : 'Audited'}</Pill>
             <ValidationDots rec={rec} tabs={validationTabs} onOpenTab={t => onOpen(rec, t)} />
           </div>
+          {/* Re-audit otomatis (sql/037): Invoice Recap diedit setelah Audited -> kembali Draft + alasan. */}
+          {rec.reaudit_reason && <Chip tone="purple" title={rec.reaudit_reason}>↻ Changed in Invoice Recap — please re-audit</Chip>}
           <button type="button" onClick={() => onOpen(rec)} className={`${SA_BTN_OUTLINE} h-8 px-4`}>Open</button>
         </div>
       </div>
