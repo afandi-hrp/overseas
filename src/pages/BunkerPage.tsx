@@ -464,8 +464,9 @@ export default function BunkerPage() {
                           main={<>
                             <div className="font-bold text-[13px] text-[#5A305A] leading-snug break-words">{r.vendor || '-'}</div>
                             <div className="flex flex-wrap gap-1.5 mt-1.5"><RowChip label="Vessel">{r.kapal || '-'}</RowChip></div>
-                            <div className="mt-2">
-                              <RowLabel>Workflow Status</RowLabel>
+                            {/* Label & dropdown 1 baris (2026-10-02, permintaan user: baris kartu lebih ramping). */}
+                            <div className="mt-2 flex items-center gap-2 flex-wrap">
+                              <span className="text-[9px] font-bold uppercase tracking-wide text-[#5A305A]/50">Workflow Status</span>
                               <WorkflowSelect row={r} onChanged={fetchList} canEdit={canEditBunker} />
                             </div>
                           </>}
