@@ -480,9 +480,9 @@ export default function BunkerPage() {
                             <div className={`font-bold text-[20px] leading-tight ${pctClass}`}>{matchStats.pct}%</div>
                           </>}
                           actions={<>
-                            <CardAction icon={FileCheck2} label="Completeness" title="Document Completeness" onClick={() => setKelengkapanRow(r)} />
-                            <CardAction icon={ClipboardList} label="Compare Doc" onClick={() => setCompareRow(r)} />
-                            <CardAction iconOnly icon={History} label="History" title="Change History" onClick={() => setAuditLogRow(r)} />
+                            <CardAction tone="primary" icon={FileCheck2} label="Completeness" title="Document Completeness" onClick={() => setKelengkapanRow(r)} />
+                            <CardAction tone="primary" icon={ClipboardList} label="Compare Doc" onClick={() => setCompareRow(r)} />
+                            <CardAction iconOnly tone="warn" icon={History} label="History" title="Change History" onClick={() => setAuditLogRow(r)} />
                             {canEditBunker && <CardAction iconOnly icon={Trash2} label="Delete" tone="danger" onClick={() => openDeleteConfirm(r)} />}
                           </>}
                         />

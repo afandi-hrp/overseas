@@ -112,6 +112,10 @@ presentational); isi kartu tetap ditulis per halaman.
   Accounting: Tgl Dok & Bank) | kanan rata kanan = Status Audit (Accounting: Total Bayar besar) | aksi
   (PDF & Hasil Audit / Preview berlabel, Riwayat/Edit/Hapus ikon saja + tooltip, gating `canEdit*` sama;
   file belum ada = tombol abu). Layar < lg kolom ditumpuk.
+- **Warna tombol aksi** (`CardAction tone`, `ACTION_TONE` di CompareDocCards, 2026-10-02 permintaan user
+  "berwarna tapi jangan ramai") — latar pucat: `primary` ungu muda `#F5EDF3` = lihat dokumen (PDF, Hasil
+  Audit, Preview, Completeness, Compare Doc), `warn` kuning `#FFF5C5` = Riwayat/History, `info` biru muda =
+  Edit, `danger` merah muda = Hapus/Delete. Berlaku juga di Bunker. Tombol nonaktif (file belum ada) tetap abu.
 - Sort mode Card: `CardSortBar` di atas daftar (`CARD_SORT_OPTIONS`, key = `SortKey`) — pengganti header
   kolom sortable; ubah sort reset `page` ke 1 (sama klik header).
 - Aksen kiri kartu SERAGAM ungu — SENGAJA tidak diwarnai per status (badge "Selesai Diproses" hijau,

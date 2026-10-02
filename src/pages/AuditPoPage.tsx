@@ -1681,16 +1681,16 @@ export default function AuditPoPage() {
                         <StatusBadge status={r.status_audit} />
                       </>}
                       actions={<>
-                        <CardAction icon={FileDown} label="PDF" title="Preview PDF" onClick={r.url_pdf ? () => {
+                        <CardAction tone="primary" icon={FileDown} label="PDF" title="Preview PDF" onClick={r.url_pdf ? () => {
                           const src = buildPreviewSrc(r.drive_file_id_pdf, r.url_pdf);
                           if (src) setPreviewTarget({ title: `PDF — ${r.nomor_po || r.vendor_name || r.id}`, src, externalUrl: r.url_pdf!, kind: 'pdf' });
                         } : undefined} />
-                        <CardAction icon={FileText} label="Hasil Audit" title="Preview Hasil Audit" onClick={r.url_html ? () => {
+                        <CardAction tone="primary" icon={FileText} label="Hasil Audit" title="Preview Hasil Audit" onClick={r.url_html ? () => {
                           const src = buildPreviewSrc(r.drive_file_id_html, r.url_html);
                           if (src) setPreviewTarget({ title: `Hasil Audit — ${r.nomor_po || r.vendor_name || r.id}`, src, externalUrl: r.url_html!, kind: 'html' });
                         } : undefined} />
-                        <CardAction iconOnly icon={History} label="Riwayat" title="Riwayat Perubahan" onClick={() => setLogRow(r)} />
-                        {canEditAuditPo && <CardAction iconOnly icon={Pencil} label="Edit" onClick={() => setEditRow(r)} />}
+                        <CardAction iconOnly tone="warn" icon={History} label="Riwayat" title="Riwayat Perubahan" onClick={() => setLogRow(r)} />
+                        {canEditAuditPo && <CardAction iconOnly tone="info" icon={Pencil} label="Edit" onClick={() => setEditRow(r)} />}
                         {canEditAuditPo && <CardAction iconOnly icon={Trash2} label="Hapus" tone="danger" onClick={() => openDeleteConfirm(r)} />}
                       </>}
                     />

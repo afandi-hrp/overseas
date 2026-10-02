@@ -1038,12 +1038,12 @@ export default function AccountingRekapPage() {
                         <div className="font-bold text-[17px] text-[#5A305A] leading-tight break-all">{formatRupiah(r.total_bayar)}</div>
                       </>}
                       actions={<>
-                        <CardAction icon={FileDown} label="Preview" title="Preview Dokumen" onClick={r.url_view ? () => {
+                        <CardAction tone="primary" icon={FileDown} label="Preview" title="Preview Dokumen" onClick={r.url_view ? () => {
                           const kind = guessPreviewKind(r.url_view);
                           const src = buildPreviewSrc(r.drive_file_id, r.url_view);
                           if (src) setPreviewTarget({ title: `Dokumen — ${r.nomor_po || r.vendor || r.id}`, src, externalUrl: r.url_view!, kind });
                         } : undefined} />
-                        {canEditAccountingRekap && <CardAction iconOnly icon={Pencil} label="Edit" onClick={() => setEditRow(r)} />}
+                        {canEditAccountingRekap && <CardAction iconOnly tone="info" icon={Pencil} label="Edit" onClick={() => setEditRow(r)} />}
                         {canEditAccountingRekap && <CardAction iconOnly icon={Trash2} label="Hapus" tone="danger" onClick={() => openDeleteConfirm(r)} />}
                       </>}
                     />

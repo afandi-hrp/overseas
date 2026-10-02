@@ -112,13 +112,24 @@ export function RowLabel({ children }: { children: React.ReactNode }) {
   return <div className="text-[9px] font-bold uppercase tracking-wide text-[#5A305A]/50 mb-1">{children}</div>;
 }
 
+// Warna lembut per jenis aksi (2026-10-02, permintaan user "berwarna tapi jangan terlalu ramai"):
+// primary = lihat dokumen (ungu muda brand), warn = riwayat (kuning #FFF5C5), info = edit (biru muda),
+// danger = hapus (merah muda). default = putih polos.
+const ACTION_TONE: Record<'default' | 'primary' | 'info' | 'warn' | 'danger', string> = {
+  default: 'border-slate-200 bg-white text-[#5A305A] hover:bg-slate-50 hover:border-[#5A305A]/40',
+  primary: 'border-[#5A305A]/15 bg-[#F5EDF3] text-[#5A305A] hover:bg-[#EBDDE8] hover:border-[#5A305A]/30',
+  info: 'border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 hover:border-sky-300',
+  warn: 'border-amber-200 bg-[#FFF5C5] text-amber-700 hover:bg-amber-100 hover:border-amber-300',
+  danger: 'border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:border-rose-300',
+};
+
 // Tombol aksi baris. Tanpa `onClick` = tampil abu (mis. file PDF belum ada), sama dgn versi
 // `<span>` abu di panel Aksi tabel. `iconOnly` = tombol kotak kecil ikon saja (label jadi tooltip).
 export function CardAction({ icon: Icon, label, onClick, tone = 'default', title, iconOnly = false }: {
   icon: typeof List;
   label: string;
   onClick?: () => void;
-  tone?: 'default' | 'danger';
+  tone?: keyof typeof ACTION_TONE;
   title?: string;
   iconOnly?: boolean;
 }) {
@@ -134,11 +145,7 @@ export function CardAction({ icon: Icon, label, onClick, tone = 'default', title
     <button
       onClick={onClick}
       title={title || label}
-      className={`inline-flex items-center ${size} rounded-xl border text-[11px] font-semibold transition-colors ${
-        tone === 'danger'
-          ? 'border-rose-200 bg-white text-rose-600 hover:bg-rose-50 hover:border-rose-300'
-          : 'border-slate-200 bg-white text-[#5A305A] hover:bg-slate-50 hover:border-[#5A305A]/40'
-      }`}
+      className={`inline-flex items-center ${size} rounded-xl border text-[11px] font-semibold transition-colors ${ACTION_TONE[tone]}`}
     >
       <Icon size={13} />{!iconOnly && label}
     </button>
