@@ -52,9 +52,9 @@ approval-nya.
   history: 031 -> 034 -> 035** (031 menimpa 2 fungsi yg diperbarui 034; 034 menimpa mark_paid Sea & Air yg
   diperbarui 035). SQL baru ke depan: buat file `sql/NNN_*.sql` baru lagi.
   **Setelah penghapusan itu**: `sql/036_courier_recap_inspeksi_READONLY.sql` (baca saja) SUDAH dijalankan user
-  2026-10-02 (hasil dipakai merancang 037); **`sql/037_courier_recap.sql` BELUM DIJALANKAN** (Invoice Recap
-  Courier per AWB, re-audit otomatis, Finance Handover Courier, master vendor Courier) — frontend tetap jalan
-  tanpanya (fallback), lihat "Invoice Recap Courier per AWB" di bawah.
+  2026-10-02 (hasil dipakai merancang 037); **`sql/037_courier_recap.sql` SUDAH DIJALANKAN** (konfirmasi user
+  2026-10-02; Invoice Recap Courier per AWB, re-audit otomatis, Finance Handover Courier, master vendor Courier) —
+  lihat "Invoice Recap Courier per AWB" di bawah.
 - **Kondisi DB production (stack `supabase3`, audit 2026-09-26)**: role `anon` tanpa hak apa pun
   di schema public (tabel, fungsi, default privileges); GraphQL ditutup; semua tabel RLS dgn
   policy `has_page_access`/`has_edit_access` (tidak ada `using (true)`); semua view
@@ -451,10 +451,10 @@ history file ini.
 @docs/claude/courier-features.md
 @docs/claude/reporting.md
 
-## STATUS & SISA PEKERJAAN — Audit PIB / Invoice Recap Sea & Air / Finance Handover (per 2026-10-01)
+## STATUS & SISA PEKERJAAN — Audit & Invoice Recap Sea & Air + Courier / Finance Handover (per 2026-10-02)
 
 **DAFTAR TERKINI (satu-satunya acuan)** — 2 bagian "BACKLOG" di bawahnya = riwayat (item dicoret = selesai).
-Semua SQL (027–035) SUDAH jalan di production. Kode SELESAI & lolos uji jsdom/PGlite, tapi **BELUM dites
+Semua SQL (027–035, 037) SUDAH jalan di production. Kode SELESAI & lolos uji jsdom/PGlite, tapi **BELUM dites
 user di production** (testing bagian 2 + Finance Handover dijadwalkan user bersamaan dgn pekerjaan lain).
 
 **Audit PIB Sea & Air (`/sea-air/audit`) — belum:**
@@ -487,8 +487,7 @@ user di production** (testing bagian 2 + Finance Handover dijadwalkan user bersa
 10. (Ditahan, keputusan user) "Export cost data" 5 output — Export TETAP.
 
 **Finance Handover (`/finance-handover`) — belum:**
-1. ~~Sumber **Courier**~~ — SELESAI 2026-10-02 (per invoice, lihat "Invoice Recap Courier per AWB"); butuh sql/037
-   (sebelum dijalankan: item Courier tampil baca saja + banner kuning).
+1. ~~Sumber **Courier**~~ — SELESAI 2026-10-02 (per invoice, lihat "Invoice Recap Courier per AWB"; sql/037 SUDAH jalan).
 2. Font: halaman Finance pakai Sora (keputusan user "semua halaman Sora"), TAPI modal FAR yg dibuka dari
    viewer masih Plus Jakarta Sans (modul FAR belum diubah) — konfirmasi user apakah FAR ikut Sora.
 3. Keamanan: role Finance bisa membaca `tabel_audit_seaair` (berisi angka duty) lewat API krn policy baca
@@ -497,6 +496,29 @@ user di production** (testing bagian 2 + Finance Handover dijadwalkan user bersa
    kode PPJK (`emkl_vendor`); kolom `aktif` belum dipakai saat pencocokan; tanpa tombol hapus.
 5. Viewer FAR berganti modal antar tab -> ukuran dialog berubah (kosmetik).
 6. (Dibatalkan, keputusan user) upload bukti transfer & Undo — TIDAK dibuat.
+7. Courier: viewer hanya dialog 1 invoice (tanpa tab Documents/Cost validation spt Sea & Air); master vendor Courier
+   (nama legal + TOP) WAJIB diisi user; page_key `courier_finance`/`settings_courier_vendors` WAJIB di-assign ke role.
+8. Keamanan Courier: policy `rekapan_courier_select_finance` membuka SEMUA baris `rekapan_courier` (bukan hanya yg
+   sudah submit) utk role Finance lewat API — UI hanya menampilkan yg ber-`submit_date`. Persempit kalau diminta.
+
+**Audit Courier (`/courier/audit`) — belum:**
+1. Audit trail hanya perubahan baris PIB/CN (`v_audit_trail`); perubahan Checklist/Doc validation/Cost validation tidak
+   tampil, & edit field belum dicatat format app "X — Lama: … → Baru: …" (dump trigger disembunyikan).
+2. Costs opsi A: review per invoice ("Accept difference / Ask vendor") belum ada (butuh tabel baru).
+3. Tab Draft masih fetch & paging di browser (risiko terpotong >1.000 baris/tabel PostgREST) — butuh RPC gabungan.
+4. Auto-calc 7 kolom hanya dihitung saat tampil/simpan app; nilai mentah n8n di DB tidak dikoreksi (Reporting baca DB).
+5. Upload additional doc: belum dikonfirmasi workflow n8n Courier memakai `awb_hint` utk MERGE ke record lama.
+6. 2 versi validasi (baru & `*Legacy.tsx` mode List) — logika load/simpan WAJIB disinkron manual tiap diubah.
+7. Badge sidebar Draft SUDAH ada; badge "needs attention" utk Courier belum diputuskan user.
+
+**Invoice Recap Courier (`/courier/rekapan`) — belum:**
+1. Badge sidebar "needs attention" — menunggu keputusan user (definisi "perlu perhatian" utk Courier).
+2. 3 AWB tanpa pasangan Audit (hasil sql/036: 2 format EMS, 1 nyata) — cek kartu "Not found in Audit" di production;
+   kalau format EMS beda tulis antara Recap & Audit, normalisasi `courierAwbNorm`/`fn_courier_awb_norm` perlu aturan tambahan.
+3. Re-audit otomatis HANYA dari edit user (service/n8n dikecualikan); upload ulang invoice oleh n8n tidak memicu re-audit.
+4. Submit to Finance tanpa kunci (keputusan user) — nominal invoice masih bisa diubah setelah Finance menerima.
+5. Tanpa review cost per invoice / issue count spt Sea & Air (status kartu hanya Submitted/Paid).
+6. (Keputusan user) Edit tetap lewat tabel List; Export TETAP.
 
 **Umum:** semua halaman di atas belum diuji user di production; `kurs` text bug SUDAH diperbaiki; badge
 sidebar needs attention SUDAH; pindah tab browser tidak refresh SUDAH (lihat bagian AuthContext).
@@ -513,7 +535,7 @@ Invoice Recap Sea & Air" di file yang sama). Doc validation mode embedded TIDAK 
 validasi belum lengkap (ada kasus invoice freight memang tidak ditagihkan) — JANGAN tambah gerbang validasi
 Courier. Tab tetap Draft/PIB/CN (tanpa "All"). Fitur tabel lama tetap di mode List.
 **Tahap 2 & 3 SELESAI (kode, 2026-10-02)**: Invoice Recap Courier per AWB + relasi Audit↔Recap (re-audit otomatis)
-+ sumber Courier di Finance Handover — lihat "Invoice Recap Courier per AWB" di bawah (**sql/037 BELUM DIJALANKAN**).
++ sumber Courier di Finance Handover — lihat "Invoice Recap Courier per AWB" di bawah (sql/037 SUDAH DIJALANKAN 2026-10-02).
 Analisa awal (RIWAYAT, sebelum tahap 1):
 - **Bisa** dibuat tampilan sama (kartu + jendela Open + form Edit + KPI, toggle List = tabel lama tetap
   utuh dgn Reorder/Edit Mode/Customize View/Export). Token `SeaAirAuditUi.tsx` & pola komponen bisa dipakai.
@@ -554,7 +576,7 @@ ada nama fungsi bentrok. Keputusan:
 15. Finance Handover Courier **per invoice**; kolom baru `finance_received_at/_by` (opsi A); master vendor = **tabel baru
     khusus Courier** `courier_vendor_master` + halaman Settings sendiri.
 
-## Invoice Recap Courier per AWB + Finance Handover Courier (2026-10-02, kode SELESAI, sql/037 BELUM DIJALANKAN)
+## Invoice Recap Courier per AWB + Finance Handover Courier (2026-10-02, kode SELESAI, sql/037 SUDAH DIJALANKAN 2026-10-02)
 
 Detail tampilan: "Invoice Recap Courier — tampilan baru per AWB" di `docs/claude/courier-features.md`. Ringkas:
 - **File**: `src/utils/CourierRecapHelpers.ts` (SATU sumber: `courierAwbNorm` [upper, buang prefix huruf+"NO.", sisa
@@ -570,7 +592,7 @@ Detail tampilan: "Invoice Recap Courier — tampilan baru per AWB" di `docs/clau
   menghapus alasan); tabel `courier_vendor_master` (RLS 4 policy, seed kode PPJK tanpa OWN); policy SELECT
   `rekapan_courier_select_finance`; RPC `fn_courier_finance_accept(uuid,text,date)` & `fn_courier_finance_mark_paid(uuid,
   date,text)` (guard `has_edit_access('courier_finance')`, Mark paid mengisi `tgl_lunas`).
-- **Sebelum 037 jalan**: kartu & KPI tetap jalan lewat fallback (semua baris tab PPJK diambil, dikelompokkan di browser;
+- **(Historis) Sebelum 037 jalan**: kartu & KPI tetap jalan lewat fallback (semua baris tab PPJK diambil, dikelompokkan di browser;
   KPI "not in audit" tidak dihitung); re-audit otomatis belum aktif; Finance Handover Courier tampil baca saja + banner.
 - **page_key baru**: `courier_finance` (Finance Handover Courier, EDIT = Accept/Mark paid) & `settings_courier_vendors`
   — BELUM di-assign ke role mana pun (hanya Admin sampai di-assign di Kelola Role & Akses).
@@ -940,7 +962,7 @@ Supabase** — bisa saja sudah basi (RPC lain ditambahkan user langsung tanpa te
   `fn_seaair_finance_accept(uuid, text, date)` (signature BARU: nama + tanggal terima; versi 1-arg DI-DROP),
   `fn_seaair_finance_mark_paid` referensi opsional, `fn_seaair_finance_undo` DI-DROP (tanpa Undo, keputusan
   user), FAR `fn_far_overseas_set_urgent(uuid, boolean)` BARU, `fn_far_overseas_mark_paid` bukti bayar opsional.
-- Courier Invoice Recap & Finance (sql/037, **BELUM DIJALANKAN**): `fn_courier_recap_awb_page`, `fn_courier_recap_summary`,
+- Courier Invoice Recap & Finance (sql/037, SUDAH DIJALANKAN 2026-10-02): `fn_courier_recap_awb_page`, `fn_courier_recap_summary`,
   `fn_courier_awb_norm`, `fn_courier_finance_accept(uuid, text, date)`, `fn_courier_finance_mark_paid(uuid, date, text)`
   (+ fungsi trigger `fn_courier_reaudit`, `fn_courier_reaudit_clear`).
 - Courier Audit — Draft/Archive lifecycle (`SharedDataTable.tsx`, nama RPC dipilih dinamis via
