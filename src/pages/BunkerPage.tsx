@@ -457,17 +457,19 @@ export default function BunkerPage() {
                           left={<>
                             <RowEyebrow><StatusBadge status={r.status} /><span>Updated {formatDateTimeID(r.updated_at)}</span></RowEyebrow>
                             <RowTitle>{r.no_po || '-'}</RowTitle>
-                            {r.lokasi && (
-                              <div className="flex flex-wrap gap-1.5 mt-1.5"><RowChip label="Location">{r.lokasi}</RowChip></div>
-                            )}
-                          </>}
-                          main={<>
-                            <div className="font-bold text-[13px] text-[#5A305A] leading-snug break-words">{r.vendor || '-'}</div>
-                            <div className="flex flex-wrap gap-1.5 mt-1.5"><RowChip label="Vessel">{r.kapal || '-'}</RowChip></div>
-                            {/* Label & dropdown 1 baris (2026-10-02, permintaan user: baris kartu lebih ramping). */}
-                            <div className="mt-2 flex items-center gap-2 flex-wrap">
+                            {/* Kiri = identitas & status PO; Workflow Status sebaris dgn labelnya (2026-10-02,
+                                permintaan user: baris kartu ramping & rapi). */}
+                            <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                               <span className="text-[9px] font-bold uppercase tracking-wide text-[#5A305A]/50">Workflow Status</span>
                               <WorkflowSelect row={r} onChanged={fetchList} canEdit={canEditBunker} />
+                            </div>
+                          </>}
+                          main={<>
+                            {/* Tengah = pihak & lokasi: Vendor, lalu chip Location & Vessel SEJAJAR 1 baris. */}
+                            <div className="font-bold text-[13px] text-[#5A305A] leading-snug break-words">{r.vendor || '-'}</div>
+                            <div className="flex flex-wrap gap-1.5 mt-1.5">
+                              <RowChip label="Location">{r.lokasi || '-'}</RowChip>
+                              <RowChip label="Vessel">{r.kapal || '-'}</RowChip>
                             </div>
                           </>}
                           side={<>

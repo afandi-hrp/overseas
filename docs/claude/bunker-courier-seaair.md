@@ -343,8 +343,9 @@ tambahkan nama kolomnya ke daftar `- 'kolom'` yang sama di trigger ini.**
 Permintaan user: samakan dgn 4 halaman Compare Doc (lihat `docs/claude/audit-po.md` "Tampilan Card |
 List" & "Toolbar dinamis"), komponen bersama `src/components/CompareDocCards.tsx`. Toggle Card | List
 (default Card, tidak disimpan) di toolbar sebelum "Items"; List = tabel lama apa adanya. Baris kartu
-(`DocRow`): kiri `StatusBadge` sistem + "Updated <tgl>", No PO besar, chip Location | tengah Vendor tebal,
-chip Vessel, label "Workflow Status" + `WorkflowSelect` (SAMA) dalam 1 baris | kanan "Doc Match" % besar (`computeMatrixMatchStats`,
+(`DocRow`, susunan final 2026-10-02 permintaan user "rapi"): kiri `StatusBadge` sistem + "Updated <tgl>",
+No PO besar, label "Workflow Status" + `WorkflowSelect` (SAMA) 1 baris | tengah Vendor tebal, chip Location
+& Vessel SEJAJAR 1 baris (Location kosong = "-") | kanan "Doc Match" % besar (`computeMatrixMatchStats`,
 warna hijau >=90/kuning >=60/merah, sama badge tombol Compare Doc tabel) | aksi Completeness, Compare Doc,
 ikon History & Delete (gating `canEditBunker`). TANPA bar Urutkan (Bunker memang tanpa sort, selalu
 `updated_at` DESC). Toolbar `@container`, Search `flex-1 min-w-[150px] max-w-[360px]`, label "Items" &
