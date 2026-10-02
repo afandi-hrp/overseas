@@ -29,7 +29,7 @@ export function ViewModeToggle({ value, onChange }: { value: CompareDocViewMode;
   );
 }
 
-// Bar tipis di atas grid kartu -- pengganti header kolom sortable tabel (mode Card tidak punya
+// Bar tipis di atas daftar kartu -- pengganti header kolom sortable tabel (mode Card tidak punya
 // header kolom). Pilihan & arah urut memakai state `sortBy`/`sortDir` YANG SAMA dgn tabel.
 export function CardSortBar<K extends string>({ total, options, sortBy, sortDir, onChange }: {
   total: number;
@@ -64,44 +64,66 @@ export function CardSortBar<K extends string>({ total, options, sortBy, sortDir,
   );
 }
 
-// Kerangka 1 kartu: header (PT + tanggal), isi field, baris tombol aksi selalu rata bawah.
-export function DocCard({ header, children, actions }: {
+// 1 data = 1 BARIS kartu lebar penuh (2026-10-02, permintaan user: "tetap seperti list tapi di
+// improve", acuan tampilan kartu Audit Courier). Kolom: identitas (kiri) | isi utama | ringkasan
+// (rata kanan) | tombol aksi. Di layar < lg kolom ditumpuk ke bawah.
+export function DocRow({ left, main, side, actions }: {
   key?: React.Key;
-  header: React.ReactNode;
-  children: React.ReactNode;
+  left: React.ReactNode;
+  main: React.ReactNode;
+  side: React.ReactNode;
   actions: React.ReactNode;
 }) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 border-l-[3px] border-l-[#5A305A]/70 shadow-sm hover:shadow-md transition-shadow flex flex-col min-w-0">
-      <div className="px-4 pt-3 pb-2.5 border-b border-slate-100 flex items-start justify-between gap-2">{header}</div>
-      <div className="px-4 py-3 flex-1 flex flex-col gap-2.5 min-w-0">{children}</div>
-      <div className="px-3 py-2.5 border-t border-slate-100 bg-slate-50/60 rounded-b-2xl flex flex-wrap items-center gap-1.5">{actions}</div>
+    <div className="bg-white rounded-2xl border border-slate-200 border-l-[3px] border-l-[#5A305A]/70 shadow-sm hover:shadow-md transition-shadow px-5 py-3.5 grid grid-cols-1 lg:grid-cols-[minmax(220px,290px)_minmax(0,1fr)_minmax(140px,210px)_auto] gap-x-6 gap-y-3 items-center min-w-0">
+      <div className="min-w-0">{left}</div>
+      <div className="min-w-0">{main}</div>
+      <div className="min-w-0 lg:text-right">{side}</div>
+      <div className="flex flex-wrap items-center gap-1.5 lg:justify-end">{actions}</div>
     </div>
   );
 }
 
-export function CardField({ label, children, className = '' }: { label: string; children: React.ReactNode; className?: string }) {
+// Baris kecil di atas judul (mis. badge PT + tanggal).
+export function RowEyebrow({ children }: { children: React.ReactNode }) {
+  return <div className="flex items-center gap-2 flex-wrap text-[10px] text-[#5A305A]/70">{children}</div>;
+}
+
+// Judul baris (Nomor PO) -- tebal & besar, boleh pecah di karakter mana pun (nomor panjang).
+export function RowTitle({ children }: { children: React.ReactNode }) {
+  return <div className="font-bold text-[15px] text-[#5A305A] leading-snug break-all mt-1">{children}</div>;
+}
+
+// Chip kecil "label nilai" (mis. "SJ 123", "Durasi 2m").
+export function RowChip({ label, children }: { label?: string; children: React.ReactNode }) {
   return (
-    <div className={`min-w-0 ${className}`}>
-      <div className="text-[9px] font-bold uppercase tracking-wide text-[#5A305A]/50 mb-0.5">{label}</div>
-      <div className="text-[11px] text-[#5A305A] break-words">{children}</div>
-    </div>
+    <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-[#5A305A] max-w-full break-all">
+      {label && <span className="opacity-60 font-bold uppercase tracking-wide text-[9px] shrink-0">{label}</span>}
+      {children}
+    </span>
   );
 }
 
-// Tombol aksi kartu. Tanpa `onClick` = tampil abu (mis. file PDF belum ada), sama dgn versi
-// `<span>` abu di panel Aksi tabel.
-export function CardAction({ icon: Icon, label, onClick, tone = 'default', title }: {
+// Label kecil huruf kapital di atas nilai (mis. "STATUS AUDIT", "TOTAL BAYAR").
+export function RowLabel({ children }: { children: React.ReactNode }) {
+  return <div className="text-[9px] font-bold uppercase tracking-wide text-[#5A305A]/50 mb-1">{children}</div>;
+}
+
+// Tombol aksi baris. Tanpa `onClick` = tampil abu (mis. file PDF belum ada), sama dgn versi
+// `<span>` abu di panel Aksi tabel. `iconOnly` = tombol kotak kecil ikon saja (label jadi tooltip).
+export function CardAction({ icon: Icon, label, onClick, tone = 'default', title, iconOnly = false }: {
   icon: typeof List;
   label: string;
   onClick?: () => void;
   tone?: 'default' | 'danger';
   title?: string;
+  iconOnly?: boolean;
 }) {
+  const size = iconOnly ? 'h-8 w-8 justify-center' : 'h-8 px-3 gap-1.5';
   if (!onClick) {
     return (
-      <span title={title} className="flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-100 bg-white text-[10px] font-semibold text-slate-300">
-        <Icon size={11} /> {label}
+      <span title={title || label} className={`inline-flex items-center ${size} rounded-xl border border-slate-100 bg-white text-[11px] font-semibold text-slate-300`}>
+        <Icon size={13} />{!iconOnly && label}
       </span>
     );
   }
@@ -109,13 +131,13 @@ export function CardAction({ icon: Icon, label, onClick, tone = 'default', title
     <button
       onClick={onClick}
       title={title || label}
-      className={`flex items-center gap-1 px-2 py-1 rounded-lg border text-[10px] font-semibold transition-colors ${
+      className={`inline-flex items-center ${size} rounded-xl border text-[11px] font-semibold transition-colors ${
         tone === 'danger'
-          ? 'border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:border-rose-300'
-          : 'border-slate-200 bg-white text-[#5A305A] hover:bg-slate-100 hover:border-[#5A305A]/40'
+          ? 'border-rose-200 bg-white text-rose-600 hover:bg-rose-50 hover:border-rose-300'
+          : 'border-slate-200 bg-white text-[#5A305A] hover:bg-slate-50 hover:border-[#5A305A]/40'
       }`}
     >
-      <Icon size={11} /> {label}
+      <Icon size={13} />{!iconOnly && label}
     </button>
   );
 }

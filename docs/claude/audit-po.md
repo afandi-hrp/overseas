@@ -100,18 +100,20 @@ Permintaan user: daftar dibuat bentuk kartu "tanpa merubah fungsi". Toggle **Car
 kanan toolbar (sebelum "Items"), default **Card**, tidak disimpan (pola Courier/Sea & Air). List =
 tabel lama APA ADANYA. Kedua mode memakai state/fetch/filter/sort/pagination/handler YANG SAMA —
 cuma bentuk render beda. Komponen bersama `src/components/CompareDocCards.tsx` (`ViewModeToggle`,
-`CardSortBar`, `DocCard`, `CardField`, `CardAction`) — PENGECUALIAN rule "duplikasi sengaja" (murni
+`CardSortBar`, `DocRow`, `RowEyebrow`/`RowTitle`/`RowChip`/`RowLabel`, `CardAction`) — PENGECUALIAN rule "duplikasi sengaja" (murni
 presentational); isi kartu tetap ditulis per halaman.
-- Kartu: header PT badge + Tanggal & Waktu; isi Nomor PO (tebal), Vendor, Status Audit (+ Durasi;
-  PI Local: Nomor SJ/Stock In tanpa Durasi), Kategori = `KategoriCell` yg SAMA (auto-save + log).
-  Accounting: Nomor PO, Vendor, Tgl Dokumen, Bank, Total Bayar, Status Proses. Aksi langsung di baris
-  bawah kartu (bukan dropdown "Aksi"): PDF / Hasil Audit / Riwayat / Edit / Hapus (Accounting:
-  Preview / Edit / Hapus), gating `canEdit*` sama; file belum ada = tombol abu.
-- Sort mode Card: `CardSortBar` di atas grid (`CARD_SORT_OPTIONS`, key = `SortKey`) — pengganti header
+- **Bentuk = 1 data 1 BARIS kartu lebar penuh** (revisi 2026-10-02, user: "tidak kotak-kotak, tetap
+  seperti list tapi di-improve", acuan kartu Audit Courier; versi grid kotak 2-4 kolom DIGANTI, jangan
+  dikembalikan). `DocRow` kolom: kiri (badge PT + tanggal, Nomor PO besar, chip Durasi / SJ+Stock In /
+  Tgl Dok+Bank) | tengah (Vendor tebal + Kategori = `KategoriCell` yg SAMA, auto-save + log;
+  Accounting: Status Proses) | kanan rata kanan (Status Audit; Accounting: Total Bayar besar) | aksi
+  (PDF & Hasil Audit / Preview berlabel, Riwayat/Edit/Hapus ikon saja + tooltip, gating `canEdit*`
+  sama; file belum ada = tombol abu). Layar < lg kolom ditumpuk.
+- Sort mode Card: `CardSortBar` di atas daftar (`CARD_SORT_OPTIONS`, key = `SortKey`) — pengganti header
   kolom sortable; ubah sort reset `page` ke 1 (sama klik header).
 - Aksen kiri kartu SERAGAM ungu — SENGAJA tidak diwarnai per status (badge "Selesai Diproses" hijau,
   padahal Dashboard menghitung status terisi = "bermasalah"; warna per status akan menyesatkan).
-- Grid `grid-cols-1 md:2 xl:3 2xl:4`, scroll internal (pola shell tinggi tetap), footer pagination sama.
+- Daftar `flex flex-col gap-2.5`, scroll internal (pola shell tinggi tetap), footer pagination sama.
 
 ## Audit AP Local/Overseas/PI Local — "Riwayat Perubahan"
 

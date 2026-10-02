@@ -10,7 +10,7 @@ import {
 } from '../utils/PiLocalHelpers';
 import { logAuditPoAudit, logAuditPoDelete } from '../utils/AuditPoLogHelpers';
 import Greeting from '../components/Greeting';
-import { ViewModeToggle, CardSortBar, DocCard, CardField, CardAction, type CompareDocViewMode } from '../components/CompareDocCards';
+import { ViewModeToggle, CardSortBar, DocRow, RowEyebrow, RowTitle, RowChip, RowLabel, CardAction, type CompareDocViewMode } from '../components/CompareDocCards';
 import { LoadingState, LoadingTableRow } from '../components/LoadingState';
 import AuditPoLogModal from '../components/AuditPoLogModal';
 
@@ -1578,13 +1578,28 @@ export default function PiLocalPage() {
               ) : rows.length === 0 ? (
                 <div className="text-center py-10 text-[#5A305A] text-sm italic">Belum ada data PI Local.</div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+                <div className="flex flex-col gap-2.5">
                   {rows.map((r) => (
-                    <DocCard
+                    <DocRow
                       key={r.id}
-                      header={<>
-                        <PtBadge pt={r.nama_pt} />
-                        <span className="text-[10px] text-[#5A305A]/70 text-right shrink-0">{formatDateTimeID(r.created_at)}</span>
+                      left={<>
+                        <RowEyebrow><PtBadge pt={r.nama_pt} /><span>{formatDateTimeID(r.created_at)}</span></RowEyebrow>
+                        <RowTitle>{r.nomor_po || '-'}</RowTitle>
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          <RowChip label="SJ">{r.nomor_sj || '-'}</RowChip>
+                          <RowChip label="Stock In">{r.nomor_stock_in || '-'}</RowChip>
+                        </div>
+                      </>}
+                      main={<>
+                        <div className="font-bold text-[13px] text-[#5A305A] leading-snug break-words">{r.vendor_name || '-'}</div>
+                        <div className="mt-2 max-w-[340px]">
+                          <RowLabel>Kategori</RowLabel>
+                          <KategoriCell row={r} onChanged={handleKategoriChanged} canEdit={canEditPiLocal} />
+                        </div>
+                      </>}
+                      side={<>
+                        <RowLabel>Status Audit</RowLabel>
+                        <StatusBadge status={r.status_audit} />
                       </>}
                       actions={<>
                         <CardAction icon={FileDown} label="PDF" title="Preview PDF" onClick={r.url_pdf ? () => {
@@ -1595,20 +1610,11 @@ export default function PiLocalPage() {
                           const src = buildPreviewSrc(r.drive_file_id_html, r.url_html);
                           if (src) setPreviewTarget({ title: `Hasil Audit — ${r.nomor_po || r.vendor_name || r.id}`, src, externalUrl: r.url_html!, kind: 'html' });
                         } : undefined} />
-                        <CardAction icon={History} label="Riwayat" title="Riwayat Perubahan" onClick={() => setLogRow(r)} />
-                        {canEditPiLocal && <CardAction icon={Pencil} label="Edit" onClick={() => setEditRow(r)} />}
-                        {canEditPiLocal && <span className="ml-auto"><CardAction icon={Trash2} label="Hapus" tone="danger" onClick={() => openDeleteConfirm(r)} /></span>}
+                        <CardAction iconOnly icon={History} label="Riwayat" title="Riwayat Perubahan" onClick={() => setLogRow(r)} />
+                        {canEditPiLocal && <CardAction iconOnly icon={Pencil} label="Edit" onClick={() => setEditRow(r)} />}
+                        {canEditPiLocal && <CardAction iconOnly icon={Trash2} label="Hapus" tone="danger" onClick={() => openDeleteConfirm(r)} />}
                       </>}
-                    >
-                        <CardField label="Nomor PO"><span className="font-bold text-[13px] leading-snug">{r.nomor_po || '-'}</span></CardField>
-                        <div className="grid grid-cols-2 gap-2.5">
-                          <CardField label="Nomor SJ">{r.nomor_sj || '-'}</CardField>
-                          <CardField label="Nomor Stock In">{r.nomor_stock_in || '-'}</CardField>
-                        </div>
-                        <CardField label="Vendor">{r.vendor_name || '-'}</CardField>
-                        <CardField label="Status Audit"><StatusBadge status={r.status_audit} /></CardField>
-                        <CardField label="Kategori"><KategoriCell row={r} onChanged={handleKategoriChanged} canEdit={canEditPiLocal} /></CardField>
-                    </DocCard>
+                    />
                   ))}
                 </div>
               )}

@@ -11,7 +11,7 @@ import {
   type AccountingRekapRow,
 } from '../utils/AccountingRekapHelpers';
 import Greeting from '../components/Greeting';
-import { ViewModeToggle, CardSortBar, DocCard, CardField, CardAction, type CompareDocViewMode } from '../components/CompareDocCards';
+import { ViewModeToggle, CardSortBar, DocRow, RowEyebrow, RowTitle, RowChip, RowLabel, CardAction, type CompareDocViewMode } from '../components/CompareDocCards';
 import { LoadingState, LoadingTableRow } from '../components/LoadingState';
 
 // ── Kontrak data (Supabase, diisi otomasi backend) ──
@@ -1003,13 +1003,28 @@ export default function AccountingRekapPage() {
               ) : rows.length === 0 ? (
                 <div className="text-center py-10 text-[#5A305A] text-sm italic">Belum ada data Accounting Rekap.</div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+                <div className="flex flex-col gap-2.5">
                   {rows.map((r) => (
-                    <DocCard
+                    <DocRow
                       key={r.id}
-                      header={<>
-                        <PtBadge pt={r.pt_internal} />
-                        <span className="text-[10px] text-[#5A305A]/70 text-right shrink-0">{formatDateTimeID(r.created_at)}</span>
+                      left={<>
+                        <RowEyebrow><PtBadge pt={r.pt_internal} /><span>{formatDateTimeID(r.created_at)}</span></RowEyebrow>
+                        <RowTitle>{r.nomor_po || '-'}</RowTitle>
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          <RowChip label="Tgl Dok">{r.tanggal_dokumen || '-'}</RowChip>
+                          <RowChip label="Bank">{r.bank || '-'}</RowChip>
+                        </div>
+                      </>}
+                      main={<>
+                        <div className="font-bold text-[13px] text-[#5A305A] leading-snug break-words">{r.vendor || '-'}</div>
+                        <div className="mt-2">
+                          <RowLabel>Status Proses</RowLabel>
+                          <StatusBadge status={r.status_proses} />
+                        </div>
+                      </>}
+                      side={<>
+                        <RowLabel>Total Bayar</RowLabel>
+                        <div className="font-bold text-[17px] text-[#5A305A] leading-tight break-all">{formatRupiah(r.total_bayar)}</div>
                       </>}
                       actions={<>
                         <CardAction icon={FileDown} label="Preview" title="Preview Dokumen" onClick={r.url_view ? () => {
@@ -1017,21 +1032,10 @@ export default function AccountingRekapPage() {
                           const src = buildPreviewSrc(r.drive_file_id, r.url_view);
                           if (src) setPreviewTarget({ title: `Dokumen — ${r.nomor_po || r.vendor || r.id}`, src, externalUrl: r.url_view!, kind });
                         } : undefined} />
-                        {canEditAccountingRekap && <CardAction icon={Pencil} label="Edit" onClick={() => setEditRow(r)} />}
-                        {canEditAccountingRekap && <span className="ml-auto"><CardAction icon={Trash2} label="Hapus" tone="danger" onClick={() => openDeleteConfirm(r)} /></span>}
+                        {canEditAccountingRekap && <CardAction iconOnly icon={Pencil} label="Edit" onClick={() => setEditRow(r)} />}
+                        {canEditAccountingRekap && <CardAction iconOnly icon={Trash2} label="Hapus" tone="danger" onClick={() => openDeleteConfirm(r)} />}
                       </>}
-                    >
-                        <CardField label="Nomor PO"><span className="font-bold text-[13px] leading-snug">{r.nomor_po || '-'}</span></CardField>
-                        <CardField label="Vendor">{r.vendor || '-'}</CardField>
-                        <div className="grid grid-cols-2 gap-2.5">
-                          <CardField label="Tgl Dokumen">{r.tanggal_dokumen || '-'}</CardField>
-                          <CardField label="Bank">{r.bank || '-'}</CardField>
-                        </div>
-                        <div className="grid grid-cols-2 gap-2.5">
-                          <CardField label="Total Bayar"><span className="font-bold font-mono text-[12px]">{formatRupiah(r.total_bayar)}</span></CardField>
-                          <CardField label="Status Proses"><StatusBadge status={r.status_proses} /></CardField>
-                        </div>
-                    </DocCard>
+                    />
                   ))}
                 </div>
               )}
