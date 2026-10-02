@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
+import PaginationFooter from './PaginationFooter'
 import { CheckCircle2, XCircle, X, Circle, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays, AlertTriangle, Save, SlidersHorizontal, RotateCcw, SquareX, UploadCloud, Pencil, GripVertical, ArrowUpDown } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { DndContext, DragOverlay, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core'
@@ -7204,44 +7205,19 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
             {/* Footer Pagination -- TETAP tampil saat Reorder Mode (sejak 2026-09-28 Reorder per
                 halaman, pageSize sementara REORDER_PAGE_SIZE). */}
             {records.length > 0 && !isCourierRecapCard && (
-              <div className="flex max-sm:flex-col justify-between items-center px-5 py-3 border-t border-slate-200 bg-slate-50 gap-3 shrink-0 relative z-20">
-                <div className="text-xs text-[#5A305A]">
-                  Showing <span className="font-semibold text-[#5A305A]">{startIndex + 1}-{Math.min(startIndex + pageSize, totalRecords)}</span> of <span className="font-semibold text-[#5A305A]">{totalRecords}</span> records
-                  {search && ` (Filter: "${search}")`}
-                </div>
-                <div className="flex items-center gap-2">
-                  {/* Rows per page (2026-10-02, permintaan user): default 10. Nonaktif selama Reorder Mode (pageSize sementara 100). */}
-                  <label className="flex items-center gap-1.5 text-xs text-[#5A305A] mr-1">
-                    Rows
-                    <select
-                      aria-label="Rows per page"
-                      value={pageSize}
-                      disabled={reorderMode}
-                      onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
-                      className="h-[30px] rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-[#5A305A] focus:outline-none cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                      {[10, 20, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
-                    </select>
-                  </label>
-                  <button 
-                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                    disabled={validPage === 1}
-                    className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[#5A305A] text-xs font-semibold hover:bg-slate-100 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
-                  >
-                    Prev
-                  </button>
-                  <span className="text-xs text-[#5A305A] font-medium min-w-[80px] text-center">
-                    Page <span className="font-bold text-[#5A305A]">{validPage}</span> of {totalPages}
-                  </span>
-                  <button 
-                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                    disabled={validPage === totalPages}
-                    className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-[#5A305A] text-xs font-semibold hover:bg-slate-100 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
+              // Rows per page default 10; nonaktif selama Reorder Mode (pageSize sementara 100). Komponen footer BERSAMA.
+              <PaginationFooter
+                start={startIndex + 1}
+                end={Math.min(startIndex + pageSize, totalRecords)}
+                total={totalRecords}
+                note={search ? ` (Filter: "${search}")` : null}
+                page={validPage}
+                totalPages={totalPages}
+                onPage={setPage}
+                pageSize={pageSize}
+                onPageSize={n => { setPageSize(n); setPage(1); }}
+                pageSizeDisabled={reorderMode}
+              />
             )}
           </div>
         </main>

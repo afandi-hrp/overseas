@@ -881,8 +881,8 @@ receipt oleh Admin, lihat di bawah); font
   pakai container query (`@2xl:` 2 kolom, `@4xl:` 1 baris 5 kolom) -> ikut LEBAR DAFTAR, bukan lebar layar (dulu `xl:`).
   Semua tombol lihat (Memo/Invoice/Handover/Recap/Audit/Docs/Cost) + "Undo receipt…" (Admin) digabung 1 menu **View ▾**
   (`ViewMenu`, portal + fixed, tutup klik luar/Escape/scroll); kolom aksi = Accept / Mark paid + View.
-  Pagination (25/hal.) = kartu putih: "Showing X–Y of N handovers" tebal + Prev/Next berbingkai + nomor halaman
-  (`pageNumbers`, 1 … p-1 p p+1 … N).
+  Daftar + pagination dalam SATU panel (2026-10-02, seperti Audit Courier): `PaginationFooter` bersama (Rows 10/25/50/100,
+  default 25, Prev / Page X of Y / Next) -- versi kartu putih + nomor halaman sebelumnya DIGANTI atas permintaan user.
 - **Undo receipt (2026-10-02, keputusan user, `sql/040_finance_undo_receive.sql` SUDAH DIJALANKAN 2026-10-02, file dihapus — git `2fefc12`)**: membatalkan
   Accept -> kembali "Waiting for Finance". HANYA **Admin** (`is_admin()`), alasan WAJIB min. 5 karakter, HANYA selama belum
   Paid; berlaku FAR / Sea & Air / Courier. RPC BARU `fn_far_overseas_finance_undo_receive(uuid,text)` (log

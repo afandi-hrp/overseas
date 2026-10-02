@@ -3,7 +3,7 @@
 // (fetchCourierRecapPage: RPC sql/037 opsi B, fallback di browser) -- BUKAN `records` tabel List.
 // Kolom yang tidak diizinkan role (getAllowedColumns 'courier_rekapan') TIDAK ditampilkan (`colOk`).
 import React, { useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import PaginationFooter from './PaginationFooter'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, Chip, Pill, PtBadge } from './SeaAirAuditUi'
 import { fmtRp, fmtRpShort, fmtDateShort, companyFullName } from '../utils/SeaAirAuditHelpers'
 import { courierDocNo, isCourierDraft } from '../utils/CourierAuditHelpers'
@@ -218,21 +218,8 @@ export const CourierRecapCardView: React.FC<{
         )}
       </div>
       {total > 0 && (
-        <div className="flex justify-between items-center px-5 py-3 border-t border-[#EADFD6] bg-white/70 gap-3 shrink-0">
-          <span className="text-[12px] text-[#6E5E70] tabular-nums">Showing <b className="text-[#3B1B3D]">{start}-{end}</b> of <b className="text-[#3B1B3D]">{total}</b> AWB</span>
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-1.5 text-[12px] text-[#6E5E70] mr-1">
-              Rows
-              <select aria-label="Rows per page" value={pageSize} onChange={e => setPageSize(Number(e.target.value))}
-                className="h-8 rounded-lg border border-[#EADFD6] bg-white px-2 text-[12px] font-semibold text-[#3B1B3D] focus:outline-none focus:border-[#6B3470] cursor-pointer">
-                {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
-            </label>
-            <button type="button" aria-label="Previous page" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1} className="p-1.5 rounded-lg border border-[#EADFD6] bg-white disabled:opacity-40"><ChevronLeft size={15} /></button>
-            <span className="text-[12px] text-[#6E5E70] tabular-nums">Page <b className="text-[#3B1B3D]">{page}</b> of {pages}</span>
-            <button type="button" aria-label="Next page" onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page >= pages} className="p-1.5 rounded-lg border border-[#EADFD6] bg-white disabled:opacity-40"><ChevronRight size={15} /></button>
-          </div>
-        </div>
+        <PaginationFooter start={start} end={end} total={total} unit="AWB" page={page} totalPages={pages} onPage={setPage}
+          pageSize={pageSize} onPageSize={setPageSize} pageSizeOptions={PAGE_SIZE_OPTIONS} />
       )}
     </div>
   )

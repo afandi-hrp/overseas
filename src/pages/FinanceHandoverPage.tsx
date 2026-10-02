@@ -10,7 +10,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import { ChevronDown, ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
+import { ChevronDown, Search, X } from 'lucide-react'
+import PaginationFooter from '../components/PaginationFooter'
 import Greeting from '../components/Greeting'
 import { LoadingState } from '../components/LoadingState'
 import { useAuth } from '../lib/AuthContext'
@@ -25,15 +26,6 @@ import {
 type StageTab = HandoverStage | 'all'
 type SourceTab = 'all' | HandoverSource
 const PAGE_SIZE = 25
-// Nomor halaman ringkas: 1 … (p-1) p (p+1) … N  (null = "…").
-const pageNumbers = (p: number, n: number): (number | null)[] => {
-  if (n <= 7) return Array.from({ length: n }, (_, i) => i + 1)
-  const set = new Set([1, n, p - 1, p, p + 1].filter(x => x >= 1 && x <= n))
-  const nums = Array.from(set).sort((a, b) => a - b)
-  const out: (number | null)[] = []
-  nums.forEach((x, i) => { if (i > 0 && x - nums[i - 1] > 1) out.push(null); out.push(x) })
-  return out
-}
 const PAGE_KEY: Record<HandoverSource, string> = { far: 'far_overseas_finance', seaair: 'sea_air_finance', courier: 'courier_finance' }
 const ROW_BG: Record<HandoverStage, string> = { waiting: 'bg-[#FFFBF2]', received: 'bg-white', paid: 'bg-[#F5FBF7]' }
 
@@ -149,6 +141,7 @@ export default function FinanceHandoverPage() {
   const [search, setSearch] = useState('')
   const [pt, setPt] = useState('All')
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(PAGE_SIZE)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
   const [receiveFor, setReceiveFor] = useState<HandoverItem | null>(null)
   const [recvName, setRecvName] = useState('')
@@ -192,7 +185,7 @@ export default function FinanceHandoverPage() {
     fetchCompanyNameMap().then(m => { if (!cancelled) setCompanyNames(m) })
     return () => { cancelled = true }
   }, [])
-  useEffect(() => { setPage(1) }, [stage, source, search, pt])
+  useEffect(() => { setPage(1) }, [stage, source, search, pt, pageSize])
 
   const today = todayIso()
   const scoped = useMemo(() => (items || []).filter(it => (source === 'all' || it.source === source) && (pt === 'All' || it.pt === pt) && matchesHandoverSearch(it, search)), [items, source, pt, search])
@@ -205,8 +198,8 @@ export default function FinanceHandoverPage() {
   const shown = useMemo(() => (stage === 'all' ? scoped : scoped.filter(it => it.stage === stage)), [scoped, stage])
   const ptOptions = useMemo(() => Array.from(new Set((items || []).filter(it => source === 'all' || it.source === source).map(it => it.pt).filter(Boolean))).sort(), [items, source])
   const totalAll = (items || []).filter(it => source === 'all' || it.source === source).length
-  const totalPages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE))
-  const pageItems = shown.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const totalPages = Math.max(1, Math.ceil(shown.length / pageSize))
+  const pageItems = shown.slice((page - 1) * pageSize, page * pageSize)
 
   const actionsEnabled = (it: HandoverItem) => canAct(it.source) && (it.source === 'far' || (it.source === 'seaair' ? seaCols : courierCols))
   const openReceive = (it: HandoverItem) => { setReceiveFor(it); setRecvName(profile?.nama || user?.email || ''); setRecvDate(today); setDialogErr(null) }
@@ -331,7 +324,9 @@ export default function FinanceHandoverPage() {
         {loadError && <div className="px-3 py-2 rounded-xl border bg-[#FDE7E4] border-[#F4C3BC] text-[#A8231A] text-[12.5px] font-semibold shrink-0">{loadError}</div>}
 
 
-        <div className="@container flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5">
+        {/* Daftar + pagination dalam 1 panel (2026-10-02, permintaan user: seperti Audit Courier). */}
+        <div className="relative isolate flex-1 flex flex-col min-h-0 overflow-hidden bg-white/40 rounded-2xl border border-[#EADFD6]/70">
+        <div className="@container flex-1 min-h-0 overflow-y-auto p-2.5 flex flex-col gap-2.5">
           {items === null ? <LoadingState /> : pageItems.length === 0 ? (
             <div className={`${SA_CARD} px-4 py-10 text-center text-[12.5px] text-[#6E5E70]`}>Nothing here for this filter.</div>
           ) : pageItems.map(it => {
@@ -388,32 +383,21 @@ export default function FinanceHandoverPage() {
           })}
         </div>
 
-        {shown.length > PAGE_SIZE && (
-          /* Pagination (2026-10-02, laporan user "kurang jelas"): kartu putih, angka tebal, tombol berbingkai + nomor halaman. */
-          <div className="flex flex-wrap items-center justify-between gap-2 shrink-0 bg-white rounded-[14px] border border-[#EADFD6] shadow-sm px-4 py-2">
-            <span className="text-[12.5px] text-[#6E5E70] tabular-nums">
-              Showing <b className="text-[#3B1B3D]">{(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, shown.length)}</b> of <b className="text-[#3B1B3D]">{shown.length}</b> handovers
-            </span>
-            <nav className="flex items-center gap-1" aria-label="Pagination">
-              <button type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage(p => p - 1)}
-                className="h-8 px-2.5 inline-flex items-center gap-1 rounded-lg border border-[#EADFD6] bg-white text-[12px] font-semibold text-[#3B1B3D] hover:bg-[#F6EFEA] disabled:opacity-40 disabled:hover:bg-white">
-                <ChevronLeft size={14} /> Prev
-              </button>
-              {pageNumbers(page, totalPages).map((n, i) => n === null ? (
-                <span key={`gap-${i}`} className="px-1 text-[12px] text-[#8A7A8B]">…</span>
-              ) : (
-                <button key={n} type="button" aria-label={`Page ${n}`} aria-current={n === page ? 'page' : undefined} onClick={() => setPage(n)}
-                  className={`h-8 min-w-[32px] px-2 rounded-lg text-[12px] font-bold tabular-nums ${n === page ? 'bg-[#3B1B3D] text-white' : 'border border-[#EADFD6] bg-white text-[#3B1B3D] hover:bg-[#F6EFEA]'}`}>
-                  {n}
-                </button>
-              ))}
-              <button type="button" aria-label="Next page" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}
-                className="h-8 px-2.5 inline-flex items-center gap-1 rounded-lg border border-[#EADFD6] bg-white text-[12px] font-semibold text-[#3B1B3D] hover:bg-[#F6EFEA] disabled:opacity-40 disabled:hover:bg-white">
-                Next <ChevronRight size={14} />
-              </button>
-            </nav>
-          </div>
+        {shown.length > 0 && (
+          <PaginationFooter
+            start={(page - 1) * pageSize + 1}
+            end={Math.min(page * pageSize, shown.length)}
+            total={shown.length}
+            unit="handovers"
+            page={page}
+            totalPages={totalPages}
+            onPage={setPage}
+            pageSize={pageSize}
+            onPageSize={setPageSize}
+            pageSizeOptions={[10, 25, 50, 100]}
+          />
         )}
+        </div>
       </main>
 
       {receiveFor && (
