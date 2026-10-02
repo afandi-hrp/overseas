@@ -25,6 +25,15 @@ import {
 type StageTab = HandoverStage | 'all'
 type SourceTab = 'all' | HandoverSource
 const PAGE_SIZE = 25
+// Nomor halaman ringkas: 1 … (p-1) p (p+1) … N  (null = "…").
+const pageNumbers = (p: number, n: number): (number | null)[] => {
+  if (n <= 7) return Array.from({ length: n }, (_, i) => i + 1)
+  const set = new Set([1, n, p - 1, p, p + 1].filter(x => x >= 1 && x <= n))
+  const nums = Array.from(set).sort((a, b) => a - b)
+  const out: (number | null)[] = []
+  nums.forEach((x, i) => { if (i > 0 && x - nums[i - 1] > 1) out.push(null); out.push(x) })
+  return out
+}
 const PAGE_KEY: Record<HandoverSource, string> = { far: 'far_overseas_finance', seaair: 'sea_air_finance', courier: 'courier_finance' }
 const ROW_BG: Record<HandoverStage, string> = { waiting: 'bg-[#FFFBF2]', received: 'bg-white', paid: 'bg-[#F5FBF7]' }
 
@@ -384,13 +393,29 @@ export default function FinanceHandoverPage() {
         </div>
 
         {shown.length > PAGE_SIZE && (
-          <div className="flex items-center justify-between gap-2 text-[12px] text-[#6E5E70] shrink-0">
-            <span>Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, shown.length)} of {shown.length}</span>
-            <div className="flex items-center gap-1">
-              <button type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="p-1.5 rounded-lg hover:bg-white disabled:opacity-40"><ChevronLeft size={15} /></button>
-              <span className="tabular-nums">{page} / {totalPages}</span>
-              <button type="button" aria-label="Next page" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)} className="p-1.5 rounded-lg hover:bg-white disabled:opacity-40"><ChevronRight size={15} /></button>
-            </div>
+          /* Pagination (2026-10-02, laporan user "kurang jelas"): kartu putih, angka tebal, tombol berbingkai + nomor halaman. */
+          <div className="flex flex-wrap items-center justify-between gap-2 shrink-0 bg-white rounded-[14px] border border-[#EADFD6] shadow-sm px-4 py-2">
+            <span className="text-[12.5px] text-[#6E5E70] tabular-nums">
+              Showing <b className="text-[#3B1B3D]">{(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, shown.length)}</b> of <b className="text-[#3B1B3D]">{shown.length}</b> handovers
+            </span>
+            <nav className="flex items-center gap-1" aria-label="Pagination">
+              <button type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage(p => p - 1)}
+                className="h-8 px-2.5 inline-flex items-center gap-1 rounded-lg border border-[#EADFD6] bg-white text-[12px] font-semibold text-[#3B1B3D] hover:bg-[#F6EFEA] disabled:opacity-40 disabled:hover:bg-white">
+                <ChevronLeft size={14} /> Prev
+              </button>
+              {pageNumbers(page, totalPages).map((n, i) => n === null ? (
+                <span key={`gap-${i}`} className="px-1 text-[12px] text-[#8A7A8B]">…</span>
+              ) : (
+                <button key={n} type="button" aria-label={`Page ${n}`} aria-current={n === page ? 'page' : undefined} onClick={() => setPage(n)}
+                  className={`h-8 min-w-[32px] px-2 rounded-lg text-[12px] font-bold tabular-nums ${n === page ? 'bg-[#3B1B3D] text-white' : 'border border-[#EADFD6] bg-white text-[#3B1B3D] hover:bg-[#F6EFEA]'}`}>
+                  {n}
+                </button>
+              ))}
+              <button type="button" aria-label="Next page" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}
+                className="h-8 px-2.5 inline-flex items-center gap-1 rounded-lg border border-[#EADFD6] bg-white text-[12px] font-semibold text-[#3B1B3D] hover:bg-[#F6EFEA] disabled:opacity-40 disabled:hover:bg-white">
+                Next <ChevronRight size={14} />
+              </button>
+            </nav>
           </div>
         )}
       </main>
