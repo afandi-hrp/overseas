@@ -523,6 +523,24 @@ Courier. Tab tetap Draft/PIB/CN (tanpa "All"). Fitur tabel lama tetap di mode Li
 - Saran urutan bila disetujui: (1) Audit Courier tampilan, (2) Rekapan Courier tampilan, (3) relasi &
   sumber Courier di Finance Handover. Pertanyaan keputusan dicatat di jawaban sesi.
 
+## Rombak Invoice Recap Courier — keputusan user (2026-10-02, BELUM DIKERJAKAN)
+
+Menunggu hasil `sql/036_courier_recap_inspeksi_READONLY.sql` (baca saja) + jawaban sisa pertanyaan. JANGAN tulis
+CREATE FUNCTION/TRIGGER/TABLE sebelum hasil inspeksi ada. Keputusan:
+1. **1 kartu = 1 AWB** (AWB dinormalisasi tanpa prefix carrier), invoice Freight / Duty / Credit Note = tab di kartu/jendela.
+2. Pagination **opsi B** = view/RPC kelompok per AWB di DB (SQL).
+3. Tab per-PPJK hanya menampilkan invoice PPJK itu; "All PPJK" lengkap.
+4. Urutan kartu = tanggal email diterima terbaru per AWB; drag `sort_order` tetap hanya di mode List.
+5. Isi kartu: AWB, PPJK, A/N, origin, berat, PO +N / vessel, total semua invoice, chip status, titik validasi, Open.
+6. Credit Note ditampilkan TERPISAH + tetap ada total akhir = Freight + Duty − CN.
+7. Breakdown per vessel: per invoice di tab Invoices + ringkasan "Split per vessel" di Overview (pola "Split per PO").
+8. **Edit tetap lewat tabel List** (tanpa form Edit baru); setelah save, kartu ikut ter-update.
+9. Submit to Finance **per invoice + tombol "Submit all" per AWB**; **tanpa syarat** (bebas) & **tanpa kunci**.
+10. Finance Handover sumber Courier: payee = nama PPJK, due date/TOP dari **master vendor baru**, Mark paid = kolom
+    `tgl_lunas` yang sudah ada.
+11. Tombol **Validation juga ada di kartu Invoice Recap** (selain di Audit).
+12. Mode List = tampilan lama (pola Sea & Air & Audit Courier). Badge sidebar "needs attention" diputuskan terpisah.
+
 ## BACKLOG — Audit PIB Sea & Air, tahap berikutnya (dicatat 2026-09-30) — RIWAYAT, lihat "STATUS & SISA PEKERJAAN" di atas
 
 **DITAHAN (keputusan user 2026-10-01)** — backlog ini BELUM dikerjakan krn berkaitan dgn redesain
