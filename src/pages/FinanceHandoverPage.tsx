@@ -267,7 +267,6 @@ export default function FinanceHandoverPage() {
       <header className="px-3 pt-1 pb-1 shrink-0">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <div className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-[#8E4F93]">Finance</div>
             <h1 className="font-bold text-2xl text-[#3B1B3D] leading-tight">Finance Handover</h1>
             <p className="text-[#6E5E70] text-[12.5px] mt-0.5">
               {isFinance
@@ -331,9 +330,6 @@ export default function FinanceHandoverPage() {
         )}
         {loadError && <div className="px-3 py-2 rounded-xl border bg-[#FDE7E4] border-[#F4C3BC] text-[#A8231A] text-[12.5px] font-semibold shrink-0">{loadError}</div>}
 
-        <div className="text-[12px] font-semibold text-[#6E5E70] shrink-0">
-          {items === null ? 'Loading…' : `${shown.length} of ${totalAll} handovers · ${fmtRp(shown.reduce((a, it) => a + it.amountIdr, 0))}`}
-        </div>
 
         <div className="@container flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5">
           {items === null ? <LoadingState /> : pageItems.length === 0 ? (
