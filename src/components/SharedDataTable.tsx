@@ -5713,7 +5713,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
   // `outline` = gaya outline hijau (Courier Audit/Invoice Recap, supaya tidak bersaing dgn Add
   // Data yg jadi satu-satunya tombol solid). Tab lain tetap hijau solid lama.
-  const renderExportBtn = (outline: boolean) => (
+  // `compact` (2026-10-02): ukuran kontrol panel filter kartu (h-9, rounded-xl) -- dipakai panel filter Audit Courier.
+  const renderExportBtn = (outline: boolean, compact = false) => (
     <button
       onClick={() => {
         const title = (activeMainTab === 'courier' && activeSubTab === 'courier_audit')
@@ -5743,7 +5744,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       }}
       disabled={reorderMode}
       title={reorderMode ? 'Selesaikan Reorder dulu' : undefined}
-      className={`px-3 py-2 rounded-full text-xs font-semibold border transition-all h-[38px] flex justify-center items-center gap-1.5 shadow-sm shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
+      className={`px-3 ${compact ? 'h-9 rounded-xl' : 'py-2 rounded-full h-[38px] shadow-sm'} text-xs font-semibold border transition-all flex justify-center items-center gap-1.5 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
         outline ? 'bg-white text-emerald-700 border-emerald-500 hover:bg-emerald-50' : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700'
       }`}
     >
@@ -6092,8 +6093,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
         
         {isCourierAuditView ? (
-        /* Header Audit Courier (2026-10-01): eyebrow + judul; mode Card + Export/Add manually
-           (mode List: Export/Add Data tetap di toolbar lama). */
+        /* Header Audit Courier (2026-10-01): eyebrow + judul. Export & "+ Add manually" mode Card DIPINDAH ke panel
+           filter (2026-10-02, permintaan user); mode List: Export/Add Data tetap di toolbar lama. */
         <header className="px-3 pt-1 pb-1 shrink-0">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
@@ -6101,16 +6102,6 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
               <h1 className="font-bold text-2xl text-[#3B1B3D] leading-tight">PIB &amp; CN Audit</h1>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
-              {courierAuditView === 'card' && renderExportBtn(true)}
-              {courierAuditView === 'card' && canEdit('courier_audit') && (
-                <button
-                  type="button"
-                  onClick={() => setCourierEditState({ record: null, docType: courierAuditType === 'cn' ? 'CN' : 'PIB' })}
-                  className="px-4 h-[38px] rounded-full bg-[#6B3470] hover:bg-[#5A2A5E] text-white text-xs font-semibold shadow-sm transition-colors shrink-0"
-                >
-                  + Add manually
-                </button>
-              )}
               <Greeting />
             </div>
           </div>
@@ -6271,7 +6262,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                    Search, PPJK date, Company, Card/List, Refresh). State filter SAMA toolbar lama. */
                 <div className="flex flex-col gap-3">
                   <CourierAuditKpiCards summary={courierSummary} loading={courierSummaryLoading} validationIncomplete={courierValidationIncomplete} colOk={courierColOk} />
-                  <div className="bg-white rounded-[14px] border border-[#EADFD6] shadow-sm px-3 py-2.5 flex flex-nowrap items-center gap-2.5 overflow-x-auto">
+                  <div className="bg-white rounded-[14px] border border-[#EADFD6] shadow-sm px-3 py-2.5 flex flex-wrap items-center gap-2.5">
                     <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[#F5EDF3] shrink-0">
                       {([
                         { id: 'archive', label: 'Draft', count: courierSummary?.draft },
@@ -6355,6 +6346,21 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                     >
                       <RefreshCw size={14} />
                     </button>
+                    {/* Export & Add manually (2026-10-02: dipindah dari header ke panel filter, permintaan user). Panel ini
+                        `flex-wrap` (BUKAN nowrap + scroll): di laptop 14" (zoom 90%) kelompok tombol turun ke baris
+                        kedua rata kanan -- dulu terdorong keluar layar & tidak terlihat (laporan user). */}
+                    <div className="ml-auto flex items-center gap-2.5 shrink-0">
+                      {renderExportBtn(true, true)}
+                      {canEdit('courier_audit') && (
+                        <button
+                          type="button"
+                          onClick={() => setCourierEditState({ record: null, docType: courierAuditType === 'cn' ? 'CN' : 'PIB' })}
+                          className="px-4 h-9 rounded-xl bg-[#6B3470] hover:bg-[#5A2A5E] text-white text-xs font-semibold shadow-sm transition-colors shrink-0 whitespace-nowrap"
+                        >
+                          + Add manually
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ) : isCourierToolbar ? (
