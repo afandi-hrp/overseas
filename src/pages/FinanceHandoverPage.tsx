@@ -19,7 +19,7 @@ import { FarHandoverViewer, SeaAirHandoverViewer, CourierHandoverViewer, type Vi
 import { fmtRp, fmtDateShort, fetchCompanyNameMap, companyFullName } from '../utils/SeaAirAuditHelpers'
 import {
   fetchFarHandovers, fetchSeaAirHandovers, fetchCourierHandovers, probeSeaAirFinanceColumns, probeCourierFinanceColumns, sortHandovers, matchesHandoverSearch, isOverdue,
-  receiveHandover, markHandoverPaid, todayIso, type HandoverItem, type HandoverSource, type HandoverStage,
+  receiveHandover, undoReceiveHandover, markHandoverPaid, todayIso, type HandoverItem, type HandoverSource, type HandoverStage,
 } from '../utils/FinanceHandoverHelpers'
 
 type StageTab = HandoverStage | 'all'
@@ -97,6 +97,8 @@ export default function FinanceHandoverPage() {
   const [payFor, setPayFor] = useState<HandoverItem | null>(null)
   const [payDate, setPayDate] = useState('')
   const [payRef, setPayRef] = useState('')
+  const [undoFor, setUndoFor] = useState<HandoverItem | null>(null)
+  const [undoReason, setUndoReason] = useState('')
   const [dialogErr, setDialogErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [viewer, setViewer] = useState<{ it: HandoverItem; tab: ViewerTab } | null>(null)
@@ -170,6 +172,20 @@ export default function FinanceHandoverPage() {
     if (error) { setDialogErr(error.message || 'Failed to mark as paid.'); return }
     showToast(`${payFor.ref} marked as paid.`)
     setPayFor(null)
+    load()
+  }
+
+  // Undo Accept (sql/040): Admin saja, alasan wajib, hanya status Received · unpaid.
+  const openUndo = (it: HandoverItem) => { setUndoFor(it); setUndoReason(''); setDialogErr(null) }
+  const submitUndo = async () => {
+    if (!undoFor) return
+    if (undoReason.trim().length < 5) { setDialogErr('Fill in the reason (min. 5 characters).'); return }
+    setBusy(true)
+    const { error } = await undoReceiveHandover(undoFor, undoReason.trim())
+    setBusy(false)
+    if (error) { setDialogErr(error.message || 'Failed to undo the receipt.'); return }
+    showToast(`${undoFor.ref} receipt undone.`)
+    setUndoFor(null)
     load()
   }
 
@@ -304,6 +320,9 @@ export default function FinanceHandoverPage() {
                   <div className="flex flex-wrap xl:justify-end gap-1.5">
                     {act && it.stage === 'waiting' && <button type="button" className={`${SA_BTN_PRIMARY} h-8`} onClick={() => openReceive(it)}>Accept</button>}
                     {act && it.stage === 'received' && <button type="button" className={`${SA_BTN_GREEN} h-8`} onClick={() => openPay(it)}>Mark paid</button>}
+                    {isAdmin && actionsEnabled(it) && it.stage === 'received' && (
+                      <button type="button" title="Admin: cancel this receipt (back to Waiting for Finance)" className={`${SA_BTN_OUTLINE} h-8`} onClick={() => openUndo(it)}>Undo receipt</button>
+                    )}
                     {lockedViews ? (
                       <span className="px-2.5 h-8 inline-flex items-center rounded-lg bg-[#F3EEEA] text-[#8A7A8B] text-[11.5px] font-bold" title="Accept the handover first to open its memo, documents and cost validation">Accept to view</span>
                     ) : it.source === 'far' ? (
@@ -369,6 +388,24 @@ export default function FinanceHandoverPage() {
           <div className="flex justify-end gap-2">
             <button type="button" className={SA_BTN_OUTLINE} onClick={() => setPayFor(null)}>Cancel</button>
             <button type="button" className={SA_BTN_GREEN} disabled={busy} onClick={submitPay}>{busy ? 'Saving…' : 'Confirm'}</button>
+          </div>
+        </Dialog>
+      )}
+
+      {undoFor && (
+        <Dialog title="Undo receipt" onClose={() => setUndoFor(null)}>
+          <div className="text-[13px] font-bold text-[#3B1B3D]">{undoFor.ref}</div>
+          <div className="text-[12px] text-[#6E5E70] mb-3">
+            Received {undoFor.receivedDate ? fmtDateShort(undoFor.receivedDate) : ''}{undoFor.receivedBy ? ` by ${undoFor.receivedBy}` : ''} — the handover goes back to <b>Waiting for Finance</b>. Only possible before it is marked as paid; the reason is recorded in the log.
+          </div>
+          <label className="flex flex-col gap-1 mb-3">
+            <span className="text-[11.5px] font-semibold text-[#3B1B3D]">Reason</span>
+            <textarea aria-label="Undo reason" rows={3} value={undoReason} onChange={e => setUndoReason(e.target.value)} placeholder="Why is this receipt cancelled? (min. 5 characters)" className={`${SA_INPUT} h-auto py-2`} />
+          </label>
+          {dialogErr && <div className="mb-3 text-[12px] font-semibold text-[#A8231A]">{dialogErr}</div>}
+          <div className="flex justify-end gap-2">
+            <button type="button" className={SA_BTN_OUTLINE} onClick={() => setUndoFor(null)}>Cancel</button>
+            <button type="button" className={SA_BTN_PRIMARY} disabled={busy || undoReason.trim().length < 5} onClick={submitUndo}>{busy ? 'Saving…' : 'Undo receipt'}</button>
           </div>
         </Dialog>
       )}

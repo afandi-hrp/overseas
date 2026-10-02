@@ -276,6 +276,12 @@ export async function receiveHandover(it: HandoverItem, receiverName: string, re
   if (it.source === 'courier') return supabase.rpc('fn_courier_finance_accept', { p_id: it.id, p_receiver_name: receiverName, p_received_date: receivedDate })
   return supabase.rpc('fn_seaair_finance_accept', { p_rekapan_id: it.id, p_receiver_name: receiverName, p_received_date: receivedDate })
 }
+// Undo "Accept" (sql/040, 2026-10-02): HANYA Admin, alasan min. 5 karakter, hanya selama belum Paid (DB menegakkan).
+export async function undoReceiveHandover(it: HandoverItem, reason: string) {
+  if (it.source === 'far') return supabase.rpc('fn_far_overseas_finance_undo_receive', { p_id: it.id, p_reason: reason })
+  if (it.source === 'courier') return supabase.rpc('fn_courier_finance_undo_receive', { p_id: it.id, p_reason: reason })
+  return supabase.rpc('fn_seaair_finance_undo_receive', { p_rekapan_id: it.id, p_reason: reason })
+}
 export async function markHandoverPaid(it: HandoverItem, paidDate: string, reference: string | null) {
   if (it.source === 'far') return supabase.rpc('fn_far_overseas_mark_paid', { p_id: it.id, p_paid_date: paidDate, p_proof_path: null, p_reference: reference })
   if (it.source === 'courier') return supabase.rpc('fn_courier_finance_mark_paid', { p_id: it.id, p_paid_date: paidDate, p_reference: reference })

@@ -83,7 +83,7 @@ function Banner({ tone, icon, children, action }: { tone: 'red' | 'amber' | 'gre
 
 const LOG_ACTION_LABEL: Record<string, string> = {
   UPLOAD: 'Uploaded', EDIT: 'Edited', SIGN: 'Signed', UNDO_SIGN: 'Undid last sign', REJECT: 'Rejected',
-  CONFIRM_AI: 'Confirmed AI finding', REMIND: 'Reminder', FINANCE_ACCEPT: 'Received by Finance', PAID: 'Paid',
+  CONFIRM_AI: 'Confirmed AI finding', REMIND: 'Reminder', FINANCE_ACCEPT: 'Received by Finance', FINANCE_UNDO_RECEIVE: 'Finance receipt undone', PAID: 'Paid',
 };
 function describeLog(e: MemoLogEntry): string {
   if (e.action === 'EDIT') return `${e.field}: ${e.old_value ?? '—'} → ${e.new_value ?? '—'}`;

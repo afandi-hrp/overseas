@@ -502,7 +502,8 @@ user di production** (testing bagian 2 + Finance Handover dijadwalkan user bersa
 4. Master vendor Sea & Air: nama legal & TOP WAJIB diisi user (selama kosong tampil kode + tanda); hanya
    kode PPJK (`emkl_vendor`); kolom `aktif` belum dipakai saat pencocokan; tanpa tombol hapus.
 5. Viewer FAR berganti modal antar tab -> ukuran dialog berubah (kosmetik).
-6. (Dibatalkan, keputusan user) upload bukti transfer & Undo — TIDAK dibuat.
+6. (Dibatalkan, keputusan user) upload bukti transfer — TIDAK dibuat. **Undo Accept DIBUAT 2026-10-02** (keputusan user
+   berubah, sql/040 BELUM DIJALANKAN) — lihat "Undo receipt" di bagian Finance Handover gabungan.
 7. Courier: ~~viewer hanya dialog 1 invoice~~ — 2026-10-02 viewer = jendela Validation BACA SAJA (lihat "Finance melihat
    validasi Courier"); master vendor Courier (nama legal + TOP) WAJIB diisi user; page_key `courier_finance`/
    `settings_courier_vendors` WAJIB di-assign ke role.
@@ -842,7 +843,8 @@ Spek user ("Finance Handover", BeeHive) — 1 inbox pengganti tanda terima kerta
 1 halaman gabungan (menu sidebar sendiri "Finance Handover", ikon `Wallet`; tab FAR & submenu Sea & Air
 lama dihapus/diarahkan); TANPA switch "View as" (peran = hak akses: EDIT page_key sumber = Finance, selain
 itu view only + catatan Exim); nama lengkap PPJK + TOP dari **master vendor Sea & Air baru**; **TANPA upload
-bukti transfer** (FAR & Sea & Air; Mark paid = tanggal + referensi bank opsional); **TANPA Undo**; font
+bukti transfer** (FAR & Sea & Air; Mark paid = tanggal + referensi bank opsional); ~~TANPA Undo~~ (DIUBAH 2026-10-02: Undo
+receipt oleh Admin, lihat di bawah); font
 **Sora** (bukan Plus Jakarta Sans spek); chip **Urgent** FAR = kolom + toggle di Edit memo.
 
 - **File**: `src/pages/FinanceHandoverPage.tsx`, `src/utils/FinanceHandoverHelpers.ts` (SATU sumber
@@ -873,6 +875,14 @@ bukti transfer** (FAR & Sea & Air; Mark paid = tanggal + referensi bank opsional
   `cost_validasi_seaair`, `cost_validasi_catatan_seaair`, `tabel_audit_seaair` (catatan: tabel Audit PIB
   berisi angka duty — tersembunyi di UI, tapi bisa dibaca role Finance lewat API).
   Sea & Air Receive menyimpan `finance_received_by` = nama yg diketik, `finance_received_at` = tanggal terima.
+- **Undo receipt (2026-10-02, keputusan user, `sql/040_finance_undo_receive.sql` BELUM DIJALANKAN)**: membatalkan
+  Accept -> kembali "Waiting for Finance". HANYA **Admin** (`is_admin()`), alasan WAJIB min. 5 karakter, HANYA selama belum
+  Paid; berlaku FAR / Sea & Air / Courier. RPC BARU `fn_far_overseas_finance_undo_receive(uuid,text)` (log
+  `far_overseas_memo_log` action `FINANCE_UNDO_RECEIVE`), `fn_seaair_finance_undo_receive(uuid,text)` (flag `app.seaair_unlock`
+  lolos kunci 031, audit_trail), `fn_courier_finance_undo_receive(uuid,text)` (kunci 038 mengizinkan kolom Finance,
+  audit_trail) -- catatan "Finance received (undo) — Lama: <tgl> · by <nama> → Baru: - · reason: …". Setelah undo, Unlock
+  Admin (Sea & Air/Courier) & Undo sign FAR kembali mungkin. UI: tombol "Undo receipt" di baris Finance Handover status
+  Received · unpaid (Admin saja) -> dialog alasan (`undoReceiveHandover`). Uji: PGlite 19 cek, jsdom courier_recap 58.
 - **Urgent FAR**: toggle di Edit memo (section due date), tampil hanya kalau kolom ada; bisa diubah walau memo
   terkunci, selama belum Paid; disimpan di `saveRowEdits` lewat RPC `fn_far_overseas_set_urgent` (BUKAN whitelist
   `update_rekapan_far_overseas_manual`; `setVal` mengizinkan field ini khusus). Chip "Urgent" di kartu memo FAR &
@@ -1039,7 +1049,8 @@ Supabase** — bisa saja sudah basi (RPC lain ditambahkan user langsung tanpa te
   `fn_seaair_recap_issue_count` (+ 6 fungsi trigger `fn_seaair_*`). Finance Handover (sql/034, SUDAH
   DIJALANKAN 2026-10-01): `fn_seaair_finance_accept`, `fn_seaair_finance_mark_paid`. **sql/035 (SUDAH DIJALANKAN 2026-10-01)**:
   `fn_seaair_finance_accept(uuid, text, date)` (signature BARU: nama + tanggal terima; versi 1-arg DI-DROP),
-  `fn_seaair_finance_mark_paid` referensi opsional, `fn_seaair_finance_undo` DI-DROP (tanpa Undo, keputusan
+  `fn_seaair_finance_mark_paid` referensi opsional, `fn_seaair_finance_undo` DI-DROP (diganti 2026-10-02 oleh
+  `fn_*_finance_undo_receive` sql/040, Admin saja; keputusan
   user), FAR `fn_far_overseas_set_urgent(uuid, boolean)` BARU, `fn_far_overseas_mark_paid` bukti bayar opsional.
 - Courier review cost & kunci Submit (sql/038, SUDAH DIJALANKAN 2026-10-02): `fn_courier_unlock_submit(uuid, text)` (+ trigger
   `fn_courier_recap_lock`); tabel `cost_validasi_review_courier`.
