@@ -10,7 +10,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
 import Greeting from '../components/Greeting'
 import { LoadingState } from '../components/LoadingState'
 import { useAuth } from '../lib/AuthContext'
@@ -52,6 +52,56 @@ function Timeline({ it }: { it: HandoverItem }) {
         )
       })}
     </div>
+  )
+}
+
+// Menu "View ▾" (2026-10-02, laporan user: di laptop 14" tombol baris turun ke bawah). Semua tombol lihat
+// (Memo/Invoice/Handover/Recap/Audit/Docs/Cost) + "Undo receipt" (Admin) digabung 1 menu -> kolom aksi ramping.
+// Portal + posisi fixed supaya tidak terpotong area scroll daftar.
+type MenuItem = { label: string; onClick: () => void; danger?: boolean }
+function ViewMenu({ items }: { items: MenuItem[] }) {
+  const [pos, setPos] = useState<{ top: number; left: number; up: boolean } | null>(null)
+  const btnRef = React.useRef<HTMLButtonElement | null>(null)
+  useEffect(() => {
+    if (!pos) return
+    const close = (e: Event) => {
+      if (e instanceof KeyboardEvent && e.key !== 'Escape') return
+      if (e.type === 'mousedown' && (e.target as HTMLElement)?.closest?.('[data-view-menu]')) return
+      setPos(null)
+    }
+    window.addEventListener('mousedown', close)
+    window.addEventListener('keydown', close)
+    window.addEventListener('scroll', close, true)
+    return () => { window.removeEventListener('mousedown', close); window.removeEventListener('keydown', close); window.removeEventListener('scroll', close, true) }
+  }, [pos])
+  const toggle = () => {
+    if (pos) { setPos(null); return }
+    const r = btnRef.current!.getBoundingClientRect()
+    const up = window.innerHeight - r.bottom < 40 + items.length * 34
+    setPos({ top: up ? r.top : r.bottom, left: r.right, up })
+  }
+  return (
+    <>
+      <button ref={btnRef} type="button" data-view-menu aria-haspopup="menu" aria-expanded={!!pos} onClick={toggle}
+        className="px-3 h-8 rounded-lg bg-[#F5EDF3] hover:bg-[#EFE2EC] text-[#3B1B3D] text-[11.5px] font-bold inline-flex items-center gap-1">
+        View <ChevronDown size={13} className={pos ? 'rotate-180 transition-transform' : 'transition-transform'} />
+      </button>
+      {pos && createPortal(
+        <div data-view-menu role="menu" className="fixed z-[80] min-w-[170px] bg-white rounded-xl border border-[#EADFD6] shadow-xl py-1"
+          style={{ left: pos.left, top: pos.top, transform: `translate(-100%, ${pos.up ? 'calc(-100% - 4px)' : '4px'})` }}>
+          {items.map((m, i) => (
+            <React.Fragment key={m.label}>
+              {m.danger && i > 0 && <div className="my-1 border-t border-[#F1E8E1]" />}
+              <button type="button" role="menuitem" onClick={() => { setPos(null); m.onClick() }}
+                className={`w-full text-left px-3 py-2 text-[12.5px] font-semibold hover:bg-[#F6EFEA] ${m.danger ? 'text-[#A8231A]' : 'text-[#3B1B3D]'}`}>
+                {m.label}
+              </button>
+            </React.Fragment>
+          ))}
+        </div>,
+        document.body
+      )}
+    </>
   )
 }
 
@@ -276,18 +326,21 @@ export default function FinanceHandoverPage() {
           {items === null ? 'Loading…' : `${shown.length} of ${totalAll} handovers · ${fmtRp(shown.reduce((a, it) => a + it.amountIdr, 0))}`}
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5">
+        <div className="@container flex-1 min-h-0 overflow-y-auto flex flex-col gap-2.5">
           {items === null ? <LoadingState /> : pageItems.length === 0 ? (
             <div className={`${SA_CARD} px-4 py-10 text-center text-[12.5px] text-[#6E5E70]`}>Nothing here for this filter.</div>
           ) : pageItems.map(it => {
             const overdue = isOverdue(it, today)
             const act = actionsEnabled(it)
             const lockedViews = act && it.stage === 'waiting'
-            const viewBtn = (tab: ViewerTab, label: string) => (
-              <button type="button" className="px-2.5 h-8 rounded-lg bg-[#F5EDF3] hover:bg-[#EFE2EC] text-[#3B1B3D] text-[11.5px] font-bold" onClick={() => setViewer({ it, tab })}>{label}</button>
-            )
+            const v = (tab: ViewerTab, label: string): MenuItem => ({ label, onClick: () => setViewer({ it, tab }) })
+            const viewItems: MenuItem[] = lockedViews ? [] : it.source === 'far' ? [v('main', 'Memo'), v('docs', 'Documents'), v('cost', 'Cost validation')]
+              : it.source === 'courier' ? [v('main', 'Invoice'), v('audit', 'Audit'), v('docs', 'Documents'), v('cost', 'Cost validation')]
+              : it.earlier ? [v('main', 'Handover'), v('recap', 'Invoice Recap'), ...(it.raw?.seaair_id ? [v('audit', 'Audit')] : [])]
+              : [v('main', 'Handover'), v('recap', 'Invoice Recap'), v('audit', 'Audit'), v('docs', 'Documents'), v('cost', 'Cost validation')]
+            if (isAdmin && act && it.stage === 'received') viewItems.push({ label: 'Undo receipt…', onClick: () => openUndo(it), danger: true })
             return (
-              <div key={it.key} className={`rounded-[14px] border border-[#EADFD6] ${ROW_BG[it.stage]} grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1.3fr)_170px_minmax(0,1.3fr)_auto] gap-x-4 gap-y-3 px-4 py-3 items-center`}>
+              <div key={it.key} className={`rounded-[14px] border border-[#EADFD6] ${ROW_BG[it.stage]} grid grid-cols-1 @2xl:grid-cols-2 @4xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(120px,150px)_minmax(0,1.25fr)_auto] gap-x-4 gap-y-3 px-4 py-3 items-center`}>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Chip tone={it.source === 'far' ? 'plum' : it.source === 'courier' ? 'amber' : 'blue'}>{it.source === 'far' ? 'FAR Overseas' : it.source === 'courier' ? 'Courier' : 'Sea & Air'}</Chip>
@@ -304,7 +357,7 @@ export default function FinanceHandoverPage() {
                   {it.payeeIsCode && <div className="text-[10.5px] text-[#7A4F00]" title={`Fill in the full legal name in Settings › ${it.source === 'courier' ? 'Courier' : 'Sea & Air'} Vendors`}>Full PPJK name not set (code shown)</div>}
                   <div className="text-[11px] text-[#6E5E70] truncate" title={it.payeeLine}>{it.payeeLine}</div>
                 </div>
-                <div className="xl:text-right min-w-0">
+                <div className="@4xl:text-right min-w-0">
                   <div className="text-[15px] font-bold text-[#3B1B3D] tabular-nums">{it.amountOriginal || fmtRp(it.amountIdr)}</div>
                   {it.amountOriginal && <div className="text-[10.5px] text-[#6E5E70] tabular-nums">≈ {fmtRp(it.amountIdr)}</div>}
                   <div className={`text-[11px] font-semibold ${it.stage === 'paid' ? 'text-[#17663D]' : overdue ? 'text-[#A8231A]' : 'text-[#3B1B3D]'}`}>
@@ -313,27 +366,16 @@ export default function FinanceHandoverPage() {
                   </div>
                 </div>
                 <Timeline it={it} />
-                <div className="flex flex-col items-start xl:items-end gap-1.5 min-w-[150px]">
+                <div className="flex flex-col items-start @4xl:items-end gap-1.5">
                   {it.stage === 'paid'
                     ? <Pill tone="green" title={it.paidReference ? `Bank reference ${it.paidReference}` : undefined}>✓ Paid{it.paidReference ? ` · ${it.paidReference}` : ''}</Pill>
                     : !act && <Pill tone={it.stage === 'waiting' ? 'amber' : overdue ? 'red' : 'grey'}>{it.stage === 'waiting' ? 'Waiting for Finance' : overdue ? 'Unpaid · overdue' : 'Unpaid'}</Pill>}
-                  <div className="flex flex-wrap xl:justify-end gap-1.5">
+                  <div className="flex flex-nowrap @4xl:justify-end gap-1.5">
                     {act && it.stage === 'waiting' && <button type="button" className={`${SA_BTN_PRIMARY} h-8`} onClick={() => openReceive(it)}>Accept</button>}
-                    {act && it.stage === 'received' && <button type="button" className={`${SA_BTN_GREEN} h-8`} onClick={() => openPay(it)}>Mark paid</button>}
-                    {isAdmin && actionsEnabled(it) && it.stage === 'received' && (
-                      <button type="button" title="Admin: cancel this receipt (back to Waiting for Finance)" className={`${SA_BTN_OUTLINE} h-8`} onClick={() => openUndo(it)}>Undo receipt</button>
-                    )}
+                    {act && it.stage === 'received' && <button type="button" className={`${SA_BTN_GREEN} h-8 whitespace-nowrap`} onClick={() => openPay(it)}>Mark paid</button>}
                     {lockedViews ? (
-                      <span className="px-2.5 h-8 inline-flex items-center rounded-lg bg-[#F3EEEA] text-[#8A7A8B] text-[11.5px] font-bold" title="Accept the handover first to open its memo, documents and cost validation">Accept to view</span>
-                    ) : it.source === 'far' ? (
-                      <>{viewBtn('main', 'Memo')}{viewBtn('docs', 'Docs')}{viewBtn('cost', 'Cost')}</>
-                    ) : it.source === 'courier' ? (
-                      <>{viewBtn('main', 'Invoice')}{viewBtn('audit', 'Audit')}{viewBtn('docs', 'Docs')}{viewBtn('cost', 'Cost')}</>
-                    ) : it.earlier ? (
-                      <>{viewBtn('main', 'Handover')}{viewBtn('recap', 'Recap')}{it.raw?.seaair_id ? viewBtn('audit', 'Audit') : null}</>
-                    ) : (
-                      <>{viewBtn('main', 'Handover')}{viewBtn('recap', 'Recap')}{viewBtn('audit', 'Audit')}{viewBtn('docs', 'Docs')}{viewBtn('cost', 'Cost')}</>
-                    )}
+                      <span className="px-2.5 h-8 inline-flex items-center rounded-lg bg-[#F3EEEA] text-[#8A7A8B] text-[11.5px] font-bold whitespace-nowrap" title="Accept the handover first to open its memo, documents and cost validation">Accept to view</span>
+                    ) : viewItems.length > 0 && <ViewMenu items={viewItems} />}
                   </div>
                 </div>
               </div>

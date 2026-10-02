@@ -877,6 +877,10 @@ receipt oleh Admin, lihat di bawah); font
   `cost_validasi_seaair`, `cost_validasi_catatan_seaair`, `tabel_audit_seaair` (catatan: tabel Audit PIB
   berisi angka duty — tersembunyi di UI, tapi bisa dibaca role Finance lewat API).
   Sea & Air Receive menyimpan `finance_received_by` = nama yg diketik, `finance_received_at` = tanggal terima.
+- **Layout baris (2026-10-02, laporan user "di laptop 14\" tombol turun ke bawah")**: daftar = `@container`, grid baris
+  pakai container query (`@2xl:` 2 kolom, `@4xl:` 1 baris 5 kolom) -> ikut LEBAR DAFTAR, bukan lebar layar (dulu `xl:`).
+  Semua tombol lihat (Memo/Invoice/Handover/Recap/Audit/Docs/Cost) + "Undo receipt…" (Admin) digabung 1 menu **View ▾**
+  (`ViewMenu`, portal + fixed, tutup klik luar/Escape/scroll); kolom aksi = Accept / Mark paid + View.
 - **Undo receipt (2026-10-02, keputusan user, `sql/040_finance_undo_receive.sql` SUDAH DIJALANKAN 2026-10-02, file dihapus — git `2fefc12`)**: membatalkan
   Accept -> kembali "Waiting for Finance". HANYA **Admin** (`is_admin()`), alasan WAJIB min. 5 karakter, HANYA selama belum
   Paid; berlaku FAR / Sea & Air / Courier. RPC BARU `fn_far_overseas_finance_undo_receive(uuid,text)` (log
