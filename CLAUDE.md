@@ -39,7 +39,10 @@ approval-nya.
 - **HTML dari backend/n8n WAJIB disanitasi `DOMPurify`** sebelum `dangerouslySetInnerHTML`
   (nilai di dalamnya hasil ekstraksi AI dari dokumen upload = input tak tepercaya). Satu-satunya
   titik saat ini: `HtmlValue` `BunkerCompareDocModal.tsx`.
-- **Folder `sql/` DIHAPUS (2026-09-26, lalu LAGI 2026-10-01)** — SEMUA file migrasi SUDAH dijalankan ke
+- **Folder `sql/` DIHAPUS (2026-09-26, 2026-10-01, lalu LAGI 2026-10-02)** — 036–039 juga SUDAH dijalankan & diverifikasi
+  (1 query baca 49 cek, semua `true`, 2026-10-02; isi terakhir ada di git commit `2fb0f3c`: 036 inspeksi baca, 037 Invoice Recap
+  Courier per AWB/re-audit/Finance Courier/master vendor, 038 review cost + kunci Submit + Unlock [fungsi unlock sempat
+  versi lama, dijalankan ulang], 039 policy baca Finance). Riwayat sebelumnya: — SEMUA file migrasi SUDAH dijalankan ke
   production: 001–026 (konfirmasi user 2026-09-26) dan 027–035 (diverifikasi dgn 1 query baca terhadap
   DB live 2026-10-01, semua cek `true`). Semua catatan "BELUM DIJALANKAN" di file ini & `docs/claude/*.md`
   utk file 001–035 TIDAK berlaku lagi. Isi SQL ada di git history (027–035 di commit `a013011`/`e070654`
@@ -54,7 +57,7 @@ approval-nya.
   **Setelah penghapusan itu**: `sql/036_courier_recap_inspeksi_READONLY.sql` (baca saja) SUDAH dijalankan user
   2026-10-02 (hasil dipakai merancang 037); **`sql/037_courier_recap.sql` SUDAH DIJALANKAN** (konfirmasi user
   2026-10-02; Invoice Recap Courier per AWB, re-audit otomatis, Finance Handover Courier, master vendor Courier) —
-  lihat "Invoice Recap Courier per AWB" di bawah. **`sql/038_courier_cost_review_and_recap_lock.sql` SUDAH DIJALANKAN 2026-10-02**
+  lihat "Invoice Recap Courier per AWB" di bawah. **`sql/038_courier_cost_review_and_recap_lock.sql` SUDAH DIJALANKAN 2026-10-02** (file dihapus, lihat git `2fb0f3c`)
   (review cost per invoice Audit Courier + kunci Submit to Finance Invoice Recap Courier, lihat "Courier 2026-10-02 bagian 2").
   **`sql/039_courier_finance_read_validation.sql` SUDAH DIJALANKAN 2026-10-02** (setelah 038): policy SELECT `courier_finance`
   utk Finance melihat validasi PIB/CN (lihat "Finance melihat validasi Courier").
