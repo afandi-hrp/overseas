@@ -1167,11 +1167,9 @@ function VendorTabContent({ loading, error, stats }: { loading: boolean; error: 
   const barW = Math.min(70, (plotW - barGap * (rows.length + 1)) / rows.length);
   const scaleY = (val: number) => plotH - (val / axisTop) * plotH;
 
-  // Kalimat "PT X dan PT Y yang sering ditemui" -- 2 PT dgn jumlah TERBANYAK (list sudah
-  // disortir descending dari fetchVendorStats), REPLIKA kalimat Key Notes di slide contoh user.
-  // Cuma ditampilkan kalau BENERAN ada dokumen (maxCount > 0) -- kalau semua 0, klaim
-  // "sering ditemui" jadi tidak masuk akal (tidak ada satu pun kejadian sama sekali).
-  const top2 = maxCount > 0 ? rows.slice(0, 2).map(s => s.pt) : [];
+  // Maks 2 PT dgn dokumen TERBANYAK (list sudah descending), hanya yang jumlahnya > 0 --
+  // kalimat Key Notes "PT X dan PT Y merupakan PT dengan dokumen terbanyak" (2026-10-02).
+  const topPts = rows.slice(0, 2).filter(s => s.count > 0).map(s => s.pt);
 
   return (
     <div className="pl-8">
@@ -1215,11 +1213,11 @@ function VendorTabContent({ loading, error, stats }: { loading: boolean; error: 
         </svg>
       </div>
       <p className="text-xs text-slate-500 mt-3 max-w-2xl">
-        * Key Notes: Visualisasi menunjukkan frekuensi vendor yang sudah masuk pada rentang tanggal
-        terpilih. {top2.length === 2 && (
-          <>Adapun <span className="font-bold">PT {top2[0]}</span> dan <span className="font-bold">PT {top2[1]}</span> yang sering ditemui dalam test atau verifikasi AI. </>
+        * Key Notes: Visualisasi menunjukkan jumlah dokumen per PT yang masuk pada rentang tanggal
+        terpilih. {topPts.length > 0 && (
+          <>Adapun {topPts.map((pt, i) => <span key={pt}>{i > 0 && ' dan '}<span className="font-bold">PT {pt}</span></span>)} merupakan PT dengan dokumen terbanyak. </>
         )}
-        Total vendor yang sudah uji coba sebanyak <span className="font-bold">{totalDokumen}</span> Dokumen.
+        Total dokumen pada grafik sebanyak <span className="font-bold">{totalDokumen}</span> Dokumen.
       </p>
     </div>
   );

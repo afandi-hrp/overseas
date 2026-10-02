@@ -456,27 +456,29 @@ function DashboardModal({ onClose }: { onClose: () => void }) {
     setStats({ total, bermasalah, sesuai: total - bermasalah });
   }, []);
 
-  // RPC `fn_reporting_vendor_stats` (2026-09) -- GANTI dari fetch SEMUA baris kolom
-  // `pt_internal` + hitung manual di JS, jadi GROUP BY di Postgres.
   const fetchVendorStats = useCallback(async (from: string, to: string) => {
     setVendorLoading(true);
     setVendorError(null);
-    const { data, error: fetchError } = await supabase.rpc('fn_reporting_vendor_stats', {
-      p_table: 'accounting_rekap_finance', p_from: from, p_to: to,
-    });
+    // Per Vendor = JUMLAH SEMUA DOKUMEN per `pt_internal` di rentang tanggal (2026-10-02, koreksi
+    // user, sama dgn Audit AP Local/Overseas/PI Local) -- BUKAN cuma dokumen bermasalah. RPC
+    // `fn_reporting_vendor_stats` memfilter `status_proses` terisi, jadi TIDAK dipakai lagi. 1 query
+    // `count/head` per PT (paralel), filter tanggal SAMA PERSIS `fetchStats`. Baris tanpa PT ->
+    // batang "TIDAK DIKETAHUI" (kalau ada).
+    const pts = ptOptions.filter(pt => pt !== 'GENERAL');
+    const countQuery = () => supabase.from('accounting_rekap_finance').select('*', { count: 'exact', head: true })
+      .gte('created_at', `${from}T00:00:00`).lte('created_at', `${to}T23:59:59`);
+    const [ptResults, noPtRes] = await Promise.all([
+      Promise.all(pts.map(pt => countQuery().eq('pt_internal', pt))),
+      countQuery().or('pt_internal.is.null,pt_internal.eq.'),
+    ]);
     setVendorLoading(false);
-    if (fetchError) { setVendorError(fetchError.message); return; }
+    const failed = [...ptResults, noPtRes].find(r => r.error);
+    if (failed?.error) { setVendorError(failed.error.message); return; }
 
-    const counts: Record<string, number> = {};
-    ptOptions.filter(pt => pt !== 'GENERAL').forEach(pt => { counts[pt] = 0; });
-    (data as { pt: string; cnt: number }[] || []).forEach(r => {
-      const pt = r.pt || 'TIDAK DIKETAHUI';
-      if (pt === 'GENERAL') return;
-      counts[pt] = (counts[pt] || 0) + Number(r.cnt || 0);
-    });
-    const list = Object.entries(counts)
-      .map(([pt, count]) => ({ pt, count }))
-      .sort((a, b) => b.count - a.count);
+    const list = pts.map((pt, i) => ({ pt, count: ptResults[i].count || 0 }));
+    const noPt = noPtRes.count || 0;
+    if (noPt > 0) list.push({ pt: 'TIDAK DIKETAHUI', count: noPt });
+    list.sort((a, b) => b.count - a.count);
     setVendorStats(list);
   }, [ptOptions]);
 
@@ -709,7 +711,8 @@ function VendorTabContent({ loading, error, stats }: { loading: boolean; error: 
   const barW = Math.min(70, (plotW - barGap * (rows.length + 1)) / rows.length);
   const scaleY = (val: number) => plotH - (val / axisTop) * plotH;
 
-  const top2 = maxCount > 0 ? rows.slice(0, 2).map(s => s.pt) : [];
+  // Maks 2 PT dgn dokumen TERBANYAK (list sudah descending), hanya yang jumlahnya > 0.
+  const topPts = rows.slice(0, 2).filter(s => s.count > 0).map(s => s.pt);
 
   return (
     <div className="pl-8">
@@ -745,11 +748,11 @@ function VendorTabContent({ loading, error, stats }: { loading: boolean; error: 
         </svg>
       </div>
       <p className="text-xs text-slate-500 mt-3 max-w-2xl">
-        * Key Notes: Visualisasi menunjukkan frekuensi PT internal yang sudah masuk pada rentang
-        tanggal terpilih. {top2.length === 2 && (
-          <>Adapun <span className="font-bold">PT {top2[0]}</span> dan <span className="font-bold">PT {top2[1]}</span> yang sering ditemui dalam proses ini. </>
+        * Key Notes: Visualisasi menunjukkan jumlah dokumen per PT internal yang masuk pada rentang
+        tanggal terpilih. {topPts.length > 0 && (
+          <>Adapun {topPts.map((pt, i) => <span key={pt}>{i > 0 && ' dan '}<span className="font-bold">PT {pt}</span></span>)} merupakan PT dengan dokumen terbanyak. </>
         )}
-        Total dokumen yang sudah diproses sebanyak <span className="font-bold">{totalDokumen}</span> Dokumen.
+        Total dokumen pada grafik sebanyak <span className="font-bold">{totalDokumen}</span> Dokumen.
       </p>
     </div>
   );
