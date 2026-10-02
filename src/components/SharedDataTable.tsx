@@ -1189,7 +1189,8 @@ function mergeChecklistData(records: any[], docTypeHint?: 'pib' | 'cn') {
 // `embedded` (2026-09-30) -- dirender sbg tab "Checklist" di dalam CourierValidationWindow (tanpa
 // overlay/judul sendiri, Save Checklist TIDAK menutup jendela). `onPctChange` melaporkan % live
 // ke label tab (null = belum ada baris dokumen_checklist & belum ada perubahan).
-function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, embedded = false, legacy = false, onPctChange, onDirtyChange }: { record: any, tab: any, onClose: () => void, onSaved?: () => void, canEdit?: boolean, embedded?: boolean, legacy?: boolean, onPctChange?: (pct: number | null) => void, onDirtyChange?: (dirty: boolean) => void }) {
+// Diekspor (2026-10-02) utk viewer Courier Finance Handover (mode baca saja, canEdit=false).
+export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, embedded = false, legacy = false, onPctChange, onDirtyChange }: { record: any, tab: any, onClose: () => void, onSaved?: () => void, canEdit?: boolean, embedded?: boolean, legacy?: boolean, onPctChange?: (pct: number | null) => void, onDirtyChange?: (dirty: boolean) => void }) {
   const [form, setForm] = useState<Record<string, boolean>>({})
   const [existingId, setExistingId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)

@@ -56,6 +56,8 @@ approval-nya.
   2026-10-02; Invoice Recap Courier per AWB, re-audit otomatis, Finance Handover Courier, master vendor Courier) —
   lihat "Invoice Recap Courier per AWB" di bawah. **`sql/038_courier_cost_review_and_recap_lock.sql` BELUM DIJALANKAN**
   (review cost per invoice Audit Courier + kunci Submit to Finance Invoice Recap Courier, lihat "Courier 2026-10-02 bagian 2").
+  **`sql/039_courier_finance_read_validation.sql` BELUM DIJALANKAN** (jalankan SETELAH 038): policy SELECT `courier_finance`
+  utk Finance melihat validasi PIB/CN (lihat "Finance melihat validasi Courier").
 - **Kondisi DB production (stack `supabase3`, audit 2026-09-26)**: role `anon` tanpa hak apa pun
   di schema public (tabel, fungsi, default privileges); GraphQL ditutup; semua tabel RLS dgn
   policy `has_page_access`/`has_edit_access` (tidak ada `using (true)`); semua view
@@ -497,8 +499,9 @@ user di production** (testing bagian 2 + Finance Handover dijadwalkan user bersa
    kode PPJK (`emkl_vendor`); kolom `aktif` belum dipakai saat pencocokan; tanpa tombol hapus.
 5. Viewer FAR berganti modal antar tab -> ukuran dialog berubah (kosmetik).
 6. (Dibatalkan, keputusan user) upload bukti transfer & Undo — TIDAK dibuat.
-7. Courier: viewer hanya dialog 1 invoice (tanpa tab Documents/Cost validation spt Sea & Air); master vendor Courier
-   (nama legal + TOP) WAJIB diisi user; page_key `courier_finance`/`settings_courier_vendors` WAJIB di-assign ke role.
+7. Courier: ~~viewer hanya dialog 1 invoice~~ — 2026-10-02 viewer = jendela Validation BACA SAJA (lihat "Finance melihat
+   validasi Courier"); master vendor Courier (nama legal + TOP) WAJIB diisi user; page_key `courier_finance`/
+   `settings_courier_vendors` WAJIB di-assign ke role.
 8. Keamanan Courier: policy `rekapan_courier_select_finance` membuka SEMUA baris `rekapan_courier` (bukan hanya yg
    sudah submit) utk role Finance lewat API — UI hanya menampilkan yg ber-`submit_date`. Persempit kalau diminta.
 
@@ -612,6 +615,22 @@ ada nama fungsi bentrok. Keputusan:
   chip Locked per invoice & header, **Unlock (Admin)** + alasan -> RPC, info "Last unlock". Konfirmasi Submit menyebut kunci.
 - **Diuji**: jsdom `courier_lock` 30 cek + regresi render 95/page 51/recap 112/finance 53/urgent 5/authfocus 12/courier 41/
   courier_ui 56/courier_recap 44, PGlite 038 28 + 037 39 — 0 gagal. Belum dites di production.
+
+## Finance melihat validasi Courier (2026-10-02, keputusan user; sql/039 BELUM DIJALANKAN)
+
+Finance HARUS bisa melihat Checklist, Doc validation & Cost validation PIB/CN pasangan invoice Courier, TANPA bisa
+mengubah. `CourierHandoverViewer` (`FinanceHandoverViewers.tsx`) = `CourierValidationWindow` yang SAMA Audit Courier
+(tab Overview = rincian invoice & serah terima · Documents · Costs), `editAccess` semua false, `ChecklistModal` (kini
+diekspor dari SharedDataTable) `canEdit={false}` -> tanpa Upload additional doc / Save / Accept / Correct / Recompute /
+review / Deduct CN. Pasangan PIB/CN dicari SAMA Invoice Recap (`fetchRecapAuditLinks`: pib_id/cn_id, cadangan AWB);
+tidak ketemu -> dialog rincian invoice saja + catatan. Tombol baris Finance Handover Courier: Invoice · Docs · Cost
+(tetap "Accept to view" sebelum Finance menerima, sama sumber lain). **Berbeda dari Sea & Air** (angka duty disembunyikan
+di Finance): Courier menampilkan semua krn invoice Duty Courier memang dibayar Finance ke PPJK.
+**`sql/039`**: policy SELECT `<tabel>_select_courier_finance` (`has_page_access('courier_finance')`) di `tabel_audit_pib`,
+`tabel_audit_cn`, `dokumen_checklist`, `dokumen_validasi`, `tabel_checklist_validasi`, `tabel_npwp`, `tabel_cost_validasi`,
+`cost_validasi_review_courier` — TANPA policy tulis (baca saja); role Finance tidak perlu akses halaman Audit Courier.
+Hasil akhir 039 menampilkan `prosecdef` `get_kurs_efektif`/`fn_hitung_storage` (kalau `get_kurs_efektif` INVOKER &
+kalkulasi PIB di layar Finance tanpa kurs -> perlu policy baca tabel kurs). Diuji: jsdom courier_recap 49 cek, PGlite 039 4.
 
 ## Invoice Recap Courier per AWB + Finance Handover Courier (2026-10-02, kode SELESAI, sql/037 SUDAH DIJALANKAN 2026-10-02)
 

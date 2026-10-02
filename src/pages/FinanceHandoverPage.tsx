@@ -309,7 +309,7 @@ export default function FinanceHandoverPage() {
                     ) : it.source === 'far' ? (
                       <>{viewBtn('main', 'Memo')}{viewBtn('docs', 'Docs')}{viewBtn('cost', 'Cost')}</>
                     ) : it.source === 'courier' ? (
-                      viewBtn('main', 'Invoice')
+                      <>{viewBtn('main', 'Invoice')}{viewBtn('docs', 'Docs')}{viewBtn('cost', 'Cost')}</>
                     ) : it.earlier ? (
                       viewBtn('main', 'Handover')
                     ) : (
@@ -378,7 +378,7 @@ export default function FinanceHandoverPage() {
           onOpenEdit={rec => navigate(`/direct-loading/${rec.id}`)} />
       )}
       {viewer && viewer.it.source === 'courier' && (
-        <CourierHandoverViewer item={viewer.it} companyNames={companyNames} onClose={() => setViewer(null)} />
+        <CourierHandoverViewer item={viewer.it} initialTab={viewer.tab} companyNames={companyNames} onClose={() => setViewer(null)} />
       )}
       {viewer && viewer.it.source === 'seaair' && (
         <SeaAirHandoverViewer item={viewer.it} initialTab={viewer.tab} companyNames={companyNames} onClose={() => setViewer(null)} />

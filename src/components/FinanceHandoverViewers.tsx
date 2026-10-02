@@ -17,6 +17,11 @@ import SeaAirRecapCostsTab from './SeaAirRecapCostsTab'
 import { SA_CARD, SA_LABEL, Chip, PtBadge } from './SeaAirAuditUi'
 import { fmtRp, fmtDateShort, companyFullName } from '../utils/SeaAirAuditHelpers'
 import { seaAirInvoiceSegments, seaAirPoList, type HandoverItem } from '../utils/FinanceHandoverHelpers'
+import CourierValidationWindow from './CourierValidationWindow'
+import { ChecklistModal } from './SharedDataTable'
+import { buildRecapGroup, courierAwbNorm, fetchRecapAuditLinks } from '../utils/CourierRecapHelpers'
+import { enrichCourierValidationPct } from '../utils/CourierValidationPct'
+import { courierDocNo, isCourierDraft, type CourierDocType } from '../utils/CourierAuditHelpers'
 
 export type ViewerTab = 'main' | 'docs' | 'cost'
 
@@ -166,18 +171,13 @@ export function SeaAirHandoverViewer({ item, initialTab, companyNames, onClose }
   )
 }
 
-// ── Courier (2026-10-02): dialog baca-saja 1 invoice Invoice Recap Courier (sql/037). ──
-export function CourierHandoverViewer({ item, companyNames, onClose }: {
-  item: HandoverItem
-  companyNames: Record<string, string>
-  onClose: () => void
-}) {
+// ── Courier (2026-10-02): invoice + validasi PIB/CN pasangannya, BACA SAJA (keputusan user: Finance melihat Checklist,
+// Doc validation & Cost validation tanpa bisa mengubah). Memakai jendela Validation yang SAMA Audit Courier
+// (CourierValidationWindow + ChecklistModal/ValidasiModal/CostValidationModal) dgn editAccess semua false.
+// Tab Overview = rincian invoice & serah terima. Pasangan Audit dicari SAMA Invoice Recap (pib_id/cn_id, cadangan AWB).
+// Butuh policy baca Finance (sql/039) -- tanpa itu tab validasi kosong.
+const courierInvoiceFacts = (item: HandoverItem, companyNames: Record<string, string>, auditNote: React.ReactNode) => {
   const r = item.raw
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
   const fact = (label: string, value: React.ReactNode) => (
     <div className="grid grid-cols-[150px_minmax(0,1fr)] gap-3 py-1.5 text-[12.5px] border-t border-[#F1E8E1] first:border-t-0">
       <div className="text-[#6E5E70]">{label}</div>
@@ -187,51 +187,129 @@ export function CourierHandoverViewer({ item, companyNames, onClose }: {
   const amt = (label: string, v: any) => (v === null || v === undefined || v === '' ? null : (
     <div className="flex justify-between gap-3 py-1.5 text-[12.5px] border-t border-[#F1E8E1] first:border-t-0"><span className="text-[#6E5E70]">{label}</span><span className="tabular-nums font-semibold text-[#3B1B3D]">{fmtRp(v)}</span></div>
   ))
-  return createPortal(
-    <div className="fixed inset-0 z-[75] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-3 md:p-5" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="bg-[#FBF7F4] rounded-2xl shadow-2xl w-full max-w-[860px] max-h-[92vh] flex flex-col overflow-hidden">
-        <div className="px-5 pt-4 pb-3 bg-white border-b border-[#EADFD6] shrink-0 flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <Chip tone="amber">Courier</Chip>
-              {r.an && <PtBadge code={r.an} title={companyFullName(companyNames, r.an)} />}
-              <span className="text-[11px] text-[#8A7A8B]">View only</span>
-            </div>
-            <h2 className="text-[18px] font-bold text-[#3B1B3D] mt-1 [overflow-wrap:anywhere]">{item.ref}</h2>
-            <div className="text-[12px] text-[#6E5E70]">
-              Payable to <b className="text-[#3B1B3D]">{item.payee}</b> · {fmtRp(item.amountIdr)}{item.dueDate ? ` · Due ${fmtDateShort(item.dueDate)}` : ''}{item.topLabel ? ` · ${item.topLabel}` : ''}
-            </div>
-          </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="p-2 rounded-xl hover:bg-[#F6EFEA] text-[#6E5E70]"><X size={18} /></button>
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="text-[12.5px] text-[#6E5E70]">
+        Payable to <b className="text-[#3B1B3D]">{item.payee}</b> · {fmtRp(item.amountIdr)}{item.dueDate ? ` · Due ${fmtDateShort(item.dueDate)}` : ''}{item.topLabel ? ` · ${item.topLabel}` : ''}
+        {r.an && <> · <PtBadge code={r.an} title={companyFullName(companyNames, r.an)} /></>}
+      </div>
+      {auditNote}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className={`${SA_CARD} px-4 py-3`}>
+          <div className={`${SA_LABEL} mb-1`}>Invoice</div>
+          {fact('Invoice type', r.invoice_type)}
+          {fact('PPJK', r.ppjk)}
+          {fact('Vendor', r.vendor)}
+          {fact('AWB', r.awb)}
+          {fact('Origin', r.origin)}
+          {fact('Email received', fmtDateShort(r.tgl_terima_email))}
+          {fact('PO PT IMI', r.po_pt_imi)}
+          {fact('PO Non IMI', r.po_shipping)}
+          {fact('Vessel', r.vessel)}
+          {fact('Remarks', r.notes)}
         </div>
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className={`${SA_CARD} px-4 py-3`}>
-            <div className={`${SA_LABEL} mb-1`}>Invoice</div>
-            {fact('Invoice type', r.invoice_type)}
-            {fact('PPJK', r.ppjk)}
-            {fact('Vendor', r.vendor)}
-            {fact('AWB', r.awb)}
-            {fact('Origin', r.origin)}
-            {fact('Email received', fmtDateShort(r.tgl_terima_email))}
-            {fact('PO PT IMI', r.po_pt_imi)}
-            {fact('PO Non IMI', r.po_shipping)}
-            {fact('Vessel', r.vessel)}
-            {fact('Remarks', r.notes)}
-          </div>
-          <div className={`${SA_CARD} px-4 py-3`}>
-            <div className={`${SA_LABEL} mb-1`}>Amount</div>
-            {amt('Courier adm fee', r.courier_adm_fee)}
-            {amt('Total freight', r.total_freight)}
-            {amt('Total duty tax', r.total_duty_tax)}
-            {amt('Total amount', r.total_amount)}
-            <div className={`${SA_LABEL} mt-3 mb-1`}>Handover</div>
-            {fact('Submitted', fmtDateShort(r.submit_date))}
-            {fact('Received', r.finance_received_at ? `${fmtDateShort(r.finance_received_at)}${r.finance_received_by ? ` · ${r.finance_received_by}` : ''}` : '')}
-            {fact('Paid', r.tgl_lunas ? `${fmtDateShort(r.tgl_lunas)}${r.paid_reference ? ` · ${r.paid_reference}` : ''}` : '')}
-          </div>
+        <div className={`${SA_CARD} px-4 py-3`}>
+          <div className={`${SA_LABEL} mb-1`}>Amount</div>
+          {amt('Courier adm fee', r.courier_adm_fee)}
+          {amt('Total freight', r.total_freight)}
+          {amt('Total duty tax', r.total_duty_tax)}
+          {amt('Total amount', r.total_amount)}
+          <div className={`${SA_LABEL} mt-3 mb-1`}>Handover</div>
+          {fact('Submitted', fmtDateShort(r.submit_date))}
+          {fact('Received', r.finance_received_at ? `${fmtDateShort(r.finance_received_at)}${r.finance_received_by ? ` · ${r.finance_received_by}` : ''}` : '')}
+          {fact('Paid', r.tgl_lunas ? `${fmtDateShort(r.tgl_lunas)}${r.paid_reference ? ` · ${r.paid_reference}` : ''}` : '')}
         </div>
       </div>
-    </div>,
+    </div>
+  )
+}
+
+const COURIER_VIEW_ACCESS = { checklist: true, doc: true, cost: true }
+const COURIER_NO_EDIT = { checklist: false, doc: false, cost: false }
+
+export function CourierHandoverViewer({ item, initialTab = 'main', companyNames, onClose }: {
+  item: HandoverItem
+  initialTab?: ViewerTab
+  companyNames: Record<string, string>
+  onClose: () => void
+}) {
+  const r = item.raw
+  const [audit, setAudit] = useState<{ rec: any; docType: CourierDocType } | null | undefined>(undefined)
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const g = buildRecapGroup(courierAwbNorm(r.awb) || `ID:${r.id}`, [r])
+        await fetchRecapAuditLinks([g])
+        const rec = g.audit?.rec || null
+        if (rec) await enrichCourierValidationPct([rec])
+        if (!cancelled) setAudit(rec ? { rec, docType: g.audit!.docType } : null)
+      } catch (e) {
+        console.error('[FinanceHandover] pasangan Audit Courier gagal', e)
+        if (!cancelled) setAudit(null)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [r])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  if (audit === undefined) {
+    return createPortal(
+      <div className="fixed inset-0 z-[75] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-3">
+        <div className="bg-white rounded-2xl shadow-2xl px-8 py-6 text-[13px] text-[#6E5E70]">Loading invoice…</div>
+      </div>,
+      document.body
+    )
+  }
+
+  // Tanpa pasangan PIB/CN (mis. data tambah manual): hanya rincian invoice.
+  if (!audit) {
+    return createPortal(
+      <div className="fixed inset-0 z-[75] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-3 md:p-5" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+        <div className="bg-[#FBF7F4] rounded-2xl shadow-2xl w-full max-w-[860px] max-h-[92vh] flex flex-col overflow-hidden">
+          <div className="px-5 pt-4 pb-3 bg-white border-b border-[#EADFD6] shrink-0 flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap"><Chip tone="amber">Courier</Chip><span className="text-[11px] text-[#8A7A8B]">View only</span></div>
+              <h2 className="text-[18px] font-bold text-[#3B1B3D] mt-1 [overflow-wrap:anywhere]">{item.ref}</h2>
+            </div>
+            <button type="button" onClick={onClose} aria-label="Close" className="p-2 rounded-xl hover:bg-[#F6EFEA] text-[#6E5E70]"><X size={18} /></button>
+          </div>
+          <div className="flex-1 min-h-0 overflow-y-auto p-4">
+            {courierInvoiceFacts(item, companyNames, (
+              <div className="rounded-[14px] border border-[#F3D9A4] bg-[#FFF8EA] px-4 py-2 text-[12.5px] text-[#7A4F00]">
+                No PIB / CN for this AWB was found in Audit Courier — Checklist, Doc validation & Cost validation are not available.
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>,
+      document.body
+    )
+  }
+
+  const rec = audit.rec
+  const docNo = courierDocNo(rec, audit.docType)
+  return createPortal(
+    <CourierValidationWindow
+      record={rec}
+      mainTab="courier"
+      subTab="courier_audit"
+      jenisDokumen={audit.docType}
+      access={COURIER_VIEW_ACCESS}
+      editAccess={COURIER_NO_EDIT}
+      renderChecklist={({ onPctChange, onSaved, onDirtyChange }) => (
+        <ChecklistModal record={rec} tab={{ id: 'courier_audit' }} embedded canEdit={false} onClose={onClose} onSaved={onSaved} onPctChange={onPctChange} onDirtyChange={onDirtyChange} />
+      )}
+      initialTab={initialTab === 'docs' ? 'checklist' : initialTab === 'cost' ? 'cost' : 'overview'}
+      title={<span className="flex items-center gap-2 flex-wrap">{item.ref}<Chip tone="amber">Courier</Chip><span className="text-[11px] font-semibold text-[#8A7A8B]">View only</span></span>}
+      subtitle={[r.invoice_type, r.awb ? `AWB ${r.awb}` : '', `${audit.docType} ${docNo || ''}`.trim(), isCourierDraft(rec) ? 'Draft' : 'Audited'].filter(Boolean).join(' · ')}
+      overview={courierInvoiceFacts(item, companyNames, null)}
+      onClose={onClose}
+    />,
     document.body
   )
 }
