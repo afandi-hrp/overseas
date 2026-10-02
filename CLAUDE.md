@@ -39,7 +39,9 @@ approval-nya.
 - **HTML dari backend/n8n WAJIB disanitasi `DOMPurify`** sebelum `dangerouslySetInnerHTML`
   (nilai di dalamnya hasil ekstraksi AI dari dokumen upload = input tak tepercaya). Satu-satunya
   titik saat ini: `HtmlValue` `BunkerCompareDocModal.tsx`.
-- **Folder `sql/` DIHAPUS (2026-09-26, 2026-10-01, lalu LAGI 2026-10-02)** — 036–039 juga SUDAH dijalankan & diverifikasi
+- **Folder `sql/` DIHAPUS (2026-09-26, 2026-10-01, lalu LAGI 2026-10-02)** — 040 (Undo receipt Finance Handover, 3 RPC
+  `fn_*_finance_undo_receive`) juga SUDAH dijalankan & diverifikasi (query baca 3 fungsi ber-komentar `beehive:040`, gagal 0,
+  2026-10-02; isi terakhir di git commit `2fefc12`). 036–039 juga SUDAH dijalankan & diverifikasi
   (1 query baca 49 cek, semua `true`, 2026-10-02; isi terakhir ada di git commit `2fb0f3c`: 036 inspeksi baca, 037 Invoice Recap
   Courier per AWB/re-audit/Finance Courier/master vendor, 038 review cost + kunci Submit + Unlock [fungsi unlock sempat
   versi lama, dijalankan ulang], 039 policy baca Finance). Riwayat sebelumnya: — SEMUA file migrasi SUDAH dijalankan ke
@@ -875,7 +877,7 @@ receipt oleh Admin, lihat di bawah); font
   `cost_validasi_seaair`, `cost_validasi_catatan_seaair`, `tabel_audit_seaair` (catatan: tabel Audit PIB
   berisi angka duty — tersembunyi di UI, tapi bisa dibaca role Finance lewat API).
   Sea & Air Receive menyimpan `finance_received_by` = nama yg diketik, `finance_received_at` = tanggal terima.
-- **Undo receipt (2026-10-02, keputusan user, `sql/040_finance_undo_receive.sql` SUDAH DIJALANKAN 2026-10-02)**: membatalkan
+- **Undo receipt (2026-10-02, keputusan user, `sql/040_finance_undo_receive.sql` SUDAH DIJALANKAN 2026-10-02, file dihapus — git `2fefc12`)**: membatalkan
   Accept -> kembali "Waiting for Finance". HANYA **Admin** (`is_admin()`), alasan WAJIB min. 5 karakter, HANYA selama belum
   Paid; berlaku FAR / Sea & Air / Courier. RPC BARU `fn_far_overseas_finance_undo_receive(uuid,text)` (log
   `far_overseas_memo_log` action `FINANCE_UNDO_RECEIVE`), `fn_seaair_finance_undo_receive(uuid,text)` (flag `app.seaair_unlock`
