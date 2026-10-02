@@ -54,9 +54,9 @@ approval-nya.
   **Setelah penghapusan itu**: `sql/036_courier_recap_inspeksi_READONLY.sql` (baca saja) SUDAH dijalankan user
   2026-10-02 (hasil dipakai merancang 037); **`sql/037_courier_recap.sql` SUDAH DIJALANKAN** (konfirmasi user
   2026-10-02; Invoice Recap Courier per AWB, re-audit otomatis, Finance Handover Courier, master vendor Courier) —
-  lihat "Invoice Recap Courier per AWB" di bawah. **`sql/038_courier_cost_review_and_recap_lock.sql` BELUM DIJALANKAN**
+  lihat "Invoice Recap Courier per AWB" di bawah. **`sql/038_courier_cost_review_and_recap_lock.sql` SUDAH DIJALANKAN 2026-10-02**
   (review cost per invoice Audit Courier + kunci Submit to Finance Invoice Recap Courier, lihat "Courier 2026-10-02 bagian 2").
-  **`sql/039_courier_finance_read_validation.sql` BELUM DIJALANKAN** (jalankan SETELAH 038): policy SELECT `courier_finance`
+  **`sql/039_courier_finance_read_validation.sql` SUDAH DIJALANKAN 2026-10-02** (setelah 038): policy SELECT `courier_finance`
   utk Finance melihat validasi PIB/CN (lihat "Finance melihat validasi Courier").
 - **Kondisi DB production (stack `supabase3`, audit 2026-09-26)**: role `anon` tanpa hak apa pun
   di schema public (tabel, fungsi, default privileges); GraphQL ditutup; semua tabel RLS dgn
@@ -458,7 +458,7 @@ history file ini.
 ## STATUS & SISA PEKERJAAN — Audit & Invoice Recap Sea & Air + Courier / Finance Handover (per 2026-10-02)
 
 **DAFTAR TERKINI (satu-satunya acuan)** — 2 bagian "BACKLOG" di bawahnya = riwayat (item dicoret = selesai).
-Semua SQL (027–035, 037) SUDAH jalan di production. Kode SELESAI & lolos uji jsdom/PGlite, tapi **BELUM dites
+Semua SQL (027–035, 037–039) SUDAH jalan di production. Kode SELESAI & lolos uji jsdom/PGlite, tapi **BELUM dites
 user di production** (testing bagian 2 + Finance Handover dijadwalkan user bersamaan dgn pekerjaan lain).
 
 **Audit PIB Sea & Air (`/sea-air/audit`) — belum:**
@@ -508,7 +508,7 @@ user di production** (testing bagian 2 + Finance Handover dijadwalkan user bersa
 
 **Audit Courier (`/courier/audit`) — status (keputusan user 2026-10-02):**
 1. (Ditunda, belum dibutuhkan) Audit trail perubahan Checklist/Doc validation/Cost validation & log edit format app.
-2. ~~Review cost per invoice~~ — SELESAI 2026-10-02 (sql/038, belum dijalankan) — lihat "Courier 2026-10-02 bagian 2".
+2. ~~Review cost per invoice~~ — SELESAI 2026-10-02 (sql/038, SUDAH dijalankan 2026-10-02) — lihat "Courier 2026-10-02 bagian 2".
 3. (Diterima user) Tab Draft fetch & paging di browser — Draft hanya sementara, tidak perlu RPC gabungan.
 4. ~~Kolom auto-calc & Reporting~~ — TIDAK PERLU TINDAKAN (dicek 2026-10-02): 7 kolom auto-calc Audit TIDAK dibaca
    Reporting (hanya app/export, sudah live-calc). Reporting membaca APA ADANYA 6 kolom auto-calc **Invoice Recap**
@@ -527,7 +527,7 @@ user di production** (testing bagian 2 + Finance Handover dijadwalkan user bersa
    (badge merah sidebar + tombol filter "Needs attention").
 2. (Keputusan user) 3 AWB "Not found in Audit" = data tambah manual, bukan n8n — biarkan dgn label itu.
 3. Re-audit otomatis tetap (dijelaskan ke user: tanpa tombol, otomatis saat nominal/AWB/PO invoice diedit setelah Audited).
-4. ~~Submit tanpa kunci~~ — SELESAI 2026-10-02 (sql/038, belum dijalankan): kunci setelah Submit + Unlock Admin, sama Sea & Air.
+4. ~~Submit tanpa kunci~~ — SELESAI 2026-10-02 (sql/038, SUDAH dijalankan 2026-10-02): kunci setelah Submit + Unlock Admin, sama Sea & Air.
 5. (Keputusan user) Tanpa issue count / review per invoice di Recap untuk sementara.
 6. (Keputusan user) Edit tetap lewat tabel List; Export TETAP.
 
@@ -587,7 +587,7 @@ ada nama fungsi bentrok. Keputusan:
 15. Finance Handover Courier **per invoice**; kolom baru `finance_received_at/_by` (opsi A); master vendor = **tabel baru
     khusus Courier** `courier_vendor_master` + halaman Settings sendiri.
 
-## Courier 2026-10-02 bagian 2 — review cost, Recompute, needs attention, kunci Submit (sql/038 BELUM DIJALANKAN)
+## Courier 2026-10-02 bagian 2 — review cost, Recompute, needs attention, kunci Submit (sql/038 SUDAH DIJALANKAN 2026-10-02)
 
 - **sql/038** (idempotent, pre-check nama `beehive:038`, uji PGlite 28 cek): tabel `cost_validasi_review_courier`
   (`doc_type` PIB/CN + `audit_id` teks + `section` FREIGHT/DUTY unik, `status_konfirmasi` MATCH/MISMATCH, catatan WAJIB utk
@@ -618,7 +618,7 @@ ada nama fungsi bentrok. Keputusan:
 - **Diuji**: jsdom `courier_lock` 30 cek + regresi render 95/page 51/recap 112/finance 53/urgent 5/authfocus 12/courier 41/
   courier_ui 56/courier_recap 44, PGlite 038 28 + 037 39 — 0 gagal. Belum dites di production.
 
-## Finance melihat validasi Courier (2026-10-02, keputusan user; sql/039 BELUM DIJALANKAN)
+## Finance melihat validasi Courier (2026-10-02, keputusan user; sql/039 SUDAH DIJALANKAN 2026-10-02)
 
 Finance HARUS bisa melihat Checklist, Doc validation & Cost validation PIB/CN pasangan invoice Courier, TANPA bisa
 mengubah. `CourierHandoverViewer` (`FinanceHandoverViewers.tsx`) = `CourierValidationWindow` yang SAMA Audit Courier
@@ -1033,7 +1033,7 @@ Supabase** — bisa saja sudah basi (RPC lain ditambahkan user langsung tanpa te
   `fn_seaair_finance_accept(uuid, text, date)` (signature BARU: nama + tanggal terima; versi 1-arg DI-DROP),
   `fn_seaair_finance_mark_paid` referensi opsional, `fn_seaair_finance_undo` DI-DROP (tanpa Undo, keputusan
   user), FAR `fn_far_overseas_set_urgent(uuid, boolean)` BARU, `fn_far_overseas_mark_paid` bukti bayar opsional.
-- Courier review cost & kunci Submit (sql/038, **BELUM DIJALANKAN**): `fn_courier_unlock_submit(uuid, text)` (+ trigger
+- Courier review cost & kunci Submit (sql/038, SUDAH DIJALANKAN 2026-10-02): `fn_courier_unlock_submit(uuid, text)` (+ trigger
   `fn_courier_recap_lock`); tabel `cost_validasi_review_courier`.
 - Courier Invoice Recap & Finance (sql/037, SUDAH DIJALANKAN 2026-10-02): `fn_courier_recap_awb_page`, `fn_courier_recap_summary`,
   `fn_courier_awb_norm`, `fn_courier_finance_accept(uuid, text, date)`, `fn_courier_finance_mark_paid(uuid, date, text)`
