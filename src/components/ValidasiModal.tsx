@@ -1746,7 +1746,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                 <textarea aria-label="Manual change notes" value={catatanManual} rows={1}
                   onChange={e => { userActionRef.current = true; setCatatanManual(e.target.value); }}
                   placeholder="Reason or notes for any value changed manually…"
-                  className="mt-1 w-full rounded-lg border border-[#EADFD6] bg-white px-2.5 py-1.5 text-[12px] text-[#3B1B3D] focus:outline-none focus:border-[#6B3470] focus:ring-2 focus:ring-[#6B3470]/15 resize-y" />
+                  className={`${VW_INPUT} mt-1 block w-full py-1.5 min-h-8 leading-[1.35] resize-y`} />
               ) : (
                 <div className="mt-1 rounded-lg border border-[#F1E8E1] bg-[#FBF7F4] px-2.5 py-1.5 text-[12px] text-[#3B1B3D] whitespace-pre-wrap [overflow-wrap:anywhere]">{catatanManual || <span className="italic text-[#8A7A8B]">No notes yet.</span>}</div>
               )}

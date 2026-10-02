@@ -135,6 +135,16 @@ page_key lama & hanya selama Draft (TANPA aturan Admin-only Sea & Air); (6) nama
 - **Audit trail** (`CourierAuditTrail.tsx`): timeline per hari, "Lama → Baru" diparse, entri kembar "×N", Refresh;
   data SAMA `fetchCourierAuditLog`.
 - Token warna Sea & Air di `validationWindowStyles.ts` (`VW_*`, `VW_TILE*`, `VW_INPUT`, `VW_TH`).
+- **Ukuran jendela (2026-10-02, permintaan user)**: SAMA jendela Open Invoice Recap Sea & Air di layar besar
+  (`max-w-[1180px] h-[94vh]`, overlay `p-3 md:p-5`); layar <=1600px (laptop 14", zoom 90%) =
+  `max-[1600px]:max-w-none max-[1600px]:h-full` + overlay `p-2.5` (hampir penuh layar, `vh` tidak ikut zoom).
+  Berlaku juga utk jendela Validation dari Invoice Recap Courier; jendela LAMA mode List (`*Legacy`) tidak berubah.
+- **Tutup jendela Open TIDAK reload tabel (2026-10-02, laporan user)**: `closeOpen` memanggil
+  `patchCourierRowSilently(rec)` (baca ulang 1 baris lewat `reloadCourierRow` & tempel ke `records`, tanpa overlay
+  "Updating data..."); KPI hanya dihitung ulang kalau persen kelengkapan/validasi baris berubah. JANGAN kembali ke
+  `fetchRecords()` di sini. Aksi yg memindahkan baris (Mark as audited/Move back/Edit/Delete) tetap refresh penuh.
+- **"Manual change notes"** (tab Documents) = textarea `VW_INPUT` `block` tinggi `h-8` supaya sejajar input
+  Check date/Checked by/No. AWB (dulu inline -> turun ~6px).
 - **Diuji**: jsdom `courier_ui` 47 cek (tab/pil/strip, Shipment Info di Overview, chip Overview -> Costs, Costs:
   kartu, show all lines, Deduct CN, Revise, klik angka -> bar, kunci CN saat dirty, Difference live, status manual,
   Save -> fn_update_actual_value + update tabel, Discard, Update estimate; Documents: checklist toggle + Save ->
@@ -184,7 +194,7 @@ Sumber % di baris = badge lama (`pct_kelengkapan`, `doc_validation_pct`, `cost_v
   Cost = Status + Edited + OK/Selisih/N/A + akurasi + Edit Cost Validasi/Batal/Simpan. Checklist
   embedded lebar penuh 2 kolom (kartu Required/Optional Documents | kartu Missing Documents +
   Catatan Checklist), BUKAN kolom sempit `max-w-3xl`. Mode standalone ketiga modal TIDAK berubah.
-- **Tutup jendela** (satu tombol X) -> `fetchRecords()` 1x supaya titik/badge baris ikut data terbaru.
+- **Tutup jendela** (satu tombol X) -> ~~`fetchRecords()` 1x~~ (DIGANTI 2026-10-02: baca ulang 1 baris tanpa reload tabel, lihat atas).
 - **Shipment Info SATU di level jendela** (grid 5 kolom, 10 field, "—" kalau kosong, nilai
   `[overflow-wrap:anywhere]` + `min-w-0`, tanpa nowrap/ellipsis). Sumber: AWB/Vendor/Jalur
   (`jenis_dokumen`)/No. PIB (`no_pib`, CN selalu "—") dari baris `tabel_audit_pib/cn`; Courier/

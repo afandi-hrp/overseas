@@ -210,9 +210,9 @@ export default function CourierValidationWindow({
   ];
 
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center p-2 sm:p-4 print:bg-white print:p-0"
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-center items-center p-3 md:p-5 max-[1600px]:p-2.5 print:bg-white print:p-0"
       onMouseDown={e => { if (e.target === e.currentTarget) requestClose(); }}>
-      <div id="courier-validation-print-area" className="bg-white w-full h-full rounded-2xl shadow-2xl flex flex-col overflow-hidden print:shadow-none print:rounded-none">
+      <div id="courier-validation-print-area" className="bg-white w-full max-w-[1180px] h-[94vh] max-[1600px]:max-w-none max-[1600px]:h-full rounded-2xl shadow-2xl flex flex-col overflow-hidden print:shadow-none print:rounded-none">
         {/* Header + tab -- gaya jendela Open Invoice Recap Sea & Air. */}
         <div className="shrink-0 px-5 pt-4 border-b border-[#EADFD6] print:px-0 print:pt-0">
           <div className="flex flex-wrap items-start justify-between gap-3 print:hidden">

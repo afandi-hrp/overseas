@@ -4648,6 +4648,21 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     return row;
   };
 
+  // Tutup jendela Open (2026-10-02, laporan user "tabel refresh tiap tutup Open"): JANGAN fetchRecords()
+  // (overlay "Updating data..." + daftar dimuat ulang). Cukup baca ulang baris itu & tempel ke `records`
+  // tanpa loading; ringkasan KPI hanya dihitung ulang kalau persen validasi/kelengkapan baris berubah.
+  // Aksi yg memindahkan baris antar tab (Mark as audited / Move back / Delete / Edit) tetap refresh penuh.
+  const patchCourierRowSilently = async (rec: any) => {
+    const t = courierDocTypeOf(rec);
+    const fresh = await reloadCourierRow(rec.id, t);
+    if (!fresh) return;
+    const same = (r: any) => String(r.id) === String(rec.id) && courierDocTypeOf(r) === t;
+    const before = records.find(same);
+    setRecords(prev => prev.map(r => (same(r) ? { ...r, ...fresh } : r)));
+    const keys = ['pct_kelengkapan', 'doc_validation_pct', 'cost_validation_pct', 'status_kelengkapan'];
+    if (!before || keys.some(k => String(before[k] ?? '') !== String(fresh[k] ?? ''))) setCourierSummaryNonce(n => n + 1);
+  };
+
   // Mark as audited / Move back to Draft dari jendela Open (logika SAMA tombol lama Undraft/Draft).
   const courierSetStatus = async (rec: any, target: 'audited' | 'draft') => {
     const t = courierDocTypeOf(rec);
@@ -5945,7 +5960,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         const draft = isCourierDraft(rec);
         const canEditAudit = canEdit('courier_audit');
         const docNo = courierColOk(t === 'CN' ? 'no_sppbmcp' : 'no_pib') ? courierDocNo(rec, t) : '';
-        const closeOpen = () => { setCourierOpen(null); fetchRecords(); };
+        const closeOpen = () => { setCourierOpen(null); patchCourierRowSilently(rec); };
         return (
           <React.Fragment key={`courier-open-${t}-${rec.id}`}>
           <CourierValidationWindow
