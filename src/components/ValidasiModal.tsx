@@ -7,6 +7,7 @@ import ValidasiPerhitunganPIB from './ValidasiPerhitunganPIB';
 import { VW_LABEL, VW_BTN_PRIMARY, VW_BTN_SECONDARY, VW_BTN_SUCCESS, VW_BTN_DANGER, VW_CARD, VW_INPUT, VW_TILE, VW_TILE_TONE, vwPctBar, vwPctText } from './validationWindowStyles';
 import { Pill } from './SeaAirAuditUi';
 import { useAuth } from '../lib/AuthContext';
+import { appendNoteLine } from '../utils/NoteLines';
 
 // Format tanggal seragam di seluruh aplikasi: DD-MMMM-YYYY, nama bulan Bahasa Inggris.
 const MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -1109,8 +1110,9 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
 
   // Simpan checklist dokumen ke tabel_checklist_validasi -- isi SAMA PERSIS autosave lama (dipakai
   // autosave mode standalone & tombol "Save changes" mode embedded). Return pesan error / null.
-  const persistChecklist = async (valuesArg?: any): Promise<string | null> => {
+  const persistChecklist = async (valuesArg?: any, notesArg?: string): Promise<string | null> => {
        const vals = valuesArg ?? values;
+       const notes = notesArg ?? catatanManual;
        const activeSectionsNow = activeSectionsRef.current;
        const pibStatsNow = pibStatsRef.current;
        const debugDataNow = debugDataRef.current;
@@ -1169,7 +1171,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
 
        const payload: any = {
           pib_id, cn_id, awb: awbNo, tanggal_cek: tanggal, nama_checker: namaChecker,
-          catatan_manual: catatanManual,
+          catatan_manual: notes,
           values_json: vals, total_match: match, total_mismatch: mismatch,
           total_empty: empty + partial, status_checklist, updated_at: new Date().toISOString()
        };
@@ -1500,7 +1502,8 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   // Jumlah field yang punya data dokumen lebih baru (banner "Recompute") -- dihitung dari fungsi yang SAMA.
   const recomputePending = useMemo(() => (computedSnapshot ? planCourierDocRecompute(values, computedSnapshot).total : 0), [values, computedSnapshot]);
 
-  if (loading) {
+  // Mode summary: baca ulang (reloadKey) senyap -- tidak menampilkan spinner lagi setelah pernah dimuat.
+  if (loading && !(variant === 'summary' && loadedOnce)) {
     if (embedded) {
       return (
         <div className="bg-white rounded-[14px] border border-[#EADFD6] flex flex-col items-center justify-center py-14 text-[#5A305A]">
@@ -1679,17 +1682,48 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     const doAccept = async (id: string) => {
       const note = acceptNote.trim();
       if (!note) return;
+      const it = unmatched.find(x => x.id === id);
       const prevValues = values;
+      const prevNotes = catatanManual;
       const nextValues = { ...values, [id]: { ...(values[id] || { src: '', cmp: '' }), manual_status: 'match', accept_note: note, accept_by: profile?.nama || user?.email || null, accept_at: new Date().toISOString() } };
+      // 2026-10-05 (keputusan user): catatan Accept juga ditambahkan ke "Manual Change Notes" (1 baris per catatan).
+      const line = `- ${it ? `${it.field} · ${it.docLabel}` : id}: ${note.replace(/\s*\n\s*/g, ' ')}`;
+      const nextNotes = appendNoteLine(catatanManual, line);
       userActionRef.current = true;
       setValues(nextValues);
+      setCatatanManual(nextNotes);
       setAcceptSaving(true);
       try {
-        const err = await persistChecklist(nextValues);
-        if (err) { setValues(prevValues); showDocToast('Failed to save: ' + err, 'error'); return; }
-        setDocSnap(JSON.parse(JSON.stringify({ values: nextValues, awbNo, tanggal, namaChecker, catatanManual })));
+        const err = await persistChecklist(nextValues, nextNotes);
+        if (err) { setValues(prevValues); setCatatanManual(prevNotes); showDocToast('Failed to save: ' + err, 'error'); return; }
+        setDocSnap(JSON.parse(JSON.stringify({ values: nextValues, awbNo, tanggal, namaChecker, catatanManual: nextNotes })));
         setAcceptingId(null); setAcceptNote('');
         showDocToast('Accepted — the field is counted as a match.', 'success');
+        onChanged?.();
+      } catch (e: any) {
+        setValues(prevValues);
+        setCatatanManual(prevNotes);
+        showDocToast('Failed to save: ' + (e?.message || ''), 'error');
+      } finally {
+        setAcceptSaving(false);
+      }
+    };
+    // Recompute (2026-10-05, keputusan user: pindah dari Details ke ringkasan, sejajar Details) -- logika SAMA
+    // handleRecomputeMissing (planCourierDocRecompute), hasilnya langsung disimpan.
+    const doRecompute = async () => {
+      const computed = computedValuesRef.current;
+      if (!computed) return;
+      const plan = planCourierDocRecompute(values, computed);
+      if (plan.total === 0) { showDocToast(docRecomputeMessage(plan), 'success'); return; }
+      const prevValues = values;
+      userActionRef.current = true;
+      setValues(plan.next);
+      setAcceptSaving(true);
+      try {
+        const err = await persistChecklist(plan.next);
+        if (err) { setValues(prevValues); showDocToast('Failed to save: ' + err, 'error'); return; }
+        setDocSnap(JSON.parse(JSON.stringify({ values: plan.next, awbNo, tanggal, namaChecker, catatanManual })));
+        showDocToast(docRecomputeMessage(plan), 'success');
         onChanged?.();
       } catch (e: any) {
         setValues(prevValues);
@@ -1717,7 +1751,15 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
         </div>
         <div className="flex items-center justify-between gap-2">
           <div className="text-[12.5px] font-bold text-[#3B1B3D]">Unmatched fields {unmatched.length > 0 && <span className="text-[#A8231A]">({unmatched.length})</span>}</div>
-          {onOpenDetails && <button type="button" className={VW_BTN_PRIMARY} onClick={onOpenDetails}>Details</button>}
+          <div className="flex items-center gap-2">
+            {canEdit && hasSourceData && (
+              <button type="button" className={VW_BTN_SECONDARY} disabled={acceptSaving} onClick={doRecompute}
+                title="Fill and update fields from the latest document data (e.g. an additional document) — manually edited fields are never overwritten">
+                <RefreshCw size={13} /> Recompute
+              </button>
+            )}
+            {onOpenDetails && <button type="button" className={VW_BTN_PRIMARY} onClick={onOpenDetails}>Details</button>}
+          </div>
         </div>
         {docToast && <div className={`px-3 py-2 rounded-xl border text-[12px] font-semibold ${docToast.type === 'success' ? 'bg-[#EAF6EF] border-[#BFE3CD] text-[#17663D]' : 'bg-[#FDE7E4] border-[#F4C3BC] text-[#A8231A]'}`}>{docToast.msg}</div>}
         {!hasSourceData && <div className="rounded-xl border border-[#EADFD6] bg-white px-3 py-2.5 text-[12px] text-[#6E5E70]">No AI document reading for this shipment yet — open Details to fill in values manually.</div>}
@@ -1759,7 +1801,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
         )}
         {recomputePending > 0 && (
           <div data-recompute-pending className="rounded-xl border border-[#F3D9A4] bg-[#FFF8EA] px-3 py-2 text-[12px] font-semibold text-[#7A4F00]">
-            {recomputePending} field(s) have newer document data — open Details and click Recompute to apply.
+            {recomputePending} field(s) have newer document data — {canEdit ? 'click Recompute to apply.' : 'an editor can apply it with Recompute while the record is Draft.'}
           </div>
         )}
         {accepted.length > 0 && (

@@ -152,6 +152,24 @@ export function buildRecapGroup(key: string, rowsIn: any[]): RecapGroup {
   }
 }
 
+// Due Date (2026-10-05, keputusan user): Tgl Invoice (`tgl_invoice`, sql/042) + 30 hari, per invoice. Kartu menampilkan
+// due date TERDEKAT dari invoice yang belum Paid (`tgl_lunas` kosong). Finance Handover Courier TIDAK memakai ini (TOP tetap).
+export const COURIER_DUE_DAYS = 30
+export function courierInvoiceDueDate(r: any): string | null {
+  const m = String(r?.tgl_invoice ?? '').match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!m) return null
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + COURIER_DUE_DAYS))
+  return d.toISOString().slice(0, 10)
+}
+export type RecapDue = { due: string | null; overdue: boolean; allPaid: boolean; missing: number; perInvoice: { no: string; kind: InvoiceKind; due: string | null; paid: boolean }[] }
+export function recapGroupDue(g: RecapGroup, todayIso: string): RecapDue {
+  const perInvoice = g.rows.map(r => ({ no: String(r.no_invoice || '—'), kind: invoiceKind(r), due: courierInvoiceDueDate(r), paid: !!r.tgl_lunas }))
+  const open = perInvoice.filter(p => !p.paid)
+  const dues = open.map(p => p.due).filter(Boolean).sort() as string[]
+  const due = dues[0] || null
+  return { due, overdue: !!due && due < todayIso, allPaid: g.rows.length > 0 && open.length === 0, missing: open.filter(p => !p.due).length, perInvoice }
+}
+
 // Status kartu (Submit to Finance per invoice).
 export function recapGroupStatus(g: RecapGroup): { label: string; tone: 'green' | 'amber' | 'blue' | 'grey' } {
   const n = g.rows.length

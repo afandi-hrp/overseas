@@ -6,6 +6,8 @@
 //   lagi (ditandai "values changed since accepted"). Review per invoice lama (sql/038) tetap dihormati.
 // - Auto-update: data dibaca ulang senyap tiap ±30 detik selama tampil, saat `reloadKey` naik (upload susulan
 //   selesai / Checklist disimpan / jendela Details ditutup) & saat ganti kartu (remount).
+// - Catatan Accept juga ditambahkan ke "Catatan Perubahan Manual" (tabel_cost_validasi.catatan, 1 baris per catatan;
+//   Undo menghapus barisnya) -- keputusan user 2026-10-05.
 // - Toolbar hanya tombol Details (`onOpenDetails`: tabel lengkap + Edit di jendela penuh).
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
@@ -18,6 +20,7 @@ import {
   type CourierCostReviews, type CourierCostItemReviewRow,
 } from '../utils/CourierCostReviewHelpers';
 import { fmtRp } from '../utils/SeaAirAuditHelpers';
+import { appendNoteLine, removeNoteLine } from '../utils/NoteLines';
 
 export const COST_SUMMARY_POLL_MS = 30000;
 
@@ -28,6 +31,9 @@ const fmtDateTime = (v: any) => {
   return isNaN(d.getTime()) ? String(v) : d.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 };
 const fmtDiff = (n: number | null) => (n === null ? '—' : `${n > 0 ? '+' : ''}${fmtRp(n)}`);
+// Baris catatan di "Catatan Perubahan Manual" utk 1 Accept.
+export const costAcceptNoteLine = (r: Pick<CostDiffRow, 'label' | 'section'>, note: string) =>
+  `- ${r.label} (Invoice ${r.section === 'FREIGHT' ? 'freight' : 'duty'}): ${String(note).replace(/\s*\n\s*/g, ' ').trim()}`;
 
 export default function CourierCostSummary({ docType, auditId, canEdit, reloadKey = 0, onOpenDetails, onPctChange, onChanged }: {
   docType: string;
@@ -76,6 +82,14 @@ export default function CourierCostSummary({ docType, auditId, canEdit, reloadKe
   const acceptedRows = summary.diff_rows.filter(r => r.accepted === 'item');
   const flash = (msg: string, ok: boolean) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3000); };
 
+  const saveCostNotes = async (notes: string): Promise<boolean> => {
+    if (!data?.id) return false;
+    if ((data.catatan || '') === notes) return true;
+    const { error } = await supabase.from('tabel_cost_validasi').update({ catatan: notes || null }).eq('id', data.id);
+    if (error) { console.error('[CourierCostSummary] catatan gagal disimpan', error); return false; }
+    setData((d: any) => (d ? { ...d, catatan: notes || null } : d));
+    return true;
+  };
   const doAccept = async (row: CostDiffRow) => {
     if (!note.trim()) return;
     setSaving(true);
@@ -84,7 +98,12 @@ export default function CourierCostSummary({ docType, auditId, canEdit, reloadKe
     if (error) { flash('Failed to save: ' + error.message, false); return; }
     setReviews(p => ({ ...p, items: { ...(p.items || {}), [row.key]: saved as CourierCostItemReviewRow } }));
     setAccepting(null); setNote('');
-    flash('Accepted — the line is counted as OK.', true);
+    // Catatan Perubahan Manual: ganti baris lama utk baris biaya yg sama (Accept ulang), lalu tambah baris baru.
+    const prevRev = reviews.items?.[row.key];
+    let notes = prevRev ? removeNoteLine(data?.catatan, costAcceptNoteLine(row, prevRev.catatan)) : (data?.catatan || '');
+    notes = appendNoteLine(notes, costAcceptNoteLine(row, note));
+    const ok = await saveCostNotes(notes);
+    flash(ok ? 'Accepted — the line is counted as OK.' : 'Accepted, but the note could not be added to the manual change notes.', ok);
     onChanged?.();
   };
   const undoAccept = async (key: string) => {
@@ -95,6 +114,8 @@ export default function CourierCostSummary({ docType, auditId, canEdit, reloadKe
     setSaving(false);
     if (error) { flash('Failed to undo: ' + error.message, false); return; }
     setReviews(p => { const items = { ...(p.items || {}) }; delete items[key]; return { ...p, items }; });
+    const row = summary.diff_rows.find(r => r.key === key);
+    if (row) await saveCostNotes(removeNoteLine(data?.catatan, costAcceptNoteLine(row, rev.catatan)));
     onChanged?.();
   };
 

@@ -3,6 +3,8 @@
 **2026-10-05: tombol Open & jendela Validation (portal) mode Card DIGANTI panel samping** — lihat CLAUDE.md "Panel Validation
 samping Invoice Recap Courier". Isi jendela Open (Overview total/split, Invoices, Audit trail, Submit, Unlock) pindah ke tab
 **Invoices** panel; bagian "Jendela Open" di bawah = RIWAYAT (aturan Submit/kunci/Edit in List tetap berlaku).
+Revisi bagian 2 (2026-10-05): susunan kartu, KPI 4 kartu, Due Date, header panel -- lihat CLAUDE.md bagian yang sama
+(isi kartu di bawah = RIWAYAT; berat/vessel/titik validasi sudah tidak ada di kartu).
 
 Keputusan user & SQL: CLAUDE.md "Rombak Invoice Recap Courier" + "Invoice Recap Courier per AWB". Pola SAMA Invoice
 Recap Sea & Air (token `SeaAirAuditUi.tsx`, font Sora); mode **List** = tabel lama `CourierRekapanRowGroup` APA ADANYA

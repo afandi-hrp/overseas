@@ -1,7 +1,7 @@
 // Panel Validation SAMPING Invoice Recap Courier (2026-10-05, keputusan user; prototipe "Validation Side Panel" --
 // hanya tata letak, warna/font tetap gaya app). Menggantikan jendela Open & jendela Validation di mode Card:
 // - Tampil di kanan daftar kartu (layar sempit: di bawah). Klik Validation kartu lain -> isi panel berganti.
-// - Header: AWB/PIB-CN, Submit all to Finance, View in Audit, Edit in List, tutup.
+// - Header (2026-10-05): tag PT + Submit all to Finance / View in Audit / Edit in List; kanan GRAND TOTAL + status, tutup.
 // - Tab Checklist | Doc Validation | Cost Validation | Invoices. Kartu tanpa pasangan Audit -> hanya Invoices.
 // - Shipment Info (2 baris, SAMA di semua tab): AWB, No. Invoice Freight, No. Invoice Duty, Vendor, Jalur, No. PIB /
 //   Courier, Service, Direction/Type, Origin/Zone, Ship Date, Chargeable Weight ("—" kalau kosong).
@@ -9,16 +9,16 @@
 //   (riwayat centang dokumen, tabel courier_checklist_doc_log sql/041).
 // - Doc Validation = ValidasiModal variant summary (Mismatch + Accept bercatatan); Cost Validation =
 //   CourierCostSummary (Over/Undercharge + Accept per baris). Tombol Details = jendela penuh tabel lama
-//   (ValidasiModalLegacy: Recompute & Edit / CostValidationModalLegacy: Edit) -- logika simpan SAMA mode List.
+//   (ValidasiModalLegacy: Edit -- Recompute pindah ke ringkasan 2026-10-05 / CostValidationModalLegacy: Edit) -- logika simpan SAMA mode List.
 // - Validasi bisa diubah hanya selama PIB/CN Draft (aturan SAMA Audit Courier).
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Send, ExternalLink, Pencil, ShieldCheck } from 'lucide-react'
+import { X, Send, ExternalLink, Pencil } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { SA_BTN_OUTLINE, SA_BTN_GREEN, Chip, Pill, PtBadge } from './SeaAirAuditUi'
+import { SA_BTN_OUTLINE, SA_BTN_GREEN, Pill, PtBadge } from './SeaAirAuditUi'
 import { fmtRp, companyFullName } from '../utils/SeaAirAuditHelpers'
 import { courierDocNo, isCourierDraft, type CourierDocType } from '../utils/CourierAuditHelpers'
-import { recapGroupStatus, ppjkCode, type RecapGroup, type RecapAuditLink } from '../utils/CourierRecapHelpers'
+import { recapGroupStatus, type RecapGroup, type RecapAuditLink } from '../utils/CourierRecapHelpers'
 import { courierShipmentInfo, fmtCourierDate, validationDotClass, validationDotLabel, rowValidationPct, type ValidationTabKey } from './CourierValidationWindow'
 import ValidasiModal from './ValidasiModal'
 import ValidasiModalLegacy from './ValidasiModalLegacy'
@@ -204,45 +204,38 @@ export default function CourierRecapValidationPanel({
 
   const status = recapGroupStatus(g)
   const unsubmitted = g.rows.filter(r => !r.submit_date)
-  const ppjks = Array.from(new Set(g.ppjks.map(ppjkCode).filter(Boolean)))
   const vendor = rec?.vendor || g.rows.map(r => r.vendor).find(hasVal)
   const editOf = (t: ValidationTabKey) => draft && canEditValidation[t]
   const tabLabel: Record<RecapPanelTab, string> = { checklist: 'Checklist', doc: 'Doc Validation', cost: 'Cost Validation', invoices: `Invoices (${g.rows.length})` }
 
   return (
     <div className="bg-white rounded-2xl border border-[#EADFD6] shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden" data-recap-panel={g.key}>
-      {/* Header */}
+      {/* Header (2026-10-05, keputusan user): baris judul/ikon/tag DIHAPUS. Kiri = tag PT + tombol aksi; kanan = GRAND
+          TOTAL (Freight + Duty − CN, ikut bertambah otomatis saat invoice baru masuk) + status Submit di bawahnya + tutup. */}
       <div className="shrink-0 px-4 pt-3 border-b border-[#EADFD6]">
         <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0 flex items-start gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-[#F5EDF3] text-[#6B3470] flex items-center justify-center shrink-0"><ShieldCheck size={16} /></div>
-            <div className="min-w-0">
-              <h2 className="text-[15px] font-bold text-[#3B1B3D] leading-tight [overflow-wrap:anywhere]">
-                {rec ? `Validation · ${docType} ${courierDocNo(rec, docType) || ''}`.trim() : `AWB ${g.awb}`}
-              </h2>
-              <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                <span className="text-[11.5px] text-[#6E5E70] tabular-nums">{g.awbRaw || g.awb}</span>
-                {ppjks.map(p => <Chip key={p} tone="grey">{p}</Chip>)}
-                {colOk('an') && g.an && <PtBadge code={g.an} title={companyFullName(companyNames, g.an)} />}
-                <Pill tone={status.tone}>{status.label}</Pill>
-                {rec && <Chip tone={draft ? 'amber' : 'green'}>{docType} · {draft ? 'Draft' : 'Audited — view only'}</Chip>}
-                {!rec && <Chip tone={g.key.startsWith('ID:') ? 'grey' : 'red'}>{g.key.startsWith('ID:') ? 'No AWB' : 'Not found in Audit'}</Chip>}
-              </div>
-            </div>
+          <div className="min-w-0 flex flex-wrap items-center gap-1.5 pt-0.5">
+            {colOk('an') && g.an && <PtBadge code={g.an} title={companyFullName(companyNames, g.an)} />}
+            {canEditRecap && unsubmitted.length > 0 && (
+              <button type="button" disabled={busy} className={`${SA_BTN_GREEN} h-8`} onClick={() => onSubmit(unsubmitted.map(r => String(r.id)))}>
+                <Send size={12} /> {busy ? 'Submitting…' : unsubmitted.length === g.rows.length ? 'Submit all to Finance' : `Submit all (${unsubmitted.length} left)`}
+              </button>
+            )}
+            {!g.key.startsWith('ID:') && <button type="button" className={`${SA_BTN_OUTLINE} h-8`} onClick={onViewInAudit}><ExternalLink size={12} /> View in Audit</button>}
+            {canEditRecap && <button type="button" className={`${SA_BTN_OUTLINE} h-8`} onClick={onEditInList} title="Edit the invoices of this AWB in the List view"><Pencil size={12} /> Edit in List</button>}
           </div>
-          <div className="flex items-center gap-1.5 flex-wrap justify-end">
-            {colOk('total_amount') && <div className="text-right mr-1"><div className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B]">Total</div><div className="text-[15px] font-bold text-[#3B1B3D] tabular-nums leading-tight">{fmtRp(g.finalTotal)}</div></div>}
+          <div className="flex items-start gap-1.5 ml-auto">
+            <div className="text-right flex flex-col items-end gap-1" data-grand-total>
+              {colOk('total_amount') && (
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B]">Grand total</div>
+                  <div className="text-[17px] font-bold text-[#3B1B3D] tabular-nums leading-tight">{fmtRp(g.finalTotal)}</div>
+                </div>
+              )}
+              <Pill tone={status.tone}>{status.label}</Pill>
+            </div>
             <button type="button" onClick={onClose} aria-label="Close panel" title="Close" className="w-8 h-8 inline-flex items-center justify-center hover:bg-[#F6EFEA] rounded-xl text-[#6E5E70]"><X size={17} /></button>
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5 mt-2">
-          {canEditRecap && unsubmitted.length > 0 && (
-            <button type="button" disabled={busy} className={`${SA_BTN_GREEN} h-8`} onClick={() => onSubmit(unsubmitted.map(r => String(r.id)))}>
-              <Send size={12} /> {busy ? 'Submitting…' : unsubmitted.length === g.rows.length ? 'Submit all to Finance' : `Submit all (${unsubmitted.length} left)`}
-            </button>
-          )}
-          {!g.key.startsWith('ID:') && <button type="button" className={`${SA_BTN_OUTLINE} h-8`} onClick={onViewInAudit}><ExternalLink size={12} /> View in Audit</button>}
-          {canEditRecap && <button type="button" className={`${SA_BTN_OUTLINE} h-8`} onClick={onEditInList} title="Edit the invoices of this AWB in the List view"><Pencil size={12} /> Edit in List</button>}
         </div>
         <div className="flex items-end gap-1 mt-2 overflow-x-auto" role="tablist">
           {tabs.map(t => {
@@ -269,7 +262,7 @@ export default function CourierRecapValidationPanel({
               <InfoCell label="No. Invoice Freight">{dash(joinNos(g.byKind.freight))}</InfoCell>
               <InfoCell label="No. Invoice Duty">{dash(joinNos(g.byKind.duty))}</InfoCell>
               <InfoCell label="Vendor">{dash(vendor)}</InfoCell>
-              <InfoCell label="Jalur">{rec ? docType : '—'}</InfoCell>
+              <InfoCell label="Jalur">{rec ? <>{docType}{!draft && <span className="text-[10.5px] font-normal text-[#8A7A8B]"> · Audited (view only)</span>}</> : '—'}</InfoCell>
               <InfoCell label={docType === 'CN' && rec ? 'No. SPPBMCP' : 'No. PIB'}>{dash(rec ? courierDocNo(rec, docType) : '')}</InfoCell>
               <InfoCell label="Courier">{dash(info.courier)}</InfoCell>
               <InfoCell label="Service">{dash(info.service)}</InfoCell>
@@ -310,7 +303,7 @@ export default function CourierRecapValidationPanel({
 
       {rec && details === 'doc' && (
         <DetailsWindow title={`Doc Validation · ${docType} ${courierDocNo(rec, docType) || ''} · ${rec.awb || ''}`} onClose={closeDetails}>
-          <ValidasiModalLegacy record={rec} mainTab="courier" subTab="courier_audit" onClose={closeDetails} canEdit={editOf('doc')} embedded />
+          <ValidasiModalLegacy record={rec} mainTab="courier" subTab="courier_audit" onClose={closeDetails} canEdit={editOf('doc')} embedded hideRecompute />
         </DetailsWindow>
       )}
       {rec && details === 'cost' && (

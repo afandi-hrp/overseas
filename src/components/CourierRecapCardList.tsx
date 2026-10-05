@@ -7,19 +7,21 @@
 // container query (@container) supaya otomatis ringkas saat lebarnya berbagi dgn panel.
 import React, { useEffect, useRef, useState } from 'react'
 import PaginationFooter from './PaginationFooter'
-import { SA_CARD, SA_LABEL, Chip, Pill, PtBadge } from './SeaAirAuditUi'
-import { fmtRp, fmtRpShort, fmtDateShort, companyFullName } from '../utils/SeaAirAuditHelpers'
+import { SA_CARD, SA_LABEL, Chip, Pill } from './SeaAirAuditUi'
+import { fmtRp, fmtDateShort, companyFullName } from '../utils/SeaAirAuditHelpers'
+import { todayLocalIso } from '../utils/SeaAirRecapHelpers'
 import { courierDocNo, isCourierDraft } from '../utils/CourierAuditHelpers'
 import {
-  fetchCourierRecapPage, fetchRecapAuditLinks, fetchCourierRecapAttentionGroups, recapGroupStatus, ppjkCode, INVOICE_KIND_LABEL,
+  fetchCourierRecapPage, fetchRecapAuditLinks, fetchCourierRecapAttentionGroups, recapGroupStatus, recapGroupDue, ppjkCode, INVOICE_KIND_LABEL, COURIER_DUE_DAYS,
   type RecapFilters, type RecapGroup, type RecapSummaryCourier, type InvoiceKind,
 } from '../utils/CourierRecapHelpers'
 import { LoadingState } from './LoadingState'
-import { ValidationDots } from './CourierAuditCardList'
 import type { ValidationTabKey } from './CourierValidationWindow'
 import type { RecapPanelTab } from './CourierRecapValidationPanel'
 
 // ─── KPI ──────────────────────────────────────────────────────────────────────
+// 2026-10-05 (keputusan user): 4 kartu -- AWB | Freight + Duty (BERSIH: − credit notes) | Not submitted | Submitted · unpaid;
+// rupiah PENUH (tanpa singkatan). Kartu "Total (− credit notes)" dihapus (nilainya kini di Freight + Duty).
 export const CourierRecapKpiCards: React.FC<{ summary: RecapSummaryCourier | null; loading: boolean; colOk: (k: string) => boolean }> = ({ summary, loading, colOk }) => {
   const v = (fn: (s: RecapSummaryCourier) => React.ReactNode) => (summary ? fn(summary) : loading ? '…' : '—')
   const card = (label: string, value: React.ReactNode, sub: React.ReactNode, valueClass = 'text-[#3B1B3D]') => (
@@ -31,10 +33,11 @@ export const CourierRecapKpiCards: React.FC<{ summary: RecapSummaryCourier | nul
   )
   const amountOk = colOk('total_amount')
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       {card('AWB', v(s => s.awb), v(s => `${s.invoices} invoice${s.invoices === 1 ? '' : 's'}${s.not_in_audit > 0 ? ` · ${s.not_in_audit} not found in Audit` : ''}`))}
-      {amountOk ? card('Freight + Duty', v(s => fmtRpShort(s.charges)), 'all invoices excl. credit notes') : card('Freight + Duty', '—', 'Hidden for your role')}
-      {amountOk ? card('Total (− credit notes)', v(s => fmtRpShort(s.charges - s.credit_notes)), v(s => `credit notes −${fmtRpShort(s.credit_notes)}`)) : card('Total (− credit notes)', '—', 'Hidden for your role')}
+      {amountOk
+        ? card('Freight + Duty', v(s => fmtRp(s.charges - s.credit_notes)), v(s => `all invoices incl. credit notes (−${fmtRp(s.credit_notes)})`))
+        : card('Freight + Duty', '—', 'Hidden for your role')}
       {card('Not submitted to Finance', v(s => s.not_submitted), 'invoices without Submit Date', 'text-[#7A4F00]')}
       {card('Submitted · unpaid', v(s => s.submitted_unpaid), v(s => `${s.paid} paid`), 'text-[#2F4FA8]')}
     </div>
@@ -42,9 +45,20 @@ export const CourierRecapKpiCards: React.FC<{ summary: RecapSummaryCourier | nul
 }
 
 // ─── Kartu 1 AWB ──────────────────────────────────────────────────────────────
+// Susunan (2026-10-05, keputusan user): baris atas "PPJK · PT" + tag Freight/Duty; AWB; Vendor | Email received (kecil),
+// PO, Origin | status Submit + PIB/CN Draft/Audited + Due Date (Tgl Invoice + 30 hari, menggantikan titik validasi) |
+// GRAND TOTAL + Validation. Berat & Vessel DIHAPUS dari kartu.
 const kindChip = (k: InvoiceKind, n: number) => (n > 0 ? (
   <Chip key={k} tone={k === 'freight' ? 'blue' : k === 'duty' ? 'amber' : 'purple'}>{INVOICE_KIND_LABEL[k]}{n > 1 ? ` ×${n}` : ''}</Chip>
 ) : null)
+
+export const RecapDueChip: React.FC<{ g: RecapGroup }> = ({ g }) => {
+  const d = recapGroupDue(g, todayLocalIso())
+  if (d.allPaid) return null
+  const title = d.perInvoice.map(p => `${INVOICE_KIND_LABEL[p.kind]} ${p.no}: ${p.paid ? 'paid' : p.due ? `due ${fmtDateShort(p.due)}` : 'no invoice date yet'}`).join('\n')
+  if (!d.due) return <Chip tone="grey" title={`Invoice date not available yet — due date = invoice date + ${COURIER_DUE_DAYS} days\n${title}`}>Due —</Chip>
+  return <Chip tone={d.overdue ? 'red' : 'grey'} title={title}>{d.overdue ? 'Overdue · ' : 'Due '}{fmtDateShort(d.due)}</Chip>
+}
 
 export const CourierRecapGroupCard: React.FC<{
   g: RecapGroup
@@ -62,32 +76,28 @@ export const CourierRecapGroupCard: React.FC<{
   const ppjks = Array.from(new Set(g.ppjks.map(ppjkCode).filter(Boolean)))
   const pos = colOk('po_pt_imi') ? g.pos : []
   const emailRange = g.firstEmail && g.lastEmail && g.firstEmail !== g.lastEmail ? `${fmtDateShort(g.firstEmail)} – ${fmtDateShort(g.lastEmail)}` : fmtDateShort(g.firstEmail)
+  const vendor = colOk('vendor') ? (g.rows.map(r => r.vendor).find(v => v && String(v).trim()) || '') : ''
+  const ppjkPt = [ppjks.join(' / '), colOk('an') ? g.an : ''].filter(Boolean).join(' · ')
 
   return (
     <div className={`${SA_CARD} border-l-4 ${border} overflow-hidden @container ${selected ? 'ring-2 ring-[#6B3470]' : ''}`} data-recap-card={g.key}>
-      <div className="grid grid-cols-1 @xl:grid-cols-2 @4xl:grid-cols-[230px_minmax(0,1fr)_260px_220px] gap-x-5 gap-y-3 px-4 py-3.5 items-center">
-        {/* 1. AWB */}
-        <div className="min-w-0">
-          <div className="text-[11px] text-[#8A7A8B] font-medium">AWB</div>
-          <div className="text-[15px] font-bold text-[#3B1B3D] truncate tabular-nums" title={g.awbRaw}>{g.awb}</div>
-          <div className="flex flex-wrap items-center gap-1.5 mt-1">
-            {ppjks.map(p => <Chip key={p} tone="grey">{p}</Chip>)}
-            {colOk('an') && g.an && <PtBadge code={g.an} title={companyFullName(companyNames, g.an)} />}
-          </div>
-          <div className="text-[11px] text-[#8A7A8B] mt-1">Email received {emailRange}</div>
-        </div>
-
-        {/* 2. Shipment & invoices */}
+      <div className="grid grid-cols-1 @xl:grid-cols-2 @4xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,1fr)_200px] gap-x-5 gap-y-3 px-4 py-3.5 items-center">
+        {/* 1. PPJK · PT + jenis invoice, AWB, Vendor */}
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">
+            {ppjkPt && <Chip tone="grey" title={colOk('an') && g.an ? companyFullName(companyNames, g.an) : undefined}>{ppjkPt}</Chip>}
             {(['freight', 'duty', 'cn'] as InvoiceKind[]).map(k => kindChip(k, g.byKind[k].length))}
           </div>
-          <div className="text-[12px] text-[#3B1B3D] mt-1 truncate">
-            {colOk('origin') ? (g.origin || '—') : ''}{colOk('weight_kg') && g.weight !== null ? ` · ${g.weight.toLocaleString('id-ID')} kg` : ''}
-          </div>
+          <div className="text-[15px] font-bold text-[#3B1B3D] truncate tabular-nums mt-1" title={g.awbRaw}>{g.awb}</div>
+          {vendor && <div className="text-[12px] font-semibold text-[#6E5E70] truncate" title={vendor}>{vendor}</div>}
+        </div>
+
+        {/* 2. Email received, PO, Origin */}
+        <div className="min-w-0">
+          <div className="text-[10.5px] text-[#8A7A8B]">Email received {emailRange}</div>
           {colOk('po_pt_imi') && (
-            <div className="text-[11px] text-[#6E5E70] min-w-0 mt-0.5">
-              {pos.length === 0 ? <span>No PO</span> : (
+            <div className="text-[11.5px] text-[#3B1B3D] min-w-0 mt-0.5">
+              {pos.length === 0 ? <span className="text-[#6E5E70]">No PO</span> : (
                 <div className="flex items-start gap-1.5 min-w-0">
                   <div className="min-w-0">{(expanded ? pos : pos.slice(0, 1)).map((p, i) => <div key={i} className="truncate" title={p}>{p}</div>)}</div>
                   {pos.length > 1 && (
@@ -99,32 +109,34 @@ export const CourierRecapGroupCard: React.FC<{
               )}
             </div>
           )}
-          {colOk('vessel') && g.vessels.length > 0 && <div className="text-[11px] text-[#6E5E70] truncate" title={g.vessels.join(' + ')}>Vessel: {g.vessels.join(' + ')}</div>}
+          {colOk('origin') && <div className="text-[11.5px] text-[#6E5E70] truncate mt-0.5">Origin: {g.origin || '—'}</div>}
         </div>
 
-        {/* 3. Status & Audit */}
+        {/* 3. Status, PIB/CN, Due Date */}
         <div className="min-w-0 flex flex-col gap-1.5 items-start">
           <Pill tone={status.tone}>{status.label}</Pill>
-          {audit ? (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <Chip tone={draft ? 'amber' : 'green'} title={`${audit.docType} ${courierDocNo(audit.rec, audit.docType) || ''}`.trim()}>{audit.docType} · {draft ? 'Draft' : 'Audited'}</Chip>
-              {audit.rec.reaudit_reason && <Chip tone="purple" title={audit.rec.reaudit_reason}>↻ Re-audit</Chip>}
-              <ValidationDots rec={audit.rec} tabs={validationTabs} onOpenTab={t => onValidation(g, t)} />
-            </div>
-          ) : g.key.startsWith('ID:') ? (
-            <Chip tone="grey">No AWB</Chip>
-          ) : (
-            <Chip tone="red" title="No PIB / CN with this AWB was found in Audit Courier">Not found in Audit</Chip>
-          )}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {audit ? (
+              <>
+                <Chip tone={draft ? 'amber' : 'green'} title={`${audit.docType} ${courierDocNo(audit.rec, audit.docType) || ''}`.trim()}>{audit.docType} · {draft ? 'Draft' : 'Audited'}</Chip>
+                {audit.rec.reaudit_reason && <Chip tone="purple" title={audit.rec.reaudit_reason}>↻ Re-audit</Chip>}
+              </>
+            ) : g.key.startsWith('ID:') ? (
+              <Chip tone="grey">No AWB</Chip>
+            ) : (
+              <Chip tone="red" title="No PIB / CN with this AWB was found in Audit Courier">Not found in Audit</Chip>
+            )}
+            <RecapDueChip g={g} />
+          </div>
         </div>
 
-        {/* 4. Total */}
+        {/* 4. GRAND TOTAL + Validation */}
         <div className="min-w-0 flex flex-col @4xl:items-end gap-1.5">
           {colOk('total_amount') ? (
             <>
-              <div className={SA_LABEL}>Total{g.cn > 0 ? ' (− credit note)' : ''}</div>
+              <div className={SA_LABEL}>Grand total</div>
               <div className="text-[18px] font-bold text-[#3B1B3D] tabular-nums leading-tight">{fmtRp(g.finalTotal)}</div>
-              {g.cn > 0 && <div className="text-[11px] text-[#6E5E70] tabular-nums">{fmtRp(g.charges)} − {fmtRp(g.cn)}</div>}
+              {g.cn > 0 && <div className="text-[11px] text-[#6E5E70] tabular-nums">{fmtRp(g.charges)} − {fmtRp(g.cn)} CN</div>}
             </>
           ) : <div className="text-[11px] text-[#8A7A8B]">Amounts hidden for your role</div>}
           <div className="flex items-center gap-1.5">

@@ -838,7 +838,7 @@ const STATUS_CONFIG: any = {
 // live (null = belum ada dokumen_validasi & belum ada checklist tersimpan). `checklistVersion`
 // naik tiap Checklist disimpan di tab sebelah -> flag PO/CIPL/Final Invoice dibaca ulang TANPA
 // reload penuh (edit yang sedang berjalan & autosave tidak terganggu).
-export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdit = true, embedded = false, onPctChange, checklistVersion = 0 }: { record: any, mainTab: string, subTab?: string, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, checklistVersion?: number }) {
+export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdit = true, embedded = false, onPctChange, checklistVersion = 0, hideRecompute = false }: { record: any, mainTab: string, subTab?: string, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, checklistVersion?: number, hideRecompute?: boolean }) {
   const [docType, setDocType] = useState<'PIB'|'CN'|null>(null);
   const [debugData, setDebugData] = useState<any>({ raw: {}, doc: {} });
 
@@ -1505,9 +1505,12 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
               </button>
             ) : (
               <>
+                {/* hideRecompute (2026-10-05): Details panel Invoice Recap -- Recompute pindah ke ringkasan (keputusan user). */}
+                {!hideRecompute && (
                 <button className={VW_BTN_SECONDARY} onClick={handleRecomputeMissing} title="Fill and update fields from the latest document data (e.g. an additional document) — manually edited fields are never overwritten">
                   <RefreshCw size={14} /> Recompute Document Data
                 </button>
+                )}
                 <button className={VW_BTN_DANGER} onClick={cancelEdit}>
                   <XCircle size={14} /> Cancel
                 </button>
@@ -1527,7 +1530,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
             value={catatanManual}
             onChange={e => { userActionRef.current = true; setCatatanManual(e.target.value); }}
             placeholder="Enter the reason or notes for any manually changed values..."
-            rows={1}
+            rows={Math.max(1, Math.min(8, (catatanManual || '').split('\n').length))}
             className="flex-1 min-w-0 border border-purple-100 bg-white rounded-lg px-2.5 py-1.5 text-[12px] text-[#5A305A] focus:outline-none focus:ring-2 focus:ring-purple-200 resize-y"
           />
         ) : (

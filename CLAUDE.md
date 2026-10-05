@@ -66,6 +66,8 @@ approval-nya.
   **`sql/041_courier_validation_panel.sql` SUDAH DIJALANKAN 2026-10-05** (konfirmasi user; 2026-10-05, panel Validation samping
   Invoice Recap Courier): tabel `courier_checklist_doc_log` + trigger `trg_courier_checklist_doc_log` (riwayat centang dokumen)
   & tabel `cost_validasi_review_courier_item` (Accept cost per baris). Lihat "Panel Validation samping Invoice Recap Courier".
+  **`sql/042_courier_recap_tgl_invoice.sql` BELUM DIJALANKAN — WAJIB dijalankan manual** (2026-10-05): kolom
+  `rekapan_courier.tgl_invoice` (date) -- dasar Due Date kartu Invoice Recap Courier (+30 hari). Sumber pengisian (n8n) menyusul dari user.
 - **Kondisi DB production (stack `supabase3`, audit 2026-09-26)**: role `anon` tanpa hak apa pun
   di schema public (tabel, fungsi, default privileges); GraphQL ditutup; semua tabel RLS dgn
   policy `has_page_access`/`has_edit_access` (tidak ada `using (true)`); semua view
@@ -539,7 +541,10 @@ user di production** (testing bagian 2 + Finance Handover dijadwalkan user bersa
 4. ~~Submit tanpa kunci~~ — SELESAI 2026-10-02 (sql/038, SUDAH dijalankan 2026-10-02): kunci setelah Submit + Unlock Admin, sama Sea & Air.
 5. (Keputusan user) Tanpa issue count / review per invoice di Recap untuk sementara.
 6. (Keputusan user) Edit tetap lewat tabel List; Export TETAP.
-7. Panel Validation samping (2026-10-05) — kode SELESAI, sql/041 SUDAH dijalankan 2026-10-05, belum dites user di production. Lihat bagian
+7. Panel Validation samping (2026-10-05) — kode SELESAI, sql/041 SUDAH dijalankan 2026-10-05, belum dites user di production.
+8. Revisi bagian 2 (2026-10-05) — kartu disusun ulang + Due Date, header panel disederhanakan, Recompute di ringkasan, catatan
+   Accept masuk catatan manual, KPI 4 kartu. **sql/042 (tgl_invoice) BELUM dijalankan**; pengisian `tgl_invoice` oleh n8n BELUM
+   (menunggu info user). Finance Handover Courier TIDAK berubah (TOP tetap -- keputusan user, ditentukan terpisah nanti). Lihat bagian
    "Panel Validation samping Invoice Recap Courier".
 
 **Umum:** semua halaman di atas belum diuji user di production; `kurs` text bug SUDAH diperbaiki; badge
@@ -640,7 +645,27 @@ Spek user + prototipe `Prototype — Validation Side Panel.html` (HANYA tata let
   trigger tabel ini); `cost_validasi_review_courier_item` (unik doc_type+audit_id+item_key, catatan wajib, RLS 4 policy
   `courier_cost_validation` + SELECT `courier_finance`). Sebelum dijalankan: Accept cost gagal simpan (pesan error), Document
   review tampil "Document history is not available yet", persen tetap jalan (fail-open).
-- **Diuji**: jsdom `courier_panel` 51 cek (+ unit helper cost), regresi render 95/page 51/recap 112/finance 57/urgent 5/authfocus 12/
+- **Revisi bagian 2 (2026-10-05, keputusan user)**:
+  - **Kartu**: baris atas chip "PPJK · PT" (mis. "DHL · IMI") + tag Freight/Duty/CN; AWB; Vendor (kecil) | Email received (kecil),
+    PO, Origin | status Submit + chip PIB/CN Draft/Audited + **Due Date** (`RecapDueChip`) | **GRAND TOTAL** + Validation. Berat &
+    Vessel DIHAPUS, titik validasi kartu DIHAPUS (diganti Due Date). Due Date = `tgl_invoice` + `COURIER_DUE_DAYS` (30) per invoice
+    (`courierInvoiceDueDate`), kartu = due TERDEKAT dari invoice yang belum Paid (`recapGroupDue`), merah "Overdue" kalau lewat,
+    "Due —" kalau Tgl Invoice belum ada (tooltip per invoice). Kolom List baru "Invoice Date" (`tgl_invoice`, COURIER_COLS).
+  - **KPI**: 4 kartu AWB | Freight + Duty (BERSIH = charges − credit notes, "all invoices incl. credit notes") | Not submitted |
+    Submitted · unpaid; rupiah PENUH (`fmtRp`, bukan `fmtRpShort`). Kartu "Total (− credit notes)" dihapus.
+  - **Header panel**: baris ikon/judul/tag DIHAPUS; kiri = PtBadge + Submit all / View in Audit / Edit in List; kanan = GRAND TOTAL +
+    status Submit di bawahnya + tutup. Status Audited tampil halus di Shipment Info "Jalur" ("· Audited (view only)").
+    GRAND TOTAL ikut bertambah otomatis: selama panel terbuka daftar kartu dibaca ulang tiap 30 dtk (+ setiap Accept/Submit).
+  - **Recompute** pindah ke ringkasan Doc Validation, sejajar Details (`doRecompute` = logika SAMA `handleRecomputeMissing`,
+    langsung disimpan); `ValidasiModalLegacy` prop BARU `hideRecompute` (dipakai jendela Details; mode List tetap ada Recompute).
+    Cost tetap hanya Details.
+  - **Catatan Accept masuk catatan manual** (`src/utils/NoteLines.ts` appendNoteLine/removeNoteLine, 1 baris per catatan, tidak
+    dobel): Doc -> `tabel_checklist_validasi.catatan_manual` ("- <field> · <dokumen>: <catatan>", disimpan bareng Accept lewat
+    `persistChecklist(values, notes)`); Cost -> `tabel_cost_validasi.catatan` ("- <baris> (Invoice freight|duty): <catatan>",
+    update langsung; Accept ulang mengganti barisnya, Undo menghapus barisnya). Tampil di Details "Manual Change Notes" /
+    "Catatan Perubahan Manual".
+- **Diuji**: jsdom `courier_panel` 64 cek (bagian 2: kartu/KPI/due/header/Recompute/catatan/Grand total otomatis), courier_recap 63,
+  + (bagian 1) jsdom `courier_panel` 51 cek (+ unit helper cost), regresi render 95/page 51/recap 112/finance 57/urgent 5/authfocus 12/
   courier 41/courier_ui 57/courier_recap 63 (disesuaikan: Open -> panel)/courier_lock 30/courier_reorder 13 — 0 gagal (console.error
   = peringatan dnd-kit tabel List lama). `tsc` bersih, `vite build` sukses. Belum dites di production.
 
@@ -1025,6 +1050,7 @@ itu sudah selesai diterjemahkan penuh**, cuma teks loading-nya saja).
 **Courier**: `rekapan_courier`, `tabel_audit_pib`, `tabel_audit_cn`, `tabel_cost_validasi`, `courier_vendor_master`
 (sql/037, master vendor Finance Handover Courier), `cost_validasi_review_courier` (sql/038, review cost per invoice),
 `cost_validasi_review_courier_item` (sql/041, Accept cost per baris), `courier_checklist_doc_log` (sql/041, riwayat centang Checklist),
+kolom `rekapan_courier.tgl_invoice` (sql/042, dasar Due Date kartu Recap),
 `dokumen_checklist`, `dokumen_validasi`, `tabel_checklist_validasi`, `tabel_npwp`,
 `tabel_processing_queue`. View `v_pib_lengkap`/`v_cn_lengkap` MASIH ADA tapi TIDAK DIPAKAI lagi
 di frontend — Audit Courier sekarang query langsung `tabel_audit_pib`/`tabel_audit_cn`, kolom

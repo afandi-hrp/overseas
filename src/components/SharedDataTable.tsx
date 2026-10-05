@@ -1053,6 +1053,8 @@ const COURIER_COLS = [
   { key: 'vendor', label: 'Vendor' },
   { key: 'origin', label: 'Origin' },
   { key: 'no_invoice', label: 'No. Invoice' },
+  // Tgl Invoice (sql/042, 2026-10-05) -- dasar Due Date kartu Invoice Recap (+30 hari).
+  { key: 'tgl_invoice', label: 'Invoice Date', type: 'date' },
   { key: 'courier_adm_fee', label: 'Courier Adm Fee', type: 'num' },
   { key: 'total_duty_tax', label: 'Total Duty Tax', type: 'num' },
   { key: 'total_freight', label: 'Total Freight', type: 'num' },
@@ -4656,6 +4658,14 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       return { g, tab: t, seq: (prev?.seq || 0) + 1 }
     })
   }
+  // Selama panel terbuka: daftar kartu (+ GRAND TOTAL panel) dibaca ulang senyap tiap 30 dtk -> invoice baru dari
+  // upload (Freight/Duty/CN) langsung ikut tanpa refresh manual (keputusan user 2026-10-05).
+  const courierRecapPanelOpen = !!courierRecapPanel
+  useEffect(() => {
+    if (!courierRecapPanelOpen) return
+    const iv = setInterval(() => { if (document.visibilityState !== 'hidden') setCourierRecapNonce(n => n + 1) }, 30000)
+    return () => clearInterval(iv)
+  }, [courierRecapPanelOpen])
   const closeCourierRecapPanel = () => {
     if (courierRecapPanelDirty.current && !window.confirm('The checklist has unsaved changes. Close and discard them?')) return
     courierRecapPanelDirty.current = false
