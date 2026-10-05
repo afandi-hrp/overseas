@@ -3,6 +3,15 @@ import { supabase } from '../../lib/supabase';
 import { LoadingTableRow } from '../../components/LoadingState';
 import { useAuth } from '../../lib/AuthContext';
 
+// Kolom ASLI tabel_ppjk_cost_rule (information_schema, dikonfirmasi user 2026-10-05) yang boleh dikirim saat simpan.
+// id/created_at/updated_at SENGAJA tidak ikut. Key form lain (mis. min_idr/max_idr lama) dibuang -- PostgREST menolak
+// seluruh request kalau ada key yang bukan kolom (dulu: Minimum/Maximum IDR tidak pernah tersimpan, tanpa pesan error).
+const SAVE_COLUMNS = [
+  'courier', 'rule_code', 'rule_name', 'category', 'description', 'price_mechanism', 'flat_idr', 'per_kg_idr', 'per_day_idr',
+  'pct_value', 'minimum_idr', 'maximum_idr', 'fiscal_threshold_idr', 'free_days', 'products_applicable', 'effective_from',
+  'effective_to', 'notes', 'document_type', 'invoice_line_name', 'jalur', 'is_waived', 'max_shipment_idr', 'tier_value_idr',
+] as const;
+
 export default function PPJKCostRule() {
   const { canEdit } = useAuth();
   const canEditRates = canEdit('admin_rates');
@@ -19,6 +28,7 @@ export default function PPJKCostRule() {
   const [editRecord, setEditRecord] = useState<any>(null);
   const [form, setForm] = useState<any>({});
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -49,21 +59,29 @@ export default function PPJKCostRule() {
         effective_from: new Date().toISOString().split('T')[0]
       });
     }
+    setSaveError(null);
     setShowModal(true);
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    const payload = { ...form };
+    setSaveError(null);
+    // Hanya kolom yang ada di tabel (SAVE_COLUMNS); key yang tidak ada di form tidak dikirim.
+    const payload: Record<string, any> = {};
+    SAVE_COLUMNS.forEach(k => { if (k in form) payload[k] = form[k]; });
     if (!payload.effective_to) payload.effective_to = null;
-    
-    if (editRecord) {
-      await supabase.from('tabel_ppjk_cost_rule').update(payload).eq('id', editRecord.id);
-    } else {
-      await supabase.from('tabel_ppjk_cost_rule').insert([payload]);
-    }
+
+    const { error } = editRecord
+      ? await supabase.from('tabel_ppjk_cost_rule').update(payload).eq('id', editRecord.id)
+      : await supabase.from('tabel_ppjk_cost_rule').insert([payload]);
     setSaving(false);
+    if (error) {
+      // Gagal: modal TETAP terbuka & isian tidak hilang, tampilkan pesan error.
+      console.error('[PPJKCostRule] simpan gagal', error);
+      setSaveError(error.message || 'Gagal menyimpan.');
+      return;
+    }
     setShowModal(false);
     fetchData();
   };
@@ -106,8 +124,8 @@ export default function PPJKCostRule() {
   const getNilaiText = (row: any) => {
     const m = row.price_mechanism;
     if (m === 'FLAT_PER_SHIPMENT') return `Rp ${row.flat_idr || 0}/shipment`;
-    if (m === 'FLAT_PER_KG') return `Rp ${row.per_kg_idr || 0}/kg`;
-    if (m === 'PCT_OF_FISCAL') return `${row.pct_value || 0}%, min Rp ${row.min_idr || 0} (threshold: ${row.fiscal_threshold_idr||0})`;
+    if (m === 'FLAT_PER_KG') return `Rp ${row.per_kg_idr || 0}/kg` + (Number(row.minimum_idr) > 0 ? `, min Rp ${row.minimum_idr}` : '');
+    if (m === 'PCT_OF_FISCAL') return `${row.pct_value || 0}%, min Rp ${row.minimum_idr || 0} (threshold: ${row.fiscal_threshold_idr||0})`;
     if (m === 'DAILY_SHIPMENT_AND_KG') return `Rp ${row.flat_idr||0}/ship + Rp ${row.per_kg_idr||0}/kg/hari`;
     if (m === 'FLAT_PER_DAY') return `Rp ${row.per_day_idr || 0}/day`;
     if (m === 'FLAT_PER_PACKAGE') return `Rp ${row.flat_idr || 0}/koli`;
@@ -302,11 +320,11 @@ export default function PPJKCostRule() {
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-[#5A305A] mb-1">Minimum IDR</label>
-                      <input type="number" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.min_idr ?? ''} onChange={e => setForm({...form, min_idr: Number(e.target.value)})} />
+                      <input type="number" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.minimum_idr ?? ''} onChange={e => setForm({...form, minimum_idr: Number(e.target.value)})} />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-[#5A305A] mb-1">Maximum IDR</label>
-                      <input type="number" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.max_idr ?? ''} onChange={e => setForm({...form, max_idr: Number(e.target.value)})} />
+                      <input type="number" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.maximum_idr ?? ''} onChange={e => setForm({...form, maximum_idr: Number(e.target.value)})} />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-[#5A305A] mb-1">Fiscal Threshold IDR</label>
@@ -358,6 +376,11 @@ export default function PPJKCostRule() {
                   </div>
                 </div>
               </div>
+              {saveError && (
+                <div className="mx-5 mb-0 mt-0 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm font-semibold shrink-0" role="alert">
+                  Gagal menyimpan: {saveError}
+                </div>
+              )}
               <div className="p-5 border-t border-slate-100 flex justify-end gap-3 bg-slate-50 shrink-0">
                 <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 rounded-lg text-[#5A305A] text-sm font-bold hover:bg-slate-200 transition-colors">Batal</button>
                 <button type="submit" disabled={saving} className="px-4 py-2 rounded-lg bg-[#5A305A] text-white text-sm font-bold hover:bg-[#73507B] disabled:opacity-50 transition-colors">

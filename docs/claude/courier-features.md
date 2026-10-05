@@ -849,9 +849,12 @@ alter table public.tabel_ppjk_cost_rule add column if not exists tier_value_idr 
 cuma kolom), buat manual (skema/RLS ikut pola `tabel_rate_sheet_dhl`/`fedex` +
 `has_page_access`/`has_edit_access('admin_rates')`).
 
-**Belum diimplementasikan (TERPISAH, jangan campur ke task UPS)**: kemungkinan mismatch
-`min_idr`/`max_idr` frontend vs kolom DB asli `minimum_idr`/`maximum_idr` di `PPJKCostRule.tsx`
-— pre-existing, perbaiki kalau diminta eksplisit.
+**DIPERBAIKI 2026-10-05**: `PPJKCostRule.tsx` dulu memakai `min_idr`/`max_idr` (kolom DB asli `minimum_idr`/`maximum_idr`)
+-> PostgREST menolak seluruh simpan saat Minimum/Maximum diisi, dan `handleSave` tidak cek error (modal tertutup seolah
+sukses). Sekarang: field `minimum_idr`/`maximum_idr`, payload hanya kolom asli (`SAVE_COLUMNS`, tanpa id/created_at/
+updated_at), error simpan tampil merah di modal (modal tidak tertutup), Nilai FLAT_PER_KG "…/kg, min Rp …".
+`SurchargeDHL.tsx`/`SurchargeFedEx.tsx` (tabel `tabel_surcharge_dhl`/`_fedex`) MASIH memakai `min_idr` & `{...form}` tanpa
+cek error -- kolom aslinya belum diverifikasi (SQL cek diberikan ke user 2026-10-05).
 
 ## Cost Validation Courier — panel "Hitung Ulang Estimasi Bonded Storage" (`CostValidationModal.tsx`)
 
