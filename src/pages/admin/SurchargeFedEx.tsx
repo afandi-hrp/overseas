@@ -3,6 +3,15 @@ import { supabase } from '../../lib/supabase';
 import { LoadingTableRow } from '../../components/LoadingState';
 import { useAuth } from '../../lib/AuthContext';
 
+// Kolom ASLI tabel_surcharge_fedex (information_schema, dicek user 2026-10-05) yang boleh dikirim saat simpan -- id/created_at/
+// updated_at tidak ikut. Dulu halaman ini memakai nama lama (kode/nama/kategori/deskripsi/min_idr)
+// -> daftar kosong di kolom Kode/Nama/Kategori, filter Kategori error, dan simpan ditolak PostgREST tanpa pesan.
+const SAVE_COLUMNS = [
+  'surcharge_code', 'surcharge_name', 'category', 'description', 'price_mechanism', 'applicable_services', 'flat_idr', 'per_kg_idr',
+  'minimum_idr', 'pct_value', 'tier_a_idr', 'tier_b_flat_idr', 'tier_b_per_kg_idr', 'tier_c_flat_idr', 'tier_c_per_kg_idr',
+  'effective_from', 'effective_to', 'notes',
+] as const;
+
 export default function SurchargeFedEx() {
   const { canEdit } = useAuth();
   const canEditRates = canEdit('admin_rates');
@@ -18,6 +27,7 @@ export default function SurchargeFedEx() {
   const [editRecord, setEditRecord] = useState<any>(null);
   const [form, setForm] = useState<any>({});
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -27,7 +37,7 @@ export default function SurchargeFedEx() {
     setLoading(true);
     let q = supabase.from('tabel_surcharge_fedex').select('*').order('created_at', { ascending: false });
     
-    if (fCat !== 'Semua') q = q.eq('kategori', fCat);
+    if (fCat !== 'Semua') q = q.eq('category', fCat);
     
     const { data: res } = await q;
     if (res) setData(res);
@@ -41,26 +51,34 @@ export default function SurchargeFedEx() {
     } else {
       setEditRecord(null);
       setForm({
-        kategori: 'SURCHARGE',
+        category: 'SURCHARGE',
         price_mechanism: 'FLAT_PER_SHIPMENT',
         effective_from: new Date().toISOString().split('T')[0]
       });
     }
+    setSaveError(null);
     setShowModal(true);
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    const payload = { ...form };
+    setSaveError(null);
+    // Hanya kolom yang ada di tabel (SAVE_COLUMNS); key yang tidak ada di form tidak dikirim.
+    const payload: Record<string, any> = {};
+    SAVE_COLUMNS.forEach(k => { if (k in form) payload[k] = form[k]; });
     if (!payload.effective_to) payload.effective_to = null;
-    
-    if (editRecord) {
-      await supabase.from('tabel_surcharge_fedex').update(payload).eq('id', editRecord.id);
-    } else {
-      await supabase.from('tabel_surcharge_fedex').insert([payload]);
-    }
+
+    const { error } = editRecord
+      ? await supabase.from('tabel_surcharge_fedex').update(payload).eq('id', editRecord.id)
+      : await supabase.from('tabel_surcharge_fedex').insert([payload]);
     setSaving(false);
+    if (error) {
+      // Gagal: modal TETAP terbuka & isian tidak hilang, tampilkan pesan error.
+      console.error('[SurchargeFedEx] simpan gagal', error);
+      setSaveError(error.message || 'Gagal menyimpan.');
+      return;
+    }
     setShowModal(false);
     fetchData();
   };
@@ -74,8 +92,8 @@ export default function SurchargeFedEx() {
 
   const filtered = data.filter(d => 
     !search || 
-    d.kode?.toLowerCase().includes(search.toLowerCase()) ||
-    d.nama?.toLowerCase().includes(search.toLowerCase())
+    d.surcharge_code?.toLowerCase().includes(search.toLowerCase()) ||
+    d.surcharge_name?.toLowerCase().includes(search.toLowerCase())
   );
 
   const getNilaiText = (row: any) => {
@@ -154,9 +172,9 @@ export default function SurchargeFedEx() {
                 const isActive = !row.effective_to || new Date(row.effective_to) > new Date();
                 return (
                   <tr key={row.id} className="hover:bg-slate-50/50">
-                    <td className="px-4 py-2 font-mono font-bold text-[#5A305A]">{row.kode}</td>
-                    <td className="px-4 py-2 font-medium">{row.nama}</td>
-                    <td className="px-4 py-2 text-xs">{row.kategori}</td>
+                    <td className="px-4 py-2 font-mono font-bold text-[#5A305A]">{row.surcharge_code}</td>
+                    <td className="px-4 py-2 font-medium">{row.surcharge_name}</td>
+                    <td className="px-4 py-2 text-xs">{row.category}</td>
                     <td className="px-4 py-2 text-xs">{row.price_mechanism}</td>
                     <td className="px-4 py-2 font-semibold text-blue-700 text-xs text-balance">
                       {getNilaiText(row)}
@@ -190,15 +208,15 @@ export default function SurchargeFedEx() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-[#5A305A] mb-1">Surcharge Code</label>
-                    <input type="text" className="w-full border border-slate-300 rounded px-3 py-2 text-sm uppercase" value={form.kode || ''} onChange={e => setForm({...form, kode: e.target.value.toUpperCase()})} required />
+                    <input type="text" className="w-full border border-slate-300 rounded px-3 py-2 text-sm uppercase" value={form.surcharge_code || ''} onChange={e => setForm({...form, surcharge_code: e.target.value.toUpperCase()})} required />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-[#5A305A] mb-1">Surcharge Name</label>
-                    <input type="text" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.nama || ''} onChange={e => setForm({...form, nama: e.target.value})} required />
+                    <input type="text" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.surcharge_name || ''} onChange={e => setForm({...form, surcharge_name: e.target.value})} required />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-[#5A305A] mb-1">Category</label>
-                    <select className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.kategori || ''} onChange={e => setForm({...form, kategori: e.target.value})} required>
+                    <select className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.category || ''} onChange={e => setForm({...form, category: e.target.value})} required>
                       <option value="FUEL">FUEL</option>
                       <option value="DEMAND">DEMAND</option>
                       <option value="NON_STANDARD">NON_STANDARD</option>
@@ -238,7 +256,7 @@ export default function SurchargeFedEx() {
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-[#5A305A] mb-1">Minimum IDR</label>
-                    <input type="number" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.min_idr ?? ''} onChange={e => setForm({...form, min_idr: Number(e.target.value)})} />
+                    <input type="number" className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.minimum_idr ?? ''} onChange={e => setForm({...form, minimum_idr: Number(e.target.value)})} />
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-[#5A305A] mb-1">Pct Value (%)</label>
@@ -281,10 +299,15 @@ export default function SurchargeFedEx() {
                   </div>
                   <div className="col-span-2">
                     <label className="block text-xs font-bold text-[#5A305A] mb-1">Notes / Description</label>
-                    <textarea rows={2} className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.notes || form.deskripsi || ''} onChange={e => setForm({...form, notes: e.target.value, deskripsi: e.target.value})} />
+                    <textarea rows={2} className="w-full border border-slate-300 rounded px-3 py-2 text-sm" value={form.notes || form.description || ''} onChange={e => setForm({...form, notes: e.target.value, description: e.target.value})} />
                   </div>
                 </div>
               </div>
+              {saveError && (
+                <div className="mx-5 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm font-semibold shrink-0" role="alert">
+                  Gagal menyimpan: {saveError}
+                </div>
+              )}
               <div className="p-5 border-t border-slate-100 flex justify-end gap-3 bg-slate-50 shrink-0">
                 <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 rounded-lg text-[#5A305A] text-sm font-bold hover:bg-slate-200 transition-colors">Batal</button>
                 <button type="submit" disabled={saving} className="px-4 py-2 rounded-lg bg-[#5A305A] text-white text-sm font-bold hover:bg-[#73507B] disabled:opacity-50 transition-colors">

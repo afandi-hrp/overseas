@@ -853,8 +853,12 @@ cuma kolom), buat manual (skema/RLS ikut pola `tabel_rate_sheet_dhl`/`fedex` +
 -> PostgREST menolak seluruh simpan saat Minimum/Maximum diisi, dan `handleSave` tidak cek error (modal tertutup seolah
 sukses). Sekarang: field `minimum_idr`/`maximum_idr`, payload hanya kolom asli (`SAVE_COLUMNS`, tanpa id/created_at/
 updated_at), error simpan tampil merah di modal (modal tidak tertutup), Nilai FLAT_PER_KG "…/kg, min Rp …".
-`SurchargeDHL.tsx`/`SurchargeFedEx.tsx` (tabel `tabel_surcharge_dhl`/`_fedex`) MASIH memakai `min_idr` & `{...form}` tanpa
-cek error -- kolom aslinya belum diverifikasi (SQL cek diberikan ke user 2026-10-05).
+`SurchargeDHL.tsx`/`SurchargeFedEx.tsx` (tabel `tabel_surcharge_dhl`/`_fedex`) JUGA DIPERBAIKI 2026-10-05 (kolom dicek user
+lewat information_schema): nama lama `kode/nama/kategori/deskripsi/min_idr` (+ DHL `daily_shipment_idr/daily_kg_idr`) ->
+`surcharge_code/surcharge_name/category/description/minimum_idr` (+ `daily_per_shipment_idr/daily_per_kg_idr`). Dulu daftar
+Kode/Nama/Kategori kosong, filter Kategori error, simpan selalu gagal diam-diam. Sekarang pola SAMA PPJK (`SAVE_COLUMNS`, error
+merah di modal). DHL: input BARU Flat IDR Domestic/International, Pct Minimum IDR, Fiscal Threshold IDR; Nilai PCT_OF_FISCAL
+pakai `pct_minimum_idr` (fallback `minimum_idr`) + threshold. Diuji jsdom 11 cek.
 
 ## Cost Validation Courier — panel "Hitung Ulang Estimasi Bonded Storage" (`CostValidationModal.tsx`)
 
