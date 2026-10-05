@@ -9,7 +9,7 @@
 import { supabase } from '../lib/supabase'
 import { relaxSeaAirDocChecks, SEA_AIR_PIB_MATRIX_ROWS, toNum } from './SeaAirValidasiHelpers'
 import { fetchSignerCompanyOptions } from './FarOverseasAirHelpers'
-import { computeRecapIssues, parsePoManual, type RecapIssue, type PoManualEntry } from './SeaAirRecapHelpers'
+import { computeRecapIssues, parsePoManual, fetchFormENotes, type RecapIssue, type PoManualEntry } from './SeaAirRecapHelpers'
 
 // ─── Angka & format ───────────────────────────────────────────────────────────
 
@@ -220,6 +220,84 @@ export function computeDutyRows(rec: any) {
   }
 }
 
+// ─── Duty: Expected vs Actual = rumus tab Documents › Duty (2026-10-05, permintaan user) ──────
+// SATU-SATUNYA rumus duty yang ditampilkan (tab Documents Invoice Recap, kartu "Duty & tax (PIB)" tab
+// Costs, kartu "Duties & taxes" jendela Open Audit PIB). Sumber = `dokumen_validasi_matriks_seaair`
+// (duty_ndpbm, duty_items, duty_aktual): per item, Rp = nilai pabean × NDPBM; BM = Rp × %BM; basis =
+// Rp + BM; PPN = basis × %PPN; PPh = basis × %PPh. Status = |actual − expected| ≤ Rp 3.000.
+// Kalau rumus ini diubah, cukup di sini (tab Documents memanggil `calcSeaAirDuty` yang sama).
+export const SEA_AIR_DUTY_TOLERANCE = 3000
+export type SeaAirDutyItem = { nilai_pabean: any; bm_pct: any; ppn_pct: any; pph_pct: any }
+export type SeaAirDutyKey = 'bm' | 'ppn' | 'pph' | 'total'
+export function calcSeaAirDuty(ndpbm: any, items: SeaAirDutyItem[]): Record<SeaAirDutyKey, number> {
+  const nd = Number(ndpbm) || 0
+  let bm = 0, ppn = 0, pph = 0
+  ;(items || []).forEach(it => {
+    const rp = (Number(it?.nilai_pabean) || 0) * nd
+    const b = rp * ((Number(it?.bm_pct) || 0) / 100)
+    const basis = rp + b
+    bm += b; ppn += basis * ((Number(it?.ppn_pct) || 0) / 100); pph += basis * ((Number(it?.pph_pct) || 0) / 100)
+  })
+  return { bm, ppn, pph, total: bm + ppn + pph }
+}
+export function seaAirDutyStatus(actual: number | null, expected: number | null): boolean | null {
+  if (actual === null || expected === null) return null
+  return Math.abs(actual - expected) <= SEA_AIR_DUTY_TOLERANCE
+}
+
+export type SeaAirDutyCompareRow = { key: SeaAirDutyKey; label: string; rateText: string | null; expected: number | null; actual: number | null; status: boolean | null }
+export type SeaAirDutyCompare = { rows: SeaAirDutyCompareRow[]; ndpbm: number | null; itemCount: number; hasCalc: boolean; hasMatrix: boolean }
+
+// Tarif per item -> teks ("Rate 11%" / "Rate 0–5% · 3 items").
+function rateTextOf(items: SeaAirDutyItem[], field: 'bm_pct' | 'ppn_pct' | 'pph_pct'): string | null {
+  const vals = Array.from(new Set(items.map(it => it?.[field]).filter(v => v !== null && v !== undefined && v !== '').map(v => Number(v)).filter(v => !isNaN(v))))
+  if (vals.length === 0) return null
+  if (vals.length === 1) return `Rate ${fmtPctShort(vals[0])}`
+  return `Rate ${fmtPctShort(Math.min(...vals))}–${fmtPctShort(Math.max(...vals))} · ${items.length} items`
+}
+
+// Actual = `duty_aktual` tab Documents (sama persis); kosong/0 -> nilai di baris Audit PIB
+// (bm / ppn_nilai / pph_nilai / total_pib).
+export function compareSeaAirDuty(matrix: any | null, auditRow: any | null): SeaAirDutyCompare {
+  const items: SeaAirDutyItem[] = Array.isArray(matrix?.duty_items) ? matrix.duty_items : []
+  const nd = Number(matrix?.duty_ndpbm) || 0
+  const hasCalc = nd > 0 && items.some(it => (Number(it?.nilai_pabean) || 0) > 0)
+  const calc = hasCalc ? calcSeaAirDuty(nd, items) : null
+  const aktual = matrix?.duty_aktual || {}
+  const pibCol: Record<SeaAirDutyKey, string> = { bm: 'bm', ppn: 'ppn_nilai', pph: 'pph_nilai', total: 'total_pib' }
+  const actualOf = (k: SeaAirDutyKey): number | null => {
+    const a = Number(aktual?.[k])
+    if (aktual?.[k] !== null && aktual?.[k] !== undefined && aktual?.[k] !== '' && !isNaN(a) && a !== 0) return a
+    const v = auditRow?.[pibCol[k]]
+    return v === null || v === undefined || v === '' ? null : num(v)
+  }
+  const mk = (key: SeaAirDutyKey, label: string, rateText: string | null): SeaAirDutyCompareRow => {
+    const expected = calc ? calc[key] : null
+    const actual = actualOf(key)
+    return { key, label, rateText, expected, actual, status: seaAirDutyStatus(actual, expected) }
+  }
+  return {
+    rows: [
+      mk('bm', 'BM', rateTextOf(items, 'bm_pct')),
+      mk('ppn', 'PPN', rateTextOf(items, 'ppn_pct')),
+      mk('pph', 'PPh', rateTextOf(items, 'pph_pct')),
+      mk('total', 'Total duty', null),
+    ],
+    ndpbm: nd > 0 ? nd : null,
+    itemCount: items.length,
+    hasCalc,
+    hasMatrix: !!matrix,
+  }
+}
+
+export async function fetchSeaAirDutyMatrix(seaairId: any): Promise<any | null> {
+  if (seaairId === null || seaairId === undefined || seaairId === '') return null
+  const { data, error } = await supabase.from('dokumen_validasi_matriks_seaair')
+    .select('seaair_id, duty_ndpbm, duty_items, duty_aktual').eq('seaair_id', seaairId).maybeSingle()
+  if (error) { console.error('[SeaAir] fetch duty matrix gagal', error); return null }
+  return data || null
+}
+
 // ─── Status validasi dari Invoice Recap (Doc Validation Sea & Air, section PIB) ─
 export type SeaAirValidationState = 'validated' | 'differences' | 'not_validated' | 'not_in_recap'
 
@@ -276,13 +354,14 @@ export async function fetchSeaAirAuditLinkInfo(ids: (string | number)[]): Promis
   const checklistBy: Record<string, any> = {}
   const costBy: Record<string, any> = {}
   const confBy: Record<string, Map<string, string>> = {}
+  const formENotes = await fetchFormENotes(unique)
   for (let i = 0; i < unique.length; i += CHUNK) {
     const chunk = unique.slice(i, i + CHUNK)
     const [rek, mat, chk, cost, conf] = await Promise.all([
       // select('*') -- kolom po_manual (sql/031) mungkin belum ada; '*' aman sebelum/sesudah SQL.
       supabase.from('rekapan_seaair').select('*').in('seaair_id', chunk),
       supabase.from('dokumen_validasi_matriks_seaair').select('seaair_id, checks').in('seaair_id', chunk),
-      supabase.from('dokumen_checklist_seaair').select('seaair_id, ada_pib, ada_sppb, ada_billing_djbc, ada_bpn, pct_kelengkapan, dokumen_kurang').in('seaair_id', chunk),
+      supabase.from('dokumen_checklist_seaair').select('seaair_id, ada_pib, ada_sppb, ada_billing_djbc, ada_bpn, ada_form_e, pct_kelengkapan, dokumen_kurang').in('seaair_id', chunk),
       supabase.from('cost_validasi_seaair').select('seaair_id, checks').in('seaair_id', chunk),
       supabase.from('cost_validasi_catatan_seaair').select('seaair_id, section, status_konfirmasi').in('seaair_id', chunk),
     ])
@@ -318,7 +397,10 @@ export async function fetchSeaAirAuditLinkInfo(ids: (string | number)[]): Promis
     const cl = checklistBy[id]
     const missingDocs = cl ? CUSTOMS_DOC_FIELDS.filter(([k]) => !cl[k]).map(([, label]) => label) : null
     const recapIssues = rekRow
-      ? computeRecapIssues({ checklist: cl || null, matriksChecks: checks !== undefined ? checks : null, costChecks: costBy[id] ?? null, confirmations: confBy[id] || new Map() })
+      ? computeRecapIssues({
+        checklist: cl || null, matriksChecks: checks !== undefined ? checks : null, costChecks: costBy[id] ?? null, confirmations: confBy[id] || new Map(),
+        origin: rekRow.origin, formENote: formENotes ? (formENotes[id]?.note ?? null) : undefined,
+      })
       : []
     out[id] = {
       rekapanId, validation, diffFields, missingDocs, recapIssues,

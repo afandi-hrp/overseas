@@ -264,8 +264,10 @@ export default function SeaAirRecapDetailModal({
           </div>
         </div>
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto bg-[#F6EFEA] p-4 flex flex-col gap-3">
+        {/* Body -- `[&>*]:shrink-0`: kartu ber-`overflow-hidden` (mis. Split per PO) di kolom flex yang
+            di-scroll boleh menyusut sampai tinggal header saat "By vendor" dibuka (laporan user 2026-10-05);
+            anak-anak dilarang menyusut supaya tinggi penuh & area ini yang di-scroll. */}
+        <div className="flex-1 overflow-y-auto bg-[#F6EFEA] p-4 flex flex-col gap-3 [&>*]:shrink-0">
           {submitted ? (
             <div className="rounded-[14px] border border-[#BFE3CD] bg-[#EAF6EF] px-4 py-2.5 flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-3">
@@ -321,11 +323,6 @@ export default function SeaAirRecapDetailModal({
                     <Field label="ETD → ETA">{fmtDateShort(rec.etd)} → {fmtDateShort(rec.eta)}</Field>
                     <Field label="ATD → ATA">{fmtDateShort(rec.atd)} → {fmtDateShort(rec.ata)}</Field>
                     <Field label="Containers">{rec.container_count || rec.container_type ? `${rec.container_count || '?'} × ${rec.container_type || '—'}` : '—'}</Field>
-                    {(rec.tgl_invoice_freight || rec.tgl_storage_mulai || rec.tgl_storage_selesai) && (
-                      <Field label="Freight invoice · storage">
-                        {fmtDateShort(rec.tgl_invoice_freight)} · {rec.tgl_storage_mulai || rec.tgl_storage_selesai ? `${fmtDateShort(rec.tgl_storage_mulai)} → ${fmtDateShort(rec.tgl_storage_selesai)}` : '—'}
-                      </Field>
-                    )}
                   </div>
                   {rec.notes && (
                     <div className="mt-3 rounded-xl bg-[#FFF8EA] border border-[#F3D9A4] px-3 py-2 text-[12px] text-[#7A4F00] whitespace-pre-wrap"><b>AI note</b> · {rec.notes}</div>
@@ -477,13 +474,13 @@ export default function SeaAirRecapDetailModal({
               perubahan belum disimpan tidak hilang saat pindah tab. */}
           {canSeeCosts && visited.costs && (
             <div className={tab === 'costs' ? '' : 'hidden'}>
-              <SeaAirRecapCostsTab seaairId={rec.seaair_id || rec.id} canEdit={canEditCosts} isAdmin={isAdmin} locked={locked} auditRow={auditRow} onChanged={onChanged} onDirtyChange={onCostsDirty} />
+              <SeaAirRecapCostsTab seaairId={rec.seaair_id || rec.id} active={tab === 'costs'} canEdit={canEditCosts} isAdmin={isAdmin} locked={locked} auditRow={auditRow} onChanged={onChanged} onDirtyChange={onCostsDirty} />
             </div>
           )}
 
           {canSeeDocs && visited.documents && (
             <div className={tab === 'documents' ? '' : 'hidden'}>
-              <SeaAirRecapDocumentsTab seaairId={rec.seaair_id || rec.id} canEdit={canEditDocs} isAdmin={isAdmin} locked={locked} onChanged={onChanged} onDirtyChange={onDocsDirty} />
+              <SeaAirRecapDocumentsTab seaairId={rec.seaair_id || rec.id} origin={rec.origin} canEdit={canEditDocs} isAdmin={isAdmin} locked={locked} onChanged={onChanged} onDirtyChange={onDocsDirty} />
             </div>
           )}
 

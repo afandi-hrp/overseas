@@ -35,7 +35,7 @@ import {
 import { SeaAirAuditCardList, SeaAirAuditKpiCards } from './SeaAirAuditCardList'
 import SeaAirAuditDetailModal from './SeaAirAuditDetailModal'
 import SeaAirAuditEditModal from './SeaAirAuditEditModal'
-import { computeRecapIssues, fetchRecapSummary, isRecapLocked, notifySeaAirRecapChanged, todayLocalIso, type RecapSummary, type RecapIssue } from '../utils/SeaAirRecapHelpers'
+import { computeRecapIssues, fetchFormENotes, fetchRecapSummary, isRecapLocked, notifySeaAirRecapChanged, todayLocalIso, type RecapSummary, type RecapIssue } from '../utils/SeaAirRecapHelpers'
 import {
   COURIER_AUDIT_CALC_FIELDS, computeCourierAuditCalc, courierAuditCalcNum, fetchCourierAuditSummary, courierDocType, courierDocNo,
   courierTableOf, makeColOk, isCourierDraft, notifyCourierAuditChanged, type CourierAuditSummary, type CourierDocType,
@@ -4231,7 +4231,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
             if (matriksChunk) allMatriksData = [...allMatriksData, ...matriksChunk];
             const { data: costChunk } = await supabase.from('cost_validasi_seaair').select('seaair_id, checks').in('seaair_id', chunkIds);
             if (costChunk) allCostValidasiData = [...allCostValidasiData, ...costChunk];
-            const { data: checklistChunk } = await supabase.from('dokumen_checklist_seaair').select('seaair_id, pct_kelengkapan, dokumen_kurang').in('seaair_id', chunkIds);
+            const { data: checklistChunk } = await supabase.from('dokumen_checklist_seaair').select('seaair_id, pct_kelengkapan, dokumen_kurang, ada_form_e').in('seaair_id', chunkIds);
             if (checklistChunk) allChecklistData = [...allChecklistData, ...checklistChunk];
             // Catatan Konfirmasi Manual per-Segmen (2026-09) -- lihat catatan di bawah dekat
             // seaAirCostValidationPctMap, dipakai supaya badge % ikut memperhitungkan segmen
@@ -4289,6 +4289,9 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           const matriksBy = new Map(allMatriksData.map(m => [String(m.seaair_id), m.checks]));
           const costBy = new Map(allCostValidasiData.map(c => [String(c.seaair_id), c.checks]));
           const checklistBy = new Map(allChecklistData.map(c => [String(c.seaair_id), c]));
+          // Form E utk barang dari China (sql/044) -- null = tabel catatan belum ada (aturan dimatikan).
+          const formENotes = await fetchFormENotes(seaairIds);
+          const originBy = new Map((data || []).map((r: any) => [String(r.seaair_id), r.origin]));
           seaairIds.forEach(sid => {
             const k = String(sid);
             seaAirRecapIssuesMap[k] = computeRecapIssues({
@@ -4296,6 +4299,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
               matriksChecks: matriksBy.has(k) ? matriksBy.get(k) : null,
               costChecks: costBy.has(k) ? costBy.get(k) : null,
               confirmations: confirmationBySeaairId.get(sid as any) || confirmationBySeaairId.get(k as any) || new Map(),
+              origin: originBy.get(k),
+              formENote: formENotes ? (formENotes[k]?.note ?? null) : undefined,
             });
             seaAirRecapHasMap[k] = { doc: matriksBy.has(k), cost: costBy.has(k), checklist: checklistBy.has(k) };
           });

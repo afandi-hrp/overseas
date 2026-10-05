@@ -340,13 +340,14 @@ export default function FinanceHandoverPage() {
               : [v('main', 'Handover'), v('recap', 'Invoice Recap'), v('audit', 'Audit'), v('docs', 'Documents'), v('cost', 'Cost validation')]
             if (isAdmin && act && it.stage === 'received') viewItems.push({ label: 'Undo receipt…', onClick: () => openUndo(it), danger: true })
             return (
-              <div key={it.key} className={`rounded-[14px] border border-[#EADFD6] ${ROW_BG[it.stage]} grid grid-cols-1 @2xl:grid-cols-2 @4xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(120px,150px)_minmax(0,1.25fr)_auto] gap-x-4 gap-y-3 px-4 py-3 items-center`}>
+              <div key={it.key} className={`rounded-[14px] border border-[#EADFD6] ${it.urgent && it.stage !== 'paid' ? 'border-l-[4px] border-l-rose-500' : ''} ${ROW_BG[it.stage]} grid grid-cols-1 @2xl:grid-cols-2 @4xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(120px,150px)_minmax(0,1.25fr)_auto] gap-x-4 gap-y-3 px-4 py-3 items-center`}>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Chip tone={it.source === 'far' ? 'plum' : it.source === 'courier' ? 'amber' : 'blue'}>{it.source === 'far' ? 'FAR Overseas' : it.source === 'courier' ? 'Courier' : 'Sea & Air'}</Chip>
                     {it.pt && <PtBadge code={it.pt} title={companyFullName(companyNames, it.pt)} />}
-                    {it.urgent && <Chip tone="red" title="May be paid before the goods are received">Urgent</Chip>}
+                    {it.urgent && <Chip tone="red" title={it.urgentNote ? `Urgent: ${it.urgentNote}` : 'May be paid before the goods are received'}>Urgent</Chip>}
                   </div>
+                  {it.urgent && it.urgentNote && <div className="text-[10.5px] font-semibold text-[#A8231A] mt-1 truncate" title={it.urgentNote}>Urgent: {it.urgentNote}</div>}
                   <div className="text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#8A7A8B] mt-1">{it.refLabel}</div>
                   <div className="text-[14px] font-bold text-[#3B1B3D] truncate" title={it.ref}>{it.ref}</div>
                   <div className="text-[11px] text-[#6E5E70] truncate" title={it.sub}>{it.sub || '—'}</div>

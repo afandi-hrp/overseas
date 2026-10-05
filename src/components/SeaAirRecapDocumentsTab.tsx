@@ -14,9 +14,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, XCircle, Circle, ChevronDown, ChevronRight, Pencil, RotateCcw, Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../lib/AuthContext'
+import { isChinaOrigin, fetchFormENotes, type FormENote } from '../utils/SeaAirRecapHelpers'
 import { LoadingState } from './LoadingState'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_PRIMARY, Chip, Pill } from './SeaAirAuditUi'
 import { relaxSeaAirDocChecks, SEA_AIR_PIB_MATRIX_ROWS, toNum } from '../utils/SeaAirValidasiHelpers'
+import { calcSeaAirDuty, SEA_AIR_DUTY_TOLERANCE } from '../utils/SeaAirAuditHelpers'
 
 // ── Salinan PERSIS formatter/parser modal lama ──
 const fmtIDR = (val: any) => {
@@ -127,8 +130,10 @@ const OPTIONAL_DOCS = [
 const DUTY_DOC_KEYS = new Set(['ada_pib', 'ada_sppb', 'ada_billing_djbc', 'ada_bpn', 'ada_sptnp', 'ada_billing_sptnp', 'ada_bpn_sptnp'])
 const ALWAYS_OPTIONAL = new Set(['ada_form_e', 'ada_e_coo', 'ada_form_ak', 'ada_sptnp', 'ada_billing_sptnp', 'ada_bpn_sptnp'])
 
-export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage, isAdmin = false, locked = false, financeView = false, onChanged, onDirtyChange }: {
+export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage, isAdmin = false, locked = false, financeView = false, onChanged, onDirtyChange, origin }: {
   seaairId: any
+  // `rekapan_seaair.origin` -- asal China -> Form E wajib atau catatan manual (2026-10-05, sql/044).
+  origin?: any
   canEdit: boolean
   financeView?: boolean  // Finance Handover: baca saja, tanpa dokumen/section PIB & kartu Duty
   isAdmin?: boolean   // bagian 2 (sql/031): accept / mismatch / koreksi nilai HANYA Admin
@@ -154,6 +159,44 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
   const [editing, setEditing] = useState<{ key: string; value: string } | null>(null)
   const [dutyEdit, setDutyEdit] = useState(false)
   const [showItems, setShowItems] = useState(false)
+  // Form E (asal China): catatan manual tabel `seaair_form_e_note` (sql/044). undefined = tabel belum ada.
+  const { user, canEdit: canEditKey } = useAuth()
+  const [formENote, setFormENote] = useState<FormENote | null | undefined>(undefined)
+  const [noteDraft, setNoteDraft] = useState('')
+  const [noteEditing, setNoteEditing] = useState(false)
+  const [savingNote, setSavingNote] = useState(false)
+  const canEditNote = canEditKey('sea_air_rekapan') && !locked && !financeView
+  useEffect(() => {
+    let cancelled = false
+    if (!seaairId) { setFormENote(undefined); return }
+    fetchFormENotes([seaairId]).then(m => { if (!cancelled) setFormENote(m === null ? undefined : (m[String(seaairId)] ?? null)) })
+    return () => { cancelled = true }
+  }, [seaairId])
+  const saveFormENote = async () => {
+    const note = noteDraft.trim()
+    if (note.length < 5) return
+    setSavingNote(true)
+    const { data, error } = await supabase.from('seaair_form_e_note')
+      .upsert({ seaair_id: seaairId, note, updated_by: user?.email || null, updated_at: new Date().toISOString() }, { onConflict: 'seaair_id' })
+      .select('*').maybeSingle()
+    setSavingNote(false)
+    if (error) { showToast('Failed to save the Form E note: ' + error.message, 'error'); return }
+    setFormENote((data as any) || { seaair_id: seaairId, note })
+    setNoteEditing(false)
+    showToast('Form E note saved.', 'success')
+    onChanged()
+  }
+  const deleteFormENote = async () => {
+    if (!window.confirm('Delete the Form E note? Submit to Finance will be locked again until Form E is checked or a note is filled in.')) return
+    setSavingNote(true)
+    const { error } = await supabase.from('seaair_form_e_note').delete().eq('seaair_id', seaairId)
+    setSavingNote(false)
+    if (error) { showToast('Failed to delete the Form E note: ' + error.message, 'error'); return }
+    setFormENote(null)
+    setNoteDraft('')
+    showToast('Form E note deleted.', 'success')
+    onChanged()
+  }
 
   const markDirty = () => setDirty(true)
   useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
@@ -281,24 +324,17 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
     return { match, mismatch, notChecked, openMismatch: open_, pct: total > 0 ? Math.round((match / total) * 100) : 0 }
   }, [visibleChecks])
 
-  const dutyCalc = useMemo(() => {
-    const nd = Number(ndpbm) || 0
-    let bm = 0, ppn = 0, pph = 0
-    items.forEach((it: any) => {
-      const rp = (Number(it.nilaiPabean) || 0) * nd
-      const b = rp * ((Number(it.bmPct) || 0) / 100)
-      const basis = rp + b
-      bm += b; ppn += basis * ((Number(it.ppnPct) || 0) / 100); pph += basis * ((Number(it.phPct) || 0) / 100)
-    })
-    return { bm, ppn, pph, total: bm + ppn + pph }
-  }, [ndpbm, items])
+  // Rumus duty = `calcSeaAirDuty` (SeaAirAuditHelpers, SATU sumber -- juga dipakai kartu duty tab Costs &
+  // jendela Open Audit PIB).
+  const dutyCalc = useMemo(() => calcSeaAirDuty(ndpbm, items.map((it: any) => ({ nilai_pabean: it.nilaiPabean, bm_pct: it.bmPct, ppn_pct: it.ppnPct, pph_pct: it.phPct }))), [ndpbm, items])
   const dutyStatus = (actual: any, expected: number): boolean | null => {
     if (actual === null || actual === undefined || String(actual).trim() === '') return null
-    return Math.abs(toNum(String(actual).trim()) - expected) <= 3000
+    return Math.abs(toNum(String(actual).trim()) - expected) <= SEA_AIR_DUTY_TOLERANCE
   }
 
   if (loading) return <LoadingState fullHeight={false} />
 
+  const chinaFormE = !financeView && isChinaOrigin(origin)
   const requiredDocs = financeView ? REQUIRED_DOCS.filter(([k]) => !DUTY_DOC_KEYS.has(k)) : REQUIRED_DOCS
   const optionalDocs = financeView ? OPTIONAL_DOCS.filter(([k]) => !DUTY_DOC_KEYS.has(k)) : OPTIONAL_DOCS
   // Mode Finance: % & "Missing" dihitung dari dokumen NON-duty saja (dokumen_kurang bisa menyebut PIB dkk).
@@ -343,13 +379,58 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
             </div>
             <div className={`${SA_LABEL} mt-3 mb-1.5`}>Optional</div>
             <div className="grid grid-cols-2 gap-1.5">
-              {optionalDocs.filter(([k]) => ALWAYS_OPTIONAL.has(k) || Object.prototype.hasOwnProperty.call(checklist, k)).map(([k, label]) => (
-                <div key={k} className="flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#EADFD6] text-[12px]">
-                  <span className="text-[#3B1B3D]">{label}</span>{checklist[k] ? <CheckCircle2 size={13} className="text-[#17663D]" /> : <span className="text-[#B7A9B8]">–</span>}
-                </div>
-              ))}
+              {optionalDocs.filter(([k]) => ALWAYS_OPTIONAL.has(k) || Object.prototype.hasOwnProperty.call(checklist, k)).map(([k, label]) => {
+                // Asal China -> Form E wajib (tile merah kalau belum tercentang).
+                const needed = k === 'ada_form_e' && chinaFormE && !checklist[k]
+                return (
+                  <div key={k} className={`flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-lg border text-[12px] ${needed ? 'border-[#F4C3BC] bg-[#FFF6F4]' : 'border-[#EADFD6]'}`}>
+                    <span className="text-[#3B1B3D]">{label}{k === 'ada_form_e' && chinaFormE && <span className={`block text-[10px] font-semibold ${checklist[k] ? 'text-[#8A7A8B]' : 'text-[#A8231A]'}`}>Required — from China</span>}</span>
+                    {checklist[k] ? <CheckCircle2 size={13} className="text-[#17663D]" /> : needed ? <XCircle size={13} className="text-[#A8231A]" /> : <span className="text-[#B7A9B8]">–</span>}
+                  </div>
+                )
+              })}
             </div>
           </>
+        )}
+        {/* Form E: barang dari China tanpa Form E -> alert + catatan manual WAJIB (Submit to Finance terkunci
+            sampai catatan diisi, aturan `computeRecapIssues`). */}
+        {chinaFormE && !checklist?.ada_form_e && (
+          formENote === undefined ? (
+            <div className="mt-3 rounded-lg bg-[#F6F1EE] text-[#6E5E70] text-[11.5px] px-3 py-2">
+              Shipped from China ({String(origin)}) — Form E is not checked. The Form E note is not available yet (run sql/044).
+            </div>
+          ) : formENote && !noteEditing ? (
+            <div className="mt-3 rounded-lg border border-[#EADFD6] bg-[#FBF7F4] px-3 py-2 text-[12px]">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-bold text-[#3B1B3D]">Form E note</span>
+                {canEditNote && (
+                  <span className="flex items-center gap-2">
+                    <button type="button" onClick={() => { setNoteDraft(formENote.note); setNoteEditing(true) }} className="text-[11.5px] font-semibold text-[#6B3470] hover:underline">Edit</button>
+                    <button type="button" onClick={deleteFormENote} disabled={savingNote} className="text-[11.5px] font-semibold text-[#A8231A] hover:underline disabled:opacity-50">Delete</button>
+                  </span>
+                )}
+              </div>
+              <div className="text-[#3B1B3D] whitespace-pre-wrap mt-0.5">{formENote.note}</div>
+              <div className="text-[11px] text-[#8A7A8B] mt-0.5">Shipped from China without Form E · {formENote.updated_by || formENote.created_by || '—'}{formENote.updated_at ? ` · ${new Date(formENote.updated_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}</div>
+            </div>
+          ) : (
+            <div className="mt-3 rounded-lg border border-[#F4C3BC] bg-[#FDE7E4] px-3 py-2.5 text-[12px] text-[#A8231A]">
+              <div className="font-bold">Form E is required — shipped from China</div>
+              <div className="mt-0.5">Origin: {String(origin)}. Check Form E in the checklist, or fill in a note explaining why there is no Form E. Submit to Finance stays locked until then.</div>
+              {canEditNote ? (
+                <>
+                  <textarea rows={3} value={noteDraft} onChange={e => setNoteDraft(e.target.value)} placeholder="Note (required, min. 5 characters) — e.g. supplier has no Form E, duty paid at normal rate"
+                    className="mt-2 w-full px-2.5 py-2 rounded-lg border border-[#F4C3BC] bg-white text-[12px] text-[#3B1B3D] focus:outline-none focus:border-[#A8231A]" />
+                  <div className="mt-1.5 flex justify-end gap-2">
+                    {noteEditing && <button type="button" className={SA_BTN_OUTLINE} onClick={() => { setNoteEditing(false); setNoteDraft('') }}>Cancel</button>}
+                    <button type="button" className={SA_BTN_PRIMARY} disabled={savingNote || noteDraft.trim().length < 5} onClick={saveFormENote}>{savingNote ? 'Saving…' : 'Save note'}</button>
+                  </div>
+                </>
+              ) : (
+                <div className="mt-1 text-[11.5px] italic">{locked ? 'Locked — submitted to Finance.' : 'You have view access only.'}</div>
+              )}
+            </div>
+          )
         )}
       </div>
 

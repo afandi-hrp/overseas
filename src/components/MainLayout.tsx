@@ -544,7 +544,9 @@ export default function MainLayout() {
       {/* ── Main Content Area ── */}
       <AnimatePresence mode="wait">
         <motion.div
-          key={location.pathname}
+          // Deep link memo FAR (/direct-loading/:id) = halaman yang SAMA -> key tidak berubah, supaya buka/tutup
+          // modal Memo tidak me-mount ulang halaman (daftar ter-refresh) -- laporan user 2026-10-05.
+          key={location.pathname.startsWith('/direct-loading/') ? '/direct-loading' : location.pathname}
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -15 }}

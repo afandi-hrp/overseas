@@ -49,5 +49,8 @@ export function computeSeaAirCostGlobalStats(checksRaw: any, confirmationBySecti
     else if (effectiveStatus === 'UNDERCHARGE') undercharge++;
   });
   const mismatch = overcharge + undercharge;
-  return { match, mismatch, overcharge, undercharge, total, pct: total > 0 ? Math.round((match / total) * 100) : 0 };
+  // Persen HANYA dari baris yang sudah punya hasil (Match / Over / Under) -- baris Not validated &
+  // Incomplete TIDAK ikut penyebut (permintaan user 2026-10-05; dulu penyebut = semua baris).
+  const evaluated = match + mismatch;
+  return { match, mismatch, overcharge, undercharge, total, pct: evaluated > 0 ? Math.round((match / evaluated) * 100) : 0 };
 }

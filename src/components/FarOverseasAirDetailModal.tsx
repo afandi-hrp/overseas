@@ -2,12 +2,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
-import { X, Stamp, Ban, Printer, FolderOpen, ClipboardList, MoreHorizontal, CheckCircle2, AlertTriangle, Clock, Info, Undo2, History, Bell, Lock, Pencil, Wallet } from 'lucide-react';
+import { X, Stamp, Ban, Printer, FolderOpen, ClipboardList, MoreHorizontal, CheckCircle2, AlertTriangle, Clock, Info, Undo2, History, Bell, Lock, Pencil, Wallet, Flame, UserCheck } from 'lucide-react';
 import {
   formatDateShort, formatDateTimeID, COST_STATUS_META, parseJsonField, computeCostStatus,
   nextStepForStatus, STEP_LABEL, STEP_ORDER, getApprovalEntries, findApprovalEntry, getWaitInfo, completedStepCount,
   getStatusLabel, getFinanceStage, isMemoLocked, fetchCanSign, fetchPreparedByBlockers, fetchMemoLog, implicitFxRate,
-  ensureFarFont, FAR_FONT_FAMILY, type ApprovalStep, type SignerConfig, type MemoLogEntry,
+  ensureFarFont, FAR_FONT_FAMILY, isOnHold, isCostStatusConfirmed, costStatusLabel, getConfirmedFinding, firstNameOf,
+  fetchPicEligibleUsers, fetchPreparedByEligibleUsers, updateRekapanFarOverseasAir, goodsReceivedBlocker,
+  type ApprovalStep, type SignerConfig, type MemoLogEntry, type PicEligibleUser,
 } from '../utils/FarOverseasAirHelpers';
 import FarOverseasMemoPaper, { MemoPaymentLine } from './FarOverseasMemoPaper';
 import FarOverseasAirCostValidationModal from './FarOverseasAirCostValidationModal';
@@ -83,22 +85,26 @@ function Banner({ tone, icon, children, action }: { tone: 'red' | 'amber' | 'gre
 
 const LOG_ACTION_LABEL: Record<string, string> = {
   UPLOAD: 'Uploaded', EDIT: 'Edited', SIGN: 'Signed', UNDO_SIGN: 'Undid last sign', REJECT: 'Rejected',
-  CONFIRM_AI: 'Confirmed AI finding', REMIND: 'Reminder', FINANCE_ACCEPT: 'Received by Finance', FINANCE_UNDO_RECEIVE: 'Finance receipt undone', PAID: 'Paid',
+  CONFIRM_AI: 'Confirmed AI finding', UNCONFIRM_AI: 'Undid AI finding confirmation', REMIND: 'Reminder', FINANCE_ACCEPT: 'Received by Finance', FINANCE_UNDO_RECEIVE: 'Finance receipt undone', PAID: 'Paid',
 };
 function describeLog(e: MemoLogEntry): string {
   if (e.action === 'EDIT') return `${e.field}: ${e.old_value ?? '—'} → ${e.new_value ?? '—'}`;
   if (e.action === 'SIGN' || e.action === 'REJECT' || e.action === 'REMIND') return `${e.field ? STEP_LABEL[e.field as ApprovalStep] || e.field : ''}${e.note ? ` — ${e.note}` : ''}`;
-  if (e.action === 'CONFIRM_AI') return `${e.field || ''}${e.note ? ` — ${e.note}` : ''}`;
+  if (e.action === 'CONFIRM_AI' || e.action === 'UNCONFIRM_AI') return `${e.field || ''}${e.note ? ` — ${e.note}` : ''}`;
   return e.note || '';
 }
 
-export default function FarOverseasAirDetailModal({ record, onClose, onChanged, onOpenEdit, refreshToken, tabBar }: {
+export default function FarOverseasAirDetailModal({ record, onClose, onChanged, onOpenEdit, refreshToken, tabBar, picUsers: picUsersProp, preparedByUsers: preparedByUsersProp }: {
   record: any;
   onClose: () => void;
   onChanged?: () => void;
   onOpenEdit?: (rec: any) => void;
   refreshToken?: number;
   tabBar?: React.ReactNode;   // Finance Handover: tab Memo · Documents · Cost di atas isi modal
+  // Pilihan "PIC who creates the memo" / "PIC who runs the shipment" (2026-10-05). Tidak dikirim
+  // (mis. viewer Finance Handover) -> diambil sendiri saat memo bisa diubah.
+  picUsers?: PicEligibleUser[];
+  preparedByUsers?: PicEligibleUser[];
 }) {
   const { user, profile, canEdit, canApproveTier } = useAuth();
   const canEditDirectLoading = canEdit('direct_loading');
@@ -122,6 +128,9 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
   const [serverBlockers, setServerBlockers] = useState<{ available: boolean; blockers: string[] } | null>(null);
   const [log, setLog] = useState<MemoLogEntry[] | null>(null);
   const [logReloadKey, setLogReloadKey] = useState(0);
+  const [fetchedPicUsers, setFetchedPicUsers] = useState<PicEligibleUser[] | null>(null);
+  const [fetchedPreparedUsers, setFetchedPreparedUsers] = useState<PicEligibleUser[] | null>(null);
+  const [savingPeople, setSavingPeople] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const memoSheetRef = useRef<HTMLDivElement>(null);
   const firstRefresh = useRef(true);
@@ -179,7 +188,7 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
     if (!signStep) { setRpcEligible(null); return; }
     fetchCanSign(rec.id, signStep).then(v => { if (!cancelled) setRpcEligible(v); });
     return () => { cancelled = true; };
-  }, [rec.id, signStep, rec.pic_user_id, rec.dominant_company_code]);
+  }, [rec.id, signStep, rec.pic_user_id, rec.prepared_by_user_id, rec.dominant_company_code]);
   useEffect(() => {
     let cancelled = false;
     if (signStep !== 'TIER1') { setServerBlockers(null); return; }
@@ -219,10 +228,15 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
   const canReject = nextStep != null && canEditDirectLoading && isEligibleForStep(nextStep);
 
   const unitPriceIsMatch = unitPriceCostStatus === 'MATCH';
-  const tier1BlockedByNotes = signStep === 'TIER1' && costNotesLoaded && !unitPriceIsMatch && !(costNotesManual && costNotesManual.trim());
-  const blockerList: string[] = signStep !== 'TIER1' ? []
+  // Overcharge/Undercharge yang sudah dikonfirmasi menggantikan syarat Notes (Manual) (SAMA sql/043).
+  const priceConfirmed = !!getConfirmedFinding(rec, 'OVERCHARGE') || !!getConfirmedFinding(rec, 'UNDERCHARGE');
+  const tier1BlockedByNotes = signStep === 'TIER1' && costNotesLoaded && !unitPriceIsMatch && !priceConfirmed && !(costNotesManual && costNotesManual.trim());
+  // Syarat Octagon "goods received date" (sql/043) juga dicek lokal -- tetap tampil walau SQL belum jalan.
+  const goodsBlock = phase2 ? goodsReceivedBlocker(rec) : null;
+  const baseBlockers: string[] = signStep !== 'TIER1' ? []
     : serverBlockers?.available ? serverBlockers.blockers
     : tier1BlockedByNotes ? [costExists ? 'Unit price in Cost Validation is not a match — fill in "Notes (Manual)" first' : 'Cost validation for this memo is not available yet'] : [];
+  const blockerList: string[] = signStep === 'TIER1' && goodsBlock && !baseBlockers.includes(goodsBlock) ? [...baseBlockers, goodsBlock] : baseBlockers;
   const prepBlocked = blockerList.length > 0;
 
   const roleForStep = (step: ApprovalStep) => step === 'TIER1' ? signer?.tier1_role : step === 'PIC' ? 'PIC' : step === 'TIER2' ? signer?.tier2_role : signer?.tier3_role;
@@ -320,6 +334,8 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
 
   const docCount = getMemoDocs(rec).length;
   const costMeta = costStatus ? COST_STATUS_META[costStatus] : null;
+  const costConfirmed = isCostStatusConfirmed(rec, costStatus);
+  const costFinding = costStatus ? getConfirmedFinding(rec, costStatus) : null;
   const locked = isMemoLocked(rec.approval_status);
   const fx = implicitFxRate(rec);
   const statusLabel = getStatusLabel(rec);
@@ -356,6 +372,34 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
       <Ban size={14} /> Reject
     </button>
   );
+  // "Prepared By" langsung di modal Memo (2026-10-05, permintaan user) -- SAMA field di Edit memo
+  // (`prepared_by_user_id`, `pic_user_id` + `pic_name`), simpan langsung lewat RPC update. Hanya
+  // sebelum Prepared By sign (setelah itu RPC mengunci kolom ini).
+  const canPickPeople = canEditDirectLoading && !locked;
+  const picUsers = picUsersProp ?? fetchedPicUsers ?? [];
+  const preparedByUsers = preparedByUsersProp ?? fetchedPreparedUsers ?? [];
+  useEffect(() => {
+    if (!canPickPeople) return;
+    if (!picUsersProp && fetchedPicUsers == null) fetchPicEligibleUsers().then(setFetchedPicUsers);
+    if (!preparedByUsersProp && fetchedPreparedUsers == null && 'prepared_by_user_id' in rec) fetchPreparedByEligibleUsers().then(setFetchedPreparedUsers);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canPickPeople]);
+  const savePeople = async (updates: Record<string, any>) => {
+    setSavingPeople(true);
+    const { data, error } = await updateRekapanFarOverseasAir(rec.id, updates);
+    setSavingPeople(false);
+    if (error) { showToast('Failed to save: ' + error.message, 'error'); return; }
+    if (data && typeof data === 'object' && (data as any).id) setRec(data);
+    else setRec((r: any) => ({ ...r, ...updates }));
+    showToast('Saved.', 'success');
+    setLogReloadKey(k => k + 1);
+    onChanged?.();
+  };
+  const personName = (list: PicEligibleUser[], id: string | null | undefined, fallback?: string | null) => {
+    const u = list.find(x => x.id === id);
+    return u ? (u.nama || u.email || '—') : (fallback || (id ? 'Assigned' : '—'));
+  };
+
   const openEditBtn = onOpenEdit && canEditDirectLoading && !locked && (
     <button onClick={() => onOpenEdit(rec)} className="px-2.5 py-1 rounded-lg border border-current/30 bg-white text-[11px] font-bold hover:opacity-80 flex items-center gap-1"><Pencil size={11} /> Open Edit</button>
   );
@@ -481,7 +525,12 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
                 FX rate locked since Prepared By signed: <span className="font-bold text-[#2A1A2C]">1 {rec.total_amount_currency} = IDR {fx.toLocaleString('id-ID', { maximumFractionDigits: 2 })}</span>. It opens again after an undo or a reject.
               </Banner>
             )}
-            {rec.on_hold === true && rec.approval_status !== 'REJECTED' && fin !== 'PAID' && (
+            {rec.is_urgent && fin !== 'PAID' && (
+              <Banner tone="red" icon={<Flame size={14} />}>
+                <span className="font-bold">Urgent</span> — may be paid before the goods are received{rec.urgent_note ? <>: <span className="font-semibold">{rec.urgent_note}</span></> : '.'}
+              </Banner>
+            )}
+            {isOnHold(rec) && rec.approval_status !== 'REJECTED' && fin !== 'PAID' && (
               <Banner tone="grey" icon={<Clock size={14} />}>
                 <span className="font-bold text-[#2A1A2C]">On hold</span> — goods not received yet, so payment waits.
               </Banner>
@@ -508,6 +557,50 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
               </Banner>
             )}
 
+            <div className="bg-white rounded-2xl border border-[#EADFD6] px-4 py-3 print:hidden">
+              <div className="flex items-center gap-2 mb-2">
+                <UserCheck size={14} className="text-[#6B3470]" />
+                <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#6B3470]">Prepared By</p>
+                {savingPeople && <span className="text-[11px] text-[#6E5E70]">Saving...</span>}
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label className="block min-w-0">
+                  <span className="block mb-1 text-xs font-semibold text-[#2A1A2C]">PIC who creates the memo</span>
+                  {canPickPeople && 'prepared_by_user_id' in rec ? (
+                    <select value={rec.prepared_by_user_id || ''} disabled={savingPeople}
+                      onChange={e => savePeople({ prepared_by_user_id: e.target.value || null })}
+                      className="w-full h-9 border border-[#EADFD6] rounded-xl px-2.5 text-sm text-[#2A1A2C] bg-white focus:outline-none focus:ring-2 focus:ring-[#6B3470]/25 disabled:opacity-60">
+                      <option value="">— Any Prepared By (Exim) —</option>
+                      {rec.prepared_by_user_id && !preparedByUsers.some(u => u.id === rec.prepared_by_user_id) && <option value={rec.prepared_by_user_id}>Current Prepared By</option>}
+                      {preparedByUsers.map(u => <option key={u.id} value={u.id}>{u.nama || u.email}</option>)}
+                    </select>
+                  ) : (
+                    <p className="h-9 flex items-center px-3 rounded-xl bg-[#FBF3EC] text-sm text-[#2A1A2C] truncate">
+                      {findApprovalEntry(entries, 'TIER1')?.nama || ('prepared_by_user_id' in rec && rec.prepared_by_user_id ? personName(preparedByUsers, rec.prepared_by_user_id) : 'Any Prepared By (Exim)')}
+                    </p>
+                  )}
+                </label>
+                <label className="block min-w-0">
+                  <span className="block mb-1 text-xs font-semibold text-[#2A1A2C]">PIC who runs the shipment</span>
+                  {canPickPeople ? (
+                    <select value={rec.pic_user_id || ''} disabled={savingPeople}
+                      onChange={e => {
+                        const id = e.target.value || null;
+                        const u = picUsers.find(p => p.id === id);
+                        savePeople({ pic_user_id: id, pic_name: u ? (u.nama || u.email || '') : null });
+                      }}
+                      className={`w-full h-9 border rounded-xl px-2.5 text-sm text-[#2A1A2C] bg-white focus:outline-none focus:ring-2 focus:ring-[#6B3470]/25 disabled:opacity-60 ${rec.pic_user_id ? 'border-[#EADFD6]' : 'border-amber-300'}`}>
+                      <option value="">— Not assigned —</option>
+                      {rec.pic_user_id && !picUsers.some(u => u.id === rec.pic_user_id) && <option value={rec.pic_user_id}>{rec.pic_name || 'Current PIC'}</option>}
+                      {picUsers.map(u => <option key={u.id} value={u.id}>{u.nama || u.email}</option>)}
+                    </select>
+                  ) : (
+                    <p className="h-9 flex items-center px-3 rounded-xl bg-[#FBF3EC] text-sm text-[#2A1A2C] truncate">{rec.pic_name || personName(picUsers, rec.pic_user_id, null)}</p>
+                  )}
+                </label>
+              </div>
+            </div>
+
             <div className="bg-white rounded-2xl border border-[#EADFD6] px-4 py-3 grid grid-cols-2 md:grid-cols-4 gap-3 print:hidden">
               {STEP_ORDER.map((step, i) => {
                 const info = stepInfo(step);
@@ -527,10 +620,13 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
               })}
             </div>
 
-            <div className={`flex items-start justify-between gap-3 rounded-xl px-4 py-2.5 text-xs print:hidden ${costStatus === 'MATCH' ? 'bg-emerald-50 text-emerald-800' : costStatus === 'OVERCHARGE' ? 'bg-rose-50 text-rose-800' : costStatus ? 'bg-amber-50 text-amber-900' : 'bg-white border border-[#EADFD6] text-[#6E5E70]'}`}>
+            <div className={`flex items-start justify-between gap-3 rounded-xl px-4 py-2.5 text-xs print:hidden ${costStatus === 'MATCH' || costConfirmed ? 'bg-emerald-50 text-emerald-800' : costStatus === 'OVERCHARGE' ? 'bg-rose-50 text-rose-800' : costStatus ? 'bg-amber-50 text-amber-900' : 'bg-white border border-[#EADFD6] text-[#6E5E70]'}`}>
               <p className="min-w-0">
-                <span className="font-bold">AI check: {costMeta?.label || (costExists ? (costStatus || 'No status') : 'Not available')}.</span>{' '}
+                <span className="font-bold">AI check: {costStatus ? costStatusLabel(rec, costStatus) : (costMeta?.label || (costExists ? 'No status' : 'Not available'))}.</span>{' '}
                 {costCatatan || (costStatus === 'MATCH' ? 'Invoice matches the vendor rate.' : '')}
+                {costConfirmed && costFinding && (
+                  <span className="block mt-0.5">✓ Confirmed by {firstNameOf(costFinding.user_name, costFinding.user_email)}{costFinding.at ? ` · ${formatDateShort(costFinding.at)}` : ''}{costFinding.note ? ` — ${costFinding.note}` : ''}</span>
+                )}
               </p>
               <span className="shrink-0 text-[10px] font-semibold opacity-70">Not printed</span>
             </div>

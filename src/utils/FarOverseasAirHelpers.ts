@@ -84,6 +84,38 @@ export const COST_STATUS_META: Record<string, { label: string; badgeClass: strin
 
 export const COMPANY_CODES = ['WNS', 'TTP', 'GMI', 'WSI', 'AMT', 'MJS', 'IMI', 'GUN'];
 
+// ── Temuan AI yang sudah dikonfirmasi user (2026-10-05) ────────────────────────────────────────
+// `ai_findings_confirmed` = [{finding, note, user_email, user_name (sql/043), at}]. Status cost
+// OVERCHARGE/UNDERCHARGE yang SUDAH dikonfirmasi tampil hijau "Overcharge · Confirmed" di semua
+// tempat (chip card/list, header Cost Validation, banner AI check modal Memo) -- SATU sumber di sini.
+export type ConfirmedFinding = { finding: string; note?: string | null; user_email?: string | null; user_name?: string | null; at?: string | null };
+export function getConfirmedFinding(rec: any, finding: string): ConfirmedFinding | null {
+  const list = parseJsonField(rec?.ai_findings_confirmed);
+  if (!Array.isArray(list)) return null;
+  return list.find((x: any) => x?.finding === finding) || null;
+}
+export function isCostStatusConfirmed(rec: any, status: string | null | undefined): boolean {
+  return (status === 'OVERCHARGE' || status === 'UNDERCHARGE') && !!getConfirmedFinding(rec, status);
+}
+export function costStatusLabel(rec: any, status: string | null | undefined): string {
+  if (!status) return 'No AI check';
+  const base = COST_STATUS_META[status]?.label || status;
+  return isCostStatusConfirmed(rec, status) ? `${base} · Confirmed` : base;
+}
+// Nama depan saja (spek user: "Confirmed by Siera", bukan email panjang @shipmentoverseas.com).
+// Nama profil (disimpan RPC sql/043) -> kata pertama; fallback bagian depan email.
+export function firstNameOf(name?: string | null, email?: string | null): string {
+  const n = String(name || '').trim();
+  if (n) return n.split(/\s+/)[0];
+  const local = String(email || '').split('@')[0].split(/[._\-+]/)[0] || '';
+  return local ? local.charAt(0).toUpperCase() + local.slice(1).toLowerCase() : '—';
+}
+
+// On hold efektif: memo Urgent TIDAK pernah on hold (boleh dibayar sebelum barang diterima).
+export function isOnHold(rec: any): boolean {
+  return rec?.on_hold === true && !rec?.is_urgent;
+}
+
 // Kolom jsonb (po_list, document_validation, cost_validation, rate_row_used, dst) NORMALNYA
 // sudah datang sebagai array/object JS asli lewat supabase-js. Tapi kalau nilainya sempat
 // di-double-encode jadi string JSON sebelum masuk kolom jsonb (mis. dari workflow n8n yang
@@ -747,6 +779,67 @@ export function getPoList(rec: any): PoListEntry[] {
   return Array.isArray(parsed) ? parsed : [];
 }
 
+// Payment type efektif: memo yang punya nomor PO otomatis "With PO" (spek user 2026-10-05, tidak
+// perlu konfirmasi manual) -- KECUALI AI bilang Non-PO. SAMA aturan trigger/blockers sql/043.
+export function effectivePaymentType(rec: any): string | null {
+  if (rec?.payment_type) return rec.payment_type;
+  if (rec?.payment_type_ai !== 'NON_PO' && getPoNumbers(rec).length > 0) return 'WITH_PO';
+  return null;
+}
+
+// Kode PT dari nomor PO ("I.PO/WNS.MDN/2608/0349" -> "WNS"). `known` = daftar kode valid; kode
+// di luar daftar -> null (tidak ditebak).
+export function companyCodeFromPoNo(po: string | null | undefined, known: string[] = COMPANY_CODES): string | null {
+  const m = /(?:^|[^A-Z])PO\s*[/.\-]\s*([A-Z]{2,5})\b/i.exec(String(po || ''));
+  if (!m) return null;
+  const code = m[1].toUpperCase();
+  return known.length === 0 || known.includes(code) ? code : null;
+}
+const poKey = (s: string | null | undefined) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+export const splitPoOri = (text: string | null | undefined): string[] =>
+  String(text || '').split('+').map(s => s.trim()).filter(Boolean);
+export const joinPoNumbers = (list: PoListEntry[]): string | null => {
+  const nos = list.map(p => String(p.po_no_raw || '').trim()).filter(Boolean);
+  return nos.length ? nos.join(' + ') : null;
+};
+
+// Tabel "PO · Vessel · KG" mengikuti field "PO number(s)" (2026-10-05, permintaan user): urutan &
+// isi = nomor di `po_ori`; PO yang sudah ada di po_list (cocok nomor ternormalisasi) TETAP membawa
+// kapal/KG/vendor/PT-nya, PO baru dibuat dgn vendor = Vendor memo & PT dari kode di nomor PO.
+// Nomor yang tidak cocok persis dipasangkan ke entri sisa pada POSISI yang sama (mis. salah ketik
+// diperbaiki) -> kapal/KG tetap terbawa; PT diturunkan ulang dari nomor baru.
+export function syncPoListFromPoOri(poOri: string | null | undefined, current: PoListEntry[], memoVendor: string | null | undefined, known: string[] = COMPANY_CODES, fallbackVessel: string | null = null): PoListEntry[] {
+  const tokens = splitPoOri(poOri);
+  const used = new Set<number>();
+  const unit = current[0]?.weight_unit;
+  const matched: (number | null)[] = tokens.map(no => {
+    const idx = current.findIndex((p, i) => !used.has(i) && poKey(p.po_no_raw) === poKey(no));
+    if (idx >= 0) used.add(idx);
+    return idx >= 0 ? idx : null;
+  });
+  tokens.forEach((_, t) => {
+    if (matched[t] != null) return;
+    if (t < current.length && !used.has(t)) { matched[t] = t; used.add(t); }
+  });
+  return tokens.map((no, t) => {
+    const idx = matched[t];
+    if (idx != null) {
+      const p = current[idx];
+      const same = poKey(p.po_no_raw) === poKey(no);
+      return { ...p, po_no_raw: no, company_code: same ? (p.company_code || companyCodeFromPoNo(no, known)) : (companyCodeFromPoNo(no, known) ?? p.company_code ?? null) };
+    }
+    return {
+      po_no_raw: no,
+      company_code: companyCodeFromPoNo(no, known),
+      vendor_name: memoVendor ? String(memoVendor).trim() || null : null,
+      vessel_raw: fallbackVessel,
+      weight_kg: null,
+      ...(unit ? { weight_unit: unit } : {}),
+      source: 'MANUAL',
+    } as PoListEntry;
+  });
+}
+
 // Berat memo dalam KG (null kalau satuannya bukan KG -- mis. CBM, tidak bisa dibandingkan
 // dgn KG per PO).
 export function memoWeightKg(rec: any): number | null {
@@ -886,16 +979,22 @@ export function deriveMemoWarnings(rec: any, cost: CostInfo | undefined, now: Da
   const dupOf = Array.isArray(rec?.ai_duplicate_of) ? rec.ai_duplicate_of : [];
   if (dupOf.length > 0 && !confirmed('DUPLICATE')) w.push({ level: 'red', text: `Possible duplicate of ${dupOf.length} other memo${dupOf.length === 1 ? '' : 's'} — confirm in Cost Validation` });
   if (cost?.status === 'OVERCHARGE') {
-    if (confirmed('OVERCHARGE')) w.push({ level: 'grey', text: 'Overcharge confirmed with a note' });
+    if (confirmed('OVERCHARGE')) w.push({ level: 'grey', text: 'Overcharge · Confirmed' });
     else w.push({ level: 'red', text: 'Overcharge — invoice is above the contract rate' });
   }
-  if (cost?.status === 'UNDERCHARGE') w.push({ level: 'amber', text: 'Undercharge — invoice is below the contract rate' });
+  if (cost?.status === 'UNDERCHARGE') {
+    if (confirmed('UNDERCHARGE')) w.push({ level: 'grey', text: 'Undercharge · Confirmed' });
+    else w.push({ level: 'amber', text: 'Undercharge — invoice is below the contract rate' });
+  }
   if (hasPhase2 && beforeSign) {
-    if (!rec.payment_type) {
+    // Ada nomor PO -> otomatis With PO (sql/043), tidak perlu peringatan konfirmasi.
+    if (!effectivePaymentType(rec)) {
       w.push({ level: 'amber', text: rec.payment_type_ai === 'UNSURE' ? 'AI is not sure — confirm With PO / Non-PO' : 'Payment type (With PO / Non-PO) not confirmed' });
-    } else if (rec.payment_type === 'NON_PO' && (!rec.non_po_kind || !rec.non_po_billed_company_code || (rec.non_po_kind === 'PERSONAL_GOODS' && !String(rec.non_po_goods_owner || '').trim()))) {
+    } else if (effectivePaymentType(rec) === 'NON_PO' && (!rec.non_po_kind || !rec.non_po_billed_company_code || (rec.non_po_kind === 'PERSONAL_GOODS' && !String(rec.non_po_goods_owner || '').trim()))) {
       w.push({ level: 'amber', text: 'Complete non-PO data (type, goods owner, billed PT)' });
     }
+    const goods = goodsReceivedBlocker(rec);
+    if (goods) w.push({ level: 'amber', text: 'Goods received date not filled — Prepared By cannot sign yet (Octagon)' });
     if (rec.total_amount_currency && rec.total_amount_currency !== 'IDR' && (rec.kurs_used == null || rec.kurs_used === '')) {
       w.push({ level: 'amber', text: 'FX rate not filled in' });
     }
@@ -904,8 +1003,9 @@ export function deriveMemoWarnings(rec: any, cost: CostInfo | undefined, now: Da
     if (missingVessel > 0) w.push({ level: 'amber', text: `Vessel missing for ${missingVessel} PO${missingVessel === 1 ? '' : 's'}` });
     else if (pl.length === 0 && !String(rec.vessel_internal_note || '').trim()) w.push({ level: 'amber', text: 'Vessel not filled in' });
   }
-  if (rec?.on_hold === true && isPaymentAlarmActive(rec)) w.push({ level: 'grey', text: 'On hold — goods not received yet' });
-  if (pending && cost && cost.unitPriceStatus !== 'MATCH' && !(cost.notesManual && cost.notesManual.trim())) {
+  if (isOnHold(rec) && isPaymentAlarmActive(rec)) w.push({ level: 'grey', text: 'On hold — goods not received yet' });
+  // Overcharge/Undercharge yang sudah dikonfirmasi = cukup (sql/043), Notes (Manual) tidak wajib lagi.
+  if (pending && cost && cost.unitPriceStatus !== 'MATCH' && !(cost.notesManual && cost.notesManual.trim()) && !confirmed('OVERCHARGE') && !confirmed('UNDERCHARGE')) {
     w.push({ level: 'amber', text: 'Unit price not matched — Cost Validation notes required before Prepared By can sign' });
   }
   if (cost?.rateAmbiguous) w.push({ level: 'amber', text: 'Several rates match — select one in Cost Validation' });
@@ -951,10 +1051,13 @@ const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Frida
 export const localIsoDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 export type DueCalc = { due: string; note: string | null; term: string };
-// Due date pembayaran (spek): Octagon = 14 hari kalender, hari invoice diterima = hari ke-1
-// (jadi +13); Jianqiao = H+1 setelah invoice diterima. Sabtu/Minggu ikut dihitung; kalau due
-// jatuh Sabtu/Minggu, DIMAJUKAN ke Jumat sebelumnya. Forwarder lain -> null (tidak ditebak).
-// Contoh spek: terima Senin 7 Sep -> hari ke-14 Minggu 20 Sep -> due Jumat 18 Sep.
+// Due date / "Please arrange payment on" (spek user 2026-10-05, GANTI aturan +13 lama). Tanggal bayar
+// SELALU ikut invoice received date (tidak menunggu barang):
+// - Octagon = 14 hari kalender, hari invoice diterima = hari ke-1 (jadi +13; contoh user: terima tgl 7 -> bayar tgl 20);
+// - Jianqiao = invoice received date + 1 hari.
+// Due yang jatuh Sabtu/Minggu DIMAJUKAN ke Jumat sebelumnya. Forwarder lain -> null (tidak ditebak).
+// Syarat goods received date Octagon = syarat APPROVE (Prepared By), lihat `goodsReceivedBlocker`.
+// Contoh: invoice diterima Rabu 7 Okt -> hari ke-14 = Selasa 20 Okt.
 export function computeDueDate(shipVia: string | null | undefined, invoiceReceived: string | null | undefined): DueCalc | null {
   const start = toLocalDay(invoiceReceived);
   const target = vendorTargetFromShipVia(shipVia);
@@ -962,11 +1065,11 @@ export function computeDueDate(shipVia: string | null | undefined, invoiceReceiv
   const due = new Date(start);
   let term: string;
   if (target === 'OCTAGON LOGISTIC') {
+    term = '14 days counting the invoice received date as day 1, e.g. received on the 7th → pay on the 20th (a Sat/Sun due date moves to Friday) — the goods must be received before the memo can be approved, unless Urgent';
     due.setDate(due.getDate() + 13);
-    term = '14 calendar days counting the invoice-received day as day 1 (Sat/Sun counted; a Sat/Sun due date moves to Friday) — goods must already be received';
   } else {
     due.setDate(due.getDate() + 1);
-    term = 'H+1 after the invoice is received (a Sat/Sun due date moves to Friday) — goods must already be at the Jakarta agent warehouse';
+    term = 'Invoice received date + 1 day (a Sat/Sun due date moves to Friday)';
   }
   let note: string | null = null;
   const dow = due.getDay();
@@ -979,9 +1082,25 @@ export function computeDueDate(shipVia: string | null | undefined, invoiceReceiv
 }
 
 // On hold (spek): barang belum diterima (Octagon) / belum di gudang agen Jakarta (Jianqiao).
-export function computeOnHold(shipVia: string | null | undefined, goodsReceived: string | null | undefined): boolean {
-  return !!vendorTargetFromShipVia(shipVia) && !toLocalDay(goodsReceived);
+// Memo Urgent tidak pernah on hold (boleh dibayar sebelum barang diterima).
+export function computeOnHold(shipVia: string | null | undefined, goodsReceived: string | null | undefined, urgent = false): boolean {
+  return !urgent && !!vendorTargetFromShipVia(shipVia) && !toLocalDay(goodsReceived);
 }
+
+// Syarat approve Octagon (spek user 2026-10-05): goods received date WAJIB terisi sebelum Prepared By
+// sign, kecuali memo Urgent. Memo lama yg menyimpan tanggal barang hanya di NOTE 3 (status_note
+// "... DD/MM/YYYY") dianggap terisi. SAMA aturan `fn_far_overseas_prepared_by_blockers` (sql/043).
+export const GOODS_RECEIVED_BLOCKER = 'Goods received date is not filled in (Octagon is approved only after the goods are received)';
+export function goodsReceivedBlocker(rec: any): string | null {
+  if (vendorTargetFromShipVia(rec?.ship_via) !== 'OCTAGON LOGISTIC' || rec?.is_urgent) return null;
+  if (toLocalDay(rec?.goods_received_date)) return null;
+  if (/\d{2}\/\d{2}\/\d{4}\s*$/.test(String(rec?.status_note || ''))) return null;
+  return GOODS_RECEIVED_BLOCKER;
+}
+
+// Penanda "Please arrange payment on" diisi MANUAL (tidak dihitung ulang otomatis) -- disimpan di
+// `due_date_note` (kolom yang sudah ada), tombol "Back to automatic" menghapusnya.
+export const MANUAL_DUE_NOTE = 'Set manually';
 
 // Due date efektif: `due_date` (hitungan term, tahap 2) -> fallback `expected_payment_date`.
 export function getMemoDueValue(rec: any): string | null {

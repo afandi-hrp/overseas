@@ -49,7 +49,7 @@ export default function FarOverseasAirMyApprovals({ mySteps, myTier, signers, ph
   const [costMap, setCostMap] = useState<Record<string, CostInfo>>({});
 
   // Kolom tahap 2 (memo_no, due_date, dst) ikut di-select HANYA kalau sql/027 sudah jalan.
-  const SELECT_COLS = phase2 ? SELECT_COLS_BASE + ', prepared_by_user_id, memo_no, due_date, on_hold, payment_type, rejected_step, finance_received_at, paid_at, ai_duplicate_of, ai_findings_confirmed, kurs_used' : SELECT_COLS_BASE;
+  const SELECT_COLS = phase2 ? SELECT_COLS_BASE + ', prepared_by_user_id, memo_no, due_date, on_hold, payment_type, rejected_step, finance_received_at, paid_at, ai_duplicate_of, ai_findings_confirmed, kurs_used, payment_type_ai, is_urgent, goods_received_date, status_note' : SELECT_COLS_BASE;
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);

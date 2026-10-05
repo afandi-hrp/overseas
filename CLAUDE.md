@@ -68,9 +68,13 @@ approval-nya.
   & tabel `cost_validasi_review_courier_item` (Accept cost per baris). Lihat "Panel Validation samping Invoice Recap Courier".
   **`sql/042_courier_recap_tgl_invoice.sql` BELUM DIJALANKAN — WAJIB dijalankan manual** (2026-10-05): kolom
   `rekapan_courier.tgl_invoice` (date) -- dasar Due Date kartu Invoice Recap Courier (+30 hari). Sumber pengisian (n8n) menyusul dari user.
-  **`sql/043_far_overseas_confirm_duplicate_urgent.sql` BELUM DIJALANKAN — WAJIB dijalankan manual** (2026-10-05, FAR Overseas):
+  **`sql/044_seaair_form_e_note.sql` BELUM DIJALANKAN — WAJIB dijalankan manual** (2026-10-05, Invoice Recap Sea & Air): tabel BARU
+  `seaair_form_e_note` (catatan manual Form E, 1 baris per `seaair_id`, RLS 4 policy). Sebelum jalan: aturan Form E fail-open
+  (tidak memblokir). Detail: `docs/claude/bunker-courier-seaair.md` "Form E utk barang dari China".
+  **`sql/043_far_overseas_confirm_duplicate_urgent.sql` SUDAH DIJALANKAN 2026-10-05** (konfirmasi user; FAR Overseas):
   kolom `urgent_note`, deteksi duplikat (trigger `trg_far_overseas_auto_fields`), payment type otomatis With PO kalau ada PO,
-  `fn_far_overseas_prepared_by_blockers` (Overcharge/Undercharge terkonfirmasi menggugurkan syarat Notes Manual), Undo konfirmasi
+  `fn_far_overseas_prepared_by_blockers` (Overcharge/Undercharge terkonfirmasi menggugurkan syarat Notes Manual; Octagon wajib goods
+  received date sebelum Prepared By sign kecuali Urgent), Undo konfirmasi
   & nama pengonfirmasi, `fn_far_overseas_set_urgent(uuid, boolean, text)`. Detail: `docs/claude/far-overseas.md` "Update 2026-10-05".
 - **Kondisi DB production (stack `supabase3`, audit 2026-09-26)**: role `anon` tanpa hak apa pun
   di schema public (tabel, fungsi, default privileges); GraphQL ditutup; semua tabel RLS dgn
@@ -486,7 +490,7 @@ user di production** (testing bagian 2 + Finance Handover dijadwalkan user bersa
 4. Status validasi "Shipment still being processed in Invoice Recap" — belum ada sumber data.
 5. Draft otomatis saat 4 dokumen bea cukai lengkap (PIB/SPPB/Billing DJBC/BPN) + log "Recorded
    automatically…". Sekarang baru: PIB baru dari AI otomatis Draft (sql/032).
-6. Valas per PO kosong kalau n8n tidak mengisi `po_harga_detail` (ditambal tab "Split evenly") — cek
+6. Valas per PO kosong kalau n8n tidak mengisi `po_harga_detail` (tab "Split evenly" jendela Open DIHAPUS 2026-10-05; isi lewat Edit) — cek
    workflow n8n ekstraksi PIB.
 7. (Ditahan, keputusan user) Export format workbook 31 kolom — Export TETAP seperti sekarang.
 
@@ -836,10 +840,9 @@ satu per satu, konfirmasi user dulu (terutama yg menyentuh SQL/RPC — ikuti atu
     (Bukan backlog lagi, dicatat supaya tidak "diperbaiki" tanpa diminta.)
 13. **Goods per PO — Valas/IDR per PO kosong** kalau `po_harga_detail` (PO Price Detail) kosong di
     DB (n8n tidak mengisinya utk sebagian PIB). Sekarang (keputusan user 2026-09-30): 1 PO -> pakai
-    Item price (valas/Rp) sbg nilai PO itu; >1 PO -> **2 tab "As recorded" | "Split evenly"** di
-    kartu Goods per PO jendela Open (tab awal Split evenly kalau PO Price Detail kosong, selain itu
-    As recorded). Split evenly = Item price DIBAGI RATA **HANYA TAMPILAN** (chip "≈ split evenly",
-    `splitMoneyEvenly`, TIDAK disimpan) + keterangan; form Edit punya
+    Item price (valas/Rp) sbg nilai PO itu; >1 PO -> nilai PO Price Detail APA ADANYA (kosong = "—" +
+    keterangan kuning). **Tab "As recorded | Split evenly" jendela Open DIHAPUS 2026-10-05 (permintaan
+    user)** -- estimasi bagi rata tidak ditampilkan lagi; form Edit tetap punya
     tombol **"Split evenly"** (isi Amount valas tiap PO, baru tersimpan kalau user klik Save).
     Nilai asli per PO tetap sebaiknya diisi n8n ke `po_harga_detail` (cek workflow ekstraksi PIB) —
     begitu terisi, tampilan otomatis pakai nilai asli.
@@ -1079,7 +1082,7 @@ kelengkapan di-merge manual di JS dari `dokumen_checklist` via `mergeChecklistDa
 **Sea & Air**: `rekapan_seaair`, `tabel_audit_seaair`, `cost_validasi_seaair`,
 `cost_validasi_catatan_seaair` (catatan konfirmasi manual per-segmen Cost Validation, 2026-09),
 `dokumen_checklist_seaair`, `dokumen_validasi_seaair`, `dokumen_validasi_matriks_seaair`,
-`kurs_bi_seaair`, `kurs_rule_vendor_seaair`, `tarif_kontrak_seaair`. Master vendor PPJK (Finance Handover, sql/035):
+`kurs_bi_seaair`, `kurs_rule_vendor_seaair`, `tarif_kontrak_seaair`, `seaair_form_e_note` (sql/044, catatan manual Form E). Master vendor PPJK (Finance Handover, sql/035):
 `seaair_vendor_master`.
 
 **FAR Overseas Air (Direct Loading)**: `rekapan_far_overseas_air`,
@@ -1157,7 +1160,7 @@ Supabase** — bisa saja sudah basi (RPC lain ditambahkan user langsung tanpa te
   `fn_seaair_finance_mark_paid` referensi opsional, `fn_seaair_finance_undo` DI-DROP (diganti 2026-10-02 oleh
   `fn_*_finance_undo_receive` sql/040, Admin saja; keputusan
   user), FAR `fn_far_overseas_set_urgent(uuid, boolean)` BARU, `fn_far_overseas_mark_paid` bukti bayar opsional.
-- FAR Overseas (sql/043, BELUM DIJALANKAN): `fn_far_overseas_unconfirm_ai_finding(uuid, text)` BARU, overload
+- FAR Overseas (sql/043, SUDAH DIJALANKAN 2026-10-05): `fn_far_overseas_unconfirm_ai_finding(uuid, text)` BARU, overload
   `fn_far_overseas_set_urgent(uuid, boolean, text)` BARU (versi 2-arg sql/035 tetap), `fn_far_overseas_confirm_ai_finding` &
   `fn_far_overseas_prepared_by_blockers` (signature sama, isi diperbarui), helper `fn_far_overseas_norm_key`/`_po_keys`/
   `_find_duplicates` + fungsi trigger `fn_far_overseas_auto_fields`.

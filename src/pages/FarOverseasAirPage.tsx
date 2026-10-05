@@ -14,6 +14,7 @@ import {
   isPaymentAlarmActive, getMemoDueValue, getStatusLabel, getFinanceStage, fetchStepSigners, mySignableSteps, canSignStep, probePhase2,
   allocateByVessel, memoRefLabel, isMemoLocked, completedStepCount, nextStepForStatus, getRouteDisplay, getPoNumbers, totalInIdr, formatIdr,
   formatDateShort, implicitFxRate, toLocalDay, STEP_ORDER, ensureFarFont, FAR_FONT_FAMILY, getApprovalEntries, getPoList,
+  isOnHold, isCostStatusConfirmed, costStatusLabel,
   type PicEligibleUser, type RateRow, type CompanyOption, type CostInfo, type ApprovalStep, type MemoWarning, type StepSignerMap,
 } from '../utils/FarOverseasAirHelpers';
 import FarOverseasAirDetailModal from '../components/FarOverseasAirDetailModal';
@@ -116,11 +117,13 @@ function DeleteConfirmModal({ record, onConfirm, onClose, deleting, error }: {
 
 // ── Komponen tampilan kecil ──────────────────────────────────────────────────────────────────
 
-function AiChip({ status }: { status: string | null | undefined }) {
+// Overcharge/Undercharge yang sudah dikonfirmasi user -> hijau "Overcharge · Confirmed" (titik tetap merah).
+function AiChip({ status, rec }: { status: string | null | undefined; rec?: any }) {
   if (!status) return <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#F5EDF3] text-[#6E5E70] whitespace-nowrap"><span className="w-1.5 h-1.5 rounded-full bg-[#6E5E70]/50" />No AI check</span>;
   const meta = COST_STATUS_META[status];
+  const confirmed = isCostStatusConfirmed(rec, status);
   const dot = status === 'MATCH' ? 'bg-emerald-500' : status === 'OVERCHARGE' ? 'bg-rose-500' : 'bg-amber-500';
-  return <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${meta?.badgeClass || 'bg-[#F5EDF3] text-[#6E5E70]'}`}><span className={`w-1.5 h-1.5 rounded-full ${dot}`} />{meta?.label || status}</span>;
+  return <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${confirmed ? 'bg-emerald-50 text-emerald-700' : meta?.badgeClass || 'bg-[#F5EDF3] text-[#6E5E70]'}`}><span className={`w-1.5 h-1.5 rounded-full ${dot}`} />{costStatusLabel(rec, status)}</span>;
 }
 
 function PtChip({ code }: { code: string | null | undefined }) {
@@ -282,7 +285,7 @@ function StatusLine({ rec }: { rec: any }) {
 
 function DueStrip({ rec, dueWindow }: { rec: any; dueWindow: number }) {
   if (!isPaymentAlarmActive(rec)) return null;
-  if (rec.on_hold === true) {
+  if (isOnHold(rec)) {
     return <div className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-white bg-[#6E5E70]"><Clock size={11} /> On hold · goods not received</div>;
   }
   const due = getDueInfo(getMemoDueValue(rec), dueWindow);
@@ -319,7 +322,7 @@ const MemoCard: React.FC<{ r: any; cost: CostInfo | undefined; dueWindow: number
   const locked = isMemoLocked(r.approval_status);
   const editState = editButtonState(r, actions.canEdit);
   const docCount = getMemoDocs(r).length;
-  const dueStrip = isPaymentAlarmActive(r) && r.on_hold !== true && due && due.level !== 'later';
+  const dueStrip = isPaymentAlarmActive(r) && !isOnHold(r) && due && due.level !== 'later';
   const border = dueStrip && due?.level === 'overdue' ? 'border-rose-300' : dueStrip ? 'border-[#E9C98B]' : 'border-[#EADFD6]';
   return (
     <div className={`bg-white rounded-2xl border ${border} shadow-sm flex flex-col overflow-hidden hover:shadow-md transition-shadow`}>
@@ -329,9 +332,9 @@ const MemoCard: React.FC<{ r: any; cost: CostInfo | undefined; dueWindow: number
           <div className="min-w-0">
             {r.memo_no && <p className="text-sm font-extrabold text-[#2A1A2C] leading-tight">{r.memo_no}</p>}
             <p className={r.memo_no ? 'inline-block mt-0.5 text-[9px] font-extrabold uppercase tracking-wide px-1.5 py-0.5 rounded bg-[#F5EDF3] text-[#6B3470]' : 'text-sm font-extrabold text-[#2A1A2C] leading-tight break-words'}>{r.memo_title || <span className="italic font-semibold text-[#6E5E70]">Untitled memo</span>}</p>
-            {r.is_urgent && <span className="ml-1 inline-block mt-0.5 text-[9px] font-extrabold uppercase tracking-wide px-1.5 py-0.5 rounded bg-rose-100 text-rose-700" title="May be paid before the goods are received">Urgent</span>}
+            {r.is_urgent && <span className="ml-1 inline-block mt-0.5 text-[9px] font-extrabold uppercase tracking-wide px-1.5 py-0.5 rounded bg-rose-100 text-rose-700" title={r.urgent_note ? `Urgent: ${r.urgent_note}` : 'May be paid before the goods are received'}>Urgent</span>}
           </div>
-          <AiChip status={cost?.status} />
+          <AiChip status={cost?.status} rec={r} />
         </div>
 
         <div className="rounded-xl bg-[#F5EDF3] px-3 py-2">
@@ -612,8 +615,11 @@ export default function FarOverseasAirPage() {
 
   // ── Data fetch ──────────────────────────────────────────────────────────────────────────────
 
-  const fetchList = useCallback(async () => {
-    setLoadingList(true);
+  // `silent` (2026-10-05, permintaan user): refresh SETELAH aksi di modal (sign, simpan Edit, Cost
+  // Validation, hapus) tidak menampilkan loading -- daftar tetap terlihat & diperbarui di tempat.
+  // Loading hanya utk tombol Refresh, ganti filter/halaman & pemuatan pertama.
+  const fetchList = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoadingList(true);
     setListError(null);
     const startIndex = (page - 1) * pageSize;
     let query = supabase.from('rekapan_far_overseas_air').select('*', { count: 'exact' });
@@ -653,7 +659,7 @@ export default function FarOverseasAirPage() {
     if (dueOnly) {
       const res = await query.limit(DUE_CANDIDATE_LIMIT);
       const all = (res.data || []).filter((r: any) => {
-        if (!isPaymentAlarmActive(r) || r.on_hold === true) return false;
+        if (!isPaymentAlarmActive(r) || isOnHold(r)) return false;
         const d = getDueInfo(getMemoDueValue(r), dueWindow);
         return !!d && d.level !== 'later';
       });
@@ -694,7 +700,7 @@ export default function FarOverseasAirPage() {
     // dihitung terpisah (abu). Tahap 1: hanya memo di rantai approval.
     let res: { data: any[] | null; error: any };
     if (phase2) {
-      res = await supabase.from('rekapan_far_overseas_air').select('id, approval_status, expected_payment_date, due_date, on_hold, finance_received_at, paid_at')
+      res = await supabase.from('rekapan_far_overseas_air').select('*')
         .neq('approval_status', 'REJECTED').is('paid_at', null)
         .or(`due_date.lte.${limitIso},expected_payment_date.lte.${limitIso},on_hold.eq.true`)
         .limit(2000);
@@ -708,7 +714,7 @@ export default function FarOverseasAirPage() {
     let overdue = 0; let soon = 0; let onHold = 0;
     (data || []).forEach((r: any) => {
       if (!isPaymentAlarmActive(r)) return;
-      if (r.on_hold === true) { onHold++; return; }
+      if (isOnHold(r)) { onHold++; return; }
       const due = getDueInfo(getMemoDueValue(r), dueWindow);
       if (!due) return;
       if (due.level === 'overdue') overdue++;
@@ -742,8 +748,8 @@ export default function FarOverseasAirPage() {
     if (mySteps.length > 0 && !mySteps.includes('TIER1') && mySteps.some(st => st === 'TIER2' || st === 'TIER3')) setTab('MY_APPROVALS');
   }, [rolesReady, mySteps, deepLinkId]);
 
-  const refreshList = useCallback(() => {
-    fetchList();
+  const refreshList = useCallback((silent = false) => {
+    fetchList({ silent });
     fetchApprovalCounts();
     fetchDueAlert();
     fetchMyApprovalsCount();
@@ -797,8 +803,9 @@ export default function FarOverseasAirPage() {
 
   // Kalau nilai dikembalikan ke nilai tersimpan, field DIBUANG dari pending (tidak dikirim).
   const setVal = useCallback((r: any, field: string, value: any) => {
-    // `is_urgent` (sql/035) TIDAK ada di whitelist RPC update -> disimpan terpisah di saveRowEdits.
-    if (!REKAPAN_EDITABLE_FIELDS.has(field) && field !== 'is_urgent') return;
+    // `is_urgent` (sql/035) & `urgent_note` (sql/043) TIDAK ada di whitelist RPC update -> disimpan
+    // terpisah di saveRowEdits lewat fn_far_overseas_set_urgent.
+    if (!REKAPAN_EDITABLE_FIELDS.has(field) && field !== 'is_urgent' && field !== 'urgent_note') return;
     setPendingEdits(prev => {
       const rowEdits = { ...(prev[r.id] || {}) };
       const original = r[field] ?? null;
@@ -901,11 +908,16 @@ export default function FarOverseasAirPage() {
   const saveRowEdits = async (id: string, baseRow: any): Promise<boolean> => {
     const allEdits = pendingEdits[id];
     if (!allEdits || Object.keys(allEdits).length === 0) return true;
-    // `is_urgent` lewat RPC sendiri (fn_far_overseas_set_urgent, sql/035) -- boleh walau memo terkunci.
-    const { is_urgent: urgentEdit, ...edits } = allEdits;
+    // `is_urgent` + `urgent_note` lewat RPC sendiri (fn_far_overseas_set_urgent, sql/035; versi 3-arg
+    // dgn catatan = sql/043) -- boleh walau memo terkunci. Kolom urgent_note belum ada -> versi 2-arg.
+    const { is_urgent: urgentEdit, urgent_note: urgentNoteEdit, ...edits } = allEdits;
     setSavingEdits(true);
-    if (urgentEdit !== undefined) {
-      const { error: urgentErr } = await supabase.rpc('fn_far_overseas_set_urgent', { p_id: id, p_urgent: !!urgentEdit });
+    if (urgentEdit !== undefined || urgentNoteEdit !== undefined) {
+      const urgent = urgentEdit !== undefined ? !!urgentEdit : !!baseRow?.is_urgent;
+      const hasNoteCol = Object.prototype.hasOwnProperty.call(baseRow || {}, 'urgent_note');
+      const { error: urgentErr } = await supabase.rpc('fn_far_overseas_set_urgent', hasNoteCol
+        ? { p_id: id, p_urgent: urgent, p_note: urgentNoteEdit !== undefined ? urgentNoteEdit : (baseRow?.urgent_note ?? null) }
+        : { p_id: id, p_urgent: urgent });
       if (urgentErr) {
         setSavingEdits(false);
         showToast('Failed to save Urgent: ' + urgentErr.message, true, 8000);
@@ -972,8 +984,7 @@ export default function FarOverseasAirPage() {
     setEditRow(null);
     setIsNewManualRow(false);
     setDetailRefreshToken(t => t + 1);
-    refreshList();
-    if (wasNew) fetchList();
+    refreshList(true);
   };
 
   const confirmDelete = async () => {
@@ -985,7 +996,7 @@ export default function FarOverseasAirPage() {
     if (error) { setDeleteError(error.message); return; }
     setDeleteConfirmRow(null);
     showToast('Memo deleted.');
-    refreshList();
+    refreshList(true);
   };
 
   const getExportData = useCallback(async (startDate?: string, endDate?: string) => {
@@ -1020,7 +1031,7 @@ export default function FarOverseasAirPage() {
         fx_display: fx != null ? fx.toLocaleString('id-ID', { maximumFractionDigits: 2 }) : '',
         total_idr_display: idr != null ? formatIdr(idr) : '',
         approval_status_display: (APPROVAL_STATUS_META[r.approval_status] || APPROVAL_STATUS_META.PENDING).label,
-        cost_status_display: cs ? (COST_STATUS_META[cs]?.label || cs) : 'No AI check',
+        cost_status_display: costStatusLabel(r, cs),
         nama_pt_display: companyOptions.find(c => c.company_code === r.dominant_company_code)?.company_name_full || r.dominant_company_code || '',
       };
     };
@@ -1052,7 +1063,7 @@ export default function FarOverseasAirPage() {
     const iv = setInterval(async () => {
       const { data } = await supabase.from('far_overseas_air_processing_queue').select('*').eq('id', activeJobId).maybeSingle();
       if (data) {
-        if (data.status === 'SUCCESS') { setActiveJobStatus('SUCCESS'); refreshList(); fetchQueue(); }
+        if (data.status === 'SUCCESS') { setActiveJobStatus('SUCCESS'); refreshList(true); fetchQueue(); }
         else if (data.status === 'FAILED') { setActiveJobStatus('FAILED'); setActiveJobError(data.error_message || 'Failed to process document.'); fetchQueue(); }
       }
     }, 4000);
@@ -1129,7 +1140,7 @@ export default function FarOverseasAirPage() {
           const route = getRouteDisplay(r.route_note);
           const pos = getPoNumbers(r);
           const due = getDueInfo(getMemoDueValue(r), dueWindow);
-          const dueAlarm = isPaymentAlarmActive(r) && r.on_hold !== true && due && due.level !== 'later';
+          const dueAlarm = isPaymentAlarmActive(r) && !isOnHold(r) && due && due.level !== 'later';
           const warnings = deriveMemoWarnings(r, cost);
           const fx = implicitFxRate(r);
           const locked = isMemoLocked(r.approval_status);
@@ -1158,7 +1169,7 @@ export default function FarOverseasAirPage() {
                 );
               })()}</td>
               <td className="px-3 py-2.5 text-right whitespace-nowrap"><p className="font-extrabold text-[#2A1A2C]">{formatMoney(r.total_amount, r.total_amount_currency)}</p>{fx != null && <p className="text-[10px] text-[#6E5E70]">≈ {formatIdr(Number(r.total_amount_idr))}</p>}</td>
-              <td className="px-3 py-2.5"><AiChip status={cost?.status} /></td>
+              <td className="px-3 py-2.5"><AiChip status={cost?.status} rec={r} /></td>
               <td className="px-3 py-2.5 w-[230px] space-y-1"><StatusLine rec={r} /><ProgressBar status={r.approval_status} /><MainWarning warnings={warnings} /></td>
               <td className="px-3 py-2.5 sticky right-0 bg-white group-hover:bg-[#FBF3EC] border-l border-[#EADFD6] z-10">
                 <div className="flex items-center gap-1">
@@ -1343,7 +1354,7 @@ export default function FarOverseasAirPage() {
                     {(Object.keys(SORT_LABEL) as SortBy[]).map(k => <option key={k} value={k}>{SORT_LABEL[k]}</option>)}
                   </select>
                 </label>
-                <button onClick={refreshList} disabled={loadingList} title="Refresh" aria-label="Refresh" className="h-9 w-9 flex items-center justify-center rounded-xl border border-[#EADFD6] text-[#2A1A2C] hover:bg-[#F5EDF3] shrink-0 disabled:opacity-50">
+                <button onClick={() => refreshList()} disabled={loadingList} title="Refresh" aria-label="Refresh" className="h-9 w-9 flex items-center justify-center rounded-xl border border-[#EADFD6] text-[#2A1A2C] hover:bg-[#F5EDF3] shrink-0 disabled:opacity-50">
                   <RefreshCw size={14} className={loadingList ? 'animate-spin' : ''} />
                 </button>
               </div>
@@ -1488,9 +1499,11 @@ export default function FarOverseasAirPage() {
           <FarOverseasAirDetailModal
             record={selected}
             onClose={() => { setSelected(null); if (deepLinkId) navigate('/direct-loading', { replace: true }); }}
-            onChanged={refreshList}
+            onChanged={() => refreshList(true)}
             onOpenEdit={(rec) => { setIsNewManualRow(false); setEditSaveError(null); setEditRow(rec); }}
             refreshToken={detailRefreshToken}
+            picUsers={picUsers}
+            preparedByUsers={preparedByUsers}
           />
         </React.Fragment>
       )}
@@ -1500,7 +1513,7 @@ export default function FarOverseasAirPage() {
           farOverseasId={costModalRow.id}
           approvalStatus={costModalRow.approval_status}
           onClose={() => setCostModalRow(null)}
-          onChanged={refreshList}
+          onChanged={() => refreshList(true)}
         />
       )}
 

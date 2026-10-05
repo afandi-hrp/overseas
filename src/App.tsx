@@ -117,8 +117,9 @@ export default function App() {
               <Route path="/settings/seaair-vendors" element={<RequirePageAccess pageKey="settings_seaair_vendors"><SeaAirVendorMasterPage /></RequirePageAccess>} />
               <Route path="/settings/courier-vendors" element={<RequirePageAccess pageKey="settings_courier_vendors"><CourierVendorMasterPage /></RequirePageAccess>} />
 
-              <Route path="/direct-loading" element={<RequirePageAccess pageKey="direct_loading"><FarOverseasAirPage /></RequirePageAccess>} />
-              <Route path="/direct-loading/:id" element={<RequirePageAccess pageKey="direct_loading"><FarOverseasAirPage /></RequirePageAccess>} />
+              {/* 1 route dgn :id opsional (2026-10-05) -- buka/tutup modal Memo (ganti URL) TIDAK me-mount ulang
+                  halaman, jadi daftar memo tidak ikut refresh. Lihat juga key `motion.div` konten di MainLayout. */}
+              <Route path="/direct-loading/:id?" element={<RequirePageAccess pageKey="direct_loading"><FarOverseasAirPage /></RequirePageAccess>} />
 
               <Route path="/bunker" element={<RequirePageAccess pageKey="bunker"><BunkerPage /></RequirePageAccess>} />
 

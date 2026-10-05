@@ -7,11 +7,13 @@ import { createPortal } from 'react-dom'
 import { X, Check, AlertTriangle, Info, Pencil, Trash2, RotateCcw, ExternalLink, CheckCircle2, XCircle, Circle } from 'lucide-react'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_GREEN, Chip, StatusPill, SectionCard, type Tone } from './SeaAirAuditUi'
 import {
-  fmtRp, fmtValas, fmtDateShort, fmtPctShort, formatNoAju, buildGoodsLines, parseLooseNumber, splitMoneyEvenly,
+  fmtRp, fmtValas, fmtDateShort, formatNoAju, buildGoodsLines, parseLooseNumber,
   computeCustomsBuildUp, computeDutyRows, isSeaAirDraft, companyFullName, fetchSeaAirAuditLog, fetchSeaAirAuditLinkInfo, markAuditedBlocker,
   VALIDATION_META, validationLabel, type SeaAirAuditLinkInfo, type SeaAirAuditLogEntry,
 } from '../utils/SeaAirAuditHelpers'
 import { poManualFor, type PoManualEntry } from '../utils/SeaAirRecapHelpers'
+import { compareSeaAirDuty, fetchSeaAirDutyMatrix } from '../utils/SeaAirAuditHelpers'
+import SeaAirDutyCompareTable from './SeaAirDutyCompareTable'
 
 const fmtDateTime = (v: any) => {
   if (!v) return '—'
@@ -79,6 +81,15 @@ export default function SeaAirAuditDetailModal({
   const draft = isSeaAirDraft(rec)
   const build = computeCustomsBuildUp(rec)
   const duty = computeDutyRows(rec)
+  // Kartu "Duties & taxes" = rumus & data tab Documents › Duty Invoice Recap (2026-10-05, permintaan user).
+  const [dutyMatrix, setDutyMatrix] = useState<any | null | undefined>(undefined)
+  useEffect(() => {
+    let cancelled = false
+    setDutyMatrix(undefined)
+    fetchSeaAirDutyMatrix(rec?.id).then(m => { if (!cancelled) setDutyMatrix(m) })
+    return () => { cancelled = true }
+  }, [rec?.id])
+  const dutyCmp = compareSeaAirDuty(dutyMatrix ?? null, rec)
   const lines = buildGoodsLines(rec)
   const cur = String(rec.kurs || '').trim()
   const curLabel = cur && !/^[0-9.,\s]+$/.test(cur) ? cur.toUpperCase() : ''
@@ -132,18 +143,10 @@ export default function SeaAirAuditDetailModal({
   // tidak ada nilai per PO di DB (hanya total `item_price`/`item_price_idr`).
   const noPerPoAmount = lines.length > 0 && lines.every(l => parseLooseNumber(l.amt) === null)
   const hasItemPrice = rec.item_price !== null && rec.item_price !== undefined && rec.item_price !== ''
-  const hasItemPriceIdr = rec.item_price_idr !== null && rec.item_price_idr !== undefined && rec.item_price_idr !== ''
   const useItemPriceForSinglePo = noPerPoAmount && lines.length === 1 && hasItemPrice
-  // >1 PO: 2 tab (keputusan user 2026-09-30) -- "As recorded" (po_harga_detail apa adanya) &
-  // "Split evenly" (Item price dibagi rata, HANYA tampilan, chip "≈ split evenly", TIDAK disimpan).
-  // Tab awal: Split evenly kalau PO Price Detail kosong, selain itu As recorded.
-  const canSplit = lines.length > 1 && hasItemPrice
-  const defaultGoodsView: 'recorded' | 'even' = canSplit && noPerPoAmount ? 'even' : 'recorded'
-  const [goodsView, setGoodsView] = useState<'recorded' | 'even'>(defaultGoodsView)
-  useEffect(() => { setGoodsView(defaultGoodsView) }, [rec?.id, defaultGoodsView])
-  const useEvenSplit = canSplit && goodsView === 'even'
-  const evenValas = canSplit ? splitMoneyEvenly(Number(rec.item_price) || 0, lines.length, 2) : []
-  const evenIdr = canSplit && hasItemPriceIdr ? splitMoneyEvenly(Number(rec.item_price_idr) || 0, lines.length, 0) : []
+  // >1 PO: nilai per PO = PO Price Detail APA ADANYA. Tab "As recorded | Split evenly" (estimasi bagi
+  // rata, 2026-09-30) DIHAPUS 2026-10-05 atas permintaan user -- isi nilai asli lewat Edit › Goods per PO
+  // (tombol "Split evenly" di form Edit tetap ada & benar-benar menyimpan).
 
   // ── Checks ──
   const checks: { group: string; ok: boolean | null; label: string; hint?: string }[] = [
@@ -274,27 +277,6 @@ export default function SeaAirAuditDetailModal({
                 right={<span className="tabular-nums">{curLabel ? `${curLabel} ` : ''}{fmtValas(rec.item_price)} · {fmtRp(rec.item_price_idr)}</span>}
                 bodyClassName="pb-2"
               >
-                {canSplit && (
-                  <div className="px-4 pb-2">
-                    <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[#F5EDF3]" role="tablist" aria-label="Amount per PO">
-                      {([
-                        { id: 'recorded', label: 'As recorded' },
-                        { id: 'even', label: 'Split evenly' },
-                      ] as const).map(t => (
-                        <button
-                          key={t.id}
-                          type="button"
-                          role="tab"
-                          aria-selected={goodsView === t.id}
-                          onClick={() => setGoodsView(t.id)}
-                          className={`px-3 h-7 rounded-lg text-xs font-bold transition-colors ${goodsView === t.id ? 'bg-[#3B1B3D] text-white shadow-sm' : 'text-[#3B1B3D] hover:bg-white'}`}
-                        >
-                          {t.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
                 <div className="overflow-x-auto">
                   <table className="w-full text-[12.5px] min-w-[440px]">
                     <thead>
@@ -311,7 +293,7 @@ export default function SeaAirAuditDetailModal({
                       ) : lines.map((l, i) => {
                         const amt = parseLooseNumber(l.amt)
                         // PO Price Detail kosong & cuma 1 PO -> nilai PO = total barang (Item price
-                        // valas/Rp), pasti benar krn tidak ada PO lain. >1 PO -> ikut tab aktif.
+                        // valas/Rp), pasti benar krn tidak ada PO lain. >1 PO -> PO Price Detail apa adanya.
                         if (useItemPriceForSinglePo) {
                           return (
                             <tr key={i} className="border-b border-[#F1E8E1] last:border-b-0">
@@ -319,22 +301,6 @@ export default function SeaAirAuditDetailModal({
                               <td className="px-3 py-2 text-[#3B1B3D] [overflow-wrap:anywhere]">{l.inv || '—'}</td>
                               <td className="px-3 py-2 text-right tabular-nums text-[#3B1B3D] whitespace-nowrap" title="From Item price (valas) — only one PO on this PIB">{curLabel ? `${curLabel} ` : ''}{fmtValas(rec.item_price)}</td>
                               <td className="px-4 py-2 text-right tabular-nums text-[#6E5E70] whitespace-nowrap" title="From Item price (Rp)">{fmtRp(rec.item_price_idr)}</td>
-                            </tr>
-                          )
-                        }
-                        if (useEvenSplit) {
-                          const tip = `Item price divided evenly across ${lines.length} POs — estimate, not saved`
-                          return (
-                            <tr key={i} className="border-b border-[#F1E8E1] last:border-b-0">
-                              <td className="px-4 py-2 font-semibold text-[#3B1B3D] [overflow-wrap:anywhere]"><PoWithPartial po={l.po} map={poManualMap} /></td>
-                              <td className="px-3 py-2 text-[#3B1B3D] [overflow-wrap:anywhere]">{l.inv || '—'}</td>
-                              <td className="px-3 py-2 text-right tabular-nums text-[#6E5E70] whitespace-nowrap" title={tip}>
-                                <span className="inline-flex items-center gap-1.5 justify-end">
-                                  <Chip tone="grey" title={tip}>≈ split evenly</Chip>
-                                  {curLabel ? `${curLabel} ` : ''}{fmtValas(evenValas[i])}
-                                </span>
-                              </td>
-                              <td className="px-4 py-2 text-right tabular-nums text-[#8A7A8B] whitespace-nowrap" title={tip}>{evenIdr.length ? `≈ ${fmtRp(evenIdr[i])}` : '—'}</td>
                             </tr>
                           )
                         }
@@ -350,22 +316,14 @@ export default function SeaAirAuditDetailModal({
                     </tbody>
                   </table>
                 </div>
-                {useEvenSplit ? (
-                  <div className="mx-4 mt-2 px-3 py-2 rounded-lg bg-[#F3EEEA] text-[#6E5E70] text-[11.5px]">
-                    Estimate — Item price divided evenly across the POs (not saved).
-                    {noPerPoAmount
-                      ? ` Amount per PO is not recorded.${canEdit && draft ? ' Fill in the real amounts via Edit › Goods per PO.' : ''}`
-                      : ' The recorded amounts are in the "As recorded" tab.'}
-                  </div>
-                ) : noPerPoAmount && lines.length > 1 && (
+                {noPerPoAmount && lines.length > 1 && (
                   <div className="mx-4 mt-2 px-3 py-2 rounded-lg bg-[#FFF1D6] text-[#7A4F00] text-[11.5px]">
-                    Amount per PO is not recorded (PO Price Detail is empty).
-                    {canSplit ? ' See the "Split evenly" tab for an estimate.' : ' Only the total below is available.'}
+                    Amount per PO is not recorded (PO Price Detail is empty) — only the total below is available.
                     {canEdit && draft ? ' Fill in the real amounts via Edit › Goods per PO.' : ''}
                   </div>
                 )}
                 <div className="px-4 pt-2 text-[11.5px] text-[#6E5E70] flex flex-col gap-0.5">
-                  {lines.length > 1 && !noPerPoAmount && !useEvenSplit && <div className="flex justify-between"><span>Sum of PO lines</span><span className="tabular-nums">{curLabel ? `${curLabel} ` : ''}{fmtValas(goodsLineTotal)}</span></div>}
+                  {lines.length > 1 && !noPerPoAmount && <div className="flex justify-between"><span>Sum of PO lines</span><span className="tabular-nums">{curLabel ? `${curLabel} ` : ''}{fmtValas(goodsLineTotal)}</span></div>}
                   <div className="flex justify-between"><span>Item price (valas)</span><span className="tabular-nums font-semibold text-[#3B1B3D]">{fmtValas(rec.item_price)}</span></div>
                   <div className="flex justify-between"><span>Other cost</span><span className="tabular-nums">{fmtValas(rec.other_cost)}</span></div>
                   <div className="flex justify-between"><span>Item price (Rp)</span><span className="tabular-nums font-semibold text-[#3B1B3D]">{fmtRp(rec.item_price_idr)}</span></div>
@@ -402,45 +360,11 @@ export default function SeaAirAuditDetailModal({
               </SectionCard>
 
               <SectionCard
-                title={<>Duties &amp; taxes <span className="text-[11.5px] font-normal text-[#8A7A8B]">rate &amp; amount as on the PIB</span></>}
+                title={<>Duties &amp; taxes <span className="text-[11.5px] font-normal text-[#8A7A8B]">same check as Invoice Recap › Documents</span></>}
                 right={<>Import value <b className="text-[#3B1B3D] tabular-nums">{fmtRp(duty.importValueStored ?? duty.importValueCalc)}</b></>}
                 bodyClassName="pb-0"
               >
-                <table className="w-full text-[12.5px]">
-                  <thead>
-                    <tr className="bg-[#FBF7F4] border-y border-[#EADFD6]">
-                      <th className={`${SA_LABEL} text-left px-4 py-2`}>Item · rate</th>
-                      <th className={`${SA_LABEL} text-right px-3 py-2`}>Calculated</th>
-                      <th className={`${SA_LABEL} text-right px-3 py-2`}>Amount on PIB</th>
-                      <th className={`${SA_LABEL} text-right px-4 py-2`}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {duty.rows.map(r => (
-                      <tr key={r.key} className="border-b border-[#F1E8E1]">
-                        <td className="px-4 py-2">
-                          <div className="font-semibold text-[#3B1B3D]">{r.label}</div>
-                          <div className="text-[11px] text-[#8A7A8B]">Rate {fmtPctShort(r.rate)}{r.key === 'bm' ? ' (BM ÷ customs value)' : ''}</div>
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums text-[#6E5E70] whitespace-nowrap">{r.status === 'derived' || r.calculated === null ? '—' : fmtRp(r.calculated)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums font-semibold text-[#3B1B3D] whitespace-nowrap">{fmtRp(r.onPib)}</td>
-                        <td className="px-4 py-2 text-right">
-                          {r.status === 'match' ? <Chip tone="green">Match</Chip>
-                            : r.status === 'differs' ? <Chip tone="red">{(r.diff ?? 0) > 0 ? '+' : '−'}{fmtRp(Math.abs(r.diff ?? 0))}</Chip>
-                            : r.status === 'derived' ? <Chip tone="grey" title="No BM rate is stored — the rate is derived from BM ÷ customs value">Derived</Chip>
-                            : <Chip tone="grey">No rate</Chip>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <div className="flex justify-between items-center gap-3 px-4 py-2.5 bg-[#FBF7F4] rounded-b-[14px]">
-                  <div>
-                    <div className="text-[13px] font-bold text-[#3B1B3D]">Total PIB</div>
-                    <div className="text-[11px] text-[#8A7A8B]">BM + PPN + PPh{duty.totalMatches ? '' : ` = ${fmtRp(duty.sumOnPib)} (differs)`}</div>
-                  </div>
-                  <div className={`text-[16px] font-bold tabular-nums whitespace-nowrap ${duty.totalMatches ? 'text-[#3B1B3D]' : 'text-[#A8231A]'}`}>{fmtRp(rec.total_pib)}</div>
-                </div>
+                <SeaAirDutyCompareTable cmp={dutyCmp} loading={dutyMatrix === undefined} />
               </SectionCard>
             </div>
           </div>

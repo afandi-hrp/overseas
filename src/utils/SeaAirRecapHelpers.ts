@@ -149,11 +149,47 @@ export function computeDocStats(checksRaw: any): DocStats {
 // - Doc: mismatch yang BUKAN hasil keputusan manual user (`c.manual` false).
 export type RecapIssue = { kind: 'docs' | 'cost' | 'match'; text: string }
 
+// ─── Form E utk barang dari China (2026-10-05, permintaan user; catatan = sql/044) ─────────────────
+// Asal China = kolom `rekapan_seaair.origin` berisi CHINA / TIONGKOK / PRC / kode "CN" / nama pelabuhan
+// utama China. Hong Kong SENGAJA tidak dihitung (bukan asal Form E). Kalau isi kolom origin di data
+// ternyata beda format, tambahkan kata kuncinya di sini (SATU-SATUNYA definisi).
+const CHINA_ORIGIN_RE = /\b(CHINA|TIONGKOK|PRC|P\.R\.C|SHANGHAI|SHENZHEN|SHEKOU|YANTIAN|NANSHA|HUANGPU|GUANGZHOU|NINGBO|QINGDAO|XIAMEN|TIANJIN|XINGANG|DALIAN|FUZHOU|LIANYUNGANG|ZHUHAI|ZHONGSHAN|FOSHAN|JIANGMEN|NANJING|TAICANG|ZHANGJIAGANG|RIZHAO|YINGKOU|YIWU|JINJIANG|QUANZHOU|WUHAN|CHONGQING|SHANTOU|ZHANJIANG|BEIJING|HANGZHOU|SUZHOU|DONGGUAN)\b/
+export function isChinaOrigin(origin: any): boolean {
+  const s = String(origin ?? '').toUpperCase()
+  if (!s.trim()) return false
+  // + kode negara "CN" berdiri sendiri, atau kode pelabuhan UN/LOCODE China (CNSHA, CNNGB, ...).
+  return CHINA_ORIGIN_RE.test(s) || /(^|[\s,(\-/])CN($|[\s,)\-/])/.test(s) || /(^|[^A-Z])CN[A-Z]{3}($|[^A-Z])/.test(s)
+}
+export const FORM_E_ISSUE_TEXT = 'Shipped from China — Form E is not checked; fill in a note in Documents'
+// Issue Form E: asal China, Form E belum tercentang, belum ada catatan manual. `formENote` undefined =
+// tabel catatan belum ada (sql/044 belum jalan) -> aturan TIDAK diterapkan (fail-open, tidak memblokir).
+export function formEIssueApplies(origin: any, checklist: any, formENote: string | null | undefined): boolean {
+  if (formENote === undefined) return false
+  if (!isChinaOrigin(origin)) return false
+  if (checklist?.ada_form_e === true) return false
+  return !String(formENote || '').trim()
+}
+export type FormENote = { seaair_id: any; note: string; created_by?: string | null; created_at?: string | null; updated_by?: string | null; updated_at?: string | null }
+// Catatan Form E per seaair_id. null = tabel belum ada / gagal dibaca (aturan dimatikan, lihat atas).
+export async function fetchFormENotes(seaairIds: (string | number)[]): Promise<Record<string, FormENote> | null> {
+  const ids = Array.from(new Set(seaairIds.filter(v => v !== null && v !== undefined && v !== '').map(String)))
+  const out: Record<string, FormENote> = {}
+  for (let i = 0; i < ids.length; i += 50) {
+    const { data, error } = await supabase.from('seaair_form_e_note').select('*').in('seaair_id', ids.slice(i, i + 50))
+    if (error) { console.warn('[SeaAirRecap] catatan Form E tidak bisa dibaca (sql/044 belum dijalankan?)', error.message); return null }
+    ;(data || []).forEach((r: any) => { out[String(r.seaair_id)] = r })
+  }
+  return out
+}
+
 export function computeRecapIssues(input: {
-  checklist?: { pct_kelengkapan?: any; dokumen_kurang?: any } | null
+  checklist?: { pct_kelengkapan?: any; dokumen_kurang?: any; ada_form_e?: any } | null
   matriksChecks?: any[] | null
   costChecks?: any[] | null
   confirmations?: Map<string, string>
+  origin?: any
+  // undefined = aturan Form E tidak diterapkan (tabel catatan belum ada); null/'' = belum ada catatan.
+  formENote?: string | null
 }): RecapIssue[] {
   const issues: RecapIssue[] = []
   const cl = input.checklist
@@ -162,6 +198,7 @@ export function computeRecapIssues(input: {
     const missing = rawMissing === '-' ? '' : rawMissing  // trigger kelengkapan isi '-' kalau lengkap
     issues.push({ kind: 'docs', text: `Missing required document${missing ? `: ${missing}` : ''}` })
   }
+  if (formEIssueApplies(input.origin, cl, input.formENote)) issues.push({ kind: 'docs', text: FORM_E_ISSUE_TEXT })
   const conf = input.confirmations || new Map()
   const costChecks = Array.isArray(input.costChecks) ? input.costChecks : []
   COST_SECTIONS.filter(s => s.confirmable && !s.optional).forEach(s => {
@@ -212,14 +249,18 @@ export async function fetchRecapIssueData(seaairIds: (string | number)[]) {
   const cost: Record<string, any[]> = {}
   const checklist: Record<string, any> = {}
   const conf: Record<string, Map<string, string>> = {}
+  const origin: Record<string, any> = {}
+  const formENotes = await fetchFormENotes(ids)
   for (let i = 0; i < ids.length; i += CHUNK) {
     const chunk = ids.slice(i, i + CHUNK)
-    const [m, c, cl, ct] = await Promise.all([
+    const [m, c, cl, ct, rk] = await Promise.all([
       supabase.from('dokumen_validasi_matriks_seaair').select('seaair_id, checks').in('seaair_id', chunk),
       supabase.from('cost_validasi_seaair').select('seaair_id, checks').in('seaair_id', chunk),
-      supabase.from('dokumen_checklist_seaair').select('seaair_id, pct_kelengkapan, dokumen_kurang').in('seaair_id', chunk),
+      supabase.from('dokumen_checklist_seaair').select('seaair_id, pct_kelengkapan, dokumen_kurang, ada_form_e').in('seaair_id', chunk),
       supabase.from('cost_validasi_catatan_seaair').select('seaair_id, section, status_konfirmasi').in('seaair_id', chunk),
+      supabase.from('rekapan_seaair').select('seaair_id, origin').in('seaair_id', chunk),
     ])
+    ;(rk.data || []).forEach((r: any) => { if (origin[String(r.seaair_id)] === undefined) origin[String(r.seaair_id)] = r.origin })
     ;(m.data || []).forEach((r: any) => { matriks[String(r.seaair_id)] = r.checks })
     ;(c.data || []).forEach((r: any) => { cost[String(r.seaair_id)] = r.checks })
     ;(cl.data || []).forEach((r: any) => { checklist[String(r.seaair_id)] = r })
@@ -231,7 +272,10 @@ export async function fetchRecapIssueData(seaairIds: (string | number)[]) {
   }
   const out: Record<string, RecapIssue[]> = {}
   ids.forEach(id => {
-    out[id] = computeRecapIssues({ checklist: checklist[id], matriksChecks: matriks[id], costChecks: cost[id], confirmations: conf[id] })
+    out[id] = computeRecapIssues({
+      checklist: checklist[id], matriksChecks: matriks[id], costChecks: cost[id], confirmations: conf[id],
+      origin: origin[id], formENote: formENotes ? (formENotes[id]?.note ?? null) : undefined,
+    })
   })
   return out
 }

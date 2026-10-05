@@ -2,10 +2,10 @@
 // Murni tampilan: data baris = `records` SharedDataTable (query lama), info validasi/link =
 // `fetchSeaAirAuditLinkInfo` (baca saja). Tabel lama (List) tetap ada lewat toggle List/Card.
 import React, { useState } from 'react'
-import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, Chip, StatusPill, PtBadge, ValidationPill } from './SeaAirAuditUi'
+import { SA_CARD, SA_LABEL, Chip, PtBadge } from './SeaAirAuditUi'
 import {
   fmtRp, fmtRpShort, fmtDateShort, fmtPctShort, formatNoAju, splitMulti, computeDutyRows, isSeaAirDraft,
-  companyFullName, type SeaAirAuditLinkInfo, type SeaAirAuditSummary,
+  companyFullName, validationLabel, VALIDATION_META, type SeaAirAuditLinkInfo, type SeaAirAuditSummary,
 } from '../utils/SeaAirAuditHelpers'
 
 // ─── Kartu KPI ────────────────────────────────────────────────────────────────
@@ -50,8 +50,10 @@ const SeaAirAuditRowCard: React.FC<{
   const reaudit = draft && !!rec.reaudit_reason
 
   return (
-    <div className={`${SA_CARD} border-l-4 ${borderColor} overflow-hidden`}>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[270px_minmax(0,1fr)_230px_230px] gap-x-5 gap-y-3 px-4 py-3.5 items-center">
+    <div className={`@container ${SA_CARD} border-l-4 ${borderColor} overflow-hidden`}>
+      {/* Susunan 2026-10-05 (gambar user): 5 kolom -- PIB | PT+supplier+PO | validasi | duty | status+Open.
+          Lebar kolom ikut LEBAR KARTU (container query): @5xl = laptop 14" (ringkas), @7xl = monitor 24" (lega). */}
+      <div className="grid grid-cols-1 @2xl:grid-cols-2 @5xl:grid-cols-[215px_minmax(0,1fr)_185px_165px_92px] @7xl:grid-cols-[260px_minmax(0,1fr)_230px_200px_110px] gap-x-4 @7xl:gap-x-6 gap-y-3 px-4 py-3.5 items-center">
         {/* 1. PIB */}
         <div className="min-w-0">
           <div className="text-[11px] text-[#8A7A8B] font-medium">PIB · {fmtDateShort(rec.tgl_ppjk)}</div>
@@ -91,18 +93,23 @@ const SeaAirAuditRowCard: React.FC<{
               </div>
             )}
           </div>
+        </div>
+
+        {/* 3. Validasi Invoice Recap + field yang beda */}
+        <div className="min-w-0 flex flex-col items-start gap-1.5">
+          <Chip tone={info ? VALIDATION_META[info.validation].tone : 'grey'} title={info ? (hasDiff ? `Fields: ${info.diffFields.join(', ')}` : VALIDATION_META[info.validation].sub) : undefined}>{validationLabel(info)}</Chip>
           {(hasDiff || waitingDocs || reaudit || rec.duplicate_of) && (
-            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {hasDiff && <Chip tone="amber" title={info!.diffFields.join(', ')}>{info!.diffFields.slice(0, 2).join(', ')}{info!.diffFields.length > 2 ? ` +${info!.diffFields.length - 2}` : ''}</Chip>}
               {reaudit && <Chip tone="purple" title={rec.reaudit_reason}>↻ re-audit</Chip>}
               {rec.duplicate_of && <Chip tone="red" title="Another PIB with the same BL / AWB already exists">Possible duplicate</Chip>}
-              {hasDiff && <Chip tone="red" title={info!.diffFields.join(', ')}>! {info!.diffFields.slice(0, 2).join(', ')}{info!.diffFields.length > 2 ? ` +${info!.diffFields.length - 2}` : ''}</Chip>}
               {waitingDocs && <Chip tone="amber" title="Customs documents still missing in the Invoice Recap checklist">Waiting for {waitingDocs.join(', ')}</Chip>}
             </div>
           )}
         </div>
 
         {/* 3. Duty & tax */}
-        <div className="lg:text-right min-w-0">
+        <div className="@5xl:text-right min-w-0">
           <div className={SA_LABEL}>Duty &amp; tax</div>
           <div className="text-[18px] font-bold text-[#3B1B3D] tabular-nums leading-tight">{fmtRp(rec.total_pib)}</div>
           <div className="text-[11px] text-[#6E5E70] tabular-nums">
@@ -110,13 +117,10 @@ const SeaAirAuditRowCard: React.FC<{
           </div>
         </div>
 
-        {/* 4. Status */}
-        <div className="flex flex-col lg:items-end gap-1.5 min-w-0">
-          <div className="flex flex-wrap lg:justify-end items-center gap-1.5">
-            <StatusPill draft={draft} />
-            <ValidationPill info={info} />
-          </div>
-          <button type="button" onClick={() => onOpen(rec)} className={`${SA_BTN_OUTLINE} h-8 px-4`}>Open</button>
+        {/* 5. Status + Open */}
+        <div className="flex flex-col @5xl:items-end gap-1.5 min-w-0">
+          <Chip tone={draft ? 'amber' : 'green'}>{draft ? 'Draft' : 'Audited'}</Chip>
+          <button type="button" onClick={() => onOpen(rec)} className="inline-flex items-center justify-center px-4 h-8 rounded-xl bg-[#6B3470] hover:bg-[#5A2A5E] text-white text-xs font-semibold">Open</button>
         </div>
       </div>
     </div>

@@ -148,6 +148,56 @@ baku, PIC per memo, re-match tarif) TETAP berlaku.
    `vessel_internal_note` disinkronkan otomatis = kapal unik digabung " + " (dibaca Reporting Cost
    by Vessel / kolom VESSEL list). Memo tanpa po_list -> 1 input kapal (`vessel_internal_note`).
 
+## Update 2026-10-05 — konfirmasi AI, duplikat, PO ⇄ tabel, due date, Urgent, Prepared By di Memo, tanpa refresh
+
+SQL: `sql/043_far_overseas_confirm_duplicate_urgent.sql` (**SUDAH DIJALANKAN 2026-10-05**, konfirmasi user; idempotent, pre-check nama
+`beehive:043`, uji PGlite 23 cek, body `fn_far_overseas_prepared_by_blockers`/`confirm_ai_finding` dari `pg_get_functiondef` live
+kiriman user 2026-10-05).
+
+1. **Overcharge/Undercharge dikonfirmasi = hijau "Overcharge · Confirmed"** di semua tempat (`costStatusLabel`/
+   `isCostStatusConfirmed`/`getConfirmedFinding`, Helpers = SATU sumber): chip AI card/List, header Cost Validation (titik
+   tetap merah), banner "AI check" modal Memo, export. Kotak temuan yang sudah dikonfirmasi = 1 baris hijau
+   "✓ Confirmed · Confirmed by <nama depan> · <tgl> — <catatan>" + **Undo** (RPC baru `fn_far_overseas_unconfirm_ai_finding`,
+   hanya sebelum Prepared By sign). Nama depan = `firstNameOf(user_name, user_email)` (`user_name` disimpan RPC confirm sejak
+   043; data lama -> bagian depan email). Temuan Undercharge kini juga bisa dikonfirmasi. **Blockers**: syarat "Notes (Manual)"
+   utk unit price tidak cocok GUGUR kalau Overcharge/Undercharge sudah dikonfirmasi (server 043 + fallback `tier1BlockedByNotes`
+   + `deriveMemoWarnings`).
+2. **Duplikat** (trigger DB, bukan AI/n8n): memo dibandingkan dgn memo yang LEBIH DULU masuk — punya nomor invoice -> invoice
+   sama (ternormalisasi A-Z0-9) DAN PO sama kalau kedua memo punya PO; tanpa nomor invoice -> fallback nomor PO sama (awalan
+   "I.PO/"/"PO/" dibuang). Dihitung ulang saat `no_invoice`/`po_ori`/`po_list` berubah; data lama diisi utk memo belum sign.
+   Kotak "Possible duplicate" menyebut nomor memo yang dirujuk; blocker hanya menghitung rujukan yang masih ada.
+3. **PO number(s) ⇄ tabel PO · Vessel · KG**: sumber tabel = `po_list` (jsonb hasil n8n). Edit "PO number(s)" (`po_ori`) ->
+   `syncPoListFromPoOri` (PO lama membawa kapal/KG/vendor; nomor yang diperbaiki di posisi sama tetap membawa datanya; PO baru:
+   vendor = Vendor memo, PT = `companyCodeFromPoNo`); kolom No PO di tabel bisa diedit -> `po_ori` ikut (`joinPoNumbers`). Vendor
+   memo diubah -> vendor PO yang kosong/sama dgn vendor lama ikut. Kolom Vendor tabel kosong -> tampil Vendor memo (abu).
+4. **Payment type otomatis**: ada nomor PO (dan AI tidak bilang NON_PO) -> With PO tanpa konfirmasi (`effectivePaymentType`,
+   trigger 043 + isi data lama, blockers). Edit memo tidak lagi membuat perubahan UNSAVED payment type utk memo ber-PO.
+5. **"Please arrange payment on" otomatis** (`computeDueDate(shipVia, invoiceReceived)`, klarifikasi user 2026-10-05): tanggal bayar
+   SELALU dari invoice received date — Octagon = **hari ke-14 dgn hari invoice diterima = hari ke-1** (= +13; contoh user "terima tgl 7, bayar tgl 20"; sempat salah +14 lalu dikoreksi user 2026-10-05), Jianqiao +1 hari; Sabtu/Minggu -> Jumat (kedua vendor, aturan
+   lama). Mengisi `due_date` + `expected_payment_date` (tercetak). Diketik manual -> `due_date_note = MANUAL_DUE_NOTE` ("Set
+   manually"), tidak ditimpa sampai tombol **Back to automatic**. Memo terkunci: hanya `due_date`.
+   **Goods received date Octagon = SYARAT APPROVE**, bukan syarat tanggal: Prepared By tidak bisa sign memo Octagon sebelum goods
+   received date terisi (kecuali Urgent; tanggal di NOTE 3 memo lama dianggap terisi) — `goodsReceivedBlocker` (frontend: banner modal
+   Memo walau SQL belum jalan, peringatan card, info Edit memo) + blocker server `fn_far_overseas_prepared_by_blockers` (043), teks
+   pesan SAMA (`GOODS_RECEIVED_BLOCKER`). Jianqiao tidak digate.
+6. **Urgent**: memo Urgent tidak pernah on hold (`isOnHold` = `on_hold && !is_urgent`, dipakai card/List/alarm due/modal; Edit
+   juga menyimpan `on_hold=false`), Octagon tidak menunggu goods received date. Kolom BARU `urgent_note` (wajib min. 5 karakter
+   saat Urgent, validasi `validateMemoEdits` + RPC 3-arg). Tampil: banner merah modal Memo, tooltip chip card, Finance Handover
+   (chip + baris "Urgent: …" + garis kiri merah). Simpan lewat `fn_far_overseas_set_urgent(p_id, p_urgent, p_note)`; kolom belum
+   ada -> versi 2-arg lama.
+7. **Prepared By di modal Memo**: kartu "Prepared By" (PIC who creates the memo = `prepared_by_user_id`, PIC who runs the shipment
+   = `pic_user_id`+`pic_name`) di atas stepper, simpan langsung lewat `update_rekapan_far_overseas_manual`; hanya sebelum memo
+   terkunci (setelah itu nama tampil baca saja). Daftar user dari halaman (prop) atau diambil sendiri (viewer Finance).
+8. **Tabel tidak refresh saat modal dibuka/ditutup**: penyebab = buka Memo mengganti URL `/direct-loading/:id` & MainLayout
+   me-mount ulang halaman (`key={location.pathname}`) + 2 route terpisah. Fix: 1 route `/direct-loading/:id?` + key konten
+   MainLayout menyamakan `/direct-loading/*`. Refresh setelah aksi di modal (sign, simpan Edit/Cost, hapus, job upload) =
+   `refreshList(true)` SENYAP (tanpa loading); loading hanya tombol Refresh, filter/halaman & pemuatan pertama.
+
+Diuji: jsdom 58 cek (helper due/sync/nama/payment type/warnings/goods blocker, route tidak remount, Cost Validation confirmed+Undo,
+modal Memo AI check/Urgent/Prepared By simpan & terkunci/blok goods Octagon, Edit memo sync PO 2 arah/due otomatis+manual+back/Urgent
+note), PGlite 043 28 cek,
+`tsc` bersih, `vite build` sukses. Belum dites di production.
+
 ## REDESAIN FAR Overseas — TAHAP 2 (2026-09-28) — SQL `sql/027_far_overseas_phase2_DRAFT.sql`
 
 **SUDAH DIJALANKAN ke production (konfirmasi user 2026-09-30).** Bagian E ditulis dari body LIVE `approve_far_overseas_air`/

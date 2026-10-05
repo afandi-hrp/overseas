@@ -8,7 +8,7 @@ import { X, Info, Pencil, Edit3, Save, CheckCircle2, AlertTriangle, HelpCircle, 
 import {
   looseNameMatch, COST_STATUS_META, parseJsonField, formatMoney, formatDateShort,
   computeExpectedFromRate, computeCostStatus, explainDominantCompany, savePoWeights, isMemoLocked,
-  getBreakdownUnit, memoWeightIn, withBreakdownUnit, WEIGHT_UNITS,
+  getBreakdownUnit, memoWeightIn, withBreakdownUnit, WEIGHT_UNITS, isCostStatusConfirmed, costStatusLabel, firstNameOf,
   ensureFarFont, FAR_FONT_FAMILY, type RateRow, type PoListEntry, type WeightUnit,
 } from '../utils/FarOverseasAirHelpers';
 import { isAutoSplitCase } from '../utils/FarOverseasAirHelpers';
@@ -226,9 +226,33 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
   // Konfirmasi temuan AI (tahap 2): draft catatan per temuan.
   const [findingNotes, setFindingNotes] = useState<Record<string, string>>({});
   const [confirmingFinding, setConfirmingFinding] = useState<string | null>(null);
+  // Memo yang dirujuk `ai_duplicate_of` (nomor memo/invoice utk ditampilkan di temuan Duplicate).
+  const [dupMemos, setDupMemos] = useState<any[]>([]);
   const [savingKg, setSavingKg] = useState(false);
 
   useEffect(() => { ensureFarFont(); }, []);
+
+  const dupIdsKey = Array.isArray(memoRow?.ai_duplicate_of) ? memoRow.ai_duplicate_of.join(',') : '';
+  useEffect(() => {
+    if (!dupIdsKey) { setDupMemos([]); return; }
+    let cancelled = false;
+    supabase.from('rekapan_far_overseas_air').select('id, memo_no, memo_title, no_invoice, po_ori, created_at').in('id', dupIdsKey.split(','))
+      .then(({ data }) => { if (!cancelled) setDupMemos(data || []); });
+    return () => { cancelled = true; };
+  }, [dupIdsKey]);
+
+  // Undo konfirmasi temuan AI (sql/043 `fn_far_overseas_unconfirm_ai_finding`), sebelum Prepared By sign.
+  const handleUndoFinding = async (key: string, title: string) => {
+    if (!memoRow) return;
+    if (!window.confirm(`Undo the "${title}" confirmation? Prepared By cannot sign until it is confirmed again.`)) return;
+    setConfirmingFinding(key);
+    const { data, error } = await supabase.rpc('fn_far_overseas_unconfirm_ai_finding', { p_id: memoRow.id, p_finding: key });
+    setConfirmingFinding(null);
+    if (error) { showToast('Failed to undo: ' + error.message, 'error'); return; }
+    setMemoRow((m: any) => ({ ...m, ai_findings_confirmed: data?.ai_findings_confirmed ?? [] }));
+    showToast(`${title} confirmation removed.`, 'success');
+    onChanged?.();
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -469,18 +493,27 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
         {tabBar}
 
         <div className="flex justify-between items-center gap-3 px-4 sm:px-6 py-3 border-b border-[#EADFD6] bg-white shrink-0">
-          <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-[#6E5E70]">{memoRow?.memo_title || 'Memo'} · Invoice {memoRow?.no_invoice || '—'} · Uploaded {formatDateShort(memoRow?.created_at)}</p>
-            <h2 className="text-base font-extrabold text-[#2A1A2C]">Cost Validation — FAR Overseas Air</h2>
+          <div className="min-w-0 flex items-center gap-4">
+            <div className="min-w-0 pr-4 border-r border-[#EADFD6]">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-[#6E5E70]">Memo no</p>
+              <p className="text-sm font-extrabold text-[#2A1A2C] leading-tight truncate">{memoRow?.memo_no || memoRow?.memo_title || '—'}</p>
+              <p className="text-[11px] text-[#6E5E70]">Uploaded {formatDateShort(memoRow?.created_at)}</p>
+            </div>
+            <h2 className="text-base sm:text-lg font-extrabold text-[#2A1A2C] truncate">Cost Validation — FAR Overseas Air</h2>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {statusMeta && (
+            {/* Overcharge/Undercharge yang sudah dikonfirmasi -> hijau "Overcharge · Confirmed" (titik tetap merah). */}
+            {statusMeta && overallStatus && (isCostStatusConfirmed(memoRow, overallStatus) ? (
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span className={`w-1.5 h-1.5 rounded-full ${overallStatus === 'OVERCHARGE' ? 'bg-rose-500' : 'bg-amber-500'}`} />{costStatusLabel(memoRow, overallStatus)}
+              </span>
+            ) : (
               <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${statusMeta.badgeClass}`}>{statusMeta.label}</span>
-            )}
+            ))}
             {canEditDirectLoading && !loadError && !loading && (
               <button
                 onClick={() => setIsEditMode(m => !m)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors ${isEditMode ? 'bg-[#6B3470] text-white' : 'bg-[#F5EDF3] hover:bg-[#EADFD6] text-[#6B3470]'}`}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors ${isEditMode ? 'bg-[#6B3470] text-white' : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-100'}`}
               >
                 <Edit3 size={14} /> {isEditMode ? 'Editing' : 'Edit'}
               </button>
@@ -521,7 +554,12 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                 const dup: any[] = Array.isArray(memoRow.ai_duplicate_of) ? memoRow.ai_duplicate_of : [];
                 const findings: { key: string; title: string; detail: string }[] = [];
                 if (overallStatus === 'OVERCHARGE') findings.push({ key: 'OVERCHARGE', title: 'Overcharge', detail: catatan || 'The invoice is above the matching contract rate.' });
-                if (dup.length > 0) findings.push({ key: 'DUPLICATE', title: 'Possible duplicate', detail: `Same details as ${dup.length} other memo${dup.length === 1 ? '' : 's'} — make sure this invoice is not paid twice.` });
+                if (overallStatus === 'UNDERCHARGE') findings.push({ key: 'UNDERCHARGE', title: 'Undercharge', detail: catatan || 'The invoice is below the matching contract rate.' });
+                // Duplikat (sql/043): invoice sama (+PO sama kalau keduanya punya PO); tanpa invoice -> PO sama.
+                if (dup.length > 0) {
+                  const refs = dupMemos.map(d => `${d.memo_no || d.memo_title || 'memo'}${d.no_invoice ? ` (invoice ${d.no_invoice})` : d.po_ori ? ` (PO ${d.po_ori})` : ''}`);
+                  findings.push({ key: 'DUPLICATE', title: 'Possible duplicate', detail: `${memoRow.no_invoice ? 'Same invoice number' : 'Same PO number'} as ${refs.length > 0 ? refs.join(', ') : `${dup.length} other memo${dup.length === 1 ? '' : 's'}`} — make sure this invoice is not paid twice.` });
+                }
                 if (findings.length === 0) return null;
                 const canConfirm = canEditDirectLoading && !kgLocked;
                 return (
@@ -529,13 +567,30 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                     {findings.map(f => {
                       const done = confirmedList.find(c => c?.finding === f.key);
                       const note = findingNotes[f.key] || '';
+                      // Sudah dikonfirmasi -> 1 baris hijau ringkas (spek gambar user): "✓ Confirmed · Confirmed by
+                      // <nama depan> · <tgl> — <catatan>" + Undo (sebelum Prepared By sign).
+                      if (done) {
+                        return (
+                          <div key={f.key} className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 flex items-center justify-between gap-3">
+                            <p className="text-xs text-emerald-800 min-w-0">
+                              <span className="font-bold mr-2">✓ Confirmed</span>
+                              {f.key !== 'OVERCHARGE' && <span className="font-semibold mr-1">{f.title} ·</span>}
+                              Confirmed by {firstNameOf(done.user_name, done.user_email)}{done.at ? ` · ${formatDateShort(done.at)}` : ''}{done.note ? ` — ${done.note}` : ''}
+                            </p>
+                            {canConfirm && (
+                              <button onClick={() => handleUndoFinding(f.key, f.title)} disabled={confirmingFinding === f.key}
+                                className="shrink-0 text-xs font-bold text-emerald-800 underline underline-offset-2 hover:text-emerald-950 disabled:opacity-50">
+                                {confirmingFinding === f.key ? 'Saving...' : 'Undo'}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      }
                       return (
-                        <div key={f.key} className={`rounded-2xl border px-4 py-3 ${done ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}>
-                          <p className={`text-sm font-bold ${done ? 'text-emerald-800' : 'text-rose-800'}`}>AI finding: {f.title}{done ? ' — confirmed' : ''}</p>
+                        <div key={f.key} className="rounded-2xl border px-4 py-3 bg-rose-50 border-rose-200">
+                          <p className="text-sm font-bold text-rose-800">AI finding: {f.title}</p>
                           <p className="text-xs text-[#2A1A2C] mt-0.5">{f.detail}</p>
-                          {done ? (
-                            <p className="text-xs text-emerald-800 mt-1">“{done.note}” · {done.user_email || '—'}{done.at ? ` · ${formatDateShort(done.at)}` : ''}</p>
-                          ) : canConfirm ? (
+                          {canConfirm ? (
                             <div className="mt-2 flex flex-col sm:flex-row gap-2">
                               <input value={note} onChange={e => setFindingNotes(n => ({ ...n, [f.key]: e.target.value }))} placeholder="Note (required, min. 5 characters)"
                                 className="flex-1 min-h-[40px] border border-rose-200 rounded-xl px-3 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-rose-200" />

@@ -1,7 +1,7 @@
 // Tampilan KARTU Invoice Recap Sea & Air (2026-10-01) -- 5 kartu KPI + daftar shipment 4 kolom.
 // Murni tampilan: baris = `records` SharedDataTable (query lama + enrichment % & issues).
 import React, { useState } from 'react'
-import { SA_CARD, SA_LABEL, Chip, PtBadge, Pill, type Tone } from './SeaAirAuditUi'
+import { SA_CARD, SA_LABEL, Chip, PtBadge, type Tone } from './SeaAirAuditUi'
 import { fmtRp, fmtRpShort, fmtDateShort } from '../utils/SeaAirAuditHelpers'
 import {
   computeLandedCost, parsePoDetail, recapStatus, COST_GROUP_COLORS, COST_GROUP_LABELS, parsePoManual, poManualFor,
@@ -89,8 +89,10 @@ const RecapRowCard: React.FC<{ rec: any; onOpen: (rec: any) => void }> = ({ rec,
   ) : null
 
   return (
-    <div className={`${SA_CARD} border-l-4 ${border} overflow-hidden`}>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[220px_minmax(0,1fr)_290px_200px] gap-x-5 gap-y-3 px-4 py-3.5 items-center">
+    <div className={`@container ${SA_CARD} border-l-4 ${border} overflow-hidden`}>
+      {/* Susunan 2026-10-05 (gambar user): supplier = judul + chip rute; baris 2 = PO + tanggal.
+          Lebar kolom ikut LEBAR KARTU (container query): @5xl = laptop 14" (ringkas), @7xl = monitor 24" (lega). */}
+      <div className="grid grid-cols-1 @2xl:grid-cols-2 @5xl:grid-cols-[180px_minmax(0,1fr)_200px_180px] @7xl:grid-cols-[220px_minmax(0,1fr)_250px_220px] gap-x-4 @7xl:gap-x-6 gap-y-3 px-4 py-3.5 items-center">
         {/* 1. Identitas */}
         <div className="min-w-0">
           <div className="text-[15px] font-bold text-[#3B1B3D] truncate" title={rec.awb || ''}>{rec.awb || '—'}</div>
@@ -102,14 +104,16 @@ const RecapRowCard: React.FC<{ rec: any; onOpen: (rec: any) => void }> = ({ rec,
           <div className="text-[11px] text-[#8A7A8B] mt-1">Uploaded {fmtDateShort(rec.created_at || rec.tgl)}</div>
         </div>
 
-        {/* 2. Shipment */}
+        {/* 2. Supplier + rute, lalu PO + tanggal */}
         <div className="min-w-0">
-          <div className="text-[13px] font-bold text-[#3B1B3D] truncate" title={`${rec.origin || '—'} → ${rec.destination || '—'}`}>{rec.origin || '—'} → {rec.destination || '—'}</div>
-          <div className="flex flex-wrap items-center gap-1 mt-1">
-            {dateChip('ETD', rec.etd)}{dateChip('ETA', rec.eta)}{dateChip('ATA', rec.ata, true)}
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 min-w-0">
+            <span className="text-[13px] font-bold text-[#3B1B3D] uppercase truncate max-w-full" title={rec.vendor || ''}>{rec.vendor || '—'}</span>
+            <span className="inline-flex items-center px-2.5 py-[2px] rounded-full bg-[#EFE8EC] text-[#3B1B3D] text-[10.5px] font-semibold uppercase tracking-wide whitespace-nowrap max-w-full truncate"
+              title={`${rec.origin || '—'} → ${rec.destination || '—'}`}>
+              {rec.origin || '—'} <span className="mx-1 text-[#8A7A8B]">→</span> {rec.destination || '—'}
+            </span>
           </div>
-          <div className="text-[11.5px] text-[#3B1B3D] mt-1 truncate" title={rec.vendor || ''}>{rec.vendor || '—'}</div>
-          <div className="text-[11px] text-[#6E5E70] min-w-0">
+          <div className="flex flex-wrap items-start gap-x-2 gap-y-1 mt-1.5 text-[11px] text-[#6E5E70] min-w-0">
             {pos.length === 0 ? <span>No PO</span> : (
               <div className="flex items-start gap-1.5 min-w-0">
                 <div className="min-w-0">{(expanded ? pos : pos.slice(0, 1)).map((p, i) => <div key={i} className="truncate" title={p.po_no}>{p.po_no || '—'}{partialOf(p.po_no) && <span className="ml-1 text-[10px] font-bold text-[#6B3470]" title="Partial shipment of this PO">{partialOf(p.po_no)}</span>}</div>)}</div>
@@ -120,12 +124,13 @@ const RecapRowCard: React.FC<{ rec: any; onOpen: (rec: any) => void }> = ({ rec,
                 )}
               </div>
             )}
+            {dateChip('ETD', rec.etd)}{dateChip('ETA', rec.eta)}{dateChip('ATA', rec.ata, true)}
           </div>
         </div>
 
         {/* 3. Status */}
         <div className="min-w-0 flex flex-col gap-1.5 items-start">
-          <Pill tone={statusTone(status.kind)} title={issues.length ? issues.map(i => `• ${i.text}`).join('\n') : undefined}>{status.label}</Pill>
+          <Chip tone={statusTone(status.kind)} title={issues.length ? issues.map(i => `• ${i.text}`).join('\n') : undefined}>{status.label}</Chip>
           <div className="flex flex-wrap gap-x-2.5 gap-y-1">
             <ScoreDot label="Doc match" pct={rec.doc_validation_pct} has={!!has.doc} />
             <ScoreDot label="Cost" pct={rec.cost_validation_pct} has={!!has.cost} />
@@ -134,7 +139,7 @@ const RecapRowCard: React.FC<{ rec: any; onOpen: (rec: any) => void }> = ({ rec,
         </div>
 
         {/* 4. Biaya */}
-        <div className="min-w-0 flex flex-col lg:items-end gap-1.5">
+        <div className="min-w-0 flex flex-col @5xl:items-end gap-1.5">
           <div className={SA_LABEL}>Landed cost</div>
           <div className="text-[18px] font-bold text-[#3B1B3D] tabular-nums leading-tight">{fmtRp(lc.landed)}</div>
           <div className="w-full max-w-[200px]"><CostMixBar groups={lc.groups} total={lc.groups.ppjk + lc.groups.origin + lc.groups.local} /></div>

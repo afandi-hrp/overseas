@@ -36,15 +36,15 @@ filter `recapNeedsAttentionOnly` (`.in('id', recapNeedsAttentionIds)`).
   tetap bisa submit], ⋯ = Move PIB Draft/Audited (`handleDraftSeaAir`/`handleUndraftSeaAir` lama) &
   Delete (`DeleteModal` lama, perilaku TETAP)), chip skor, banner blocker/submitted.
   Overview: Shipment (Company nama lengkap, Supplier, Invoice no, Recap date, Delivery term dari
-  `tabel_audit_seaair`, berat/CBM, ETD→ETA, ATD→ATA, container, tgl invoice freight/storage,
+  `tabel_audit_seaair`, berat/CBM, ETD→ETA, ATD→ATA, container (field "Freight invoice · storage" DIHAPUS 2026-10-05, permintaan user),
   AI note=`notes`), Landed cost (+By vendor), Split per PO (Summary/Per invoice dari `*_split`
   tersimpan — 1 nilai per shipment = bagi rata; By KG belum).
 - **Tab Costs** (`SeaAirRecapCostsTab`): logika SALINAN PERSIS `ValidasiShipmentInvoiceLengkap.tsx`
   (toleransi, Jalur Hijau/Merah EMKL `expected_alt`, sisip baris SURVEYOR, `updateCheck`, simpan RPC
   `update_cost_validasi_manual` seluruh `checks`, review = upsert/hapus `cost_validasi_catatan_seaair`
   onConflict `seaair_id,section`; Accept difference=MATCH, Ask vendor=MISMATCH wajib note). **Kalau
-  modal lama diubah, WAJIB sinkron ke file ini.** + kartu Duty & tax (PIB) dari baris Audit PIB
-  (`computeDutyRows`) & SPTNP.
+  modal lama diubah, WAJIB sinkron ke file ini.** + kartu Duty & tax (PIB) (sejak 2026-10-05 = rumus &
+  data tab Documents › Duty, lihat "Duty SATU rumus" di bawah) & SPTNP.
 - **Tab Documents** (`SeaAirRecapDocumentsTab`, DIBANGUN ULANG PENUH 2026-10-01 atas permintaan
   user): kiri Checklist (daftar dokumen SAMA `SeaAirChecklistModal`, baca saja); kanan Document
   validation per section (`SECTIONS` di file itu = baris/kolom SAMA konstanta modal lama:
@@ -87,6 +87,47 @@ terkunci; menu "Move PIB to Audited" nonaktif selama ada issue. Tab Costs & Docu
 hanya Admin (`canEdit && isAdmin && !locked`), non-Admin lihat catatan abu; Edit duty tetap
 `canEdit && !locked`. Chip duplikat (`duplicate_of`) di kartu & header. Split per PO "By KG"
 memakai TOTAL shipment × KG PO / total KG (pembulatan per sel, tampilan saja).
+
+## Kartu Audit PIB & Invoice Recap — susunan baru + responsif 14"/24" (2026-10-05, gambar user)
+
+- **Invoice Recap** (`SeaAirRecapCardList.tsx`): 4 kolom -- AWB/tipe/PT/Uploaded | **supplier tebal (huruf besar) + chip rute
+  "ORIGIN → DEST"**, baris 2 = PO (+N PO) + chip ETD/ETA/ATA | chip status ("⚠ N issues", Chip kecil) + titik skor | Landed cost +
+  bar + Open.
+- **Audit PIB** (`SeaAirAuditCardList.tsx`): **5 kolom** -- PIB | PT + supplier + PO | **kolom validasi BARU** (chip
+  `validationLabel`/`VALIDATION_META` "! N PIB differences to review" + chip kuning nama field beda, re-audit/duplikat/Waiting) |
+  Duty & tax | chip Draft/Audited + tombol Open ungu penuh. `StatusPill`/`ValidationPill` tidak dipakai kartu lagi.
+- **Responsif = container query lebar KARTU** (`@container`, pola Finance Handover): < @2xl 1 kolom, @2xl 2 kolom bertumpuk,
+  `@5xl` (≥1024px kartu, laptop 14" + zoom 90%) 1 baris ringkas, `@7xl` (≥1280px, monitor 24") kolom tepi & jarak lebih lega.
+  JANGAN kembali ke breakpoint layar `lg:` (lebar kartu tergantung sidebar). Diuji jsdom 11 cek (isi kolom), CSS dicek di build.
+
+## Form E utk barang dari China — Invoice Recap Sea & Air (2026-10-05, permintaan user; `sql/044` BELUM DIJALANKAN)
+
+Shipment yang asalnya China (`rekapan_seaair.origin`, `isChinaOrigin` di `SeaAirRecapHelpers.ts` = SATU-SATUNYA definisi:
+CHINA/TIONGKOK/PRC, kode "CN" berdiri sendiri, UN/LOCODE "CNxxx", nama pelabuhan/kota utama China; Hong Kong TIDAK) WAJIB
+Form E tercentang (`dokumen_checklist_seaair.ada_form_e`). Belum tercentang & belum ada catatan -> issue
+`FORM_E_ISSUE_TEXT` di `computeRecapIssues` -> Submit to Finance terkunci, kartu "⚠ N issues", KPI/badge Needs attention,
+gerbang Mark as audited Audit PIB (semua lewat `computeRecapIssues`; 3 pemanggil -- SharedDataTable, `fetchRecapIssueData`,
+`fetchSeaAirAuditLinkInfo` -- kini juga membaca `ada_form_e`, `origin` & catatan). Tab Documents: tile Form E merah
+"Required — from China" + alert di bawah checklist dgn textarea catatan (min. 5 karakter) -> Save -> alert hilang,
+catatan tampil (Edit/Delete). Catatan = tabel BARU `seaair_form_e_note` (sql/044: 1 baris per `seaair_id`, tipe ikut
+`dokumen_checklist_seaair.seaair_id`, catatan ≥5 karakter, RLS baca rekapan/audit/finance, tulis `has_edit_access('sea_air_rekapan')`)
+-- SENGAJA bukan kolom di checklist (ditulis n8n) / rekapan (trigger re-audit & kunci). Tulis = upsert onConflict seaair_id
+(`canEdit('sea_air_rekapan')`, tidak terkunci, bukan financeView). **Gerbang HANYA di frontend** (DB `fn_seaair_recap_issue_count`
+tidak tahu aturan ini, sama seperti gerbang doc mismatch). Tabel belum ada -> `fetchFormENotes` null -> aturan TIDAK diterapkan
+(fail-open) + info abu "run sql/044". Diuji: PGlite 044 8 cek, jsdom 33 cek.
+
+## Duty SATU rumus — Audit PIB, Invoice Recap Costs & Documents (2026-10-05, permintaan user)
+
+Kartu duty di jendela Open Audit PIB ("Duties & taxes"), tab Costs Invoice Recap ("Duty & tax (PIB)") dan tab
+Documents › Duty kini memakai rumus & data YANG SAMA: `calcSeaAirDuty`/`compareSeaAirDuty` (`SeaAirAuditHelpers.ts`,
+SATU-SATUNYA rumus) dari `dokumen_validasi_matriks_seaair` (`duty_ndpbm`, `duty_items`, `duty_aktual`): per item Rp =
+nilai pabean × NDPBM; BM = Rp × %BM; basis = Rp + BM; PPN/PPh = basis × %; toleransi **Rp 3.000**
+(`SEA_AIR_DUTY_TOLERANCE`). Baris BM / PPN / PPh / Total duty; kolom Actual (PIB) | Expected (calculation) | Status.
+Actual = `duty_aktual` (sama tab Documents); kosong/0 -> nilai baris Audit PIB (bm/ppn_nilai/pph_nilai/total_pib).
+Matriks/NDPBM/item belum ada -> Expected "—", status "Not calculated" + keterangan isi lewat Documents › Edit duty.
+Tabel bersama `SeaAirDutyCompareTable.tsx` (baca saja; edit duty tetap di tab Documents). Tab Costs membaca ulang data
+duty tiap tab-nya ditampilkan (prop `active`). `computeDutyRows` TETAP dipakai utk Import value, Checks ("Total PIB =
+BM + PPN + PPh", "Import value = customs value + BM") & kartu daftar Audit PIB. Diuji jsdom 16 cek.
 
 ## Finance Handover Sea & Air — DIGANTI halaman gabungan (2026-10-01)
 
@@ -137,16 +178,13 @@ area daftar, modal) + refactor rumus di bawah.
 - **Jendela Open**: Document (semua kolom `SEA_AIR_AUDIT_COLS` termasuk Document type/Remarks/
   SPTNP/Notes), Goods per PO (split `+` SAMA tabel lama; Valas per PO = `po_harga_detail`, IDR per
   PO = valas × kurs tersirat `item_price_idr ÷ item_price`; `po_harga_detail` KOSONG -> 1 PO pakai
-  Item price valas/Rp; >1 PO (& Item price ada) -> 2 TAB "As recorded" | "Split evenly" (state
-  `goodsView`, tab awal Split evenly kalau `po_harga_detail` kosong, selain itu As recorded).
-  Split evenly = Item price valas/Rp DIBAGI RATA hanya tampilan -- chip "≈ split evenly",
-  `splitMoneyEvenly` valas 2 desimal/Rp bulat, sisa ke PO pertama, TIDAK disimpan -- + keterangan
-  abu & baris "Sum of PO lines" disembunyikan; As recorded kosong = "—" + keterangan kuning yg
-  menunjuk tab Split evenly; form Edit: tombol "Split evenly"
+  Item price valas/Rp; >1 PO -> PO Price Detail APA ADANYA (kosong = "—" + keterangan kuning "isi
+  lewat Edit › Goods per PO"). Tab "As recorded | Split evenly" (estimasi bagi rata) DIHAPUS
+  2026-10-05 atas permintaan user -- JANGAN dikembalikan tanpa diminta; form Edit: tombol "Split evenly"
   mengisi Amount valas tiap PO, baru tersimpan saat Save), Customs value build-up (Goods → Freight → Insurance=`asuransi`
-  → Rounding/"Unexplained balance" >Rp1.000 → CV; header Balance = rumus lama), Duty & tax
-  (calculated vs on PIB, toleransi Rp 1.000; **BM% = BM ÷ customs value, tidak bisa diedit —
-  keputusan user, jadi baris BM "Derived"**), Checks, Audit trail (`v_audit_trail`
+  → Rounding/"Unexplained balance" >Rp1.000 → CV; header Balance = rumus lama), Duties & taxes
+  (sejak 2026-10-05 = rumus & data tab Documents › Duty Invoice Recap, lihat "Duty SATU rumus" di bawah;
+  versi lama "calculated vs on PIB" + BM "Derived" DIGANTI), Checks, Audit trail (`v_audit_trail`
   tabel_audit_seaair cocok awb/no_aju; dump mentah trigger TIDAK ditampilkan). Aksi: Edit & Delete
   (Draft saja, pola lama: baris LENGKAP tidak bisa diedit), Mark as audited (status LENGKAP,
   **tanpa syarat validated — keputusan user, "nanti diupdate"**), Reopen as draft (ARCHIVED).
@@ -649,6 +687,6 @@ menimpa baris lama, bukan numpuk baris baru) atau **DELETE total** (hapus konfir
 ## Sea & Air — Modal Cost Validasi Shipment & Invoice (`ValidasiShipmentInvoiceLengkap.tsx`)
 
 `globalStats` (footer "Cost Validation Summary") — % + progress bar (REPLIKA
-`SeaAirValidasiModal.tsx`). `pct = round(match/total*100)`, `total` = SEMUA baris `checks`.
+`SeaAirValidasiModal.tsx`). `pct = round(match/(match+over+under)*100)` (sejak 2026-10-05, permintaan user: baris Not validated & Incomplete TIDAK ikut penyebut; dulu `total` = SEMUA baris `checks`). Berlaku di semua pemakai `computeSeaAirCostGlobalStats` (tab Costs Invoice Recap, titik Cost kartu, badge List, modal lama).
 Baris `'SURVEYOR'` DIKECUALIKAN dari hitungan. File ini BELUM diaudit menyeluruh apakah punya
 pola SECTIONS/row-col-lookup lain — cek dulu sebelum translate/ubah row/col lain.

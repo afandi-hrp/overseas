@@ -14,7 +14,8 @@ import { LoadingState } from './LoadingState'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_PRIMARY, Chip, Pill, type Tone } from './SeaAirAuditUi'
 import { computeSeaAirCostGlobalStats, type SectionConfirmation } from '../utils/SeaAirCostValidasiHelpers'
 import { COST_SECTIONS, isSummaryCostRow } from '../utils/SeaAirRecapHelpers'
-import { computeDutyRows, fmtRp, fmtPctShort, fmtDateShort } from '../utils/SeaAirAuditHelpers'
+import { computeDutyRows, fmtRp, fmtDateShort, compareSeaAirDuty, fetchSeaAirDutyMatrix } from '../utils/SeaAirAuditHelpers'
+import SeaAirDutyCompareTable from './SeaAirDutyCompareTable'
 
 type Catatan = { id: any; seaair_id: any; section: string; status_konfirmasi: SectionConfirmation; catatan: string | null; dikonfirmasi_oleh: string | null; dikonfirmasi_at: string | null }
 type Draft = { status: SectionConfirmation; catatan: string }
@@ -71,8 +72,10 @@ const rowStatusChip = (status: string | null) => {
   return <Chip tone="grey">Incomplete</Chip>
 }
 
-export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, isAdmin = false, locked = false, financeView = false, auditRow, onChanged, onDirtyChange }: {
+export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, isAdmin = false, locked = false, financeView = false, auditRow, onChanged, onDirtyChange, active = true }: {
   seaairId: any
+  // Tab sedang tampil -- dipakai utk membaca ulang data duty (bisa baru diubah di tab Documents).
+  active?: boolean
   canEdit: boolean
   financeView?: boolean  // Finance Handover: baca saja, tanpa segmen CUSTOM & kartu Duty & tax
   isAdmin?: boolean   // bagian 2 (sql/031): review & edit nominal HANYA Admin
@@ -271,9 +274,20 @@ export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, is
     return `${ok} of ${secs.length} invoice${secs.length === 1 ? '' : 's'} match the contract rate`
   })()
 
+  // Kartu duty = rumus & data tab Documents › Duty (2026-10-05, permintaan user). Hook WAJIB sebelum
+  // `return` loading di bawah (Rules of Hooks).
+  const [dutyMatrix, setDutyMatrix] = useState<any | null | undefined>(undefined)
+  useEffect(() => {
+    if (financeView || !active) return
+    let cancelled = false
+    fetchSeaAirDutyMatrix(seaairId).then(m => { if (!cancelled) setDutyMatrix(m) })
+    return () => { cancelled = true }
+  }, [seaairId, active, financeView])
+
   if (loading) return <LoadingState fullHeight={false} />
 
   const duty = auditRow ? computeDutyRows(auditRow) : null
+  const dutyCmp = auditRow || dutyMatrix ? compareSeaAirDuty(dutyMatrix ?? null, auditRow) : null
   const hasSptnp = !!(auditRow && (auditRow.no_sptnp || auditRow.tgl_sptnp || auditRow.sptnp_total))
   const accColor = stats.pct >= 90 ? 'bg-[#17663D]' : stats.pct >= 60 ? 'bg-[#E0A526]' : 'bg-[#A8231A]'
 
@@ -512,41 +526,16 @@ export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, is
           </div>
           {duty && <span className="text-[12px] text-[#6E5E70]">Import value <b className="text-[#3B1B3D] tabular-nums">{fmtRp(duty.importValueStored ?? duty.importValueCalc)}</b></span>}
         </div>
-        {!duty ? (
+        {!dutyCmp && dutyMatrix !== undefined ? (
           <div className="px-4 pb-4 text-[12.5px] text-[#6E5E70]">No PIB linked to this shipment yet.</div>
         ) : (
           <>
-            <table className="w-full text-[12.5px]">
-              <thead>
-                <tr className="bg-[#FBF7F4] border-y border-[#EADFD6]">
-                  <th className={`${SA_LABEL} text-left px-4 py-2`}>Item · rate</th>
-                  <th className={`${SA_LABEL} text-right px-3 py-2`}>Expected (calculation)</th>
-                  <th className={`${SA_LABEL} text-right px-3 py-2`}>Actual (PIB)</th>
-                  <th className={`${SA_LABEL} text-right px-4 py-2`}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {duty.rows.map(r => (
-                  <tr key={r.key} className="border-b border-[#F1E8E1]">
-                    <td className="px-4 py-2"><div className="font-semibold text-[#3B1B3D]">{r.label}</div><div className="text-[11px] text-[#8A7A8B]">Rate {fmtPctShort(r.rate)}{r.key === 'bm' ? ' (BM ÷ customs value)' : ''}</div></td>
-                    <td className="px-3 py-2 text-right tabular-nums text-[#6E5E70]">{r.status === 'derived' || r.calculated === null ? '—' : fmtRp(r.calculated)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums font-semibold text-[#3B1B3D]">{fmtRp(r.onPib)}</td>
-                    <td className="px-4 py-2 text-right">
-                      {r.status === 'match' ? <Chip tone="green">Match</Chip> : r.status === 'differs' ? <Chip tone="red">{(r.diff ?? 0) > 0 ? '+' : '−'}{fmtRp(Math.abs(r.diff ?? 0))}</Chip> : <Chip tone="grey">{r.status === 'derived' ? 'Derived' : 'No rate'}</Chip>}
-                    </td>
-                  </tr>
-                ))}
-                <tr className="bg-[#FBF7F4]">
-                  <td className="px-4 py-2 font-bold text-[#3B1B3D]">Total PIB</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-[#6E5E70]">{fmtRp(duty.sumOnPib)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums font-bold text-[#3B1B3D]">{fmtRp(auditRow.total_pib)}</td>
-                  <td className="px-4 py-2 text-right">{duty.totalMatches ? <Chip tone="green">Match</Chip> : <Chip tone="red">Differs</Chip>}</td>
-                </tr>
-              </tbody>
-            </table>
-            <div className="px-4 py-2.5 text-[12px] text-[#6E5E70]">
-              SPTNP: {hasSptnp ? <b className="text-[#3B1B3D]">{auditRow.no_sptnp || '—'} · {fmtDateShort(auditRow.tgl_sptnp)} · {fmtRp(auditRow.sptnp_total)}</b> : 'None'}
-            </div>
+            <SeaAirDutyCompareTable cmp={dutyCmp} loading={dutyMatrix === undefined} />
+            {auditRow && (
+              <div className="px-4 py-2.5 text-[12px] text-[#6E5E70] border-t border-[#F1E8E1]">
+                SPTNP: {hasSptnp ? <b className="text-[#3B1B3D]">{auditRow.no_sptnp || '—'} · {fmtDateShort(auditRow.tgl_sptnp)} · {fmtRp(auditRow.sptnp_total)}</b> : 'None'}
+              </div>
+            )}
           </>
         )}
       </div>

@@ -7,6 +7,7 @@ import {
   getPoList, implicitFxRate, ensureFarFont, FAR_FONT_FAMILY, computeDueDate, computeOnHold, getMemoDueValue,
   getPoNumbers, parseJsonField, DEFAULT_FX, getBreakdownUnit, memoWeightIn, withBreakdownUnit, buildWeightBreakdownDisplay,
   recomputeDominantCompany, isAutoSplitCase, splitEvenly, WEIGHT_UNITS,
+  syncPoListFromPoOri, joinPoNumbers, companyCodeFromPoNo, effectivePaymentType, MANUAL_DUE_NOTE, COMPANY_CODES, goodsReceivedBlocker,
   type PicEligibleUser, type RateRow, type CompanyOption, type SignerConfig, type PoListEntry, type WeightUnit,
 } from '../utils/FarOverseasAirHelpers';
 import FarOverseasMemoPaper, { MemoPaymentLine } from './FarOverseasMemoPaper';
@@ -45,8 +46,12 @@ const NON_PO_KIND_OPTIONS = [
 
 // Validasi sebelum simpan (spek: With PO -> nomor PO wajib). Dipanggil halaman sebelum RPC.
 export function validateMemoEdits(merged: any, phase2: boolean): string | null {
-  if (phase2 && merged.payment_type === 'WITH_PO' && getPoNumbers(merged).length === 0) {
+  if (phase2 && effectivePaymentType(merged) === 'WITH_PO' && getPoNumbers(merged).length === 0) {
     return 'PO number is required for a With-PO memo.';
+  }
+  // Catatan Urgent (sql/043) wajib kalau Urgent dicentang -- hanya kalau kolomnya sudah ada.
+  if (merged.is_urgent && 'urgent_note' in merged && String(merged.urgent_note || '').trim().length < 5) {
+    return 'Fill in why this memo is urgent (min. 5 characters).';
   }
   return null;
 }
@@ -203,9 +208,10 @@ const joinVessels = (list: PoListEntry[]): string | null => {
   return uniq.length ? uniq.join(' + ') : null;
 };
 const cellInputCls = 'w-full border border-[#EADFD6] rounded-xl px-3 py-2 text-xs text-[#2A1A2C] bg-white focus:outline-none focus:ring-2 focus:ring-[#6B3470]/25 focus:border-[#6B3470] disabled:bg-[#FBF3EC] disabled:text-[#6E5E70]';
-function PoVesselWeightTable({ row, merged, poList, readOnly, setVal, getVal, badge }: {
+function PoVesselWeightTable({ row, merged, poList, readOnly, setVal, getVal, badge, companyCodes }: {
   row: any; merged: any; poList: PoListEntry[]; readOnly: boolean;
   setVal: (r: any, field: string, value: any) => void; getVal: (r: any, field: string) => any; badge: React.ReactNode;
+  companyCodes: string[];
 }) {
   const unit = getBreakdownUnit(merged, poList);
   const memoW = memoWeightIn(merged, unit);
@@ -217,6 +223,16 @@ function PoVesselWeightTable({ row, merged, poList, readOnly, setVal, getVal, ba
     setVal(row, 'po_list', list);
     setVal(row, 'weight_breakdown', buildWeightBreakdownDisplay(list));
     const winner = recomputeDominantCompany(list);
+    if (winner) setVal(row, 'dominant_company_code', winner);
+  };
+  // No PO diedit di tabel -> "PO number(s)" (po_ori) ikut direvisi (2026-10-05, permintaan user); PT
+  // diturunkan ulang dari kode di nomor PO, Paying PT dihitung ulang kalau rumus PO punya pemenang.
+  const setPoNo = (idx: number, no: string) => {
+    const next: PoListEntry[] = poList.map((p, i) => (i === idx ? { ...p, po_no_raw: no === '' ? null : no, company_code: companyCodeFromPoNo(no, companyCodes) ?? (no ? p.company_code ?? null : null) } : { ...p }));
+    setVal(row, 'po_list', next);
+    setVal(row, 'po_ori', joinPoNumbers(next));
+    setVal(row, 'weight_breakdown', buildWeightBreakdownDisplay(next));
+    const winner = recomputeDominantCompany(next);
     if (winner) setVal(row, 'dominant_company_code', winner);
   };
   const setVessel = (idx: number, vessel: string) => {
@@ -331,11 +347,19 @@ function PoVesselWeightTable({ row, merged, poList, readOnly, setVal, getVal, ba
               <tr key={idx}>
                 <td className="py-0.5 text-[11px] text-[#6E5E70] align-middle">{idx + 1}</td>
                 <td className="py-0.5 pl-1 align-middle">
-                  <div className={`${boxCls} font-bold`} title={poTitle || undefined}><span className="truncate">{po.po_no_raw || '—'}</span></div>
+                  {readOnly ? (
+                    <div className={`${boxCls} font-bold`} title={poTitle || undefined}><span className="truncate">{po.po_no_raw || '—'}</span></div>
+                  ) : (
+                    <input type="text" value={po.po_no_raw || ''} placeholder="PO number" title={poTitle || undefined}
+                      onChange={e => setPoNo(idx, e.target.value)}
+                      className={`${inCls} font-bold ${!String(po.po_no_raw || '').trim() ? 'border-amber-300' : ''}`} />
+                  )}
                 </td>
-                {/* Vendor per PO (hasil baca dokumen PO, read-only) -- beda dari field "Vendor" memo. */}
+                {/* Vendor per PO (hasil baca dokumen PO); kosong -> ikut field "Vendor" memo. */}
                 <td className="py-0.5 pl-1 align-middle">
-                  <div className={`${boxCls} uppercase text-[10.5px]`} title={po.vendor_name || undefined}><span className="truncate">{po.vendor_name || <span className="text-[#6E5E70]">—</span>}</span></div>
+                  <div className={`${boxCls} uppercase text-[10.5px]`} title={po.vendor_name || merged.vendor || undefined}>
+                    <span className="truncate">{po.vendor_name || (merged.vendor ? <span className="text-[#6E5E70]">{merged.vendor}</span> : <span className="text-[#6E5E70]">—</span>)}</span>
+                  </div>
                 </td>
                 <td className="py-0.5 pl-1 align-middle">
                   <input type="text" value={po.vessel_raw || ''} disabled={readOnly} placeholder="Vessel name"
@@ -401,10 +425,10 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
   // kurs default RMB -- masuk sbg perubahan UNSAVED, baru tersimpan kalau user klik Save.
   useEffect(() => {
     if (readOnly || !ctx.phase2) return;
-    if (!row.payment_type) {
-      const ai = row.payment_type_ai === 'WITH_PO' || row.payment_type_ai === 'NON_PO' ? row.payment_type_ai : null;
-      const suggestion = ai || (getPoNumbers(row).length > 0 ? 'WITH_PO' : null);
-      if (suggestion) setVal(row, 'payment_type', suggestion);
+    // Memo dgn nomor PO otomatis With PO (trigger sql/043 + `effectivePaymentType`) -> tidak perlu
+    // jadi perubahan UNSAVED. Prefill hanya saran AI utk memo tanpa PO.
+    if (!effectivePaymentType(row) && (row.payment_type_ai === 'WITH_PO' || row.payment_type_ai === 'NON_PO')) {
+      setVal(row, 'payment_type', row.payment_type_ai);
     }
     const cur = String(row.total_amount_currency || '').toUpperCase();
     if (cur && cur !== 'IDR' && (row.kurs_used == null || row.kurs_used === '') && DEFAULT_FX[cur]) {
@@ -470,18 +494,34 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
     setVal(row, 'kurs_used', k);
     if (totalAmount != null && k != null && k > 0) setVal(row, 'total_amount_idr', Math.round(totalAmount * k));
   };
-  // Due date & on hold dihitung ulang tiap Ship via / tanggal invoice diterima / barang diterima berubah.
-  const recomputeDue = (shipVia: any, invoiceReceived: any, goodsReceived: any) => {
+  // "Please arrange payment on" OTOMATIS (2026-10-05, permintaan user): dihitung ulang tiap Ship via /
+  // invoice received date berubah -> `due_date` + `expected_payment_date` (yang tercetak di memo).
+  // Octagon 14 hari (hari terima = hari ke-1, tgl 7 -> tgl 20), Jianqiao +1 hari, dari invoice received date (tidak menunggu barang); Sabtu/Minggu
+  // -> Jumat. Goods received date Octagon = syarat approve (`goodsReceivedBlocker`), bukan syarat tanggal. Diisi manual -> ditandai MANUAL_DUE_NOTE & tidak ditimpa
+  // lagi sampai "Back to automatic". Memo terkunci: hanya due_date (kolom after-sign RPC).
+  const paymentManual = merged.due_date_note === MANUAL_DUE_NOTE;
+  const receiptOnly = readOnly && receiptEditable;
+  const recomputeDue = (shipVia: any, invoiceReceived: any, goodsReceived: any, urgent: boolean = !!merged.is_urgent, backToAuto = false) => {
     if (!ctx.phase2) return;
+    setVal(row, 'on_hold', computeOnHold(shipVia, goodsReceived, urgent));
+    if (paymentManual && !backToAuto) return;
     const calc = computeDueDate(shipVia, invoiceReceived);
-    if (calc) {
-      setVal(row, 'due_date', calc.due);
-      setVal(row, 'due_date_note', calc.note);
-    } else if (invoiceReceived == null) {
-      setVal(row, 'due_date', null);
-      setVal(row, 'due_date_note', null);
+    // Belum ada aturan (forwarder lain / invoice received date kosong) -> tanggal yang ada TIDAK diubah.
+    if (!calc) {
+      if (backToAuto) setVal(row, 'due_date_note', null);
+      return;
     }
-    setVal(row, 'on_hold', computeOnHold(shipVia, goodsReceived));
+    setVal(row, 'due_date', calc.due);
+    setVal(row, 'due_date_note', calc.note);
+    if (!receiptOnly) setVal(row, 'expected_payment_date', calc.due);
+  };
+  const setPaymentManual = (iso: string) => {
+    const v = iso || null;
+    setVal(row, 'expected_payment_date', v);
+    if (ctx.phase2) {
+      setVal(row, 'due_date', v);
+      setVal(row, 'due_date_note', v ? MANUAL_DUE_NOTE : null);
+    }
   };
   const goodsDateValue: string = merged.goods_received_date ? String(merged.goods_received_date).slice(0, 10) : '';
   // Memo lama menyimpan tanggal barang diterima HANYA di NOTE 3 (status_note) -> dipakai sbg
@@ -490,7 +530,7 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
   const setGoodsDate = (iso: string) => {
     if (ctx.phase2) {
       setVal(row, 'goods_received_date', iso || null);
-      recomputeDue(merged.ship_via, merged.invoice_received_date, iso || null);
+      recomputeDue(merged.ship_via, merged.invoice_received_date, iso || parseStatusNoteDateIso(getVal(row, 'status_note')) || null);
     }
     if (iso && ctx.costCity) setVal(row, 'status_note', composeStatusNote(ctx.costCity, iso));
   };
@@ -498,7 +538,37 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
   const aiType: string | null = row.payment_type_ai || null;
   const aiFindings = parseJsonField(row.ai_findings_confirmed);
   // Non-PO (tahap 2): field PO number disembunyikan (nilai lama TIDAK dihapus).
-  const hidePoNumber = ctx.phase2 && merged.payment_type === 'NON_PO';
+  const effType = effectivePaymentType(merged);
+  const hidePoNumber = ctx.phase2 && effType === 'NON_PO';
+  const companyCodes = ctx.companyOptions.length > 0 ? ctx.companyOptions.map(c => c.company_code) : COMPANY_CODES;
+  // "PO number(s)" diedit -> tabel PO · Vessel · KG ikut (2026-10-05, permintaan user): PO baru dibuat dgn
+  // vendor = Vendor memo & PT dari kode nomor PO; PO lama membawa kapal/KG-nya.
+  const setPoOri = (text: string) => {
+    const v = text === '' ? null : text;
+    setVal(row, 'po_ori', v);
+    const cur = getPoList(merged);
+    const singleVessel = cur.length === 0 && merged.vessel_internal_note && !String(merged.vessel_internal_note).includes('+') ? String(merged.vessel_internal_note).trim() : null;
+    const next = withBreakdownUnit(syncPoListFromPoOri(v, cur, merged.vendor, companyCodes, singleVessel), getBreakdownUnit(merged, cur));
+    setVal(row, 'po_list', next.length ? next : (cur.length ? [] : row.po_list ?? null));
+    setVal(row, 'weight_breakdown', next.length ? buildWeightBreakdownDisplay(next) : (row.weight_breakdown ?? null));
+    const winner = recomputeDominantCompany(next);
+    if (winner) setVal(row, 'dominant_company_code', winner);
+  };
+  // Vendor memo diubah -> vendor PO yang kosong / sama dgn vendor lama ikut berganti.
+  const setVendor = (text: string) => {
+    const v = text === '' ? null : text;
+    const old = String(merged.vendor || '').trim().toUpperCase();
+    setVal(row, 'vendor', v);
+    const cur = getPoList(merged);
+    if (cur.length === 0) return;
+    let changed = false;
+    const next = cur.map(p => {
+      const pv = String(p.vendor_name || '').trim().toUpperCase();
+      if (!pv || (old && pv === old)) { changed = true; return { ...p, vendor_name: v }; }
+      return p;
+    });
+    if (changed) setVal(row, 'po_list', next);
+  };
   const due = getDueInfo(merged.expected_payment_date, 3);
 
   const city = ctx.costCity;
@@ -587,7 +657,7 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
                   <div className="flex items-center rounded-xl bg-white border border-[#EADFD6] p-1">
                     {(['WITH_PO', 'NON_PO'] as const).map(t => (
                       <button key={t} type="button" disabled={readOnly} onClick={() => setVal(row, 'payment_type', t)}
-                        className={`px-3 h-8 rounded-lg text-xs font-bold ${merged.payment_type === t ? 'bg-[#3B1B3D] text-white' : 'text-[#6E5E70] hover:text-[#2A1A2C]'} disabled:cursor-not-allowed`}>
+                        className={`px-3 h-8 rounded-lg text-xs font-bold ${effType === t ? 'bg-[#3B1B3D] text-white' : 'text-[#6E5E70] hover:text-[#2A1A2C]'} disabled:cursor-not-allowed`}>
                         {t === 'WITH_PO' ? 'With PO' : 'Non-PO'}
                       </button>
                     ))}
@@ -599,14 +669,15 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
                     {aiType === 'UNSURE' ? 'AI is not sure — please confirm' : <><span className="font-bold">{aiType === 'WITH_PO' ? 'With PO' : 'Non-PO'}</span>{row.payment_type_ai_reason ? ` · ${row.payment_type_ai_reason}` : ''}</>}
                   </p>
                 )}
-                {aiType && aiType !== 'UNSURE' && merged.payment_type && merged.payment_type !== aiType && (
+                {aiType && aiType !== 'UNSURE' && effType && effType !== aiType && (
                   <p className="mt-1 text-[11px] text-amber-800">Changed from the AI suggestion — this is recorded in the audit trail.</p>
                 )}
-                {!merged.payment_type && <p className="mt-1 text-[11px] text-amber-800">Confirm the payment type — Prepared By cannot sign until it is set.</p>}
-                {merged.payment_type === 'WITH_PO' && getPoNumbers(merged).length === 0 && (
+                {!merged.payment_type && effType === 'WITH_PO' && <p className="mt-1 text-[11px] text-[#6E5E70]">Set automatically — this memo has a PO number.</p>}
+                {!effType && <p className="mt-1 text-[11px] text-amber-800">Confirm the payment type — Prepared By cannot sign until it is set.</p>}
+                {effType === 'WITH_PO' && getPoNumbers(merged).length === 0 && (
                   <p className="mt-1 text-[11px] text-rose-700">A With-PO memo needs a PO number (Document section below).</p>
                 )}
-                {merged.payment_type === 'NON_PO' && (
+                {effType === 'NON_PO' && (
                   <div className="mt-3 rounded-xl bg-white border border-[#EADFD6] p-3">
                     <p className="text-xs font-bold text-[#2A1A2C]">Memo without PO</p>
                     <p className="text-[11px] text-[#6E5E70] mb-2">Must be complete before Prepared By can sign.</p>
@@ -645,15 +716,20 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
             <section>
               <SectionTitle>Document</SectionTitle>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <PoVesselWeightTable row={row} merged={merged} poList={poList} readOnly={readOnly} setVal={setVal} getVal={getVal}
+                <PoVesselWeightTable row={row} merged={merged} poList={poList} readOnly={readOnly} setVal={setVal} getVal={getVal} companyCodes={companyCodes}
                   badge={isPending('po_list') || isPending('vessel_internal_note') ? <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#6B3470] text-white">UNSAVED</span> : null} />
                 <label className="block md:col-span-2"><Label field="memo_title">Memo title</Label>
                   <MemoTitleSelect value={getVal(row, 'memo_title')} options={ctx.memoTitleOptions} disabled={readOnly} onChange={v => setVal(row, 'memo_title', v)} onAddOption={ctx.addMemoTitleOption} />
                 </label>
                 {!hidePoNumber && (
-                  <label className="block md:col-span-2"><Label field="po_ori" hint="(joined with “ + ”)">PO number(s)</Label>{area('po_ori', 2, 'I.PO/WNS.MDN/2608/0349 + ...')}</label>
+                  <label className="block md:col-span-2"><Label field="po_ori" hint="(joined with “ + ” — the PO · Vessel · KG table follows this field)">PO number(s)</Label>
+                    <textarea rows={2} value={getVal(row, 'po_ori') ?? ''} placeholder="I.PO/WNS.MDN/2608/0349 + ..." disabled={readOnly}
+                      onChange={e => setPoOri(e.target.value)} className={`${inputCls} resize-y`} />
+                  </label>
                 )}
-                <label className="block"><Label field="vendor">Vendor</Label>{text('vendor')}</label>
+                <label className="block"><Label field="vendor">Vendor</Label>
+                  <input type="text" value={getVal(row, 'vendor') ?? ''} disabled={readOnly} onChange={e => setVendor(e.target.value)} className={inputCls} />
+                </label>
                 <label className="block"><Label field="ship_via" hint="Payable to">Ship via</Label>
                   <input type="text" list="far-known-forwarders" value={getVal(row, 'ship_via') ?? ''} disabled={readOnly}
                     onChange={e => {
@@ -771,15 +847,31 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
                   {!city && <span className="block text-[11px] text-amber-800 mt-1">No destination city yet — Note 3 is filled once Cost Validation has a matched rate.</span>}
                 </label>
                 <label className="block"><Label field="departure_date">Departure date</Label>{date('departure_date')}</label>
-                <label className="block"><Label field="expected_payment_date" hint="printed on memo">Please arrange payment on</Label>{date('expected_payment_date')}</label>
+                <label className="block"><Label field="expected_payment_date" hint="printed on memo">Please arrange payment on</Label>
+                  <input type="date" value={merged.expected_payment_date ? String(merged.expected_payment_date).slice(0, 10) : ''} disabled={readOnly}
+                    onChange={e => setPaymentManual(e.target.value)} className={inputCls} />
+                  {ctx.phase2 && (
+                    <span className="flex items-center gap-2 mt-1 text-[11px]">
+                      {paymentManual ? (
+                        <>
+                          <span className="font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">MANUAL</span>
+                          {!readOnly && <button type="button" onClick={() => recomputeDue(merged.ship_via, merged.invoice_received_date, effectiveGoods(), !!merged.is_urgent, true)} className="font-bold text-[#6B3470] hover:underline">Back to automatic</button>}
+                        </>
+                      ) : (
+                        <span className="text-[#6E5E70]"><span className="font-bold px-1.5 py-0.5 rounded bg-[#F5EDF3] text-[#6B3470] mr-1">AUTO</span>from the invoice received date (Octagon: day 14 counting that day as day 1, e.g. 7th → 20th · Jianqiao +1 day)</span>
+                      )}
+                    </span>
+                  )}
+                </label>
               </div>
               {(() => {
                 const dueCalc = ctx.phase2 ? computeDueDate(merged.ship_via, merged.invoice_received_date) : null;
+                const goodsBlock = ctx.phase2 ? goodsReceivedBlocker({ ...merged, goods_received_date: effectiveGoods() }) : null;
                 const d = getDueInfo(getMemoDueValue(merged), 3);
                 if (!d && !dueCalc) {
                   return ctx.phase2 ? <p className="mt-2 text-[11px] text-[#6E5E70]">Fill in the invoice-received date to calculate the due date{vendorTargetFromShipVia(merged.ship_via) ? '' : ' (only for Octagon / Jianqiao)'}.</p> : null;
                 }
-                const tone = merged.on_hold ? 'bg-[#F5EDF3] text-[#2A1A2C]' : d?.level === 'overdue' ? 'bg-rose-50 text-rose-800' : d?.level === 'today' || d?.level === 'soon' ? 'bg-amber-50 text-amber-900' : 'bg-[#FBF3EC] text-[#2A1A2C]';
+                const tone = merged.on_hold && !merged.is_urgent ? 'bg-[#F5EDF3] text-[#2A1A2C]' : d?.level === 'overdue' ? 'bg-rose-50 text-rose-800' : d?.level === 'today' || d?.level === 'soon' ? 'bg-amber-50 text-amber-900' : 'bg-[#FBF3EC] text-[#2A1A2C]';
                 return (
                   <div className={`mt-3 rounded-2xl px-4 py-3 text-xs flex gap-4 items-start ${tone}`}>
                     <div className="shrink-0">
@@ -789,7 +881,8 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
                     <div className="min-w-0">
                       {d && <p>{d.level === 'overdue' ? `Overdue by ${-d.daysLeft} day${d.daysLeft === -1 ? '' : 's'}.` : d.level === 'today' ? 'Due today.' : `Due in ${d.daysLeft} day${d.daysLeft === 1 ? '' : 's'}.`}{merged.due_date_note ? ` ${merged.due_date_note}.` : ''}</p>}
                       {dueCalc && <p className="mt-0.5 opacity-80"><span className="font-bold">Term:</span> {dueCalc.term}</p>}
-                      {merged.on_hold && <p className="mt-0.5 font-bold">On hold — goods not received yet.</p>}
+                      {goodsBlock && <p className="mt-0.5 font-bold text-amber-800">Fill in the goods received date — Prepared By cannot sign an Octagon memo before the goods are received (unless Urgent).</p>}
+                      {merged.on_hold && !merged.is_urgent && <p className="mt-0.5 font-bold">On hold — goods not received yet.</p>}
                     </div>
                   </div>
                 );
@@ -801,10 +894,27 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
                 <label className={`mt-3 flex items-start gap-2.5 rounded-2xl border px-4 py-3 text-xs ${merged.is_urgent ? 'border-rose-200 bg-rose-50' : 'border-[#EADFD6] bg-white'}`}>
                   <input type="checkbox" className="mt-0.5 accent-rose-600" checked={!!merged.is_urgent}
                     disabled={(readOnly && !receiptEditable) || !!row.paid_at}
-                    onChange={e => ctx.setVal(row, 'is_urgent', e.target.checked)} aria-label="Urgent" />
-                  <span>
+                    onChange={e => {
+                      const on = e.target.checked;
+                      ctx.setVal(row, 'is_urgent', on);
+                      if (!on && 'urgent_note' in row) ctx.setVal(row, 'urgent_note', null);
+                      // Urgent: tidak on hold & Octagon tidak menunggu goods received date (spek user).
+                      recomputeDue(merged.ship_via, merged.invoice_received_date, effectiveGoods(), on);
+                    }} aria-label="Urgent" />
+                  <span className="flex-1 min-w-0">
                     <span className="font-extrabold text-[#2A1A2C]">Urgent</span>
-                    <span className="block text-[#6E5E70]">May be paid before the goods are received. Shown as an “Urgent” chip in Finance Handover.{row.paid_at ? ' (Already paid — cannot be changed.)' : ''}</span>
+                    <span className="block text-[#6E5E70]">May be paid before the goods are received — the memo can be approved without a goods received date and is not on hold. Shown as an “Urgent” chip in Finance Handover.{row.paid_at ? ' (Already paid — cannot be changed.)' : ''}</span>
+                    {merged.is_urgent && 'urgent_note' in row && (
+                      <span className="block mt-2" onClick={e => e.preventDefault()}>
+                        <span className="flex items-center gap-1.5 mb-1 font-semibold text-[#2A1A2C]">Why is it urgent?
+                          {isPending('urgent_note') && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#6B3470] text-white">UNSAVED</span>}
+                        </span>
+                        <textarea rows={2} value={merged.urgent_note ?? ''} disabled={(readOnly && !receiptEditable) || !!row.paid_at}
+                          placeholder="Required, min. 5 characters — e.g. vessel departs on Friday"
+                          onChange={e => ctx.setVal(row, 'urgent_note', e.target.value === '' ? null : e.target.value)}
+                          className={`${inputCls} resize-y ${String(merged.urgent_note || '').trim().length < 5 ? 'border-rose-300' : ''}`} />
+                      </span>
+                    )}
                   </span>
                 </label>
               )}

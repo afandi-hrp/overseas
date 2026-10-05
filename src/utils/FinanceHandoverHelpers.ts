@@ -41,6 +41,7 @@ export type HandoverItem = {
   dueDate: string | null
   topLabel: string | null       // "TOP 30d" / "TOP 14d (default)"
   urgent: boolean
+  urgentNote?: string | null   // FAR: alasan Urgent (sql/043)
   earlier: boolean              // Sea & Air tanpa data validasi -> hanya tab Handover
   stage: HandoverStage
   raw: any
@@ -108,6 +109,7 @@ export function farToItem(r: any): HandoverItem {
     dueDate: dueDay ? isoOf(dueDay) : null,
     topLabel: null,
     urgent: !!r.is_urgent,
+    urgentNote: r.urgent_note || null,
     earlier: false,
     stage: st === 'PAID' ? 'paid' : st === 'RECEIVED' ? 'received' : 'waiting',
     raw: r,
