@@ -63,7 +63,7 @@ approval-nya.
   (review cost per invoice Audit Courier + kunci Submit to Finance Invoice Recap Courier, lihat "Courier 2026-10-02 bagian 2").
   **`sql/039_courier_finance_read_validation.sql` SUDAH DIJALANKAN 2026-10-02** (setelah 038): policy SELECT `courier_finance`
   utk Finance melihat validasi PIB/CN (lihat "Finance melihat validasi Courier").
-  **`sql/041_courier_validation_panel.sql` BELUM DIJALANKAN — WAJIB dijalankan manual** (2026-10-05, panel Validation samping
+  **`sql/041_courier_validation_panel.sql` SUDAH DIJALANKAN 2026-10-05** (konfirmasi user; 2026-10-05, panel Validation samping
   Invoice Recap Courier): tabel `courier_checklist_doc_log` + trigger `trg_courier_checklist_doc_log` (riwayat centang dokumen)
   & tabel `cost_validasi_review_courier_item` (Accept cost per baris). Lihat "Panel Validation samping Invoice Recap Courier".
 - **Kondisi DB production (stack `supabase3`, audit 2026-09-26)**: role `anon` tanpa hak apa pun
@@ -539,7 +539,7 @@ user di production** (testing bagian 2 + Finance Handover dijadwalkan user bersa
 4. ~~Submit tanpa kunci~~ — SELESAI 2026-10-02 (sql/038, SUDAH dijalankan 2026-10-02): kunci setelah Submit + Unlock Admin, sama Sea & Air.
 5. (Keputusan user) Tanpa issue count / review per invoice di Recap untuk sementara.
 6. (Keputusan user) Edit tetap lewat tabel List; Export TETAP.
-7. Panel Validation samping (2026-10-05) — kode SELESAI, **sql/041 BELUM dijalankan**, belum dites user di production. Lihat bagian
+7. Panel Validation samping (2026-10-05) — kode SELESAI, sql/041 SUDAH dijalankan 2026-10-05, belum dites user di production. Lihat bagian
    "Panel Validation samping Invoice Recap Courier".
 
 **Umum:** semua halaman di atas belum diuji user di production; `kurs` text bug SUDAH diperbaiki; badge
@@ -598,7 +598,7 @@ ada nama fungsi bentrok. Keputusan:
 15. Finance Handover Courier **per invoice**; kolom baru `finance_received_at/_by` (opsi A); master vendor = **tabel baru
     khusus Courier** `courier_vendor_master` + halaman Settings sendiri.
 
-## Panel Validation samping Invoice Recap Courier (2026-10-05, keputusan user; sql/041 BELUM DIJALANKAN)
+## Panel Validation samping Invoice Recap Courier (2026-10-05, keputusan user; sql/041 SUDAH DIJALANKAN 2026-10-05)
 
 Spek user + prototipe `Prototype — Validation Side Panel.html` (HANYA tata letak; warna/font tetap gaya app). Berlaku mode
 **Card** Invoice Recap Courier saja (Audit Courier, mode List & Finance Handover TIDAK berubah).
@@ -1112,7 +1112,7 @@ Supabase** — bisa saja sudah basi (RPC lain ditambahkan user langsung tanpa te
   `fn_seaair_finance_mark_paid` referensi opsional, `fn_seaair_finance_undo` DI-DROP (diganti 2026-10-02 oleh
   `fn_*_finance_undo_receive` sql/040, Admin saja; keputusan
   user), FAR `fn_far_overseas_set_urgent(uuid, boolean)` BARU, `fn_far_overseas_mark_paid` bukti bayar opsional.
-- Courier panel Validation Invoice Recap (sql/041, BELUM DIJALANKAN): fungsi trigger `fn_courier_checklist_doc_log()` (trigger
+- Courier panel Validation Invoice Recap (sql/041, SUDAH DIJALANKAN 2026-10-05): fungsi trigger `fn_courier_checklist_doc_log()` (trigger
   `trg_courier_checklist_doc_log` di `dokumen_checklist`); tanpa RPC (Accept cost per baris = upsert langsung, RLS).
 - Courier review cost & kunci Submit (sql/038, SUDAH DIJALANKAN 2026-10-02): `fn_courier_unlock_submit(uuid, text)` (+ trigger
   `fn_courier_recap_lock`); tabel `cost_validasi_review_courier`.
