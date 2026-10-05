@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, Pencil, Receipt, Package } from 'lucide-reac
 import { Chip, Pill, type Tone } from './SeaAirAuditUi';
 import { supabase } from '../lib/supabase';
 import { computeLiveCostSummary, isRowVisible } from '../utils/CostValidationHelpers';
+import { courierStorageActualDays, computeCourierStorageExpected, saveCourierStorageEstimate } from '../utils/CourierStorageEstimate';
 import { fetchCourierCostReviews, reviewMapOf, type CourierCostReviews, type CourierCostReview } from '../utils/CourierCostReviewHelpers';
 import CourierCostReviewBox from './CourierCostReviewBox';
 import { VW_TOOLBAR, VW_LABEL, VW_BTN_PRIMARY, VW_BTN_SECONDARY, VW_BTN_SUCCESS, VW_CARD, VW_INPUT, VW_TH, VW_TILE, VW_TILE_TONE, vwPctBar, vwPctText } from './validationWindowStyles';
@@ -189,45 +190,15 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
     }
   }, [etaDate, releaseDate, data, jenisDokumen, isEditing, storageWeightManual]);
 
-  const getActualDays = () => {
-    if (!etaDate || !releaseDate) return 0;
-    const mEta = new Date(etaDate);
-    const mRel = new Date(releaseDate);
-    const diffTime = mRel.getTime() - mEta.getTime();
-    // +1 (2026-09, permintaan user) -- hari ETA & Release dihitung penuh dua-duanya, bukan cuma
-    // selisihnya. Sebelumnya ETA 1 Sep -> Release 3 Sep = 2 hari, sekarang = 3 hari.
-    return Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1);
-  };
+  // Logika hitung/simpan estimasi Bonded Storage dipindah ke src/utils/CourierStorageEstimate.ts (2026-10-05, isi SAMA)
+  // supaya ringkasan Cost Validation panel Invoice Recap memakai logika yang persis sama.
+  const getActualDays = () => courierStorageActualDays(etaDate, releaseDate);
 
   const checkExpected = async () => {
     if (!data) return;
     setDebugError('');
-    const actual_days = getActualDays();
-    const courier = (data.cv_courier || '').toUpperCase();
-    const jd = (jenisDokumen || data.jenis_dokumen || '').toUpperCase();
-    
-    // cv_storage_weight_kg is for storage. Prioritaskan input manual user (storageWeightManual),
-    // fallback ke data asli/cv_chargeable_kg kalau field manual masih kosong.
-    const storage_weight = Number(storageWeightManual) || Number(data.cv_storage_weight_kg) || Number(data.cv_chargeable_kg) || 0;
-    
     try {
-      const { data: rpcData, error } = await supabase.rpc('fn_hitung_storage', {
-        p_courier: courier,
-        p_jenis: jd,
-        p_actual_days: actual_days,
-        p_weight_kg: storage_weight
-      });
-      
-      if (error) {
-        throw error;
-      }
-      
-      setStorageExpectedResult({ 
-        expected_idr: rpcData?.expected_idr || 0,
-        billing_days: rpcData?.billing_days || 0,
-        rate_per_day: rpcData?.rate_per_day || 0,
-        rate_per_kg: rpcData?.rate_per_kg || 0
-      });
+      setStorageExpectedResult(await computeCourierStorageExpected(data, jenisDokumen, storageWeightManual, etaDate, releaseDate));
     } catch (err: any) {
       console.error('Error calling fn_hitung_storage:', err);
       setDebugError(err.message || String(err));
@@ -289,43 +260,8 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
     if (!etaDate || !releaseDate || !data || !storageExpectedResult) return;
     setUpdating(true);
     try {
-      const actualDays = getActualDays();
-      const expected = storageExpectedResult.expected_idr || 0;
-      
-      await supabase
-        .from('tabel_cost_validasi')
-        .update({
-          cv_eta_date: etaDate,
-          cv_release_date: releaseDate,
-          cv_storage_input_manual: true,
-          cv_storage_weight_kg: Number(storageWeightManual) || null
-        })
-        .eq('id', data.id);
-        
-      const { error } = await supabase.rpc('fn_save_storage_estimate', {
-        p_cv_id: data.id,
-        p_actual_days: actualDays,
-        p_billing_days: storageExpectedResult.billing_days || 0,
-        p_rate_per_day: storageExpectedResult.rate_per_day || 0,
-        p_rate_per_kg: storageExpectedResult.rate_per_kg || 0,
-        p_expected_idr: expected
-      });
-      
-      if (error) throw error;
-
-      // Ambil ulang PERSIS baris yang sedang diedit lewat `id` (data.id) -- BUKAN fetchData()
-      // yang query berdasar awb/docId + "order by created_at desc limit 1". Kalau dokumen ini
-      // kebetulan punya lebih dari 1 baris tabel_cost_validasi (mis. riwayat lama), fetchData()
-      // bisa saja menarik baris LAIN (bukan yang baru diedit), yang kalau kebetulan lebih
-      // "kosong" akan terlihat seperti "semua data cost validation hilang" -- padahal datanya
-      // sendiri sebenarnya aman (fn_save_storage_estimate -> fn_recompute_totals sudah
-      // dikonfirmasi RETURN to_jsonb(SELECT * ...), seluruh kolom, bukan sebagian).
-      const { data: freshRow, error: refetchError } = await supabase
-        .from('tabel_cost_validasi')
-        .select('*')
-        .eq('id', data.id)
-        .single();
-      if (!refetchError && freshRow) {
+      const freshRow = await saveCourierStorageEstimate(data, etaDate, releaseDate, storageWeightManual, storageExpectedResult);
+      if (freshRow) {
         await enrichAndSetData(freshRow);
       } else {
         await fetchData();

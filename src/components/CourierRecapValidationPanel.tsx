@@ -128,8 +128,16 @@ const DetailsWindow: React.FC<{ title: React.ReactNode; onClose: () => void; chi
   document.body,
 )
 
+// Warna latar tab per persen (revisi 2026-10-05): 100% hijau muda, >=60% kuning muda, <60% merah muda, belum ada data abu.
+const tabToneClass = (pct: number | null | undefined) =>
+  pct === undefined ? 'bg-[#F3EEEA] text-[#3B1B3D]'
+    : pct === null ? 'bg-[#F3EEEA] text-[#6E5E70]'
+      : pct >= 100 ? 'bg-[#EAF6EF] text-[#17663D]'
+        : pct >= 60 ? 'bg-[#FFF1D6] text-[#7A4F00]'
+          : 'bg-[#FDE7E4] text-[#A8231A]'
+
 const InfoCell: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <div className="min-w-0 bg-white px-2.5 py-1.5">
+  <div className="min-w-0 bg-[#FCF8FB] px-2.5 py-1.5">
     <p className="text-[9.5px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B] leading-none mb-1">{label}</p>
     <div className="text-[12px] font-semibold text-[#3B1B3D] leading-snug [overflow-wrap:anywhere]">{children}</div>
   </div>
@@ -166,7 +174,8 @@ export default function CourierRecapValidationPanel({
   const docType = (audit?.docType || 'PIB') as CourierDocType
   const draft = rec ? isCourierDraft(rec) : false
   const tabs: RecapPanelTab[] = [
-    ...(rec ? (['checklist', 'doc', 'cost'] as ValidationTabKey[]).filter(t => access[t]) : []),
+    // Urutan tab (revisi 2026-10-05, keputusan user): Checklist | Cost Validation | Doc Validation | Invoices.
+    ...(rec ? (['checklist', 'cost', 'doc'] as ValidationTabKey[]).filter(t => access[t]) : []),
     'invoices',
   ]
   const [tab, setTab] = useState<RecapPanelTab>(() => (initialTab && tabs.includes(initialTab) ? initialTab : tabs[0]))
@@ -237,13 +246,14 @@ export default function CourierRecapValidationPanel({
             <button type="button" onClick={onClose} aria-label="Close panel" title="Close" className="w-8 h-8 inline-flex items-center justify-center hover:bg-[#F6EFEA] rounded-xl text-[#6E5E70]"><X size={17} /></button>
           </div>
         </div>
-        <div className="flex items-end gap-1 mt-2 overflow-x-auto" role="tablist">
+        <div className="flex items-end gap-1.5 mt-2 overflow-x-auto" role="tablist">
           {tabs.map(t => {
             const dot = t === 'invoices' ? undefined : pct[t]
             return (
               <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => goTab(t)}
                 title={dot !== undefined ? `${tabLabel[t]}: ${validationDotLabel(dot)}` : undefined}
-                className={`shrink-0 flex items-center gap-1.5 px-2.5 pt-1 pb-2 text-[12.5px] font-semibold border-b-2 transition-colors ${tab === t ? 'border-[#6B3470] text-[#3B1B3D]' : 'border-transparent text-[#6E5E70] hover:text-[#3B1B3D]'}`}>
+                data-tab-tone={dot === undefined ? 'neutral' : dot === null ? 'none' : dot >= 100 ? 'ok' : dot >= 60 ? 'warn' : 'bad'}
+                className={`shrink-0 flex items-center gap-1.5 px-3 pt-1.5 pb-1.5 rounded-t-lg text-[12.5px] font-semibold border-b-[3px] transition-colors ${tabToneClass(dot)} ${tab === t ? 'border-[#6B3470] font-bold' : 'border-transparent opacity-80 hover:opacity-100'}`}>
                 {dot !== undefined && <span className={`w-2 h-2 rounded-full shrink-0 ${validationDotClass(dot)}`} />}
                 {tabLabel[t]}{dot !== undefined && dot !== null ? ` ${dot}%` : ''}
                 {t === 'checklist' && checklistDirty && <span className="w-1.5 h-1.5 rounded-full bg-[#E0A526]" title="Unsaved changes" />}
@@ -253,11 +263,11 @@ export default function CourierRecapValidationPanel({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto bg-[#FBF7F4] @container">
-        {/* Shipment Info -- SAMA di semua tab */}
-        <div className="px-3 pt-3">
-          <div className="rounded-[12px] border border-[#EADFD6] overflow-hidden" data-shipment-info>
-            <div className="grid grid-cols-2 @lg:grid-cols-3 @4xl:grid-cols-6 gap-px bg-[#EADFD6]">
+      {/* Shipment Info -- SAMA di semua tab, DIBEKUKAN di atas area scroll dgn latar ungu muda (revisi 2026-10-05) supaya
+          jelas beda dari isi tab di bawahnya. */}
+      <div className="shrink-0 px-3 py-2.5 bg-[#F5EDF3] border-b border-[#D9C7DA] @container" data-shipment-frozen>
+          <div className="rounded-[12px] border border-[#D9C7DA] overflow-hidden" data-shipment-info>
+            <div className="grid grid-cols-2 @lg:grid-cols-3 @4xl:grid-cols-6 gap-px bg-[#E4D3E2]">
               <InfoCell label="AWB">{dash(rec?.awb || g.awbRaw || g.awb)}</InfoCell>
               <InfoCell label="No. Invoice Freight">{dash(joinNos(g.byKind.freight))}</InfoCell>
               <InfoCell label="No. Invoice Duty">{dash(joinNos(g.byKind.duty))}</InfoCell>
@@ -272,8 +282,9 @@ export default function CourierRecapValidationPanel({
               <InfoCell label="Chargeable Weight">{dash(info.chargeable)}</InfoCell>
             </div>
           </div>
-        </div>
+      </div>
 
+      <div className="flex-1 min-h-0 overflow-y-auto bg-[#FBF7F4] @container">
         <div className="p-3">
           {rec && access.checklist && visited.checklist && (
             <div className={tab === 'checklist' ? 'flex flex-col gap-3' : 'hidden'} role="tabpanel">

@@ -11,3 +11,6 @@ export const appendNoteLine = (notes: string | null | undefined, line: string): 
 export const removeNoteLine = (notes: string | null | undefined, line: string): string =>
   (notes || '').split('\n').filter(l => l.trim() !== line.trim()).join('\n').replace(/\s+$/, '');
 
+// Hapus semua baris yang memenuhi syarat (mis. semua catatan Accept utk 1 baris biaya, format lama & baru).
+export const removeNoteLinesWhere = (notes: string | null | undefined, pred: (line: string) => boolean): string =>
+  (notes || '').split('\n').filter(l => !pred(l.trim())).join('\n').replace(/\s+$/, '');

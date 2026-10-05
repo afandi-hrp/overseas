@@ -7,7 +7,10 @@ import ValidasiPerhitunganPIB from './ValidasiPerhitunganPIB';
 import { VW_LABEL, VW_BTN_PRIMARY, VW_BTN_SECONDARY, VW_BTN_SUCCESS, VW_BTN_DANGER, VW_CARD, VW_INPUT, VW_TILE, VW_TILE_TONE, vwPctBar, vwPctText } from './validationWindowStyles';
 import { Pill } from './SeaAirAuditUi';
 import { useAuth } from '../lib/AuthContext';
-import { appendNoteLine } from '../utils/NoteLines';
+import { appendNoteLine, removeNoteLinesWhere } from '../utils/NoteLines';
+
+// Catatan Accept milik 1 field di Manual Change Notes -- format baru "<field> · <sumber> ✓ ..." & lama "- <field> · <sumber>: ...".
+const isDocNoteOf = (label: string) => (line: string) => line.startsWith(`${label} ✓ `) || line.startsWith(`- ${label}: `);
 
 // Format tanggal seragam di seluruh aplikasi: DD-MMMM-YYYY, nama bulan Bahasa Inggris.
 const MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -1685,10 +1688,13 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
       const it = unmatched.find(x => x.id === id);
       const prevValues = values;
       const prevNotes = catatanManual;
-      const nextValues = { ...values, [id]: { ...(values[id] || { src: '', cmp: '' }), manual_status: 'match', accept_note: note, accept_by: profile?.nama || user?.email || null, accept_at: new Date().toISOString() } };
+      const cur = values[id] || { src: '', cmp: '' };
+      // accept_prev_status = status manual sebelum Accept (dipulihkan saat Undo).
+      const nextValues = { ...values, [id]: { ...cur, manual_status: 'match', accept_prev_status: cur.manual_status ?? null, accept_note: note, accept_by: profile?.nama || user?.email || null, accept_at: new Date().toISOString() } };
       // 2026-10-05 (keputusan user): catatan Accept juga ditambahkan ke "Manual Change Notes" (1 baris per catatan).
-      const line = `- ${it ? `${it.field} · ${it.docLabel}` : id}: ${note.replace(/\s*\n\s*/g, ' ')}`;
-      const nextNotes = appendNoteLine(catatanManual, line);
+      // Format (revisi 2026-10-05): "<Nama field> · <Sumber> ✓ <catatan>"; catatan lama utk field yg sama diganti.
+      const label = it ? `${it.field} · ${it.docLabel}` : id;
+      const nextNotes = appendNoteLine(removeNoteLinesWhere(catatanManual, isDocNoteOf(label)), `${label} ✓ ${note.replace(/\s*\n\s*/g, ' ')}`);
       userActionRef.current = true;
       setValues(nextValues);
       setCatatanManual(nextNotes);
@@ -1704,6 +1710,33 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
         setValues(prevValues);
         setCatatanManual(prevNotes);
         showDocToast('Failed to save: ' + (e?.message || ''), 'error');
+      } finally {
+        setAcceptSaving(false);
+      }
+    };
+    // Undo Accept (revisi 2026-10-05): status kembali seperti sebelum Accept, catatannya dihapus dari Manual Change Notes.
+    const doUndo = async (it: SumItem) => {
+      const cur = values[it.id] || { src: '', cmp: '' };
+      const { accept_note, accept_by, accept_at, accept_prev_status, ...rest } = cur;
+      void accept_note; void accept_by; void accept_at;
+      const nextValues = { ...values, [it.id]: { ...rest, manual_status: accept_prev_status ?? null } };
+      const nextNotes = removeNoteLinesWhere(catatanManual, isDocNoteOf(`${it.field} · ${it.docLabel}`));
+      const prevValues = values;
+      const prevNotes = catatanManual;
+      userActionRef.current = true;
+      setValues(nextValues);
+      setCatatanManual(nextNotes);
+      setAcceptSaving(true);
+      try {
+        const err = await persistChecklist(nextValues, nextNotes);
+        if (err) { setValues(prevValues); setCatatanManual(prevNotes); showDocToast('Failed to undo: ' + err, 'error'); return; }
+        setDocSnap(JSON.parse(JSON.stringify({ values: nextValues, awbNo, tanggal, namaChecker, catatanManual: nextNotes })));
+        showDocToast('Accept undone.', 'success');
+        onChanged?.();
+      } catch (e: any) {
+        setValues(prevValues);
+        setCatatanManual(prevNotes);
+        showDocToast('Failed to undo: ' + (e?.message || ''), 'error');
       } finally {
         setAcceptSaving(false);
       }
@@ -1812,8 +1845,11 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
             {showAccepted && (
               <div className="mt-1.5 flex flex-col gap-1.5">
                 {accepted.map(it => (
-                  <div key={it.id} className="rounded-lg border border-[#BFE3CD] bg-[#F4FBF7] px-3 py-1.5 text-[11.5px]">
-                    <div className="font-semibold text-[#3B1B3D]">{it.field} <span className="font-normal text-[#6E5E70]">· {it.docLabel}</span></div>
+                  <div key={it.id} data-doc-accepted={it.id} className="rounded-lg border border-[#BFE3CD] bg-[#F4FBF7] px-3 py-1.5 text-[11.5px]">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="font-semibold text-[#3B1B3D]">{it.field} <span className="font-normal text-[#6E5E70]">· {it.docLabel}</span></div>
+                      {canEdit && <button type="button" disabled={acceptSaving} className="text-[#A8231A] font-semibold hover:underline shrink-0 disabled:opacity-50" onClick={() => doUndo(it)}>Undo</button>}
+                    </div>
                     <div className="text-[#17663D] [overflow-wrap:anywhere]">✓ {it.v.accept_note}</div>
                     <div className="text-[#8A7A8B]">{it.v.accept_by || '—'}{it.v.accept_at ? ` · ${fmtDateEN(it.v.accept_at)}` : ''}</div>
                   </div>

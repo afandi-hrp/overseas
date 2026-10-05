@@ -8,6 +8,10 @@
 //   selesai / Checklist disimpan / jendela Details ditutup) & saat ganti kartu (remount).
 // - Catatan Accept juga ditambahkan ke "Catatan Perubahan Manual" (tabel_cost_validasi.catatan, 1 baris per catatan;
 //   Undo menghapus barisnya) -- keputusan user 2026-10-05.
+//   Format (revisi 2026-10-05): "<Nama item> · <Status> ✓ <catatan>" (format lama "- <item> (Invoice ..): .." tetap dikenali
+//   saat Accept ulang/Undo).
+// - Form "Bonded storage estimate" (revisi 2026-10-05) = SALINAN form "Hitung Ulang Estimasi Bonded Storage" Details,
+//   logika SATU sumber (src/utils/CourierStorageEstimate.ts) & kolom yang sama -> isian depan/Details saling sinkron.
 // - Toolbar hanya tombol Details (`onOpenDetails`: tabel lengkap + Edit di jendela penuh).
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
@@ -20,7 +24,8 @@ import {
   type CourierCostReviews, type CourierCostItemReviewRow,
 } from '../utils/CourierCostReviewHelpers';
 import { fmtRp } from '../utils/SeaAirAuditHelpers';
-import { appendNoteLine, removeNoteLine } from '../utils/NoteLines';
+import { appendNoteLine, removeNoteLinesWhere } from '../utils/NoteLines';
+import { courierStorageActualDays, computeCourierStorageExpected, saveCourierStorageEstimate, type StorageEstimate } from '../utils/CourierStorageEstimate';
 
 export const COST_SUMMARY_POLL_MS = 30000;
 
@@ -31,9 +36,75 @@ const fmtDateTime = (v: any) => {
   return isNaN(d.getTime()) ? String(v) : d.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 };
 const fmtDiff = (n: number | null) => (n === null ? '—' : `${n > 0 ? '+' : ''}${fmtRp(n)}`);
-// Baris catatan di "Catatan Perubahan Manual" utk 1 Accept.
-export const costAcceptNoteLine = (r: Pick<CostDiffRow, 'label' | 'section'>, note: string) =>
-  `- ${r.label} (Invoice ${r.section === 'FREIGHT' ? 'freight' : 'duty'}): ${String(note).replace(/\s*\n\s*/g, ' ').trim()}`;
+// Baris catatan di "Catatan Perubahan Manual" utk 1 Accept: "<Nama item> · <Status> ✓ <catatan>".
+export const costAcceptNoteLine = (r: Pick<CostDiffRow, 'label' | 'status'>, note: string) =>
+  `${r.label} · ${STATUS_LABEL[r.status]} ✓ ${String(note).replace(/\s*\n\s*/g, ' ').trim()}`;
+// Semua catatan Accept milik 1 baris biaya (format baru + format lama "- <item> (Invoice ...): ...").
+const isCostNoteOf = (label: string) => (line: string) => line.startsWith(`${label} · `) && line.includes(' ✓ ') || line.startsWith(`- ${label} (Invoice `);
+
+// Form estimasi Bonded Storage (salinan form Details, logika CourierStorageEstimate). Nilai awal dari kolom tersimpan.
+const StorageEstimateBox: React.FC<{ data: any; docType: string; canEdit: boolean; onSaved: (fresh: any | null) => void }> = ({ data, docType, canEdit, onSaved }) => {
+  const [weight, setWeight] = useState('');
+  const [eta, setEta] = useState('');
+  const [rel, setRel] = useState('');
+  const [result, setResult] = useState<StorageEstimate | null>(null);
+  const [err, setErr] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const savedWeight = String(Number(data.cv_storage_weight_kg) || Number(data.cv_chargeable_kg) || '');
+  const savedEta = data.cv_eta_date ? String(data.cv_eta_date).substring(0, 10) : '';
+  const savedRel = data.cv_release_date ? String(data.cv_release_date).substring(0, 10) : '';
+  useEffect(() => { setWeight(savedWeight); setEta(savedEta); setRel(savedRel); }, [data.id, savedWeight, savedEta, savedRel]);
+  useEffect(() => {
+    let alive = true;
+    if (!eta || !rel) { setResult(null); setErr(''); return; }
+    setErr('');
+    computeCourierStorageExpected(data, docType, weight, eta, rel)
+      .then(r => { if (alive) setResult(r); })
+      .catch((e: any) => { if (alive) { console.error('Error calling fn_hitung_storage:', e); setErr(e?.message || String(e)); } });
+    return () => { alive = false; };
+  }, [eta, rel, weight, data, docType]);
+  const save = async () => {
+    if (!eta || !rel || !result) return;
+    setSaving(true);
+    try {
+      const fresh = await saveCourierStorageEstimate(data, eta, rel, weight, result);
+      setMsg({ text: 'New storage estimate saved.', ok: true });
+      onSaved(fresh);
+    } catch (e: any) {
+      console.error(e);
+      setMsg({ text: 'Failed to save estimate: ' + (e?.message || ''), ok: false });
+    } finally {
+      setSaving(false);
+      setTimeout(() => setMsg(null), 3000);
+    }
+  };
+  const cell = 'bg-[#FBF7F4] border border-[#EADFD6] rounded-lg px-2 py-1.5 text-center font-bold text-[#3B1B3D] text-[12px]';
+  return (
+    <div className="rounded-xl border border-[#F3D9A4] bg-[#FFF8EA] px-3 py-2.5" data-storage-estimate>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <div className="text-[12.5px] font-bold text-[#7A4F00]">Bonded storage estimate</div>
+        <div className="text-[11.5px] text-[#6E5E70]">Storage actual <b className="text-[#3B1B3D]">{fmtRp(data.cv_storage_actual)}</b>{data.cv_storage_input_manual && data.cv_storage_days ? ` · saved ${data.cv_storage_days} days` : ''}</div>
+      </div>
+      <div className="grid grid-cols-2 @lg:grid-cols-5 gap-2 items-end text-[11px]">
+        <label className="flex flex-col gap-1"><span className="font-semibold text-[#6E5E70]">Storage weight (kg)</span>
+          <input aria-label="Storage weight" type="number" step="any" disabled={!canEdit} value={weight} onChange={e => setWeight(e.target.value)} className={`${VW_INPUT} w-full`} /></label>
+        <label className="flex flex-col gap-1"><span className="font-semibold text-[#6E5E70]">ETA date</span>
+          <input aria-label="ETA date" type="date" disabled={!canEdit} value={eta} onChange={e => setEta(e.target.value)} className={`${VW_INPUT} w-full`} /></label>
+        <label className="flex flex-col gap-1"><span className="font-semibold text-[#6E5E70]">Release date</span>
+          <input aria-label="Release date" type="date" disabled={!canEdit} value={rel} onChange={e => setRel(e.target.value)} className={`${VW_INPUT} w-full`} /></label>
+        <div className="flex flex-col gap-1"><span className="font-semibold text-[#6E5E70]">Actual days</span><div className={cell}>{eta && rel ? courierStorageActualDays(eta, rel) : '-'}</div></div>
+        <div className="flex flex-col gap-1"><span className="font-semibold text-[#6E5E70]">Billing days</span><div className={cell}>{eta && rel && result ? result.billing_days : '-'}</div></div>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 mt-2">
+        <div className="text-[12px] text-[#6E5E70]">Expected storage <b className="text-[14px] text-[#3B1B3D] tabular-nums">{result ? fmtRp(result.expected_idr) : 'Rp 0'}</b>
+          {err && <span className="block text-[11px] font-bold text-[#A8231A]">{err}</span>}</div>
+        {canEdit && <button type="button" className={VW_BTN_PRIMARY} disabled={saving || !eta || !rel || !result} onClick={save}>{saving ? 'Saving…' : 'Save new estimate'}</button>}
+      </div>
+      {msg && <div className={`mt-1.5 text-[11.5px] font-semibold ${msg.ok ? 'text-[#17663D]' : 'text-[#A8231A]'}`}>{msg.text}</div>}
+    </div>
+  );
+};
 
 export default function CourierCostSummary({ docType, auditId, canEdit, reloadKey = 0, onOpenDetails, onPctChange, onChanged }: {
   docType: string;
@@ -98,10 +169,8 @@ export default function CourierCostSummary({ docType, auditId, canEdit, reloadKe
     if (error) { flash('Failed to save: ' + error.message, false); return; }
     setReviews(p => ({ ...p, items: { ...(p.items || {}), [row.key]: saved as CourierCostItemReviewRow } }));
     setAccepting(null); setNote('');
-    // Catatan Perubahan Manual: ganti baris lama utk baris biaya yg sama (Accept ulang), lalu tambah baris baru.
-    const prevRev = reviews.items?.[row.key];
-    let notes = prevRev ? removeNoteLine(data?.catatan, costAcceptNoteLine(row, prevRev.catatan)) : (data?.catatan || '');
-    notes = appendNoteLine(notes, costAcceptNoteLine(row, note));
+    // Catatan Perubahan Manual: ganti catatan lama utk baris biaya yg sama (Accept ulang), lalu tambah baris baru.
+    const notes = appendNoteLine(removeNoteLinesWhere(data?.catatan, isCostNoteOf(row.label)), costAcceptNoteLine(row, note));
     const ok = await saveCostNotes(notes);
     flash(ok ? 'Accepted — the line is counted as OK.' : 'Accepted, but the note could not be added to the manual change notes.', ok);
     onChanged?.();
@@ -115,7 +184,7 @@ export default function CourierCostSummary({ docType, auditId, canEdit, reloadKe
     if (error) { flash('Failed to undo: ' + error.message, false); return; }
     setReviews(p => { const items = { ...(p.items || {}) }; delete items[key]; return { ...p, items }; });
     const row = summary.diff_rows.find(r => r.key === key);
-    if (row) await saveCostNotes(removeNoteLine(data?.catatan, costAcceptNoteLine(row, rev.catatan)));
+    if (row) await saveCostNotes(removeNoteLinesWhere(data?.catatan, isCostNoteOf(row.label)));
     onChanged?.();
   };
 
@@ -185,6 +254,9 @@ export default function CourierCostSummary({ docType, auditId, canEdit, reloadKe
             </div>
           )}
         </div>
+      )}
+      {data && data.cv_storage_actual !== null && data.cv_storage_actual !== undefined && (
+        <StorageEstimateBox data={data} docType={docType} canEdit={canEdit} onSaved={fresh => { if (fresh) setData(fresh); else load(); onChanged?.(); }} />
       )}
       {data && (
         <div className="pt-2 border-t border-[#F1E8E1]">

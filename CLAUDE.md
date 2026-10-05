@@ -68,6 +68,10 @@ approval-nya.
   & tabel `cost_validasi_review_courier_item` (Accept cost per baris). Lihat "Panel Validation samping Invoice Recap Courier".
   **`sql/042_courier_recap_tgl_invoice.sql` BELUM DIJALANKAN — WAJIB dijalankan manual** (2026-10-05): kolom
   `rekapan_courier.tgl_invoice` (date) -- dasar Due Date kartu Invoice Recap Courier (+30 hari). Sumber pengisian (n8n) menyusul dari user.
+  **`sql/043_far_overseas_confirm_duplicate_urgent.sql` BELUM DIJALANKAN — WAJIB dijalankan manual** (2026-10-05, FAR Overseas):
+  kolom `urgent_note`, deteksi duplikat (trigger `trg_far_overseas_auto_fields`), payment type otomatis With PO kalau ada PO,
+  `fn_far_overseas_prepared_by_blockers` (Overcharge/Undercharge terkonfirmasi menggugurkan syarat Notes Manual), Undo konfirmasi
+  & nama pengonfirmasi, `fn_far_overseas_set_urgent(uuid, boolean, text)`. Detail: `docs/claude/far-overseas.md` "Update 2026-10-05".
 - **Kondisi DB production (stack `supabase3`, audit 2026-09-26)**: role `anon` tanpa hak apa pun
   di schema public (tabel, fungsi, default privileges); GraphQL ditutup; semua tabel RLS dgn
   policy `has_page_access`/`has_edit_access` (tidak ada `using (true)`); semua view
@@ -99,7 +103,7 @@ Semua route (kecuali `/login`) dibungkus `<ProtectedRoute>` → `<MainLayout>` (
 | `/settings/seaair-vendors` | `SeaAirVendorMasterPage` | Master vendor Sea & Air (PPJK: nama legal + TOP hari), page_key `settings_seaair_vendors`, tabel `seaair_vendor_master` (sql/035) |
 | `/settings/courier-vendors` | `CourierVendorMasterPage` | Master vendor Courier (PPJK tanpa "OWN ": nama legal + TOP hari), page_key `settings_courier_vendors`, tabel `courier_vendor_master` (sql/037). Kedua halaman vendor = komponen generik `VendorMasterPage.tsx` (prop `config`) |
 | `/sea-air/audit`, `/sea-air/rekapan` | → `SharedDataTable` | Audit = tampilan "PIB Audit" (2026-09-30), Rekapan = tampilan "Invoice Recap" (2026-10-01) — keduanya kartu/Open + toggle List ke tabel lama; lihat "Audit PIB Sea & Air — tampilan baru" & "Invoice Recap Sea & Air — tampilan baru" di `docs/claude/bunker-courier-seaair.md` |
-| `/direct-loading`, `/direct-loading/:id` | `FarOverseasAirPage` | modul "FAR Overseas" di sidebar; `page_key`/route TETAP `direct_loading`/`/direct-loading` (label tampil "FAR Overseas"). Redesain tahap 1 (2026-09-28, tab Memos/My Approvals, gaya visual & font sendiri) — lihat `docs/claude/far-overseas.md`; tahap 2 = `sql/027_far_overseas_phase2_DRAFT.sql` (SUDAH DIJALANKAN 2026-09-30) |
+| `/direct-loading/:id?` (1 route, `:id` opsional sejak 2026-10-05) | `FarOverseasAirPage` | modul "FAR Overseas" di sidebar; `page_key`/route TETAP `direct_loading`/`/direct-loading` (label tampil "FAR Overseas"). Redesain tahap 1 (2026-09-28, tab Memos/My Approvals, gaya visual & font sendiri) — lihat `docs/claude/far-overseas.md`; tahap 2 = `sql/027_far_overseas_phase2_DRAFT.sql` (SUDAH DIJALANKAN 2026-09-30) |
 | `/bunker` | `BunkerPage` | |
 | `/audit-po` | `AuditPoPage` | read-only judul card, label menu "Audit AP Local" |
 | `/audit-po-overseas` | `AuditPoOverseasPage` | label "Audit AP Overseas", DUPLIKASI SENGAJA `AuditPoPage` (tabel `audit_po_apovs_comp`) |
@@ -664,7 +668,22 @@ Spek user + prototipe `Prototype — Validation Side Panel.html` (HANYA tata let
     `persistChecklist(values, notes)`); Cost -> `tabel_cost_validasi.catatan` ("- <baris> (Invoice freight|duty): <catatan>",
     update langsung; Accept ulang mengganti barisnya, Undo menghapus barisnya). Tampil di Details "Manual Change Notes" /
     "Catatan Perubahan Manual".
-- **Diuji**: jsdom `courier_panel` 64 cek (bagian 2: kartu/KPI/due/header/Recompute/catatan/Grand total otomatis), courier_recap 63,
+- **Revisi bagian 3 (2026-10-05, keputusan user)**:
+  - **Bonded storage** di ringkasan Cost Validation (`StorageEstimateBox` di CourierCostSummary, tampil kalau `cv_storage_actual`
+    ada): Storage weight / ETA / Release / Actual & Billing days / Expected / "Save new estimate". Logika hitung & simpan DIPINDAH ke
+    `src/utils/CourierStorageEstimate.ts` (isi SAMA, dipakai juga CostValidationModal & CostValidationModalLegacy) -> kolom sama
+    (`cv_eta_date`, `cv_release_date`, `cv_storage_weight_kg`, RPC fn_hitung_storage/fn_save_storage_estimate) -> depan & Details sinkron.
+  - **Format catatan Accept** (menggantikan format bagian 2; format lama tetap dikenali saat Accept ulang/Undo): Doc =
+    "<Nama field> · <Sumber> ✓ <catatan>" (mis. "Berat (kg) · AWB ✓ …"), Cost = "<Nama item> · <Status> ✓ <catatan>" (mis.
+    "Fuel surcharge · Overcharge ✓ …"). Accept ulang field/baris yang sama mengganti barisnya (`removeNoteLinesWhere`).
+  - **Undo** di daftar "accepted" ringkasan Doc Validation: status kembali ke sebelum Accept (`accept_prev_status` di values_json),
+    catatan dihapus dari Manual Change Notes, langsung disimpan.
+  - **Urutan tab** panel: Checklist | Cost Validation | Doc Validation | Invoices. **Warna latar tab** per persen (`tabToneClass`):
+    100% hijau muda, ≥60% kuning muda, <60% merah muda, belum ada data abu; Invoices netral.
+  - **Shipment Info DIBEKUKAN** di atas area scroll (tidak ikut scroll) dgn latar ungu muda `#F5EDF3` (sel `#FCF8FB`), beda dari isi
+    tab (`#FBF7F4`).
+- **Diuji**: jsdom `courier_panel` 75 cek (bagian 3: storage depan->Details, format catatan, Undo Doc, urutan/warna tab, Shipment
+  Info beku) -- sebelumnya `courier_panel` 64 cek (bagian 2: kartu/KPI/due/header/Recompute/catatan/Grand total otomatis), courier_recap 63,
   + (bagian 1) jsdom `courier_panel` 51 cek (+ unit helper cost), regresi render 95/page 51/recap 112/finance 57/urgent 5/authfocus 12/
   courier 41/courier_ui 57/courier_recap 63 (disesuaikan: Open -> panel)/courier_lock 30/courier_reorder 13 — 0 gagal (console.error
   = peringatan dnd-kit tabel List lama). `tsc` bersih, `vite build` sukses. Belum dites di production.
@@ -1138,6 +1157,10 @@ Supabase** — bisa saja sudah basi (RPC lain ditambahkan user langsung tanpa te
   `fn_seaair_finance_mark_paid` referensi opsional, `fn_seaair_finance_undo` DI-DROP (diganti 2026-10-02 oleh
   `fn_*_finance_undo_receive` sql/040, Admin saja; keputusan
   user), FAR `fn_far_overseas_set_urgent(uuid, boolean)` BARU, `fn_far_overseas_mark_paid` bukti bayar opsional.
+- FAR Overseas (sql/043, BELUM DIJALANKAN): `fn_far_overseas_unconfirm_ai_finding(uuid, text)` BARU, overload
+  `fn_far_overseas_set_urgent(uuid, boolean, text)` BARU (versi 2-arg sql/035 tetap), `fn_far_overseas_confirm_ai_finding` &
+  `fn_far_overseas_prepared_by_blockers` (signature sama, isi diperbarui), helper `fn_far_overseas_norm_key`/`_po_keys`/
+  `_find_duplicates` + fungsi trigger `fn_far_overseas_auto_fields`.
 - Courier panel Validation Invoice Recap (sql/041, SUDAH DIJALANKAN 2026-10-05): fungsi trigger `fn_courier_checklist_doc_log()` (trigger
   `trg_courier_checklist_doc_log` di `dokumen_checklist`); tanpa RPC (Accept cost per baris = upsert langsung, RLS).
 - Courier review cost & kunci Submit (sql/038, SUDAH DIJALANKAN 2026-10-02): `fn_courier_unlock_submit(uuid, text)` (+ trigger
