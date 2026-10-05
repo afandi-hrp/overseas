@@ -66,10 +66,10 @@ approval-nya.
   **`sql/041_courier_validation_panel.sql` SUDAH DIJALANKAN 2026-10-05** (konfirmasi user; 2026-10-05, panel Validation samping
   Invoice Recap Courier): tabel `courier_checklist_doc_log` + trigger `trg_courier_checklist_doc_log` (riwayat centang dokumen)
   & tabel `cost_validasi_review_courier_item` (Accept cost per baris). Lihat "Panel Validation samping Invoice Recap Courier".
-  **`sql/042_courier_recap_tgl_invoice.sql` BELUM DIJALANKAN — WAJIB dijalankan manual** (2026-10-05): kolom
+  **`sql/042_courier_recap_tgl_invoice.sql` SUDAH DIJALANKAN 2026-10-05** (konfirmasi user; 2026-10-05): kolom
   `rekapan_courier.tgl_invoice` (date) -- dasar Due Date kartu Invoice Recap Courier (+30 hari). Sumber pengisian (n8n) menyusul dari user.
-  **`sql/044_seaair_form_e_note.sql` BELUM DIJALANKAN — WAJIB dijalankan manual** (2026-10-05, Invoice Recap Sea & Air): tabel BARU
-  `seaair_form_e_note` (catatan manual Form E, 1 baris per `seaair_id`, RLS 4 policy). Sebelum jalan: aturan Form E fail-open
+  **`sql/044_seaair_form_e_note.sql` SUDAH DIJALANKAN 2026-10-05** (konfirmasi user; 2026-10-05, Invoice Recap Sea & Air): tabel BARU
+  `seaair_form_e_note` (catatan manual Form E, 1 baris per `seaair_id`, RLS 4 policy). Aturan Form E kini AKTIF (memblokir Submit selama Form E belum tercentang / belum ada catatan); dulu sebelum jalan fail-open
   (tidak memblokir). Detail: `docs/claude/bunker-courier-seaair.md` "Form E utk barang dari China".
   **`sql/043_far_overseas_confirm_duplicate_urgent.sql` SUDAH DIJALANKAN 2026-10-05** (konfirmasi user; FAR Overseas):
   kolom `urgent_note`, deteksi duplikat (trigger `trg_far_overseas_auto_fields`), payment type otomatis With PO kalau ada PO,
@@ -551,7 +551,7 @@ user di production** (testing bagian 2 + Finance Handover dijadwalkan user bersa
 6. (Keputusan user) Edit tetap lewat tabel List; Export TETAP.
 7. Panel Validation samping (2026-10-05) — kode SELESAI, sql/041 SUDAH dijalankan 2026-10-05, belum dites user di production.
 8. Revisi bagian 2 (2026-10-05) — kartu disusun ulang + Due Date, header panel disederhanakan, Recompute di ringkasan, catatan
-   Accept masuk catatan manual, KPI 4 kartu. **sql/042 (tgl_invoice) BELUM dijalankan**; pengisian `tgl_invoice` oleh n8n BELUM
+   Accept masuk catatan manual, KPI 4 kartu. sql/042 (tgl_invoice) SUDAH dijalankan 2026-10-05; pengisian `tgl_invoice` oleh n8n BELUM
    (menunggu info user). Finance Handover Courier TIDAK berubah (TOP tetap -- keputusan user, ditentukan terpisah nanti). Lihat bagian
    "Panel Validation samping Invoice Recap Courier".
 

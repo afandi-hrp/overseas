@@ -100,7 +100,7 @@ memakai TOTAL shipment × KG PO / total KG (pembulatan per sel, tampilan saja).
   `@5xl` (≥1024px kartu, laptop 14" + zoom 90%) 1 baris ringkas, `@7xl` (≥1280px, monitor 24") kolom tepi & jarak lebih lega.
   JANGAN kembali ke breakpoint layar `lg:` (lebar kartu tergantung sidebar). Diuji jsdom 11 cek (isi kolom), CSS dicek di build.
 
-## Form E utk barang dari China — Invoice Recap Sea & Air (2026-10-05, permintaan user; `sql/044` BELUM DIJALANKAN)
+## Form E utk barang dari China — Invoice Recap Sea & Air (2026-10-05, permintaan user; `sql/044` SUDAH DIJALANKAN 2026-10-05)
 
 Shipment yang asalnya China (`rekapan_seaair.origin`, `isChinaOrigin` di `SeaAirRecapHelpers.ts` = SATU-SATUNYA definisi:
 CHINA/TIONGKOK/PRC, kode "CN" berdiri sendiri, UN/LOCODE "CNxxx", nama pelabuhan/kota utama China; Hong Kong TIDAK) WAJIB
