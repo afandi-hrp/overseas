@@ -113,9 +113,11 @@ export const CourierDocumentReview: React.FC<{ rec: any; docType: CourierDocType
 }
 
 // ─── Jendela penuh "Details" (tabel lama) ─────────────────────────────────────
+// Lebar (2026-10-05, permintaan user): hampir selebar layar di monitor besar (maks 1880px) supaya tabel matriks
+// terlihat semua; laptop 14" (<=1600px) tetap penuh layar seperti sebelumnya.
 const DetailsWindow: React.FC<{ title: React.ReactNode; onClose: () => void; children: React.ReactNode }> = ({ title, onClose, children }) => createPortal(
   <div className="fixed inset-0 z-[80] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-3 md:p-5 max-[1600px]:p-2.5" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
-    <div className="bg-white w-full max-w-[1320px] h-[94vh] max-[1600px]:max-w-none max-[1600px]:h-full rounded-2xl shadow-2xl flex flex-col overflow-hidden" role="dialog" aria-label="Details">
+    <div className="bg-white w-full max-w-[1880px] h-[94vh] max-[1600px]:h-full rounded-2xl shadow-2xl flex flex-col overflow-hidden" role="dialog" aria-label="Details">
       <div className="shrink-0 flex items-center justify-between gap-3 px-5 py-3 border-b border-[#EADFD6]">
         <h2 className="text-[16px] font-bold text-[#3B1B3D] [overflow-wrap:anywhere]">{title}</h2>
         <button type="button" onClick={onClose} aria-label="Close details" title="Close" className="w-9 h-9 inline-flex items-center justify-center hover:bg-[#F6EFEA] rounded-xl text-[#6E5E70]"><X size={18} /></button>

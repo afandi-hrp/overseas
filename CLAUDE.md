@@ -629,7 +629,7 @@ Spek user + prototipe `Prototype — Validation Side Panel.html` (HANYA tata let
   invoice lama (sql/038) TETAP dihormati. **Auto-update**: dibaca ulang senyap tiap 30 dtk (`COST_SUMMARY_POLL_MS`, tab tidak
   tersembunyi), saat Checklist disimpan / upload susulan SUCCESS (`onSaved` ChecklistModal), saat Details ditutup & saat ganti
   kartu — bergantung n8n menghitung ulang `tabel_cost_validasi` setelah upload susulan (konfirmasi user "harusnya").
-- **Details** = jendela penuh (portal z-[80]) berisi tabel LAMA mode List: Doc = `ValidasiModalLegacy` (Edit + Recompute, autosave
+- **Details** = jendela penuh (portal z-[80], monitor besar `max-w-[1880px]` hampir selebar layar spy tabel matriks muat; layar <=1600px penuh layar) berisi tabel LAMA mode List: Doc = `ValidasiModalLegacy` (Edit + Recompute, autosave
   2 dtk SAMA mode List), Cost = `CostValidationModalLegacy` (Edit Cost Validasi, review per invoice). Ditutup -> panel dibaca ulang.
 - **Invoices** = `CourierRecapInvoicesTab.tsx` (DULU jendela Open `CourierRecapDetailModal.tsx`, file di-rename): Total (− CN),
   sub-tab Freight/Duty/Credit Note, Submit to Finance per invoice, kunci + Unlock (Admin), Split per vessel, Audit trail (lipat).
