@@ -1,5 +1,9 @@
 ## Invoice Recap Courier — tampilan baru per AWB (2026-10-02)
 
+**2026-10-05: tombol Open & jendela Validation (portal) mode Card DIGANTI panel samping** — lihat CLAUDE.md "Panel Validation
+samping Invoice Recap Courier". Isi jendela Open (Overview total/split, Invoices, Audit trail, Submit, Unlock) pindah ke tab
+**Invoices** panel; bagian "Jendela Open" di bawah = RIWAYAT (aturan Submit/kunci/Edit in List tetap berlaku).
+
 Keputusan user & SQL: CLAUDE.md "Rombak Invoice Recap Courier" + "Invoice Recap Courier per AWB". Pola SAMA Invoice
 Recap Sea & Air (token `SeaAirAuditUi.tsx`, font Sora); mode **List** = tabel lama `CourierRekapanRowGroup` APA ADANYA
 (Reorder/Edit Mode/Customize View/Export tetap). Default mode = Card (state `courierRecapView`, tidak disimpan).

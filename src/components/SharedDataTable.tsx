@@ -43,7 +43,7 @@ import {
 import { CourierAuditCardList, CourierAuditKpiCards } from './CourierAuditCardList'
 import { COURIER_REKAPAN_CALC_FIELDS, computeCourierRekapanCalc, submitRecapInvoices, notifyCourierRecapChanged, fetchCourierRecapSummary, type RecapFilters, type RecapGroup, type RecapSummaryCourier } from '../utils/CourierRecapHelpers'
 import { CourierRecapCardView, CourierRecapKpiCards } from './CourierRecapCardList'
-import CourierRecapDetailModal from './CourierRecapDetailModal'
+import CourierRecapValidationPanel, { type RecapPanelTab } from './CourierRecapValidationPanel'
 import CourierAuditOverview from './CourierAuditOverview'
 import CourierAuditTrail from './CourierAuditTrail'
 import CourierAuditEditModal from './CourierAuditEditModal'
@@ -1230,6 +1230,9 @@ const CHECKLIST_FIELDS = [
   { key: 'ada_billing_djbc_sptnp', label: 'Billing DJBC SPTNP', mand: [], scope: ['pib', 'cn'] },
   { key: 'ada_bpn_sptnp', label: 'BPN SPTNP', mand: [], scope: ['pib', 'cn'] },
 ]
+
+// Label dokumen Checklist per kolom `ada_*` -- dipakai "Document review" panel Validation Invoice Recap (2026-10-05).
+const CHECKLIST_LABELS: Record<string, string> = Object.fromEntries(CHECKLIST_FIELDS.map(f => [f.key, f.label]))
 
 // Kolom dokumen_checklist yang dulunya di-join lewat view v_pib_lengkap/v_cn_lengkap.
 // Sejak view dihilangkan (2026-09), kolom-kolom ini di-merge manual di sini dari tabel dokumen_checklist.
@@ -4643,8 +4646,21 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   const [courierRecapNonce, setCourierRecapNonce] = useState(0)
   const [courierRecapSummary, setCourierRecapSummary] = useState<RecapSummaryCourier | null>(null)
   const [courierRecapSummaryLoading, setCourierRecapSummaryLoading] = useState(false)
-  const [courierRecapOpen, setCourierRecapOpen] = useState<RecapGroup | null>(null)
-  const [courierRecapValidation, setCourierRecapValidation] = useState<{ rec: any; docType: CourierDocType; tab?: WindowTabKey } | null>(null)
+  // Panel Validation samping (2026-10-05, keputusan user) -- menggantikan jendela Open & jendela Validation mode Card.
+  const [courierRecapPanel, setCourierRecapPanel] = useState<{ g: RecapGroup; tab?: RecapPanelTab; seq: number } | null>(null)
+  const courierRecapPanelDirty = useRef(false)
+  const openCourierRecapPanel = (g: RecapGroup, t?: RecapPanelTab) => {
+    setCourierRecapPanel(prev => {
+      if (prev && prev.g.key !== g.key && courierRecapPanelDirty.current && !window.confirm('The checklist has unsaved changes. Switch to another AWB and discard them?')) return prev
+      if (!prev || prev.g.key !== g.key) courierRecapPanelDirty.current = false
+      return { g, tab: t, seq: (prev?.seq || 0) + 1 }
+    })
+  }
+  const closeCourierRecapPanel = () => {
+    if (courierRecapPanelDirty.current && !window.confirm('The checklist has unsaved changes. Close and discard them?')) return
+    courierRecapPanelDirty.current = false
+    setCourierRecapPanel(null)
+  }
   const [courierRecapBusy, setCourierRecapBusy] = useState(false)
   const courierRecapColOk = makeColOk(isCourierRecapView ? getAllowedColumns('courier_rekapan') : null)
   const courierRecapFilters: RecapFilters = useMemo(() => ({
@@ -5992,55 +6008,6 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         </React.Fragment>
       )}
 
-      {/* Invoice Recap Courier (2026-10-02) -- jendela Open per AWB & jendela Validation PIB/CN pasangannya */}
-      {isCourierRecapView && courierRecapOpen && (
-        <React.Fragment key={`recap-open-${courierRecapOpen.key}`}>
-        <CourierRecapDetailModal
-          g={courierRecapOpen}
-          companyNames={courierCompanyNames}
-          colOk={courierRecapColOk}
-          canEdit={canEdit('courier_rekapan')}
-          validationTabs={courierValidationTabs}
-          busy={courierRecapBusy}
-          onClose={() => setCourierRecapOpen(null)}
-          onSubmit={handleCourierRecapSubmit}
-          isAdmin={isAdmin}
-          onUnlock={handleCourierRecapUnlock}
-          onValidation={t => { const a = courierRecapOpen.audit; if (a) setCourierRecapValidation({ rec: a.rec, docType: a.docType, tab: t }); }}
-          onViewInAudit={() => navigate(`/courier/audit?q=${encodeURIComponent(courierRecapOpen.audit?.rec?.awb || courierRecapOpen.awb)}`)}
-          onEditInList={() => { const g = courierRecapOpen; setCourierRecapOpen(null); switchCourierRecapView('list'); setSearch(g.awb); }}
-        />
-        </React.Fragment>
-      )}
-      {isCourierRecapView && courierRecapValidation && tab && (() => {
-        const { rec, docType } = courierRecapValidation;
-        const draft = isCourierDraft(rec);
-        const closeVal = () => { setCourierRecapValidation(null); refreshCourierRecap(); };
-        // Portal ke body + z-[80]: dibuka dari jendela Open Recap (portal z-[70]) -> harus tampil DI DEPAN (laporan user 2026-10-02).
-        return createPortal(
-          <React.Fragment key={`recap-val-${docType}-${rec.id}`}>
-          <CourierValidationWindow
-            zIndexClass="z-[80]"
-            record={rec}
-            mainTab="courier"
-            subTab="courier_audit"
-            jenisDokumen={docType}
-            access={courierValidationAccess}
-            // Aturan SAMA Audit Courier: validasi hanya bisa diubah selama PIB/CN masih Draft (keputusan user).
-            editAccess={{ checklist: draft && canEdit('courier_checklist_dokumen'), doc: draft && canEdit('courier_dokumen_validation'), cost: draft && canEdit('courier_cost_validation') }}
-            renderChecklist={({ onPctChange, onSaved, onDirtyChange }) => (
-              <ChecklistModal record={rec} tab={tab} embedded onClose={closeVal} onSaved={onSaved} onPctChange={onPctChange} onDirtyChange={onDirtyChange} canEdit={draft && canEdit('courier_checklist_dokumen')} />
-            )}
-            initialTab={courierRecapValidation.tab}
-            title={<span>Validation · {docType} {courierDocNo(rec, docType) || ''}</span>}
-            subtitle={`${rec.awb || ''}${draft ? '' : ' · Audited — view only'}`}
-            onClose={closeVal}
-          />
-          </React.Fragment>,
-          document.body
-        );
-      })()}
-
       {/* Audit PIB Sea & Air (2026-09-30) -- jendela Open & form Edit/Add manually */}
       {isSeaAirAudit && seaAirDetailRecord && (
         <SeaAirAuditDetailModal
@@ -6955,10 +6922,40 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 colOk={courierRecapColOk}
                 validationTabs={courierValidationTabs}
                 enrichAudit={enrichRecapAudit}
-                onOpen={g => setCourierRecapOpen(g)}
-                onValidation={(g, t) => { if (g.audit) setCourierRecapValidation({ rec: g.audit.rec, docType: g.audit.docType, tab: t }); }}
-                onLoaded={groups => setCourierRecapOpen(prev => (prev ? (groups.find(x => x.key === prev.key) || prev) : prev))}
+                onValidation={(g, t) => openCourierRecapPanel(g, t)}
+                onLoaded={groups => setCourierRecapPanel(prev => {
+                  if (!prev) return prev
+                  const fresh = groups.find(x => x.key === prev.g.key)
+                  return fresh ? { ...prev, g: fresh } : prev
+                })}
                 attentionOnly={courierRecapAttentionOnly}
+                selectedKey={courierRecapPanel?.g.key || null}
+                panel={courierRecapPanel && tab ? (
+                  <React.Fragment key={`recap-panel-${courierRecapPanel.g.key}`}>
+                  <CourierRecapValidationPanel
+                    g={courierRecapPanel.g}
+                    initialTab={courierRecapPanel.tab}
+                    companyNames={courierCompanyNames}
+                    colOk={courierRecapColOk}
+                    access={courierValidationAccess}
+                    canEditValidation={{ checklist: canEdit('courier_checklist_dokumen'), doc: canEdit('courier_dokumen_validation'), cost: canEdit('courier_cost_validation') }}
+                    canEditRecap={canEdit('courier_rekapan')}
+                    isAdmin={isAdmin}
+                    busy={courierRecapBusy}
+                    checklistLabels={CHECKLIST_LABELS}
+                    renderChecklist={({ rec, canEdit: ce, onPctChange, onSaved, onDirtyChange }) => (
+                      <ChecklistModal record={rec} tab={tab} embedded onClose={closeCourierRecapPanel} onSaved={onSaved} onPctChange={onPctChange} onDirtyChange={onDirtyChange} canEdit={ce} />
+                    )}
+                    onClose={closeCourierRecapPanel}
+                    onSubmit={handleCourierRecapSubmit}
+                    onUnlock={handleCourierRecapUnlock}
+                    onViewInAudit={() => navigate(`/courier/audit?q=${encodeURIComponent(courierRecapPanel.g.audit?.rec?.awb || courierRecapPanel.g.awb)}`)}
+                    onEditInList={() => { const g = courierRecapPanel.g; closeCourierRecapPanel(); switchCourierRecapView('list'); setSearch(g.awb); }}
+                    onChanged={() => setCourierRecapNonce(n => n + 1)}
+                    onDirtyChange={d => { courierRecapPanelDirty.current = d }}
+                  />
+                  </React.Fragment>
+                ) : null}
               />
             ) : loading && displayRows.length === 0 ? (
               <LoadingState />

@@ -2,9 +2,12 @@
 // digabung), pola kartu Invoice Recap Sea & Air (token SeaAirAuditUi). Data diambil SENDIRI per halaman AWB
 // (fetchCourierRecapPage: RPC sql/037 opsi B, fallback di browser) -- BUKAN `records` tabel List.
 // Kolom yang tidak diizinkan role (getAllowedColumns 'courier_rekapan') TIDAK ditampilkan (`colOk`).
+// 2026-10-05 (keputusan user): tombol Open DIHAPUS -- tinggal tombol Validation yang membuka PANEL SAMPING
+// (CourierRecapValidationPanel) di kanan daftar; kartu tanpa pasangan Audit -> panel tab Invoices. Kartu memakai
+// container query (@container) supaya otomatis ringkas saat lebarnya berbagi dgn panel.
 import React, { useEffect, useRef, useState } from 'react'
 import PaginationFooter from './PaginationFooter'
-import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, Chip, Pill, PtBadge } from './SeaAirAuditUi'
+import { SA_CARD, SA_LABEL, Chip, Pill, PtBadge } from './SeaAirAuditUi'
 import { fmtRp, fmtRpShort, fmtDateShort, companyFullName } from '../utils/SeaAirAuditHelpers'
 import { courierDocNo, isCourierDraft } from '../utils/CourierAuditHelpers'
 import {
@@ -14,6 +17,7 @@ import {
 import { LoadingState } from './LoadingState'
 import { ValidationDots } from './CourierAuditCardList'
 import type { ValidationTabKey } from './CourierValidationWindow'
+import type { RecapPanelTab } from './CourierRecapValidationPanel'
 
 // ─── KPI ──────────────────────────────────────────────────────────────────────
 export const CourierRecapKpiCards: React.FC<{ summary: RecapSummaryCourier | null; loading: boolean; colOk: (k: string) => boolean }> = ({ summary, loading, colOk }) => {
@@ -47,9 +51,9 @@ export const CourierRecapGroupCard: React.FC<{
   companyNames: Record<string, string>
   colOk: (k: string) => boolean
   validationTabs: ValidationTabKey[]
-  onOpen: (g: RecapGroup) => void
-  onValidation: (g: RecapGroup, tab?: ValidationTabKey) => void
-}> = ({ g, companyNames, colOk, validationTabs, onOpen, onValidation }) => {
+  selected?: boolean
+  onValidation: (g: RecapGroup, tab?: RecapPanelTab) => void
+}> = ({ g, companyNames, colOk, validationTabs, selected = false, onValidation }) => {
   const [expanded, setExpanded] = useState(false)
   const status = recapGroupStatus(g)
   const audit = g.audit
@@ -60,8 +64,8 @@ export const CourierRecapGroupCard: React.FC<{
   const emailRange = g.firstEmail && g.lastEmail && g.firstEmail !== g.lastEmail ? `${fmtDateShort(g.firstEmail)} – ${fmtDateShort(g.lastEmail)}` : fmtDateShort(g.firstEmail)
 
   return (
-    <div className={`${SA_CARD} border-l-4 ${border} overflow-hidden`}>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[230px_minmax(0,1fr)_260px_220px] gap-x-5 gap-y-3 px-4 py-3.5 items-center">
+    <div className={`${SA_CARD} border-l-4 ${border} overflow-hidden @container ${selected ? 'ring-2 ring-[#6B3470]' : ''}`} data-recap-card={g.key}>
+      <div className="grid grid-cols-1 @xl:grid-cols-2 @4xl:grid-cols-[230px_minmax(0,1fr)_260px_220px] gap-x-5 gap-y-3 px-4 py-3.5 items-center">
         {/* 1. AWB */}
         <div className="min-w-0">
           <div className="text-[11px] text-[#8A7A8B] font-medium">AWB</div>
@@ -115,7 +119,7 @@ export const CourierRecapGroupCard: React.FC<{
         </div>
 
         {/* 4. Total */}
-        <div className="min-w-0 flex flex-col lg:items-end gap-1.5">
+        <div className="min-w-0 flex flex-col @4xl:items-end gap-1.5">
           {colOk('total_amount') ? (
             <>
               <div className={SA_LABEL}>Total{g.cn > 0 ? ' (− credit note)' : ''}</div>
@@ -124,10 +128,10 @@ export const CourierRecapGroupCard: React.FC<{
             </>
           ) : <div className="text-[11px] text-[#8A7A8B]">Amounts hidden for your role</div>}
           <div className="flex items-center gap-1.5">
-            {audit && validationTabs.length > 0 && (
-              <button type="button" onClick={() => onValidation(g)} className={`${SA_BTN_OUTLINE} h-8 px-3`}>Validation</button>
-            )}
-            <button type="button" onClick={() => onOpen(g)} className="inline-flex items-center justify-center px-4 h-8 rounded-xl bg-[#6B3470] hover:bg-[#5A2A5E] text-white text-xs font-semibold">Open</button>
+            {/* Tanpa pasangan Audit (atau tanpa hak lihat validasi) -> panel langsung tab Invoices. */}
+            <button type="button" onClick={() => onValidation(g, audit && validationTabs.length > 0 ? undefined : 'invoices')}
+              aria-pressed={selected}
+              className={`inline-flex items-center justify-center px-4 h-8 rounded-xl text-xs font-semibold ${selected ? 'bg-[#3B1B3D] text-white' : 'bg-[#6B3470] hover:bg-[#5A2A5E] text-white'}`}>Validation</button>
           </div>
         </div>
       </div>
@@ -147,12 +151,14 @@ export const CourierRecapCardView: React.FC<{
   colOk: (k: string) => boolean
   validationTabs: ValidationTabKey[]
   enrichAudit: (recs: any[]) => Promise<void>
-  onOpen: (g: RecapGroup) => void
-  onValidation: (g: RecapGroup, tab?: ValidationTabKey) => void
+  onValidation: (g: RecapGroup, tab?: RecapPanelTab) => void
   onLoaded?: (groups: RecapGroup[]) => void
+  // Panel Validation samping (2026-10-05) -- null = daftar lebar penuh.
+  selectedKey?: string | null
+  panel?: React.ReactNode
   // "Needs attention" (2026-10-02): hanya AWB yang perlu perhatian (recapGroupNeedsAttention), dihitung di browser.
   attentionOnly?: boolean
-}> = ({ filters, nonce, companyNames, colOk, validationTabs, enrichAudit, onOpen, onValidation, onLoaded, attentionOnly = false }) => {
+}> = ({ filters, nonce, companyNames, colOk, validationTabs, enrichAudit, onValidation, onLoaded, attentionOnly = false, selectedKey = null, panel = null }) => {
   const [pageSize, setPageSize] = useState(COURIER_RECAP_PAGE_SIZE)
   const filterKey = JSON.stringify(filters) + (attentionOnly ? ':attention' : '') + ':' + pageSize
   const [page, setPage] = useState(1)
@@ -198,8 +204,8 @@ export const CourierRecapCardView: React.FC<{
   const start = total === 0 ? 0 : (page - 1) * pageSize + 1
   const end = Math.min(page * pageSize, total)
 
-  return (
-    <div className="flex-1 min-h-0 flex flex-col">
+  const list = (
+    <div className={panel ? 'flex flex-col min-h-0 lg:w-[44%] lg:min-w-[380px] lg:max-w-[720px] lg:shrink-0 max-lg:min-h-[420px]' : 'flex-1 min-h-0 flex flex-col'}>
       <div className="flex-1 min-h-0 relative overflow-y-auto p-2.5">
         {groups === null && loading ? <LoadingState /> : error ? (
           <div className="text-center py-16 text-[#A8231A] text-[13px]">Failed to load Invoice Recap: {error}</div>
@@ -211,7 +217,7 @@ export const CourierRecapCardView: React.FC<{
             {/* Baris "N AWB · newest email received first" DIHAPUS 2026-10-02 (permintaan user) -- jumlah ada di footer. */}
             <div className="flex flex-col gap-2.5">
               {(groups || []).map(g => (
-                <CourierRecapGroupCard key={g.key} g={g} companyNames={companyNames} colOk={colOk} validationTabs={validationTabs} onOpen={onOpen} onValidation={onValidation} />
+                <CourierRecapGroupCard key={g.key} g={g} companyNames={companyNames} colOk={colOk} validationTabs={validationTabs} selected={selectedKey === g.key} onValidation={onValidation} />
               ))}
             </div>
           </>
@@ -221,6 +227,14 @@ export const CourierRecapCardView: React.FC<{
         <PaginationFooter start={start} end={end} total={total} unit="AWB" page={page} totalPages={pages} onPage={setPage}
           pageSize={pageSize} onPageSize={setPageSize} pageSizeOptions={PAGE_SIZE_OPTIONS} />
       )}
+    </div>
+  )
+  if (!panel) return list
+  // 2 kolom: daftar kiri, panel kanan (layar sempit: ditumpuk, panel di bawah daftar).
+  return (
+    <div className="flex-1 min-h-0 flex flex-col lg:flex-row max-lg:overflow-y-auto">
+      {list}
+      <div className="lg:flex-1 min-w-0 min-h-0 flex flex-col p-2.5 lg:pl-0 max-lg:min-h-[640px]">{panel}</div>
     </div>
   )
 }

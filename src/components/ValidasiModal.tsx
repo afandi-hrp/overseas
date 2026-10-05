@@ -6,6 +6,7 @@ import { Receipt, FileText, Landmark, Ship, Sailboat, FileCheck2, FileDigit, IdC
 import ValidasiPerhitunganPIB from './ValidasiPerhitunganPIB';
 import { VW_LABEL, VW_BTN_PRIMARY, VW_BTN_SECONDARY, VW_BTN_SUCCESS, VW_BTN_DANGER, VW_CARD, VW_INPUT, VW_TILE, VW_TILE_TONE, vwPctBar, vwPctText } from './validationWindowStyles';
 import { Pill } from './SeaAirAuditUi';
+import { useAuth } from '../lib/AuthContext';
 
 // Format tanggal seragam di seluruh aplikasi: DD-MMMM-YYYY, nama bulan Bahasa Inggris.
 const MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -860,7 +861,12 @@ const STATUS_CONFIG: any = {
 // live (null = belum ada dokumen_validasi & belum ada checklist tersimpan). `checklistVersion`
 // naik tiap Checklist disimpan di tab sebelah -> flag PO/CIPL/Final Invoice dibaca ulang TANPA
 // reload penuh (edit yang sedang berjalan & autosave tidak terganggu).
-export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdit = true, embedded = false, onPctChange, onDirtyChange, checklistVersion = 0 }: { record: any, mainTab: string, subTab?: string, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, onDirtyChange?: (dirty: boolean) => void, checklistVersion?: number }) {
+// `variant="summary"` (2026-10-05, panel Validation Invoice Recap Courier, keputusan user): HANYA ringkasan field
+// Mismatch + tombol Accept (catatan alasan WAJIB, disimpan langsung -- `accept_note/_by/_at` di values_json, tanpa
+// ubah skema) + Accuracy + tombol Details (`onOpenDetails`: jendela penuh tabel lama dgn Recompute & Edit).
+// Load/simpan/status SAMA mode lain (persistChecklist). `reloadKey` naik -> baca ulang data dari DB tanpa remount.
+export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdit = true, embedded = false, onPctChange, onDirtyChange, checklistVersion = 0, variant = 'full', onOpenDetails, reloadKey = 0, onChanged }: { record: any, mainTab: string, subTab?: string, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, onDirtyChange?: (dirty: boolean) => void, checklistVersion?: number, variant?: 'full' | 'summary', onOpenDetails?: () => void, reloadKey?: number, onChanged?: () => void }) {
+  const { profile, user } = useAuth();
   const [docType, setDocType] = useState<'PIB'|'CN'|null>(null);
   const [debugData, setDebugData] = useState<any>({ raw: {}, doc: {} });
 
@@ -963,6 +969,12 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   // insert baris baru) -- baris yang SUDAH ada TETAP diupdate seperti biasa (tidak diblokir),
   // krn baris itu sendiri jadi bukti sudah pernah ada aktivitas checklist sebelumnya.
   const userActionRef = useRef(false);
+  // Mode summary: field yang sedang di-Accept (catatan) & penanda sudah pernah dimuat (reload senyap tanpa spinner).
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
+  const [acceptNote, setAcceptNote] = useState('');
+  const [acceptSaving, setAcceptSaving] = useState(false);
+  const [showAccepted, setShowAccepted] = useState(false);
+  const [loadedOnce, setLoadedOnce] = useState(false);
 
   useEffect(() => {
     supabase.from('tabel_npwp').select('*').then(({data}) => {
@@ -1092,19 +1104,20 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
       setLoading(false);
     };
 
-    doLoad();
-  }, [record, mainTab, subTab]);
+    doLoad().then(() => setLoadedOnce(true));
+  }, [record, mainTab, subTab, reloadKey]);
 
   // Simpan checklist dokumen ke tabel_checklist_validasi -- isi SAMA PERSIS autosave lama (dipakai
   // autosave mode standalone & tombol "Save changes" mode embedded). Return pesan error / null.
-  const persistChecklist = async (): Promise<string | null> => {
+  const persistChecklist = async (valuesArg?: any): Promise<string | null> => {
+       const vals = valuesArg ?? values;
        const activeSectionsNow = activeSectionsRef.current;
        const pibStatsNow = pibStatsRef.current;
        const debugDataNow = debugDataRef.current;
 
        let match = 0, mismatch = 0, partial = 0, empty = 0;
        activeSectionsNow.forEach(s => s.rows.forEach(r => {
-           const v = values[r.id] || {src: '', cmp: ''};
+           const v = vals[r.id] || {src: '', cmp: ''};
            const stComputed = computeStatus(v.src, v.cmp, r.isFormat, r.field, debugDataNow.raw?.is_po_non_imi, getDocChecklistFlag(r.compareDoc, docCompletenessFlagsRef.current));
            const st = v.manual_status || stComputed;
            if (st === "match") match++;
@@ -1157,7 +1170,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
        const payload: any = {
           pib_id, cn_id, awb: awbNo, tanggal_cek: tanggal, nama_checker: namaChecker,
           catatan_manual: catatanManual,
-          values_json: values, total_match: match, total_mismatch: mismatch,
+          values_json: vals, total_match: match, total_mismatch: mismatch,
           total_empty: empty + partial, status_checklist, updated_at: new Date().toISOString()
        };
 
@@ -1649,6 +1662,135 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   //    lipat, per field daftar dokumen + chip status + "✓ Checked — accept" / "Mark mismatch" / "Correct"
   //    (2 kotak: nilai dokumen sumber & nilai pembanding). Perubahan dikumpulkan lalu disimpan lewat bar
   //    "Unsaved changes · Discard / Save changes" -> `persistChecklist` (isi payload SAMA autosave lama).
+  // ── Mode summary (2026-10-05, panel Validation Invoice Recap Courier) -- lihat komentar di atas komponen.
+  //    Hanya field Mismatch (Incomplete/Not checked TIDAK ditampilkan); Accept = manual_status 'match' + catatan
+  //    alasan WAJIB, langsung disimpan (persistChecklist). Field yang sudah di-Accept hilang dari daftar.
+  if (variant === 'summary') {
+    type SumItem = { id: string; sectionTitle: string; field: string; hint?: string; docLabel: string; v: any; st: string; isFormat?: boolean };
+    const unmatched: SumItem[] = [];
+    const accepted: SumItem[] = [];
+    activeSections.forEach(section => section.rows.forEach((r: any) => {
+      const v = values[r.id] || { src: '', cmp: '' };
+      const st = v.manual_status || computeStatus(v.src, v.cmp, r.isFormat, r.field, debugData.raw?.is_po_non_imi, getDocChecklistFlag(r.compareDoc, docCompletenessFlags));
+      const item: SumItem = { id: r.id, sectionTitle: SECTION_TITLE[section.id] || section.label, field: r.rowLabel || r.field, hint: r.hint, docLabel: getColumnDisplayLabel(r.compareDoc, docType), v, st, isFormat: r.isFormat };
+      if (st === 'mismatch') unmatched.push(item);
+      else if (v.manual_status === 'match' && v.accept_note) accepted.push(item);
+    }));
+    const doAccept = async (id: string) => {
+      const note = acceptNote.trim();
+      if (!note) return;
+      const prevValues = values;
+      const nextValues = { ...values, [id]: { ...(values[id] || { src: '', cmp: '' }), manual_status: 'match', accept_note: note, accept_by: profile?.nama || user?.email || null, accept_at: new Date().toISOString() } };
+      userActionRef.current = true;
+      setValues(nextValues);
+      setAcceptSaving(true);
+      try {
+        const err = await persistChecklist(nextValues);
+        if (err) { setValues(prevValues); showDocToast('Failed to save: ' + err, 'error'); return; }
+        setDocSnap(JSON.parse(JSON.stringify({ values: nextValues, awbNo, tanggal, namaChecker, catatanManual })));
+        setAcceptingId(null); setAcceptNote('');
+        showDocToast('Accepted — the field is counted as a match.', 'success');
+        onChanged?.();
+      } catch (e: any) {
+        setValues(prevValues);
+        showDocToast('Failed to save: ' + (e?.message || ''), 'error');
+      } finally {
+        setAcceptSaving(false);
+      }
+    };
+    const valueText = (it: SumItem) => {
+      const src = it.v.srcDisplay ? it.v.srcDisplay : formatViewValue(it.v.src, it.field);
+      if (it.isFormat) return src;
+      return `${src} (${formatViewValue(it.v.cmp, it.field)})`;
+    };
+    if (!loadedOnce) return <div className="py-10 flex justify-center"><LoadingSpinner /></div>;
+    return (
+      <div className="flex flex-col gap-3 min-w-0" data-doc-summary>
+        {/* Kalkulasi PIB/SPPBMCP tetap dipasang (tersembunyi) supaya Accuracy SAMA tabel lengkap. */}
+        <div className="hidden">
+          <ValidasiPerhitunganPIB
+            dataValidasiRaw={debugData?.raw}
+            jenisDokumen={record?.jenis_dokumen || (mainTab === 'audit' && subTab === 'pib' ? 'PIB' : (mainTab === 'audit' && subTab === 'cn' ? 'CN' : ''))}
+            onStatsChange={setPibStats}
+            isEditMode={false}
+          />
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-[12.5px] font-bold text-[#3B1B3D]">Unmatched fields {unmatched.length > 0 && <span className="text-[#A8231A]">({unmatched.length})</span>}</div>
+          {onOpenDetails && <button type="button" className={VW_BTN_PRIMARY} onClick={onOpenDetails}>Details</button>}
+        </div>
+        {docToast && <div className={`px-3 py-2 rounded-xl border text-[12px] font-semibold ${docToast.type === 'success' ? 'bg-[#EAF6EF] border-[#BFE3CD] text-[#17663D]' : 'bg-[#FDE7E4] border-[#F4C3BC] text-[#A8231A]'}`}>{docToast.msg}</div>}
+        {!hasSourceData && <div className="rounded-xl border border-[#EADFD6] bg-white px-3 py-2.5 text-[12px] text-[#6E5E70]">No AI document reading for this shipment yet — open Details to fill in values manually.</div>}
+        {hasSourceData && unmatched.length === 0 && (
+          <div className="rounded-xl border border-[#BFE3CD] bg-[#EAF6EF] px-3 py-2.5 text-[12px] font-semibold text-[#17663D]">No unmatched fields.</div>
+        )}
+        {unmatched.map(it => (
+          <div key={it.id} data-doc-unmatched={it.id} className="rounded-r-xl border-l-[3px] border-l-[#A8231A] bg-[#FFF8F7] border border-[#F4C3BC] px-3 py-2">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-[12.5px] font-semibold text-[#3B1B3D]">{it.field}</div>
+                <div className="text-[11px] text-[#6E5E70]">{it.sectionTitle} · {it.docLabel}{it.hint ? ` · ${it.hint}` : ''}</div>
+              </div>
+              <span className="shrink-0 text-[11px] font-bold text-[#A8231A]">Mismatch{it.v.manual_status ? ' ✎' : ''}</span>
+            </div>
+            <div className="text-[12px] text-[#3B1B3D] mt-1 [overflow-wrap:anywhere]">{valueText(it)}</div>
+            {canEdit && acceptingId !== it.id && (
+              <div className="flex justify-end mt-1">
+                <button type="button" className={VW_BTN_SECONDARY} onClick={() => { setAcceptingId(it.id); setAcceptNote(''); }}>Accept</button>
+              </div>
+            )}
+            {canEdit && acceptingId === it.id && (
+              <div className="mt-2 flex flex-col gap-1.5">
+                <textarea aria-label="Accept reason" autoFocus value={acceptNote} onChange={e => setAcceptNote(e.target.value)} rows={2}
+                  placeholder="Reason for accepting this difference (required)"
+                  className={`${VW_INPUT} w-full py-1.5 min-h-[52px] leading-[1.35] resize-y`} />
+                <div className="flex justify-end gap-2">
+                  <button type="button" className={VW_BTN_SECONDARY} disabled={acceptSaving} onClick={() => { setAcceptingId(null); setAcceptNote(''); }}>Cancel</button>
+                  <button type="button" className={VW_BTN_PRIMARY} disabled={acceptSaving || !acceptNote.trim()} onClick={() => doAccept(it.id)}>{acceptSaving ? 'Saving…' : 'Save'}</button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+        {pibStats.mismatch > 0 && (
+          <div className="rounded-xl border border-[#F3D9A4] bg-[#FFF8EA] px-3 py-2 text-[12px] font-semibold text-[#7A4F00]">
+            {pibStats.mismatch} mismatch{pibStats.mismatch === 1 ? '' : 'es'} in the {docType === 'CN' ? 'SPPBMCP' : 'PIB'} calculation — open Details to review.
+          </div>
+        )}
+        {recomputePending > 0 && (
+          <div data-recompute-pending className="rounded-xl border border-[#F3D9A4] bg-[#FFF8EA] px-3 py-2 text-[12px] font-semibold text-[#7A4F00]">
+            {recomputePending} field(s) have newer document data — open Details and click Recompute to apply.
+          </div>
+        )}
+        {accepted.length > 0 && (
+          <div>
+            <button type="button" className="text-[11.5px] font-semibold text-[#6B3470] hover:underline" onClick={() => setShowAccepted(v => !v)}>
+              {showAccepted ? 'Hide' : 'Show'} accepted ({accepted.length})
+            </button>
+            {showAccepted && (
+              <div className="mt-1.5 flex flex-col gap-1.5">
+                {accepted.map(it => (
+                  <div key={it.id} className="rounded-lg border border-[#BFE3CD] bg-[#F4FBF7] px-3 py-1.5 text-[11.5px]">
+                    <div className="font-semibold text-[#3B1B3D]">{it.field} <span className="font-normal text-[#6E5E70]">· {it.docLabel}</span></div>
+                    <div className="text-[#17663D] [overflow-wrap:anywhere]">✓ {it.v.accept_note}</div>
+                    <div className="text-[#8A7A8B]">{it.v.accept_by || '—'}{it.v.accept_at ? ` · ${fmtDateEN(it.v.accept_at)}` : ''}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        <div className="pt-2 border-t border-[#F1E8E1]">
+          <div className="flex justify-between items-baseline mb-1 text-[11.5px] text-[#6E5E70]">
+            <span>Accuracy</span>
+            <b className={vwPctText(stats.pct)}>{stats.match}/{stats.checked} ({stats.pct}%)</b>
+          </div>
+          <div className="h-2 rounded-full bg-[#F3EEEA] overflow-hidden"><div className={`h-full transition-all duration-500 ${vwPctBar(stats.pct)}`} style={{ width: `${stats.pct}%` }} /></div>
+        </div>
+      </div>
+    );
+  }
+
   if (embedded) {
     const openMismatch = (() => {
       let n = 0;
@@ -1833,6 +1975,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                                     </>
                                   )}
                                   {v.srcNote && <span className="text-[10.5px] text-[#8A7A8B]"> · {v.srcNote}</span>}
+                                  {v.manual_status === 'match' && v.accept_note && <span className="text-[10.5px] text-[#17663D]" title={`${v.accept_by || ''}${v.accept_at ? ' · ' + fmtDateEN(v.accept_at) : ''}`}> · Accepted: {v.accept_note}</span>}
                                   {hasOtherCost && Number(otherCostVal) !== 0 && (
                                     <span className="text-[10.5px] italic text-[#6E5E70]"> · Other cost {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 4 }).format(Number(otherCostVal))}{v.otherCost_edited ? ' ✎' : ''}</span>
                                   )}
