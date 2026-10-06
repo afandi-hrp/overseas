@@ -1,3 +1,266 @@
+<!-- Dipindah dari CLAUDE.md 2026-10-06 (CLAUDE.md diringkas; file ini dibaca saat modulnya dikerjakan). -->
+
+## SharedDataTable — catatan kolom/filter Courier (dipindah dari CLAUDE.md "Struktur routing")
+
+**`SharedDataTable.tsx`** (`src/components/`, ~3800 baris) komponen generik besar: Courier
+Audit/Rekapan, Sea & Air Audit/Rekapan, Audit Trail — dipilih via prop
+`defaultMainTab`/`defaultSubTab`. Banyak logic bercabang berdasar
+`activeMainTab`/`activeSubTab`, hati-hati saat edit.
+
+- **Kolom AWB — beda SENGAJA antara Audit Courier & Rekapan Courier** (JANGAN disatukan):
+  Audit Courier (`PIB_COLS`/`CN_COLS`, `awb` tanpa `type`) tampil APA ADANYA termasuk prefix
+  carrier ("DHL NO."/"FEDEX No."). Rekapan Courier (`COURIER_COLS`, `type:'awb_strip_carrier'`)
+  BUANG prefix carrier di tampilan (regex `.replace(/^(DHL|FEDEX)\s*NO\.?\s*:?\s*/i,'')`) — mode
+  edit inline tetap raw. Sama pola dgn kolom `ppjk` (buang prefix "OWN"). Regex serupa di
+  `ValidasiModal.tsx`/`ValidasiHelper.ts` untuk internal matching AWB, bukan display — di luar
+  cakupan ini.
+- **Filter tanggal Audit Courier** — berdasar `tgl_ppjk` ("PPJK Date"), BUKAN `created_at`.
+  Rekapan Courier pakai `tgl_terima_email`. Kalau ada laporan "filter salah kolom", cek dulu
+  apa datanya (`tgl_ppjk` kosong/beda), bukan otomatis curigai kode.
+- **Sort default BEDA per tab Courier (2026-09-29)** — Audit Draft & Invoice Recap All PPJK =
+  Created At langsung; Audit PIB/CN & Invoice Recap per-PPJK = kolom `sort_order` (drag manual),
+  nilai awalnya dari trigger DB: Doc Acceptance (PIB/CN) / Email Received Date (per-PPJK), yang
+  KOSONG selalu paling atas. Detail: "Sort default per tab Courier" di
+  `docs/claude/courier-features.md`.
+- **Padding halaman** — lihat "Pola UI yang harus diikuti" di bawah (standar `px-3`/`pt-2`/`pb-1`
+  di semua halaman termasuk file ini).
+- Dropdown Company Audit Courier (`activeCourierImporAnFilter`) — `max-w-[160px]` (2026-09, dulu
+  `w-[48px] truncate` krn toolbar 1 baris kepotong di layar 14"; sejak toolbar Courier jadi 2
+  baris, Company pindah ke baris 1 & ruangnya cukup — lihat "Toolbar 2 baris" di
+  `docs/claude/courier-features.md`).
+- Input tanggal filter (`filterStartDate`/`filterEndDate`) — `w-[82px]`, dipakai
+  Courier/Sea & Air Audit/Rekapan + Audit Trail.
+- **`CourierRekapanRowGroup`**: pairing PO↔Vessel dari `rec.po_pt_imi`/`rec.vessel` jalan kalau
+  SALAH SATU field ada isinya (bukan cuma `po_pt_imi`) — dulu bug: `po_pt_imi` kosong bikin
+  `vessel` hilang dari tampilan (tetap ada di data/export). Sudah fix, jangan reintroduce cek
+  `if (typeof rec.po_pt_imi === 'string')` doang.
+- **`getCellData()` formatting display-only**: kolom `ppjk` strip prefix "OWN ", kolom `awb`
+  strip prefix carrier — murni tampilan, data mentah Supabase TIDAK berubah.
+
+## Redesain Courier mengikuti Sea & Air — STATUS (2026-10-01)
+
+**Tahap 1 Audit Courier SELESAI** (tampilan kartu/Open/Edit, lihat "Audit Courier — tampilan baru" di
+`docs/claude/courier-features.md`). **Susulan 2026-10-01**: jendela Open = tab Overview | Documents (Checklist + Doc validation
+per field, tanpa tabel) | Costs (kartu per invoice, klik angka/status, bar Save/Discard) | Audit trail — SAMA pola
+jendela Open Invoice Recap Sea & Air; data & cara simpan tetap (lihat "Tab Documents / Costs / Audit trail ala
+Invoice Recap Sea & Air" di file yang sama). Doc validation mode embedded TIDAK autosave lagi (keputusan user).
+**Mode List** (2026-10-02, keputusan user) = tampilan SEBELUM rombak (jendela Validation & form Add Data lama, file
+`*Legacy.tsx`) — lihat "Mode List = tampilan SEBELUM rombak" di `docs/claude/courier-features.md`. **Keputusan user permanen**: Mark as audited TIDAK PERNAH dikunci walau
+validasi belum lengkap (ada kasus invoice freight memang tidak ditagihkan) — JANGAN tambah gerbang validasi
+Courier. Tab tetap Draft/PIB/CN (tanpa "All"). Fitur tabel lama tetap di mode List.
+**Tahap 2 & 3 SELESAI (kode, 2026-10-02)**: Invoice Recap Courier per AWB + relasi Audit↔Recap (re-audit otomatis)
++ sumber Courier di Finance Handover — lihat "Invoice Recap Courier per AWB" di bawah (sql/037 SUDAH DIJALANKAN 2026-10-02).
+Analisa awal (RIWAYAT, sebelum tahap 1):
+- **Bisa** dibuat tampilan sama (kartu + jendela Open + form Edit + KPI, toggle List = tabel lama tetap
+  utuh dgn Reorder/Edit Mode/Customize View/Export). Token `SeaAirAuditUi.tsx` & pola komponen bisa dipakai.
+- **Audit Courier paling cocok**: kolom PIB_COLS/CN_COLS hampir identik `SEA_AIR_AUDIT_COLS` (customs value,
+  BM/PPN/PPh, total_pib_cn, SPTNP, PO per baris). Beda: 2 jenis dokumen (PIB & CN/SPPBMCP, `sanksi_adm`),
+  tab Draft/PIB/CN, auto-calc 7 kolom + `manual_override_fields`, NAS Submit Date (highlight + badge
+  outstanding), Doc Acceptance, urutan manual `sort_order`, jendela Validation 3 tab yg SUDAH ada (bisa jadi
+  isi jendela Open), dan **batas kolom per role (Finance)** yg WAJIB ikut di kartu/Open.
+- **Rekapan Courier beda model**: 1 baris = 1 INVOICE (FREIGHT/DUTY/CREDIT NOTE) per AWB, bukan 1 shipment
+  dgn banyak segmen spt Sea & Air; tab per-PPJK; PO↔vessel + breakdown per vessel (auto-calc 6 kolom);
+  sudah punya `submit_date` & `tgl_lunas`. Perlu keputusan: kartu per invoice atau digabung per AWB.
+- **Relasi Audit↔Rekapan Courier** hanya lewat AWB (tanpa FK spt `seaair_id`); validasi Courier menempel di
+  baris PIB/CN Audit. Gerbang/kunci/re-audit ala Sea & Air butuh pencocokan AWB + SQL baru.
+- Saran urutan bila disetujui: (1) Audit Courier tampilan, (2) Rekapan Courier tampilan, (3) relasi &
+  sumber Courier di Finance Handover. Pertanyaan keputusan dicatat di jawaban sesi.
+
+## Rombak Invoice Recap Courier — keputusan user (2026-10-02, SUDAH DIKERJAKAN — lihat bagian berikut)
+
+Hasil inspeksi `sql/036` (2026-10-02): rekapan 157 baris, audit 92; 3 AWB Recap tanpa pasangan Audit (2 format EMS,
+1 nyata); 31 AWB punya >1 PPJK; 0 AWB punya PIB & CN sekaligus; kolom `rekapan_courier.pib_id`/`cn_id` ADA; tidak
+ada nama fungsi bentrok. Keputusan:
+1. **1 kartu = 1 AWB** (AWB dinormalisasi tanpa prefix carrier), invoice Freight / Duty / Credit Note = tab di kartu/jendela.
+2. Pagination **opsi B** = view/RPC kelompok per AWB di DB (SQL).
+3. Tab per-PPJK hanya menampilkan invoice PPJK itu; "All PPJK" lengkap.
+4. Urutan kartu = tanggal email diterima terbaru per AWB; drag `sort_order` tetap hanya di mode List.
+5. Isi kartu: AWB, PPJK, A/N, origin, berat, PO +N / vessel, total semua invoice, chip status, titik validasi, Open.
+6. Credit Note ditampilkan TERPISAH + tetap ada total akhir = Freight + Duty − CN.
+7. Breakdown per vessel: per invoice di tab Invoices + ringkasan "Split per vessel" di Overview (pola "Split per PO").
+8. **Edit tetap lewat tabel List** (tanpa form Edit baru); setelah save, kartu ikut ter-update.
+9. Submit to Finance **per invoice + tombol "Submit all" per AWB**; **tanpa syarat** (bebas) & **tanpa kunci**.
+10. Finance Handover sumber Courier: payee = nama PPJK, due date/TOP dari **master vendor baru**, Mark paid = kolom
+    `tgl_lunas` yang sudah ada.
+11. Tombol **Validation juga ada di kartu Invoice Recap** (selain di Audit).
+12. Mode List = tampilan lama (pola Sea & Air & Audit Courier). Badge sidebar "needs attention" diputuskan terpisah.
+13. KPI "AWB belum ada di Audit" DIGANTI chip merah "Not found in Audit" di kartu (setelah dijelaskan ke user).
+14. **Re-audit otomatis DIPAKAI**: edit kolom nominal/AWB/PO di Recap oleh user setelah PIB/CN Audited -> PIB/CN kembali
+    Draft + alasan (pola Sea & Air). Validasi dari Recap = aturan SAMA Audit (bisa diubah hanya selama PIB/CN Draft).
+15. Finance Handover Courier **per invoice**; kolom baru `finance_received_at/_by` (opsi A); master vendor = **tabel baru
+    khusus Courier** `courier_vendor_master` + halaman Settings sendiri.
+
+## Panel Validation samping Invoice Recap Courier (2026-10-05, keputusan user; sql/041 SUDAH DIJALANKAN 2026-10-05)
+
+Spek user + prototipe `Prototype — Validation Side Panel.html` (HANYA tata letak; warna/font tetap gaya app). Berlaku mode
+**Card** Invoice Recap Courier saja (Audit Courier, mode List & Finance Handover TIDAK berubah).
+- **Kartu**: tombol **Open DIHAPUS**, tinggal **Validation** (semua kartu; tanpa pasangan Audit -> panel tab Invoices). Klik
+  -> panel di KANAN daftar (`CourierRecapCardView` prop `panel`/`selectedKey`, daftar `lg:w-[44%]`; layar < lg ditumpuk). Klik
+  kartu lain -> panel berganti (key per AWB; perubahan Checklist belum disimpan -> konfirmasi). Kartu pakai container query
+  (`@container`, `@xl:`/`@4xl:`) supaya ringkas saat berbagi lebar. Titik validasi kartu = buka panel di tab itu.
+- **Panel** (`CourierRecapValidationPanel.tsx`): header (Validation · PIB/CN no., chip, Total, Submit all to Finance, View in
+  Audit, Edit in List, tutup) · tab **Checklist | Doc Validation | Cost Validation | Invoices (N)** · **Shipment Info** SAMA di
+  semua tab, 12 field (AWB, No. Invoice Freight, No. Invoice Duty [no_invoice invoice AWB itu], Vendor, Jalur, No. PIB/SPPBMCP /
+  Courier, Service, Direction/Type, Origin/Zone, Ship Date, Chargeable Weight [tabel_cost_validasi]), "—" kalau kosong.
+  Validasi bisa diubah hanya selama PIB/CN Draft (aturan SAMA Audit Courier).
+- **Checklist** = `ChecklistModal` embedded (SAMA, Upload additional doc & catatan tetap) + **Document review**
+  (`CourierDocumentReview`): riwayat dari `courier_checklist_doc_log` dikelompokkan per tanggal + pelaku (NULL = "n8n (upload)");
+  dokumen yang sudah tercentang tanpa riwayat = "<tgl checklist dibuat> or earlier — checked before document history was recorded".
+- **Doc Validation** = `ValidasiModal variant="summary"` (prop baru; load/simpan SAMA): hanya field status Mismatch (Incomplete/
+  Not checked tidak tampil), **Accept** -> catatan alasan WAJIB -> Save langsung (`persistChecklist(nextValues)`; disimpan
+  `values_json[id].manual_status='match'` + `accept_note/accept_by/accept_at`, TANPA ubah skema) -> field hilang dari daftar
+  ("Show accepted (N)"). Accuracy di bawah. Toolbar hanya **Details**. Header Check date/Checked by/No. AWB/Manual change notes
+  TIDAK tampil (keputusan user: Manual change notes diganti catatan per baris; data lama tetap di DB). Mismatch kalkulasi
+  PIB/SPPBMCP & "N field(s) have newer document data" ditampilkan sbg info -> Details. Catatan Accept juga tampil di jendela
+  Open Audit Courier ("· Accepted: …").
+- **Cost Validation** = `CourierCostSummary.tsx`: baris Overcharge/Undercharge/Difference dari `computeLiveCostSummary().diff_rows`
+  (BARU, SATU sumber). Total invoice jadi baris ringkasan HANYA kalau selisihnya bukan dari baris utama (mis. Other charges).
+  **Accept per baris (opsi B, keputusan user)** -> `cost_validasi_review_courier_item` (catatan WAJIB + snapshot Expected/Actual):
+  baris dihitung OK di persen (badge kartu/KPI/jendela Audit ikut, lewat `fetchCourierCostReviews`/`fetchCourierCostReviewMaps`),
+  GUGUR otomatis kalau nilainya berubah (baris muncul lagi, "values changed since accepted"); Undo di "Show accepted". Review per
+  invoice lama (sql/038) TETAP dihormati. **Auto-update**: dibaca ulang senyap tiap 30 dtk (`COST_SUMMARY_POLL_MS`, tab tidak
+  tersembunyi), saat Checklist disimpan / upload susulan SUCCESS (`onSaved` ChecklistModal), saat Details ditutup & saat ganti
+  kartu — bergantung n8n menghitung ulang `tabel_cost_validasi` setelah upload susulan (konfirmasi user "harusnya").
+- **Details** = jendela penuh (portal z-[80], monitor besar `max-w-[1880px]` hampir selebar layar spy tabel matriks muat; layar <=1600px penuh layar) berisi tabel LAMA mode List: Doc = `ValidasiModalLegacy` (Edit + Recompute, autosave
+  2 dtk SAMA mode List), Cost = `CostValidationModalLegacy` (Edit Cost Validasi, review per invoice). Ditutup -> panel dibaca ulang.
+- **Invoices** = `CourierRecapInvoicesTab.tsx` (DULU jendela Open `CourierRecapDetailModal.tsx`, file di-rename): Total (− CN),
+  sub-tab Freight/Duty/Credit Note, Submit to Finance per invoice, kunci + Unlock (Admin), Split per vessel, Audit trail (lipat).
+- **sql/041** (idempotent, pre-check nama `beehive:041`, uji PGlite 15 cek): `courier_checklist_doc_log` (RLS: SELECT
+  `courier_checklist_dokumen` ATAU `courier_finance`; INSERT/UPDATE/DELETE `false` = append-only), trigger AFTER INSERT/UPDATE
+  `dokumen_checklist` `fn_courier_checklist_doc_log` (SECURITY DEFINER, catat ADDED/REMOVED tiap kolom `ada_*`, pelaku = nama
+  profil/email, service = NULL; trigger lama `trg_hitung_kelengkapan` BEFORE tidak terganggu — dicek user 2026-10-05: hanya itu
+  trigger tabel ini); `cost_validasi_review_courier_item` (unik doc_type+audit_id+item_key, catatan wajib, RLS 4 policy
+  `courier_cost_validation` + SELECT `courier_finance`). Sebelum dijalankan: Accept cost gagal simpan (pesan error), Document
+  review tampil "Document history is not available yet", persen tetap jalan (fail-open).
+- **Revisi bagian 2 (2026-10-05, keputusan user)**:
+  - **Kartu**: baris atas chip "PPJK · PT" (mis. "DHL · IMI") + tag Freight/Duty/CN; AWB; Vendor (kecil) | Email received (kecil),
+    PO, Origin | status Submit + chip PIB/CN Draft/Audited + **Due Date** (`RecapDueChip`) | **GRAND TOTAL** + Validation. Berat &
+    Vessel DIHAPUS, titik validasi kartu DIHAPUS (diganti Due Date). Due Date = `tgl_invoice` + `COURIER_DUE_DAYS` (30) per invoice
+    (`courierInvoiceDueDate`), kartu = due TERDEKAT dari invoice yang belum Paid (`recapGroupDue`), merah "Overdue" kalau lewat,
+    "Due —" kalau Tgl Invoice belum ada (tooltip per invoice). Kolom List baru "Invoice Date" (`tgl_invoice`, COURIER_COLS).
+  - **KPI**: 4 kartu AWB | Freight + Duty (BERSIH = charges − credit notes, "all invoices incl. credit notes") | Not submitted |
+    Submitted · unpaid; rupiah PENUH (`fmtRp`, bukan `fmtRpShort`). Kartu "Total (− credit notes)" dihapus.
+  - **Header panel**: baris ikon/judul/tag DIHAPUS; kiri = PtBadge + Submit all / View in Audit / Edit in List; kanan = GRAND TOTAL +
+    status Submit di bawahnya + tutup. Status Audited tampil halus di Shipment Info "Jalur" ("· Audited (view only)").
+    GRAND TOTAL ikut bertambah otomatis: selama panel terbuka daftar kartu dibaca ulang tiap 30 dtk (+ setiap Accept/Submit).
+  - **Recompute** pindah ke ringkasan Doc Validation, sejajar Details (`doRecompute` = logika SAMA `handleRecomputeMissing`,
+    langsung disimpan); `ValidasiModalLegacy` prop BARU `hideRecompute` (dipakai jendela Details; mode List tetap ada Recompute).
+    Cost tetap hanya Details.
+  - **Catatan Accept masuk catatan manual** (`src/utils/NoteLines.ts` appendNoteLine/removeNoteLine, 1 baris per catatan, tidak
+    dobel): Doc -> `tabel_checklist_validasi.catatan_manual` ("- <field> · <dokumen>: <catatan>", disimpan bareng Accept lewat
+    `persistChecklist(values, notes)`); Cost -> `tabel_cost_validasi.catatan` ("- <baris> (Invoice freight|duty): <catatan>",
+    update langsung; Accept ulang mengganti barisnya, Undo menghapus barisnya). Tampil di Details "Manual Change Notes" /
+    "Catatan Perubahan Manual".
+- **Revisi bagian 3 (2026-10-05, keputusan user)**:
+  - **Bonded storage** di ringkasan Cost Validation (`StorageEstimateBox` di CourierCostSummary, tampil kalau `cv_storage_actual`
+    ada): Storage weight / ETA / Release / Actual & Billing days / Expected / "Save new estimate". Logika hitung & simpan DIPINDAH ke
+    `src/utils/CourierStorageEstimate.ts` (isi SAMA, dipakai juga CostValidationModal & CostValidationModalLegacy) -> kolom sama
+    (`cv_eta_date`, `cv_release_date`, `cv_storage_weight_kg`, RPC fn_hitung_storage/fn_save_storage_estimate) -> depan & Details sinkron.
+  - **Format catatan Accept** (menggantikan format bagian 2; format lama tetap dikenali saat Accept ulang/Undo): Doc =
+    "<Nama field> · <Sumber> ✓ <catatan>" (mis. "Berat (kg) · AWB ✓ …"), Cost = "<Nama item> · <Status> ✓ <catatan>" (mis.
+    "Fuel surcharge · Overcharge ✓ …"). Accept ulang field/baris yang sama mengganti barisnya (`removeNoteLinesWhere`).
+  - **Undo** di daftar "accepted" ringkasan Doc Validation: status kembali ke sebelum Accept (`accept_prev_status` di values_json),
+    catatan dihapus dari Manual Change Notes, langsung disimpan.
+  - **Urutan tab** panel: Checklist | Cost Validation | Doc Validation | Invoices. **Warna latar tab** per persen (`tabToneClass`):
+    100% hijau muda, ≥60% kuning muda, <60% merah muda, belum ada data abu; Invoices netral.
+  - **Shipment Info DIBEKUKAN** di atas area scroll (tidak ikut scroll) dgn latar ungu muda `#F5EDF3` (sel `#FCF8FB`), beda dari isi
+    tab (`#FBF7F4`).
+- **Diuji**: jsdom `courier_panel` 75 cek (bagian 3: storage depan->Details, format catatan, Undo Doc, urutan/warna tab, Shipment
+  Info beku) -- sebelumnya `courier_panel` 64 cek (bagian 2: kartu/KPI/due/header/Recompute/catatan/Grand total otomatis), courier_recap 63,
+  + (bagian 1) jsdom `courier_panel` 51 cek (+ unit helper cost), regresi render 95/page 51/recap 112/finance 57/urgent 5/authfocus 12/
+  courier 41/courier_ui 57/courier_recap 63 (disesuaikan: Open -> panel)/courier_lock 30/courier_reorder 13 — 0 gagal (console.error
+  = peringatan dnd-kit tabel List lama). `tsc` bersih, `vite build` sukses. Belum dites di production.
+
+## Courier 2026-10-02 bagian 2 — review cost, Recompute, needs attention, kunci Submit (sql/038 SUDAH DIJALANKAN 2026-10-02)
+
+- **sql/038** (idempotent, pre-check nama `beehive:038`, uji PGlite 28 cek): tabel `cost_validasi_review_courier`
+  (`doc_type` PIB/CN + `audit_id` teks + `section` FREIGHT/DUTY unik, `status_konfirmasi` MATCH/MISMATCH, catatan WAJIB utk
+  MISMATCH, RLS 4 policy page_key `courier_cost_validation`); kolom `rekapan_courier.submit_unlock_reason/_by/_at`; trigger
+  `fn_courier_recap_lock` (BEFORE UPDATE/DELETE: baris ber-`submit_date` hanya boleh ubah kolom Finance/`sort_order`, DELETE
+  ditolak; submit baru dicatat audit_trail "Submit to Finance — Lama: - → Baru: <tgl>"; service lolos; flag
+  `app.courier_unlock`); RPC `fn_courier_unlock_submit(uuid, text)` (Admin, alasan ≥5, ditolak kalau Finance sudah terima ATAU sudah
+  lunas -- data lama: `tgl_lunas` terisi tanpa Received; dicatat audit_trail). **Efek saat 038 dijalankan**: SEMUA invoice
+  lama yg sudah punya Submit Date (per 2026-10-02: 84 baris, 68 Waiting + 16 Paid) langsung TERKUNCI. RPC Finance Courier (037) tetap jalan di baris terkunci.
+- **Review cost** (`CourierCostReviewHelpers.ts` SATU-SATUNYA query tabel, `CourierCostReviewBox.tsx` dipakai jendela baru &
+  `CostValidationModalLegacy` [prop `legacy`]): kotak per invoice Freight/Duty, muncul kalau invoice ada selisih ATAU sudah
+  direview; Accept difference (catatan opsional) / Ask vendor to revise (catatan wajib) / Change / Undo; hak = `canEdit`
+  modal (Draft + `courier_cost_validation`). `computeLiveCostSummary(data, jenis, reviews)` — MATCH = baris selisih invoice
+  itu dihitung OK & status invoice OK (baris detail tidak berubah); `section_diff` = ada selisih sebelum review. Badge persen
+  (`fetchCourierValidationBadgePct`) ikut membaca review -> titik kartu, KPI, jendela, versi lama SAMA.
+- **Persen validasi Courier dipindah** ke `src/utils/CourierValidationPct.ts` (isi sama): `mergeChecklistFields`
+  (SharedDataTable `mergeChecklistData` = wrapper dgn `CHECKLIST_MERGE_FIELDS`), `fetchCourierValidationBadgePct`,
+  `rowValidationPct` (re-export dari CourierValidationWindow), `courierValidationIncomplete`, `enrichCourierValidationPct`.
+- **Recompute document data** (`src/utils/CourierDocRecompute.ts`, dipakai ValidasiModal & ValidasiModalLegacy): isi +
+  perbarui sisi src/cmp yang BELUM diedit manual dari data dokumen terbaru (nilai kosong tidak menghapus, `manual_status`
+  tetap); banner "N field(s) have newer document data" (`data-recompute-pending`). Versi lama kini juga cek error simpan.
+- **Needs attention** (`recapGroupNeedsAttention`, `fetchCourierRecapAttentionGroups`, `fetchCourierRecapNeedsAttentionCount`
+  di CourierRecapHelpers): AWB dgn invoice belum submit & PIB/CN validasi (tab yg boleh dilihat) < 100%/belum ada. Badge merah
+  submenu Courier › Invoice Recap (MainLayout, refresh mount/masuk /courier/* & event Recap/Audit) + tombol filter "Needs
+  attention" (kartu dihitung di browser, paging 12 sendiri).
+- **Kunci di UI**: List (`CourierRekapanRowGroup`) baris ber-`submit_date` -> Edit/Delete hilang + "🔒 Locked"; jendela Open:
+  chip Locked per invoice & header, **Unlock (Admin)** + alasan -> RPC, info "Last unlock". Konfirmasi Submit menyebut kunci.
+- **Diuji**: jsdom `courier_lock` 30 cek + regresi render 95/page 51/recap 112/finance 53/urgent 5/authfocus 12/courier 41/
+  courier_ui 56/courier_recap 44, PGlite 038 28 + 037 39 — 0 gagal. Belum dites di production.
+
+## Finance melihat validasi Courier (2026-10-02, keputusan user; sql/039 SUDAH DIJALANKAN 2026-10-02)
+
+Finance HARUS bisa melihat Checklist, Doc validation & Cost validation PIB/CN pasangan invoice Courier, TANPA bisa
+mengubah. `CourierHandoverViewer` (`FinanceHandoverViewers.tsx`) = `CourierValidationWindow` yang SAMA Audit Courier
+(tab Overview = rincian invoice & serah terima · Documents · Costs), `editAccess` semua false, `ChecklistModal` (kini
+diekspor dari SharedDataTable) `canEdit={false}` -> tanpa Upload additional doc / Save / Accept / Correct / Recompute /
+review / Deduct CN. Pasangan PIB/CN dicari SAMA Invoice Recap (`fetchRecapAuditLinks`: pib_id/cn_id, cadangan AWB);
+tidak ketemu -> dialog rincian invoice saja + catatan. Tombol baris Finance Handover Courier: Invoice · Audit · Docs · Cost
+(tetap "Accept to view" sebelum Finance menerima, sama sumber lain). **Berbeda dari Sea & Air** (angka duty disembunyikan
+di Finance): Courier menampilkan semua krn invoice Duty Courier memang dibayar Finance ke PPJK.
+**`sql/039`**: policy SELECT `<tabel>_select_courier_finance` (`has_page_access('courier_finance')`) di `tabel_audit_pib`,
+`tabel_audit_cn`, `dokumen_checklist`, `dokumen_validasi`, `tabel_checklist_validasi`, `tabel_npwp`, `tabel_cost_validasi`,
+`cost_validasi_review_courier` — TANPA policy tulis (baca saja); role Finance tidak perlu akses halaman Audit Courier.
+**Tab "Audit" (2026-10-02, keputusan user: tab di jendela invoice, kolom dipilih Admin PER ROLE, Courier + Sea & Air,
+hanya baris pasangan handover)**: `FinanceAuditFields` (`FinanceHandoverViewers.tsx`, baca saja) -- Courier = tab "Audit PIB"/
+"Audit CN" (prop BARU `extraTab` di `CourierValidationWindow`, nilai SAMA layar Audit: `computeCourierAuditCalc` + kolom
+kelengkapan), kolom `FINANCE_AUDIT_COLS.courierPib/courierCn`; Sea & Air = tab "Audit PIB" di viewer Sea & Air (baris
+`tabel_audit_seaair` via `seaair_id`, Balance/Insurance `computeSeaAirBalanceAsuransi`), kolom `FINANCE_AUDIT_COLS.seaair`
+(muncul juga utk "earlier shipment" yg punya `seaair_id`). Kolom yg tampil = `getAllowedColumns('courier_finance' |
+'sea_air_finance')` -> Admin mengatur di Kelola Role & Akses › tombol Columns di baris page_key Finance (dialog diberi
+keterangan `COLUMN_ACCESS_NOTE`); NULL (belum diatur) = SEMUA kolom. **Pengecualian aturan "jangan tampilkan duty"
+Sea & Air**: tab Audit PIB menampilkan kolom duty KALAU Admin tidak membatasinya (keputusan user: Admin yg memilih).
+**Kolom Invoice Recap (2026-10-02, permintaan user)** -- mekanisme SAMA: 1 tombol Columns per page_key Finance berisi
+"Invoice Recap · …" (key berawalan `recap:`, `FINANCE_RECAP_COLS` = COURIER_COLS / SEA_AIR_REKAPAN_COLS) + "Audit · …" (key
+polos, kompatibel pengaturan sebelumnya); `splitFinanceColumns(allowed)` memecah per kelompok (NULL = semua; kalau diatur,
+kelompok tanpa centang = tidak ada kolom -> pesan "ask an Admin"). Courier: tab Overview = kartu Handover (tetap) + kartu
+"Invoice Recap" (kolom per role, menggantikan rincian invoice tetap); Sea & Air: tab BARU "Invoice Recap" (PO & Vessel
+dari `po_detail`), tab Handover tetap. Header "Payable to · jumlah · due" selalu tampil. Tombol baris: Courier Invoice ·
+Audit · Docs · Cost; Sea & Air Handover · Recap · Audit · Docs · Cost. Diuji: jsdom courier_recap 53, finance 57.
+Cek user 2026-10-02: `get_kurs_efektif` SECURITY DEFINER (kurs tampil utk Finance); `fn_hitung_storage` INVOKER tapi hanya
+dipakai panel Recalculate bonded storage yg tersembunyi di mode baca saja -> tidak perlu policy tambahan.
+**Admin di Finance Handover** = diperlakukan sbg Finance (canEdit selalu true): daftar SAMA (hanya yg sudah submit),
+bisa Accept/Mark paid, detail tetap "Accept to view" sebelum diterima. Diuji: jsdom courier_recap 49 cek, PGlite 039 4.
+
+## Invoice Recap Courier per AWB + Finance Handover Courier (2026-10-02, kode SELESAI, sql/037 SUDAH DIJALANKAN 2026-10-02)
+
+Detail tampilan: "Invoice Recap Courier — tampilan baru per AWB" di `docs/claude/courier-features.md`. Ringkas:
+- **File**: `src/utils/CourierRecapHelpers.ts` (SATU sumber: `courierAwbNorm` [upper, buang prefix huruf+"NO.", sisa
+  A-Z0-9 — SAMA `fn_courier_awb_norm` SQL], `buildRecapGroup`, `invoiceKind`/`invoiceAmount` [CN = nilai absolut],
+  `splitPerVessel`, `fetchCourierRecapPage`/`fetchCourierRecapSummary` [RPC + FALLBACK browser kalau RPC belum ada],
+  `fetchRecapAuditLinks` [`pib_id`/`cn_id` dulu, cadangan AWB ternormalisasi], `submitRecapInvoices`; auto-calc 6
+  kolom `computeCourierRekapanCalc` DIPINDAH ke sini, isi tidak berubah), `CourierRecapCardList.tsx` (5 KPI + kartu,
+  paging 12/halaman sendiri), `CourierRecapDetailModal.tsx` (Open). SharedDataTable: cabang `isCourierRecapView`.
+- **sql/037** (idempotent, pre-check nama berkomentar `beehive:037`, uji PGlite 39 cek): kolom `rekapan_courier.
+  finance_received_at/_by`, `paid_reference`, `paid_by`; `tabel_audit_pib/cn.reaudit_reason/_at`; `fn_courier_awb_norm` +
+  index ekspresi; RPC baca `fn_courier_recap_awb_page` & `fn_courier_recap_summary` (SECURITY INVOKER, ikut RLS);
+  trigger `fn_courier_reaudit` (AFTER UPDATE rekapan_courier, user saja) & `fn_courier_reaudit_clear` (Mark as audited
+  menghapus alasan); tabel `courier_vendor_master` (RLS 4 policy, seed kode PPJK tanpa OWN); policy SELECT
+  `rekapan_courier_select_finance`; RPC `fn_courier_finance_accept(uuid,text,date)` & `fn_courier_finance_mark_paid(uuid,
+  date,text)` (guard `has_edit_access('courier_finance')`, Mark paid mengisi `tgl_lunas`).
+- **(Historis) Sebelum 037 jalan**: kartu & KPI tetap jalan lewat fallback (semua baris tab PPJK diambil, dikelompokkan di browser;
+  KPI "not in audit" tidak dihitung); re-audit otomatis belum aktif; Finance Handover Courier tampil baca saja + banner.
+- **page_key baru**: `courier_finance` (Finance Handover Courier, EDIT = Accept/Mark paid) & `settings_courier_vendors`
+  — BELUM di-assign ke role mana pun (hanya Admin sampai di-assign di Kelola Role & Akses).
+- **Diuji**: jsdom 44 cek (kartu/grup/urutan/total − CN, tab PPJK, Search, Open Overview/Invoices/Audit trail, Submit per
+  invoice & Submit all, Validation dari Recap, Edit in List, view-only, batas kolom role, Finance Courier Accept/Mark paid
+  + viewer, master vendor Courier & Sea & Air), regresi render 95/page 51/recap 112/finance 53/urgent 5/authfocus 12/
+  courier 39/courier_ui 56 — 0 gagal. Belum dites di production.
+
 ## Invoice Recap Courier — tampilan baru per AWB (2026-10-02)
 
 **2026-10-05: tombol Open & jendela Validation (portal) mode Card DIGANTI panel samping** — lihat CLAUDE.md "Panel Validation

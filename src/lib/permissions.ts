@@ -14,7 +14,15 @@ export type PageEntry = {
   // halaman lain -- lihat courier_cost_validation dkk di bawah. Tidak ikut route guard
   // (RequirePageAccess), cuma dipakai SharedDataTable.tsx utk sembunyikan/tampilkan tombol.
   path?: string;
-  group: 'Courier' | 'Sea & Air' | 'FAR Overseas' | 'Bunker' | 'Audit AP Local' | 'Audit AP Overseas' | 'PI Local' | 'Accounting Rekap' | 'Verification QFP' | 'LSA' | 'SPB' | 'Reporting' | 'General' | 'Settings';
+  // Grup = MENU SIDEBAR tempat halaman ini berada (2026-10-06, permintaan user: matrix Manage Roles &
+  // Access dikelompokkan SAMA dgn sidebar). Dipakai HANYA oleh RoleManagementPage.
+  group: 'Courier' | 'Sea & Air' | 'FAR Overseas' | 'Finance Handover' | 'Reporting' | 'Compare Doc' | 'SPB' | 'Audit Trail' | 'Settings';
+  // Nama seperti di submenu sidebar (mis. "Invoice Recap") -- HANYA utk tampilan matrix role;
+  // `label` tetap dipakai pesan "tidak punya akses" dll.
+  menuLabel?: string;
+  // Diisi utk page_key yg BUKAN halaman (tombol/fitur di dalam halaman lain) -- nama halaman induknya.
+  // Matrix menampilkannya menjorok di bawah induk.
+  parent?: string;
   // Daftar "jabatan approval" yang berlaku KHUSUS utk halaman ini (opsional -- cuma diisi utk
   // halaman yang punya alur approval berjenjang, mis. Direct Loading/FAR Overseas Air:
   // Exim -> PIC -> SPV -> Direktur). Kosongkan/hilangkan field ini utk halaman yang belum py
@@ -28,35 +36,35 @@ export type PageEntry = {
 };
 
 export const PAGE_REGISTRY: PageEntry[] = [
-  { key: 'courier_upload', label: 'Upload (Courier)', path: '/courier/upload', group: 'Courier' },
-  { key: 'courier_audit', label: 'Audit (Courier)', path: '/courier/audit', group: 'Courier' },
-  { key: 'courier_rekapan', label: 'Rekapan Invoice (Courier)', path: '/courier/rekapan', group: 'Courier' },
-  { key: 'courier_validasi', label: 'Validasi (Courier)', path: '/courier/validasi', group: 'Courier' },
+  { key: 'courier_upload', label: 'Upload (Courier)', menuLabel: 'Upload', path: '/courier/upload', group: 'Courier' },
+  { key: 'courier_audit', label: 'Audit (Courier)', menuLabel: 'Audit', path: '/courier/audit', group: 'Courier' },
+  { key: 'courier_rekapan', label: 'Rekapan Invoice (Courier)', menuLabel: 'Invoice Recap', path: '/courier/rekapan', group: 'Courier' },
+  { key: 'courier_validasi', label: 'Validasi (Courier)', menuLabel: 'Validation', path: '/courier/validasi', group: 'Courier' },
   // Tombol aksi di dalam Audit (Courier) -- bukan halaman/route tersendiri (lihat catatan path
   // di PageEntry di atas), jadi kalau di-uncheck di matrix role, tombolnya hilang dari dropdown
   // "Aksi" tapi halaman Audit (Courier) itu sendiri tetap bisa diakses seperti biasa.
-  { key: 'courier_cost_validation', label: 'Cost Validation (Courier)', group: 'Courier' },
-  { key: 'courier_dokumen_validation', label: 'Dokumen Validation (Courier)', group: 'Courier' },
-  { key: 'courier_checklist_dokumen', label: 'Checklist Dokumen (Courier)', group: 'Courier' },
+  { key: 'courier_cost_validation', label: 'Cost Validation (Courier)', menuLabel: 'Cost Validation', parent: 'Audit', group: 'Courier' },
+  { key: 'courier_dokumen_validation', label: 'Dokumen Validation (Courier)', menuLabel: 'Doc Validation', parent: 'Audit', group: 'Courier' },
+  { key: 'courier_checklist_dokumen', label: 'Checklist Dokumen (Courier)', menuLabel: 'Checklist', parent: 'Audit', group: 'Courier' },
   // Finance Handover Courier (2026-10-02, sql/037): sumber Courier di halaman GABUNGAN /finance-handover.
   // EDIT = boleh Accept & Mark paid per invoice (RPC fn_courier_finance_*). Baca rekapan_courier lewat
   // policy SELECT tambahan -- role Finance TIDAK perlu akses Invoice Recap Courier.
-  { key: 'courier_finance', label: 'Finance Handover (Courier)', path: '/finance-handover', group: 'Courier' },
+  { key: 'courier_finance', label: 'Finance Handover (Courier)', menuLabel: 'Courier', path: '/finance-handover', group: 'Finance Handover' },
 
-  { key: 'sea_air_upload', label: 'Upload (Sea & Air)', path: '/sea-air/upload', group: 'Sea & Air' },
-  { key: 'sea_air_audit', label: 'Audit (Sea & Air)', path: '/sea-air/audit', group: 'Sea & Air' },
-  { key: 'sea_air_rekapan', label: 'Rekapan (Sea & Air)', path: '/sea-air/rekapan', group: 'Sea & Air' },
+  { key: 'sea_air_upload', label: 'Upload (Sea & Air)', menuLabel: 'Upload', path: '/sea-air/upload', group: 'Sea & Air' },
+  { key: 'sea_air_audit', label: 'Audit (Sea & Air)', menuLabel: 'Audit', path: '/sea-air/audit', group: 'Sea & Air' },
+  { key: 'sea_air_rekapan', label: 'Rekapan (Sea & Air)', menuLabel: 'Invoice Recap', path: '/sea-air/rekapan', group: 'Sea & Air' },
   // Tombol aksi di dalam Rekapan (Sea & Air) -- sama seperti Courier di atas, bukan route sendiri.
-  { key: 'sea_air_cost_validation', label: 'Cost Validation (Sea & Air)', group: 'Sea & Air' },
-  { key: 'sea_air_dokumen_validation', label: 'Dokumen Validation (Sea & Air)', group: 'Sea & Air' },
-  { key: 'sea_air_checklist_validation', label: 'Checklist Validation (Sea & Air)', group: 'Sea & Air' },
+  { key: 'sea_air_cost_validation', label: 'Cost Validation (Sea & Air)', menuLabel: 'Cost Validation', parent: 'Invoice Recap', group: 'Sea & Air' },
+  { key: 'sea_air_dokumen_validation', label: 'Dokumen Validation (Sea & Air)', menuLabel: 'Doc Validation', parent: 'Invoice Recap', group: 'Sea & Air' },
+  { key: 'sea_air_checklist_validation', label: 'Checklist Validation (Sea & Air)', menuLabel: 'Checklist', parent: 'Invoice Recap', group: 'Sea & Air' },
   // Finance Handover Sea & Air (2026-10-01, sql/034+035): Receive / Mark paid lewat RPC fn_seaair_finance_*
   // (guard has_edit_access). Halaman GABUNGAN /finance-handover (FAR + Sea & Air). Baca rekapan_seaair &
   // tabel validasi lewat policy SELECT tambahan -- role Finance TIDAK perlu akses Invoice Recap.
-  { key: 'sea_air_finance', label: 'Finance Handover (Sea & Air)', path: '/finance-handover', group: 'Sea & Air' },
+  { key: 'sea_air_finance', label: 'Finance Handover (Sea & Air)', menuLabel: 'Sea & Air', path: '/finance-handover', group: 'Finance Handover' },
 
   {
-    key: 'direct_loading', label: 'FAR Overseas', path: '/direct-loading', group: 'FAR Overseas',
+    key: 'direct_loading', label: 'FAR Overseas', menuLabel: 'FAR Overseas (memos & approval)', path: '/direct-loading', group: 'FAR Overseas',
     approvalTiers: [
       { value: 'TIER1', label: 'Prepared By (Exim)' },
       { value: 'PIC', label: 'PIC' },
@@ -67,21 +75,21 @@ export const PAGE_REGISTRY: PageEntry[] = [
   // Sumber FAR di halaman GABUNGAN /finance-handover (2026-10-01; dulu tab di halaman FAR) -- EDIT =
   // boleh Accept & Mark paid (RPC fn_far_overseas_finance_accept/mark_paid, sql/027+035, tanpa bukti
   // bayar). Role Finance JUGA butuh akses lihat `direct_loading` (RLS tabel memo).
-  { key: 'far_overseas_finance', label: 'Finance Handover (FAR Overseas)', path: '/finance-handover', group: 'FAR Overseas' },
+  { key: 'far_overseas_finance', label: 'Finance Handover (FAR Overseas)', menuLabel: 'FAR Overseas', path: '/finance-handover', group: 'Finance Handover' },
 
-  { key: 'bunker', label: 'Bunker', path: '/bunker', group: 'Bunker' },
+  { key: 'bunker', label: 'Bunker', path: '/bunker', group: 'Compare Doc' },
 
-  { key: 'audit_po', label: 'Audit AP Local', path: '/audit-po', group: 'Audit AP Local' },
+  { key: 'audit_po', label: 'Audit AP Local', path: '/audit-po', group: 'Compare Doc' },
 
-  { key: 'audit_po_overseas', label: 'Audit AP Overseas', path: '/audit-po-overseas', group: 'Audit AP Overseas' },
+  { key: 'audit_po_overseas', label: 'Audit AP Overseas', path: '/audit-po-overseas', group: 'Compare Doc' },
 
-  { key: 'pi_local', label: 'PI Local', path: '/pi-local', group: 'PI Local' },
+  { key: 'pi_local', label: 'PI Local', path: '/pi-local', group: 'Compare Doc' },
   // Verification QFP (2026-10-06) -- migrasi Verification QFP.html; tanpa tabel Supabase (langsung ke webhook n8n).
-  { key: 'verification_qfp', label: 'Verification QFP', path: '/verification-qfp', group: 'Verification QFP' },
+  { key: 'verification_qfp', label: 'Verification QFP', path: '/verification-qfp', group: 'Compare Doc' },
   // LSA (2026-10-06) -- migrasi LSA.html; tanpa tabel Supabase (langsung ke webhook n8n).
-  { key: 'lsa', label: 'LSA', path: '/lsa', group: 'LSA' },
+  { key: 'lsa', label: 'LSA', path: '/lsa', group: 'Compare Doc' },
 
-  { key: 'accounting_rekap', label: 'Accounting Rekap', path: '/accounting-rekap', group: 'Accounting Rekap' },
+  { key: 'accounting_rekap', label: 'Accounting Rekap', path: '/accounting-rekap', group: 'Compare Doc' },
   // SPB (2026-10-06) -- migrasi Manualbook.html & Oil Request.html; tanpa tabel Supabase (langsung ke webhook n8n).
   { key: 'requisition_rh', label: 'Requisition RH', path: '/spb/requisition-rh', group: 'SPB' },
   { key: 'oil_request', label: 'Oil Request', path: '/spb/oil-request', group: 'SPB' },
@@ -89,13 +97,13 @@ export const PAGE_REGISTRY: PageEntry[] = [
   // 2026-09: 2 halaman ini digabung jadi 1 route/halaman "Cost by Vessel" (`CostByVesselPage.tsx`,
   // 2 tab) -- page_key TETAP 2 terpisah (assignment akses per-role existing tidak berubah),
   // cuma `path` sekarang keduanya nunjuk ke route gabungan yg sama dgn `?view=` beda per tab.
-  { key: 'reporting_dashboard', label: 'Dashboard (Reporting)', path: '/reporting/cost-by-vessel?view=dashboard', group: 'Reporting' },
-  { key: 'reporting_cost_per_vessel', label: 'Cost per Vessel', path: '/reporting/cost-by-vessel?view=cost_per_vessel', group: 'Reporting' },
+  { key: 'reporting_dashboard', label: 'Dashboard (Reporting)', menuLabel: 'Overseas Cost by Vessel — Dashboard', path: '/reporting/cost-by-vessel?view=dashboard', group: 'Reporting' },
+  { key: 'reporting_cost_per_vessel', label: 'Cost per Vessel', menuLabel: 'Overseas Cost by Vessel — Cost per Vessel', path: '/reporting/cost-by-vessel?view=cost_per_vessel', group: 'Reporting' },
   // Halaman BARU (2026-09), TERPISAH dari 2 di atas -- sumber data beda total (Invoice Recap
   // Courier `rekapan_courier`, BUKAN `reporting_cost_allocation`), route sendiri, page_key sendiri.
   { key: 'reporting_cost_by_courier', label: 'Overseas Cost by Courier', path: '/reporting/cost-by-courier', group: 'Reporting' },
 
-  { key: 'audit_trail', label: 'Audit Trail', path: '/audit-trail', group: 'General' },
+  { key: 'audit_trail', label: 'Audit Trail', path: '/audit-trail', group: 'Audit Trail' },
 
   { key: 'settings_webhooks', label: 'Konfigurasi Webhook Otomasi', path: '/settings/webhooks', group: 'Settings' },
   { key: 'admin_rates', label: 'Rate Tables & PPJK', path: '/admin/rates', group: 'Settings' },
@@ -119,7 +127,22 @@ export const PAGE_REGISTRY: PageEntry[] = [
   { key: 'settings_master_vessel', label: 'Master Vessel', path: '/settings/master-vessel', group: 'Settings' },
 ];
 
-export const PAGE_GROUPS: PageEntry['group'][] = ['Courier', 'Sea & Air', 'FAR Overseas', 'Bunker', 'Audit AP Local', 'Audit AP Overseas', 'PI Local', 'Accounting Rekap', 'Verification QFP', 'LSA', 'SPB', 'Reporting', 'General', 'Settings'];
+// Urutan grup = urutan menu sidebar (MainLayout MAIN_TABS) + Settings di bawah.
+export const PAGE_GROUPS: PageEntry['group'][] = ['Courier', 'Sea & Air', 'FAR Overseas', 'Finance Handover', 'Reporting', 'Compare Doc', 'SPB', 'Audit Trail', 'Settings'];
+
+// Urutan baris di matrix role = urutan submenu sidebar (BUKAN urutan PAGE_REGISTRY -- urutan registry
+// menentukan halaman awal setelah login di getDefaultLandingPath, jadi sengaja tidak diubah). Fitur
+// (`parent`) tepat di bawah induknya. page_key yg belum ada di daftar ini tampil di akhir grupnya.
+export const ACCESS_MATRIX_ORDER: string[] = [
+  'courier_audit', 'courier_checklist_dokumen', 'courier_dokumen_validation', 'courier_cost_validation', 'courier_rekapan', 'courier_validasi', 'courier_upload',
+  'sea_air_audit', 'sea_air_rekapan', 'sea_air_checklist_validation', 'sea_air_dokumen_validation', 'sea_air_cost_validation', 'sea_air_upload',
+  'direct_loading',
+  'far_overseas_finance', 'sea_air_finance', 'courier_finance',
+  'reporting_dashboard', 'reporting_cost_per_vessel', 'reporting_cost_by_courier',
+  'bunker', 'audit_po', 'audit_po_overseas', 'accounting_rekap', 'pi_local', 'verification_qfp', 'lsa',
+  'requisition_rh', 'oil_request',
+  'audit_trail',
+];
 
 export function pageLabel(key: string): string {
   return PAGE_REGISTRY.find(p => p.key === key)?.label || key;

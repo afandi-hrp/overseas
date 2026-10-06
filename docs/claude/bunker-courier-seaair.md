@@ -1,3 +1,69 @@
+<!-- Dipindah dari CLAUDE.md 2026-10-06 (CLAUDE.md diringkas; file ini dibaca saat modulnya dikerjakan). -->
+
+## Relasi Audit PIB ↔ Invoice Recap Sea & Air — "bagian 2" (2026-10-01, kode SELESAI, sql/031+032 SUDAH DIJALANKAN 2026-10-01)
+
+Item yang menyangkut KEDUA halaman dikerjakan bareng. **Pelurusan user**: n8n HANYA membaca dokumen
+dgn AI lalu menulis hasilnya ke Supabase — SEMUA otomatisasi dibuat di DB (trigger/fungsi), BUKAN
+n8n; nama fungsi baru dipastikan belum ada (inspeksi `sql/030`/`030b`, + pre-check di awal 031 yg
+membatalkan kalau ada fungsi bernama sama TANPA komentar `beehive:031`). Export TETAP.
+"Penulis service" = `auth.email() IS NULL` (n8n / SQL Editor) — SELALU lolos semua guard di bawah.
+
+**Keputusan user (jangan diubah tanpa konfirmasi ulang)**:
+1. Konfirmasi validasi (review cost Accept/Ask vendor, edit nominal cost, Accept/Mark mismatch/
+   **Correct** nilai dokumen) **HANYA Admin**. Edit Duty tetap boleh siapa pun yg punya hak edit.
+2. **Submit to Finance** hanya kalau 0 issue (TIDAK ada "submit anyway"). Setelah submit baris
+   **terkunci** (Edit/Delete/review/edit Costs & Documents nonaktif, DB menolak UPDATE/DELETE) —
+   hanya **Admin** bisa **Unlock** dgn alasan (≥5 karakter), tercatat di audit trail.
+3. **Mark as audited** (Audit PIB: tombol, "Save & mark as audited", menu "Move PIB to Audited" di
+   Recap) hanya kalau PIB terhubung ke baris Recap DAN Recap-nya 0 issue (= sudah bisa Submit).
+   PIB manual yg belum terhubung -> hanya bisa disimpan Draft.
+4. Edit shipment di Recap (user) -> PIB terkait otomatis kembali Draft + chip/banner ungu
+   "↻ Changed in Invoice Recap — please re-audit" (kolom `reaudit_reason`/`reaudit_at`).
+5. Upload ulang AWB yg sama tanpa sadar -> ditandai **duplikat** (`duplicate_of`, chip merah) —
+   TIDAK digabung/ditimpa. Upload dokumen susulan nanti via n8n (upsert by AWB) — hasil AI tetap utuh.
+6. Quotation freight per BL: BARU tombol "+ Add quotation" (kartu Freight origin/destination tab
+   Costs) — klik = info "coming soon"; pembacaan quotation oleh n8n menyusul.
+
+**`sql/031`** (idempotent, uji PGlite 45 cek): kolom baru `rekapan_seaair.po_manual jsonb`,
+`duplicate_of`, `submit_unlock_reason/_by/_at`; `tabel_audit_seaair.reaudit_reason/_at`,
+`ai_snapshot jsonb`, `ai_snapshot_at`, `duplicate_of`. Fungsi: `fn_seaair_recap_issue_count`
+(checklist <100 + cost Over/Under belum direview; doc mismatch TIDAK — fuzzy relax hanya ada di JS),
+trigger `trg_seaair_guard_mark_audited`, `trg_seaair_recap_lock`, `trg_seaair_reaudit`,
+`trg_seaair_snapshot_ai` (simpan nilai AI tiap tulis service), `trg_seaair_flag_duplicate`,
+`trg_seaair_validation_admin_only` (catatan cost, `checks` cost, check dokumen `manual` yg
+`match`/`values` berubah atau baru jadi manual), RPC `fn_seaair_unlock_submit(p_rekapan_id,
+p_reason)` & `fn_seaair_reread_from_ai(p_seaair_id)` (Draft saja, kembalikan nilai AI; notes &
+status tidak disentuh). Semua aksi dicatat ke `audit_trail` format app "X — Lama: … → Baru: …".
+**`sql/032`**: `trg_seaair_auto_draft` — PIB baru dari service (status null/LENGKAP) -> ARCHIVED.
+**Efek setelah dijalankan (2026-10-01)**: PIB/Recap LAMA tidak punya `ai_snapshot` (tombol Re-read
+baru muncul utk baris yg ditulis n8n SETELAH 031) & `duplicate_of` hanya terisi utk insert baru;
+baris Recap yg SUDAH punya `tgl_submit_finance` langsung TERKUNCI (perlu Unlock Admin utk dikoreksi);
+insert dari SQL Editor juga dianggap service (ikut jadi Draft, lolos guard).
+
+**Frontend**: `markAuditedBlocker()` (`SeaAirAuditHelpers.ts`, SATU-SATUNYA aturan blokir audited di
+UI) dipakai `SeaAirAuditDetailModal`/`SeaAirAuditEditModal`; `fetchSeaAirAuditLinkInfo` kini juga
+hitung `recapIssues`/`recapPoManual`. Recap: `isRecapLocked`, `parsePoManual`/`poManualFor`
+(`SeaAirRecapHelpers.ts`); Costs/Documents tab terima `isAdmin`/`locked`; Edit shipment: field
+"Submitted to Finance" DIHAPUS, KG/valas/currency/Partial per PO -> `po_manual` (hanya tampil kalau
+kolomnya ada = 031 sudah jalan) + tombol "Split weight evenly"; Split per PO "By KG" otomatis kalau
+SEMUA PO punya KG (toggle "As recorded"); chip Partial di Recap & Audit PIB. Issue `dokumen_kurang`
+'-' (trigger kelengkapan isi '-' kalau lengkap) diabaikan.
+**Uji**: jsdom Recap 112 cek, Audit page 51, render 95, PGlite 031 45 + 032 3 — 0 gagal.
+Belum dites ke production.
+
+**Keterbatasan / catatan**:
+- Gerbang doc mismatch HANYA di frontend (DB cuma menghitung checklist + cost).
+- Mode **List** (tabel lama) — SUDAH digate 2026-10-01: baris terkunci tampil chip "🔒 Locked" tanpa
+  Edit/Delete, tombol "Audit" (undraft) nonaktif selama ada issue, modal lama Cost/Doc Validation
+  `canEdit` = hak edit && Admin && tidak terkunci (edit Duty non-Admin lewat tab Documents jendela Open).
+- (Historis) Sebelum 031 dijalankan: Submit/Mark audited sudah digate di UI, tapi tidak ada kunci DB, kolom
+  `po_manual` tidak ada (form KG per PO tersembunyi), Unlock/Re-read RPC belum ada (error).
+- RPC `update_cost_validasi_manual` dulu menghitung `SESUAI`/`TIDAK_SESUAI` (app memakai `MATCH`/
+  `OVERCHARGE`/`UNDERCHARGE`) -> kolom ringkasan salah; DIPERBAIKI `sql/033` (signature sama, backfill
+  baris lama opsional & dikomentari). Aplikasi tidak membaca kolom ringkasan itu.
+- Belum: freight otomatis per delivery term, quotation per BL (n8n), bukti bayar (upload) di Finance
+  Handover, status "still being processed".
+
 ## Invoice Recap Sea & Air — tampilan baru "Invoice Recap" (2026-10-01)
 
 Redesain `/sea-air/rekapan` dari spek user ("BeeHive AI · Invoice Recap", V167), pola SAMA dgn Audit

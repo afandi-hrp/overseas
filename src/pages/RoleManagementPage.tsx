@@ -1,14 +1,28 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
-import { PAGE_REGISTRY, PAGE_GROUPS, APPROVAL_TIER_PAGES } from '../lib/permissions';
-import { Plus, Trash2, ShieldCheck, Users, LayoutGrid, Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns3, X, Search } from 'lucide-react';
+import { PAGE_REGISTRY, PAGE_GROUPS, APPROVAL_TIER_PAGES, ACCESS_MATRIX_ORDER, type PageEntry } from '../lib/permissions';
+import {
+  Plus, Trash2, ShieldCheck, Users, LayoutGrid, Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns3, X, Search,
+  Plane, Ship, FileCheck2, Wallet, BarChart3, GitCompare, ClipboardList, ScrollText, Settings as SettingsIcon, CornerDownRight,
+} from 'lucide-react';
 import Greeting from '../components/Greeting';
 import { LoadingState } from '../components/LoadingState';
 import { COLUMN_ACCESS_PAGES, COLUMN_ACCESS_NOTE } from '../components/SharedDataTable';
 
 type Role = { id: string; name: string; description: string | null; is_protected: boolean };
 type ProfileRow = { id: string; email: string | null; nama: string | null };
+
+// Ikon grup matrix = ikon menu yg sama di sidebar (MainLayout MAIN_TABS) supaya mudah dicocokkan.
+const GROUP_ICON: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  'Courier': Plane, 'Sea & Air': Ship, 'FAR Overseas': FileCheck2, 'Finance Handover': Wallet, 'Reporting': BarChart3,
+  'Compare Doc': GitCompare, 'SPB': ClipboardList, 'Audit Trail': ScrollText, 'Settings': SettingsIcon,
+};
+const matrixOrder = (p: PageEntry) => {
+  const i = ACCESS_MATRIX_ORDER.indexOf(p.key);
+  return i >= 0 ? i : 1000 + PAGE_REGISTRY.indexOf(p);
+};
+const pageName = (p: PageEntry) => p.menuLabel || p.label;
 
 // Jabatan approval berjenjang (mis. FAR Overseas Air: Exim -> PIC -> SPV -> Direktur, lihat
 // FarOverseasAirDetailModal.tsx) NEMPEL LANGSUNG DI USER, PER HALAMAN -- tabel
@@ -52,6 +66,7 @@ export default function RoleManagementPage() {
   const [savingNewRole, setSavingNewRole] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [userSearch, setUserSearch] = useState('');
+  const [pageSearch, setPageSearch] = useState('');
   // Grup halaman yang di-collapse di matrix akses -- makin banyak halaman & role, matrix bisa
   // sangat panjang ke bawah, jadi tiap grup bisa diciutkan satu-satu (atau semua sekaligus lewat
   // tombol Ciutkan/Bentangkan Semua) supaya halaman ini tetap ringkas & mudah dipindai.
@@ -295,6 +310,20 @@ export default function RoleManagementPage() {
     });
   };
 
+  // Grup matrix (urutan sidebar) + filter pencarian halaman. Saat mencari, grup yg punya hasil
+  // selalu terbentang.
+  const matrixGroups = useMemo(() => {
+    const q = pageSearch.trim().toLowerCase();
+    return PAGE_GROUPS.map(group => {
+      const all = PAGE_REGISTRY.filter(p => p.group === group).sort((a, b) => matrixOrder(a) - matrixOrder(b));
+      const pages = q
+        ? all.filter(p => [p.menuLabel, p.label, p.key, p.parent, group].some(v => (v || '').toLowerCase().includes(q)))
+        : all;
+      return { group, all, pages };
+    }).filter(g => g.pages.length > 0);
+  }, [pageSearch]);
+  const searchingPages = pageSearch.trim() !== '';
+
   const filteredProfiles = useMemo(() => {
     const q = userSearch.trim().toLowerCase();
     if (!q) return profiles;
@@ -313,7 +342,7 @@ export default function RoleManagementPage() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-3 pt-2 pb-8 space-y-6">
+      <main className="px-3 pt-2 pb-8 space-y-6">
 
         {columnModal && (
           <ColumnAccessModal
@@ -374,60 +403,113 @@ export default function RoleManagementPage() {
               </div>
             </div>
 
-            {/* Matrix akses halaman per role */}
+            {/* Matrix akses halaman per role -- dikelompokkan SAMA dgn menu sidebar (2026-10-06): ikon & nama
+                menu sidebar, urutan submenu, fitur (tombol di dalam halaman) menjorok di bawah induknya, baris
+                grup menampilkan ringkasan akses per role (tetap informatif saat grup diciutkan). */}
             <div className="relative bg-white/40 backdrop-blur-xl rounded-2xl border border-[#5A305A]/25 shadow-[0_4px_24px_rgba(90,48,90,0.08)] p-6 overflow-hidden">
               <div className="absolute -bottom-24 -right-16 w-64 h-64 bg-gradient-to-tl from-[#73507B]/15 to-transparent rounded-full blur-3xl pointer-events-none" />
-              <div className="relative flex items-center justify-between gap-3 mb-1 flex-wrap">
+              <div className="relative flex items-center justify-between gap-3 mb-3 flex-wrap">
                 <div className="flex items-center gap-2">
                   <LayoutGrid size={17} className="text-[#5A305A]" />
                   <h2 className="font-bold text-[#5A305A]">Page Access per Role</h2>
-                  <span className="text-[11px] font-medium text-[#5A305A]/50">{PAGE_REGISTRY.length} pages · {PAGE_GROUPS.length} groups</span>
+                  <span className="text-[11px] font-medium text-[#5A305A]/50">{PAGE_REGISTRY.length} pages · {PAGE_GROUPS.length} menus</span>
                 </div>
-                <button
-                  onClick={() => setCollapsedGroups(prev => prev.size >= PAGE_GROUPS.length ? new Set() : new Set(PAGE_GROUPS))}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-[#5A305A]/20 bg-white/70 text-[#5A305A] text-[11px] font-semibold hover:bg-white transition-colors"
-                >
-                  {collapsedGroups.size >= PAGE_GROUPS.length ? <ChevronsUpDown size={12} /> : <ChevronsDownUp size={12} />}
-                  {collapsedGroups.size >= PAGE_GROUPS.length ? 'Expand All' : 'Collapse All'}
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="relative">
+                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#5A305A]/50 pointer-events-none" />
+                    <input
+                      value={pageSearch}
+                      onChange={e => setPageSearch(e.target.value)}
+                      placeholder="Search page..."
+                      className="w-52 border border-[#5A305A]/25 bg-white/80 rounded-xl pl-8 pr-7 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A]"
+                    />
+                    {pageSearch && (
+                      <button onClick={() => setPageSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#5A305A]/50 hover:text-[#5A305A]" aria-label="Clear search"><X size={12} /></button>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setCollapsedGroups(prev => prev.size >= PAGE_GROUPS.length ? new Set() : new Set(PAGE_GROUPS))}
+                    disabled={searchingPages}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-[#5A305A]/20 bg-white/80 text-[#5A305A] text-[11px] font-semibold hover:bg-white transition-colors disabled:opacity-50"
+                  >
+                    {collapsedGroups.size >= PAGE_GROUPS.length ? <ChevronsUpDown size={12} /> : <ChevronsDownUp size={12} />}
+                    {collapsedGroups.size >= PAGE_GROUPS.length ? 'Expand All' : 'Collapse All'}
+                  </button>
+                </div>
               </div>
-              <div className="relative rounded-xl border border-[#5A305A]/12 bg-white/85 backdrop-blur-md shadow-inner overflow-hidden">
-                <div className="overflow-auto max-h-[520px]">
-                  <table className="w-full text-xs border-collapse min-w-[500px]">
+
+              {/* Legenda */}
+              <div className="relative flex items-center gap-x-4 gap-y-1.5 flex-wrap mb-3 text-[11px] text-[#5A305A]/80">
+                <span className="inline-flex items-center gap-1.5"><span className="w-4 h-4 rounded-md bg-emerald-500 text-white inline-flex items-center justify-center"><Check size={10} strokeWidth={3} /></span> Can open the page</span>
+                <span className="inline-flex items-center gap-1.5"><span className="text-[9px] font-bold px-1.5 h-4 rounded bg-amber-500 text-white inline-flex items-center">EDIT</span> / <span className="text-[9px] font-bold px-1.5 h-4 rounded bg-slate-100 border border-slate-300 text-slate-500 inline-flex items-center">VIEW</span> click to switch</span>
+                <span className="inline-flex items-center gap-1.5"><span className="text-[9px] font-bold px-1.5 h-4 rounded border border-slate-300 text-slate-500 inline-flex items-center gap-0.5"><Columns3 size={9} />ALL</span> visible columns</span>
+                <span className="inline-flex items-center gap-1.5"><CornerDownRight size={12} className="text-[#5A305A]/50" /> action inside a page</span>
+                <span className="inline-flex items-center gap-1.5"><span className="text-[10px] font-bold px-1.5 rounded-full bg-emerald-100 text-emerald-700">3/3</span> pages granted in the menu</span>
+              </div>
+
+              <div className="relative rounded-xl border border-[#5A305A]/12 bg-white/90 backdrop-blur-md shadow-inner overflow-hidden">
+                <div className="overflow-auto max-h-[70vh]">
+                  <table className="w-full text-xs border-collapse min-w-[560px]">
                     <thead>
                       <tr className="text-[10px] text-[#5A305A]/80 uppercase tracking-wider">
-                        <th className="text-left font-bold px-4 py-3 sticky left-0 top-0 z-20 bg-[#FAF7F5] border-b border-[#5A305A]/12">Page</th>
-                        {roles.map(role => (
-                          <th key={role.id} className="text-center font-bold px-4 py-3 whitespace-nowrap sticky top-0 z-10 bg-[#FAF7F5] border-b border-[#5A305A]/12">{role.name}</th>
-                        ))}
+                        <th className="text-left font-bold px-4 py-3 sticky left-0 top-0 z-30 bg-[#FAF7F5] border-b border-[#5A305A]/12 min-w-[260px]">Menu / Page</th>
+                        {roles.map(role => {
+                          const n = role.is_protected ? PAGE_REGISTRY.length : PAGE_REGISTRY.filter(p => rolePageAccess[role.id]?.has(p.key)).length;
+                          return (
+                            <th key={role.id} className="text-center font-bold px-3 py-2.5 whitespace-nowrap sticky top-0 z-20 bg-[#FAF7F5] border-b border-[#5A305A]/12">
+                              <div>{role.name}</div>
+                              <div className="text-[9px] font-medium normal-case tracking-normal text-[#5A305A]/50 mt-0.5">{role.is_protected ? 'all pages' : `${n} page${n === 1 ? '' : 's'}`}</div>
+                            </th>
+                          );
+                        })}
                       </tr>
                     </thead>
                     <tbody>
-                      {PAGE_GROUPS.map(group => {
-                        const groupPages = PAGE_REGISTRY.filter(p => p.group === group);
-                        const isCollapsed = collapsedGroups.has(group);
+                      {matrixGroups.length === 0 && (
+                        <tr><td colSpan={roles.length + 1} className="text-center text-[#5A305A]/60 italic py-6">No page matches "{pageSearch}".</td></tr>
+                      )}
+                      {matrixGroups.map(({ group, all, pages }) => {
+                        const isCollapsed = !searchingPages && collapsedGroups.has(group);
+                        const Icon = GROUP_ICON[group] || LayoutGrid;
                         return (
                         <React.Fragment key={group}>
-                          <tr>
-                            <td colSpan={roles.length + 1} className="p-0 sticky left-0 border-b border-[#5A305A]/10">
-                              <button
-                                onClick={() => toggleGroup(group)}
-                                className="w-full flex items-center gap-1.5 px-4 py-3 text-[10px] font-bold text-[#5A305A]/80 uppercase tracking-widest bg-[#FFF5C5] hover:bg-[#FFF0A8] transition-colors text-left"
-                              >
-                                {isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-                                {group}
-                                <span className="normal-case font-medium text-[#5A305A]/50 tracking-normal">({groupPages.length})</span>
-                              </button>
+                          <tr onClick={() => !searchingPages && toggleGroup(group)} className={`${searchingPages ? '' : 'cursor-pointer'} group/grp`}>
+                            <td className="sticky left-0 z-10 px-3 py-2.5 bg-[#FFF5C5] group-hover/grp:bg-[#FFF0A8] border-b border-[#5A305A]/10 transition-colors">
+                              <div className="flex items-center gap-2">
+                                {searchingPages ? <span className="w-3" /> : isCollapsed ? <ChevronRight size={13} className="text-[#5A305A]/70" /> : <ChevronDown size={13} className="text-[#5A305A]/70" />}
+                                <span className="w-6 h-6 rounded-lg bg-[#5A305A] text-white flex items-center justify-center shrink-0"><Icon size={13} /></span>
+                                <span className="text-[12px] font-bold text-[#5A305A]">{group}</span>
+                                <span className="text-[10px] font-medium text-[#5A305A]/55">{all.length} page{all.length === 1 ? '' : 's'}</span>
+                              </div>
                             </td>
+                            {roles.map(role => {
+                              const granted = role.is_protected ? all.length : all.filter(p => rolePageAccess[role.id]?.has(p.key)).length;
+                              const tone = granted === 0 ? 'bg-white/70 text-slate-400' : granted === all.length ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700';
+                              return (
+                                <td key={role.id} className="px-3 py-2.5 text-center bg-[#FFF5C5] group-hover/grp:bg-[#FFF0A8] border-b border-[#5A305A]/10 transition-colors">
+                                  <span className={`inline-block min-w-[38px] text-[10px] font-bold px-1.5 py-0.5 rounded-full ${tone}`}>{granted === 0 ? '—' : `${granted}/${all.length}`}</span>
+                                </td>
+                              );
+                            })}
                           </tr>
-                          {!isCollapsed && groupPages.map(page => (
+                          {!isCollapsed && pages.map(page => (
                             <tr key={page.key} className="group/row hover:bg-[#5A305A]/[0.04] transition-colors">
-                              <td className="px-4 py-3.5 text-[#5A305A] sticky left-0 bg-white group-hover/row:bg-[#FAF7F5] transition-colors border-b border-slate-100">{page.label}</td>
+                              <td className={`py-2.5 pr-4 sticky left-0 z-[5] bg-white group-hover/row:bg-[#FAF7F5] transition-colors border-b border-slate-100 ${page.parent ? 'pl-14' : 'pl-11'}`}>
+                                <div className="flex items-start gap-1.5">
+                                  {page.parent && <CornerDownRight size={12} className="text-[#5A305A]/40 mt-0.5 shrink-0" />}
+                                  <div className="min-w-0">
+                                    <div className={`text-[#5A305A] ${page.parent ? 'font-medium' : 'font-semibold'}`}>{pageName(page)}</div>
+                                    <div className="text-[10px] text-[#5A305A]/45 mt-0.5 truncate">
+                                      {page.parent ? `Action inside ${page.parent}` : page.path?.split('?')[0]}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
                               {roles.map(role => {
                                 const checked = role.is_protected || !!rolePageAccess[role.id]?.has(page.key);
                                 const canEditPage = role.is_protected || !!rolePageCanEdit[role.id]?.has(page.key);
                                 return (
-                                  <td key={role.id} className="px-4 py-3.5 text-center border-b border-slate-100">
+                                  <td key={role.id} className="px-3 py-2.5 text-center border-b border-slate-100">
                                     <div className="inline-flex items-center gap-1">
                                       <button
                                         onClick={() => toggleRolePageAccess(role, page.key)}
