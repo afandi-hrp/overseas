@@ -35,6 +35,7 @@ import {
 import { SeaAirAuditCardList, SeaAirAuditKpiCards } from './SeaAirAuditCardList'
 import SeaAirAuditDetailModal from './SeaAirAuditDetailModal'
 import SeaAirAuditEditModal from './SeaAirAuditEditModal'
+import { orSafe, fetchAllPages } from '../utils/supabaseQueryHelpers'
 import { computeRecapIssues, fetchFormENotes, fetchRecapSummary, isRecapLocked, notifySeaAirRecapChanged, todayLocalIso, type RecapSummary, type RecapIssue } from '../utils/SeaAirRecapHelpers'
 import {
   COURIER_AUDIT_CALC_FIELDS, computeCourierAuditCalc, courierAuditCalcNum, fetchCourierAuditSummary, courierDocType, courierDocNo,
@@ -120,6 +121,8 @@ const TRAIL_TABLES: Record<string, string[]> = {
 // n8n lagi setelah guard di atas) MASIH tersaring krn tidak cocok pola (b), sesuai permintaan
 // user "biar rapi", HANYA baris INSERT/DELETE-nya yang tetap tampil.
 const TRAIL_APP_WRITTEN_FILTER = 'catatan.is.null,catatan.ilike.%— Lama:%,catatan.ilike.Baris dihapus permanen —%';
+
+// `orSafe` (Search aman utk `.or()`) & `fetchAllPages` (Export per halaman) -- src/utils/supabaseQueryHelpers.ts (2026-10-06).
 
 // ─── Field AI (disabled) dan Manual (editable) per tipe ───────
 
@@ -3574,8 +3577,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   const navigate = useNavigate();
   // `?q=` (2026-09-30) -- isi awal kotak Search, dipakai tombol "Open in Invoice Recap" di Audit PIB
   // Sea & Air (buka Invoice Recap terfilter BL/AWB shipment itu). Tanpa param = perilaku lama.
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const initialSearchParam = searchParams.get('q') || '';
+  // `?open=<id Audit PIB>` (2026-10-06) -- Invoice Recap Sea & Air langsung membuka jendela Open shipment itu
+  // (tombol "Open in Invoice Recap" jendela Audit PIB). Dibaca sekali, lalu dihapus dari URL.
+  const openRecapForSeaairId = searchParams.get('open');
   // Search Audit/Rekapan Courier HANYA mencari di kolom yang boleh dilihat role user (2026-09-29,
   // lihat COLUMN_ACCESS_PAGES) -- supaya baris tidak "muncul tanpa alasan kelihatan" krn cocok di
   // kolom tersembunyi. Kalau TIDAK ADA satu pun kolom search yang diizinkan, pakai daftar asli
@@ -3671,7 +3677,12 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     setPage(1); // Reset page on tab switch
   }, [defaultMainTab, defaultSubTab]);
 
-  const [courierAuditType, setCourierAuditType] = useState('archive')
+  // `?tab=draft|pib|cn` (2026-10-06, tombol "View in Audit" Invoice Recap Courier) -- tab awal Audit Courier, supaya fetch
+  // pertama langsung di tab tempat PIB/CN itu berada (Draft vs sudah Audited).
+  const [courierAuditType, setCourierAuditType] = useState(() => {
+    const t = searchParams.get('tab');
+    return t === 'pib' || t === 'cn' ? t : 'archive';
+  })
   // 'draft' (status ARCHIVED) | 'audit' (Audited, non-ARCHIVED) | 'all' -- default Draft sejak
   // redesain PIB Audit 2026-09-30 (tab Draft paling kiri & aktif, sesuai mockup user).
   const [seaAirAuditType, setSeaAirAuditType] = useState('draft')
@@ -3698,9 +3709,15 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   const [loading,       setLoading]       = useState(true)
   const [filterStartDate, setFilterStartDate] = useState('')
   const [filterEndDate, setFilterEndDate] = useState('')
-  const [search,        setSearch]        = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
+  // Diisi dari `?q=` SEJAK render pertama (2026-10-06, laporan user "Open in Invoice Recap" menampilkan semua data):
+  // dulu mulai '' lalu diisi efek -> request TANPA filter terkirim lebih dulu & responsnya bisa tiba belakangan.
+  const [search,        setSearch]        = useState(initialSearchParam)
+  const [debouncedSearch, setDebouncedSearch] = useState(initialSearchParam)
+  // Nomor urut request daftar -- respons dari request yang SUDAH digantikan request lebih baru diabaikan (lihat
+  // `fetchRecords`). Setter asli disimpan di alias `raw*` supaya bisa dibungkus di dalam fetchRecords.
+  const fetchRecordsSeqRef = useRef(0)
   const [fetchError,    setFetchError]    = useState<string | null>(null)
+  const rawSetRecords = setRecords, rawSetTotalRecords = setTotalRecords, rawSetLoading = setLoading, rawSetFetchError = setFetchError
 
   // Reorder Mode (2026-09) keluar otomatis begitu tab/filter berubah -- scope drag (tabel, tab
   // PPJK/PIB-CN) harus sama persis dgn yg ditampilkan, ganti tab bikin posisi yg dihitung basi.
@@ -3784,16 +3801,26 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   }, []);
 
   useEffect(() => {
+    // Daftar user dropdown "User" Audit Trail -- HANYA di tab Audit Trail (dulu jalan di semua halaman pemakai
+    // SharedDataTable). Server-side: RPC `fn_audit_trail_users` (sql/048, DISTINCT di Postgres); RPC belum ada ->
+    // cara lama (2.000 baris terbaru, dedup di browser).
+    if (activeMainTab !== 'trail') return;
+    let cancelled = false;
     const fetchTrailUsers = async () => {
-      // Fetch distinct user (buat filter "peruser" di Audit Trail)
-      const { data } = await supabase.from('v_audit_trail').select('user_email').neq('user_email', null).order('created_at', { ascending: false }).limit(2000);
-      if (data) {
-        const unique = Array.from(new Set(data.map((d: any) => d.user_email && String(d.user_email).trim()).filter(Boolean))) as string[];
-        setTrailUserTabs(['All', ...unique.sort()]);
+      let users: string[] | null = null;
+      const rpc = await supabase.rpc('fn_audit_trail_users');
+      if (!rpc.error && Array.isArray(rpc.data)) {
+        users = rpc.data.map((d: any) => String(d?.user_email || '').trim()).filter(Boolean);
+      } else {
+        const { data } = await supabase.from('v_audit_trail').select('user_email').neq('user_email', null).order('created_at', { ascending: false }).limit(2000);
+        if (data) users = data.map((d: any) => d.user_email && String(d.user_email).trim()).filter(Boolean);
       }
+      if (cancelled || !users) return;
+      setTrailUserTabs(['All', ...Array.from(new Set(users)).sort()]);
     };
     fetchTrailUsers();
-  }, []);
+    return () => { cancelled = true; };
+  }, [activeMainTab]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -3920,6 +3947,15 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     if (!tab) return
     if (!(activeMainTab === 'courier' && activeSubTab === 'courier_audit') && !tab.table) return
 
+    // Penjaga respons lama (2026-10-06): hanya request TERAKHIR yang boleh mengubah daftar/loading/error -- request
+    // yang tergantikan (filter/Search berubah saat masih jalan) tidak lagi bisa menimpa hasil yang lebih baru.
+    const seq = ++fetchRecordsSeqRef.current
+    const live = () => seq === fetchRecordsSeqRef.current
+    const setRecords = (v: any[]) => { if (live()) rawSetRecords(v) }
+    const setTotalRecords = (v: number) => { if (live()) rawSetTotalRecords(v) }
+    const setLoading = (v: boolean) => { if (live()) rawSetLoading(v) }
+    const setFetchError = (v: string | null) => { if (live()) rawSetFetchError(v) }
+
     setLoading(true)
     setFetchError(null)
 
@@ -3951,8 +3987,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         if (debouncedSearch) {
           const searchColsPib = restrictSearchCols('courier_audit', ['awb', 'vendor_inv_no', 'no_pib', 'po_ori', 'vendor']);
           const searchColsCn = restrictSearchCols('courier_audit', ['awb', 'vendor_inv_no', 'po_ori', 'vendor']);
-          queryPib = queryPib.or(searchColsPib.map(col => `${col}.ilike.%${debouncedSearch}%`).join(','));
-          queryCn = queryCn.or(searchColsCn.map(col => `${col}.ilike.%${debouncedSearch}%`).join(','));
+          queryPib = queryPib.or(searchColsPib.map(col => `${col}.ilike.%${orSafe(debouncedSearch)}%`).join(','));
+          queryCn = queryCn.or(searchColsCn.map(col => `${col}.ilike.%${orSafe(debouncedSearch)}%`).join(','));
         }
 
         const [resPib, resCn] = await Promise.all([queryPib, queryCn])
@@ -4114,7 +4150,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         searchCols = ['awb', 'no_dokumen', 'user_email', 'tabel'];
       }
       if (searchCols.length > 0) {
-        const orCondition = searchCols.map(col => `${col}.ilike.%${debouncedSearch}%`).join(',');
+        const orCondition = searchCols.map(col => `${col}.ilike.%${orSafe(debouncedSearch)}%`).join(',');
         query = query.or(orCondition);
       }
     }
@@ -4370,7 +4406,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       if (filterEndDate) query = query.lte('tgl_terima_email', `${filterEndDate} 23:59:59`);
       if (debouncedSearch) {
         const searchCols = restrictSearchCols('courier_rekapan', ['awb', 'no_invoice', 'vendor', 'po_pt_imi', 'ppjk']);
-        query = query.or(searchCols.map(col => `${col}.ilike.%${debouncedSearch}%`).join(','));
+        query = query.or(searchCols.map(col => `${col}.ilike.%${orSafe(debouncedSearch)}%`).join(','));
       }
       const { data, error } = await query;
       if (error || !data) {
@@ -4394,7 +4430,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         q = statusMode === 'archived' ? q.eq('status', 'ARCHIVED') : q.neq('status', 'ARCHIVED');
         if (activeCourierImporAnFilter !== 'All') q = q.eq('impor_an', activeCourierImporAnFilter);
         if (debouncedSearch) {
-          q = q.or(searchCols.map(col => `${col}.ilike.%${debouncedSearch}%`).join(','));
+          q = q.or(searchCols.map(col => `${col}.ilike.%${orSafe(debouncedSearch)}%`).join(','));
         }
         return q;
       }
@@ -4605,6 +4641,23 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     return row;
   };
 
+  // `?open=PIB:<id>` / `CN:<id>` (2026-10-06, tombol "View in Audit" Invoice Recap Courier) -- jendela Open PIB/CN itu terbuka
+  // SEKALI setelah daftar dimuat (baris dibaca ulang lewat reloadCourierRow = data SAMA jendela Open biasa), lalu
+  // `open` & `tab` dihapus dari URL (Search `q` tetap).
+  const openCourierHandledRef = useRef(false);
+  useEffect(() => {
+    if (!isCourierAuditView || openCourierHandledRef.current || loading) return;
+    const m = /^(PIB|CN):(.+)$/.exec(searchParams.get('open') || '');
+    if (!m) return;
+    openCourierHandledRef.current = true;
+    const t = m[1] as CourierDocType;
+    reloadCourierRow(m[2], t)
+      .then(row => { if (row) setCourierOpen({ rec: row, tab: 'overview' }); })
+      .catch(err => console.error('[CourierAudit] buka PIB/CN dari link gagal', err))
+      .finally(() => setSearchParams(prev => { const n = new URLSearchParams(prev); n.delete('open'); n.delete('tab'); return n; }, { replace: true }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCourierAuditView, loading, searchParams]);
+
   // Tutup jendela Open (2026-10-02, laporan user "tabel refresh tiap tutup Open"): JANGAN fetchRecords()
   // (overlay "Updating data..." + daftar dimuat ulang). Cukup baca ulang baris itu & tempel ke `records`
   // tanpa loading; ringkasan KPI hanya dihitung ulang kalau persen validasi/kelengkapan baris berubah.
@@ -4794,8 +4847,25 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
   const handleSeaAirOpenRecap = (rec: any) => {
     const key = String(rec?.awb || rec?.no_aju || '').trim();
-    navigate(key ? `/sea-air/rekapan?q=${encodeURIComponent(key)}` : '/sea-air/rekapan');
+    const params = new URLSearchParams();
+    if (key) params.set('q', key);
+    if (rec?.id !== null && rec?.id !== undefined) params.set('open', String(rec.id));
+    const qs = params.toString();
+    navigate(qs ? `/sea-air/rekapan?${qs}` : '/sea-air/rekapan');
   };
+
+  // `?open=<id Audit PIB>` -- buka jendela Open Invoice Recap shipment yg `seaair_id`-nya = id itu, SEKALI, setelah
+  // daftar (terfilter `?q=`) selesai dimuat. Tidak ada di halaman ini -> baris diambil langsung dari DB.
+  const openRecapHandledRef = useRef(false);
+  useEffect(() => {
+    if (!isSeaAirRekapan || !openRecapForSeaairId || openRecapHandledRef.current || loading) return;
+    openRecapHandledRef.current = true;
+    const clearParam = () => setSearchParams(prev => { const n = new URLSearchParams(prev); n.delete('open'); return n; }, { replace: true });
+    const hit = records.find(r => String(r.seaair_id) === String(openRecapForSeaairId));
+    if (hit) { setRecapDetailId(hit.id); setRecapDetailSnapshot(hit); clearParam(); return; }
+    supabase.from('rekapan_seaair').select('*').eq('seaair_id', openRecapForSeaairId).order('id', { ascending: true }).limit(1)
+      .then(({ data }) => { const row = data && data[0]; if (row) { setRecapDetailId(row.id); setRecapDetailSnapshot(row); } clearParam(); });
+  }, [isSeaAirRekapan, openRecapForSeaairId, loading, records, setSearchParams]);
 
   const getExportData = async (startDate?: string, endDate?: string) => {
     if (!tab) return []
@@ -4822,11 +4892,13 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       if (debouncedSearch) {
         const searchColsPib = restrictSearchCols('courier_audit', ['awb', 'vendor_inv_no', 'no_pib', 'po_ori', 'vendor']);
         const searchColsCn = restrictSearchCols('courier_audit', ['awb', 'vendor_inv_no', 'po_ori', 'vendor']);
-        queryPib = queryPib.or(searchColsPib.map(col => `${col}.ilike.%${debouncedSearch}%`).join(','));
-        queryCn = queryCn.or(searchColsCn.map(col => `${col}.ilike.%${debouncedSearch}%`).join(','));
+        queryPib = queryPib.or(searchColsPib.map(col => `${col}.ilike.%${orSafe(debouncedSearch)}%`).join(','));
+        queryCn = queryCn.or(searchColsCn.map(col => `${col}.ilike.%${orSafe(debouncedSearch)}%`).join(','));
       }
       
-      const [resPib, resCn] = await Promise.all([queryPib, queryCn]);
+      // Per halaman (lihat fetchAllPages) -- urutan stabil by id; urutan tampilan diatur di bawah.
+      const [resPib, resCn] = await Promise.all([fetchAllPages(queryPib.order('id', { ascending: true }), 25000), fetchAllPages(queryCn.order('id', { ascending: true }), 25000)]);
+      if (resPib.error || resCn.error) { console.error(resPib.error || resCn.error); throw (resPib.error || resCn.error); }
       
       // `sptnp_total` sudah ikut `select('*')` -- query ulang per-50-id dibuang (2026-09-28).
       const combined = [
@@ -4943,7 +5015,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         searchCols = ['awb', 'no_dokumen', 'user_email', 'tabel'];
       }
       if (searchCols.length > 0) {
-        const orCondition = searchCols.map(col => `${col}.ilike.%${debouncedSearch}%`).join(',');
+        const orCondition = searchCols.map(col => `${col}.ilike.%${orSafe(debouncedSearch)}%`).join(',');
         query = query.or(orCondition);
       }
     }
@@ -4969,7 +5041,9 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       query = query.order(actualSortCol, { ascending: sortDirection === 'asc', nullsFirst: false });
     }
 
-    const { data, error } = await query
+    // Tiebreak `id` utk urutan stabil antar-halaman (v_audit_trail: created_at berpresisi mikrodetik, tanpa tiebreak).
+    if (activeMainTab !== 'trail' && !usesRowSortOrderExport) query = query.order('id', { ascending: true });
+    const { data, error } = await fetchAllPages(query)
 
     if (error) {
       console.error(error);
@@ -6994,7 +7068,17 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                     onClose={closeCourierRecapPanel}
                     onSubmit={handleCourierRecapSubmit}
                     onUnlock={handleCourierRecapUnlock}
-                    onViewInAudit={() => navigate(`/courier/audit?q=${encodeURIComponent(courierRecapPanel.g.audit?.rec?.awb || courierRecapPanel.g.awb)}`)}
+                    onViewInAudit={() => {
+                      // 2026-10-06: buka Audit Courier terfilter AWB, di tab tempat PIB/CN berada, & jendela Open-nya langsung.
+                      const link = courierRecapPanel.g.audit;
+                      const params = new URLSearchParams();
+                      params.set('q', String(link?.rec?.awb || courierRecapPanel.g.awbRaw || courierRecapPanel.g.awb || ''));
+                      if (link?.rec) {
+                        params.set('tab', isCourierDraft(link.rec) ? 'draft' : link.docType === 'CN' ? 'cn' : 'pib');
+                        params.set('open', `${link.docType}:${link.rec.id}`);
+                      }
+                      navigate(`/courier/audit?${params.toString()}`);
+                    }}
                     onEditInList={() => { const g = courierRecapPanel.g; closeCourierRecapPanel(); switchCourierRecapView('list'); setSearch(g.awb); }}
                     onChanged={() => setCourierRecapNonce(n => n + 1)}
                     onDirtyChange={d => { courierRecapPanelDirty.current = d }}

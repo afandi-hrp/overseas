@@ -123,6 +123,10 @@ Spek user + prototipe `Prototype — Validation Side Panel.html` (HANYA tata let
   kartu — bergantung n8n menghitung ulang `tabel_cost_validasi` setelah upload susulan (konfirmasi user "harusnya").
 - **Details** = jendela penuh (portal z-[80], monitor besar `max-w-[1880px]` hampir selebar layar spy tabel matriks muat; layar <=1600px penuh layar) berisi tabel LAMA mode List: Doc = `ValidasiModalLegacy` (Edit + Recompute, autosave
   2 dtk SAMA mode List), Cost = `CostValidationModalLegacy` (Edit Cost Validasi, review per invoice). Ditutup -> panel dibaca ulang.
+- **View in Audit** (2026-10-06, permintaan user, pola SAMA "Open in Invoice Recap" Sea & Air): navigate
+  `/courier/audit?q=<awb>&tab=<draft|pib|cn>&open=<PIB|CN>:<id>` -- Audit Courier dibuka langsung di tab tempat PIB/CN itu
+  (`courierAuditType` diinisialisasi dari `?tab=`, fetch pertama sudah benar), Search terisi AWB sejak render pertama, jendela
+  Open PIB/CN terbuka sekali (`reloadCourierRow`), lalu `open` & `tab` dihapus dari URL (`q` tetap). Diuji jsdom 5 cek.
 - **Audit trail** (tab BARU 2026-10-06, permintaan user) = riwayat INVOICE AWB itu (`fetchRecapCourierLog`, v_audit_trail
   rekapan_courier: dibuat, edit, Submit to Finance, Unlock, dst; tampilan `CourierAuditTrail`) -- DULU bagian lipat di bawah tab
   Invoices (dihapus dari sana). Riwayat centang dokumen tetap di Checklist › Document review; riwayat PIB/CN di jendela Open Audit.

@@ -54,8 +54,12 @@ yang berlaku lintas modul. Rujukan lama di docs berbunyi "lihat CLAUDE.md bagian
   (2026-10-06, konfirmasi user). Isi terakhir 041–047 ada di git commit `4286a34` (`git show 4286a34:sql/<file>`), yang lebih
   lama di commit sebelumnya. 045 = seed 3 akun @purchasing.com, 046 = `profiles.divisi` + RPC `fn_set_user_divisi`, 047 = isi
   divisi dari domain email. Catatan "BELUM DIJALANKAN" di `docs/claude/*.md` utk file ≤047 TIDAK berlaku. SQL baru: file
-  `sql/NNN_*.sql` baru (lanjut 048; idempotent, pre-check nama fungsi), user yang menjalankan manual — tidak ada akses DB
+  `sql/NNN_*.sql` baru (lanjut 049; idempotent, pre-check nama fungsi), user yang menjalankan manual — tidak ada akses DB
   dari sesi.
+  **`sql/048_audit_trail_users_and_indexes.sql` SUDAH DIJALANKAN 2026-10-06** (konfirmasi user): RPC baca `fn_audit_trail_users()`
+  (dropdown User halaman Audit Trail, DISTINCT di Postgres) + index `user_email` & trigram awb/no_dokumen/user_email. Kalau RPC
+  error, dropdown User fallback ke cara lama (2.000 baris terbaru). Detail: `docs/claude/bunker-courier-seaair.md` "Audit Trail
+  server-side".
 - **Kondisi DB production (stack `supabase3`)**: `anon` tanpa hak di schema public, GraphQL ditutup, semua tabel RLS
   (`has_page_access`/`has_edit_access`, tidak ada `using (true)`), view `security_invoker`, RPC `SECURITY DEFINER`
   ber-`search_path` & guard. **Aturan objek baru**: tabel WAJIB RLS 4 policy; RPC `SECURITY DEFINER` WAJIB guard
@@ -196,6 +200,7 @@ signature beda → `42P13`; whitelist `v_allowed_columns` RPC buatan user bisa b
 kosong (cek whitelist dulu). Daftar di bawah disimpulkan dari `.rpc('...')` di frontend, bisa basi.
 
 - Auth: `get_my_access`, `get_my_approval_tiers`, `get_my_column_access`.
+- Audit Trail (sql/048, SUDAH DIJALANKAN 2026-10-06): `fn_audit_trail_users()` (SECURITY INVOKER, baca saja).
 - FAR Overseas: `update_rekapan_far_overseas_manual` (whitelist kolom TERPISAH dari `REKAPAN_EDITABLE_FIELDS` —
   tambah field = tambah whitelist), `insert_rekapan_far_overseas_manual`, `update_cost_validasi_far_overseas_manual`,
   `fn_delete_far_overseas_air`, `approve_far_overseas_air`, `reject_far_overseas_air`, `get_users_with_approval_tier`,

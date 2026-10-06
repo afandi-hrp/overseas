@@ -264,7 +264,10 @@ area daftar, modal) + refactor rumus di bawah.
   sel `required` `SEA_AIR_PIB_MATRIX_ROWS` (DIPINDAH dari SeaAirValidasiModal ke
   SeaAirValidasiHelpers, isi tidak berubah) → ada `match===false` = "differences", ada yg dinilai =
   "validated", else "not validated"; tanpa matriks & tanpa `rekapan_seaair` = "Not in Invoice
-  Recap yet". "Open in Invoice Recap" = navigate `/sea-air/rekapan?q=<awb>` (SharedDataTable kini
+  Recap yet". "Open in Invoice Recap" = navigate `/sea-air/rekapan?q=<awb>&open=<id Audit PIB>` (2026-10-06: jendela Open Invoice Recap
+  shipment itu -- `seaair_id` = id -- terbuka OTOMATIS sekali lalu `open` dihapus dari URL; Search diisi dari `?q=` SEJAK render
+  pertama & `fetchRecords` punya penjaga respons lama `fetchRecordsSeqRef` -- dulu request tanpa filter terkirim dulu & responsnya
+  yg tiba belakangan menimpa hasil terfilter = "semua data tampil", laporan user) (SharedDataTable kini
   membaca `?q=` sbg isi awal Search).
 - **Jendela Open**: Document (semua kolom `SEA_AIR_AUDIT_COLS` termasuk Document type/Remarks/
   SPTNP/Notes), Goods per PO (split `+` SAMA tabel lama; Valas per PO = `po_harga_detail`, IDR per
@@ -419,6 +422,16 @@ baris apa pun di `audit_trail`. Update lewat APLIKASI (user login) TETAP tercata
 (termasuk dump mentah `fn_audit_diff` utk 8 dari 10 fungsi) — makanya filter tampilan di bawah
 MASIH tetap diperlukan sbg lapis kedua. Data lama (sebelum guard dipasang) TIDAK ikut terhapus
 otomatis dari fix ini.
+
+**Audit Trail server-side (analisa 2026-10-06, audit_trail ±6.400 baris)**: daftar (filter Module/User/tanggal, Search,
+sort, `.range()` + `count:'exact'`) SUDAH server-side. Diperbaiki: (1) dropdown User = RPC `fn_audit_trail_users` (sql/048 SUDAH DIJALANKAN 2026-10-06,
+DISTINCT di Postgres; fallback 2.000 baris terbaru) & HANYA dimuat di tab Audit Trail (dulu di semua halaman SharedDataTable);
+(2) Search semua tab SharedDataTable lewat `orSafe` (`src/utils/supabaseQueryHelpers.ts`: escape `\ % _`, koma/kurung/kutip
+-> `_`) -- dulu koma di Search membuat query `.or()` error; (3) Export = `fetchAllPages` (per 1.000 baris, berhenti saat
+halaman kosong -> aman dari batas `max-rows` PostgREST; tiebreak `id` kecuali v_audit_trail) -- dulu 1 request
+`.limit(50000)`/`.limit(25000)` bisa terpotong diam-diam; (4) index sql/048. `count:'exact'` & filter `catatan ilike` dibiarkan
+(murah di ukuran tabel sekarang; kalau audit_trail tumbuh jauh, pertimbangkan kolom penanda log-app + index / count estimated).
+Diuji: unit 7 cek (builder postgrest-js asli + server tiruan max-rows 300), PGlite 048 14 cek.
 
 **Fix tampilan** — `TRAIL_APP_WRITTEN_FILTER` (`SharedDataTable.tsx`, dipakai di query trail
 list utama & `getExportData`): entri hanya tampil/di-export kalau `catatan` **NULL** (SELALU
