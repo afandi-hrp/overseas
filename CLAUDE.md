@@ -55,7 +55,8 @@ yang berlaku lintas modul. Rujukan lama di docs berbunyi "lihat CLAUDE.md bagian
   lama di commit sebelumnya. 045 = seed 3 akun @purchasing.com, 046 = `profiles.divisi` + RPC `fn_set_user_divisi`, 047 = isi
   divisi dari domain email. Catatan "BELUM DIJALANKAN" di `docs/claude/*.md` utk file ≤047 TIDAK berlaku. SQL baru: file
   `sql/NNN_*.sql` baru (lanjut 049; idempotent, pre-check nama fungsi), user yang menjalankan manual — tidak ada akses DB
-  dari sesi.
+  dari sesi. **Tambah user baru**: template `docs/sql-templates/add-users.sql` (edit daftar email/nama/password/divisi/role;
+  buat akun auth + identities + profil + divisi + role; email lama tidak diubah password-nya; diuji PGlite 27 cek).
   **`sql/048_audit_trail_users_and_indexes.sql` SUDAH DIJALANKAN 2026-10-06** (konfirmasi user): RPC baca `fn_audit_trail_users()`
   (dropdown User halaman Audit Trail, DISTINCT di Postgres) + index `user_email` & trigram awb/no_dokumen/user_email. Kalau RPC
   error, dropdown User fallback ke cara lama (2.000 baris terbaru). Detail: `docs/claude/bunker-courier-seaair.md` "Audit Trail
