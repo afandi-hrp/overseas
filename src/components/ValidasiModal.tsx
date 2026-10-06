@@ -869,7 +869,12 @@ const STATUS_CONFIG: any = {
 // Mismatch + tombol Accept (catatan alasan WAJIB, disimpan langsung -- `accept_note/_by/_at` di values_json, tanpa
 // ubah skema) + Accuracy + tombol Details (`onOpenDetails`: jendela penuh tabel lama dgn Recompute & Edit).
 // Load/simpan/status SAMA mode lain (persistChecklist). `reloadKey` naik -> baca ulang data dari DB tanpa remount.
-export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdit = true, embedded = false, onPctChange, onDirtyChange, checklistVersion = 0, variant = 'full', onOpenDetails, reloadKey = 0, onChanged }: { record: any, mainTab: string, subTab?: string, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, onDirtyChange?: (dirty: boolean) => void, checklistVersion?: number, variant?: 'full' | 'summary', onOpenDetails?: () => void, reloadKey?: number, onChanged?: () => void }) {
+// `financeView` (2026-10-06, Finance Handover Courier, keputusan user; dipakai bersama `embedded` & canEdit=false): HANYA
+// ringkasan Match/Mismatch/Not filled + akurasi (angka SAMA, dari seluruh pemeriksaan) + 3 tabel FINANCE_DOC_SECTIONS
+// (Invoice Freight & Invoice Duty, SPPBMCP [jalur CN], NPWP table), semua terbuka; meta/catatan, banner, Recompute,
+// Expand all & kalkulasi PIB/SPPBMCP tidak tampil (kalkulasi tetap dipasang tersembunyi spy akurasi SAMA).
+export const FINANCE_DOC_SECTIONS = ['s_inv_freight_duty', 's_sppbmcp', 's_tabel_npwp'];
+export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdit = true, embedded = false, onPctChange, onDirtyChange, checklistVersion = 0, variant = 'full', onOpenDetails, reloadKey = 0, onChanged, financeView = false }: { record: any, mainTab: string, subTab?: string, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, onDirtyChange?: (dirty: boolean) => void, checklistVersion?: number, variant?: 'full' | 'summary', onOpenDetails?: () => void, reloadKey?: number, onChanged?: () => void, financeView?: boolean }) {
   const { profile, user } = useAuth();
   const [docType, setDocType] = useState<'PIB'|'CN'|null>(null);
   const [debugData, setDebugData] = useState<any>({ raw: {}, doc: {} });
@@ -1468,7 +1473,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   useEffect(() => {
     if (loading || openSections !== null) return;
     const init: Record<string, boolean> = {};
-    activeSections.forEach(s => { if (sectionStats(s).mismatch > 0) init[s.id] = true; });
+    activeSections.forEach(s => { if (financeView || sectionStats(s).mismatch > 0) init[s.id] = true; });
     setOpenSections(init);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading]);
@@ -1922,11 +1927,12 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                 <div className="text-[10px] font-semibold">{label}</div>
               </div>
             ))}
-            <div className="w-36 print:hidden">
+            <div className={`w-36 ${financeView ? '' : 'print:hidden'}`}>
               <div className="flex justify-between items-baseline mb-1 text-[11px] text-[#6E5E70]"><span>Accuracy</span><b className={vwPctText(stats.pct)}>{stats.match}/{stats.checked}</b></div>
               <div className="h-2 rounded-full bg-[#F3EEEA] overflow-hidden"><div className={`h-full transition-all duration-500 ${vwPctBar(stats.pct)}`} style={{ width: `${stats.pct}%` }} /></div>
             </div>
           </div>
+          {!financeView && (<>
           <div className="mt-3 pt-3 border-t border-[#F1E8E1] flex flex-wrap items-end gap-x-4 gap-y-2">
             <div className="min-w-0">
               <div className={VW_LABEL}>Check date</div>
@@ -1971,18 +1977,22 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
           </div>
           {recomputeMsg && <div className="mt-2 rounded-lg bg-[#EEF1FA] text-[#2F4FA8] text-[12px] font-semibold px-3 py-1.5">{recomputeMsg}</div>}
           {!recomputeMsg && recomputePending > 0 && <div data-recompute-pending className="mt-2 rounded-lg bg-[#FFF8EA] border border-[#F3D9A4] text-[#7A4F00] text-[12px] font-semibold px-3 py-1.5">{docRecomputePendingText(recomputePending, canEdit)}</div>}
+          </>)}
         </div>
 
         {!hasSourceData && (
-          <div className={`${VW_CARD} px-4 py-4 text-[12.5px] text-[#6E5E70]`}>No AI document reading for this shipment yet — values can still be filled in manually.</div>
+          <div className={`${VW_CARD} px-4 py-4 text-[12.5px] text-[#6E5E70]`}>No AI document reading for this shipment yet{financeView ? '.' : ' — values can still be filled in manually.'}</div>
         )}
-        {openMismatch > 0 ? (
+        {financeView ? null : openMismatch > 0 ? (
           <div className="rounded-[14px] border border-[#F4C3BC] bg-[#FDE7E4] px-4 py-2 text-[12.5px] font-semibold text-[#A8231A]">{openMismatch} mismatch{openMismatch === 1 ? '' : 'es'} not yet confirmed — accept, correct the value, or keep as mismatch.</div>
         ) : stats.mismatch > 0 ? (
           <div className="rounded-[14px] border border-[#BFE3CD] bg-[#EAF6EF] px-4 py-2 text-[12.5px] font-semibold text-[#17663D]">✓ Mismatch reviewed manually</div>
         ) : null}
 
-        {activeSections.map(section => {
+        {financeView && docType === 'PIB' && (
+          <div className={`${VW_CARD} px-4 py-2.5 text-[12px] text-[#6E5E70]`}>SPPBMCP is not shown — it applies to the CN path only (this AWB is PIB).</div>
+        )}
+        {activeSections.filter(section => !financeView || FINANCE_DOC_SECTIONS.includes(section.id)).map(section => {
           const ss = sectionStats(section);
           const groupKey = (r: any) => r.rowLabel || r.field;
           const uniqueFields: string[] = [];
@@ -2109,8 +2119,9 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
           );
         })}
 
-        {/* Kalkulasi PIB / SPPBMCP (komponen lama) -- nilai bisa dikoreksi lewat tombol di bawah. */}
-        <div className="min-w-0">
+        {/* Kalkulasi PIB / SPPBMCP (komponen lama) -- nilai bisa dikoreksi lewat tombol di bawah. Finance: tersembunyi
+            (tetap dipasang supaya akurasi SAMA). */}
+        <div className={financeView ? 'hidden' : 'min-w-0'}>
           {canEdit && (
             <div className="flex justify-end mb-1.5 print:hidden">
               <button type="button" className={VW_BTN_SECONDARY} onClick={() => setCalcEdit(v => !v)}>

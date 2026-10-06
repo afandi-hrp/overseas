@@ -309,6 +309,55 @@
   }
 }
 
+/* Print kartu AWB Finance Handover Courier (FinanceHandoverPage/FinanceCourierAwbDetail, 2026-10-06) -- yang tercetak
+   HANYA kartu yang sedang terbuka (id dipasang di kartu terbuka saja): info kartu + tab detail aktif (tab lain `hidden`,
+   tab bar & semua tombol print:hidden) + keterangan cetak. Kartu TIDAK di-portal (detail tetap di dalam halaman), jadi
+   semua leluhurnya (`:has`) dilepas dari overflow/tinggi/posisi supaya kartu tidak terpotong panel daftar & bisa
+   mengalir ke beberapa halaman. Elemen body lain sudah visibility:hidden oleh aturan print di atas. */
+@media print {
+  *:has(#finance-courier-print-area) {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    position: static !important;
+    contain: none !important;
+  }
+  #finance-courier-print-area,
+  #finance-courier-print-area * {
+    visibility: visible;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  #finance-courier-print-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    box-shadow: none !important;
+  }
+  #finance-courier-print-area .cvw-fill {
+    height: auto !important;
+    min-height: 0 !important;
+    flex: none !important;
+    overflow: visible !important;
+  }
+  #finance-courier-print-area .overflow-y-auto,
+  #finance-courier-print-area .overflow-x-auto,
+  #finance-courier-print-area .overflow-auto,
+  #finance-courier-print-area .overflow-hidden {
+    overflow: visible !important;
+  }
+  #finance-courier-print-area .sticky {
+    position: static !important;
+  }
+  #finance-courier-print-area tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
+
 /* Print "Requisition RH" (RequisitionRhPage, 2026-10-06) -- area cetak = portal ke body
    (`hidden print:block`), pola sama #bunker-print-area: semua elemen body lain sudah
    visibility:hidden oleh aturan print di atas, area ini dipaksa absolute dari pojok kertas

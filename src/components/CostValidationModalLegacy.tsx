@@ -13,6 +13,7 @@ import { courierStorageActualDays, computeCourierStorageExpected, saveCourierSto
 import { fetchCourierCostReviews, reviewMapOf, type CourierCostReviews, type CourierCostReview } from '../utils/CourierCostReviewHelpers';
 import CourierCostReviewBox from './CourierCostReviewBox';
 import { VW_TOOLBAR, VW_LABEL, VW_BTN_PRIMARY, VW_BTN_SECONDARY, VW_BTN_SUCCESS, vwPctBar, vwPctText } from './validationWindowStylesLegacy';
+import { VW_CARD as FV_CARD, VW_TILE as FV_TILE, VW_TILE_TONE as FV_TILE_TONE, vwPctBar as fvPctBar } from './validationWindowStyles';
 
 const formatRp = (num: any) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(Number(num) || 0);
 
@@ -82,7 +83,12 @@ const ActualInlineInput = ({
 // aktif, 3 field Shipment Info yang memang bisa diedit (Ship Date, Origin, Chargeable Weight)
 // tetap muncul di panel ringkas supaya fungsinya tidak hilang. `onPctChange` = % tab (null =
 // belum ada baris tabel_cost_validasi), `onDataChange` = baris terbaru utk Shipment Info jendela.
-export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecord, onClose, canEdit = true, embedded = false, onPctChange, onDataChange }: { awb: string, jenisDokumen: string, docId?: string, rawRecord?: any, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, onDataChange?: (data: any) => void }) {
+// `financeView` (2026-10-06, Finance Handover Courier, keputusan user; dipakai dgn `embedded` & canEdit=false): isi SAMA
+// Details, header diganti ringkasan gaya jendela Open Audit (OK/Difference/N/A + "x of y invoices match the rate sheet" +
+// akurasi, angka dari computeLiveCostSummary yg SAMA) dan SEMUA tombol aksi (Potong CN, Revisi, Update Estimasi, Hitung
+// Ulang Estimasi) disembunyikan. Catatan Perubahan Manual tetap tampil.
+export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecord, onClose, canEdit = true, embedded = false, onPctChange, onDataChange, financeView = false }: { awb: string, jenisDokumen: string, docId?: string, rawRecord?: any, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, onDataChange?: (data: any) => void, financeView?: boolean }) {
+  const act = !financeView;
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
@@ -587,7 +593,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                         <td className="px-4 py-3 text-[#5A305A] font-medium bg-white">
                             <div className="flex flex-col gap-2">
                                 <span>{row.name || row.surcharge_name}</span>
-                                {hasCn && !isEditing && maxActual > 0 && (
+                                {act && hasCn && !isEditing && maxActual > 0 && (
                                     <div className="flex items-center gap-2 mt-1">
                                         <input 
                                           type="number" 
@@ -765,7 +771,39 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
       )}
     <div className={embedded ? 'flex flex-col flex-1 min-h-0 w-full cvw-fill' : 'fixed inset-0 z-50 flex items-center justify-center p-2 bg-slate-900/50 backdrop-blur-sm shadow-2xl'}>
       <div className={embedded ? 'bg-white w-full flex-1 min-h-0 overflow-hidden flex flex-col cvw-fill' : 'bg-white rounded-2xl w-full max-w-6xl overflow-hidden shadow-2xl flex flex-col max-h-[97vh]'}>
-        {embedded ? (
+        {embedded && financeView ? (
+          data && (() => {
+            const invoicesOk = [liveSummary.invoice_freight_status, liveSummary.invoice_duty_status].filter(st => st && st !== 'N/A');
+            const invoicesMatch = invoicesOk.filter(st => st === 'OK').length;
+            return (
+              <div className="px-5 pt-3">
+                <div className={`${FV_CARD} px-4 py-3 flex flex-wrap items-center gap-4`} data-finance-cost-summary>
+                  <div className="mr-auto min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[14px] font-bold text-[#3B1B3D]">Cost validation</span>
+                      {data.is_edited && <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10.5px] font-bold bg-[#FFF1D6] text-[#7A4F00]" title="Values were changed manually">Edited</span>}
+                    </div>
+                    <div className="text-[11.5px] text-[#6E5E70]">{invoicesOk.length ? `${invoicesMatch} of ${invoicesOk.length} invoice${invoicesOk.length === 1 ? '' : 's'} match the rate sheet` : 'Each invoice line vs. the rate sheet'}</div>
+                  </div>
+                  {([
+                    ['OK', liveSummary.total_ok, FV_TILE_TONE.green],
+                    ['Difference', liveSummary.total_selisih, FV_TILE_TONE.red],
+                    ['N/A', liveSummary.total_na, FV_TILE_TONE.grey],
+                  ] as const).map(([label, value, cls]) => (
+                    <div key={label} className={`${FV_TILE} ${cls}`}>
+                      <div className="text-[18px] font-bold leading-tight tabular-nums">{value}</div>
+                      <div className="text-[10px] font-semibold">{label}</div>
+                    </div>
+                  ))}
+                  <div className="min-w-[150px]">
+                    <div className="flex justify-between text-[11px] text-[#6E5E70] mb-1"><span>Accuracy</span><b className="text-[#3B1B3D]">{liveSummary.pct}%</b></div>
+                    <div className="h-2 rounded-full bg-[#F3EEEA] overflow-hidden"><div className={`h-full ${fvPctBar(liveSummary.pct)}`} style={{ width: `${liveSummary.pct}%` }} /></div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()
+        ) : embedded ? (
           /* Toolbar tab "Cost Validation" (jendela Validation) -- ringkasan status/akurasi di kiri,
              tombol Edit Cost Validasi / Batal / Simpan di kanan. Beda isi dari toolbar Doc
              Validation, gaya sama (lihat validationWindowStyles.ts). */
@@ -1019,7 +1057,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                         <td className="px-4 py-3 text-[#5A305A] font-medium bg-white align-top">
                           <div className="flex flex-col gap-2">
                              <span>Freight Charge</span>
-                             {(Number(data?.cv_cn_freight_total) > 0 && Number(data?.cv_cn_freight_subtotal) > 0) && !isEditing && Number(data.cv_freight_actual) > 0 && (
+                             {act && (Number(data?.cv_cn_freight_total) > 0 && Number(data?.cv_cn_freight_subtotal) > 0) && !isEditing && Number(data.cv_freight_actual) > 0 && (
                                 <div className="flex items-center gap-2 mt-1">
                                     <input 
                                       type="number" 
@@ -1050,7 +1088,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                         <td className="px-4 py-3 text-[#5A305A] font-medium bg-white align-top">
                           <div className="flex flex-col gap-2">
                              <span>Fuel Surcharge ({data.cv_fuel_rate_pct ? data.cv_fuel_rate_pct + '%' : ''})</span>
-                             {(Number(data?.cv_cn_freight_total) > 0 && Number(data?.cv_cn_freight_subtotal) > 0) && !isEditing && Number(data.cv_fuel_actual) > 0 && (
+                             {act && (Number(data?.cv_cn_freight_total) > 0 && Number(data?.cv_cn_freight_subtotal) > 0) && !isEditing && Number(data.cv_fuel_actual) > 0 && (
                                 <div className="flex items-center gap-2 mt-1">
                                     <input 
                                       type="number" 
@@ -1082,7 +1120,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                         <td className="px-4 py-3 text-[#5A305A] font-medium bg-white align-top">
                           <div className="flex flex-col gap-2">
                              <span>VAT ({data.cv_vat_freight_pct ? data.cv_vat_freight_pct + '%' : ''})</span>
-                             {(Number(data?.cv_cn_freight_total) > 0 && Number(data?.cv_cn_freight_vat) > 0) && !isEditing && Number(data.cv_vat_freight_actual_net || data.cv_vat_freight_actual) > 0 && (
+                             {act && (Number(data?.cv_cn_freight_total) > 0 && Number(data?.cv_cn_freight_vat) > 0) && !isEditing && Number(data.cv_vat_freight_actual_net || data.cv_vat_freight_actual) > 0 && (
                                 <div className="flex items-center gap-2 mt-1">
                                     <input 
                                       type="number" 
@@ -1188,7 +1226,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                               return (
                                 <li key={idx} className="flex items-center justify-between group">
                                   <span>✅ Rp {formatRp(log.amount).replace('Rp', '').trim()} dipotong dari {log.target}{log.index != null ? ' #'+log.index : ''} pada {dateStr}</span>
-                                  <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setReviseConfirm({side: 'freight', logIndex: idx, log: log}); }} disabled={updating} className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] bg-orange-100 hover:bg-orange-200 text-orange-800 px-2 py-0.5 rounded font-medium disabled:opacity-50">Revisi</button>
+                                  {act && <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setReviseConfirm({side: 'freight', logIndex: idx, log: log}); }} disabled={updating} className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] bg-orange-100 hover:bg-orange-200 text-orange-800 px-2 py-0.5 rounded font-medium disabled:opacity-50">Revisi</button>}
                                 </li>
                               );
                             })}
@@ -1292,7 +1330,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                         <td className="px-4 py-3 bg-white">
                           <div className="flex items-center gap-2">
                              <DutyStatusDropdown field="cv_storage_status" />
-                             {!isEditing && data.cv_storage_input_manual && (
+                             {act && !isEditing && data.cv_storage_input_manual && (
                                <button 
                                  onClick={() => setEditStorageManual(!editStorageManual)}
                                  className="text-xs text-blue-600 hover:underline cursor-pointer font-bold"
@@ -1390,6 +1428,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                       </div>
                     </div>
                     
+                    {act && (<>
                     <div className="border-t border-orange-200/50 pt-3">
                       <p className="text-sm font-medium text-orange-800 mb-2">Potong Subtotal CN dari:</p>
                       {Number(data.cv_cn_duty_subtotal) > 0 ? (
@@ -1527,6 +1566,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                         </div>
                       )}
                     </div>
+                    </>)}
 
                     {data.cv_cn_duty_log && Array.isArray(data.cv_cn_duty_log) && data.cv_cn_duty_log.length > 0 && (
                       <div className="mt-4 pt-3 border-t border-orange-200/50">
@@ -1537,7 +1577,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                             return (
                               <li key={idx} className="flex items-center justify-between group">
                                 <span>✅ Rp {formatRp(log.amount).replace('Rp', '').trim()} dipotong dari {log.target}{log.index != null ? ' #'+log.index : ''} pada {dateStr}</span>
-                                <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setReviseConfirm({side: 'duty', logIndex: idx, log: log}); }} disabled={updating} className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] bg-orange-100 hover:bg-orange-200 text-orange-800 px-2 py-0.5 rounded font-medium disabled:opacity-50">Revisi</button>
+                                {act && <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setReviseConfirm({side: 'duty', logIndex: idx, log: log}); }} disabled={updating} className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] bg-orange-100 hover:bg-orange-200 text-orange-800 px-2 py-0.5 rounded font-medium disabled:opacity-50">Revisi</button>}
                               </li>
                             );
                           })}
@@ -1566,7 +1606,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                   </div>
                 ) : null}
 
-                {data.cv_storage_actual !== null && !isEditing && (!data.cv_storage_input_manual || editStorageManual) && (
+                {act && data.cv_storage_actual !== null && !isEditing && (!data.cv_storage_input_manual || editStorageManual) && (
                   <div className="bg-orange-50 border border-orange-200 p-4 rounded-xl mt-4">
                     <div className="flex items-center justify-between mb-3 border-b border-orange-200 pb-2">
                        {/* This is the existing storage estimation manual component */}

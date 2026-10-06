@@ -214,6 +214,10 @@ Spek user + prototipe `Prototype — Validation Side Panel.html` (HANYA tata let
 
 ## Finance melihat validasi Courier (2026-10-02, keputusan user; sql/039 SUDAH DIJALANKAN 2026-10-02)
 
+**2026-10-06: viewer jendela `CourierHandoverViewer`, tombol Invoice · Audit · Docs · Cost, tab Audit/Invoice Recap per role & "Accept to
+view" utk Courier DIGANTI** kartu per AWB + detail di dalam kartu (Invoices · Checklist · Cost Validation · Doc Validation) — lihat
+`docs/claude/finance-handover.md` "Tab Courier". Isi di bawah = RIWAYAT (policy sql/039 tetap dipakai).
+
 Finance HARUS bisa melihat Checklist, Doc validation & Cost validation PIB/CN pasangan invoice Courier, TANPA bisa
 mengubah. `CourierHandoverViewer` (`FinanceHandoverViewers.tsx`) = `CourierValidationWindow` yang SAMA Audit Courier
 (tab Overview = rincian invoice & serah terima · Documents · Costs), `editAccess` semua false, `ChecklistModal` (kini

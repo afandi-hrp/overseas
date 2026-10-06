@@ -7,20 +7,25 @@
 // view only (tidak ada switch "View as" -- itu hanya di prototipe).
 // Aturan: tidak pernah menampilkan angka/dokumen duty & tax; nama penerima pembayaran selalu lengkap
 // (Sea & Air dari master vendor, kode tampil + tanda kalau nama lengkap belum diisi).
+// Tab COURIER (2026-10-06, keputusan user, referensi finance_handover_courier.html): 1 kartu per AWB (CourierAwbCard),
+// Accept / Mark paid per AWB, tombol "Open" (semua status, menggantikan menu View) membuka detail DI DALAM kartu
+// (FinanceCourierAwbDetail, baca saja) -- aturan "Accept dulu baru bisa lihat" DIHAPUS utk Courier. Print = kartu itu +
+// tab aktif saja. FAR Overseas & Sea & Air TIDAK berubah.
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { createPortal, flushSync } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import { ChevronDown, Search, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, Search, X } from 'lucide-react'
 import PaginationFooter from '../components/PaginationFooter'
 import Greeting from '../components/Greeting'
 import { LoadingState } from '../components/LoadingState'
 import { useAuth } from '../lib/AuthContext'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_BTN_GREEN, SA_INPUT, Chip, Pill, PtBadge } from '../components/SeaAirAuditUi'
-import { FarHandoverViewer, SeaAirHandoverViewer, CourierHandoverViewer, type ViewerTab } from '../components/FinanceHandoverViewers'
+import { FarHandoverViewer, SeaAirHandoverViewer, type ViewerTab } from '../components/FinanceHandoverViewers'
+import FinanceCourierAwbDetail, { COURIER_DETAIL_TAB_LABEL, type CourierDetailTab } from '../components/FinanceCourierAwbDetail'
 import { fmtRp, fmtDateShort, fetchCompanyNameMap, companyFullName } from '../utils/SeaAirAuditHelpers'
 import {
   fetchFarHandovers, fetchSeaAirHandovers, fetchCourierHandovers, probeSeaAirFinanceColumns, probeCourierFinanceColumns, sortHandovers, matchesHandoverSearch, isOverdue,
-  receiveHandover, undoReceiveHandover, markHandoverPaid, todayIso, type HandoverItem, type HandoverSource, type HandoverStage,
+  receiveHandover, undoReceiveHandover, markHandoverPaid, todayIso, courierInvoiceLabel, type HandoverItem, type HandoverSource, type HandoverStage,
 } from '../utils/FinanceHandoverHelpers'
 
 type StageTab = HandoverStage | 'all'
@@ -106,6 +111,93 @@ function ViewMenu({ items }: { items: MenuItem[] }) {
   )
 }
 
+// Kartu Courier per AWB (2026-10-06): No. AWB · Courier · PT · Jalur · Vendor · Payable to · Due (TOP) · Total · Status ·
+// timeline Sent–Received–Paid. Kolom aksi: Accept / Mark paid (Finance) + Open (semua status, semua yang boleh lihat;
+// gaya SAMA tombol Open Invoice Recap Courier). Kartu terbuka = area cetak (#finance-courier-print-area, index.css).
+const COURIER_STAGE_PILL: Record<HandoverStage, { label: string; tone: 'amber' | 'blue' | 'green' }> = {
+  waiting: { label: 'Waiting for Finance', tone: 'amber' },
+  received: { label: 'Received · unpaid', tone: 'blue' },
+  paid: { label: 'Paid', tone: 'green' },
+}
+const OPEN_BTN = 'inline-flex items-center justify-center gap-1 px-4 h-8 rounded-xl text-white text-xs font-semibold whitespace-nowrap'
+
+function CourierAwbCard({ it, companyNames, act, overdue, open, onOpen, onAccept, onPay, onUndo, children }: {
+  it: HandoverItem
+  companyNames: Record<string, string>
+  act: boolean
+  overdue: boolean
+  open: boolean
+  onOpen: () => void
+  onAccept: () => void
+  onPay: () => void
+  onUndo: (() => void) | null
+  children?: React.ReactNode
+}) {
+  const c = it.courier!
+  const pill = COURIER_STAGE_PILL[it.stage]
+  const late = it.stage === 'received' && overdue
+  return (
+    <div id={open ? 'finance-courier-print-area' : undefined} data-courier-card={it.key}
+      className={`shrink-0 rounded-[14px] border border-[#EADFD6] ${ROW_BG[it.stage]} ${open ? 'ring-2 ring-[#6B3470]/40' : ''}`}>
+      <div className="grid grid-cols-1 @2xl:grid-cols-2 @4xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(120px,160px)_minmax(0,1.2fr)_auto] gap-x-4 gap-y-3 px-4 py-3 items-center">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Chip tone="amber">Courier</Chip>
+            {c.courierCode && <Chip tone="grey" title="Courier">{c.courierCode}</Chip>}
+            {it.pt && <PtBadge code={it.pt} title={companyFullName(companyNames, it.pt)} />}
+            {c.jalur ? <Chip tone={c.jalur === 'CN' ? 'purple' : 'blue'} title={`Jalur ${c.jalur}`}>{c.jalur}</Chip>
+              : <Chip tone="grey" title="No PIB / CN for this AWB was found in Audit Courier">Jalur —</Chip>}
+          </div>
+          <div className="text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#8A7A8B] mt-1">AWB</div>
+          <div className="text-[14px] font-bold text-[#3B1B3D] truncate" title={it.ref}>{it.ref}</div>
+          <div className="text-[11px] text-[#6E5E70] truncate" title={it.sub}>{it.sub}</div>
+        </div>
+        <div className="min-w-0">
+          <div className={SA_LABEL}>Payable to</div>
+          <div className="text-[12.5px] font-bold text-[#3B1B3D] truncate uppercase" title={it.payee}>{it.payee}</div>
+          {it.payeeIsCode && <div className="text-[10.5px] text-[#7A4F00]" title="Fill in the full legal name in Settings › Courier Vendors">Full courier name not set (code shown)</div>}
+          <div className="text-[11px] text-[#6E5E70] truncate" title={it.payeeLine}>{it.payeeLine}</div>
+          <div className="mt-1" data-awb-status={it.stage}>
+            <Pill tone={late ? 'red' : pill.tone} title={it.paidReference ? `Bank reference ${it.paidReference}` : undefined}>{late ? 'Received · unpaid · overdue' : pill.label}</Pill>
+          </div>
+        </div>
+        <div className="@4xl:text-right min-w-0">
+          <div className="text-[15px] font-bold text-[#3B1B3D] tabular-nums" data-awb-total>{fmtRp(it.amountIdr)}</div>
+          <div className={`text-[11px] font-semibold ${it.stage === 'paid' ? 'text-[#17663D]' : overdue ? 'text-[#A8231A]' : 'text-[#3B1B3D]'}`}>
+            {it.stage === 'paid' ? `Paid ${fmtDateShort(it.paidDate)}${it.paidReference ? ` · ${it.paidReference}` : ''}`
+              : it.dueDate ? `${overdue ? 'Overdue · due' : 'Due'} ${fmtDateShort(it.dueDate)}${it.topLabel ? ` · ${it.topLabel}` : ''}` : 'Due —'}
+          </div>
+        </div>
+        <Timeline it={it} />
+        <div className="flex flex-col items-start @4xl:items-end gap-1 print:hidden">
+          <div className="flex flex-nowrap @4xl:justify-end gap-1.5">
+            {act && it.stage === 'waiting' && <button type="button" className={`${SA_BTN_PRIMARY} h-8`} onClick={onAccept}>Accept</button>}
+            {act && it.stage === 'received' && <button type="button" className={`${SA_BTN_GREEN} h-8 whitespace-nowrap`} onClick={onPay}>Mark paid</button>}
+            <button type="button" onClick={onOpen} aria-expanded={open}
+              className={`${OPEN_BTN} ${open ? 'bg-[#3B1B3D]' : 'bg-[#6B3470] hover:bg-[#5A2A5E]'}`}>
+              {open ? <>Close <ChevronUp size={13} /></> : <>Open <ChevronDown size={13} /></>}
+            </button>
+          </div>
+          {onUndo && <button type="button" onClick={onUndo} className="text-[11px] font-semibold text-[#A8231A] hover:underline">Undo receipt…</button>}
+        </div>
+      </div>
+      {open && children}
+    </div>
+  )
+}
+
+// Dialog Accept / Mark paid / Undo Courier: invoice AWB yang ikut diproses (aksi per AWB = semua invoice terkait).
+function CourierAffected({ it, ids, verb }: { it: HandoverItem; ids?: string[]; verb: string }) {
+  if (!it.courier || !ids) return null
+  const list = it.courier.rows.filter(r => ids.includes(String(r.id)))
+  return (
+    <div className="mb-3 rounded-lg bg-[#FBF7F4] border border-[#F1E8E1] px-3 py-2 text-[11.5px] text-[#3B1B3D]" data-affected-invoices>
+      <div className="font-semibold mb-0.5">{list.length} invoice{list.length === 1 ? '' : 's'} of this AWB will be {verb}:</div>
+      {list.map(r => <div key={r.id} className="[overflow-wrap:anywhere]">{courierInvoiceLabel(r)} · {r.no_invoice || '—'}</div>)}
+    </div>
+  )
+}
+
 function Dialog({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return createPortal(
     <div className="fixed inset-0 z-[85] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -154,8 +246,22 @@ export default function FinanceHandoverPage() {
   const [dialogErr, setDialogErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [viewer, setViewer] = useState<{ it: HandoverItem; tab: ViewerTab } | null>(null)
+  // Courier: 1 kartu terbuka sekaligus (key) + tab detail aktif + waktu cetak (keterangan hasil cetak).
+  const [openCourier, setOpenCourier] = useState<string | null>(null)
+  const [courierTab, setCourierTab] = useState<CourierDetailTab>('invoices')
+  const [printedAt, setPrintedAt] = useState<Date>(() => new Date())
 
   useEffect(() => { document.title = 'Finance Handover · BeeHive' }, [])
+  // Waktu cetak diperbarui tepat sebelum dialog print (tombol Print maupun Ctrl+P).
+  useEffect(() => {
+    const before = () => flushSync(() => setPrintedAt(new Date()))
+    window.addEventListener('beforeprint', before)
+    return () => window.removeEventListener('beforeprint', before)
+  }, [])
+  const toggleCourier = (key: string) => {
+    setOpenCourier(k => (k === key ? null : key))
+    setCourierTab('invoices')
+  }
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
@@ -332,6 +438,20 @@ export default function FinanceHandoverPage() {
           ) : pageItems.map(it => {
             const overdue = isOverdue(it, today)
             const act = actionsEnabled(it)
+            if (it.source === 'courier' && it.courier) {
+              return (
+                <React.Fragment key={it.key}>
+                <CourierAwbCard it={it} companyNames={companyNames} act={act} overdue={overdue} open={openCourier === it.key}
+                  onOpen={() => toggleCourier(it.key)} onAccept={() => openReceive(it)} onPay={() => openPay(it)}
+                  onUndo={isAdmin && act && it.stage === 'received' ? () => openUndo(it) : null}>
+                  <div className="hidden print:block px-4 pb-2 text-[11px] font-semibold text-[#6E5E70]" data-print-note>
+                    Finance Handover · Courier · {COURIER_DETAIL_TAB_LABEL[courierTab]} · printed {printedAt.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                  <FinanceCourierAwbDetail item={it} tab={courierTab} onTab={setCourierTab} onPrint={() => window.print()} />
+                </CourierAwbCard>
+                </React.Fragment>
+              )
+            }
             const lockedViews = act && it.stage === 'waiting'
             const v = (tab: ViewerTab, label: string): MenuItem => ({ label, onClick: () => setViewer({ it, tab }) })
             const viewItems: MenuItem[] = lockedViews ? [] : it.source === 'far' ? [v('main', 'Memo'), v('docs', 'Documents'), v('cost', 'Cost validation')]
@@ -405,6 +525,7 @@ export default function FinanceHandoverPage() {
         <Dialog title="Receive handover" onClose={() => setReceiveFor(null)}>
           <div className="text-[13px] font-bold text-[#3B1B3D]">{receiveFor.ref}</div>
           <div className="text-[12px] text-[#6E5E70] mb-3">Payable to {receiveFor.payee} ({payeeKind(receiveFor)}) · {receiveFor.amountOriginal ? `${receiveFor.amountOriginal} (≈ ${fmtRp(receiveFor.amountIdr)})` : fmtRp(receiveFor.amountIdr)}</div>
+          <CourierAffected it={receiveFor} ids={receiveFor.courier?.waitingIds} verb="received" />
           <label className="flex flex-col gap-1 mb-3">
             <span className="text-[11.5px] font-semibold text-[#3B1B3D]">Received by</span>
             <input value={recvName} onChange={e => setRecvName(e.target.value)} placeholder="Name" className={SA_INPUT} />
@@ -424,6 +545,7 @@ export default function FinanceHandoverPage() {
         <Dialog title="Mark as paid" onClose={() => setPayFor(null)}>
           <div className="text-[13px] font-bold text-[#3B1B3D]">{payFor.ref}</div>
           <div className="text-[12px] text-[#6E5E70] mb-3">Payable to {payFor.payee} ({payeeKind(payFor)}) · {payFor.amountOriginal ? `${payFor.amountOriginal} (≈ ${fmtRp(payFor.amountIdr)})` : fmtRp(payFor.amountIdr)}</div>
+          <CourierAffected it={payFor} ids={payFor.courier?.receivedIds} verb="marked as paid" />
           <label className="flex flex-col gap-1 mb-3">
             <span className="text-[11.5px] font-semibold text-[#3B1B3D]">Transfer date</span>
             <input type="date" value={payDate} onChange={e => setPayDate(e.target.value)} className={SA_INPUT} />
@@ -446,6 +568,7 @@ export default function FinanceHandoverPage() {
           <div className="text-[12px] text-[#6E5E70] mb-3">
             Received {undoFor.receivedDate ? fmtDateShort(undoFor.receivedDate) : ''}{undoFor.receivedBy ? ` by ${undoFor.receivedBy}` : ''} — the handover goes back to <b>Waiting for Finance</b>. Only possible before it is marked as paid; the reason is recorded in the log.
           </div>
+          <CourierAffected it={undoFor} ids={undoFor.courier?.receivedIds} verb="set back to Waiting for Finance" />
           <label className="flex flex-col gap-1 mb-3">
             <span className="text-[11.5px] font-semibold text-[#3B1B3D]">Reason</span>
             <textarea aria-label="Undo reason" rows={3} value={undoReason} onChange={e => setUndoReason(e.target.value)} placeholder="Why is this receipt cancelled? (min. 5 characters)" className={`${SA_INPUT} h-auto py-2`} />
@@ -461,9 +584,6 @@ export default function FinanceHandoverPage() {
       {viewer && viewer.it.source === 'far' && (
         <FarHandoverViewer item={viewer.it} initialTab={viewer.tab} onClose={() => setViewer(null)} onChanged={load}
           onOpenEdit={rec => navigate(`/direct-loading/${rec.id}`)} />
-      )}
-      {viewer && viewer.it.source === 'courier' && (
-        <CourierHandoverViewer item={viewer.it} initialTab={viewer.tab} companyNames={companyNames} onClose={() => setViewer(null)} />
       )}
       {viewer && viewer.it.source === 'seaair' && (
         <SeaAirHandoverViewer item={viewer.it} initialTab={viewer.tab} companyNames={companyNames} onClose={() => setViewer(null)} />
