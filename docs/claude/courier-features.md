@@ -99,7 +99,7 @@ Spek user + prototipe `Prototype — Validation Side Panel.html` (HANYA tata let
   kartu lain -> panel berganti (key per AWB; perubahan Checklist belum disimpan -> konfirmasi). Kartu pakai container query
   (`@container`, `@xl:`/`@4xl:`) supaya ringkas saat berbagi lebar. Titik validasi kartu = buka panel di tab itu.
 - **Panel** (`CourierRecapValidationPanel.tsx`): header (Validation · PIB/CN no., chip, Total, Submit all to Finance, View in
-  Audit, Edit in List, tutup) · tab **Checklist | Doc Validation | Cost Validation | Invoices (N)** · **Shipment Info** SAMA di
+  Audit, Edit in List, tutup) · tab **Checklist | Doc Validation | Cost Validation | Invoices (N) | Audit trail** (tab Audit trail 2026-10-06) · **Shipment Info** SAMA di
   semua tab, 12 field (AWB, No. Invoice Freight, No. Invoice Duty [no_invoice invoice AWB itu], Vendor, Jalur, No. PIB/SPPBMCP /
   Courier, Service, Direction/Type, Origin/Zone, Ship Date, Chargeable Weight [tabel_cost_validasi]), "—" kalau kosong.
   Validasi bisa diubah hanya selama PIB/CN Draft (aturan SAMA Audit Courier).
@@ -123,8 +123,14 @@ Spek user + prototipe `Prototype — Validation Side Panel.html` (HANYA tata let
   kartu — bergantung n8n menghitung ulang `tabel_cost_validasi` setelah upload susulan (konfirmasi user "harusnya").
 - **Details** = jendela penuh (portal z-[80], monitor besar `max-w-[1880px]` hampir selebar layar spy tabel matriks muat; layar <=1600px penuh layar) berisi tabel LAMA mode List: Doc = `ValidasiModalLegacy` (Edit + Recompute, autosave
   2 dtk SAMA mode List), Cost = `CostValidationModalLegacy` (Edit Cost Validasi, review per invoice). Ditutup -> panel dibaca ulang.
+- **Audit trail** (tab BARU 2026-10-06, permintaan user) = riwayat INVOICE AWB itu (`fetchRecapCourierLog`, v_audit_trail
+  rekapan_courier: dibuat, edit, Submit to Finance, Unlock, dst; tampilan `CourierAuditTrail`) -- DULU bagian lipat di bawah tab
+  Invoices (dihapus dari sana). Riwayat centang dokumen tetap di Checklist › Document review; riwayat PIB/CN di jendela Open Audit.
+- **Shipment Info bisa dilipat** (2026-10-06, laporan user di 14": isi tab tertutup header): terlipat = 1 baris (AWB · Vendor ·
+  No. PIB/SPPBMCP · Chargeable) + "Show all shipment info"; default terlipat kalau `window.innerHeight` < 1000, pilihan user
+  disimpan localStorage `beehive_courier_recap_shipinfo_open`. Diuji jsdom 8 cek.
 - **Invoices** = `CourierRecapInvoicesTab.tsx` (DULU jendela Open `CourierRecapDetailModal.tsx`, file di-rename): Total (− CN),
-  sub-tab Freight/Duty/Credit Note, Submit to Finance per invoice, kunci + Unlock (Admin), Split per vessel, Audit trail (lipat).
+  sub-tab Freight/Duty/Credit Note, Submit to Finance per invoice, kunci + Unlock (Admin), Split per vessel (Audit trail pindah ke tab sendiri 2026-10-06).
 - **sql/041** (idempotent, pre-check nama `beehive:041`, uji PGlite 15 cek): `courier_checklist_doc_log` (RLS: SELECT
   `courier_checklist_dokumen` ATAU `courier_finance`; INSERT/UPDATE/DELETE `false` = append-only), trigger AFTER INSERT/UPDATE
   `dokumen_checklist` `fn_courier_checklist_doc_log` (SECURITY DEFINER, catat ADDED/REMOVED tiap kolom `ada_*`, pelaku = nama
@@ -276,6 +282,9 @@ Recap Sea & Air (token `SeaAirAuditUi.tsx`, font Sora); mode **List** = tabel la
 - **Export & "+ Add manually" mode Card (2026-10-02, permintaan user)**: DIPINDAH dari header ke ujung kanan panel filter
   (kelompok `ml-auto`, tombol `h-9 rounded-xl`, `renderExportBtn(true, true)`). Panel filter Audit Courier mode Card
   `flex-wrap` (BUKAN nowrap + overflow-x) supaya di laptop 14" kelompok tombol turun ke baris 2 & tetap terlihat.
+  **Susulan 2026-10-06 (laporan user: di 14" Export/+Add masih turun ke baris 2)**: panel Audit Courier = wrapper `@container` +
+  baris dalam `flex-wrap @min-[1100px]:flex-nowrap` (Search menyusut, min 120px); < 1500px Export ikon saja
+  (`renderExportBtn(…, iconBelow1500)`), padding tab/Card-List & select PT diringkas. Wrap hanya kalau panel < 1100px.
   **Susulan 2026-10-02 (user: harus 1 baris di laptop 14")**: panel = `@container`; di bawah lebar panel 1450px label
   dipersingkat ("PPJK date"->"PPJK", "Company"->"PT", "+ Add manually"->"+ Add" + tooltip), Search `min-w-[150px]`,
   select PT `max-w-[110px]`, input tanggal `w-[104px]`. `flex-wrap` tetap sbg cadangan layar lebih sempit.

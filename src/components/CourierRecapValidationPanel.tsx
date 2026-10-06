@@ -11,14 +11,20 @@
 //   CourierCostSummary (Over/Undercharge + Accept per baris). Tombol Details = jendela penuh tabel lama
 //   (ValidasiModalLegacy: Edit -- Recompute pindah ke ringkasan 2026-10-05 / CostValidationModalLegacy: Edit) -- logika simpan SAMA mode List.
 // - Validasi bisa diubah hanya selama PIB/CN Draft (aturan SAMA Audit Courier).
+// - Tab "Audit trail" (2026-10-06, permintaan user): riwayat INVOICE AWB ini (v_audit_trail rekapan_courier, loader
+//   `fetchRecapCourierLog` -- dulu bagian lipat di bawah tab Invoices). Riwayat centang dokumen tetap di tab Checklist
+//   ("Document review"); riwayat PIB/CN tetap di jendela Open Audit Courier.
+// - Shipment Info bisa dilipat (2026-10-06, laporan user di laptop 14": isi tab tertutup header). Default terlipat kalau
+//   tinggi jendela < 1000px; pilihan disimpan di localStorage (per browser).
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Send, ExternalLink, Pencil } from 'lucide-react'
+import { X, Send, ExternalLink, Pencil, ChevronDown, ChevronUp } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { SA_BTN_OUTLINE, SA_BTN_GREEN, Pill, PtBadge } from './SeaAirAuditUi'
 import { fmtRp, companyFullName } from '../utils/SeaAirAuditHelpers'
 import { courierDocNo, isCourierDraft, type CourierDocType } from '../utils/CourierAuditHelpers'
-import { recapGroupStatus, type RecapGroup, type RecapAuditLink } from '../utils/CourierRecapHelpers'
+import { recapGroupStatus, fetchRecapCourierLog, type RecapGroup, type RecapAuditLink } from '../utils/CourierRecapHelpers'
+import CourierAuditTrail from './CourierAuditTrail'
 import { courierShipmentInfo, fmtCourierDate, validationDotClass, validationDotLabel, rowValidationPct, type ValidationTabKey } from './CourierValidationWindow'
 import ValidasiModal from './ValidasiModal'
 import ValidasiModalLegacy from './ValidasiModalLegacy'
@@ -26,7 +32,17 @@ import CostValidationModalLegacy from './CostValidationModalLegacy'
 import CourierCostSummary from './CourierCostSummary'
 import CourierRecapInvoicesTab from './CourierRecapInvoicesTab'
 
-export type RecapPanelTab = ValidationTabKey | 'invoices'
+export type RecapPanelTab = ValidationTabKey | 'invoices' | 'trail'
+
+const SHIP_INFO_KEY = 'beehive_courier_recap_shipinfo_open'
+const initialShipInfoOpen = (): boolean => {
+  try {
+    const v = window.localStorage.getItem(SHIP_INFO_KEY)
+    if (v === '1') return true
+    if (v === '0') return false
+  } catch { /* storage tidak tersedia */ }
+  return typeof window !== 'undefined' && window.innerHeight >= 1000
+}
 
 const hasVal = (v: any) => {
   if (v === null || v === undefined) return false
@@ -177,6 +193,7 @@ export default function CourierRecapValidationPanel({
     // Urutan tab (revisi 2026-10-05, keputusan user): Checklist | Cost Validation | Doc Validation | Invoices.
     ...(rec ? (['checklist', 'cost', 'doc'] as ValidationTabKey[]).filter(t => access[t]) : []),
     'invoices',
+    'trail',
   ]
   const [tab, setTab] = useState<RecapPanelTab>(() => (initialTab && tabs.includes(initialTab) ? initialTab : tabs[0]))
   const [visited, setVisited] = useState<Record<string, boolean>>(() => ({ [tab]: true }))
@@ -215,7 +232,15 @@ export default function CourierRecapValidationPanel({
   const unsubmitted = g.rows.filter(r => !r.submit_date)
   const vendor = rec?.vendor || g.rows.map(r => r.vendor).find(hasVal)
   const editOf = (t: ValidationTabKey) => draft && canEditValidation[t]
-  const tabLabel: Record<RecapPanelTab, string> = { checklist: 'Checklist', doc: 'Doc Validation', cost: 'Cost Validation', invoices: `Invoices (${g.rows.length})` }
+  const tabLabel: Record<RecapPanelTab, string> = { checklist: 'Checklist', doc: 'Doc Validation', cost: 'Cost Validation', invoices: `Invoices (${g.rows.length})`, trail: 'Audit trail' }
+  const trailLoader = useMemo(() => () => fetchRecapCourierLog(g), [g])
+  const [shipInfoOpen, setShipInfoOpen] = useState<boolean>(initialShipInfoOpen)
+  const toggleShipInfo = () => setShipInfoOpen(v => {
+    const next = !v
+    try { window.localStorage.setItem(SHIP_INFO_KEY, next ? '1' : '0') } catch { /* abaikan */ }
+    return next
+  })
+  const pibLabel = docType === 'CN' && rec ? 'No. SPPBMCP' : 'No. PIB'
 
   return (
     <div className="bg-white rounded-2xl border border-[#EADFD6] shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden" data-recap-panel={g.key}>
@@ -248,7 +273,7 @@ export default function CourierRecapValidationPanel({
         </div>
         <div className="flex items-end gap-1.5 mt-2 overflow-x-auto" role="tablist">
           {tabs.map(t => {
-            const dot = t === 'invoices' ? undefined : pct[t]
+            const dot = t === 'invoices' || t === 'trail' ? undefined : pct[t]
             return (
               <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => goTab(t)}
                 title={dot !== undefined ? `${tabLabel[t]}: ${validationDotLabel(dot)}` : undefined}
@@ -264,8 +289,25 @@ export default function CourierRecapValidationPanel({
       </div>
 
       {/* Shipment Info -- SAMA di semua tab, DIBEKUKAN di atas area scroll dgn latar ungu muda (revisi 2026-10-05) supaya
-          jelas beda dari isi tab di bawahnya. */}
-      <div className="shrink-0 px-3 py-2.5 bg-[#F5EDF3] border-b border-[#D9C7DA] @container" data-shipment-frozen>
+          jelas beda dari isi tab di bawahnya. Bisa dilipat jadi 1 baris ringkas (2026-10-06, layar 14"). */}
+      <div className="shrink-0 px-3 py-2 bg-[#F5EDF3] border-b border-[#D9C7DA] @container" data-shipment-frozen>
+        {!shipInfoOpen ? (
+          <div className="flex items-center gap-x-4 gap-y-1 flex-wrap text-[11.5px]" data-shipment-collapsed>
+            <span className="min-w-0"><span className="text-[#8A7A8B]">AWB </span><b className="text-[#3B1B3D] [overflow-wrap:anywhere]">{dash(rec?.awb || g.awbRaw || g.awb)}</b></span>
+            <span className="min-w-0"><span className="text-[#8A7A8B]">Vendor </span><b className="text-[#3B1B3D] [overflow-wrap:anywhere]">{dash(vendor)}</b></span>
+            {rec && <span className="min-w-0"><span className="text-[#8A7A8B]">{pibLabel} </span><b className="text-[#3B1B3D] [overflow-wrap:anywhere]">{dash(courierDocNo(rec, docType))}</b></span>}
+            <span className="min-w-0"><span className="text-[#8A7A8B]">Chargeable </span><b className="text-[#3B1B3D]">{dash(info.chargeable)}</b></span>
+            <button type="button" onClick={toggleShipInfo} className="ml-auto inline-flex items-center gap-1 text-[11.5px] font-semibold text-[#6B3470] hover:underline shrink-0">
+              Show all shipment info <ChevronDown size={13} />
+            </button>
+          </div>
+        ) : (
+        <>
+          <div className="flex justify-end mb-1">
+            <button type="button" onClick={toggleShipInfo} className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#6B3470] hover:underline">
+              Hide shipment info <ChevronUp size={13} />
+            </button>
+          </div>
           <div className="rounded-[12px] border border-[#D9C7DA] overflow-hidden" data-shipment-info>
             <div className="grid grid-cols-2 @lg:grid-cols-3 @4xl:grid-cols-6 gap-px bg-[#E4D3E2]">
               <InfoCell label="AWB">{dash(rec?.awb || g.awbRaw || g.awb)}</InfoCell>
@@ -273,7 +315,7 @@ export default function CourierRecapValidationPanel({
               <InfoCell label="No. Invoice Duty">{dash(joinNos(g.byKind.duty))}</InfoCell>
               <InfoCell label="Vendor">{dash(vendor)}</InfoCell>
               <InfoCell label="Jalur">{rec ? <>{docType}{!draft && <span className="text-[10.5px] font-normal text-[#8A7A8B]"> · Audited (view only)</span>}</> : '—'}</InfoCell>
-              <InfoCell label={docType === 'CN' && rec ? 'No. SPPBMCP' : 'No. PIB'}>{dash(rec ? courierDocNo(rec, docType) : '')}</InfoCell>
+              <InfoCell label={pibLabel}>{dash(rec ? courierDocNo(rec, docType) : '')}</InfoCell>
               <InfoCell label="Courier">{dash(info.courier)}</InfoCell>
               <InfoCell label="Service">{dash(info.service)}</InfoCell>
               <InfoCell label="Direction / Type">{dash(info.direction)}</InfoCell>
@@ -282,6 +324,8 @@ export default function CourierRecapValidationPanel({
               <InfoCell label="Chargeable Weight">{dash(info.chargeable)}</InfoCell>
             </div>
           </div>
+        </>
+        )}
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto bg-[#FBF7F4] @container">
@@ -307,6 +351,11 @@ export default function CourierRecapValidationPanel({
           {tab === 'invoices' && (
             <div role="tabpanel">
               <CourierRecapInvoicesTab g={g} colOk={colOk} canEdit={canEditRecap} busy={busy} onSubmit={onSubmit} isAdmin={isAdmin} onUnlock={onUnlock} onEditInList={onEditInList} />
+            </div>
+          )}
+          {tab === 'trail' && (
+            <div role="tabpanel" className="flex flex-col -m-3">
+              <CourierAuditTrail loader={trailLoader} loadKey={g.key + ':' + g.rows.length} />
             </div>
           )}
         </div>

@@ -166,6 +166,14 @@ hanya Admin (`canEdit && isAdmin && !locked`), non-Admin lihat catatan abu; Edit
 `canEdit && !locked`. Chip duplikat (`duplicate_of`) di kartu & header. Split per PO "By KG"
 memakai TOTAL shipment × KG PO / total KG (pembulatan per sel, tampilan saja).
 
+## Panel filter Invoice Recap Sea & Air — 1 baris di laptop 14" (2026-10-06, laporan user)
+
+Wrapper `@container` + baris dalam `flex-wrap @min-[1150px]:flex-nowrap` (Search menyusut, min 120px). < 1500px: label Date & Sort
+disembunyikan (tooltip/aria tetap), select Sort `max-w-[96px]`, Company `max-w-[90px]`, Export ikon saja
+(`renderExportBtn(true, true, true)`), padding tab & Card/List diringkas; < 1300px Upload ikon saja. Wrap hanya kalau panel < 1150px.
+Pola SAMA panel Audit Courier. (Container query TIDAK berlaku ke elemen container itu sendiri -- makanya flex row
+dipisah ke div dalam.)
+
 ## Kartu Audit PIB & Invoice Recap — susunan baru + responsif 14"/24" (2026-10-05, gambar user)
 
 - **Invoice Recap** (`SeaAirRecapCardList.tsx`): 4 kolom -- AWB/tipe/PT/Uploaded | **supplier tebal (huruf besar) + chip rute

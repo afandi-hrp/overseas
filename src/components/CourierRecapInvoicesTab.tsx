@@ -3,17 +3,16 @@
 // - Total (Freight + Duty − Credit Note, CN terpisah) + Split per vessel (jumlah breakdown per vessel tiap invoice).
 // - Invoice per jenis (Freight / Duty / Credit Note): nominal, NTPN/PO/remarks, chip Sent/Received/Paid,
 //   Submit to Finance per invoice (tanpa syarat), kunci setelah submit + Unlock (Admin, alasan min. 5 karakter).
-// - Audit trail (`v_audit_trail` rekapan_courier cocok AWB).
+// - Audit trail DIPINDAH ke tab "Audit trail" panel Validation (2026-10-06, permintaan user).
 // - Edit TETAP lewat tabel List (tombol "Edit in List" di header panel).
 import React, { useMemo, useState } from 'react'
-import { Send, Lock, Unlock, History, ChevronDown, ChevronRight } from 'lucide-react'
+import { Send, Lock, Unlock } from 'lucide-react'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_GREEN, Chip, SectionCard } from './SeaAirAuditUi'
 import { fmtRp, fmtDateShort } from '../utils/SeaAirAuditHelpers'
 import {
-  splitPerVessel, poVesselPairs, invoiceKind, invoiceAmount, fetchRecapCourierLog,
+  splitPerVessel, poVesselPairs, invoiceKind, invoiceAmount,
   INVOICE_KIND_LABEL, type RecapGroup, type InvoiceKind,
 } from '../utils/CourierRecapHelpers'
-import CourierAuditTrail from './CourierAuditTrail'
 
 const hasVal = (v: any) => v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim() !== '-'
 const Fact: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
@@ -78,10 +77,8 @@ export default function CourierRecapInvoicesTab({
 }) {
   const kinds = (['freight', 'duty', 'cn'] as InvoiceKind[]).filter(k => g.byKind[k].length > 0)
   const [kind, setKind] = useState<InvoiceKind>(kinds[0] || 'freight')
-  const [showTrail, setShowTrail] = useState(false)
   const amountOk = colOk('total_amount')
   const split = useMemo(() => splitPerVessel(g.rows), [g.rows])
-  const loader = useMemo(() => () => fetchRecapCourierLog(g), [g])
   const activeKind = kinds.includes(kind) ? kind : (kinds[0] || 'freight')
 
   const totalLine = (label: string, value: number, opts: { sub?: string; neg?: boolean; bold?: boolean } = {}) => (
@@ -234,13 +231,6 @@ export default function CourierRecapInvoicesTab({
         </SectionCard>
       )}
 
-      <div className={`${SA_CARD} overflow-hidden`}>
-        <button type="button" onClick={() => setShowTrail(v => !v)} className="w-full flex items-center gap-2 px-4 py-2.5 text-left text-[13px] font-bold text-[#3B1B3D] hover:bg-[#FBF7F4]">
-          <History size={14} className="text-[#6B3470]" /> Audit trail
-          <span className="ml-auto text-[#6B3470]">{showTrail ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
-        </button>
-        {showTrail && <div className="border-t border-[#EADFD6] max-h-[480px] flex flex-col"><CourierAuditTrail loader={loader} loadKey={g.key + ':' + g.rows.length} /></div>}
-      </div>
     </div>
   )
 }

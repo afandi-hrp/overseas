@@ -5769,7 +5769,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   // `outline` = gaya outline hijau (Courier Audit/Invoice Recap, supaya tidak bersaing dgn Add
   // Data yg jadi satu-satunya tombol solid). Tab lain tetap hijau solid lama.
   // `compact` (2026-10-02): ukuran kontrol panel filter kartu (h-9, rounded-xl) -- dipakai panel filter Audit Courier.
-  const renderExportBtn = (outline: boolean, compact = false) => (
+  // `iconBelow1500` (2026-10-06): di dalam panel `@container` lebar < 1500px tombol jadi ikon saja (laptop 14").
+  const renderExportBtn = (outline: boolean, compact = false, iconBelow1500 = false) => (
     <button
       onClick={() => {
         const title = (activeMainTab === 'courier' && activeSubTab === 'courier_audit')
@@ -5798,13 +5799,14 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         setExportModalState({ title, cols: visibleCols, dateFieldLabel, splitByPoDetail })
       }}
       disabled={reorderMode}
-      title={reorderMode ? 'Selesaikan Reorder dulu' : undefined}
-      className={`px-3 ${compact ? 'h-9 rounded-xl' : 'py-2 rounded-full h-[38px] shadow-sm'} text-xs font-semibold border transition-all flex justify-center items-center gap-1.5 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
+      title={reorderMode ? 'Selesaikan Reorder dulu' : iconBelow1500 ? 'Export' : undefined}
+      aria-label="Export"
+      className={`${iconBelow1500 ? 'px-2.5 @min-[1500px]:px-3' : 'px-3'} ${compact ? 'h-9 rounded-xl' : 'py-2 rounded-full h-[38px] shadow-sm'} text-xs font-semibold border transition-all flex justify-center items-center gap-1.5 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
         outline ? 'bg-white text-emerald-700 border-emerald-500 hover:bg-emerald-50' : 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700'
       }`}
     >
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
-      Export
+      <span className={iconBelow1500 ? 'hidden @min-[1500px]:inline' : undefined}>Export</span>
     </button>
   );
 
@@ -6288,7 +6290,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                    Search, PPJK date, Company, Card/List, Refresh). State filter SAMA toolbar lama. */
                 <div className="flex flex-col gap-3">
                   <CourierAuditKpiCards summary={courierSummary} loading={courierSummaryLoading} validationIncomplete={courierValidationIncomplete} colOk={courierColOk} />
-                  <div className="@container bg-white rounded-[14px] border border-[#EADFD6] shadow-sm px-3 py-2.5 flex flex-wrap items-center gap-2">
+                  {/* 1 baris di laptop 14" (2026-10-06, permintaan user): wrapper = container, baris dalam `nowrap` mulai lebar
+                      panel 1100px (Search yang menyusut, min 120px); < 1500px kontrol diringkas (Export ikon saja, padding tab). */}
+                  <div className="@container bg-white rounded-[14px] border border-[#EADFD6] shadow-sm px-3 py-2.5">
+                  <div className="flex flex-wrap @min-[1100px]:flex-nowrap items-center gap-2">
                     <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[#F5EDF3] shrink-0">
                       {([
                         { id: 'archive', label: 'Draft', count: courierSummary?.draft },
@@ -6303,7 +6308,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                             type="button"
                             onClick={() => { setCourierAuditType(t.id); setPage(1); }}
                             title={nas ? `${nas} without NAS Submit Date` : undefined}
-                            className={`flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-bold transition-colors ${active ? 'bg-[#3B1B3D] text-white shadow-sm' : 'text-[#3B1B3D] hover:bg-white'}`}
+                            className={`flex items-center gap-1.5 px-2 @min-[1500px]:px-3 h-8 rounded-lg text-xs font-bold transition-colors ${active ? 'bg-[#3B1B3D] text-white shadow-sm' : 'text-[#3B1B3D] hover:bg-white'}`}
                           >
                             {t.label}
                             <span className={`min-w-[20px] px-1.5 h-[18px] rounded-full text-[10.5px] flex items-center justify-center tabular-nums ${active ? 'bg-white/20 text-white' : 'bg-white text-[#6E5E70]'}`}>
@@ -6314,7 +6319,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         );
                       })}
                     </div>
-                    <div className="relative flex-1 min-w-[150px]">
+                    <div className="relative flex-1 min-w-[120px]">
                       <SearchIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A7A8B] pointer-events-none" />
                       <input
                         type="text"
@@ -6345,7 +6350,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         aria-label="Company"
                         value={activeCourierImporAnFilter}
                         onChange={e => { setActiveCourierImporAnFilter(e.target.value); setPage(1); }}
-                        className="border-0 bg-transparent text-xs font-bold text-[#3B1B3D] focus:outline-none cursor-pointer max-w-[110px]"
+                        className="border-0 bg-transparent text-xs font-bold text-[#3B1B3D] focus:outline-none cursor-pointer max-w-[80px] @min-[1500px]:max-w-[110px]"
                       >
                         {courierImporAnTabs.map(an => (
                           <option key={an} value={an}>{an}</option>
@@ -6390,7 +6395,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                           key={m}
                           type="button"
                           onClick={() => switchCourierView(m)}
-                          className={`px-3 h-7 rounded-lg text-xs font-bold transition-colors ${courierAuditView === m ? 'bg-white text-[#3B1B3D] shadow-sm' : 'text-[#6E5E70] hover:text-[#3B1B3D]'}`}
+                          className={`px-2 @min-[1500px]:px-3 h-7 rounded-lg text-xs font-bold transition-colors ${courierAuditView === m ? 'bg-white text-[#3B1B3D] shadow-sm' : 'text-[#6E5E70] hover:text-[#3B1B3D]'}`}
                         >
                           {m === 'card' ? 'Card' : 'List'}
                         </button>
@@ -6409,7 +6414,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         `flex-wrap` (BUKAN nowrap + scroll): di laptop 14" (zoom 90%) kelompok tombol turun ke baris
                         kedua rata kanan -- dulu terdorong keluar layar & tidak terlihat (laporan user). */}
                     <div className="ml-auto flex items-center gap-2 shrink-0">
-                      {renderExportBtn(true, true)}
+                      {renderExportBtn(true, true, true)}
                       {canEdit('courier_audit') && (
                         <button
                           type="button"
@@ -6422,6 +6427,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         </button>
                       )}
                     </div>
+                  </div>
                   </div>
                 </div>
               ) : isCourierToolbar ? (
@@ -6707,24 +6713,29 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                    lebar panel 1450px; tidak muat -> turun ke baris 2 (tidak dipotong). */
                 <div className="flex flex-col gap-3">
                   <SeaAirRecapKpiCards summary={recapSummary} loading={recapSummaryLoading} />
-                  <div className="@container bg-white rounded-[14px] border border-[#EADFD6] shadow-sm px-3 py-2.5 flex flex-wrap items-center gap-2">
+                  {/* 1 baris di laptop 14" (2026-10-06, permintaan user): wrapper = container, baris dalam `nowrap` mulai lebar
+                      panel 1150px (Search yang menyusut, min 120px); < 1500px label Date/Sort disembunyikan, Export ikon saja;
+                      < 1300px Upload ikon saja. */}
+                  <div className="@container bg-white rounded-[14px] border border-[#EADFD6] shadow-sm px-3 py-2.5">
+                  <div className="flex flex-wrap @min-[1150px]:flex-nowrap items-center gap-2">
                     <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[#F5EDF3] shrink-0">
                       {['All', 'LCL', 'FCL', 'AIR'].map(t => (
                         <button
                           key={t}
                           type="button"
                           onClick={() => { setActiveShipmentTypeFilter(t); setPage(1); }}
-                          className={`px-3 h-8 rounded-lg text-xs font-bold transition-colors ${activeShipmentTypeFilter === t ? 'bg-[#3B1B3D] text-white shadow-sm' : 'text-[#3B1B3D] hover:bg-white'}`}
+                          className={`px-2.5 @min-[1500px]:px-3 h-8 rounded-lg text-xs font-bold transition-colors ${activeShipmentTypeFilter === t ? 'bg-[#3B1B3D] text-white shadow-sm' : 'text-[#3B1B3D] hover:bg-white'}`}
                         >
                           {t}
                         </button>
                       ))}
                     </div>
-                    <div className="relative flex-1 min-w-[150px]">
+                    <div className="relative flex-1 min-w-[120px]">
                       <SearchIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A7A8B] pointer-events-none" />
                       <input
                         type="text"
                         placeholder="Search BL / AWB, supplier, invoice, PIB no.…"
+                        title="Search BL / AWB, supplier, invoice, PIB no."
                         value={search}
                         onChange={e => setSearch(e.target.value)}
                         className="w-full h-9 rounded-xl pl-8 pr-8 text-[13px] bg-[#FBF7F4] border border-[#EADFD6] text-[#3B1B3D] placeholder:text-[#8A7A8B] focus:outline-none focus:border-[#6B3470] focus:bg-white"
@@ -6734,7 +6745,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 h-9 px-2.5 rounded-xl border border-[#EADFD6] bg-white shrink-0" title="Date">
-                      <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]">Date</span>
+                      <span className="hidden @min-[1500px]:inline text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]">Date</span>
                       <input type="date" aria-label="From date" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} className="w-[104px] text-[12px] bg-transparent focus:outline-none text-[#3B1B3D] cursor-pointer" />
                       <span className="text-[#8A7A8B] text-xs">–</span>
                       <input type="date" aria-label="To date" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} className="w-[104px] text-[12px] bg-transparent focus:outline-none text-[#3B1B3D] cursor-pointer" />
@@ -6748,7 +6759,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         aria-label="Company"
                         value={activeAnFilter}
                         onChange={e => { setActiveAnFilter(e.target.value); setPage(1); }}
-                        className="border-0 bg-transparent text-xs font-bold text-[#3B1B3D] focus:outline-none cursor-pointer max-w-[120px]"
+                        className="border-0 bg-transparent text-xs font-bold text-[#3B1B3D] focus:outline-none cursor-pointer max-w-[90px] @min-[1500px]:max-w-[120px]"
                       >
                         {anTabs.map(an => <option key={an} value={an}>{an === 'All' ? 'All companies' : an}</option>)}
                       </select>
@@ -6761,8 +6772,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                     >
                       <span className="hidden @min-[1450px]:inline">Needs attention</span><span className="@min-[1450px]:hidden">Attention</span>{recapSummary ? ` · ${recapSummary.needsAttention}` : ''}
                     </button>
-                    <div className="flex items-center gap-2 h-9 pl-3 pr-2 rounded-xl border border-[#EADFD6] bg-white shrink-0">
-                      <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]">Sort</span>
+                    <div className="flex items-center gap-2 h-9 pl-2.5 @min-[1500px]:pl-3 pr-2 rounded-xl border border-[#EADFD6] bg-white shrink-0" title="Sort">
+                      <span className="hidden @min-[1500px]:inline text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]">Sort</span>
                       <select
                         value={sortColumn === 'total_invoice' ? 'total_invoice' : sortDirection === 'asc' ? 'oldest' : 'newest'}
                         onChange={e => {
@@ -6771,7 +6782,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                           else { setSortColumn('created_at'); setSortDirection(v === 'oldest' ? 'asc' : 'desc'); }
                           setPage(1);
                         }}
-                        className="border-0 bg-transparent text-xs font-bold text-[#3B1B3D] focus:outline-none cursor-pointer"
+                        aria-label="Sort"
+                        className="border-0 bg-transparent text-xs font-bold text-[#3B1B3D] focus:outline-none cursor-pointer max-w-[96px] @min-[1500px]:max-w-none"
                       >
                         <option value="newest">Newest</option>
                         <option value="oldest">Oldest</option>
@@ -6781,7 +6793,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                     <div className="inline-flex items-center p-1 rounded-xl bg-[#F5EDF3] shrink-0" role="group" aria-label="View mode">
                       {(['card', 'list'] as const).map(m => (
                         <button key={m} type="button" onClick={() => setSeaAirRecapView(m)}
-                          className={`px-3 h-7 rounded-lg text-xs font-bold transition-colors ${seaAirRecapView === m ? 'bg-white text-[#3B1B3D] shadow-sm' : 'text-[#6E5E70] hover:text-[#3B1B3D]'}`}>
+                          className={`px-2 @min-[1500px]:px-3 h-7 rounded-lg text-xs font-bold transition-colors ${seaAirRecapView === m ? 'bg-white text-[#3B1B3D] shadow-sm' : 'text-[#6E5E70] hover:text-[#3B1B3D]'}`}>
                           {m === 'card' ? 'Card' : 'List'}
                         </button>
                       ))}
@@ -6792,17 +6804,19 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                     </button>
                     {/* Export & Upload documents (2026-10-06: dipindah dari header, permintaan user). */}
                     <div className="ml-auto flex items-center gap-2 shrink-0">
-                      {renderExportBtn(true, true)}
+                      {renderExportBtn(true, true, true)}
                       {canSee('sea_air_upload') && (
                         <Link
                           to="/sea-air/upload"
                           title="Upload documents"
-                          className="px-4 h-9 rounded-xl bg-[#6B3470] hover:bg-[#5A2A5E] text-white text-xs font-semibold shadow-sm transition-colors shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap"
+                          aria-label="Upload documents"
+                          className="px-3 @min-[1300px]:px-4 h-9 rounded-xl bg-[#6B3470] hover:bg-[#5A2A5E] text-white text-xs font-semibold shadow-sm transition-colors shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap"
                         >
-                          <UploadCloud size={14} /> Upload<span className="hidden @min-[1450px]:inline"> documents</span>
+                          <UploadCloud size={14} /><span className="hidden @min-[1300px]:inline">Upload</span><span className="hidden @min-[1500px]:inline"> documents</span>
                         </Link>
                       )}
                     </div>
+                  </div>
                   </div>
                 </div>
               ) : (
