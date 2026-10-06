@@ -43,6 +43,10 @@ import AccountingRekapPage from './pages/AccountingRekapPage';
 import CostByVesselPage from './pages/CostByVesselPage';
 import ReportingCostByCourierPage from './pages/ReportingCostByCourierPage';
 import MasterVesselAdminPage from './pages/MasterVesselAdminPage';
+import RequisitionRhPage from './pages/RequisitionRhPage';
+import OilRequestPage from './pages/OilRequestPage';
+import VerificationQfpPage from './pages/VerificationQfpPage';
+import LsaPage from './pages/LsaPage';
 
 function ProtectedRoute() {
   const { session, loading, lockScreenActive } = useAuth();
@@ -126,7 +130,15 @@ export default function App() {
               <Route path="/audit-po" element={<RequirePageAccess pageKey="audit_po"><AuditPoPage /></RequirePageAccess>} />
               <Route path="/audit-po-overseas" element={<RequirePageAccess pageKey="audit_po_overseas"><AuditPoOverseasPage /></RequirePageAccess>} />
               <Route path="/pi-local" element={<RequirePageAccess pageKey="pi_local"><PiLocalPage /></RequirePageAccess>} />
+              {/* Verification QFP (2026-10-06) -- migrasi Verification QFP.html (n8n verify-documents), submenu Compare Doc. */}
+              <Route path="/verification-qfp" element={<RequirePageAccess pageKey="verification_qfp"><VerificationQfpPage /></RequirePageAccess>} />
+              {/* LSA (2026-10-06) -- migrasi LSA.html (n8n audit-dokumen + polling), submenu Compare Doc. */}
+              <Route path="/lsa" element={<RequirePageAccess pageKey="lsa"><LsaPage /></RequirePageAccess>} />
               <Route path="/accounting-rekap" element={<RequirePageAccess pageKey="accounting_rekap"><AccountingRekapPage /></RequirePageAccess>} />
+
+              {/* SPB (2026-10-06) -- migrasi 2 halaman HTML mandiri (n8n AI): Manualbook.html & Oil Request.html. */}
+              <Route path="/spb/requisition-rh" element={<RequirePageAccess pageKey="requisition_rh"><RequisitionRhPage /></RequirePageAccess>} />
+              <Route path="/spb/oil-request" element={<RequirePageAccess pageKey="oil_request"><OilRequestPage /></RequirePageAccess>} />
 
               {/* Gabungan "Cost by Vessel" (2026-09) -- GANTI TOTAL dari 2 route terpisah
                   (/reporting/dashboard, /reporting/cost-per-vessel), sekarang 1 route 2 tab.

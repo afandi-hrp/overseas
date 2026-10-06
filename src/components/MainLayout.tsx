@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plane, Ship, ScrollText, Settings, ChevronUp, ChevronDown, LogOut, UserCircle, FileCheck2, GitCompare, BarChart3, Menu, X, Wallet } from 'lucide-react';
+import { Plane, Ship, ScrollText, Settings, ChevronUp, ChevronDown, LogOut, UserCircle, FileCheck2, GitCompare, BarChart3, Menu, X, Wallet, ClipboardList } from 'lucide-react';
 import shipmentIcon from '../assets/beehive-icon.png';
 import { useAuth } from '../lib/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -105,7 +105,21 @@ const MAIN_TABS: MainTab[] = [
       { id: 'audit_po_overseas', label: 'Audit AP Overseas', path: '/audit-po-overseas', pageKey: 'audit_po_overseas' },
       { id: 'accounting_rekap', label: 'Accounting Rekap', path: '/accounting-rekap', pageKey: 'accounting_rekap' },
       { id: 'pi_local', label: 'PI Local', path: '/pi-local', pageKey: 'pi_local' },
+      { id: 'verification_qfp', label: 'Verification QFP', path: '/verification-qfp', pageKey: 'verification_qfp' },
+      { id: 'lsa', label: 'LSA', path: '/lsa', pageKey: 'lsa' },
     ]
+  },
+  {
+    // SPB (2026-10-06) -- menu induk 2 halaman migrasi HTML mandiri (verifikasi AI n8n).
+    id: 'spb',
+    label: 'SPB',
+    icon: ClipboardList,
+    path: '/spb/requisition-rh',
+    basePath: '/spb',
+    subTabs: [
+      { id: 'requisition_rh', label: 'Requisition RH', path: '/spb/requisition-rh', pageKey: 'requisition_rh' },
+      { id: 'oil_request', label: 'Oil Request', path: '/spb/oil-request', pageKey: 'oil_request' },
+    ],
   },
   {
     id: 'trail',
@@ -416,7 +430,9 @@ export default function MainLayout() {
               return (
                 <div key={t.id} className="flex flex-col" onMouseEnter={() => setExpandedTab(t.id)}>
                   <button
-                    onClick={() => navigate(t.path)}
+                    // Subtab pertama yg BOLEH diakses (visibleTabs sudah difilter) -- mis. user SPB yg hanya
+                    // punya Oil Request tidak dilempar ke Requisition RH. Akses penuh = sama dgn t.path.
+                    onClick={() => navigate(t.subTabs?.[0]?.path ?? t.path)}
                     className={`flex items-center justify-between px-2.5 py-2.5 rounded-xl border transition-all ${
                       isActive
                         ? 'text-white bg-white/10 backdrop-blur-md border-white/20 shadow-lg shadow-[#5A305A]/10'

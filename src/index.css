@@ -308,3 +308,70 @@
     break-inside: avoid;
   }
 }
+
+/* Print "Requisition RH" (RequisitionRhPage, 2026-10-06) -- area cetak = portal ke body
+   (`hidden print:block`), pola sama #bunker-print-area: semua elemen body lain sudah
+   visibility:hidden oleh aturan print di atas, area ini dipaksa absolute dari pojok kertas
+   supaya tidak terdorong ruang kosong & bisa mengalir ke banyak halaman. */
+@media print {
+  #requisition-rh-print-area,
+  #requisition-rh-print-area * {
+    visibility: visible;
+  }
+  #requisition-rh-print-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+  #requisition-rh-print-area thead {
+    display: table-header-group;
+  }
+  #requisition-rh-print-area tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
+
+/* Print "Verification QFP" (VerificationQfpPage, 2026-10-06) -- pola sama #requisition-rh-print-area:
+   portal ke body (`hidden print:block`), elemen body lain sudah visibility:hidden. Ukuran kertas
+   A4 portrait margin 10mm (sama asli) dipasang lewat <style> di halaman (hanya selama halaman terbuka). */
+@media print {
+  #verification-qfp-print-area,
+  #verification-qfp-print-area * {
+    visibility: visible;
+  }
+  #verification-qfp-print-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+  #verification-qfp-print-area thead {
+    display: table-header-group;
+  }
+}
+
+/* Print "LSA" (LsaPage, 2026-10-06) -- pola sama #verification-qfp-print-area; A4 landscape lewat
+   <style> di halaman. */
+@media print {
+  #lsa-print-area,
+  #lsa-print-area * {
+    visibility: visible;
+  }
+  #lsa-print-area {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+  #lsa-print-area thead {
+    display: table-header-group;
+  }
+}

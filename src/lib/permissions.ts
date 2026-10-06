@@ -14,7 +14,7 @@ export type PageEntry = {
   // halaman lain -- lihat courier_cost_validation dkk di bawah. Tidak ikut route guard
   // (RequirePageAccess), cuma dipakai SharedDataTable.tsx utk sembunyikan/tampilkan tombol.
   path?: string;
-  group: 'Courier' | 'Sea & Air' | 'FAR Overseas' | 'Bunker' | 'Audit AP Local' | 'Audit AP Overseas' | 'PI Local' | 'Accounting Rekap' | 'Reporting' | 'General' | 'Settings';
+  group: 'Courier' | 'Sea & Air' | 'FAR Overseas' | 'Bunker' | 'Audit AP Local' | 'Audit AP Overseas' | 'PI Local' | 'Accounting Rekap' | 'Verification QFP' | 'LSA' | 'SPB' | 'Reporting' | 'General' | 'Settings';
   // Daftar "jabatan approval" yang berlaku KHUSUS utk halaman ini (opsional -- cuma diisi utk
   // halaman yang punya alur approval berjenjang, mis. Direct Loading/FAR Overseas Air:
   // Exim -> PIC -> SPV -> Direktur). Kosongkan/hilangkan field ini utk halaman yang belum py
@@ -76,8 +76,15 @@ export const PAGE_REGISTRY: PageEntry[] = [
   { key: 'audit_po_overseas', label: 'Audit AP Overseas', path: '/audit-po-overseas', group: 'Audit AP Overseas' },
 
   { key: 'pi_local', label: 'PI Local', path: '/pi-local', group: 'PI Local' },
+  // Verification QFP (2026-10-06) -- migrasi Verification QFP.html; tanpa tabel Supabase (langsung ke webhook n8n).
+  { key: 'verification_qfp', label: 'Verification QFP', path: '/verification-qfp', group: 'Verification QFP' },
+  // LSA (2026-10-06) -- migrasi LSA.html; tanpa tabel Supabase (langsung ke webhook n8n).
+  { key: 'lsa', label: 'LSA', path: '/lsa', group: 'LSA' },
 
   { key: 'accounting_rekap', label: 'Accounting Rekap', path: '/accounting-rekap', group: 'Accounting Rekap' },
+  // SPB (2026-10-06) -- migrasi Manualbook.html & Oil Request.html; tanpa tabel Supabase (langsung ke webhook n8n).
+  { key: 'requisition_rh', label: 'Requisition RH', path: '/spb/requisition-rh', group: 'SPB' },
+  { key: 'oil_request', label: 'Oil Request', path: '/spb/oil-request', group: 'SPB' },
 
   // 2026-09: 2 halaman ini digabung jadi 1 route/halaman "Cost by Vessel" (`CostByVesselPage.tsx`,
   // 2 tab) -- page_key TETAP 2 terpisah (assignment akses per-role existing tidak berubah),
@@ -112,7 +119,7 @@ export const PAGE_REGISTRY: PageEntry[] = [
   { key: 'settings_master_vessel', label: 'Master Vessel', path: '/settings/master-vessel', group: 'Settings' },
 ];
 
-export const PAGE_GROUPS: PageEntry['group'][] = ['Courier', 'Sea & Air', 'FAR Overseas', 'Bunker', 'Audit AP Local', 'Audit AP Overseas', 'PI Local', 'Accounting Rekap', 'Reporting', 'General', 'Settings'];
+export const PAGE_GROUPS: PageEntry['group'][] = ['Courier', 'Sea & Air', 'FAR Overseas', 'Bunker', 'Audit AP Local', 'Audit AP Overseas', 'PI Local', 'Accounting Rekap', 'Verification QFP', 'LSA', 'SPB', 'Reporting', 'General', 'Settings'];
 
 export function pageLabel(key: string): string {
   return PAGE_REGISTRY.find(p => p.key === key)?.label || key;
