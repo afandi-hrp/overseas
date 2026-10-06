@@ -213,6 +213,17 @@ TAPI `field` mentah (`"Format Pass: Tidak Ada Vessel & IMO"`, logic-critical) TI
 Komentar kode & CLAUDE.md ini TETAP Bahasa Indonesia (bukan scope translasi UI).
 
 
+## Divisi user — panel Roles per User (2026-10-06, permintaan user; `sql/046_profiles_divisi.sql`)
+
+- Kolom `profiles.divisi` (text, HURUF BESAR, NULL = belum ada) + RPC `fn_set_user_divisi(uuid, text)` (SECURITY DEFINER, guard
+  `is_admin()`, trim + upper, kosong = NULL, maks 60 karakter, revoke anon). Lewat RPC krn policy UPDATE `profiles` mungkin hanya
+  baris milik sendiri. Murni pengelompokan tampilan, BUKAN hak akses.
+- `RoleManagementPage.tsx`: `DivisionPicker` per user (pilihan `DEFAULT_DIVISIONS` FINANCE/PURCHASING/SHIPMENT + divisi yg sudah
+  dipakai + "+ New division…"), tabel dikelompokkan per divisi (abjad, "No division" terakhir), baris grup = jumlah user + jumlah
+  user per role, Expand/Collapse All, Search juga mencocokkan divisi (saat mencari semua grup terbentang).
+- Fail-safe: kolom belum ada -> query `profiles` diulang tanpa `divisi`, panel tampil daftar datar + info kuning "run sql/046".
+- Diuji: jsdom 15 cek, PGlite 7 cek.
+
 # Arsip versi lengkap dari CLAUDE.md lama (2026-10-06)
 
 Versi ringkas & terkini ada di CLAUDE.md. Di sini versi lengkap (catatan per route, nomor SQL per RPC).

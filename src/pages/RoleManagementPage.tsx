@@ -4,14 +4,55 @@ import { useAuth } from '../lib/AuthContext';
 import { PAGE_REGISTRY, PAGE_GROUPS, APPROVAL_TIER_PAGES, ACCESS_MATRIX_ORDER, type PageEntry } from '../lib/permissions';
 import {
   Plus, Trash2, ShieldCheck, Users, LayoutGrid, Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns3, X, Search,
-  Plane, Ship, FileCheck2, Wallet, BarChart3, GitCompare, ClipboardList, ScrollText, Settings as SettingsIcon, CornerDownRight,
+  Plane, Ship, FileCheck2, Wallet, BarChart3, GitCompare, ClipboardList, ScrollText, Settings as SettingsIcon, CornerDownRight, Building2,
 } from 'lucide-react';
 import Greeting from '../components/Greeting';
 import { LoadingState } from '../components/LoadingState';
 import { COLUMN_ACCESS_PAGES, COLUMN_ACCESS_NOTE } from '../components/SharedDataTable';
 
 type Role = { id: string; name: string; description: string | null; is_protected: boolean };
-type ProfileRow = { id: string; email: string | null; nama: string | null };
+type ProfileRow = { id: string; email: string | null; nama: string | null; divisi?: string | null };
+
+// Divisi user (sql/046, kolom profiles.divisi, disimpan HURUF BESAR) -- murni pengelompokan panel "Roles per
+// User", BUKAN hak akses. Pilihan default + divisi lain yang sudah dipakai + "+ New division...".
+const DEFAULT_DIVISIONS = ['FINANCE', 'PURCHASING', 'SHIPMENT'];
+const titleCase = (s: string) => s.toLowerCase().replace(/(^|[\s&/-])(\p{L})/gu, (_m, a, b) => a + b.toUpperCase());
+
+function DivisionPicker({ value, options, onChange }: { value: string | null | undefined; options: string[]; onChange: (v: string | null) => void }) {
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState('');
+  const cls = 'mt-1 text-[10px] font-semibold bg-white/90 border border-[#5A305A]/20 rounded-md px-1.5 py-0.5 text-[#5A305A] focus:outline-none focus:border-[#5A305A] max-w-[170px]';
+  if (adding) {
+    const commit = () => { const v = draft.trim(); setAdding(false); if (v) onChange(v.toUpperCase()); };
+    return (
+      <input
+        autoFocus
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setAdding(false); }}
+        onBlur={commit}
+        maxLength={60}
+        placeholder="New division name"
+        className={cls}
+      />
+    );
+  }
+  return (
+    <select
+      value={value || ''}
+      onChange={e => {
+        if (e.target.value === '__new__') { setDraft(''); setAdding(true); return; }
+        onChange(e.target.value || null);
+      }}
+      title="Division (grouping only, not access)"
+      className={`${cls} cursor-pointer`}
+    >
+      <option value="">— No division</option>
+      {options.map(o => <option key={o} value={o}>{titleCase(o)}</option>)}
+      <option value="__new__">+ New division…</option>
+    </select>
+  );
+}
 
 // Ikon grup matrix = ikon menu yg sama di sidebar (MainLayout MAIN_TABS) supaya mudah dicocokkan.
 const GROUP_ICON: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
@@ -66,6 +107,9 @@ export default function RoleManagementPage() {
   const [savingNewRole, setSavingNewRole] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [userSearch, setUserSearch] = useState('');
+  // sql/046 belum dijalankan (kolom profiles.divisi tidak ada) -> panel tampil tanpa pengelompokan + info.
+  const [divisiAvailable, setDivisiAvailable] = useState(true);
+  const [collapsedDivisions, setCollapsedDivisions] = useState<Set<string>>(new Set());
   const [pageSearch, setPageSearch] = useState('');
   // Grup halaman yang di-collapse di matrix akses -- makin banyak halaman & role, matrix bisa
   // sangat panjang ke bawah, jadi tiap grup bisa diciutkan satu-satu (atau semua sekaligus lewat
@@ -90,7 +134,7 @@ export default function RoleManagementPage() {
     const [rolesRes, accessRes, profilesRes, userRolesRes, approvalTiersRes] = await Promise.all([
       supabase.from('roles').select('id, name, description, is_protected').order('is_protected', { ascending: false }).order('name'),
       supabase.from('role_page_access').select('role_id, page_key, can_edit, visible_columns'),
-      supabase.from('profiles').select('id, email, nama').order('nama'),
+      supabase.from('profiles').select('id, email, nama, divisi').order('nama'),
       supabase.from('user_roles').select('user_id, role_id'),
       supabase.from('user_approval_tiers').select('user_id, page_key, tier'),
     ]);
@@ -132,7 +176,15 @@ export default function RoleManagementPage() {
     setRolePageCanEdit(canEditMap);
     setRoleVisibleColumns(visibleColsMap);
 
-    setProfiles(profilesRes.data || []);
+    // Kolom `divisi` (sql/046) -- kalau belum ada, query gagal TOTAL; ulangi tanpa kolom itu.
+    let profileRows: ProfileRow[] = (profilesRes.data as ProfileRow[]) || [];
+    setDivisiAvailable(!profilesRes.error);
+    if (profilesRes.error) {
+      const retry = await supabase.from('profiles').select('id, email, nama').order('nama');
+      profileRows = (retry.data as ProfileRow[]) || [];
+      if (retry.error) showToast('Failed to load users: ' + retry.error.message, 'error');
+    }
+    setProfiles(profileRows);
 
     const urMap: Record<string, Set<string>> = {};
     (userRolesRes.data || []).forEach((r: any) => {
@@ -284,6 +336,12 @@ export default function RoleManagementPage() {
     });
   };
 
+  const updateUserDivisi = async (profile: ProfileRow, divisi: string | null) => {
+    const { data, error } = await supabase.rpc('fn_set_user_divisi', { p_user_id: profile.id, p_divisi: divisi });
+    if (error) { showToast('Failed to save division: ' + error.message, 'error'); return; }
+    setProfiles(prev => prev.map(p => (p.id === profile.id ? { ...p, divisi: (data as string | null) ?? null } : p)));
+  };
+
   const toggleUserRole = async (userId: string, role: Role) => {
     const has = userRoles[userId]?.has(role.id);
 
@@ -327,8 +385,33 @@ export default function RoleManagementPage() {
   const filteredProfiles = useMemo(() => {
     const q = userSearch.trim().toLowerCase();
     if (!q) return profiles;
-    return profiles.filter(p => (p.nama || '').toLowerCase().includes(q) || (p.email || '').toLowerCase().includes(q));
+    return profiles.filter(p => [p.nama, p.email, p.divisi].some(v => (v || '').toLowerCase().includes(q)));
   }, [profiles, userSearch]);
+
+  // Pilihan dropdown divisi = default + divisi yang sudah dipakai (urut abjad).
+  const divisionOptions = useMemo(
+    () => Array.from(new Set([...DEFAULT_DIVISIONS, ...profiles.map(p => (p.divisi || '').trim().toUpperCase()).filter(Boolean)])).sort(),
+    [profiles],
+  );
+  // Kelompok per divisi (abjad, "No division" paling bawah). Tanpa kolom divisi -> 1 kelompok tanpa header.
+  const divisionGroups = useMemo(() => {
+    if (!divisiAvailable) return [{ key: '', users: filteredProfiles }];
+    const map = new Map<string, ProfileRow[]>();
+    filteredProfiles.forEach(p => {
+      const k = (p.divisi || '').trim().toUpperCase();
+      if (!map.has(k)) map.set(k, []);
+      map.get(k)!.push(p);
+    });
+    return Array.from(map.entries())
+      .sort(([a], [b]) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b)))
+      .map(([key, users]) => ({ key, users }));
+  }, [filteredProfiles, divisiAvailable]);
+  const searchingUsers = userSearch.trim() !== '';
+  const toggleDivision = (key: string) => setCollapsedDivisions(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
 
   return (
     <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
@@ -581,13 +664,30 @@ export default function RoleManagementPage() {
                     {filteredProfiles.length}{filteredProfiles.length !== profiles.length ? ` of ${profiles.length}` : ''} users
                   </span>
                 </div>
-                <input
-                  value={userSearch}
-                  onChange={e => setUserSearch(e.target.value)}
-                  placeholder="Search name / email..."
-                  className="border border-[#5A305A]/25 bg-white/70 backdrop-blur-sm rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A] w-56"
-                />
+                <div className="flex items-center gap-2 flex-wrap">
+                  <input
+                    value={userSearch}
+                    onChange={e => setUserSearch(e.target.value)}
+                    placeholder="Search name / email / division..."
+                    className="border border-[#5A305A]/25 bg-white/70 backdrop-blur-sm rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A] w-60"
+                  />
+                  {divisiAvailable && (
+                    <button
+                      onClick={() => setCollapsedDivisions(prev => prev.size > 0 ? new Set() : new Set(divisionGroups.map(g => g.key)))}
+                      disabled={searchingUsers}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-[#5A305A]/20 bg-white/80 text-[#5A305A] text-[11px] font-semibold hover:bg-white transition-colors disabled:opacity-50"
+                    >
+                      {collapsedDivisions.size > 0 ? <ChevronsUpDown size={12} /> : <ChevronsDownUp size={12} />}
+                      {collapsedDivisions.size > 0 ? 'Expand All' : 'Collapse All'}
+                    </button>
+                  )}
+                </div>
               </div>
+              {!divisiAvailable && (
+                <div className="relative mb-3 px-3 py-2 rounded-xl border border-amber-200 bg-amber-50 text-amber-800 text-[11px] font-medium">
+                  Grouping by division is not active yet — run <code className="font-mono">sql/046_profiles_divisi.sql</code> in the Supabase SQL Editor, then refresh this page.
+                </div>
+              )}
               {/* Tabel matrix (user x role) -- SAMA POLA dgn panel "Page Access per Role" di atas
                   (sticky kolom pertama, header sticky, checkbox bulat emerald), diganti dari
                   layout pill-per-user lama atas permintaan user ("mempercantik panel ini") supaya
@@ -599,11 +699,11 @@ export default function RoleManagementPage() {
                 {filteredProfiles.length === 0 ? (
                   <p className="text-xs text-[#5A305A] italic text-center py-6">No users found.</p>
                 ) : (
-                  <div className="overflow-auto max-h-[520px]">
+                  <div className="overflow-auto max-h-[70vh]">
                     <table className="w-full text-xs border-collapse min-w-[600px]">
                       <thead>
                         <tr className="text-[10px] text-[#5A305A]/80 uppercase tracking-wider">
-                          <th className="text-left font-bold px-4 py-3 sticky left-0 top-0 z-20 bg-[#FFF5C5] border-b border-[#5A305A]/12">User</th>
+                          <th className="text-left font-bold px-4 py-3 sticky left-0 top-0 z-30 bg-[#FFF5C5] border-b border-[#5A305A]/12 min-w-[220px]">User</th>
                           {APPROVAL_TIER_PAGES.map(page => (
                             <th key={page.key} className="text-center font-bold px-4 py-3 whitespace-nowrap sticky top-0 z-10 bg-[#FAF7F5] border-b border-[#5A305A]/12">{page.label} Approval</th>
                           ))}
@@ -613,48 +713,81 @@ export default function RoleManagementPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredProfiles.map(p => {
-                          const assigned = userRoles[p.id] || new Set<string>();
+                        {divisionGroups.map(({ key, users }) => {
+                          const collapsed = !searchingUsers && collapsedDivisions.has(key);
                           return (
-                            <tr key={p.id} className="group/row hover:bg-[#5A305A]/[0.04] transition-colors">
-                              <td className="px-4 py-3 sticky left-0 bg-[#FFF5C5] group-hover/row:bg-[#FFF0A8] transition-colors border-b border-slate-100">
-                                <p className="text-sm font-semibold text-[#5A305A] truncate">{p.nama || '(no name)'}</p>
-                                <p className="text-[11px] font-light text-[#5A305A]/70 truncate">{p.email || '-'}</p>
-                              </td>
-                              {APPROVAL_TIER_PAGES.map(page => (
-                                <td key={page.key} className="px-4 py-3 text-center border-b border-slate-100">
-                                  <select
-                                    value={userApprovalTiers[p.id]?.[page.key] || ''}
-                                    onChange={e => updateUserApprovalTier(p, page.key, e.target.value)}
-                                    title={`${page.label} approval role -- only takes effect if this user also has a role with edit access to the ${page.label} page`}
-                                    className="text-[11px] font-semibold bg-white border border-[#5A305A]/25 rounded-lg px-2 py-1 focus:outline-none cursor-pointer text-[#5A305A]"
-                                  >
-                                    <option value="">—</option>
-                                    {page.approvalTiers!.map(opt => (
-                                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                    ))}
-                                  </select>
-                                </td>
-                              ))}
-                              {roles.map(role => {
-                                const has = assigned.has(role.id);
-                                return (
-                                  <td key={role.id} className="px-4 py-3 text-center border-b border-slate-100">
-                                    <button
-                                      onClick={() => toggleUserRole(p.id, role)}
-                                      title={role.name}
-                                      className={`w-6 h-6 rounded-lg border inline-flex items-center justify-center transition-all ${
-                                        has
-                                          ? 'bg-emerald-500 border-emerald-500 text-white shadow-sm'
-                                          : 'bg-white border-slate-300 hover:border-emerald-400 hover:bg-emerald-50 cursor-pointer'
-                                      }`}
-                                    >
-                                      {has && <Check size={13} strokeWidth={3} />}
-                                    </button>
+                            <React.Fragment key={key || '__none__'}>
+                              {divisiAvailable && (
+                                <tr onClick={() => !searchingUsers && toggleDivision(key)} className={`${searchingUsers ? '' : 'cursor-pointer'} group/div`}>
+                                  <td className="sticky left-0 z-10 px-3 py-2.5 bg-[#F5EDF3] group-hover/div:bg-[#EEDFEA] border-b border-[#5A305A]/10 transition-colors">
+                                    <div className="flex items-center gap-2">
+                                      {searchingUsers ? <span className="w-3" /> : collapsed ? <ChevronRight size={13} className="text-[#5A305A]/70" /> : <ChevronDown size={13} className="text-[#5A305A]/70" />}
+                                      <span className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${key ? 'bg-[#5A305A] text-white' : 'bg-slate-200 text-slate-500'}`}><Building2 size={13} /></span>
+                                      <span className={`text-[12px] font-bold ${key ? 'text-[#5A305A]' : 'text-slate-500 italic'}`}>{key ? titleCase(key) : 'No division'}</span>
+                                      <span className="text-[10px] font-medium text-[#5A305A]/55">{users.length} user{users.length === 1 ? '' : 's'}</span>
+                                    </div>
                                   </td>
+                                  {APPROVAL_TIER_PAGES.map(page => (
+                                    <td key={page.key} className="bg-[#F5EDF3] group-hover/div:bg-[#EEDFEA] border-b border-[#5A305A]/10 transition-colors" />
+                                  ))}
+                                  {roles.map(role => {
+                                    const n = users.filter(u => userRoles[u.id]?.has(role.id)).length;
+                                    return (
+                                      <td key={role.id} className="px-3 py-2.5 text-center bg-[#F5EDF3] group-hover/div:bg-[#EEDFEA] border-b border-[#5A305A]/10 transition-colors">
+                                        <span title={`${n} user(s) in this division have the ${role.name} role`} className={`inline-block min-w-[30px] text-[10px] font-bold px-1.5 py-0.5 rounded-full ${n > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-white/70 text-slate-400'}`}>{n > 0 ? n : '—'}</span>
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              )}
+                              {!collapsed && users.map(p => {
+                                const assigned = userRoles[p.id] || new Set<string>();
+                                return (
+                                <tr key={p.id} className="group/row hover:bg-[#5A305A]/[0.04] transition-colors">
+                                  <td className="px-4 py-3 sticky left-0 bg-[#FFF5C5] group-hover/row:bg-[#FFF0A8] transition-colors border-b border-slate-100">
+                                    <p className="text-sm font-semibold text-[#5A305A] truncate">{p.nama || '(no name)'}</p>
+                                    <p className="text-[11px] font-light text-[#5A305A]/70 truncate">{p.email || '-'}</p>
+                                    {divisiAvailable && (
+                                      <DivisionPicker value={p.divisi} options={divisionOptions} onChange={v => updateUserDivisi(p, v)} />
+                                    )}
+                                  </td>
+                                  {APPROVAL_TIER_PAGES.map(page => (
+                                    <td key={page.key} className="px-4 py-3 text-center border-b border-slate-100">
+                                      <select
+                                        value={userApprovalTiers[p.id]?.[page.key] || ''}
+                                        onChange={e => updateUserApprovalTier(p, page.key, e.target.value)}
+                                        title={`${page.label} approval role -- only takes effect if this user also has a role with edit access to the ${page.label} page`}
+                                        className="text-[11px] font-semibold bg-white border border-[#5A305A]/25 rounded-lg px-2 py-1 focus:outline-none cursor-pointer text-[#5A305A]"
+                                      >
+                                        <option value="">—</option>
+                                        {page.approvalTiers!.map(opt => (
+                                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                        ))}
+                                      </select>
+                                    </td>
+                                  ))}
+                                  {roles.map(role => {
+                                    const has = assigned.has(role.id);
+                                    return (
+                                      <td key={role.id} className="px-4 py-3 text-center border-b border-slate-100">
+                                        <button
+                                          onClick={() => toggleUserRole(p.id, role)}
+                                          title={role.name}
+                                          className={`w-6 h-6 rounded-lg border inline-flex items-center justify-center transition-all ${
+                                            has
+                                              ? 'bg-emerald-500 border-emerald-500 text-white shadow-sm'
+                                              : 'bg-white border-slate-300 hover:border-emerald-400 hover:bg-emerald-50 cursor-pointer'
+                                          }`}
+                                        >
+                                          {has && <Check size={13} strokeWidth={3} />}
+                                        </button>
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
                                 );
                               })}
-                            </tr>
+                            </React.Fragment>
                           );
                         })}
                       </tbody>

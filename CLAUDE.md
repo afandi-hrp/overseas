@@ -52,7 +52,10 @@ yang berlaku lintas modul. Rujukan lama di docs berbunyi "lihat CLAUDE.md bagian
   JANGAN `eval`/innerHTML di halaman.
 - **SQL**: semua migrasi `sql/001`–`sql/044` SUDAH dijalankan di production (isi di git history).
   `sql/045_seed_purchasing_users.sql` (3 akun @purchasing.com, insert langsung ke `auth.users`+`auth.identities`,
-  diuji PGlite) dibuat 2026-10-06 — BELUM dikonfirmasi dijalankan. Catatan "BELUM DIJALANKAN" di `docs/claude/*.md` utk file ≤044 TIDAK berlaku. SQL baru: file
+  diuji PGlite) dibuat 2026-10-06 — BELUM dikonfirmasi dijalankan.
+  `sql/046_profiles_divisi.sql` (kolom `profiles.divisi` + RPC `fn_set_user_divisi`, Admin saja) SUDAH DIJALANKAN 2026-10-06
+  (konfirmasi user). `sql/047_profiles_divisi_from_email.sql` (isi divisi dari domain email: @finance→FINANCE,
+  @purchasing→PURCHASING, @shipmentoverseas→SHIPMENT; hanya yg masih kosong) dibuat 2026-10-06 — BELUM dikonfirmasi. Catatan "BELUM DIJALANKAN" di `docs/claude/*.md` utk file ≤044 TIDAK berlaku. SQL baru: file
   `sql/NNN_*.sql` baru (idempotent, pre-check nama fungsi), user yang menjalankan manual — tidak ada akses DB dari sesi.
 - **Kondisi DB production (stack `supabase3`)**: `anon` tanpa hak di schema public, GraphQL ditutup, semua tabel RLS
   (`has_page_access`/`has_edit_access`, tidak ada `using (true)`), view `security_invoker`, RPC `SECURITY DEFINER`
@@ -124,6 +127,8 @@ pageKey | pageKeys | adminOnly>`.
 - Kolom per role (`visible_columns`, `COLUMN_ACCESS_PAGES` di SharedDataTable) = merapikan tampilan, BUKAN keamanan
   (data tetap terkirim; fail-open).
 - Klik menu induk sidebar (desktop) membuka subtab pertama yang boleh diakses user.
+- Panel Roles per User dikelompokkan per **divisi user** (`profiles.divisi`, sql/046, dropdown per user, Admin saja) —
+  pengelompokan tampilan, BUKAN hak akses.
 
 ## Translasi UI ke Bahasa Inggris (ringkas — detail `docs/claude/rbac-security.md`)
 
