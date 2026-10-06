@@ -15,6 +15,26 @@ import { poManualFor, type PoManualEntry } from '../utils/SeaAirRecapHelpers'
 import { compareSeaAirDuty, fetchSeaAirDutyMatrix } from '../utils/SeaAirAuditHelpers'
 import SeaAirDutyCompareTable from './SeaAirDutyCompareTable'
 
+// Audit trail ringkas (2026-10-06, permintaan user: log panjang -> scroll terlalu panjang). Entri berturutan yg identik
+// (aksi + user + detail, hari sama) digabung "×N"; awalnya hanya AUDIT_TRAIL_PREVIEW baris terbaru, "Show all" membuka
+// sisanya di area ber-scroll sendiri (tinggi maks). Data SAMA (`fetchSeaAirAuditLog`), murni tampilan.
+const AUDIT_TRAIL_PREVIEW = 6
+const TRAIL_TONE: Record<string, string> = {
+  Created: 'text-[#17663D] bg-[#EAF6EF]', Recorded: 'text-[#6E5E70] bg-[#F3EEEA]',
+  Updated: 'text-[#6B3470] bg-[#F5EDF3]', Deleted: 'text-[#A8231A] bg-[#FDE7E4]',
+}
+type TrailRow = { at: string; who: string; what: string; detail: string; count: number; last: string }
+const mergeTrail = (log: { at: string; who: string; what: string; detail: string }[]): TrailRow[] => {
+  const out: TrailRow[] = []
+  log.forEach(e => {
+    const prev = out[out.length - 1]
+    const sameDay = prev && String(prev.at).slice(0, 10) === String(e.at).slice(0, 10)
+    if (prev && sameDay && prev.what === e.what && prev.who === e.who && prev.detail === e.detail) { prev.count++; prev.last = e.at }
+    else out.push({ ...e, count: 1, last: e.at })
+  })
+  return out
+}
+
 const fmtDateTime = (v: any) => {
   if (!v) return '—'
   const d = new Date(v)
@@ -67,6 +87,7 @@ export default function SeaAirAuditDetailModal({
   onReread: (rec: any) => Promise<boolean>
 }) {
   const [busy, setBusy] = useState(false)
+  const [trailAll, setTrailAll] = useState(false)
   const [log, setLog] = useState<SeaAirAuditLogEntry[] | null>(null)
   // Info validasi dari parent (baris di halaman aktif); kalau tidak ada (mis. baris pindah tab
   // setelah ubah status) diambil sendiri.
@@ -379,23 +400,47 @@ export default function SeaAirAuditDetailModal({
             ))}
           </SectionCard>
 
-          {/* Audit trail */}
-          <div className={`${SA_CARD}`}>
-            <div className="px-4 pt-3.5 pb-2 text-[14px] font-bold text-[#3B1B3D]">Audit trail</div>
-            <div className="px-4 pb-3">
-              {log === null ? (
-                <div className="text-[12px] text-[#8A7A8B] py-1">Loading…</div>
-              ) : log.length === 0 ? (
-                <div className="text-[12px] text-[#8A7A8B] py-1">No activity recorded</div>
-              ) : log.map((e, i) => (
-                <div key={i} className="grid grid-cols-[130px_110px_minmax(0,1fr)] gap-3 py-1.5 text-[12px] border-t border-[#F1E8E1] first:border-t-0">
-                  <span className="text-[#6E5E70] tabular-nums">{fmtDateTime(e.at)}</span>
-                  <span className="font-semibold text-[#3B1B3D] truncate" title={e.who}>{e.who}</span>
-                  <span className="text-[#3B1B3D] [overflow-wrap:anywhere]"><b>{e.what}</b>{e.detail ? ` — ${e.detail}` : ''}</span>
+          {/* Audit trail -- ringkas + "Show all" ber-scroll (2026-10-06) */}
+          {(() => {
+            const rows = log ? mergeTrail(log) : []
+            const shown = trailAll ? rows : rows.slice(0, AUDIT_TRAIL_PREVIEW)
+            return (
+              <div className={`${SA_CARD}`} data-audit-trail>
+                <div className="px-4 pt-3.5 pb-2 flex items-center justify-between gap-2">
+                  <span className="text-[14px] font-bold text-[#3B1B3D]">Audit trail</span>
+                  {log && log.length > 0 && <span className="text-[11px] text-[#8A7A8B]">{log.length} entr{log.length === 1 ? 'y' : 'ies'}</span>}
                 </div>
-              ))}
-            </div>
-          </div>
+                <div className="px-4 pb-3">
+                  {log === null ? (
+                    <div className="text-[12px] text-[#8A7A8B] py-1">Loading…</div>
+                  ) : rows.length === 0 ? (
+                    <div className="text-[12px] text-[#8A7A8B] py-1">No activity recorded</div>
+                  ) : (
+                    <>
+                      <div className={trailAll ? 'max-h-[340px] overflow-y-auto pr-1 -mr-1' : ''}>
+                        {shown.map((e, i) => (
+                          <div key={i} className="grid grid-cols-[118px_minmax(0,140px)_minmax(0,1fr)] gap-3 py-1.5 text-[12px] border-t border-[#F1E8E1] first:border-t-0 items-start">
+                            <span className="text-[#6E5E70] tabular-nums" title={e.count > 1 ? `${fmtDateTime(e.last)} – ${fmtDateTime(e.at)}` : undefined}>{fmtDateTime(e.at)}</span>
+                            <span className="font-semibold text-[#3B1B3D] truncate" title={e.who}>{e.who}</span>
+                            <span className="text-[#3B1B3D] [overflow-wrap:anywhere] flex flex-wrap items-center gap-1.5">
+                              <span className={`px-1.5 py-[1px] rounded-md text-[10.5px] font-bold ${TRAIL_TONE[e.what] || 'text-[#6E5E70] bg-[#F3EEEA]'}`}>{e.what}</span>
+                              {e.count > 1 && <span className="px-1.5 py-[1px] rounded-md text-[10.5px] font-bold text-[#6E5E70] bg-[#F3EEEA]" title={`${e.count} identical entries`}>×{e.count}</span>}
+                              {e.detail && <span className="min-w-0">{e.detail}</span>}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      {rows.length > AUDIT_TRAIL_PREVIEW && (
+                        <button type="button" onClick={() => setTrailAll(v => !v)} className="mt-1.5 text-[12px] font-semibold text-[#6B3470] hover:underline">
+                          {trailAll ? 'Show less' : `Show all (${rows.length - AUDIT_TRAIL_PREVIEW} more)`}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            )
+          })()}
         </div>
       </div>
     </div>,

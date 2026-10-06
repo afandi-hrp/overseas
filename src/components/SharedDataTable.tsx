@@ -6126,7 +6126,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           </div>
         </header>
         ) : isSeaAirAudit ? (
-        /* Header Audit PIB Sea & Air (2026-09-30): eyebrow + judul + Export/Add manually. */
+        /* Header Audit PIB Sea & Air (2026-09-30): judul + keterangan. Export & "+ Add manually" DIPINDAH ke panel
+           filter (2026-10-06, permintaan user -- di laptop 14" tombol + Greeting berdesakan; pola sama Courier). */
         <header className="px-3 pt-1 pb-1 shrink-0">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
@@ -6134,16 +6135,6 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
               <p className="text-[#6E5E70] text-[12.5px] mt-0.5">Sea &amp; Air PIB documents read by AI — check against Invoice Recap, then mark as audited.</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
-              {renderExportBtn(true)}
-              {canEdit('sea_air_audit') && (
-                <button
-                  type="button"
-                  onClick={() => setSeaAirEditState({ record: null })}
-                  className="px-4 h-[38px] rounded-full bg-[#6B3470] hover:bg-[#5A2A5E] text-white text-xs font-semibold shadow-sm transition-colors shrink-0"
-                >
-                  + Add manually
-                </button>
-              )}
               <Greeting />
             </div>
           </div>
@@ -6615,10 +6606,12 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 </div>
               ) : isSeaAirAudit ? (
                 /* Audit PIB Sea & Air (2026-09-30): 4 kartu KPI + 1 kartu filter (tab Draft/Audited/All,
-                   Search, PIB DATE, COMPANY, List/Card, Refresh). Filter & state SAMA dgn toolbar lama. */
+                   Search, PIB DATE, COMPANY, List/Card, Refresh, Export, + Add manually). Filter & state SAMA dgn toolbar lama.
+                   Responsif (2026-10-06, permintaan user, pola panel Courier): `@container` + flex-wrap -- di bawah lebar panel
+                   1450px label dipersingkat & input mengecil; tidak muat -> kontrol turun ke baris 2 (TIDAK dipotong). */
                 <div className="flex flex-col gap-3">
                   <SeaAirAuditKpiCards summary={seaAirSummary} loading={seaAirSummaryLoading} />
-                  <div className="bg-white rounded-[14px] border border-[#EADFD6] shadow-sm px-3 py-2.5 flex flex-nowrap items-center gap-2.5 overflow-x-auto">
+                  <div className="@container bg-white rounded-[14px] border border-[#EADFD6] shadow-sm px-3 py-2.5 flex flex-wrap items-center gap-2">
                     <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[#F5EDF3] shrink-0">
                       {([
                         { id: 'draft', label: 'Draft', count: seaAirSummary?.draft },
@@ -6641,7 +6634,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         );
                       })}
                     </div>
-                    <div className="relative flex-1 min-w-[220px]">
+                    <div className="relative flex-1 min-w-[150px]">
                       <SearchIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A7A8B] pointer-events-none" />
                       <input
                         type="text"
@@ -6656,21 +6649,22 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         </button>
                       )}
                     </div>
-                    <div className="flex items-center gap-1.5 h-9 px-3 rounded-xl border border-[#EADFD6] bg-white shrink-0">
-                      <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]">PIB date</span>
-                      <input type="date" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} className="w-[108px] text-[12px] bg-transparent focus:outline-none text-[#3B1B3D] cursor-pointer" />
+                    <div className="flex items-center gap-1.5 h-9 px-2.5 rounded-xl border border-[#EADFD6] bg-white shrink-0" title="PIB date">
+                      <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]"><span className="hidden @min-[1450px]:inline">PIB </span>date</span>
+                      <input type="date" aria-label="From date" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} className="w-[104px] text-[12px] bg-transparent focus:outline-none text-[#3B1B3D] cursor-pointer" />
                       <span className="text-[#8A7A8B] text-xs">–</span>
-                      <input type="date" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} className="w-[108px] text-[12px] bg-transparent focus:outline-none text-[#3B1B3D] cursor-pointer" />
+                      <input type="date" aria-label="To date" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} className="w-[104px] text-[12px] bg-transparent focus:outline-none text-[#3B1B3D] cursor-pointer" />
                       {(filterStartDate || filterEndDate) && (
                         <button type="button" onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }} className="text-[#8A7A8B] hover:text-[#3B1B3D]"><X size={13} /></button>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 h-9 pl-3 pr-2 rounded-xl border border-[#EADFD6] bg-white shrink-0">
-                      <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]">Company</span>
+                    <div className="flex items-center gap-2 h-9 pl-2.5 pr-2 rounded-xl border border-[#EADFD6] bg-white shrink-0" title="Company">
+                      <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]"><span className="@min-[1450px]:hidden">PT</span><span className="hidden @min-[1450px]:inline">Company</span></span>
                       <select
+                        aria-label="Company"
                         value={activeImporAnFilter}
                         onChange={e => { setActiveImporAnFilter(e.target.value); setPage(1); }}
-                        className="border-0 bg-transparent text-xs font-bold text-[#3B1B3D] focus:outline-none cursor-pointer max-w-[160px]"
+                        className="border-0 bg-transparent text-xs font-bold text-[#3B1B3D] focus:outline-none cursor-pointer max-w-[110px]"
                       >
                         {importAnTabs.map(an => (
                           <option key={an} value={an}>{an}</option>
@@ -6698,6 +6692,20 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                     >
                       <RefreshCw size={14} />
                     </button>
+                    {/* Export & + Add manually (2026-10-06: dipindah dari header, permintaan user). */}
+                    <div className="ml-auto flex items-center gap-2 shrink-0">
+                      {renderExportBtn(true, true)}
+                      {canEdit('sea_air_audit') && (
+                        <button
+                          type="button"
+                          onClick={() => setSeaAirEditState({ record: null })}
+                          title="Add a PIB manually"
+                          className="px-4 h-9 rounded-xl bg-[#6B3470] hover:bg-[#5A2A5E] text-white text-xs font-semibold shadow-sm transition-colors shrink-0 whitespace-nowrap"
+                        >
+                          + Add<span className="hidden @min-[1450px]:inline"> manually</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ) : isSeaAirRekapan ? (

@@ -218,6 +218,11 @@ daftar kartu), `SeaAirAuditDetailModal.tsx` (jendela Open), `SeaAirAuditEditModa
 Add manually). `SharedDataTable.tsx` HANYA disentuh di cabang `isSeaAirAudit` (header, toolbar,
 area daftar, modal) + refactor rumus di bawah.
 
+- **2026-10-06 (permintaan user, laptop 14" berantakan)**: Export & "+ Add manually" DIPINDAH dari header ke ujung kanan panel
+  filter (`ml-auto`, label "+ Add" di bawah lebar panel 1450px); panel filter `@container` + `flex-wrap` (dulu nowrap +
+  overflow-x -> tombol Refresh terpotong), label "PIB date"->"date" & "Company"->"PT" di bawah 1450px (pola panel Courier).
+  **Audit trail jendela Open ringkas**: entri berturutan identik (aksi+user+detail, hari sama) digabung "×N", awal 6 baris
+  terbaru + "Show all (N more)" (area scroll maks 340px) / "Show less"; jumlah entri di judul. Data tetap `fetchSeaAirAuditLog`.
 - **Header** eyebrow "SEA & AIR" + "PIB Audit", Export (sama ExportModal lama, kolom TIDAK berubah)
   + "+ Add manually" (form baru) + Greeting. **Kartu KPI** (PIB records x draft · y audited /
   Customs value / Duties & taxes BM·PPN·PPh / Not validated yet) = `fetchSeaAirAuditSummary()`:
