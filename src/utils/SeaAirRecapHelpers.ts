@@ -361,7 +361,8 @@ export async function fetchRecapSummary(f: RecapFilters): Promise<RecapSummary |
 }
 
 // ─── Log (audit_trail) ────────────────────────────────────────────────────────
-export type RecapLogEntry = { at: string; who: string; what: string; detail: string }
+// `entity`/`verb` (2026-10-06): dipakai tab Audit trail yg dipercantik (chip modul & ikon aksi). `what` tetap utk kompatibilitas.
+export type RecapLogEntry = { at: string; who: string; what: string; detail: string; entity?: string; verb?: string }
 const quote = (v: string) => `"${String(v).replace(/"/g, '\\"')}"`
 const TABLE_LABEL: Record<string, string> = {
   rekapan_seaair: 'Invoice Recap',
@@ -388,9 +389,11 @@ export async function fetchRecapLog(rec: any): Promise<RecapLogEntry[]> {
         who: r.user_email || 'System',
         what: `${TABLE_LABEL[r.tabel] || r.tabel} ${verb}`,
         detail: cat.includes('— Lama:') ? cat : (r.deskripsi || ''),
+        entity: TABLE_LABEL[r.tabel] || r.tabel,
+        verb,
       })
     })
   }
-  if (rec?.created_at) entries.push({ at: rec.created_at, who: 'System', what: 'Shipment recorded', detail: 'Invoice Recap row created' })
+  if (rec?.created_at) entries.push({ at: rec.created_at, who: 'System', what: 'Shipment recorded', detail: 'Invoice Recap row created', entity: 'Invoice Recap', verb: 'recorded' })
   return entries
 }

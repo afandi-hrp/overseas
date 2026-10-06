@@ -12,7 +12,7 @@
 // masih ada perubahan -> konfirmasi.
 import React, { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, MoreHorizontal, Pencil, Send, ChevronDown, ChevronRight, Lock, Unlock } from 'lucide-react'
+import { X, MoreHorizontal, Pencil, Send, ChevronDown, ChevronRight, Lock, Unlock, PlusCircle, Trash2, History, FileInput } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_GREEN, Chip, Pill, PtBadge, type Tone } from './SeaAirAuditUi'
 import SeaAirRecapCostsTab from './SeaAirRecapCostsTab'
@@ -31,21 +31,129 @@ const scoreTone = (pct: number | null | undefined, has: boolean): Tone => (!has 
 
 const toN = (v: any): number | null => (v === null || v === undefined || v === '' || isNaN(Number(v)) ? null : Number(v))
 
-// Sel PO di tabel Split per PO: nomor PO + kapal + chip Partial / KG / valas dari po_manual.
+// Sel PO di tabel Split per PO (2026-10-06, gambar user): nomor PO tebal, kapal ungu, chip "◐ Partial N · USD x this
+// shipment" dari po_manual. KG pindah ke kolom "KG · Share".
 const PoCell: React.FC<{ po: { po_no: string; vessel: string }; m: PoManualEntry | null }> = ({ po, m }) => {
-  const kg = toN(m?.kg)
   const valas = toN(m?.valas)
   return (
     <div className="min-w-0">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <span className="font-semibold text-[#3B1B3D]">{po.po_no || '—'}</span>
-        {m?.partial && <Chip tone="purple" title="Partial shipment of this PO">◐ Partial{m.partial_no ? ` ${m.partial_no}` : ''}</Chip>}
+      <div className="font-bold text-[#3B1B3D] [overflow-wrap:anywhere]">{po.po_no || '—'}</div>
+      <div className="text-[11px] font-semibold uppercase text-[#8E4F93] [overflow-wrap:anywhere]">{po.vessel || '—'}</div>
+      {m?.partial && (
+        <span className="mt-1 inline-flex items-center gap-1 px-2 py-[1px] rounded-md bg-[#FFF1D6] text-[#7A4F00] text-[10.5px] font-semibold" title="Partial shipment of this PO">
+          ◐ Partial{m.partial_no ? ` ${m.partial_no}` : ''}{valas != null ? ` · ${`${m?.currency || ''} ${fmtValas(valas)}`.trim()} this shipment` : ''}
+        </span>
+      )}
+    </div>
+  )
+}
+
+// Bagi `total` ke tiap baris sesuai bobot -- dibulatkan ke rupiah, jumlahnya PERSIS total (selisih pembulatan ke baris terakhir).
+const allocate = (total: number | null, weights: number[]): (number | null)[] => {
+  if (total == null) return weights.map(() => null)
+  const sumW = weights.reduce((a, b) => a + b, 0)
+  if (sumW <= 0) return weights.map(() => null)
+  const parts = weights.map(w => Math.round((total * w) / sumW))
+  const rest = Math.round(total - parts.reduce((a, b) => a + b, 0))
+  if (parts.length) parts[parts.length - 1] += rest
+  return parts
+}
+const fmtPct = (v: number) => `${(Math.round(v * 1000) / 10).toLocaleString('id-ID', { maximumFractionDigits: 1 })}%`
+
+// ── Audit trail tab (2026-10-06, permintaan user: dipercantik) ──────────────────────────────────────────────
+// Per hari; entri di menit yg sama oleh user yg sama dgn aksi sama digabung jadi 1 baris + chip modul (mis. hapus
+// shipment = Invoice Recap + Audit PIB + Document/Cost validation sekaligus). Deskripsi generik trigger
+// ("Edit data SEAAIR-... AWB: ...") disembunyikan; catatan format app "X — Lama: a → Baru: b" ditampilkan rapi.
+const TRAIL_VERB: Record<string, { label: string; icon: React.ReactNode; tone: string; dot: string }> = {
+  created: { label: 'Created', icon: <PlusCircle size={13} />, tone: 'text-[#17663D] bg-[#EAF6EF]', dot: 'bg-[#17663D]' },
+  updated: { label: 'Updated', icon: <Pencil size={12} />, tone: 'text-[#6B3470] bg-[#F5EDF3]', dot: 'bg-[#6B3470]' },
+  deleted: { label: 'Deleted', icon: <Trash2 size={12} />, tone: 'text-[#A8231A] bg-[#FDE7E4]', dot: 'bg-[#A8231A]' },
+  recorded: { label: 'Recorded', icon: <FileInput size={12} />, tone: 'text-[#6E5E70] bg-[#F3EEEA]', dot: 'bg-[#8A7A8B]' },
+  changed: { label: 'Changed', icon: <History size={12} />, tone: 'text-[#6E5E70] bg-[#F3EEEA]', dot: 'bg-[#8A7A8B]' },
+}
+const ENTITY_TONE: Record<string, string> = {
+  'Invoice Recap': 'bg-[#EEF1FA] text-[#2F4FA8]', 'Audit PIB': 'bg-[#F5EDF3] text-[#6B3470]',
+  'Document validation': 'bg-[#FFF1D6] text-[#7A4F00]', 'Cost validation': 'bg-[#EAF6EF] text-[#17663D]',
+}
+const GENERIC_DETAIL = /^(edit|hapus|tambah|input|insert|update|delete)\s+data\b/i
+const parseChange = (d: string) => {
+  const m = String(d || '').match(/^(.*?)\s+—\s+Lama:\s*([\s\S]*?)\s+→\s+Baru:\s*([\s\S]*)$/)
+  return m ? { field: m[1].trim(), from: m[2].trim(), to: m[3].trim() } : null
+}
+const localDay = (v: any) => { const d = new Date(v); return isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
+const localTime = (v: any) => { const d = new Date(v); return isNaN(d.getTime()) ? '' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
+type TrailCluster = { key: string; day: string; time: string; who: string; verb: string; entities: string[]; details: string[]; count: number }
+const clusterTrail = (log: RecapLogEntry[]): TrailCluster[] => {
+  const out: TrailCluster[] = []
+  log.forEach(e => {
+    const verb = e.verb || 'changed'
+    const day = localDay(e.at), time = localTime(e.at)
+    const key = `${day} ${time}|${e.who}|${verb}`
+    const detail = e.detail && !GENERIC_DETAIL.test(e.detail) ? e.detail : ''
+    const last = out[out.length - 1]
+    if (last && last.key === key) {
+      if (e.entity && !last.entities.includes(e.entity)) last.entities.push(e.entity)
+      else last.count++
+      if (detail && !last.details.includes(detail)) last.details.push(detail)
+    } else {
+      out.push({ key, day, time, who: e.who, verb, entities: e.entity ? [e.entity] : [], details: detail ? [detail] : [], count: 1 })
+    }
+  })
+  return out
+}
+const TRAIL_PREVIEW = 12
+
+const RecapAuditTrail: React.FC<{ log: RecapLogEntry[] | null }> = ({ log }) => {
+  const [all, setAll] = useState(false)
+  if (log === null) return <div className={`${SA_CARD} px-4 py-3 text-[12px] text-[#8A7A8B]`}>Loading…</div>
+  const clusters = clusterTrail(log)
+  if (clusters.length === 0) return <div className={`${SA_CARD} px-4 py-3 text-[12px] text-[#8A7A8B]`}>No activity recorded</div>
+  const shown = all ? clusters : clusters.slice(0, TRAIL_PREVIEW)
+  const days: { day: string; items: TrailCluster[] }[] = []
+  shown.forEach(c => { const d = days[days.length - 1]; if (d && d.day === c.day) d.items.push(c); else days.push({ day: c.day, items: [c] }) })
+  return (
+    <div className={`${SA_CARD} px-4 py-3`} data-recap-trail>
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <span className="text-[13px] font-bold text-[#3B1B3D]">Activity</span>
+        <span className="text-[11px] text-[#8A7A8B]">{log.length} entr{log.length === 1 ? 'y' : 'ies'} · {clusters.length} event{clusters.length === 1 ? '' : 's'}</span>
       </div>
-      <div className="text-[11px] font-semibold text-[#8E4F93]">{po.vessel || '—'}</div>
-      {(kg != null || valas != null) && (
-        <div className="text-[10.5px] text-[#6E5E70] tabular-nums">
-          {kg != null ? `${fmtValas(kg)} kg` : ''}{kg != null && valas != null ? ' · ' : ''}{valas != null ? `${m?.currency || ''} ${fmtValas(valas)}`.trim() : ''}
+      {days.map(d => (
+        <div key={d.day} className="mt-2">
+          <div className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B] mb-1">{d.day ? fmtDateShort(d.day) : 'Unknown date'}</div>
+          <div className="relative pl-5">
+            <span className="absolute left-[7px] top-1 bottom-1 w-px bg-[#EADFD6]" aria-hidden="true" />
+            {d.items.map((c, i) => {
+              const v = TRAIL_VERB[c.verb] || TRAIL_VERB.changed
+              return (
+                <div key={i} className="relative py-1.5" data-trail-event>
+                  <span className={`absolute -left-[17px] top-[11px] w-2.5 h-2.5 rounded-full ring-2 ring-white ${v.dot}`} aria-hidden="true" />
+                  <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
+                    <span className="tabular-nums text-[#6E5E70] w-[38px] shrink-0">{c.time}</span>
+                    <span className={`inline-flex items-center gap-1 px-1.5 py-[1px] rounded-md text-[11px] font-bold ${v.tone}`}>{v.icon}{v.label}</span>
+                    {c.entities.map(en => <span key={en} className={`px-1.5 py-[1px] rounded-md text-[10.5px] font-semibold ${ENTITY_TONE[en] || 'bg-[#F3EEEA] text-[#6E5E70]'}`}>{en}</span>)}
+                    {c.count > 1 && <span className="px-1.5 py-[1px] rounded-md text-[10.5px] font-bold bg-[#F3EEEA] text-[#6E5E70]" title={`${c.count} entries`}>×{c.count}</span>}
+                    <span className="text-[#6E5E70] truncate">· {c.who}</span>
+                  </div>
+                  {c.details.map((dt, j) => {
+                    const ch = parseChange(dt)
+                    return ch ? (
+                      <div key={j} className="ml-[46px] mt-0.5 text-[11.5px] text-[#3B1B3D] [overflow-wrap:anywhere]">
+                        <span className="font-semibold">{ch.field}</span>: <span className="line-through text-[#8A7A8B]">{ch.from || '—'}</span> → <span className="font-semibold">{ch.to || '—'}</span>
+                      </div>
+                    ) : (
+                      <div key={j} className="ml-[46px] mt-0.5 text-[11.5px] text-[#6E5E70] [overflow-wrap:anywhere]">{dt}</div>
+                    )
+                  })}
+                </div>
+              )
+            })}
+          </div>
         </div>
+      ))}
+      {clusters.length > TRAIL_PREVIEW && (
+        <button type="button" onClick={() => setAll(v => !v)} className="mt-2 text-[12px] font-semibold text-[#6B3470] hover:underline">
+          {all ? 'Show less' : `Show all (${clusters.length - TRAIL_PREVIEW} more)`}
+        </button>
       )}
     </div>
   )
@@ -102,9 +210,13 @@ export default function SeaAirRecapDetailModal({
   const poManual = parsePoManual(rec)
   const poKgs = pos.map(p => toN(poManualFor(poManual, p.po_no)?.kg))
   const kgTotal = poKgs.reduce<number>((a, b) => a + (b || 0), 0)
-  const allKg = pos.length > 1 && poKgs.every(k => k != null && k > 0)
+  // Split per PO (2026-10-06, gambar user): By KG (total × KG PO ÷ total KG) | Evenly (total ÷ jumlah PO). By KG hanya
+  // bisa dipilih kalau SEMUA PO punya KG (Edit shipment). Nilai dibagi di browser, jumlahnya selalu persis total.
+  const allKg = pos.length > 0 && poKgs.every(k => k != null && k > 0)
   const basis: 'even' | 'kg' = allKg ? (splitBasis ?? 'kg') : 'even'
-  const share = (i: number) => (kgTotal > 0 ? (poKgs[i] || 0) / kgTotal : 0)
+  const weights = pos.map((_, i) => (basis === 'kg' ? (poKgs[i] || 0) : 1))
+  const weightSum = weights.reduce((a, b) => a + b, 0)
+  const share = (i: number) => (weightSum > 0 ? weights[i] / weightSum : 0)
   // Submit: wajib 0 issue & terhubung ke Audit PIB (DB menolak juga -- trigger sql/031 bagian E).
   const submitBlocker = !seaairId ? 'Not linked to an Audit PIB record' : issues.length > 0 ? `${issues.length} open issue${issues.length === 1 ? '' : 's'} must be confirmed by an Admin first` : null
   const anyDirty = Object.values(dirtyTabs).some(Boolean)
@@ -168,17 +280,18 @@ export default function SeaAirRecapDetailModal({
   const cbm = rec.cbm ?? auditRow?.cbm ?? null
   const groupTotal = lc.groups.ppjk + lc.groups.origin + lc.groups.local
 
-  // ── Split per PO (nilai *_split tersimpan = 1 nilai per shipment, sama utk tiap PO / bagi rata) ──
-  const splitVal = (col: string) => (rec[col] === null || rec[col] === undefined || rec[col] === '' ? null : Number(rec[col]))
-  const localSplitCols = RECAP_SEGMENTS.filter(s => s.group === 'local').map(s => s.splitCol)
-  const sumSplit = (cols: string[]) => {
-    const vals = cols.map(splitVal).filter(v => v !== null) as number[]
+  // Nilai per PO per kolom (alokasi bilangan bulat, jumlah = total).
+  const splitCols: Record<string, (number | null)[]> = {
+    ppjk: allocate(lc.groups.ppjk, weights),
+    origin: allocate(lc.groups.origin, weights),
+    local: allocate(lc.groups.local, weights),
+    duty: allocate(toN(rec.duty_total), weights),
+    ...Object.fromEntries(RECAP_SEGMENTS.map(sg => [sg.key, allocate(toN(rec[sg.costCol]), weights)])),
+  }
+  const rowTotal = (i: number, keys: string[]) => {
+    const vals = keys.map(k => splitCols[k][i]).filter(v => v != null) as number[]
     return vals.length ? vals.reduce((a, b) => a + b, 0) : null
   }
-  const ppjkSplit = splitVal('emkl_split')
-  const originSplit = splitVal('split_biaya_origin')
-  const localSplit = sumSplit(localSplitCols)
-  const totalSplit = sumSplit(['emkl_split', 'split_biaya_origin', ...localSplitCols])
 
   const tabs: { key: TabKey; label: string; badge?: number }[] = [
     { key: 'overview', label: 'Overview' },
@@ -188,8 +301,10 @@ export default function SeaAirRecapDetailModal({
   ]
 
   return createPortal(
-    <div className="fixed inset-0 z-[70] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-3 md:p-5" onMouseDown={e => { if (e.target === e.currentTarget) requestClose() }}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[1180px] h-[94vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-[70] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-3 md:p-5 max-[1600px]:p-2.5" onMouseDown={e => { if (e.target === e.currentTarget) requestClose() }}>
+      {/* Ukuran (2026-10-06, permintaan user): layar <=1600px (laptop 14", zoom 90%) = hampir penuh layar; monitor besar
+          (24") dilebarkan dari 1180px ke 1560px. */}
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[1560px] h-[94vh] max-[1600px]:max-w-none max-[1600px]:h-full flex flex-col overflow-hidden">
         {/* Header */}
         <div className="px-5 pt-4 pb-0 border-b border-[#EADFD6] shrink-0">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -374,28 +489,27 @@ export default function SeaAirRecapDetailModal({
                 </div>
               </div>
 
-              <div className={`${SA_CARD} overflow-hidden`}>
+              <div className={`${SA_CARD} overflow-hidden`} data-split-per-po>
                 <div className="px-4 pt-3 pb-2 flex flex-wrap items-center justify-between gap-2">
-                  <div>
+                  <div className="flex flex-wrap items-baseline gap-x-2">
                     <h3 className="text-[14px] font-bold text-[#3B1B3D]">Split per PO</h3>
-                    <div className="text-[11.5px] text-[#6E5E70]">
-                      {pos.length} PO{pos.length === 1 ? '' : 's'} · {basis === 'kg' ? `split by KG (${fmtValas(kgTotal)} kg total)` : 'split evenly (as recorded)'}
-                      {!allKg && pos.length > 1 ? ' · fill KG per PO in Edit shipment to split by weight' : ''}
-                    </div>
+                    <span className="text-[11.5px] text-[#8A7A8B]">
+                      {pos.length} PO{pos.length === 1 ? '' : 's'} · {basis === 'kg' ? `Share = total × PO KG ÷ ${fmtValas(kgTotal)} kg` : `Share = total ÷ ${pos.length} PO${pos.length === 1 ? '' : 's'}`}
+                    </span>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                  {allKg && (
                     <div className="inline-flex p-0.5 rounded-xl bg-[#F5EDF3]">
-                      {(['kg', 'even'] as const).map(v => (
-                        <button key={v} type="button" onClick={() => setSplitBasis(v)} className={`px-3 h-7 rounded-lg text-xs font-bold ${basis === v ? 'bg-[#3B1B3D] text-white' : 'text-[#3B1B3D] hover:bg-white'}`}>{v === 'kg' ? 'By KG' : 'As recorded'}</button>
+                      {(['summary', 'invoice'] as const).map(v => (
+                        <button key={v} type="button" onClick={() => setSplitView(v)} className={`px-3 h-7 rounded-lg text-xs font-bold ${splitView === v ? 'bg-[#3B1B3D] text-white' : 'text-[#3B1B3D] hover:bg-white'}`}>{v === 'summary' ? 'Summary' : 'Per invoice'}</button>
                       ))}
                     </div>
-                  )}
-                  <div className="inline-flex p-0.5 rounded-xl bg-[#F5EDF3]">
-                    {(['summary', 'invoice'] as const).map(v => (
-                      <button key={v} type="button" onClick={() => setSplitView(v)} className={`px-3 h-7 rounded-lg text-xs font-bold ${splitView === v ? 'bg-[#3B1B3D] text-white' : 'text-[#3B1B3D] hover:bg-white'}`}>{v === 'summary' ? 'Summary' : 'Per invoice'}</button>
-                    ))}
-                  </div>
+                    <div className="inline-flex p-0.5 rounded-xl bg-[#F5EDF3]">
+                      {(['kg', 'even'] as const).map(v => (
+                        <button key={v} type="button" disabled={v === 'kg' && !allKg} onClick={() => setSplitBasis(v)}
+                          title={v === 'kg' && !allKg ? 'Fill in KG for every PO in Edit shipment to split by weight' : undefined}
+                          className={`px-3 h-7 rounded-lg text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed ${basis === v ? 'bg-[#3B1B3D] text-white' : 'text-[#3B1B3D] hover:bg-white'}`}>{v === 'kg' ? 'By KG' : 'Evenly'}</button>
+                      ))}
+                    </div>
                   </div>
                 </div>
                 {pos.length === 0 ? (
@@ -403,44 +517,45 @@ export default function SeaAirRecapDetailModal({
                 ) : (
                   <div className="overflow-x-auto">
                     {splitView === 'summary' ? (
-                      <table className="w-full text-[12.5px] min-w-[760px]">
+                      <table className="w-full text-[12.5px] min-w-[820px]">
                         <thead>
                           <tr className="bg-[#FBF7F4] border-y border-[#EADFD6]">
                             <th className={`${SA_LABEL} text-left px-4 py-2`}>PO · vessel</th>
+                            <th className={`${SA_LABEL} text-right px-3 py-2`}>KG · share</th>
                             {(['ppjk', 'origin', 'local'] as CostGroupKey[]).map(k => (
                               <th key={k} className={`${SA_LABEL} text-right px-3 py-2`}><span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: COST_GROUP_COLORS[k] }} />{COST_GROUP_LABELS[k]}</span></th>
                             ))}
-                            <th className={`${SA_LABEL} text-right px-3 py-2`}>Total</th>
-                            <th className={`${SA_LABEL} text-right px-4 py-2`}><span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: COST_GROUP_COLORS.duty }} />Duty &amp; tax</span></th>
+                            <th className={`${SA_LABEL} text-right px-3 py-2`}><span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: COST_GROUP_COLORS.duty }} />Duty &amp; tax</span></th>
+                            <th className={`${SA_LABEL} text-right px-4 py-2`}>Total</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {pos.map((p, i) => {
-                            const byKg = basis === 'kg'
-                            const sh = share(i)
-                            const kgv = (v: any) => (toN(v) == null ? null : Math.round((toN(v) as number) * sh))
-                            return (
-                              <tr key={i} className="border-b border-[#F1E8E1] last:border-b-0">
-                                <td className="px-4 py-2"><PoCell po={p} m={poManualFor(poManual, p.po_no)} />{byKg && <div className="text-[10.5px] text-[#8A7A8B] tabular-nums">{Math.round(sh * 1000) / 10}% of weight</div>}</td>
-                                <td className="px-3 py-2 text-right tabular-nums">{fmtRp(byKg ? kgv(lc.groups.ppjk) : ppjkSplit)}</td>
-                                <td className="px-3 py-2 text-right tabular-nums">{fmtRp(byKg ? kgv(lc.groups.origin) : originSplit)}</td>
-                                <td className="px-3 py-2 text-right tabular-nums">{fmtRp(byKg ? kgv(lc.groups.local) : localSplit)}</td>
-                                <td className="px-3 py-2 text-right tabular-nums font-bold text-[#3B1B3D]">{fmtRp(byKg ? kgv(groupTotal) : totalSplit)}</td>
-                                <td className="px-4 py-2 text-right tabular-nums text-[#6E5E70]" title={byKg ? `BM ${fmtRp(kgv(rec.bm))} · PPN ${fmtRp(kgv(rec.ppn))} · PPh ${fmtRp(kgv(rec.pph))}` : `BM ${fmtRp(rec.bm_split)} · PPN ${fmtRp(rec.ppn_split)} · PPh ${fmtRp(rec.pph_split)}`}>{fmtRp(byKg ? kgv(rec.duty_total) : rec.duty_split)}</td>
-                              </tr>
-                            )
-                          })}
+                          {pos.map((p, i) => (
+                            <tr key={i} className="border-b border-[#F1E8E1] last:border-b-0 align-top">
+                              <td className="px-4 py-2.5"><PoCell po={p} m={poManualFor(poManual, p.po_no)} /></td>
+                              <td className="px-3 py-2.5 text-right tabular-nums">
+                                <div className="text-[#3B1B3D]">{poKgs[i] != null ? `${fmtValas(poKgs[i])} kg` : '—'}</div>
+                                <div className="text-[11px] text-[#8A7A8B]">{fmtPct(share(i))}</div>
+                              </td>
+                              <td className="px-3 py-2.5 text-right tabular-nums">{fmtRp(splitCols.ppjk[i])}</td>
+                              <td className="px-3 py-2.5 text-right tabular-nums">{fmtRp(splitCols.origin[i])}</td>
+                              <td className="px-3 py-2.5 text-right tabular-nums">{fmtRp(splitCols.local[i])}</td>
+                              <td className="px-3 py-2.5 text-right tabular-nums" title={`BM ${fmtRp(allocate(toN(rec.bm), weights)[i])} · PPN ${fmtRp(allocate(toN(rec.ppn), weights)[i])} · PPh ${fmtRp(allocate(toN(rec.pph), weights)[i])}`}>{fmtRp(splitCols.duty[i])}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums font-bold text-[#3B1B3D]">{fmtRp(rowTotal(i, ['ppjk', 'origin', 'local', 'duty']))}</td>
+                            </tr>
+                          ))}
                         </tbody>
                       </table>
                     ) : (
-                      <table className="w-full text-[12px] min-w-[980px]">
+                      <table className="w-full text-[12px] min-w-[1040px]">
                         <thead>
                           <tr className="bg-[#FBF7F4] border-y border-[#EADFD6]">
                             <th className={`${SA_LABEL} text-left px-4 py-2`}>PO · vessel</th>
-                            {RECAP_SEGMENTS.map(s => (
-                              <th key={s.key} className="text-right px-2 py-2 align-bottom">
-                                <div className="text-[10.5px] font-semibold uppercase tracking-[0.05em] text-[#8A7A8B]">{s.label}</div>
-                                <div className="text-[10.5px] text-[#6E5E70] normal-case line-clamp-2" title={rec[s.vendorCol] || ''}>{rec[s.vendorCol] || '—'}</div>
+                            <th className={`${SA_LABEL} text-right px-2 py-2`}>KG · share</th>
+                            {RECAP_SEGMENTS.map(sg => (
+                              <th key={sg.key} className="text-right px-2 py-2 align-bottom">
+                                <div className="text-[10.5px] font-semibold uppercase tracking-[0.05em] text-[#8A7A8B]">{sg.label}</div>
+                                <div className="text-[10.5px] text-[#6E5E70] normal-case line-clamp-2" title={rec[sg.vendorCol] || ''}>{rec[sg.vendorCol] || '—'}</div>
                               </th>
                             ))}
                             <th className={`${SA_LABEL} text-right px-2 py-2`}>Duty &amp; tax</th>
@@ -448,19 +563,18 @@ export default function SeaAirRecapDetailModal({
                           </tr>
                         </thead>
                         <tbody>
-                          {pos.map((p, i) => {
-                            const byKg = basis === 'kg'
-                            const sh = share(i)
-                            const kgv = (v: any) => (toN(v) == null ? null : Math.round((toN(v) as number) * sh))
-                            return (
-                              <tr key={i} className="border-b border-[#F1E8E1] last:border-b-0">
-                                <td className="px-4 py-2"><PoCell po={p} m={poManualFor(poManual, p.po_no)} /></td>
-                                {RECAP_SEGMENTS.map(s => <td key={s.key} className="px-2 py-2 text-right tabular-nums">{fmtRp(byKg ? kgv(rec[s.costCol]) : splitVal(s.splitCol))}</td>)}
-                                <td className="px-2 py-2 text-right tabular-nums text-[#6E5E70]">{fmtRp(byKg ? kgv(rec.duty_total) : rec.duty_split)}</td>
-                                <td className="px-4 py-2 text-right tabular-nums font-bold text-[#3B1B3D]">{fmtRp(byKg ? kgv(groupTotal) : totalSplit)}</td>
-                              </tr>
-                            )
-                          })}
+                          {pos.map((p, i) => (
+                            <tr key={i} className="border-b border-[#F1E8E1] last:border-b-0 align-top">
+                              <td className="px-4 py-2.5"><PoCell po={p} m={poManualFor(poManual, p.po_no)} /></td>
+                              <td className="px-2 py-2.5 text-right tabular-nums">
+                                <div className="text-[#3B1B3D]">{poKgs[i] != null ? `${fmtValas(poKgs[i])} kg` : '—'}</div>
+                                <div className="text-[11px] text-[#8A7A8B]">{fmtPct(share(i))}</div>
+                              </td>
+                              {RECAP_SEGMENTS.map(sg => <td key={sg.key} className="px-2 py-2.5 text-right tabular-nums">{fmtRp(splitCols[sg.key][i])}</td>)}
+                              <td className="px-2 py-2.5 text-right tabular-nums">{fmtRp(splitCols.duty[i])}</td>
+                              <td className="px-4 py-2.5 text-right tabular-nums font-bold text-[#3B1B3D]">{fmtRp(rowTotal(i, [...RECAP_SEGMENTS.map(sg => sg.key), 'duty']))}</td>
+                            </tr>
+                          ))}
                         </tbody>
                       </table>
                     )}
@@ -484,18 +598,7 @@ export default function SeaAirRecapDetailModal({
             </div>
           )}
 
-          {tab === 'trail' && (
-            <div className={`${SA_CARD} px-4 py-3`}>
-              {log === null ? <div className="text-[12px] text-[#8A7A8B]">Loading…</div>
-                : log.length === 0 ? <div className="text-[12px] text-[#8A7A8B]">No activity recorded</div>
-                : log.map((e, i) => (
-                  <div key={i} className="grid grid-cols-[140px_minmax(0,1fr)] gap-3 py-2 text-[12px] border-t border-[#F1E8E1] first:border-t-0">
-                    <span className="text-[#6E5E70] tabular-nums">{fmtDateShort(e.at)} {new Date(e.at).toTimeString().slice(0, 5)}</span>
-                    <span className="text-[#3B1B3D] [overflow-wrap:anywhere]"><b>{e.what}</b> · <span className="text-[#6E5E70]">{e.who}</span>{e.detail ? <div className="text-[#6E5E70]">{e.detail}</div> : null}</span>
-                  </div>
-                ))}
-            </div>
-          )}
+          {tab === 'trail' && <RecapAuditTrail log={log} />}
 
           {!seaairId && tab !== 'overview' && tab !== 'trail' && (
             <div className="text-[11.5px] text-[#8A7A8B]">This Invoice Recap row is not linked to an Audit PIB record (seaair_id is empty).</div>

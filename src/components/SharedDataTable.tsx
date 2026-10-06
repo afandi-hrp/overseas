@@ -6140,7 +6140,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           </div>
         </header>
         ) : isSeaAirRekapan ? (
-        /* Header Invoice Recap Sea & Air (2026-10-01): eyebrow + judul + Export/Upload documents. */
+        /* Header Invoice Recap Sea & Air (2026-10-01): judul + keterangan. Export & Upload documents DIPINDAH ke panel
+           filter (2026-10-06, permintaan user -- sama Audit PIB Sea & Air; di laptop 14" berdesakan dgn Greeting). */
         <header className="px-3 pt-1 pb-1 shrink-0">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
@@ -6148,15 +6149,6 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
               <p className="text-[#6E5E70] text-[12.5px] mt-0.5">Sea &amp; Air shipment invoices per BL / AWB — validate costs &amp; documents, then submit to Finance.</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
-              {renderExportBtn(true)}
-              {canSee('sea_air_upload') && (
-                <Link
-                  to="/sea-air/upload"
-                  className="px-4 h-[38px] rounded-full bg-[#6B3470] hover:bg-[#5A2A5E] text-white text-xs font-semibold shadow-sm transition-colors shrink-0 inline-flex items-center gap-1.5"
-                >
-                  <UploadCloud size={14} /> Upload documents
-                </Link>
-              )}
               <Greeting />
             </div>
           </div>
@@ -6710,10 +6702,12 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 </div>
               ) : isSeaAirRekapan ? (
                 /* Invoice Recap Sea & Air (2026-10-01): 5 kartu KPI + 1 kartu filter (tipe All/LCL/FCL/AIR,
-                   Search, tanggal, COMPANY, Needs attention, SORT, Card/List, Refresh). */
+                   Search, tanggal, COMPANY, Needs attention, SORT, Card/List, Refresh, Export, Upload documents).
+                   Responsif (2026-10-06, pola Audit PIB / Courier): `@container` + flex-wrap, label dipersingkat di bawah
+                   lebar panel 1450px; tidak muat -> turun ke baris 2 (tidak dipotong). */
                 <div className="flex flex-col gap-3">
                   <SeaAirRecapKpiCards summary={recapSummary} loading={recapSummaryLoading} />
-                  <div className="bg-white rounded-[14px] border border-[#EADFD6] shadow-sm px-3 py-2.5 flex flex-nowrap items-center gap-2.5 overflow-x-auto">
+                  <div className="@container bg-white rounded-[14px] border border-[#EADFD6] shadow-sm px-3 py-2.5 flex flex-wrap items-center gap-2">
                     <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[#F5EDF3] shrink-0">
                       {['All', 'LCL', 'FCL', 'AIR'].map(t => (
                         <button
@@ -6726,7 +6720,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         </button>
                       ))}
                     </div>
-                    <div className="relative flex-1 min-w-[220px]">
+                    <div className="relative flex-1 min-w-[150px]">
                       <SearchIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A7A8B] pointer-events-none" />
                       <input
                         type="text"
@@ -6739,21 +6733,22 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         <button type="button" onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8A7A8B] hover:text-[#3B1B3D]"><X size={14} /></button>
                       )}
                     </div>
-                    <div className="flex items-center gap-1.5 h-9 px-3 rounded-xl border border-[#EADFD6] bg-white shrink-0">
+                    <div className="flex items-center gap-1.5 h-9 px-2.5 rounded-xl border border-[#EADFD6] bg-white shrink-0" title="Date">
                       <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]">Date</span>
-                      <input type="date" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} className="w-[108px] text-[12px] bg-transparent focus:outline-none text-[#3B1B3D] cursor-pointer" />
+                      <input type="date" aria-label="From date" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)} className="w-[104px] text-[12px] bg-transparent focus:outline-none text-[#3B1B3D] cursor-pointer" />
                       <span className="text-[#8A7A8B] text-xs">–</span>
-                      <input type="date" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} className="w-[108px] text-[12px] bg-transparent focus:outline-none text-[#3B1B3D] cursor-pointer" />
+                      <input type="date" aria-label="To date" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)} className="w-[104px] text-[12px] bg-transparent focus:outline-none text-[#3B1B3D] cursor-pointer" />
                       {(filterStartDate || filterEndDate) && (
                         <button type="button" onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }} className="text-[#8A7A8B] hover:text-[#3B1B3D]"><X size={13} /></button>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 h-9 pl-3 pr-2 rounded-xl border border-[#EADFD6] bg-white shrink-0">
-                      <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]">Company</span>
+                    <div className="flex items-center gap-2 h-9 pl-2.5 pr-2 rounded-xl border border-[#EADFD6] bg-white shrink-0" title="Company">
+                      <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]"><span className="@min-[1450px]:hidden">PT</span><span className="hidden @min-[1450px]:inline">Company</span></span>
                       <select
+                        aria-label="Company"
                         value={activeAnFilter}
                         onChange={e => { setActiveAnFilter(e.target.value); setPage(1); }}
-                        className="border-0 bg-transparent text-xs font-bold text-[#3B1B3D] focus:outline-none cursor-pointer max-w-[160px]"
+                        className="border-0 bg-transparent text-xs font-bold text-[#3B1B3D] focus:outline-none cursor-pointer max-w-[120px]"
                       >
                         {anTabs.map(an => <option key={an} value={an}>{an === 'All' ? 'All companies' : an}</option>)}
                       </select>
@@ -6764,7 +6759,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                       aria-pressed={recapNeedsAttentionOnly}
                       className={`h-9 px-3 rounded-xl border text-xs font-bold shrink-0 transition-colors ${recapNeedsAttentionOnly ? 'bg-[#FDE7E4] border-[#F4C3BC] text-[#A8231A]' : 'bg-white border-[#EADFD6] text-[#3B1B3D] hover:bg-[#FBF7F4]'}`}
                     >
-                      Needs attention{recapSummary ? ` · ${recapSummary.needsAttention}` : ''}
+                      <span className="hidden @min-[1450px]:inline">Needs attention</span><span className="@min-[1450px]:hidden">Attention</span>{recapSummary ? ` · ${recapSummary.needsAttention}` : ''}
                     </button>
                     <div className="flex items-center gap-2 h-9 pl-3 pr-2 rounded-xl border border-[#EADFD6] bg-white shrink-0">
                       <span className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]">Sort</span>
@@ -6795,6 +6790,19 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                       className="w-9 h-9 rounded-xl border border-[#EADFD6] bg-white text-[#3B1B3D] hover:bg-[#FBF7F4] flex items-center justify-center shrink-0">
                       <RefreshCw size={14} />
                     </button>
+                    {/* Export & Upload documents (2026-10-06: dipindah dari header, permintaan user). */}
+                    <div className="ml-auto flex items-center gap-2 shrink-0">
+                      {renderExportBtn(true, true)}
+                      {canSee('sea_air_upload') && (
+                        <Link
+                          to="/sea-air/upload"
+                          title="Upload documents"
+                          className="px-4 h-9 rounded-xl bg-[#6B3470] hover:bg-[#5A2A5E] text-white text-xs font-semibold shadow-sm transition-colors shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap"
+                        >
+                          <UploadCloud size={14} /> Upload<span className="hidden @min-[1450px]:inline"> documents</span>
+                        </Link>
+                      )}
+                    </div>
                   </div>
                 </div>
               ) : (

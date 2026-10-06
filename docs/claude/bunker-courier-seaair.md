@@ -98,6 +98,18 @@ filter `recapNeedsAttentionOnly` (`.in('id', recapNeedsAttentionIds)`).
   supplier, PO +N/Hide, chip status (+tooltip issues), titik Doc match/Cost/Doc complete
   (`doc_validation_pct`/`cost_validation_pct`/`checklist_pct`, abu kalau datanya belum ada),
   Landed cost + bar kelompok, Open. Sort: Newest/Oldest/Total invoice · highest.
+- **2026-10-06 (permintaan user)**: (1) Export & "Upload documents" DIPINDAH dari header ke ujung kanan panel filter;
+  panel `@container` + `flex-wrap` (label "Company"->"PT", "Needs attention"->"Attention", "Upload documents"->"Upload" di
+  bawah lebar panel 1450px) -- pola SAMA Audit PIB. (2) Jendela Open: layar <=1600px HAMPIR PENUH LAYAR
+  (`max-[1600px]:max-w-none h-full`), monitor besar `max-w-[1560px]` (dulu 1180px). (3) **Split per PO dibangun ulang (gambar
+  user)**: kolom PO · vessel (chip "◐ Partial N · USD x this shipment") | KG · share | PPJK & trucking | Origin | Local | Duty & tax |
+  TOTAL (TERMASUK duty); toggle Summary|Per invoice + **By KG | Evenly**. Nilai DIHITUNG di browser dari biaya invoice
+  (`allocate`, dibulatkan ke rupiah, selisih pembulatan ke baris terakhir -> jumlah PERSIS total); By KG = total × KG PO ÷ total
+  KG (aktif hanya kalau SEMUA PO punya KG di Edit shipment, default kalau ada), Evenly = total ÷ jumlah PO. Opsi lama "As
+  recorded" (kolom `*_split` tersimpan) DIHAPUS dari tampilan (kolom DB tidak diubah). (4) **Tab Audit trail dipercantik**
+  (`RecapAuditTrail`): per hari + garis waktu, entri menit sama + user sama + aksi sama digabung 1 baris dgn chip modul
+  (Invoice Recap / Audit PIB / Document validation / Cost validation), ×N utk duplikat, deskripsi generik trigger ("Edit/Hapus
+  data ...") disembunyikan, format app "X — Lama → Baru" dirapikan, 12 event pertama + "Show all". `RecapLogEntry` + `entity`/`verb`.
 - **Open**: header (Edit, Submit to Finance [ada issue -> "· N to fix" + konfirmasi daftar issue,
   tetap bisa submit], ⋯ = Move PIB Draft/Audited (`handleDraftSeaAir`/`handleUndraftSeaAir` lama) &
   Delete (`DeleteModal` lama, perilaku TETAP)), chip skor, banner blocker/submitted.
