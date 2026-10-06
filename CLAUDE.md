@@ -50,13 +50,12 @@ yang berlaku lintas modul. Rujukan lama di docs berbunyi "lihat CLAUDE.md bagian
 - **HTML dari backend/n8n WAJIB disanitasi `DOMPurify`** sebelum `dangerouslySetInnerHTML` (hasil AI = input tak
   tepercaya). Kalau HTML n8n butuh script (Oil Request): render di `<iframe sandbox>` TANPA `allow-same-origin`,
   JANGAN `eval`/innerHTML di halaman.
-- **SQL**: semua migrasi `sql/001`–`sql/044` SUDAH dijalankan di production (isi di git history).
-  `sql/045_seed_purchasing_users.sql` (3 akun @purchasing.com, insert langsung ke `auth.users`+`auth.identities`,
-  diuji PGlite) dibuat 2026-10-06 — BELUM dikonfirmasi dijalankan.
-  `sql/046_profiles_divisi.sql` (kolom `profiles.divisi` + RPC `fn_set_user_divisi`, Admin saja) SUDAH DIJALANKAN 2026-10-06
-  (konfirmasi user). `sql/047_profiles_divisi_from_email.sql` (isi divisi dari domain email: @finance→FINANCE,
-  @purchasing→PURCHASING, @shipmentoverseas→SHIPMENT; hanya yg masih kosong) dibuat 2026-10-06 — BELUM dikonfirmasi. Catatan "BELUM DIJALANKAN" di `docs/claude/*.md` utk file ≤044 TIDAK berlaku. SQL baru: file
-  `sql/NNN_*.sql` baru (idempotent, pre-check nama fungsi), user yang menjalankan manual — tidak ada akses DB dari sesi.
+- **SQL**: semua migrasi `sql/001`–`sql/047` SUDAH dijalankan di production & folder `sql/` DIHAPUS dari repo
+  (2026-10-06, konfirmasi user). Isi terakhir 041–047 ada di git commit `4286a34` (`git show 4286a34:sql/<file>`), yang lebih
+  lama di commit sebelumnya. 045 = seed 3 akun @purchasing.com, 046 = `profiles.divisi` + RPC `fn_set_user_divisi`, 047 = isi
+  divisi dari domain email. Catatan "BELUM DIJALANKAN" di `docs/claude/*.md` utk file ≤047 TIDAK berlaku. SQL baru: file
+  `sql/NNN_*.sql` baru (lanjut 048; idempotent, pre-check nama fungsi), user yang menjalankan manual — tidak ada akses DB
+  dari sesi.
 - **Kondisi DB production (stack `supabase3`)**: `anon` tanpa hak di schema public, GraphQL ditutup, semua tabel RLS
   (`has_page_access`/`has_edit_access`, tidak ada `using (true)`), view `security_invoker`, RPC `SECURITY DEFINER`
   ber-`search_path` & guard. **Aturan objek baru**: tabel WAJIB RLS 4 policy; RPC `SECURITY DEFINER` WAJIB guard
