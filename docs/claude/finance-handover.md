@@ -79,8 +79,9 @@ Spek user + referensi tampilan `finance_handover_courier.html` (root repo; HANYA
   utk `receivedIds`) dipanggil berurutan (`eachCourierInvoice`, berhenti di error pertama). Dialog menampilkan daftar invoice yang ikut
   diproses (`CourierAffected`). Undo receipt (Admin) = link kecil di bawah tombol kartu (menu View tidak ada di Courier).
 - **Kartu** (`CourierAwbCard` di FinanceHandoverPage): chip Courier · kode courier · PT · Jalur (PIB biru/CN ungu, "Jalur —" kalau pasangan
-  Audit tidak ketemu) · AWB · "N invoices · Freight + Duty + CN Freight" | Payable to (nama lengkap master Courier) + Vendor + pill status |
-  Total + Due/TOP (atau Paid + ref) | timeline Sent–Received–Paid | Accept / Mark paid (Finance) + **Open** (SEMUA status & semua yg boleh
+  Audit tidak ketemu) · AWB · Vendor | Payable to (nama lengkap master Courier) + pill status | Total + Due/TOP (atau Paid + ref) |
+  timeline **Approved–Accepted–Paid** (revisi 2026-10-07: dulu "N invoices · Freight + …" di bawah AWB & Vendor di bawah Payable to; label
+  Sent/Received diganti lewat prop `labels` `Timeline`, logika tanggal SAMA; FAR & Sea & Air tetap Sent/Received) | Accept / Mark paid (Finance) + **Open** (SEMUA status & semua yg boleh
   lihat; gaya SAMA tombol Open lama Invoice Recap Courier `bg-[#6B3470] h-8 rounded-xl`, terbuka = "Close" `bg-[#3B1B3D]`). 1 kartu
   terbuka sekaligus; buka kartu lain menutup yg lama & tab kembali ke Invoices. **Aturan "Accept dulu baru bisa lihat" DIHAPUS utk Courier.**
 - **Detail** (`FinanceCourierAwbDetail.tsx`, expand DI DALAM kartu, semua baca saja; viewer jendela `CourierHandoverViewer` DIHAPUS): tab
@@ -91,16 +92,25 @@ Spek user + referensi tampilan `finance_handover_courier.html` (root repo; HANYA
   - Cost Validation: `CostValidationModalLegacy` (= isi Details Invoice Recap) prop BARU **`financeView`**: header ringkasan gaya jendela Open
     Audit (OK / Difference / N/A + "x of y invoices match the rate sheet" + Accuracy, `computeLiveCostSummary` SAMA) menggantikan toolbar;
     Potong CN / Revisi / Update Estimasi / Hitung Ulang Estimasi disembunyikan; Catatan Perubahan Manual tetap tampil.
-  - Doc Validation: `ValidasiModal` embedded prop BARU **`financeView`** (+ konstanta `FINANCE_DOC_SECTIONS`): hanya 3 tabel (Invoice freight &
-    invoice duty, SPPBMCP [jalur CN; PIB = catatan], NPWP table), semua terbuka; meta (Check date/Checked by/No. AWB/Manual change notes),
-    banner mismatch, Recompute, Expand all & kalkulasi PIB/SPPBMCP disembunyikan (kalkulasi tetap dipasang tersembunyi). **Angka Match /
-    Mismatch / Not filled & akurasi = perhitungan yang sudah ada (seluruh pemeriksaan PIB/CN, SAMA % di Audit/Recap)**, bukan hanya 3 tabel.
+  - Doc Validation: `ValidasiModal` embedded prop BARU **`financeView`**: ringkasan Match/Mismatch/Not filled + Accuracy (tetap) +
+    **TABEL MATRIKS** (revisi 2026-10-07, menggantikan kartu per field) = tampilan SAMA Invoice Recap › Doc Validation › Details
+    (`ValidasiModalLegacy`): panel kiri ikon · nama tabel · badge x/y match (dihitung dari SEL YANG TAMPIL), baris = field, kolom = dokumen
+    (warna header `getHeaderColor` SAMA), sel = nilai · (nilai pembanding) · status; kolom "Validasi Field" `sticky left-0` saat digeser
+    (`DualScrollTable`). Kolom/baris dari konstanta `FINANCE_DOC_MATRIX` (menggantikan `FINANCE_DOC_SECTIONS`):
+    Invoice Freight & Invoice Duty = baris No. AWB · No Invoice PPJK · Subtotal/DPP/PPN (After CN) × kolom Invoice Duty · FP Freight · FP Duty ·
+    CN Invoice Freight · CN Invoice Duty · FP Revisi Freight · FP Revisi Duty (Berat (kg) & kolom SPPB/PIB/BPN/AWB tidak tampil);
+    Tabel NPWP = semua baris × kolom PIB · SPPBMCP · FP Freight · FP Duty · FP Revisi Freight · FP Revisi Duty · Invoice Freight · Invoice
+    Duty · CN Freight · CN Duty. **SPPBMCP disembunyikan seluruhnya** (tanpa catatan). Meta, banner, Recompute, Expand all & kalkulasi
+    PIB/SPPBMCP disembunyikan (kalkulasi tetap dipasang tersembunyi). **Angka ringkasan Match / Mismatch / Not filled & akurasi = perhitungan
+    yang sudah ada (seluruh pemeriksaan PIB/CN, SAMA % di Audit/Recap)**. Print: sel dipadatkan (`[data-finance-matrix]` di index.css).
   - Pasangan PIB/CN tidak ketemu -> tab validasi berisi catatan, titik abu.
 - **Print** (tombol di baris tab): `window.print()`; kartu terbuka ber-id `#finance-courier-print-area` (aturan `index.css`: leluhur dilepas
   overflow/tinggi/posisi lewat `*:has(...)` karena kartu TIDAK di-portal). Tercetak: info kartu + tab aktif + keterangan
   "Finance Handover · Courier · <tab> · printed <tgl jam>" (`hidden print:block`, waktu diperbarui di `beforeprint` dgn `flushSync`).
   Tab bar & semua tombol `print:hidden`, kartu lain tidak tercetak.
-- **Diuji**: jsdom `fh` 59 cek (setelah Checklist dihapus; sebelumnya 64) (3 kartu per AWB, total − CN, chip/payee/due/status, Search no. invoice, Open di semua status & gaya, detail di
+- **Diuji (revisi 2026-10-07)**: jsdom `fh` 71 cek (+ info kartu tanpa jumlah invoice, Vendor di bawah AWB, timeline Approved/Accepted, 2 tabel
+  matriks: kolom/baris/urutan, badge 19 sel, warna header, kolom sticky, isi sel, tanpa input/tombol, tanpa SPPBMCP) + regresi finance lama 57.
+- **Diuji (awal)**: jsdom `fh` 59 cek (setelah Checklist dihapus; sebelumnya 64) (3 kartu per AWB, total − CN, chip/payee/due/status, Search no. invoice, Open di semua status & gaya, detail di
   dalam kartu, 3 tab (tanpa Checklist) + % + titik, Invoices kurung/total/tanpa AWB, Cost header & tanpa aksi + catatan,
   Doc 3 tabel & tanpa aksi/meta, catatan SPPBMCP jalur PIB, tanpa pasangan Audit, Print + keterangan, 1 kartu terbuka, Accept 3 RPC, Mark paid
   2 RPC + ref, Undo Admin 3 RPC, view-only) + regresi finance lama 57 — 0 gagal; `tsc` bersih, `vite build` sukses. Belum dites di production.

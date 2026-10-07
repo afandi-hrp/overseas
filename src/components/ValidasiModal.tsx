@@ -870,10 +870,19 @@ const STATUS_CONFIG: any = {
 // ubah skema) + Accuracy + tombol Details (`onOpenDetails`: jendela penuh tabel lama dgn Recompute & Edit).
 // Load/simpan/status SAMA mode lain (persistChecklist). `reloadKey` naik -> baca ulang data dari DB tanpa remount.
 // `financeView` (2026-10-06, Finance Handover Courier, keputusan user; dipakai bersama `embedded` & canEdit=false): HANYA
-// ringkasan Match/Mismatch/Not filled + akurasi (angka SAMA, dari seluruh pemeriksaan) + 3 tabel FINANCE_DOC_SECTIONS
-// (Invoice Freight & Invoice Duty, SPPBMCP [jalur CN], NPWP table), semua terbuka; meta/catatan, banner, Recompute,
-// Expand all & kalkulasi PIB/SPPBMCP tidak tampil (kalkulasi tetap dipasang tersembunyi spy akurasi SAMA).
-export const FINANCE_DOC_SECTIONS = ['s_inv_freight_duty', 's_sppbmcp', 's_tabel_npwp'];
+// ringkasan Match/Mismatch/Not filled + akurasi (angka SAMA, dari seluruh pemeriksaan) + TABEL MATRIKS (revisi 2026-10-07:
+// tampilan SAMA Invoice Recap > Doc Validation > Details = ValidasiModalLegacy -- panel kiri ikon/nama/x/y match, baris =
+// field, kolom = dokumen dgn warna header SAMA, sel = nilai, (pembanding), status; kolom "Validasi Field" sticky saat
+// digeser) utk FINANCE_DOC_MATRIX saja (Invoice Freight & Invoice Duty, Tabel NPWP; SPPBMCP disembunyikan seluruhnya).
+// Badge x/y match per tabel = sel yang tampil. Meta/catatan, banner, Recompute, Expand all & kalkulasi PIB/SPPBMCP tidak
+// tampil (kalkulasi tetap dipasang tersembunyi spy akurasi SAMA).
+export const FINANCE_DOC_MATRIX: { id: string; cols: string[]; rows?: string[] }[] = [
+  { id: 's_inv_freight_duty',
+    cols: ['Invoice Duty', 'FP Freight', 'FP Duty', 'CN INVOICE FREIGHT', 'CN INVOICE DUTY', 'FP Revisi Freight', 'FP Revisi Duty'],
+    rows: ['No. AWB', 'No Invoice PPJK', 'Subtotal / Subtotal After CN', 'DPP / DPP After CN', 'PPN / PPN After CN'] },
+  { id: 's_tabel_npwp',
+    cols: ['PIB', 'SPPBMCP', 'FP Freight', 'FP Duty', 'FP Revisi Freight', 'FP Revisi Duty', 'Invoice Freight', 'Invoice Duty', 'CN Freight', 'CN Duty'] },
+];
 export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdit = true, embedded = false, onPctChange, onDirtyChange, checklistVersion = 0, variant = 'full', onOpenDetails, reloadKey = 0, onChanged, financeView = false }: { record: any, mainTab: string, subTab?: string, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, onDirtyChange?: (dirty: boolean) => void, checklistVersion?: number, variant?: 'full' | 'summary', onOpenDetails?: () => void, reloadKey?: number, onChanged?: () => void, financeView?: boolean }) {
   const { profile, user } = useAuth();
   const [docType, setDocType] = useState<'PIB'|'CN'|null>(null);
@@ -1906,6 +1915,79 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
       );
     };
 
+    // Tabel matriks Finance (baca saja) -- markup SAMA tabel ValidasiModalLegacy (Details), dibatasi kolom/baris FINANCE_DOC_MATRIX.
+    const renderFinanceMatrix = () => FINANCE_DOC_MATRIX.map(cfg => {
+      const section = activeSections.find(s => s.id === cfg.id);
+      if (!section) return null;
+      const groupKey = (r: any) => r.rowLabel || r.field;
+      const shownRows = section.rows.filter((r: any) => cfg.cols.includes(r.compareDoc) && (!cfg.rows || cfg.rows.includes(groupKey(r))));
+      const cols = cfg.cols.filter(c => section.rows.some((r: any) => r.compareDoc === c));
+      const fields: string[] = cfg.rows ? cfg.rows.filter(f => section.rows.some((r: any) => groupKey(r) === f)) : [];
+      if (!cfg.rows) section.rows.forEach((r: any) => { const k = groupKey(r); if (!fields.includes(k)) fields.push(k); });
+      const ss = sectionStats({ ...section, rows: shownRows });
+      const badge = ss.match === ss.total && ss.total > 0 ? `${ss.total}/${ss.total} match` : ss.mismatch > 0 ? `${ss.mismatch} mismatch` : `${ss.match}/${ss.total} match`;
+      return (
+        <div key={section.id} className="flex flex-col md:flex-row border border-[#EADFD6] rounded-[14px] overflow-hidden bg-white" data-finance-matrix={section.id}>
+          <div className="w-full md:w-36 bg-[#FBF7F4] flex flex-row md:flex-col items-center justify-center p-3 border-b md:border-b-0 md:border-r border-[#EADFD6] shrink-0 gap-2.5">
+            <div className="w-11 h-11 bg-[#5A305A] text-white rounded-xl flex items-center justify-center shrink-0">{sectionIcons[section.id] || <FileText size={22} />}</div>
+            <div className="text-center font-bold text-[#5A305A] text-[10.5px] tracking-wider uppercase">{section.label}</div>
+            <span className={`ml-auto md:ml-0 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${ss.mismatch > 0 ? 'bg-[#FDE7E4] text-[#A8231A]' : 'bg-[#EAF6EF] text-[#17663D]'}`} data-matrix-badge>{badge}</span>
+          </div>
+          <DualScrollTable>
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr>
+                  <th className="p-3 bg-slate-100 border-b border-r border-slate-300 text-[11px] font-bold text-[#5A305A] uppercase tracking-wide whitespace-normal w-[160px] min-w-[160px] max-w-[160px] sticky left-0 z-10 shadow-[1px_0_0_0_#cbd5e1]">VALIDASI FIELD</th>
+                  {cols.map(doc => {
+                    const colorObj = getHeaderColor(doc);
+                    return <th key={doc} className="p-3 border-b border-r last:border-r-0 border-slate-300 text-[11px] font-bold uppercase tracking-widest text-center min-w-[150px]" style={{ backgroundColor: colorObj.bg, color: colorObj.text }}>{getColumnDisplayLabel(doc, docType)}</th>;
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {fields.map(field => (
+                  <tr key={field} className="border-b border-slate-200 last:border-b-0">
+                    <td className="p-3 border-r border-slate-300 text-xs font-bold text-[#5A305A] bg-white whitespace-normal w-[160px] min-w-[160px] max-w-[160px] break-words sticky left-0 z-10 align-middle shadow-[1px_0_0_0_#cbd5e1]">
+                      {field}
+                      {Array.from(new Set(section.rows.filter((r: any) => groupKey(r) === field && r.hint).map((r: any) => r.hint))).map((h, i) => (
+                        <div key={i} className="text-[10px] text-[#5A305A] mt-1 font-medium leading-tight">{h as string}</div>
+                      ))}
+                    </td>
+                    {cols.map(doc => {
+                      const rowMatch: any = shownRows.find((r: any) => r.compareDoc === doc && groupKey(r) === field);
+                      if (!rowMatch) return <td key={doc} className="p-3 border-r border-slate-300 last:border-r-0 text-center text-[#5A305A] align-middle bg-slate-50/30 min-w-[150px]">-</td>;
+                      const v = values[rowMatch.id] || { src: '', cmp: '' };
+                      const st = v.manual_status || computeStatus(v.src, v.cmp, rowMatch.isFormat, rowMatch.field, debugData.raw?.is_po_non_imi, getDocChecklistFlag(rowMatch.compareDoc, docCompletenessFlags));
+                      const errNpwp = v.cmp && hasNpwpError(rowMatch.id, v.cmp);
+                      const cfgSt = getCfg(st);
+                      const StatusIcon = st === 'match' ? CheckCircle2 : st === 'mismatch' ? XCircle : Clock;
+                      return (
+                        <td key={doc} className="p-3 border-r border-slate-300 last:border-r-0 align-middle min-w-[150px]" data-matrix-cell={rowMatch.id}>
+                          <div className="flex flex-col gap-1.5 items-center w-full text-center">
+                            <span className={`text-xs break-words px-1 ${v.src_edited ? 'text-blue-700 font-bold' : 'text-[#5A305A] font-medium'}`}>
+                              {v.srcDisplay ? v.srcDisplay : formatViewValue(v.src, field)}{v.src_edited ? ' ✎' : ''}
+                              {v.srcNote && <div className="text-[10px] font-normal text-[#8A7A8B] mt-0.5">{v.srcNote}</div>}
+                            </span>
+                            {!rowMatch.isFormat && (
+                              <span className={`text-[10px] break-words px-1 ${v.cmp_edited ? 'text-blue-700 font-bold' : 'text-[#5A305A]/70'}`}>({formatViewValue(v.cmp, field)}){v.cmp_edited ? ' ✎' : ''}</span>
+                            )}
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold whitespace-nowrap" style={{ backgroundColor: cfgSt.bg, color: cfgSt.color }}>
+                              <StatusIcon size={12} />{cfgSt.label}{v.manual_status ? ' ✎' : ''}
+                            </span>
+                            {(errNpwp || v.npwp_status === 'not_found') && <span className="text-[9.5px] text-[#7A4F00] bg-[#FFF1D6] px-2 py-0.5 rounded-md font-bold uppercase">NPWP tidak terdaftar</span>}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </DualScrollTable>
+        </div>
+      );
+    });
+
     return (
       <div className="flex flex-col gap-3 min-w-0">
         {docToast && <div className={`px-3 py-2 rounded-xl border text-[12.5px] font-semibold ${docToast.type === 'success' ? 'bg-[#EAF6EF] border-[#BFE3CD] text-[#17663D]' : 'bg-[#FDE7E4] border-[#F4C3BC] text-[#A8231A]'}`}>{docToast.msg}</div>}
@@ -1989,10 +2071,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
           <div className="rounded-[14px] border border-[#BFE3CD] bg-[#EAF6EF] px-4 py-2 text-[12.5px] font-semibold text-[#17663D]">✓ Mismatch reviewed manually</div>
         ) : null}
 
-        {financeView && docType === 'PIB' && (
-          <div className={`${VW_CARD} px-4 py-2.5 text-[12px] text-[#6E5E70]`}>SPPBMCP is not shown — it applies to the CN path only (this AWB is PIB).</div>
-        )}
-        {activeSections.filter(section => !financeView || FINANCE_DOC_SECTIONS.includes(section.id)).map(section => {
+        {financeView ? renderFinanceMatrix() : activeSections.map(section => {
           const ss = sectionStats(section);
           const groupKey = (r: any) => r.rowLabel || r.field;
           const uniqueFields: string[] = [];
@@ -2137,7 +2216,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
           />
         </div>
 
-        <div className="text-[11px] text-[#8A7A8B] px-1">Value in brackets = the compared document · ✎ = changed manually · Format pass = vessel no. must contain " - " (dash).</div>
+        <div className="text-[11px] text-[#8A7A8B] px-1">Value in brackets = the compared document · ✎ = changed manually{financeView ? '' : ' · Format pass = vessel no. must contain " - " (dash).'}</div>
 
         {docDirty && canEdit && (
           <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 px-4 py-3 rounded-[14px] bg-white border border-[#E0A526] shadow-lg print:hidden">

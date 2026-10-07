@@ -65,6 +65,12 @@ export const ppjkCode = (v: any) => String(v ?? '').trim().toUpperCase().replace
 
 export type InvoiceKind = 'freight' | 'duty' | 'cn'
 export const INVOICE_KIND_LABEL: Record<InvoiceKind, string> = { freight: 'Freight', duty: 'Duty', cn: 'Credit Note' }
+// Jenis 1 invoice utk ringkasan Total (2026-10-07): Freight / Duty / Credit Note Freight / Credit Note Duty.
+export const invoiceKindFullLabel = (r: any): string => {
+  const k = invoiceKind(r)
+  if (k !== 'cn') return INVOICE_KIND_LABEL[k]
+  return /DUTY/i.test(String(r?.invoice_type || '')) ? 'Credit Note Duty' : 'Credit Note Freight'
+}
 export function invoiceKind(r: any): InvoiceKind {
   const t = String(r?.invoice_type || '').toUpperCase()
   if (t.includes('CREDIT NOTE')) return 'cn'
@@ -152,8 +158,10 @@ export function buildRecapGroup(key: string, rowsIn: any[]): RecapGroup {
   }
 }
 
-// Due Date (2026-10-05, keputusan user): Tgl Invoice (`tgl_invoice`, sql/042) + 30 hari, per invoice. Kartu menampilkan
-// due date TERDEKAT dari invoice yang belum Paid (`tgl_lunas` kosong). Finance Handover Courier TIDAK memakai ini (TOP tetap).
+// Due Date (2026-10-05, keputusan user): Invoice PPJK Date (`tgl_invoice`, sql/042; diisi n8n dari tanggal invoice dokumen
+// PPJK) + 30 hari (TOP 30). REVISI 2026-10-07 (keputusan user): due date kartu = Invoice PPJK Date PALING AWAL dari SEMUA
+// invoice AWB (dulu: due terdekat dari invoice yang belum Paid); chip tetap disembunyikan kalau semua invoice sudah Paid;
+// tanggal kosong -> "Due —". Finance Handover Courier TIDAK memakai ini (TOP tetap).
 export const COURIER_DUE_DAYS = 30
 export function courierInvoiceDueDate(r: any): string | null {
   const m = String(r?.tgl_invoice ?? '').match(/^(\d{4})-(\d{2})-(\d{2})/)
@@ -165,9 +173,9 @@ export type RecapDue = { due: string | null; overdue: boolean; allPaid: boolean;
 export function recapGroupDue(g: RecapGroup, todayIso: string): RecapDue {
   const perInvoice = g.rows.map(r => ({ no: String(r.no_invoice || '—'), kind: invoiceKind(r), due: courierInvoiceDueDate(r), paid: !!r.tgl_lunas }))
   const open = perInvoice.filter(p => !p.paid)
-  const dues = open.map(p => p.due).filter(Boolean).sort() as string[]
+  const dues = perInvoice.map(p => p.due).filter(Boolean).sort() as string[]
   const due = dues[0] || null
-  return { due, overdue: !!due && due < todayIso, allPaid: g.rows.length > 0 && open.length === 0, missing: open.filter(p => !p.due).length, perInvoice }
+  return { due, overdue: !!due && due < todayIso, allPaid: g.rows.length > 0 && open.length === 0, missing: perInvoice.filter(p => !p.due).length, perInvoice }
 }
 
 // Status kartu (Submit to Finance per invoice).
@@ -399,6 +407,21 @@ export async function fetchCourierRecapAttentionGroups(f: RecapFilters, tabs: Va
   const hits = open.filter(g => recapGroupNeedsAttention(g, tabs))
   if (enrich) await enrich(hits.map(g => g.audit!.rec))
   return hits
+}
+
+// ─── Filter KPI (2026-10-07, keputusan user) ─────────────────────────────────────────────────────
+// Kartu KPI "Not submitted to Finance" / "Submitted · unpaid" bisa diklik ("Freight + Duty" = semua; "AWB" tidak).
+// List: filter per invoice di query (SharedDataTable). Card: AWB yang punya MINIMAL 1 invoice berstatus itu, isi kartu
+// tetap lengkap (semua invoice & Grand Total). Dihitung di browser (aturan kelompok & filter halaman SAMA fallback RPC),
+// pola SAMA "Needs attention" -- tanpa SQL/RPC baru. KPI aktif mematikan "Needs attention" & sebaliknya.
+export type RecapKpiFilter = 'all' | 'not_submitted' | 'submitted_unpaid' | null
+export const recapRowMatchesKpi = (r: any, k: RecapKpiFilter): boolean =>
+  k === 'not_submitted' ? !r.submit_date && !r.tgl_lunas
+    : k === 'submitted_unpaid' ? !!r.submit_date && !r.tgl_lunas
+      : true
+export async function fetchCourierRecapKpiGroups(f: RecapFilters, k: Exclude<RecapKpiFilter, 'all' | null>): Promise<RecapGroup[]> {
+  const groups = (await fallbackGroups(f)).map(g => buildRecapGroup(g.key, g.rows.map(applyCalc)))
+  return groups.filter(g => g.rows.some(r => recapRowMatchesKpi(r, k)))
 }
 
 // Jumlah utk badge sidebar (tanpa filter halaman). Gagal -> null (badge disembunyikan).

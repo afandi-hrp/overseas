@@ -1,6 +1,7 @@
 // Tab "Invoices" panel Validation Invoice Recap Courier (2026-10-05, keputusan user: tombol Open di kartu DIHAPUS,
 // isinya pindah ke sini). Dulu = jendela Open (CourierRecapDetailModal, 2026-10-02) -- isi & aturan TETAP:
-// - Total (Freight + Duty − Credit Note, CN terpisah) + Split per vessel (jumlah breakdown per vessel tiap invoice).
+// - Total (2026-10-07: tabel 1 baris per invoice Jenis | No. Invoice PPJK | Invoice PPJK Date | Jumlah, CN dalam kurung,
+//   Total = Grand Total) + Split per vessel (jumlah breakdown per vessel tiap invoice).
 // - Invoice per jenis (Freight / Duty / Credit Note): nominal, NTPN/PO/remarks, chip Sent/Received/Paid,
 //   Submit to Finance per invoice (tanpa syarat), kunci setelah submit + Unlock (Admin, alasan min. 5 karakter).
 // - Audit trail DIPINDAH ke tab "Audit trail" panel Validation (2026-10-06, permintaan user).
@@ -10,7 +11,7 @@ import { Send, Lock, Unlock } from 'lucide-react'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_GREEN, Chip, SectionCard } from './SeaAirAuditUi'
 import { fmtRp, fmtDateShort } from '../utils/SeaAirAuditHelpers'
 import {
-  splitPerVessel, poVesselPairs, invoiceKind, invoiceAmount,
+  splitPerVessel, poVesselPairs, invoiceKind, invoiceAmount, invoiceKindFullLabel,
   INVOICE_KIND_LABEL, type RecapGroup, type InvoiceKind,
 } from '../utils/CourierRecapHelpers'
 
@@ -80,13 +81,11 @@ export default function CourierRecapInvoicesTab({
   const amountOk = colOk('total_amount')
   const split = useMemo(() => splitPerVessel(g.rows), [g.rows])
   const activeKind = kinds.includes(kind) ? kind : (kinds[0] || 'freight')
-
-  const totalLine = (label: string, value: number, opts: { sub?: string; neg?: boolean; bold?: boolean } = {}) => (
-    <div className={`flex justify-between gap-3 py-1.5 text-[12.5px] ${opts.bold ? 'pt-2.5 mt-1 border-t border-[#EADFD6]' : ''}`}>
-      <span className={opts.bold ? 'text-[13.5px] font-bold text-[#3B1B3D]' : 'text-[#3B1B3D]'}>{label}{opts.sub && <span className="text-[11px] text-[#8A7A8B] font-normal"> · {opts.sub}</span>}</span>
-      <span className={`tabular-nums whitespace-nowrap ${opts.bold ? 'text-[16px] font-bold text-[#3B1B3D]' : opts.neg ? 'font-semibold text-[#A8231A]' : 'font-semibold text-[#3B1B3D]'}`}>{opts.neg ? '− ' : ''}{fmtRp(value)}</span>
-    </div>
-  )
+  // Urutan baris ringkasan Total: Freight · Duty · Credit Note Freight · Credit Note Duty (dalam jenis: urutan masuk).
+  const totalRows = useMemo(() => {
+    const order: Record<string, number> = { 'Freight': 0, 'Duty': 1, 'Credit Note Freight': 2, 'Credit Note Duty': 3 }
+    return [...g.rows].sort((a, b) => order[invoiceKindFullLabel(a)] - order[invoiceKindFullLabel(b)])
+  }, [g.rows])
 
   const invoiceCard = (r: any) => {
     const pairs = poVesselPairs(r)
@@ -102,8 +101,9 @@ export default function CourierRecapInvoicesTab({
               <Chip tone={k === 'freight' ? 'blue' : k === 'duty' ? 'amber' : 'purple'}>{r.invoice_type || INVOICE_KIND_LABEL[k]}</Chip>
               <span className="text-[14px] font-bold text-[#3B1B3D] [overflow-wrap:anywhere]">{r.no_invoice || 'No invoice no.'}</span>
             </div>
-            <div className="text-[11.5px] text-[#6E5E70] mt-0.5">
-              {[r.ppjk, colOk('vendor') ? r.vendor : '', r.tgl_terima_email ? `email ${fmtDateShort(r.tgl_terima_email)}` : ''].filter(Boolean).join(' · ')}
+            {/* 2026-10-07 (keputusan user): tanggal email diganti Invoice PPJK Date (`tgl_invoice`). */}
+            <div className="text-[11.5px] text-[#6E5E70] mt-0.5" data-invoice-ppjk-date>
+              {[r.ppjk, colOk('vendor') ? r.vendor : '', colOk('tgl_invoice') ? `Invoice PPJK Date ${hasVal(r.tgl_invoice) ? fmtDateShort(r.tgl_invoice) : '—'}` : ''].filter(Boolean).join(' · ')}
             </div>
             <div className="mt-1.5">{financeChips(r)}</div>
           </div>
@@ -179,13 +179,39 @@ export default function CourierRecapInvoicesTab({
 
   return (
     <div className="flex flex-col gap-3 min-w-0">
+      {/* Ringkasan Total (2026-10-07, keputusan user): 1 baris per invoice -- Jenis | No. Invoice PPJK | Invoice PPJK Date |
+          Jumlah (Freight, Duty, Credit Note Freight, Credit Note Duty); CN dalam kurung & langsung mengurangi; Total = Grand
+          Total AWB (g.finalTotal, SAMA kartu). Tanggal kosong = "—". */}
       {amountOk && (
-        <SectionCard title="Total" right={`${g.submitted}/${g.rows.length} submitted · ${g.paid} paid`} bodyClassName="px-4 pb-3">
-          {g.byKind.freight.length > 0 && totalLine('Freight', g.freight, { sub: `${g.byKind.freight.length} invoice${g.byKind.freight.length === 1 ? '' : 's'}` })}
-          {g.byKind.duty.length > 0 && totalLine('Duty', g.duty, { sub: `${g.byKind.duty.length} invoice${g.byKind.duty.length === 1 ? '' : 's'}` })}
-          {g.cn > 0 && totalLine('Freight + Duty', g.charges)}
-          {g.byKind.cn.length > 0 && totalLine('Credit Note', g.cn, { neg: true, sub: `${g.byKind.cn.length} credit note${g.byKind.cn.length === 1 ? '' : 's'}` })}
-          {totalLine(g.cn > 0 ? 'Total (Freight + Duty − Credit Note)' : 'Total', g.finalTotal, { bold: true })}
+        <SectionCard title="Total" right={`${g.submitted}/${g.rows.length} submitted · ${g.paid} paid`} bodyClassName="pb-1">
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12.5px] min-w-[460px]" data-recap-total-table>
+              <thead>
+                <tr className="bg-[#FBF7F4] border-y border-[#EADFD6]">
+                  <th className={`${SA_LABEL} text-left px-4 py-2`}>Type</th>
+                  <th className={`${SA_LABEL} text-left px-3 py-2`}>No. Invoice PPJK</th>
+                  <th className={`${SA_LABEL} text-left px-3 py-2`}>Invoice PPJK Date</th>
+                  <th className={`${SA_LABEL} text-right px-4 py-2`}>Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {totalRows.map(r => (
+                  <tr key={r.id} className="border-b border-[#F1E8E1]" data-total-row>
+                    <td className="px-4 py-2 font-semibold text-[#3B1B3D] whitespace-nowrap">{invoiceKindFullLabel(r)}</td>
+                    <td className="px-3 py-2 text-[#3B1B3D] [overflow-wrap:anywhere]">{r.no_invoice || '—'}</td>
+                    <td className="px-3 py-2 text-[#3B1B3D] whitespace-nowrap">{colOk('tgl_invoice') && hasVal(r.tgl_invoice) ? fmtDateShort(r.tgl_invoice) : '—'}</td>
+                    <td className="px-4 py-2 text-right tabular-nums font-semibold text-[#3B1B3D] whitespace-nowrap">
+                      {invoiceKind(r) === 'cn' ? `(${invoiceAmount(r).toLocaleString('id-ID')})` : fmtRp(invoiceAmount(r))}
+                    </td>
+                  </tr>
+                ))}
+                <tr className="bg-[#FBF7F4]">
+                  <td colSpan={3} className="px-4 py-2.5 text-[13.5px] font-bold text-[#3B1B3D]">Total</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-[16px] font-bold text-[#3B1B3D] whitespace-nowrap" data-recap-grand-total>{fmtRp(g.finalTotal)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </SectionCard>
       )}
 

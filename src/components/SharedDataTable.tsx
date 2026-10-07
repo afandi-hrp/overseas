@@ -42,7 +42,7 @@ import {
   courierTableOf, makeColOk, isCourierDraft, notifyCourierAuditChanged, type CourierAuditSummary, type CourierDocType,
 } from '../utils/CourierAuditHelpers'
 import { CourierAuditCardList, CourierAuditKpiCards } from './CourierAuditCardList'
-import { COURIER_REKAPAN_CALC_FIELDS, computeCourierRekapanCalc, submitRecapInvoices, notifyCourierRecapChanged, fetchCourierRecapSummary, type RecapFilters, type RecapGroup, type RecapSummaryCourier } from '../utils/CourierRecapHelpers'
+import { COURIER_REKAPAN_CALC_FIELDS, computeCourierRekapanCalc, submitRecapInvoices, notifyCourierRecapChanged, fetchCourierRecapSummary, type RecapFilters, type RecapGroup, type RecapSummaryCourier, type RecapKpiFilter } from '../utils/CourierRecapHelpers'
 import { CourierRecapCardView, CourierRecapKpiCards } from './CourierRecapCardList'
 import CourierRecapValidationPanel, { type RecapPanelTab } from './CourierRecapValidationPanel'
 import CourierAuditOverview from './CourierAuditOverview'
@@ -1049,6 +1049,10 @@ const CN_COLS = [
 
 const COURIER_COLS = [
   { key: 'index', label: 'No.', type: 'index' },
+  // Invoice PPJK Date (sql/042 `tgl_invoice`; 2026-10-07: dipindah ke sebelum Email Received Date & label diganti, keputusan
+  // user) -- tanggal invoice dokumen PPJK (Freight/Duty/CN), diisi n8n saat upload (data lama kosong, tanpa backfill).
+  // Dasar Due Date kartu Invoice Recap (+30 hari).
+  { key: 'tgl_invoice', label: 'Invoice PPJK Date', type: 'date' },
   { key: 'tgl_terima_email', label: 'Email Received Date', type: 'date' },
   { key: 'tgl_lapor_fp', label: 'FP Report Date', type: 'date' },
   { key: 'ppjk', label: 'PPJK' },
@@ -1056,8 +1060,6 @@ const COURIER_COLS = [
   { key: 'vendor', label: 'Vendor' },
   { key: 'origin', label: 'Origin' },
   { key: 'no_invoice', label: 'No. Invoice' },
-  // Tgl Invoice (sql/042, 2026-10-05) -- dasar Due Date kartu Invoice Recap (+30 hari).
-  { key: 'tgl_invoice', label: 'Invoice Date', type: 'date' },
   { key: 'courier_adm_fee', label: 'Courier Adm Fee', type: 'num' },
   { key: 'total_duty_tax', label: 'Total Duty Tax', type: 'num' },
   { key: 'total_freight', label: 'Total Freight', type: 'num' },
@@ -3694,6 +3696,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   const [activeTrailUserFilter, setActiveTrailUserFilter] = useState('All')
   const [trailUserTabs, setTrailUserTabs] = useState<string[]>(['All'])
   const [activePpjkFilter, setActivePpjkFilter] = useState('All')
+  // Filter KPI Invoice Recap Courier (2026-10-07, keputusan user) -- List & Card; lihat RecapKpiFilter (CourierRecapHelpers).
+  const [courierRecapKpi, setCourierRecapKpi] = useState<RecapKpiFilter>(null)
   const [activeShipmentTypeFilter, setActiveShipmentTypeFilter] = useState('All')
   const [activeAnFilter, setActiveAnFilter] = useState('All')
   const [anTabs, setAnTabs] = useState<string[]>(['All'])
@@ -4113,6 +4117,12 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       query = query.eq('an', activeCourierAnFilter);
     }
 
+    // Filter KPI Invoice Recap Courier (2026-10-07) -- per invoice, aturan SAMA recapRowMatchesKpi.
+    if (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') {
+      if (courierRecapKpi === 'not_submitted') query = query.is('submit_date', null).is('tgl_lunas', null);
+      else if (courierRecapKpi === 'submitted_unpaid') query = query.not('submit_date', 'is', null).is('tgl_lunas', null);
+    }
+
     // Apply Filter by Impor An (Audit Courier)
     if (activeMainTab === 'courier' && activeSubTab === 'courier_audit' && activeCourierImporAnFilter !== 'All') {
       query = query.eq('impor_an', activeCourierImporAnFilter);
@@ -4382,7 +4392,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       setFetchError(error.message);
     }
     setLoading(false)
-  }, [tab, activeMainTab, activeSubTab, courierAuditType, seaAirAuditType, activeTrailFilter, activeTrailUserFilter, activePpjkFilter, activeShipmentTypeFilter, activeAnFilter, activeImporAnFilter, activeCourierAnFilter, activeCourierImporAnFilter, debouncedSearch, sortColumn, sortDirection, page, pageSize, filterStartDate, filterEndDate, restrictSearchCols, recapNeedsAttentionOnly, recapNeedsAttentionIds])
+  }, [tab, activeMainTab, activeSubTab, courierAuditType, seaAirAuditType, activeTrailFilter, activeTrailUserFilter, activePpjkFilter, activeShipmentTypeFilter, activeAnFilter, activeImporAnFilter, activeCourierAnFilter, activeCourierImporAnFilter, debouncedSearch, sortColumn, sortDirection, page, pageSize, filterStartDate, filterEndDate, restrictSearchCols, recapNeedsAttentionOnly, recapNeedsAttentionIds, courierRecapKpi])
 
   // ── Indikator "Outstanding" (badge angka di pojok tab) ──────────────────────
   // Rekapan Courier: jumlah baris per-tab PPJK yang Submit Date-nya masih kosong (key 'All' =
@@ -4993,6 +5003,12 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     // Apply Filter by A/N (Rekapan Courier)
     if (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan' && activeCourierAnFilter !== 'All') {
       query = query.eq('an', activeCourierAnFilter);
+    }
+
+    // Filter KPI Invoice Recap Courier (2026-10-07) -- per invoice, aturan SAMA recapRowMatchesKpi.
+    if (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') {
+      if (courierRecapKpi === 'not_submitted') query = query.is('submit_date', null).is('tgl_lunas', null);
+      else if (courierRecapKpi === 'submitted_unpaid') query = query.not('submit_date', 'is', null).is('tgl_lunas', null);
     }
 
     // Apply Filter by Impor An (Audit Courier)
@@ -6256,7 +6272,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 /* Invoice Recap Courier (Card & List, 2026-10-02: header SAMA di kedua mode, permintaan user) mode Card (2026-10-02): 5 kartu KPI + 1 kartu filter (tab PPJK, Search,
                    tanggal email, Company, Card/List, Refresh). State filter SAMA toolbar lama. */
                 <div className="flex flex-col gap-3">
-                  <CourierRecapKpiCards summary={courierRecapSummary} loading={courierRecapSummaryLoading} colOk={courierRecapColOk} />
+                  <CourierRecapKpiCards summary={courierRecapSummary} loading={courierRecapSummaryLoading} colOk={courierRecapColOk}
+                    kpi={courierRecapKpi} onKpi={k => { setCourierRecapKpi(k); setPage(1); if (k && k !== 'all') setCourierRecapAttentionOnly(false) }} />
                   <div className="@container bg-white rounded-[14px] border border-[#EADFD6] shadow-sm px-3 py-2.5 flex flex-wrap items-center gap-2">
                     <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[#F5EDF3] shrink-0" role="tablist" aria-label="PPJK">
                       {ppjkTabs.map(pj => {
@@ -6302,7 +6319,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                       </select>
                     </div>
                     {courierRecapView === 'card' && courierValidationTabs.length > 0 && (
-                      <button type="button" aria-pressed={courierRecapAttentionOnly} onClick={() => setCourierRecapAttentionOnly(v => !v)}
+                      <button type="button" aria-pressed={courierRecapAttentionOnly} onClick={() => { if (!courierRecapAttentionOnly) setCourierRecapKpi(null); setCourierRecapAttentionOnly(v => !v) }}
                         title="AWB with open invoices whose PIB / CN validation is not 100%"
                         className={`h-9 px-3 rounded-xl border text-xs font-bold shrink-0 inline-flex items-center gap-1.5 transition-colors ${courierRecapAttentionOnly ? 'bg-[#C8402F] border-[#C8402F] text-white' : 'bg-white border-[#EADFD6] text-[#A8231A] hover:bg-[#FDE7E4]'}`}>
                         <span className={`w-2 h-2 rounded-full ${courierRecapAttentionOnly ? 'bg-white' : 'bg-[#C8402F]'}`} /> <span className="hidden @min-[1500px]:inline">Needs attention</span><span className="@min-[1500px]:hidden" aria-hidden="true">Attention</span>
@@ -7048,6 +7065,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   return fresh ? { ...prev, g: fresh } : prev
                 })}
                 attentionOnly={courierRecapAttentionOnly}
+                kpiFilter={courierRecapKpi}
                 selectedKey={courierRecapPanel?.g.key || null}
                 panel={courierRecapPanel && tab ? (
                   <React.Fragment key={`recap-panel-${courierRecapPanel.g.key}`}>

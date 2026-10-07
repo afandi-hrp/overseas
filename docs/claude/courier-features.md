@@ -90,6 +90,31 @@ ada nama fungsi bentrok. Keputusan:
 15. Finance Handover Courier **per invoice**; kolom baru `finance_received_at/_by` (opsi A); master vendor = **tabel baru
     khusus Courier** `courier_vendor_master` + halaman Settings sendiri.
 
+## Invoice Recap Courier — Invoice PPJK Date, Total per invoice, KPI klik (2026-10-07, keputusan user)
+
+Spek user "REVISI: Courier → Invoice Recap" + mockup (hanya tata letak). TANPA SQL baru.
+- **Invoice PPJK Date** = kolom yang SUDAH ada `rekapan_courier.tgl_invoice` (sql/042, sudah dijalankan 2026-10-05) = tanggal invoice
+  dokumen PPJK (Invoice Freight/Duty, CN Freight/Duty). Diisi **n8n** saat upload (aplikasi tidak membaca dokumen; Upload hanya proxy ke n8n).
+  **Status 2026-10-07: n8n BELUM mengisi** -- hasil ekstraksi Gemini (`dokumen_validasi.data_validasi_raw` › `invoice_freight_v` dst)
+  belum punya field tanggal -> prompt + mapping n8n perlu ditambah (lihat status-backlog). Data lama kosong, tanpa backfill; bisa diisi
+  manual lewat Edit di List.
+- **List**: kolom "Invoice Date" diganti label **"Invoice PPJK Date"** & dipindah ke SEBELUM "Email Received Date" (`COURIER_COLS`).
+- **Tab Invoices** (panel Validation): baris kecil kartu invoice "email <tgl>" diganti "Invoice PPJK Date <tgl|—>"; ringkasan **Total** =
+  tabel 1 baris per invoice **Type | No. Invoice PPJK | Invoice PPJK Date | Amount** (urut Freight · Duty · Credit Note Freight · Credit Note
+  Duty, `invoiceKindFullLabel`), CN dalam kurung "(50.000)", baris Total = `g.finalTotal` (Grand Total kartu). Dulu: baris Freight / Duty /
+  Freight + Duty / Credit Note / Total.
+- **Due kartu** (`recapGroupDue`): Invoice PPJK Date **PALING AWAL dari semua invoice AWB** + 30 hari (dulu: due terdekat dari invoice yg
+  belum Paid); kosong = "Due —"; chip disembunyikan kalau semua invoice Paid (keputusan user).
+- **KPI klik** (`CourierRecapKpiCards` prop `kpi`/`onKpi`, state `courierRecapKpi` SharedDataTable, tipe `RecapKpiFilter`): "Not submitted to
+  Finance" = invoice tanpa `submit_date` & tanpa `tgl_lunas`; "Submitted · unpaid" = ber-`submit_date` & tanpa `tgl_lunas`; "Freight + Duty"
+  = semua (reset); "AWB" tidak bisa diklik. Aktif = `ring-2` ungu + `aria-pressed`; klik lagi = semua. Ikut tab PPJK & filter aktif.
+  **List**: filter per invoice di query `fetchRecords` (+ Export `getExportData`). **Card**: AWB dgn MINIMAL 1 invoice berstatus itu, isi
+  kartu tetap lengkap (`fetchCourierRecapKpiGroups`, dihitung di browser spt "Needs attention", `recapRowMatchesKpi`). KPI aktif mematikan
+  "Needs attention" & sebaliknya ("Freight + Duty" tidak mematikan). Angka KPI tetap dari `fetchCourierRecapSummary` (tidak berubah).
+- **Diuji**: jsdom `recap_kpi` 25 cek (due paling awal/—/semua Paid, KPI Card & List + border + klik ulang, KPI vs Needs attention, tabel
+  Total + Grand Total, Invoice PPJK Date di kartu invoice, urutan kolom List) — 0 gagal; regresi `courier_recap`/`courier_panel`: kegagalan SAMA
+  baseline sebelum perubahan (uji lama belum diperbarui) + "total lines" (format Total diganti, disengaja). `tsc` bersih, `vite build` sukses.
+
 ## Panel Validation samping Invoice Recap Courier (2026-10-05, keputusan user; sql/041 SUDAH DIJALANKAN 2026-10-05)
 
 Spek user + prototipe `Prototype — Validation Side Panel.html` (HANYA tata letak; warna/font tetap gaya app). Berlaku mode

@@ -352,6 +352,20 @@
   #finance-courier-print-area .sticky {
     position: static !important;
   }
+  /* Tabel matriks Doc Validation (revisi 2026-10-07): di kertas kolom dipadatkan supaya muat (di layar digeser
+     horizontal), scrollbar atas DualScrollTable tidak dicetak. */
+  #finance-courier-print-area [data-finance-matrix] th,
+  #finance-courier-print-area [data-finance-matrix] td {
+    min-width: 0 !important;
+    width: auto !important;
+    padding: 4px !important;
+  }
+  #finance-courier-print-area [data-finance-matrix] .scrollbar-visible {
+    display: none !important;
+  }
+  #finance-courier-print-area [data-finance-matrix] {
+    break-inside: avoid;
+  }
   #finance-courier-print-area tr {
     page-break-inside: avoid;
     break-inside: avoid;

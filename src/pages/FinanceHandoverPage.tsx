@@ -34,10 +34,11 @@ const PAGE_SIZE = 25
 const PAGE_KEY: Record<HandoverSource, string> = { far: 'far_overseas_finance', seaair: 'sea_air_finance', courier: 'courier_finance' }
 const ROW_BG: Record<HandoverStage, string> = { waiting: 'bg-[#FFFBF2]', received: 'bg-white', paid: 'bg-[#F5FBF7]' }
 
-function Timeline({ it }: { it: HandoverItem }) {
+// `labels` (2026-10-07): Courier memakai "Approved" / "Accepted" (logika tanggal SAMA), sumber lain tetap Sent / Received.
+function Timeline({ it, labels = ['Sent', 'Received'] }: { it: HandoverItem; labels?: [string, string] }) {
   const steps = [
-    { label: 'Sent', date: it.sentDate, who: null as string | null },
-    { label: 'Received', date: it.receivedDate, who: it.receivedBy },
+    { label: labels[0], date: it.sentDate, who: null as string | null },
+    { label: labels[1], date: it.receivedDate, who: it.receivedBy },
     { label: 'Paid', date: it.paidDate, who: null },
   ]
   return (
@@ -112,7 +113,7 @@ function ViewMenu({ items }: { items: MenuItem[] }) {
 }
 
 // Kartu Courier per AWB (2026-10-06): No. AWB · Courier · PT · Jalur · Vendor · Payable to · Due (TOP) · Total · Status ·
-// timeline Sent–Received–Paid. Kolom aksi: Accept / Mark paid (Finance) + Open (semua status, semua yang boleh lihat;
+// timeline Approved–Accepted–Paid (revisi 2026-10-07: info jumlah invoice dihapus, Vendor di bawah AWB, label timeline). Kolom aksi: Accept / Mark paid (Finance) + Open (semua status, semua yang boleh lihat;
 // gaya SAMA tombol Open Invoice Recap Courier). Kartu terbuka = area cetak (#finance-courier-print-area, index.css).
 const COURIER_STAGE_PILL: Record<HandoverStage, { label: string; tone: 'amber' | 'blue' | 'green' }> = {
   waiting: { label: 'Waiting for Finance', tone: 'amber' },
@@ -150,13 +151,12 @@ function CourierAwbCard({ it, companyNames, act, overdue, open, onOpen, onAccept
           </div>
           <div className="text-[9.5px] font-bold uppercase tracking-[0.08em] text-[#8A7A8B] mt-1">AWB</div>
           <div className="text-[14px] font-bold text-[#3B1B3D] truncate" title={it.ref}>{it.ref}</div>
-          <div className="text-[11px] text-[#6E5E70] truncate" title={it.sub}>{it.sub}</div>
+          <div className="text-[11px] text-[#6E5E70] truncate" title={it.payeeLine}>{it.payeeLine}</div>
         </div>
         <div className="min-w-0">
           <div className={SA_LABEL}>Payable to</div>
           <div className="text-[12.5px] font-bold text-[#3B1B3D] truncate uppercase" title={it.payee}>{it.payee}</div>
           {it.payeeIsCode && <div className="text-[10.5px] text-[#7A4F00]" title="Fill in the full legal name in Settings › Courier Vendors">Full courier name not set (code shown)</div>}
-          <div className="text-[11px] text-[#6E5E70] truncate" title={it.payeeLine}>{it.payeeLine}</div>
           <div className="mt-1" data-awb-status={it.stage}>
             <Pill tone={late ? 'red' : pill.tone} title={it.paidReference ? `Bank reference ${it.paidReference}` : undefined}>{late ? 'Received · unpaid · overdue' : pill.label}</Pill>
           </div>
@@ -168,7 +168,7 @@ function CourierAwbCard({ it, companyNames, act, overdue, open, onOpen, onAccept
               : it.dueDate ? `${overdue ? 'Overdue · due' : 'Due'} ${fmtDateShort(it.dueDate)}${it.topLabel ? ` · ${it.topLabel}` : ''}` : 'Due —'}
           </div>
         </div>
-        <Timeline it={it} />
+        <Timeline it={it} labels={['Approved', 'Accepted']} />
         <div className="flex flex-col items-start @4xl:items-end gap-1 print:hidden">
           <div className="flex flex-nowrap @4xl:justify-end gap-1.5">
             {act && it.stage === 'waiting' && <button type="button" className={`${SA_BTN_PRIMARY} h-8`} onClick={onAccept}>Accept</button>}
