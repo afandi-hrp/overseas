@@ -144,7 +144,17 @@ const newItem = (idx: number) => ({
 });
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, onStatsChange, isEditMode }: { dataValidasiRaw?: any, jenisDokumen?: string, onStatsChange?: (stats: any) => void, isEditMode?: boolean }) {
+// Baris tabel "Validasi PIB / SPPBMCP" utk notifikasi "Unmatched fields" panel Validation Invoice Recap Courier (2026-10-08,
+// keputusan user): Nama field · Actual (Expected) · Selisih -- TANPA sumber/rumus. `ignoreForStats` = baris yg sengaja tidak
+// ikut hitungan akurasi (Freight/BM/PPN/PPH) -- TIDAK masuk notifikasi panel Card (koreksi user 2026-10-08).
+export type CalcRowInfo = {
+  id: string; label: string; computed: string; status: string; ignoreForStats: boolean; hidden: boolean
+  actual: string; expected: string; selisih: string | null
+}
+
+// `statusOverrides` (2026-10-08): id baris -> status (mis. 'match' utk baris yg di-Accept di panel Card) -- mengalahkan
+// status manual/hasil hitung; ikut hitungan onStatsChange. `onRowsChange` memancarkan SEMUA baris tabel aktif.
+export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, onStatsChange, isEditMode, statusOverrides, onRowsChange }: { dataValidasiRaw?: any, jenisDokumen?: string, onStatsChange?: (stats: any) => void, isEditMode?: boolean, statusOverrides?: Record<string, string>, onRowsChange?: (rows: CalcRowInfo[]) => void }) {
   const [ndpbm, setNdpbm] = useState("");
   const [items, setItems] = useState<any[]>([newItem(0)]);
 
@@ -444,14 +454,36 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
     rows.forEach((r: any) => {
       if (r.ignoreForStats) return;
       const stComputed = r.customStatus ? r.customStatus(r.ak, r.expected) : statusOf(r.ak, r.expected);
-      const st = manualStatus[r.id] || stComputed;
+      const st = statusOverrides?.[r.id] || manualStatus[r.id] || stComputed;
       if (st === "match") match++;
       else if (st === "mismatch") mismatch++;
       else empty++;
     });
     onStatsChange({ match, mismatch, empty });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jnsUpper, aktualPIB, aktualSPPBMCP, calc, manualStatus]);
+  }, [jnsUpper, aktualPIB, aktualSPPBMCP, calc, manualStatus, statusOverrides]);
+
+  // Daftar baris (semua, termasuk ignoreForStats) utk notifikasi panel Card.
+  useEffect(() => {
+    if (!onRowsChange) return;
+    const rows = jnsUpper === "PIB" ? pibRows : (jnsUpper === "CN" ? sppbmcpRows : []);
+    onRowsChange(rows.map((r: any) => {
+      const computed = r.customStatus ? r.customStatus(r.ak, r.expected) : statusOf(r.ak, r.expected);
+      const hasAk = r.expected !== null && r.expected !== undefined && r.ak !== undefined && r.ak !== null && r.ak !== "" && r.ak !== "—";
+      const actualNum = r.akNum !== undefined ? r.akNum : toNum(r.ak);
+      const diff = hasAk ? actualNum - r.expected : null;
+      return {
+        id: r.id, label: r.label, computed,
+        status: statusOverrides?.[r.id] || manualStatus[r.id] || computed,
+        ignoreForStats: !!r.ignoreForStats,
+        hidden: jnsUpper === "CN" && r.id === "ndpbmXnilai",
+        actual: hasAk ? r.fmt(actualNum) : "—",
+        expected: r.expected !== null && r.expected !== undefined ? r.fmt(r.expected) : "—",
+        selisih: diff === null ? null : `${diff > 0.0000001 ? "+" : diff < -0.0000001 ? "−" : ""}${r.fmt(Math.abs(diff))}`,
+      };
+    }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jnsUpper, aktualPIB, aktualSPPBMCP, calc, manualStatus, statusOverrides]);
 
   // `title` = KUNCI LOGIKA ("Validasi SPPBMCP" -> toleransi 1.000) -- jangan diubah; judul tampilan
   // diambil dari VALIDATION_TITLE (2026-10-01, gaya kartu Sea & Air).
@@ -466,7 +498,7 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
     rows.forEach((r: any) => {
       if (r.ignoreForStats) return;
       const stc = r.customStatus ? r.customStatus(r.ak, r.expected) : statusOf(r.ak, r.expected);
-      const s2 = manualStatus[r.id] || stc;
+      const s2 = statusOverrides?.[r.id] || manualStatus[r.id] || stc;
       if (s2 === 'match') m++; else if (s2 === 'mismatch') mm++;
     });
     const TH = 'px-3 py-2 border-b border-[#EADFD6] text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B] whitespace-nowrap';
@@ -498,7 +530,7 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
           <tbody>
             {rows.map((row) => {
               const stComputed = row.customStatus ? row.customStatus(row.ak, row.expected) : statusOf(row.ak, row.expected);
-              const st = manualStatus[row.id] || stComputed;
+              const st = statusOverrides?.[row.id] || manualStatus[row.id] || stComputed;
 
               const isSPPBMCP = title === "Validasi SPPBMCP";
 

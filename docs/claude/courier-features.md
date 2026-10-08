@@ -90,6 +90,45 @@ ada nama fungsi bentrok. Keputusan:
 15. Finance Handover Courier **per invoice**; kolom baru `finance_received_at/_by` (opsi A); master vendor = **tabel baru
     khusus Courier** `courier_vendor_master` + halaman Settings sendiri.
 
+## Invoice Recap Courier (Card) — "Valid (note)", Selisih, Validasi PIB/SPPBMCP di notifikasi (2026-10-08, keputusan user)
+
+Spek user + mockup `invoice_recap_note_selisih.html` (hanya tata letak). **Butuh `sql/049_courier_checklist_valid_note.sql` (SUDAH DIJALANKAN
+2026-10-08, konfirmasi user)** untuk Valid (note); tanpa SQL itu tombol "Accept with note" nonaktif (tooltip), bagian lain tetap jalan.
+- **Valid (note) — Checklist** (`ChecklistModal` embedded, tab Checklist; juga di jendela Open Audit Courier krn komponen & data SAMA): dokumen
+  WAJIB yang Missing punya tombol **"Accept with note"**, NONAKTIF kalau Checklist Note kosong (atau kolom belum ada). Di-Accept -> tile kuning +
+  ikon catatan + chip "Valid (note)" + catatan di bawah nama + tombol Undo; tersimpan lewat bar "Save checklist" di kolom BARU
+  `dokumen_checklist.accepted_docs text[]` (nama kolom `ada_*`; kolom `ada_*` TIDAK diubah). **Dihitung lengkap** di % Checklist & hilang dari banner
+  Missing -> aturan ada di DUA tempat yg harus SAMA: trigger DB `hitung_kelengkapan()` (sql/049: lengkap = `ada_*` true ATAU [di accepted_docs
+  DAN catatan_checklist tidak kosong]; juga membuang entri accepted_docs yg `ada_*`-nya sudah true / bukan dokumen wajib) & hitungan di
+  `ChecklistModal` (`isAcc`/`eff`/payload). **Catatan dihapus -> semua Valid (note) kembali Missing** (accepted_docs tetap tersimpan sbg riwayat, hidup
+  lagi kalau catatan diisi). **Upload susulan** (n8n/Upload additional doc) mengisi `ada_*` true -> trigger membuang entri accepted_docs ->
+  Lengkap biasa; catatan tetap. Hanya selama PIB/CN Draft (`canEdit`, aturan Checklist lama TIDAK berubah). Data lama tidak di-backfill.
+  Satu Checklist Note berlaku utk SEMUA dokumen di AWB itu. Kotak "Checklist Note" (kuning) DI ATAS banner Missing (dulu di bawah daftar).
+  Accept TIDAK dicatat di `courier_checklist_doc_log` (hanya perubahan `ada_*`).
+- **Sinkron Checklist Note ↔ Remarks** (`src/utils/CourierRemarksSync.ts`): Remarks = `rekapan_courier.notes` (per invoice; "Internal Remarks" =
+  `keterangan`, tidak terkait). Checklist Note disimpan (berubah) -> Remarks SEMUA invoice AWB itu yang BELUM di-Submit diisi sama
+  (`syncChecklistNoteToRemarks`, dipanggil `ChecklistModal.handleSave`). Remarks diedit di List (`handleInlineSaveRow` & `EditModal`, hanya kalau
+  nilainya berubah) -> invoice lain AWB itu (belum Submit) + Checklist Note record PIB/CN-nya ikut (`syncRemarkToGroup`; HANYA PIB/CN Draft & baris
+  `dokumen_checklist` yg sudah ada — Audited = Checklist terkunci, tidak diubah). Keputusan user: **teks lama TIDAK ditimpa sampai ada yang mengedit**
+  (tidak ada sinkron saat tampil/baca); **invoice ber-submit_date tidak ikut** (terkunci sql/038, tetap Remarks lamanya; TANPA SQL tambahan). Tulis
+  langsung ke tabel (bukan lewat jalur simpan) supaya dua arah tidak saling memicu; gagal sinkron hanya `console.warn`. Hapus catatan -> Remarks
+  dikosongkan juga. Kunci grup = AWB ternormalisasi (+ tautan `pib_id`/`cn_id`).
+- **Unmatched fields — Selisih** (`ValidasiModal` variant summary): Berat (kg) `44,5 (43,2)` + chip **Selisih +1,3 kg**; Item Value (`po_item_value_vs_pib`,
+  `pib04`, `pib07`, `bt_vendor_item_value_vs_pib`) `3.493,3 (3.468,3)` + **Selisih +25,0** (+ chip **Other Cost: 25** utk PIB vs PO, nilai SAMA Details —
+  data raw hanya `other_cost_valas` numerik, TIDAK ada mata uang -> mockup "USD 25" tampil tanpa "USD"). Selisih = nilai − pembanding (`parseNumeric`).
+- **Baris tabel "Validasi PIB / SPPBMCP" masuk notifikasi** (`ValidasiPerhitunganPIB` props BARU `statusOverrides` & `onRowsChange` -> `CalcRowInfo`):
+  **KOREKSI user 2026-10-08**: HANYA baris yang memang sudah DIHITUNG di akurasi (bukan `ignoreForStats`), yang berstatus Mismatch -- PIB: Asuransi (24),
+  Nilai Pabean (26), Total Nilai Pabean (baris ini juga berbadge status & dihitung; tidak disebut di daftar user -- sengaja ikut supaya mismatch-nya bisa
+  di-Accept), Total BM+PPN+PPH; SPPBMCP: Sanksi Administrasi, Total BM+PPN+PPH+Sanksi ADM. **Freight (25), BM, PPN, PPH TETAP dikecualikan** (tidak
+  tampil, tidak dihitung) & SPPBMCP "Total Nilai Pabean" tetap disembunyikan. Format `Nama · Actual (Expected) · Selisih ±x` TANPA sumber/rumus (rumus
+  tetap di Details). Accept wajib catatan, tersimpan di `tabel_checklist_validasi.values_json['pibcalc:<id>']` (`manual_status/accept_note/...`, tanpa
+  ubah skema) + Manual Change Notes **"Asuransi (24) · Validasi PIB/SPPBMCP ✓ catatan"**; Undo & "Show accepted" SAMA field lain. `statusOverrides` ikut
+  ke instance kalkulasi di mode penuh/Details (baris yg di-Accept jadi Match di sana juga) dan ke hitungan `onStatsChange`; `persistChecklist(…,pibStatsArg)`
+  menyimpan match+1/mismatch−1 langsung. Karena yg dinotifikasi = baris yg SUDAH dihitung, **hitungan %/Accuracy tidak berubah rumus** (tidak ada
+  perbedaan panel Card vs Audit; opsi A/B yang sempat diusulkan DIBATALKAN). Banner "N mismatches in the PIB calculation" hanya fallback.
+- **Diuji**: jsdom `valid_note` 41 cek + PGlite sql/049 15 cek (uji dgn fungsi lama dari user sbg baseline); regresi courier_ui 57, courier 41, courier_lock 30,
+  courier_panel 72 (3 gagal SAMA baseline), recap_kpi 25, finance 57+71 — 0 gagal baru. `tsc` bersih, `vite build` sukses. Belum dites di production.
+
 ## Invoice Recap Courier — Invoice PPJK Date, Total per invoice, KPI klik (2026-10-07, keputusan user)
 
 Spek user "REVISI: Courier → Invoice Recap" + mockup (hanya tata letak). TANPA SQL baru.

@@ -54,7 +54,7 @@ yang berlaku lintas modul. Rujukan lama di docs berbunyi "lihat CLAUDE.md bagian
   (2026-10-06, konfirmasi user). Isi terakhir 041–047 ada di git commit `4286a34` (`git show 4286a34:sql/<file>`), yang lebih
   lama di commit sebelumnya. 045 = seed 3 akun @purchasing.com, 046 = `profiles.divisi` + RPC `fn_set_user_divisi`, 047 = isi
   divisi dari domain email. Catatan "BELUM DIJALANKAN" di `docs/claude/*.md` utk file ≤047 TIDAK berlaku. SQL baru: file
-  `sql/NNN_*.sql` baru (lanjut 049; idempotent, pre-check nama fungsi), user yang menjalankan manual — tidak ada akses DB
+  `sql/NNN_*.sql` baru (lanjut 050; **`sql/049_courier_checklist_valid_note.sql` SUDAH DIJALANKAN 2026-10-08** (konfirmasi user) — kolom `dokumen_checklist.accepted_docs` + ganti trigger `hitung_kelengkapan`, lihat courier-features.md "Valid (note)"; idempotent, pre-check nama fungsi), user yang menjalankan manual — tidak ada akses DB
   dari sesi. **Tambah user baru**: template `docs/sql-templates/add-users.sql` (edit daftar email/nama/password/divisi/role;
   buat akun auth + identities + profil + divisi + role; email lama tidak diubah password-nya; diuji PGlite 27 cek).
   **`sql/048_audit_trail_users_and_indexes.sql` SUDAH DIJALANKAN 2026-10-06** (konfirmasi user): RPC baca `fn_audit_trail_users()`

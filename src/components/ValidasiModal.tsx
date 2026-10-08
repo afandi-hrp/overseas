@@ -3,7 +3,7 @@ import { planCourierDocRecompute, docRecomputeMessage, docRecomputePendingText }
 import { LoadingSpinner } from './LoadingState';
 import { supabase } from '../lib/supabase';
 import { Receipt, FileText, Landmark, Ship, Sailboat, FileCheck2, FileDigit, IdCard, Scale, ClipboardList, Edit3, CheckCircle2, XCircle, Clock, Building2, Plane, CalendarDays, UserCheck, ChevronDown, ChevronUp, ChevronRight, RefreshCw, RotateCcw } from 'lucide-react';
-import ValidasiPerhitunganPIB from './ValidasiPerhitunganPIB';
+import ValidasiPerhitunganPIB, { type CalcRowInfo } from './ValidasiPerhitunganPIB';
 import { VW_LABEL, VW_BTN_PRIMARY, VW_BTN_SECONDARY, VW_BTN_SUCCESS, VW_BTN_DANGER, VW_CARD, VW_INPUT, VW_TILE, VW_TILE_TONE, vwPctBar, vwPctText } from './validationWindowStyles';
 import { Pill } from './SeaAirAuditUi';
 import { useAuth } from '../lib/AuthContext';
@@ -929,6 +929,12 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   const [showHeaderDetail, setShowHeaderDetail] = useState(true);
   const [snapshotValues, setSnapshotValues] = useState<any>(null);
   const [pibStats, setPibStats] = useState({ match: 0, mismatch: 0, empty: 0 });
+  // Mode summary (2026-10-08): baris tabel "Validasi PIB / SPPBMCP" utk notifikasi Unmatched fields (Nama · Actual (Expected) ·
+  // Selisih). Accept disimpan di values_json['pibcalc:<id>'] (manual_status/accept_note/...) -> statusOverrides komponen kalkulasi.
+  const [calcRows, setCalcRows] = useState<CalcRowInfo[]>([]);
+  const onCalcRows = React.useCallback((rows: CalcRowInfo[]) => {
+    setCalcRows(prev => (JSON.stringify(prev) === JSON.stringify(rows) ? prev : rows));
+  }, []);
   // Status centang PO/CIPL/Final Invoice dari "Document Completeness Checklist" (tabel
   // `dokumen_checklist`, kolom `ada_po`/`ada_cipl`/`ada_final_invoice`) -- 2026-09, dipakai
   // GATING baris "No Vessel/IMO Format" (section `s_no_vessel_imo`): kalau dokumennya BELUM
@@ -1127,11 +1133,13 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
 
   // Simpan checklist dokumen ke tabel_checklist_validasi -- isi SAMA PERSIS autosave lama (dipakai
   // autosave mode standalone & tombol "Save changes" mode embedded). Return pesan error / null.
-  const persistChecklist = async (valuesArg?: any, notesArg?: string): Promise<string | null> => {
+  // `pibStatsArg` (2026-10-08): hitungan PIB/SPPBMCP yg SUDAH memperhitungkan Accept baris kalkulasi (state pibStats baru
+  // diperbarui setelah render, sedangkan simpan terjadi langsung).
+  const persistChecklist = async (valuesArg?: any, notesArg?: string, pibStatsArg?: { match: number; mismatch: number; empty: number }): Promise<string | null> => {
        const vals = valuesArg ?? values;
        const notes = notesArg ?? catatanManual;
        const activeSectionsNow = activeSectionsRef.current;
-       const pibStatsNow = pibStatsRef.current;
+       const pibStatsNow = pibStatsArg ?? pibStatsRef.current;
        const debugDataNow = debugDataRef.current;
 
        let match = 0, mismatch = 0, partial = 0, empty = 0;
@@ -1364,6 +1372,11 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     return { match, mismatch, partial, empty, checked, pct, total: totalItems };
   }, [values, activeSections, computeStatus, pibStats, debugData, docCompletenessFlags]);
 
+  // Override status baris kalkulasi yg di-Accept (mode summary).
+  const calcOverridesKey = Object.keys(values).filter(k => k.startsWith('pibcalc:') && values[k]?.manual_status === 'match').sort().join('|');
+  const calcOverrides = useMemo<Record<string, string>>(
+    () => Object.fromEntries(calcOverridesKey ? calcOverridesKey.split('|').map(k => [k.slice('pibcalc:'.length), 'match']) : []),
+    [calcOverridesKey]);
   useEffect(() => {
     if (!onPctChange || loading) return;
     onPctChange(hasSourceData ? stats.pct : null);
@@ -1686,7 +1699,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   //    Hanya field Mismatch (Incomplete/Not checked TIDAK ditampilkan); Accept = manual_status 'match' + catatan
   //    alasan WAJIB, langsung disimpan (persistChecklist). Field yang sudah di-Accept hilang dari daftar.
   if (variant === 'summary') {
-    type SumItem = { id: string; sectionTitle: string; field: string; hint?: string; docLabel: string; v: any; st: string; isFormat?: boolean };
+    type SumItem = { id: string; sectionTitle: string; field: string; hint?: string; docLabel: string; v: any; st: string; isFormat?: boolean; calc?: CalcRowInfo };
     const unmatched: SumItem[] = [];
     const accepted: SumItem[] = [];
     activeSections.forEach(section => section.rows.forEach((r: any) => {
@@ -1696,6 +1709,16 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
       if (st === 'mismatch') unmatched.push(item);
       else if (v.manual_status === 'match' && v.accept_note) accepted.push(item);
     }));
+    // Baris tabel "Validasi PIB / SPPBMCP" yg Mismatch ikut notifikasi (2026-10-08, keputusan user) -- HANYA baris yg memang
+    // dihitung di akurasi: PIB = Asuransi (24), Nilai Pabean (26), Total Nilai Pabean, Total BM+PPN+PPH; SPPBMCP = Sanksi
+    // Administrasi, Total BM+PPN+PPH+Sanksi ADM. Freight (25)/BM/PPN/PPH (ignoreForStats) TIDAK ikut.
+    calcRows.filter(r => !r.hidden && !r.ignoreForStats).forEach(r => {
+      const id = `pibcalc:${r.id}`;
+      const v = values[id] || { src: '', cmp: '' };
+      const item: SumItem = { id, sectionTitle: 'Validasi PIB/SPPBMCP', field: r.label, docLabel: 'Validasi PIB/SPPBMCP', v, st: r.status, calc: r };
+      if (r.status === 'mismatch') unmatched.push(item);
+      else if (v.manual_status === 'match' && v.accept_note) accepted.push(item);
+    });
     const doAccept = async (id: string) => {
       const note = acceptNote.trim();
       if (!note) return;
@@ -1714,7 +1737,9 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
       setCatatanManual(nextNotes);
       setAcceptSaving(true);
       try {
-        const err = await persistChecklist(nextValues, nextNotes);
+        // Baris kalkulasi yg di-Accept: mismatch -> match di hitungan tersimpan (state pibStats baru ikut setelah render).
+        const adj = it?.calc ? { match: pibStats.match + 1, mismatch: Math.max(0, pibStats.mismatch - 1), empty: pibStats.empty } : undefined;
+        const err = await persistChecklist(nextValues, nextNotes, adj);
         if (err) { setValues(prevValues); setCatatanManual(prevNotes); showDocToast('Failed to save: ' + err, 'error'); return; }
         setDocSnap(JSON.parse(JSON.stringify({ values: nextValues, awbNo, tanggal, namaChecker, catatanManual: nextNotes })));
         setAcceptingId(null); setAcceptNote('');
@@ -1742,7 +1767,8 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
       setCatatanManual(nextNotes);
       setAcceptSaving(true);
       try {
-        const err = await persistChecklist(nextValues, nextNotes);
+        const adj = it.calc && it.calc.computed === 'mismatch' ? { match: Math.max(0, pibStats.match - 1), mismatch: pibStats.mismatch + 1, empty: pibStats.empty } : undefined;
+        const err = await persistChecklist(nextValues, nextNotes, adj);
         if (err) { setValues(prevValues); setCatatanManual(prevNotes); showDocToast('Failed to undo: ' + err, 'error'); return; }
         setDocSnap(JSON.parse(JSON.stringify({ values: nextValues, awbNo, tanggal, namaChecker, catatanManual: nextNotes })));
         showDocToast('Accept undone.', 'success');
@@ -1780,9 +1806,28 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
       }
     };
     const valueText = (it: SumItem) => {
+      if (it.calc) return `${it.calc.actual} (${it.calc.expected})`;
       const src = it.v.srcDisplay ? it.v.srcDisplay : formatViewValue(it.v.src, it.field);
       if (it.isFormat) return src;
       return `${src} (${formatViewValue(it.v.cmp, it.field)})`;
+    };
+    // Selisih (2026-10-08, keputusan user): Berat (kg) "44,5 (43,2) · Selisih +1,3 kg"; Item Value "3.493,3 (3.468,3) · Selisih +25,0
+    // · Other Cost: 25" (Other Cost = nilai yg sama dgn Details); baris kalkulasi PIB/SPPBMCP "218,75 (208,04) · Selisih +10,71".
+    const ITEM_VALUE_IDS = ['po_item_value_vs_pib', 'pib04', 'pib07', 'bt_vendor_item_value_vs_pib'];
+    const fmtSel = (n: number, unit = '') => `${n > 0.0000001 ? '+' : n < -0.0000001 ? '−' : ''}${Math.abs(n).toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 2 })}${unit}`;
+    const selisihOf = (it: SumItem): string | null => {
+      if (it.calc) return it.calc.selisih ? `Selisih ${it.calc.selisih}` : null;
+      if (it.id !== 'id04' && !ITEM_VALUE_IDS.includes(it.id)) return null;
+      const a = parseNumeric(it.v.src), b = parseNumeric(it.v.cmp);
+      if (a === null || b === null) return null;
+      return `Selisih ${fmtSel(a - b, it.id === 'id04' ? ' kg' : '')}`;
+    };
+    const otherCostOf = (it: SumItem): string | null => {
+      if (it.id !== 'po_item_value_vs_pib') return null;
+      const raw = it.v.otherCost !== undefined && it.v.otherCost !== null && it.v.otherCost !== '' ? it.v.otherCost : (debugData.raw?.other_cost_valas ?? '');
+      const n = Number(raw);
+      if (!raw || isNaN(n) || n === 0) return null;
+      return `Other Cost: ${new Intl.NumberFormat('id-ID', { maximumFractionDigits: 4 }).format(n)}`;
     };
     if (!loadedOnce) return <div className="py-10 flex justify-center"><LoadingSpinner /></div>;
     return (
@@ -1794,6 +1839,8 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
             jenisDokumen={record?.jenis_dokumen || (mainTab === 'audit' && subTab === 'pib' ? 'PIB' : (mainTab === 'audit' && subTab === 'cn' ? 'CN' : ''))}
             onStatsChange={setPibStats}
             isEditMode={false}
+            statusOverrides={calcOverrides}
+            onRowsChange={onCalcRows}
           />
         </div>
         <div className="flex items-center justify-between gap-2">
@@ -1818,11 +1865,15 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
                 <div className="text-[12.5px] font-semibold text-[#3B1B3D]">{it.field}</div>
-                <div className="text-[11px] text-[#6E5E70]">{it.sectionTitle} · {it.docLabel}{it.hint ? ` · ${it.hint}` : ''}</div>
+                {!it.calc && <div className="text-[11px] text-[#6E5E70]">{it.sectionTitle} · {it.docLabel}{it.hint ? ` · ${it.hint}` : ''}</div>}
               </div>
               <span className="shrink-0 text-[11px] font-bold text-[#A8231A]">Mismatch{it.v.manual_status ? ' ✎' : ''}</span>
             </div>
-            <div className="text-[12px] text-[#3B1B3D] mt-1 [overflow-wrap:anywhere]">{valueText(it)}</div>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px] text-[#3B1B3D] [overflow-wrap:anywhere]">
+              <span data-unmatched-values>{valueText(it)}</span>
+              {selisihOf(it) && <span data-unmatched-selisih className="px-1.5 py-[1px] rounded-md bg-[#FDE7E4] text-[#A8231A] text-[11px] font-bold">{selisihOf(it)}</span>}
+              {otherCostOf(it) && <span data-unmatched-othercost className="px-1.5 py-[1px] rounded-md bg-[#EEE7FA] text-[#5B3FA0] text-[11px] font-bold">{otherCostOf(it)}</span>}
+            </div>
             {canEdit && acceptingId !== it.id && (
               <div className="flex justify-end mt-1">
                 <button type="button" className={VW_BTN_SECONDARY} onClick={() => { setAcceptingId(it.id); setAcceptNote(''); }}>Accept</button>
@@ -1841,7 +1892,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
             )}
           </div>
         ))}
-        {pibStats.mismatch > 0 && (
+        {pibStats.mismatch > 0 && calcRows.length === 0 && (
           <div className="rounded-xl border border-[#F3D9A4] bg-[#FFF8EA] px-3 py-2 text-[12px] font-semibold text-[#7A4F00]">
             {pibStats.mismatch} mismatch{pibStats.mismatch === 1 ? '' : 'es'} in the {docType === 'CN' ? 'SPPBMCP' : 'PIB'} calculation — open Details to review.
           </div>
@@ -1875,7 +1926,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
         <div className="pt-2 border-t border-[#F1E8E1]">
           <div className="flex justify-between items-baseline mb-1 text-[11.5px] text-[#6E5E70]">
             <span>Accuracy</span>
-            <b className={vwPctText(stats.pct)}>{stats.match}/{stats.checked} ({stats.pct}%)</b>
+            <b className={vwPctText(stats.pct)} data-doc-accuracy>{stats.match}/{stats.checked} ({stats.pct}%)</b>
           </div>
           <div className="h-2 rounded-full bg-[#F3EEEA] overflow-hidden"><div className={`h-full transition-all duration-500 ${vwPctBar(stats.pct)}`} style={{ width: `${stats.pct}%` }} /></div>
         </div>
@@ -2213,6 +2264,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
             jenisDokumen={record?.jenis_dokumen || (mainTab === 'audit' && subTab === 'pib' ? 'PIB' : (mainTab === 'audit' && subTab === 'cn' ? 'CN' : ''))}
             onStatsChange={setPibStats}
             isEditMode={canEdit && calcEdit}
+            statusOverrides={calcOverrides}
           />
         </div>
 
@@ -2659,6 +2711,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                 jenisDokumen={record?.jenis_dokumen || (mainTab === 'audit' && subTab === 'pib' ? 'PIB' : (mainTab === 'audit' && subTab === 'cn' ? 'CN' : ''))}
                 onStatsChange={setPibStats}
                 isEditMode={isEditMode}
+                statusOverrides={calcOverrides}
               />
             </div>
 

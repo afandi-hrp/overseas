@@ -85,6 +85,8 @@ user di production** (testing bagian 2 + Finance Handover dijadwalkan user bersa
    Accept masuk catatan manual, KPI 4 kartu. sql/042 (tgl_invoice) SUDAH dijalankan 2026-10-05; pengisian `tgl_invoice` oleh n8n BELUM
    (menunggu info user). Finance Handover Courier TIDAK berubah (TOP tetap -- keputusan user, ditentukan terpisah nanti). Lihat bagian
    "Panel Validation samping Invoice Recap Courier".
+10. Valid (note) + Selisih + Validasi PIB/SPPBMCP di notifikasi (2026-10-08) — kode SELESAI. sql/049 SUDAH dijalankan 2026-10-08 (konfirmasi user);
+    baris Validasi PIB/SPPBMCP yang masuk notifikasi = hanya yang dihitung di akurasi (koreksi user; Freight/BM/PPN/PPH tetap dikecualikan). Lihat courier-features.md.
 9. Invoice PPJK Date (2026-10-07) — kode aplikasi SELESAI (kolom List, tab Invoices, Due, KPI klik). **Pengisian `tgl_invoice` oleh n8n
    BELUM**: dicek user 2026-10-07 di `dokumen_validasi.data_validasi_raw` -- `invoice_freight_v`/`invoice_duty_v`/`credit_note_freight_v`/
    `credit_note_duty_v` TIDAK punya field tanggal (hanya alamat/awb/no_invoice/ppn/pt_penerima/subtotal/npwp/items/count). Perlu: prompt

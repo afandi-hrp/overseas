@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import PaginationFooter from './PaginationFooter'
-import { CheckCircle2, XCircle, X, Circle, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays, AlertTriangle, Save, SlidersHorizontal, RotateCcw, SquareX, UploadCloud, Pencil, GripVertical, ArrowUpDown } from 'lucide-react'
+import { CheckCircle2, XCircle, X, Circle, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays, AlertTriangle, Save, SlidersHorizontal, RotateCcw, SquareX, UploadCloud, Pencil, GripVertical, ArrowUpDown, StickyNote } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { DndContext, DragOverlay, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core'
 import { SortableContext, useSortable, arrayMove, verticalListSortingStrategy, horizontalListSortingStrategy } from '@dnd-kit/sortable'
@@ -42,7 +42,8 @@ import {
   courierTableOf, makeColOk, isCourierDraft, notifyCourierAuditChanged, type CourierAuditSummary, type CourierDocType,
 } from '../utils/CourierAuditHelpers'
 import { CourierAuditCardList, CourierAuditKpiCards } from './CourierAuditCardList'
-import { COURIER_REKAPAN_CALC_FIELDS, computeCourierRekapanCalc, submitRecapInvoices, notifyCourierRecapChanged, fetchCourierRecapSummary, type RecapFilters, type RecapGroup, type RecapSummaryCourier, type RecapKpiFilter } from '../utils/CourierRecapHelpers'
+import { syncChecklistNoteToRemarks, syncRemarkToGroup } from '../utils/CourierRemarksSync'
+import { COURIER_REKAPAN_CALC_FIELDS, courierAwbNorm, computeCourierRekapanCalc, submitRecapInvoices, notifyCourierRecapChanged, fetchCourierRecapSummary, type RecapFilters, type RecapGroup, type RecapSummaryCourier, type RecapKpiFilter } from '../utils/CourierRecapHelpers'
 import { CourierRecapCardView, CourierRecapKpiCards } from './CourierRecapCardList'
 import CourierRecapValidationPanel, { type RecapPanelTab } from './CourierRecapValidationPanel'
 import CourierAuditOverview from './CourierAuditOverview'
@@ -666,6 +667,12 @@ function EditModal({ record, tab, cols, onClose, onSaved, isCreate, createDefaul
           .update(payload)
           .eq('id', record.id);
         error = updErr;
+        // Remarks (notes) Invoice Recap Courier berubah -> sinkron ke invoice lain AWB itu (belum Submit) & Checklist Note
+        // (2026-10-08, CourierRemarksSync). Gagal sinkron tidak menggagalkan simpan.
+        if (!updErr && targetTable === 'rekapan_courier' && payload && 'notes' in payload
+          && String(record.notes ?? '').trim() !== String(payload.notes ?? '').trim()) {
+          await syncRemarkToGroup({ ...record, ...payload }, payload.notes ?? null)
+        }
       }
         
       if (error) throw error
@@ -1282,6 +1289,12 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
   const [savedForm, setSavedForm] = useState<Record<string, boolean>>({})
   const [savedCatatan, setSavedCatatan] = useState('')
   const [savedMsg, setSavedMsg] = useState(false)
+  // "Valid (note)" (2026-10-08, keputusan user; sql/049): dokumen WAJIB yang Missing di-Accept dgn catatan (Checklist Note).
+  // Disimpan di dokumen_checklist.accepted_docs (daftar kolom ada_*); dihitung lengkap selama catatan terisi, dibuang
+  // otomatis (trigger) begitu dokumen di-upload susulan. Selama kolom belum ada (sql/049 belum jalan) tombol Accept nonaktif.
+  const [accepted, setAccepted] = useState<string[]>([])
+  const [savedAccepted, setSavedAccepted] = useState<string[]>([])
+  const [hasAcceptedCol, setHasAcceptedCol] = useState(false)
 
   // Upload dokumen susulan (2026-09) -- tombol "Upload Additional Doc" di footer modal ini,
   // kirim ulang dokumen yang belum terupload saat upload pertama di halaman Upload Courier,
@@ -1309,6 +1322,11 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
         setForm(updated)
         setSavedForm(updated)
         setExistingId(data.id)
+        if (Object.prototype.hasOwnProperty.call(data, 'accepted_docs')) {
+          const acc = Array.isArray(data.accepted_docs) ? data.accepted_docs : []
+          setAccepted(acc)
+          setSavedAccepted(acc)
+        }
       }
     } catch (e) {
       // Diamkan -- kalau gagal refresh otomatis, user masih bisa tutup & buka lagi modal ini manual.
@@ -1379,6 +1397,11 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
           const c = colExists ? (data.catatan_checklist || '') : ''
           setCatatan(c)
           setSavedCatatan(c)
+          const accCol = Object.prototype.hasOwnProperty.call(data, 'accepted_docs')
+          setHasAcceptedCol(accCol)
+          const acc = accCol && Array.isArray(data.accepted_docs) ? data.accepted_docs : []
+          setAccepted(acc)
+          setSavedAccepted(acc)
         }
       } catch (e: any) {
         setErr(e.message || 'Failed to load checklist id.')
@@ -1410,16 +1433,22 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
       
       const mandatoryFields = CHECKLIST_FIELDS.filter(f => f.mand.includes(docType))
       const total_mandatory = mandatoryFields.length
-      const total_mandatory_ada = mandatoryFields.filter(f => form[f.key]).length
+      // Valid (note): hanya dokumen wajib yg belum ada_*, berlaku selama catatan terisi (trigger hitung_kelengkapan sql/049 SAMA).
+      const acceptedClean = accepted.filter(k => mandatoryFields.some(f => f.key === k) && !form[k])
+      const noteFilled = catatan.trim() !== ''
+      const effOk = (k: string) => !!form[k] || (noteFilled && acceptedClean.includes(k))
+      const total_mandatory_ada = mandatoryFields.filter(f => effOk(f.key)).length
       
       payload.total_mandatory = total_mandatory
       payload.total_mandatory_ada = total_mandatory_ada
       payload.pct_kelengkapan = total_mandatory > 0 ? Math.round((total_mandatory_ada / total_mandatory) * 100) : 100;
       payload.status_kelengkapan = total_mandatory_ada === total_mandatory ? 'LENGKAP' : 'TIDAK LENGKAP'
       
-      const dokumen_kurang = mandatoryFields.filter(f => !form[f.key]).map(f => f.label).join(', ')
+      const dokumen_kurang = mandatoryFields.filter(f => !effOk(f.key)).map(f => f.label).join(', ')
       payload.dokumen_kurang = dokumen_kurang || '-'
       if (hasCatatanCol) payload.catatan_checklist = catatan.trim() ? catatan : null
+      if (hasAcceptedCol) payload.accepted_docs = acceptedClean
+      const noteChanged = hasCatatanCol && catatan !== savedCatatan
 
       if (existingId) {
         const { error } = await supabase.from('dokumen_checklist').update(payload).eq('id', existingId)
@@ -1432,10 +1461,13 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
         if (inserted?.id) setExistingId(inserted.id)
       }
 
+      // Checklist Note berubah -> Remarks semua invoice AWB yg belum di-Submit ikut (sinkron dua arah, CourierRemarksSync).
+      if (noteChanged) await syncChecklistNoteToRemarks({ ...record, jenis_dokumen: isPib ? 'PIB' : 'CN' }, catatan.trim() ? catatan : null)
       if (onSaved) onSaved()
       if (embedded) {
         setSavedForm(form)
         setSavedCatatan(catatan)
+        if (hasAcceptedCol) { setAccepted(acceptedClean); setSavedAccepted(acceptedClean) }
         setSavedMsg(true)
         setTimeout(() => setSavedMsg(false), 3000)
       } else {
@@ -1453,12 +1485,17 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
   const mandatoryFields = applicableFields.filter(f => f.mand.includes(docType));
   const optionalFields = applicableFields.filter(f => !f.mand.includes(docType));
 
+  const noteOk = catatan.trim() !== '';
+  // Valid (note) = belum ada_* TAPI di-Accept & catatan terisi (dihitung lengkap; hilang dari banner Missing).
+  const isAcc = (key: string) => !form[key] && noteOk && accepted.includes(key);
+  const eff = (key: string) => !!form[key] || isAcc(key);
   const mandatoryCount = mandatoryFields.length;
-  const checkedMandatoryCount = mandatoryFields.filter(f => form[f.key]).length;
+  const checkedMandatoryCount = mandatoryFields.filter(f => eff(f.key)).length;
   const pct = mandatoryCount > 0 ? Math.round((checkedMandatoryCount / mandatoryCount) * 100) : 100;
   const status = pct === 100 ? 'LENGKAP' : 'BELUM LENGKAP';
-  const missingDocs = mandatoryFields.filter(f => !form[f.key]).map(f => f.label);
-  const isDirty = catatan !== savedCatatan || CHECKLIST_FIELDS.some(f => !!form[f.key] !== !!savedForm[f.key]);
+  const missingDocs = mandatoryFields.filter(f => !eff(f.key)).map(f => f.label);
+  const acceptedKey = (a: string[]) => JSON.stringify([...a].sort());
+  const isDirty = catatan !== savedCatatan || CHECKLIST_FIELDS.some(f => !!form[f.key] !== !!savedForm[f.key]) || (hasAcceptedCol && acceptedKey(accepted) !== acceptedKey(savedAccepted));
 
   // Label tab jendela Validation: null (titik abu) kalau belum pernah ada baris checklist
   // tersimpan & belum ada perubahan -- sama arti dgn badge baris (pct_kelengkapan NULL).
@@ -1491,6 +1528,7 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
   const revertUnsaved = () => {
     setForm(savedForm)
     setCatatan(savedCatatan)
+    setAccepted(savedAccepted)
     setErr(null)
   }
 
@@ -1533,7 +1571,7 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
       onChange={e => setCatatan(e.target.value)}
       disabled={!hasCatatanCol}
       rows={embedded ? 2 : 3}
-      placeholder={hasCatatanCol ? 'No notes yet.' : 'Notes are unavailable until database migration 028 is applied.'}
+      placeholder={hasCatatanCol ? (embedded ? 'e.g. Final Invoice & BT Vendor were not issued by the vendor for this sample shipment…' : 'No notes yet.') : 'Notes are unavailable until database migration 028 is applied.'}
       className="w-full border border-[#EADFD6] bg-white rounded-lg px-3 py-2 text-[12.5px] text-[#3B1B3D] focus:outline-none focus:border-[#6B3470] focus:ring-2 focus:ring-[#6B3470]/15 resize-y disabled:bg-[#F6EFEA] disabled:cursor-not-allowed [overflow-wrap:anywhere]"
     />
   ) : (
@@ -1693,28 +1731,78 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
   if (embedded) {
     const optionalChecked = optionalFields.filter(f => form[f.key]).length
     const complete = pct === 100
+    // Tile dokumen: tombol utama = centang diterima/belum (SAMA dulu); dokumen wajib Missing punya tombol "Accept with note"
+    // (nonaktif tanpa Checklist Note); dokumen Valid (note) = kuning + ikon catatan + catatan di bawah nama + "Undo".
     const docTile = (field: typeof CHECKLIST_FIELDS[number], required: boolean) => {
       const val = !!form[field.key]
+      const acc = required && isAcc(field.key)
+      const state = val ? 'ok' : acc ? 'accepted' : 'missing'
+      const canAccept = required && !val && !acc && canEdit
+      const acceptBlocked = !noteOk || !hasAcceptedCol
       return (
-        <button
-          type="button"
+        <div
           key={field.key}
-          onClick={canEdit ? () => toggle(field.key) : undefined}
-          disabled={!canEdit}
-          title={canEdit ? (val ? 'Click to mark as not received' : 'Click to mark as received') : undefined}
-          className={`w-full min-w-0 flex items-center gap-1.5 px-2.5 py-2 rounded-lg border text-left text-[12px] transition-colors ${
+          data-doc-key={field.key}
+          data-doc-state={required ? state : (val ? 'ok' : 'optional')}
+          className={`w-full min-w-0 flex flex-col rounded-lg border text-[12px] transition-colors ${
             required
-              ? (val ? 'border-[#D6EEDF] bg-[#F5FBF7]' : 'border-[#F4C3BC] bg-[#FFF6F4]')
+              ? (val ? 'border-[#D6EEDF] bg-[#F5FBF7]' : acc ? 'border-[#F3D9A4] bg-[#FFF8EA]' : 'border-[#F4C3BC] bg-[#FFF6F4]')
               : 'border-[#EADFD6] bg-white'
-          } ${canEdit ? 'cursor-pointer hover:border-[#6B3470]/40' : 'cursor-default'}`}
+          }`}
         >
-          {required
-            ? (val ? <CheckCircle2 size={13} className="text-[#17663D] shrink-0" /> : <XCircle size={13} className="text-[#A8231A] shrink-0" />)
-            : (val ? <CheckCircle2 size={13} className="text-[#17663D] shrink-0" /> : <Circle size={13} className="text-[#B7A9B8] shrink-0" />)}
-          <span className="font-semibold text-[#3B1B3D] [overflow-wrap:anywhere]">{field.label}</span>
-        </button>
+          <button
+            type="button"
+            onClick={canEdit ? () => toggle(field.key) : undefined}
+            disabled={!canEdit}
+            title={canEdit ? (val ? 'Click to mark as not received' : 'Click to mark as received') : undefined}
+            className={`w-full min-w-0 flex items-start gap-1.5 px-2.5 py-2 text-left ${canEdit ? 'cursor-pointer hover:bg-black/[0.02] rounded-lg' : 'cursor-default'}`}
+          >
+            {required
+              ? (val ? <CheckCircle2 size={13} className="text-[#17663D] shrink-0 mt-0.5" /> : acc ? <StickyNote size={13} className="text-[#B7791F] shrink-0 mt-0.5" /> : <XCircle size={13} className="text-[#A8231A] shrink-0 mt-0.5" />)
+              : (val ? <CheckCircle2 size={13} className="text-[#17663D] shrink-0 mt-0.5" /> : <Circle size={13} className="text-[#B7A9B8] shrink-0 mt-0.5" />)}
+            <span className="min-w-0">
+              <span className="font-semibold text-[#3B1B3D] [overflow-wrap:anywhere]">{field.label}</span>
+              {acc && (
+                <>
+                  <span className="ml-1.5 inline-flex items-center px-1.5 py-[1px] rounded-md bg-[#FFF1D6] text-[#7A4F00] text-[10px] font-bold align-middle">Valid (note)</span>
+                  <span className="block text-[10.5px] font-normal text-[#7A4F00] [overflow-wrap:anywhere] line-clamp-2" title={catatan}>{catatan}</span>
+                </>
+              )}
+            </span>
+          </button>
+          {(canAccept || (required && canEdit && !val && accepted.includes(field.key))) && (
+            <div className="px-2.5 pb-2 -mt-0.5 flex flex-wrap items-center gap-1.5 print:hidden">
+          {canAccept && (
+            <button type="button" data-accept-doc={field.key} disabled={acceptBlocked}
+              onClick={() => setAccepted(a => (a.includes(field.key) ? a : [...a, field.key]))}
+              title={!hasAcceptedCol ? 'Accept with note is unavailable until database migration 049 is applied.' : !noteOk ? 'Fill in the Checklist Note first to accept this missing document.' : 'Accept this missing document as valid, with the Checklist Note'}
+              className="px-2 h-6 rounded-md border border-[#D9C7DA] bg-white text-[10.5px] font-semibold text-[#6B3470] hover:bg-[#F5EDF3] disabled:opacity-40 disabled:cursor-not-allowed print:hidden">
+              Accept with note
+            </button>
+          )}
+          {required && canEdit && !val && accepted.includes(field.key) && (
+            <button type="button" data-undo-accept={field.key}
+              onClick={() => setAccepted(a => a.filter(k => k !== field.key))}
+              title="Remove the acceptance — the document goes back to Missing"
+              className="px-2 h-6 rounded-md text-[10.5px] font-semibold text-[#A8231A] hover:underline print:hidden">
+              Undo
+            </button>
+          )}
+            </div>
+          )}
+        </div>
       )
     }
+    // Kotak "Checklist Note" (kuning, di atas daftar dokumen) = dokumen_checklist.catatan_checklist = kolom Remarks di List
+    // (sinkron dua arah; Remarks invoice yg sudah di-Submit tidak ikut).
+    const noteBox = (
+      <div className="mt-3 rounded-[12px] border border-[#F3D9A4] bg-[#FFF8EA] px-3 py-2.5" data-checklist-note>
+        <div className="text-[12.5px] font-bold text-[#3B1B3D]">Checklist Note</div>
+        <div className="text-[11px] text-[#6E5E70] mb-1.5">Required to accept a missing document. Same as the <b>Remarks</b> column in the List view.</div>
+        {catatanInput}
+        <div className="text-[10.5px] font-semibold text-[#2F4FA8] mt-1">↔ Synced with the Remarks column (List){hasCatatanCol ? '' : ' — unavailable until migration 028 is applied'}</div>
+      </div>
+    )
     return (
       <div className="bg-white rounded-[14px] border border-[#EADFD6] shadow-[0_1px_2px_rgba(59,27,61,0.04)] p-4">
         <div className="flex items-center justify-between gap-2">
@@ -1753,8 +1841,9 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
 
         <div className="mt-3 print:hidden">{jobBanners}</div>
         {err && <div className="mt-2 rounded-lg bg-[#FDE7E4] text-[#A8231A] text-[12px] font-semibold px-3 py-1.5">⚠️ {err}</div>}
+        {noteBox}
         {missingDocs.length > 0 && (
-          <div className="mt-2 rounded-lg bg-[#FDE7E4] text-[#A8231A] text-[12px] font-semibold px-3 py-1.5 [overflow-wrap:anywhere]">Missing: {missingDocs.join(', ')}</div>
+          <div className="mt-2 rounded-lg bg-[#FDE7E4] text-[#A8231A] text-[12px] font-semibold px-3 py-1.5 [overflow-wrap:anywhere]" data-missing-banner>Missing: {missingDocs.join(', ')}</div>
         )}
 
         <div className="flex items-center justify-between mt-3 mb-1.5">
@@ -1772,9 +1861,6 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
             <div className="grid grid-cols-2 gap-1.5">{optionalFields.map(f => docTile(f, false))}</div>
           </>
         )}
-
-        <div className="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B] mt-3 mb-1.5">Checklist notes</div>
-        {catatanInput}
 
         {uploadSusulanModal}
       </div>
@@ -5238,6 +5324,15 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
         const res = await supabase.from('rekapan_courier').update(cleanedPayload).eq('id', id);
         error = res.error;
+        // Remarks (notes) berubah -> sinkron ke invoice lain AWB itu (belum Submit) & Checklist Note PIB/CN Draft
+        // (2026-10-08, CourierRemarksSync); baris List invoice lain ikut di-patch di state.
+        if (!res.error && record && 'notes' in cleanedPayload && String(record.notes ?? '').trim() !== String(cleanedPayload.notes ?? '').trim()) {
+          await syncRemarkToGroup({ ...record, ...cleanedPayload }, cleanedPayload.notes ?? null)
+          const key = courierAwbNorm(record.awb)
+          if (key) {
+            setRecords(prev => prev.map(r => (String(r.id) !== String(id) && !r.submit_date && courierAwbNorm(r.awb) === key) ? { ...r, notes: cleanedPayload.notes ?? null } : r))
+          }
+        }
       } else {
         return false;
       }
