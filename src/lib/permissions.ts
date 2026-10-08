@@ -93,6 +93,8 @@ export const PAGE_REGISTRY: PageEntry[] = [
   // SPB (2026-10-06) -- migrasi Manualbook.html & Oil Request.html; tanpa tabel Supabase (langsung ke webhook n8n).
   { key: 'requisition_rh', label: 'Requisition RH', path: '/spb/requisition-rh', group: 'SPB' },
   { key: 'oil_request', label: 'Oil Request', path: '/spb/oil-request', group: 'SPB' },
+  // Auto Rename (2026-10-08) -- migrasi `auto Rename.html`; tanpa tabel Supabase (langsung ke webhook n8n).
+  { key: 'auto_rename', label: 'Auto Rename', path: '/spb/auto-rename', group: 'SPB' },
 
   // 2026-09: 2 halaman ini digabung jadi 1 route/halaman "Cost by Vessel" (`CostByVesselPage.tsx`,
   // 2 tab) -- page_key TETAP 2 terpisah (assignment akses per-role existing tidak berubah),
@@ -140,7 +142,7 @@ export const ACCESS_MATRIX_ORDER: string[] = [
   'far_overseas_finance', 'sea_air_finance', 'courier_finance',
   'reporting_dashboard', 'reporting_cost_per_vessel', 'reporting_cost_by_courier',
   'bunker', 'audit_po', 'audit_po_overseas', 'accounting_rekap', 'pi_local', 'verification_qfp', 'lsa',
-  'requisition_rh', 'oil_request',
+  'requisition_rh', 'oil_request', 'auto_rename',
   'audit_trail',
 ];
 

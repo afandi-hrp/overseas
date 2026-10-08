@@ -119,6 +119,7 @@ const MAIN_TABS: MainTab[] = [
     subTabs: [
       { id: 'requisition_rh', label: 'Requisition RH', path: '/spb/requisition-rh', pageKey: 'requisition_rh' },
       { id: 'oil_request', label: 'Oil Request', path: '/spb/oil-request', pageKey: 'oil_request' },
+      { id: 'auto_rename', label: 'Auto Rename', path: '/spb/auto-rename', pageKey: 'auto_rename' },
     ],
   },
   {

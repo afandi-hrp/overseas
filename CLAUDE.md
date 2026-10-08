@@ -46,7 +46,7 @@ yang berlaku lintas modul. Rujukan lama di docs berbunyi "lihat CLAUDE.md bagian
   `DRIVE_PREVIEW_ACCESS`). Endpoint baru WAJIB `authorize()`; pemanggil baru WAJIB `apiFetch`, JANGAN `fetch` polos.
   Env runtime wajib `SUPABASE_URL`+`SUPABASE_ANON_KEY` (fallback `VITE_*`), tanpa itu `/api/*` 503. `x-webhook-url`
   hanya ke origin n8n terdaftar (`VITE_N8N_*` + `N8N_ALLOWED_ORIGINS`). Upload multer 50MB/file, 30 file.
-  (Pengecualian sadar: 4 halaman migrasi SPB/QFP/LSA memanggil webhook n8n LANGSUNG dari browser, sama versi asli.)
+  (Pengecualian sadar: 5 halaman migrasi SPB/QFP/LSA memanggil webhook n8n LANGSUNG dari browser, sama versi asli.)
 - **HTML dari backend/n8n WAJIB disanitasi `DOMPurify`** sebelum `dangerouslySetInnerHTML` (hasil AI = input tak
   tepercaya). Kalau HTML n8n butuh script (Oil Request): render di `<iframe sandbox>` TANPA `allow-same-origin`,
   JANGAN `eval`/innerHTML di halaman.
@@ -92,7 +92,7 @@ pageKey | pageKeys | adminOnly>`.
 | `/reporting/cost-by-vessel`, `/reporting/cost-by-courier` | `CostByVesselPage`, `ReportingCostByCourierPage` | gating internal (`reporting_dashboard`/`reporting_cost_per_vessel`), `reporting_cost_by_courier` |
 | `/bunker`, `/audit-po`, `/audit-po-overseas`, `/accounting-rekap`, `/pi-local` | `BunkerPage`, `AuditPoPage`, `AuditPoOverseasPage`, `AccountingRekapPage`, `PiLocalPage` | Compare Doc; 3 halaman AuditPo/PiLocal = DUPLIKASI SENGAJA (porting manual) |
 | `/verification-qfp`, `/lsa` | `VerificationQfpPage`, `LsaPage` | Compare Doc, `verification_qfp`, `lsa` |
-| `/spb/requisition-rh`, `/spb/oil-request` | `RequisitionRhPage`, `OilRequestPage` | SPB, `requisition_rh`, `oil_request` |
+| `/spb/requisition-rh`, `/spb/oil-request`, `/spb/auto-rename` | `RequisitionRhPage`, `OilRequestPage`, `AutoRenamePage` | SPB, `requisition_rh`, `oil_request`, `auto_rename` |
 | `/audit-trail` | `AuditTrailPage` → `SharedDataTable` | `audit_trail` |
 | `/settings` | `SettingsPage` | hub kartu (tanpa gating sendiri) |
 | `/settings/roles`, `/settings/master-vessel` | `RoleManagementPage`, `MasterVesselAdminPage` | `adminOnly` |

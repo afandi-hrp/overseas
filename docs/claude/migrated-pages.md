@@ -1,4 +1,4 @@
-# Halaman migrasi HTML mandiri (n8n AI) — SPB, Verification QFP, LSA
+# Halaman migrasi HTML mandiri (n8n AI) — SPB (Requisition RH, Oil Request, Auto Rename), Verification QFP, LSA
 
 Empat halaman yg dulu file HTML mandiri, dimigrasi ke app 2026-10-06. Pola bersama: logika (webhook/polling/render/print) SAMA dgn file asli (file asli sudah dihapus, tidak ada di git); tanpa tabel Supabase; panggil webhook n8n LANGSUNG dari browser; tampilan gaya app.
 
@@ -83,3 +83,21 @@ biasa = semua baris (sama asli). Tanpa tabel Supabase; page_key `requisition_rh`
 di-assign ke role -- hanya Admin sampai di-assign di Kelola Role & Akses. **Catatan keamanan (diterima, sama
 versi asli)**: URL webhook n8n terlihat di bundle & webhook tidak butuh login; polling berhenti kalau user pindah
 halaman (job n8n tetap jalan). Diuji jsdom 38 cek, `tsc` bersih, `vite build` sukses. Belum dites ke n8n production.
+
+### Auto Rename (`/spb/auto-rename`, `src/pages/AutoRenamePage.tsx`, 2026-10-08)
+
+Migrasi `auto Rename.html` ("Item Names AI -- Item Normalization Workspace", normalisasi nama item T01), submenu ke-3 **SPB**
+(page_key `auto_rename`, BELUM di-assign ke role -- hanya Admin). Tanpa tabel Supabase. SAMA dgn file asli: upload
+.xlsx/.xls (maks 4 MB), dibaca di browser dgn **SheetJS 0.20.3**, sheet pertama yg punya header `ItemName` dipilih otomatis
+(dropdown ganti sheet), baris kosong dibuang, id baris `R<n>`; "Process with AI" membangun ulang xlsx 1 sheet `Items` dari
+sheet terpilih -> FormData `data` (`items-to-validate.xlsx`) POST LANGSUNG ke `https://n8.waruna-group.co.id/webhook/validate-excel-ai-v2`
+(timeout 180 dtk, maks 2.000 item); respons (`[]` / `results` / `data.results`) dipasangkan per `row_id` + `ItemCode`
+(duplikat / tidak ada / kode beda = NEED_REVIEW, rekomendasi = nama asli); modal Review -> Save & Approve disimpan di browser;
+Export Excel (sheet `AI Review`, 5 kolom hasil ditambah, nama asli tidak ditimpa); Try Sample; semua pesan toast Indonesia apa adanya.
+**Dependency `xlsx`** dipasang dari tarball resmi SheetJS (`https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`) -- JANGAN
+ganti ke `xlsx` npm (0.18.5, usang & ada CVE); `exceljs` tidak bisa baca .xls. Di-`import()` dinamis (chunk terpisah ±500 KB).
+Nilai n8n dirender sbg teks React (tanpa innerHTML/DOMPurify). BEDA (tampilan): gaya app (header ikon ungu, kartu, `PaginationFooter`
+15 baris/halaman, modal & toast gaya app); sidebar/topbar file asli dibuang; kartu stat "Need Review" bisa diklik = filter
+Need Review (pengganti menu "AI Review" sidebar asli). Diuji jsdom 34 cek (xlsx + xls, sheet pertama tanpa ItemName,
+tolak ekstensi/ukuran, mapping hasil, filter/search, review, Esc, export, 404). **Belum dites ke n8n production** -- perlu
+CORS (Allowed Origins) di node Webhook mengizinkan origin BeeHive.

@@ -45,6 +45,7 @@ import ReportingCostByCourierPage from './pages/ReportingCostByCourierPage';
 import MasterVesselAdminPage from './pages/MasterVesselAdminPage';
 import RequisitionRhPage from './pages/RequisitionRhPage';
 import OilRequestPage from './pages/OilRequestPage';
+import AutoRenamePage from './pages/AutoRenamePage';
 import VerificationQfpPage from './pages/VerificationQfpPage';
 import LsaPage from './pages/LsaPage';
 
@@ -139,6 +140,7 @@ export default function App() {
               {/* SPB (2026-10-06) -- migrasi 2 halaman HTML mandiri (n8n AI): Manualbook.html & Oil Request.html. */}
               <Route path="/spb/requisition-rh" element={<RequirePageAccess pageKey="requisition_rh"><RequisitionRhPage /></RequirePageAccess>} />
               <Route path="/spb/oil-request" element={<RequirePageAccess pageKey="oil_request"><OilRequestPage /></RequirePageAccess>} />
+              <Route path="/spb/auto-rename" element={<RequirePageAccess pageKey="auto_rename"><AutoRenamePage /></RequirePageAccess>} />
 
               {/* Gabungan "Cost by Vessel" (2026-09) -- GANTI TOTAL dari 2 route terpisah
                   (/reporting/dashboard, /reporting/cost-per-vessel), sekarang 1 route 2 tab.
