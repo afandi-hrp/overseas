@@ -90,6 +90,39 @@ ada nama fungsi bentrok. Keputusan:
 15. Finance Handover Courier **per invoice**; kolom baru `finance_received_at/_by` (opsi A); master vendor = **tabel baru
     khusus Courier** `courier_vendor_master` + halaman Settings sendiri.
 
+## Invoice Recap Courier (Card) — tab Invoices gabungan + Split, centang manual hanya Admin (2026-10-08, keputusan user)
+
+Spek user + mockup `invoice_recap_gabung_split.html` (hanya tata letak). Tab Invoices (`CourierRecapInvoicesTab.tsx`, ditulis ulang):
+- **Dihapus**: tab Freight (n)/Duty (n), kartu per invoice (judul invoice, nominal kanan, "Submit to Finance" per invoice, "Not submitted" per invoice), tabel
+  PO·Vessel per invoice & "Split per vessel" lama. Submit ke Finance sekarang HANYA lewat "Submit all to Finance" di header panel. Rincian per invoice tetap di List.
+- **Total** (Type | No. Invoice PPJK | Invoice PPJK Date | Amount, CN dalam kurung, Total = Grand Total) + kolom BARU **Status** per baris: chip
+  Locked (kalau ber-`submit_date`) + Sent/Received/Paid (`financeChips`) / "Not submitted"; tombol **Unlock (Admin)** di baris yang sudah di-Submit
+  (aturan Unlock TIDAK berubah: alasan min. 5 karakter, `fn_courier_unlock_submit`, ditolak kalau Finance sudah menerima/lunas -> pesan "Unlock unavailable").
+  Info "Last unlock" jadi tooltip kolom Status baris yg belum Submit.
+- **Rincian biaya gabungan** (Freight + Duty dijumlah, kotor): kiri Courier adm fee · Total freight · Credit note freight (kurung, hanya jika ada) · Total duty tax ·
+  Credit note duty (kurung, jika ada) · BM · PPN · PPh · **Total amount = Grand Total** (`g.finalTotal`); kanan NTPN · FP report date · PO PT IMI · PO Non IMI · Remarks ·
+  Internal remarks. Field yg ada di Freight & Duty tapi beda -> keduanya berlabel Freight / Duty; sama/satu sisi -> sekali (`pairFact`). Gating kolom per role (`colOk`) tetap.
+- **Split per PO | Split per vessel** (tab; `netCostTotals`, `splitEvenly`, `sumSplit`, `poVesselMap` di `CourierRecapHelpers.ts`): total gabungan AWB (sudah dikurangi credit
+  note) dibagi RATA menurut jumlah PO (PO PT IMI + PO Non IMI unik = `g.pos`) atau vessel unik (`g.vessels`); 2 desimal, selisih pembulatan masuk baris TERAKHIR (hitung
+  dalam sen) -> baris Total = jumlah kolom; **Total Incl. PPN+PPh = Courier + Freight + Duty** (= Grand Total), **Total Excl. PPN+PPh = Courier + Freight + BM**; PPN+PPh = ppn + pph.
+  Kolom (PO): PO | Vessel | Courier | Freight | Duty | BM | PPN+PPh | Incl | Excl; (vessel): tanpa kolom PO/Vessel kedua. **Kolom Vessel di Split per PO DISEMBUNYIKAN**
+  kalau pasangan PO↔vessel ambigu (keputusan user): dalam 1 invoice ada >1 PO DAN >1 vessel DAN jumlahnya beda (mis. 3 PO vs 4 vessel); selain itu 1 PO banyak vessel ->
+  semua vessel digabung " + " (pasangan per invoice `poVesselPairs`, lalu gabung per PO); PO Non IMI = "—". Angka Split BEDA dari kolom Breakdown di List (itu per invoice
+  dibagi jumlah vessel invoice itu) -- keputusan user.
+- **Credit note mengurangi kolom sesuai ISI baris credit note itu sendiri** (data nyata dicek user 2026-10-08): Credit Note Freight mengisi `total_freight` (mis. −279.788) ->
+  kurangi Freight; **Credit Note Duty mengisi `courier_adm_fee` (mis. −89.372), bukan duty** -> kurangi kolom **Courier**; BM/PPN/PPh credit note 0. Aturan data-driven, nilai absolut.
+  Duty = BM + PPN + PPh.
+- **Centang manual Checklist HANYA Admin** (`ChecklistModal`, semua tampilan: embedded, legacy, standalone): non-admin -> tile dokumen tidak bisa diklik (`canToggle = canEdit &&
+  isAdmin`, `data-manual-toggle="off"`) + petunjuk "Manual check: Admin only" di dokumen Missing; dokumen hanya jadi Lengkap lewat upload (n8n) atau Valid (note) lewat
+  "Accept with note" (**boleh untuk semua role ber-hak edit Checklist, selama PIB/CN Draft**; hanya dihitung bila catatan terisi -- ditegakkan trigger sql/049). Admin tetap bisa
+  mencentang & mencabut. **Server/DB: `sql/050_courier_checklist_manual_admin_only.sql` (SUDAH DIJALANKAN 2026-10-08, konfirmasi user)** — trigger `trg_courier_checklist_manual_guard` (BEFORE
+  INSERT/UPDATE `dokumen_checklist`): non-admin yg mengubah kolom `ada_*` (centang MAUPUN cabut) -> error 42501 "Only an Admin can change a document check manually"; penulis
+  service (n8n/SQL Editor, `auth.email() IS NULL`) & Admin lolos; simpan Checklist dari aplikasi mengirim semua `ada_*` apa adanya -> kalau tak berubah tetap lolos (Accept/Checklist Note
+  tetap bisa). Kontrol disembunyikan di UI DAN diblokir di DB (DevTools/API juga ditolak).
+- **Diuji**: jsdom `invoices_tab` 40 cek (angka mockup persis: per PO 33.194,67/…,66, per vessel 24.896 & 797.322,25, Total = Rp 12.183.259, Excl Rp 5.608.873; Status & Unlock; kolom
+  Vessel tersembunyi saat ambigu; 1 PO banyak vessel) + `valid_note` 44 (Admin-only) + PGlite sql/050 10 cek; regresi recap_kpi 25, courier_ui 59, courier 41, courier_lock 30,
+  courier_panel 72 (3 gagal SAMA baseline), finance 57+71. Uji lama disesuaikan (kartu per invoice & Submit per invoice sudah tidak ada). `tsc` bersih, `vite build` sukses. Belum dites di production.
+
 ## Invoice Recap Courier (Card) — "Valid (note)", Selisih, Validasi PIB/SPPBMCP di notifikasi (2026-10-08, keputusan user)
 
 Spek user + mockup `invoice_recap_note_selisih.html` (hanya tata letak). **Butuh `sql/049_courier_checklist_valid_note.sql` (SUDAH DIJALANKAN

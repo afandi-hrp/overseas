@@ -187,7 +187,68 @@ export function recapGroupStatus(g: RecapGroup): { label: string; tone: 'green' 
   return { label: 'Not submitted', tone: 'grey' }
 }
 
-// Split per vessel: jumlah breakdown_* tiap invoice yang memuat vessel itu (Credit Note dikurangkan).
+// ─── Rincian gabungan & Split per PO / per vessel (2026-10-08, keputusan user; menggantikan tab Freight/Duty & tabel PO/vessel) ──
+// Biaya BERSIH per kolom (Courier adm fee · Freight · Duty · BM · PPN+PPh): invoice Freight/Duty ditambah, Credit Note DIKURANGI
+// menurut kolom yang terisi di baris credit note itu sendiri (nilai absolut) -- data nyata: Credit Note Freight mengisi total_freight,
+// Credit Note Duty mengisi courier_adm_fee (mis. −89.372), jadi CN Duty mengurangi kolom Courier, bukan Duty. Duty = BM + PPN + PPh.
+export type CostTotals = { adm: number; freight: number; duty: number; bm: number; ppnpph: number }
+const cnum = (v: any) => { const x = Number(v); return isNaN(x) ? 0 : x }
+export function netCostTotals(rows: any[]): CostTotals {
+  const t: CostTotals = { adm: 0, freight: 0, duty: 0, bm: 0, ppnpph: 0 }
+  rows.forEach(r => {
+    const sign = invoiceKind(r) === 'cn' ? -1 : 1
+    const m = (v: any) => (sign < 0 ? Math.abs(cnum(v)) : cnum(v))
+    t.adm += sign * m(r.courier_adm_fee)
+    t.freight += sign * m(r.total_freight)
+    t.duty += sign * m(r.total_duty_tax)
+    t.bm += sign * m(r.bm)
+    t.ppnpph += sign * (m(r.ppn) + m(r.pph))
+  })
+  return t
+}
+
+export type SplitLine = { key: string; po?: string; vessel?: string; courier: number; freight: number; duty: number; bm: number; ppnpph: number; incl: number; excl: number }
+// Bagi rata ke n baris, pembulatan 2 desimal; selisih pembulatan masuk baris TERAKHIR (hitung dalam sen) supaya jumlah kolom = total.
+export function splitEvenly(total: CostTotals, labels: { key: string; po?: string; vessel?: string }[]): SplitLine[] {
+  const n = labels.length
+  if (n === 0) return []
+  const share = (v: number, i: number) => {
+    const cents = Math.round(v * 100)
+    const base = Math.round(cents / n)
+    return (i === n - 1 ? cents - base * (n - 1) : base) / 100
+  }
+  return labels.map((l, i) => {
+    const courier = share(total.adm, i), freight = share(total.freight, i), duty = share(total.duty, i)
+    const bm = share(total.bm, i), ppnpph = share(total.ppnpph, i)
+    const r2 = (x: number) => Math.round(x * 100) / 100
+    return { ...l, courier, freight, duty, bm, ppnpph, incl: r2(courier + freight + duty), excl: r2(courier + freight + bm) }
+  })
+}
+export const sumSplit = (lines: SplitLine[]): Omit<SplitLine, 'key' | 'po' | 'vessel'> => {
+  const r2 = (x: number) => Math.round(x * 100) / 100
+  const s = (f: (l: SplitLine) => number) => r2(lines.reduce((a, l) => a + f(l), 0))
+  return { courier: s(l => l.courier), freight: s(l => l.freight), duty: s(l => l.duty), bm: s(l => l.bm), ppnpph: s(l => l.ppnpph), incl: s(l => l.incl), excl: s(l => l.excl) }
+}
+
+// Vessel per PO utk tab "Split per PO": dipasangkan per invoice (poVesselPairs: 1 PO banyak vessel -> semua vessel; jumlah PO = vessel -> urut).
+// AMBIGU (kolom Vessel disembunyikan, keputusan user): dalam satu invoice ada >1 PO DAN >1 vessel DAN jumlahnya beda -- pasangan PO↔vessel
+// tidak bisa dipastikan. PO Non IMI tidak punya pasangan vessel ("—").
+export function poVesselMap(rows: any[]): { map: Record<string, string[]>; ambiguous: boolean } {
+  const map: Record<string, string[]> = {}
+  let ambiguous = false
+  rows.forEach(r => {
+    const pos = String(r.po_pt_imi ?? '').split(/[+,]+/).map(x => x.trim()).filter(Boolean)
+    const vessels = String(r.vessel ?? '').split(/[+,]+/).map(x => x.trim()).filter(Boolean)
+    if (pos.length > 1 && vessels.length > 1 && pos.length !== vessels.length) ambiguous = true
+    poVesselPairs(r).forEach(p => {
+      if (!p.po || !p.vessel) return
+      map[p.po] = Array.from(new Set([...(map[p.po] || []), p.vessel]))
+    })
+  })
+  return { map, ambiguous }
+}
+
+// Split per vessel: jumlah breakdown_* tiap invoice yang memuat vessel itu (Credit Note dikurangkan). (LAMA -- tidak dipakai lagi tab Invoices 2026-10-08)
 export type VesselSplit = { vessel: string; adm: number; freight: number; duty: number; bm: number; ppnpph: number; total: number }
 export function splitPerVessel(rows: any[]): VesselSplit[] {
   const map = new Map<string, VesselSplit>()

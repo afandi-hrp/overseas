@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import PaginationFooter from './PaginationFooter'
-import { CheckCircle2, XCircle, X, Circle, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays, AlertTriangle, Save, SlidersHorizontal, RotateCcw, SquareX, UploadCloud, Pencil, GripVertical, ArrowUpDown, StickyNote } from 'lucide-react'
+import { CheckCircle2, XCircle, X, Circle, ChevronDown, Search as SearchIcon, RefreshCw, CalendarDays, AlertTriangle, Save, SlidersHorizontal, RotateCcw, SquareX, UploadCloud, Pencil, GripVertical, ArrowUpDown, StickyNote, Lock } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { DndContext, DragOverlay, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core'
 import { SortableContext, useSortable, arrayMove, verticalListSortingStrategy, horizontalListSortingStrategy } from '@dnd-kit/sortable'
@@ -1295,6 +1295,10 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
   const [accepted, setAccepted] = useState<string[]>([])
   const [savedAccepted, setSavedAccepted] = useState<string[]>([])
   const [hasAcceptedCol, setHasAcceptedCol] = useState(false)
+  // Centang manual dokumen (tandai "diterima"/cabut) HANYA Admin (2026-10-08, keputusan user; DB: sql/050). Non-admin: kontrol
+  // centang tidak ada (bukan sekadar nonaktif); dokumen hanya jadi Lengkap lewat upload atau Valid (note) lewat "Accept with note".
+  const { isAdmin: isAdminUser } = useAuth()
+  const canToggle = canEdit && isAdminUser
 
   // Upload dokumen susulan (2026-09) -- tombol "Upload Additional Doc" di footer modal ini,
   // kirim ulang dokumen yang belum terupload saat upload pertama di halaman Upload Courier,
@@ -1616,11 +1620,11 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
         <button
           type="button"
           key={field.key}
-          onClick={canEdit ? () => toggle(field.key) : undefined}
-          disabled={!canEdit}
+          onClick={canToggle ? () => toggle(field.key) : undefined}
+          disabled={!canToggle}
           className={`w-full min-w-0 flex items-center justify-between gap-2 px-3 py-2 rounded-lg border text-left transition-colors ${
             val ? 'border-emerald-200 bg-emerald-50/70' : 'border-slate-200 bg-white'
-          } ${canEdit ? (val ? 'hover:border-emerald-300 cursor-pointer' : 'hover:border-[#5A305A]/30 hover:bg-[#5A305A]/[0.03] cursor-pointer') : 'cursor-default'}`}
+          } ${canToggle ? (val ? 'hover:border-emerald-300 cursor-pointer' : 'hover:border-[#5A305A]/30 hover:bg-[#5A305A]/[0.03] cursor-pointer') : 'cursor-default'}`}
         >
           <span className={`text-[13px] font-medium [overflow-wrap:anywhere] ${val ? 'text-emerald-900' : 'text-[#5A305A]'}`}>{field.label}</span>
           {val
@@ -1752,10 +1756,11 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
         >
           <button
             type="button"
-            onClick={canEdit ? () => toggle(field.key) : undefined}
-            disabled={!canEdit}
-            title={canEdit ? (val ? 'Click to mark as not received' : 'Click to mark as received') : undefined}
-            className={`w-full min-w-0 flex items-start gap-1.5 px-2.5 py-2 text-left ${canEdit ? 'cursor-pointer hover:bg-black/[0.02] rounded-lg' : 'cursor-default'}`}
+            onClick={canToggle ? () => toggle(field.key) : undefined}
+            disabled={!canToggle}
+            data-manual-toggle={canToggle ? 'on' : 'off'}
+            title={canToggle ? (val ? 'Click to mark as not received' : 'Click to mark as received') : undefined}
+            className={`w-full min-w-0 flex items-start gap-1.5 px-2.5 py-2 text-left ${canToggle ? 'cursor-pointer hover:bg-black/[0.02] rounded-lg' : 'cursor-default disabled:opacity-100'}`}
           >
             {required
               ? (val ? <CheckCircle2 size={13} className="text-[#17663D] shrink-0 mt-0.5" /> : acc ? <StickyNote size={13} className="text-[#B7791F] shrink-0 mt-0.5" /> : <XCircle size={13} className="text-[#A8231A] shrink-0 mt-0.5" />)
@@ -1787,6 +1792,11 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
               className="px-2 h-6 rounded-md text-[10.5px] font-semibold text-[#A8231A] hover:underline print:hidden">
               Undo
             </button>
+          )}
+          {canAccept && !isAdminUser && (
+            <span data-admin-only-hint className="inline-flex items-center gap-1 text-[10.5px] text-[#8A7A8B]" title="Only an Admin can mark a document as received manually. Upload the document or accept it with a note.">
+              <Lock size={10} /> Manual check: Admin only
+            </span>
           )}
             </div>
           )}
@@ -1919,7 +1929,7 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
             {mandatoryFields.map(field => {
               const val = form[field.key];
               return (
-                <div key={field.key} onClick={canEdit ? () => toggle(field.key) : undefined} className={`flex justify-between items-center p-3 bg-white border border-slate-200 rounded-lg shadow-sm transition-colors group ${canEdit ? 'hover:border-slate-300 cursor-pointer' : ''}`}>
+                <div key={field.key} onClick={canToggle ? () => toggle(field.key) : undefined} className={`flex justify-between items-center p-3 bg-white border border-slate-200 rounded-lg shadow-sm transition-colors group ${canToggle ? 'hover:border-slate-300 cursor-pointer' : ''}`}>
                   <span className="text-sm font-medium text-[#5A305A]">{field.label}</span>
                   {val ? (
                     <CheckCircle2 size={20} className="text-emerald-500" />
@@ -1938,7 +1948,7 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
                 {optionalFields.map(field => {
                   const val = form[field.key];
                   return (
-                    <div key={field.key} onClick={canEdit ? () => toggle(field.key) : undefined} className={`flex justify-between items-center p-3 bg-white border border-slate-200 rounded-lg shadow-sm transition-colors group ${canEdit ? 'hover:border-slate-300 cursor-pointer' : ''}`}>
+                    <div key={field.key} onClick={canToggle ? () => toggle(field.key) : undefined} className={`flex justify-between items-center p-3 bg-white border border-slate-200 rounded-lg shadow-sm transition-colors group ${canToggle ? 'hover:border-slate-300 cursor-pointer' : ''}`}>
                       <span className="text-sm font-medium text-[#5A305A] flex items-center gap-2">
                         {field.label}
                         <span className="text-[10px] bg-slate-100 text-[#5A305A] px-1.5 py-0.5 rounded font-semibold">(Optional)</span>
