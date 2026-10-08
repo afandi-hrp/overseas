@@ -7155,7 +7155,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 </button>
               </div>
             )}
-            {isCourierRecapCard ? (
+            {/* Invoice Recap Courier (2026-10-08, laporan user: Card <-> List ter-refresh): KEDUA tampilan tetap terpasang & hanya
+                disembunyikan (`hidden`), bukan di-unmount -> pindah Card/List tanpa query ulang, halaman/ukuran halaman/scroll/panel tetap. */}
+            {isCourierRecapView && (
+              <div className={isCourierRecapCard ? 'contents' : 'hidden'} data-recap-view="card">
               <CourierRecapCardView
                 filters={courierRecapFilters}
                 nonce={courierRecapNonce}
@@ -7209,7 +7212,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   </React.Fragment>
                 ) : null}
               />
-            ) : loading && displayRows.length === 0 ? (
+              </div>
+            )}
+            <div className={isCourierRecapCard ? 'hidden' : 'contents'} data-recap-view="list">
+            {loading && displayRows.length === 0 ? (
               <LoadingState />
             ) : fetchError ? (
               <div className="text-center py-24 text-red-500">
@@ -7504,6 +7510,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
               </div>
               </div>
             )}
+            </div>
 
             {/* Footer Pagination -- TETAP tampil saat Reorder Mode (sejak 2026-09-28 Reorder per
                 halaman, pageSize sementara REORDER_PAGE_SIZE). */}

@@ -90,6 +90,16 @@ ada nama fungsi bentrok. Keputusan:
 15. Finance Handover Courier **per invoice**; kolom baru `finance_received_at/_by` (opsi A); master vendor = **tabel baru
     khusus Courier** `courier_vendor_master` + halaman Settings sendiri.
 
+## Invoice Recap Courier — pindah Card ↔ List TANPA refresh (2026-10-08, laporan user)
+
+Dulu `{isCourierRecapCard ? <CourierRecapCardView/> : <tabel List>}` meng-UNMOUNT salah satunya: List -> Card memasang ulang `CourierRecapCardView` -> 4 query ulang
+(`fn_courier_recap_awb_page`, `rekapan_courier`, `tabel_audit_pib/cn`) + spinner, halaman/ukuran halaman/scroll/pilihan kartu hilang. **Sekarang KEDUA tampilan tetap terpasang & hanya
+disembunyikan** (`SharedDataTable`: pembungkus `data-recap-view="card"` / `"list"`, `contents` saat aktif, `hidden` saat tidak; hanya untuk `isCourierRecapView`, halaman lain tidak berubah).
+Efek: pindah tampilan = 0 query, halaman Card tetap, panel Validation tetap terbuka (elemen DOM sama), scroll List tetap. Data tetap segar: `refreshCourierRecap()` (nonce + `fetchRecords`)
+menyegarkan keduanya, filter/KPI/Search memengaruhi keduanya. Konsekuensi: tabel List ikut terpasang (tersembunyi) saat Card aktif -> peringatan dev dnd-kit "<div> in <table>" kini muncul
+juga di mode Card (hanya console dev, tidak fungsional); selector uji harus dibatasi `[data-recap-view="list"]`. **Audit Courier (Card/List) & Sea & Air memakai pola ternary yang sama (BELUM diubah).**
+Diuji: jsdom `view_switch` 11 cek (0 query bolak-balik, halaman 2 tetap, panel elemen sama).
+
 ## Invoice Recap Courier (Card) — tab Invoices gabungan + Split, centang manual hanya Admin (2026-10-08, keputusan user)
 
 Spek user + mockup `invoice_recap_gabung_split.html` (hanya tata letak). Tab Invoices (`CourierRecapInvoicesTab.tsx`, ditulis ulang):
