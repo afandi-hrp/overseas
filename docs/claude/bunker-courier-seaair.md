@@ -566,6 +566,15 @@ dari batch query `dokumen_checklist_seaair`.
     for select using (tabel = 'bunker_dokumen' and public.has_page_access('bunker'));
   ```
 
+## Courier — Document Validation, baris "Berat (kg)" (id04) SATU aturan (2026-10-09, permintaan user)
+
+Dulu diisi 3 salinan yang tidak sama: modal (`ValidasiModal`/`ValidasiModalLegacy`) memakai fallback berat Invoice Duty tapi `cmp` kosong tanpa Invoice Freight; `generateValues`
+(`ValidasiFill.ts`, persen kartu/halaman validasi) tanpa fallback. Sekarang SATU fungsi `beratKgPair(raw, hasInvoiceFreight)` di `ValidasiHelper.ts` dipakai ketiganya:
+`src` = `invoice_freight_cost.actual_weight_kg` (ada Invoice Freight) atau fallback `invoice_duty_cost.actual_weight_kg`; `cmp` = `awb_detail_v.weight` SELALU diisi (dulu kosong tanpa
+Invoice Freight -> berat Invoice Duty tidak pernah dicocokkan dgn AWB). Efek: AWB tanpa Invoice Freight sekarang bisa match/mismatch (dulu partial); persen kartu ikut. Data checklist
+yang SUDAH tersimpan (`tabel_checklist_validasi.values_json`) TIDAK di-backfill (aturan "bukan retroaktif"); berlaku saat dokumen dihitung ulang / dibuka baru. Diuji: 4 kasus
+(match / mismatch / tanpa AWB detail = partial / dengan Invoice Freight); `tsc` bersih.
+
 ## Courier — Document Validation, bug fix tooltip "Nilai dari ..." salah label (2026-09)
 
 `getSrcTooltipLabel()` (module-level, `ValidasiModal.tsx`) — fungsi ini nentuin label tooltip

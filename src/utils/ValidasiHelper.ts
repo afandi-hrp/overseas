@@ -230,6 +230,20 @@ export function hitungDppCmp(hargaJual: any, noSeri: any) {
   return null;
 }
 
+// Baris "Berat (kg)" (id04) tabel Invoice Freight & Invoice Duty -- SATU-SATUNYA aturan, dipakai modal Doc Validation (ValidasiModal /
+// ValidasiModalLegacy) DAN generateValues (persen validasi kartu) supaya tidak berbeda (2026-10-09, permintaan user).
+// src = berat dari Invoice Freight; kalau tidak ada Invoice Freight -> fallback berat Invoice Duty. cmp = berat di dokumen AWB (awb_detail_v.weight),
+// SELALU diisi (dulu kosong kalau tidak ada Invoice Freight -> berat Invoice Duty tidak pernah dicocokkan).
+export function beratKgPair(raw: any, hasInvoiceFreight: boolean): { src: any; cmp: any } {
+  const idOther = raw?.invoice_freight_cost || {};
+  const invDutyCost = raw?.invoice_duty_cost || {};
+  const awbDet = raw?.awb_detail_v || {};
+  return {
+    src: hasInvoiceFreight ? idOther.actual_weight_kg : invDutyCost.actual_weight_kg,
+    cmp: awbDet.weight,
+  };
+}
+
 export function compareNumeric(src: any, cmp: any) {
   if (src === null || src === undefined || src === '') return 'empty';
   if (cmp === null || cmp === undefined || cmp === '') return 'partial';

@@ -8,6 +8,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { planCourierDocRecompute, docRecomputeMessage, docRecomputePendingText } from '../utils/CourierDocRecompute';
 import { LoadingSpinner } from './LoadingState';
+import { beratKgPair } from '../utils/ValidasiHelper';
 import { supabase } from '../lib/supabase';
 import { Receipt, FileText, Landmark, Ship, Sailboat, FileCheck2, FileDigit, IdCard, Scale, ClipboardList, Edit3, CheckCircle2, XCircle, Clock, Building2, Plane, CalendarDays, UserCheck, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import ValidasiPerhitunganPIB from './ValidasiPerhitunganPIBLegacy';
@@ -541,7 +542,8 @@ function buildValidationValues(raw: any, docAwb: string, localNpwps: any[]): Rec
   fill("id01", invDutyCost.vat_duty_basis_idr || "", fpD.harga_jual || "");
   fill("id02", invD.ppn, fpD.ppn);
   fill("id03", fpD.pt_pembeli || "", findNpwpByName(fpD.pt_pembeli)?.nama || "");
-  fill("id04", hasInvoiceFreight ? idOther.actual_weight_kg : invDutyCost.actual_weight_kg, hasInvoiceFreight ? awbDet.weight : null);
+  const berat = beratKgPair(raw, hasInvoiceFreight); // SATU aturan dgn generateValues (persen kartu)
+  fill("id04", berat.src, berat.cmp);
 
   fill("id06", docAwb, cmpAwbFisik);
   fill("id07", invF.awb || invD.awb, pibV.no_awb || "");

@@ -1,4 +1,4 @@
-import { SECTIONS, hitungDppCmp, normalizeInvoiceSeparator } from './ValidasiHelper';
+import { SECTIONS, hitungDppCmp, normalizeInvoiceSeparator, beratKgPair } from './ValidasiHelper';
 
 export const generateValues = (raw: any, docAwb: string, localNpwps: any[]) => {
 let newV: any = {};
@@ -85,7 +85,8 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
         fill("id01", invDutyCost.vat_duty_basis_idr || "", fpD.harga_jual || "");
         fill("id02", invD.ppn, fpD.ppn);
         fill("id03", fpD.pt_pembeli || "", findNpwpByName(fpD.pt_pembeli)?.nama || "");
-        fill("id04", hasInvoiceFreight ? idOther.actual_weight_kg : null, hasInvoiceFreight ? awbDet.weight : null);
+        const berat = beratKgPair(raw, hasInvoiceFreight); // SATU aturan dgn modal Doc Validation
+        fill("id04", berat.src, berat.cmp);
 
         fill("id06", docAwb, cmpAwbFisik);
         fill("id07", docAwb, sppbV.no_awb || "");
