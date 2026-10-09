@@ -100,6 +100,60 @@ menyegarkan keduanya, filter/KPI/Search memengaruhi keduanya. Konsekuensi: tabel
 juga di mode Card (hanya console dev, tidak fungsional); selector uji harus dibatasi `[data-recap-view="list"]`. **Audit Courier (Card/List) & Sea & Air memakai pola ternary yang sama (BELUM diubah).**
 Diuji: jsdom `view_switch` 11 cek (0 query bolak-balik, halaman 2 tetap, panel elemen sama).
 
+## Section Total — Invoice Freight / Invoice Duty / Grand Total (2026-10-09, keputusan user; TANPA SQL, TANPA perubahan n8n)
+
+Spek user + `section_total_duty.html` (tata letak; teks UI diterjemahkan ke Inggris sesuai aturan app). SATU rumus di `src/utils/CourierTotalBreakdown.ts`
+(`courierTotalBreakdown`), dipakai tab Invoices panel Validation (Invoice Recap, Card) & tab Invoices Finance Handover Courier.
+- **Fakta data (dicek user 2026-10-09, query ke production)**: n8n SELALU menyalin BM+PPN+PPh PIB/SPPBMCP ke `total_duty_tax` + `bm/ppn/pph` baris **Duty**
+  (semua PPJK & jalur), jadi `total_amount` baris Duty = adm fee + pajak PIB -- BUKAN angka tertera di invoice (mis. DHL 6115842622 PIB: 13.276.996, invoice
+  asli 194.250). Baris Duty PIB & CN bentuknya identik -> pembeda HANYA dari isi invoice: `dokumen_validasi.data_validasi_raw › invoice_duty_cost ›
+  import_export_duties_idr` (hasil ekstraksi Gemini; label baris fee lain: `disbursement_*`, `nonroutine_idr`, `processing_fee_idr`, `storage_idr`, `other_charges`).
+  Kasus "duty tax di baris Freight" hanya 1 AWB (FedEx 876815843326). Hasil n8n TIDAK boleh diubah (keputusan user) -> semua koreksi di aplikasi.
+- **Rumus (AWB BELUM dikirim ke Finance, per `g.submitted === 0`)**: Invoice Freight = `total_amount` − `total_duty_tax` (adm fee di invoice freight ikut);
+  Invoice Duty = `courier_adm_fee` + `import_export_duties_idr` (kosong/0 -> adm saja); Grand Total = Freight + Duty − Credit Note. BM/PPN/PPh = rincian abu-abu
+  (SATU sumber per AWB: baris Duty dulu, kalau tak ada baris Freight; TIDAK dijumlah antar baris karena n8n menyalin ke tiap baris Duty). Mode: `included`
+  (ada baris duty tax; abu-abu: Courier adm fee · BM · PPN · PPh, tag "included in Invoice Duty") / `self` (dibayar sendiri; BM · PPN · PPh, tag "paid separately
+  · not in total") / `none` (tidak ada invoice Duty: baris "not uploaded / not issued" + abu-abu) / `unknown` (data tak terbaca) / `legacy` (sudah dikirim).
+  Selisih `import_export_duties_idr` vs BM+PPN+PPh > Rp 3.000 (`COURIER_DUTY_TOLERANCE`) = info kuning "Difference", bukan "Needs check"; cocok = info hijau.
+- **AWB yang SUDAH dikirim ke Finance** (ada invoice ber-submit_date): angka LAMA (`total_amount`), tanpa baris abu-abu, hanya label "Invoice Freight/Invoice Duty";
+  "Needs check" tetap tampil sebagai info. Finance Handover (hanya berisi invoice terkirim) otomatis mode ini: kolom Invoice · No. Invoice · Email received · Amount +
+  "Grand Total" (= `item.amountIdr`, tidak berubah).
+- **"Needs check"** (jangan ditebak; angka baris Duty tetap nilai lama): AWB kosong/tanpa nomor (`ID:` / upload susulan), tak ada PIB/CN tertaut, `dokumen_validasi`
+  /`invoice_duty_cost` belum ada, >1 baris Duty & no. invoice ekstraksi tak cocok satupun, jalur PIB tapi invoice duty berisi duty tax, jalur CN tapi tanpa baris duty tax.
+  Pada AWB belum dikirim: **Submit all to Finance dikunci** (hanya frontend) sampai **Internal remarks** (`rekapan_courier.keterangan`, BUKAN Remarks/`notes` krn sinkron
+  Checklist Note) terisi di salah satu invoice AWB; kotak isian + "Save remarks" ada di bawah tabel Total (tulis ke semua invoice AWB yang belum Submit, tanpa baris
+  Audit Trail -- pola `CourierRemarksSync`). Selama data duty dimuat Submit juga nonaktif.
+- **Tabel Total**: Invoice | No. Invoice | Invoice PPJK Date | Amount | Status | Tgl Submit (Status = Locked/Not submitted + Received/Paid; tanggal Submit pindah ke kolom
+  sendiri). Rincian biaya gabungan: "Total duty tax" = duty tax yang ikut Total (0 + keterangan "Paid separately" kalau tak ikut), BM/PPN/PPh dari sumber tunggal.
+- **Belum / sengaja tidak berubah (tahap 1)**: kartu, KPI "Freight + Duty", List, Export masih memakai `total_amount` lama (angka kartu bisa BEDA dari Grand Total panel
+  untuk AWB PIB belum dikirim). Split per PO/vessel & Reporting tetap memasukkan duty tax; `netCostTotals` kini menghitung pajak SEKALI per AWB (tidak dobel kalau ada
+  baris Duty + Freight). Dedupe di `ReportingCourierHelpers` belum.
+- **Diuji**: skrip logika 34 cek (3 AWB contoh: 4.770.715 / 4.943.467 / 973.127, frozen, Needs check, 2 baris Duty, Credit Note) + render SSR 22 cek; `tsc` bersih, `vite build` sukses.
+  Belum dites di production.
+
+## Badge "Updating data..." daftar kartu Invoice Recap (2026-10-09, permintaan user)
+
+`CourierRecapCardList`: badge dulu `absolute` DI DALAM kontainer scroll (ikut tergulir, kecil & abu-abu). Sekarang pembungkus `relative` terpisah dari kontainer scroll -> badge tetap
+melayang di kanan atas daftar. REVISI user: tetap pil kecil "Updating…" seperti semula (BUKAN overlay besar / spinner / daftar diredupkan), hanya diberi warna kuning (`#FFE9A8`, teks
+`#7A4F00`) & sedikit lebih besar (12.5px, semi-bold). Muncul saat ganti halaman / 10-50 baris / filter. Pemuatan pertama tetap `LoadingState` penuh.
+**Audit Courier mode Card** (`SharedDataTable`, cabang `isCourierAuditView && courierAuditView === 'card'`) kini SAMA: overlay putih besar "Updating data..." (ikut tergulir, menutup daftar)
+diganti badge yang sama. Badge = komponen bersama `UpdatingBadge` (`LoadingState.tsx`) -- WAJIB di pembungkus `relative` yang bukan kontainer scroll. Tidak diubah: mode List
+(tabel; overlay-nya sudah di pembungkus tetap), Sea & Air, Audit Trail.
+
+## Tutup jendela Details tidak lagi menyegarkan daftar kalau tidak ada perubahan (2026-10-09, laporan user)
+
+Panel Validation Invoice Recap: dulu `closeDetails` SELALU `bump()` (-> `onChanged` -> `refreshCourierRecap`: query ulang daftar kartu + spinner). Sekarang jendela Details
+(`ValidasiModalLegacy` / `CostValidationModalLegacy`, prop BARU `onMutated`) memberi tahu panel hanya SETELAH ada yang tersimpan: Doc Validation = autosave berhasil DAN ada aksi user
+(`userActionRef`); Cost Validation = Edit simpan (juga kalau gagal di tengah, krn RPC Actual bisa sudah jalan) / Apply & Revise Credit Note. Tutup tanpa perubahan = 0 query. Catatan:
+autosave Doc Validation 2 detik -> menutup jendela sebelum 2 detik membatalkan simpan (perilaku lama, tidak diubah).
+
+## Unlock massal — tombol "Unlock all (Admin)" di header panel Validation (2026-10-09, permintaan user)
+
+Di sebelah "Edit in List" (Admin saja, muncul kalau ada invoice ber-submit_date). Klik -> dialog: daftar invoice yang akan dibuka + SATU alasan (min. 5 karakter) ->
+memanggil RPC yang SAMA dgn Unlock per invoice (`fn_courier_unlock_submit`, berurutan, `handleCourierRecapUnlockMany` di SharedDataTable) -- TANPA SQL baru. Invoice yang sudah
+diterima/dilunasi Finance dilewati (disebut di dialog; tombol nonaktif kalau semuanya begitu). Error per invoice dikumpulkan & ditampilkan di dialog (tidak ada alert berulang),
+daftar disegarkan sekali. Unlock per invoice di tabel Total TETAP ada. Efek samping: AWB yang dibuka dihitung "belum dikirim" -> Section Total memakai rumus baru.
+
 ## Invoice Recap Courier (Card) — tab Invoices gabungan + Split, centang manual hanya Admin (2026-10-08, keputusan user)
 
 Spek user + mockup `invoice_recap_gabung_split.html` (hanya tata letak). Tab Invoices (`CourierRecapInvoicesTab.tsx`, ditulis ulang):

@@ -87,7 +87,8 @@ const ActualInlineInput = ({
 // Details, header diganti ringkasan gaya jendela Open Audit (OK/Difference/N/A + "x of y invoices match the rate sheet" +
 // akurasi, angka dari computeLiveCostSummary yg SAMA) dan SEMUA tombol aksi (Potong CN, Revisi, Update Estimasi, Hitung
 // Ulang Estimasi) disembunyikan. Catatan Perubahan Manual tetap tampil.
-export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecord, onClose, canEdit = true, embedded = false, onPctChange, onDataChange, financeView = false }: { awb: string, jenisDokumen: string, docId?: string, rawRecord?: any, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, onDataChange?: (data: any) => void, financeView?: boolean }) {
+export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecord, onClose, canEdit = true, embedded = false, onPctChange, onDataChange, financeView = false, onMutated }: { awb: string, jenisDokumen: string, docId?: string, rawRecord?: any, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, onDataChange?: (data: any) => void, financeView?: boolean, onMutated?: () => void }) {
+  // `onMutated` = dipanggil SETELAH perubahan (Edit / Credit Note) benar-benar tersimpan (panel Invoice Recap menyegarkan daftar hanya kalau ada ini).
   const act = !financeView;
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -350,8 +351,10 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
       
       setIsEditing(false);
       await fetchData();
+      onMutated?.();
     } catch (e: any) {
       console.error('Save Edit Error:', e);
+      onMutated?.(); // sebagian nilai Actual bisa sudah tersimpan lewat RPC sebelum error -- tetap segarkan
       alert('Gagal menyimpan perubahan: ' + (e.message || String(e)));
     } finally {
       setSavingEdit(false);
@@ -376,7 +379,8 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
       if (error) throw error;
       const cnKey = index !== undefined ? `${target}_${index}` : target;
       setCnFreightAmounts(prev => ({ ...prev, [cnKey]: '' }));
-      
+      onMutated?.(); // credit note sudah tersimpan (RPC di atas berhasil) -- walau recompute di bawah gagal
+
       const { data: recomputed, error: recomputeErr } = await supabase.rpc('fn_recompute_totals', { p_cv_id: data.id });
       if (recomputeErr) throw recomputeErr;
       const cvData = Array.isArray(recomputed) ? recomputed[0] : recomputed;
@@ -411,7 +415,8 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
       if (error) throw error;
       const cnKey = index !== undefined ? `${target}_${index}` : target;
       setCnDutyAmounts(prev => ({ ...prev, [cnKey]: '' }));
-      
+      onMutated?.(); // credit note sudah tersimpan (RPC di atas berhasil) -- walau recompute di bawah gagal
+
       const { data: recomputed, error: recomputeErr } = await supabase.rpc('fn_recompute_totals', { p_cv_id: data.id });
       if (recomputeErr) throw recomputeErr;
       const cvData = Array.isArray(recomputed) ? recomputed[0] : recomputed;
@@ -441,6 +446,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
         p_log_index: logIndex
       });
       if (error) throw error;
+      onMutated?.(); // revisi credit note sudah tersimpan
 
       const { data: recomputed, error: recomputeErr } = await supabase.rpc('fn_recompute_totals', { p_cv_id: data.id });
       if (recomputeErr) throw recomputeErr;

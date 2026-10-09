@@ -838,7 +838,10 @@ const STATUS_CONFIG: any = {
 // live (null = belum ada dokumen_validasi & belum ada checklist tersimpan). `checklistVersion`
 // naik tiap Checklist disimpan di tab sebelah -> flag PO/CIPL/Final Invoice dibaca ulang TANPA
 // reload penuh (edit yang sedang berjalan & autosave tidak terganggu).
-export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdit = true, embedded = false, onPctChange, checklistVersion = 0, hideRecompute = false }: { record: any, mainTab: string, subTab?: string, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, checklistVersion?: number, hideRecompute?: boolean }) {
+export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdit = true, embedded = false, onPctChange, checklistVersion = 0, hideRecompute = false, onMutated }: { record: any, mainTab: string, subTab?: string, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, checklistVersion?: number, hideRecompute?: boolean, onMutated?: () => void }) {
+  // `onMutated` = dipanggil SETELAH perubahan dari user benar-benar tersimpan (panel Invoice Recap menyegarkan daftar hanya kalau ada ini).
+  const onMutatedRef = useRef(onMutated);
+  onMutatedRef.current = onMutated;
   const [docType, setDocType] = useState<'PIB'|'CN'|null>(null);
   const [debugData, setDebugData] = useState<any>({ raw: {}, doc: {} });
 
@@ -1138,6 +1141,8 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
        if (error) {
           console.error('[Doc Validation] simpan gagal', error);
           setRecomputeMsg('Failed to save document validation: ' + error.message);
+       } else if (userActionRef.current) {
+          onMutatedRef.current?.();
        }
     }, 2000);
     return () => clearTimeout(tid);

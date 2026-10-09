@@ -10,7 +10,7 @@ import { restrictToVerticalAxis, restrictToHorizontalAxis } from '@dnd-kit/modif
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import Greeting from './Greeting'
-import { LoadingState, LoadingSpinner } from '../components/LoadingState'
+import { LoadingState, LoadingSpinner, UpdatingBadge } from '../components/LoadingState'
 import ExportModal from '../components/ExportModal'
 import CourierUploadSusulanModal from '../components/CourierUploadSusulanModal'
 import { VW_TOOLBAR, VW_BODY, VW_CARD, VW_CARD_TITLE, VW_BTN_PRIMARY, VW_BTN_SECONDARY, vwPctBar, vwPctText } from '../components/validationWindowStyles'
@@ -4897,6 +4897,24 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     refreshCourierRecap();
     return true;
   };
+  // Unlock massal (Admin): satu alasan utk semua invoice AWB. Memanggil RPC yang SAMA per invoice (berurutan), error per invoice
+  // dikumpulkan (tanpa alert berulang), daftar disegarkan SEKALI di akhir (juga kalau sebagian gagal).
+  const handleCourierRecapUnlockMany = async (ids: string[], reason: string) => {
+    const failed: { id: string; message: string }[] = [];
+    let done = 0;
+    setCourierRecapBusy(true);
+    try {
+      for (const id of ids) {
+        const { error } = await supabase.rpc('fn_courier_unlock_submit', { p_id: id, p_reason: reason });
+        if (error) failed.push({ id, message: error.message });
+        else done += 1;
+      }
+    } finally {
+      setCourierRecapBusy(false);
+      if (done > 0) refreshCourierRecap();
+    }
+    return { done, failed };
+  };
   const switchCourierRecapView = (m: 'card' | 'list') => {
     if (m === 'card') {
       if (reorderMode) exitReorderMode();
@@ -7194,6 +7212,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                     onClose={closeCourierRecapPanel}
                     onSubmit={handleCourierRecapSubmit}
                     onUnlock={handleCourierRecapUnlock}
+                    onUnlockMany={handleCourierRecapUnlockMany}
                     onViewInAudit={() => {
                       // 2026-10-06: buka Audit Courier terfilter AWB, di tab tempat PIB/CN berada, & jendela Open-nya langsung.
                       const link = courierRecapPanel.g.audit;
@@ -7238,15 +7257,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 )}
               </div>
             ) : isCourierAuditView && courierAuditView === 'card' ? (
-              <div className="flex-1 min-h-0 relative overflow-y-auto p-2.5">
-                {loading && (
-                  <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-50 flex items-center justify-center">
-                    <div className="flex items-center bg-white px-4 py-2 rounded-xl shadow-md border border-slate-100 text-[#5A305A] font-medium text-sm">
-                      <LoadingSpinner className="mr-3" />
-                      Updating data...
-                    </div>
-                  </div>
-                )}
+              <div className="flex-1 min-h-0 relative flex flex-col" data-courier-audit-card-view>
+              {/* Badge "Updating…" kuning (2026-10-09, SAMA Invoice Recap Courier): di pembungkus `relative` yang TIDAK ikut scroll, daftar tidak diredupkan. */}
+              {loading && <UpdatingBadge />}
+              <div className="flex-1 min-h-0 overflow-y-auto p-2.5">
                 {/* Baris "N draft records" DIHAPUS 2026-10-02 (permintaan user) -- jumlah tetap di footer "Showing … of N". */}
                 {(() => {
                   const list = (
@@ -7268,6 +7282,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                     </DndContext>
                   ) : list;
                 })()}
+              </div>
               </div>
             ) : isSeaAirAudit && seaAirViewMode === 'card' ? (
               <div className="flex-1 min-h-0 relative overflow-y-auto p-2.5">

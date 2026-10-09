@@ -16,9 +16,9 @@
 //   ("Document review"); riwayat PIB/CN tetap di jendela Open Audit Courier.
 // - Shipment Info bisa dilipat (2026-10-06, laporan user di laptop 14": isi tab tertutup header). Default terlipat kalau
 //   tinggi jendela < 1000px; pilihan disimpan di localStorage (per browser).
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Send, ExternalLink, Pencil, ChevronDown, ChevronUp } from 'lucide-react'
+import { X, Send, ExternalLink, Pencil, ChevronDown, ChevronUp, Unlock } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { SA_BTN_OUTLINE, SA_BTN_GREEN, Pill, PtBadge } from './SeaAirAuditUi'
 import { fmtRp, companyFullName } from '../utils/SeaAirAuditHelpers'
@@ -31,6 +31,7 @@ import ValidasiModalLegacy from './ValidasiModalLegacy'
 import CostValidationModalLegacy from './CostValidationModalLegacy'
 import CourierCostSummary from './CourierCostSummary'
 import CourierRecapInvoicesTab from './CourierRecapInvoicesTab'
+import { useCourierDutyRaw, courierTotalBreakdown, courierSubmitLock } from '../utils/CourierTotalBreakdown'
 
 export type RecapPanelTab = ValidationTabKey | 'invoices' | 'trail'
 
@@ -128,6 +129,73 @@ export const CourierDocumentReview: React.FC<{ rec: any; docType: CourierDocType
   )
 }
 
+// ─── Unlock massal (Admin) ────────────────────────────────────────────────────
+// Satu alasan utk SEMUA invoice AWB yang sudah di-Submit. Aturan per invoice TETAP (RPC fn_courier_unlock_submit): yang sudah diterima /
+// dilunasi Finance tidak bisa di-unlock -> dilewati & dilaporkan. Setelah unlock, AWB dihitung sbg "belum dikirim" (rumus Total baru).
+export type UnlockManyResult = { done: number; failed: { id: string; message: string }[] }
+const UnlockAllControl: React.FC<{ rows: any[]; busy: boolean; onUnlockMany: (ids: string[], reason: string) => Promise<UnlockManyResult> }> = ({ rows, busy, onUnlockMany }) => {
+  const [open, setOpen] = useState(false)
+  const [reason, setReason] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [errors, setErrors] = useState<string[]>([])
+  const submitted = rows.filter(r => r.submit_date)
+  const eligible = submitted.filter(r => !r.finance_received_at && !r.tgl_lunas)
+  const skipped = submitted.length - eligible.length
+  const close = () => { if (saving) return; setOpen(false); setReason(''); setErrors([]) }
+  const ok = reason.trim().length >= 5
+  const confirm = async () => {
+    setSaving(true); setErrors([])
+    try {
+      const res = await onUnlockMany(eligible.map(r => String(r.id)), reason.trim())
+      if (res.failed.length === 0) { setSaving(false); setOpen(false); setReason(''); return }
+      const byId = new Map<string, any>(rows.map(r => [String(r.id), r]))
+      setErrors(res.failed.map(f => `${byId.get(f.id)?.no_invoice || f.id}: ${f.message}`))
+    } catch (e: any) {
+      setErrors([String(e?.message || e)])
+    }
+    setSaving(false)
+  }
+  return (
+    <>
+      <button type="button" disabled={busy || eligible.length === 0} className={`${SA_BTN_OUTLINE} h-8`} data-unlock-all
+        onClick={() => setOpen(true)}
+        title={eligible.length === 0 ? 'No submitted invoice can be unlocked (already received / paid by Finance)' : `Unlock all ${eligible.length} submitted invoice${eligible.length === 1 ? '' : 's'} of this AWB`}>
+        <Unlock size={12} /> Unlock all (Admin)
+      </button>
+      {open && createPortal(
+        <div className="fixed inset-0 z-[90] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4" onMouseDown={e => { if (e.target === e.currentTarget) close() }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[460px] p-5" role="dialog" aria-label="Unlock all invoices" data-unlock-all-dialog>
+            <h3 className="text-[15px] font-bold text-[#3B1B3D]">Unlock all invoices</h3>
+            <p className="text-[12.5px] text-[#6E5E70] mt-1">
+              {eligible.length} invoice{eligible.length === 1 ? '' : 's'} of this AWB will be unlocked for editing and deleting. They go back to "Not submitted" and must be submitted to Finance again.
+            </p>
+            <ul className="mt-2 text-[12px] text-[#3B1B3D] list-disc pl-4 max-h-[120px] overflow-y-auto">
+              {eligible.map(r => <li key={r.id}>{r.no_invoice || '—'}</li>)}
+            </ul>
+            {skipped > 0 && <p className="mt-2 text-[11.5px] text-[#7A4F00] bg-[#FFF1D6] rounded-lg px-2.5 py-1.5">{skipped} invoice{skipped === 1 ? '' : 's'} already received / paid by Finance cannot be unlocked and will stay locked.</p>}
+            <textarea aria-label="Unlock reason" value={reason} onChange={e => setReason(e.target.value)} rows={3} disabled={saving} autoFocus
+              placeholder="Reason for unlocking (min. 5 characters)"
+              className="mt-3 w-full rounded-lg border border-[#EADFD6] bg-white px-2.5 py-1.5 text-[12.5px] text-[#3B1B3D] focus:outline-none focus:border-[#6B3470]" />
+            {errors.length > 0 && (
+              <div className="mt-2 text-[11.5px] text-[#B42318] bg-[#FDECEA] rounded-lg px-2.5 py-1.5" data-unlock-all-errors>
+                <b>Some invoices could not be unlocked:</b>
+                <ul className="list-disc pl-4">{errors.map((m, i) => <li key={i} className="[overflow-wrap:anywhere]">{m}</li>)}</ul>
+              </div>
+            )}
+            <div className="flex justify-end gap-2 mt-4">
+              <button type="button" className={`${SA_BTN_OUTLINE} h-9`} onClick={close} disabled={saving}>Cancel</button>
+              <button type="button" className={`${SA_BTN_GREEN} h-9`} disabled={!ok || saving || eligible.length === 0} onClick={confirm}>
+                {saving ? 'Unlocking…' : `Unlock ${eligible.length} invoice${eligible.length === 1 ? '' : 's'}`}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </>
+  )
+}
+
 // ─── Jendela penuh "Details" (tabel lama) ─────────────────────────────────────
 // Lebar (2026-10-05, permintaan user): hampir selebar layar di monitor besar (maks 1880px) supaya tabel matriks
 // terlihat semua; laptop 14" (<=1600px) tetap penuh layar seperti sebelumnya.
@@ -161,7 +229,7 @@ const InfoCell: React.FC<{ label: string; children: React.ReactNode }> = ({ labe
 
 export default function CourierRecapValidationPanel({
   g, initialTab, companyNames, colOk, access, canEditValidation, canEditRecap, isAdmin, busy, checklistLabels,
-  renderChecklist, onClose, onSubmit, onUnlock, onViewInAudit, onEditInList, onChanged, onDirtyChange,
+  renderChecklist, onClose, onSubmit, onUnlock, onUnlockMany, onViewInAudit, onEditInList, onChanged, onDirtyChange,
 }: {
   g: RecapGroup
   initialTab?: RecapPanelTab
@@ -178,6 +246,7 @@ export default function CourierRecapValidationPanel({
   onClose: () => void
   onSubmit: (ids: string[]) => void
   onUnlock: (id: string, reason: string) => Promise<boolean>
+  onUnlockMany?: (ids: string[], reason: string) => Promise<UnlockManyResult>
   onViewInAudit: () => void
   onEditInList: () => void
   onChanged: () => void
@@ -212,7 +281,15 @@ export default function CourierRecapValidationPanel({
   const [checklistDirty, setChecklistDirty] = useState(false)
   useEffect(() => { onDirtyChange?.(checklistDirty) }, [checklistDirty, onDirtyChange])
   const [details, setDetails] = useState<'doc' | 'cost' | null>(null)
-  const closeDetails = () => { setDetails(null); bump() }
+  // Jendela Details (tabel lama) HANYA menyegarkan ringkasan & daftar kartu kalau ada perubahan yang benar-benar tersimpan di dalamnya
+  // (2026-10-09, laporan user: tutup Details tanpa mengubah apa pun tidak boleh memicu update baris/daftar).
+  const detailsMutatedRef = useRef(false)
+  const markDetailsMutated = useCallback(() => { detailsMutatedRef.current = true }, [])
+  const openDetails = (k: 'doc' | 'cost') => { detailsMutatedRef.current = false; setDetails(k) }
+  const closeDetails = () => {
+    setDetails(null)
+    if (detailsMutatedRef.current) { detailsMutatedRef.current = false; bump() }
+  }
 
   // Shipment Info baris 2 dari tabel_cost_validasi (SAMA jendela Validation).
   const [cv, setCv] = useState<any>(null)
@@ -230,6 +307,11 @@ export default function CourierRecapValidationPanel({
 
   const status = recapGroupStatus(g)
   const unsubmitted = g.rows.filter(r => !r.submit_date)
+  // Section Total (2026-10-09): Invoice Freight / Invoice Duty / Grand Total dari satu rumus (CourierTotalBreakdown.ts). "Needs check"
+  // pada AWB yang belum dikirim mengunci Submit to Finance sampai Internal remarks terisi (hanya frontend).
+  const dutyRaw = useCourierDutyRaw(audit, g.byKind.duty.length > 0)
+  const bd = useMemo(() => courierTotalBreakdown(g, dutyRaw, audit), [g, dutyRaw, audit])
+  const submitLock = courierSubmitLock(bd, g.rows)
   const vendor = rec?.vendor || g.rows.map(r => r.vendor).find(hasVal)
   const editOf = (t: ValidationTabKey) => draft && canEditValidation[t]
   const tabLabel: Record<RecapPanelTab, string> = { checklist: 'Checklist', doc: 'Doc Validation', cost: 'Cost Validation', invoices: `Invoices (${g.rows.length})`, trail: 'Audit trail' }
@@ -251,19 +333,23 @@ export default function CourierRecapValidationPanel({
           <div className="min-w-0 flex flex-wrap items-center gap-1.5 pt-0.5">
             {colOk('an') && g.an && <PtBadge code={g.an} title={companyFullName(companyNames, g.an)} />}
             {canEditRecap && unsubmitted.length > 0 && (
-              <button type="button" disabled={busy} className={`${SA_BTN_GREEN} h-8`} onClick={() => onSubmit(unsubmitted.map(r => String(r.id)))}>
+              <button type="button" disabled={busy || !!submitLock} className={`${SA_BTN_GREEN} h-8`} data-submit-lock={submitLock || 'none'}
+                title={submitLock === 'needs_remarks' ? 'Needs check — fill in Internal remarks (Invoices tab) to unlock Submit to Finance' : submitLock === 'loading' ? 'Reading the Invoice Duty content…' : undefined}
+                onClick={() => onSubmit(unsubmitted.map(r => String(r.id)))}>
                 <Send size={12} /> {busy ? 'Submitting…' : unsubmitted.length === g.rows.length ? 'Submit all to Finance' : `Submit all (${unsubmitted.length} left)`}
               </button>
             )}
             {!g.key.startsWith('ID:') && <button type="button" className={`${SA_BTN_OUTLINE} h-8`} onClick={onViewInAudit}><ExternalLink size={12} /> View in Audit</button>}
             {canEditRecap && <button type="button" className={`${SA_BTN_OUTLINE} h-8`} onClick={onEditInList} title="Edit the invoices of this AWB in the List view"><Pencil size={12} /> Edit in List</button>}
+            {isAdmin && onUnlockMany && g.rows.some(r => r.submit_date) && <UnlockAllControl rows={g.rows} busy={busy} onUnlockMany={onUnlockMany} />}
           </div>
           <div className="flex items-start gap-1.5 ml-auto">
             <div className="text-right flex flex-col items-end gap-1" data-grand-total>
               {colOk('total_amount') && (
                 <div>
                   <div className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B]">Grand total</div>
-                  <div className="text-[17px] font-bold text-[#3B1B3D] tabular-nums leading-tight">{fmtRp(g.finalTotal)}</div>
+                  <div className="text-[17px] font-bold text-[#3B1B3D] tabular-nums leading-tight">{bd.loading ? '…' : fmtRp(bd.grandTotal)}</div>
+                  {bd.needsCheck && <div className="text-[10.5px] font-bold text-[#B42318]" data-needs-check-flag>Needs check</div>}
                 </div>
               )}
               <Pill tone={status.tone}>{status.label}</Pill>
@@ -339,18 +425,18 @@ export default function CourierRecapValidationPanel({
           {rec && access.doc && visited.doc && (
             <div className={tab === 'doc' ? '' : 'hidden'} role="tabpanel">
               <ValidasiModal record={rec} mainTab="courier" subTab="courier_audit" onClose={onClose} canEdit={editOf('doc')} embedded
-                variant="summary" reloadKey={reloadKey} onPctChange={onDocPct} onChanged={onChanged} onOpenDetails={() => setDetails('doc')} />
+                variant="summary" reloadKey={reloadKey} onPctChange={onDocPct} onChanged={onChanged} onOpenDetails={() => openDetails('doc')} />
             </div>
           )}
           {rec && access.cost && visited.cost && (
             <div className={tab === 'cost' ? '' : 'hidden'} role="tabpanel">
               <CourierCostSummary docType={docType} auditId={rec.id} canEdit={editOf('cost')} reloadKey={reloadKey}
-                onPctChange={onCostPct} onChanged={onChanged} onOpenDetails={() => setDetails('cost')} />
+                onPctChange={onCostPct} onChanged={onChanged} onOpenDetails={() => openDetails('cost')} />
             </div>
           )}
           {tab === 'invoices' && (
             <div role="tabpanel">
-              <CourierRecapInvoicesTab g={g} colOk={colOk} canEdit={canEditRecap} busy={busy} onSubmit={onSubmit} isAdmin={isAdmin} onUnlock={onUnlock} onEditInList={onEditInList} />
+              <CourierRecapInvoicesTab g={g} bd={bd} onRemarksSaved={onChanged} colOk={colOk} canEdit={canEditRecap} busy={busy} onSubmit={onSubmit} isAdmin={isAdmin} onUnlock={onUnlock} onEditInList={onEditInList} />
             </div>
           )}
           {tab === 'trail' && (
@@ -363,12 +449,12 @@ export default function CourierRecapValidationPanel({
 
       {rec && details === 'doc' && (
         <DetailsWindow title={`Doc Validation · ${docType} ${courierDocNo(rec, docType) || ''} · ${rec.awb || ''}`} onClose={closeDetails}>
-          <ValidasiModalLegacy record={rec} mainTab="courier" subTab="courier_audit" onClose={closeDetails} canEdit={editOf('doc')} embedded hideRecompute />
+          <ValidasiModalLegacy record={rec} mainTab="courier" subTab="courier_audit" onClose={closeDetails} canEdit={editOf('doc')} embedded hideRecompute onMutated={markDetailsMutated} />
         </DetailsWindow>
       )}
       {rec && details === 'cost' && (
         <DetailsWindow title={`Cost Validation · ${docType} ${courierDocNo(rec, docType) || ''} · ${rec.awb || ''}`} onClose={closeDetails}>
-          <CostValidationModalLegacy awb={rec.awb} jenisDokumen={docType} docId={rec.id} rawRecord={rec} onClose={closeDetails} canEdit={editOf('cost')} embedded />
+          <CostValidationModalLegacy awb={rec.awb} jenisDokumen={docType} docId={rec.id} rawRecord={rec} onClose={closeDetails} canEdit={editOf('cost')} embedded onMutated={markDetailsMutated} />
         </DetailsWindow>
       )}
     </div>

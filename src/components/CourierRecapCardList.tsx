@@ -15,7 +15,7 @@ import {
   fetchCourierRecapPage, fetchRecapAuditLinks, fetchCourierRecapAttentionGroups, fetchCourierRecapKpiGroups, recapGroupStatus, recapGroupDue, ppjkCode, INVOICE_KIND_LABEL, COURIER_DUE_DAYS,
   type RecapFilters, type RecapGroup, type RecapSummaryCourier, type InvoiceKind, type RecapKpiFilter,
 } from '../utils/CourierRecapHelpers'
-import { LoadingState } from './LoadingState'
+import { LoadingState, UpdatingBadge } from './LoadingState'
 import type { ValidationTabKey } from './CourierValidationWindow'
 import type { RecapPanelTab } from './CourierRecapValidationPanel'
 
@@ -234,28 +234,33 @@ export const CourierRecapCardView: React.FC<{
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterKey, page, nonce])
 
+  // Memuat ulang (ganti halaman / jumlah baris / filter) selagi daftar lama masih tampil -> badge "Updating…" kuning melayang.
+  const updating = loading && groups !== null
   const pages = Math.max(1, Math.ceil(total / pageSize))
   const start = total === 0 ? 0 : (page - 1) * pageSize + 1
   const end = Math.min(page * pageSize, total)
 
   const list = (
     <div className={panel ? 'flex flex-col min-h-0 lg:w-[44%] lg:min-w-[380px] lg:max-w-[720px] lg:shrink-0 max-lg:min-h-[420px]' : 'flex-1 min-h-0 flex flex-col'}>
-      <div className="flex-1 min-h-0 relative overflow-y-auto p-2.5">
+      {/* Pembungkus `relative` TIDAK ikut scroll: badge "Updating data…" melayang tetap di atas daftar walau daftar digulir (2026-10-09, permintaan user). */}
+      <div className="flex-1 min-h-0 relative flex flex-col">
+      {updating && <UpdatingBadge />}
+      <div className="flex-1 min-h-0 overflow-y-auto p-2.5">
         {groups === null && loading ? <LoadingState /> : error ? (
           <div className="text-center py-16 text-[#A8231A] text-[13px]">Failed to load Invoice Recap: {error}</div>
         ) : (groups || []).length === 0 ? (
           <div className="text-center py-20 text-[#6E5E70] text-[13px]">{attentionOnly ? 'No AWB needs attention — every open invoice has 100% validation.' : kpiStatus === 'not_submitted' ? 'No AWB with invoices not yet submitted to Finance.' : kpiStatus === 'submitted_unpaid' ? 'No AWB with submitted, unpaid invoices.' : 'No AWB matches the current filters.'}</div>
         ) : (
           <>
-            {loading && <div className="absolute top-2 right-3 z-10 text-[11px] text-[#6E5E70] bg-white/90 px-2 py-0.5 rounded-full border border-[#EADFD6]">Updating…</div>}
             {/* Baris "N AWB · newest email received first" DIHAPUS 2026-10-02 (permintaan user) -- jumlah ada di footer. */}
-            <div className="flex flex-col gap-2.5">
+            <div className="flex flex-col gap-2.5" aria-busy={updating}>
               {(groups || []).map(g => (
                 <CourierRecapGroupCard key={g.key} g={g} companyNames={companyNames} colOk={colOk} validationTabs={validationTabs} selected={selectedKey === g.key} onValidation={onValidation} />
               ))}
             </div>
           </>
         )}
+      </div>
       </div>
       {total > 0 && (
         <PaginationFooter start={start} end={end} total={total} unit="AWB" page={page} totalPages={pages} onPage={setPage}

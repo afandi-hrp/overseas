@@ -193,16 +193,26 @@ export function recapGroupStatus(g: RecapGroup): { label: string; tone: 'green' 
 // Credit Note Duty mengisi courier_adm_fee (mis. −89.372), jadi CN Duty mengurangi kolom Courier, bukan Duty. Duty = BM + PPN + PPh.
 export type CostTotals = { adm: number; freight: number; duty: number; bm: number; ppnpph: number }
 const cnum = (v: any) => { const x = Number(v); return isNaN(x) ? 0 : x }
+// Duty tax (total_duty_tax, BM, PPN, PPh) dihitung SEKALI per AWB (2026-10-09, keputusan user: tetap biaya shipment, tapi tidak boleh
+// dobel kalau ada invoice Duty): n8n menyalin pajak PIB/SPPBMCP ke tiap baris Duty (dan kadang baris Freight) -> ambil dari SATU baris
+// sumber (baris Duty dulu, kalau tidak ada baru Freight); baris Freight/Duty lain tidak menambah kolom pajak lagi.
 export function netCostTotals(rows: any[]): CostTotals {
   const t: CostTotals = { adm: 0, freight: 0, duty: 0, bm: 0, ppnpph: 0 }
+  const plain = rows.filter(r => invoiceKind(r) !== 'cn')
+  const hasTax = (r: any) => cnum(r.total_duty_tax) !== 0 || cnum(r.bm) + cnum(r.ppn) + cnum(r.pph) !== 0
+  const taxSrc = [...plain.filter(r => invoiceKind(r) === 'duty'), ...plain.filter(r => invoiceKind(r) === 'freight')].find(hasTax)
   rows.forEach(r => {
-    const sign = invoiceKind(r) === 'cn' ? -1 : 1
+    const isCn = invoiceKind(r) === 'cn'
+    const sign = isCn ? -1 : 1
     const m = (v: any) => (sign < 0 ? Math.abs(cnum(v)) : cnum(v))
+    const withTax = isCn || r === taxSrc
     t.adm += sign * m(r.courier_adm_fee)
     t.freight += sign * m(r.total_freight)
-    t.duty += sign * m(r.total_duty_tax)
-    t.bm += sign * m(r.bm)
-    t.ppnpph += sign * (m(r.ppn) + m(r.pph))
+    if (withTax) {
+      t.duty += sign * m(r.total_duty_tax)
+      t.bm += sign * m(r.bm)
+      t.ppnpph += sign * (m(r.ppn) + m(r.pph))
+    }
   })
   return t
 }

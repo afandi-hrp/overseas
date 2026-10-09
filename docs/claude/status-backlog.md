@@ -6,6 +6,11 @@ Daftar terkini pekerjaan yg belum selesai/ditahan per modul. Item dicoret = sele
 
 ## STATUS & SISA PEKERJAAN — Audit & Invoice Recap Sea & Air + Courier / Finance Handover (per 2026-10-02)
 
+**Courier — Section Total (2026-10-09), tahap berikutnya**: (1) angka KARTU & KPI "Freight + Duty" Invoice Recap masih rumus lama (`total_amount`) -> samakan dgn
+`courierTotalBreakdown` (KPI dihitung di browser; butuh baca `import_export_duties_idr` banyak AWB -> view kecil `security_invoker` atau batch `dokumen_validasi`); (2) dedupe
+duty tax di `ReportingCourierHelpers` (hitung SEKALI per AWB); (3) verifikasi sinyal `import_export_duties_idr` utk FedEx/EMS/UPS (Query E/F belum dijalankan user);
+(4) AWB Received/Paid tetap angka lama -- evaluasi setelah user melihat hasilnya. Lihat courier-features.md "Section Total".
+
 **DAFTAR TERKINI (satu-satunya acuan)** — 2 bagian "BACKLOG" di bawahnya = riwayat (item dicoret = selesai).
 Semua SQL (027–035, 037–040) SUDAH jalan di production. Kode SELESAI & lolos uji jsdom/PGlite, tapi **BELUM dites
 user di production** (testing bagian 2 + Finance Handover dijadwalkan user bersamaan dgn pekerjaan lain).

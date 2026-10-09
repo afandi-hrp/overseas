@@ -51,6 +51,15 @@ export function LoadingState({ label = 'Loading data...', className = '', fullHe
   );
 }
 
+// Badge "Updating…" daftar kartu Courier (Invoice Recap & Audit) -- pil kuning kecil di kanan atas. WAJIB diletakkan di pembungkus `relative`
+// yang TIDAK ikut scroll (saudara dari kontainer `overflow-y-auto`), supaya tetap melayang saat daftar digulir. (2026-10-09, permintaan user)
+export function UpdatingBadge() {
+  return (
+    <div className="absolute top-2 right-3 z-20 pointer-events-none text-[12.5px] font-semibold text-[#7A4F00] bg-[#FFE9A8] px-3 py-1 rounded-full border border-[#E8C15A] shadow-sm"
+      role="status" aria-live="polite" data-recap-updating>Updating…</div>
+  );
+}
+
 export function LoadingTableRow({ colSpan, label = 'Loading data...' }: { colSpan: number; label?: string }) {
   return (
     <tr>
