@@ -23,6 +23,23 @@ hidup → dicek ulang saat tab baru mount (`pending.tabId !== tabId baru` DAN
 `Date.now()-pending.ts > CLOSE_CONFIRM_MS`) → logout saat mount. Keterbatasan diterima:
 force-kill browser tidak terdeteksi (idle-timeout jadi jaring pengaman independen).
 
+## User Activity — siapa online + terakhir masuk (2026-10-09, permintaan user; `sql/051_user_presence.sql` SUDAH DIJALANKAN 2026-10-09, konfirmasi user)
+
+Panel TERBAWAH Settings → Manage Roles & Access (`UserActivityPanel.tsx`, **Admin saja**: halaman adminOnly + RPC menolak non-Admin).
+- **Terakhir masuk** = `auth.users.last_sign_in_at` (dicatat Supabase tiap login; app logout saat tab ditutup/idle 30 mnt jadi tiap kunjungan = login baru; hanya
+  1 waktu terakhir, TIDAK ada riwayat -- keputusan user). Dibaca lewat `fn_user_activity()` (SECURITY DEFINER, `is_admin()`).
+- **Online**: `usePresenceHeartbeat` (dipasang di `MainLayout`) memanggil `fn_user_heartbeat(p_page, p_active)` tiap 60 dtk (+ saat pindah halaman / tab kembali terlihat) ->
+  tabel `user_presence` (1 baris/user; waktu dari SERVER). Berhenti kalau tak ada sesi ATAU `lockScreenActive`. Tanpa state/render ulang (hanya ref+timer) -> tidak melanggar
+  aturan pindah tab. `active` = ada klik/ketik < 5 mnt (memakai `LAST_ACTIVITY_KEY` AuthContext, kini `export`). Kalau fungsi belum ada (sql/051 belum jalan) hook berhenti
+  mencoba sampai reload (hanya `console.warn`).
+- **Status** (`utils/UserPresence.ts`, dihitung dari `server_now` RPC): Online = heartbeat ≤ 3 mnt DAN aktif ≤ 5 mnt; Idle = heartbeat ≤ 3 mnt tapi tak aktif; Offline = selain itu.
+  Tab ditutup -> baru tampil Offline setelah ≤ 3 mnt (tidak seketika). Halaman saat ini = `pageLabelFromPath(path)` (PAGE_REGISTRY + pemetaan manual).
+- Panel: kartu ringkasan (online · idle · total), filter Online/Idle/Offline, pencarian, tabel User · Division · Status · Last login · Last seen · Current page; segar otomatis tiap
+  30 dtk selagi tab terlihat + tombol Refresh. Kalau RPC belum ada: pesan "run sql/051".
+- **SQL 051** (idempotent, pre-check nama): tabel `user_presence` (RLS 4 policy: baca = milik sendiri/Admin, tulis = milik sendiri, hapus = Admin), `fn_user_heartbeat` (SECURITY
+  INVOKER), `fn_user_activity` (SECURITY DEFINER + guard `is_admin()`, `set search_path`, revoke dari public/anon). Diuji PGlite 12 cek (upsert, isolasi antar-user, non-admin ditolak, anon
+  ditolak, idempotent) + 17 cek fungsi murni.
+
 ## Pindah tab browser TIDAK boleh me-refresh halaman (`AuthContext.tsx`, 2026-10-01)
 
 Supabase memancarkan ulang event `SIGNED_IN` tiap tab browser kembali fokus (user & token sama).

@@ -7,6 +7,7 @@ import {
   Plane, Ship, FileCheck2, Wallet, BarChart3, GitCompare, ClipboardList, ScrollText, Settings as SettingsIcon, CornerDownRight, Building2,
 } from 'lucide-react';
 import Greeting from '../components/Greeting';
+import UserActivityPanel from '../components/UserActivityPanel';
 import { LoadingState } from '../components/LoadingState';
 import { COLUMN_ACCESS_PAGES, COLUMN_ACCESS_NOTE } from '../components/SharedDataTable';
 
@@ -796,6 +797,9 @@ export default function RoleManagementPage() {
                 )}
               </div>
             </div>
+
+            {/* Panel TERBAWAH (2026-10-09, permintaan user): siapa online + terakhir masuk + halaman saat ini (Admin saja; sql/051). */}
+            <UserActivityPanel />
           </>
         )}
       </main>

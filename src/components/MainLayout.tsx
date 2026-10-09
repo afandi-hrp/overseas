@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Plane, Ship, ScrollText, Settings, ChevronUp, ChevronDown, LogOut, UserCircle, FileCheck2, GitCompare, BarChart3, Menu, X, Wallet, ClipboardList } from 'lucide-react';
 import shipmentIcon from '../assets/beehive-icon.png';
 import { useAuth } from '../lib/AuthContext';
+import { usePresenceHeartbeat } from '../lib/usePresenceHeartbeat';
 import { supabase } from '../lib/supabase';
 import { SEA_AIR_AUDIT_CHANGED_EVENT } from '../utils/SeaAirAuditHelpers';
 import { SEA_AIR_RECAP_CHANGED_EVENT, fetchRecapNeedsAttentionCount } from '../utils/SeaAirRecapHelpers';
@@ -145,6 +146,7 @@ export default function MainLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { signOut, allowedPageKeys, isAdmin, profile, user } = useAuth();
+  usePresenceHeartbeat(); // 2026-10-09: heartbeat presence utk panel "User Activity" (Admin) -- tanpa state/render ulang
   const accountName = profile?.nama || user?.email?.split('@')[0] || 'User';
   const accountInitial = accountName.charAt(0).toUpperCase();
 

@@ -74,7 +74,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const IDLE_CHECK_INTERVAL_MS = 15 * 1000;
 const ACTIVITY_THROTTLE_MS = 5 * 1000;
-const LAST_ACTIVITY_KEY = 'shipment_last_activity_ts';
+export const LAST_ACTIVITY_KEY = 'shipment_last_activity_ts';
 const ACTIVITY_EVENTS: (keyof WindowEventMap)[] = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
 
 // Logout paksa kalau tab BENERAN ditutup (bukan cuma di-refresh/F5) -- lihat komentar panjang
