@@ -4966,7 +4966,13 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           canEditDocs={canEdit('sea_air_dokumen_validation')}
           isAdmin={isAdmin}
           onUnlock={handleRecapUnlock}
-          onClose={() => { recapPanelDirty.current = false; setRecapDetailId(null); setRecapDetailSnapshot(null); }}
+          onClose={() => {
+            recapPanelDirty.current = false;
+            // Jendela penuh (hasil Expand) di tampilan Card: tutup = KEMBALI ke panel samping (daftar kiri + panel kanan, shipment yang sama
+            // tetap terbuka), bukan ke daftar kartu polos (2026-10-12, permintaan user). Panel/List: tutup = tutup.
+            if (variant === 'modal' && seaAirRecapView === 'card') { setRecapDetailPanel(true); return; }
+            setRecapDetailId(null); setRecapDetailSnapshot(null);
+          }}
           onEdit={rec => setRecapEditRec(rec)}
           onSubmit={(rec, dateIso) => handleRecapSave(rec, { tgl_submit_finance: dateIso })}
           onToggleDraft={async rec => {

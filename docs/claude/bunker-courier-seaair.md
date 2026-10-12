@@ -856,3 +856,6 @@ Diuji skrip 6 cek.
 `SeaAirRecapCardList` prop `compact` (= `recapPanelOpen` di `SharedDataTable`) -> `RecapRowCard` memakai susunan 2 kolom yang tidak memanjang ke bawah. Kiri: chip
 `jenis · PT` + kontainer (FCL `n × tipe`), AWB, supplier (terpotong), **nomor PO (+N PO) tepat di bawah supplier**, sedangkan **chip ATD · ATA di kolom kanan di bawah `Uploaded`** (revisi 2026-10-12, user menukar posisinya; kosong "—"), status (`Not submitted` + `Ready` / `⚠ N issues`; sudah submit -> pil status). Kanan: `Uploaded`, PO (+N PO bisa dibuka), `Origin: X` (tujuan di tooltip), Landed cost, tombol **"Validation"** (gelap kalau terpilih). Tanpa Cost mix & titik skor
 (angkanya ada di header panel). Mode lebar (panel tertutup): susunan TIDAK berubah, tombolnya juga "Validation" (revisi 2026-10-12, permintaan user: label seragam). Uji render 10 cek.
+
+- **Tutup jendela penuh (hasil Expand) di tampilan Card = kembali ke panel samping** (daftar kiri + panel kanan, shipment yang sama tetap terbuka), BUKAN ke daftar
+  kartu polos (2026-10-12, permintaan user). Ini berlaku untuk tombol X, klik di luar jendela, dan Esc. Tutup di panel / di mode List tetap menutup shipment.
