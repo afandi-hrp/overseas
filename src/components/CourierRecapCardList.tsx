@@ -15,6 +15,7 @@ import {
   fetchCourierRecapPage, fetchRecapAuditLinks, fetchCourierRecapAttentionGroups, fetchCourierRecapKpiGroups, recapGroupStatus, recapGroupDue, ppjkCode, INVOICE_KIND_LABEL, COURIER_DUE_DAYS,
   type RecapFilters, type RecapGroup, type RecapSummaryCourier, type InvoiceKind, type RecapKpiFilter,
 } from '../utils/CourierRecapHelpers'
+import { attachCourierGrandTotals } from '../utils/CourierTotalBreakdown'
 import { LoadingState, UpdatingBadge } from './LoadingState'
 import type { ValidationTabKey } from './CourierValidationWindow'
 import type { RecapPanelTab } from './CourierRecapValidationPanel'
@@ -84,6 +85,9 @@ export const CourierRecapGroupCard: React.FC<{
 }> = ({ g, companyNames, colOk, validationTabs, selected = false, onValidation }) => {
   const [expanded, setExpanded] = useState(false)
   const status = recapGroupStatus(g)
+  // Sama dgn baris Grand Total tabel Total di panel; `syncedTotal` kosong (belum/gagal dihitung) -> rumus lama.
+  const grand = g.syncedTotal ? g.syncedTotal.grand : g.finalTotal
+  const cnTotal = g.syncedTotal ? g.syncedTotal.cn : g.cn
   const audit = g.audit
   const draft = audit ? isCourierDraft(audit.rec) : false
   const border = status.tone === 'green' ? 'border-l-[#17663D]' : status.tone === 'blue' ? 'border-l-[#2F4FA8]' : status.tone === 'amber' ? 'border-l-[#E0A526]' : 'border-l-[#D9CFD6]'
@@ -149,8 +153,8 @@ export const CourierRecapGroupCard: React.FC<{
           {colOk('total_amount') ? (
             <>
               <div className={SA_LABEL}>Grand total</div>
-              <div className="text-[18px] font-bold text-[#3B1B3D] tabular-nums leading-tight">{fmtRp(g.finalTotal)}</div>
-              {g.cn > 0 && <div className="text-[11px] text-[#6E5E70] tabular-nums">{fmtRp(g.charges)} − {fmtRp(g.cn)} CN</div>}
+              <div className="text-[18px] font-bold text-[#3B1B3D] tabular-nums leading-tight" data-card-grand-total>{fmtRp(grand)}</div>
+              {cnTotal > 0 && <div className="text-[11px] text-[#6E5E70] tabular-nums">{fmtRp(grand + cnTotal)} − {fmtRp(cnTotal)} CN</div>}
             </>
           ) : <div className="text-[11px] text-[#8A7A8B]">Amounts hidden for your role</div>}
           <div className="flex items-center gap-1.5">
@@ -214,12 +218,14 @@ export const CourierRecapCardView: React.FC<{
           const all = await fetchCourierRecapKpiGroups(filters, kpiStatus)
           res = { total: all.length, groups: all.slice((page - 1) * pageSize, page * pageSize), fallback: false }
           await fetchRecapAuditLinks(res.groups)
-          await enrichAudit(res.groups.map(g => g.audit?.rec).filter(Boolean))
+          // Grand Total kartu = baris Grand Total tabel Total panel (2026-10-12); paralel dgn enrich (hanya butuh g.audit).
+          await Promise.all([enrichAudit(res.groups.map(g => g.audit?.rec).filter(Boolean)), attachCourierGrandTotals(res.groups)])
         } else {
           res = await fetchCourierRecapPage(filters, (page - 1) * pageSize, pageSize)
           await fetchRecapAuditLinks(res.groups)
-          await enrichAudit(res.groups.map(g => g.audit?.rec).filter(Boolean))
+          await Promise.all([enrichAudit(res.groups.map(g => g.audit?.rec).filter(Boolean)), attachCourierGrandTotals(res.groups)])
         }
+        if (attentionOnly) await attachCourierGrandTotals(res.groups)
         if (my !== seq.current) return
         setGroups(res.groups)
         setTotal(res.total)

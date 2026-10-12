@@ -27,13 +27,10 @@ export type DutyRaw =
   | { state: 'ok'; dutyLine: number | null; invoiceNo: string | null }
   | { state: 'missing'; reason: DutyRawReason }
 
-export async function fetchCourierDutyRaw(audit: RecapAuditLink | null): Promise<DutyRaw> {
-  if (!audit) return { state: 'missing', reason: 'no_link' }
-  const col = audit.docType === 'CN' ? 'cn_id' : 'pib_id'
-  const { data, error } = await supabase.from('dokumen_validasi').select('data_validasi_raw').eq(col, audit.rec.id)
-  if (error) { console.warn('[CourierTotal] dokumen_validasi tidak terbaca', error.message); return { state: 'missing', reason: 'error' } }
+// Baris `dokumen_validasi` satu PIB/CN -> data invoice duty (SATU parser: panel Validation, Finance Handover & kartu).
+function parseDutyRaw(data: any[] | null | undefined): DutyRaw {
   if (!data || data.length === 0) return { state: 'missing', reason: 'no_doc' }
-  for (const d of data as any[]) {
+  for (const d of data) {
     let raw: any = d.data_validasi_raw
     if (typeof raw === 'string') { try { raw = JSON.parse(raw) } catch { raw = null } }
     const cost = raw?.invoice_duty_cost
@@ -43,6 +40,14 @@ export async function fetchCourierDutyRaw(audit: RecapAuditLink | null): Promise
     }
   }
   return { state: 'missing', reason: 'no_duty_cost' }
+}
+
+export async function fetchCourierDutyRaw(audit: RecapAuditLink | null): Promise<DutyRaw> {
+  if (!audit) return { state: 'missing', reason: 'no_link' }
+  const col = audit.docType === 'CN' ? 'cn_id' : 'pib_id'
+  const { data, error } = await supabase.from('dokumen_validasi').select('data_validasi_raw').eq(col, audit.rec.id)
+  if (error) { console.warn('[CourierTotal] dokumen_validasi tidak terbaca', error.message); return { state: 'missing', reason: 'error' } }
+  return parseDutyRaw(data as any[])
 }
 
 // `enabled` = AWB punya baris Duty (kalau tidak, data mentah tidak dibutuhkan). Dibaca ulang kalau pasangan Audit berganti.
@@ -158,6 +163,48 @@ export function courierTotalBreakdown(g: RecapGroup, raw: DutyRaw, audit: RecapA
     frozen, loading, mode, rows, hasDutyRow, adm, ...tax, taxSum, dutyLine,
     dutyCounted: mode === 'included' ? (dutyLine ?? 0) : 0,
     selisih, checks, needsCheck: checks.length > 0, grandTotal,
+  }
+}
+
+// Grand Total KARTU Invoice Recap = baris "Grand Total" tabel Total panel Validation (2026-10-12, keputusan user). Memakai rumus
+// SAMA (`courierTotalBreakdown`); data invoice duty dibaca BATCH untuk satu halaman kartu (2 query: pib_id & cn_id). AWB yang sudah
+// dikirim ke Finance tidak butuh data mentah (angka lama). Gagal baca -> kartu fallback ke `finalTotal` (rumus lama), tidak error.
+export async function attachCourierGrandTotals(groups: RecapGroup[]): Promise<void> {
+  try {
+    const need = groups.filter(g => g.submitted === 0 && g.byKind.duty.length > 0 && g.audit)
+    const ids: Record<'PIB' | 'CN', Set<string>> = { PIB: new Set(), CN: new Set() }
+    need.forEach(g => ids[g.audit!.docType === 'CN' ? 'CN' : 'PIB'].add(String(g.audit!.rec.id)))
+    const docs = new Map<string, any[]>()      // 'PIB:<id>' | 'CN:<id>' -> baris dokumen_validasi
+    const failed = new Set<string>()
+    await Promise.all((['PIB', 'CN'] as const).map(async t => {
+      if (ids[t].size === 0) return
+      const col = t === 'CN' ? 'cn_id' : 'pib_id'
+      const { data, error } = await supabase.from('dokumen_validasi').select(`${col}, data_validasi_raw`).in(col, Array.from(ids[t]))
+      if (error) {
+        console.warn('[CourierTotal] dokumen_validasi (batch kartu) tidak terbaca', error.message)
+        ids[t].forEach(id => failed.add(`${t}:${id}`))
+        return
+      }
+      ;(data as any[] || []).forEach(d => {
+        const k = `${t}:${d[col]}`
+        const list = docs.get(k)
+        if (list) list.push(d); else docs.set(k, [d])
+      })
+    }))
+    groups.forEach(g => {
+      let raw: DutyRaw = { state: 'idle' }
+      if (g.byKind.duty.length > 0 && g.submitted === 0) {
+        if (!g.audit) raw = { state: 'missing', reason: 'no_link' }
+        else {
+          const k = `${g.audit.docType === 'CN' ? 'CN' : 'PIB'}:${g.audit.rec.id}`
+          raw = failed.has(k) ? { state: 'missing', reason: 'error' } : parseDutyRaw(docs.get(k))
+        }
+      }
+      const bd = courierTotalBreakdown(g, raw, g.audit)
+      g.syncedTotal = { grand: bd.grandTotal, cn: bd.rows.filter(x => x.cn).reduce((s, x) => s + x.amount, 0) }
+    })
+  } catch (e) {
+    console.warn('[CourierTotal] Grand Total kartu gagal dihitung, memakai rumus lama', e)
   }
 }
 

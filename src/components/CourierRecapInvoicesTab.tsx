@@ -166,6 +166,9 @@ export default function CourierRecapInvoicesTab({
       cnDuty: cnOf('Credit Note Duty').reduce((s, r) => s + invoiceAmount(r), 0), cnDutyN: cnOf('Credit Note Duty').length,
     }
   }, [g.rows])
+  // Total amount rincian = Courier adm fee + Total freight + Total duty tax − Credit note (jumlah baris yang tampil di atasnya).
+  // BEDA dgn Grand Total tabel Total (`bd.grandTotal`: duty tax tidak ikut kalau dibayar terpisah) -- keputusan user 2026-10-12.
+  const detailTotal = detail.adm + detail.freight + detail.duty - detail.cnFreight - detail.cnDuty
 
   // Field yg ada di Freight & Duty: nilai sama (atau hanya satu sisi) -> tampil sekali; beda -> keduanya berlabel Freight / Duty.
   const pairFact = (label: string, key: string, fmt: (v: any) => string = v => String(v), sep = ', ') => {
@@ -336,7 +339,8 @@ export default function CourierRecapInvoicesTab({
         </SectionCard>
       )}
 
-      {/* Rincian biaya gabungan (Freight + Duty). Total amount = Courier adm fee + Total freight + Total duty tax − Credit note = Grand Total. */}
+      {/* Rincian biaya gabungan (Freight + Duty). Total amount = Courier adm fee + Total freight + Total duty tax − Credit note
+          (2026-10-12: rumus literal dari baris di atasnya; Grand Total tabel Total di atas TIDAK menjumlah duty tax yang dibayar terpisah). */}
       <SectionCard title="Cost breakdown (Freight + Duty combined)" right="No separate Freight / Duty tabs" bodyClassName="px-4 pb-3" className="" >
         <div className="grid grid-cols-1 @2xl:grid-cols-2 gap-x-8" data-cost-breakdown>
           <div>
@@ -345,15 +349,13 @@ export default function CourierRecapInvoicesTab({
                 {colOk('courier_adm_fee') && <Line k="adm" label="Courier adm fee" value={fmtRp(detail.adm)} />}
                 {colOk('total_freight') && <Line k="freight" label="Total freight" value={fmtRp(detail.freight)} />}
                 {detail.cnFreightN > 0 && <Line k="cn_freight" label="Credit note freight" value={fmtCn(detail.cnFreight)} />}
-                {colOk('total_duty_tax') && (
-                  <Line k="duty" label="Total duty tax" value={fmtRp(newRule ? bd.dutyCounted : detail.duty)}
-                    sub={newRule && bd.mode !== 'included' ? 'Paid separately — not in total' : undefined} />
-                )}
+                {/* 2026-10-12 (keputusan user): nilai LIVE kolom total_duty_tax (tanpa aturan "Paid separately — not in total"). */}
+                {colOk('total_duty_tax') && <Line k="duty" label="Total duty tax" value={fmtRp(detail.duty)} />}
                 {detail.cnDutyN > 0 && <Line k="cn_duty" label="Credit note duty" value={fmtCn(detail.cnDuty)} />}
                 {colOk('bm') && <Line k="bm" label="BM" value={fmtRp(newRule ? bd.bm : detail.bm)} />}
                 {colOk('ppn') && <Line k="ppn" label="PPN" value={fmtRp(newRule ? bd.ppn : detail.ppn)} />}
                 {colOk('pph') && <Line k="pph" label="PPh" value={fmtRp(newRule ? bd.pph : detail.pph)} />}
-                <Line k="total" strong label="Total amount" sub="Courier adm + Freight + Duty tax − Credit note" value={<span data-detail-total>{fmtRp(bd.grandTotal)}</span>} />
+                <Line k="total" strong label="Total amount" sub="Courier adm + Freight + Duty tax − Credit note" value={<span data-detail-total>{fmtRp(detailTotal)}</span>} />
               </>
             ) : <div className="text-[12px] text-[#8A7A8B] py-2">Amounts hidden for your role</div>}
           </div>

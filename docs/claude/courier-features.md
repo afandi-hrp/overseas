@@ -124,7 +124,21 @@ Spek user + `section_total_duty.html` (tata letak; teks UI diterjemahkan ke Ingg
   Checklist Note) terisi di salah satu invoice AWB; kotak isian + "Save remarks" ada di bawah tabel Total (tulis ke semua invoice AWB yang belum Submit, tanpa baris
   Audit Trail -- pola `CourierRemarksSync`). Selama data duty dimuat Submit juga nonaktif.
 - **Tabel Total**: Invoice | No. Invoice | Invoice PPJK Date | Amount | Status | Tgl Submit (Status = Locked/Not submitted + Received/Paid; tanggal Submit pindah ke kolom
-  sendiri). Rincian biaya gabungan: "Total duty tax" = duty tax yang ikut Total (0 + keterangan "Paid separately" kalau tak ikut), BM/PPN/PPh dari sumber tunggal.
+  sendiri). Rincian biaya gabungan: BM/PPN/PPh dari sumber tunggal. **"Total duty tax" (REVISI 2026-10-12, keputusan user)** = nilai LIVE kolom `total_duty_tax`
+  (`detail.duty` = jumlah baris non-CN; BUKAN dedupe per AWB -- aman krn per AWB hanya ada SATU invoice Freight & SATU invoice Duty, yang bisa >1 hanya Credit Note (konfirmasi user 2026-10-12)), aturan lama "0 + Paid separately — not in total"
+  DIHAPUS. **"Total amount" rincian (REVISI 2026-10-12)** = Courier adm fee + Total freight + Total duty tax − Credit note (jumlah baris yang tampil; `detailTotal`) -- BEDA dgn
+  baris **Grand Total** tabel Total (`bd.grandTotal`, duty tax dibayar terpisah tidak ikut). Contoh AWB 6115842622: Total amount 17.853.461, Grand Total 4.770.715.
+  **Grand Total KARTU = baris Grand Total tabel Total** (2026-10-12, keputusan user): `attachCourierGrandTotals` (`CourierTotalBreakdown.ts`) dipanggil setelah satu halaman
+  kartu dimuat -- baca `dokumen_validasi` BATCH (2 query: `pib_id`/`cn_id` untuk AWB yg punya baris Duty & belum Submit), lalu `courierTotalBreakdown` per AWB -> `g.syncedTotal`.
+  Gagal/kosong -> kartu fallback `g.finalTotal` (rumus lama). Subbaris "x − y CN" kartu ikut rumus baru.
+  **KPI "Freight + Duty"** (2026-10-12): `sql/052_courier_recap_summary_grand_total.sql` (**SUDAH DIJALANKAN 2026-10-12**, konfirmasi user) menulis ulang `fn_courier_recap_summary` (signature & return SAMA,
+  `CREATE OR REPLACE`; badan lama dari `pg_get_functiondef` live user) -- hanya `charges` yang berubah, meniru `courierTotalBreakdown` di server (frozen = angka lama; Freight =
+  amt − total_duty_tax; Duty = adm + `import_export_duties_idr` kalau terbaca; pasangan PIB/CN via pib_id/cn_id lalu AWB) + fungsi baru `fn_courier_raw_json` (raw berupa string JSON).
+  Frontend TIDAK berubah (`charges − credit_notes`). Diuji PGlite 13 cek (kasus AWB 6115842622 = 4.770.715, included, frozen, tanpa pasangan Audit, raw string, fallback AWB,
+  Credit Note, 2 baris Duty). **Beban**: RPC kini membaca `dokumen_validasi.data_validasi_raw` semua AWB belum-Submit yg punya baris Duty tiap kali ringkasan dipanggil
+  (ganti filter / refresh). Ukuran diukur user 2026-10-12: 100 baris, rata-rata 2.757 B, maks 3.824 B (terkompresi), 0 baris berupa string JSON -> kecil, tidak perlu
+  cache/JSON-path. Di kartu, `attachCourierGrandTotals` jalan PARALEL dgn `enrichAudit` (hanya butuh `g.audit`). **Tidak disinkronkan, sengaja**: daftar Finance Handover (semua AWB-nya sudah Submit = angka lama), List &
+  Export (nilai per-invoice kolom `total_amount`, tidak ada total AWB).
 - **Belum / sengaja tidak berubah (tahap 1)**: kartu, KPI "Freight + Duty", List, Export masih memakai `total_amount` lama (angka kartu bisa BEDA dari Grand Total panel
   untuk AWB PIB belum dikirim). Split per PO/vessel & Reporting tetap memasukkan duty tax; `netCostTotals` kini menghitung pajak SEKALI per AWB (tidak dobel kalau ada
   baris Duty + Freight). Dedupe di `ReportingCourierHelpers` belum.

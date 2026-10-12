@@ -118,7 +118,10 @@ export type RecapGroup = {
   duty: number
   charges: number                 // freight + duty
   cn: number                      // jumlah Credit Note (positif)
-  finalTotal: number              // charges − cn
+  finalTotal: number              // charges − cn (rumus LAMA: Σ total_amount)
+  // Grand Total rumus baru = baris "Grand Total" tabel Total panel Validation (courierTotalBreakdown). Diisi
+  // `attachCourierGrandTotals` (CourierTotalBreakdown.ts) setelah daftar kartu dimuat; kosong -> kartu pakai finalTotal.
+  syncedTotal?: { grand: number; cn: number }
   submitted: number
   received: number
   paid: number
