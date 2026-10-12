@@ -821,10 +821,10 @@ pola SECTIONS/row-col-lookup lain — cek dulu sebelum translate/ubah row/col la
 - **Submit to Finance ambang 90%**: `computeRecapIssues` -- kalau % Cost Validation DAN % Doc Validation sama-sama **>= 90** (`RECAP_SUBMIT_PCT_THRESHOLD`), issue
   cost (OVERCHARGE/UNDERCHARGE belum dikonfirmasi) & mismatch dokumen DILEWATI. Tetap menahan: checklist (dokumen wajib kurang) & Form E. Tidak ada data
   matriks/cost -> aturan tidak berlaku (tidak menambah blokir baru). Efek ke tombol "Submit to Finance", status kartu (⚠ N issues / Ready), KPI Needs attention, dan
-  gerbang "Mark as audited" PIB (pakai issue yang sama). **Sisi DB**: `sql/053_seaair_recap_issue_count_pct90.sql` (**BELUM DIJALANKAN**) -- trigger sql/031 memakai
+  gerbang "Mark as audited" PIB (pakai issue yang sama). **Sisi DB**: `sql/053_seaair_recap_issue_count_pct90.sql` (**SUDAH DIJALANKAN 2026-10-12**, konfirmasi user) -- trigger sql/031 memakai
   `fn_seaair_recap_issue_count` yang menghitung section cost belum dikonfirmasi; 053 melewatinya kalau % Cost >= 90 (rumus % = `computeSeaAirCostGlobalStats`,
-  pre-check md5 badan fungsi live = sql/031 -- kalau beda STOP). % Doc >= 90 tidak dihitung di server (mismatch dokumen memang tidak pernah dihitung server). Sebelum 053
-  dijalankan, tombol aktif tapi DB menolak kalau ada section cost belum dikonfirmasi. Diuji PGlite 10 cek.
+  pre-check md5 badan fungsi live = sql/031 -- kalau beda STOP). % Doc >= 90 tidak dihitung di server (mismatch dokumen memang tidak pernah dihitung server). (Sebelum 053
+  dijalankan tombol bisa aktif tapi DB menolak -- kini sudah dijalankan.) Diuji PGlite 10 cek.
 - **Audit Sea & Air (jendela Open Audit PIB)**: kartu "Duties & taxes" DIHAPUS (`SeaAirAuditDetailModal.tsx`; kartu Customs value (CIF) & "Checks" tetap).
   Perbandingan duty tetap ada di Invoice Recap › Documents › Duty. `SeaAirDutyCompareTable` masih dipakai tab Costs Invoice Recap.
 
