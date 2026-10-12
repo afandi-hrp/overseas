@@ -88,7 +88,13 @@ Spek user + referensi tampilan `finance_handover_courier.html` (root repo; HANYA
   **Invoices · Cost Validation · Doc Validation** (tab Checklist DIHAPUS 2026-10-06, permintaan user: Finance tidak butuh;
   prop `onCounts` ChecklistModal ikut dicabut); label = % + titik (`validationDotClass`: hijau 100, oranye <100, abu belum ada
   data; "…" saat memuat). Kedua tab validasi dipasang sekaligus saat kartu dibuka (tab lain `hidden`) supaya % label langsung akurat.
-  - Invoices: hanya invoice handover AWB ini; kolom jenis + no. invoice · email received · amount; CN dalam kurung "(289.000)"; baris Total (net).
+  - Invoices (REVISI 2026-10-12, keputusan user): tampilan SAMA tabel "Total" tab Invoices panel Validation Invoice Recap -- komponen BERSAMA
+    `CourierTotalSummary` (`CourierRecapInvoicesTab.tsx`): Invoice · No. Invoice · Invoice PPJK Date · Amount (CN dalam kurung) · Status (Locked +
+    Received/Paid) · Tgl Submit + Grand Total, "Needs check" info. Hanya invoice handover AWB ini (semua sudah Submit -> mode `legacy`: angka rumus
+    lama, TANPA tombol Unlock krn tidak ada `onUnlock`). **BM · PPN · PPh DIJABARKAN** (mode `legacy` di `CourierTotalSummary`; SAMA Invoice Recap yang sudah Locked): baris abu-abu Courier
+    adm fee + BM + PPN + PPh di bawah Invoice Duty dgn tag "included in Invoice Duty" (nominal sudah termasuk di Invoice Duty, rumus lama; tanpa tag "paid
+    separately"); tanpa invoice Duty tapi pajak tercatat di Freight -> di bawah invoice terakhir, TANPA tag; tanpa pajak sama
+    sekali -> tidak ada rincian. Revisi 2026-10-12: awalnya hanya Finance, lalu user minta Invoice Recap yang Locked ikut menjabarkan (sync). Diuji SSR 10 cek.
   - Cost Validation: `CostValidationModalLegacy` (= isi Details Invoice Recap) prop BARU **`financeView`**: header ringkasan gaya jendela Open
     Audit (OK / Difference / N/A + "x of y invoices match the rate sheet" + Accuracy, `computeLiveCostSummary` SAMA) menggantikan toolbar;
     Potong CN / Revisi / Update Estimasi / Hitung Ulang Estimasi disembunyikan; Catatan Perubahan Manual tetap tampil.

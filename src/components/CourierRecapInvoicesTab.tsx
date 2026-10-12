@@ -129,6 +129,137 @@ const Line: React.FC<{ label: React.ReactNode; value: React.ReactNode; sub?: str
   </div>
 )
 
+// Tabel "Total" (Invoice | No. Invoice | Invoice PPJK Date | Amount | Status | Tgl Submit + Grand Total, rincian abu-abu BM/PPN/PPh,
+// kotak Match/Difference & Needs check). SATU komponen: tab Invoices panel Validation Invoice Recap DAN tab Invoices Finance
+// Handover Courier (2026-10-12, keputusan user: tampilan sama). Finance = baca saja: tanpa `onUnlock` tombol Unlock tidak muncul.
+export function CourierTotalSummary({
+  g, bd, colOk, busy = false, canEdit = false, isAdmin = false, onUnlock, onRemarksSaved,
+}: {
+  g: RecapGroup
+  bd: TotalBreakdown
+  colOk: (k: string) => boolean
+  busy?: boolean
+  canEdit?: boolean
+  isAdmin?: boolean
+  onUnlock?: (id: string, reason: string) => Promise<boolean>
+  onRemarksSaved?: () => void
+}) {
+  // Rumus baru (BELUM dikirim ke Finance): duty tax tidak ikut Total kecuali tertera di Invoice Duty; rincian BM/PPN/PPh dari SATU sumber.
+  const newRule = bd.mode === 'included' || bd.mode === 'self' || bd.mode === 'none'
+  // AWB yang sudah di-Submit/Locked (mode `legacy`, rumus lama) TETAP menjabarkan BM · PPN · PPh -- nominalnya sudah termasuk di Invoice
+  // Duty / Freight (2026-10-12, keputusan user: Invoice Recap & Finance Handover sama).
+  const legacyBreakdown = bd.mode === 'legacy' && (bd.hasDutyRow || bd.taxSum > 0)
+  const taxIncluded = bd.mode === 'included' || legacyBreakdown // duty tax sudah termasuk di nominal invoice di atasnya
+  const showGray = (newRule || legacyBreakdown) && colOk('total_amount')
+  const fmtMoney = (n: number) => fmtRp(n)
+  const diffOver = bd.selisih !== null && Math.abs(bd.selisih) > COURIER_DUTY_TOLERANCE
+  const grayTax: [string, number][] = [['BM', bd.bm], ['PPN', bd.ppn], ['PPh', bd.pph]]
+  const withAdm = taxIncluded && bd.hasDutyRow // Invoice Duty = adm fee + pajak -> adm fee ikut dijabarkan
+  const grayRows: [string, number][] = withAdm ? [['Courier adm fee', bd.adm], ...grayTax] : grayTax
+  const tagIndex = withAdm ? 1 : 0 // baris yang memuat tag keterangan
+  if (!colOk('total_amount')) return null
+  return (
+    <SectionCard title="Total" right={`${g.submitted}/${g.rows.length} submitted · ${g.paid} paid`} bodyClassName="pb-1">
+      <div className="overflow-x-auto">
+        <table className="w-full text-[12.5px] min-w-[760px]" data-recap-total-table data-total-mode={bd.mode}>
+          <thead>
+            <tr className="bg-[#FBF7F4] border-y border-[#EADFD6]">
+              <th className={`${SA_LABEL} text-left px-4 py-2`}>Invoice</th>
+              <th className={`${SA_LABEL} text-left px-3 py-2`}>No. Invoice</th>
+              <th className={`${SA_LABEL} text-left px-3 py-2`}>Invoice PPJK Date</th>
+              <th className={`${SA_LABEL} text-right px-3 py-2`}>Amount</th>
+              <th className={`${SA_LABEL} text-left px-4 py-2`}>Status</th>
+              <th className={`${SA_LABEL} text-left px-3 py-2`}>Tgl Submit</th>
+            </tr>
+          </thead>
+          <tbody>
+            {bd.rows.map(({ row: r, label, amount, cn }) => (
+              <React.Fragment key={r.id}>
+                <tr className="border-b border-[#F1E8E1] align-top" data-total-row data-recap-invoice={r.id}>
+                  <td className="px-4 py-2 font-semibold text-[#3B1B3D] whitespace-nowrap">{label}</td>
+                  <td className="px-3 py-2 text-[#3B1B3D] [overflow-wrap:anywhere]">{r.no_invoice || '—'}</td>
+                  <td className="px-3 py-2 text-[#3B1B3D] whitespace-nowrap">{colOk('tgl_invoice') && hasVal(r.tgl_invoice) ? fmtDateShort(r.tgl_invoice) : '—'}</td>
+                  <td className="px-3 py-2 text-right tabular-nums font-semibold text-[#3B1B3D] whitespace-nowrap" data-row-amount>
+                    {cn ? fmtCn(amount) : fmtRp(amount)}
+                  </td>
+                  <td className="px-4 py-2" data-invoice-status={r.id}
+                    title={!r.submit_date && r.submit_unlock_reason ? `Last unlock: ${r.submit_unlocked_by || 'Admin'}${r.submit_unlocked_at ? ` · ${fmtDateShort(r.submit_unlocked_at)}` : ''} — ${r.submit_unlock_reason}` : undefined}>
+                    <div className="flex flex-col items-start gap-1">
+                      {statusChips(r)}
+                      {r.submit_date && isAdmin && onUnlock && <UnlockControl r={r} busy={busy} onUnlock={onUnlock} />}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-[#6E5E70] whitespace-nowrap" data-submit-date>{r.submit_date ? fmtDateShort(r.submit_date) : '—'}</td>
+                </tr>
+                {/* Rincian abu-abu (BM · PPN · PPh) tepat di bawah Invoice Duty; nominal sejajar kolom Amount, TIDAK ikut Grand Total. */}
+                {showGray && label === 'Invoice Duty' && r === bd.rows.find(x => x.label === 'Invoice Duty')?.row && grayRows.map(([l, v], i) => (
+                  <tr key={`gray-${l}`} className="bg-[#FCFBFC] text-[12px] text-[#958893]" data-gray-row={l}>
+                    <td colSpan={3} className={`pl-9 pr-3 ${i === 0 ? 'pt-2' : 'pt-0.5'} ${i === grayRows.length - 1 ? 'pb-2.5' : 'pb-0.5'}`}>
+                      {l}
+                      {i === tagIndex && (taxIncluded
+                        ? <span className="ml-2 px-1.5 py-px rounded-[5px] text-[9.5px] font-semibold bg-[#FDE7C2] text-[#7A4A00]">included in Invoice Duty</span>
+                        : <span className="ml-2 px-1.5 py-px rounded-[5px] text-[9.5px] font-semibold bg-[#E6EFFF] text-[#1D4F9B]">paid separately · not in total</span>)}
+                    </td>
+                    <td className={`px-3 text-right tabular-nums whitespace-nowrap ${i === 0 ? 'pt-2' : 'pt-0.5'} ${i === grayRows.length - 1 ? 'pb-2.5' : 'pb-0.5'}`}>{fmtMoney(v)}</td>
+                    <td colSpan={2} />
+                  </tr>
+                ))}
+              </React.Fragment>
+            ))}
+            {/* Belum ada invoice Duty: baris pengganti + rincian abu-abu (dibayar sendiri) di bawahnya. */}
+            {bd.mode === 'none' && (
+              <>
+                <tr className="border-b border-[#F1E8E1] italic text-[#6E5E70]" data-duty-missing>
+                  <td colSpan={3} className="px-4 py-2">Invoice Duty · not uploaded / not issued</td>
+                  <td className="px-3 py-2 text-right">—</td>
+                  <td colSpan={2} />
+                </tr>
+                {showGray && grayRows.map(([l, v], i) => (
+                  <tr key={`gray-${l}`} className="bg-[#FCFBFC] text-[12px] text-[#958893]" data-gray-row={l}>
+                    <td colSpan={3} className={`pl-9 pr-3 ${i === 0 ? 'pt-2' : 'pt-0.5'} ${i === grayRows.length - 1 ? 'pb-2.5' : 'pb-0.5'}`}>
+                      {l}{i === 0 && <span className="ml-2 px-1.5 py-px rounded-[5px] text-[9.5px] font-semibold bg-[#E6EFFF] text-[#1D4F9B]">paid separately · not in total</span>}
+                    </td>
+                    <td className={`px-3 text-right tabular-nums whitespace-nowrap ${i === 0 ? 'pt-2' : 'pt-0.5'} ${i === grayRows.length - 1 ? 'pb-2.5' : 'pb-0.5'}`}>{fmtMoney(v)}</td>
+                    <td colSpan={2} />
+                  </tr>
+                ))}
+              </>
+            )}
+            {/* Finance Handover, AWB tanpa invoice Duty tapi pajaknya tercatat di invoice Freight: rincian di bawah invoice terakhir. */}
+            {legacyBreakdown && !bd.hasDutyRow && showGray && grayRows.map(([l, v], i) => (
+              <tr key={`gray-${l}`} className="bg-[#FCFBFC] text-[12px] text-[#958893]" data-gray-row={l}>
+                <td colSpan={3} className={`pl-9 pr-3 ${i === 0 ? 'pt-2' : 'pt-0.5'} ${i === grayRows.length - 1 ? 'pb-2.5' : 'pb-0.5'}`}>
+                  {l}
+                </td>
+                <td className={`px-3 text-right tabular-nums whitespace-nowrap ${i === 0 ? 'pt-2' : 'pt-0.5'} ${i === grayRows.length - 1 ? 'pb-2.5' : 'pb-0.5'}`}>{fmtMoney(v)}</td>
+                <td colSpan={2} />
+              </tr>
+            ))}
+            <tr className="bg-[#FBF7F4]">
+              <td colSpan={3} className="px-4 py-2.5 text-[13.5px] font-bold text-[#3B1B3D]">Grand Total</td>
+              <td className="px-3 py-2.5 text-right tabular-nums text-[16px] font-bold text-[#3B1B3D] whitespace-nowrap" data-recap-grand-total>
+                {bd.loading ? <span className="text-[12px] font-normal text-[#8A7A8B]">Loading…</span> : fmtRp(bd.grandTotal)}
+              </td>
+              <td colSpan={2} />
+            </tr>
+            {bd.mode === 'included' && !bd.needsCheck && (
+              <tr><td colSpan={6} className="p-0">
+                {diffOver
+                  ? <div className="bg-[#FFF1D6] text-[#7A4F00] text-[11.5px] font-semibold px-4 py-2 border-t border-[#F3D9A4]" data-duty-diff>Difference: duty tax on the invoice ({fmtRp(bd.dutyLine ?? 0)}) vs BM + PPN + PPh ({fmtRp(bd.taxSum)}) = {bd.selisih! > 0 ? '+' : '−'}{fmtRp(Math.abs(bd.selisih!))}</div>
+                  : <div className="bg-[#E3F4E9] text-[#1F7A4D] text-[11.5px] font-semibold px-4 py-2 border-t border-[#CBE8D4]" data-duty-ok>✓ Match: duty tax on the invoice ({fmtRp(bd.dutyLine ?? 0)}) = BM + PPN + PPh ({fmtRp(bd.taxSum)})</div>}
+              </td></tr>
+            )}
+            {bd.mode === 'included' && bd.needsCheck && diffOver && (
+              <tr><td colSpan={6} className="p-0"><div className="bg-[#FFF1D6] text-[#7A4F00] text-[11.5px] font-semibold px-4 py-2 border-t border-[#F3D9A4]" data-duty-diff>Difference: duty tax on the invoice ({fmtRp(bd.dutyLine ?? 0)}) vs BM + PPN + PPh ({fmtRp(bd.taxSum)}) = {bd.selisih! > 0 ? '+' : '−'}{fmtRp(Math.abs(bd.selisih!))}</div></td></tr>
+            )}
+            {bd.needsCheck && <tr><td colSpan={6} className="p-0"><NeedsCheckNote bd={bd} rows={g.rows} canEdit={canEdit} onSaved={onRemarksSaved} /></td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </SectionCard>
+  )
+}
+
 export default function CourierRecapInvoicesTab({
   g, bd, colOk, busy, isAdmin = false, onUnlock, onEditInList, onRemarksSaved, canEdit,
 }: {
@@ -146,14 +277,8 @@ export default function CourierRecapInvoicesTab({
   const amountOk = colOk('total_amount')
   const [splitTab, setSplitTab] = useState<'po' | 'vessel'>('po')
 
-  // Rumus baru (BELUM dikirim ke Finance): duty tax tidak ikut Total kecuali tertera di Invoice Duty; rincian BM/PPN/PPh dari SATU sumber.
+  // Rumus baru (BELUM dikirim ke Finance): lihat CourierTotalSummary.
   const newRule = bd.mode === 'included' || bd.mode === 'self' || bd.mode === 'none'
-  const showGray = newRule && colOk('total_amount')
-  const fmtMoney = (n: number) => fmtRp(n)
-  const diffOver = bd.selisih !== null && Math.abs(bd.selisih) > COURIER_DUTY_TOLERANCE
-  const grayTax: [string, number][] = [['BM', bd.bm], ['PPN', bd.ppn], ['PPh', bd.pph]]
-  const grayRows: [string, number][] = bd.mode === 'included' ? [['Courier adm fee', bd.adm], ...grayTax] : grayTax
-  const tagIndex = bd.mode === 'included' ? 1 : 0 // baris yang memuat tag keterangan
 
   // ── Rincian gabungan: Freight + Duty dijumlah (kotor); Credit Note terpisah (dalam kurung); Total amount = Grand Total ──
   const detail = useMemo(() => {
@@ -248,96 +373,7 @@ export default function CourierRecapInvoicesTab({
   return (
     <div className="flex flex-col gap-3 min-w-0">
       {/* Ringkasan Total (2026-10-07) + kolom Status & Unlock (Admin) (2026-10-08). */}
-      {amountOk && (
-        <SectionCard title="Total" right={`${g.submitted}/${g.rows.length} submitted · ${g.paid} paid`} bodyClassName="pb-1">
-          <div className="overflow-x-auto">
-            <table className="w-full text-[12.5px] min-w-[760px]" data-recap-total-table data-total-mode={bd.mode}>
-              <thead>
-                <tr className="bg-[#FBF7F4] border-y border-[#EADFD6]">
-                  <th className={`${SA_LABEL} text-left px-4 py-2`}>Invoice</th>
-                  <th className={`${SA_LABEL} text-left px-3 py-2`}>No. Invoice</th>
-                  <th className={`${SA_LABEL} text-left px-3 py-2`}>Invoice PPJK Date</th>
-                  <th className={`${SA_LABEL} text-right px-3 py-2`}>Amount</th>
-                  <th className={`${SA_LABEL} text-left px-4 py-2`}>Status</th>
-                  <th className={`${SA_LABEL} text-left px-3 py-2`}>Tgl Submit</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bd.rows.map(({ row: r, label, amount, cn }) => (
-                  <React.Fragment key={r.id}>
-                    <tr className="border-b border-[#F1E8E1] align-top" data-total-row data-recap-invoice={r.id}>
-                      <td className="px-4 py-2 font-semibold text-[#3B1B3D] whitespace-nowrap">{label}</td>
-                      <td className="px-3 py-2 text-[#3B1B3D] [overflow-wrap:anywhere]">{r.no_invoice || '—'}</td>
-                      <td className="px-3 py-2 text-[#3B1B3D] whitespace-nowrap">{colOk('tgl_invoice') && hasVal(r.tgl_invoice) ? fmtDateShort(r.tgl_invoice) : '—'}</td>
-                      <td className="px-3 py-2 text-right tabular-nums font-semibold text-[#3B1B3D] whitespace-nowrap" data-row-amount>
-                        {cn ? fmtCn(amount) : fmtRp(amount)}
-                      </td>
-                      <td className="px-4 py-2" data-invoice-status={r.id}
-                        title={!r.submit_date && r.submit_unlock_reason ? `Last unlock: ${r.submit_unlocked_by || 'Admin'}${r.submit_unlocked_at ? ` · ${fmtDateShort(r.submit_unlocked_at)}` : ''} — ${r.submit_unlock_reason}` : undefined}>
-                        <div className="flex flex-col items-start gap-1">
-                          {statusChips(r)}
-                          {r.submit_date && isAdmin && onUnlock && <UnlockControl r={r} busy={busy} onUnlock={onUnlock} />}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 text-[#6E5E70] whitespace-nowrap" data-submit-date>{r.submit_date ? fmtDateShort(r.submit_date) : '—'}</td>
-                    </tr>
-                    {/* Rincian abu-abu (BM · PPN · PPh) tepat di bawah Invoice Duty; nominal sejajar kolom Amount, TIDAK ikut Grand Total. */}
-                    {showGray && label === 'Invoice Duty' && r === bd.rows.find(x => x.label === 'Invoice Duty')?.row && grayRows.map(([l, v], i) => (
-                      <tr key={`gray-${l}`} className="bg-[#FCFBFC] text-[12px] text-[#958893]" data-gray-row={l}>
-                        <td colSpan={3} className={`pl-9 pr-3 ${i === 0 ? 'pt-2' : 'pt-0.5'} ${i === grayRows.length - 1 ? 'pb-2.5' : 'pb-0.5'}`}>
-                          {l}
-                          {i === tagIndex && (bd.mode === 'included'
-                            ? <span className="ml-2 px-1.5 py-px rounded-[5px] text-[9.5px] font-semibold bg-[#FDE7C2] text-[#7A4A00]">included in Invoice Duty</span>
-                            : <span className="ml-2 px-1.5 py-px rounded-[5px] text-[9.5px] font-semibold bg-[#E6EFFF] text-[#1D4F9B]">paid separately · not in total</span>)}
-                        </td>
-                        <td className={`px-3 text-right tabular-nums whitespace-nowrap ${i === 0 ? 'pt-2' : 'pt-0.5'} ${i === grayRows.length - 1 ? 'pb-2.5' : 'pb-0.5'}`}>{fmtMoney(v)}</td>
-                        <td colSpan={2} />
-                      </tr>
-                    ))}
-                  </React.Fragment>
-                ))}
-                {/* Belum ada invoice Duty: baris pengganti + rincian abu-abu (dibayar sendiri) di bawahnya. */}
-                {bd.mode === 'none' && (
-                  <>
-                    <tr className="border-b border-[#F1E8E1] italic text-[#6E5E70]" data-duty-missing>
-                      <td colSpan={3} className="px-4 py-2">Invoice Duty · not uploaded / not issued</td>
-                      <td className="px-3 py-2 text-right">—</td>
-                      <td colSpan={2} />
-                    </tr>
-                    {showGray && grayRows.map(([l, v], i) => (
-                      <tr key={`gray-${l}`} className="bg-[#FCFBFC] text-[12px] text-[#958893]" data-gray-row={l}>
-                        <td colSpan={3} className={`pl-9 pr-3 ${i === 0 ? 'pt-2' : 'pt-0.5'} ${i === grayRows.length - 1 ? 'pb-2.5' : 'pb-0.5'}`}>
-                          {l}{i === 0 && <span className="ml-2 px-1.5 py-px rounded-[5px] text-[9.5px] font-semibold bg-[#E6EFFF] text-[#1D4F9B]">paid separately · not in total</span>}
-                        </td>
-                        <td className={`px-3 text-right tabular-nums whitespace-nowrap ${i === 0 ? 'pt-2' : 'pt-0.5'} ${i === grayRows.length - 1 ? 'pb-2.5' : 'pb-0.5'}`}>{fmtMoney(v)}</td>
-                        <td colSpan={2} />
-                      </tr>
-                    ))}
-                  </>
-                )}
-                <tr className="bg-[#FBF7F4]">
-                  <td colSpan={3} className="px-4 py-2.5 text-[13.5px] font-bold text-[#3B1B3D]">Grand Total</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums text-[16px] font-bold text-[#3B1B3D] whitespace-nowrap" data-recap-grand-total>
-                    {bd.loading ? <span className="text-[12px] font-normal text-[#8A7A8B]">Loading…</span> : fmtRp(bd.grandTotal)}
-                  </td>
-                  <td colSpan={2} />
-                </tr>
-                {bd.mode === 'included' && !bd.needsCheck && (
-                  <tr><td colSpan={6} className="p-0">
-                    {diffOver
-                      ? <div className="bg-[#FFF1D6] text-[#7A4F00] text-[11.5px] font-semibold px-4 py-2 border-t border-[#F3D9A4]" data-duty-diff>Difference: duty tax on the invoice ({fmtRp(bd.dutyLine ?? 0)}) vs BM + PPN + PPh ({fmtRp(bd.taxSum)}) = {bd.selisih! > 0 ? '+' : '−'}{fmtRp(Math.abs(bd.selisih!))}</div>
-                      : <div className="bg-[#E3F4E9] text-[#1F7A4D] text-[11.5px] font-semibold px-4 py-2 border-t border-[#CBE8D4]" data-duty-ok>✓ Match: duty tax on the invoice ({fmtRp(bd.dutyLine ?? 0)}) = BM + PPN + PPh ({fmtRp(bd.taxSum)})</div>}
-                  </td></tr>
-                )}
-                {bd.mode === 'included' && bd.needsCheck && diffOver && (
-                  <tr><td colSpan={6} className="p-0"><div className="bg-[#FFF1D6] text-[#7A4F00] text-[11.5px] font-semibold px-4 py-2 border-t border-[#F3D9A4]" data-duty-diff>Difference: duty tax on the invoice ({fmtRp(bd.dutyLine ?? 0)}) vs BM + PPN + PPh ({fmtRp(bd.taxSum)}) = {bd.selisih! > 0 ? '+' : '−'}{fmtRp(Math.abs(bd.selisih!))}</div></td></tr>
-                )}
-                {bd.needsCheck && <tr><td colSpan={6} className="p-0"><NeedsCheckNote bd={bd} rows={g.rows} canEdit={canEdit} onSaved={onRemarksSaved} /></td></tr>}
-              </tbody>
-            </table>
-          </div>
-        </SectionCard>
-      )}
+      <CourierTotalSummary g={g} bd={bd} colOk={colOk} busy={busy} canEdit={canEdit} isAdmin={isAdmin} onUnlock={onUnlock} onRemarksSaved={onRemarksSaved} />
 
       {/* Rincian biaya gabungan (Freight + Duty). Total amount = Courier adm fee + Total freight + Total duty tax − Credit note
           (2026-10-12: rumus literal dari baris di atasnya; Grand Total tabel Total di atas TIDAK menjumlah duty tax yang dibayar terpisah). */}

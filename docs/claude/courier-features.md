@@ -123,6 +123,9 @@ Spek user + `section_total_duty.html` (tata letak; teks UI diterjemahkan ke Ingg
   Pada AWB belum dikirim: **Submit all to Finance dikunci** (hanya frontend) sampai **Internal remarks** (`rekapan_courier.keterangan`, BUKAN Remarks/`notes` krn sinkron
   Checklist Note) terisi di salah satu invoice AWB; kotak isian + "Save remarks" ada di bawah tabel Total (tulis ke semua invoice AWB yang belum Submit, tanpa baris
   Audit Trail -- pola `CourierRemarksSync`). Selama data duty dimuat Submit juga nonaktif.
+- **Tabel Total = komponen `CourierTotalSummary`** (2026-10-12; dipakai juga tab Invoices Finance Handover). AWB yang sudah Locked (mode `legacy`, rumus lama) TETAP
+  menjabarkan Courier adm fee + BM · PPN · PPh di bawah Invoice Duty (tag "included in Invoice Duty", tidak ikut Grand Total); tanpa invoice Duty tapi pajak di Freight ->
+  di bawah invoice terakhir TANPA tag; tanpa pajak -> tidak ada rincian. Belum Locked: aturan lama (included / self / none) tidak berubah.
 - **Tabel Total**: Invoice | No. Invoice | Invoice PPJK Date | Amount | Status | Tgl Submit (Status = Locked/Not submitted + Received/Paid; tanggal Submit pindah ke kolom
   sendiri). Rincian biaya gabungan: BM/PPN/PPh dari sumber tunggal. **"Total duty tax" (REVISI 2026-10-12, keputusan user)** = nilai LIVE kolom `total_duty_tax`
   (`detail.duty` = jumlah baris non-CN; BUKAN dedupe per AWB -- aman krn per AWB hanya ada SATU invoice Freight & SATU invoice Duty, yang bisa >1 hanya Credit Note (konfirmasi user 2026-10-12)), aturan lama "0 + Paid separately — not in total"

@@ -17,10 +17,10 @@ import ValidasiModal from './ValidasiModal'
 import CostValidationModalLegacy from './CostValidationModalLegacy'
 import { VW_CARD } from './validationWindowStyles'
 import { validationDotClass, validationDotLabel } from './CourierValidationWindow'
-import { fmtRp, fmtDateShort } from '../utils/SeaAirAuditHelpers'
 import { computeCourierAuditCalc, type CourierDocType } from '../utils/CourierAuditHelpers'
-import { courierInvoiceLabel, courierSignedAmount, type HandoverItem } from '../utils/FinanceHandoverHelpers'
-import { useCourierDutyRaw, courierTotalBreakdown, CHECK_MESSAGE } from '../utils/CourierTotalBreakdown'
+import type { HandoverItem } from '../utils/FinanceHandoverHelpers'
+import { useCourierDutyRaw, courierTotalBreakdown } from '../utils/CourierTotalBreakdown'
+import { CourierTotalSummary } from './CourierRecapInvoicesTab'
 
 export type CourierDetailTab = 'invoices' | 'cost' | 'doc'
 type DetailValidationTab = Exclude<CourierDetailTab, 'invoices'>
@@ -31,53 +31,18 @@ export const COURIER_DETAIL_TAB_LABEL: Record<CourierDetailTab, string> = {
 
 const noop = () => {}
 
-// Jumlah akuntansi: Credit Note dalam kurung, mis. (289.000).
-const accAmount = (n: number) => (n < 0 ? `(${Math.abs(n).toLocaleString('id-ID')})` : fmtRp(n))
+const allCols = () => true
 
-// Revisi 2026-10-09 (keputusan user): kolom Invoice · No. Invoice · Email received · Amount + "Grand Total". Handover hanya berisi invoice yang
-// SUDAH dikirim ke Finance -> angka TIDAK berubah (rumus lama), hanya label; "Needs check" tampil sebagai info saja.
+// Revisi 2026-10-12 (keputusan user): tampilan SAMA dgn tabel "Total" tab Invoices panel Validation Invoice Recap Courier
+// (`CourierTotalSummary`: Invoice · No. Invoice · Invoice PPJK Date · Amount · Status · Tgl Submit + Grand Total). Handover hanya berisi
+// invoice yang SUDAH dikirim ke Finance -> angka TIDAK berubah (rumus lama), hanya label; "Needs check" tampil sebagai info saja;
+// tanpa tombol Unlock (Finance baca saja). BM · PPN · PPh dijabarkan (sama Invoice Recap yang sudah Locked, keputusan user 2026-10-12).
 export function CourierInvoicesTable({ item }: { item: HandoverItem }) {
-  const rows = item.courier?.rows || []
   const group = item.courier?.group || null
   const raw = useCourierDutyRaw(group?.audit ?? null, !!group && group.byKind.duty.length > 0)
   const bd = useMemo(() => (group ? courierTotalBreakdown(group, raw, group.audit) : null), [group, raw])
-  const th = 'px-3 py-2 text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B]'
-  return (
-    <div className={`${VW_CARD} overflow-x-auto`}>
-      <table className="w-full text-[12.5px]">
-        <thead>
-          <tr className="bg-[#FBF7F4] text-left">
-            <th className={`${th} px-4`}>Invoice</th>
-            <th className={th}>No. Invoice</th>
-            <th className={th}>Email received</th>
-            <th className={`${th} px-4 text-right`}>Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(r => (
-            <tr key={r.id} className="border-t border-[#F1E8E1]" data-invoice-row>
-              <td className="px-4 py-2 font-bold text-[#3B1B3D] whitespace-nowrap">{courierInvoiceLabel(r)}</td>
-              <td className="px-3 py-2 text-[#3B1B3D] [overflow-wrap:anywhere]">{r.no_invoice || '—'}</td>
-              <td className="px-3 py-2 text-[#6E5E70] whitespace-nowrap">{fmtDateShort(r.tgl_terima_email) || '—'}</td>
-              <td className="px-4 py-2 text-right tabular-nums font-semibold text-[#3B1B3D] whitespace-nowrap">{accAmount(courierSignedAmount(r))}</td>
-            </tr>
-          ))}
-          <tr className="border-t-2 border-[#EADFD6] bg-[#FBF7F4]">
-            <td colSpan={3} className="px-4 py-2.5 text-[13.5px] font-bold text-[#3B1B3D]">Grand Total</td>
-            <td className="px-4 py-2.5 text-right tabular-nums text-[14px] font-bold text-[#3B1B3D] whitespace-nowrap" data-invoices-total>{fmtRp(item.amountIdr)}</td>
-          </tr>
-          {bd?.needsCheck && (
-            <tr><td colSpan={4} className="p-0">
-              <div className="bg-[#FDECEA] text-[#B42318] border-t border-[#F3C9C2] px-4 py-2 text-[11.5px]" data-needs-check>
-                <b>Needs check (info — amounts unchanged)</b>
-                <ul className="list-disc pl-4 mt-0.5">{bd.checks.map(c => <li key={c}>{CHECK_MESSAGE[c]}</li>)}</ul>
-              </div>
-            </td></tr>
-          )}
-        </tbody>
-      </table>
-    </div>
-  )
+  if (!group || !bd) return null
+  return <CourierTotalSummary g={group} bd={bd} colOk={allCols} />
 }
 
 export default function FinanceCourierAwbDetail({ item, tab, onTab, onPrint }: {
