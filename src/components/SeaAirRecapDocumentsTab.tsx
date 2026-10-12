@@ -18,7 +18,7 @@ import { useAuth } from '../lib/AuthContext'
 import { isChinaOrigin, fetchFormENotes, type FormENote } from '../utils/SeaAirRecapHelpers'
 import { LoadingState } from './LoadingState'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_PRIMARY, Chip, Pill } from './SeaAirAuditUi'
-import { relaxSeaAirDocChecks, SEA_AIR_PIB_MATRIX_ROWS, toNum } from '../utils/SeaAirValidasiHelpers'
+import { relaxSeaAirDocChecks, SEA_AIR_PIB_MATRIX_ROWS, SEA_AIR_INVOICE_COLS, isCountedDocCheck, toNum } from '../utils/SeaAirValidasiHelpers'
 import { calcSeaAirDuty, SEA_AIR_DUTY_TOLERANCE } from '../utils/SeaAirAuditHelpers'
 
 // ── Salinan PERSIS formatter/parser modal lama ──
@@ -72,7 +72,7 @@ type SectionDef = {
   kind: (row: string, col: string) => ValueKind
   noStatus?: (row: string) => boolean
 }
-const INVOICE_COLS = ['PPJK', 'Freight Origin', 'Freight Destination', 'Storage', 'Laporan Surveyor (opsional)', 'LOLO', 'Trucking']
+const INVOICE_COLS = SEA_AIR_INVOICE_COLS
 const SECTIONS: SectionDef[] = [
   { key: 'INVOICE_FCL', label: 'Invoice', sub: 'Nama PT, vendor and amount read from each invoice', toggle: 'row',
     rows: ['Nama PT', 'Nama Vendor', 'Nominal'].map(r => ({ db: r, label: r, cols: INVOICE_COLS })),
@@ -222,7 +222,7 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
       // Section yg punya mismatch saat DIMUAT terbuka otomatis; TIDAK ikut menutup sendiri saat
       // mismatch-nya di-accept (supaya hasil review & Undo tetap terlihat).
       const initOpen: Record<string, boolean> = {}
-      relaxed.forEach((c: any) => { if (c.match === false) initOpen[c.section] = true })
+      relaxed.forEach((c: any) => { if (c.match === false && isCountedDocCheck(c)) initOpen[c.section] = true })
       setOpen(initOpen)
       const snap: Record<string, any> = {}
       relaxed.forEach((c: any) => { snap[keyOf(c)] = JSON.parse(JSON.stringify(c)) })
@@ -312,7 +312,8 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
   }
 
   // ── Statistik (sama formula globalStats modal lama) ──
-  const visibleChecks = useMemo(() => (financeView ? checks.filter(c => c.section !== 'PIB') : checks), [checks, financeView])
+  // Hanya sel yang TAMPIL bersatus (`isCountedDocCheck`, 2026-10-12): PIB = kolom required; tanpa baris "Nama Barang Kena Pajak" & VESSEL.
+  const visibleChecks = useMemo(() => checks.filter(c => isCountedDocCheck(c) && !(financeView && c.section === 'PIB')), [checks, financeView])
   const stats = useMemo(() => {
     let match = 0, mismatch = 0, notChecked = 0, open_ = 0
     visibleChecks.forEach(c => {
@@ -348,8 +349,9 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
     const secChecks = checks.filter(c => c.section === sec.key)
     const rows = sec.rows.map(r => ({ ...r, cells: r.cols.map(col => secChecks.find(c => c.row === r.db && c.col === col)).filter(Boolean) as any[] }))
       .filter(r => r.cells.length > 0)
-    const mismatch = secChecks.filter(c => c.match === false).length
-    const match = secChecks.filter(c => c.match === true).length
+    const countedChecks = secChecks.filter(isCountedDocCheck)
+    const mismatch = countedChecks.filter(c => c.match === false).length
+    const match = countedChecks.filter(c => c.match === true).length
     return { sec, rows, mismatch, match, total: match + mismatch }
   }).filter(s => s.rows.length > 0).sort((a, b) => b.mismatch - a.mismatch)
 

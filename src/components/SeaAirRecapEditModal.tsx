@@ -218,7 +218,7 @@ export default function SeaAirRecapEditModal({ rec, onClose, onSave }: {
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
               <div>
                 <h3 className="text-[14px] font-bold text-[#3B1B3D]">PO &amp; vessel</h3>
-                {manualEnabled && pos.length > 0 && <div className="text-[11.5px] text-[#6E5E70]">KG per PO is used to split costs by weight (all POs must have KG). Mark a PO as partial when only part of it ships here.</div>}
+                {manualEnabled && pos.length > 0 && <div className="text-[11.5px] text-[#6E5E70]">{pos.length === 1 ? 'Single PO — KG follows the shipment Weight (kg) automatically.' : 'KG per PO is used to split costs by weight (all POs must have KG).'} Mark a PO as partial when only part of it ships here.</div>}
               </div>
               {manualEnabled && pos.length > 1 && (
                 <button type="button" className={SA_BTN_OUTLINE} onClick={splitWeightEvenly} disabled={toNumOrNull(form.weight_kg || '') === null}
@@ -241,7 +241,10 @@ export default function SeaAirRecapEditModal({ rec, onClose, onSave }: {
                       <input value={p.vessel ?? ''} onChange={e => setPos(prev => prev.map((x: any, j: number) => j === i ? { ...x, vessel: e.target.value } : x))} className={SA_INPUT} />
                       {manualEnabled && manual[i] && (
                         <>
-                          <input type="number" step="any" aria-label={`KG PO ${i + 1}`} value={manual[i].kg} onChange={e => setM(i, { kg: e.target.value })} className={`${SA_INPUT} text-right tabular-nums`} />
+                          {pos.length === 1
+                            ? <input type="number" aria-label="KG PO 1 (automatic)" value={form.weight_kg ?? ''} disabled readOnly
+                                title="Single PO — KG follows the shipment Weight (kg) automatically" className={`${SA_INPUT} text-right tabular-nums bg-[#F6F1EE] text-[#6E5E70] cursor-not-allowed`} />
+                            : <input type="number" step="any" aria-label={`KG PO ${i + 1}`} value={manual[i].kg} onChange={e => setM(i, { kg: e.target.value })} className={`${SA_INPUT} text-right tabular-nums`} />}
                           <input type="number" step="any" aria-label={`Valas PO ${i + 1}`} value={manual[i].valas} onChange={e => setM(i, { valas: e.target.value })} className={`${SA_INPUT} text-right tabular-nums`} />
                           <input aria-label={`Currency PO ${i + 1}`} value={manual[i].currency} placeholder="USD" maxLength={5} onChange={e => setM(i, { currency: e.target.value.toUpperCase() })} className={SA_INPUT} />
                           <div className="flex items-center gap-1.5">
@@ -255,7 +258,7 @@ export default function SeaAirRecapEditModal({ rec, onClose, onSave }: {
                     </React.Fragment>
                   ))}
                 </div>
-                {manualEnabled && (() => {
+                {manualEnabled && pos.length > 1 && (() => {
                   const kgs = manual.slice(0, pos.length).map(m => toNumOrNull(m.kg))
                   const w = toNumOrNull(form.weight_kg || '')
                   if (!kgs.some(k => k !== null)) return null

@@ -12,8 +12,6 @@ import {
   VALIDATION_META, validationLabel, type SeaAirAuditLinkInfo, type SeaAirAuditLogEntry,
 } from '../utils/SeaAirAuditHelpers'
 import { poManualFor, type PoManualEntry } from '../utils/SeaAirRecapHelpers'
-import { compareSeaAirDuty, fetchSeaAirDutyMatrix } from '../utils/SeaAirAuditHelpers'
-import SeaAirDutyCompareTable from './SeaAirDutyCompareTable'
 
 // Audit trail ringkas (2026-10-06, permintaan user: log panjang -> scroll terlalu panjang). Entri berturutan yg identik
 // (aksi + user + detail, hari sama) digabung "×N"; awalnya hanya AUDIT_TRAIL_PREVIEW baris terbaru, "Show all" membuka
@@ -102,15 +100,7 @@ export default function SeaAirAuditDetailModal({
   const draft = isSeaAirDraft(rec)
   const build = computeCustomsBuildUp(rec)
   const duty = computeDutyRows(rec)
-  // Kartu "Duties & taxes" = rumus & data tab Documents › Duty Invoice Recap (2026-10-05, permintaan user).
-  const [dutyMatrix, setDutyMatrix] = useState<any | null | undefined>(undefined)
-  useEffect(() => {
-    let cancelled = false
-    setDutyMatrix(undefined)
-    fetchSeaAirDutyMatrix(rec?.id).then(m => { if (!cancelled) setDutyMatrix(m) })
-    return () => { cancelled = true }
-  }, [rec?.id])
-  const dutyCmp = compareSeaAirDuty(dutyMatrix ?? null, rec)
+  // Kartu "Duties & taxes" DIHAPUS 2026-10-12 (permintaan user); perbandingan duty tetap di Invoice Recap › Documents.
   const lines = buildGoodsLines(rec)
   const cur = String(rec.kurs || '').trim()
   const curLabel = cur && !/^[0-9.,\s]+$/.test(cur) ? cur.toUpperCase() : ''
@@ -378,14 +368,6 @@ export default function SeaAirAuditDetailModal({
                   </div>
                   <div className="text-[16px] font-bold tabular-nums text-[#3B1B3D] whitespace-nowrap">{fmtRp(build.cv)}</div>
                 </div>
-              </SectionCard>
-
-              <SectionCard
-                title={<>Duties &amp; taxes <span className="text-[11.5px] font-normal text-[#8A7A8B]">same check as Invoice Recap › Documents</span></>}
-                right={<>Import value <b className="text-[#3B1B3D] tabular-nums">{fmtRp(duty.importValueStored ?? duty.importValueCalc)}</b></>}
-                bodyClassName="pb-0"
-              >
-                <SeaAirDutyCompareTable cmp={dutyCmp} loading={dutyMatrix === undefined} />
               </SectionCard>
             </div>
           </div>

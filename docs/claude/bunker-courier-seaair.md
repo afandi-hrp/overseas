@@ -803,3 +803,35 @@ menimpa baris lama, bukan numpuk baris baru) atau **DELETE total** (hapus konfir
 `SeaAirValidasiModal.tsx`). `pct = round(match/(match+over+under)*100)` (sejak 2026-10-05, permintaan user: baris Not validated & Incomplete TIDAK ikut penyebut; dulu `total` = SEMUA baris `checks`). Berlaku di semua pemakai `computeSeaAirCostGlobalStats` (tab Costs Invoice Recap, titik Cost kartu, badge List, modal lama).
 Baris `'SURVEYOR'` DIKECUALIKAN dari hitungan. File ini BELUM diaudit menyeluruh apakah punya
 pola SECTIONS/row-col-lookup lain — cek dulu sebelum translate/ubah row/col lain.
+
+## Sea & Air — Invoice Recap: ATD/ATA kartu, hitungan mismatch Doc Validation, ambang Submit 90%, hapus "Duties & taxes" Audit (2026-10-12, permintaan user)
+
+- **Kartu Invoice Recap** (`SeaAirRecapCardList.tsx`): chip **ATD** & **ATA** tepat DI BAWAH chip `origin → destination` (kolom 2). Selalu tampil; tanggal kosong =
+  "—" (abu). ATA dipindah dari baris PO (baris PO tetap ETD · ETA). Rute + ATD/ATA = SATU kolom (`flex-col`) di sebelah nama vendor, jadi tetap di bawah chip rute
+  walau chip turun ke bawah vendor di kartu sempit (revisi 2026-10-12: sebelumnya chip ATD/ATA berada di bawah nama vendor, bukan di bawah rute). Sama di header
+  jendela Open (`SeaAirRecapDetailModal`) & viewer Finance Handover Sea & Air (`FinanceHandoverViewers`, Fact ATD/ATA setelah Route).
+- **Hitungan Match / Mismatch / Not checked Doc Validation** (tab Documents, badge % kartu/List, issue "N document mismatch", `evaluatePibValidation`): dua penyebab
+  angka Mismatch tidak cocok dgn yang terlihat -- (1) sel **TOTAL CIPL × Bukti TF**: tampilan menjumlah nilai gabungan ("USD 14.070 + USD 6.030") vs TOTAL CIPL
+  (toleransi 1) tapi `c.match` hasil `relaxSeaAirDocChecks` tetap fuzzyMatch teks -> ringkasan menghitung Mismatch padahal sel tampil Match. SEKARANG
+  `relaxSeaAirDocChecks` menjumlah juga (SATU sumber). (2) ringkasan menghitung SEMUA isi `checks`, termasuk sel yang TIDAK tampil bersatus: kolom PIB di luar
+  `required`, baris "Nama Barang Kena Pajak" (noStatus), section VESSEL. SEKARANG hanya sel yang tampil bersatus (`isCountedDocCheck`/`countedDocChecks` di
+  `SeaAirValidasiHelpers.ts`; konstanta kolom invoice `SEA_AIR_INVOICE_COLS` dipakai SECTIONS tab Documents). Dipakai: `computeDocStats`, tab Documents (stats & header
+  section & buka-otomatis section), `SharedDataTable` (badge % Rekapan), `SeaAirValidasiModal` (globalStats, mode List). Section yang BARU dicakup struktur lain
+  WAJIB ditambah di `SEA_AIR_DOC_COUNTED`. Diuji skrip 19 cek.
+- **Submit to Finance ambang 90%**: `computeRecapIssues` -- kalau % Cost Validation DAN % Doc Validation sama-sama **>= 90** (`RECAP_SUBMIT_PCT_THRESHOLD`), issue
+  cost (OVERCHARGE/UNDERCHARGE belum dikonfirmasi) & mismatch dokumen DILEWATI. Tetap menahan: checklist (dokumen wajib kurang) & Form E. Tidak ada data
+  matriks/cost -> aturan tidak berlaku (tidak menambah blokir baru). Efek ke tombol "Submit to Finance", status kartu (⚠ N issues / Ready), KPI Needs attention, dan
+  gerbang "Mark as audited" PIB (pakai issue yang sama). **Sisi DB**: `sql/053_seaair_recap_issue_count_pct90.sql` (**BELUM DIJALANKAN**) -- trigger sql/031 memakai
+  `fn_seaair_recap_issue_count` yang menghitung section cost belum dikonfirmasi; 053 melewatinya kalau % Cost >= 90 (rumus % = `computeSeaAirCostGlobalStats`,
+  pre-check md5 badan fungsi live = sql/031 -- kalau beda STOP). % Doc >= 90 tidak dihitung di server (mismatch dokumen memang tidak pernah dihitung server). Sebelum 053
+  dijalankan, tombol aktif tapi DB menolak kalau ada section cost belum dikonfirmasi. Diuji PGlite 10 cek.
+- **Audit Sea & Air (jendela Open Audit PIB)**: kartu "Duties & taxes" DIHAPUS (`SeaAirAuditDetailModal.tsx`; kartu Customs value (CIF) & "Checks" tetap).
+  Perbandingan duty tetap ada di Invoice Recap › Documents › Duty. `SeaAirDutyCompareTable` masih dipakai tab Costs Invoice Recap.
+
+## Sea & Air — Invoice Recap › Split per PO: KG otomatis kalau hanya 1 PO (2026-10-12, permintaan user)
+
+`recapPoKgs(rec, pos, poManual)` (`SeaAirRecapHelpers.ts`, SATU sumber): shipment dgn **1 PO** -> kolom KG = **Weight (kg) shipment** (`rekapan_seaair.weight_kg`)
+OTOMATIS (100%, label "· auto"), tidak diisi manual; weight kosong/0 -> jatuh ke nilai manual lama kalau ada. **>1 PO** -> manual per PO (Edit shipment, `po_manual.kg`),
+By KG hanya bisa dipilih kalau SEMUA PO punya KG (aturan lama). Edit shipment (`SeaAirRecapEditModal`): input KG PO tunggal disabled & menampilkan Weight (kg); tombol
+"Split weight evenly" & ringkasan total KG hanya untuk >1 PO. Nilai manual lama pada 1 PO TIDAK dihapus (tidak ditulis ulang), hanya diabaikan selama PO tunggal.
+Diuji skrip 6 cek.

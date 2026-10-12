@@ -84,8 +84,9 @@ const RecapRowCard: React.FC<{ rec: any; onOpen: (rec: any) => void }> = ({ rec,
   const lc = computeLandedCost(rec)
   const border = status.kind === 'submitted' ? 'border-l-[#17663D]' : status.kind === 'issues' ? 'border-l-[#E0A526]' : 'border-l-[#D9CFD6]'
   const has = rec.recap_has || {}
-  const dateChip = (label: string, v: any, blue = false) => v ? (
-    <span className={`inline-flex items-center gap-1 px-1.5 py-[1px] rounded-md text-[10.5px] whitespace-nowrap ${blue ? 'bg-[#EEF1FA] text-[#2F4FA8]' : 'bg-[#F6EFEA] text-[#3B1B3D]'}`}><b>{label}</b>{fmtDateShort(v)}</span>
+  // `always` = chip tetap tampil ("—") walau tanggal kosong (ATD/ATA, 2026-10-12: user mau lihat kosongnya juga).
+  const dateChip = (label: string, v: any, blue = false, always = false) => (v || always) ? (
+    <span className={`inline-flex items-center gap-1 px-1.5 py-[1px] rounded-md text-[10.5px] whitespace-nowrap ${v ? (blue ? 'bg-[#EEF1FA] text-[#2F4FA8]' : 'bg-[#F6EFEA] text-[#3B1B3D]') : 'bg-[#F6F3F4] text-[#8A7A8B]'}`}><b>{label}</b>{v ? fmtDateShort(v) : '—'}</span>
   ) : null
 
   return (
@@ -106,12 +107,19 @@ const RecapRowCard: React.FC<{ rec: any; onOpen: (rec: any) => void }> = ({ rec,
 
         {/* 2. Supplier + rute, lalu PO + tanggal */}
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 min-w-0">
-            <span className="text-[13px] font-bold text-[#3B1B3D] uppercase truncate max-w-full" title={rec.vendor || ''}>{rec.vendor || '—'}</span>
-            <span className="inline-flex items-center px-2.5 py-[2px] rounded-full bg-[#EFE8EC] text-[#3B1B3D] text-[10.5px] font-semibold uppercase tracking-wide whitespace-nowrap max-w-full truncate"
-              title={`${rec.origin || '—'} → ${rec.destination || '—'}`}>
-              {rec.origin || '—'} <span className="mx-1 text-[#8A7A8B]">→</span> {rec.destination || '—'}
-            </span>
+          {/* Rute + ATD/ATA SATU kolom (2026-10-12, permintaan user): ATD & ATA SELALU tepat di bawah chip origin → destination,
+              baik chip berada di sebelah nama vendor (kartu lebar) maupun turun ke bawahnya (kartu sempit). */}
+          <div className="flex flex-wrap items-start gap-x-2.5 gap-y-1.5 min-w-0">
+            <span className="text-[13px] font-bold text-[#3B1B3D] uppercase truncate max-w-full leading-[22px]" title={rec.vendor || ''}>{rec.vendor || '—'}</span>
+            <div className="flex flex-col items-start gap-1.5 min-w-0 max-w-full">
+              <span className="inline-flex items-center px-2.5 py-[2px] rounded-full bg-[#EFE8EC] text-[#3B1B3D] text-[10.5px] font-semibold uppercase tracking-wide whitespace-nowrap max-w-full truncate"
+                title={`${rec.origin || '—'} → ${rec.destination || '—'}`}>
+                {rec.origin || '—'} <span className="mx-1 text-[#8A7A8B]">→</span> {rec.destination || '—'}
+              </span>
+              <div className="flex flex-wrap items-center gap-1.5" data-card-atd-ata>
+                {dateChip('ATD', rec.atd, false, true)}{dateChip('ATA', rec.ata, true, true)}
+              </div>
+            </div>
           </div>
           <div className="flex flex-wrap items-start gap-x-2 gap-y-1 mt-1.5 text-[11px] text-[#6E5E70] min-w-0">
             {pos.length === 0 ? <span>No PO</span> : (
@@ -124,7 +132,7 @@ const RecapRowCard: React.FC<{ rec: any; onOpen: (rec: any) => void }> = ({ rec,
                 )}
               </div>
             )}
-            {dateChip('ETD', rec.etd)}{dateChip('ETA', rec.eta)}{dateChip('ATA', rec.ata, true)}
+            {dateChip('ETD', rec.etd)}{dateChip('ETA', rec.eta)}
           </div>
         </div>
 

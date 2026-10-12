@@ -9,7 +9,8 @@
 // - Needs attention = persentase rendah & BELUM dikonfirmasi user (lihat computeRecapIssues).
 
 import { supabase } from '../lib/supabase'
-import { relaxSeaAirDocChecks } from './SeaAirValidasiHelpers'
+import { relaxSeaAirDocChecks, countedDocChecks } from './SeaAirValidasiHelpers'
+import { computeSeaAirCostGlobalStats, type SectionConfirmation } from './SeaAirCostValidasiHelpers'
 
 // Sengaja TIDAK di-import dari SeaAirAuditHelpers (file itu meng-import helper ini -> hindari import melingkar).
 const num = (v: any): number => {
@@ -39,6 +40,18 @@ export function poManualFor(map: Record<string, PoManualEntry>, po: any): PoManu
   if (!k) return null
   const hit = Object.keys(map).find(x => poKey(x) === k)
   return hit ? map[hit] : null
+}
+
+// KG per PO utk Split per PO (2026-10-12, permintaan user): shipment dgn 1 PO -> KG OTOMATIS = Weight (kg) shipment
+// (`rekapan_seaair.weight_kg`), tidak diisi manual; >1 PO -> manual per PO (po_manual). Weight kosong/0 pada 1 PO -> jatuh ke
+// nilai manual (kalau ada). `auto` = nilai berasal dari berat shipment.
+export function recapPoKgs(rec: any, pos: { po_no: string }[], poManual: Record<string, PoManualEntry>): { kgs: (number | null)[]; auto: boolean } {
+  const n = (v: any) => { if (v === null || v === undefined || v === '') return null; const x = Number(v); return Number.isFinite(x) ? x : null }
+  if (pos.length === 1) {
+    const w = n(rec?.weight_kg)
+    if (w !== null && w > 0) return { kgs: [w], auto: true }
+  }
+  return { kgs: pos.map(p => n(poManualFor(poManual, p.po_no)?.kg)), auto: false }
 }
 
 // ─── po_detail (PO + vessel per PO) ──────────────────────────────────────────
@@ -130,7 +143,8 @@ export const isSummaryCostRow = (row: any) => {
 export type DocStats = { match: number; mismatch: number; notChecked: number; pct: number; openMismatch: number }
 // Formula % SAMA dgn badge Doc Validation Rekapan & modal (relax dulu, null tidak dihitung).
 export function computeDocStats(checksRaw: any): DocStats {
-  const checks = relaxSeaAirDocChecks(Array.isArray(checksRaw) ? checksRaw : [])
+  // Hanya sel yang tampil bersatus di tab Documents (`countedDocChecks`).
+  const checks = countedDocChecks(relaxSeaAirDocChecks(Array.isArray(checksRaw) ? checksRaw : []))
   let match = 0, mismatch = 0, notChecked = 0, openMismatch = 0
   checks.forEach((c: any) => {
     if (c.match === true) match++
@@ -182,6 +196,11 @@ export async function fetchFormENotes(seaairIds: (string | number)[]): Promise<R
   return out
 }
 
+// Ambang Submit to Finance (2026-10-12, keputusan user): % Cost Validation DAN % Doc Validation sama-sama >= 90 -> temuan Cost
+// (over/under belum dikonfirmasi) & mismatch dokumen TIDAK menahan Submit. Checklist (dokumen wajib kurang) & Form E tetap menahan.
+// Sisi DB: sql/053 (`fn_seaair_recap_issue_count` melewati section cost kalau % Cost >= 90).
+export const RECAP_SUBMIT_PCT_THRESHOLD = 90
+
 export function computeRecapIssues(input: {
   checklist?: { pct_kelengkapan?: any; dokumen_kurang?: any; ada_form_e?: any } | null
   matriksChecks?: any[] | null
@@ -201,7 +220,11 @@ export function computeRecapIssues(input: {
   if (formEIssueApplies(input.origin, cl, input.formENote)) issues.push({ kind: 'docs', text: FORM_E_ISSUE_TEXT })
   const conf = input.confirmations || new Map()
   const costChecks = Array.isArray(input.costChecks) ? input.costChecks : []
-  COST_SECTIONS.filter(s => s.confirmable && !s.optional).forEach(s => {
+  // Kedua % harus ada datanya (matriks & cost) dan >= ambang -> temuan cost & mismatch dokumen dilewati.
+  const docPct = Array.isArray(input.matriksChecks) ? computeDocStats(input.matriksChecks).pct : null
+  const costPct = Array.isArray(input.costChecks) ? computeSeaAirCostGlobalStats(input.costChecks, conf as Map<string, SectionConfirmation>).pct : null
+  const pctOk = docPct !== null && costPct !== null && docPct >= RECAP_SUBMIT_PCT_THRESHOLD && costPct >= RECAP_SUBMIT_PCT_THRESHOLD
+  COST_SECTIONS.filter(s => s.confirmable && !s.optional && !pctOk).forEach(s => {
     const rows = costChecks.filter((c: any) => String(c.section || '').trim().toUpperCase() === s.key && !isSummaryCostRow(c))
     const over = rows.some((c: any) => c.status === 'OVERCHARGE')
     const under = rows.some((c: any) => c.status === 'UNDERCHARGE')
@@ -210,7 +233,7 @@ export function computeRecapIssues(input: {
       issues.push({ kind: 'cost', text: `${costSectionLabel(s.key)} · ${what} — Admin to confirm in Costs` })
     }
   })
-  if (Array.isArray(input.matriksChecks)) {
+  if (Array.isArray(input.matriksChecks) && !pctOk) {
     const { openMismatch } = computeDocStats(input.matriksChecks)
     if (openMismatch > 0) issues.push({ kind: 'match', text: `${openMismatch} document mismatch${openMismatch === 1 ? '' : 'es'} — Admin to confirm in Documents` })
   }

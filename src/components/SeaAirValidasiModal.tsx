@@ -3,7 +3,7 @@ import { LoadingSpinner } from './LoadingState';
 import { useState, useEffect, useMemo } from 'react';
 import { X, CheckCircle2, Edit3, Printer, XCircle, Clock, Info, Plus, Trash2, Receipt, Percent, Landmark, FileText, Ship, ClipboardList } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { relaxSeaAirDocChecks, SEA_AIR_PIB_MATRIX_ROWS } from '../utils/SeaAirValidasiHelpers';
+import { relaxSeaAirDocChecks, SEA_AIR_PIB_MATRIX_ROWS, isCountedDocCheck } from '../utils/SeaAirValidasiHelpers';
 
 // ─── Helper umum ──────────────────────────────────────────────────────────────
 
@@ -1231,6 +1231,7 @@ export default function SeaAirValidasiModal({ record, onClose, canEdit = true }:
   const globalStats = useMemo(() => {
     let total = 0, match = 0, mismatch = 0;
     checks.forEach(c => {
+      if (!isCountedDocCheck(c)) return; // hanya sel bersatus yang tampil (2026-10-12), SAMA tab Documents Invoice Recap
       if (c.match !== null && c.match !== undefined) {
          total++;
          if (c.match === true) match++;

@@ -137,6 +137,8 @@ export function SeaAirHandoverViewer({ item, initialTab, companyNames, onClose }
                 <Fact label="PT">{ptName || rec.a_n || '—'}</Fact>
                 <Fact label="Supplier">{rec.vendor || '—'}</Fact>
                 <Fact label="Route">{rec.origin || '—'} → {rec.destination || '—'}</Fact>
+                <Fact label="ATD">{fmtDateShort(rec.atd) || '—'}</Fact>
+                <Fact label="ATA">{fmtDateShort(rec.ata) || '—'}</Fact>
                 <Fact label="Shipment">{[String(rec.shipment_type || '').toUpperCase() || null, deliveryTerm].filter(Boolean).join(' · ') || '—'}</Fact>
                 <Fact label="PO">{pos.length ? pos.join(', ') : '—'}</Fact>
                 <Fact label="Supplier invoice">{rec.no_invoice || '—'}</Fact>

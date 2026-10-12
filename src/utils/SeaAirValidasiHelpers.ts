@@ -235,6 +235,12 @@ export function relaxSeaAirDocChecks(checksRaw: any[]): any[] {
           c.match = Math.abs(refNum - docNum) <= 1000;
         } else if (c.row === "NO PIB (No Pengajuan)") {
           c.match = strictAlnumMatch(effectiveRef, c.values.doc);
+        } else if (c.row === "TOTAL CIPL (PIB No. 23)" && c.col === "Bukti TF") {
+          // Bukti TF bisa berisi beberapa nilai gabungan ("USD 14.070 + USD 6.030") atau berawalan mata uang: yang dibandingkan
+          // = JUMLAH nilainya vs TOTAL CIPL (toleransi 1), SAMA yang ditampilkan di sel (2026-10-12: dulu hanya tampilan yang
+          // menjumlah, c.match tetap hasil fuzzyMatch teks -> ringkasan menghitung Mismatch padahal sel tampil Match).
+          const sum = String(c.values.doc).split(/\s*\+\s*/).map((p: string) => p.trim()).filter(Boolean).reduce((a: number, p: string) => a + toNum(p), 0);
+          c.match = Math.abs(sum - toNum(effectiveRef)) <= 1;
         } else if (c.row === "NO PO") {
           c.match = comparePoSet(effectiveRef, c.values.doc);
         } else if (["ORIGIN", "DESTINATION", "Origin", "Destination"].includes(c.row)) {
@@ -247,3 +253,23 @@ export function relaxSeaAirDocChecks(checksRaw: any[]): any[] {
     return c;
   });
 }
+
+// ─── Cek yang DIHITUNG di ringkasan Doc Validation (2026-10-12, keputusan user) ───────────────────────────────
+// Ringkasan Match / Mismatch / Not checked & % HANYA menghitung sel yang TAMPIL dengan status di tab Documents Invoice Recap:
+// PIB = hanya kolom `required` tiap baris matriks; baris "Nama Barang Kena Pajak" (tanpa status) & section VESSEL
+// (hanya "Has data / Empty") TIDAK dihitung. Dulu semua isi `checks` ikut terhitung -> angka Mismatch kadang berasal dari sel
+// yang tidak terlihat. JANGAN hitung dari `checks` mentah di tempat lain -- pakai `isCountedDocCheck`/`countedDocChecks`.
+export const SEA_AIR_INVOICE_COLS = ['PPJK', 'Freight Origin', 'Freight Destination', 'Storage', 'Laporan Surveyor (opsional)', 'LOLO', 'Trucking'];
+const SEA_AIR_DOC_COUNTED: Record<string, { rows: string[]; cols: string[] }> = {
+  INVOICE_FCL: { rows: ['Nama PT', 'Nama Vendor', 'Nominal'], cols: SEA_AIR_INVOICE_COLS },
+  FAKTUR_PAJAK: { rows: ['Nama Vendor', 'Nama PT', 'Nominal'], cols: SEA_AIR_INVOICE_COLS },
+  EMKL: { rows: ['Nama PPJK', 'Nama Importir'], cols: ['Invoice EMKL'] },
+  ACTUAL: { rows: ['AWB No', 'QTY', 'KG', 'CBM', 'Origin', 'Destination'], cols: ['Inv. Freight', 'Inv. Storage'] },
+};
+export function isCountedDocCheck(c: any): boolean {
+  if (!c) return false;
+  if (c.section === 'PIB') return SEA_AIR_PIB_MATRIX_ROWS.some(r => r.dbRow === c.row && r.required.includes(c.col));
+  const d = SEA_AIR_DOC_COUNTED[c.section];
+  return !!d && d.rows.includes(c.row) && d.cols.includes(c.col);
+}
+export const countedDocChecks = (checks: any[]): any[] => (Array.isArray(checks) ? checks : []).filter(isCountedDocCheck);

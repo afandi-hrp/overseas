@@ -22,7 +22,7 @@ import SeaAirValidasiModal from '../components/SeaAirValidasiModal'
 import ValidasiShipmentInvoiceLengkap from '../components/ValidasiShipmentInvoiceLengkap'
 import { computeLiveCostSummary } from '../utils/CostValidationHelpers'
 import { mergeChecklistFields, fetchCourierValidationBadgePct } from '../utils/CourierValidationPct'
-import { relaxSeaAirDocChecks } from '../utils/SeaAirValidasiHelpers'
+import { relaxSeaAirDocChecks, countedDocChecks } from '../utils/SeaAirValidasiHelpers'
 import { computeSeaAirCostGlobalStats } from '../utils/SeaAirCostValidasiHelpers'
 import { SECTIONS, computeStatus } from '../utils/ValidasiHelper'
 import { generateValues } from '../utils/ValidasiFill'
@@ -4398,7 +4398,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           // sementara modal SELALU hitung ulang `c.match` di client tiap dibuka. Tanpa baris ini,
           // badge & modal bisa tampil % berbeda walau baca tabel yang sama persis.
           seaAirDocValidationPctMap = Object.fromEntries(allMatriksData.map(m => {
-            const checks = relaxSeaAirDocChecks(m.checks);
+            const checks = countedDocChecks(relaxSeaAirDocChecks(m.checks)); // hanya sel bersatus yang tampil (2026-10-12)
             let total = 0, match = 0;
             checks.forEach((c: any) => {
               if (c.match !== null && c.match !== undefined) {

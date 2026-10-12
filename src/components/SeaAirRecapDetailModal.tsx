@@ -21,7 +21,7 @@ import { CostMixBar, containerLabel } from './SeaAirRecapCardList'
 import { fmtRp, fmtDateShort, fmtValas, companyFullName } from '../utils/SeaAirAuditHelpers'
 import {
   computeLandedCost, parsePoDetail, recapStatus, fetchRecapLog, todayLocalIso, isRecapLocked,
-  parsePoManual, poManualFor, RECAP_SEGMENTS, COST_GROUP_COLORS, COST_GROUP_LABELS,
+  parsePoManual, poManualFor, recapPoKgs, RECAP_SEGMENTS, COST_GROUP_COLORS, COST_GROUP_LABELS,
   type RecapIssue, type RecapLogEntry, type CostGroupKey, type PoManualEntry,
 } from '../utils/SeaAirRecapHelpers'
 
@@ -208,7 +208,8 @@ export default function SeaAirRecapDetailModal({
   const submitted = status.kind === 'submitted'
   const locked = isRecapLocked(rec)
   const poManual = parsePoManual(rec)
-  const poKgs = pos.map(p => toN(poManualFor(poManual, p.po_no)?.kg))
+  // 1 PO -> KG otomatis dari Weight (kg) shipment; >1 PO -> manual per PO (Edit shipment).
+  const { kgs: poKgs, auto: kgAuto } = recapPoKgs(rec, pos, poManual)
   const kgTotal = poKgs.reduce<number>((a, b) => a + (b || 0), 0)
   // Split per PO (2026-10-06, gambar user): By KG (total × KG PO ÷ total KG) | Evenly (total ÷ jumlah PO). By KG hanya
   // bisa dipilih kalau SEMUA PO punya KG (Edit shipment). Nilai dibagi di browser, jumlahnya selalu persis total.
@@ -317,6 +318,11 @@ export default function SeaAirRecapDetailModal({
                 {locked && <Chip tone="grey" title="Submitted to Finance — read-only"><Lock size={10} /> Locked</Chip>}
               </div>
               <div className="text-[12px] text-[#6E5E70] mt-0.5">{rec.origin || '—'} → {rec.destination || '—'}</div>
+              {/* ATD / ATA tepat di bawah rute (2026-10-12, permintaan user: sama dgn kartu). */}
+              <div className="flex flex-wrap items-center gap-1.5 mt-1" data-header-atd-ata>
+                <Chip tone="grey"><b>ATD</b> {fmtDateShort(rec.atd) || '—'}</Chip>
+                <Chip tone="blue"><b>ATA</b> {fmtDateShort(rec.ata) || '—'}</Chip>
+              </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
               <div className="text-right mr-2">
@@ -535,7 +541,7 @@ export default function SeaAirRecapDetailModal({
                               <td className="px-4 py-2.5"><PoCell po={p} m={poManualFor(poManual, p.po_no)} /></td>
                               <td className="px-3 py-2.5 text-right tabular-nums">
                                 <div className="text-[#3B1B3D]">{poKgs[i] != null ? `${fmtValas(poKgs[i])} kg` : '—'}</div>
-                                <div className="text-[11px] text-[#8A7A8B]">{fmtPct(share(i))}</div>
+                                <div className="text-[11px] text-[#8A7A8B]">{fmtPct(share(i))}{kgAuto && <span title="Single PO — KG is taken from the shipment weight"> · auto</span>}</div>
                               </td>
                               <td className="px-3 py-2.5 text-right tabular-nums">{fmtRp(splitCols.ppjk[i])}</td>
                               <td className="px-3 py-2.5 text-right tabular-nums">{fmtRp(splitCols.origin[i])}</td>
@@ -568,7 +574,7 @@ export default function SeaAirRecapDetailModal({
                               <td className="px-4 py-2.5"><PoCell po={p} m={poManualFor(poManual, p.po_no)} /></td>
                               <td className="px-2 py-2.5 text-right tabular-nums">
                                 <div className="text-[#3B1B3D]">{poKgs[i] != null ? `${fmtValas(poKgs[i])} kg` : '—'}</div>
-                                <div className="text-[11px] text-[#8A7A8B]">{fmtPct(share(i))}</div>
+                                <div className="text-[11px] text-[#8A7A8B]">{fmtPct(share(i))}{kgAuto && <span title="Single PO — KG is taken from the shipment weight"> · auto</span>}</div>
                               </td>
                               {RECAP_SEGMENTS.map(sg => <td key={sg.key} className="px-2 py-2.5 text-right tabular-nums">{fmtRp(splitCols[sg.key][i])}</td>)}
                               <td className="px-2 py-2.5 text-right tabular-nums">{fmtRp(splitCols.duty[i])}</td>
