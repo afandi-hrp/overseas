@@ -356,7 +356,7 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
   }).filter(s => s.rows.length > 0).sort((a, b) => b.mismatch - a.mismatch)
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-3 items-start">
+    <div className="grid grid-cols-1 @5xl:grid-cols-[320px_minmax(0,1fr)] gap-3 items-start">
       {/* ── Checklist ── */}
       <div className={`${SA_CARD} p-4`}>
         <div className="flex items-center justify-between gap-2">
@@ -487,7 +487,7 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
                         const refKind = sec.kind(r.db, r.cols[0])
                         const rowChanged = r.cells.some(isChanged)
                         return (
-                          <div key={r.db} className="px-4 py-2.5 grid grid-cols-1 md:grid-cols-[210px_minmax(0,1fr)] gap-3">
+                          <div key={r.db} className="px-4 py-2.5 grid grid-cols-1 @2xl:grid-cols-[210px_minmax(0,1fr)] gap-3">
                             <div className="min-w-0">
                               <div className="text-[12.5px] font-semibold text-[#3B1B3D]">{r.label}</div>
                               {ref != null && <div className="text-[11px] text-[#6E5E70] [overflow-wrap:anywhere]">Reference: {sec.key === 'PIB' && r.db === 'TOTAL CIPL (PIB No. 23)' ? fmtForeign(toNum(ref)) : fmtValue(refKind, ref)}</div>}

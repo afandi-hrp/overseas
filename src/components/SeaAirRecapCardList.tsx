@@ -1,7 +1,7 @@
 // Tampilan KARTU Invoice Recap Sea & Air (2026-10-01) -- 5 kartu KPI + daftar shipment 4 kolom.
 // Murni tampilan: baris = `records` SharedDataTable (query lama + enrichment % & issues).
 import React, { useState } from 'react'
-import { SA_CARD, SA_LABEL, Chip, PtBadge, type Tone } from './SeaAirAuditUi'
+import { SA_CARD, SA_LABEL, Chip, Pill, PtBadge, type Tone } from './SeaAirAuditUi'
 import { fmtRp, fmtRpShort, fmtDateShort } from '../utils/SeaAirAuditHelpers'
 import {
   computeLandedCost, parsePoDetail, recapStatus, COST_GROUP_COLORS, COST_GROUP_LABELS, parsePoManual, poManualFor,
@@ -71,7 +71,7 @@ export const containerLabel = (rec: any) => {
 
 export const statusTone = (kind: string): Tone => (kind === 'submitted' ? 'green' : kind === 'issues' ? 'amber' : 'blue')
 
-const RecapRowCard: React.FC<{ rec: any; onOpen: (rec: any) => void }> = ({ rec, onOpen }) => {
+const RecapRowCard: React.FC<{ rec: any; onOpen: (rec: any) => void; selected?: boolean; compact?: boolean }> = ({ rec, onOpen, selected = false, compact = false }) => {
   const [expanded, setExpanded] = useState(false)
   const issues: RecapIssue[] = rec.recap_issues || []
   const status = recapStatus(rec, issues)
@@ -89,8 +89,72 @@ const RecapRowCard: React.FC<{ rec: any; onOpen: (rec: any) => void }> = ({ rec,
     <span className={`inline-flex items-center gap-1 px-1.5 py-[1px] rounded-md text-[10.5px] whitespace-nowrap ${v ? (blue ? 'bg-[#EEF1FA] text-[#2F4FA8]' : 'bg-[#F6EFEA] text-[#3B1B3D]') : 'bg-[#F6F3F4] text-[#8A7A8B]'}`}><b>{label}</b>{v ? fmtDateShort(v) : '—'}</span>
   ) : null
 
+  // Mode RINGKAS (2026-10-12, gambar user): dipakai saat panel samping terbuka (daftar menyempit) -- 2 kolom, tidak memanjang ke bawah.
+  // Kiri: jenis · PT + kontainer, AWB, supplier, status (Not submitted + Ready / N issues). Kanan: Uploaded · ATD · ATA, PO, Origin,
+  // Landed cost, tombol. Tanpa Cost mix & titik skor (angkanya ada di header panel).
+  if (compact) {
+    const type = String(rec.shipment_type || '').toUpperCase()
+    const cnt = rec.container_count
+    const ct = String(rec.container_type || '').trim()
+    const contChip = type === 'FCL' && (cnt || ct) ? `${cnt || '?'} × ${ct || '—'}` : null
+    return (
+      <div className={`@container ${SA_CARD} border-l-4 ${border} overflow-hidden ${selected ? 'ring-2 ring-[#6B3470]' : ''}`} data-recap-card={rec.id} data-compact aria-current={selected || undefined}>
+        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-4 px-3.5 py-3">
+          <div className="min-w-0 flex flex-col">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Chip tone="grey">{[type || '—', rec.a_n].filter(Boolean).join(' · ')}</Chip>
+              {contChip && <Chip tone="blue">{contChip}</Chip>}
+              {rec.duplicate_of && <Chip tone="red" title="Another Invoice Recap row with the same BL / AWB already exists">Duplicate?</Chip>}
+            </div>
+            <div className="text-[15px] font-bold text-[#3B1B3D] truncate mt-1.5" title={rec.awb || ''}>{rec.awb || '—'}</div>
+            <div className="text-[11.5px] font-semibold uppercase text-[#6E5E70] truncate" title={rec.vendor || ''}>{rec.vendor || '—'}</div>
+            {/* Nomor PO di kolom kiri, tepat di bawah nama supplier (2026-10-12, permintaan user). */}
+            <div className="flex items-start gap-1.5 mt-1.5 text-[11.5px] text-[#3B1B3D] min-w-0">
+              {pos.length === 0 ? <span className="text-[#6E5E70]">No PO</span> : (
+                <>
+                  <div className="min-w-0">{(expanded ? pos : pos.slice(0, 1)).map((p, i) => <div key={i} className="truncate" title={p.po_no}>{p.po_no || '—'}{partialOf(p.po_no) && <span className="ml-1 text-[10px] font-bold text-[#6B3470]" title="Partial shipment of this PO">{partialOf(p.po_no)}</span>}</div>)}</div>
+                  {pos.length > 1 && (
+                    <button type="button" onClick={() => setExpanded(v => !v)} className="shrink-0 px-1.5 py-[1px] rounded-full border border-[#D9C7DA] bg-[#F5EDF3] text-[#6B3470] text-[10.5px] font-semibold hover:bg-[#EFE2EC]">
+                      {expanded ? 'Hide' : `+${pos.length - 1} PO`}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 mt-auto pt-2.5">
+              {status.kind === 'submitted'
+                ? <Pill tone="green">{status.label}</Pill>
+                : (
+                  <>
+                    <Pill tone="grey">Not submitted</Pill>
+                    {issues.length > 0
+                      ? <Chip tone="amber" title={issues.map(i => `• ${i.text}`).join(' ')}>⚠ {issues.length} issue{issues.length === 1 ? '' : 's'}</Chip>
+                      : <Chip tone="blue">Ready</Chip>}
+                  </>
+                )}
+            </div>
+          </div>
+          <div className="min-w-0 flex flex-col">
+            <div className="text-[11px] text-[#8A7A8B]">
+              Uploaded {fmtDateShort(rec.created_at || rec.tgl)}
+            </div>
+            {/* ATD / ATA di bawah tanggal Uploaded (2026-10-12: posisi ATD/ATA & nomor PO ditukar, permintaan user). */}
+            <div className="flex flex-wrap items-center gap-1.5 mt-1.5" data-card-atd-ata>
+              {dateChip('ATD', rec.atd, false, true)}{dateChip('ATA', rec.ata, true, true)}
+            </div>
+            <div className="text-[11.5px] text-[#6E5E70] truncate mt-1.5" title={`${rec.origin || '—'} → ${rec.destination || '—'}`}>Origin: {rec.origin || '—'}</div>
+            <div className={`${SA_LABEL} mt-2`}>Landed cost</div>
+            <div className="text-[18px] font-bold text-[#3B1B3D] tabular-nums leading-tight">{fmtRp(lc.landed)}</div>
+            <button type="button" onClick={() => onOpen(rec)} aria-pressed={selected}
+              className={`mt-2 self-start inline-flex items-center justify-center px-4 h-8 rounded-xl text-white text-xs font-semibold ${selected ? 'bg-[#3B1B3D]' : 'bg-[#6B3470] hover:bg-[#5A2A5E]'}`}>Validation</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className={`@container ${SA_CARD} border-l-4 ${border} overflow-hidden`}>
+    <div className={`@container ${SA_CARD} border-l-4 ${border} overflow-hidden ${selected ? 'ring-2 ring-[#6B3470]' : ''}`} data-recap-card={rec.id} aria-current={selected || undefined}>
       {/* Susunan 2026-10-05 (gambar user): supplier = judul + chip rute; baris 2 = PO + tanggal.
           Lebar kolom ikut LEBAR KARTU (container query): @5xl = laptop 14" (ringkas), @7xl = monitor 24" (lega). */}
       <div className="grid grid-cols-1 @2xl:grid-cols-2 @5xl:grid-cols-[180px_minmax(0,1fr)_200px_180px] @7xl:grid-cols-[220px_minmax(0,1fr)_250px_220px] gap-x-4 @7xl:gap-x-6 gap-y-3 px-4 py-3.5 items-center">
@@ -151,15 +215,17 @@ const RecapRowCard: React.FC<{ rec: any; onOpen: (rec: any) => void }> = ({ rec,
           <div className={SA_LABEL}>Landed cost</div>
           <div className="text-[18px] font-bold text-[#3B1B3D] tabular-nums leading-tight">{fmtRp(lc.landed)}</div>
           <div className="w-full max-w-[200px]"><CostMixBar groups={lc.groups} total={lc.groups.ppjk + lc.groups.origin + lc.groups.local} /></div>
-          <button type="button" onClick={() => onOpen(rec)} className="inline-flex items-center justify-center px-4 h-8 rounded-xl bg-[#6B3470] hover:bg-[#5A2A5E] text-white text-xs font-semibold">Open</button>
+          <button type="button" onClick={() => onOpen(rec)} aria-pressed={selected}
+            className={`inline-flex items-center justify-center px-4 h-8 rounded-xl text-white text-xs font-semibold ${selected ? 'bg-[#3B1B3D]' : 'bg-[#6B3470] hover:bg-[#5A2A5E]'}`}>Validation</button>
         </div>
       </div>
     </div>
   )
 }
 
-export const SeaAirRecapCardList: React.FC<{ rows: any[]; onOpen: (rec: any) => void }> = ({ rows, onOpen }) => (
+// `selectedId` = kartu yang sedang terbuka di panel samping (diberi ring).
+export const SeaAirRecapCardList: React.FC<{ rows: any[]; onOpen: (rec: any) => void; selectedId?: any; compact?: boolean }> = ({ rows, onOpen, selectedId = null, compact = false }) => (
   <div className="flex flex-col gap-2.5">
-    {rows.map(rec => <RecapRowCard key={rec.id} rec={rec} onOpen={onOpen} />)}
+    {rows.map(rec => <RecapRowCard key={rec.id} rec={rec} onOpen={onOpen} compact={compact} selected={selectedId !== null && selectedId !== undefined && String(selectedId) === String(rec.id)} />)}
   </div>
 )

@@ -476,8 +476,8 @@ export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, is
                         )}
                       </div>
                     ) : showReviewForm ? (
-                      <div className="flex flex-col md:flex-row md:items-start gap-2">
-                        <span className="text-[12px] font-bold text-[#3B1B3D] md:pt-2 shrink-0">Your review</span>
+                      <div className="flex flex-col @2xl:flex-row @2xl:items-start gap-2">
+                        <span className="text-[12px] font-bold text-[#3B1B3D] @2xl:pt-2 shrink-0">Your review</span>
                         <div className="inline-flex p-0.5 rounded-xl border border-[#EADFD6] bg-white shrink-0 h-fit">
                           <button type="button" onClick={() => setCatatanDraft(p => ({ ...p, [sec.key]: { ...draft, status: 'MATCH' } }))}
                             className={`px-3 h-8 rounded-lg text-[11.5px] font-bold flex items-center gap-1 ${draft.status === 'MATCH' ? 'bg-[#17663D] text-white' : 'text-[#3B1B3D] hover:bg-[#F6EFEA]'}`}>

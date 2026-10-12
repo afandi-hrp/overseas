@@ -247,7 +247,7 @@ export const CourierRecapCardView: React.FC<{
   const end = Math.min(page * pageSize, total)
 
   const list = (
-    <div className={panel ? 'flex flex-col min-h-0 lg:w-[44%] lg:min-w-[380px] lg:max-w-[720px] lg:shrink-0 max-lg:min-h-[420px]' : 'flex-1 min-h-0 flex flex-col'}>
+    <div className={panel ? 'flex flex-col min-h-0 lg:w-[35%] lg:min-w-[380px] lg:max-w-[720px] lg:shrink-0 max-lg:min-h-[420px]' : 'flex-1 min-h-0 flex flex-col'}>
       {/* Pembungkus `relative` TIDAK ikut scroll: badge "Updating data…" melayang tetap di atas daftar walau daftar digulir (2026-10-09, permintaan user). */}
       <div className="flex-1 min-h-0 relative flex flex-col">
       {updating && <UpdatingBadge />}

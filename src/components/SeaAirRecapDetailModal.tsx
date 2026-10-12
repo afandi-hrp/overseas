@@ -12,7 +12,7 @@
 // masih ada perubahan -> konfirmasi.
 import React, { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, MoreHorizontal, Pencil, Send, ChevronDown, ChevronRight, Lock, Unlock, PlusCircle, Trash2, History, FileInput } from 'lucide-react'
+import { X, MoreHorizontal, Pencil, Send, ChevronDown, ChevronRight, Lock, Unlock, PlusCircle, Trash2, History, FileInput, Maximize2, Minimize2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_GREEN, Chip, Pill, PtBadge, type Tone } from './SeaAirAuditUi'
 import SeaAirRecapCostsTab from './SeaAirRecapCostsTab'
@@ -168,6 +168,7 @@ const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, 
 
 export default function SeaAirRecapDetailModal({
   rec, companyNames, canEdit, canSeeCosts, canEditCosts, canSeeDocs, canEditDocs, isAdmin = false, onUnlock, onClose, onEdit, onSubmit, onToggleDraft, onDelete, onChanged,
+  variant = 'modal', onToggleVariant, onAnyDirtyChange,
 }: {
   rec: any
   companyNames: Record<string, string>
@@ -184,7 +185,13 @@ export default function SeaAirRecapDetailModal({
   onToggleDraft: (rec: any) => void
   onDelete: (rec: any) => void
   onChanged: () => void
+  // 'panel' = dirender di dalam halaman (panel samping daftar kartu, 2026-10-12); 'modal' = jendela penuh (portal). `onToggleVariant`
+  // = tombol Expand (panel -> modal) / Collapse (modal -> panel). `onAnyDirtyChange` = ada perubahan Costs/Documents belum disimpan.
+  variant?: 'modal' | 'panel'
+  onToggleVariant?: () => void
+  onAnyDirtyChange?: (dirty: boolean) => void
 }) {
+  const isPanel = variant === 'panel'
   const [tab, setTab] = useState<TabKey>('overview')
   const [visited, setVisited] = useState<Record<string, boolean>>({ overview: true })
   const [dirtyTabs, setDirtyTabs] = useState<Record<string, boolean>>({})
@@ -221,6 +228,7 @@ export default function SeaAirRecapDetailModal({
   // Submit: wajib 0 issue & terhubung ke Audit PIB (DB menolak juga -- trigger sql/031 bagian E).
   const submitBlocker = !seaairId ? 'Not linked to an Audit PIB record' : issues.length > 0 ? `${issues.length} open issue${issues.length === 1 ? '' : 's'} must be confirmed by an Admin first` : null
   const anyDirty = Object.values(dirtyTabs).some(Boolean)
+  useEffect(() => { onAnyDirtyChange?.(anyDirty) }, [anyDirty]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const onCostsDirty = useCallback((d: boolean) => setDirtyTabs(p => (p.costs === d ? p : { ...p, costs: d })), [])
   const onDocsDirty = useCallback((d: boolean) => setDirtyTabs(p => (p.documents === d ? p : { ...p, documents: d })), [])
@@ -251,11 +259,12 @@ export default function SeaAirRecapDetailModal({
   }, [tab, rec.id, rec.awb])
 
   useEffect(() => {
+    if (isPanel) return // panel samping: Esc tidak menutup (tidak mengganggu isian di halaman)
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') requestClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onClose, anyDirty])
+  }, [onClose, anyDirty, isPanel])
 
   const handleSubmit = async () => {
     if (submitBlocker) return
@@ -301,11 +310,10 @@ export default function SeaAirRecapDetailModal({
     { key: 'trail', label: 'Audit trail' },
   ]
 
-  return createPortal(
-    <div className="fixed inset-0 z-[70] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-3 md:p-5 max-[1600px]:p-2.5" onMouseDown={e => { if (e.target === e.currentTarget) requestClose() }}>
-      {/* Ukuran (2026-10-06, permintaan user): layar <=1600px (laptop 14", zoom 90%) = hampir penuh layar; monitor besar
-          (24") dilebarkan dari 1180px ke 1560px. */}
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[1560px] h-[94vh] max-[1600px]:max-w-none max-[1600px]:h-full flex flex-col overflow-hidden">
+  const content = (
+      <div className={isPanel
+        ? '@container bg-white rounded-2xl shadow-sm border border-[#EADFD6] w-full flex-1 min-h-0 flex flex-col overflow-hidden'
+        : '@container bg-white rounded-2xl shadow-2xl w-full max-w-[1560px] h-[94vh] max-[1600px]:max-w-none max-[1600px]:h-full flex flex-col overflow-hidden'}>
         {/* Header */}
         <div className="px-5 pt-4 pb-0 border-b border-[#EADFD6] shrink-0">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -364,6 +372,12 @@ export default function SeaAirRecapDetailModal({
                   )}
                 </div>
               )}
+              {onToggleVariant && (
+                <button type="button" onClick={onToggleVariant} aria-label={isPanel ? 'Expand to full window' : 'Collapse to side panel'} title={isPanel ? 'Expand to full window' : 'Collapse to side panel'}
+                  className="inline-flex items-center justify-center h-9 w-9 rounded-xl text-[#6E5E70] hover:bg-[#F6EFEA]" data-variant-toggle>
+                  {isPanel ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
+                </button>
+              )}
               <button type="button" onClick={requestClose} aria-label="Close" className="inline-flex items-center justify-center h-9 w-9 rounded-xl text-[#6E5E70] hover:bg-[#F6EFEA]"><X size={18} /></button>
             </div>
           </div>
@@ -404,7 +418,7 @@ export default function SeaAirRecapDetailModal({
                 )}
               </div>
               {unlockOpen && (
-                <div className="flex flex-col md:flex-row md:items-start gap-2">
+                <div className="flex flex-col @2xl:flex-row @2xl:items-start gap-2">
                   <textarea value={unlockReason} onChange={e => setUnlockReason(e.target.value)} rows={2} autoFocus
                     placeholder="Reason for unlocking (required, min. 5 characters) — recorded in the audit trail"
                     className="flex-1 px-3 py-2 rounded-xl border border-[#EADFD6] bg-white text-[12.5px] focus:outline-none focus:border-[#6B3470]" />
@@ -431,7 +445,7 @@ export default function SeaAirRecapDetailModal({
 
           {tab === 'overview' && (
             <>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-3">
                 <div className={`${SA_CARD} p-4`}>
                   <h3 className="text-[14px] font-bold text-[#3B1B3D] mb-3">Shipment</h3>
                   <div className="grid grid-cols-2 gap-x-5 gap-y-3">
@@ -612,6 +626,13 @@ export default function SeaAirRecapDetailModal({
           <div className="h-1" />
         </div>
       </div>
+  )
+  if (isPanel) return content
+  return createPortal(
+    // Ukuran (2026-10-06, permintaan user): layar <=1600px (laptop 14", zoom 90%) = hampir penuh layar; monitor besar
+    // (24") dilebarkan dari 1180px ke 1560px.
+    <div className="fixed inset-0 z-[70] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-3 md:p-5 max-[1600px]:p-2.5" onMouseDown={e => { if (e.target === e.currentTarget) requestClose() }}>
+      {content}
     </div>,
     document.body
   )

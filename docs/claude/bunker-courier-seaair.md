@@ -835,3 +835,24 @@ OTOMATIS (100%, label "· auto"), tidak diisi manual; weight kosong/0 -> jatuh k
 By KG hanya bisa dipilih kalau SEMUA PO punya KG (aturan lama). Edit shipment (`SeaAirRecapEditModal`): input KG PO tunggal disabled & menampilkan Weight (kg); tombol
 "Split weight evenly" & ringkasan total KG hanya untuk >1 PO. Nilai manual lama pada 1 PO TIDAK dihapus (tidak ditulis ulang), hanya diabaikan selama PO tunggal.
 Diuji skrip 6 cek.
+
+## Sea & Air — Invoice Recap (Card): tombol Open membuka PANEL SAMPING (2026-10-12, permintaan user)
+
+- Tombol **Open** di tampilan **Card** membuka jendela detail sebagai **panel di KANAN daftar** (daftar kiri `lg:w-[35%]`, min 380px, maks 720px; panel sisanya; masing2
+  scroll sendiri; layar < lg ditumpuk). Pola SAMA Invoice Recap Courier (`CourierRecapCardView`). Tombol **Expand** (ikon di header) = pindah ke jendela penuh (modal
+  lama), **Collapse** = kembali ke panel. **Mode List selalu modal.** Setiap Open baru mulai dari panel.
+- `SeaAirRecapDetailModal` prop BARU `variant: 'modal' | 'panel'` (panel = tanpa portal/overlay, `flex-1 min-h-0`; Esc TIDAK menutup panel), `onToggleVariant`,
+  `onAnyDirtyChange`. State di `SharedDataTable`: `recapDetailPanel` (default true), `recapAsPanel`, `openRecapDetail`, `renderRecapDetail(variant)`, `recapPanelOpen` + `renderRecapPanel()`. **Panel WAJIB dirender LAZY di JSX return** (bukan di body
+  komponen): `renderRecapDetail` membaca `handleRecapUnlock` dkk yang dideklarasikan sesudahnya -> dipanggil lebih awal = ReferenceError TDZ = halaman putih (bug 2026-10-12).
+  Panel di-`key` per baris (remount saat pindah kartu). Perubahan Costs/Documents belum disimpan -> konfirmasi saat pindah kartu atau Expand/Collapse (remount =
+  perubahan hilang, tab kembali ke Overview).
+- Kartu yang terbuka diberi ring (`selectedId` -> `RecapRowCard selected`), tombol Open jadi gelap. Edit shipment & dialog Unlock tetap modal.
+- Breakpoint layar di jendela & tab diganti **container query** (root jendela `@container`): grid Overview `@3xl`, form Unlock/Your review `@2xl`, Documents tab
+  `@5xl` (checklist + validasi dua kolom) & baris `@2xl`. `FinanceHandoverViewers` membungkus kedua tab dgn `@container` (pemakai lain tab yang sama).
+- Lebar daftar panel Courier juga diubah 44% -> 35% (`CourierRecapCardList`).
+
+## Sea & Air — Invoice Recap: kartu RINGKAS saat panel samping terbuka (2026-10-12, gambar user)
+
+`SeaAirRecapCardList` prop `compact` (= `recapPanelOpen` di `SharedDataTable`) -> `RecapRowCard` memakai susunan 2 kolom yang tidak memanjang ke bawah. Kiri: chip
+`jenis · PT` + kontainer (FCL `n × tipe`), AWB, supplier (terpotong), **nomor PO (+N PO) tepat di bawah supplier**, sedangkan **chip ATD · ATA di kolom kanan di bawah `Uploaded`** (revisi 2026-10-12, user menukar posisinya; kosong "—"), status (`Not submitted` + `Ready` / `⚠ N issues`; sudah submit -> pil status). Kanan: `Uploaded`, PO (+N PO bisa dibuka), `Origin: X` (tujuan di tooltip), Landed cost, tombol **"Validation"** (gelap kalau terpilih). Tanpa Cost mix & titik skor
+(angkanya ada di header panel). Mode lebar (panel tertutup): susunan TIDAK berubah, tombolnya juga "Validation" (revisi 2026-10-12, permintaan user: label seragam). Uji render 10 cek.

@@ -181,12 +181,12 @@ export function SeaAirHandoverViewer({ item, initialTab, companyNames, onClose }
           )}
           {!item.earlier && visited.docs && (
             <div className={tab === 'docs' ? '' : 'hidden'}>
-              <SeaAirRecapDocumentsTab seaairId={rec.seaair_id} canEdit={false} financeView onChanged={() => {}} />
+              <div className="@container"><SeaAirRecapDocumentsTab seaairId={rec.seaair_id} canEdit={false} financeView onChanged={() => {}} /></div>
             </div>
           )}
           {!item.earlier && visited.cost && (
             <div className={tab === 'cost' ? '' : 'hidden'}>
-              <SeaAirRecapCostsTab seaairId={rec.seaair_id} canEdit={false} financeView auditRow={null} onChanged={() => {}} />
+              <div className="@container"><SeaAirRecapCostsTab seaairId={rec.seaair_id} canEdit={false} financeView auditRow={null} onChanged={() => {}} /></div>
             </div>
           )}
         </div>

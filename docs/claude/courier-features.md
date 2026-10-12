@@ -273,7 +273,7 @@ Spek user "REVISI: Courier → Invoice Recap" + mockup (hanya tata letak). TANPA
 Spek user + prototipe `Prototype — Validation Side Panel.html` (HANYA tata letak; warna/font tetap gaya app). Berlaku mode
 **Card** Invoice Recap Courier saja (Audit Courier, mode List & Finance Handover TIDAK berubah).
 - **Kartu**: tombol **Open DIHAPUS**, tinggal **Validation** (semua kartu; tanpa pasangan Audit -> panel tab Invoices). Klik
-  -> panel di KANAN daftar (`CourierRecapCardView` prop `panel`/`selectedKey`, daftar `lg:w-[44%]`; layar < lg ditumpuk). Klik
+  -> panel di KANAN daftar (`CourierRecapCardView` prop `panel`/`selectedKey`, daftar `lg:w-[35%]` (revisi 2026-10-12, permintaan user; dulu 44%); layar < lg ditumpuk). Klik
   kartu lain -> panel berganti (key per AWB; perubahan Checklist belum disimpan -> konfirmasi). Kartu pakai container query
   (`@container`, `@xl:`/`@4xl:`) supaya ringkas saat berbagi lebar. Titik validasi kartu = buka panel di tab itu.
 - **Panel** (`CourierRecapValidationPanel.tsx`): header (Validation · PIB/CN no., chip, Total, Submit all to Finance, View in

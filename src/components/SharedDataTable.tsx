@@ -4638,6 +4638,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   const [recapSummaryNonce, setRecapSummaryNonce] = useState(0)
   const [recapDetailId, setRecapDetailId] = useState<any>(null)
   const [recapDetailSnapshot, setRecapDetailSnapshot] = useState<any>(null)
+  // Invoice Recap Sea & Air (2026-10-12, permintaan user): tombol Open di tampilan Card membuka PANEL SAMPING dulu (kanan daftar);
+  // tombol Expand melebarkannya jadi jendela penuh (modal). Mode List selalu modal. `recapPanelDirty` = ada perubahan Costs/Documents
+  // belum disimpan di panel (konfirmasi sebelum pindah kartu).
+  const [recapDetailPanel, setRecapDetailPanel] = useState(true);
+  const recapPanelDirty = useRef(false);
   const [recapEditRec, setRecapEditRec] = useState<any>(null)
 
   useEffect(() => {
@@ -4933,6 +4938,53 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     const fresh = records.find(r => String(r.id) === String(recapDetailId));
     if (fresh) setRecapDetailSnapshot(fresh);
   }, [records, recapDetailId]);
+  const recapAsPanel = isSeaAirRekapan && seaAirRecapView === 'card' && recapDetailPanel;
+  const openRecapDetail = (rec: any) => {
+    if (recapAsPanel && recapDetailId !== null && String(recapDetailId) !== String(rec.id) && recapPanelDirty.current
+      && !window.confirm('There are unsaved changes in Costs or Documents. Switch to another shipment anyway?')) return;
+    recapPanelDirty.current = false;
+    setRecapDetailPanel(true);
+    setRecapDetailId(rec.id);
+    setRecapDetailSnapshot(rec);
+  };
+  const renderRecapDetail = (variant: 'modal' | 'panel') => (
+        <SeaAirRecapDetailModal
+          variant={variant}
+          onToggleVariant={seaAirRecapView === 'card' ? () => {
+            // Pindah panel <-> jendela penuh me-remount isinya: perubahan Costs/Documents belum disimpan akan hilang -> konfirmasi.
+            if (recapPanelDirty.current && !window.confirm('There are unsaved changes in Costs or Documents. Switching the view will discard them. Continue?')) return;
+            recapPanelDirty.current = false;
+            setRecapDetailPanel(variant !== 'panel');
+          } : undefined}
+          onAnyDirtyChange={(d: boolean) => { recapPanelDirty.current = d; }}
+          rec={recapDetailRec}
+          companyNames={seaAirCompanyNames}
+          canEdit={canEdit('sea_air_rekapan')}
+          canSeeCosts={canSee('sea_air_cost_validation')}
+          canEditCosts={canEdit('sea_air_cost_validation')}
+          canSeeDocs={canSee('sea_air_dokumen_validation') || canSee('sea_air_checklist_validation')}
+          canEditDocs={canEdit('sea_air_dokumen_validation')}
+          isAdmin={isAdmin}
+          onUnlock={handleRecapUnlock}
+          onClose={() => { recapPanelDirty.current = false; setRecapDetailId(null); setRecapDetailSnapshot(null); }}
+          onEdit={rec => setRecapEditRec(rec)}
+          onSubmit={(rec, dateIso) => handleRecapSave(rec, { tgl_submit_finance: dateIso })}
+          onToggleDraft={async rec => {
+            if (rec.audit_status === 'ARCHIVED') await handleUndraftSeaAir(rec);
+            else await handleDraftSeaAir(rec);
+            setRecapSummaryNonce(n => n + 1);
+            notifySeaAirAuditChanged();
+          }}
+          onDelete={rec => { setRecapDetailId(null); setDeleteRecord(rec); }}
+          onChanged={refreshRecap}
+        />
+  );
+  // PENTING: panel dirender LAZY (`renderRecapPanel()` dipanggil di JSX return) -- `renderRecapDetail` membaca handleRecapUnlock dkk yang
+  // dideklarasikan SETELAH baris ini; memanggilnya di sini = ReferenceError (TDZ) -> halaman putih (laporan user 2026-10-12).
+  const recapPanelOpen = isSeaAirRekapan && recapAsPanel && !!recapDetailRec && !seaAirValidasiRecord;
+  const renderRecapPanel = () => (recapPanelOpen && recapDetailRec
+    ? <React.Fragment key={`recap-panel-${recapDetailRec.id}`}>{renderRecapDetail('panel')}</React.Fragment>
+    : null);
 
   const handleRecapSave = async (rec: any, changes: Record<string, any>) => {
     const ok = await handleInlineSaveRow(rec.id, changes);
@@ -6124,30 +6176,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
       {/* Invoice Recap Sea & Air (2026-10-01) -- jendela Open & Edit shipment. Jendela Open
           disembunyikan sementara modal Document Validation lama terbuka (modal lama z-50). */}
-      {isSeaAirRekapan && recapDetailRec && !seaAirValidasiRecord && (
-        <SeaAirRecapDetailModal
-          rec={recapDetailRec}
-          companyNames={seaAirCompanyNames}
-          canEdit={canEdit('sea_air_rekapan')}
-          canSeeCosts={canSee('sea_air_cost_validation')}
-          canEditCosts={canEdit('sea_air_cost_validation')}
-          canSeeDocs={canSee('sea_air_dokumen_validation') || canSee('sea_air_checklist_validation')}
-          canEditDocs={canEdit('sea_air_dokumen_validation')}
-          isAdmin={isAdmin}
-          onUnlock={handleRecapUnlock}
-          onClose={() => { setRecapDetailId(null); setRecapDetailSnapshot(null); }}
-          onEdit={rec => setRecapEditRec(rec)}
-          onSubmit={(rec, dateIso) => handleRecapSave(rec, { tgl_submit_finance: dateIso })}
-          onToggleDraft={async rec => {
-            if (rec.audit_status === 'ARCHIVED') await handleUndraftSeaAir(rec);
-            else await handleDraftSeaAir(rec);
-            setRecapSummaryNonce(n => n + 1);
-            notifySeaAirAuditChanged();
-          }}
-          onDelete={rec => { setRecapDetailId(null); setDeleteRecord(rec); }}
-          onChanged={refreshRecap}
-        />
-      )}
+      {isSeaAirRekapan && recapDetailRec && !seaAirValidasiRecord && !recapAsPanel && renderRecapDetail('modal')}
       {isSeaAirRekapan && recapEditRec && (
         <SeaAirRecapEditModal
           rec={recapEditRec}
@@ -7306,7 +7335,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 />
               </div>
             ) : isSeaAirRekapan && seaAirRecapView === 'card' ? (
-              <div className="flex-1 min-h-0 relative overflow-y-auto p-2.5">
+              <div className={`flex-1 min-h-0 flex flex-col lg:flex-row ${recapPanelOpen ? 'max-lg:overflow-y-auto' : ''}`}>
+              <div className={`relative overflow-y-auto p-2.5 ${recapPanelOpen ? 'lg:w-[35%] lg:min-w-[380px] lg:max-w-[720px] lg:shrink-0 max-lg:min-h-[420px]' : 'flex-1 min-h-0'}`}>
                 {loading && (
                   <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-50 flex items-center justify-center">
                     <div className="flex items-center bg-white px-4 py-2 rounded-xl shadow-md border border-slate-100 text-[#5A305A] font-medium text-sm">
@@ -7324,8 +7354,16 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 </div>
                 <SeaAirRecapCardList
                   rows={displayRows}
-                  onOpen={rec => { setRecapDetailId(rec.id); setRecapDetailSnapshot(rec); }}
+                  onOpen={openRecapDetail}
+                  selectedId={recapAsPanel ? recapDetailId : null}
+                  compact={recapPanelOpen}
                 />
+              </div>
+              {recapPanelOpen && (
+                <div className="lg:flex-1 min-w-0 min-h-0 flex flex-col p-2.5 lg:pl-0 max-lg:min-h-[640px]" data-recap-panel>
+                  {renderRecapPanel()}
+                </div>
+              )}
               </div>
             ) : (
               <div className="flex-1 flex flex-col min-h-0 relative w-full">
