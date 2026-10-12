@@ -826,7 +826,7 @@ pola SECTIONS/row-col-lookup lain — cek dulu sebelum translate/ubah row/col la
   pre-check md5 badan fungsi live = sql/031 -- kalau beda STOP). % Doc >= 90 tidak dihitung di server (mismatch dokumen memang tidak pernah dihitung server). (Sebelum 053
   dijalankan tombol bisa aktif tapi DB menolak -- kini sudah dijalankan.) Diuji PGlite 10 cek.
 - **Audit Sea & Air (jendela Open Audit PIB)**: kartu "Duties & taxes" DIHAPUS (`SeaAirAuditDetailModal.tsx`; kartu Customs value (CIF) & "Checks" tetap).
-  Perbandingan duty tetap ada di Invoice Recap › Documents › Duty. `SeaAirDutyCompareTable` masih dipakai tab Costs Invoice Recap.
+  Perbandingan duty tetap ada di Invoice Recap › Documents › Duty. (Kartu "Duty & tax (PIB)" di tab Costs juga DIHAPUS 2026-10-12 -- lihat bawah.)
 
 ## Sea & Air — Invoice Recap › Split per PO: KG otomatis kalau hanya 1 PO (2026-10-12, permintaan user)
 
@@ -859,3 +859,10 @@ Diuji skrip 6 cek.
 
 - **Tutup jendela penuh (hasil Expand) di tampilan Card = kembali ke panel samping** (daftar kiri + panel kanan, shipment yang sama tetap terbuka), BUKAN ke daftar
   kartu polos (2026-10-12, permintaan user). Ini berlaku untuk tombol X, klik di luar jendela, dan Esc. Tutup di panel / di mode List tetap menutup shipment.
+
+## Sea & Air — Invoice Recap › tab Costs: kartu "Duty & tax (PIB)" dihapus (2026-10-12, permintaan user)
+
+Kartu "Duty & tax (PIB)" (Import value, tabel BM/PPN/PPh/Total duty Actual vs Expected, baris SPTNP) DIHAPUS dari `SeaAirRecapCostsTab` -- redundan dgn Doc Validation
+(tab Documents › Duty: NDPBM, item pabean, Actual vs Expected, toleransi Rp 3.000). Ikut dibersihkan: state/fetch `dutyMatrix`, `compareSeaAirDuty` dkk di tab ini, dan file
+`SeaAirDutyCompareTable.tsx` (tidak ada pemakai lagi). Helper `compareSeaAirDuty`/`fetchSeaAirDutyMatrix` di `SeaAirAuditHelpers.ts` dibiarkan (tak terpakai). Baris
+"SPTNP: nomor · tanggal · total" (atau "None") DIPERTAHANKAN sbg satu baris kecil di tab Costs (permintaan user 2026-10-12; tidak tampil di mode Finance).

@@ -14,8 +14,7 @@ import { LoadingState } from './LoadingState'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_PRIMARY, Chip, Pill, type Tone } from './SeaAirAuditUi'
 import { computeSeaAirCostGlobalStats, type SectionConfirmation } from '../utils/SeaAirCostValidasiHelpers'
 import { COST_SECTIONS, isSummaryCostRow } from '../utils/SeaAirRecapHelpers'
-import { computeDutyRows, fmtRp, fmtDateShort, compareSeaAirDuty, fetchSeaAirDutyMatrix } from '../utils/SeaAirAuditHelpers'
-import SeaAirDutyCompareTable from './SeaAirDutyCompareTable'
+import { fmtRp, fmtDateShort } from '../utils/SeaAirAuditHelpers'
 
 type Catatan = { id: any; seaair_id: any; section: string; status_konfirmasi: SectionConfirmation; catatan: string | null; dikonfirmasi_oleh: string | null; dikonfirmasi_at: string | null }
 type Draft = { status: SectionConfirmation; catatan: string }
@@ -274,21 +273,8 @@ export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, is
     return `${ok} of ${secs.length} invoice${secs.length === 1 ? '' : 's'} match the contract rate`
   })()
 
-  // Kartu duty = rumus & data tab Documents › Duty (2026-10-05, permintaan user). Hook WAJIB sebelum
-  // `return` loading di bawah (Rules of Hooks).
-  const [dutyMatrix, setDutyMatrix] = useState<any | null | undefined>(undefined)
-  useEffect(() => {
-    if (financeView || !active) return
-    let cancelled = false
-    fetchSeaAirDutyMatrix(seaairId).then(m => { if (!cancelled) setDutyMatrix(m) })
-    return () => { cancelled = true }
-  }, [seaairId, active, financeView])
-
   if (loading) return <LoadingState fullHeight={false} />
 
-  const duty = auditRow ? computeDutyRows(auditRow) : null
-  const dutyCmp = auditRow || dutyMatrix ? compareSeaAirDuty(dutyMatrix ?? null, auditRow) : null
-  const hasSptnp = !!(auditRow && (auditRow.no_sptnp || auditRow.tgl_sptnp || auditRow.sptnp_total))
   const accColor = stats.pct >= 90 ? 'bg-[#17663D]' : stats.pct >= 60 ? 'bg-[#E0A526]' : 'bg-[#A8231A]'
 
   return (
@@ -516,31 +502,16 @@ export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, is
         )
       })}
 
-      {/* Duty & tax (PIB) -- disembunyikan di mode Finance */}
-      {!financeView && (<>
-      <div className={`${SA_CARD} overflow-hidden`}>
-        <div className="px-4 pt-3 pb-2 flex items-center justify-between gap-3">
-          <div>
-            <div className="text-[13.5px] font-bold text-[#3B1B3D]">Duty &amp; tax (PIB)</div>
-            <div className="text-[11.5px] text-[#6E5E70]">Not part of the landed cost · paid via Billing DJBC</div>
+      {/* Kartu "Duty & tax (PIB)" DIHAPUS 2026-10-12 (permintaan user): informasinya redundan dgn tab Documents › Duty. */}
+      {/* Hanya baris SPTNP yang dipertahankan (2026-10-12, permintaan user): satu baris kecil; disembunyikan di mode Finance seperti kartu lama. */}
+      {!financeView && auditRow && (() => {
+        const hasSptnp = !!(auditRow.no_sptnp || auditRow.tgl_sptnp || auditRow.sptnp_total)
+        return (
+          <div className={`${SA_CARD} px-4 py-2 text-[12px] text-[#6E5E70]`} data-sptnp-line>
+            SPTNP: {hasSptnp ? <b className="text-[#3B1B3D]">{auditRow.no_sptnp || '—'} · {fmtDateShort(auditRow.tgl_sptnp)} · {fmtRp(auditRow.sptnp_total)}</b> : 'None'}
           </div>
-          {duty && <span className="text-[12px] text-[#6E5E70]">Import value <b className="text-[#3B1B3D] tabular-nums">{fmtRp(duty.importValueStored ?? duty.importValueCalc)}</b></span>}
-        </div>
-        {!dutyCmp && dutyMatrix !== undefined ? (
-          <div className="px-4 pb-4 text-[12.5px] text-[#6E5E70]">No PIB linked to this shipment yet.</div>
-        ) : (
-          <>
-            <SeaAirDutyCompareTable cmp={dutyCmp} loading={dutyMatrix === undefined} />
-            {auditRow && (
-              <div className="px-4 py-2.5 text-[12px] text-[#6E5E70] border-t border-[#F1E8E1]">
-                SPTNP: {hasSptnp ? <b className="text-[#3B1B3D]">{auditRow.no_sptnp || '—'} · {fmtDateShort(auditRow.tgl_sptnp)} · {fmtRp(auditRow.sptnp_total)}</b> : 'None'}
-              </div>
-            )}
-          </>
-        )}
-      </div>
-      </>)}
-
+        )
+      })()}
       {/* Bar simpan perubahan Expected/Actual */}
       {hasUnsaved && (
         <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 px-4 py-3 rounded-[14px] bg-white border border-[#E0A526] shadow-lg">
