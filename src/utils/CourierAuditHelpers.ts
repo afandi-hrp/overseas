@@ -153,6 +153,56 @@ export function computeCourierDutyRows(rec: any, t: CourierDocType) {
   }
 }
 
+// ─── Angka kartu & preview Audit Courier (2026-10-13, permintaan user) ────────
+// Total Duty Tax = BM + PPN + PPh + (CN: Admin penalty / sanksi adm; PIB: SPTNP total). SATU rumus utk kartu & Section 3 preview.
+export const courierAdmOrSptnp = (rec: any, t: CourierDocType): number => (t === 'CN' ? n(rec?.sanksi_adm) : n(rec?.sptnp_total))
+export const courierTotalDutyTax = (rec: any, t: CourierDocType): number => n(rec?.bm) + n(rec?.ppn_nilai) + n(rec?.pph_nilai) + courierAdmOrSptnp(rec, t)
+
+// Credit Note & Final Check Date tidak ada di baris tabel_audit_pib/cn -> dibaca terpisah (per halaman kartu, 2 query berkelompok):
+// Credit Note = tabel_cost_validasi (baris terbaru) cv_cn_freight_total + cv_cn_duty_total (nominal asli credit note, dibuat absolut);
+// Final Check Date = tabel_checklist_validasi.tanggal_cek ("Check date" Doc Validation).
+export type CourierCardExtra = { creditNote: number; finalCheckDate: string | null }
+// Total Expenses = Total Invoice Freight + Total Invoice Duty − Credit Note.
+export const courierTotalExpenses = (rec: any, extra?: CourierCardExtra | null): number =>
+  n(rec?.total_inv_freight) + n(rec?.total_inv_duty) - (extra?.creditNote || 0)
+
+export async function fetchCourierCardExtras(rows: any[], docTypeOf: (rec: any) => CourierDocType): Promise<Record<string, CourierCardExtra>> {
+  const out: Record<string, CourierCardExtra> = {}
+  const ids: Record<CourierDocType, any[]> = { PIB: [], CN: [] }
+  rows.forEach(r => { if (r?.id !== undefined && r?.id !== null) ids[docTypeOf(r)].push(r.id) })
+  const chunkSize = 50
+  const slot = (t: CourierDocType, id: any): CourierCardExtra => {
+    const k = courierRowKey({ id }, t)
+    if (!out[k]) out[k] = { creditNote: 0, finalCheckDate: null }
+    return out[k]
+  }
+  for (const t of ['PIB', 'CN'] as CourierDocType[]) {
+    // Pra-isi 1 entri per baris -> baris tanpa Credit Note / tanggal cek tetap {0, null} (bukan "belum dibaca").
+    ids[t].forEach(id => slot(t, id))
+    const idKey = t === 'CN' ? 'cn_id' : 'pib_id'
+    const seenCost = new Set<string>()
+    for (let i = 0; i < ids[t].length; i += chunkSize) {
+      const chunk = ids[t].slice(i, i + chunkSize)
+      const [cv, chk] = await Promise.all([
+        supabase.from('tabel_cost_validasi').select(`${idKey}, cv_cn_freight_total, cv_cn_duty_total, created_at`).in(idKey, chunk).order('created_at', { ascending: false }),
+        supabase.from('tabel_checklist_validasi').select(`${idKey}, tanggal_cek`).in(idKey, chunk),
+      ])
+      if (cv.error) console.error('[CourierAudit] credit note kartu gagal', cv.error)
+      if (chk.error) console.error('[CourierAudit] final check date kartu gagal', chk.error)
+      ;(cv.data || []).forEach((r: any) => {
+        const k = `${t}-${r[idKey]}`
+        if (seenCost.has(k)) return // baris terbaru saja (order desc)
+        seenCost.add(k)
+        slot(t, r[idKey]).creditNote = Math.abs(n(r.cv_cn_freight_total)) + Math.abs(n(r.cv_cn_duty_total))
+      })
+      ;(chk.data || []).forEach((r: any) => {
+        if (r.tanggal_cek) slot(t, r[idKey]).finalCheckDate = r.tanggal_cek
+      })
+    }
+  }
+  return out
+}
+
 // ─── Ringkasan KPI ────────────────────────────────────────────────────────────
 export type CourierAuditFilters = { importAn: string; startDate: string; endDate: string; search: string; searchColsPib: string[]; searchColsCn: string[] }
 export type CourierAuditSummary = {

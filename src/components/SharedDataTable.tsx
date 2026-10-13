@@ -16,7 +16,7 @@ import CourierUploadSusulanModal from '../components/CourierUploadSusulanModal'
 import { VW_TOOLBAR, VW_BODY, VW_CARD, VW_CARD_TITLE, VW_BTN_PRIMARY, VW_BTN_SECONDARY, vwPctBar, vwPctText } from '../components/validationWindowStyles'
 import { VW_TOOLBAR as VW_TOOLBAR_L, VW_BODY as VW_BODY_L, VW_CARD as VW_CARD_L, VW_CARD_TITLE as VW_CARD_TITLE_L, VW_BTN_PRIMARY as VW_BTN_PRIMARY_L, VW_BTN_SECONDARY as VW_BTN_SECONDARY_L, vwPctBar as vwPctBar_L, vwPctText as vwPctText_L } from '../components/validationWindowStylesLegacy'
 import CourierValidationWindowLegacy from './CourierValidationWindowLegacy'
-import CourierValidationWindow, { rowValidationPct, validationDotClass, validationDotLabel, VALIDATION_TAB_LABEL, VALIDATION_TAB_ORDER, type ValidationTabKey, type WindowTabKey } from '../components/CourierValidationWindow'
+import { rowValidationPct, validationDotClass, validationDotLabel, VALIDATION_TAB_LABEL, VALIDATION_TAB_ORDER, type ValidationTabKey } from '../components/CourierValidationWindow'
 import SeaAirChecklistModal from '../components/SeaAirChecklistModal'
 import SeaAirValidasiModal from '../components/SeaAirValidasiModal'
 import ValidasiShipmentInvoiceLengkap from '../components/ValidasiShipmentInvoiceLengkap'
@@ -46,8 +46,7 @@ import { syncChecklistNoteToRemarks, syncRemarkToGroup } from '../utils/CourierR
 import { COURIER_REKAPAN_CALC_FIELDS, courierAwbNorm, computeCourierRekapanCalc, submitRecapInvoices, notifyCourierRecapChanged, fetchCourierRecapSummary, type RecapFilters, type RecapGroup, type RecapSummaryCourier, type RecapKpiFilter } from '../utils/CourierRecapHelpers'
 import { CourierRecapCardView, CourierRecapKpiCards } from './CourierRecapCardList'
 import CourierRecapValidationPanel, { type RecapPanelTab } from './CourierRecapValidationPanel'
-import CourierAuditOverview from './CourierAuditOverview'
-import CourierAuditTrail from './CourierAuditTrail'
+import CourierAuditPreview from './CourierAuditPreview'
 import CourierAuditEditModal from './CourierAuditEditModal'
 import { SA_BTN_OUTLINE, SA_BTN_GREEN } from './SeaAirAuditUi'
 import { SeaAirRecapCardList, SeaAirRecapKpiCards, CostMixLegend } from './SeaAirRecapCardList'
@@ -4685,7 +4684,9 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   const [courierSummaryNonce, setCourierSummaryNonce] = useState(0)
   const [courierValidationIncomplete, setCourierValidationIncomplete] = useState<number | null>(null)
   const [courierCompanyNames, setCourierCompanyNames] = useState<Record<string, string>>({})
-  const [courierOpen, setCourierOpen] = useState<{ rec: any; tab: WindowTabKey } | null>(null)
+  // Panel preview kanan mode Card (2026-10-13): baris yang sedang dibuka. `extrasNonce` naik = kartu membaca ulang Credit Note & Final Check.
+  const [courierOpen, setCourierOpen] = useState<{ rec: any; tab: 'overview' } | null>(null)
+  const [courierExtrasNonce, setCourierExtrasNonce] = useState(0)
   const [courierEditState, setCourierEditState] = useState<{ record: any | null; docType: CourierDocType } | null>(null)
   const [courierBusy, setCourierBusy] = useState(false)
   const courierColOk = makeColOk(isCourierAuditView ? getAllowedColumns('courier_audit') : null)
@@ -4780,6 +4781,9 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     const same = (r: any) => String(r.id) === String(rec.id) && courierDocTypeOf(r) === t;
     const before = records.find(same);
     setRecords(prev => prev.map(r => (same(r) ? { ...r, ...fresh } : r)));
+    // Panel preview yang masih menampilkan baris ini ikut mendapat data terbaru (Missing docs, persen, dst).
+    setCourierOpen(prev => (prev && same(prev.rec) ? { ...prev, rec: { ...prev.rec, ...fresh } } : prev));
+    setCourierExtrasNonce(n => n + 1);
     const keys = ['pct_kelengkapan', 'doc_validation_pct', 'cost_validation_pct', 'status_kelengkapan'];
     if (!before || keys.some(k => String(before[k] ?? '') !== String(fresh[k] ?? ''))) {
       setCourierSummaryNonce(n => n + 1);
@@ -4804,6 +4808,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     // Reorder Mode kini ada di Card & List (2026-10-02) -- ganti tampilan = keluar Reorder dulu.
     if (reorderMode) exitReorderMode();
     if (m === 'card') setCourierAuditEditMode(false);
+    if (m === 'list') setCourierOpen(null); // panel preview hanya ada di mode Card
     setCourierAuditView(m);
   };
 
@@ -6195,61 +6200,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         />
       )}
 
-      {/* Audit Courier (2026-10-01) -- jendela Open = jendela Validation + tab Overview & tombol aksi */}
-      {isCourierAuditView && courierOpen && tab && (() => {
-        const rec = courierOpen.rec;
-        const t = courierDocTypeOf(rec);
-        const draft = isCourierDraft(rec);
-        const canEditAudit = canEdit('courier_audit');
-        const docNo = courierColOk(t === 'CN' ? 'no_sppbmcp' : 'no_pib') ? courierDocNo(rec, t) : '';
-        const closeOpen = () => { setCourierOpen(null); patchCourierRowSilently(rec); };
-        return (
-          <React.Fragment key={`courier-open-${t}-${rec.id}`}>
-          <CourierValidationWindow
-            record={rec}
-            mainTab={activeMainTab}
-            subTab={activeSubTab}
-            jenisDokumen={t}
-            access={courierValidationAccess}
-            // Validasi hanya bisa diubah selama Draft (sama tombol Validation tabel lama); baris Audited = lihat saja.
-            editAccess={{ checklist: draft && canEdit('courier_checklist_dokumen'), doc: draft && canEdit('courier_dokumen_validation'), cost: draft && canEdit('courier_cost_validation') }}
-            renderChecklist={({ onPctChange, onSaved, onDirtyChange }) => (
-              <ChecklistModal record={rec} tab={tab} embedded onClose={closeOpen} onSaved={onSaved} onPctChange={onPctChange} onDirtyChange={onDirtyChange} canEdit={draft && canEdit('courier_checklist_dokumen')} />
-            )}
-            initialTab={courierOpen.tab}
-            title={<span className="flex items-center gap-2 flex-wrap">{t} {docNo || (courierColOk('awb') ? rec.awb : '') || ''}<span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${draft ? 'bg-[#FFF1D6] text-[#7A4F00]' : 'bg-[#EAF6EF] text-[#17663D]'}`}>{draft ? 'Draft' : 'Audited'}</span></span>}
-            subtitle={[courierColOk('tgl_ppjk') ? fmtDateShortSeaAir(rec.tgl_ppjk) : '', courierColOk('awb') && docNo ? rec.awb : '', courierColOk('impor_an') ? rec.impor_an : '', courierColOk('vendor') ? rec.vendor : ''].filter(Boolean).join(' · ')}
-            headerActions={canEditAudit ? (
-              <>
-                <button type="button" onClick={() => setCourierEditState({ record: rec, docType: t })} className={SA_BTN_OUTLINE}>Edit</button>
-                {draft ? (
-                  <button type="button" disabled={courierBusy} onClick={() => courierSetStatus(rec, 'audited')} className={SA_BTN_GREEN}>{courierBusy ? 'Saving…' : 'Mark as audited'}</button>
-                ) : (
-                  <button type="button" disabled={courierBusy} onClick={() => courierSetStatus(rec, 'draft')} className={SA_BTN_OUTLINE}>{courierBusy ? 'Saving…' : 'Move back to Draft'}</button>
-                )}
-                {draft && courierAuditType === 'archive' && (
-                  <button type="button" title="Delete this draft" onClick={() => { setCourierOpen(null); setDeleteRecord(rec); }} className="inline-flex items-center justify-center gap-1.5 px-3.5 h-9 rounded-xl border border-[#F4C3BC] bg-white text-[#A8231A] text-xs font-semibold hover:bg-[#FDE7E4] transition-colors">Delete</button>
-                )}
-              </>
-            ) : null}
-            overview={({ openTab, cv }) => (
-              <CourierAuditOverview
-                rec={rec}
-                docType={t}
-                companyNames={courierCompanyNames}
-                colOk={courierColOk}
-                validationTabs={courierValidationTabs}
-                canEdit={canEditAudit}
-                onOpenTab={openTab}
-                cv={cv}
-              />
-            )}
-            trail={<CourierAuditTrail rec={rec} docType={t} />}
-            onClose={closeOpen}
-          />
-          </React.Fragment>
-        );
-      })()}
+      {/* Audit Courier: detail baris (Overview / Audit trail + popup validasi) = PANEL PREVIEW kanan daftar kartu
+          (CourierAuditPreview, 2026-10-13) -- dirender di cabang Card tabel di bawah, bukan jendela overlay lagi. */}
       {isCourierAuditView && courierEditState && (
         <React.Fragment key={courierEditState.record ? `courier-edit-${courierEditState.docType}-${courierEditState.record.id}` : 'courier-edit-new'}>
         <CourierAuditEditModal
@@ -7298,10 +7250,14 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 )}
               </div>
             ) : isCourierAuditView && courierAuditView === 'card' ? (
-              <div className="flex-1 min-h-0 relative flex flex-col" data-courier-audit-card-view>
+              // Panel preview kanan (2026-10-13): daftar menyempit ke kiri (35%, min 380px, maks 720px), detail di kanan; layar sempit = ditumpuk.
+              (() => {
+              const previewOpen = !!(courierOpen && tab && !reorderMode);
+              return (
+              <div className={`flex-1 min-h-0 relative flex flex-col lg:flex-row ${previewOpen ? 'max-lg:overflow-y-auto' : ''}`} data-courier-audit-card-view>
               {/* Badge "Updating…" kuning (2026-10-09, SAMA Invoice Recap Courier): di pembungkus `relative` yang TIDAK ikut scroll, daftar tidak diredupkan. */}
               {loading && <UpdatingBadge />}
-              <div className="flex-1 min-h-0 overflow-y-auto p-2.5">
+              <div className={`min-h-0 overflow-y-auto p-2.5 ${previewOpen ? 'lg:w-[35%] lg:min-w-[380px] lg:max-w-[720px] lg:shrink-0 max-lg:min-h-[420px]' : 'flex-1'}`}>
                 {/* Baris "N draft records" DIHAPUS 2026-10-02 (permintaan user) -- jumlah tetap di footer "Showing … of N". */}
                 {(() => {
                   const list = (
@@ -7311,7 +7267,9 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                       companyNames={courierCompanyNames}
                       colOk={courierColOk}
                       validationTabs={courierValidationTabs}
-                      onOpen={(rec, t) => setCourierOpen({ rec, tab: t || 'overview' })}
+                      selectedKey={courierOpen ? `${courierDocTypeOf(courierOpen.rec)}-${courierOpen.rec.id}` : null}
+                      onOpen={rec => setCourierOpen({ rec, tab: 'overview' })}
+                      extrasNonce={courierExtrasNonce}
                       wrapCard={reorderMode ? (rec, index, card) => (
                         <SortableCardShell id={rec.id} index={startIndex + index} totalRows={totalRecords} onMoveTo={pos => handleMoveRowTo(rec, pos)}>{card}</SortableCardShell>
                       ) : undefined}
@@ -7324,7 +7282,45 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   ) : list;
                 })()}
               </div>
+              {previewOpen && courierOpen && tab && (() => {
+                const rec = courierOpen.rec;
+                const t = courierDocTypeOf(rec);
+                const draft = isCourierDraft(rec);
+                return (
+                  <div className="lg:flex-1 min-w-0 min-h-0 flex flex-col p-2.5 lg:pl-0 max-lg:min-h-[640px]" data-courier-preview-panel>
+                    {/* key = jenis + id: klik kartu lain = isi panel diganti (state popup/tab ikut reset). */}
+                    <React.Fragment key={`courier-open-${t}-${rec.id}`}>
+                    <CourierAuditPreview
+                      rec={rec}
+                      docType={t}
+                      companyNames={courierCompanyNames}
+                      colOk={courierColOk}
+                      validationTabs={courierValidationTabs}
+                      access={courierValidationAccess}
+                      // Validasi hanya bisa diubah selama Draft (sama tombol Validation tabel lama); baris Audited = lihat saja.
+                      editAccess={{ checklist: draft && canEdit('courier_checklist_dokumen'), doc: draft && canEdit('courier_dokumen_validation'), cost: draft && canEdit('courier_cost_validation') }}
+                      mainTab={activeMainTab}
+                      subTab={activeSubTab}
+                      canEditAudit={canEdit('courier_audit')}
+                      canDelete={draft && courierAuditType === 'archive'}
+                      busy={courierBusy}
+                      escDisabled={!!courierEditState || !!deleteRecord}
+                      renderChecklist={({ onPctChange, onSaved, onDirtyChange }) => (
+                        <ChecklistModal record={rec} tab={tab} embedded onClose={() => {}} onSaved={onSaved} onPctChange={onPctChange} onDirtyChange={onDirtyChange} canEdit={draft && canEdit('courier_checklist_dokumen')} />
+                      )}
+                      onClose={() => setCourierOpen(null)}
+                      onEdit={() => setCourierEditState({ record: rec, docType: t })}
+                      onSetStatus={target => courierSetStatus(rec, target)}
+                      onDelete={() => { setCourierOpen(null); setDeleteRecord(rec); }}
+                      onValidationChanged={() => patchCourierRowSilently(rec)}
+                    />
+                    </React.Fragment>
+                  </div>
+                );
+              })()}
               </div>
+              );
+              })()
             ) : isSeaAirAudit && seaAirViewMode === 'card' ? (
               <div className="flex-1 min-h-0 relative overflow-y-auto p-2.5">
                 {loading && (

@@ -522,7 +522,59 @@ Recap Sea & Air (token `SeaAirAuditUi.tsx`, font Sora); mode **List** = tabel la
   (List: "🔒 Locked" tanpa Edit/Delete; Open: chip Locked + Unlock (Admin) dgn alasan). Detail: CLAUDE.md
   "Courier 2026-10-02 bagian 2".
 
+## Audit Courier mode Card — kartu baru, panel preview kanan, popup validasi (2026-10-13, permintaan user)
+
+Referensi tampilan user: `audit_preview_v2.html` (root repo). **MENGGANTIKAN jendela Open Audit Courier** (`CourierValidationWindow`
++ `CourierAuditOverview` + tab Documents/Costs yang dijelaskan di bagian "tampilan baru PIB & CN Audit" di bawah — bagian itu
+sekarang RIWAYAT utk jendela Open; mode List/jendela Legacy tidak berubah). Style/warna/font tetap (token `SeaAirAuditUi`, Sora).
+
+- **Kartu** (`CourierAuditCardList.tsx`): kiri = badge jalur + tgl PPJK, **No. PIB hanya jalur PIB** (CN: baris kosong, teks
+  "No SPPBMCP no." dihapus), chip **PT** (`impor_an`; menggantikan chip OWN FEDEX/OWN DHL = `via`, dihapus) + delivery term + AWB;
+  tengah = vendor (+ chip Accepted/NAS submitted bila ada; **No. PO dihapus dari kartu** tapi tetap bisa dicari lewat Search —
+  kolom `po_ori` masih di `searchColsPib/Cn`); kanan = **Total Expenses** (= `total_inv_freight` + `total_inv_duty` − Credit Note),
+  **Total Duty Tax** (= BM + PPN + PPh + SPTNP/sanksi adm; `courierTotalDutyTax`), **Final Check**; paling kanan = pill status +
+  tombol **Open** saja (titik-titik validasi dihapus; chip "↻ Changed in Invoice Recap" tetap). Seluruh kartu bisa diklik.
+  Tata letak pakai container query (`@container`/`@4xl`): kartu lebar 1 baris, kartu sempit (daftar menyempit) ditumpuk.
+- **Sumber 2 angka baru** (`fetchCourierCardExtras`, `CourierAuditHelpers.ts`; 2 query berkelompok per 50 baris, TANPA SQL baru):
+  **Credit Note** = `tabel_cost_validasi` baris terbaru per `pib_id`/`cn_id`: `|cv_cn_freight_total| + |cv_cn_duty_total|`;
+  **Final Check Date** = `tabel_checklist_validasi.tanggal_cek` ("Check date" Doc Validation). Kartu menampilkan "…" sampai terbaca;
+  Final Check disembunyikan ("—") bila role tak boleh lihat Doc Validation. **Asumsi — konfirmasi ke user bila salah sumber.**
+  SPTNP utk jalur PIB = `sptnp_total` (BUKAN bagian `total_pib_cn` lama; `total_pib_cn` tidak diubah).
+- **Panel preview** (`CourierAuditPreview.tsx`, state `courierOpen` di SharedDataTable): Open/klik kartu → daftar kiri (35%, min
+  380 / maks 720px, pola Invoice Recap), panel kanan; klik kartu lain = ganti isi (key `courier-open-${jenis}-${id}`); tutup
+  ✕ / Esc (Esc tidak menutup panel saat form Edit/Delete terbuka — `escDisabled`; saat popup terbuka Esc menutup popup).
+  Pindah ke List / Reorder Mode menutup panel. Header: badge jalur + No. AWB, Edit, Mark as audited / Move back to Draft, Delete
+  (hanya Draft tab Draft), Print (`#courier-audit-preview-print-area`, aturan `:has` di index.css), ✕. Badge "Doc complete / Doc
+  match / Cost" di header DIHAPUS. Tab hanya **Overview** & **Audit trail** (`CourierAuditTrail` tidak berubah).
+- **Overview**: ① PO & Vendor (Vendor, Remarks, tabel PO ORI | Vendor Inv No | Item Price valas + Rp, baris Other cost & Total
+  Item Price = `item_price + other_cost`, Rp = `item_price_idr`; toggle As recorded/Split evenly tetap ada bila >1 PO tanpa
+  rincian) ② Shipment (A/N, Via, Delivery Term, No. PIB/SPPBMCP, PPJK Date, No. SPTNP, SPTNP Date, HS Code) ③ Customs Value &
+  Duties (Invoice PPJK: Total Inv Freight/Duty; Customs Value: Valas DPP, Kurs NDPBM, Total Customs Value — baris "T. N.Pabean +
+  BM" dihapus; Duties & Taxes: BM/PPN/PPh dengan %, Admin penalty / SPTNP Total, Total PIB/CN = rumus Total Duty Tax kartu; tanpa
+  rumus & kolom status) ④ Completeness & Validation (Checklist % + "Missing: …" dari `dokumen_kurang`, Cost Validation %, Doc
+  Validation %, Check difference = `cek_selisih`, merah bila ≠ 0 setelah dibulatkan; info saja, tidak bisa diklik).
+- **Popup** (Section 4, tutup ✕ / Esc / klik luar kembali ke preview): Checklist → `ChecklistModal embedded` (isi SAMA: Upload
+  additional doc, Checklist Note, Required/Optional, Accept with note); Doc Validation → `ValidasiModal embedded reviewUi`; Cost
+  Validation → `CostValidationModal embedded`. Dipasang HANYA selama popup terbuka (tidak ada lagi "selalu terpasang") ->
+  perubahan belum disimpan = konfirmasi saat tutup. Persen Section 4 live dari `onPctChange`; saat popup ditutup baris dibaca ulang
+  senyap (`patchCourierRowSilently`, juga memperbarui `courierOpen.rec` & `courierExtrasNonce` utk kartu).
+- **Popup Doc Validation (`ValidasiModal` prop `reviewUi`, hanya Audit Courier; Invoice Recap/jendela lama TIDAK berubah)**:
+  chip Match/Mismatch = SATU tombol toggle (ikon ⇄; klik = `applyManualStatus` match ↔ mismatch; hanya baris Match/Mismatch &
+  user ber-hak edit; Incomplete/Not checked = chip biasa); tombol "Correct" per baris DIHAPUS → 1 tombol **Edit** di kiri atas
+  (mode edit: semua baris — termasuk Incomplete — menampilkan kotak nilai sumber & pembanding + Other cost, nilai kalkulasi
+  PIB/SPPBMCP ikut bisa diedit; label berubah "Save changes" = `saveDoc` lalu keluar mode edit; bar Discard tetap); "✓ Checked —
+  accept" HANYA di baris Mismatch (semantik lama: `manual_status='match'`); Undo per baris (bila berubah) tetap. Tombol "Edit
+  calculation values" terpisah disembunyikan (digabung ke tombol Edit). **Catatan**: di baris Mismatch toggle & Accept sama-sama
+  menghasilkan Match (accept tidak punya status "dikonfirmasi tetap mismatch" seperti di mockup) — ubah bila user ingin beda.
+- **Diuji**: `tsc` bersih, `vite build` sukses, render SSR (kartu PIB/CN, preview: 4 section, tab, Missing docs, Check difference
+  merah, tanpa badge skor). **Belum diuji interaktif di browser/production** (popup, toggle, mode Edit, Print, Esc).
+- File: `CourierAuditCardList.tsx`, `CourierAuditPreview.tsx` (baru), `CourierAuditOverview.tsx` DIHAPUS, `ValidasiModal.tsx`,
+  `CourierAuditHelpers.ts`, `SharedDataTable.tsx` (cabang `isCourierAuditView && card`), `index.css` (print). `CourierValidationWindow`
+  default export tak dipakai lagi oleh Audit (helper/ekspor lain masih dipakai Recap/Finance).
+
 ## Audit Courier — tampilan baru "PIB & CN Audit" (2026-10-01)
+
+> **Diganti sebagian 2026-10-13**: kartu & jendela Open di bagian ini sudah diganti kartu baru + panel preview (lihat bagian di atas).
 
 Mengikuti Audit PIB Sea & Air (token `SeaAirAuditUi.tsx`, font Sora). Keputusan user: samakan dgn Audit PIB
 Sea & Air + sesuaikan perbedaan (tab Draft/PIB/CN, Admin penalty CN, NAS Submit Date, batas kolom role

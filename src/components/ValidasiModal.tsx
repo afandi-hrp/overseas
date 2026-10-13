@@ -3,7 +3,7 @@ import { planCourierDocRecompute, docRecomputeMessage, docRecomputePendingText }
 import { LoadingSpinner } from './LoadingState';
 import { beratKgPair } from '../utils/ValidasiHelper';
 import { supabase } from '../lib/supabase';
-import { Receipt, FileText, Landmark, Ship, Sailboat, FileCheck2, FileDigit, IdCard, Scale, ClipboardList, Edit3, CheckCircle2, XCircle, Clock, Building2, Plane, CalendarDays, UserCheck, ChevronDown, ChevronUp, ChevronRight, RefreshCw, RotateCcw } from 'lucide-react';
+import { Receipt, FileText, Landmark, Ship, Sailboat, FileCheck2, FileDigit, IdCard, Scale, ClipboardList, Edit3, CheckCircle2, XCircle, Clock, Building2, Plane, CalendarDays, UserCheck, ChevronDown, ChevronUp, ChevronRight, RefreshCw, RotateCcw, ArrowLeftRight } from 'lucide-react';
 import ValidasiPerhitunganPIB, { type CalcRowInfo } from './ValidasiPerhitunganPIB';
 import { VW_LABEL, VW_BTN_PRIMARY, VW_BTN_SECONDARY, VW_BTN_SUCCESS, VW_BTN_DANGER, VW_CARD, VW_INPUT, VW_TILE, VW_TILE_TONE, vwPctBar, vwPctText } from './validationWindowStyles';
 import { Pill } from './SeaAirAuditUi';
@@ -878,6 +878,10 @@ const STATUS_CONFIG: any = {
 // digeser) utk FINANCE_DOC_MATRIX saja (Invoice Freight & Invoice Duty, Tabel NPWP; SPPBMCP disembunyikan seluruhnya).
 // Badge x/y match per tabel = sel yang tampil. Meta/catatan, banner, Recompute, Expand all & kalkulasi PIB/SPPBMCP tidak
 // tampil (kalkulasi tetap dipasang tersembunyi spy akurasi SAMA).
+// `reviewUi` (2026-10-13, popup Doc Validation kartu Audit Courier, permintaan user; hanya dgn `embedded`): (1) chip Match/Mismatch
+// per baris = SATU tombol toggle (klik = ganti Match <-> Mismatch, `applyManualStatus`); (2) tombol "Correct" per baris DIHAPUS ->
+// 1 tombol "Edit" di kiri atas utk mengedit SEMUA nilai (juga baris Incomplete); (3) "Checked — accept" hanya di baris Mismatch.
+// Tanpa prop ini tampilan embedded lama (Invoice Recap / jendela lama) TIDAK berubah.
 export const FINANCE_DOC_MATRIX: { id: string; cols: string[]; rows?: string[] }[] = [
   { id: 's_inv_freight_duty',
     cols: ['Invoice Duty', 'FP Freight', 'FP Duty', 'CN INVOICE FREIGHT', 'CN INVOICE DUTY', 'FP Revisi Freight', 'FP Revisi Duty'],
@@ -885,7 +889,7 @@ export const FINANCE_DOC_MATRIX: { id: string; cols: string[]; rows?: string[] }
   { id: 's_tabel_npwp',
     cols: ['PIB', 'SPPBMCP', 'FP Freight', 'FP Duty', 'FP Revisi Freight', 'FP Revisi Duty', 'Invoice Freight', 'Invoice Duty', 'CN Freight', 'CN Duty'] },
 ];
-export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdit = true, embedded = false, onPctChange, onDirtyChange, checklistVersion = 0, variant = 'full', onOpenDetails, reloadKey = 0, onChanged, financeView = false }: { record: any, mainTab: string, subTab?: string, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, onDirtyChange?: (dirty: boolean) => void, checklistVersion?: number, variant?: 'full' | 'summary', onOpenDetails?: () => void, reloadKey?: number, onChanged?: () => void, financeView?: boolean }) {
+export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdit = true, embedded = false, onPctChange, onDirtyChange, checklistVersion = 0, variant = 'full', onOpenDetails, reloadKey = 0, onChanged, financeView = false, reviewUi = false }: { record: any, mainTab: string, subTab?: string, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, onDirtyChange?: (dirty: boolean) => void, checklistVersion?: number, variant?: 'full' | 'summary', onOpenDetails?: () => void, reloadKey?: number, onChanged?: () => void, financeView?: boolean, reviewUi?: boolean }) {
   const { profile, user } = useAuth();
   const [docType, setDocType] = useState<'PIB'|'CN'|null>(null);
   const [debugData, setDebugData] = useState<any>({ raw: {}, doc: {} });
@@ -984,6 +988,8 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   const [docSaving, setDocSaving] = useState(false);
   const [docToast, setDocToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [correcting, setCorrecting] = useState<string | null>(null);
+  // reviewUi: mode Edit global (semua nilai jadi kotak isian).
+  const [editAll, setEditAll] = useState(false);
   const [calcEdit, setCalcEdit] = useState(false);
   // Cegah checklist baru KEBUAT hanya krn user MEMBUKA/MELIHAT modal ini tanpa mengedit apa pun
   // (2026-09, laporan user -- ikon pensil "sudah diedit" tidak muncul, artinya field itu memang
@@ -1242,13 +1248,15 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     setDocSaving(true);
     try {
       const err = await persistChecklist();
-      if (err) { showDocToast('Failed to save: ' + err, 'error'); return; }
+      if (err) { showDocToast('Failed to save: ' + err, 'error'); return false; }
       setDocSnap(makeDocSnap());
       setCorrecting(null);
       showDocToast('Document validation saved.', 'success');
+      return true;
     } catch (e: any) {
       console.error('[ValidasiModal] simpan gagal', e);
       showDocToast('Failed to save: ' + (e?.message || ''), 'error');
+      return false;
     } finally {
       setDocSaving(false);
     }
@@ -1258,6 +1266,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     const snap = JSON.parse(JSON.stringify(docSnap));
     setValues(snap.values); setAwbNo(snap.awbNo); setTanggal(snap.tanggal); setNamaChecker(snap.namaChecker); setCatatanManual(snap.catatanManual ?? "");
     setCorrecting(null);
+    setEditAll(false);
   };
   // "✓ Checked — accept" / "Mark mismatch" (pola Sea & Air) -- menulis manual_status yg SAMA dgn klik
   // pil status mode Edit lama (toggleManualStatus), tanpa syarat mode Edit.
@@ -2043,6 +2052,19 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
 
     return (
       <div className="flex flex-col gap-3 min-w-0">
+        {reviewUi && canEdit && !financeView && (
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
+            <button type="button" disabled={docSaving} className={editAll ? VW_BTN_PRIMARY : VW_BTN_SECONDARY} data-edit-all
+              onClick={async () => {
+                if (!editAll) { setEditAll(true); return; }
+                if (docDirty && !(await saveDoc())) return;
+                setEditAll(false);
+              }}>
+              {editAll ? <><CheckCircle2 size={13} /> {docSaving ? 'Saving…' : 'Save changes'}</> : <><Edit3 size={13} /> Edit</>}
+            </button>
+            <span className="text-[11px] text-[#6E5E70]">{editAll ? 'Edit mode: every value can be corrected, including Incomplete rows.' : 'One Edit button to correct all values.'}</span>
+          </div>
+        )}
         {docToast && <div className={`px-3 py-2 rounded-xl border text-[12.5px] font-semibold ${docToast.type === 'success' ? 'bg-[#EAF6EF] border-[#BFE3CD] text-[#17663D]' : 'bg-[#FDE7E4] border-[#F4C3BC] text-[#A8231A]'}`}>{docToast.msg}</div>}
 
         {/* Ringkasan */}
@@ -2119,7 +2141,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
           <div className={`${VW_CARD} px-4 py-4 text-[12.5px] text-[#6E5E70]`}>No AI document reading for this shipment yet{financeView ? '.' : ' — values can still be filled in manually.'}</div>
         )}
         {financeView ? null : openMismatch > 0 ? (
-          <div className="rounded-[14px] border border-[#F4C3BC] bg-[#FDE7E4] px-4 py-2 text-[12.5px] font-semibold text-[#A8231A]">{openMismatch} mismatch{openMismatch === 1 ? '' : 'es'} not yet confirmed — accept, correct the value, or keep as mismatch.</div>
+          <div className="rounded-[14px] border border-[#F4C3BC] bg-[#FDE7E4] px-4 py-2 text-[12.5px] font-semibold text-[#A8231A]">{openMismatch} mismatch{openMismatch === 1 ? '' : 'es'} not yet confirmed — accept, {reviewUi ? 'edit' : 'correct'} the value, or keep as mismatch.</div>
         ) : stats.mismatch > 0 ? (
           <div className="rounded-[14px] border border-[#BFE3CD] bg-[#EAF6EF] px-4 py-2 text-[12.5px] font-semibold text-[#17663D]">✓ Mismatch reviewed manually</div>
         ) : null}
@@ -2164,7 +2186,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                         )}
                       </div>
                       <div className="flex flex-col gap-1.5 min-w-0">
-                        {rowsOfField.map((rowMatch: any) => {
+                        {rowsOfField.map((rowMatch: any, rowIdx: number) => {
                           const v = values[rowMatch.id] || { src: '', cmp: '' };
                           const otherCostVal = v.otherCost !== undefined && v.otherCost !== null && v.otherCost !== ''
                             ? v.otherCost
@@ -2174,7 +2196,9 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                           const errNpwp = v.cmp && hasNpwpError(rowMatch.id, v.cmp);
                           const colorObj = getHeaderColor(rowMatch.compareDoc);
                           const changed = isCellChanged(rowMatch.id);
-                          const isCorrecting = correcting === rowMatch.id;
+                          const isCorrecting = reviewUi ? editAll : correcting === rowMatch.id;
+                          // reviewUi: chip Match/Mismatch = 1 tombol toggle; Incomplete / belum dicek tetap chip biasa.
+                          const toggleable = reviewUi && canEdit && (st === 'match' || st === 'mismatch');
                           const hasOtherCost = rowMatch.id === 'po_item_value_vs_pib' || rowMatch.id === 'cipl01';
                           return (
                             <div key={rowMatch.id} className={`rounded-lg border px-2.5 py-1.5 ${st === 'mismatch' ? 'border-[#F4C3BC] bg-[#FFF8F7]' : 'border-[#F1E8E1] bg-white'}`}>
@@ -2200,9 +2224,22 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                                     <span className="text-[10.5px] italic text-[#6E5E70]"> · Other cost {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 4 }).format(Number(otherCostVal))}{v.otherCost_edited ? ' ✎' : ''}</span>
                                   )}
                                 </span>
-                                {chip(st, !!v.manual_status)}
+                                {toggleable ? (
+                                  <button type="button" data-status-toggle={rowMatch.id} title="Click to switch Match ⇄ Mismatch"
+                                    onClick={() => applyManualStatus(rowMatch.id, st === 'match' ? 'mismatch' : 'match')}
+                                    className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-bold whitespace-nowrap cursor-pointer hover:brightness-95"
+                                    style={{ backgroundColor: getCfg(st).bg, color: getCfg(st).color }}>
+                                    {st === 'match' ? <CheckCircle2 size={11} /> : <XCircle size={11} />}{getCfg(st).label}{v.manual_status ? ' ✎' : ''}<ArrowLeftRight size={10} className="opacity-60" />
+                                  </button>
+                                ) : chip(st, !!v.manual_status)}
                                 {(errNpwp || v.npwp_status === 'not_found') && <span className="text-[9.5px] text-[#7A4F00] bg-[#FFF1D6] px-2 py-0.5 rounded-md font-bold uppercase">NPWP tidak terdaftar</span>}
-                                {canEdit && !isCorrecting && (
+                                {reviewUi && canEdit && (
+                                  <span className="flex items-center gap-2 text-[11px] font-semibold print:hidden">
+                                    {st === 'mismatch' && <button type="button" className="text-[#17663D] hover:underline" onClick={() => applyManualStatus(rowMatch.id, 'match')}>✓ Checked — accept</button>}
+                                    {changed && <button type="button" className="text-[#6E5E70] hover:underline inline-flex items-center gap-0.5" onClick={() => undoCell(rowMatch.id)}><RotateCcw size={10} />Undo</button>}
+                                  </span>
+                                )}
+                                {!reviewUi && canEdit && !isCorrecting && (
                                   <span className="flex items-center gap-2 text-[11px] font-semibold print:hidden">
                                     {st === 'match'
                                       ? <button type="button" className="text-[#A8231A] hover:underline" onClick={() => applyManualStatus(rowMatch.id, 'mismatch')}>Mark mismatch</button>
@@ -2214,12 +2251,15 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                               </div>
                               {canEdit && isCorrecting && (
                                 <div className="mt-2 flex flex-wrap items-end gap-2 print:hidden">
+                                  {/* reviewUi + s_pib: nilai Reference sama utk semua dokumen 1 field -> kotaknya cukup di baris pertama. */}
+                                  {!(reviewUi && section.id === 's_pib' && rowIdx > 0) && (
                                   <label className="flex flex-col gap-1 min-w-[180px] flex-1">
                                     <span className={VW_LABEL}>{section.id === 's_pib' ? 'Reference (PIB) — all documents in this row' : `Value from ${getSrcTooltipLabel(rowMatch, section)}`}</span>
                                     <input aria-label="Correct source value" className={`${VW_INPUT} w-full`} value={v.src || ""}
                                       placeholder={rowMatch.isFormat ? "Format..." : ""}
                                       onChange={e => section.id === 's_pib' ? setSrcForGroup(section, field, e.target.value) : setObj(rowMatch.id, 'src', e.target.value)} />
                                   </label>
+                                  )}
                                   {!rowMatch.isFormat && (
                                     <label className="flex flex-col gap-1 min-w-[180px] flex-1">
                                       <span className={VW_LABEL}>Value from {getColumnDisplayLabel(rowMatch.compareDoc, docType)}</span>
@@ -2236,7 +2276,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                                       <input aria-label="Other cost" className={`${VW_INPUT} w-full`} value={otherCostVal} onChange={e => setObj(rowMatch.id, 'otherCost', e.target.value)} />
                                     </label>
                                   )}
-                                  <button type="button" className={VW_BTN_SECONDARY} onClick={() => setCorrecting(null)}>Done</button>
+                                  {!reviewUi && <button type="button" className={VW_BTN_SECONDARY} onClick={() => setCorrecting(null)}>Done</button>}
                                 </div>
                               )}
                             </div>
@@ -2254,7 +2294,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
         {/* Kalkulasi PIB / SPPBMCP (komponen lama) -- nilai bisa dikoreksi lewat tombol di bawah. Finance: tersembunyi
             (tetap dipasang supaya akurasi SAMA). */}
         <div className={financeView ? 'hidden' : 'min-w-0'}>
-          {canEdit && (
+          {canEdit && !reviewUi && (
             <div className="flex justify-end mb-1.5 print:hidden">
               <button type="button" className={VW_BTN_SECONDARY} onClick={() => setCalcEdit(v => !v)}>
                 <Edit3 size={12} /> {calcEdit ? 'Done editing calculation' : 'Edit calculation values'}
@@ -2265,7 +2305,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
             dataValidasiRaw={debugData?.raw}
             jenisDokumen={record?.jenis_dokumen || (mainTab === 'audit' && subTab === 'pib' ? 'PIB' : (mainTab === 'audit' && subTab === 'cn' ? 'CN' : ''))}
             onStatsChange={setPibStats}
-            isEditMode={canEdit && calcEdit}
+            isEditMode={canEdit && (reviewUi ? editAll : calcEdit)}
             statusOverrides={calcOverrides}
           />
         </div>

@@ -2,13 +2,14 @@
 // Murni tampilan: baris = `records` SharedDataTable (query lama, sudah ter-enrich auto-calc,
 // kelengkapan & persen validasi), ringkasan = fetchCourierAuditSummary. Kolom yang tidak diizinkan
 // role (getAllowedColumns 'courier_audit') TIDAK ditampilkan (`colOk`). Tabel lama tetap di mode List.
-import React, { useState } from 'react'
-import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, Chip, Pill, PtBadge } from './SeaAirAuditUi'
-import { fmtRp, fmtRpShort, fmtDateShort, fmtPctShort, splitMulti, companyFullName } from '../utils/SeaAirAuditHelpers'
+import React, { useEffect, useMemo, useState } from 'react'
+import { SA_CARD, SA_LABEL, Chip, Pill, PtBadge } from './SeaAirAuditUi'
+import { fmtRp, fmtRpShort, fmtDateShort, companyFullName } from '../utils/SeaAirAuditHelpers'
 import {
-  computeCourierDutyRows, courierDocNo, courierRowKey, isCourierDraft, type CourierAuditSummary, type CourierDocType,
+  courierDocNo, courierRowKey, courierTotalDutyTax, courierTotalExpenses, fetchCourierCardExtras, isCourierDraft,
+  type CourierAuditSummary, type CourierCardExtra, type CourierDocType,
 } from '../utils/CourierAuditHelpers'
-import { VALIDATION_TAB_LABEL, rowValidationPct, validationDotClass, validationDotLabel, type ValidationTabKey } from './CourierValidationWindow'
+import type { ValidationTabKey } from './CourierValidationWindow'
 
 const hasVal = (v: any) => v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim() !== '-'
 
@@ -45,82 +46,68 @@ export const CourierAuditKpiCards: React.FC<{
   )
 }
 
-// Titik status validasi (sama aturan tombol Validation lama: hijau 100%, oranye <100%, abu belum ada).
-export const ValidationDots: React.FC<{ rec: any; tabs: ValidationTabKey[]; onOpenTab?: (t: ValidationTabKey) => void }> = ({ rec, tabs, onOpenTab }) => {
-  const pct = rowValidationPct(rec)
-  if (tabs.length === 0) return null
-  return (
-    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-[#F3EEEA]">
-      {tabs.map(t => (
-        <button key={t} type="button" onClick={onOpenTab ? () => onOpenTab(t) : undefined} disabled={!onOpenTab}
-          title={`${VALIDATION_TAB_LABEL[t]}: ${validationDotLabel(pct[t])}`} aria-label={`${VALIDATION_TAB_LABEL[t]}: ${validationDotLabel(pct[t])}`}
-          className={`w-2.5 h-2.5 rounded-full ${validationDotClass(pct[t])} ${onOpenTab ? 'hover:ring-2 hover:ring-[#6B3470]/30' : ''}`} />
-      ))}
-    </span>
-  )
-}
-
 // ─── Baris kartu PIB / CN ─────────────────────────────────────────────────────
+// Revisi 2026-10-13 (permintaan user, referensi audit_preview_v2.html): kiri = jalur + tgl PPJK, No. PIB (HANYA PIB), chip PT +
+// delivery term + AWB; tengah = vendor; kanan = Total Expenses / Total Duty Tax / Final Check; paling kanan = status + tombol Open
+// (titik-titik validasi & daftar PO dihapus dari kartu; PO tetap bisa dicari lewat Search). Tata letak pakai container query:
+// kartu lebar = 1 baris 4 blok, kartu sempit (daftar menyempit saat panel preview terbuka) = ditumpuk.
+const KpiBlock: React.FC<{ label: string; children: React.ReactNode; small?: boolean }> = ({ label, children, small }) => (
+  <div className="min-w-0">
+    <div className={SA_LABEL}>{label}</div>
+    <div className={`${small ? 'text-[13px] font-semibold' : 'text-[15px] font-bold'} text-[#3B1B3D] tabular-nums leading-tight mt-0.5 whitespace-nowrap`}>{children}</div>
+  </div>
+)
+const Hidden = () => <span className="text-[#8A7A8B] font-normal">—</span>
+
 const CourierAuditRowCard: React.FC<{
   rec: any
   docType: CourierDocType
   companyNames: Record<string, string>
   colOk: (key: string) => boolean
   validationTabs: ValidationTabKey[]
-  onOpen: (rec: any, tab?: 'overview' | ValidationTabKey) => void
-}> = ({ rec, docType, companyNames, colOk, validationTabs, onOpen }) => {
-  const [expanded, setExpanded] = useState(false)
+  extra?: CourierCardExtra
+  selected: boolean
+  onOpen?: (rec: any) => void
+}> = ({ rec, docType, companyNames, colOk, validationTabs, extra, selected, onOpen }) => {
   const draft = isCourierDraft(rec)
-  const pos = colOk('po_ori') ? splitMulti(rec.po_ori) : []
-  const duty = computeCourierDutyRows(rec, docType)
-  const rate = (k: 'bm' | 'ppn' | 'pph') => fmtPctShort(duty.rows.find(r => r.key === k)?.rate ?? null)
   const nasDone = colOk('tgl_submit_nas') && hasVal(rec.tgl_submit_nas)
   const borderColor = draft ? 'border-l-[#E0A526]' : nasDone ? 'border-l-[#17663D]' : 'border-l-[#6B3470]'
-  const via = colOk('via') ? String(rec.via || '').toUpperCase() : ''
   const term = colOk('delivery_term') ? String(rec.delivery_term || '').trim() : ''
-  const docNoKey = docType === 'CN' ? 'no_sppbmcp' : 'no_pib'
-  const docNo = colOk(docNoKey) ? courierDocNo(rec, docType) : ''
-  const adm = docType === 'CN' && colOk('sanksi_adm') ? Number(rec.sanksi_adm) || 0 : 0
-  const rateOk = colOk('bm') && colOk('total_nilai_pabean')
+  // No. PIB hanya utk jalur PIB; jalur CN barisnya DIKOSONGKAN (tanpa teks "No SPPBMCP no.").
+  const pibNo = docType === 'PIB' && colOk('no_pib') ? courierDocNo(rec, 'PIB') : ''
+  const showExpenses = colOk('total_inv_freight') || colOk('total_inv_duty')
+  const showDutyTax = colOk('total_pib_cn')
+  const showFinalCheck = validationTabs.includes('doc')
+  const loadingExtra = extra === undefined // belum selesai dibaca -> "…" (bukan angka tanpa Credit Note)
 
   return (
-    <div className={`${SA_CARD} border-l-4 ${borderColor} overflow-hidden ${nasDone ? 'bg-[#F7FBF8]' : ''}`}>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[260px_minmax(0,1fr)_230px_240px] gap-x-5 gap-y-3 px-4 py-3.5 items-center">
-        {/* 1. Dokumen */}
+    <div
+      className={`${SA_CARD} border-l-4 ${borderColor} overflow-hidden @container ${onOpen ? 'cursor-pointer' : ''} ${nasDone ? 'bg-[#F7FBF8]' : ''} ${selected ? 'ring-2 ring-[#6B3470] border-[#6B3470]' : onOpen ? 'hover:border-[#D9C7DA]' : ''}`}
+      data-courier-card={`${docType}-${rec.id}`}
+      onClick={onOpen ? () => onOpen(rec) : undefined}
+    >
+      <div className="grid grid-cols-1 @4xl:grid-cols-[minmax(0,285px)_minmax(0,1fr)_auto_auto] gap-x-5 gap-y-2.5 px-4 py-3.5 items-center">
+        {/* 1. Jalur + tgl PPJK, No. PIB (khusus PIB), PT · delivery term · AWB */}
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 text-[11px] text-[#8A7A8B] font-medium">
             <Chip tone={docType === 'CN' ? 'purple' : 'blue'}>{docType}</Chip>
             {colOk('tgl_ppjk') && <span>{fmtDateShort(rec.tgl_ppjk)}</span>}
           </div>
-          <div className="text-[13.5px] font-bold text-[#3B1B3D] truncate tabular-nums mt-0.5" title={docNo}>{docNo || <span className="text-[#8A7A8B] font-semibold">No {docType === 'CN' ? 'SPPBMCP' : 'PIB'} no.</span>}</div>
-          <div className="flex items-center gap-1.5 mt-1 min-w-0">
-            {via && <Chip tone="grey">{via}</Chip>}
+          {docType === 'PIB' && colOk('no_pib') && (
+            <div className="text-[13.5px] font-bold text-[#3B1B3D] truncate tabular-nums mt-0.5" title={pibNo}>
+              {pibNo || <span className="text-[#8A7A8B] font-semibold">No PIB no.</span>}
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-1.5 mt-1 min-w-0">
+            {colOk('impor_an') && rec.impor_an && <PtBadge code={rec.impor_an} title={companyFullName(companyNames, rec.impor_an)} />}
             {term && <Chip tone="plum">{term}</Chip>}
-            {colOk('awb') && <span className="text-[11px] text-[#6E5E70] truncate" title={rec.awb || ''}>{rec.awb || '—'}</span>}
+            {colOk('awb') && <span className="text-[11px] text-[#6E5E70] [overflow-wrap:anywhere]" title={rec.awb || ''}>{rec.awb || '—'}</span>}
           </div>
         </div>
 
-        {/* 2. PT + supplier + PO */}
+        {/* 2. Vendor (+ chip Accepted / NAS submitted bila ada) */}
         <div className="min-w-0">
-          <div className="flex items-center gap-2 min-w-0">
-            {colOk('impor_an') && <PtBadge code={rec.impor_an} title={companyFullName(companyNames, rec.impor_an)} />}
-            {colOk('vendor') && <span className="text-[13px] font-bold text-[#3B1B3D] truncate" title={rec.vendor || ''}>{rec.vendor || '—'}</span>}
-          </div>
-          {colOk('po_ori') && (
-            <div className="mt-1 text-[11.5px] text-[#6E5E70] min-w-0">
-              {pos.length === 0 ? <span>No PO</span> : (
-                <div className="flex items-start gap-1.5 min-w-0">
-                  <div className="min-w-0">{(expanded ? pos : pos.slice(0, 1)).map((p, i) => <div key={i} className="truncate" title={p}>{p}</div>)}</div>
-                  {pos.length > 1 && (
-                    <button type="button" onClick={() => setExpanded(v => !v)}
-                      className="shrink-0 px-1.5 py-[1px] rounded-full border border-[#D9C7DA] bg-[#F5EDF3] text-[#6B3470] text-[10.5px] font-semibold hover:bg-[#EFE2EC]">
-                      {expanded ? 'Hide' : `+${pos.length - 1} PO`}
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+          {colOk('vendor') && <div className="text-[13px] font-bold text-[#3B1B3D] [overflow-wrap:anywhere]" title={rec.vendor || ''}>{rec.vendor || '—'}</div>}
           {(nasDone || (colOk('doc_acceptance') && hasVal(rec.doc_acceptance))) && (
             <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
               {colOk('doc_acceptance') && hasVal(rec.doc_acceptance) && <Chip tone="grey" title="Doc Acceptance">Accepted {fmtDateShort(rec.doc_acceptance)}</Chip>}
@@ -129,31 +116,32 @@ const CourierAuditRowCard: React.FC<{
           )}
         </div>
 
-        {/* 3. Duty & tax */}
-        <div className="lg:text-right min-w-0">
-          {colOk('total_pib_cn') ? (
-            <>
-              <div className={SA_LABEL}>Duty &amp; tax</div>
-              <div className="text-[18px] font-bold text-[#3B1B3D] tabular-nums leading-tight">{fmtRp(rec.total_pib_cn)}</div>
-              {rateOk && (
-                <div className="text-[11px] text-[#6E5E70] tabular-nums">
-                  BM <b className="text-[#3B1B3D]">{rate('bm')}</b> · PPN <b className="text-[#3B1B3D]">{rate('ppn')}</b> · PPh <b className="text-[#3B1B3D]">{rate('pph')}</b>
-                </div>
-              )}
-              {adm > 0 && <div className="text-[11px] text-[#7A4F00] tabular-nums">incl. admin penalty {fmtRp(adm)}</div>}
-            </>
-          ) : <div className="text-[11px] text-[#8A7A8B]">Duty &amp; tax hidden for your role</div>}
+        {/* 3. Total Expenses · Total Duty Tax · Final Check */}
+        <div className="flex flex-wrap @4xl:flex-nowrap gap-x-[18px] gap-y-1.5 @4xl:text-right min-w-0">
+          <KpiBlock label="Total Expenses">
+            {showExpenses ? (loadingExtra ? '…' : fmtRp(courierTotalExpenses(rec, extra))) : <Hidden />}
+          </KpiBlock>
+          <KpiBlock label="Total Duty Tax">
+            {showDutyTax ? fmtRp(courierTotalDutyTax(rec, docType)) : <Hidden />}
+          </KpiBlock>
+          <KpiBlock label="Final Check" small>
+            {showFinalCheck ? (loadingExtra ? '…' : extra?.finalCheckDate ? fmtDateShort(extra.finalCheckDate) : '—') : <Hidden />}
+          </KpiBlock>
         </div>
 
-        {/* 4. Status */}
-        <div className="flex flex-col lg:items-end gap-1.5 min-w-0">
-          <div className="flex flex-wrap lg:justify-end items-center gap-1.5">
+        {/* 4. Status + Open (kartu sempit: 1 baris, status kiri & Open kanan) */}
+        <div className="flex @4xl:flex-col items-center @4xl:items-end justify-between gap-1.5 min-w-0">
+          <div className="flex flex-col items-start @4xl:items-end gap-1.5 min-w-0">
             <Pill tone={draft ? 'amber' : 'green'}>{draft ? 'Draft' : 'Audited'}</Pill>
-            <ValidationDots rec={rec} tabs={validationTabs} onOpenTab={t => onOpen(rec, t)} />
+            {/* Re-audit otomatis (sql/037): Invoice Recap diedit setelah Audited -> kembali Draft + alasan. */}
+            {rec.reaudit_reason && <Chip tone="purple" title={rec.reaudit_reason}>↻ Changed in Invoice Recap — please re-audit</Chip>}
           </div>
-          {/* Re-audit otomatis (sql/037): Invoice Recap diedit setelah Audited -> kembali Draft + alasan. */}
-          {rec.reaudit_reason && <Chip tone="purple" title={rec.reaudit_reason}>↻ Changed in Invoice Recap — please re-audit</Chip>}
-          <button type="button" onClick={() => onOpen(rec)} className={`${SA_BTN_OUTLINE} h-8 px-4`}>Open</button>
+          {onOpen && (
+            <button type="button" onClick={e => { e.stopPropagation(); onOpen(rec) }}
+              className={`inline-flex items-center justify-center px-4 h-8 rounded-xl border text-xs font-semibold transition-colors ${selected ? 'bg-[#3B1B3D] border-[#3B1B3D] text-white' : 'bg-white border-[#EADFD6] hover:border-[#6B3470]/40 hover:bg-[#FBF7F4] text-[#3B1B3D]'}`}>
+              {selected ? 'Opened' : 'Open'}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -166,15 +154,40 @@ export const CourierAuditCardList: React.FC<{
   companyNames: Record<string, string>
   colOk: (key: string) => boolean
   validationTabs: ValidationTabKey[]
-  onOpen: (rec: any, tab?: 'overview' | ValidationTabKey) => void
+  // Kartu yang sedang tampil di panel preview (kunci `${jenis}-${id}`) & klik kartu / tombol Open.
+  selectedKey?: string | null
+  onOpen: (rec: any) => void
+  // Naik = baca ulang Credit Note & Final Check (mis. setelah popup validasi ditutup).
+  extrasNonce?: number
   // Reorder Mode mode Card (2026-10-02): bungkus tiap kartu (grip drag + nomor posisi). Tanpa prop = tampilan biasa.
+  // Saat Reorder Mode, kartu TIDAK bisa dibuka (tanpa tombol Open) -- hanya diseret.
   wrapCard?: (rec: any, index: number, card: React.ReactNode) => React.ReactNode
-}> = ({ rows, docTypeOf, companyNames, colOk, validationTabs, onOpen, wrapCard }) => (
-  <div className="flex flex-col gap-2.5">
-    {rows.map((rec, index) => {
-      const t = docTypeOf(rec)
-      const card = <CourierAuditRowCard rec={rec} docType={t} companyNames={companyNames} colOk={colOk} validationTabs={validationTabs} onOpen={onOpen} />
-      return <React.Fragment key={courierRowKey(rec, t)}>{wrapCard ? wrapCard(rec, index, card) : card}</React.Fragment>
-    })}
-  </div>
-)
+}> = ({ rows, docTypeOf, companyNames, colOk, validationTabs, selectedKey = null, onOpen, extrasNonce = 0, wrapCard }) => {
+  // Credit Note & Final Check Date dibaca berkelompok utk baris yang tampil (2 query per 50 baris); kunci string supaya
+  // render ulang induk (identitas `rows` baru) TIDAK memicu baca ulang.
+  const rowsKey = useMemo(() => rows.map(r => courierRowKey(r, docTypeOf(r))).join(','), [rows, docTypeOf])
+  const [extras, setExtras] = useState<Record<string, CourierCardExtra>>({})
+  useEffect(() => {
+    let cancelled = false
+    fetchCourierCardExtras(rows, docTypeOf)
+      .then(m => { if (!cancelled) setExtras(m) })
+      .catch(e => console.error('[CourierAudit] angka kartu gagal', e))
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowsKey, extrasNonce])
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      {rows.map((rec, index) => {
+        const t = docTypeOf(rec)
+        const key = courierRowKey(rec, t)
+        const extra = extras[key] // undefined = belum dibaca (…)
+        const card = (
+          <CourierAuditRowCard rec={rec} docType={t} companyNames={companyNames} colOk={colOk} validationTabs={validationTabs}
+            extra={extra} selected={selectedKey === key} onOpen={wrapCard ? undefined : onOpen} />
+        )
+        return <React.Fragment key={key}>{wrapCard ? wrapCard(rec, index, card) : card}</React.Fragment>
+      })}
+    </div>
+  )
+}
