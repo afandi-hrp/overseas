@@ -3,11 +3,13 @@
 // fn_cost_agent_update_invoice_header lalu muat ulang) | split view: viewer file (Google Drive /preview) + tabel baris & history |
 // tab Documents & Tax (susulan) | tab Timeline. Aksi: Submit for approval (verification/rejected, semua baris verified).
 // Tab Approval (Prompt 4: ladder + Approve/Reject) & Payments (Prompt 5: AP Note/PV, Resend, Mark as paid).
+// sql/057: koreksi header -> combobox vendor cari server (ilike, 20) + "+ Add vendor" (fn_cost_agent_add_vendor) & teks asli
+// invoice (*_name_raw) di bawah Vendor/Vessel/Port; cache hasil Browse history per filter selama modal terbuka.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
-import { X, Pencil, Send, ExternalLink, AlertTriangle, RotateCcw, PanelLeftClose, PanelLeftOpen, FileText, Wallet, ShieldCheck, Trash2 } from 'lucide-react'
-import { StatusChip, CostAgentCombobox, FieldLabel, type ComboOption } from './CostAgentUi'
+import { X, Pencil, Send, ExternalLink, AlertTriangle, RotateCcw, PanelLeftClose, PanelLeftOpen, FileText, Wallet, ShieldCheck, Trash2, Plus } from 'lucide-react'
+import { StatusChip, CostAgentCombobox, CostAgentModal, FieldLabel, type ComboOption } from './CostAgentUi'
 import { Chip, PtBadge, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_BTN_GREEN, SA_INPUT, SA_LABEL } from './SeaAirAuditUi'
 import { LoadingState, LoadingSpinner } from './LoadingState'
 import CostAgentInvoiceLines from './CostAgentInvoiceLines'
@@ -15,8 +17,10 @@ import CostAgentInvoiceDocuments from './CostAgentInvoiceDocuments'
 import CostAgentApprovalPanel from './CostAgentApprovalPanel'
 import CostAgentPaymentsPanel from './CostAgentPaymentsPanel'
 import CostAgentPaymentModal from './CostAgentPaymentModal'
+import type { HistoryCache } from './CostAgentHistoryBrowser'
 import {
   costAgentGetInvoiceHistory, costAgentUpdateInvoiceHeader, costAgentSubmitForApproval, costAgentUpload,
+  costAgentAddVendor, searchCostAgentVendors, formatNpwp,
   fetchCostAgentCallOptions, callOptionLabel, drivePreviewUrl, isInvoiceEditable, canUploadSupporting,
   fmtMoney, fmtDate, fmtDateTimePort, fmtDateTimeCompact, tzAbbrev, fmtNumber, CHECK_NOTE_LABEL, canDeleteInvoice, activeApprovalStep, isApproverOf, notifyCostAgentApprovalsChanged,
   type CostAgentInvoiceHistory, type CostAgentCompany, type CostAgentVendor, type CostAgentVessel, type CostAgentPort,
@@ -52,6 +56,7 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
   const [showPay, setShowPay] = useState(false)
   const onChangedRef = useRef(onChanged)
   onChangedRef.current = onChanged
+  const historyCache = useRef<HistoryCache>(new Map()) // hasil Browse history per filter (hidup selama modal terbuka)
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -187,7 +192,7 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
               {inv.status === 'processing' && (
                 <div className="mt-2.5 rounded-md border border-[#C9D3F0] bg-[#EEF1FA] px-2.5 py-1.5 text-[12px] text-[#2F4FA8] flex items-center gap-2"><LoadingSpinner /> AI is reading this invoice — this window refreshes automatically.</div>
               )}
-              {editHeader && <HeaderEditor data={data!} companies={companies} vendors={vendors} vessels={vessels} ports={ports} actor={actor}
+              {editHeader && <HeaderEditor data={data!} companies={companies} vendors={vendors} vessels={vessels} ports={ports} actor={actor} onToast={onToast}
                 onCancel={() => setEditHeader(false)} onSaved={async () => { setEditHeader(false); await reload() }} />}
             </>
           )}
@@ -223,6 +228,7 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
               <div className="flex-1 min-w-0 flex flex-col min-h-0">
                 <div className="flex-1 min-h-0">
                   <CostAgentInvoiceLines lines={data.lines} currency={data.invoice.currency} costItems={costItems} editable={editable} actor={actor} onChanged={reload}
+                    invoice={data.invoice} ports={ports} vessels={vessels} vendors={vendors} historyCache={historyCache.current}
                     toolbarLeft={
                       <button type="button" className="text-[11.5px] text-[#6E5E70] hover:text-[#6B3470] inline-flex items-center gap-1 max-lg:hidden" onClick={() => setShowViewer(v => !v)}
                         title={showViewer ? 'Hide the invoice file' : 'Show the invoice file'}>
@@ -307,12 +313,13 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
 }
 
 // Koreksi header (vendor / kapal / pelabuhan / port call / company) -> fn_cost_agent_update_invoice_header.
-function HeaderEditor({ data, companies, vendors, vessels, ports, actor, onCancel, onSaved }: {
+function HeaderEditor({ data, companies, vendors, vessels, ports, actor, onToast, onCancel, onSaved }: {
   data: CostAgentInvoiceHistory; companies: CostAgentCompany[]; vendors: CostAgentVendor[]; vessels: CostAgentVessel[]
-  ports: CostAgentPort[]; actor: string | null; onCancel: () => void; onSaved: () => void
+  ports: CostAgentPort[]; actor: string | null; onToast: (msg: string, tone?: 'ok' | 'warn') => void; onCancel: () => void; onSaved: () => void
 }) {
   const inv = data.invoice
-  const [vendorId, setVendorId] = useState<number | null>(inv.vendor_id)
+  const [vendor, setVendor] = useState<{ id: number; name: string } | null>(inv.vendor_id ? { id: inv.vendor_id, name: inv.vendor_name || `#${inv.vendor_id}` } : null)
+  const vendorId = vendor?.id ?? null
   const [vesselId, setVesselId] = useState<number | null>(inv.vessel_id)
   const [portId, setPortId] = useState<number | null>(inv.port_id)
   const [callId, setCallId] = useState<number | null>(inv.voyage_call_id)
@@ -327,7 +334,6 @@ function HeaderEditor({ data, companies, vendors, vessels, ports, actor, onCance
     return () => { cancelled = true }
   }, [vesselId])
 
-  const vendorOpts: ComboOption[] = useMemo(() => vendors.map(v => ({ value: v.id, label: v.name, sub: v.npwp || undefined })), [vendors])
   const vesselOpts: ComboOption[] = useMemo(() => vessels.map(v => ({ value: v.id, label: v.name, sub: [v.vessel_type, v.dwt ? `DWT ${fmtNumber(v.dwt, 0)}` : null].filter(Boolean).join(' · ') })), [vessels])
   const portOpts: ComboOption[] = useMemo(() => ports.map(p => ({ value: p.id, label: `${p.code} — ${p.name}`, keywords: (p.aliases || []).join(' '), warn: p.is_verified ? undefined : 'Port not verified yet' })), [ports])
   const callOpts: ComboOption[] = useMemo(() => calls.map(c => ({ value: c.id, label: callOptionLabel(c), sub: `${fmtDateTimePort(c.arrived_at, c.port_tz)} → ${fmtDateTimePort(c.departed_at, c.port_tz)}`, keywords: `${c.port_name}` })), [calls])
@@ -350,10 +356,10 @@ function HeaderEditor({ data, companies, vendors, vessels, ports, actor, onCance
   return (
     <div className="mt-3 rounded-xl border border-[#EADFD6] bg-[#FBF7F4] p-3">
       <div className="grid grid-cols-1 md:grid-cols-5 gap-2.5">
-        <div><FieldLabel>Vendor</FieldLabel><CostAgentCombobox options={vendorOpts} value={vendorId} onChange={v => setVendorId(v === null ? null : Number(v))} placeholder={inv.vendor_name_raw || 'Vendor…'} /></div>
-        <div><FieldLabel>Vessel</FieldLabel><CostAgentCombobox options={vesselOpts} value={vesselId} onChange={v => { setVesselId(v === null ? null : Number(v)); setCallId(null) }} placeholder={inv.vessel_name_raw || 'Vessel…'} /></div>
+        <div><FieldLabel>Vendor</FieldLabel><VendorCombobox value={vendor} onChange={setVendor} rawName={inv.vendor_name_raw} knownVendors={vendors} actor={actor} onToast={onToast} /><AsWritten raw={inv.vendor_name_raw} /></div>
+        <div><FieldLabel>Vessel</FieldLabel><CostAgentCombobox options={vesselOpts} value={vesselId} onChange={v => { setVesselId(v === null ? null : Number(v)); setCallId(null) }} placeholder={inv.vessel_name_raw || 'Vessel…'} /><AsWritten raw={inv.vessel_name_raw} /></div>
         <div className="md:col-span-2"><FieldLabel hint="sets the port">Voyage port call</FieldLabel><CostAgentCombobox options={callOpts} value={callId} onChange={pickCall} placeholder={vesselId ? 'Port call of this vessel…' : 'Pick a vessel first'} disabled={!vesselId} /></div>
-        <div><FieldLabel>Port</FieldLabel><CostAgentCombobox options={portOpts} value={portId} onChange={v => setPortId(v === null ? null : Number(v))} placeholder={inv.port_name_raw || 'Port…'} /></div>
+        <div><FieldLabel>Port</FieldLabel><CostAgentCombobox options={portOpts} value={portId} onChange={v => setPortId(v === null ? null : Number(v))} placeholder={inv.port_name_raw || 'Port…'} /><AsWritten raw={inv.port_name_raw} /></div>
         <div>
           <FieldLabel>Company</FieldLabel>
           <select className={SA_INPUT} value={company} onChange={e => setCompany(e.target.value)}>
@@ -367,5 +373,152 @@ function HeaderEditor({ data, companies, vendors, vessels, ports, actor, onCance
         </div>
       </div>
     </div>
+  )
+}
+
+// Teks asli di invoice (hasil baca AI) di bawah field koreksi header.
+function AsWritten({ raw }: { raw: string | null | undefined }) {
+  if (!raw) return null
+  return <div className="mt-0.5 text-[11px] text-[#8A7A8B] truncate" title={raw}>As written on invoice: <span className="text-[#6E5E70]">{raw}</span></div>
+}
+
+// Combobox vendor: cari cost_agent_vendors di server (name ilike, maks 20); tidak ketemu -> "+ Add vendor "<teks>"".
+function VendorCombobox({ value, onChange, rawName, knownVendors, actor, onToast }: {
+  value: { id: number; name: string } | null
+  onChange: (v: { id: number; name: string } | null) => void
+  rawName: string | null
+  knownVendors: CostAgentVendor[]
+  actor: string | null
+  onToast: (msg: string, tone?: 'ok' | 'warn') => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const [results, setResults] = useState<CostAgentVendor[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [adding, setAdding] = useState<string | null>(null) // teks yg diketik saat klik "+ Add vendor"
+  const seq = useRef(0)
+
+  useEffect(() => {
+    if (!open) return
+    const my = ++seq.current
+    const t = setTimeout(async () => {
+      setLoading(true); setError(null)
+      try { const r = await searchCostAgentVendors(q, 20); if (my === seq.current) setResults(r) }
+      catch (e: any) { if (my === seq.current) { setResults([]); setError(e.message || String(e)) } }
+      finally { if (my === seq.current) setLoading(false) }
+    }, 250)
+    return () => clearTimeout(t)
+  }, [q, open])
+
+  const term = q.trim()
+  const exact = !!term && results.some(v => v.name.trim().toLowerCase() === term.toLowerCase())
+
+  return (
+    <div className="relative">
+      <div className="relative">
+        <input className={`${SA_INPUT} pr-7`} value={open ? q : value?.name || ''} placeholder={value?.name || rawName || 'Vendor…'}
+          onFocus={() => { setQ(''); setOpen(true) }} onBlur={() => setTimeout(() => setOpen(false), 150)}
+          onChange={e => { setQ(e.target.value); setOpen(true) }} />
+        {value && (
+          <button type="button" tabIndex={-1} aria-label="Clear" onMouseDown={e => { e.preventDefault(); onChange(null) }}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-[#8A7A8B] hover:text-[#A8231A]"><X size={13} /></button>
+        )}
+      </div>
+      {open && (
+        <div className="absolute z-[90] mt-1 w-full min-w-[240px] max-h-64 overflow-y-auto bg-white border border-[#EADFD6] rounded-lg shadow-xl">
+          {loading && results.length === 0 ? <div className="px-3 py-2"><LoadingSpinner /></div>
+            : error ? <div className="px-3 py-2 text-[12px] text-[#A8231A]">{error}</div>
+            : results.length === 0 ? <div className="px-3 py-2 text-[12px] text-[#8A7A8B]">No vendor found</div>
+            : results.map(v => (
+              <button type="button" key={v.id} onMouseDown={e => { e.preventDefault(); onChange({ id: v.id, name: v.name }); setOpen(false) }}
+                className={`w-full text-left px-3 py-1.5 text-[12.5px] hover:bg-[#FBF7F4] ${v.id === value?.id ? 'bg-[#F5EDF3]' : ''}`}>
+                <span className="block text-[#3B1B3D] font-medium truncate">{v.name}</span>
+                {v.npwp && <span className="block text-[11px] text-[#6E5E70] truncate">{v.npwp}</span>}
+              </button>
+            ))}
+          {term && !exact && !loading && (
+            <button type="button" onMouseDown={e => { e.preventDefault(); setAdding(term); setOpen(false) }}
+              className="w-full text-left px-3 py-1.5 text-[12.5px] font-semibold text-[#6B3470] hover:bg-[#F5EDF3] border-t border-[#F3EEEA] inline-flex items-center gap-1">
+              <Plus size={12} /> Add vendor "{term}"
+            </button>
+          )}
+        </div>
+      )}
+      {adding !== null && (
+        <AddVendorModal rawName={rawName} typed={adding} actor={actor} onClose={() => setAdding(null)}
+          onAdded={(id, name) => {
+            const known = knownVendors.find(v => v.id === id) || results.find(v => v.id === id)
+            setAdding(null)
+            onChange({ id, name: known?.name || name })
+            onToast(known ? 'Vendor already exists, selected' : 'Vendor added and selected.')
+          }} />
+      )}
+    </div>
+  )
+}
+
+// Vendor baru -> fn_cost_agent_add_vendor (nama/alias/NPWP sudah ada -> server mengembalikan id lama).
+function AddVendorModal({ rawName, typed, actor, onClose, onAdded }: {
+  rawName: string | null; typed: string; actor: string | null; onClose: () => void; onAdded: (id: number, name: string) => void
+}) {
+  const [name, setName] = useState(rawName || typed)
+  const [npwp, setNpwp] = useState('')
+  const [aliases, setAliases] = useState<string[]>(rawName ? [rawName] : [])
+  const [aliasInput, setAliasInput] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const addAlias = (v: string) => {
+    const t = v.trim()
+    if (t && !aliases.some(a => a.toLowerCase() === t.toLowerCase())) setAliases(p => [...p, t])
+    setAliasInput('')
+  }
+  const npwpDigits = npwp.replace(/\D/g, '')
+
+  const save = async () => {
+    if (!name.trim()) { setError('Name is required.'); return }
+    if (npwpDigits && npwpDigits.length !== 15) { setError('NPWP must be 15 digits (00.000.000.0-000.000).'); return }
+    const allAliases = aliasInput.trim() ? [...aliases, aliasInput.trim()] : aliases
+    setBusy(true); setError(null)
+    try {
+      const id = await costAgentAddVendor({ name: name.trim(), npwp: npwpDigits ? npwp : null, aliases: allAliases, actor })
+      onAdded(Number(id), name.trim())
+    } catch (e: any) { setError(e.message || String(e)); setBusy(false) }
+  }
+
+  return (
+    <CostAgentModal z="z-[80]" maxWidth="max-w-lg" onClose={() => { if (!busy) onClose() }} title="Add vendor"
+      subtitle={rawName ? <>As written on invoice: <i>{rawName}</i></> : undefined}
+      footer={<>
+        <button type="button" className={SA_BTN_OUTLINE} onClick={onClose} disabled={busy}>Cancel</button>
+        <button type="button" className={SA_BTN_PRIMARY} onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Add & select'}</button>
+      </>}>
+      <div className="p-5 grid grid-cols-1 gap-3">
+        <div><FieldLabel required>Name</FieldLabel><input className={SA_INPUT} value={name} onChange={e => setName(e.target.value)} autoFocus /></div>
+        <div>
+          <FieldLabel hint="optional">NPWP</FieldLabel>
+          <input className={SA_INPUT} value={npwp} inputMode="numeric" placeholder="00.000.000.0-000.000" onChange={e => setNpwp(formatNpwp(e.target.value))} />
+        </div>
+        <div>
+          <FieldLabel hint="Enter or comma to add">Aliases</FieldLabel>
+          <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-[#EADFD6] bg-white px-2 py-1.5 min-h-9">
+            {aliases.map(a => (
+              <span key={a} className="inline-flex items-center gap-1 rounded-full bg-[#F5EDF3] text-[#6B3470] text-[11.5px] font-semibold pl-2.5 pr-1 py-0.5">
+                {a}<button type="button" aria-label={`Remove ${a}`} onClick={() => setAliases(p => p.filter(x => x !== a))} className="p-0.5 rounded-full hover:bg-white/70"><X size={11} /></button>
+              </span>
+            ))}
+            <input className="flex-1 min-w-[120px] text-[13px] text-[#3B1B3D] focus:outline-none bg-transparent" value={aliasInput} placeholder={aliases.length ? '' : 'Other names on invoices…'}
+              onChange={e => { const v = e.target.value; if (v.includes(',')) v.split(',').forEach(addAlias); else setAliasInput(v) }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') { e.preventDefault(); addAlias(aliasInput) }
+                else if (e.key === 'Backspace' && !aliasInput && aliases.length) setAliases(p => p.slice(0, -1))
+              }}
+              onBlur={() => { if (aliasInput.trim()) addAlias(aliasInput) }} />
+          </div>
+        </div>
+        {error && <div className="rounded-lg border border-[#F4C3BC] bg-[#FDE7E4] px-3 py-2 text-[12.5px] text-[#A8231A]">{error}</div>}
+      </div>
+    </CostAgentModal>
   )
 }

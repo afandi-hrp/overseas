@@ -167,7 +167,7 @@ File: `src/pages/cost-agent/CostAgentVoyagePage.tsx` (halaman), `src/components/
 
 File: `src/pages/cost-agent/CostAgentInvoicePage.tsx` (daftar), `src/components/CostAgentUploadModal.tsx`,
 `CostAgentInvoiceReviewModal.tsx` (review + `HeaderEditor`), `CostAgentInvoiceLines.tsx` (baris + history + `AddCostItemModal`),
-`CostAgentInvoiceDocuments.tsx` (tab Documents & Tax). `CostAgentFileDrop` (CostAgentUi) = pemilih file bersama upload & susulan
+`CostAgentInvoiceDocuments.tsx` (tab Documents & Tax), `CostAgentHistoryBrowser.tsx` (drawer Browse history, update 057). `CostAgentFileDrop` (CostAgentUi) = pemilih file bersama upload & susulan
 (PDF/JPG/PNG, 50 MB/file, 30 file -- selaras server.ts).
 
 - **Route**: `:id` = invoice yg dibuka di review modal (klik baris = `navigate('/cost-agent/invoice/<id>')`, tutup = kembali tanpa
@@ -194,8 +194,11 @@ File: `src/pages/cost-agent/CostAgentInvoicePage.tsx` (daftar), `src/components/
 - **Baris** (edit hanya verification/rejected & `canEdit('cost_agent_invoice')`): select cost item (per kategori) ->
   `verify_line(learn_alias true)`; Verified (learn alias saat dicentang); "Ref" = include_in_history; Remark disimpan saat blur
   (RPC memakai coalesce -> remark tidak bisa dikosongkan). Baris tanpa cost item / item_baru: "Not in cost master yet" + **Add as new
-  cost item** (code/name/category/GL/keywords -> `add_cost_item` -> `verify_line(id baru, verified)`). **Verify all matching** = baris
-  flag sesuai yg belum verified (berurutan). Sub-baris history (maks 2): match level, tanggal, invoice, voy, kapal (DWT), port, vendor,
+  cost item** (code/name/category/GL/keywords -> `add_cost_item` -> `verify_line(id baru, verified)`). Field **Code** = combobox
+  (2026-10-13): daftar cost item aktif (cari code/nama/kategori, maks 60) + "New code"; code yg cocok persis dgn item yg ada ->
+  mode "Use existing cost item" (field lain read-only berisi data item itu, TANPA `add_cost_item`) -> `verify_line(id item lama,
+  verified, learn_alias)` sehingga teks baris dipelajari sbg alias. **Verify all matching** = baris
+  flag sesuai yg belum verified (berurutan). Sub-baris history (maks 2 + pembanding manual; detail tampilan lihat "Update 057"): match level, tanggal, invoice, voy, kapal (DWT), port, vendor,
   amount, Δ vs baris ini (Rp & %). Footer: jumlah & total per flag.
 - **Documents & Tax**: upload susulan (semua status kecuali processing/cancelled) meta `{mode:'susulan', invoice_id, hint}`; respons
   `job_id` -> poll `cost_agent_invoice_documents` per job 5 dtk sampai tidak ada processing lalu muat ulang (tabel tidak ada ->
@@ -205,6 +208,46 @@ File: `src/pages/cost-agent/CostAgentInvoicePage.tsx` (daftar), `src/components/
 - **Aksi footer**: Submit for approval (verification/rejected, nonaktif + "· N not verified" bila ada baris belum verified;
   konfirmasi) -> `fn_cost_agent_submit_for_approval`. waiting_approval / approved / journal / paid = info saja (Prompt 4/5).
 - **Diuji 2026-10-13**: `tsc` bersih, `vite build` sukses, modul & route tersaji di dev server. BELUM dites ke DB/n8n.
+
+### Update 057 -- history per baris, pembanding manual, vendor baru (2026-10-13)
+
+`sql/057_cost_agent_history_fix.sql` SUDAH DIJALANKAN (konfirmasi user; file SQL tidak ditulis dari sesi ini). Hanya halaman
+Agency Invoices yg berubah (Voyages & Approval Matrix tidak disentuh; `CostAgentUi.tsx` tidak diubah).
+
+- **Data baru**: `history[]` per baris = `description_raw` (teks BARIS saja), `invoice_description` (judul invoice lama -- dulu
+  tergabung "judul | baris"), `similarity` 0..1, `match_level` + `'manual'` (pembanding pilihan user, selalu urutan pertama).
+  `lines[]` + `ref_history_id` (null = otomatis) & `compare_similarity`. Invoice membawa `vendor_name_raw`/`vessel_name_raw`/
+  `port_name_raw`. Tipe di `CostAgentHelpers.ts` (field baru opsional).
+- **RPC baru** (wrapper di helper): `costAgentSearchHistory(filter, limit 20, offset)` -> `fn_cost_agent_search_history(p_filter,
+  p_limit, p_offset)` {rows[], has_more, limit, offset}; filter `{cost_item_id, port_id, vessel_id, vendor_id, q, date_from,
+  date_to, description}` -- key kosong dibuang, minimal SATU filter utama (`hasHistoryMainFilter`) atau RPC error.
+  `costAgentSetLineReference(lineId, historyId|null, actor)` -> `fn_cost_agent_set_line_reference` (hanya verification/rejected,
+  null = kembali otomatis, flag compare dihitung ulang server). `costAgentAddVendor({name, npwp, aliases, actor})` ->
+  `fn_cost_agent_add_vendor` (nama/alias/NPWP sudah ada -> id lama). Plus `searchCostAgentVendors(term, 20)` (baca
+  `cost_agent_vendors` name ilike, `%`/`_` di-escape) & `formatNpwp` (15 digit -> 00.000.000.0-000.000).
+- **Sub-baris history** (`CostAgentInvoiceLines.tsx`): baris 1 = match level (`'manual'` -> "Chosen by user" + ikon pin, garis kiri
+  ungu) + badge similarity + `description_raw`; baris 2 kecil abu = `invoice_description` · tgl · invoice · voy · kapal (DWT) · port ·
+  vendor. Badge `SimilarityBadge` (di `CostAgentHistoryBrowser.tsx`): >= 0.8 "Same line" hijau, 0.5–0.79 "Similar" biru, < 0.5
+  "Cost item only" abu (tooltip "No similar line text found; compared by cost item"); null = tidak tampil. Baris invoice: badge
+  `compare_similarity` di samping chip flag compare + link **Browse history** (semua user yg bisa buka modal, baca saja) +
+  **Reset to automatic** (bila `ref_history_id` terisi & editable).
+- **Drawer `CostAgentHistoryBrowser.tsx`** (portal z-[80], lebar `min(1560px, 98vw)`, hanya dari modal review; tabel `w-full`, kolom Line
+  menyerap sisa lebar + truncate, kolom tombol aksi `sticky right-0` -- dulu tombol "Use as comparison" terpotong di kanan): filter awal cost item baris + port/vessel/vendor
+  header + description = teks baris; chips bisa dihapus, select cost item, combobox port/vessel/vendor (master dari halaman), teks
+  cari `q` debounce 400 ms, date from/to. Tanpa filter utama -> tombol Search nonaktif + hint, tidak memanggil RPC. Cari otomatis
+  saat filter berubah; tombol Search = cari ulang melewati cache. 20 baris/halaman, **Load more** (offset = jumlah baris) bila
+  `has_more`. Cache per filter = `Map` milik modal review (`historyCache` ref, hilang saat modal ditutup). Kolom: Date, Line
+  (`description_raw` + judul/invoice/voy/cost item kecil), Vessel (DWT), Port, Vendor, Amount (qty × price), Δ vs current (Rp & %),
+  Match (similarity), Source (Import/App). Baris similarity >= 0.5 hijau muda; pembanding manual aktif ungu muda + label "Chosen by
+  user". **Use as comparison** (prop `editable` = verification/rejected && `canEdit('cost_agent_invoice')`) -> set_line_reference
+  -> drawer tutup -> modal dimuat ulang; gagal = pesan di drawer. Esc menutup drawer saja (listener capture).
+- **Correct header -- vendor** (`HeaderEditor`): `VendorCombobox` cari server (debounce 250 ms, maks 20); teks tidak cocok persis
+  dgn hasil -> "+ Add vendor "<teks>"" -> `AddVendorModal`: Name (default `vendor_name_raw`, fallback teks diketik), NPWP opsional
+  (mask 15 digit), Aliases chips (Enter/koma, default `vendor_name_raw`). Simpan -> add_vendor -> vendor otomatis terpilih; id
+  sudah ada di master halaman / hasil cari -> toast "Vendor already exists, selected". Di bawah Vendor/Vessel/Port: "As written on
+  invoice: <*_name_raw>". Simpan header tetap `fn_cost_agent_update_invoice_header` (server menyimpan alias otomatis). Daftar
+  vendor halaman (`vendors` prop) TIDAK dimuat ulang setelah tambah vendor -- dipakai hanya utk cek "already exists" & filter drawer.
+- **Diuji 2026-10-13**: `tsc` bersih, `vite build` sukses. BELUM dites ke DB (RPC 057) dari sesi ini.
 
 ## Approval (Prompt 4, 2026-10-13)
 

@@ -14,7 +14,8 @@ export type CostAgentVoyageStatus = 'draft' | 'confirmed' | 'closed'
 export type CostAgentVoyageSource = 'manual' | 'api' | 'import' | 'ai'
 export type CostAgentActivity = 'muat' | 'bongkar' | 'bongkar_muat' | 'sts' | 'bunker' | 'docking' | 'lainnya'
 export type CostAgentCompareFlag = 'sesuai' | 'naik' | 'turun' | 'tanpa_history' | 'item_baru'
-export type CostAgentMatchLevel = 'same_vessel_port' | 'nearest_dwt' | 'nearest_port' | 'none'
+// 'manual' (sql/057) = pembanding pilihan user (lines.ref_history_id), selalu urutan pertama di history[].
+export type CostAgentMatchLevel = 'same_vessel_port' | 'nearest_dwt' | 'nearest_port' | 'none' | 'manual'
 export type CostAgentDocType = 'unknown' | 'invoice' | 'faktur_pajak' | 'po' | 'kwitansi' | 'nota_pelabuhan' | 'lampiran' | 'lainnya'
 export type CostAgentDocStatus = 'processing' | 'done' | 'failed'
 export type CostAgentTaxStatus = 'processing' | 'match' | 'mismatch' | 'error'
@@ -205,7 +206,9 @@ export interface CostAgentLineHistory {
   vendor_name: string | null
   distance_km: number | null
   dwt_diff: number | null
-  description_raw: string | null
+  description_raw: string | null // sql/057: teks BARIS biaya saja
+  invoice_description?: string | null // sql/057: judul invoice lama (dulu tergabung "judul | baris")
+  similarity?: number | null // sql/057: kemiripan teks baris 0..1
 }
 export interface CostAgentInvoiceLine {
   id: number
@@ -230,6 +233,8 @@ export interface CostAgentInvoiceLine {
   is_verified: boolean
   verified_by: string | null
   verified_at: string | null
+  ref_history_id?: number | null // sql/057: pembanding manual (null = otomatis)
+  compare_similarity?: number | null // sql/057: kemiripan teks vs pembanding terpakai 0..1
   history: CostAgentLineHistory[]
 }
 // check_notes dari fn_cost_agent_ingest_invoice: {type, msg} -- type vendor_unknown | vessel_unknown | port_unknown |
@@ -414,6 +419,50 @@ export const costAgentAddCostItem = (a: {
   p_code: a.code, p_name: a.name, p_category: a.category, p_gl_account: a.glAccount ?? null,
   p_keywords: a.keywords ?? [], p_actor: a.actor ?? null,
 })
+// ─── History browser & vendor baru (sql/057, 2026-10-13) ────────────────────────────────────────────────────────
+// Filter fn_cost_agent_search_history: minimal SATU dari cost_item_id/port_id/vessel_id/vendor_id (RPC error bila kosong).
+export interface CostAgentHistoryFilter {
+  cost_item_id?: number | null; port_id?: number | null; vessel_id?: number | null; vendor_id?: number | null
+  q?: string | null; date_from?: string | null; date_to?: string | null; description?: string | null
+}
+export const hasHistoryMainFilter = (f: CostAgentHistoryFilter) => [f.cost_item_id, f.port_id, f.vessel_id, f.vendor_id].some(v => v != null)
+export interface CostAgentHistorySearchRow {
+  history_id: number; service_date: string; invoice_no: string | null; voyage_no: string | null; amount: number
+  qty: number | null; unit_price: number | null; cost_item_code: string | null; cost_item_name: string | null
+  vessel_name: string | null; vessel_dwt: number | null; port_code: string | null; port_name: string | null
+  vendor_name: string | null; company_code: string | null; description_raw: string | null; invoice_description: string | null
+  source: 'import' | 'app' | string; similarity: number | null
+}
+export interface CostAgentHistorySearchResult { rows: CostAgentHistorySearchRow[]; has_more: boolean; limit: number; offset: number }
+export const costAgentSearchHistory = (filter: CostAgentHistoryFilter, limit = 20, offset = 0) => {
+  // Kirim hanya key terisi (null / '' dibuang).
+  const p = Object.fromEntries(Object.entries(filter).filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== ''))
+  return callCostAgentRpc<CostAgentHistorySearchResult>('fn_cost_agent_search_history', { p_filter: p, p_limit: limit, p_offset: offset })
+}
+// Hanya status verification/rejected; historyId null = kembali ke pembanding otomatis. Flag compare dihitung ulang server.
+export const costAgentSetLineReference = (lineId: number, historyId: number | null, actor?: string | null) =>
+  callCostAgentRpc<void>('fn_cost_agent_set_line_reference', { p_line_id: lineId, p_history_id: historyId, p_actor: actor ?? null })
+// Nama/alias/NPWP sudah ada -> server mengembalikan id vendor lama (tidak dobel).
+export const costAgentAddVendor = (a: { name: string; npwp?: string | null; aliases?: string[]; actor?: string | null }) =>
+  callCostAgentRpc<number>('fn_cost_agent_add_vendor', { p_name: a.name, p_npwp: a.npwp ?? null, p_aliases: a.aliases ?? [], p_actor: a.actor ?? null })
+// Combobox vendor koreksi header: cari nama (ilike, maks 20) -- tidak memuat seluruh master.
+export async function searchCostAgentVendors(term: string, limit = 20): Promise<CostAgentVendor[]> {
+  let q: any = supabase.from('cost_agent_vendors').select('id, name, npwp, is_active').order('name').limit(limit)
+  const t = term.trim()
+  if (t) q = q.ilike('name', `%${t.replace(/[\\%_]/g, m => '\\' + m)}%`)
+  const { data, error } = await q
+  if (error) throw new Error(error.message)
+  return (data || []) as CostAgentVendor[]
+}
+// NPWP lama 15 digit -> "00.000.000.0-000.000" (input bebas, non-digit dibuang).
+export function formatNpwp(v: string): string {
+  const d = v.replace(/\D/g, '').slice(0, 15)
+  const parts: [number, string][] = [[2, '.'], [5, '.'], [8, '.'], [9, '-'], [12, '.']]
+  let out = ''
+  for (let i = 0; i < d.length; i++) { out += d[i]; const sep = parts.find(([n]) => n === i + 1); if (sep && i + 1 < d.length) out += sep[1] }
+  return out
+}
+
 export const costAgentSubmitForApproval = (invoiceId: number, actor?: string | null) =>
   callCostAgentRpc<unknown>('fn_cost_agent_submit_for_approval', { p_invoice_id: invoiceId, p_actor: actor ?? null })
 export const costAgentDecideApproval = (invoiceId: number, decision: 'approved' | 'rejected', note: string | null, actor?: string | null) =>
@@ -510,6 +559,7 @@ export function matchLevelLabel(level: CostAgentMatchLevel | null | undefined, h
   if (level === 'same_vessel_port') return 'Same vessel & port'
   if (level === 'nearest_dwt') return `Nearest DWT (Δ ${fmtNumber(h?.dwt_diff ?? 0)})`
   if (level === 'nearest_port') return `Nearest port (${fmtNumber(h?.distance_km ?? 0)} km)`
+  if (level === 'manual') return 'Chosen by user'
   return 'No match'
 }
 

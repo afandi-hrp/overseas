@@ -3,20 +3,24 @@
 // canEdit('cost_agent_invoice')): ganti cost item / centang Verified / "Use as reference" / remark -> fn_cost_agent_verify_line
 // (p_learn_alias true saat memilih/verifikasi cost item -> server belajar alias deskripsi vendor); "Add as new cost item" ->
 // fn_cost_agent_add_cost_item lalu verify_line(id baru). Setiap perubahan -> parent memuat ulang (flag compare dihitung server).
+// sql/057: sub-baris history = description_raw (baris) + invoice_description (judul invoice, kecil abu) + badge similarity;
+// match_level 'manual' = "Chosen by user". "Browse history" -> drawer CostAgentHistoryBrowser (pilih pembanding manual ->
+// fn_cost_agent_set_line_reference); "Reset to automatic" bila ref_history_id terisi.
 import React, { useMemo, useState } from 'react'
-import { Plus, CheckCheck, AlertTriangle } from 'lucide-react'
+import { Plus, CheckCheck, AlertTriangle, History, RotateCcw } from 'lucide-react'
 import { CompareFlagChip, MatchLevelLabel, CostAgentModal, FieldLabel } from './CostAgentUi'
 import { SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_INPUT } from './SeaAirAuditUi'
+import CostAgentHistoryBrowser, { SimilarityBadge, ChosenByUserLabel, type HistoryCache } from './CostAgentHistoryBrowser'
 import {
-  costAgentVerifyLine, costAgentAddCostItem, fmtMoney, fmtNumber, fmtPct, fmtDate, COMPARE_FLAG_META,
-  type CostAgentInvoiceLine, type CostAgentCostItem, type CostAgentCompareFlag,
+  costAgentVerifyLine, costAgentAddCostItem, costAgentSetLineReference, fmtMoney, fmtNumber, fmtPct, fmtDate, COMPARE_FLAG_META,
+  type CostAgentInvoiceLine, type CostAgentCostItem, type CostAgentCompareFlag, type CostAgentPort, type CostAgentVessel, type CostAgentVendor,
 } from '../utils/CostAgentHelpers'
 
 const TH = 'px-2 py-2 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[#6E5E70] whitespace-nowrap bg-[#FBF7F4] border-b border-[#EADFD6]'
 const TD = 'px-2 py-1.5 text-[12.5px] text-[#3B1B3D] align-top'
 const CATEGORIES = ['PORT', 'AGENCY', 'CREW', 'DOCUMENT', 'WATER', 'ADMIN', 'TAX', 'OTHER']
 
-export default function CostAgentInvoiceLines({ lines, currency, costItems, editable, actor, onChanged, toolbarLeft }: {
+export default function CostAgentInvoiceLines({ lines, currency, costItems, editable, actor, onChanged, toolbarLeft, invoice, ports, vessels, vendors, historyCache }: {
   lines: CostAgentInvoiceLine[]
   currency: string
   costItems: CostAgentCostItem[]
@@ -24,11 +28,18 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
   actor: string | null
   onChanged: () => Promise<void> | void
   toolbarLeft?: React.ReactNode // mis. tombol Show/Hide file dari modal review (hemat 1 baris di laptop 14")
+  // Browse history (sql/057): filter awal dari header invoice + master utk select filter; cache milik modal review.
+  invoice: { port_id: number | null; vessel_id: number | null; vendor_id: number | null }
+  ports: CostAgentPort[]
+  vessels: CostAgentVessel[]
+  vendors: CostAgentVendor[]
+  historyCache: HistoryCache
 }) {
   const [busy, setBusy] = useState<number | 'all' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [remarks, setRemarks] = useState<Record<number, string>>({})
   const [addFor, setAddFor] = useState<CostAgentInvoiceLine | null>(null)
+  const [browseFor, setBrowseFor] = useState<CostAgentInvoiceLine | null>(null)
 
   const items = useMemo(() => costItems.filter(c => c.is_active !== false), [costItems])
   const itemsByCat = useMemo(() => {
@@ -120,7 +131,24 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                       <div className="font-semibold">{fmtMoney(l.amount, currency)}</div>
                       {(l.qty != null || l.unit_price != null) && <div className="text-[11px] text-[#8A7A8B]">{fmtNumber(l.qty, 3)}{l.unit ? ` ${l.unit}` : ''} × {fmtNumber(l.unit_price)}</div>}
                     </td>
-                    <td className={`${TD} whitespace-nowrap`}><CompareFlagChip flag={l.compare_flag} diffPct={l.compare_diff_pct} /></td>
+                    <td className={`${TD} whitespace-nowrap`}>
+                      <div className="flex items-center gap-1">
+                        <CompareFlagChip flag={l.compare_flag} diffPct={l.compare_diff_pct} />
+                        <SimilarityBadge value={l.compare_similarity} />
+                      </div>
+                      <div className="mt-1 flex items-center gap-2">
+                        <button type="button" className="text-[11px] font-semibold text-[#6B3470] hover:underline inline-flex items-center gap-0.5" onClick={() => setBrowseFor(l)}>
+                          <History size={11} /> Browse history
+                        </button>
+                        {editable && l.ref_history_id != null && (
+                          <button type="button" className="text-[11px] font-semibold text-[#6E5E70] hover:text-[#6B3470] hover:underline inline-flex items-center gap-0.5 disabled:opacity-50"
+                            disabled={rowBusy} title="Go back to the automatically chosen comparison"
+                            onClick={() => run(l.id, () => costAgentSetLineReference(l.id, null, actor))}>
+                            <RotateCcw size={11} /> Reset to automatic
+                          </button>
+                        )}
+                      </div>
+                    </td>
                     <td className={`${TD} min-w-[120px]`}>
                       {editable ? (
                         <input className={`${SA_INPUT} h-8 text-[12px]`} value={remarkVal} disabled={rowBusy} placeholder="—"
@@ -146,12 +174,16 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                         <td className={`${TD} py-1`} />
                         {/* 1 baris (laptop 14"): max-w-0 = sel tidak melebarkan kolom, teks dipotong "…", lengkap di tooltip. */}
                         <td className={`${TD} py-1 text-[11.5px] max-w-0`} colSpan={2}
-                          title={`${fmtDate(h.service_date)} · ${h.invoice_no || '—'}${h.voyage_no ? ` · Voy ${h.voyage_no}` : ''} · ${h.vessel_name || '—'}${h.vessel_dwt ? ` (DWT ${fmtNumber(h.vessel_dwt, 0)})` : ''} · ${h.port_code || '—'} · ${h.vendor_name || '—'}`}>
-                          <div className="flex items-center gap-2 pl-3 border-l-2 border-[#EADFD6] min-w-0">
-                            <span className="shrink-0"><MatchLevelLabel level={h.match_level} dwtDiff={h.dwt_diff} distanceKm={h.distance_km} /></span>
-                            <span className="text-[#6E5E70] truncate min-w-0">
-                              {fmtDate(h.service_date)} · {h.invoice_no || '—'}{h.voyage_no ? ` · Voy ${h.voyage_no}` : ''} · {h.vessel_name || '—'}{h.vessel_dwt ? ` (DWT ${fmtNumber(h.vessel_dwt, 0)})` : ''} · {h.port_code || '—'} · {h.vendor_name || '—'}
-                            </span>
+                          title={`${h.description_raw || '—'}${h.invoice_description ? `\n${h.invoice_description}` : ''}\n${fmtDate(h.service_date)} · ${h.invoice_no || '—'}${h.voyage_no ? ` · Voy ${h.voyage_no}` : ''} · ${h.vessel_name || '—'}${h.vessel_dwt ? ` (DWT ${fmtNumber(h.vessel_dwt, 0)})` : ''} · ${h.port_code || '—'} · ${h.vendor_name || '—'}`}>
+                          <div className={`pl-3 border-l-2 min-w-0 ${h.match_level === 'manual' ? 'border-[#6B3470]' : 'border-[#EADFD6]'}`}>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="shrink-0">{h.match_level === 'manual' ? <ChosenByUserLabel /> : <MatchLevelLabel level={h.match_level} dwtDiff={h.dwt_diff} distanceKm={h.distance_km} />}</span>
+                              <span className="shrink-0"><SimilarityBadge value={h.similarity} /></span>
+                              <span className="text-[#3B1B3D] truncate min-w-0">{h.description_raw || '—'}</span>
+                            </div>
+                            <div className="text-[10.5px] text-[#8A7A8B] truncate">
+                              {h.invoice_description ? `${h.invoice_description} · ` : ''}{fmtDate(h.service_date)} · {h.invoice_no || '—'}{h.voyage_no ? ` · Voy ${h.voyage_no}` : ''} · {h.vessel_name || '—'}{h.vessel_dwt ? ` (DWT ${fmtNumber(h.vessel_dwt, 0)})` : ''} · {h.port_code || '—'} · {h.vendor_name || '—'}
+                            </div>
                           </div>
                         </td>
                         <td className={`${TD} py-1 text-right tabular-nums text-[11.5px] text-[#6E5E70] whitespace-nowrap`}>{fmtMoney(h.amount, currency)}</td>
@@ -176,7 +208,18 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
           ))}
         </div>
       )}
-      {addFor && <AddCostItemModal line={addFor} actor={actor} onClose={() => setAddFor(null)} onAdded={async id => {
+      {browseFor && (
+        <CostAgentHistoryBrowser line={lines.find(x => x.id === browseFor.id) || browseFor} currency={currency} invoice={invoice}
+          costItems={items} ports={ports} vessels={vessels} vendors={vendors} cache={historyCache} editable={editable}
+          onClose={() => setBrowseFor(null)}
+          onUse={async historyId => {
+            const l = browseFor
+            await costAgentSetLineReference(l.id, historyId, actor) // gagal -> error tampil di drawer (drawer tetap terbuka)
+            setBrowseFor(null)
+            await run(l.id, async () => {}) // muat ulang modal (flag compare dihitung ulang server)
+          }} />
+      )}
+      {addFor && <AddCostItemModal line={addFor} costItems={items} actor={actor} onClose={() => setAddFor(null)} onAdded={async id => {
         const l = addFor
         setAddFor(null)
         await run(l.id, () => verify(l, { costItemId: id, isVerified: true, learnAlias: true }))
@@ -185,10 +228,13 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
   )
 }
 
-function AddCostItemModal({ line, actor, onClose, onAdded }: {
-  line: CostAgentInvoiceLine; actor: string | null; onClose: () => void; onAdded: (id: number) => void
+// Field Code = combobox: pilih cost item yg SUDAH ADA (baris langsung memakai item itu, tanpa add_cost_item -- teks baris
+// dipelajari sbg alias lewat verify_line learn_alias) atau ketik code baru (alur lama: add_cost_item).
+function AddCostItemModal({ line, costItems, actor, onClose, onAdded }: {
+  line: CostAgentInvoiceLine; costItems: CostAgentCostItem[]; actor: string | null; onClose: () => void; onAdded: (id: number) => void
 }) {
   const [code, setCode] = useState('')
+  const [codeOpen, setCodeOpen] = useState(false)
   const [name, setName] = useState(line.description_raw.slice(0, 80))
   const [category, setCategory] = useState('PORT')
   const [gl, setGl] = useState('')
@@ -196,7 +242,15 @@ function AddCostItemModal({ line, actor, onClose, onAdded }: {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const codeTerm = code.trim().toUpperCase()
+  const existing = codeTerm ? costItems.find(c => c.code.toUpperCase() === codeTerm) || null : null
+  const codeMatches = useMemo(() => {
+    const t = codeTerm.toLowerCase()
+    return (t ? costItems.filter(c => `${c.code} ${c.name} ${c.category}`.toLowerCase().includes(t)) : costItems).slice(0, 60)
+  }, [costItems, codeTerm])
+
   const save = async () => {
+    if (existing) { onAdded(existing.id); return } // pakai item yg sudah ada
     if (!code.trim() || !name.trim()) { setError('Code and name are required.'); return }
     setBusy(true); setError(null)
     try {
@@ -211,21 +265,50 @@ function AddCostItemModal({ line, actor, onClose, onAdded }: {
   }
 
   return (
-    <CostAgentModal z="z-[80]" maxWidth="max-w-lg" onClose={() => { if (!busy) onClose() }} title="Add new cost item"
+    <CostAgentModal z="z-[80]" maxWidth="max-w-3xl" onClose={() => { if (!busy) onClose() }} title={existing ? 'Use existing cost item' : 'Add new cost item'}
       subtitle={<>From line: <i>{line.description_raw}</i></>}
       footer={<>
         <button type="button" className={SA_BTN_OUTLINE} onClick={onClose} disabled={busy}>Cancel</button>
-        <button type="button" className={SA_BTN_PRIMARY} onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Add & use for this line'}</button>
+        <button type="button" className={SA_BTN_PRIMARY} onClick={save} disabled={busy}>{busy ? 'Saving…' : existing ? 'Use for this line' : 'Add & use for this line'}</button>
       </>}>
       <div className="p-5 grid grid-cols-2 gap-3">
-        <div><FieldLabel required hint="e.g. PORT_CLEARANCE">Code</FieldLabel><input className={SA_INPUT} value={code} onChange={e => setCode(e.target.value.toUpperCase())} /></div>
+        <div className="relative">
+          <FieldLabel required hint="pick existing or type a new one">Code</FieldLabel>
+          <input className={SA_INPUT} value={code} placeholder="e.g. PORT_CLEARANCE" autoFocus
+            onFocus={() => setCodeOpen(true)} onBlur={() => setTimeout(() => setCodeOpen(false), 150)}
+            onChange={e => { setCode(e.target.value.toUpperCase()); setCodeOpen(true) }} />
+          {codeOpen && (
+            <div className="absolute z-[90] mt-1 w-[min(560px,85vw)] max-h-60 overflow-y-auto bg-white border border-[#EADFD6] rounded-lg shadow-xl">
+              {codeTerm && !existing && (
+                <button type="button" onMouseDown={e => { e.preventDefault(); setCodeOpen(false) }}
+                  className="w-full text-left px-3 py-1.5 text-[12.5px] font-semibold text-[#6B3470] hover:bg-[#F5EDF3] border-b border-[#F3EEEA] inline-flex items-center gap-1">
+                  <Plus size={12} /> New code "{codeTerm}"
+                </button>
+              )}
+              {codeMatches.length === 0 ? <div className="px-3 py-2 text-[12px] text-[#8A7A8B]">No existing cost item matches</div> : codeMatches.map(c => (
+                <button type="button" key={c.id} onMouseDown={e => { e.preventDefault(); setCode(c.code); setCodeOpen(false) }}
+                  className={`w-full text-left px-3 py-1.5 text-[12.5px] hover:bg-[#FBF7F4] ${existing?.id === c.id ? 'bg-[#F5EDF3]' : ''}`}>
+                  <span className="block text-[#3B1B3D] font-semibold truncate">{c.code} <span className="font-normal text-[#8A7A8B]">· {c.category}</span></span>
+                  <span className="block text-[11px] text-[#6E5E70] truncate">{c.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div>
           <FieldLabel>Category</FieldLabel>
-          <select className={SA_INPUT} value={category} onChange={e => setCategory(e.target.value)}>{CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select>
+          <select className={SA_INPUT} value={existing ? existing.category : category} disabled={!!existing} onChange={e => setCategory(e.target.value)}>
+            {[...new Set([...(existing ? [existing.category] : []), ...CATEGORIES])].map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
         </div>
-        <div className="col-span-2"><FieldLabel required>Name</FieldLabel><input className={SA_INPUT} value={name} onChange={e => setName(e.target.value)} /></div>
-        <div><FieldLabel>GL account</FieldLabel><input className={SA_INPUT} value={gl} onChange={e => setGl(e.target.value)} placeholder="e.g. 61050" /></div>
-        <div><FieldLabel hint="comma separated">Keywords</FieldLabel><input className={SA_INPUT} value={keywords} onChange={e => setKeywords(e.target.value)} /></div>
+        {existing && (
+          <div className="col-span-2 rounded-lg border border-[#C9D3F0] bg-[#EEF1FA] px-3 py-2 text-[12px] text-[#2F4FA8]">
+            <b>{existing.code}</b> already exists — this line will use it, and the line text is learned as an alias.
+          </div>
+        )}
+        <div className="col-span-2"><FieldLabel required>Name</FieldLabel><input className={SA_INPUT} value={existing ? existing.name : name} disabled={!!existing} onChange={e => setName(e.target.value)} /></div>
+        <div><FieldLabel>GL account</FieldLabel><input className={SA_INPUT} value={existing ? existing.gl_account || '' : gl} disabled={!!existing} onChange={e => setGl(e.target.value)} placeholder="e.g. 61050" /></div>
+        <div><FieldLabel hint="comma separated">Keywords</FieldLabel><input className={SA_INPUT} value={existing ? (existing.keywords || []).join(', ') : keywords} disabled={!!existing} onChange={e => setKeywords(e.target.value)} /></div>
         {error && <div className="col-span-2 rounded-lg border border-[#F4C3BC] bg-[#FDE7E4] px-3 py-2 text-[12.5px] text-[#A8231A]">{error}</div>}
       </div>
     </CostAgentModal>
