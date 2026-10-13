@@ -48,6 +48,9 @@ import OilRequestPage from './pages/OilRequestPage';
 import AutoRenamePage from './pages/AutoRenamePage';
 import VerificationQfpPage from './pages/VerificationQfpPage';
 import LsaPage from './pages/LsaPage';
+import CostAgentVoyagePage from './pages/cost-agent/CostAgentVoyagePage';
+import CostAgentInvoicePage from './pages/cost-agent/CostAgentInvoicePage';
+import CostAgentApprovalMatrixPage from './pages/cost-agent/CostAgentApprovalMatrixPage';
 
 function ProtectedRoute() {
   const { session, loading, lockScreenActive } = useAuth();
@@ -141,6 +144,12 @@ export default function App() {
               <Route path="/spb/requisition-rh" element={<RequirePageAccess pageKey="requisition_rh"><RequisitionRhPage /></RequirePageAccess>} />
               <Route path="/spb/oil-request" element={<RequirePageAccess pageKey="oil_request"><OilRequestPage /></RequirePageAccess>} />
               <Route path="/spb/auto-rename" element={<RequirePageAccess pageKey="auto_rename"><AutoRenamePage /></RequirePageAccess>} />
+
+              {/* Cost Agent / Biaya Keagenan (2026-10-13). Invoice = 1 route dgn :id opsional (pola FAR) supaya buka/tutup
+                  review invoice tidak me-mount ulang halaman. */}
+              <Route path="/cost-agent/voyage" element={<RequirePageAccess pageKey="cost_agent_voyage"><CostAgentVoyagePage /></RequirePageAccess>} />
+              <Route path="/cost-agent/invoice/:id?" element={<RequirePageAccess pageKey="cost_agent_invoice"><CostAgentInvoicePage /></RequirePageAccess>} />
+              <Route path="/cost-agent/approval-matrix" element={<RequirePageAccess pageKey="cost_agent_approval_matrix"><CostAgentApprovalMatrixPage /></RequirePageAccess>} />
 
               {/* Gabungan "Cost by Vessel" (2026-09) -- GANTI TOTAL dari 2 route terpisah
                   (/reporting/dashboard, /reporting/cost-per-vessel), sekarang 1 route 2 tab.

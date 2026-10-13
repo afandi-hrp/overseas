@@ -35,7 +35,20 @@ app.use((_req, res, next) => {
 const SUPABASE_URL = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').replace(/\/+$/, '');
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
 
-type UserAccess = { isAdmin: boolean; pageKeys: Set<string>; editKeys: Set<string> };
+// `email` = klaim email JWT (dibaca SETELAH PostgREST menerima token = tanda tangan sah) -- dipakai Cost Agent utk
+// menimpa `uploaded_by`/`requested_by` (jangan percaya nilai dari client).
+type UserAccess = { isAdmin: boolean; pageKeys: Set<string>; editKeys: Set<string>; email: string | null };
+
+function emailFromJwt(token: string): string | null {
+  try {
+    const part = token.split('.')[1];
+    if (!part) return null;
+    const payload = JSON.parse(Buffer.from(part.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+    return typeof payload?.email === 'string' && payload.email.trim() ? payload.email.trim() : null;
+  } catch {
+    return null;
+  }
+}
 const ACCESS_CACHE_TTL_MS = 60_000;
 const accessCache = new Map<string, { access: UserAccess; exp: number }>();
 
@@ -60,6 +73,7 @@ async function resolveUserAccess(token: string): Promise<UserAccess | null> {
     isAdmin: d?.is_admin === true,
     pageKeys: new Set(Array.isArray(d?.page_keys) ? d.page_keys : []),
     editKeys: new Set(Array.isArray(d?.edit_page_keys) ? d.edit_page_keys : []),
+    email: emailFromJwt(token),
   };
   if (accessCache.size > 2000) accessCache.clear();
   accessCache.set(token, { access, exp: now + ACCESS_CACHE_TTL_MS });
@@ -99,6 +113,8 @@ async function authorize(req: express.Request, res: express.Response, rules: Acc
     res.status(403).json({ status: 'error', pesan: 'Anda tidak punya akses ke fitur ini.' });
     return false;
   }
+  // Disimpan utk handler berikutnya (mis. email user Cost Agent).
+  res.locals.userAccess = access;
   return true;
 }
 
@@ -106,12 +122,25 @@ async function authorize(req: express.Request, res: express.Response, rules: Acc
 // HANYA boleh menunjuk ke origin (skema+host+port) n8n yang sudah dikenal: origin dari
 // VITE_N8N_*_WEBHOOK_URL di env server + daftar tambahan N8N_ALLOWED_ORIGINS (koma). Tanpa
 // batasan ini header itu = SSRF (server dipaksa POST ke alamat internal mana pun & balikin isinya).
-const ENV_WEBHOOK_URLS = [
-  process.env.VITE_N8N_WEBHOOK_URL,
-  process.env.VITE_N8N_SEAAIR_WEBHOOK_URL,
-  process.env.VITE_N8N_FAR_OVERSEAS_AIR_WEBHOOK_URL,
-  process.env.VITE_N8N_BUNKER_WEBHOOK_URL,
-].filter((u): u is string => !!u);
+// Tipe webhook -> nama env URL default. Tipe tak dikenal jatuh ke VITE_N8N_WEBHOOK_URL (Courier) seperti dulu.
+// cost_agent* (2026-10-13): cost_agent & cost_agent_voyage = upload multipart (/api/n8n-proxy-start);
+// cost_agent_voyage_pull & cost_agent_payment = aksi JSON tanpa file (/api/n8n-proxy-json).
+const WEBHOOK_ENV_KEYS: Record<string, string> = {
+  courier: 'VITE_N8N_WEBHOOK_URL',
+  sea_air: 'VITE_N8N_SEAAIR_WEBHOOK_URL',
+  far_overseas_air: 'VITE_N8N_FAR_OVERSEAS_AIR_WEBHOOK_URL',
+  bunker: 'VITE_N8N_BUNKER_WEBHOOK_URL',
+  cost_agent: 'VITE_N8N_COST_AGENT_WEBHOOK_URL',
+  cost_agent_voyage: 'VITE_N8N_COST_AGENT_VOYAGE_WEBHOOK_URL',
+  cost_agent_voyage_pull: 'VITE_N8N_COST_AGENT_VOYAGE_PULL_URL',
+  cost_agent_payment: 'VITE_N8N_COST_AGENT_PAYMENT_URL',
+};
+const defaultWebhookUrlFor = (type: string): string | undefined =>
+  process.env[Object.hasOwn(WEBHOOK_ENV_KEYS, type) ? WEBHOOK_ENV_KEYS[type] : 'VITE_N8N_WEBHOOK_URL'];
+
+const ENV_WEBHOOK_URLS = Object.values(WEBHOOK_ENV_KEYS)
+  .map(k => process.env[k])
+  .filter((u): u is string => !!u);
 
 function originOf(u: string): string | null {
   try {
@@ -134,7 +163,55 @@ const UPLOAD_ACCESS: Record<string, AccessRule[]> = {
   sea_air: [{ key: 'sea_air_upload' }],
   far_overseas_air: [{ key: 'direct_loading', edit: true }],
   bunker: [{ key: 'bunker', edit: true }],
+  // Cost Agent: SATU webhook utk invoice baru DAN dokumen susulan (dibedakan cost_agent_meta.mode).
+  cost_agent: [{ key: 'cost_agent_invoice', edit: true }],
+  cost_agent_voyage: [{ key: 'cost_agent_voyage', edit: true }],
 };
+
+// Aksi JSON tanpa file (/api/n8n-proxy-json).
+const JSON_WEBHOOK_ACCESS: Record<string, AccessRule[]> = {
+  cost_agent_voyage_pull: [{ key: 'cost_agent_voyage', edit: true }],
+  cost_agent_payment: [{ key: 'cost_agent_payment', edit: true }],
+};
+
+// Validasi field multipart `cost_agent_meta` (string JSON objek, maks 4 KB). `uploaded_by` SELALU ditimpa email
+// user login. Field tidak dikirim = objek kosong (tetap diteruskan supaya n8n selalu tahu pengirimnya).
+function buildCostAgentMeta(raw: unknown, email: string): { ok: true; value: string } | { ok: false; pesan: string } {
+  let meta: Record<string, unknown> = {};
+  if (raw !== undefined) {
+    if (typeof raw !== 'string') return { ok: false, pesan: 'cost_agent_meta harus berupa string JSON.' };
+    if (Buffer.byteLength(raw, 'utf8') > 4096) return { ok: false, pesan: 'cost_agent_meta terlalu besar (maks 4 KB).' };
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return { ok: false, pesan: 'cost_agent_meta bukan JSON yang valid.' };
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { ok: false, pesan: 'cost_agent_meta harus berupa objek JSON.' };
+    meta = parsed as Record<string, unknown>;
+  }
+  return { ok: true, value: JSON.stringify({ ...meta, uploaded_by: email }) };
+}
+
+// Header ke n8n: rahasia webhook (lihat komentar di /api/n8n-proxy-start).
+function n8nAuthHeaders(): Record<string, string> {
+  const h: Record<string, string> = {};
+  if (process.env.N8N_WEBHOOK_SECRET) h[process.env.N8N_WEBHOOK_AUTH_HEADER || 'X-Webhook-Secret'] = process.env.N8N_WEBHOOK_SECRET;
+  return h;
+}
+
+// Header `x-webhook-url` (override dari halaman Webhook Settings) hanya boleh ke origin n8n terdaftar (anti SSRF).
+function resolveWebhookUrl(req: express.Request, type: string): { url?: string; error?: string } {
+  const overrideUrl = req.headers['x-webhook-url'];
+  if (overrideUrl !== undefined) {
+    const o = typeof overrideUrl === 'string' ? originOf(overrideUrl) : null;
+    if (!o || !ALLOWED_WEBHOOK_ORIGINS.has(o)) {
+      return { error: 'Webhook URL tidak diizinkan (host n8n tidak terdaftar di N8N_ALLOWED_ORIGINS server).' };
+    }
+    return { url: overrideUrl as string };
+  }
+  return { url: defaultWebhookUrlFor(type) };
+}
 
 // Batas ukuran upload -- sebelumnya tanpa batas sama sekali (memoryStorage), 1 request raksasa
 // bisa menghabiskan RAM container.
@@ -159,11 +236,8 @@ app.post('/api/n8n-proxy-start', async (req, res, next) => {
   }
 }, upload.any(), async (req, res) => {
   try {
-    const webhookType = req.headers['x-webhook-type'] || 'courier';
-    const defaultWebhookUrl = webhookType === 'sea_air' ? process.env.VITE_N8N_SEAAIR_WEBHOOK_URL
-      : webhookType === 'far_overseas_air' ? process.env.VITE_N8N_FAR_OVERSEAS_AIR_WEBHOOK_URL
-      : webhookType === 'bunker' ? process.env.VITE_N8N_BUNKER_WEBHOOK_URL
-      : process.env.VITE_N8N_WEBHOOK_URL;
+    const webhookType = String(req.headers['x-webhook-type'] || 'courier');
+    const defaultWebhookUrl = defaultWebhookUrlFor(webhookType);
     const overrideUrl = req.headers['x-webhook-url'];
     if (overrideUrl !== undefined) {
       const o = typeof overrideUrl === 'string' ? originOf(overrideUrl) : null;
@@ -202,6 +276,15 @@ app.post('/api/n8n-proxy-start', async (req, res, next) => {
       // PERNAH mengirim field ini sama sekali (req.body.awb_hint tetap undefined), jadi cabang
       // ini tidak menambah field baru ke jalur upload pertama yang tidak memintanya.
       if (req.body?.awb_hint !== undefined) formData.append('awb_hint', req.body.awb_hint);
+      // KHUSUS Cost Agent (2026-10-13): teruskan `cost_agent_meta` (company_code/voyage_call_id/mode/invoice_id/hint/
+      // reprocess_invoice_id), `uploaded_by` ditimpa email user login. Tipe lama TIDAK terpengaruh.
+      if (webhookType.startsWith('cost_agent')) {
+        const email = (res.locals.userAccess as UserAccess | undefined)?.email;
+        if (!email) return res.status(401).json({ status: 'error', pesan: 'Email user tidak ditemukan di sesi login. Silakan login ulang.' });
+        const meta = buildCostAgentMeta(req.body?.cost_agent_meta, email);
+        if ('pesan' in meta) return res.status(400).json({ status: 'error', pesan: meta.pesan });
+        formData.append('cost_agent_meta', meta.value);
+      }
     }
 
     // Webhook n8n bawaannya TANPA autentikasi -- siapa pun yang tahu URL-nya bisa kirim dokumen
@@ -238,6 +321,52 @@ app.post('/api/n8n-proxy-start', async (req, res, next) => {
   } catch (error: any) {
     console.error('Proxy Error:', error);
     res.status(500).json({ status: 'error', pesan: error.message || 'Gagal menghubungi N8N webhook' });
+  }
+});
+
+// Aksi n8n TANPA file (Cost Agent, 2026-10-13): body JSON (maks 64 KB) diteruskan ke webhook n8n sesuai
+// X-Webhook-Type + `requested_by` = email user login. Status & body respons n8n diteruskan apa adanya
+// (body non-JSON dikirim sbg text/plain supaya tidak pernah dirender sbg HTML di origin aplikasi).
+const jsonBody = express.json({ limit: '64kb' });
+app.post('/api/n8n-proxy-json', async (req, res, next) => {
+  const type = String(req.headers['x-webhook-type'] || '');
+  const rules = Object.hasOwn(JSON_WEBHOOK_ACCESS, type) ? JSON_WEBHOOK_ACCESS[type] : null;
+  if (!rules) return res.status(400).json({ status: 'error', pesan: 'Tipe webhook tidak dikenal.' });
+  // Autentikasi SEBELUM body dibaca.
+  try {
+    if (await authorize(req, res, rules)) next();
+  } catch (e) {
+    console.error('[Security] authorize error:', e);
+    if (!res.headersSent) res.status(500).json({ status: 'error', pesan: 'Gagal memverifikasi akses.' });
+  }
+}, jsonBody, async (req, res) => {
+  try {
+    const type = String(req.headers['x-webhook-type']);
+    const body = req.body;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return res.status(400).json({ status: 'error', pesan: 'Body harus berupa objek JSON (Content-Type: application/json).' });
+    }
+    const email = (res.locals.userAccess as UserAccess | undefined)?.email;
+    if (!email) return res.status(401).json({ status: 'error', pesan: 'Email user tidak ditemukan di sesi login. Silakan login ulang.' });
+
+    const { url, error } = resolveWebhookUrl(req, type);
+    if (error) return res.status(400).json({ status: 'error', pesan: error });
+    if (!url) return res.status(400).json({ status: 'error', pesan: 'Webhook URL tidak dikonfigurasi di client/server.' });
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { ...n8nAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...body, requested_by: email }),
+      signal: AbortSignal.timeout(300000),
+    });
+    const text = await response.text();
+    let data: unknown = undefined;
+    try { data = text ? JSON.parse(text) : {}; } catch { data = undefined; }
+    if (data !== undefined) res.status(response.status).json(data);
+    else res.status(response.status).type('text/plain').send(text);
+  } catch (error: any) {
+    console.error('Proxy JSON Error:', error);
+    if (!res.headersSent) res.status(500).json({ status: 'error', pesan: error.message || 'Gagal menghubungi N8N webhook' });
   }
 });
 
@@ -296,6 +425,9 @@ app.use('/api', (err: any, _req: express.Request, res: express.Response, next: e
   if (err instanceof multer.MulterError) {
     return res.status(err.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ status: 'error', pesan: `Upload ditolak: ${err.message}` });
   }
+  // Error body JSON (/api/n8n-proxy-json): terlalu besar / bukan JSON valid.
+  if (err?.type === 'entity.too.large') return res.status(413).json({ status: 'error', pesan: 'Body terlalu besar (maks 64 KB).' });
+  if (err?.type === 'entity.parse.failed') return res.status(400).json({ status: 'error', pesan: 'Body bukan JSON yang valid.' });
   next(err);
 });
 

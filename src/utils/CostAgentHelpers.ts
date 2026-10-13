@@ -1,0 +1,872 @@
+// Helper modul Cost Agent / Biaya Keagenan (2026-10-13, fondasi Prompt 1) -- SATU sumber tipe, query baca, wrapper RPC,
+// label status & formatter modul ini. Skema: sql/054_cost_agent_schema.sql. Ringkasan: docs/claude/cost-agent.md.
+// Pola: baca lewat supabase.from (view/tabel ber-RLS), tulis HANYA lewat RPC berguard (fn_cost_agent_*); n8n via proxy
+// server.ts (/api/n8n-proxy-start multipart, /api/n8n-proxy-json tanpa file) -- selalu apiFetch, JANGAN fetch polos.
+import { supabase } from '../lib/supabase'
+import { apiFetch } from '../lib/apiFetch'
+import { orSafe } from './supabaseQueryHelpers'
+import type { Tone } from '../components/SeaAirAuditUi'
+
+// ─── Nilai enum (nilai DB apa adanya; label Inggris lewat *_META) ───────────────────────────────────────────────
+export type CostAgentInvoiceStatus =
+  | 'processing' | 'failed' | 'verification' | 'waiting_approval' | 'rejected' | 'approved' | 'journal' | 'paid' | 'cancelled'
+export type CostAgentVoyageStatus = 'draft' | 'confirmed' | 'closed'
+export type CostAgentVoyageSource = 'manual' | 'api' | 'import' | 'ai'
+export type CostAgentActivity = 'muat' | 'bongkar' | 'bongkar_muat' | 'sts' | 'bunker' | 'docking' | 'lainnya'
+export type CostAgentCompareFlag = 'sesuai' | 'naik' | 'turun' | 'tanpa_history' | 'item_baru'
+export type CostAgentMatchLevel = 'same_vessel_port' | 'nearest_dwt' | 'nearest_port' | 'none'
+export type CostAgentDocType = 'unknown' | 'invoice' | 'faktur_pajak' | 'po' | 'kwitansi' | 'nota_pelabuhan' | 'lampiran' | 'lainnya'
+export type CostAgentDocStatus = 'processing' | 'done' | 'failed'
+export type CostAgentTaxStatus = 'processing' | 'match' | 'mismatch' | 'error'
+export type CostAgentApprovalDecision = 'pending' | 'approved' | 'rejected' | 'skipped'
+export type CostAgentPaymentDocType = 'AP_NOTE' | 'PV'
+export type CostAgentPaymentStatus = 'draft' | 'submitted' | 'posted' | 'failed' | 'paid' | 'cancelled'
+
+// ─── Baris view daftar ──────────────────────────────────────────────────────────────────────────────────────────
+export interface CostAgentVoyageListRow {
+  id: number
+  company_code: string | null
+  vessel_id: number
+  vessel_name: string
+  vessel_type: string | null
+  voyage_no: string
+  seq_in_report: number | null
+  charter_type: string | null
+  report_month: string | null // YYYY-MM-DD (tgl 1)
+  status: CostAgentVoyageStatus
+  source: CostAgentVoyageSource
+  route: string | null // "BLW → LSM → SAB"
+  first_arrival: string | null
+  last_departure: string | null
+  cargo_total: number | null
+  cargo_unit: string | null
+  invoice_count: number
+  next_port_code: string | null
+  next_eta_at: string | null
+  updated_at: string
+}
+
+export interface CostAgentInvoiceListRow {
+  id: number
+  status: CostAgentInvoiceStatus
+  company_code: string | null
+  invoice_no: string | null
+  invoice_date: string | null
+  service_date: string | null
+  grand_total: number | null
+  currency: string
+  vendor_name: string | null
+  vessel_name: string | null
+  port_code: string | null
+  port_name: string | null
+  voyage_no: string | null
+  voyage_id: number | null
+  voyage_call_id: number | null
+  duplicate_of: number | null
+  note_count: number | null
+  line_count: number
+  naik_count: number
+  baru_count: number
+  unverified_count: number
+  tax_status: CostAgentTaxStatus | null
+  // Kolom versi 2 (dokumen susulan) -- TIDAK ADA di sql/054 yang disalin 2026-10-13; opsional sampai view diperbarui.
+  po_numbers?: string[] | null
+  document_count?: number | null
+  documents_processing?: number | null
+  created_at: string
+  updated_at: string
+}
+
+// ─── Master ─────────────────────────────────────────────────────────────────────────────────────────────────────
+export interface CostAgentCompany { code: string; name: string | null; npwp?: string | null; is_active?: boolean }
+export interface CostAgentVessel {
+  id: number; name: string; vessel_type: string | null; dwt: number | null; company_code: string | null
+  prefix?: string | null; short_code?: string | null; is_active?: boolean
+}
+export interface CostAgentPort {
+  id: number; code: string; name: string; aliases: string[]; tz: string; is_verified: boolean
+  province?: string | null; lat?: number | null; lon?: number | null
+}
+export interface CostAgentVendor { id: number; name: string; npwp?: string | null; is_active?: boolean }
+export interface CostAgentCostItem {
+  id: number; code: string; name: string; category: string; gl_account: string | null; keywords?: string[]; is_active?: boolean
+}
+
+export interface CostAgentApprovalMatrixRow {
+  id: number
+  name: string
+  company_code: string | null // null = semua PT
+  vendor_id: number | null // null = semua vendor
+  min_amount: number
+  max_amount: number | null // null = tanpa batas atas
+  step_no: number
+  approver_label: string
+  approver_emails: string[]
+  approver_role: string | null
+  is_active: boolean
+  created_by?: string | null
+  created_at?: string
+  updated_at?: string
+}
+
+// ─── Detail voyage (fn_cost_agent_get_voyage) ───────────────────────────────────────────────────────────────────
+export interface CostAgentCallInvoice { id: number; status: CostAgentInvoiceStatus; invoice_no: string | null; vendor_name: string | null; grand_total: number | null }
+export interface CostAgentVoyageCall {
+  id: number
+  voyage_id: number
+  seq: number
+  port_id: number
+  port_code: string
+  port_name: string
+  port_tz: string
+  activity: CostAgentActivity
+  arrived_at: string | null
+  anchored_at: string | null
+  berthed_at: string | null
+  commenced_at: string | null
+  completed_at: string | null
+  departed_at: string | null
+  handling_hours: number | null
+  port_stay_hours: number | null
+  remarks: string | null
+  invoices: CostAgentCallInvoice[] | null
+}
+export interface CostAgentVoyageCargo {
+  id: number; voyage_id: number; call_id: number | null; seq: number; product: string; qty: number; unit: string; remarks: string | null
+}
+export interface CostAgentVoyageDetail {
+  id: number
+  vessel_id: number
+  vessel_name: string
+  vessel_dwt: number | null
+  vessel_type: string | null
+  company_code: string | null
+  voyage_no: string
+  seq_in_report: number | null
+  charter_type: string | null
+  report_month: string | null
+  next_port_id: number | null
+  next_port_code: string | null
+  next_port_name: string | null
+  next_eta_at: string | null
+  status: CostAgentVoyageStatus
+  source: CostAgentVoyageSource
+  remarks: string | null
+  external_ref: string | null
+  calls: CostAgentVoyageCall[]
+  cargo: CostAgentVoyageCargo[]
+  cargo_total: number | null
+  created_at: string
+  updated_at: string
+}
+
+// Payload fn_cost_agent_save_voyage -- waktu = jam lokal pelabuhan "YYYY-MM-DD HH:mm" TANPA offset.
+export interface CostAgentVoyagePayload {
+  id?: number | null
+  vessel_id: number
+  company_code: string | null
+  voyage_no: string
+  seq_in_report?: number | null
+  charter_type?: string | null
+  report_month: string | null // 'YYYY-MM-01'
+  next_port?: string | null // kode / nama pelabuhan (server resolve)
+  next_eta_at?: string | null
+  status?: CostAgentVoyageStatus
+  remarks?: string | null
+  calls: {
+    seq: number; port_id: number; activity: CostAgentActivity
+    arrived_at?: string | null; berthed_at?: string | null; commenced_at?: string | null; completed_at?: string | null; departed_at?: string | null
+  }[]
+  cargo: { product: string; qty: number; unit: string; call_seq?: number | null }[]
+}
+// warnings = peringatan urutan waktu (tidak memblok) -- objek {seq, field, msg} dari fn_cost_agent_save_voyage.
+export interface CostAgentVoyageWarning { seq: number; field: string; msg: string }
+export interface CostAgentSaveVoyageResult { voyage_id: number; warnings: CostAgentVoyageWarning[]; calls: { seq: number; call_id: number }[] }
+export interface CostAgentUpsertVoyagesResult {
+  saved: number
+  voyages: { voyage_no: string; voyage_id: number; warnings: CostAgentVoyageWarning[] | null }[]
+  errors: { voyage_no: string | null; vessel: string | null; external_ref: string | null; error: string }[]
+}
+
+// ─── Detail invoice (fn_cost_agent_get_invoice_history) ─────────────────────────────────────────────────────────
+export interface CostAgentLineHistory {
+  match_level: CostAgentMatchLevel
+  history_id: number
+  service_date: string
+  invoice_no: string | null
+  voyage_no: string | null
+  amount: number
+  qty: number | null
+  unit_price: number | null
+  vessel_name: string | null
+  vessel_dwt: number | null
+  port_code: string | null
+  port_name: string | null
+  vendor_name: string | null
+  distance_km: number | null
+  dwt_diff: number | null
+  description_raw: string | null
+}
+export interface CostAgentInvoiceLine {
+  id: number
+  invoice_id: number
+  line_no: number
+  description_raw: string
+  cost_item_id: number | null
+  cost_item_code: string | null
+  cost_item_name: string | null
+  match_method: string | null
+  qty: number | null
+  unit: string | null
+  unit_price: number | null
+  amount: number
+  gl_account: string | null
+  compare_flag: CostAgentCompareFlag | null
+  compare_level: CostAgentMatchLevel | null
+  compare_ref_amount: number | null
+  compare_diff_pct: number | null
+  remark: string | null
+  include_in_history: boolean
+  is_verified: boolean
+  verified_by: string | null
+  verified_at: string | null
+  history: CostAgentLineHistory[]
+}
+// check_notes dari fn_cost_agent_ingest_invoice: {type, msg} -- type vendor_unknown | vessel_unknown | port_unknown |
+// voyage_unmatched | duplicate | total_mismatch | (v2) susulan_mismatch. msg Indonesia (tampil apa adanya).
+export interface CostAgentCheckNote { type?: string; msg?: string; message?: string; [k: string]: unknown }
+export interface CostAgentInvoice {
+  id: number
+  status: CostAgentInvoiceStatus
+  source: string
+  company_code: string | null
+  vendor_id: number | null
+  vessel_id: number | null
+  port_id: number | null
+  voyage_id: number | null
+  voyage_call_id: number | null
+  vendor_name: string | null
+  vessel_name: string | null
+  vessel_dwt: number | null
+  vessel_type: string | null
+  port_code: string | null
+  port_name: string | null
+  vendor_name_raw: string | null
+  vessel_name_raw: string | null
+  port_name_raw: string | null
+  voyage_no_raw: string | null
+  invoice_no: string | null
+  invoice_date: string | null
+  service_date: string | null
+  currency: string
+  subtotal: number | null
+  ppn: number | null
+  pph: number | null
+  materai: number | null
+  grand_total: number | null
+  lines_total: number | null
+  file_url: string | null
+  file_name: string | null
+  files: { file_name?: string; file_url?: string; drive_id?: string }[]
+  check_notes: CostAgentCheckNote[]
+  duplicate_of: number | null
+  error_message: string | null
+  uploaded_by: string | null
+  submitted_by: string | null
+  submitted_at: string | null
+  approved_at: string | null
+  paid_at: string | null
+  paid_ref: string | null
+  po_numbers?: string[] | null // versi 2
+  voyage: Record<string, any> | null
+  voyage_call: Record<string, any> | null
+  created_at: string
+  updated_at: string
+}
+export interface CostAgentApproval {
+  id: number; invoice_id: number; round_no: number; step_no: number; approver_label: string; approver_emails: string[]
+  approver_role: string | null; decision: CostAgentApprovalDecision; decided_by: string | null; decided_at: string | null
+  note: string | null; created_at: string
+}
+export interface CostAgentTaxCheck {
+  id: number; invoice_id: number; doc_type: string; status: CostAgentTaxStatus; file_url: string | null; file_name: string | null
+  fp_number: string | null; fp_date: string | null; seller_name: string | null; seller_npwp: string | null
+  buyer_name: string | null; buyer_npwp: string | null; dpp: number | null; ppn: number | null
+  check_results: { field: string; expected: unknown; actual: unknown; ok: boolean }[]
+  error_message: string | null; created_at: string
+}
+export interface CostAgentPaymentRequest {
+  id: number; invoice_id: number; doc_type: CostAgentPaymentDocType; doc_no: string | null; amount: number
+  pph_amount: number | null; due_date: string | null; bank_name: string | null; bank_account_name: string | null
+  bank_account_no: string | null; description: string | null
+  journal_lines: { gl_account: string; description?: string; debit?: number; credit?: number }[]
+  status: CostAgentPaymentStatus; posted_ref: string | null; posted_at: string | null; response: unknown
+  created_by: string | null; created_at: string
+}
+export interface CostAgentStatusLogRow {
+  id: number; invoice_id: number; from_status: string | null; to_status: string; actor: string | null; note: string | null; created_at: string
+}
+// Versi 2 (dokumen susulan) -- tabel cost_agent_invoice_documents BELUM ADA di sql/054 yang disalin 2026-10-13.
+export interface CostAgentInvoiceDocument {
+  id: number; invoice_id: number; job_id: string; mode: 'invoice' | 'susulan'; seq: number; file_name: string | null
+  file_url: string | null; doc_type: CostAgentDocType; status: CostAgentDocStatus; extracted: { summary?: string; [k: string]: unknown } | null
+  tax_check_id: number | null; error_message: string | null; uploaded_by: string | null; created_at: string
+}
+export interface CostAgentInvoiceHistory {
+  invoice: CostAgentInvoice
+  lines: CostAgentInvoiceLine[]
+  approvals: CostAgentApproval[]
+  tax_checks: CostAgentTaxCheck[]
+  payments: CostAgentPaymentRequest[]
+  timeline: CostAgentStatusLogRow[]
+  documents?: CostAgentInvoiceDocument[] // versi 2
+}
+export interface CostAgentMatrixStep { step_no: number; approver_label: string; approver_emails: string[]; approver_role: string | null }
+
+// ─── Query baca daftar (pagination server-side) ─────────────────────────────────────────────────────────────────
+export interface CostAgentListParams {
+  page: number // mulai 1
+  pageSize: number
+  search?: string
+  searchCols?: string[]
+  // Filter kesamaan sederhana; nilai kosong/null/'All' diabaikan. Array = `.in()`.
+  eq?: Record<string, string | number | boolean | (string | number)[] | null | undefined>
+  gte?: Record<string, string | number | null | undefined>
+  lte?: Record<string, string | number | null | undefined>
+  orderBy?: string
+  ascending?: boolean
+}
+
+export async function fetchCostAgentList<T>(table: string, p: CostAgentListParams): Promise<{ rows: T[]; count: number }> {
+  let q: any = supabase.from(table).select('*', { count: 'exact' })
+  Object.entries(p.eq || {}).forEach(([k, v]) => {
+    if (v === undefined || v === null || v === '' || v === 'All') return
+    q = Array.isArray(v) ? (v.length ? q.in(k, v) : q) : q.eq(k, v)
+  })
+  Object.entries(p.gte || {}).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') q = q.gte(k, v) })
+  Object.entries(p.lte || {}).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') q = q.lte(k, v) })
+  const term = (p.search || '').trim()
+  if (term && p.searchCols?.length) q = q.or(p.searchCols.map(c => `${c}.ilike.%${orSafe(term)}%`).join(','))
+  q = q.order(p.orderBy || 'updated_at', { ascending: !!p.ascending })
+  if (p.orderBy !== 'id') q = q.order('id', { ascending: !!p.ascending })
+  const from = (Math.max(1, p.page) - 1) * p.pageSize
+  const { data, error, count } = await q.range(from, from + p.pageSize - 1)
+  if (error) throw new Error(error.message)
+  return { rows: (data || []) as T[], count: count ?? 0 }
+}
+
+export const COST_AGENT_VOYAGE_SEARCH_COLS = ['vessel_name', 'voyage_no', 'route', 'charter_type']
+export const COST_AGENT_INVOICE_SEARCH_COLS = ['invoice_no', 'vendor_name', 'vessel_name', 'port_code', 'port_name', 'voyage_no']
+
+export const fetchCostAgentVoyageList = (p: CostAgentListParams) =>
+  fetchCostAgentList<CostAgentVoyageListRow>('cost_agent_voyage_list_v', { searchCols: COST_AGENT_VOYAGE_SEARCH_COLS, ...p })
+export const fetchCostAgentInvoiceList = (p: CostAgentListParams) =>
+  fetchCostAgentList<CostAgentInvoiceListRow>('cost_agent_invoice_list_v', { searchCols: COST_AGENT_INVOICE_SEARCH_COLS, ...p })
+
+// Master utk dropdown/combobox (kecil; dibaca sekali per halaman).
+async function selectAll<T>(table: string, cols: string, order: string): Promise<T[]> {
+  const { data, error } = await supabase.from(table).select(cols).order(order).limit(5000)
+  if (error) throw new Error(error.message)
+  return (data || []) as T[]
+}
+export const fetchCostAgentCompanies = () => selectAll<CostAgentCompany>('cost_agent_companies', 'code, name, npwp, is_active', 'code')
+export const fetchCostAgentVessels = () =>
+  selectAll<CostAgentVessel>('cost_agent_vessels', 'id, name, vessel_type, dwt, company_code, prefix, short_code, is_active', 'name')
+export const fetchCostAgentPorts = () =>
+  selectAll<CostAgentPort>('cost_agent_ports', 'id, code, name, aliases, tz, is_verified, province, lat, lon', 'code')
+export const fetchCostAgentVendors = () => selectAll<CostAgentVendor>('cost_agent_vendors', 'id, name, npwp, is_active', 'name')
+export const fetchCostAgentCostItems = () =>
+  selectAll<CostAgentCostItem>('cost_agent_cost_items', 'id, code, name, category, gl_account, keywords, is_active', 'code')
+
+// ─── Wrapper RPC (lempar Error dgn message Supabase -- pesan Indonesia dari RPC ditampilkan apa adanya) ─────────
+export async function callCostAgentRpc<T = unknown>(fn: string, args: Record<string, unknown>): Promise<T> {
+  const { data, error } = await supabase.rpc(fn, args)
+  if (error) throw new Error(error.message)
+  return data as T
+}
+
+// p_actor: dikirim email user (server memakai auth.email() bila ada).
+export const costAgentGetVoyage = (voyageId: number) =>
+  callCostAgentRpc<CostAgentVoyageDetail | null>('fn_cost_agent_get_voyage', { p_voyage_id: voyageId })
+export const costAgentSaveVoyage = (voyage: CostAgentVoyagePayload, actor?: string | null) =>
+  callCostAgentRpc<CostAgentSaveVoyageResult>('fn_cost_agent_save_voyage', { p_voyage: voyage, p_source: 'manual', p_actor: actor ?? null })
+export const costAgentUpsertVoyages = (rows: unknown[], actor?: string | null) =>
+  callCostAgentRpc<CostAgentUpsertVoyagesResult>('fn_cost_agent_upsert_voyages', { p_rows: rows, p_source: 'import', p_actor: actor ?? null })
+export const costAgentGetInvoiceHistory = (invoiceId: number) =>
+  callCostAgentRpc<CostAgentInvoiceHistory | null>('fn_cost_agent_get_invoice_history', { p_invoice_id: invoiceId })
+export const costAgentUpdateInvoiceHeader = (a: {
+  invoiceId: number; vendorId: number | null; vesselId: number | null; portId: number | null; voyageCallId: number | null
+  companyCode: string | null; actor?: string | null
+}) => callCostAgentRpc<void>('fn_cost_agent_update_invoice_header', {
+  p_invoice_id: a.invoiceId, p_vendor_id: a.vendorId, p_vessel_id: a.vesselId, p_port_id: a.portId,
+  p_voyage_call_id: a.voyageCallId, p_company_code: a.companyCode, p_actor: a.actor ?? null,
+})
+export const costAgentVerifyLine = (a: {
+  lineId: number; costItemId: number | null; isVerified: boolean; remark?: string | null; includeInHistory: boolean
+  learnAlias: boolean; actor?: string | null
+}) => callCostAgentRpc<void>('fn_cost_agent_verify_line', {
+  p_line_id: a.lineId, p_cost_item_id: a.costItemId, p_is_verified: a.isVerified, p_remark: a.remark ?? null,
+  p_include_in_history: a.includeInHistory, p_learn_alias: a.learnAlias, p_actor: a.actor ?? null,
+})
+export const costAgentAddCostItem = (a: {
+  code: string; name: string; category: string; glAccount?: string | null; keywords?: string[]; actor?: string | null
+}) => callCostAgentRpc<number>('fn_cost_agent_add_cost_item', {
+  p_code: a.code, p_name: a.name, p_category: a.category, p_gl_account: a.glAccount ?? null,
+  p_keywords: a.keywords ?? [], p_actor: a.actor ?? null,
+})
+export const costAgentSubmitForApproval = (invoiceId: number, actor?: string | null) =>
+  callCostAgentRpc<unknown>('fn_cost_agent_submit_for_approval', { p_invoice_id: invoiceId, p_actor: actor ?? null })
+export const costAgentDecideApproval = (invoiceId: number, decision: 'approved' | 'rejected', note: string | null, actor?: string | null) =>
+  callCostAgentRpc<unknown>('fn_cost_agent_decide_approval', { p_invoice_id: invoiceId, p_decision: decision, p_note: note, p_actor: actor ?? null })
+export const costAgentMatrixFor = (company: string | null, vendorId: number | null, amount: number) =>
+  callCostAgentRpc<CostAgentMatrixStep[]>('fn_cost_agent_matrix_for', { p_company: company, p_vendor_id: vendorId, p_amount: amount })
+export const costAgentCreatePaymentRequest = (invoiceId: number, docType: CostAgentPaymentDocType, data: Record<string, unknown>, actor?: string | null) =>
+  callCostAgentRpc<number>('fn_cost_agent_create_payment_request', { p_invoice_id: invoiceId, p_doc_type: docType, p_data: data, p_actor: actor ?? null })
+export const costAgentMarkPaid = (invoiceId: number, paidAt: string, paidRef: string, actor?: string | null) =>
+  callCostAgentRpc<unknown>('fn_cost_agent_mark_paid', { p_invoice_id: invoiceId, p_paid_at: paidAt, p_paid_ref: paidRef, p_actor: actor ?? null })
+
+// ─── Proxy n8n (server.ts) ──────────────────────────────────────────────────────────────────────────────────────
+// Key localStorage override URL (diisi halaman Settings › Webhooks; kosong = env server).
+export const COST_AGENT_WEBHOOK_STORAGE_KEYS = {
+  cost_agent: 'n8n_cost_agent_webhook_url',
+  cost_agent_voyage: 'n8n_cost_agent_voyage_webhook_url',
+  cost_agent_voyage_pull: 'n8n_cost_agent_voyage_pull_url',
+  cost_agent_payment: 'n8n_cost_agent_payment_url',
+} as const
+export type CostAgentWebhookType = keyof typeof COST_AGENT_WEBHOOK_STORAGE_KEYS
+
+function webhookHeaders(type: CostAgentWebhookType): Record<string, string> {
+  const h: Record<string, string> = { 'X-Webhook-Type': type }
+  try {
+    const custom = localStorage.getItem(COST_AGENT_WEBHOOK_STORAGE_KEYS[type])
+    if (custom) h['X-Webhook-Url'] = custom
+  } catch { /* localStorage tidak tersedia -> pakai env server */ }
+  return h
+}
+
+async function readProxyResponse(res: Response): Promise<any> {
+  const text = await res.text()
+  let data: any
+  try { data = text ? JSON.parse(text) : {} } catch { data = { pesan: text } }
+  if (!res.ok || data?.status === 'error') throw new Error(data?.pesan || data?.message || `Automation server error (HTTP ${res.status}).`)
+  return data
+}
+
+// Upload multipart (invoice baru / dokumen susulan / voyage report). `meta` -> field `cost_agent_meta` (JSON, maks 4 KB);
+// `uploaded_by` diisi server dari sesi login. Respons n8n dikembalikan apa adanya (mis. {job_id, invoice_id, mode}).
+export async function costAgentUpload(type: 'cost_agent' | 'cost_agent_voyage', files: File[], meta: Record<string, unknown>): Promise<any> {
+  const fd = new FormData()
+  files.forEach((f, i) => fd.append('file_' + i, f))
+  fd.append('cost_agent_meta', JSON.stringify(meta))
+  const res = await apiFetch('/api/n8n-proxy-start', { method: 'POST', body: fd, headers: webhookHeaders(type) })
+  return readProxyResponse(res)
+}
+
+// Aksi tanpa file (tarik voyage / posting pembayaran). `requested_by` diisi server.
+export async function costAgentJsonAction(type: 'cost_agent_voyage_pull' | 'cost_agent_payment', body: Record<string, unknown>): Promise<any> {
+  const res = await apiFetch('/api/n8n-proxy-json', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: { ...webhookHeaders(type), 'Content-Type': 'application/json' },
+  })
+  return readProxyResponse(res)
+}
+
+// ─── Label & warna ──────────────────────────────────────────────────────────────────────────────────────────────
+export const INVOICE_STATUS_META: Record<CostAgentInvoiceStatus, { label: string; tone: Tone }> = {
+  processing: { label: 'Processing (AI)', tone: 'blue' },
+  failed: { label: 'Failed', tone: 'red' },
+  verification: { label: 'Verification', tone: 'amber' },
+  waiting_approval: { label: 'Waiting Approval', tone: 'purple' },
+  rejected: { label: 'Rejected', tone: 'red' },
+  approved: { label: 'Approved', tone: 'green' },
+  journal: { label: 'Journal (AP/PV)', tone: 'plum' },
+  paid: { label: 'Paid', tone: 'green' },
+  cancelled: { label: 'Cancelled', tone: 'grey' },
+}
+// Urutan tab status di halaman invoice.
+export const INVOICE_STATUS_ORDER: CostAgentInvoiceStatus[] = ['processing', 'failed', 'verification', 'waiting_approval', 'rejected', 'approved', 'journal', 'paid']
+
+export const VOYAGE_STATUS_META: Record<CostAgentVoyageStatus, { label: string; tone: Tone; hint?: string }> = {
+  draft: { label: 'Draft', tone: 'amber', hint: 'Needs review' },
+  confirmed: { label: 'Confirmed', tone: 'green' },
+  closed: { label: 'Closed', tone: 'grey' },
+}
+export const VOYAGE_SOURCE_LABEL: Record<CostAgentVoyageSource, string> = { manual: 'Manual', api: 'API', import: 'Import', ai: 'AI' }
+
+export const ACTIVITY_LABEL: Record<CostAgentActivity, string> = {
+  muat: 'Load', bongkar: 'Discharge', bongkar_muat: 'Load & Discharge', sts: 'STS', bunker: 'Bunker', docking: 'Docking', lainnya: 'Other',
+}
+
+export const COMPARE_FLAG_META: Record<CostAgentCompareFlag, { label: string; tone: Tone }> = {
+  sesuai: { label: 'In line', tone: 'green' },
+  naik: { label: 'Higher', tone: 'red' },
+  turun: { label: 'Lower', tone: 'blue' },
+  tanpa_history: { label: 'No history', tone: 'grey' },
+  item_baru: { label: 'New item', tone: 'amber' },
+}
+
+export function matchLevelLabel(level: CostAgentMatchLevel | null | undefined, h?: { dwt_diff?: number | null; distance_km?: number | null }): string {
+  if (level === 'same_vessel_port') return 'Same vessel & port'
+  if (level === 'nearest_dwt') return `Nearest DWT (Δ ${fmtNumber(h?.dwt_diff ?? 0)})`
+  if (level === 'nearest_port') return `Nearest port (${fmtNumber(h?.distance_km ?? 0)} km)`
+  return 'No match'
+}
+
+export const DOC_TYPE_LABEL: Record<CostAgentDocType, string> = {
+  unknown: 'Unknown', invoice: 'Invoice', faktur_pajak: 'Tax invoice (Faktur Pajak)', po: 'PO', kwitansi: 'Receipt (Kwitansi)',
+  nota_pelabuhan: 'Port note', lampiran: 'Attachment', lainnya: 'Other',
+}
+
+export const TAX_STATUS_META: Record<CostAgentTaxStatus, { label: string; tone: Tone }> = {
+  processing: { label: 'Checking', tone: 'blue' },
+  match: { label: 'Match', tone: 'green' },
+  mismatch: { label: 'Mismatch', tone: 'red' },
+  error: { label: 'Error', tone: 'red' },
+}
+
+// ─── Formatter ──────────────────────────────────────────────────────────────────────────────────────────────────
+const idNum = (maxFrac: number) => new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: maxFrac })
+const toNumber = (v: unknown): number | null => {
+  if (v === null || v === undefined || v === '') return null
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? n : null
+}
+export const fmtNumber = (v: unknown, maxFrac = 2): string => { const n = toNumber(v); return n === null ? '—' : idNum(maxFrac).format(n) }
+// Rupiah: titik ribuan, tanpa desimal ("Rp 1.250.000").
+export const fmtRupiah = (v: unknown): string => { const n = toNumber(v); return n === null ? '—' : `Rp ${idNum(0).format(Math.round(n))}` }
+// Nominal dgn mata uang (IDR -> Rupiah, lainnya 2 desimal + kode).
+export const fmtMoney = (v: unknown, currency = 'IDR'): string =>
+  currency === 'IDR' ? fmtRupiah(v) : (toNumber(v) === null ? '—' : `${currency} ${idNum(2).format(toNumber(v)!)}`)
+// Liter (cargo L15): titik ribuan.
+export const fmtLiter = (v: unknown, unit = 'L'): string => { const n = toNumber(v); return n === null ? '—' : `${idNum(3).format(n)} ${unit}` }
+export const fmtPct = (v: unknown): string => { const n = toNumber(v); return n === null ? '—' : `${n > 0 ? '+' : ''}${idNum(1).format(n)}%` }
+
+// Singkatan zona waktu Indonesia (laporan voyage memakai LT = jam lokal pelabuhan).
+const TZ_ABBR: Record<string, string> = {
+  'Asia/Jakarta': 'WIB', 'Asia/Pontianak': 'WIB', 'Asia/Makassar': 'WITA', 'Asia/Ujung_Pandang': 'WITA', 'Asia/Jayapura': 'WIT',
+}
+export const tzAbbrev = (tz?: string | null): string => (tz ? TZ_ABBR[tz] || tz : 'WIB')
+
+const partsIn = (iso: string, tz: string) => {
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return null
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(d)
+  const g = (t: string) => parts.find(p => p.type === t)?.value || ''
+  return { y: g('year'), m: g('month'), d: g('day'), hh: g('hour'), mm: g('minute') }
+}
+
+// Nama bulan sendiri (Intl en-GB di Chrome/Node menulis "Sept") -- format tetap "06 Sep 2026".
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+// Tampilan "06 Sep 2026 08:00 WITA" dlm zona pelabuhan.
+export function fmtDateTimePort(iso: string | null | undefined, tz?: string | null, withZone = true): string {
+  if (!iso) return '—'
+  const zone = tz || 'Asia/Jakarta'
+  const p = partsIn(iso, zone)
+  if (!p) return String(iso)
+  const s = `${p.d} ${MON[Number(p.m) - 1]} ${p.y} ${p.hh}:${p.mm}`
+  return withZone ? `${s} ${tzAbbrev(zone)}` : s
+}
+// Ringkas utk tabel daftar: "06 Sep 20:00" (tanpa tahun & zona; tampilkan zona terpisah / tooltip pakai fmtDateTimePort).
+export function fmtDateTimeCompact(iso: string | null | undefined, tz?: string | null): string {
+  if (!iso) return '—'
+  const p = partsIn(iso, tz || 'Asia/Jakarta')
+  return p ? `${p.d} ${MON[Number(p.m) - 1]} ${p.hh}:${p.mm}` : String(iso)
+}
+// Tanggal saja ("06 Sep 2026"), utk kolom date (invoice_date, report_month dsb) -- tidak digeser zona.
+export function fmtDate(v: string | null | undefined): string {
+  if (!v) return '—'
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(v)
+  return m ? `${m[3]} ${MON[Number(m[2]) - 1]} ${m[1]}` : String(v)
+}
+export function fmtReportMonth(v: string | null | undefined): string {
+  if (!v) return '—'
+  const m = /^(\d{4})-(\d{2})/.exec(v)
+  return m ? `${MON[Number(m[2]) - 1]} ${m[1]}` : String(v)
+}
+
+// timestamptz dari DB -> nilai <input type="datetime-local"> dlm jam lokal pelabuhan ("YYYY-MM-DDTHH:mm").
+export function toPortLocalInput(iso: string | null | undefined, tz?: string | null): string {
+  if (!iso) return ''
+  const p = partsIn(iso, tz || 'Asia/Jakarta')
+  return p ? `${p.y}-${p.m}-${p.d}T${p.hh}:${p.mm}` : ''
+}
+// Nilai input datetime-local -> format RPC "YYYY-MM-DD HH:mm" (jam lokal pelabuhan, TANPA offset; server yg mengonversi).
+export function fromLocalInput(v: string | null | undefined): string | null {
+  if (!v) return null
+  const m = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/.exec(v)
+  return m ? `${m[1]} ${m[2]}` : null
+}
+// Durasi jam ("36.5 h") utk handling/port stay.
+export const fmtHours = (v: unknown): string => { const n = toNumber(v); return n === null ? '—' : `${idNum(1).format(n)} h` }
+
+// ─── Util form voyage ───────────────────────────────────────────────────────────────────────────────────────────
+export const COST_AGENT_PRODUCTS = ['B50', 'PERTALITE', 'SOLAR', 'PERTAMAX', 'AVTUR', 'SEMEN CURAH']
+export const COST_AGENT_CARGO_UNITS = ['L15', 'MT', 'KL', 'BBL']
+export const COST_AGENT_CHARTER_TYPES = ['COA', 'TC', 'SPOT']
+export const COST_AGENT_ACTIVITIES: CostAgentActivity[] = ['muat', 'bongkar', 'bongkar_muat', 'sts', 'bunker', 'docking', 'lainnya']
+// Aktivitas yg dihitung "bongkar" di laporan bulanan / pilihan Discharge port cargo.
+export const isDischargeActivity = (a: string) => a === 'bongkar' || a === 'bongkar_muat' || a === 'sts'
+
+// Qty cargo dari input bebas: "3.751.843" (id-ID), "3,751,843" (Excel), "3751843.5" -> number | null.
+export function parseQtyInput(v: string | number | null | undefined): number | null {
+  if (v === null || v === undefined) return null
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null
+  let s = v.trim().replace(/\s+/g, '')
+  if (!s) return null
+  if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(s)) s = s.replace(/\./g, '').replace(',', '.')
+  else if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) s = s.replace(/,/g, '')
+  else s = s.replace(',', '.')
+  const n = Number(s)
+  return Number.isFinite(n) ? n : null
+}
+
+// <input type="month"> ("2026-09") <-> report_month ("2026-09-01").
+export const monthToReportMonth = (m: string | null | undefined): string | null => (m && /^\d{4}-\d{2}/.test(m) ? `${m.slice(0, 7)}-01` : null)
+export const reportMonthToMonth = (v: string | null | undefined): string => (v && /^\d{4}-\d{2}/.test(v) ? v.slice(0, 7) : '')
+export const currentMonth = (): string => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+// Selisih jam antara 2 waktu lokal pelabuhan yg SAMA zonanya ("YYYY-MM-DDTHH:mm") -- utk handling / port stay live di form.
+export function diffLocalHours(from: string | null | undefined, to: string | null | undefined): number | null {
+  if (!from || !to) return null
+  const a = new Date(from.replace(' ', 'T')).getTime()
+  const b = new Date(to.replace(' ', 'T')).getTime()
+  if (isNaN(a) || isNaN(b)) return null
+  return Math.round(((b - a) / 3600000) * 100) / 100
+}
+
+// Kode pelabuhan per hop dari kolom `route` view ("BLW → LSM → SAB").
+export const routePorts = (route: string | null | undefined): string[] =>
+  (route || '').split('→').map(s => s.trim()).filter(Boolean)
+
+// ─── Util halaman Agency Invoices (Prompt 3) ────────────────────────────────────────────────────────────────────
+// Status yg bisa dikoreksi user (header & baris) -- SAMA guard RPC update_invoice_header / verify_line.
+export const isInvoiceEditable = (st: string | null | undefined) => st === 'verification' || st === 'rejected'
+// Dokumen susulan boleh dikirim di semua status kecuali processing / cancelled.
+export const canUploadSupporting = (st: string | null | undefined) => !!st && st !== 'processing' && st !== 'cancelled'
+
+export const CHECK_NOTE_LABEL: Record<string, string> = {
+  vendor_unknown: 'Vendor not in master', vessel_unknown: 'Vessel not in master', port_unknown: 'Port not in master',
+  voyage_unmatched: 'Voyage / port call not matched', duplicate: 'Possible duplicate', total_mismatch: 'Total mismatch',
+  susulan_mismatch: 'Supporting document refers to another invoice',
+}
+
+// Jumlah invoice per status (tab) -- head count per status, filter sama daftar (tanpa filter status).
+export async function fetchCostAgentInvoiceStatusCounts(f: { company?: string; search?: string }): Promise<Record<string, number>> {
+  const out: Record<string, number> = {}
+  await Promise.all(INVOICE_STATUS_ORDER.map(async st => {
+    let q: any = supabase.from('cost_agent_invoice_list_v').select('id', { count: 'exact', head: true }).eq('status', st)
+    if (f.company) q = q.eq('company_code', f.company)
+    const term = (f.search || '').trim()
+    if (term) q = q.or(COST_AGENT_INVOICE_SEARCH_COLS.map(c => `${c}.ilike.%${orSafe(term)}%`).join(','))
+    const { count, error } = await q
+    if (!error) out[st] = count ?? 0
+  }))
+  return out
+}
+
+// error_message invoice failed (view daftar tidak membawa kolom ini).
+export async function fetchCostAgentInvoiceErrors(ids: number[]): Promise<Record<number, string | null>> {
+  if (!ids.length) return {}
+  const { data, error } = await supabase.from('cost_agent_invoices').select('id, error_message').in('id', ids)
+  if (error) return {}
+  return Object.fromEntries((data || []).map((r: any) => [r.id, r.error_message]))
+}
+
+// Pilihan port call utk upload / koreksi header: "MT. EXPO · Voy 5 · LSM (06 Sep)". Embed FK PostgREST.
+export interface CostAgentCallOption {
+  id: number; voyage_id: number; seq: number; arrived_at: string | null; departed_at: string | null
+  port_id: number; port_code: string; port_name: string; port_tz: string
+  voyage_no: string; report_month: string | null; company_code: string | null; vessel_id: number; vessel_name: string
+}
+const CALL_SELECT = 'id, voyage_id, seq, arrived_at, departed_at, port_id, port:cost_agent_ports(code, name, tz), voyage:cost_agent_voyages(voyage_no, report_month, company_code, vessel_id, vessel:cost_agent_vessels(name))'
+const toCallOption = (r: any): CostAgentCallOption => ({
+  id: r.id, voyage_id: r.voyage_id, seq: r.seq, arrived_at: r.arrived_at, departed_at: r.departed_at, port_id: r.port_id,
+  port_code: r.port?.code || '', port_name: r.port?.name || '', port_tz: r.port?.tz || 'Asia/Jakarta',
+  voyage_no: r.voyage?.voyage_no || '', report_month: r.voyage?.report_month || null, company_code: r.voyage?.company_code || null,
+  vessel_id: r.voyage?.vessel_id, vessel_name: r.voyage?.vessel?.name || '',
+})
+export async function fetchCostAgentCallOptions(f: { vesselId?: number | null; ids?: number[]; limit?: number } = {}): Promise<CostAgentCallOption[]> {
+  // Filter kapal di server: embed voyage `!inner` + eq kolom embed.
+  const select = f.vesselId ? CALL_SELECT.replace('voyage:cost_agent_voyages(', 'voyage:cost_agent_voyages!inner(') : CALL_SELECT
+  let q: any = supabase.from('cost_agent_voyage_calls').select(select)
+  if (f.vesselId) q = q.eq('voyage.vessel_id', f.vesselId)
+  if (f.ids?.length) q = q.in('id', f.ids)
+  else q = q.order('arrived_at', { ascending: false, nullsFirst: false }).limit(f.limit ?? 400)
+  const { data, error } = await q
+  if (error) throw new Error(error.message)
+  return (data || []).map(toCallOption)
+}
+export const callOptionLabel = (c: CostAgentCallOption) => {
+  const d = c.arrived_at ? fmtDateTimePort(c.arrived_at, c.port_tz, false).slice(0, 6) : null
+  return `${c.vessel_name} · Voy ${c.voyage_no} · ${c.port_code}${d ? ` (${d})` : ''}`
+}
+
+// Dokumen per job (versi 2: tabel cost_agent_invoice_documents). null = tabel belum ada / tidak bisa dibaca.
+export async function fetchCostAgentDocumentsByJob(jobId: string): Promise<CostAgentInvoiceDocument[] | null> {
+  const { data, error } = await supabase.from('cost_agent_invoice_documents').select('*').eq('job_id', jobId)
+  if (error) return null
+  return (data || []) as CostAgentInvoiceDocument[]
+}
+
+// Link Google Drive -> URL embed /preview (iframe). null = bukan link Drive yg dikenal (tampilkan tombol buka saja).
+export function drivePreviewUrl(url: string | null | undefined): string | null {
+  if (!url) return null
+  const m = /drive\.google\.com\/file\/d\/([A-Za-z0-9_-]{10,})/.exec(url) || /[?&]id=([A-Za-z0-9_-]{10,})/.exec(url)
+  return m && /google\.com/.test(url) ? `https://drive.google.com/file/d/${m[1]}/preview` : null
+}
+
+// Batas file upload (selaras server.ts: 50 MB/file, 30 file).
+export const COST_AGENT_UPLOAD_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg']
+export const COST_AGENT_MAX_FILE_BYTES = 50 * 1024 * 1024
+export const COST_AGENT_MAX_FILES = 30
+export const fmtFileSize = (n: number) => (n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`)
+
+// ─── Approval (Prompt 4) ────────────────────────────────────────────────────────────────────────────────────────
+// Event badge sidebar "My Approvals" (pola *_CHANGED_EVENT modul lain).
+export const COST_AGENT_APPROVALS_CHANGED_EVENT = 'beehive:cost-agent-approvals-changed'
+export const notifyCostAgentApprovalsChanged = () => {
+  try { window.dispatchEvent(new Event(COST_AGENT_APPROVALS_CHANGED_EVENT)) } catch { /* abaikan */ }
+}
+
+// Step aktif 1 invoice = step pending TERENDAH di round TERAKHIR (sama urutan fn_cost_agent_decide_approval).
+export function activeApprovalStep(approvals: CostAgentApproval[]): CostAgentApproval | null {
+  if (!approvals.length) return null
+  const round = Math.max(...approvals.map(a => a.round_no))
+  return approvals.filter(a => a.round_no === round && a.decision === 'pending').sort((a, b) => a.step_no - b.step_no)[0] || null
+}
+export const isApproverOf = (step: CostAgentApproval | null, email: string | null | undefined) =>
+  !!step && !!email && (step.approver_emails || []).some(e => e.toLowerCase() === email.toLowerCase())
+
+// Invoice waiting_approval yg step aktifnya memuat email user. Server tetap mengecek email (decide_approval).
+export async function fetchMyApprovalInvoiceIds(email: string | null | undefined): Promise<number[]> {
+  if (!email) return []
+  const variants = [...new Set([email, email.toLowerCase()])]
+  const { data: mine, error } = await supabase.from('cost_agent_approvals').select('invoice_id')
+    .eq('decision', 'pending').overlaps('approver_emails', variants).limit(2000)
+  if (error) throw new Error(error.message)
+  const ids = [...new Set((mine || []).map((r: any) => Number(r.invoice_id)))]
+  if (!ids.length) return []
+  const [{ data: all, error: e2 }, { data: inv, error: e3 }] = await Promise.all([
+    supabase.from('cost_agent_approvals').select('*').in('invoice_id', ids),
+    supabase.from('cost_agent_invoices').select('id').in('id', ids).eq('status', 'waiting_approval'),
+  ])
+  if (e2) throw new Error(e2.message)
+  if (e3) throw new Error(e3.message)
+  const byInv = new Map<number, CostAgentApproval[]>()
+  ;(all || []).forEach((a: any) => byInv.set(Number(a.invoice_id), [...(byInv.get(Number(a.invoice_id)) || []), a]))
+  const waiting = new Set((inv || []).map((r: any) => Number(r.id)))
+  return ids.filter(id => waiting.has(id) && isApproverOf(activeApprovalStep(byInv.get(id) || []), email))
+}
+
+// Approval matrix: CRUD langsung tabel (RLS has_edit_access('cost_agent_approval_matrix')).
+export type CostAgentMatrixInput = Omit<CostAgentApprovalMatrixRow, 'id' | 'created_at' | 'updated_at'>
+export async function fetchCostAgentApprovalMatrix(): Promise<CostAgentApprovalMatrixRow[]> {
+  const { data, error } = await supabase.from('cost_agent_approval_matrix').select('*')
+    .order('company_code', { ascending: true, nullsFirst: true }).order('vendor_id', { ascending: true, nullsFirst: true })
+    .order('min_amount').order('step_no')
+  if (error) throw new Error(error.message)
+  return (data || []) as CostAgentApprovalMatrixRow[]
+}
+export async function saveCostAgentMatrixRule(id: number | null, row: CostAgentMatrixInput): Promise<void> {
+  const payload = { ...row, updated_at: new Date().toISOString() }
+  const { error } = id === null
+    ? await supabase.from('cost_agent_approval_matrix').insert(payload)
+    : await supabase.from('cost_agent_approval_matrix').update(payload).eq('id', id)
+  if (error) throw new Error(error.message)
+}
+export async function deleteCostAgentMatrixRule(id: number): Promise<void> {
+  const { error } = await supabase.from('cost_agent_approval_matrix').delete().eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+// Rentang nominal yg TIDAK tertutup aturan aktif umum (vendor kosong) utk 1 company (null = aturan "all companies" saja).
+// Aturan per vendor tidak dihitung menutup (hanya berlaku utk vendor itu). Submit invoice di celah ini akan gagal.
+// Nominal dianggap rupiah bulat: celah dihitung dgn presisi 1 (min > max sebelumnya + 1 = ada celah).
+export function matrixCoverageGaps(rules: CostAgentApprovalMatrixRow[], company: string | null): { from: number; to: number | null }[] {
+  const ranges = rules
+    .filter(r => r.is_active && r.vendor_id === null && (r.company_code === null || r.company_code === company))
+    .map(r => ({ min: Number(r.min_amount || 0), max: r.max_amount === null ? null : Number(r.max_amount) }))
+    .sort((a, b) => a.min - b.min)
+  const gaps: { from: number; to: number | null }[] = []
+  let next = 0 // nilai terkecil yg belum tertutup
+  for (const r of ranges) {
+    if (r.min > next) gaps.push({ from: next, to: r.min })
+    if (r.max === null) return gaps
+    next = Math.max(next, r.max + 1)
+  }
+  gaps.push({ from: next, to: null })
+  return gaps
+}
+
+// Nominal ringkas utk ladder ("50M", "1.5B", "250K").
+export function fmtShortAmount(v: number | null | undefined): string {
+  if (v === null || v === undefined) return '∞'
+  const n = Number(v)
+  const f = (x: number) => idNum(1).format(x)
+  if (Math.abs(n) >= 1e9) return `${f(n / 1e9)}B`
+  if (Math.abs(n) >= 1e6) return `${f(n / 1e6)}M`
+  if (Math.abs(n) >= 1e3) return `${f(n / 1e3)}K`
+  return f(n)
+}
+
+// Email user aplikasi utk autocomplete approver (profiles; RLS bisa membatasi -> kembalikan yg terbaca saja).
+export async function fetchAppUserEmails(): Promise<{ email: string; name: string | null }[]> {
+  const { data, error } = await supabase.from('profiles').select('email, nama').not('email', 'is', null).order('email').limit(2000)
+  if (error) return []
+  return (data || []).map((r: any) => ({ email: String(r.email), name: r.nama ?? null }))
+}
+
+// ─── Payment (Prompt 5) ─────────────────────────────────────────────────────────────────────────────────────────
+// Akun GL default jurnal AP Note / PV. AP vendor / VAT in / WHT payable SENGAJA KOSONG -- WAJIB dikonfirmasi Finance.
+// Bisa diisi lewat tabel cost_agent_settings (key gl_ap_vendor / gl_vat_in / gl_wht_payable / gl_stamp_duty, value
+// string JSON mis. '"21010"') tanpa ubah kode. Stamp duty default 61030 = GL cost item MATERAI di seed sql/055.
+export const COST_AGENT_GL_DEFAULTS = { ap_vendor: '', vat_in: '', wht_payable: '', stamp_duty: '61030' }
+export type CostAgentGlAccounts = typeof COST_AGENT_GL_DEFAULTS
+export async function fetchCostAgentGlAccounts(): Promise<CostAgentGlAccounts> {
+  const out = { ...COST_AGENT_GL_DEFAULTS }
+  const { data } = await supabase.from('cost_agent_settings').select('key, value').in('key', ['gl_ap_vendor', 'gl_vat_in', 'gl_wht_payable', 'gl_stamp_duty'])
+  ;(data || []).forEach((r: any) => {
+    const v = r.value === null || r.value === undefined ? '' : String(r.value)
+    if (!v) return
+    if (r.key === 'gl_ap_vendor') out.ap_vendor = v
+    if (r.key === 'gl_vat_in') out.vat_in = v
+    if (r.key === 'gl_wht_payable') out.wht_payable = v
+    if (r.key === 'gl_stamp_duty') out.stamp_duty = v
+  })
+  return out
+}
+export interface CostAgentJournalLine { gl_account: string; description: string; debit: number; credit: number }
+
+// Saran rekening vendor terakhir (per browser) -- kenyamanan saja, bukan sumber data.
+export type CostAgentVendorBank = { bank_name: string; bank_account_name: string; bank_account_no: string }
+const BANK_KEY = 'cost_agent_vendor_bank'
+export function loadVendorBank(vendorKey: string | number | null | undefined): CostAgentVendorBank | null {
+  if (vendorKey === null || vendorKey === undefined) return null
+  try { return (JSON.parse(localStorage.getItem(BANK_KEY) || '{}') as Record<string, CostAgentVendorBank>)[String(vendorKey)] || null } catch { return null }
+}
+export function saveVendorBank(vendorKey: string | number | null | undefined, bank: CostAgentVendorBank) {
+  if (vendorKey === null || vendorKey === undefined) return
+  try {
+    const all = JSON.parse(localStorage.getItem(BANK_KEY) || '{}')
+    all[String(vendorKey)] = bank
+    localStorage.setItem(BANK_KEY, JSON.stringify(all))
+  } catch { /* abaikan */ }
+}
+export const PAYMENT_STATUS_META: Record<CostAgentPaymentStatus, { label: string; tone: Tone }> = {
+  draft: { label: 'Draft', tone: 'grey' }, submitted: { label: 'Sent — waiting posting', tone: 'blue' },
+  posted: { label: 'Posted', tone: 'green' }, failed: { label: 'Failed', tone: 'red' }, paid: { label: 'Paid', tone: 'green' },
+  cancelled: { label: 'Cancelled', tone: 'grey' },
+}
+
+// ─── Hapus invoice (masa uji coba, sql/056) ─────────────────────────────────────────────────────────────────────
+// Admin saja; status journal / paid tidak bisa (sudah diposting ke finance). Anak invoice ikut terhapus (FK cascade).
+export const canDeleteInvoice = (st: string | null | undefined) => !!st && st !== 'journal' && st !== 'paid'
+export const costAgentDeleteInvoice = (invoiceId: number, reason?: string | null) =>
+  callCostAgentRpc<{ deleted: number; status: string; history_rows_removed: number }>('fn_cost_agent_delete_invoice', { p_invoice_id: invoiceId, p_reason: reason ?? null })

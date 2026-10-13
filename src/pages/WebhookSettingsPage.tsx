@@ -1,16 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { apiFetch } from '../lib/apiFetch';
-import { Webhook, Plane, Ship, FileCheck2, Fuel, CheckCircle2, XCircle } from 'lucide-react';
+import { Webhook, Plane, Ship, FileCheck2, Fuel, CheckCircle2, XCircle, Anchor } from 'lucide-react';
+import { COST_AGENT_WEBHOOK_STORAGE_KEYS } from '../utils/CostAgentHelpers';
 import Greeting from '../components/Greeting';
 
-type WebhookType = 'courier' | 'sea_air' | 'far_overseas_air' | 'bunker';
+type WebhookType = 'courier' | 'sea_air' | 'far_overseas_air' | 'bunker'
+  | 'cost_agent' | 'cost_agent_voyage' | 'cost_agent_voyage_pull' | 'cost_agent_payment';
 
 const WEBHOOK_META: Record<WebhookType, { label: string; icon: React.ElementType }> = {
   courier: { label: 'Courier', icon: Plane },
   sea_air: { label: 'Sea & Air', icon: Ship },
   far_overseas_air: { label: 'Direct Loading (FAR Overseas Air)', icon: FileCheck2 },
   bunker: { label: 'Bunker', icon: Fuel },
+  cost_agent: { label: 'Cost Agent — Agency Invoice (invoice & susulan)', icon: Anchor },
+  cost_agent_voyage: { label: 'Cost Agent — Read Voyage Report (AI)', icon: Anchor },
+  cost_agent_voyage_pull: { label: 'Cost Agent — Pull Voyages (source system)', icon: Anchor },
+  cost_agent_payment: { label: 'Cost Agent — Payment Posting (AP/PV)', icon: Anchor },
 };
+
+// Key localStorage override per tipe (key lama TIDAK diubah; Cost Agent dari CostAgentHelpers -- dibaca juga pemanggilnya).
+const STORAGE_KEYS: Record<WebhookType, string> = {
+  courier: 'n8n_webhook_url',
+  sea_air: 'n8n_seaair_webhook_url',
+  far_overseas_air: 'n8n_far_overseas_air_webhook_url',
+  bunker: 'n8n_bunker_webhook_url',
+  ...COST_AGENT_WEBHOOK_STORAGE_KEYS,
+};
+const WEBHOOK_TYPES = Object.keys(WEBHOOK_META) as WebhookType[];
 
 function WebhookCard({ type, value, onChange, onTest, testing }: {
   type: WebhookType;
@@ -52,58 +68,24 @@ function WebhookCard({ type, value, onChange, onTest, testing }: {
 }
 
 export default function WebhookSettingsPage() {
-  const [webhookUrl, setWebhookUrl] = useState('');
-  const [seaAirWebhookUrl, setSeaAirWebhookUrl] = useState('');
-  const [farOverseasAirWebhookUrl, setFarOverseasAirWebhookUrl] = useState('');
-  const [bunkerWebhookUrl, setBunkerWebhookUrl] = useState('');
+  const [urls, setUrls] = useState<Record<WebhookType, string>>(() => Object.fromEntries(WEBHOOK_TYPES.map(t => [t, ''])) as Record<WebhookType, string>);
   const [testResult, setTestResult] = useState<{ type: 'sukses' | 'gagal', message: string, target?: string } | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
   const [isSaved, setIsSaved] = useState(false);
 
   useEffect(() => {
     // Load from local storage
-    const savedCourier = localStorage.getItem('n8n_webhook_url');
-    if (savedCourier) {
-      setWebhookUrl(savedCourier);
-    }
-    const savedSeaAir = localStorage.getItem('n8n_seaair_webhook_url');
-    if (savedSeaAir) {
-      setSeaAirWebhookUrl(savedSeaAir);
-    }
-    const savedFarOverseasAir = localStorage.getItem('n8n_far_overseas_air_webhook_url');
-    if (savedFarOverseasAir) {
-      setFarOverseasAirWebhookUrl(savedFarOverseasAir);
-    }
-    const savedBunker = localStorage.getItem('n8n_bunker_webhook_url');
-    if (savedBunker) {
-      setBunkerWebhookUrl(savedBunker);
-    }
+    const loaded = {} as Record<WebhookType, string>;
+    WEBHOOK_TYPES.forEach(t => { loaded[t] = localStorage.getItem(STORAGE_KEYS[t]) || ''; });
+    setUrls(loaded);
   }, []);
 
   const handleSave = () => {
-    if (webhookUrl.trim() === '') {
-      localStorage.removeItem('n8n_webhook_url');
-    } else {
-      localStorage.setItem('n8n_webhook_url', webhookUrl.trim());
-    }
-
-    if (seaAirWebhookUrl.trim() === '') {
-      localStorage.removeItem('n8n_seaair_webhook_url');
-    } else {
-      localStorage.setItem('n8n_seaair_webhook_url', seaAirWebhookUrl.trim());
-    }
-
-    if (farOverseasAirWebhookUrl.trim() === '') {
-      localStorage.removeItem('n8n_far_overseas_air_webhook_url');
-    } else {
-      localStorage.setItem('n8n_far_overseas_air_webhook_url', farOverseasAirWebhookUrl.trim());
-    }
-
-    if (bunkerWebhookUrl.trim() === '') {
-      localStorage.removeItem('n8n_bunker_webhook_url');
-    } else {
-      localStorage.setItem('n8n_bunker_webhook_url', bunkerWebhookUrl.trim());
-    }
+    WEBHOOK_TYPES.forEach(t => {
+      const v = urls[t].trim();
+      if (v === '') localStorage.removeItem(STORAGE_KEYS[t]);
+      else localStorage.setItem(STORAGE_KEYS[t], v);
+    });
 
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 3000);
@@ -113,8 +95,9 @@ export default function WebhookSettingsPage() {
     setLoading(type);
     setTestResult(null);
     try {
-      const headers: HeadersInit = { 'X-Webhook-Test': 'true' };
-      const urlToTest = type === 'courier' ? webhookUrl : type === 'sea_air' ? seaAirWebhookUrl : type === 'far_overseas_air' ? farOverseasAirWebhookUrl : bunkerWebhookUrl;
+      // X-Webhook-Type ikut dikirim (2026-10-13) -- tanpa itu kolom kosong selalu menguji URL .env Courier.
+      const headers: HeadersInit = { 'X-Webhook-Test': 'true', 'X-Webhook-Type': type };
+      const urlToTest = urls[type];
 
       if (urlToTest.trim()) {
         headers['X-Webhook-Url'] = urlToTest.trim();
@@ -163,10 +146,11 @@ export default function WebhookSettingsPage() {
           <div className="absolute -bottom-24 -right-16 w-64 h-64 bg-gradient-to-tl from-[#73507B]/15 to-transparent rounded-full blur-3xl pointer-events-none" />
 
           <div className="relative grid grid-cols-1 md:grid-cols-2 gap-3">
-            <WebhookCard type="courier" value={webhookUrl} onChange={setWebhookUrl} onTest={() => handleTest('courier')} testing={loading === 'courier'} />
-            <WebhookCard type="sea_air" value={seaAirWebhookUrl} onChange={setSeaAirWebhookUrl} onTest={() => handleTest('sea_air')} testing={loading === 'sea_air'} />
-            <WebhookCard type="far_overseas_air" value={farOverseasAirWebhookUrl} onChange={setFarOverseasAirWebhookUrl} onTest={() => handleTest('far_overseas_air')} testing={loading === 'far_overseas_air'} />
-            <WebhookCard type="bunker" value={bunkerWebhookUrl} onChange={setBunkerWebhookUrl} onTest={() => handleTest('bunker')} testing={loading === 'bunker'} />
+            {WEBHOOK_TYPES.map(t => (
+              <React.Fragment key={t}>
+                <WebhookCard type={t} value={urls[t]} onChange={v => setUrls(prev => ({ ...prev, [t]: v }))} onTest={() => handleTest(t)} testing={loading === t} />
+              </React.Fragment>
+            ))}
           </div>
 
           {testResult && (

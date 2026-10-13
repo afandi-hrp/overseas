@@ -16,7 +16,7 @@ export type PageEntry = {
   path?: string;
   // Grup = MENU SIDEBAR tempat halaman ini berada (2026-10-06, permintaan user: matrix Manage Roles &
   // Access dikelompokkan SAMA dgn sidebar). Dipakai HANYA oleh RoleManagementPage.
-  group: 'Courier' | 'Sea & Air' | 'FAR Overseas' | 'Finance Handover' | 'Reporting' | 'Compare Doc' | 'SPB' | 'Audit Trail' | 'Settings';
+  group: 'Courier' | 'Sea & Air' | 'FAR Overseas' | 'Finance Handover' | 'Reporting' | 'Compare Doc' | 'SPB' | 'Cost Agent' | 'Audit Trail' | 'Settings';
   // Nama seperti di submenu sidebar (mis. "Invoice Recap") -- HANYA utk tampilan matrix role;
   // `label` tetap dipakai pesan "tidak punya akses" dll.
   menuLabel?: string;
@@ -127,10 +127,19 @@ export const PAGE_REGISTRY: PageEntry[] = [
   // lihat sql/003_reporting_master_vessel.sql). Didaftarkan di sini murni utk tampil konsisten
   // di matrix Kelola Role & Akses (dokumentasi), bukan sumber gating akses sebenarnya.
   { key: 'settings_master_vessel', label: 'Master Vessel', path: '/settings/master-vessel', group: 'Settings' },
+
+  // Cost Agent / Biaya Keagenan (2026-10-13, fondasi Prompt 1) -- SENGAJA di AKHIR registry supaya halaman awal
+  // login (getDefaultLandingPath) user lama tidak berubah. Skema sql/054 (RLS has_page_access/has_edit_access per
+  // page_key di bawah). Detail: docs/claude/cost-agent.md.
+  { key: 'cost_agent_voyage', label: 'Voyages (Cost Agent)', menuLabel: 'Voyages', path: '/cost-agent/voyage', group: 'Cost Agent' },
+  { key: 'cost_agent_invoice', label: 'Agency Invoices (Cost Agent)', menuLabel: 'Agency Invoices', path: '/cost-agent/invoice', group: 'Cost Agent' },
+  // Fitur di dalam Agency Invoices (AP Note / PV + Mark paid) -- bukan route sendiri.
+  { key: 'cost_agent_payment', label: 'Payment / AP-PV (Cost Agent)', menuLabel: 'Payment / AP-PV', parent: 'Agency Invoices', group: 'Cost Agent' },
+  { key: 'cost_agent_approval_matrix', label: 'Approval Matrix (Cost Agent)', menuLabel: 'Approval Matrix', path: '/cost-agent/approval-matrix', group: 'Cost Agent' },
 ];
 
 // Urutan grup = urutan menu sidebar (MainLayout MAIN_TABS) + Settings di bawah.
-export const PAGE_GROUPS: PageEntry['group'][] = ['Courier', 'Sea & Air', 'FAR Overseas', 'Finance Handover', 'Reporting', 'Compare Doc', 'SPB', 'Audit Trail', 'Settings'];
+export const PAGE_GROUPS: PageEntry['group'][] = ['Courier', 'Sea & Air', 'FAR Overseas', 'Finance Handover', 'Reporting', 'Compare Doc', 'SPB', 'Cost Agent', 'Audit Trail', 'Settings'];
 
 // Urutan baris di matrix role = urutan submenu sidebar (BUKAN urutan PAGE_REGISTRY -- urutan registry
 // menentukan halaman awal setelah login di getDefaultLandingPath, jadi sengaja tidak diubah). Fitur
@@ -143,6 +152,7 @@ export const ACCESS_MATRIX_ORDER: string[] = [
   'reporting_dashboard', 'reporting_cost_per_vessel', 'reporting_cost_by_courier',
   'bunker', 'audit_po', 'audit_po_overseas', 'accounting_rekap', 'pi_local', 'verification_qfp', 'lsa',
   'requisition_rh', 'oil_request', 'auto_rename',
+  'cost_agent_voyage', 'cost_agent_invoice', 'cost_agent_payment', 'cost_agent_approval_matrix',
   'audit_trail',
 ];
 

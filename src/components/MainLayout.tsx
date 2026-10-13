@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plane, Ship, ScrollText, Settings, ChevronUp, ChevronDown, LogOut, UserCircle, FileCheck2, GitCompare, BarChart3, Menu, X, Wallet, ClipboardList } from 'lucide-react';
+import { Plane, Ship, ScrollText, Settings, ChevronUp, ChevronDown, LogOut, UserCircle, FileCheck2, GitCompare, BarChart3, Menu, X, Wallet, ClipboardList, Anchor } from 'lucide-react';
 import shipmentIcon from '../assets/beehive-icon.png';
 import { useAuth } from '../lib/AuthContext';
 import { usePresenceHeartbeat } from '../lib/usePresenceHeartbeat';
@@ -11,6 +11,7 @@ import { SEA_AIR_RECAP_CHANGED_EVENT, fetchRecapNeedsAttentionCount } from '../u
 import { COURIER_AUDIT_CHANGED_EVENT, fetchCourierDraftCount } from '../utils/CourierAuditHelpers';
 import { COURIER_RECAP_CHANGED_EVENT, fetchCourierRecapNeedsAttentionCount } from '../utils/CourierRecapHelpers';
 import type { ValidationTabKey } from './CourierValidationWindow';
+import { COST_AGENT_APPROVALS_CHANGED_EVENT, fetchMyApprovalInvoiceIds } from '../utils/CostAgentHelpers';
 
 // Tipe eksplisit (2026-09, ditambahkan saat "Cost by Vessel" butuh `pageKeys` array di beberapa
 // entry) -- tanpa ini TS infer union literal per-anggota array yg TIDAK saling exchangeable
@@ -121,6 +122,19 @@ const MAIN_TABS: MainTab[] = [
       { id: 'requisition_rh', label: 'Requisition RH', path: '/spb/requisition-rh', pageKey: 'requisition_rh' },
       { id: 'oil_request', label: 'Oil Request', path: '/spb/oil-request', pageKey: 'oil_request' },
       { id: 'auto_rename', label: 'Auto Rename', path: '/spb/auto-rename', pageKey: 'auto_rename' },
+    ],
+  },
+  {
+    // Cost Agent / Biaya Keagenan (2026-10-13) -- lihat docs/claude/cost-agent.md.
+    id: 'cost_agent',
+    label: 'Cost Agent',
+    icon: Anchor,
+    path: '/cost-agent/voyage',
+    basePath: '/cost-agent',
+    subTabs: [
+      { id: 'cost_agent_voyage', label: 'Voyages', path: '/cost-agent/voyage', pageKey: 'cost_agent_voyage' },
+      { id: 'cost_agent_invoice', label: 'Agency Invoices', path: '/cost-agent/invoice', pageKey: 'cost_agent_invoice' },
+      { id: 'cost_agent_approval_matrix', label: 'Approval Matrix', path: '/cost-agent/approval-matrix', pageKey: 'cost_agent_approval_matrix' },
     ],
   },
   {
@@ -276,7 +290,32 @@ export default function MainLayout() {
     window.addEventListener(COURIER_AUDIT_CHANGED_EVENT, load);
     return () => { cancelled = true; window.removeEventListener(COURIER_RECAP_CHANGED_EVENT, load); window.removeEventListener(COURIER_AUDIT_CHANGED_EVENT, load); };
   }, [canSeeCourierRecap, courierTabsKey, inCourier]);
-  const subTabBadge = (subId: string) => (subId === 'courier_rekapan' && courierAttentionCount ? (
+  // Badge "My Approvals" Cost Agent (2026-10-13, Prompt 4): invoice waiting_approval yg step aktifnya memuat email user.
+  // Dihitung saat mount, masuk /cost-agent/*, & event COST_AGENT_APPROVALS_CHANGED_EVENT (submit / keputusan approval).
+  const canSeeCostAgentInvoice = isAdmin || allowedPageKeys.has('cost_agent_invoice');
+  const inCostAgent = location.pathname.startsWith('/cost-agent');
+  const myEmail = user?.email ?? null;
+  const [costAgentApprovalCount, setCostAgentApprovalCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!canSeeCostAgentInvoice || !myEmail) { setCostAgentApprovalCount(null); return; }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const ids = await fetchMyApprovalInvoiceIds(myEmail);
+        if (!cancelled) setCostAgentApprovalCount(ids.length);
+      } catch {
+        if (!cancelled) setCostAgentApprovalCount(null); // tabel belum ada / RLS -> tanpa badge
+      }
+    };
+    load();
+    window.addEventListener(COST_AGENT_APPROVALS_CHANGED_EVENT, load);
+    return () => { cancelled = true; window.removeEventListener(COST_AGENT_APPROVALS_CHANGED_EVENT, load); };
+  }, [canSeeCostAgentInvoice, myEmail, inCostAgent]);
+  const subTabBadge = (subId: string) => (subId === 'cost_agent_invoice' && costAgentApprovalCount ? (
+    <span title="Invoices waiting for your approval" className="ml-auto min-w-[20px] h-[18px] px-1.5 rounded-full bg-[#5B2E8C] text-white text-[10.5px] font-bold flex items-center justify-center">
+      {costAgentApprovalCount > 99 ? '99+' : costAgentApprovalCount}
+    </span>
+  ) : subId === 'courier_rekapan' && courierAttentionCount ? (
     <span title="AWB needing attention (validation not 100%)" className="ml-auto min-w-[20px] h-[18px] px-1.5 rounded-full bg-[#C8402F] text-white text-[10.5px] font-bold flex items-center justify-center">
       {courierAttentionCount > 99 ? '99+' : courierAttentionCount}
     </span>
@@ -564,8 +603,9 @@ export default function MainLayout() {
       <AnimatePresence mode="wait">
         <motion.div
           // Deep link memo FAR (/direct-loading/:id) = halaman yang SAMA -> key tidak berubah, supaya buka/tutup
-          // modal Memo tidak me-mount ulang halaman (daftar ter-refresh) -- laporan user 2026-10-05.
-          key={location.pathname.startsWith('/direct-loading/') ? '/direct-loading' : location.pathname}
+          // modal Memo tidak me-mount ulang halaman (daftar ter-refresh) -- laporan user 2026-10-05. Pola SAMA utk
+          // invoice Cost Agent (/cost-agent/invoice/:id).
+          key={location.pathname.startsWith('/direct-loading/') ? '/direct-loading' : location.pathname.startsWith('/cost-agent/invoice/') ? '/cost-agent/invoice' : location.pathname}
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -15 }}
