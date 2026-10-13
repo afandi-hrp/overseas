@@ -531,15 +531,14 @@ sekarang RIWAYAT utk jendela Open; mode List/jendela Legacy tidak berubah). Styl
 - **Kartu** (`CourierAuditCardList.tsx`): kiri = badge jalur + tgl PPJK, **No. PIB hanya jalur PIB** (CN: baris kosong, teks
   "No SPPBMCP no." dihapus), chip **PT** (`impor_an`; menggantikan chip OWN FEDEX/OWN DHL = `via`, dihapus) + delivery term + AWB;
   tengah = vendor (+ chip Accepted/NAS submitted bila ada; **No. PO dihapus dari kartu** tapi tetap bisa dicari lewat Search —
-  kolom `po_ori` masih di `searchColsPib/Cn`); kanan = **Total Expenses** (= `total_inv_freight` + `total_inv_duty` − Credit Note),
+  kolom `po_ori` masih di `searchColsPib/Cn`); kanan = **Total Expenses** (= `total_inv_freight` + `total_inv_duty`),
   **Total Duty Tax** (= BM + PPN + PPh + SPTNP/sanksi adm; `courierTotalDutyTax`), **Final Check**; paling kanan = pill status +
   tombol **Open** saja (titik-titik validasi dihapus; chip "↻ Changed in Invoice Recap" tetap). Seluruh kartu bisa diklik.
   Tata letak pakai container query (`@container`/`@4xl`): kartu lebar 1 baris, kartu sempit (daftar menyempit) ditumpuk.
-- **Sumber 2 angka baru** (`fetchCourierCardExtras`, `CourierAuditHelpers.ts`; 2 query berkelompok per 50 baris, TANPA SQL baru):
-  **Credit Note** = `tabel_cost_validasi` baris terbaru per `pib_id`/`cn_id`: `|cv_cn_freight_total| + |cv_cn_duty_total|`;
-  **Final Check Date** = `tabel_checklist_validasi.tanggal_cek` ("Check date" Doc Validation). Kartu menampilkan "…" sampai terbaca;
-  Final Check disembunyikan ("—") bila role tak boleh lihat Doc Validation. **Asumsi — konfirmasi ke user bila salah sumber.**
-  SPTNP utk jalur PIB = `sptnp_total` (BUKAN bagian `total_pib_cn` lama; `total_pib_cn` tidak diubah).
+- **Sumber angka kartu (keputusan user 2026-10-13, TANPA query tambahan & TANPA SQL)**: **Total Expenses** = kolom Total Inv Freight +
+  Total Inv Duty LANGSUNG (kedua kolom sudah dikurangi credit note masing2 -> TIDAK ada pengurangan Credit Note lagi; butuh kedua
+  kolom boleh dilihat role, `courierTotalExpenses`); **Final Check** = kolom **NAS Submit Date** (`tgl_submit_nas`, tab Draft/PIB/CN
+  versi List). SPTNP utk Total Duty Tax: PIB = `sptnp_total`, CN = `sanksi_adm`; `total_pib_cn` (kolom lama) TIDAK diubah.
 - **Panel preview** (`CourierAuditPreview.tsx`, state `courierOpen` di SharedDataTable): Open/klik kartu → daftar kiri (35%, min
   380 / maks 720px, pola Invoice Recap), panel kanan; klik kartu lain = ganti isi (key `courier-open-${jenis}-${id}`); tutup
   ✕ / Esc (Esc tidak menutup panel saat form Edit/Delete terbuka — `escDisabled`; saat popup terbuka Esc menutup popup).
@@ -550,14 +549,14 @@ sekarang RIWAYAT utk jendela Open; mode List/jendela Legacy tidak berubah). Styl
   Item Price = `item_price + other_cost`, Rp = `item_price_idr`; toggle As recorded/Split evenly tetap ada bila >1 PO tanpa
   rincian) ② Shipment (A/N, Via, Delivery Term, No. PIB/SPPBMCP, PPJK Date, No. SPTNP, SPTNP Date, HS Code) ③ Customs Value &
   Duties (Invoice PPJK: Total Inv Freight/Duty; Customs Value: Valas DPP, Kurs NDPBM, Total Customs Value — baris "T. N.Pabean +
-  BM" dihapus; Duties & Taxes: BM/PPN/PPh dengan %, Admin penalty / SPTNP Total, Total PIB/CN = rumus Total Duty Tax kartu; tanpa
+  BM" dihapus; Duties & Taxes: BM/PPN/PPh dengan %, Admin penalty / SPTNP Total, Total PIB/CN = kolom `total_pib_cn` APA ADANYA (sama kolom "Total PIB/CN (Rp)" versi List, TIDAK memuat SPTNP utk PIB; rumus BM+PPN+PPh+SPTNP hanya utk angka Total Duty Tax di KARTU, keputusan user 2026-10-13); tanpa
   rumus & kolom status) ④ Completeness & Validation (Checklist % + "Missing: …" dari `dokumen_kurang`, Cost Validation %, Doc
   Validation %, Check difference = `cek_selisih`, merah bila ≠ 0 setelah dibulatkan; info saja, tidak bisa diklik).
 - **Popup** (Section 4, tutup ✕ / Esc / klik luar kembali ke preview): Checklist → `ChecklistModal embedded` (isi SAMA: Upload
   additional doc, Checklist Note, Required/Optional, Accept with note); Doc Validation → `ValidasiModal embedded reviewUi`; Cost
   Validation → `CostValidationModal embedded`. Dipasang HANYA selama popup terbuka (tidak ada lagi "selalu terpasang") ->
   perubahan belum disimpan = konfirmasi saat tutup. Persen Section 4 live dari `onPctChange`; saat popup ditutup baris dibaca ulang
-  senyap (`patchCourierRowSilently`, juga memperbarui `courierOpen.rec` & `courierExtrasNonce` utk kartu).
+  senyap (`patchCourierRowSilently`, juga memperbarui `courierOpen.rec`).
 - **Popup Doc Validation (`ValidasiModal` prop `reviewUi`, hanya Audit Courier; Invoice Recap/jendela lama TIDAK berubah)**:
   chip Match/Mismatch = SATU tombol toggle (ikon ⇄; klik = `applyManualStatus` match ↔ mismatch; hanya baris Match/Mismatch &
   user ber-hak edit; Incomplete/Not checked = chip biasa); tombol "Correct" per baris DIHAPUS → 1 tombol **Edit** di kiri atas

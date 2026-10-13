@@ -4684,9 +4684,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   const [courierSummaryNonce, setCourierSummaryNonce] = useState(0)
   const [courierValidationIncomplete, setCourierValidationIncomplete] = useState<number | null>(null)
   const [courierCompanyNames, setCourierCompanyNames] = useState<Record<string, string>>({})
-  // Panel preview kanan mode Card (2026-10-13): baris yang sedang dibuka. `extrasNonce` naik = kartu membaca ulang Credit Note & Final Check.
+  // Panel preview kanan mode Card (2026-10-13): baris yang sedang dibuka.
   const [courierOpen, setCourierOpen] = useState<{ rec: any; tab: 'overview' } | null>(null)
-  const [courierExtrasNonce, setCourierExtrasNonce] = useState(0)
   const [courierEditState, setCourierEditState] = useState<{ record: any | null; docType: CourierDocType } | null>(null)
   const [courierBusy, setCourierBusy] = useState(false)
   const courierColOk = makeColOk(isCourierAuditView ? getAllowedColumns('courier_audit') : null)
@@ -4783,7 +4782,6 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     setRecords(prev => prev.map(r => (same(r) ? { ...r, ...fresh } : r)));
     // Panel preview yang masih menampilkan baris ini ikut mendapat data terbaru (Missing docs, persen, dst).
     setCourierOpen(prev => (prev && same(prev.rec) ? { ...prev, rec: { ...prev.rec, ...fresh } } : prev));
-    setCourierExtrasNonce(n => n + 1);
     const keys = ['pct_kelengkapan', 'doc_validation_pct', 'cost_validation_pct', 'status_kelengkapan'];
     if (!before || keys.some(k => String(before[k] ?? '') !== String(fresh[k] ?? ''))) {
       setCourierSummaryNonce(n => n + 1);
@@ -7266,10 +7264,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                       docTypeOf={courierDocTypeOf}
                       companyNames={courierCompanyNames}
                       colOk={courierColOk}
-                      validationTabs={courierValidationTabs}
                       selectedKey={courierOpen ? `${courierDocTypeOf(courierOpen.rec)}-${courierOpen.rec.id}` : null}
                       onOpen={rec => setCourierOpen({ rec, tab: 'overview' })}
-                      extrasNonce={courierExtrasNonce}
                       wrapCard={reorderMode ? (rec, index, card) => (
                         <SortableCardShell id={rec.id} index={startIndex + index} totalRows={totalRecords} onMoveTo={pos => handleMoveRowTo(rec, pos)}>{card}</SortableCardShell>
                       ) : undefined}

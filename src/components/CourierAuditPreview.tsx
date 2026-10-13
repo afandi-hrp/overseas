@@ -13,7 +13,7 @@ import { X, Printer, ChevronRight } from 'lucide-react'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_GREEN, Chip } from './SeaAirAuditUi'
 import { fmtRp, fmtValas, fmtDateShort, fmtPctShort, buildGoodsLines, parseLooseNumber, splitMoneyEvenly, companyFullName } from '../utils/SeaAirAuditHelpers'
 import {
-  computeCourierBuildUp, computeCourierDutyRows, courierAdmOrSptnp, courierDocNo, courierTotalDutyTax, type CourierDocType,
+  computeCourierBuildUp, computeCourierDutyRows, courierAdmOrSptnp, courierDocNo, type CourierDocType,
 } from '../utils/CourierAuditHelpers'
 import { VALIDATION_TAB_LABEL, rowValidationPct, validationDotClass, type ValidationTabKey } from './CourierValidationWindow'
 import ValidasiModal from './ValidasiModal'
@@ -384,7 +384,7 @@ export default function CourierAuditPreview({
                     {colOk('ppn_nilai') && <LRow label={<>PPN <small className="text-[10.5px] text-[#8A7A8B] ml-1">{rate('ppn')}</small></>}>{fmtRp(rec.ppn_nilai)}</LRow>}
                     {colOk('pph_nilai') && <LRow label={<>PPh <small className="text-[10.5px] text-[#8A7A8B] ml-1">{rate('pph')}</small></>}>{fmtRp(rec.pph_nilai)}</LRow>}
                     {colOk(docType === 'CN' ? 'sanksi_adm' : 'sptnp_total') && <LRow label="Admin penalty / SPTNP Total">{fmtRp(courierAdmOrSptnp(rec, docType))}</LRow>}
-                    {colOk('total_pib_cn') && <LRow label={`Total ${docType}`} tone="total">{fmtRp(courierTotalDutyTax(rec, docType))}</LRow>}
+                    {colOk('total_pib_cn') && <LRow label={`Total ${docType}`} tone="total">{fmtRp(rec.total_pib_cn)}</LRow>}
                   </>
                 )}
               </PreviewSection>

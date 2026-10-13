@@ -2,14 +2,13 @@
 // Murni tampilan: baris = `records` SharedDataTable (query lama, sudah ter-enrich auto-calc,
 // kelengkapan & persen validasi), ringkasan = fetchCourierAuditSummary. Kolom yang tidak diizinkan
 // role (getAllowedColumns 'courier_audit') TIDAK ditampilkan (`colOk`). Tabel lama tetap di mode List.
-import React, { useEffect, useMemo, useState } from 'react'
+import React from 'react'
 import { SA_CARD, SA_LABEL, Chip, Pill, PtBadge } from './SeaAirAuditUi'
 import { fmtRp, fmtRpShort, fmtDateShort, companyFullName } from '../utils/SeaAirAuditHelpers'
 import {
-  courierDocNo, courierRowKey, courierTotalDutyTax, courierTotalExpenses, fetchCourierCardExtras, isCourierDraft,
-  type CourierAuditSummary, type CourierCardExtra, type CourierDocType,
+  courierDocNo, courierRowKey, courierTotalDutyTax, courierTotalExpenses, isCourierDraft,
+  type CourierAuditSummary, type CourierDocType,
 } from '../utils/CourierAuditHelpers'
-import type { ValidationTabKey } from './CourierValidationWindow'
 
 const hasVal = (v: any) => v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim() !== '-'
 
@@ -64,21 +63,20 @@ const CourierAuditRowCard: React.FC<{
   docType: CourierDocType
   companyNames: Record<string, string>
   colOk: (key: string) => boolean
-  validationTabs: ValidationTabKey[]
-  extra?: CourierCardExtra
   selected: boolean
   onOpen?: (rec: any) => void
-}> = ({ rec, docType, companyNames, colOk, validationTabs, extra, selected, onOpen }) => {
+}> = ({ rec, docType, companyNames, colOk, selected, onOpen }) => {
   const draft = isCourierDraft(rec)
   const nasDone = colOk('tgl_submit_nas') && hasVal(rec.tgl_submit_nas)
   const borderColor = draft ? 'border-l-[#E0A526]' : nasDone ? 'border-l-[#17663D]' : 'border-l-[#6B3470]'
   const term = colOk('delivery_term') ? String(rec.delivery_term || '').trim() : ''
   // No. PIB hanya utk jalur PIB; jalur CN barisnya DIKOSONGKAN (tanpa teks "No SPPBMCP no.").
   const pibNo = docType === 'PIB' && colOk('no_pib') ? courierDocNo(rec, 'PIB') : ''
-  const showExpenses = colOk('total_inv_freight') || colOk('total_inv_duty')
+  // Total Expenses butuh KEDUA kolom (menjumlah kolom yang disembunyikan = membocorkan nilainya).
+  const showExpenses = colOk('total_inv_freight') && colOk('total_inv_duty')
   const showDutyTax = colOk('total_pib_cn')
-  const showFinalCheck = validationTabs.includes('doc')
-  const loadingExtra = extra === undefined // belum selesai dibaca -> "…" (bukan angka tanpa Credit Note)
+  // Final Check = NAS Submit Date (tgl_submit_nas, kolom tab Draft/PIB/CN versi List; revisi user 2026-10-13).
+  const showFinalCheck = colOk('tgl_submit_nas')
 
   return (
     <div
@@ -119,13 +117,13 @@ const CourierAuditRowCard: React.FC<{
         {/* 3. Total Expenses · Total Duty Tax · Final Check */}
         <div className="flex flex-wrap @4xl:flex-nowrap gap-x-[18px] gap-y-1.5 @4xl:text-right min-w-0">
           <KpiBlock label="Total Expenses">
-            {showExpenses ? (loadingExtra ? '…' : fmtRp(courierTotalExpenses(rec, extra))) : <Hidden />}
+            {showExpenses ? fmtRp(courierTotalExpenses(rec)) : <Hidden />}
           </KpiBlock>
           <KpiBlock label="Total Duty Tax">
             {showDutyTax ? fmtRp(courierTotalDutyTax(rec, docType)) : <Hidden />}
           </KpiBlock>
           <KpiBlock label="Final Check" small>
-            {showFinalCheck ? (loadingExtra ? '…' : extra?.finalCheckDate ? fmtDateShort(extra.finalCheckDate) : '—') : <Hidden />}
+            {showFinalCheck ? (hasVal(rec.tgl_submit_nas) ? fmtDateShort(rec.tgl_submit_nas) : '—') : <Hidden />}
           </KpiBlock>
         </div>
 
@@ -153,38 +151,21 @@ export const CourierAuditCardList: React.FC<{
   docTypeOf: (rec: any) => CourierDocType
   companyNames: Record<string, string>
   colOk: (key: string) => boolean
-  validationTabs: ValidationTabKey[]
   // Kartu yang sedang tampil di panel preview (kunci `${jenis}-${id}`) & klik kartu / tombol Open.
   selectedKey?: string | null
   onOpen: (rec: any) => void
-  // Naik = baca ulang Credit Note & Final Check (mis. setelah popup validasi ditutup).
-  extrasNonce?: number
   // Reorder Mode mode Card (2026-10-02): bungkus tiap kartu (grip drag + nomor posisi). Tanpa prop = tampilan biasa.
   // Saat Reorder Mode, kartu TIDAK bisa dibuka (tanpa tombol Open) -- hanya diseret.
   wrapCard?: (rec: any, index: number, card: React.ReactNode) => React.ReactNode
-}> = ({ rows, docTypeOf, companyNames, colOk, validationTabs, selectedKey = null, onOpen, extrasNonce = 0, wrapCard }) => {
-  // Credit Note & Final Check Date dibaca berkelompok utk baris yang tampil (2 query per 50 baris); kunci string supaya
-  // render ulang induk (identitas `rows` baru) TIDAK memicu baca ulang.
-  const rowsKey = useMemo(() => rows.map(r => courierRowKey(r, docTypeOf(r))).join(','), [rows, docTypeOf])
-  const [extras, setExtras] = useState<Record<string, CourierCardExtra>>({})
-  useEffect(() => {
-    let cancelled = false
-    fetchCourierCardExtras(rows, docTypeOf)
-      .then(m => { if (!cancelled) setExtras(m) })
-      .catch(e => console.error('[CourierAudit] angka kartu gagal', e))
-    return () => { cancelled = true }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowsKey, extrasNonce])
-
+}> = ({ rows, docTypeOf, companyNames, colOk, selectedKey = null, onOpen, wrapCard }) => {
   return (
     <div className="flex flex-col gap-2.5">
       {rows.map((rec, index) => {
         const t = docTypeOf(rec)
         const key = courierRowKey(rec, t)
-        const extra = extras[key] // undefined = belum dibaca (…)
         const card = (
-          <CourierAuditRowCard rec={rec} docType={t} companyNames={companyNames} colOk={colOk} validationTabs={validationTabs}
-            extra={extra} selected={selectedKey === key} onOpen={wrapCard ? undefined : onOpen} />
+          <CourierAuditRowCard rec={rec} docType={t} companyNames={companyNames} colOk={colOk}
+            selected={selectedKey === key} onOpen={wrapCard ? undefined : onOpen} />
         )
         return <React.Fragment key={key}>{wrapCard ? wrapCard(rec, index, card) : card}</React.Fragment>
       })}
