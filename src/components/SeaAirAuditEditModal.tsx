@@ -7,6 +7,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Plus } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { syncRemarksToChecklistNote } from '../utils/SeaAirRemarksSync'
 import { SA_INPUT, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_GREEN, SA_CARD } from './SeaAirAuditUi'
 import {
   fmtRp, fmtValas, fmtPctShort, parseLooseNumber, buildGoodsLines, goodsLinesToFields, computeSeaAirBalanceAsuransi,
@@ -229,6 +230,10 @@ export default function SeaAirAuditEditModal({
       } else {
         const { error } = await supabase.rpc('update_seaair_row', { p_id: record.id, p_updates: payload })
         if (error) throw error
+        // Remarks berubah -> Checklist Note (tab Checklist Invoice Recap) ikut; gagal sinkron tidak menggagalkan simpan.
+        if ('remarks' in payload && String(record.remarks ?? '').trim() !== String(payload.remarks ?? '').trim()) {
+          await syncRemarksToChecklistNote(record.id, payload.remarks ?? null)
+        }
         onSaved(record.id)
       }
     } catch (e: any) {

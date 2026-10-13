@@ -825,6 +825,11 @@ pola SECTIONS/row-col-lookup lain — cek dulu sebelum translate/ubah row/col la
   `fn_seaair_recap_issue_count` yang menghitung section cost belum dikonfirmasi; 053 melewatinya kalau % Cost >= 90 (rumus % = `computeSeaAirCostGlobalStats`,
   pre-check md5 badan fungsi live = sql/031 -- kalau beda STOP). % Doc >= 90 tidak dihitung di server (mismatch dokumen memang tidak pernah dihitung server). (Sebelum 053
   dijalankan tombol bisa aktif tapi DB menolak -- kini sudah dijalankan.) Diuji PGlite 10 cek.
+- **DIKEMBALIKAN 2026-10-13 (permintaan user)**: kartu "Duties & taxes" (BM/PPN/PPh, Expected vs Actual, = tab Documents › Duty Invoice Recap) di
+  jendela Open Audit PIB (`SeaAirAuditDetailModal.tsx`) dipasang lagi persis versi sebelum 2026-10-12 (revert hunk commit beed30f);
+  `SeaAirDutyCompareTable.tsx` dipulihkan dari git (`ffe490d^`) krn sempat dihapus. Kartu "Duty & tax (PIB)" di tab Costs Invoice Recap
+  TETAP dihapus. **Kolom "Expected (calculation)" di kartu ini DIHAPUS (permintaan user, 2026-10-13)**: tinggal Item · Actual (PIB) ·
+  Status (status Match/Mismatch tetap dihitung dari Expected di `compareSeaAirDuty`, hanya angkanya tidak ditampilkan). Bullet di bawah = riwayat.
 - **Audit Sea & Air (jendela Open Audit PIB)**: kartu "Duties & taxes" DIHAPUS (`SeaAirAuditDetailModal.tsx`; kartu Customs value (CIF) & "Checks" tetap).
   Perbandingan duty tetap ada di Invoice Recap › Documents › Duty. (Kartu "Duty & tax (PIB)" di tab Costs juga DIHAPUS 2026-10-12 -- lihat bawah.)
 
@@ -866,3 +871,80 @@ Kartu "Duty & tax (PIB)" (Import value, tabel BM/PPN/PPh/Total duty Actual vs Ex
 (tab Documents › Duty: NDPBM, item pabean, Actual vs Expected, toleransi Rp 3.000). Ikut dibersihkan: state/fetch `dutyMatrix`, `compareSeaAirDuty` dkk di tab ini, dan file
 `SeaAirDutyCompareTable.tsx` (tidak ada pemakai lagi). Helper `compareSeaAirDuty`/`fetchSeaAirDutyMatrix` di `SeaAirAuditHelpers.ts` dibiarkan (tak terpakai). Baris
 "SPTNP: nomor · tanggal · total" (atau "None") DIPERTAHANKAN sbg satu baris kecil di tab Costs (permintaan user 2026-10-12; tidak tampil di mode Finance).
+
+## Sea & Air — Invoice Recap: persen skor menempel di tab jendela Open (2026-10-13, permintaan user)
+
+3 pil terpisah di kanan tab bar (`SeaAirRecapDetailModal.tsx`: "Doc match", "Cost accuracy", "Doc complete") DIHAPUS; persennya kini chip di tab masing2:
+**Costs** = persen Cost accuracy (`cost_validation_pct`), **Documents** = "Match NN%" (Doc Validation, `doc_validation_pct`) + "Complete NN%"
+(Checklist, `checklist_pct`); "—" abu bila datanya belum ada. Warna sama `scoreTone` (hijau 100, amber >=60, merah <60). Badge jumlah temuan
+(kuning) tetap. Sumber angka & rumus TIDAK berubah. Berlaku utk mode jendela & panel samping (satu komponen).
+
+**Kartu Invoice Recap (mode lebar, `SeaAirRecapCardList.tsx`, 2026-10-13, permintaan user)**: chip ATD/ATA kini tepat di SEBELAH chip origin → destination
+(satu baris, `flex-wrap`; layar sempit turun ke baris berikut tapi tetap 1 grup dgn rute) -- sebelumnya di bawah chip rute (2026-10-12). Kartu RINGKAS (panel
+samping terbuka) & header jendela Open TIDAK berubah (ATD/ATA tetap di bawah rute).
+**3 titik skor (Doc match · Cost · Doc complete) SATU baris** di kartu lebar (2026-10-13, permintaan user): kolom status dilebarkan
+`@5xl` 200→300px, `@7xl` 250→310px, `flex-nowrap` mulai `@5xl` (di bawahnya masih boleh wrap krn kolom setengah lebar). Kartu ringkas tidak punya titik skor.
+
+**Seluruh kartu Invoice Recap bisa diklik** (`SeaAirRecapCardList.tsx`, 2026-10-13, permintaan user): klik di mana saja pada kartu = buka detail (panel kiri-kanan,
+sama tombol Validation); kartu lebar & ringkas. Klik pada tombol/tautan di dalam kartu (+N PO, Validation) tidak dobel; memilih teks (mis. menyalin AWB) tidak
+membuka kartu (`window.getSelection()`).
+
+**Strip "Shipment info" di tab Costs / Documents / Audit trail** (`SeaAirRecapDetailModal.tsx`, 2026-10-13, permintaan user; pola Invoice Recap Courier,
+`CourierRecapValidationPanel`): dibekukan di atas area scroll, latar ungu muda, TIDAK tampil di Overview (sudah ada panel Shipment). Isi = isi panel Shipment:
+Company, Supplier, Invoice no, Recap date, Delivery term, Weight / volume, ETD → ETA, ATD → ATA, Type (grid 2 / 3 / 5 kolom lewat container query, sel Type
+`col-span` mengisi sisa). Bisa dilipat ("Hide shipment info" / "Show all shipment info" -> 1 baris: Supplier · Invoice no · Type); pilihan disimpan di
+`localStorage` `beehive_seaair_recap_shipinfo_open`, default terbuka hanya bila tinggi layar >= 1000px. Berlaku utk mode jendela & panel samping.
+
+**Panel Shipment: "Containers" → "Type"** (`SeaAirRecapDetailModal.tsx`, 2026-10-13, permintaan user): FCL = `FCL • 1 × 20 GP` (shipment_type + container_count × container_type),
+LCL / AIR = `shipment_type` saja, kosong = "—". `containerLabel()` chip kartu (pemisah `·`) TIDAK diubah.
+**Bug fix (laporan user 2026-10-13)**: Card → List dengan panel detail terbuka memunculkan detail itu sbg MODAL di atas List (`recapAsPanel` jadi false krn
+view = list, sedangkan `recapDetailId` masih terisi). Kini tombol List menutup detail (`recapDetailId`/`snapshot` null; ada konfirmasi bila `recapPanelDirty`).
+Mode List tetap membuka detail sbg modal HANYA lewat klik baris/tombol di List.
+
+## Sea & Air — Audit PIB: detail Open = panel kiri-kanan seperti Invoice Recap (2026-10-13, permintaan user)
+
+Klik kartu / Open Audit PIB (mode Card) tidak lagi membuka modal: daftar kartu menyempit ke kiri (`lg:w-[35%]`, min 380 / maks 720px, pola Invoice Recap) & detail
+tampil di panel kanan (`SeaAirAuditDetailModal` prop `variant='panel'`, tanpa portal; grid 2 kolom isi pakai container query `@3xl`). Klik kartu lain = ganti isi;
+tutup ✕ / Esc. Tombol **Expand** (ikon di header) melebarkan ke jendela penuh (modal lama, `variant='modal'`), **Collapse** kembali ke panel — state
+`seaAirDetailPanel` di SharedDataTable. Pindah ke **List** menutup detail (`setSeaAirDetailRecord(null)`) supaya tidak muncul modal di atas List. Kartu (`SeaAirAuditCardList`):
+seluruh kartu bisa diklik (tombol/tautan di dalam & seleksi teks tidak dobel), kartu terpilih ber-ring ungu + tombol "Opened", 2 kolom mulai lebar kartu 448px (`@md`).
+Isi detail, aksi (Edit, Re-read, Mark as audited, Reopen, Delete, Open in Invoice Recap) & hak akses TIDAK berubah.
+**Tutup jendela penuh (Expand) = kembali ke panel kiri-kanan** (2026-10-13, permintaan user): di mode Card, ✕ / Esc pada jendela penuh memanggil
+`setSeaAirDetailPanel(true)` (record sama tetap terbuka), BUKAN menutup detail -- sama perilaku Invoice Recap. Menutup detail sepenuhnya = ✕ / Esc pada panel.
+**Urutan kolom kartu Audit PIB (2026-10-13, permintaan user)**: blok **Duty & tax** kini SEBELUM blok status validasi Invoice Recap ("Validated…" / "N PIB difference
+to review" + field beda): PIB | PT·supplier·PO | Duty & tax | Validasi | Status + Open (lebar kolom ikut tertukar: `@5xl` 165/185px, `@7xl` 200/230px).
+**Layar 24" (`@7xl`) kartu Audit PIB (2026-10-13, permintaan user)**: kolom PT·supplier·PO dibatasi maks 600px (`minmax(0,600px)`) & kolom terakhir (Status + Open, rata kanan)
+menyerap sisa lebar (`minmax(110px,1fr)`), sehingga Duty & tax + status validasi bergeser ke kiri (tidak ada lagi ruang kosong besar sebelum Duty & tax). Laptop 14" (`@5xl`) tidak berubah.
+Revisi (2026-10-13): di `@7xl` blok status validasi tetap DEKAT tombol Draft/Open -- kolom validasi = `minmax(230px,1fr)` dgn `justify-self-end` (rata ujung kanan kolom), kolom Status
+`110px` tetap; hanya Duty & tax yang bergeser ke kiri (kolom supplier maks 600px).
+
+## Sea & Air — Invoice Recap: tab Checklist terpisah dari Doc Validation (2026-10-13, permintaan user; pola Invoice Recap Courier)
+
+Tab jendela Open kini: **Overview | Costs | Checklist | Doc Validation | Audit trail** (dulu satu tab "Documents" memuat Checklist + Document validation berdampingan).
+- `SeaAirRecapDocumentsTab` dapat prop `part` (`'all'` default = layout lama berdampingan, dipakai Finance Handover; `'checklist'` = kartu Checklist + Form E note saja;
+  `'doc'` = Document validation + kalkulasi Duty saja). Jendela Open memasang 2 instance (`part="checklist"` & `part="doc"`; dipasang saat tab pertama dibuka & tetap
+  terpasang). Checklist baca saja (tanpa dirty); dirty/Save hanya di tab Doc Validation (key dirty tetap `documents`).
+- Persen skor menempel di tab masing2: **Checklist** = Doc complete (`checklist_pct`), **Doc Validation** = Doc match (`doc_validation_pct`), **Costs** = Cost accuracy.
+- Badge temuan dipisah: `kind 'docs'` (dokumen wajib belum ada, Form E) -> Checklist; `kind 'match'` (mismatch dokumen belum dikonfirmasi) -> Doc Validation; `cost` -> Costs.
+- Hak akses tetap SATU (`canSeeDocs` = dokumen validation ATAU checklist; `canEditDocs` = sea_air_dokumen_validation) -- kedua tab tampil/tersembunyi bersama.
+- Teks ikut disesuaikan: "Admin to confirm in Doc Validation", "fill in a note in Checklist" (Form E), "Invoice Recap › Doc Validation" (kartu Duties & taxes Audit PIB).
+**Urutan & nama tab (2026-10-13, permintaan user)**: Overview | Checklist | Doc Validation | **Cost Validation** | Audit trail (tab "Costs" diganti nama "Cost Validation" & dipindah ke
+setelah Doc Validation; key internal tetap `costs`/`checklist`/`documents`). Teks ikut: "Admin to confirm in Cost Validation", konfirmasi "unsaved changes in Doc Validation or Cost Validation".
+**Tab Checklist: kotak "Checklist Note" gaya Courier (2026-10-13, permintaan user)**: catatan Form E (`seaair_form_e_note`, sql/044) di `SeaAirRecapDocumentsTab` kini tampil sbg kartu kuning
+"Checklist Note" (judul + keterangan, kotak teks putih, baris keterangan biru) dan dipindah ke ATAS daftar dokumen (sebelumnya merah, di bawah daftar) -- SAMA tab Checklist Courier.
+Perilaku TIDAK berubah: hanya tampil utk asal China yang Form E-nya belum tercentang, WAJIB min. 5 karakter (Submit to Finance terkunci, `computeRecapIssues`), simpan/ubah/hapus
+lewat tabel yang sama. **Belum ada** "Checklist Note" umum Sea & Air yang sinkron dgn Remarks (kolom `catatan_checklist` hanya ada di `dokumen_checklist` Courier) -- butuh keputusan user + SQL baru.
+
+## Sea & Air — Checklist Note umum ↔ Remarks Audit PIB (2026-10-13, keputusan user: opsi a; TANPA SQL baru)
+
+Tab Checklist Invoice Recap: kotak "Checklist Note" kini SELALU tampil (bukan hanya China tanpa Form E) dan tersinkron dua arah dgn **`tabel_audit_seaair.remarks`** (kolom "Remarks" List Audit PIB).
+- **Penyimpanan**: tabel `seaair_form_e_note` (sql/044) dipakai ulang sbg satu-satunya Checklist Note per shipment (catatan >= 5 karakter, CHECK DB). Catatan Form E = catatan yang
+  sama: aturan Form E (`formEIssueApplies`/`computeRecapIssues`, gerbang Submit) TIDAK berubah -- catatan apa pun yang terisi memenuhi gerbang (sama kelonggaran Courier).
+  "Required" (merah) hanya ditampilkan utk asal China tanpa Form E.
+- **Sinkron** (`src/utils/SeaAirRemarksSync.ts`, meniru CourierRemarksSync): catatan -> Remarks saat Save / Delete di tab Checklist (RPC `update_seaair_row`, `remarks` ada di whitelist --
+  diverifikasi `pg_get_functiondef` user 2026-10-13; guard `has_edit_access('sea_air_audit')`); Remarks -> catatan saat Remarks diedit di form Edit Audit PIB
+  (`SeaAirAuditEditModal`), edit umum & edit inline/massal List (`SharedDataTable`). Hanya saat ADA yang mengedit; hanya selama PIB Draft (`status` ARCHIVED); Recap yang sudah
+  Submit ke Finance tidak diubah; Remarks < 5 karakter tidak disalin; Remarks dikosongkan -> catatan dihapus (dan Delete catatan -> Remarks dikosongkan, ada konfirmasi).
+  Gagal sinkron TIDAK menggagalkan simpan (console.warn). User yang boleh edit Recap tapi tidak `sea_air_audit` edit: catatan tersimpan, Remarks tidak ikut (RPC menolak).
+- **Isi awal**: catatan kosong & Remarks sudah berisi -> kotak diisi Remarks (BELUM tersimpan sampai klik Save note).
+- **Belum diverifikasi**: daftar trigger `tabel_audit_seaair` (apakah menulis `remarks` memicu efek samping) -- user belum mengirim hasilnya. "Accept with note" dokumen hilang (fase 2) DITUNDA.

@@ -81,6 +81,14 @@ const RecapRowCard: React.FC<{ rec: any; onOpen: (rec: any) => void; selected?: 
     const m = poManualFor(poManual, po)
     return m?.partial ? `◐ P${m.partial_no || ''}` : null
   }
+  // Seluruh kartu bisa diklik (2026-10-13, permintaan user) = sama tombol Validation. Klik di tombol/tautan di dalam kartu (+N PO, Validation)
+  // tidak ikut membuka; memilih/menyalin teks (mis. nomor AWB) juga tidak membuka kartu.
+  const openFromCard = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button, a, input, select, textarea')) return
+    const sel = typeof window !== 'undefined' ? window.getSelection?.()?.toString() : ''
+    if (sel) return
+    onOpen(rec)
+  }
   const lc = computeLandedCost(rec)
   const border = status.kind === 'submitted' ? 'border-l-[#17663D]' : status.kind === 'issues' ? 'border-l-[#E0A526]' : 'border-l-[#D9CFD6]'
   const has = rec.recap_has || {}
@@ -98,7 +106,7 @@ const RecapRowCard: React.FC<{ rec: any; onOpen: (rec: any) => void; selected?: 
     const ct = String(rec.container_type || '').trim()
     const contChip = type === 'FCL' && (cnt || ct) ? `${cnt || '?'} × ${ct || '—'}` : null
     return (
-      <div className={`@container ${SA_CARD} border-l-4 ${border} overflow-hidden ${selected ? 'ring-2 ring-[#6B3470]' : ''}`} data-recap-card={rec.id} data-compact aria-current={selected || undefined}>
+      <div className={`@container ${SA_CARD} border-l-4 ${border} overflow-hidden cursor-pointer ${selected ? 'ring-2 ring-[#6B3470]' : 'hover:border-[#D9C7DA]'}`} data-recap-card={rec.id} data-compact aria-current={selected || undefined} onClick={openFromCard}>
         <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-4 px-3.5 py-3">
           <div className="min-w-0 flex flex-col">
             <div className="flex flex-wrap items-center gap-1.5">
@@ -154,10 +162,10 @@ const RecapRowCard: React.FC<{ rec: any; onOpen: (rec: any) => void; selected?: 
   }
 
   return (
-    <div className={`@container ${SA_CARD} border-l-4 ${border} overflow-hidden ${selected ? 'ring-2 ring-[#6B3470]' : ''}`} data-recap-card={rec.id} aria-current={selected || undefined}>
+    <div className={`@container ${SA_CARD} border-l-4 ${border} overflow-hidden cursor-pointer ${selected ? 'ring-2 ring-[#6B3470]' : 'hover:border-[#D9C7DA]'}`} data-recap-card={rec.id} aria-current={selected || undefined} onClick={openFromCard}>
       {/* Susunan 2026-10-05 (gambar user): supplier = judul + chip rute; baris 2 = PO + tanggal.
           Lebar kolom ikut LEBAR KARTU (container query): @5xl = laptop 14" (ringkas), @7xl = monitor 24" (lega). */}
-      <div className="grid grid-cols-1 @2xl:grid-cols-2 @5xl:grid-cols-[180px_minmax(0,1fr)_200px_180px] @7xl:grid-cols-[220px_minmax(0,1fr)_250px_220px] gap-x-4 @7xl:gap-x-6 gap-y-3 px-4 py-3.5 items-center">
+      <div className="grid grid-cols-1 @2xl:grid-cols-2 @5xl:grid-cols-[180px_minmax(0,1fr)_300px_180px] @7xl:grid-cols-[220px_minmax(0,1fr)_310px_220px] gap-x-4 @7xl:gap-x-6 gap-y-3 px-4 py-3.5 items-center">
         {/* 1. Identitas */}
         <div className="min-w-0">
           <div className="text-[15px] font-bold text-[#3B1B3D] truncate" title={rec.awb || ''}>{rec.awb || '—'}</div>
@@ -171,11 +179,11 @@ const RecapRowCard: React.FC<{ rec: any; onOpen: (rec: any) => void; selected?: 
 
         {/* 2. Supplier + rute, lalu PO + tanggal */}
         <div className="min-w-0">
-          {/* Rute + ATD/ATA SATU kolom (2026-10-12, permintaan user): ATD & ATA SELALU tepat di bawah chip origin → destination,
-              baik chip berada di sebelah nama vendor (kartu lebar) maupun turun ke bawahnya (kartu sempit). */}
+          {/* Rute + ATD/ATA SATU baris (revisi 2026-10-13, permintaan user): ATD & ATA tepat di SEBELAH chip origin → destination
+              (sebelumnya di bawahnya, 2026-10-12). Kartu sempit: ATD/ATA turun ke baris berikut (flex-wrap), tetap 1 grup dgn rute. */}
           <div className="flex flex-wrap items-start gap-x-2.5 gap-y-1.5 min-w-0">
             <span className="text-[13px] font-bold text-[#3B1B3D] uppercase truncate max-w-full leading-[22px]" title={rec.vendor || ''}>{rec.vendor || '—'}</span>
-            <div className="flex flex-col items-start gap-1.5 min-w-0 max-w-full">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 min-w-0 max-w-full">
               <span className="inline-flex items-center px-2.5 py-[2px] rounded-full bg-[#EFE8EC] text-[#3B1B3D] text-[10.5px] font-semibold uppercase tracking-wide whitespace-nowrap max-w-full truncate"
                 title={`${rec.origin || '—'} → ${rec.destination || '—'}`}>
                 {rec.origin || '—'} <span className="mx-1 text-[#8A7A8B]">→</span> {rec.destination || '—'}
@@ -203,7 +211,8 @@ const RecapRowCard: React.FC<{ rec: any; onOpen: (rec: any) => void; selected?: 
         {/* 3. Status */}
         <div className="min-w-0 flex flex-col gap-1.5 items-start">
           <Chip tone={statusTone(status.kind)} title={issues.length ? issues.map(i => `• ${i.text}`).join('\n') : undefined}>{status.label}</Chip>
-          <div className="flex flex-wrap gap-x-2.5 gap-y-1">
+          {/* 3 titik skor SATU baris di kartu lebar (2026-10-13, permintaan user; kolom status dilebarkan 200->300 / 250->310); kartu sempit boleh wrap. */}
+          <div className="flex flex-wrap @5xl:flex-nowrap gap-x-2.5 gap-y-1 whitespace-nowrap">
             <ScoreDot label="Doc match" pct={rec.doc_validation_pct} has={!!has.doc} />
             <ScoreDot label="Cost" pct={rec.cost_validation_pct} has={!!has.cost} />
             <ScoreDot label="Doc complete" pct={rec.checklist_pct} has={!!has.checklist} />

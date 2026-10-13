@@ -4,7 +4,7 @@
 // (dipanggil parent), Edit & Delete memakai form/modal masing-masing.
 import React, { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Check, AlertTriangle, Info, Pencil, Trash2, RotateCcw, ExternalLink, CheckCircle2, XCircle, Circle } from 'lucide-react'
+import { X, Check, AlertTriangle, Info, Pencil, Trash2, RotateCcw, ExternalLink, CheckCircle2, XCircle, Circle, Maximize2, Minimize2 } from 'lucide-react'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_GREEN, Chip, StatusPill, SectionCard, type Tone } from './SeaAirAuditUi'
 import {
   fmtRp, fmtValas, fmtDateShort, formatNoAju, buildGoodsLines, parseLooseNumber,
@@ -12,6 +12,8 @@ import {
   VALIDATION_META, validationLabel, type SeaAirAuditLinkInfo, type SeaAirAuditLogEntry,
 } from '../utils/SeaAirAuditHelpers'
 import { poManualFor, type PoManualEntry } from '../utils/SeaAirRecapHelpers'
+import { compareSeaAirDuty, fetchSeaAirDutyMatrix } from '../utils/SeaAirAuditHelpers'
+import SeaAirDutyCompareTable from './SeaAirDutyCompareTable'
 
 // Audit trail ringkas (2026-10-06, permintaan user: log panjang -> scroll terlalu panjang). Entri berturutan yg identik
 // (aksi + user + detail, hari sama) digabung "×N"; awalnya hanya AUDIT_TRAIL_PREVIEW baris terbaru, "Show all" membuka
@@ -71,7 +73,7 @@ const CheckRow: React.FC<{ ok: boolean | null; label: string; hint?: string }> =
 )
 
 export default function SeaAirAuditDetailModal({
-  rec, info: infoProp, companyNames, canEdit, onClose, onEdit, onDelete, onSetStatus, onOpenRecap, onReread,
+  rec, info: infoProp, companyNames, canEdit, onClose, onEdit, onDelete, onSetStatus, onOpenRecap, onReread, variant = 'modal', onToggleVariant,
 }: {
   rec: any
   info?: SeaAirAuditLinkInfo
@@ -83,7 +85,12 @@ export default function SeaAirAuditDetailModal({
   onSetStatus: (rec: any, status: 'ARCHIVED' | 'LENGKAP') => Promise<boolean>
   onOpenRecap: (rec: any) => void
   onReread: (rec: any) => Promise<boolean>
+  // 'panel' = dirender di dalam halaman (panel kanan daftar kartu, 2026-10-13, sama Invoice Recap); 'modal' = jendela penuh (portal).
+  // `onToggleVariant` = tombol Expand (panel -> modal) / Collapse (modal -> panel).
+  variant?: 'modal' | 'panel'
+  onToggleVariant?: () => void
 }) {
+  const isPanel = variant === 'panel'
   const [busy, setBusy] = useState(false)
   const [trailAll, setTrailAll] = useState(false)
   const [log, setLog] = useState<SeaAirAuditLogEntry[] | null>(null)
@@ -100,7 +107,15 @@ export default function SeaAirAuditDetailModal({
   const draft = isSeaAirDraft(rec)
   const build = computeCustomsBuildUp(rec)
   const duty = computeDutyRows(rec)
-  // Kartu "Duties & taxes" DIHAPUS 2026-10-12 (permintaan user); perbandingan duty tetap di Invoice Recap › Documents.
+  // Kartu "Duties & taxes" = rumus & data tab Documents › Duty Invoice Recap (2026-10-05, permintaan user).
+  const [dutyMatrix, setDutyMatrix] = useState<any | null | undefined>(undefined)
+  useEffect(() => {
+    let cancelled = false
+    setDutyMatrix(undefined)
+    fetchSeaAirDutyMatrix(rec?.id).then(m => { if (!cancelled) setDutyMatrix(m) })
+    return () => { cancelled = true }
+  }, [rec?.id])
+  const dutyCmp = compareSeaAirDuty(dutyMatrix ?? null, rec)
   const lines = buildGoodsLines(rec)
   const cur = String(rec.kurs || '').trim()
   const curLabel = cur && !/^[0-9.,\s]+$/.test(cur) ? cur.toUpperCase() : ''
@@ -178,9 +193,10 @@ export default function SeaAirAuditDetailModal({
 
   const hasSptnp = !!(rec.no_sptnp || rec.tgl_sptnp || rec.sptnp_total)
 
-  return createPortal(
-    <div className="fixed inset-0 z-[70] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-3 md:p-5" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[94vh] flex flex-col overflow-hidden">
+  const content = (
+      <div className={isPanel
+        ? '@container bg-white rounded-2xl shadow-sm border border-[#EADFD6] w-full flex-1 min-h-0 flex flex-col overflow-hidden'
+        : '@container bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[94vh] flex flex-col overflow-hidden'} data-audit-detail={variant}>
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-4 border-b border-[#EADFD6] shrink-0">
           <div className="min-w-0">
@@ -224,6 +240,12 @@ export default function SeaAirAuditDetailModal({
                 <Trash2 size={14} />
               </button>
             )}
+            {onToggleVariant && (
+              <button type="button" onClick={onToggleVariant} aria-label={isPanel ? 'Expand to full window' : 'Collapse to side panel'} title={isPanel ? 'Expand to full window' : 'Collapse to side panel'}
+                className="inline-flex items-center justify-center h-9 w-9 rounded-xl text-[#6E5E70] hover:bg-[#F6EFEA]" data-variant-toggle>
+                {isPanel ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
+              </button>
+            )}
             <button type="button" onClick={onClose} aria-label="Close" className="inline-flex items-center justify-center h-9 w-9 rounded-xl text-[#6E5E70] hover:bg-[#F6EFEA]">
               <X size={18} />
             </button>
@@ -264,7 +286,7 @@ export default function SeaAirAuditDetailModal({
             ) : null}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-3">
             {/* Kiri */}
             <div className="flex flex-col gap-3 min-w-0">
               <SectionCard title="Document" bodyClassName="px-4 pb-3">
@@ -369,6 +391,14 @@ export default function SeaAirAuditDetailModal({
                   <div className="text-[16px] font-bold tabular-nums text-[#3B1B3D] whitespace-nowrap">{fmtRp(build.cv)}</div>
                 </div>
               </SectionCard>
+
+              <SectionCard
+                title={<>Duties &amp; taxes <span className="text-[11.5px] font-normal text-[#8A7A8B]">same check as Invoice Recap › Doc Validation</span></>}
+                right={<>Import value <b className="text-[#3B1B3D] tabular-nums">{fmtRp(duty.importValueStored ?? duty.importValueCalc)}</b></>}
+                bodyClassName="pb-0"
+              >
+                <SeaAirDutyCompareTable cmp={dutyCmp} loading={dutyMatrix === undefined} />
+              </SectionCard>
             </div>
           </div>
 
@@ -425,6 +455,11 @@ export default function SeaAirAuditDetailModal({
           })()}
         </div>
       </div>
+  )
+  if (isPanel) return content
+  return createPortal(
+    <div className="fixed inset-0 z-[70] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-3 md:p-5" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      {content}
     </div>,
     document.body
   )

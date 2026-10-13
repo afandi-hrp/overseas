@@ -12,7 +12,7 @@
 // masih ada perubahan -> konfirmasi.
 import React, { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, MoreHorizontal, Pencil, Send, ChevronDown, ChevronRight, Lock, Unlock, PlusCircle, Trash2, History, FileInput, Maximize2, Minimize2 } from 'lucide-react'
+import { X, MoreHorizontal, Pencil, Send, ChevronDown, ChevronUp, ChevronRight, Lock, Unlock, PlusCircle, Trash2, History, FileInput, Maximize2, Minimize2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_GREEN, Chip, Pill, PtBadge, type Tone } from './SeaAirAuditUi'
 import SeaAirRecapCostsTab from './SeaAirRecapCostsTab'
@@ -25,7 +25,25 @@ import {
   type RecapIssue, type RecapLogEntry, type CostGroupKey, type PoManualEntry,
 } from '../utils/SeaAirRecapHelpers'
 
-type TabKey = 'overview' | 'costs' | 'documents' | 'trail'
+type TabKey = 'overview' | 'costs' | 'checklist' | 'documents' | 'trail'
+
+// Shipment info beku di atas tab Costs / Documents / Audit trail (2026-10-13, permintaan user; pola Invoice Recap Courier): bisa dilipat,
+// pilihan diingat per browser. Default terbuka hanya di layar tinggi (>= 1000px) supaya isi tab tidak tertutup di laptop 14".
+const SHIP_INFO_KEY = 'beehive_seaair_recap_shipinfo_open'
+const initialShipInfoOpen = (): boolean => {
+  try {
+    const v = window.localStorage.getItem(SHIP_INFO_KEY)
+    if (v === '1') return true
+    if (v === '0') return false
+  } catch { /* storage tidak tersedia */ }
+  return typeof window !== 'undefined' && window.innerHeight >= 1000
+}
+const ShipInfoCell: React.FC<{ label: string; className?: string; children: React.ReactNode }> = ({ label, className = '', children }) => (
+  <div className={`min-w-0 bg-[#FCF8FB] px-2.5 py-1.5 ${className}`}>
+    <p className="text-[9.5px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B] leading-none mb-1">{label}</p>
+    <div className="text-[12px] font-semibold text-[#3B1B3D] leading-snug [overflow-wrap:anywhere]">{children}</div>
+  </div>
+)
 
 const scoreTone = (pct: number | null | undefined, has: boolean): Tone => (!has || pct == null ? 'grey' : pct >= 100 ? 'green' : pct >= 60 ? 'amber' : 'red')
 
@@ -193,6 +211,12 @@ export default function SeaAirRecapDetailModal({
 }) {
   const isPanel = variant === 'panel'
   const [tab, setTab] = useState<TabKey>('overview')
+  const [shipInfoOpen, setShipInfoOpen] = useState<boolean>(initialShipInfoOpen)
+  const toggleShipInfo = () => setShipInfoOpen(v => {
+    const next = !v
+    try { window.localStorage.setItem(SHIP_INFO_KEY, next ? '1' : '0') } catch { /* abaikan */ }
+    return next
+  })
   const [visited, setVisited] = useState<Record<string, boolean>>({ overview: true })
   const [dirtyTabs, setDirtyTabs] = useState<Record<string, boolean>>({})
   const [menuOpen, setMenuOpen] = useState(false)
@@ -234,7 +258,7 @@ export default function SeaAirRecapDetailModal({
   const onDocsDirty = useCallback((d: boolean) => setDirtyTabs(p => (p.documents === d ? p : { ...p, documents: d })), [])
   const goTab = (t: TabKey) => { setTab(t); setVisited(p => ({ ...p, [t]: true })) }
   const requestClose = () => {
-    if (anyDirty && !window.confirm('There are unsaved changes in Costs or Documents. Close anyway?')) return
+    if (anyDirty && !window.confirm('There are unsaved changes in Doc Validation or Cost Validation. Close anyway?')) return
     onClose()
   }
 
@@ -284,10 +308,19 @@ export default function SeaAirRecapDetailModal({
   }
 
   const costIssues = issues.filter(i => i.kind === 'cost').length
-  const docIssues = issues.filter(i => i.kind !== 'cost').length
+  // Temuan dipisah per tab (2026-10-13): 'docs' (dokumen wajib / Form E) -> Checklist, 'match' (mismatch dokumen) -> Doc Validation.
+  const checklistIssues = issues.filter(i => i.kind === 'docs').length
+  const docIssues = issues.filter(i => i.kind === 'match').length
   const ptName = companyFullName(companyNames, rec.a_n)
   const deliveryTerm = auditRow?.delivery_term || null
   const cbm = rec.cbm ?? auditRow?.cbm ?? null
+  // Type (panel Shipment & strip Shipment info): FCL = "FCL • 1 × 20 GP", LCL / AIR = jenis saja.
+  const typeLabel = (() => {
+    const st = String(rec.shipment_type || '').trim().toUpperCase()
+    if (st === 'FCL' && (rec.container_count || String(rec.container_type || '').trim())) return `FCL • ${rec.container_count || '?'} × ${String(rec.container_type || '').trim() || '—'}`
+    return st || '—'
+  })()
+  const weightVolText = `${rec.weight_kg != null && rec.weight_kg !== '' ? `${fmtValas(rec.weight_kg)} kg` : '—'} · ${cbm != null && cbm !== '' ? `${fmtValas(Math.round(Number(cbm) * 100) / 100)} m³` : '—'}`
   const groupTotal = lc.groups.ppjk + lc.groups.origin + lc.groups.local
 
   // Nilai per PO per kolom (alokasi bilangan bulat, jumlah = total).
@@ -303,10 +336,16 @@ export default function SeaAirRecapDetailModal({
     return vals.length ? vals.reduce((a, b) => a + b, 0) : null
   }
 
-  const tabs: { key: TabKey; label: string; badge?: number }[] = [
+  // Persen skor menempel di tab-nya (revisi 2026-10-13, permintaan user; dulu 3 pil terpisah di kanan tab bar): Costs = Cost accuracy,
+  // Documents = Doc match (Doc Validation) + Doc complete (Checklist).
+  const tabs: { key: TabKey; label: string; badge?: number; scores?: { label: string; title: string; pct: number | null | undefined; has: boolean }[] }[] = [
     { key: 'overview', label: 'Overview' },
-    ...(canSeeCosts ? [{ key: 'costs' as TabKey, label: 'Costs', badge: costIssues || undefined }] : []),
-    ...(canSeeDocs ? [{ key: 'documents' as TabKey, label: 'Documents', badge: docIssues || undefined }] : []),
+    ...(canSeeDocs ? [{ key: 'checklist' as TabKey, label: 'Checklist', badge: checklistIssues || undefined,
+      scores: [{ label: '', title: 'Doc complete (Checklist)', pct: rec.checklist_pct, has: !!has.checklist }] }] : []),
+    ...(canSeeDocs ? [{ key: 'documents' as TabKey, label: 'Doc Validation', badge: docIssues || undefined,
+      scores: [{ label: '', title: 'Doc match (Doc Validation)', pct: rec.doc_validation_pct, has: !!has.doc }] }] : []),
+    ...(canSeeCosts ? [{ key: 'costs' as TabKey, label: 'Cost Validation', badge: costIssues || undefined,
+      scores: [{ label: '', title: 'Cost accuracy', pct: rec.cost_validation_pct, has: !!has.cost }] }] : []),
     { key: 'trail', label: 'Audit trail' },
   ]
 
@@ -388,16 +427,52 @@ export default function SeaAirRecapDetailModal({
                   className={`px-3 pb-2 pt-1 text-[13px] font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${tab === t.key ? 'border-[#6B3470] text-[#3B1B3D]' : 'border-transparent text-[#6E5E70] hover:text-[#3B1B3D]'}`}>
                   {t.label}
                   {t.badge ? <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[#E0A526] text-white text-[10px] font-bold flex items-center justify-center">{t.badge}</span> : null}
+                  {t.scores?.map(sc => (
+                    <Chip key={sc.title} tone={scoreTone(sc.pct, sc.has)} title={sc.title}>{sc.label ? `${sc.label} ` : ''}{sc.has && sc.pct != null ? `${sc.pct}%` : '—'}</Chip>
+                  ))}
                 </button>
               ))}
             </div>
-            <div className="flex flex-wrap items-center gap-1.5 pb-2">
-              <Pill tone={scoreTone(rec.doc_validation_pct, !!has.doc)}>Doc match {has.doc ? `${rec.doc_validation_pct}%` : '—'}</Pill>
-              <Pill tone={scoreTone(rec.cost_validation_pct, !!has.cost)}>Cost accuracy {has.cost ? `${rec.cost_validation_pct}%` : '—'}</Pill>
-              <Pill tone={scoreTone(rec.checklist_pct, !!has.checklist)}>Doc complete {has.checklist ? `${rec.checklist_pct}%` : '—'}</Pill>
-            </div>
           </div>
         </div>
+
+        {/* Shipment info (2026-10-13, permintaan user): SAMA di tab Costs / Documents / Audit trail (Overview sudah punya panel Shipment),
+            dibekukan di atas area scroll dgn latar ungu muda, bisa dilipat jadi 1 baris ringkas. Pola Invoice Recap Courier. */}
+        {tab !== 'overview' && (
+          <div className="shrink-0 px-3 py-2 bg-[#F5EDF3] border-b border-[#D9C7DA] @container" data-shipment-frozen>
+            {!shipInfoOpen ? (
+              <div className="flex items-center gap-x-4 gap-y-1 flex-wrap text-[11.5px]" data-shipment-collapsed>
+                <span className="min-w-0"><span className="text-[#8A7A8B]">Supplier </span><b className="text-[#3B1B3D] [overflow-wrap:anywhere]">{rec.vendor || '—'}</b></span>
+                <span className="min-w-0"><span className="text-[#8A7A8B]">Invoice no </span><b className="text-[#3B1B3D] [overflow-wrap:anywhere]">{rec.no_invoice || '—'}</b></span>
+                <span className="min-w-0"><span className="text-[#8A7A8B]">Type </span><b className="text-[#3B1B3D]">{typeLabel}</b></span>
+                <button type="button" onClick={toggleShipInfo} className="ml-auto inline-flex items-center gap-1 text-[11.5px] font-semibold text-[#6B3470] hover:underline shrink-0">
+                  Show all shipment info <ChevronDown size={13} />
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="flex justify-end mb-1">
+                  <button type="button" onClick={toggleShipInfo} className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#6B3470] hover:underline">
+                    Hide shipment info <ChevronUp size={13} />
+                  </button>
+                </div>
+                <div className="rounded-[12px] border border-[#D9C7DA] overflow-hidden" data-shipment-info>
+                  <div className="grid grid-cols-2 @lg:grid-cols-3 @4xl:grid-cols-5 gap-px bg-[#E4D3E2]">
+                    <ShipInfoCell label="Company">{ptName}</ShipInfoCell>
+                    <ShipInfoCell label="Supplier">{rec.vendor || '—'}</ShipInfoCell>
+                    <ShipInfoCell label="Invoice no">{rec.no_invoice || '—'}</ShipInfoCell>
+                    <ShipInfoCell label="Recap date">{fmtDateShort(rec.tgl)}</ShipInfoCell>
+                    <ShipInfoCell label="Delivery term">{deliveryTerm || '—'}</ShipInfoCell>
+                    <ShipInfoCell label="Weight / volume">{weightVolText}</ShipInfoCell>
+                    <ShipInfoCell label="ETD → ETA">{fmtDateShort(rec.etd)} → {fmtDateShort(rec.eta)}</ShipInfoCell>
+                    <ShipInfoCell label="ATD → ATA">{fmtDateShort(rec.atd)} → {fmtDateShort(rec.ata)}</ShipInfoCell>
+                    <ShipInfoCell label="Type" className="col-span-2 @lg:col-span-1 @4xl:col-span-2">{typeLabel}</ShipInfoCell>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         {/* Body -- `[&>*]:shrink-0`: kartu ber-`overflow-hidden` (mis. Split per PO) di kolom flex yang
             di-scroll boleh menyusut sampai tinggal header saat "By vendor" dibuka (laporan user 2026-10-05);
@@ -457,7 +532,8 @@ export default function SeaAirRecapDetailModal({
                     <Field label="Weight / volume">{rec.weight_kg != null && rec.weight_kg !== '' ? `${fmtValas(rec.weight_kg)} kg` : '—'} · {cbm != null && cbm !== '' ? `${fmtValas(Math.round(Number(cbm) * 100) / 100)} m³` : '—'}</Field>
                     <Field label="ETD → ETA">{fmtDateShort(rec.etd)} → {fmtDateShort(rec.eta)}</Field>
                     <Field label="ATD → ATA">{fmtDateShort(rec.atd)} → {fmtDateShort(rec.ata)}</Field>
-                    <Field label="Containers">{rec.container_count || rec.container_type ? `${rec.container_count || '?'} × ${rec.container_type || '—'}` : '—'}</Field>
+                    {/* Type (2026-10-13, permintaan user; dulu "Containers"): FCL = "FCL • 1 × 20 GP" (jenis + jumlah × tipe kontainer), LCL / AIR = jenis saja. */}
+                    <Field label="Type">{typeLabel}</Field>
                   </div>
                   {rec.notes && (
                     <div className="mt-3 rounded-xl bg-[#FFF8EA] border border-[#F3D9A4] px-3 py-2 text-[12px] text-[#7A4F00] whitespace-pre-wrap"><b>AI note</b> · {rec.notes}</div>
@@ -612,9 +688,15 @@ export default function SeaAirRecapDetailModal({
             </div>
           )}
 
+          {canSeeDocs && visited.checklist && (
+            <div className={tab === 'checklist' ? '' : 'hidden'}>
+              <SeaAirRecapDocumentsTab part="checklist" seaairId={rec.seaair_id || rec.id} origin={rec.origin} canEdit={canEditDocs} isAdmin={isAdmin} locked={locked} onChanged={onChanged} />
+            </div>
+          )}
+
           {canSeeDocs && visited.documents && (
             <div className={tab === 'documents' ? '' : 'hidden'}>
-              <SeaAirRecapDocumentsTab seaairId={rec.seaair_id || rec.id} origin={rec.origin} canEdit={canEditDocs} isAdmin={isAdmin} locked={locked} onChanged={onChanged} onDirtyChange={onDocsDirty} />
+              <SeaAirRecapDocumentsTab part="doc" seaairId={rec.seaair_id || rec.id} origin={rec.origin} canEdit={canEditDocs} isAdmin={isAdmin} locked={locked} onChanged={onChanged} onDirtyChange={onDocsDirty} />
             </div>
           )}
 

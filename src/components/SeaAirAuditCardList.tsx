@@ -34,8 +34,16 @@ const SeaAirAuditRowCard: React.FC<{
   info?: SeaAirAuditLinkInfo
   companyNames: Record<string, string>
   onOpen: (rec: any) => void
-}> = ({ rec, info, companyNames, onOpen }) => {
+  selected?: boolean
+}> = ({ rec, info, companyNames, onOpen, selected = false }) => {
   const [expanded, setExpanded] = useState(false)
+  // Seluruh kartu bisa diklik (2026-10-13, permintaan user; sama Invoice Recap) = tombol Open. Klik di tombol/tautan dalam kartu (+N PO, Open)
+  // tidak dobel; memilih/menyalin teks tidak membuka kartu.
+  const openFromCard = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button, a, input, select, textarea')) return
+    if (typeof window !== 'undefined' && window.getSelection?.()?.toString()) return
+    onOpen(rec)
+  }
   const draft = isSeaAirDraft(rec)
   const pos = splitMulti(rec.po_ori)
   const duty = computeDutyRows(rec)
@@ -50,10 +58,11 @@ const SeaAirAuditRowCard: React.FC<{
   const reaudit = draft && !!rec.reaudit_reason
 
   return (
-    <div className={`@container ${SA_CARD} border-l-4 ${borderColor} overflow-hidden`}>
+    <div className={`@container ${SA_CARD} border-l-4 ${borderColor} overflow-hidden cursor-pointer ${selected ? 'ring-2 ring-[#6B3470]' : 'hover:border-[#D9C7DA]'}`}
+      data-audit-card={rec.id} aria-current={selected || undefined} onClick={openFromCard}>
       {/* Susunan 2026-10-05 (gambar user): 5 kolom -- PIB | PT+supplier+PO | validasi | duty | status+Open.
           Lebar kolom ikut LEBAR KARTU (container query): @5xl = laptop 14" (ringkas), @7xl = monitor 24" (lega). */}
-      <div className="grid grid-cols-1 @2xl:grid-cols-2 @5xl:grid-cols-[215px_minmax(0,1fr)_185px_165px_92px] @7xl:grid-cols-[260px_minmax(0,1fr)_230px_200px_110px] gap-x-4 @7xl:gap-x-6 gap-y-3 px-4 py-3.5 items-center">
+      <div className="grid grid-cols-1 @md:grid-cols-2 @5xl:grid-cols-[215px_minmax(0,1fr)_165px_185px_92px] @7xl:grid-cols-[260px_minmax(0,600px)_200px_minmax(230px,1fr)_110px] gap-x-4 @7xl:gap-x-6 gap-y-3 px-4 py-3.5 items-center">
         {/* 1. PIB */}
         <div className="min-w-0">
           <div className="text-[11px] text-[#8A7A8B] font-medium">PIB · {fmtDateShort(rec.tgl_ppjk)}</div>
@@ -95,8 +104,18 @@ const SeaAirAuditRowCard: React.FC<{
           </div>
         </div>
 
-        {/* 3. Validasi Invoice Recap + field yang beda */}
-        <div className="min-w-0 flex flex-col items-start gap-1.5">
+        {/* 3. Duty & tax (ditukar dgn validasi 2026-10-13, permintaan user: Duty & tax sebelum status validasi) */}
+        <div className="@5xl:text-right min-w-0">
+          <div className={SA_LABEL}>Duty &amp; tax</div>
+          <div className="text-[18px] font-bold text-[#3B1B3D] tabular-nums leading-tight">{fmtRp(rec.total_pib)}</div>
+          <div className="text-[11px] text-[#6E5E70] tabular-nums">
+            BM <b className="text-[#3B1B3D]">{rate('bm')}</b> · PPN <b className="text-[#3B1B3D]">{rate('ppn')}</b> · PPh <b className="text-[#3B1B3D]">{rate('pph')}</b>
+          </div>
+        </div>
+
+        {/* 4. Validasi Invoice Recap + field yang beda */}
+        {/* 24" (@7xl): blok ini didorong ke ujung kanan kolomnya (dekat Draft/Open) sementara Duty & tax tetap bergeser ke kiri. */}
+        <div className="min-w-0 flex flex-col items-start gap-1.5 @7xl:justify-self-end">
           <Chip tone={info ? VALIDATION_META[info.validation].tone : 'grey'} title={info ? (hasDiff ? `Fields: ${info.diffFields.join(', ')}` : VALIDATION_META[info.validation].sub) : undefined}>{validationLabel(info)}</Chip>
           {(hasDiff || waitingDocs || reaudit || rec.duplicate_of) && (
             <div className="flex flex-wrap items-center gap-1.5">
@@ -108,19 +127,10 @@ const SeaAirAuditRowCard: React.FC<{
           )}
         </div>
 
-        {/* 3. Duty & tax */}
-        <div className="@5xl:text-right min-w-0">
-          <div className={SA_LABEL}>Duty &amp; tax</div>
-          <div className="text-[18px] font-bold text-[#3B1B3D] tabular-nums leading-tight">{fmtRp(rec.total_pib)}</div>
-          <div className="text-[11px] text-[#6E5E70] tabular-nums">
-            BM <b className="text-[#3B1B3D]">{rate('bm')}</b> · PPN <b className="text-[#3B1B3D]">{rate('ppn')}</b> · PPh <b className="text-[#3B1B3D]">{rate('pph')}</b>
-          </div>
-        </div>
-
         {/* 5. Status + Open */}
         <div className="flex flex-col @5xl:items-end gap-1.5 min-w-0">
           <Chip tone={draft ? 'amber' : 'green'}>{draft ? 'Draft' : 'Audited'}</Chip>
-          <button type="button" onClick={() => onOpen(rec)} className="inline-flex items-center justify-center px-4 h-8 rounded-xl bg-[#6B3470] hover:bg-[#5A2A5E] text-white text-xs font-semibold">Open</button>
+          <button type="button" onClick={() => onOpen(rec)} className={`inline-flex items-center justify-center px-4 h-8 rounded-xl text-white text-xs font-semibold ${selected ? 'bg-[#3B1B3D]' : 'bg-[#6B3470] hover:bg-[#5A2A5E]'}`}>{selected ? 'Opened' : 'Open'}</button>
         </div>
       </div>
     </div>
@@ -132,10 +142,13 @@ export const SeaAirAuditCardList: React.FC<{
   linkInfo: Record<string, SeaAirAuditLinkInfo>
   companyNames: Record<string, string>
   onOpen: (rec: any) => void
-}> = ({ rows, linkInfo, companyNames, onOpen }) => (
+  // Kartu yang sedang tampil di panel detail kanan (2026-10-13).
+  selectedId?: any
+}> = ({ rows, linkInfo, companyNames, onOpen, selectedId = null }) => (
   <div className="flex flex-col gap-2.5">
     {rows.map(rec => (
-      <SeaAirAuditRowCard key={rec.id} rec={rec} info={linkInfo[String(rec.id)]} companyNames={companyNames} onOpen={onOpen} />
+      <SeaAirAuditRowCard key={rec.id} rec={rec} info={linkInfo[String(rec.id)]} companyNames={companyNames} onOpen={onOpen}
+        selected={selectedId !== null && selectedId !== undefined && String(selectedId) === String(rec.id)} />
     ))}
   </div>
 )

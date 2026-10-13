@@ -174,7 +174,7 @@ export function isChinaOrigin(origin: any): boolean {
   // + kode negara "CN" berdiri sendiri, atau kode pelabuhan UN/LOCODE China (CNSHA, CNNGB, ...).
   return CHINA_ORIGIN_RE.test(s) || /(^|[\s,(\-/])CN($|[\s,)\-/])/.test(s) || /(^|[^A-Z])CN[A-Z]{3}($|[^A-Z])/.test(s)
 }
-export const FORM_E_ISSUE_TEXT = 'Shipped from China — Form E is not checked; fill in a note in Documents'
+export const FORM_E_ISSUE_TEXT = 'Shipped from China — Form E is not checked; fill in a note in Checklist'
 // Issue Form E: asal China, Form E belum tercentang, belum ada catatan manual. `formENote` undefined =
 // tabel catatan belum ada (sql/044 belum jalan) -> aturan TIDAK diterapkan (fail-open, tidak memblokir).
 export function formEIssueApplies(origin: any, checklist: any, formENote: string | null | undefined): boolean {
@@ -230,12 +230,12 @@ export function computeRecapIssues(input: {
     const under = rows.some((c: any) => c.status === 'UNDERCHARGE')
     if ((over || under) && !conf.has(s.key)) {
       const what = over && under ? 'needs review' : over ? 'overcharge' : 'undercharge'
-      issues.push({ kind: 'cost', text: `${costSectionLabel(s.key)} · ${what} — Admin to confirm in Costs` })
+      issues.push({ kind: 'cost', text: `${costSectionLabel(s.key)} · ${what} — Admin to confirm in Cost Validation` })
     }
   })
   if (Array.isArray(input.matriksChecks) && !pctOk) {
     const { openMismatch } = computeDocStats(input.matriksChecks)
-    if (openMismatch > 0) issues.push({ kind: 'match', text: `${openMismatch} document mismatch${openMismatch === 1 ? '' : 'es'} — Admin to confirm in Documents` })
+    if (openMismatch > 0) issues.push({ kind: 'match', text: `${openMismatch} document mismatch${openMismatch === 1 ? '' : 'es'} — Admin to confirm in Doc Validation` })
   }
   return issues
 }

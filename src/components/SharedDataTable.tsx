@@ -43,6 +43,7 @@ import {
 } from '../utils/CourierAuditHelpers'
 import { CourierAuditCardList, CourierAuditKpiCards } from './CourierAuditCardList'
 import { syncChecklistNoteToRemarks, syncRemarkToGroup } from '../utils/CourierRemarksSync'
+import { syncRemarksToChecklistNote } from '../utils/SeaAirRemarksSync'
 import { COURIER_REKAPAN_CALC_FIELDS, courierAwbNorm, computeCourierRekapanCalc, submitRecapInvoices, notifyCourierRecapChanged, fetchCourierRecapSummary, type RecapFilters, type RecapGroup, type RecapSummaryCourier, type RecapKpiFilter } from '../utils/CourierRecapHelpers'
 import { CourierRecapCardView, CourierRecapKpiCards } from './CourierRecapCardList'
 import CourierRecapValidationPanel, { type RecapPanelTab } from './CourierRecapValidationPanel'
@@ -646,6 +647,10 @@ function EditModal({ record, tab, cols, onClose, onSaved, isCreate, createDefaul
       if (targetTable === 'tabel_audit_seaair') {
         const { error: rpcErr } = await supabase.rpc('update_seaair_row', { p_id: record.id, p_updates: payload });
         error = rpcErr;
+        // Remarks berubah -> Checklist Note (Invoice Recap Sea & Air) ikut (2026-10-13, SeaAirRemarksSync); gagal sinkron tidak menggagalkan simpan.
+        if (!rpcErr && payload && 'remarks' in payload && String(record.remarks ?? '').trim() !== String(payload.remarks ?? '').trim()) {
+          await syncRemarksToChecklistNote(record.id, payload.remarks ?? null)
+        }
       } else if (targetTable === 'rekapan_seaair') {
         const rekapanPayload = { ...payload };
         if (rekapanPayload.cbm !== undefined) {
@@ -4573,6 +4578,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   const [seaAirLinkInfo, setSeaAirLinkInfo] = useState<Record<string, SeaAirAuditLinkInfo>>({})
   const [seaAirCompanyNames, setSeaAirCompanyNames] = useState<Record<string, string>>({})
   const [seaAirDetailRecord, setSeaAirDetailRecord] = useState<any>(null)
+  // Detail Audit PIB = panel kanan daftar kartu (2026-10-13, permintaan user; sama Invoice Recap); tombol Expand melebarkannya jadi jendela penuh.
+  const [seaAirDetailPanel, setSeaAirDetailPanel] = useState(true)
   // `record: null` = Add manually, object = Edit PIB
   const [seaAirEditState, setSeaAirEditState] = useState<{ record: any | null } | null>(null)
 
@@ -4613,6 +4620,28 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     if (error || !data) return null;
     return { ...data, ...computeSeaAirBalanceAsuransi(data) };
   };
+
+  const seaAirAuditAsPanel = isSeaAirAudit && seaAirViewMode === 'card' && seaAirDetailPanel
+  const seaAirPanelOpen = seaAirAuditAsPanel && !!seaAirDetailRecord
+  const renderSeaAirDetail = (variant: 'panel' | 'modal') => seaAirDetailRecord ? (
+    <React.Fragment key={`seaair-detail-${seaAirDetailRecord.id}`}>
+    <SeaAirAuditDetailModal
+      rec={seaAirDetailRecord}
+      info={seaAirLinkInfo[String(seaAirDetailRecord.id)]}
+      companyNames={seaAirCompanyNames}
+      canEdit={canEdit('sea_air_audit')}
+      variant={variant}
+      onToggleVariant={seaAirViewMode === 'card' ? () => setSeaAirDetailPanel(variant !== 'panel') : undefined}
+      // Tutup (X / Esc) jendela penuh mode Card = kembali ke panel kiri-kanan (record sama), BUKAN menutup detail (2026-10-13, permintaan user).
+      onClose={() => { if (variant === 'modal' && seaAirViewMode === 'card') { setSeaAirDetailPanel(true); return; } setSeaAirDetailRecord(null); }}
+      onEdit={rec => setSeaAirEditState({ record: rec })}
+      onDelete={rec => { setSeaAirDetailRecord(null); setDeleteRecord(rec); }}
+      onSetStatus={handleSeaAirSetStatus}
+      onOpenRecap={handleSeaAirOpenRecap}
+      onReread={handleSeaAirReread}
+    />
+    </React.Fragment>
+  ) : null
 
   const handleSeaAirSetStatus = async (rec: any, status: 'ARCHIVED' | 'LENGKAP') => {
     const { error } = await supabase.rpc('update_seaair_row', { p_id: rec.id, p_updates: { status } });
@@ -4944,7 +4973,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
   const recapAsPanel = isSeaAirRekapan && seaAirRecapView === 'card' && recapDetailPanel;
   const openRecapDetail = (rec: any) => {
     if (recapAsPanel && recapDetailId !== null && String(recapDetailId) !== String(rec.id) && recapPanelDirty.current
-      && !window.confirm('There are unsaved changes in Costs or Documents. Switch to another shipment anyway?')) return;
+      && !window.confirm('There are unsaved changes in Doc Validation or Cost Validation. Switch to another shipment anyway?')) return;
     recapPanelDirty.current = false;
     setRecapDetailPanel(true);
     setRecapDetailId(rec.id);
@@ -4955,7 +4984,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           variant={variant}
           onToggleVariant={seaAirRecapView === 'card' ? () => {
             // Pindah panel <-> jendela penuh me-remount isinya: perubahan Costs/Documents belum disimpan akan hilang -> konfirmasi.
-            if (recapPanelDirty.current && !window.confirm('There are unsaved changes in Costs or Documents. Switching the view will discard them. Continue?')) return;
+            if (recapPanelDirty.current && !window.confirm('There are unsaved changes in Doc Validation or Cost Validation. Switching the view will discard them. Continue?')) return;
             recapPanelDirty.current = false;
             setRecapDetailPanel(variant !== 'panel');
           } : undefined}
@@ -5341,6 +5370,13 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
         const res = await supabase.rpc('update_seaair_row', { p_id: id, p_updates: cleanedPayload });
         error = res.error;
+        // Remarks berubah (edit inline / massal) -> Checklist Note ikut (SeaAirRemarksSync).
+        if (!res.error && 'remarks' in cleanedPayload) {
+          const before = records.find(r => String(r.id) === String(id));
+          if (!before || String(before.remarks ?? '').trim() !== String(cleanedPayload.remarks ?? '').trim()) {
+            await syncRemarksToChecklistNote(id, cleanedPayload.remarks ?? null);
+          }
+        }
       } else if (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_rekapan') {
         const record = records.find(r => String(r.id) === String(id));
         if (!record) return false;
@@ -6224,20 +6260,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       )}
 
       {/* Audit PIB Sea & Air (2026-09-30) -- jendela Open & form Edit/Add manually */}
-      {isSeaAirAudit && seaAirDetailRecord && (
-        <SeaAirAuditDetailModal
-          rec={seaAirDetailRecord}
-          info={seaAirLinkInfo[String(seaAirDetailRecord.id)]}
-          companyNames={seaAirCompanyNames}
-          canEdit={canEdit('sea_air_audit')}
-          onClose={() => setSeaAirDetailRecord(null)}
-          onEdit={rec => setSeaAirEditState({ record: rec })}
-          onDelete={rec => { setSeaAirDetailRecord(null); setDeleteRecord(rec); }}
-          onSetStatus={handleSeaAirSetStatus}
-          onOpenRecap={handleSeaAirOpenRecap}
-          onReread={handleSeaAirReread}
-        />
-      )}
+      {isSeaAirAudit && seaAirDetailRecord && !seaAirAuditAsPanel && renderSeaAirDetail('modal')}
       {isSeaAirAudit && seaAirEditState && (
         <SeaAirAuditEditModal
           record={seaAirEditState.record}
@@ -6879,7 +6902,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         <button
                           key={m}
                           type="button"
-                          onClick={() => setSeaAirViewMode(m)}
+                          onClick={() => {
+                            // Card -> List: tutup detail dulu (tanpa ini detail yang sama muncul sbg MODAL di atas List).
+                            if (m === 'list') setSeaAirDetailRecord(null);
+                            setSeaAirViewMode(m);
+                          }}
                           className={`px-3 h-7 rounded-lg text-xs font-bold transition-colors ${seaAirViewMode === m ? 'bg-white text-[#3B1B3D] shadow-sm' : 'text-[#6E5E70] hover:text-[#3B1B3D]'}`}
                         >
                           {m === 'card' ? 'Card' : 'List'}
@@ -6997,7 +7024,16 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                     </div>
                     <div className="inline-flex items-center p-1 rounded-xl bg-[#F5EDF3] shrink-0" role="group" aria-label="View mode">
                       {(['card', 'list'] as const).map(m => (
-                        <button key={m} type="button" onClick={() => setSeaAirRecapView(m)}
+                        <button key={m} type="button" onClick={() => {
+                          // Card -> List dgn panel detail terbuka: tutup detail dulu (tanpa ini `recapAsPanel` jadi false & detail yang sama
+                          // muncul sbg MODAL di atas List -- laporan user 2026-10-13). Perubahan belum disimpan -> konfirmasi.
+                          if (m === 'list' && seaAirRecapView === 'card' && recapDetailId !== null) {
+                            if (recapPanelDirty.current && !window.confirm('There are unsaved changes in Doc Validation or Cost Validation. Switching to List will discard them. Continue?')) return;
+                            recapPanelDirty.current = false;
+                            setRecapDetailId(null); setRecapDetailSnapshot(null);
+                          }
+                          setSeaAirRecapView(m);
+                        }}
                           className={`px-2 @min-[1500px]:px-3 h-7 rounded-lg text-xs font-bold transition-colors ${seaAirRecapView === m ? 'bg-white text-[#3B1B3D] shadow-sm' : 'text-[#6E5E70] hover:text-[#3B1B3D]'}`}>
                           {m === 'card' ? 'Card' : 'List'}
                         </button>
@@ -7318,7 +7354,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
               );
               })()
             ) : isSeaAirAudit && seaAirViewMode === 'card' ? (
-              <div className="flex-1 min-h-0 relative overflow-y-auto p-2.5">
+              <div className={`flex-1 min-h-0 flex flex-col lg:flex-row ${seaAirPanelOpen ? 'max-lg:overflow-y-auto' : ''}`}>
+              <div className={`relative overflow-y-auto p-2.5 ${seaAirPanelOpen ? 'lg:w-[35%] lg:min-w-[380px] lg:max-w-[720px] lg:shrink-0 max-lg:min-h-[420px]' : 'flex-1 min-h-0'}`}>
                 {loading && (
                   <div className="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-50 flex items-center justify-center">
                     <div className="flex items-center bg-white px-4 py-2 rounded-xl shadow-md border border-slate-100 text-[#5A305A] font-medium text-sm">
@@ -7335,8 +7372,15 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                   rows={displayRows}
                   linkInfo={seaAirLinkInfo}
                   companyNames={seaAirCompanyNames}
-                  onOpen={rec => setSeaAirDetailRecord(rec)}
+                  onOpen={rec => { setSeaAirDetailPanel(true); setSeaAirDetailRecord(rec); }}
+                  selectedId={seaAirAuditAsPanel ? seaAirDetailRecord?.id : null}
                 />
+              </div>
+              {seaAirPanelOpen && (
+                <div className="lg:flex-1 min-w-0 min-h-0 flex flex-col p-2.5 lg:pl-0 max-lg:min-h-[640px]" data-seaair-audit-panel>
+                  {renderSeaAirDetail('panel')}
+                </div>
+              )}
               </div>
             ) : isSeaAirRekapan && seaAirRecapView === 'card' ? (
               <div className={`flex-1 min-h-0 flex flex-col lg:flex-row ${recapPanelOpen ? 'max-lg:overflow-y-auto' : ''}`}>

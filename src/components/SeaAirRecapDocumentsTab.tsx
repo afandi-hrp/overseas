@@ -16,6 +16,7 @@ import { CheckCircle2, XCircle, Circle, ChevronDown, ChevronRight, Pencil, Rotat
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../lib/AuthContext'
 import { isChinaOrigin, fetchFormENotes, type FormENote } from '../utils/SeaAirRecapHelpers'
+import { syncChecklistNoteToRemarks, fetchAuditRemarks, CHECKLIST_NOTE_MIN } from '../utils/SeaAirRemarksSync'
 import { LoadingState } from './LoadingState'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_PRIMARY, Chip, Pill } from './SeaAirAuditUi'
 import { relaxSeaAirDocChecks, SEA_AIR_PIB_MATRIX_ROWS, SEA_AIR_INVOICE_COLS, isCountedDocCheck, toNum } from '../utils/SeaAirValidasiHelpers'
@@ -130,8 +131,11 @@ const OPTIONAL_DOCS = [
 const DUTY_DOC_KEYS = new Set(['ada_pib', 'ada_sppb', 'ada_billing_djbc', 'ada_bpn', 'ada_sptnp', 'ada_billing_sptnp', 'ada_bpn_sptnp'])
 const ALWAYS_OPTIONAL = new Set(['ada_form_e', 'ada_e_coo', 'ada_form_ak', 'ada_sptnp', 'ada_billing_sptnp', 'ada_bpn_sptnp'])
 
-export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage, isAdmin = false, locked = false, financeView = false, onChanged, onDirtyChange, origin }: {
+export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage, isAdmin = false, locked = false, financeView = false, onChanged, onDirtyChange, origin, part = 'all' }: {
   seaairId: any
+  // 'all' = Checklist + Doc validation berdampingan (Finance Handover); 'checklist' / 'doc' = salah satu saja -- jendela Open Invoice Recap memakai
+  // 2 tab terpisah (Checklist | Doc Validation, 2026-10-13, permintaan user; pola Invoice Recap Courier).
+  part?: 'all' | 'checklist' | 'doc'
   // `rekapan_seaair.origin` -- asal China -> Form E wajib atau catatan manual (2026-10-05, sql/044).
   origin?: any
   canEdit: boolean
@@ -166,6 +170,20 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
   const [noteEditing, setNoteEditing] = useState(false)
   const [savingNote, setSavingNote] = useState(false)
   const canEditNote = canEditKey('sea_air_rekapan') && !locked && !financeView
+  // Remarks Audit PIB (tabel_audit_seaair.remarks): isi awal kotak saat catatan masih kosong (belum tersimpan sampai Save) & penentu sinkron.
+  const [auditRemarks, setAuditRemarks] = useState<{ remarks: string | null; draft: boolean } | null>(null)
+  const prefilled = React.useRef<string>('')
+  useEffect(() => {
+    let cancelled = false
+    if (!seaairId) { setAuditRemarks(null); return }
+    fetchAuditRemarks(seaairId).then(r => { if (!cancelled) setAuditRemarks(r) })
+    return () => { cancelled = true }
+  }, [seaairId])
+  useEffect(() => {
+    if (formENote !== null || !auditRemarks?.remarks || noteDraft !== '' || prefilled.current === String(seaairId)) return
+    prefilled.current = String(seaairId)
+    setNoteDraft(auditRemarks.remarks)
+  }, [formENote, auditRemarks, noteDraft, seaairId])
   useEffect(() => {
     let cancelled = false
     if (!seaairId) { setFormENote(undefined); return }
@@ -174,27 +192,32 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
   }, [seaairId])
   const saveFormENote = async () => {
     const note = noteDraft.trim()
-    if (note.length < 5) return
+    if (note.length < CHECKLIST_NOTE_MIN) return
     setSavingNote(true)
     const { data, error } = await supabase.from('seaair_form_e_note')
       .upsert({ seaair_id: seaairId, note, updated_by: user?.email || null, updated_at: new Date().toISOString() }, { onConflict: 'seaair_id' })
       .select('*').maybeSingle()
     setSavingNote(false)
-    if (error) { showToast('Failed to save the Form E note: ' + error.message, 'error'); return }
+    if (error) { showToast('Failed to save the note: ' + error.message, 'error'); return }
     setFormENote((data as any) || { seaair_id: seaairId, note })
     setNoteEditing(false)
-    showToast('Form E note saved.', 'success')
+    // Checklist Note -> kolom Remarks Audit PIB (hanya bila PIB masih Draft; gagal sinkron tidak menggagalkan simpan).
+    const synced = await syncChecklistNoteToRemarks(seaairId, note)
+    if (synced) setAuditRemarks(p => ({ remarks: note, draft: p?.draft ?? true }))
+    showToast(synced ? 'Checklist Note saved · Remarks updated.' : 'Checklist Note saved.', 'success')
     onChanged()
   }
   const deleteFormENote = async () => {
-    if (!window.confirm('Delete the Form E note? Submit to Finance will be locked again until Form E is checked or a note is filled in.')) return
+    if (!window.confirm('Delete the Checklist Note? The Remarks column (Audit PIB) is cleared too while the PIB is still a draft. For a shipment from China without Form E, Submit to Finance will be locked again until a note is filled in.')) return
     setSavingNote(true)
     const { error } = await supabase.from('seaair_form_e_note').delete().eq('seaair_id', seaairId)
     setSavingNote(false)
-    if (error) { showToast('Failed to delete the Form E note: ' + error.message, 'error'); return }
+    if (error) { showToast('Failed to delete the note: ' + error.message, 'error'); return }
     setFormENote(null)
     setNoteDraft('')
-    showToast('Form E note deleted.', 'success')
+    const synced = await syncChecklistNoteToRemarks(seaairId, null)
+    if (synced) setAuditRemarks(p => ({ remarks: null, draft: p?.draft ?? true }))
+    showToast('Checklist Note deleted.', 'success')
     onChanged()
   }
 
@@ -356,14 +379,67 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
   }).filter(s => s.rows.length > 0).sort((a, b) => b.mismatch - a.mismatch)
 
   return (
-    <div className="grid grid-cols-1 @5xl:grid-cols-[320px_minmax(0,1fr)] gap-3 items-start">
+    <div className={part === 'all' ? 'grid grid-cols-1 @5xl:grid-cols-[320px_minmax(0,1fr)] gap-3 items-start' : 'flex flex-col gap-3'}>
       {/* ── Checklist ── */}
+      {part !== 'doc' && (
       <div className={`${SA_CARD} p-4`}>
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2"><h3 className="text-[14px] font-bold text-[#3B1B3D]">Checklist</h3>{checklist && <Pill tone={complete ? 'green' : 'red'}>{complete ? 'Complete' : 'Incomplete'}</Pill>}</div>
           <span className="text-[16px] font-bold text-[#3B1B3D]">{pct === null ? '—' : `${pct}%`}</span>
         </div>
         <div className="h-2 rounded-full bg-[#F3EEEA] overflow-hidden mt-2"><div className={`h-full ${complete ? 'bg-[#17663D]' : 'bg-[#E0A526]'}`} style={{ width: `${pct || 0}%` }} /></div>
+        {/* Kotak "Checklist Note" (2026-10-13, permintaan user: SAMA tab Checklist Courier -- kartu kuning, judul + keterangan, kotak teks, baris
+            keterangan biru) SELALU tampil. Isinya = catatan per shipment (tabel seaair_form_e_note, sql/044) yang tersinkron dgn kolom Remarks
+            Audit PIB (SeaAirRemarksSync, opsi a keputusan user). WAJIB (min. 5 karakter) hanya utk barang dari China tanpa Form E: Submit to
+            Finance terkunci sampai terisi (aturan computeRecapIssues). Tabel belum ada (sql/044) -> kartu tidak tampil. */}
+        {!financeView && formENote === undefined && chinaFormE && !checklist?.ada_form_e && (
+          <div className="mt-3 rounded-lg bg-[#F6F1EE] text-[#6E5E70] text-[11.5px] px-3 py-2">
+            Shipped from China ({String(origin)}) — Form E is not checked. The Checklist Note is not available yet (run sql/044).
+          </div>
+        )}
+        {!financeView && formENote !== undefined && (() => {
+          const required = chinaFormE && !checklist?.ada_form_e
+          return (
+            <div className={`mt-3 rounded-[12px] border px-3 py-2.5 ${required && !formENote ? 'border-[#F4C3BC] bg-[#FFF6F4]' : 'border-[#F3D9A4] bg-[#FFF8EA]'}`} data-checklist-note>
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[12.5px] font-bold text-[#3B1B3D]">Checklist Note{required && <span className="ml-1.5 text-[10.5px] font-semibold text-[#A8231A]">Required</span>}</div>
+                {formENote && !noteEditing && canEditNote && (
+                  <span className="flex items-center gap-2">
+                    <button type="button" onClick={() => { setNoteDraft(formENote.note); setNoteEditing(true) }} className="text-[11.5px] font-semibold text-[#6B3470] hover:underline">Edit</button>
+                    <button type="button" onClick={deleteFormENote} disabled={savingNote} className="text-[11.5px] font-semibold text-[#A8231A] hover:underline disabled:opacity-50">Delete</button>
+                  </span>
+                )}
+              </div>
+              <div className="text-[11px] text-[#6E5E70] mb-1.5">
+                {required
+                  ? <>Shipped from China ({String(origin)}) without <b>Form E</b>. Check Form E in the checklist, or explain here why there is none — Submit to Finance stays locked until then. Same as the <b>Remarks</b> column in the Audit PIB list.</>
+                  : <>Note about this shipment's documents (e.g. a document the vendor does not issue). Same as the <b>Remarks</b> column in the Audit PIB list.</>}
+              </div>
+              {formENote && !noteEditing ? (
+                <>
+                  <div className="w-full px-2.5 py-2 rounded-lg border border-[#E9D9B5] bg-white text-[12px] text-[#3B1B3D] whitespace-pre-wrap [overflow-wrap:anywhere]">{formENote.note}</div>
+                  <div className="text-[11px] text-[#8A7A8B] mt-1">{formENote.updated_by || formENote.created_by || '—'}{formENote.updated_at ? ` · ${new Date(formENote.updated_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}</div>
+                </>
+              ) : canEditNote ? (
+                <>
+                  <textarea rows={3} value={noteDraft} onChange={e => setNoteDraft(e.target.value)} aria-label="Checklist Note"
+                    placeholder="e.g. Final Invoice & BT Vendor were not issued by the vendor for this shipment… (min. 5 characters)"
+                    className="w-full px-2.5 py-2 rounded-lg border border-[#E9D9B5] bg-white text-[12px] text-[#3B1B3D] focus:outline-none focus:border-[#6B3470]" />
+                  <div className="mt-1.5 flex justify-end gap-2">
+                    {noteEditing && <button type="button" className={SA_BTN_OUTLINE} onClick={() => { setNoteEditing(false); setNoteDraft('') }}>Cancel</button>}
+                    <button type="button" className={SA_BTN_PRIMARY} disabled={savingNote || noteDraft.trim().length < CHECKLIST_NOTE_MIN} onClick={saveFormENote}>{savingNote ? 'Saving…' : 'Save note'}</button>
+                  </div>
+                </>
+              ) : (
+                <div className="text-[11.5px] italic text-[#7A4F00]">{locked ? 'Locked — submitted to Finance.' : 'You have view access only.'}</div>
+              )}
+              <div className="text-[10.5px] font-semibold text-[#2F4FA8] mt-1">
+                ↔ Synced with the Remarks column (Audit PIB list){auditRemarks && !auditRemarks.draft ? ' — not updated: this PIB is already audited' : ''}
+              </div>
+            </div>
+          )
+        })()}
+
         {!checklist ? (
           <div className="text-[12px] text-[#6E5E70] mt-3">No checklist recorded for this shipment yet.</div>
         ) : (
@@ -394,49 +470,11 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
             </div>
           </>
         )}
-        {/* Form E: barang dari China tanpa Form E -> alert + catatan manual WAJIB (Submit to Finance terkunci
-            sampai catatan diisi, aturan `computeRecapIssues`). */}
-        {chinaFormE && !checklist?.ada_form_e && (
-          formENote === undefined ? (
-            <div className="mt-3 rounded-lg bg-[#F6F1EE] text-[#6E5E70] text-[11.5px] px-3 py-2">
-              Shipped from China ({String(origin)}) — Form E is not checked. The Form E note is not available yet (run sql/044).
-            </div>
-          ) : formENote && !noteEditing ? (
-            <div className="mt-3 rounded-lg border border-[#EADFD6] bg-[#FBF7F4] px-3 py-2 text-[12px]">
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-bold text-[#3B1B3D]">Form E note</span>
-                {canEditNote && (
-                  <span className="flex items-center gap-2">
-                    <button type="button" onClick={() => { setNoteDraft(formENote.note); setNoteEditing(true) }} className="text-[11.5px] font-semibold text-[#6B3470] hover:underline">Edit</button>
-                    <button type="button" onClick={deleteFormENote} disabled={savingNote} className="text-[11.5px] font-semibold text-[#A8231A] hover:underline disabled:opacity-50">Delete</button>
-                  </span>
-                )}
-              </div>
-              <div className="text-[#3B1B3D] whitespace-pre-wrap mt-0.5">{formENote.note}</div>
-              <div className="text-[11px] text-[#8A7A8B] mt-0.5">Shipped from China without Form E · {formENote.updated_by || formENote.created_by || '—'}{formENote.updated_at ? ` · ${new Date(formENote.updated_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''}</div>
-            </div>
-          ) : (
-            <div className="mt-3 rounded-lg border border-[#F4C3BC] bg-[#FDE7E4] px-3 py-2.5 text-[12px] text-[#A8231A]">
-              <div className="font-bold">Form E is required — shipped from China</div>
-              <div className="mt-0.5">Origin: {String(origin)}. Check Form E in the checklist, or fill in a note explaining why there is no Form E. Submit to Finance stays locked until then.</div>
-              {canEditNote ? (
-                <>
-                  <textarea rows={3} value={noteDraft} onChange={e => setNoteDraft(e.target.value)} placeholder="Note (required, min. 5 characters) — e.g. supplier has no Form E, duty paid at normal rate"
-                    className="mt-2 w-full px-2.5 py-2 rounded-lg border border-[#F4C3BC] bg-white text-[12px] text-[#3B1B3D] focus:outline-none focus:border-[#A8231A]" />
-                  <div className="mt-1.5 flex justify-end gap-2">
-                    {noteEditing && <button type="button" className={SA_BTN_OUTLINE} onClick={() => { setNoteEditing(false); setNoteDraft('') }}>Cancel</button>}
-                    <button type="button" className={SA_BTN_PRIMARY} disabled={savingNote || noteDraft.trim().length < 5} onClick={saveFormENote}>{savingNote ? 'Saving…' : 'Save note'}</button>
-                  </div>
-                </>
-              ) : (
-                <div className="mt-1 text-[11.5px] italic">{locked ? 'Locked — submitted to Finance.' : 'You have view access only.'}</div>
-              )}
-            </div>
-          )
-        )}
       </div>
+      )}
 
       {/* ── Document validation ── */}
+      {part !== 'checklist' && (
       <div className="flex flex-col gap-3 min-w-0">
         {toast && <div className={`px-3 py-2 rounded-xl border text-[12.5px] font-semibold ${toast.type === 'success' ? 'bg-[#EAF6EF] border-[#BFE3CD] text-[#17663D]' : 'bg-[#FDE7E4] border-[#F4C3BC] text-[#A8231A]'}`}>{toast.msg}</div>}
         <div className={`${SA_CARD} px-4 py-3 flex flex-wrap items-center gap-3`}>
@@ -638,6 +676,7 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
           </div>
         )}
       </div>
+      )}
     </div>
   )
 }
