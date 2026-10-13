@@ -5055,6 +5055,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     }
     const fresh = await reloadSeaAirRow(rec.id);
     if (fresh) setSeaAirDetailRecord(fresh);
+    // Re-read mengembalikan nilai AI (termasuk Remarks bila ada di snapshot) tanpa lewat jalur simpan -> Checklist Note ikut (SeaAirRemarksSync).
+    if (fresh && String(rec.remarks ?? '').trim() !== String(fresh.remarks ?? '').trim()) {
+      await syncRemarksToChecklistNote(rec.id, fresh.remarks ?? null);
+    }
     refreshSeaAirAudit();
     return true;
   };

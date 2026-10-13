@@ -947,4 +947,8 @@ Tab Checklist Invoice Recap: kotak "Checklist Note" kini SELALU tampil (bukan ha
   Submit ke Finance tidak diubah; Remarks < 5 karakter tidak disalin; Remarks dikosongkan -> catatan dihapus (dan Delete catatan -> Remarks dikosongkan, ada konfirmasi).
   Gagal sinkron TIDAK menggagalkan simpan (console.warn). User yang boleh edit Recap tapi tidak `sea_air_audit` edit: catatan tersimpan, Remarks tidak ikut (RPC menolak).
 - **Isi awal**: catatan kosong & Remarks sudah berisi -> kotak diisi Remarks (BELUM tersimpan sampai klik Save note).
-- **Belum diverifikasi**: daftar trigger `tabel_audit_seaair` (apakah menulis `remarks` memicu efek samping) -- user belum mengirim hasilnya. "Accept with note" dokumen hilang (fase 2) DITUNDA.
+- Trigger `tabel_audit_seaair` SUDAH diverifikasi (lihat bawah). "Accept with note" dokumen hilang (fase 2) DITUNDA.
+- **Trigger `tabel_audit_seaair` (DIVERIFIKASI user 2026-10-13 lewat pg_trigger; sinkron Remarks AMAN)**: `trg_audit_seaair` AFTER INSERT/DELETE/UPDATE (audit trail; perubahan Remarks
+  tercatat atas nama user); `trg_seaair_auto_draft` BEFORE INSERT saja; `trg_seaair_flag_duplicate` BEFORE INSERT saja; `trg_seaair_guard_mark_audited` BEFORE INSERT,UPDATE **OF status**
+  (tidak terpicu update yang hanya mengisi `remarks`); `trg_seaair_snapshot_ai` BEFORE INSERT,UPDATE tanpa batas kolom (cabang UPDATE hanya melindungi kolom snapshot AI dari user; sinkron tidak
+  menyentuhnya). Sinkron Remarks hanya mengirim `{remarks}` ke `update_seaair_row`. Re-read from AI kini juga menyinkronkan Remarks -> Checklist Note bila Remarks berubah.
