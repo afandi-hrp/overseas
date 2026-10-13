@@ -6432,19 +6432,24 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 <div className="flex flex-col gap-3">
                   <CourierRecapKpiCards summary={courierRecapSummary} loading={courierRecapSummaryLoading} colOk={courierRecapColOk}
                     kpi={courierRecapKpi} onKpi={k => { setCourierRecapKpi(k); setPage(1); if (k && k !== 'all') setCourierRecapAttentionOnly(false) }} />
-                  <div className="@container bg-white rounded-[14px] border border-[#EADFD6] shadow-sm px-3 py-2.5 flex flex-wrap items-center gap-2">
+                  {/* 1 baris di laptop 14" (2026-10-12, permintaan user; pola SAMA Audit Courier 2026-10-06): wrapper = container, baris dalam
+                      `nowrap` mulai lebar panel 1350px (kontrolnya lebih banyak drpd Audit Courier: ~1290px minimum saat diringkas; Search
+                      menyusut sampai 120px); < 1500px kontrol diringkas (tab PPJK rapat, Export ikon saja, label pendek). Di bawah 1350px tetap
+                      `flex-wrap` sbg cadangan. */}
+                  <div className="@container bg-white rounded-[14px] border border-[#EADFD6] shadow-sm px-3 py-2.5">
+                  <div className="flex flex-wrap @min-[1350px]:flex-nowrap items-center gap-2">
                     <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[#F5EDF3] shrink-0" role="tablist" aria-label="PPJK">
                       {ppjkTabs.map(pj => {
                         const active = activePpjkFilter === pj;
                         return (
                           <button key={pj} type="button" role="tab" aria-selected={active} onClick={() => { setActivePpjkFilter(pj); setPage(1); }}
-                            className={`px-3 h-8 rounded-lg text-xs font-bold transition-colors ${active ? 'bg-[#3B1B3D] text-white shadow-sm' : 'text-[#3B1B3D] hover:bg-white'}`}>
+                            className={`px-2 @min-[1500px]:px-3 h-8 rounded-lg text-xs font-bold transition-colors ${active ? 'bg-[#3B1B3D] text-white shadow-sm' : 'text-[#3B1B3D] hover:bg-white'}`}>
                             {pj === 'All' ? 'All PPJK' : pj}
                           </button>
                         );
                       })}
                     </div>
-                    <div className="relative flex-1 min-w-[150px]">
+                    <div className="relative flex-1 min-w-[120px]">
                       <SearchIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A7A8B] pointer-events-none" />
                       <input
                         type="text"
@@ -6524,7 +6529,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                     </button>
                     {/* Export (2026-10-02: dipindah dari header ke panel filter, permintaan user -- sama Audit Courier). */}
                     <div className="ml-auto flex items-center gap-2 shrink-0">
-                      {renderExportBtn(true, true)}
+                      {renderExportBtn(true, true, true)}
                       {courierRecapView === 'list' && canEdit('courier_rekapan') && (
                         <button type="button" onClick={() => setShowAddRowModal(true)} title="Add invoice (form)"
                           className="px-4 h-9 rounded-xl bg-[#6B3470] hover:bg-[#5A2A5E] text-white text-xs font-semibold shadow-sm transition-colors shrink-0 whitespace-nowrap">
@@ -6532,6 +6537,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                         </button>
                       )}
                     </div>
+                  </div>
                   </div>
                 </div>
               ) : isCourierAuditView ? (

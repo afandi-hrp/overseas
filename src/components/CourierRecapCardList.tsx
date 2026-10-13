@@ -99,7 +99,9 @@ export const CourierRecapGroupCard: React.FC<{
 
   return (
     <div className={`${SA_CARD} border-l-4 ${border} overflow-hidden @container ${selected ? 'ring-2 ring-[#6B3470]' : ''}`} data-recap-card={g.key}>
-      <div className="grid grid-cols-1 @xl:grid-cols-2 @4xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,1fr)_200px] gap-x-5 gap-y-3 px-4 py-3.5 items-center">
+      {/* 2 kolom (2x2) mulai lebar kartu 448px (@md; 2026-10-12, permintaan user: laptop 14", daftar 35% saat panel terbuka tidak
+          lagi menumpuk 4 blok ke bawah): [identitas | email·PO·origin] / [status | grand total + tombol]. */}
+      <div className="grid grid-cols-1 @md:grid-cols-2 @4xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,1fr)_200px] gap-x-4 @4xl:gap-x-5 gap-y-3 px-3.5 @4xl:px-4 py-3 @4xl:py-3.5 items-center">
         {/* 1. PPJK · PT + jenis invoice, AWB, Vendor */}
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-1.5">

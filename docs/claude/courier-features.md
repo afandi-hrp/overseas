@@ -1339,3 +1339,11 @@ Release Date lewat `.update()` langsung ke `tabel_cost_validasi` (`cv_storage_we
 `data.cv_eta_date`/`cv_release_date` kalau sudah pernah disimpan, lalu `checkExpected()` jalan
 ulang otomatis isi Actual/Billing Days live (Actual/Billing Days sendiri TIDAK disimpan sbg
 kolom terpisah).
+
+## Invoice Recap Courier — toolbar 1 baris & kartu 2x2 di laptop 14" (2026-10-12, permintaan user)
+
+- **Panel filter** (tab PPJK · Search · Email date · PT · Attention · Card/List · Refresh · Export): sebelumnya Export jatuh sendirian ke baris ke-2 di laptop 14". Sekarang pola
+  SAMA Audit Courier: wrapper `@container`, baris dalam `flex-wrap @min-[1350px]:flex-nowrap`; Search `flex-1 min-w-[120px]` yang menyusut; < 1500px tab PPJK `px-2`,
+  Export ikon saja (`renderExportBtn(true, true, true)`), label pendek (Email/PT/Attention). Di bawah 1350px tetap `flex-wrap` (cadangan; ~1290px = lebar minimum 1 baris).
+- **Kartu** (`CourierRecapGroupCard`): grid 2 kolom mulai lebar KARTU 448px (`@md`, dulu `@xl` 576px) -> saat panel samping terbuka (daftar 35%) kartu berbentuk 2x2
+  [identitas | email·PO·origin] / [status | grand total + Validation], tidak lagi 4 blok bertumpuk. Padding sedikit dirapatkan (`px-3.5 py-3`) di bawah `@4xl`.
