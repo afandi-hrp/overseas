@@ -26,7 +26,8 @@ Modul lengkap (kode); BELUM dites ke DB/n8n. sql/054 = versi user dgn guard (202
 
 ## File
 
-- SQL (disalin APA ADANYA dari `Keagenan/`, BELUM DIJALANKAN): `sql/054_cost_agent_schema.sql`, `sql/055_cost_agent_seed_master.sql`.
+- SQL `sql/054_cost_agent_schema.sql`, `sql/055_cost_agent_seed_master.sql`, `sql/056_cost_agent_delete_invoice.sql` SUDAH
+  DIJALANKAN 2026-10-13 & dihapus dari repo (isi: `git show a21e206:sql/<file>`). Salinan SQL di `Keagenan/` juga dihapus.
   `sql/056_cost_agent_seed_history_part01..06.sql` disebut di spek tapi **TIDAK ADA** di folder owner (belum disalin).
 - `src/utils/CostAgentHelpers.ts` -- SATU sumber tipe view/RPC, `fetchCostAgentList` (`.range` + count exact + search `.or ilike`
   lewat `orSafe`), `fetchCostAgentVoyageList`/`InvoiceList`, master (`fetchCostAgentVessels/Ports/Vendors/CostItems/Companies`),
@@ -77,7 +78,7 @@ Group `'Cost Agent'` (PAGE_GROUPS & sidebar: setelah SPB, sebelum Audit Trail; i
 - Smoke test 2026-10-13 (port 3999): tipe tak dikenal 400, tanpa token/token palsu 401, Courier tetap 401 tanpa token.
   Upload/aksi dgn sesi login asli BELUM dites (perlu n8n + SQL 054 jalan).
 
-## Database (sql/054, BELUM DIJALANKAN)
+## Database (sql/054–056 SUDAH DIJALANKAN 2026-10-13; file dihapus dari repo, isi di git commit `a21e206`)
 
 Tabel: `cost_agent_settings`, `_companies`, `_ports` (tz, is_verified), `_vessels` (dwt, vessel_type), `_vendors`,
 `_cost_items`, `_cost_item_aliases`, `_voyages`, `_voyage_calls` (handling_hours/port_stay_hours generated), `_voyage_cargo`,

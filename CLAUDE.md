@@ -51,17 +51,22 @@ yang berlaku lintas modul. Rujukan lama di docs berbunyi "lihat CLAUDE.md bagian
 - **HTML dari backend/n8n WAJIB disanitasi `DOMPurify`** sebelum `dangerouslySetInnerHTML` (hasil AI = input tak
   tepercaya). Kalau HTML n8n butuh script (Oil Request): render di `<iframe sandbox>` TANPA `allow-same-origin`,
   JANGAN `eval`/innerHTML di halaman.
-- **SQL**: semua migrasi `sql/001`–`sql/047` SUDAH dijalankan di production & folder `sql/` DIHAPUS dari repo
-  (2026-10-06, konfirmasi user). Isi terakhir 041–047 ada di git commit `4286a34` (`git show 4286a34:sql/<file>`), yang lebih
-  lama di commit sebelumnya. 045 = seed 3 akun @purchasing.com, 046 = `profiles.divisi` + RPC `fn_set_user_divisi`, 047 = isi
-  divisi dari domain email. Catatan "BELUM DIJALANKAN" di `docs/claude/*.md` utk file ≤047 TIDAK berlaku. SQL baru: file
-  `sql/NNN_*.sql` baru (lanjut 057; **`sql/056_cost_agent_delete_invoice.sql` SUDAH DIJALANKAN 2026-10-13** (konfirmasi user; RPC `fn_cost_agent_delete_invoice` hapus invoice Cost Agent, Admin, masa uji coba -- cost-agent.md; **KEPUTUSAN TERTUNDA (user): nasib fitur hapus setelah uji coba -- cabut grant / hapus tombol / pertahankan; JANGAN diubah sebelum user memutuskan**); **`sql/054_cost_agent_schema.sql` (versi user ber-guard 2026-10-13) + `sql/055_cost_agent_seed_master.sql` = Cost Agent, BELUM DIJALANKAN** (analisa & sisa temuan di cost-agent.md "Database"); **`sql/053_seaair_recap_issue_count_pct90.sql` SUDAH DIJALANKAN 2026-10-12** (konfirmasi user; uji PGlite 10 cek) -- `fn_seaair_recap_issue_count` melewati section cost belum dikonfirmasi kalau % Cost >= 90 (gerbang Submit to Finance Sea & Air), pre-check md5 vs sql/031, lihat bunker-courier-seaair.md; **`sql/052_courier_recap_summary_grand_total.sql` SUDAH DIJALANKAN 2026-10-12** (konfirmasi user; uji PGlite 13 cek) -- `fn_courier_recap_summary` KPI "Freight + Duty" Invoice Recap Courier pakai rumus Grand Total baru + fungsi baru `fn_courier_raw_json`, lihat courier-features.md; **`sql/051_user_presence.sql` SUDAH DIJALANKAN 2026-10-09** (konfirmasi user) -- panel User Activity (tabel `user_presence` + `fn_user_heartbeat`/`fn_user_activity`), lihat auth-session.md "User Activity"; **`sql/049_courier_checklist_valid_note.sql` SUDAH DIJALANKAN 2026-10-08** (konfirmasi user); **`sql/050_courier_checklist_manual_admin_only.sql` SUDAH DIJALANKAN 2026-10-08** (konfirmasi user) — trigger guard centang manual Checklist hanya Admin — kolom `dokumen_checklist.accepted_docs` + ganti trigger `hitung_kelengkapan`, lihat courier-features.md "Valid (note)"; idempotent, pre-check nama fungsi), user yang menjalankan manual — tidak ada akses DB
-  dari sesi. **Tambah user baru**: template `docs/sql-templates/add-users.sql` (edit daftar email/nama/password/divisi/role;
-  buat akun auth + identities + profil + divisi + role; email lama tidak diubah password-nya; diuji PGlite 27 cek).
-  **`sql/048_audit_trail_users_and_indexes.sql` SUDAH DIJALANKAN 2026-10-06** (konfirmasi user): RPC baca `fn_audit_trail_users()`
-  (dropdown User halaman Audit Trail, DISTINCT di Postgres) + index `user_email` & trigram awb/no_dokumen/user_email. Kalau RPC
-  error, dropdown User fallback ke cara lama (2.000 baris terbaru). Detail: `docs/claude/bunker-courier-seaair.md` "Audit Trail
-  server-side".
+- **SQL**: semua migrasi `sql/001`–`sql/056` SUDAH dijalankan di production & folder `sql/` DIHAPUS dari repo (001–047:
+  2026-10-06; 048–056: 2026-10-13; konfirmasi user). Isi terakhir: 041–047 di git commit `4286a34`, 048–056 di commit
+  `a21e206` (`git show <commit>:sql/<file>`), yang lebih lama di commit sebelumnya. Catatan "BELUM DIJALANKAN" di
+  `docs/claude/*.md` utk file ≤056 TIDAK berlaku. Ringkas 045–056: 045 seed 3 akun @purchasing.com; 046 `profiles.divisi` +
+  RPC `fn_set_user_divisi`; 047 isi divisi dari domain email; 048 RPC `fn_audit_trail_users()` + index Audit Trail (RPC error ->
+  dropdown User fallback 2.000 baris terbaru; bunker-courier-seaair.md "Audit Trail server-side"); 049 Checklist Courier
+  "Valid (note)" (`dokumen_checklist.accepted_docs` + trigger `hitung_kelengkapan`); 050 centang manual Checklist Courier hanya
+  Admin; 051 User Activity (`user_presence`, `fn_user_heartbeat`/`fn_user_activity`, auth-session.md); 052 KPI "Freight + Duty"
+  Invoice Recap Courier (`fn_courier_recap_summary` + `fn_courier_raw_json`, courier-features.md); 053
+  `fn_seaair_recap_issue_count` lewati section cost belum dikonfirmasi bila % Cost >= 90 (bunker-courier-seaair.md); 054 skema
+  Cost Agent (versi user ber-guard) + 055 seed master; 056 RPC `fn_cost_agent_delete_invoice` (hapus invoice Cost Agent, Admin,
+  masa uji coba -- cost-agent.md). **KEPUTUSAN TERTUNDA (user): nasib fitur hapus invoice Cost Agent setelah uji coba (cabut
+  grant / hapus tombol / pertahankan) -- JANGAN diubah sebelum user memutuskan.** SQL baru: file `sql/NNN_*.sql` baru (lanjut
+  **057**; buat ulang folder `sql/`), idempotent + pre-check nama fungsi, user yang menjalankan manual -- tidak ada akses DB dari
+  sesi. **Tambah user baru**: template `docs/sql-templates/add-users.sql` (edit daftar email/nama/password/divisi/role; buat akun
+  auth + identities + profil + divisi + role; email lama tidak diubah password-nya; diuji PGlite 27 cek).
 - **Kondisi DB production (stack `supabase3`)**: `anon` tanpa hak di schema public, GraphQL ditutup, semua tabel RLS
   (`has_page_access`/`has_edit_access`, tidak ada `using (true)`), view `security_invoker`, RPC `SECURITY DEFINER`
   ber-`search_path` & guard. **Aturan objek baru**: tabel WAJIB RLS 4 policy; RPC `SECURITY DEFINER` WAJIB guard
