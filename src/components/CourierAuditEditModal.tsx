@@ -12,8 +12,8 @@ import { createPortal } from 'react-dom'
 import { X, Plus, RotateCcw } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { SA_INPUT, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_GREEN, SA_CARD } from './SeaAirAuditUi'
-import { fmtRp, fmtValas, parseLooseNumber, buildGoodsLines, goodsLinesToFields, companyFullName, splitMoneyEvenly, type GoodsLine } from '../utils/SeaAirAuditHelpers'
-import { COURIER_AUDIT_CALC_FIELDS, computeCourierAuditCalc, courierTableOf, COURIER_STATUS_DRAFT, isCourierDraft, type CourierDocType } from '../utils/CourierAuditHelpers'
+import { fmtRp, fmtValas, buildGoodsLines, goodsLinesToFields, companyFullName, splitMoneyEvenly, type GoodsLine } from '../utils/SeaAirAuditHelpers'
+import { COURIER_AUDIT_CALC_FIELDS, computeCourierAuditCalc, courierTableOf, COURIER_STATUS_DRAFT, isCourierDraft, courierPoAmount, courierPoAmountReplace, type CourierDocType } from '../utils/CourierAuditHelpers'
 
 const COMMON_NUM = ['item_price', 'other_cost', 'valas_dpp', 'kurs_ndpbm', 'total_inv_freight', 'total_inv_duty', 'bm', 'ppn_nilai', 'pph_nilai', 'sptnp_total'] as const
 const CALC = COURIER_AUDIT_CALC_FIELDS as readonly string[]
@@ -102,14 +102,16 @@ export default function CourierAuditEditModal({
   const cur = (form.kurs || '').toUpperCase()
   const curOptions = cur && !CURRENCY_OPTIONS.includes(cur) ? [...CURRENCY_OPTIONS, cur] : CURRENCY_OPTIONS
   const importerOptions = Array.from(new Set([...importAnOptions.filter(o => o && o !== 'All'), ...(form.impor_an ? [form.impor_an] : [])]))
-  const linesSum = lines.reduce((s, l) => s + (parseLooseNumber(l.amt) ?? 0), 0)
+  // Nilai per PO dibaca dari teks detail "2608/0013/IMI = USD 700" (courierPoAmount) -- parseLooseNumber menggabung semua digit.
+  const linesSum = lines.reduce((s, l) => s + (courierPoAmount(l.amt) ?? 0), 0)
 
   const handleSplitEvenly = () => {
     const total = toNumOrNull(form.item_price) ?? 0
     if (!(total > 0) || lines.length === 0) return
     if (lines.some(l => (l.amt || '').trim() !== '') && !window.confirm('Replace the current PO amounts with Item price (valas) split evenly?')) return
     const parts = splitMoneyEvenly(total, lines.length, 2)
-    setLines(prev => prev.map((l, i) => ({ ...l, amt: String(parts[i]) })))
+    // Hanya angkanya yang diganti; referensi PO & mata uang di teks detail dipertahankan.
+    setLines(prev => prev.map((l, i) => ({ ...l, amt: courierPoAmountReplace(l.amt, parts[i]) })))
   }
 
   const numInput = (k: string, extra = '') => (

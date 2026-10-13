@@ -6,6 +6,7 @@
 // lengkap (ada kasus invoice freight memang tidak ditagihkan); fitur tabel lama tetap di mode List.
 import { supabase } from '../lib/supabase'
 import { normPct } from './SeaAirAuditHelpers'
+import { toNum } from './SeaAirValidasiHelpers'
 
 // ─── Audit Courier — Auto-Calculate Kolom Turunan (2026-09) ─────────────────
 // 7 kolom turunan dihitung otomatis dari kolom sumbernya, URUTAN WAJIB 1->7 (field bawah pakai
@@ -157,6 +158,44 @@ export function computeCourierDutyRows(rec: any, t: CourierDocType) {
 // Total Duty Tax = BM + PPN + PPh + (CN: Admin penalty / sanksi adm; PIB: SPTNP total). SATU rumus utk kartu & Section 3 preview.
 export const courierAdmOrSptnp = (rec: any, t: CourierDocType): number => (t === 'CN' ? n(rec?.sanksi_adm) : n(rec?.sptnp_total))
 export const courierTotalDutyTax = (rec: any, t: CourierDocType): number => n(rec?.bm) + n(rec?.ppn_nilai) + n(rec?.pph_nilai) + courierAdmOrSptnp(rec, t)
+
+// Nilai per PO dari kolom `po_harga_detail` (PO Price Detail). Format Courier: "2608/0013/IMI = USD 700" (referensi PO = mata uang
+// nominal) -- BUKAN angka polos. Parser lama (parseLooseNumber/toNum) membuang semua non-digit -> "26080013700" (bug 2026-10-13).
+// Ambil token angka TERAKHIR setelah "=" (atau seluruh teks bila tanpa "="); null bila tak ada angka. Mendukung "1.200,50" & "1,200.50".
+export function courierPoAmount(raw: any): number | null {
+  const s = String(raw ?? '').trim()
+  if (!s) return null
+  const eq = s.lastIndexOf('=')
+  const tail = eq >= 0 ? s.slice(eq + 1) : s
+  const tokens = tail.match(/-?\d[\d.,]*/g)
+  if (!tokens || tokens.length === 0) return null
+  const v = toNum(tokens[tokens.length - 1])
+  return Number.isFinite(v) ? v : null
+}
+// Ganti HANYA angka nilai di teks detail PO, format sekitarnya dipertahankan: ("2608/0013/IMI = USD 700", 466,67) ->
+// "2608/0013/IMI = USD 466.67". Teks kosong / tanpa angka -> angka polos (sama perilaku lama). Dipakai "Split evenly" form Edit.
+export function courierPoAmountReplace(raw: any, value: number): string {
+  const s = String(raw ?? '').trim()
+  const eq = s.lastIndexOf('=')
+  const base = eq >= 0 ? eq + 1 : 0
+  const re = /-?\d[\d.,]*/g
+  let last: RegExpExecArray | null = null
+  let m: RegExpExecArray | null
+  while ((m = re.exec(s.slice(base)))) last = m
+  if (!s) return String(value)
+  if (!last) return `${s} ${value}` // mis. "2608/0013/IMI = USD" (mata uang saja) -> "… = USD 5"
+  const at = base + last.index
+  return `${s.slice(0, at)}${value}${s.slice(at + last[0].length)}`
+}
+// Kurs pengali nilai per PO -> Rp: SAMA aturan kolom Item Price (Rp) (computeCourierAuditCalc): USD = Kurs NDPBM, selain itu
+// Kurs BI (CN; fallback Kurs NDPBM, PIB tak punya Kurs BI) -- jumlah Rp per PO = Item Price (Rp). null bila kurs kosong/0.
+export function courierPoRate(rec: any): number | null {
+  const cur = String(rec?.kurs || '').trim().toUpperCase()
+  const ndpbm = n(rec?.kurs_ndpbm)
+  const bi = n(rec?.kurs_bi)
+  const r = cur === 'USD' ? ndpbm : (bi || ndpbm)
+  return r > 0 ? r : null
+}
 
 // Total Expenses = kolom Total Inv Freight + Total Inv Duty LANGSUNG (revisi user 2026-10-13: kedua kolom itu sudah dikurangi
 // credit note masing-masing, jadi TIDAK ada pengurangan Credit Note lagi & tidak ada query tambahan).

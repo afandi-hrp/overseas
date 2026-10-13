@@ -11,9 +11,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { X, Printer, ChevronRight } from 'lucide-react'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_GREEN, Chip } from './SeaAirAuditUi'
-import { fmtRp, fmtValas, fmtDateShort, fmtPctShort, buildGoodsLines, parseLooseNumber, splitMoneyEvenly, companyFullName } from '../utils/SeaAirAuditHelpers'
+import { fmtRp, fmtValas, fmtDateShort, fmtPctShort, buildGoodsLines, splitMoneyEvenly, companyFullName } from '../utils/SeaAirAuditHelpers'
 import {
-  computeCourierBuildUp, computeCourierDutyRows, courierAdmOrSptnp, courierDocNo, type CourierDocType,
+  computeCourierBuildUp, computeCourierDutyRows, courierAdmOrSptnp, courierDocNo, courierPoAmount, courierPoRate, type CourierDocType,
 } from '../utils/CourierAuditHelpers'
 import { VALIDATION_TAB_LABEL, rowValidationPct, validationDotClass, type ValidationTabKey } from './CourierValidationWindow'
 import ValidasiModal from './ValidasiModal'
@@ -158,8 +158,10 @@ export default function CourierAuditPreview({
   const cur = colOk('kurs') ? String(rec.kurs || '').trim().toUpperCase() : ''
   const curLabel = cur && !/^[0-9.,\s]+$/.test(cur) ? cur : ''
   const showIdr = colOk('item_price_idr')
-  const goodsRate = build.goodsIdr > 0 && Number(rec.item_price) > 0 ? build.goodsIdr / Number(rec.item_price) : (build.kursNdpbm || null)
-  const noPerPoAmount = lines.length > 0 && lines.every(l => parseLooseNumber(l.amt) === null)
+  // Nilai per PO = detail `po_harga_detail` ("2608/0013/IMI = USD 700" -> 700) x Kurs NDPBM (USD) / Kurs BI (selain USD, CN);
+  // aturan kurs SAMA kolom Item Price (Rp) -> jumlah Rp per PO = Total Item Price.
+  const goodsRate = courierPoRate(rec)
+  const noPerPoAmount = lines.length > 0 && lines.every(l => courierPoAmount(l.amt) === null)
   const hasItemPrice = hasVal(rec.item_price) && colOk('item_price')
   const useItemPriceForSinglePo = noPerPoAmount && lines.length === 1 && hasItemPrice
   const canSplit = lines.length > 1 && hasItemPrice
@@ -256,8 +258,9 @@ export default function CourierAuditPreview({
               </div>
             )}
 
-            {/* Section 1 (lebar) + Section 2 (sempit) */}
-            <div className="grid grid-cols-1 @3xl:grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)] gap-3">
+            {/* Grid 2x2 SIMETRIS (revisi 2026-10-13, laporan user): kolom SAMA utk kedua baris (batas kiri/kanan sejajar), kartu satu baris sama
+                tinggi (stretch): 1 | 2 di atas, 3 | 4 di bawah. Layar sempit: 1 kolom urutan 1-2-3-4. */}
+            <div className="grid grid-cols-1 @3xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)] gap-3">
               <PreviewSection n={1} title="PO & Vendor"
                 right={<>
                   {colOk('po_ori') ? `${lines.length} PO` : ''}{curLabel ? ` · ${curLabel}` : ''}
@@ -294,7 +297,7 @@ export default function CourierAuditPreview({
                         {lines.length === 0 ? (
                           <tr><td colSpan={3} className="px-3.5 py-3 text-[#8A7A8B] border-t border-[#F3ECE6]">No PO recorded</td></tr>
                         ) : lines.map((l, i) => {
-                          const amt = parseLooseNumber(l.amt)
+                          const amt = courierPoAmount(l.amt)
                           const valas = useItemPriceForSinglePo ? fmtValas(rec.item_price)
                             : useEvenSplit ? fmtValas(evenValas[i])
                             : l.amt ? (amt !== null ? fmtValas(amt) : l.amt) : null
@@ -357,10 +360,7 @@ export default function CourierAuditPreview({
                   </LRow>
                 )}
               </PreviewSection>
-            </div>
 
-            {/* Section 3 + Section 4 */}
-            <div className="grid grid-cols-1 @3xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] gap-3 items-start">
               <PreviewSection n={3} title="Customs Value & Duties" right={`As on the ${docType}`}>
                 {(colOk('total_inv_freight') || colOk('total_inv_duty')) && (
                   <>

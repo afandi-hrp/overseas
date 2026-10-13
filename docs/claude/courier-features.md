@@ -545,6 +545,17 @@ sekarang RIWAYAT utk jendela Open; mode List/jendela Legacy tidak berubah). Styl
   Pindah ke List / Reorder Mode menutup panel. Header: badge jalur + No. AWB, Edit, Mark as audited / Move back to Draft, Delete
   (hanya Draft tab Draft), Print (`#courier-audit-preview-print-area`, aturan `:has` di index.css), ✕. Badge "Doc complete / Doc
   match / Cost" di header DIHAPUS. Tab hanya **Overview** & **Audit trail** (`CourierAuditTrail` tidak berubah).
+- **Tata letak Overview (revisi 2026-10-13, 2 laporan user)**: SATU grid 2x2 dgn lebar kolom SAMA utk kedua baris
+  (`@3xl:grid-cols-[1.55fr_1fr]`; versi awal 1.8fr/1.3fr membuat batas kolom baris atas & bawah tidak sejajar) dan kartu satu baris
+  SAMA TINGGI (stretch, tanpa `items-start`): 1 | 2 lalu 3 | 4; layar sempit 1 kolom urutan 1-2-3-4. Sempat dicoba 2 kolom
+  independen (1+3 | 2+4) -> ditolak user: tinggi kolom beda & tepi atas Section 3/4 tidak sejajar. JANGAN diubah ke keduanya.
+- **Nilai per PO (Section 1; bug fix 2026-10-13, laporan user)**: `po_harga_detail` Courier berformat `2608/0013/IMI = USD 700`
+  (referensi PO = mata uang nominal; dipisah `+`/`, `, dipasangkan POSISIONAL dgn `po_ori`). Parser lama (`parseLooseNumber`/`toNum`)
+  membuang non-digit -> `26.080.013.700`. Kini `courierPoAmount()` (CourierAuditHelpers) = angka TERAKHIR setelah `=`; Rp per PO =
+  nilai x `courierPoRate()` = **Kurs NDPBM bila currency USD, selain USD Kurs BI (fallback NDPBM)** = aturan kolom Item Price (Rp)
+  (`computeCourierAuditCalc`) -> jumlah Rp per PO = Total Item Price. **Form Edit (`CourierAuditEditModal`) ikut diperbaiki**: Goods total
+  (`linesSum`) memakai `courierPoAmount`; "Split evenly" memakai `courierPoAmountReplace` (hanya angka yg diganti, referensi PO &
+  mata uang di teks detail dipertahankan; baris kosong -> angka polos). Kolom Amount per baris tetap teks apa adanya.
 - **Overview**: ① PO & Vendor (Vendor, Remarks, tabel PO ORI | Vendor Inv No | Item Price valas + Rp, baris Other cost & Total
   Item Price = `item_price + other_cost`, Rp = `item_price_idr`; toggle As recorded/Split evenly tetap ada bila >1 PO tanpa
   rincian) ② Shipment (A/N, Via, Delivery Term, No. PIB/SPPBMCP, PPJK Date, No. SPTNP, SPTNP Date, HS Code) ③ Customs Value &
