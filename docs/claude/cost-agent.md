@@ -307,6 +307,37 @@ Dianalisa 2026-10-14 thd isi asli `git show a21e206:sql/054_cost_agent_schema.sq
   dihapus; app memang tidak punya hapus cost item).
 - SISA TEMUAN #1 (`mark_paid` tanpa cek status) TETAP terbuka.
 
+### Update 061 -- pembanding alternatif & "Check reference" (2026-10-14)
+
+`sql/060_cost_agent_compare_fix.sql` & `sql/061_cost_agent_compare_alternative.sql` = file USER, SUDAH dijalankan (konfirmasi user);
+disalin user ke ROOT repo (memicu crash watcher Vite EBUSY) -> dipindah ke `sql/` 2026-10-14. Tanpa RPC baru. **Dianalisa 2026-10-14**:
+- 060: token kuantitas ("6 HARI" -> 6HARI), dokumen sama (no invoice + vendor) tidak jadi pembanding dirinya (`p_exclude_invoice_no`,
+  get_line_history internal 9 param), history SEBELUM tgl invoice didahulukan, `resolve_cost_item` alias tanpa angka + keyword frasa >= 3
+  kata, trigger history approved -> refresh_compare invoice lain (verification/rejected, kapal/pelabuhan & jenis biaya sama, maks 200).
+- 061: kolom `compare_alt_amount numeric(18,2)`, `compare_check boolean not null default false`; get_line_history & history_row + kolom
+  `pick`; alternatif = baris same_line ranking terbaik di tier <= 3 (kapal sendiri / pelabuhan sama) HANYA bila primary bukan same_line,
+  menggantikan `next` (limit 2); refresh_compare: flag dari primary, `compare_check` = alternatif beda > tolerance_pct (5) dari primary;
+  dgn pembanding MANUAL compare_alt_amount null & compare_check false.
+- Keduanya memakai GRANT allowlist resmi 16 RPC (delete_invoice ikut) -> izin hapus tetap.
+- **Penyesuaian frontend dari analisa**: get_invoice_history tetap mengirim baris otomatis `pick='primary'` walau ada pembanding manual ->
+  label "Main reference" hanya tampil bila baris TIDAK punya `ref_history_id`.
+- **Data**: `history[].pick` = 'primary' (pembanding utama, flag dihitung dari sini) | 'next' | 'alternative' (baris SAMA / same_line di
+  kapal sendiri-pelabuhan lain atau pelabuhan sama-kapal lain; hanya bila primary bukan same_line) | 'manual'. `lines[]` +
+  `compare_alt_amount`, `compare_check` (alternatif beda > 5% dari pembanding utama).
+- **Sub-baris** (`CostAgentInvoiceLines`): primary = label kecil "Main reference" di depan label sumber; alternative = chip "Alternative ·
+  same line" (ungu muda, tooltip "Same service found elsewhere. The flag is still based on the main reference — check which one fits."),
+  garis kiri putus-putus, latar ungu sangat muda + tombol **Use as comparison** langsung (`set_line_reference(line, history)` -> modal
+  dimuat ulang; hanya `editable` = verification/rejected & canEdit). Badge line_match baris invoice kini dari pembanding TERPAKAI (manual >
+  primary > baris pertama utk data lama tanpa `pick`).
+- **compare_check**: chip kuning "Check reference" di samping flag (tooltip "Main reference: Rp … · Same-line alternative: Rp …");
+  footer "Needs check: n" = tombol filter (hanya baris compare_check / tampilkan semua); **Verify all matching mengecualikan baris
+  compare_check**.
+- **Sub-baris history responsif (2026-10-14, laporan user: label panjang menimpa kolom Amount)**: baris label (Main reference / Alternative,
+  sumber, badge line_match, jarak hari) `flex-wrap` (turun baris), teks `description_raw` di baris sendiri (truncate), isi sel `overflow-hidden`;
+  sel sticky Ref/Verified sub-baris alternative ikut latar ungu muda. Diuji render SSR komponen asli lebar tabel 900 / 1100px.
+- **Poin C (ikon check di daftar invoice) DILEWATI**: view `cost_agent_invoice_list_v` tidak membawa hitungan compare_check & spek melarang
+  query tambahan berat. Bisa ditambah kalau view diberi kolom (mis. `check_count`).
+
 ## Approval (Prompt 4, 2026-10-13)
 
 - **Approval Matrix** (`src/pages/cost-agent/CostAgentApprovalMatrixPage.tsx`): CRUD langsung `cost_agent_approval_matrix`

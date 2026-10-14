@@ -6,10 +6,13 @@
 // sql/057: sub-baris history = description_raw (baris) + invoice_description (judul invoice, kecil abu) + badge similarity;
 // match_level 'manual' = "Chosen by user". "Browse history" -> drawer CostAgentHistoryBrowser (pilih pembanding manual ->
 // fn_cost_agent_set_line_reference); "Reset to automatic" bila ref_history_id terisi.
+// sql/061: sub-baris `pick` -- primary diberi label "Main reference", alternative (baris SAMA di tempat lain, garis putus-putus) +
+// tombol "Use as comparison" langsung. Baris `compare_check` (alternatif beda > 5% dari pembanding utama) = badge "Check reference",
+// dihitung/difilter di footer ("Needs check") & TIDAK ikut "Verify all matching".
 import React, { useMemo, useState } from 'react'
-import { Plus, CheckCheck, AlertTriangle, History, RotateCcw } from 'lucide-react'
+import { Plus, CheckCheck, AlertTriangle, History, RotateCcw, Pin } from 'lucide-react'
 import { CompareFlagChip, MatchLevelLabel, CostAgentModal, FieldLabel } from './CostAgentUi'
-import { SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_INPUT } from './SeaAirAuditUi'
+import { SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_INPUT, Chip } from './SeaAirAuditUi'
 import CostAgentHistoryBrowser, { LineMatchBadge, ChosenByUserLabel, type HistoryCache } from './CostAgentHistoryBrowser'
 import {
   costAgentVerifyLine, costAgentAddCostItem, costAgentSetLineReference, fmtMoney, fmtNumber, fmtPct, fmtDate, daysDiffLabel, COMPARE_FLAG_META,
@@ -40,6 +43,7 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
   const [remarks, setRemarks] = useState<Record<number, string>>({})
   const [addFor, setAddFor] = useState<CostAgentInvoiceLine | null>(null)
   const [browseFor, setBrowseFor] = useState<CostAgentInvoiceLine | null>(null)
+  const [onlyCheck, setOnlyCheck] = useState(false) // footer "Needs check": tampilkan hanya baris compare_check
 
   const items = useMemo(() => costItems.filter(c => c.is_active !== false), [costItems])
   const itemsByCat = useMemo(() => {
@@ -63,7 +67,10 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
       actor,
     })
 
-  const matching = lines.filter(l => l.compare_flag === 'sesuai' && !l.is_verified && l.cost_item_id)
+  // compare_check (sql/061) TIDAK ikut: pembanding alternatif beda jauh -> wajib dicek manual dulu.
+  const matching = lines.filter(l => l.compare_flag === 'sesuai' && !l.is_verified && l.cost_item_id && !l.compare_check)
+  const needsCheck = lines.filter(l => l.compare_check)
+  const shownLines = onlyCheck && needsCheck.length ? needsCheck : lines
   const verifyAllMatching = () => run('all', async () => {
     for (const l of matching) await verify(l, { isVerified: true, learnAlias: true })
   })
@@ -99,8 +106,10 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
           </thead>
           <tbody>
             {lines.length === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-[#6E5E70] italic">No cost lines.</td></tr>}
-            {lines.map(l => {
+            {shownLines.map(l => {
               const rowBusy = busy === l.id || busy === 'all'
+              // Pembanding terpakai: manual > primary (sql/061) > baris pertama (data lama tanpa `pick`).
+              const refRow = (l.history || []).find(h => h.pick === 'manual' || h.pick === 'primary') || l.history?.[0]
               const newItem = !l.cost_item_id || l.compare_flag === 'item_baru'
               const remarkVal = remarks[l.id] ?? (l.remark || '')
               // Latar baris juga dipakai sel sticky Ref/Verified (harus pekat supaya isi kolom lain tidak tembus saat digeser).
@@ -138,8 +147,13 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                     <td className={`${TD} min-w-[130px]`}>
                       <div className="flex flex-wrap items-center gap-1">
                         <CompareFlagChip flag={l.compare_flag} diffPct={l.compare_diff_pct} />
-                        {/* sql/058: badge dari line_match history PERTAMA (pembanding terpakai), bukan compare_similarity. */}
-                        <LineMatchBadge match={l.history?.[0]?.line_match} similarity={l.history?.[0]?.similarity} />
+                        {/* sql/058: badge dari line_match pembanding TERPAKAI, bukan compare_similarity. */}
+                        <LineMatchBadge match={refRow?.line_match} similarity={refRow?.similarity} />
+                        {l.compare_check && (
+                          <Chip tone="amber" title={`Main reference: ${fmtMoney(l.compare_ref_amount, currency)} · Same-line alternative: ${fmtMoney(l.compare_alt_amount, currency)}`}>
+                            <AlertTriangle size={10} /> Check reference
+                          </Chip>
+                        )}
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 whitespace-nowrap">
                         <button type="button" className="text-[11px] font-semibold text-[#6B3470] hover:underline inline-flex items-center gap-0.5" onClick={() => setBrowseFor(l)}>
@@ -175,19 +189,28 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                   {(l.history || []).map((h, i) => {
                     const diff = Number(l.amount || 0) - Number(h.amount || 0)
                     const pct = h.amount ? (diff / Math.abs(Number(h.amount))) * 100 : null
+                    const alt = h.pick === 'alternative'
                     return (
-                      <tr key={`${l.id}-h${i}`} className="bg-[#FCFAF8]">
+                      <tr key={`${l.id}-h${i}`} className={alt ? 'bg-[#F7F4FC]' : 'bg-[#FCFAF8]'} data-history-pick={h.pick || undefined}>
                         <td className={`${TD} py-1`} />
                         {/* 1 baris (laptop 14"): max-w-0 = sel tidak melebarkan kolom, teks dipotong "…", lengkap di tooltip. */}
                         <td className={`${TD} py-1 text-[11.5px] max-w-0`} colSpan={2}
                           title={`${h.description_raw || '—'}${h.invoice_description ? `\n${h.invoice_description}` : ''}\n${fmtDate(h.service_date)} · ${h.invoice_no || '—'}${h.voyage_no ? ` · Voy ${h.voyage_no}` : ''} · ${h.vessel_name || '—'}${h.vessel_dwt ? ` (DWT ${fmtNumber(h.vessel_dwt, 0)})` : ''} · ${h.port_code || '—'} · ${h.vendor_name || '—'}`}>
-                          <div className={`pl-3 border-l-2 min-w-0 ${h.match_level === 'manual' ? 'border-[#6B3470]' : 'border-[#EADFD6]'}`}>
-                            <div className="flex items-center gap-2 min-w-0">
+                          {/* Responsif (2026-10-14, laporan user: label panjang menimpa kolom Amount): label sumber/badge/jarak hari boleh TURUN BARIS
+                              (flex-wrap), teks baris history di baris sendiri (truncate, lengkap di tooltip sel), isi sel tidak bisa keluar (overflow-hidden). */}
+                          <div className={`pl-3 border-l-2 min-w-0 overflow-hidden ${alt ? 'border-dashed border-[#8E6FC0]' : h.match_level === 'manual' ? 'border-[#6B3470]' : 'border-[#EADFD6]'}`}>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
+                              {/* sql/061: baris primary tetap dikirim walau ada pembanding manual (flag kini dari manual) -> label hanya tanpa manual. */}
+                              {h.pick === 'primary' && l.ref_history_id == null && <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.05em] text-[#6B3470]">Main reference</span>}
+                              {alt && (
+                                <span className="shrink-0 inline-flex items-center px-1.5 py-0.5 rounded-md bg-[#ECE6F7] text-[#5B2E8C] text-[10.5px] font-bold"
+                                  title="Same service found elsewhere. The flag is still based on the main reference — check which one fits.">Alternative · same line</span>
+                              )}
                               <span className="shrink-0">{h.match_level === 'manual' ? <ChosenByUserLabel /> : <MatchLevelLabel level={h.match_level} dwtDiff={h.dwt_diff} distanceKm={h.distance_km} />}</span>
                               <span className="shrink-0"><LineMatchBadge match={h.line_match} similarity={h.similarity} /></span>
                               {daysDiffLabel(h.days_diff) && <span className="shrink-0 text-[10.5px] text-[#8A7A8B]">{daysDiffLabel(h.days_diff)}</span>}
-                              <span className="text-[#3B1B3D] truncate min-w-0">{h.description_raw || '—'}</span>
                             </div>
+                            <div className="text-[#3B1B3D] truncate">{h.description_raw || '—'}</div>
                             <div className="text-[10.5px] text-[#8A7A8B] truncate">
                               {h.invoice_description ? `${h.invoice_description} · ` : ''}{fmtDate(h.service_date)} · {h.invoice_no || '—'}{h.voyage_no ? ` · Voy ${h.voyage_no}` : ''} · {h.vessel_name || '—'}{h.vessel_dwt ? ` (DWT ${fmtNumber(h.vessel_dwt, 0)})` : ''} · {h.port_code || '—'} · {h.vendor_name || '—'}
                             </div>
@@ -195,10 +218,17 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                         </td>
                         <td className={`${TD} py-1 text-right tabular-nums text-[11.5px] text-[#6E5E70] whitespace-nowrap`}>{fmtMoney(h.amount, currency)}</td>
                         <td className={`${TD} py-1 text-[11.5px] whitespace-nowrap tabular-nums ${diff > 0 ? 'text-[#A8231A]' : diff < 0 ? 'text-[#2F4FA8]' : 'text-[#6E5E70]'}`} colSpan={2}>
-                          Δ {diff > 0 ? '+' : ''}{fmtMoney(diff, currency)}{pct !== null ? ` (${fmtPct(pct)})` : ''}
+                          <span>Δ {diff > 0 ? '+' : ''}{fmtMoney(diff, currency)}{pct !== null ? ` (${fmtPct(pct)})` : ''}</span>
+                          {alt && editable && (
+                            <button type="button" disabled={busy !== null} className="ml-2 inline-flex items-center gap-0.5 text-[11px] font-semibold text-[#5B2E8C] hover:underline disabled:opacity-50"
+                              title="Use this same-line history as the comparison for this invoice line"
+                              onClick={() => run(l.id, () => costAgentSetLineReference(l.id, h.history_id, actor))}>
+                              <Pin size={11} /> Use as comparison
+                            </button>
+                          )}
                         </td>
-                        <td className="sticky right-[64px] bg-[#FCFAF8] shadow-[-6px_0_6px_-6px_rgba(59,27,61,0.18)]" />
-                        <td className="sticky right-0 bg-[#FCFAF8]" />
+                        <td className={`sticky right-[64px] ${alt ? 'bg-[#F7F4FC]' : 'bg-[#FCFAF8]'} shadow-[-6px_0_6px_-6px_rgba(59,27,61,0.18)]`} />
+                        <td className={`sticky right-0 ${alt ? 'bg-[#F7F4FC]' : 'bg-[#FCFAF8]'}`} />
                       </tr>
                     )
                   })}
@@ -209,12 +239,19 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
         </table>
       </div>
       {byFlag.length > 0 && (
-        <div className="px-3 py-2 border-t border-[#EADFD6] bg-[#FBF7F4] flex flex-wrap gap-x-4 gap-y-1 text-[12px] shrink-0">
+        <div className="px-3 py-2 border-t border-[#EADFD6] bg-[#FBF7F4] flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] shrink-0">
           {byFlag.map(([k, v]) => (
             <span key={k} className="text-[#3B1B3D]">
               {COMPARE_FLAG_META[k as CostAgentCompareFlag]?.label || 'Not compared'}: <b className="tabular-nums">{v.n}</b> · <span className="tabular-nums">{fmtMoney(v.amount, currency)}</span>
             </span>
           ))}
+          {needsCheck.length > 0 && (
+            <button type="button" aria-pressed={onlyCheck} onClick={() => setOnlyCheck(v => !v)} data-needs-check-filter
+              title={onlyCheck ? 'Show all lines' : 'Show only lines whose same-line alternative differs from the main reference'}
+              className={`ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-semibold ${onlyCheck ? 'bg-[#7A4F00] text-white' : 'bg-[#FFF1D6] text-[#7A4F00] hover:bg-[#FFE6B3]'}`}>
+              <AlertTriangle size={11} /> Needs check: <b className="tabular-nums">{needsCheck.length}</b>{onlyCheck ? ' · show all' : ''}
+            </button>
+          )}
         </div>
       )}
       {browseFor && (

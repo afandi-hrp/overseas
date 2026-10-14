@@ -214,6 +214,9 @@ export interface CostAgentLineHistory {
   similarity?: number | null // sql/057: kemiripan teks baris 0..1 (sql/058: hanya utk tooltip)
   line_match?: CostAgentLineMatch | null // sql/058
   days_diff?: number | null // sql/058: tgl history − tgl invoice (negatif = sebelum invoice)
+  // sql/061: peran baris -- primary = pembanding utama (flag dihitung dari sini), next = pembanding ke-2, alternative = baris SAMA
+  // (same_line) di kapal sendiri-pelabuhan lain / pelabuhan sama-kapal lain (hanya bila primary bukan same_line), manual = pilihan user.
+  pick?: 'primary' | 'next' | 'alternative' | 'manual' | null
 }
 export interface CostAgentInvoiceLine {
   id: number
@@ -240,6 +243,8 @@ export interface CostAgentInvoiceLine {
   verified_at: string | null
   ref_history_id?: number | null // sql/057: pembanding manual (null = otomatis)
   compare_similarity?: number | null // sql/057: kemiripan teks vs pembanding terpakai 0..1
+  compare_alt_amount?: number | null // sql/061: nominal pembanding alternatif (baris same_line di tempat lain)
+  compare_check?: boolean | null // sql/061: alternatif beda > 5% dari pembanding utama -> perlu dicek manual
   history: CostAgentLineHistory[]
 }
 // check_notes dari fn_cost_agent_ingest_invoice: {type, msg} -- type vendor_unknown | vessel_unknown | port_unknown |
