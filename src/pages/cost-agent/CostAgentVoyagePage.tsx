@@ -2,6 +2,8 @@
 // List (cost_agent_voyage_list_v, pagination server-side, pola BunkerPage) | Monthly Report (1 kapal + 1 bulan, layout
 // laporan + Export Excel). Klik baris -> drawer detail. Tulis HANYA lewat RPC berguard (form / import) atau n8n (pull / AI).
 // Edit = canEdit('cost_agent_voyage'); upload invoice per port call = canEdit('cost_agent_invoice'). Detail: docs/claude/cost-agent.md.
+// 2026-10-14 (keputusan user): tampilan Card = DEFAULT (List tetap ada), klik kartu -> panel detail SAMPING (drawer `embedded`, pola
+// panel Invoice Recap Courier: daftar 35% kiri, panel kanan; klik kartu lain = ganti isi). List / Monthly Report tetap drawer overlay.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RefreshCw, Plus, FileSpreadsheet, CloudDownload, Sparkles, X } from 'lucide-react'
 import { useAuth } from '../../lib/AuthContext'
@@ -9,6 +11,7 @@ import PaginationFooter from '../../components/PaginationFooter'
 import { LoadingTableRow } from '../../components/LoadingState'
 import { CostAgentPageHeader, RouteBadges, FilterPanel, FilterSearch, FilterField, FilterSegment, FilterButton, FILTER_SELECT, FILTER_SELECT_WIDE } from '../../components/CostAgentUi'
 import { Chip, SA_CARD } from '../../components/SeaAirAuditUi'
+import { CostAgentCardScroller, CostAgentVoyageCard } from '../../components/CostAgentCards'
 import CostAgentVoyageForm from '../../components/CostAgentVoyageForm'
 import CostAgentVoyageDrawer from '../../components/CostAgentVoyageDrawer'
 import CostAgentVoyageImportModal from '../../components/CostAgentVoyageImportModal'
@@ -56,7 +59,7 @@ export default function CostAgentVoyagePage() {
   const [month, setMonth] = useState(currentMonth())
   const [status, setStatus] = useState<'' | CostAgentVoyageStatus>('')
   const [source, setSource] = useState<'' | CostAgentVoyageSource>('')
-  const [view, setView] = useState<'list' | 'monthly'>('list')
+  const [view, setView] = useState<'card' | 'list' | 'monthly'>('card')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   useEffect(() => { setPage(1) }, [debounced, company, vesselId, month, status, source, pageSize])
@@ -86,7 +89,7 @@ export default function CostAgentVoyagePage() {
       if (seq === seqRef.current) setLoading(false)
     }
   }, [page, pageSize, debounced, company, vesselId, month, status, source])
-  useEffect(() => { if (view === 'list') fetchList() }, [fetchList, view, reloadKey])
+  useEffect(() => { if (view !== 'monthly') fetchList() }, [fetchList, view, reloadKey])
   const refresh = () => setReloadKey(k => k + 1)
 
   // ── Toast ──
@@ -95,6 +98,8 @@ export default function CostAgentVoyagePage() {
 
   // ── Modal / drawer ──
   const [drawerId, setDrawerId] = useState<number | null>(null)
+  // Ganti tampilan menutup panel/drawer (panel samping hanya milik tampilan Card).
+  const changeView = (v: 'card' | 'list' | 'monthly') => { setView(v); setDrawerId(null) }
   const [form, setForm] = useState<{ id: number | null } | null>(null)
   const [showImport, setShowImport] = useState(false)
   const [showPull, setShowPull] = useState(false)
@@ -154,8 +159,8 @@ export default function CostAgentVoyagePage() {
                 {(Object.keys(VOYAGE_SOURCE_LABEL) as CostAgentVoyageSource[]).map(s => <option key={s} value={s}>{VOYAGE_SOURCE_LABEL[s]}</option>)}
               </select>
             </FilterField>
-            <FilterSegment value={view} onChange={setView} options={[{ value: 'list', label: 'List' }, { value: 'monthly', label: 'Monthly Report', short: 'Report' }]} />
-            <FilterButton icon={RefreshCw} label="Refresh" labelFrom={2000} onClick={refresh} disabled={loading && view === 'list'} spin={loading && view === 'list'} />
+            <FilterSegment value={view} onChange={changeView} options={[{ value: 'card', label: 'Card' }, { value: 'list', label: 'List' }, { value: 'monthly', label: 'Monthly Report', short: 'Report' }]} />
+            <FilterButton icon={RefreshCw} label="Refresh" labelFrom={2000} onClick={refresh} disabled={loading && view !== 'monthly'} spin={loading && view !== 'monthly'} />
             {canEditVoyage && (
               <>
                 <FilterButton icon={CloudDownload} label="Pull" labelFrom={2000} title="Pull voyages from the source system" onClick={() => setShowPull(true)} />
@@ -168,6 +173,23 @@ export default function CostAgentVoyagePage() {
 
           {view === 'monthly' ? (
             <CostAgentVoyageMonthlyReport vesselId={vesselId} vesselName={selectedVessel?.name || ''} month={month} ports={ports} reloadKey={reloadKey} onOpen={setDrawerId} />
+          ) : view === 'card' ? (
+            <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-3">
+              <div className={`rounded-[14px] border border-[#EADFD6] bg-[#FBF7F4] flex flex-col min-h-0 overflow-hidden ${drawerId !== null ? 'lg:w-[35%] lg:min-w-[380px] lg:max-w-[720px] lg:shrink-0 max-lg:min-h-[420px]' : 'flex-1'}`}>
+                <CostAgentCardScroller loading={loading} error={listError} count={rows.length}
+                  empty={<>No voyages{month ? ` for ${fmtReportMonth(`${month}-01`)}` : ''}.{canEditVoyage ? ' Click "New voyage" or "Import Excel" to add one.' : ''}</>}>
+                  {rows.map(r => <CostAgentVoyageCard key={r.id} r={r} tzByCode={tzByCode} selected={drawerId === r.id} onOpen={() => setDrawerId(r.id)} />)}
+                </CostAgentCardScroller>
+                <PaginationFooter start={start} end={Math.min(page * pageSize, total)} total={total} unit="voyages" page={page} totalPages={totalPages}
+                  onPage={setPage} pageSize={pageSize} onPageSize={setPageSize} />
+              </div>
+              {drawerId !== null && (
+                <div key={drawerId} className="lg:flex-1 min-w-0 min-h-0 flex flex-col max-lg:min-h-[640px]">
+                  <CostAgentVoyageDrawer embedded voyageId={drawerId} ports={ports} reloadKey={reloadKey} canEdit={canEditVoyage} canUploadInvoice={canUploadInvoice}
+                    onClose={() => setDrawerId(null)} onEdit={id => setForm({ id })} />
+                </div>
+              )}
+            </div>
           ) : (
             <div className={`${SA_CARD} flex-1 min-h-0 flex flex-col overflow-hidden`}>
               <div className="overflow-auto flex-1 min-h-0">
@@ -232,7 +254,7 @@ export default function CostAgentVoyagePage() {
         </main>
       </div>
 
-      {drawerId !== null && (
+      {drawerId !== null && view !== 'card' && (
         <CostAgentVoyageDrawer voyageId={drawerId} ports={ports} reloadKey={reloadKey} canEdit={canEditVoyage} canUploadInvoice={canUploadInvoice}
           onClose={() => setDrawerId(null)} onEdit={id => setForm({ id })} />
       )}
@@ -247,7 +269,7 @@ export default function CostAgentVoyagePage() {
       {showPull && <CostAgentVoyagePullModal vessels={vessels} onClose={() => setShowPull(false)} onDone={refresh} />}
       {showAi && (
         <CostAgentVoyageAiModal companies={companies} defaultCompany={company} onClose={() => setShowAi(false)}
-          onDone={() => { setStatus('draft'); setMonth(''); setView('list'); refresh() }} />
+          onDone={() => { setStatus('draft'); setMonth(''); setView(v => (v === 'monthly' ? 'card' : v)); refresh() }} />
       )}
     </>
   )

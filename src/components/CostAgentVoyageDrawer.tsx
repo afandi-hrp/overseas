@@ -1,6 +1,8 @@
 // Drawer detail voyage Cost Agent (2026-10-13, Prompt 2) -- fn_cost_agent_get_voyage: timeline pelabuhan (jam lokal
 // pelabuhan + handling/port stay), cargo, invoice per port call (link ke /cost-agent/invoice/:id) + tombol upload invoice
 // utk port call itu (membuka upload halaman invoice dgn voyage_call_id terisi -- dibangun Prompt 3).
+// `embedded` (2026-10-14, tampilan Card): isi SAMA, dirender sbg PANEL SAMPING di kanan daftar kartu (pola panel Invoice Recap
+// Courier) tanpa overlay/portal; klik kartu lain = ganti isi. Mode List / Monthly Report tetap drawer overlay.
 import React, { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
@@ -17,7 +19,8 @@ const TIMES = [
   ['arrived_at', 'Arrival'], ['berthed_at', 'Berthed'], ['commenced_at', 'Commenced'], ['completed_at', 'Completed'], ['departed_at', 'Departure'],
 ] as const
 
-export default function CostAgentVoyageDrawer({ voyageId, ports, reloadKey, canEdit, canUploadInvoice, onClose, onEdit }: {
+export default function CostAgentVoyageDrawer({ voyageId, ports, reloadKey, canEdit, canUploadInvoice, onClose, onEdit, embedded = false }: {
+  embedded?: boolean
   voyageId: number
   ports: CostAgentPort[]
   reloadKey: number
@@ -51,9 +54,8 @@ export default function CostAgentVoyageDrawer({ voyageId, ports, reloadKey, canE
   const cargoByUnit = new Map<string, number>()
   data?.cargo.forEach(g => cargoByUnit.set(g.unit, (cargoByUnit.get(g.unit) || 0) + Number(g.qty || 0)))
 
-  return createPortal(
-    <div className="fixed inset-0 z-[60] bg-slate-900/40 backdrop-blur-[2px] flex justify-end" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
-      <aside className="bg-white w-full max-w-[560px] h-full shadow-2xl flex flex-col">
+  const panel = (
+      <aside className={embedded ? 'bg-white rounded-2xl border border-[#EADFD6] shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden' : 'bg-white w-full max-w-[560px] h-full shadow-2xl flex flex-col'} data-voyage-panel={embedded ? voyageId : undefined}>
         <div className="px-5 py-4 border-b border-[#EADFD6] flex items-start justify-between gap-3 shrink-0">
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
@@ -165,6 +167,11 @@ export default function CostAgentVoyageDrawer({ voyageId, ports, reloadKey, canE
           </div>
         )}
       </aside>
+  )
+  if (embedded) return panel
+  return createPortal(
+    <div className="fixed inset-0 z-[60] bg-slate-900/40 backdrop-blur-[2px] flex justify-end" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
+      {panel}
     </div>,
     document.body,
   )

@@ -315,6 +315,29 @@ Agency Invoices yg berubah (Voyages & Approval Matrix tidak disentuh; `CostAgent
 - **Approval Matrix**: kolom Simulate di kanan mulai lebar area 1100px (container query, dulu `xl:`); peringatan celah nominal
   ringkas (PT dgn celah sama digabung 1 baris; tanpa aturan aktif = 1 baris "No active rule yet").
 
+## Tampilan Card -- Voyages & Agency Invoices (2026-10-14, keputusan user)
+
+- **Card = default, List tetap ada** (toggle `FilterSegment`): Voyages **Card | List | Monthly Report**, Agency Invoices **Card | List**.
+  TANPA KPI (keputusan user). Kartu = `src/components/CostAgentCards.tsx` (`CostAgentVoyageCard`, `CostAgentInvoiceCard`,
+  `CostAgentCardScroller`) -- pola SAMA kartu Courier/Sea & Air (token SeaAirAuditUi, garis warna status kiri `border-l-4`, container
+  query `@xl`/`@5xl` memadatkan kartu saat berbagi lebar). Data = query daftar yang SAMA mode List (tanpa query tambahan), pagination
+  `PaginationFooter` tetap.
+- **Voyages**: kartu = PT · bulan, kapal, Voy #seq · charter · tipe | rute + Arrival/Departure (zona pelabuhan) | cargo, jumlah invoice,
+  Next ETA | status + source; Draft = latar kuning muda. Klik kartu -> **panel detail samping** = `CostAgentVoyageDrawer` prop `embedded`
+  (isi sama drawer, tanpa overlay/portal; pola panel Invoice Recap Courier: daftar `lg:w-[35%]` min 380 / maks 720px, panel kanan,
+  layar < lg ditumpuk; key per voyage). Ganti tampilan menutup panel (`changeView`); List & Monthly Report tetap drawer overlay.
+- **Agency Invoices**: kartu = PT · tgl invoice, vendor, invoice no | vessel · Voy, port, docs + PO chip | flags (higher/new/duplicate/
+  tax/to verify) + jumlah baris + error & Reprocess (failed) | Grand total + status + hapus (Admin). Tab Approved & hak payment: checkbox
+  per kartu + "Select all on this page". Klik kartu tetap membuka **modal review besar** (keputusan user).
+- **Bug kartu tergencet (laporan user 2026-10-14)**: kartu di kolom flex yg di-scroll ikut MENYUSUT (flex-shrink default) saat daftar lebih
+  tinggi dari layar -> isi terpotong `overflow-hidden`. Fix: `shrink-0` di kelas kartu (`cardCls`). Kartu 2 kolom mulai lebar kartu 448px
+  (`@md`, pola kartu Courier), 4 kolom mulai 1024px (`@5xl`). **Diukur** (komponen ASLI dirender Vite SSR + CSS build, headless Chrome,
+  lebar daftar 380–1700px, data panjang: vendor 40+ huruf, 3 PO, 5 chip, error failed): 0 elemen terpotong/meluber di semua lebar; tinggi
+  kartu invoice 93px (1450px) / 114px (1280px, laptop 14") / 190px (520px); voyage 108px (>=1150px) / 180px (520–1024px); 380–450px = 1
+  kolom (2 kolom di lebar itu memotong rute & vendor).
+- **Lebar panel filter diukur** (headless Chrome + CSS hasil build, markup panel sama, 1150–2100px): Agency Invoices (kasus terpadat tab
+  Approved + AI processing) 1 baris di semua lebar; Voyages 1 baris mulai 1200px, 1150px wrap 2 baris (tanpa terpotong, disengaja).
+
 ## Hapus invoice -- masa uji coba (2026-10-13, permintaan user; `sql/056` SUDAH DIJALANKAN 2026-10-13, konfirmasi user)
 
 - RLS `cost_agent_invoices` menolak DELETE dari app -> RPC baru `fn_cost_agent_delete_invoice(p_invoice_id, p_reason)`
@@ -350,6 +373,11 @@ Agency Invoices yg berubah (Voyages & Approval Matrix tidak disentuh; `CostAgent
   terlihat di laptop 14" walau tabel melebar; kolom Compare kini boleh pindah baris (dulu `whitespace-nowrap`). **Remark** = textarea yg
   tingginya ikut panjang teks (maks 6 baris, bisa ditarik), tampilan baca saja `whitespace-pre-wrap`. **Add new cost item**: body
   `min-h-[460px]`, daftar Code langsung terbuka saat modal tampil (`codeOpen` awal true), dropdown `max-h-72`.
+- **Viewer file TIDAK membuka tab baru (2026-10-14, permintaan user)**: link "Open" (`target=_blank`) diganti tombol **Full screen** =
+  overlay di halaman yang sama (`fullView`, portal z-[85], pilihan file, X / Esc menutup overlay saja). Iframe Drive `/preview` diberi
+  `sandbox="allow-scripts allow-same-origin allow-forms"` (TANPA allow-popups) + tombol kita (48px, kanan atas) MENUTUPI ikon pop-out
+  Drive (Full screen / Exit full screen) -- `FilePreviewFrame`. File non-Drive tidak di-sandbox (viewer PDF Chrome menolak iframe
+  ber-sandbox) & tampil langsung di overlay.
 
 ## Konvensi lanjutan
 

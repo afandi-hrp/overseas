@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
-import { X, Pencil, Send, ExternalLink, AlertTriangle, RotateCcw, PanelLeftClose, PanelLeftOpen, FileText, Wallet, ShieldCheck, Trash2, Plus } from 'lucide-react'
+import { X, Pencil, Send, Maximize2, Minimize2, AlertTriangle, RotateCcw, PanelLeftClose, PanelLeftOpen, FileText, Wallet, ShieldCheck, Trash2, Plus } from 'lucide-react'
 import { StatusChip, CostAgentCombobox, CostAgentModal, FieldLabel, type ComboOption } from './CostAgentUi'
 import { Chip, PtBadge, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_BTN_GREEN, SA_INPUT, SA_LABEL } from './SeaAirAuditUi'
 import { LoadingState, LoadingSpinner } from './LoadingState'
@@ -54,6 +54,8 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
   const [actionError, setActionError] = useState<string | null>(null)
   const [editHeader, setEditHeader] = useState(false)
   const [showPay, setShowPay] = useState(false)
+  // Viewer file layar penuh DI HALAMAN INI (2026-10-14, permintaan user: jangan buka tab baru).
+  const [fullView, setFullView] = useState(false)
   const onChangedRef = useRef(onChanged)
   onChangedRef.current = onChanged
   const historyCache = useRef<HistoryCache>(new Map()) // hasil Browse history per filter (hidup selama modal terbuka)
@@ -90,10 +92,10 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
   }, [status, reload])
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { if (fullView) setFullView(false); else onClose() } }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [onClose, fullView])
 
   const inv = data?.invoice
   const editable = !!inv && canEdit && isInvoiceEditable(inv.status)
@@ -217,11 +219,11 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
                       <button key={i} type="button" onClick={() => setFileIdx(i)} title={f.name}
                         className={`px-2 py-1 rounded-md text-[11.5px] font-semibold max-w-[180px] truncate ${i === fileIdx ? 'bg-[#F5EDF3] text-[#6B3470]' : 'text-[#6E5E70] hover:bg-[#FBF7F4]'}`}><FileText size={11} className="inline mr-1 -mt-0.5" />{f.name}</button>
                     ))}
-                    {current?.url && <a href={current.url} target="_blank" rel="noopener noreferrer" className="ml-auto text-[11.5px] text-[#6B3470] hover:underline inline-flex items-center gap-1">Open <ExternalLink size={11} /></a>}
+                    {current?.url && <button type="button" onClick={() => setFullView(true)} className="ml-auto text-[11.5px] text-[#6B3470] hover:underline inline-flex items-center gap-1">Full screen <Maximize2 size={11} /></button>}
                   </div>
-                  <div className="flex-1 min-h-0 bg-[#F6EFEA]">
-                    {preview ? <iframe title="Invoice file" src={preview} className="w-full h-full border-0" allow="autoplay" />
-                      : <div className="h-full flex items-center justify-center text-[12.5px] text-[#6E5E70] p-4 text-center">{current?.url ? 'Preview is only available for Google Drive files — use "Open".' : 'No file stored for this invoice yet.'}</div>}
+                  <div className="flex-1 min-h-0 bg-[#F6EFEA] relative">
+                    {preview ? <FilePreviewFrame src={preview} drive onFullScreen={() => setFullView(true)} />
+                      : <div className="h-full flex items-center justify-center text-[12.5px] text-[#6E5E70] p-4 text-center">{current?.url ? 'Preview is only available for Google Drive files — use "Full screen".' : 'No file stored for this invoice yet.'}</div>}
                   </div>
                 </div>
               )}
@@ -304,6 +306,25 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
           </div>
         )}
       </div>
+      {fullView && current?.url && createPortal(
+        <div className="fixed inset-0 z-[85] bg-slate-900/70 backdrop-blur-sm flex flex-col p-3 max-[1600px]:p-2" data-file-fullscreen
+          onMouseDown={e => { if (e.target === e.currentTarget) setFullView(false) }}>
+          <div className="bg-white rounded-2xl shadow-2xl flex flex-col flex-1 min-h-0 overflow-hidden">
+            <div className="flex items-center gap-1.5 px-4 py-2 border-b border-[#EADFD6] shrink-0 flex-wrap">
+              {files.map((f, i) => (
+                <button key={i} type="button" onClick={() => setFileIdx(i)} title={f.name}
+                  className={`px-2 py-1 rounded-md text-[12px] font-semibold max-w-[260px] truncate ${i === fileIdx ? 'bg-[#F5EDF3] text-[#6B3470]' : 'text-[#6E5E70] hover:bg-[#FBF7F4]'}`}><FileText size={12} className="inline mr-1 -mt-0.5" />{f.name}</button>
+              ))}
+              <button type="button" onClick={() => setFullView(false)} aria-label="Close full screen" title="Close (Esc)"
+                className="ml-auto p-1.5 rounded-full hover:bg-[#F6EFEA] text-[#6E5E70]"><X size={18} /></button>
+            </div>
+            <div className="flex-1 min-h-0 bg-[#F6EFEA] relative">
+              <FilePreviewFrame src={preview || current.url} drive={!!preview} exit onFullScreen={() => setFullView(false)} />
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
       {showPay && inv && (
         <CostAgentPaymentModal invoiceIds={[inv.id]} actor={actor} onClose={() => { setShowPay(false); setTab('payments') }} onDone={() => { reload() }} />
       )}
@@ -520,5 +541,24 @@ function AddVendorModal({ rawName, typed, actor, onClose, onAdded }: {
         {error && <div className="rounded-lg border border-[#F4C3BC] bg-[#FDE7E4] px-3 py-2 text-[12.5px] text-[#A8231A]">{error}</div>}
       </div>
     </CostAgentModal>
+  )
+}
+
+// Iframe file invoice. Google Drive /preview: `sandbox` TANPA allow-popups + tombol kita menutupi ikon pop-out Drive di kanan atas ->
+// file tidak pernah terbuka di tab baru (permintaan user 2026-10-14). File non-Drive (PDF langsung) TIDAK di-sandbox: viewer PDF
+// bawaan Chrome menolak tampil di iframe ber-sandbox.
+function FilePreviewFrame({ src, drive, exit = false, onFullScreen }: { src: string; drive: boolean; exit?: boolean; onFullScreen?: () => void }) {
+  return (
+    <>
+      {drive
+        ? <iframe title="Invoice file" src={src} className="w-full h-full border-0" allow="autoplay" sandbox="allow-scripts allow-same-origin allow-forms" />
+        : <iframe title="Invoice file" src={src} className="w-full h-full border-0" />}
+      {drive && (
+        <button type="button" onClick={onFullScreen} title={exit ? 'Exit full screen' : 'Full screen'} aria-label={exit ? 'Exit full screen' : 'Full screen'}
+          className="absolute top-2 right-2 w-12 h-12 rounded-md inline-flex items-center justify-center bg-[#3B1B3D]/85 hover:bg-[#3B1B3D] text-white">
+          {exit ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+        </button>
+      )}
+    </>
   )
 }

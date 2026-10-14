@@ -5,13 +5,17 @@
 // (proxy cost_agent tanpa file, cost_agent_meta {reprocess_invoice_id}). Tulis HANYA lewat RPC berguard / n8n.
 // Prompt 4: tab "My Approvals" (invoice waiting_approval yg step aktifnya memuat email user). Prompt 5: tab Approved bisa
 // multi-select -> "Create AP Note / PV" (antrean, 1 request per invoice) bila canEdit('cost_agent_payment').
+// 2026-10-14 (keputusan user): tampilan Card = DEFAULT (List tetap ada, toggle Card | List); klik kartu tetap membuka modal review
+// besar (viewer file + tabel baris terlalu lebar utk panel samping). Kartu = data & aksi SAMA baris List (checkbox Approved, hapus
+// Admin, Reprocess, chip flags).
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { RefreshCw, UploadCloud, X, RotateCcw, FileText, Loader2, Wallet, ShieldCheck, Trash2, AlertTriangle } from 'lucide-react'
 import { useAuth } from '../../lib/AuthContext'
 import PaginationFooter from '../../components/PaginationFooter'
 import { LoadingTableRow } from '../../components/LoadingState'
-import { CostAgentPageHeader, CostAgentModal, StatusChip, FilterPanel, FilterSearch, FilterField, FilterButton, FILTER_SELECT, FILTER_SELECT_WIDE } from '../../components/CostAgentUi'
+import { CostAgentPageHeader, CostAgentModal, StatusChip, FilterPanel, FilterSearch, FilterField, FilterButton, FilterSegment, FILTER_SELECT, FILTER_SELECT_WIDE } from '../../components/CostAgentUi'
+import { CostAgentCardScroller, CostAgentInvoiceCard } from '../../components/CostAgentCards'
 import { Chip, SA_BTN_OUTLINE, SA_CARD, SA_INPUT } from '../../components/SeaAirAuditUi'
 import CostAgentUploadModal from '../../components/CostAgentUploadModal'
 import CostAgentInvoiceReviewModal from '../../components/CostAgentInvoiceReviewModal'
@@ -71,6 +75,7 @@ export default function CostAgentInvoicePage() {
   useEffect(() => { const t = setTimeout(() => setDebounced(search.trim()), 350); return () => clearTimeout(t) }, [search])
   const [company, setCompany] = useState('')
   const [statusTab, setStatusTab] = useState<'all' | 'mine' | CostAgentInvoiceStatus>('all')
+  const [view, setView] = useState<'card' | 'list'>('card')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   useEffect(() => { setPage(1) }, [debounced, company, statusTab, pageSize])
@@ -220,6 +225,7 @@ export default function CostAgentInvoicePage() {
               {(myIds?.length ?? 0) > 0 && <span className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-[#5B2E8C] text-white text-[10.5px] flex items-center justify-center">{myIds!.length}</span>}
             </FilterButton>
             {needPoll && <span className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-[#2F4FA8] shrink-0" title="AI is processing — the list refreshes automatically"><Loader2 size={13} className="animate-spin" /><span className="hidden @min-[1650px]:inline">AI processing</span></span>}
+            <FilterSegment value={view} onChange={setView} options={[{ value: 'card', label: 'Card' }, { value: 'list', label: 'List' }]} />
             <FilterButton icon={RefreshCw} label="Refresh" labelFrom={1650} onClick={refresh} disabled={loading} spin={loading} />
             {statusTab === 'approved' && canPay && (
               <FilterButton icon={Wallet} label={`Create AP Note / PV${selected.length ? ` (${selected.length})` : ''}`} short={`AP/PV${selected.length ? ` (${selected.length})` : ''}`}
@@ -228,6 +234,28 @@ export default function CostAgentInvoicePage() {
             {canEditInvoice && <FilterButton icon={UploadCloud} label="Upload invoice" short="Upload" variant="primary" onClick={() => setUpload({ callId: null })} />}
           </FilterPanel>
 
+          {view === 'card' ? (
+            <div className="rounded-[14px] border border-[#EADFD6] bg-[#FBF7F4] flex-1 min-h-0 flex flex-col overflow-hidden">
+              <CostAgentCardScroller loading={loading} error={listError} count={rows.length}
+                empty={statusTab === 'mine' ? 'Nothing waiting for your approval.' : `No invoices.${canEditInvoice ? ' Click "Upload invoice" to add one.' : ''}`}
+                header={selectable && rows.length > 0 && !loading ? (
+                  <label className="flex items-center gap-2 px-1 text-[12px] font-semibold text-[#3B1B3D] shrink-0">
+                    <input type="checkbox" aria-label="Select all" className="w-4 h-4 accent-[#6B3470]" checked={rows.length > 0 && selected.length === rows.length}
+                      onChange={e => setSelected(e.target.checked ? rows.map(r => r.id) : [])} />
+                    Select all on this page{selected.length ? ` · ${selected.length} selected` : ''}
+                  </label>
+                ) : undefined}>
+                {rows.map(r => (
+                  <CostAgentInvoiceCard key={r.id} r={r} selected={r.id === openId} onOpen={() => openInvoice(r.id)}
+                    checkbox={selectable ? { checked: selected.includes(r.id), onChange: v => setSelected(p => (v ? [...p, r.id] : p.filter(x => x !== r.id))) } : undefined}
+                    error={errors[r.id]} onReprocess={canEditInvoice ? () => reprocess(r.id) : undefined} reprocessing={reprocessing === r.id}
+                    onDelete={canDelete && canDeleteInvoice(r.status) ? () => deleteInvoice(r) : undefined} deleting={deleting === r.id} />
+                ))}
+              </CostAgentCardScroller>
+              <PaginationFooter start={(page - 1) * pageSize + 1} end={Math.min(page * pageSize, total)} total={total} unit="invoices"
+                page={page} totalPages={totalPages} onPage={setPage} pageSize={pageSize} onPageSize={setPageSize} />
+            </div>
+          ) : (
           <div className={`${SA_CARD} flex-1 min-h-0 flex flex-col overflow-hidden`}>
             <div className="overflow-auto flex-1 min-h-0">
               <table className="min-w-full">
@@ -312,6 +340,7 @@ export default function CostAgentInvoicePage() {
             <PaginationFooter start={(page - 1) * pageSize + 1} end={Math.min(page * pageSize, total)} total={total} unit="invoices"
               page={page} totalPages={totalPages} onPage={setPage} pageSize={pageSize} onPageSize={setPageSize} />
           </div>
+          )}
         </main>
       </div>
 
