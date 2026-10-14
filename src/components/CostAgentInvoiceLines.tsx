@@ -10,9 +10,9 @@ import React, { useMemo, useState } from 'react'
 import { Plus, CheckCheck, AlertTriangle, History, RotateCcw } from 'lucide-react'
 import { CompareFlagChip, MatchLevelLabel, CostAgentModal, FieldLabel } from './CostAgentUi'
 import { SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_INPUT } from './SeaAirAuditUi'
-import CostAgentHistoryBrowser, { SimilarityBadge, ChosenByUserLabel, type HistoryCache } from './CostAgentHistoryBrowser'
+import CostAgentHistoryBrowser, { LineMatchBadge, ChosenByUserLabel, type HistoryCache } from './CostAgentHistoryBrowser'
 import {
-  costAgentVerifyLine, costAgentAddCostItem, costAgentSetLineReference, fmtMoney, fmtNumber, fmtPct, fmtDate, COMPARE_FLAG_META,
+  costAgentVerifyLine, costAgentAddCostItem, costAgentSetLineReference, fmtMoney, fmtNumber, fmtPct, fmtDate, daysDiffLabel, COMPARE_FLAG_META,
   type CostAgentInvoiceLine, type CostAgentCostItem, type CostAgentCompareFlag, type CostAgentPort, type CostAgentVessel, type CostAgentVendor,
 } from '../utils/CostAgentHelpers'
 
@@ -29,7 +29,7 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
   onChanged: () => Promise<void> | void
   toolbarLeft?: React.ReactNode // mis. tombol Show/Hide file dari modal review (hemat 1 baris di laptop 14")
   // Browse history (sql/057): filter awal dari header invoice + master utk select filter; cache milik modal review.
-  invoice: { port_id: number | null; vessel_id: number | null; vendor_id: number | null }
+  invoice: { port_id: number | null; vessel_id: number | null; vendor_id: number | null; service_date?: string | null; invoice_date?: string | null }
   ports: CostAgentPort[]
   vessels: CostAgentVessel[]
   vendors: CostAgentVendor[]
@@ -138,7 +138,8 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                     <td className={`${TD} min-w-[130px]`}>
                       <div className="flex flex-wrap items-center gap-1">
                         <CompareFlagChip flag={l.compare_flag} diffPct={l.compare_diff_pct} />
-                        <SimilarityBadge value={l.compare_similarity} />
+                        {/* sql/058: badge dari line_match history PERTAMA (pembanding terpakai), bukan compare_similarity. */}
+                        <LineMatchBadge match={l.history?.[0]?.line_match} similarity={l.history?.[0]?.similarity} />
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 whitespace-nowrap">
                         <button type="button" className="text-[11px] font-semibold text-[#6B3470] hover:underline inline-flex items-center gap-0.5" onClick={() => setBrowseFor(l)}>
@@ -183,7 +184,8 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                           <div className={`pl-3 border-l-2 min-w-0 ${h.match_level === 'manual' ? 'border-[#6B3470]' : 'border-[#EADFD6]'}`}>
                             <div className="flex items-center gap-2 min-w-0">
                               <span className="shrink-0">{h.match_level === 'manual' ? <ChosenByUserLabel /> : <MatchLevelLabel level={h.match_level} dwtDiff={h.dwt_diff} distanceKm={h.distance_km} />}</span>
-                              <span className="shrink-0"><SimilarityBadge value={h.similarity} /></span>
+                              <span className="shrink-0"><LineMatchBadge match={h.line_match} similarity={h.similarity} /></span>
+                              {daysDiffLabel(h.days_diff) && <span className="shrink-0 text-[10.5px] text-[#8A7A8B]">{daysDiffLabel(h.days_diff)}</span>}
                               <span className="text-[#3B1B3D] truncate min-w-0">{h.description_raw || '—'}</span>
                             </div>
                             <div className="text-[10.5px] text-[#8A7A8B] truncate">
@@ -257,7 +259,17 @@ function AddCostItemModal({ line, costItems, actor, onClose, onAdded }: {
   }, [costItems, codeTerm])
 
   const save = async () => {
-    if (existing) { onAdded(existing.id); return } // pakai item yg sudah ada
+    // Code sudah ada: keyword tambahan (bila diisi) ditambahkan server ke item itu (sql/058 add_cost_item: nama & keyword lama tetap).
+    if (existing) {
+      const extra = keywords.split(',').map(k => k.trim()).filter(Boolean)
+      if (!extra.length) { onAdded(existing.id); return }
+      setBusy(true); setError(null)
+      try {
+        const id = await costAgentAddCostItem({ code: existing.code, name: existing.name, category: existing.category, glAccount: existing.gl_account, keywords: extra, actor })
+        onAdded(Number(id || existing.id))
+      } catch (e: any) { setError(e.message || String(e)); setBusy(false) }
+      return
+    }
     if (!code.trim() || !name.trim()) { setError('Code and name are required.'); return }
     setBusy(true); setError(null)
     try {
@@ -315,7 +327,12 @@ function AddCostItemModal({ line, costItems, actor, onClose, onAdded }: {
         )}
         <div className="col-span-2"><FieldLabel required>Name</FieldLabel><input className={SA_INPUT} value={existing ? existing.name : name} disabled={!!existing} onChange={e => setName(e.target.value)} /></div>
         <div><FieldLabel>GL account</FieldLabel><input className={SA_INPUT} value={existing ? existing.gl_account || '' : gl} disabled={!!existing} onChange={e => setGl(e.target.value)} placeholder="e.g. 61050" /></div>
-        <div><FieldLabel hint="comma separated">Keywords</FieldLabel><input className={SA_INPUT} value={existing ? (existing.keywords || []).join(', ') : keywords} disabled={!!existing} onChange={e => setKeywords(e.target.value)} /></div>
+        <div className="col-span-2">
+          <FieldLabel hint="comma separated">{existing ? 'Keywords to add' : 'Keywords'}</FieldLabel>
+          <input className={SA_INPUT} value={keywords} onChange={e => setKeywords(e.target.value)} />
+          <p className="mt-1 text-[11px] text-[#6E5E70] leading-snug">Comma-separated words used to auto-detect this cost on future invoices. If the code already exists, these keywords are added to it (existing keywords and name are kept).</p>
+          {existing && (existing.keywords || []).length > 0 && <p className="mt-0.5 text-[11px] text-[#8A7A8B] [overflow-wrap:anywhere]">Existing keywords: {(existing.keywords || []).join(', ')}</p>}
+        </div>
         {error && <div className="col-span-2 rounded-lg border border-[#F4C3BC] bg-[#FDE7E4] px-3 py-2 text-[12.5px] text-[#A8231A]">{error}</div>}
       </div>
     </CostAgentModal>

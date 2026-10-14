@@ -99,6 +99,8 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
 
   const inv = data?.invoice
   const editable = !!inv && canEdit && isInvoiceEditable(inv.status)
+  // Koreksi header (sql/058 update): verification / rejected / failed. Baris tetap hanya verification/rejected (`editable`).
+  const headerEditable = !!inv && canEdit && (isInvoiceEditable(inv.status) || inv.status === 'failed')
   const files = useMemo(() => {
     if (!inv) return [] as { name: string; url: string | null }[]
     const list = (inv.files || []).map((f, i) => ({ name: f.file_name || `File ${i + 1}`, url: f.file_url || null }))
@@ -144,7 +146,7 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
               {inv && <div className="text-[12px] text-[#6E5E70] mt-0.5">Invoice date {fmtDate(inv.invoice_date)} · Service date {fmtDate(inv.service_date)} · Uploaded by {inv.uploaded_by || '—'}</div>}
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              {editable && !editHeader && <button type="button" className={SA_BTN_OUTLINE} onClick={() => setEditHeader(true)}><Pencil size={13} /> Correct header</button>}
+              {headerEditable && !editHeader && <button type="button" className={SA_BTN_OUTLINE} onClick={() => setEditHeader(true)}><Pencil size={13} /> Correct header</button>}
               {onDelete && inv && canDeleteInvoice(inv.status) && (
                 <button type="button" className={`${SA_BTN_OUTLINE} text-[#A8231A] hover:border-[#F4C3BC] hover:bg-[#FDE7E4]`} title="Delete this invoice (Admin, trial data)"
                   onClick={() => onDelete({ id: inv.id, invoice_no: inv.invoice_no, status: inv.status })}><Trash2 size={13} /> Delete</button>

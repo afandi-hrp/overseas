@@ -249,6 +249,64 @@ Agency Invoices yg berubah (Voyages & Approval Matrix tidak disentuh; `CostAgent
   vendor halaman (`vendors` prop) TIDAK dimuat ulang setelah tambah vendor -- dipakai hanya utk cek "already exists" & filter drawer.
 - **Diuji 2026-10-13**: `tsc` bersih, `vite build` sukses. BELUM dites ke DB (RPC 057) dari sesi ini.
 
+### Update 058 -- compare v2: line_match, days_diff, same_vessel, sort (2026-10-14)
+
+`sql/058_cost_agent_compare_v2.sql` (file USER, bukan di repo) SUDAH DIJALANKAN; tanpa RPC baru. **Nomor 058 dipakai 2 file**: file repo
+`sql/058_cost_agent_delete_invoice_grant.sql` (grant delete_invoice, BELUM dijalankan per 2026-10-14) berbeda isi -- SQL berikutnya 059.
+- **Data**: `history[]` (get_invoice_history) & `rows[]` (search_history) + `line_match` ('same_line' | 'similar' | 'different_line' |
+  'no_text', dihitung SERVER), `days_diff` (tgl history − tgl invoice), `similarity` (tooltip saja). `match_level` + `same_vessel`.
+  search_history `p_filter` + `ref_date` ('YYYY-MM-DD') & `sort` ('similarity' | 'date'); respons + `sort`. Tipe di CostAgentHelpers.
+- **Badge** `LineMatchBadge` (CostAgentHistoryBrowser.tsx, MENGGANTIKAN SimilarityBadge angka): same_line "Same line" hijau, similar
+  "Similar line" biru, different_line "Different line" oranye (tooltip "Different service/wording than this invoice line — check
+  manually"), no_text tanpa badge; persen similarity hanya di tooltip; label "Cost item only" DIHAPUS. Baris invoice: badge dari
+  `history[0].line_match` (pembanding terpakai), bukan `compare_similarity`.
+- **Label sumber** (`matchLevelLabel`, hanya dipakai tabel baris invoice): same_vessel_port "Same vessel & port", nearest_dwt "Same port ·
+  nearest DWT (Δ x)", same_vessel "Same vessel · other port", nearest_port "Nearest port (x km)", manual "Chosen by user" + teks kecil
+  `daysDiffLabel` ("12 days before" / "5 days after" / "same day") di sub-baris & kolom Date drawer.
+- **Browse history**: `ref_date` = service_date invoice (fallback invoice_date); toggle **Sort: Best match | Newest** (default Best
+  match), ikut kunci cache. Highlight baris = line_match same_line/similar (dulu similarity >= 0.5).
+- **Correct header**: tampil juga utk status `failed` (dulu hanya verification/rejected; baris tetap verification/rejected). Combobox
+  vendor + Add vendor + "As written on invoice" SUDAH ada sejak update 057 (tidak diubah).
+- **Add new cost item**: helper text Keywords. Code yg SUDAH ada kini bisa menambah keyword ("Keywords to add", default teks baris; daftar
+  keyword lama tampil) -> `fn_cost_agent_add_cost_item(code lama, …)` (server menambah keyword, nama/keyword lama tetap) lalu verify_line;
+  dikosongkan = langsung pakai item (tanpa RPC).
+
+- **Analisa isi 058_cost_agent_compare_v2.sql (2026-10-14, file user di root)**: kontrak data COCOK dgn frontend (history & rows: `line_match`,
+  `days_diff`, `similarity`; match_level nearest_dwt = pelabuhan sama, same_vessel = pelabuhan lain; search_history `ref_date`/`sort` +
+  respons `sort`; add_cost_item `on conflict (code)` hanya menggabung keyword, return id). Tabel baru `cost_agent_token_synonyms` &
+  `cost_agent_token_stats` ber-RLS 4 policy (baca `has_page_access('cost_agent_invoice')`, tulis false). Fungsi baru search_path '';
+  search_history/add_cost_item ber-guard. **Temuan**:
+  1. **Bagian 9 GRANT (revoke massal `fn_cost_agent_*` + allowlist 15 RPC) TIDAK memuat `fn_cost_agent_delete_invoice`** -> setiap kali
+     058 (atau SQL dgn pola sama) dijalankan, izin hapus invoice TERCABUT lagi (penyebab insiden "permission denied"). Grant repo
+     `sql/058_cost_agent_delete_invoice_grant.sql` dijalankan user SETELAH compare_v2 (2026-10-14) -> aman sekarang. SQL berikutnya yg
+     memakai pola ini WAJIB menambah `fn_cost_agent_delete_invoice` ke `app_rpc` (selama fitur hapus dipertahankan).
+  2. Best match search_history hanya berlaku bila `description` (chip "Line text") terisi; tanpa itu server urut tanggal -> drawer
+     menampilkan "Sorted by date — no line text" (dari respons `sort`).
+  3. `fn_cost_agent_update_invoice_header` (TIDAK diubah 058) -- **diverifikasi user 2026-10-14 (pg_get_functiondef live)**: guard
+     `assert_edit('cost_agent_invoice')`, status `verification/rejected/failed` diizinkan (cocok tombol Correct header UI), status invoice
+     TIDAK berubah (failed tetap failed), alias vendor/kapal/pelabuhan dari `*_name_raw` dipelajari otomatis, lalu `refresh_compare` +
+     status_log "Header dikoreksi". Catatan kecil: id invoice tak ada -> status NULL lolos cek (NOT IN dgn NULL), update 0 baris, insert
+     status_log bisa gagal FK -- tidak terjangkau dari UI (modal hanya utk invoice yg ada).
+
+### SQL 059 (file user, SUDAH DIJALANKAN 2026-10-14) -- pesan jelas bila invoice/baris sudah tidak ada + delete_invoice resmi
+
+Dianalisa 2026-10-14 thd isi asli `git show a21e206:sql/054_cost_agent_schema.sql` / `056_cost_agent_delete_invoice.sql`:
+- `update_invoice_header`, `verify_line`, `submit_for_approval`, `create_payment_request`: + `if not found then raise exception 'Invoice
+  % tidak ditemukan'` (verify_line juga 'Baris % tidak ditemukan' + kunci invoice `for update`). Isi lain SAMA 054/057, KECUALI
+  `submit_for_approval` + aturan BARU: step matrix tanpa `approver_emails` -> submit DITOLAK ("Approval Matrix untuk invoice ini punya step
+  tanpa email approver…"; insert approvals ikut dibatalkan) -> menutup SISA TEMUAN #2 utk invoice yg diajukan sesudah 059.
+- `delete_invoice` (return jsonb SAMA 056, + `files`): guard sama (assert_edit + Admin bila `fn_cost_agent_caller_role()` =
+  authenticated -- fungsi ada di 054), + not found; invoice lain yg memakai history invoice ini sbg pembanding manual -> refresh_compare
+  (verification/rejected saja); statistik kata 058 diperbarui utk jenis biaya terdampak.
+- **GRANT allowlist resmi = 16 RPC (+ `fn_cost_agent_delete_invoice`)** -> izin hapus tidak tercabut lagi oleh SQL Cost Agent berikutnya
+  yg memakai daftar ini. `sql/058_cost_agent_delete_invoice_grant.sql` (repo) kini hanya riwayat.
+- Frontend TIDAK perlu diubah (pesan error RPC sudah tampil apa adanya di modal/toast).
+- **FK `cost_agent_invoice_lines` (dicek user 2026-10-14, pg_constraint)**: `ref_history_id_fkey` = `n` (ON DELETE SET NULL) -> hapus
+  invoice yg history-nya dipakai pembanding manual invoice lain AMAN (pembanding jadi otomatis lalu refresh_compare 059);
+  `invoice_id_fkey` = `c` (cascade, baris ikut terhapus); `cost_item_id_fkey` = `a` (no action -- cost item yg dipakai baris tidak bisa
+  dihapus; app memang tidak punya hapus cost item).
+- SISA TEMUAN #1 (`mark_paid` tanpa cek status) TETAP terbuka.
+
 ## Approval (Prompt 4, 2026-10-13)
 
 - **Approval Matrix** (`src/pages/cost-agent/CostAgentApprovalMatrixPage.tsx`): CRUD langsung `cost_agent_approval_matrix`
@@ -335,6 +393,11 @@ Agency Invoices yg berubah (Voyages & Approval Matrix tidak disentuh; `CostAgent
   lebar daftar 380–1700px, data panjang: vendor 40+ huruf, 3 PO, 5 chip, error failed): 0 elemen terpotong/meluber di semua lebar; tinggi
   kartu invoice 93px (1450px) / 114px (1280px, laptop 14") / 190px (520px); voyage 108px (>=1150px) / 180px (520–1024px); 380–450px = 1
   kolom (2 kolom di lebar itu memotong rute & vendor).
+- **Upload invoice per port call LANGSUNG dari Voyages (2026-10-14, permintaan user)**: tombol "Upload invoice for this port call" di
+  panel/drawer membuka `CostAgentUploadModal` di halaman Voyages (prop `onUploadInvoice` drawer; port call terisi, company = company
+  voyage, fallback filter Company halaman). Form, proxy n8n (`cost_agent`) & meta SAMA halaman Agency Invoices; selesai -> toast + daftar &
+  panel dibaca ulang. Dulu pindah ke `/cost-agent/invoice?upload=1&call=` -- query itu TETAP didukung halaman Invoice (drawer tanpa prop
+  `onUploadInvoice` = link lama).
 - **Lebar panel filter diukur** (headless Chrome + CSS hasil build, markup panel sama, 1150–2100px): Agency Invoices (kasus terpadat tab
   Approved + AI processing) 1 baris di semua lebar; Voyages 1 baris mulai 1200px, 1150px wrap 2 baris (tanpa terpotong, disengaja).
 

@@ -4,6 +4,8 @@
 // select master), q debounce 400 ms, rentang tanggal. Minimal 1 filter utama (cost item/port/vessel/vendor) -- syarat RPC.
 // Hasil di-cache per filter (cache milik modal review, hidup selama modal terbuka). "Use as comparison" ->
 // fn_cost_agent_set_line_reference (hanya status verification/rejected & canEdit('cost_agent_invoice') = prop `editable`).
+// sql/058 (compare v2): badge = `line_match` dari server (bukan dihitung dari angka), ref_date = tgl invoice (service_date, fallback
+// invoice_date) -> days_diff per baris, toggle Sort: Best match (similarity) | Newest (date).
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Search, Pin, AlertTriangle } from 'lucide-react'
@@ -11,36 +13,36 @@ import { CostAgentCombobox, FieldLabel, type ComboOption } from './CostAgentUi'
 import { Chip, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_INPUT } from './SeaAirAuditUi'
 import { LoadingState, LoadingSpinner } from './LoadingState'
 import {
-  costAgentSearchHistory, hasHistoryMainFilter, fmtMoney, fmtNumber, fmtPct, fmtDate,
+  costAgentSearchHistory, hasHistoryMainFilter, fmtMoney, fmtNumber, fmtPct, fmtDate, daysDiffLabel,
   type CostAgentHistoryFilter, type CostAgentHistorySearchRow, type CostAgentInvoiceLine, type CostAgentCostItem,
-  type CostAgentPort, type CostAgentVessel, type CostAgentVendor,
+  type CostAgentPort, type CostAgentVessel, type CostAgentVendor, type CostAgentLineMatch,
 } from '../utils/CostAgentHelpers'
 
 const PAGE = 20
 
-// Badge kemiripan teks baris: >= 0.8 Same line, 0.5–0.79 Similar, < 0.5 Cost item only.
-export function SimilarityBadge({ value }: { value: number | null | undefined }) {
-  if (value === null || value === undefined) return null
-  const v = Number(value)
-  const pct = `${Math.round(v * 100)}%`
-  if (v >= 0.8) return <Chip tone="green" title={`Line text similarity ${pct}`}>Same line</Chip>
-  if (v >= 0.5) return <Chip tone="blue" title={`Line text similarity ${pct}`}>Similar</Chip>
-  return <Chip tone="grey" title="No similar line text found; compared by cost item">Cost item only</Chip>
+// Badge kecocokan teks baris (sql/058): dari `line_match` server -- same_line hijau, similar biru, different_line oranye, no_text
+// tanpa badge. Persen similarity hanya di tooltip.
+export function LineMatchBadge({ match, similarity }: { match: CostAgentLineMatch | null | undefined; similarity?: number | null }) {
+  if (!match || match === 'no_text') return null
+  const pct = similarity !== null && similarity !== undefined && !isNaN(Number(similarity)) ? ` · text similarity ${Math.round(Number(similarity) * 100)}%` : ''
+  if (match === 'same_line') return <Chip tone="green" title={`Same line text as this invoice line${pct}`}>Same line</Chip>
+  if (match === 'similar') return <Chip tone="blue" title={`Similar line text${pct}`}>Similar line</Chip>
+  return <Chip tone="amber" className="!bg-[#FDEBD9] !text-[#9A4A12]" title={`Different service/wording than this invoice line — check manually${pct}`}>Different line</Chip>
 }
 
 export const ChosenByUserLabel = () => (
   <span className="text-[11px] font-semibold text-[#6B3470] whitespace-nowrap inline-flex items-center gap-0.5"><Pin size={11} /> Chosen by user</span>
 )
 
-export type HistoryCache = Map<string, { rows: CostAgentHistorySearchRow[]; hasMore: boolean }>
+export type HistoryCache = Map<string, { rows: CostAgentHistorySearchRow[]; hasMore: boolean; sort?: string }>
 
 const filterKey = (f: CostAgentHistoryFilter) =>
-  JSON.stringify(['cost_item_id', 'port_id', 'vessel_id', 'vendor_id', 'q', 'date_from', 'date_to', 'description'].map(k => (f as any)[k] ?? null))
+  JSON.stringify(['cost_item_id', 'port_id', 'vessel_id', 'vendor_id', 'q', 'date_from', 'date_to', 'description', 'ref_date', 'sort'].map(k => (f as any)[k] ?? null))
 
 export default function CostAgentHistoryBrowser({ line, currency, invoice, costItems, ports, vessels, vendors, cache, editable, onUse, onClose }: {
   line: CostAgentInvoiceLine
   currency: string
-  invoice: { port_id: number | null; vessel_id: number | null; vendor_id: number | null }
+  invoice: { port_id: number | null; vessel_id: number | null; vendor_id: number | null; service_date?: string | null; invoice_date?: string | null }
   costItems: CostAgentCostItem[]
   ports: CostAgentPort[]
   vessels: CostAgentVessel[]
@@ -59,8 +61,12 @@ export default function CostAgentHistoryBrowser({ line, currency, invoice, costI
   const [q, setQ] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [sort, setSort] = useState<'similarity' | 'date'>('similarity') // Best match (default) | Newest
+  const refDate = String(invoice.service_date || invoice.invoice_date || '').slice(0, 10) || null
   const [rows, setRows] = useState<CostAgentHistorySearchRow[]>([])
   const [hasMore, setHasMore] = useState(false)
+  // Urutan yang BENAR-BENAR dipakai server (sql/058: Best match hanya bila filter teks baris ada; tanpa itu urut tanggal).
+  const [serverSort, setServerSort] = useState<string | undefined>(undefined)
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -78,23 +84,23 @@ export default function CostAgentHistoryBrowser({ line, currency, invoice, costI
 
   const filter: CostAgentHistoryFilter = useMemo(() => ({
     cost_item_id: costItemId, port_id: portId, vessel_id: vesselId, vendor_id: vendorId,
-    q: q || null, date_from: dateFrom || null, date_to: dateTo || null, description,
-  }), [costItemId, portId, vesselId, vendorId, q, dateFrom, dateTo, description])
+    q: q || null, date_from: dateFrom || null, date_to: dateTo || null, description, ref_date: refDate, sort,
+  }), [costItemId, portId, vesselId, vendorId, q, dateFrom, dateTo, description, refDate, sort])
   const canSearch = hasHistoryMainFilter(filter)
 
   const search = async (force = false) => {
     if (!canSearch) { setRows([]); setHasMore(false); return }
     const key = filterKey(filter)
     const hit = !force && cache.get(key)
-    if (hit) { setRows(hit.rows); setHasMore(hit.hasMore); setError(null); return }
+    if (hit) { setRows(hit.rows); setHasMore(hit.hasMore); setServerSort(hit.sort); setError(null); return }
     const my = ++seq.current
     setLoading(true); setError(null)
     try {
       const r = await costAgentSearchHistory(filter, PAGE, 0)
       if (my !== seq.current) return
       const list = r?.rows || []
-      cache.set(key, { rows: list, hasMore: !!r?.has_more })
-      setRows(list); setHasMore(!!r?.has_more)
+      cache.set(key, { rows: list, hasMore: !!r?.has_more, sort: r?.sort })
+      setRows(list); setHasMore(!!r?.has_more); setServerSort(r?.sort)
     } catch (e: any) {
       if (my === seq.current) { setError(e.message || String(e)); setRows([]); setHasMore(false) }
     } finally {
@@ -113,7 +119,7 @@ export default function CostAgentHistoryBrowser({ line, currency, invoice, costI
       const r = await costAgentSearchHistory(filter, PAGE, rows.length)
       if (my !== seq.current) return
       const next = [...rows, ...(r?.rows || [])]
-      cache.set(key, { rows: next, hasMore: !!r?.has_more })
+      cache.set(key, { rows: next, hasMore: !!r?.has_more, sort: r?.sort ?? serverSort })
       setRows(next); setHasMore(!!r?.has_more)
     } catch (e: any) { setError(e.message || String(e)) } finally { setLoadingMore(false) }
   }
@@ -178,6 +184,16 @@ export default function CostAgentHistoryBrowser({ line, currency, invoice, costI
               </span>
             ))}
             <div className="ml-auto flex items-center gap-2">
+              <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[#F5EDF3]" role="tablist" aria-label="Sort">
+                <span className="pl-1.5 pr-0.5 text-[11px] font-semibold text-[#6E5E70]">Sort:</span>
+                {([['similarity', 'Best match'], ['date', 'Newest']] as const).map(([v, label]) => (
+                  <button key={v} type="button" role="tab" aria-selected={sort === v} onClick={() => setSort(v)}
+                    className={`px-2.5 h-7 rounded-lg text-xs font-bold whitespace-nowrap ${sort === v ? 'bg-[#3B1B3D] text-white shadow-sm' : 'text-[#3B1B3D] hover:bg-white'}`}>{label}</button>
+                ))}
+              </div>
+              {sort === 'similarity' && serverSort === 'date' && (
+                <span className="text-[11px] text-[#7A4F00]" title="Best match needs the line text filter (chip “Line text”)">Sorted by date — no line text</span>
+              )}
               {!canSearch && <span className="text-[11.5px] text-[#7A4F00] inline-flex items-center gap-1"><AlertTriangle size={12} /> Pick at least a cost item, port, vessel or vendor.</span>}
               <button type="button" className={SA_BTN_PRIMARY} disabled={!canSearch || loading} onClick={() => search(true)}><Search size={13} /> Search</button>
             </div>
@@ -204,12 +220,12 @@ export default function CostAgentHistoryBrowser({ line, currency, invoice, costI
                   const diff = lineAmount - Number(h.amount || 0)
                   const pct = h.amount ? (diff / Math.abs(Number(h.amount))) * 100 : null
                   const current = line.ref_history_id === h.history_id
-                  const similar = h.similarity !== null && h.similarity !== undefined && Number(h.similarity) >= 0.5
+                  const similar = h.line_match === 'same_line' || h.line_match === 'similar'
                   const TD = 'px-2 py-1.5 text-[12px] text-[#3B1B3D] align-top'
                   const rowBg = current ? 'bg-[#F5EDF3]' : similar ? 'bg-[#F2FAF5]' : 'bg-white'
                   return (
                     <tr key={h.history_id} className={`border-t border-[#F3EEEA] ${rowBg}`}>
-                      <td className={`${TD} whitespace-nowrap`}>{fmtDate(h.service_date)}</td>
+                      <td className={`${TD} whitespace-nowrap`}>{fmtDate(h.service_date)}{daysDiffLabel(h.days_diff) && <div className="text-[10.5px] text-[#8A7A8B]">{daysDiffLabel(h.days_diff)}</div>}</td>
                       <td className={`${TD} w-full max-w-0`}>
                         <div className="truncate" title={h.description_raw || undefined}>{h.description_raw || '—'}</div>
                         <div className="text-[11px] text-[#8A7A8B] truncate" title={h.invoice_description || undefined}>
@@ -227,7 +243,7 @@ export default function CostAgentHistoryBrowser({ line, currency, invoice, costI
                         <div>{diff > 0 ? '+' : ''}{fmtMoney(diff, currency)}</div>
                         {pct !== null && <div className="text-[11px]">{fmtPct(pct)}</div>}
                       </td>
-                      <td className={`${TD} whitespace-nowrap`}><SimilarityBadge value={h.similarity} /></td>
+                      <td className={`${TD} whitespace-nowrap`}><LineMatchBadge match={h.line_match} similarity={h.similarity} /></td>
                       <td className={`${TD} whitespace-nowrap text-[11.5px] text-[#6E5E70]`}>{h.source === 'import' ? 'Import' : h.source === 'app' ? 'App' : h.source || '—'}</td>
                       <td className={`${TD} whitespace-nowrap text-right sticky right-0 ${rowBg} shadow-[-6px_0_6px_-6px_rgba(59,27,61,0.18)]`}>
                         {current ? <ChosenByUserLabel /> : editable && (
@@ -250,7 +266,7 @@ export default function CostAgentHistoryBrowser({ line, currency, invoice, costI
         </div>
         <div className="px-5 py-2 border-t border-[#EADFD6] bg-[#FBF7F4] text-[11.5px] text-[#6E5E70] shrink-0 flex items-center gap-3 flex-wrap">
           <span>{rows.length} row{rows.length === 1 ? '' : 's'} shown{hasMore ? ' · more available' : ''}</span>
-          <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-[#F2FAF5] border border-[#CFE9D9]" /> similar line text (≥ 50%)</span>
+          <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-[#F2FAF5] border border-[#CFE9D9]" /> same / similar line text</span>
           {!editable && <span className="ml-auto italic">Read only — comparison can be changed while the invoice is in Verification / Rejected.</span>}
         </div>
       </div>

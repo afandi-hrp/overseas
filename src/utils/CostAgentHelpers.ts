@@ -15,7 +15,10 @@ export type CostAgentVoyageSource = 'manual' | 'api' | 'import' | 'ai'
 export type CostAgentActivity = 'muat' | 'bongkar' | 'bongkar_muat' | 'sts' | 'bunker' | 'docking' | 'lainnya'
 export type CostAgentCompareFlag = 'sesuai' | 'naik' | 'turun' | 'tanpa_history' | 'item_baru'
 // 'manual' (sql/057) = pembanding pilihan user (lines.ref_history_id), selalu urutan pertama di history[].
-export type CostAgentMatchLevel = 'same_vessel_port' | 'nearest_dwt' | 'nearest_port' | 'none' | 'manual'
+// 'same_vessel' (sql/058 compare v2) = kapal sama, pelabuhan lain.
+export type CostAgentMatchLevel = 'same_vessel_port' | 'nearest_dwt' | 'same_vessel' | 'nearest_port' | 'none' | 'manual'
+// sql/058: kecocokan teks baris dihitung SERVER (badge memakai ini, JANGAN dihitung dari angka similarity).
+export type CostAgentLineMatch = 'same_line' | 'similar' | 'different_line' | 'no_text'
 export type CostAgentDocType = 'unknown' | 'invoice' | 'faktur_pajak' | 'po' | 'kwitansi' | 'nota_pelabuhan' | 'lampiran' | 'lainnya'
 export type CostAgentDocStatus = 'processing' | 'done' | 'failed'
 export type CostAgentTaxStatus = 'processing' | 'match' | 'mismatch' | 'error'
@@ -208,7 +211,9 @@ export interface CostAgentLineHistory {
   dwt_diff: number | null
   description_raw: string | null // sql/057: teks BARIS biaya saja
   invoice_description?: string | null // sql/057: judul invoice lama (dulu tergabung "judul | baris")
-  similarity?: number | null // sql/057: kemiripan teks baris 0..1
+  similarity?: number | null // sql/057: kemiripan teks baris 0..1 (sql/058: hanya utk tooltip)
+  line_match?: CostAgentLineMatch | null // sql/058
+  days_diff?: number | null // sql/058: tgl history − tgl invoice (negatif = sebelum invoice)
 }
 export interface CostAgentInvoiceLine {
   id: number
@@ -424,6 +429,8 @@ export const costAgentAddCostItem = (a: {
 export interface CostAgentHistoryFilter {
   cost_item_id?: number | null; port_id?: number | null; vessel_id?: number | null; vendor_id?: number | null
   q?: string | null; date_from?: string | null; date_to?: string | null; description?: string | null
+  ref_date?: string | null // sql/058: 'YYYY-MM-DD' tgl invoice -> days_diff
+  sort?: 'similarity' | 'date' | null // sql/058: Best match | Newest
 }
 export const hasHistoryMainFilter = (f: CostAgentHistoryFilter) => [f.cost_item_id, f.port_id, f.vessel_id, f.vendor_id].some(v => v != null)
 export interface CostAgentHistorySearchRow {
@@ -432,8 +439,9 @@ export interface CostAgentHistorySearchRow {
   vessel_name: string | null; vessel_dwt: number | null; port_code: string | null; port_name: string | null
   vendor_name: string | null; company_code: string | null; description_raw: string | null; invoice_description: string | null
   source: 'import' | 'app' | string; similarity: number | null
+  line_match?: CostAgentLineMatch | null; days_diff?: number | null // sql/058
 }
-export interface CostAgentHistorySearchResult { rows: CostAgentHistorySearchRow[]; has_more: boolean; limit: number; offset: number }
+export interface CostAgentHistorySearchResult { rows: CostAgentHistorySearchRow[]; has_more: boolean; limit: number; offset: number; sort?: string }
 export const costAgentSearchHistory = (filter: CostAgentHistoryFilter, limit = 20, offset = 0) => {
   // Kirim hanya key terisi (null / '' dibuang).
   const p = Object.fromEntries(Object.entries(filter).filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== ''))
@@ -555,9 +563,20 @@ export const COMPARE_FLAG_META: Record<CostAgentCompareFlag, { label: string; to
   item_baru: { label: 'New item', tone: 'amber' },
 }
 
+// Jarak tanggal history vs invoice (sql/058 days_diff): "12 days before" / "5 days after" / "same day".
+export function daysDiffLabel(d: number | null | undefined): string {
+  if (d === null || d === undefined || isNaN(Number(d))) return ''
+  const n = Math.round(Number(d))
+  if (n === 0) return 'same day'
+  const a = Math.abs(n)
+  return `${a} day${a === 1 ? '' : 's'} ${n < 0 ? 'before' : 'after'}`
+}
+
 export function matchLevelLabel(level: CostAgentMatchLevel | null | undefined, h?: { dwt_diff?: number | null; distance_km?: number | null }): string {
   if (level === 'same_vessel_port') return 'Same vessel & port'
-  if (level === 'nearest_dwt') return `Nearest DWT (Δ ${fmtNumber(h?.dwt_diff ?? 0)})`
+  // sql/058: nearest_dwt = pelabuhan sama, kapal DWT terdekat.
+  if (level === 'nearest_dwt') return `Same port · nearest DWT${h?.dwt_diff != null ? ` (Δ ${fmtNumber(h.dwt_diff)})` : ''}`
+  if (level === 'same_vessel') return 'Same vessel · other port'
   if (level === 'nearest_port') return `Nearest port (${fmtNumber(h?.distance_km ?? 0)} km)`
   if (level === 'manual') return 'Chosen by user'
   return 'No match'
