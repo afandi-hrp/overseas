@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
-import { X, Stamp, Ban, Printer, FolderOpen, ClipboardList, MoreHorizontal, CheckCircle2, AlertTriangle, Clock, Info, Undo2, History, Bell, Lock, Pencil, Wallet, Flame, UserCheck } from 'lucide-react';
+import { X, Stamp, Ban, Printer, FolderOpen, ClipboardList, ChevronDown, ChevronUp, CheckCircle2, AlertTriangle, Clock, Info, Undo2, History, Bell, Lock, Pencil, Wallet, Flame, UserCheck } from 'lucide-react';
 import {
   formatDateShort, formatDateTimeID, COST_STATUS_META, parseJsonField, computeCostStatus,
   nextStepForStatus, STEP_LABEL, STEP_ORDER, getApprovalEntries, findApprovalEntry, getWaitInfo, completedStepCount,
@@ -112,6 +112,8 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
   const [signer, setSigner] = useState<SignerConfig | null>(null);
   const [showReject, setShowReject] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  // AI check dilipat default (2026-10-14, permintaan user) -- klik baris ringkas utk rincian.
+  const [showAiCheck, setShowAiCheck] = useState(false);
   const [showCost, setShowCost] = useState(false);
   const [showDocs, setShowDocs] = useState(false);
   const [showLog, setShowLog] = useState(false);
@@ -424,22 +426,16 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
             <p className="text-[11px] text-[#6E5E70] truncate">{rec.memo_no && rec.memo_title ? `${rec.memo_title} · ` : ''}Uploaded {formatDateShort(rec.created_at)} · <span className="font-semibold text-[#2A1A2C]">{statusLabel}</span></p>
           </div>
           <div className="flex items-center gap-1.5 flex-wrap justify-end">
-            <div className="relative" ref={menuRef}>
-              <button onClick={() => setShowMenu(m => !m)} aria-label="More actions" className="h-9 w-9 flex items-center justify-center rounded-xl border border-[#EADFD6] text-[#2A1A2C] hover:bg-[#F5EDF3]">
-                <MoreHorizontal size={16} />
+            {/* Menu titik 3 DIHAPUS (2026-10-14, permintaan user): Print jadi tombol sendiri; "Undo last sign" tombol sendiri yang HANYA tampil
+                bila user boleh undo (penanda tangan terakhir, sebelum Finance menerima) -- aturan canUndo tidak berubah. */}
+            <button onClick={() => window.print()} title="Print memo" className="h-9 flex items-center gap-1.5 px-3 rounded-xl border border-[#EADFD6] text-xs font-semibold text-[#2A1A2C] hover:bg-[#F5EDF3]">
+              <Printer size={14} /> <span className="hidden sm:inline">Print</span>
+            </button>
+            {canUndo && (
+              <button onClick={handleUndo} title="Undo your last signature" className="h-9 flex items-center gap-1.5 px-3 rounded-xl border border-[#EADFD6] text-xs font-semibold text-[#2A1A2C] hover:bg-[#F5EDF3]">
+                <Undo2 size={14} /> <span className="hidden sm:inline">Undo last sign</span>
               </button>
-              {showMenu && (
-                <div className="absolute right-0 top-10 z-10 w-48 bg-white border border-[#EADFD6] rounded-xl shadow-lg py-1 text-xs">
-                  <button onClick={() => { setShowMenu(false); window.print(); }} className="w-full flex items-center gap-2 px-3 py-2 text-left text-[#2A1A2C] hover:bg-[#F5EDF3]"><Printer size={13} /> Print memo</button>
-                  {phase2 && (
-                    <button onClick={handleUndo} disabled={!canUndo} title={canUndo ? undefined : 'Only the person who signed last can undo (not after Finance received it)'}
-                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-[#2A1A2C] hover:bg-[#F5EDF3] disabled:opacity-40 disabled:hover:bg-transparent">
-                      <Undo2 size={13} /> Undo last sign
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
+            )}
             <button onClick={() => setShowDocs(true)} className="h-9 flex items-center gap-1.5 px-3 rounded-xl border border-[#EADFD6] text-xs font-semibold text-[#2A1A2C] hover:bg-[#F5EDF3]">
               <FolderOpen size={14} /> <span className="hidden sm:inline">Documents</span>{docCount > 0 ? ` · ${docCount}` : ''}
             </button>
@@ -452,8 +448,9 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
               <ClipboardList size={14} /> <span className="hidden sm:inline">Cost Validation</span>
             </button>
             <div className="hidden sm:flex items-center gap-1.5">
-              {rejectBtn('h-9')}
-              {signBtn('h-9')}
+              {rejectBtn('h-10')}
+              {/* Sign diperbesar (2026-10-14, permintaan user). */}
+              {signBtn('h-10 !px-5 !text-[13px]')}
             </div>
             <button onClick={onClose} aria-label="Close" className="h-9 w-9 flex items-center justify-center rounded-xl hover:bg-[#F5EDF3] text-[#6E5E70]">
               <X size={18} />
@@ -557,31 +554,33 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
               </Banner>
             )}
 
-            <div className="bg-white rounded-2xl border border-[#EADFD6] px-4 py-3 print:hidden">
-              <div className="flex items-center gap-2 mb-2">
-                <UserCheck size={14} className="text-[#6B3470]" />
-                <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#6B3470]">Prepared By</p>
+            {/* Prepared By RINGKAS (2026-10-14, permintaan user: row diperkecil): judul + 2 field dlm 1 baris, label di sebelah select (h-8);
+                layar sempit turun ke baris berikut. Isi & simpan (savePeople) tidak berubah. */}
+            <div className="bg-white rounded-2xl border border-[#EADFD6] px-4 py-2 print:hidden flex flex-wrap items-center gap-x-4 gap-y-1.5" data-prepared-by>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <UserCheck size={13} className="text-[#6B3470]" />
+                <p className="text-[10.5px] font-extrabold uppercase tracking-[0.12em] text-[#6B3470]">Prepared By</p>
                 {savingPeople && <span className="text-[11px] text-[#6E5E70]">Saving...</span>}
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <label className="block min-w-0">
-                  <span className="block mb-1 text-xs font-semibold text-[#2A1A2C]">PIC who creates the memo</span>
+              <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1.5">
+                <label className="min-w-0 flex items-center gap-2">
+                  <span className="shrink-0 text-[11.5px] font-semibold text-[#6E5E70]">PIC who creates the memo</span>
                   {canPickPeople && 'prepared_by_user_id' in rec ? (
                     <select value={rec.prepared_by_user_id || ''} disabled={savingPeople}
                       onChange={e => savePeople({ prepared_by_user_id: e.target.value || null })}
-                      className="w-full h-9 border border-[#EADFD6] rounded-xl px-2.5 text-sm text-[#2A1A2C] bg-white focus:outline-none focus:ring-2 focus:ring-[#6B3470]/25 disabled:opacity-60">
+                      className="flex-1 min-w-0 h-8 border border-[#EADFD6] rounded-lg px-2 text-[12.5px] text-[#2A1A2C] bg-white focus:outline-none focus:ring-2 focus:ring-[#6B3470]/25 disabled:opacity-60">
                       <option value="">— Any Prepared By (Exim) —</option>
                       {rec.prepared_by_user_id && !preparedByUsers.some(u => u.id === rec.prepared_by_user_id) && <option value={rec.prepared_by_user_id}>Current Prepared By</option>}
                       {preparedByUsers.map(u => <option key={u.id} value={u.id}>{u.nama || u.email}</option>)}
                     </select>
                   ) : (
-                    <p className="h-9 flex items-center px-3 rounded-xl bg-[#FBF3EC] text-sm text-[#2A1A2C] truncate">
+                    <p className="flex-1 min-w-0 h-8 flex items-center px-2.5 rounded-lg bg-[#FBF3EC] text-[12.5px] text-[#2A1A2C] truncate">
                       {findApprovalEntry(entries, 'TIER1')?.nama || ('prepared_by_user_id' in rec && rec.prepared_by_user_id ? personName(preparedByUsers, rec.prepared_by_user_id) : 'Any Prepared By (Exim)')}
                     </p>
                   )}
                 </label>
-                <label className="block min-w-0">
-                  <span className="block mb-1 text-xs font-semibold text-[#2A1A2C]">PIC who runs the shipment</span>
+                <label className="min-w-0 flex items-center gap-2">
+                  <span className="shrink-0 text-[11.5px] font-semibold text-[#6E5E70]">PIC who runs the shipment</span>
                   {canPickPeople ? (
                     <select value={rec.pic_user_id || ''} disabled={savingPeople}
                       onChange={e => {
@@ -589,13 +588,13 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
                         const u = picUsers.find(p => p.id === id);
                         savePeople({ pic_user_id: id, pic_name: u ? (u.nama || u.email || '') : null });
                       }}
-                      className={`w-full h-9 border rounded-xl px-2.5 text-sm text-[#2A1A2C] bg-white focus:outline-none focus:ring-2 focus:ring-[#6B3470]/25 disabled:opacity-60 ${rec.pic_user_id ? 'border-[#EADFD6]' : 'border-amber-300'}`}>
+                      className={`flex-1 min-w-0 h-8 border rounded-lg px-2 text-[12.5px] text-[#2A1A2C] bg-white focus:outline-none focus:ring-2 focus:ring-[#6B3470]/25 disabled:opacity-60 ${rec.pic_user_id ? 'border-[#EADFD6]' : 'border-amber-300'}`}>
                       <option value="">— Not assigned —</option>
                       {rec.pic_user_id && !picUsers.some(u => u.id === rec.pic_user_id) && <option value={rec.pic_user_id}>{rec.pic_name || 'Current PIC'}</option>}
                       {picUsers.map(u => <option key={u.id} value={u.id}>{u.nama || u.email}</option>)}
                     </select>
                   ) : (
-                    <p className="h-9 flex items-center px-3 rounded-xl bg-[#FBF3EC] text-sm text-[#2A1A2C] truncate">{rec.pic_name || personName(picUsers, rec.pic_user_id, null)}</p>
+                    <p className="flex-1 min-w-0 h-8 flex items-center px-2.5 rounded-lg bg-[#FBF3EC] text-[12.5px] text-[#2A1A2C] truncate">{rec.pic_name || personName(picUsers, rec.pic_user_id, null)}</p>
                   )}
                 </label>
               </div>
@@ -620,16 +619,32 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
               })}
             </div>
 
-            <div className={`flex items-start justify-between gap-3 rounded-xl px-4 py-2.5 text-xs print:hidden ${costStatus === 'MATCH' || costConfirmed ? 'bg-emerald-50 text-emerald-800' : costStatus === 'OVERCHARGE' ? 'bg-rose-50 text-rose-800' : costStatus ? 'bg-amber-50 text-amber-900' : 'bg-white border border-[#EADFD6] text-[#6E5E70]'}`}>
-              <p className="min-w-0">
-                <span className="font-bold">AI check: {costStatus ? costStatusLabel(rec, costStatus) : (costMeta?.label || (costExists ? 'No status' : 'Not available'))}.</span>{' '}
-                {costCatatan || (costStatus === 'MATCH' ? 'Invoice matches the vendor rate.' : '')}
-                {costConfirmed && costFinding && (
-                  <span className="block mt-0.5">✓ Confirmed by {firstNameOf(costFinding.user_name, costFinding.user_email)}{costFinding.at ? ` · ${formatDateShort(costFinding.at)}` : ''}{costFinding.note ? ` — ${costFinding.note}` : ''}</span>
-                )}
-              </p>
-              <span className="shrink-0 text-[10px] font-semibold opacity-70">Not printed</span>
-            </div>
+            {/* AI check DILIPAT default (2026-10-14, permintaan user): baris ringkas (status) bisa diklik utk menampilkan catatan AI &
+                konfirmasi. Warna & isi tidak berubah. */}
+            {(() => {
+              const aiDetail = costCatatan || (costStatus === 'MATCH' ? 'Invoice matches the vendor rate.' : '')
+              const hasDetail = !!aiDetail || (costConfirmed && !!costFinding)
+              return (
+                <div className={`rounded-xl px-4 py-2 text-xs print:hidden ${costStatus === 'MATCH' || costConfirmed ? 'bg-emerald-50 text-emerald-800' : costStatus === 'OVERCHARGE' ? 'bg-rose-50 text-rose-800' : costStatus ? 'bg-amber-50 text-amber-900' : 'bg-white border border-[#EADFD6] text-[#6E5E70]'}`} data-ai-check>
+                  <button type="button" onClick={() => hasDetail && setShowAiCheck(v => !v)} aria-expanded={showAiCheck} disabled={!hasDetail}
+                    className="w-full flex items-center justify-between gap-3 text-left disabled:cursor-default">
+                    <span className="min-w-0 font-bold">AI check: {costStatus ? costStatusLabel(rec, costStatus) : (costMeta?.label || (costExists ? 'No status' : 'Not available'))}.{costConfirmed && costFinding ? <span className="font-semibold"> ✓ Confirmed</span> : null}</span>
+                    <span className="shrink-0 flex items-center gap-2">
+                      <span className="text-[10px] font-semibold opacity-70">Not printed</span>
+                      {hasDetail && <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold underline-offset-2 hover:underline">{showAiCheck ? 'Hide details' : 'Show details'}{showAiCheck ? <ChevronUp size={13} /> : <ChevronDown size={13} />}</span>}
+                    </span>
+                  </button>
+                  {showAiCheck && hasDetail && (
+                    <p className="mt-1 min-w-0">
+                      {aiDetail}
+                      {costConfirmed && costFinding && (
+                        <span className="block mt-0.5">✓ Confirmed by {firstNameOf(costFinding.user_name, costFinding.user_email)}{costFinding.at ? ` · ${formatDateShort(costFinding.at)}` : ''}{costFinding.note ? ` — ${costFinding.note}` : ''}</span>
+                      )}
+                    </p>
+                  )}
+                </div>
+              )
+            })()}
 
             <div className="far-memo-half bg-white rounded-2xl p-3 md:p-6 shadow-sm print:shadow-none print:p-0 print:rounded-none overflow-x-auto">
               <div ref={memoSheetRef} className="far-memo-sheet min-w-[560px] print:min-w-0">

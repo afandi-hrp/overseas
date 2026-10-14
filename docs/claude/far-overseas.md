@@ -1049,3 +1049,14 @@ refresh. Judul baru itu OTOMATIS ikut muncul lagi di sesi BERIKUTNYA begitu bari
   dikonstruksi di 2 titik (row List biasa & `FarOverseasAirCardEditModal`), keduanya WAJIB tetap
   sinkron kalau nambah field `ListRenderCtx` baru lagi ke depan.
 - Mode tampil (bukan edit) TETAP teks polos (bukan badge/dropdown), konsisten kolom lain.
+
+## Modal Memo — header & panel ringkas (2026-10-14, permintaan user)
+
+`FarOverseasAirDetailModal.tsx`:
+- **Menu titik 3 DIHAPUS**: **Print** jadi tombol sendiri di header (ikon + "Print"); **Undo last sign** jadi tombol sendiri yang HANYA tampil bila `canUndo`
+  (penanda tangan terakhir = user login, phase 2, sebelum Finance menerima -- aturan lama tidak berubah; dulu item menu nonaktif bila tidak boleh).
+- **AI check dilipat default**: baris ringkas "AI check: <status>. [✓ Confirmed]" + "Show details" -> catatan AI (`cost_validasi_far_overseas_air.catatan`) &
+  baris konfirmasi (oleh, tgl, catatan). Warna kotak sama. State lokal (tidak disimpan).
+- **Panel Prepared By ringkas**: judul + 2 field ("PIC who creates the memo", "PIC who runs the shipment") SATU baris, label di sebelah select `h-8` (dulu label di atas,
+  `h-9`); layar sempit turun ke baris berikut. Simpan (`savePeople`) & hak (`canPickPeople`) tidak berubah.
+- **Tombol Sign** (desktop) diperbesar `h-10`, `px-5`, teks 13px; Reject ikut `h-10`. Bar bawah HP (>= 44px) tidak berubah.
