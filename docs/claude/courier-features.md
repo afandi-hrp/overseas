@@ -66,6 +66,43 @@ Analisa awal (RIWAYAT, sebelum tahap 1):
 - Saran urutan bila disetujui: (1) Audit Courier tampilan, (2) Rekapan Courier tampilan, (3) relasi &
   sumber Courier di Finance Handover. Pertanyaan keputusan dicatat di jawaban sesi.
 
+## Revisi Invoice Recap 2026-10-14 — Credit Note depan, auto hide, Accepted, kunci Submit/Paid Date, tanggal Submit (permintaan user, TANPA SQL)
+
+Spek user + 3 screenshot mockup (hanya tata letak). SATU sumber aturan: `src/utils/CourierRecapRules.ts`.
+- **Tanggal mulai berlaku** `COURIER_RECAP_RULES_FROM = 2026-10-14 00:00 WIB` (`isCourierRulesRecord(created_at)`). Kunci Submit/Paid Date dinilai dari
+  `rekapan_courier.created_at`; syarat CN/storage di persen Cost Validation dari `tabel_cost_validasi.created_at`. Data lebih lama: persen & kunci TIDAK berubah
+  (info "Credit note not allocated yet" & kartu CN depan tetap tampil utk semua data -- hanya kemudahan).
+- **Kartu Credit Note depan** (`CourierCreditNoteBox.tsx`, dipasang di `CourierCostSummary`): SALINAN form CN Details (`CostValidationModalLegacy`) -- sisa subtotal,
+  sisa VAT, max total (original), baris target (syarat SAMA Details: Actual > 0; Other charges = actual − adjustment, kecuali STORAGE), input + **Deduct**, riwayat +
+  **Revise** (konfirmasi inline, bukan popup). RPC SAMA: `fn_apply_credit_note` → `fn_recompute_totals` (baris terbaru dikembalikan), `fn_revise_credit_note`. Validasi
+  baru di depan: nominal > 0 & ≤ sisa subtotal/VAT (Details tidak berubah). **Satu kartu per JENIS CN** (Freight / Duty): kolom cost hanya punya SATU agregat per
+  jenis (n8n menjumlah >1 CN sejenis) -> nomor CN dari invoice Credit Note AWB (`cnInvoices` dari panel, `invoice_type` DUTY/FREIGHT, tanggal = `tgl_terima_email`).
+  Sinkron: satu data -- Details membaca ulang saat dibuka; perubahan di Details -> panel dibaca ulang saat ditutup (`onMutated` lama). Label UI Inggris (aturan app):
+  "Remaining CN subtotal", "Deduct CN subtotal from:", "Deduct".
+- **Info** di area Cost differences selama ada CN belum habis / estimasi belum disimpan: "Credit note not allocated yet — To complete: deduct the credit note (n CN not
+  fully deducted) and save the bonded storage estimate".
+- **Auto hide** (depan saja; Details tidak disembunyikan): CN dengan sisa subtotal & VAT = 0 -> kartu hilang, link **Show/Hide credit note (x/y)** (riwayat semua CN
+  yang habis). Bonded storage: setelah **Save new estimate** (`cv_storage_input_manual` true) kartu hilang -> **Show/Hide bonded storage** (ringkasan berat/ETA/release/
+  billing days/expected/actual + `updated_at`; user hanya kalau kolom `cv_storage_saved_by`/`updated_by` ada -- tabel tidak menyimpan penyimpan estimasi) + **✎ Edit
+  estimate** (kartu terbuka lagi, ada Cancel). Link sejajar "Show accepted" (`data-cost-toggles`). CN baru diupload -> sisa > 0 -> kartu muncul lagi otomatis.
+- **Persen Cost Validation** (`computeLiveCostSummary`, SATU sumber -> badge kartu/KPI/needs attention/panel ikut): data baru menambah 1 cek per CN (OK bila habis) +
+  1 cek storage bila `cv_storage_actual` ada (OK bila estimasi disimpan). Field baru summary: `cn_pending`, `storage_pending`, `rules_apply`. Efek samping: hitungan
+  `total_selisih` (dipakai ringkasan Finance "Difference") ikut menghitung CN/storage yang belum beres utk data baru.
+- **Accepted di Doc Validation** (`ValidasiModal` + `ValidasiModalLegacy`/Details): field `manual_status 'match'` + `accept_note` (hasil Accept ringkasan) tampil chip
+  **Accepted** hijau tua (`#17663D`, teks putih) + "✓ Valid" di bawahnya (catatan lengkap di tooltip) -- matriks Details, matriks penuh, matriks Finance, tampilan per
+  field; chip header/tile "N Accepted" (Match = match − accepted). Akurasi TIDAK berubah (Accepted tetap lolos). Undo (ringkasan) -> status sebelum Accept = Mismatch.
+- **Kunci Submit all to Finance** (panel `CourierRecapValidationPanel`): invoice baru belum Submit -> tombol abu-abu 🔒 sampai Cost = 100% & Doc = 100% (Checklist tidak
+  wajib; persen live tab / badge kartu). Strip info di bawah header ("Submit & Paid Date are locked until validation is complete: Cost x% · Doc y%" / hijau "…100%.
+  Submit to Finance is available"). AWB baru tanpa PIB/CN di Audit = terkunci (`no_audit`). Kunci "Needs check" lama (Internal remarks) tetap berlaku sesudahnya.
+  Semua invoice sudah Submit -> label **✓ Submitted <tgl>**; status kartu/panel "Submitted to Finance · 14 Oct 2026" (`recapGroupStatus`, tanggal Submit terakhir).
+- **Kunci Paid Date di List & Edit Mode** (`CourierRekapanRowGroup` prop `paidDateLock`): sel `tgl_lunas` tampil 🔒 (tooltip persen), input tidak dirender. Dihitung di
+  SharedDataTable (`courierPaidLocks`): HANYA invoice baru belum Submit di halaman itu -> grup per AWB -> `fetchRecapAuditLinks` -> `enrichCourierValidationPct` (rumus
+  badge) -> `courierValidationLock`. Selama dicek = ikut terkunci. **Frontend saja** (DB tidak menolak; pola kunci "Needs check").
+- **Tanggal Submit** (`handleCourierRecapSubmit` -> dialog `data-submit-date-dialog`, ganti `window.confirm`): default hari ini, `max` hari ini, tanggal lampau boleh, ke
+  depan ditolak (juga dicek saat simpan); Submit / Cancel; error tampil di dialog. `submitRecapInvoices(ids, tanggal)` (hanya baris yg submit_date masih kosong).
+- **Diuji 2026-10-14**: skrip logika 15 cek (data lama tidak berubah, 4/7 → 7/7, sisa VAT, tanpa storage, kunci lama/baru/no_audit/sudah submit, batas tanggal WIB) lulus;
+  `tsc` bersih, `vite build` sukses. Belum dites di browser / production.
+
 ## Rombak Invoice Recap Courier — keputusan user (2026-10-02, SUDAH DIKERJAKAN — lihat bagian berikut)
 
 Hasil inspeksi `sql/036` (2026-10-02): rekapan 157 baris, audit 92; 3 AWB Recap tanpa pasangan Audit (2 format EMS,

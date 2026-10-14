@@ -661,6 +661,10 @@ mentah tunggal, JANGAN dicari sbg 1 kolom `raw.*` langsung).
 
 ## Courier — Document Validation (`ValidasiModal.tsx`)
 
+- **Status Accepted (2026-10-14)**: field yang di-Accept dgn catatan (`manual_status 'match'` + `accept_note`) tampil chip "Accepted" hijau tua + "✓ Valid"
+  (tooltip = catatan) di `ValidasiModal` & `ValidasiModalLegacy` (helper lokal `isAcceptedVal`/`shownSt`, `getCfg('accepted')`); hitungan/akurasi TIDAK
+  berubah. Detail: courier-features.md "Revisi Invoice Recap 2026-10-14".
+
 **Konteks penting**: file ini punya SECTIONS + `fill()`/`generateValues` SENDIRI, TERPISAH dari
 `ValidasiHelper.ts`/`ValidasiFill.ts` — SUDAH TERBUKTI TIDAK SINKRON. **Kalau mau tau/ubah
 src-cmp yg BENERAN tampil, baca/edit `ValidasiModal.tsx`, JANGAN `ValidasiFill.ts`.**

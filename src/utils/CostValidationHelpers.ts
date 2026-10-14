@@ -3,6 +3,7 @@
 // MAUPUN SharedDataTable.tsx (badge persentase di tombol Cost Validation halaman Audit Courier).
 // JANGAN duplikat logic ini di tempat lain -- kalau aturan visibilitas/klasifikasi baris
 // berubah, cukup ubah di sini, otomatis konsisten di kedua tempat.
+import { courierCnStates, courierHasStorage, courierStorageSaved, isCourierRulesRecord, type CnSide } from './CourierRecapRules';
 
 export function isRowVisible(status: string | undefined, expected: any, actual?: any): boolean {
   const isNa = !status || status.toUpperCase() === 'N/A';
@@ -73,6 +74,11 @@ export type CostValidationSummary = {
   section_diff: { FREIGHT: boolean; DUTY: boolean };
   // Semua baris berselisih (termasuk yang sudah di-Accept -- lihat `accepted`).
   diff_rows: CostDiffRow[];
+  // Revisi Invoice Recap 2026-10-14 (CourierRecapRules.ts): CN yang sisanya belum habis & estimasi storage yang belum
+  // disimpan. Ikut menentukan pct HANYA bila `rules_apply` (baris cost dibuat setelah fitur aktif).
+  cn_pending?: CnSide[];
+  storage_pending?: boolean;
+  rules_apply?: boolean;
 };
 
 const numOrNull = (v: any): number | null => (v === null || v === undefined || v === '' || isNaN(Number(v)) ? null : Number(v));
@@ -188,6 +194,17 @@ export function computeLiveCostSummary(data: any, jenisDokumen?: string | null, 
   if ((reviews?.DUTY === 'MATCH' || dutyTotalOk) && isOverchargeLike(invoiceDutyStatus)) invoiceDutyStatus = 'OK';
   const overallStatusCost = (isOverchargeLike(invoiceFreightStatus) || isOverchargeLike(invoiceDutyStatus)) ? 'ADA SELISIH' : 'OK';
 
+  // Syarat 100% tambahan (2026-10-14): tiap Credit Note = 1 cek (OK bila sisa subtotal & VAT = 0), Bonded storage = 1 cek
+  // (OK bila estimasi sudah disimpan). Hanya data setelah fitur aktif -- persen data lama TIDAK berubah.
+  const cnStates = courierCnStates(data);
+  const cn_pending = cnStates.filter(c => !c.done).map(c => c.side);
+  const storage_pending = courierHasStorage(data) && !courierStorageSaved(data);
+  const rules_apply = isCourierRulesRecord(data.created_at);
+  if (rules_apply) {
+    cnStates.forEach(c => { if (c.done) total_ok++; else total_selisih++; });
+    if (courierHasStorage(data)) { if (storage_pending) total_selisih++; else total_ok++; }
+  }
+
   const total_cost_cek = total_ok + total_selisih;
 
   return {
@@ -201,5 +218,8 @@ export function computeLiveCostSummary(data: any, jenisDokumen?: string | null, 
     pct: total_cost_cek > 0 ? Math.round((total_ok / total_cost_cek) * 100) : 0,
     section_diff,
     diff_rows,
+    cn_pending,
+    storage_pending,
+    rules_apply,
   };
 }

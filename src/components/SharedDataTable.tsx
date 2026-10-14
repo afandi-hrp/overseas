@@ -21,7 +21,8 @@ import SeaAirChecklistModal from '../components/SeaAirChecklistModal'
 import SeaAirValidasiModal from '../components/SeaAirValidasiModal'
 import ValidasiShipmentInvoiceLengkap from '../components/ValidasiShipmentInvoiceLengkap'
 import { computeLiveCostSummary } from '../utils/CostValidationHelpers'
-import { mergeChecklistFields, fetchCourierValidationBadgePct } from '../utils/CourierValidationPct'
+import { mergeChecklistFields, fetchCourierValidationBadgePct, enrichCourierValidationPct } from '../utils/CourierValidationPct'
+import { courierRowUnderRules, courierValidationLock, courierLockTitle } from '../utils/CourierRecapRules'
 import { relaxSeaAirDocChecks, countedDocChecks } from '../utils/SeaAirValidasiHelpers'
 import { computeSeaAirCostGlobalStats } from '../utils/SeaAirCostValidasiHelpers'
 import { SECTIONS, computeStatus } from '../utils/ValidasiHelper'
@@ -44,7 +45,7 @@ import {
 import { CourierAuditCardList, CourierAuditKpiCards } from './CourierAuditCardList'
 import { syncChecklistNoteToRemarks, syncRemarkToGroup } from '../utils/CourierRemarksSync'
 import { syncRemarksToChecklistNote } from '../utils/SeaAirRemarksSync'
-import { COURIER_REKAPAN_CALC_FIELDS, courierAwbNorm, computeCourierRekapanCalc, submitRecapInvoices, notifyCourierRecapChanged, fetchCourierRecapSummary, type RecapFilters, type RecapGroup, type RecapSummaryCourier, type RecapKpiFilter } from '../utils/CourierRecapHelpers'
+import { COURIER_REKAPAN_CALC_FIELDS, courierAwbNorm, computeCourierRekapanCalc, submitRecapInvoices, notifyCourierRecapChanged, fetchCourierRecapSummary, buildRecapGroup, fetchRecapAuditLinks, type RecapFilters, type RecapGroup, type RecapSummaryCourier, type RecapKpiFilter } from '../utils/CourierRecapHelpers'
 import { CourierRecapCardView, CourierRecapKpiCards } from './CourierRecapCardList'
 import CourierRecapValidationPanel, { type RecapPanelTab } from './CourierRecapValidationPanel'
 import CourierAuditPreview from './CourierAuditPreview'
@@ -2923,7 +2924,9 @@ const CourierRekapanRowGroup: React.FC<{
   reorderMode?: boolean,
   totalRows?: number,
   onMoveTo?: (r: any, position: number) => void,
-}> = ({ rec, index, cols, onDelete, editMode, getVal, setVal, onSaveRow, reorderMode, totalRows, onMoveTo }) => {
+  // Kunci Paid Date (2026-10-14, CourierRecapRules.ts): teks tooltip = terkunci (invoice baru, validasi belum 100%); undefined = bebas.
+  paidDateLock?: string,
+}> = ({ rec, index, cols, onDelete, editMode, getVal, setVal, onSaveRow, reorderMode, totalRows, onMoveTo, paidDateLock }) => {
   const repeatingCols = ['po_pt_imi', 'vessel', 'breakdown_courier_adm_vessel', 'breakdown_duty_vessel', 'breakdown_freight_vessel', 'breakdown_bm_vessel', 'breakdown_ppnpph_vessel'];
   // Drag & Drop Reorder (2026-09) -- pola sama persis CourierAuditRowGroup, lihat komentarnya.
   const sortable = useSortable({ id: rec.id, disabled: !reorderMode });
@@ -3062,6 +3065,15 @@ const CourierRekapanRowGroup: React.FC<{
               const additionalClasses = !isRepeating && isFirst && rowCount > 1 && isExpanded
                 ? `border-r border-slate-200 ${hasSubmitDate ? 'bg-[#FFF5C5] group-hover:bg-[#F5E28F]' : 'bg-white group-hover:bg-blue-50/30'}`
                 : '';
+
+              // Paid Date terkunci: tampil 🔒, tidak bisa diisi (List & Edit Mode).
+              if (c.key === 'tgl_lunas' && paidDateLock) {
+                return (
+                  <td key={c.key} className={`px-4 py-3 text-[11px] align-top ${alignClass} ${additionalClasses}`} rowSpan={isRepeating ? 1 : (isExpanded ? rowCount : 1)} data-paid-date-lock>
+                    <span title={paidDateLock} className="inline-flex items-center gap-1 text-slate-400 cursor-not-allowed">🔒{rec.tgl_lunas ? <span className="text-[#5A305A]">{content}</span> : null}</span>
+                  </td>
+                );
+              }
 
               if (editingThisRow && canBulkEdit && isInlineEditable(c.key) && (!isRepeating || isFirst) && c.key !== 'po_no' && c.key !== 'vessel' && c.key !== 'po_ori' && c.key !== 'vendor_inv_no' && c.key !== 'po_harga_detail') {
                 const cellVal = getVal!(rec, c.key);
@@ -4873,6 +4885,42 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     setCourierRecapPanel(null)
   }
   const [courierRecapBusy, setCourierRecapBusy] = useState(false)
+  // Dialog tanggal Submit to Finance (2026-10-14, permintaan user): default hari ini, boleh mundur, tidak boleh ke depan.
+  const [courierSubmitDialog, setCourierSubmitDialog] = useState<{ ids: string[]; date: string; error: string | null } | null>(null)
+  // Kunci Paid Date di List / Edit Mode (2026-10-14, CourierRecapRules.ts): id invoice -> tooltip kunci. Hanya invoice baru yang belum
+  // di-Submit dicek (cari pasangan PIB/CN lalu persen Doc & Cost -- rumus SAMA badge kartu). Belum selesai dicek = ikut terkunci.
+  const [courierPaidLocks, setCourierPaidLocks] = useState<Record<string, string | null>>({})
+  useEffect(() => {
+    if (!isCourierRecapView) return
+    const due = records.filter(courierRowUnderRules)
+    if (due.length === 0) { setCourierPaidLocks({}); return }
+    let alive = true
+    ;(async () => {
+      try {
+        const byKey = new Map<string, any[]>()
+        due.forEach(r => { const k = courierAwbNorm(r.awb) || `ID:${r.id}`; byKey.set(k, [...(byKey.get(k) || []), r]) })
+        const groups = [...byKey.entries()].map(([k, rows]) => buildRecapGroup(k, rows))
+        await fetchRecapAuditLinks(groups)
+        const recs = groups.map(g => g.audit?.rec).filter(Boolean)
+        await enrichCourierValidationPct(recs)
+        const out: Record<string, string | null> = {}
+        groups.forEach(g => {
+          const rec = g.audit?.rec
+          const lock = courierValidationLock(g.rows, !!rec, rec?.doc_validation_pct, rec?.cost_validation_pct)
+          g.rows.forEach(r => { out[String(r.id)] = lock ? (courierLockTitle(lock, rec?.doc_validation_pct, rec?.cost_validation_pct) || 'Locked') : null })
+        })
+        if (alive) setCourierPaidLocks(out)
+      } catch (e) {
+        console.error('[CourierRecap] cek kunci Paid Date gagal', e)
+      }
+    })()
+    return () => { alive = false }
+  }, [records, isCourierRecapView])
+  const courierPaidDateLockOf = (r: any): string | undefined => {
+    if (!courierRowUnderRules(r)) return undefined
+    const v = courierPaidLocks[String(r.id)]
+    return v === undefined ? 'Checking validation… Paid Date is locked until Cost Validation and Doc Validation are 100%' : (v || undefined)
+  }
   const courierRecapColOk = makeColOk(isCourierRecapView ? getAllowedColumns('courier_rekapan') : null)
   const courierRecapFilters: RecapFilters = useMemo(() => ({
     ppjk: activePpjkFilter && activePpjkFilter !== 'All' ? activePpjkFilter : null,
@@ -4915,14 +4963,23 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     notifyCourierRecapChanged();
   };
   // Submit to Finance per invoice / "Submit all" -- tanpa syarat; setelah submit TERKUNCI (sql/038, keputusan user 2026-10-02).
+  // 2026-10-14: Submit Date DIPILIH user di dialog (default hari ini, boleh tanggal sebelumnya, tidak boleh ke depan) -- dulu otomatis
+  // tanggal klik, padahal invoice bisa sudah diserahkan lebih dulu.
   const handleCourierRecapSubmit = async (ids: string[]) => {
     if (ids.length === 0) return;
+    setCourierSubmitDialog({ ids, date: todayLocalIso(), error: null });
+  };
+  const confirmCourierRecapSubmit = async () => {
+    const d = courierSubmitDialog;
+    if (!d) return;
     const today = todayLocalIso();
-    if (!window.confirm(`Submit ${ids.length} invoice${ids.length === 1 ? '' : 's'} to Finance?\nSubmit Date: ${fmtDateShortSeaAir(today)}\n\nAfter submitting, the invoice is locked (no edit / delete) — only an Admin can unlock it.`)) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) { setCourierSubmitDialog({ ...d, error: 'Pick a submit date.' }); return; }
+    if (d.date > today) { setCourierSubmitDialog({ ...d, error: 'The submit date cannot be in the future.' }); return; }
     setCourierRecapBusy(true);
-    const { error } = await submitRecapInvoices(ids, today);
+    const { error } = await submitRecapInvoices(d.ids, d.date);
     setCourierRecapBusy(false);
-    if (error) { alert('Failed to submit to Finance: ' + error.message); return; }
+    if (error) { setCourierSubmitDialog({ ...d, error: 'Failed to submit to Finance: ' + error.message }); return; }
+    setCourierSubmitDialog(null);
     refreshCourierRecap();
   };
   // Unlock Submit to Finance (Admin, sql/038) -- pola Sea & Air fn_seaair_unlock_submit.
@@ -6153,6 +6210,31 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           onCancel={() => setShowCustomizeView(null)}
           onSave={(newHiddenKeys) => saveHiddenCols(showCustomizeView, newHiddenKeys)}
         />
+      )}
+
+      {courierSubmitDialog && (
+        <div className="fixed inset-0 z-[90] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4" onMouseDown={e => { if (e.target === e.currentTarget && !courierRecapBusy) setCourierSubmitDialog(null) }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[420px] p-5" role="dialog" aria-label="Submit to Finance" data-submit-date-dialog>
+            <h3 className="text-[15px] font-bold text-[#3B1B3D]">Submit to Finance</h3>
+            <p className="text-[12.5px] text-[#6E5E70] mt-1">
+              {courierSubmitDialog.ids.length} invoice{courierSubmitDialog.ids.length === 1 ? '' : 's'} will be submitted. After submitting, the invoice is locked (no edit / delete) — only an Admin can unlock it.
+            </p>
+            <label className="block mt-3">
+              <span className="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B]">Submit date</span>
+              <input type="date" aria-label="Submit date" value={courierSubmitDialog.date} max={todayLocalIso()} disabled={courierRecapBusy}
+                onChange={e => setCourierSubmitDialog(d => (d ? { ...d, date: e.target.value, error: null } : d))}
+                className="mt-1 w-full h-9 px-3 rounded-lg border border-[#EADFD6] bg-white text-[13px] text-[#3B1B3D] focus:outline-none focus:border-[#6B3470]" />
+              <span className="block mt-1 text-[11px] text-[#8A7A8B]">Today or an earlier date (when the invoice was actually handed over).</span>
+            </label>
+            {courierSubmitDialog.error && <div className="mt-2 text-[11.5px] text-[#B42318] bg-[#FDECEA] rounded-lg px-2.5 py-1.5">{courierSubmitDialog.error}</div>}
+            <div className="flex justify-end gap-2 mt-4">
+              <button type="button" className={`${SA_BTN_OUTLINE} h-9`} disabled={courierRecapBusy} onClick={() => setCourierSubmitDialog(null)}>Cancel</button>
+              <button type="button" className={`${SA_BTN_GREEN} h-9`} disabled={courierRecapBusy || !courierSubmitDialog.date || courierSubmitDialog.date > todayLocalIso()} onClick={confirmCourierRecapSubmit}>
+                {courierRecapBusy ? 'Submitting…' : 'Submit'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {editRecord && tab && (
@@ -7569,6 +7651,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                             reorderMode={reorderMode}
                             totalRows={totalRecords}
                             onMoveTo={reorderMode ? handleMoveRowTo : undefined}
+                            paidDateLock={courierPaidDateLockOf(rec)}
                           />
                         );
                       }

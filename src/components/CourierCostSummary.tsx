@@ -13,6 +13,10 @@
 // - Form "Bonded storage estimate" (revisi 2026-10-05) = SALINAN form "Hitung Ulang Estimasi Bonded Storage" Details,
 //   logika SATU sumber (src/utils/CourierStorageEstimate.ts) & kolom yang sama -> isian depan/Details saling sinkron.
 // - Toolbar hanya tombol Details (`onOpenDetails`: tabel lengkap + Edit di jendela penuh).
+// - Revisi 2026-10-14 (permintaan user): form Credit Note Details DIDUPLIKAT ke depan (`CourierCreditNoteBox`, 1 kartu per jenis CN
+//   selama sisanya belum habis) + info "Credit note not allocated yet". Auto hide: CN yang sudah habis & estimasi storage yang
+//   sudah disimpan disembunyikan -> link "Show credit note (x/y)" / "Show bonded storage" sejajar "Show accepted" (ringkasan +
+//   tombol "Edit estimate" membuka kartu lagi). Details tidak ikut disembunyikan. Syarat 100%: lihat CourierRecapRules.ts.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
@@ -26,6 +30,8 @@ import {
 import { fmtRp } from '../utils/SeaAirAuditHelpers';
 import { appendNoteLine, removeNoteLinesWhere } from '../utils/NoteLines';
 import { courierStorageActualDays, computeCourierStorageExpected, saveCourierStorageEstimate, type StorageEstimate } from '../utils/CourierStorageEstimate';
+import { courierCnStates, courierHasStorage, courierStorageSaved } from '../utils/CourierRecapRules';
+import CourierCreditNoteBox, { CnLogList, cnNosOf, cnSideLabel, type CnInvoiceInfo } from './CourierCreditNoteBox';
 
 export const COST_SUMMARY_POLL_MS = 30000;
 
@@ -35,6 +41,11 @@ const fmtDateTime = (v: any) => {
   const d = new Date(v);
   return isNaN(d.getTime()) ? String(v) : d.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 };
+const fmtDay = (v: any) => {
+  if (!v) return '';
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? String(v) : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+};
 const fmtDiff = (n: number | null) => (n === null ? '—' : `${n > 0 ? '+' : ''}${fmtRp(n)}`);
 // Baris catatan di "Catatan Perubahan Manual" utk 1 Accept: "<Nama item> · <Status> ✓ <catatan>".
 export const costAcceptNoteLine = (r: Pick<CostDiffRow, 'label' | 'status'>, note: string) =>
@@ -43,7 +54,7 @@ export const costAcceptNoteLine = (r: Pick<CostDiffRow, 'label' | 'status'>, not
 const isCostNoteOf = (label: string) => (line: string) => line.startsWith(`${label} · `) && line.includes(' ✓ ') || line.startsWith(`- ${label} (Invoice `);
 
 // Form estimasi Bonded Storage (salinan form Details, logika CourierStorageEstimate). Nilai awal dari kolom tersimpan.
-const StorageEstimateBox: React.FC<{ data: any; docType: string; canEdit: boolean; onSaved: (fresh: any | null) => void }> = ({ data, docType, canEdit, onSaved }) => {
+const StorageEstimateBox: React.FC<{ data: any; docType: string; canEdit: boolean; saved?: boolean; onCancel?: () => void; onSaved: (fresh: any | null) => void }> = ({ data, docType, canEdit, saved, onCancel, onSaved }) => {
   const [weight, setWeight] = useState('');
   const [eta, setEta] = useState('');
   const [rel, setRel] = useState('');
@@ -83,7 +94,8 @@ const StorageEstimateBox: React.FC<{ data: any; docType: string; canEdit: boolea
   return (
     <div className="rounded-xl border border-[#F3D9A4] bg-[#FFF8EA] px-3 py-2.5" data-storage-estimate>
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-        <div className="text-[12.5px] font-bold text-[#7A4F00]">Bonded storage estimate</div>
+        <div className="text-[12.5px] font-bold text-[#7A4F00] flex items-center gap-1.5">Bonded storage estimate
+          {!saved && <span className="px-1.5 py-0.5 rounded-md bg-[#FFE9C2] text-[#7A4F00] text-[10px] font-bold">needs saving</span>}</div>
         <div className="text-[11.5px] text-[#6E5E70]">Storage actual <b className="text-[#3B1B3D]">{fmtRp(data.cv_storage_actual)}</b>{data.cv_storage_input_manual && data.cv_storage_days ? ` · saved ${data.cv_storage_days} days` : ''}</div>
       </div>
       <div className="grid grid-cols-2 @lg:grid-cols-5 gap-2 items-end text-[11px]">
@@ -99,14 +111,17 @@ const StorageEstimateBox: React.FC<{ data: any; docType: string; canEdit: boolea
       <div className="flex flex-wrap items-center justify-between gap-2 mt-2">
         <div className="text-[12px] text-[#6E5E70]">Expected storage <b className="text-[14px] text-[#3B1B3D] tabular-nums">{result ? fmtRp(result.expected_idr) : 'Rp 0'}</b>
           {err && <span className="block text-[11px] font-bold text-[#A8231A]">{err}</span>}</div>
-        {canEdit && <button type="button" className={VW_BTN_PRIMARY} disabled={saving || !eta || !rel || !result} onClick={save}>{saving ? 'Saving…' : 'Save new estimate'}</button>}
+        <div className="flex items-center gap-2">
+          {onCancel && <button type="button" className={VW_BTN_SECONDARY} disabled={saving} onClick={onCancel}>Cancel</button>}
+          {canEdit && <button type="button" className={VW_BTN_PRIMARY} disabled={saving || !eta || !rel || !result} onClick={save}>{saving ? 'Saving…' : 'Save new estimate'}</button>}
+        </div>
       </div>
       {msg && <div className={`mt-1.5 text-[11.5px] font-semibold ${msg.ok ? 'text-[#17663D]' : 'text-[#A8231A]'}`}>{msg.text}</div>}
     </div>
   );
 };
 
-export default function CourierCostSummary({ docType, auditId, canEdit, reloadKey = 0, onOpenDetails, onPctChange, onChanged }: {
+export default function CourierCostSummary({ docType, auditId, canEdit, reloadKey = 0, onOpenDetails, onPctChange, onChanged, cnInvoices = [] }: {
   docType: string;
   auditId: any;
   canEdit: boolean;
@@ -114,6 +129,7 @@ export default function CourierCostSummary({ docType, auditId, canEdit, reloadKe
   onOpenDetails?: () => void;
   onPctChange?: (pct: number | null) => void;
   onChanged?: () => void;
+  cnInvoices?: CnInvoiceInfo[]; // invoice Credit Note AWB ini (nomor & tanggal email) utk label kartu CN
 }) {
   const { profile, user } = useAuth();
   const isCn = String(docType || '').toUpperCase() === 'CN';
@@ -125,6 +141,9 @@ export default function CourierCostSummary({ docType, auditId, canEdit, reloadKe
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const [showAccepted, setShowAccepted] = useState(false);
+  const [showCn, setShowCn] = useState(false);
+  const [showStorage, setShowStorage] = useState(false);
+  const [editStorage, setEditStorage] = useState(false);
   const seq = useRef(0);
 
   const load = useCallback(async () => {
@@ -149,6 +168,17 @@ export default function CourierCostSummary({ docType, auditId, canEdit, reloadKe
   const pct = data ? summary.pct : null;
   useEffect(() => { if (loaded) onPctChange?.(pct); }, [loaded, pct, onPctChange]);
 
+  const cnStates = useMemo(() => courierCnStates(data), [data]);
+  const cnOpen = cnStates.filter(c => !c.done);
+  const cnDone = cnStates.filter(c => c.done);
+  const hasStorage = courierHasStorage(data);
+  const storageSaved = courierStorageSaved(data);
+  const storagePending = hasStorage && !storageSaved;
+  const storageCard = hasStorage && (!storageSaved || editStorage);
+  const pendingTodo = [
+    cnOpen.length > 0 ? `deduct the credit note (${cnOpen.length} CN not fully deducted)` : null,
+    storagePending ? 'save the bonded storage estimate' : null,
+  ].filter(Boolean).join(' and ');
   const open = summary.diff_rows.filter(r => r.accepted === null);
   const acceptedRows = summary.diff_rows.filter(r => r.accepted === 'item');
   const flash = (msg: string, ok: boolean) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3000); };
@@ -197,6 +227,12 @@ export default function CourierCostSummary({ docType, auditId, canEdit, reloadKe
         {onOpenDetails && <button type="button" className={VW_BTN_PRIMARY} onClick={onOpenDetails} disabled={!data}>Details</button>}
       </div>
       {toast && <div className={`px-3 py-2 rounded-xl border text-[12px] font-semibold ${toast.ok ? 'bg-[#EAF6EF] border-[#BFE3CD] text-[#17663D]' : 'bg-[#FDE7E4] border-[#F4C3BC] text-[#A8231A]'}`}>{toast.msg}</div>}
+      {data && pendingTodo && (
+        <div className="rounded-xl border border-[#F2D58A] bg-[#FFF8E6] px-3 py-2 text-[12px] text-[#7A4F00]" data-cn-pending-info>
+          {cnOpen.length > 0 && <div className="font-bold">Credit note not allocated yet</div>}
+          <div>To complete: {pendingTodo} (see below).</div>
+        </div>
+      )}
       {!data ? (
         <div className="rounded-xl border border-[#EADFD6] bg-white px-3 py-2.5 text-[12px] text-[#6E5E70]">No cost validation for this shipment yet.</div>
       ) : open.length === 0 ? (
@@ -231,13 +267,29 @@ export default function CourierCostSummary({ docType, auditId, canEdit, reloadKe
           )}
         </div>
       ))}
-      {acceptedRows.length > 0 && (
+      {(acceptedRows.length > 0 || cnDone.length > 0 || (hasStorage && storageSaved && !editStorage)) && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1" data-cost-toggles>
+          {acceptedRows.length > 0 && (
+            <button type="button" className="text-[11.5px] font-semibold text-[#6B3470] hover:underline" onClick={() => setShowAccepted(v => !v)}>
+              {showAccepted ? 'Hide' : 'Show'} accepted ({acceptedRows.length})
+            </button>
+          )}
+          {cnDone.length > 0 && (
+            <button type="button" data-toggle-cn className="text-[11.5px] font-semibold text-[#6B3470] hover:underline" onClick={() => setShowCn(v => !v)}>
+              {showCn ? 'Hide' : 'Show'} credit note ({cnDone.length}/{cnStates.length})
+            </button>
+          )}
+          {hasStorage && storageSaved && !editStorage && (
+            <button type="button" data-toggle-storage className="text-[11.5px] font-semibold text-[#6B3470] hover:underline" onClick={() => setShowStorage(v => !v)}>
+              {showStorage ? 'Hide' : 'Show'} bonded storage
+            </button>
+          )}
+        </div>
+      )}
+      {acceptedRows.length > 0 && showAccepted && (
         <div>
-          <button type="button" className="text-[11.5px] font-semibold text-[#6B3470] hover:underline" onClick={() => setShowAccepted(v => !v)}>
-            {showAccepted ? 'Hide' : 'Show'} accepted ({acceptedRows.length})
-          </button>
           {showAccepted && (
-            <div className="mt-1.5 flex flex-col gap-1.5">
+            <div className="flex flex-col gap-1.5">
               {acceptedRows.map(r => {
                 const rev = reviews.items?.[r.key];
                 return (
@@ -255,8 +307,42 @@ export default function CourierCostSummary({ docType, auditId, canEdit, reloadKe
           )}
         </div>
       )}
-      {data && data.cv_storage_actual !== null && data.cv_storage_actual !== undefined && (
-        <StorageEstimateBox data={data} docType={docType} canEdit={canEdit} onSaved={fresh => { if (fresh) setData(fresh); else load(); onChanged?.(); }} />
+      {data && showCn && cnDone.length > 0 && (
+        <div className="rounded-xl border border-[#F3D9A4] bg-[#FFFBF2] px-3 py-2 flex flex-col gap-1.5" data-cn-history>
+          {cnDone.map(c => {
+            const nos = cnNosOf(cnInvoices, c.side).map(x => x.no);
+            return (
+              <div key={c.side}>
+                <div className="text-[12px] text-[#3B1B3D]"><b>{cnSideLabel(c.side)}</b>{nos.length ? <b> · CN {nos.join(', ')}</b> : null}
+                  <span className="text-[#6E5E70]"> · Remaining subtotal {fmtRp(c.subtotal)} · Remaining VAT {fmtRp(c.vat)}</span></div>
+                <div className="pl-3"><CnLogList cv={data} state={c} /></div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {data && showStorage && hasStorage && storageSaved && !editStorage && (
+        <div className="rounded-xl border border-[#F3D9A4] bg-[#FFFBF2] px-3 py-2 text-[12px] text-[#3B1B3D]" data-storage-saved>
+          <div><b>Estimate saved</b><span className="text-[#6E5E70]">
+            {data.cv_storage_weight_kg ? ` · ${data.cv_storage_weight_kg} kg` : ''}
+            {data.cv_eta_date ? ` · ETA ${fmtDay(data.cv_eta_date)}` : ''}
+            {data.cv_release_date ? ` · Release ${fmtDay(data.cv_release_date)}` : ''}
+            {data.cv_storage_days ? ` · Billing ${data.cv_storage_days} days` : ''}</span></div>
+          <div className="text-[#6E5E70]">Expected storage <b className="text-[#3B1B3D]">{fmtRp(data.cv_storage_expected)}</b> · Storage actual <b className="text-[#3B1B3D]">{fmtRp(data.cv_storage_actual)}</b>
+            {(data.cv_storage_saved_by || data.updated_by) ? ` · ${data.cv_storage_saved_by || data.updated_by}` : ''}{data.updated_at ? ` · ${fmtDateTime(data.updated_at)}` : ''}</div>
+          {canEdit && <button type="button" className="mt-1 text-[11.5px] font-semibold text-[#6B3470] hover:underline" onClick={() => { setEditStorage(true); setShowStorage(false); }}>✎ Edit estimate</button>}
+        </div>
+      )}
+      {data && cnOpen.map(c => (
+        <React.Fragment key={c.side}>
+          <CourierCreditNoteBox cv={data} state={c} cnInvoices={cnInvoices} canEdit={canEdit}
+            onApplied={fresh => { if (fresh) setData(fresh); else load(); onChanged?.(); }} />
+        </React.Fragment>
+      ))}
+      {data && storageCard && (
+        <StorageEstimateBox data={data} docType={docType} canEdit={canEdit} saved={storageSaved}
+          onCancel={editStorage ? () => setEditStorage(false) : undefined}
+          onSaved={fresh => { if (fresh) setData(fresh); else load(); setEditStorage(false); onChanged?.(); }} />
       )}
       {data && (
         <div className="pt-2 border-t border-[#F1E8E1]">

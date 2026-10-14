@@ -1237,11 +1237,12 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   };
 
   const stats = useMemo(() => {
-    let match = 0, mismatch = 0, partial = 0, empty = 0;
+    let match = 0, mismatch = 0, partial = 0, empty = 0, accepted = 0;
     activeSections.forEach(s => s.rows.forEach(r => {
       const v = values[r.id] || {src: '', cmp: ''};
       const stComputed = computeStatus(v.src, v.cmp, r.isFormat, r.field, debugData.raw?.is_po_non_imi, getDocChecklistFlag(r.compareDoc, docCompletenessFlags));
       const st = v.manual_status || stComputed;
+      if (st === "match" && v.manual_status === 'match' && v.accept_note) accepted++;
       if (st === "match") match++;
       else if (st === "mismatch") mismatch++;
       else if (st === "partial") partial++;
@@ -1255,7 +1256,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     const checked = match + mismatch;
     const totalItems = match + mismatch + partial + empty;
     const pct = checked === 0 ? 0 : Math.round((match / checked) * 100);
-    return { match, mismatch, partial, empty, checked, pct, total: totalItems };
+    return { match, mismatch, partial, empty, checked, pct, total: totalItems, accepted };
   }, [values, activeSections, computeStatus, pibStats, debugData, docCompletenessFlags]);
 
   useEffect(() => {
@@ -1434,7 +1435,12 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   const txtSec = "#64748b";
   const txtWarn = "#92400e";
 
+  // Accepted (2026-10-14, permintaan user): field Mismatch yang di-Accept dgn catatan (manual_status 'match' + accept_note, dari
+  // ringkasan Doc Validation) tampil "Accepted" hijau tua + "✓ Valid", BUKAN Match. Tetap dihitung lolos; Undo -> Mismatch.
+  const isAcceptedVal = (v: any, st: string) => st === 'match' && v?.manual_status === 'match' && !!v?.accept_note;
+  const acceptTitle = (v: any) => `${v?.accept_note || ''}${v?.accept_by ? ` — ${v.accept_by}` : ''}${v?.accept_at ? ` · ${fmtDateEN(v.accept_at)}` : ''}`;
   const getCfg = (st: string) => {
+    if (st === 'accepted') return { label: "Accepted", bg: "#17663D", color: "#FFFFFF", icon: "ti-check" };
     if (st === 'match') return { label: "Match", bg: bgSuccess, color: txtSuccess, icon: "ti-check" };
     if (st === 'mismatch') return { label: "Mismatch", bg: bgDanger, color: txtDanger, icon: "ti-x" };
     if (st === 'partial') return { label: "Incomplete", bg: bgWarning, color: txtWarn, icon: "ti-clock" };
@@ -1489,7 +1495,8 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
 
         <div className="flex items-center gap-3 print:hidden">
           <div className="flex items-center gap-1.5">
-            <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 text-emerald-700 px-2 py-1 text-[11px] font-semibold"><b className="text-[13px]">{stats.match}</b> Match</span>
+            <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 text-emerald-700 px-2 py-1 text-[11px] font-semibold"><b className="text-[13px]">{stats.match - stats.accepted}</b> Match</span>
+            {stats.accepted > 0 && <span className="inline-flex items-center gap-1 rounded-md bg-[#17663D] text-white px-2 py-1 text-[11px] font-semibold"><b className="text-[13px]">{stats.accepted}</b> Accepted</span>}
             <span className="inline-flex items-center gap-1 rounded-md bg-red-50 text-red-700 px-2 py-1 text-[11px] font-semibold"><b className="text-[13px]">{stats.mismatch}</b> Mismatch</span>
             <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 text-slate-600 px-2 py-1 text-[11px] font-semibold"><b className="text-[13px]">{stats.empty + stats.partial}</b> Not filled</span>
           </div>
@@ -1926,18 +1933,22 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
 
                                        {/* STATUS PILL */}
                                        {(() => {
-                                         const cfg = getCfg(st);
+                                         const acc = isAcceptedVal(v, st);
+                                         const cfg = getCfg(acc ? 'accepted' : st);
                                          const StatusIcon = st === 'match' ? CheckCircle2 : st === 'mismatch' ? XCircle : Clock;
                                          return (
+                                           <>
                                            <div
                                              className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold whitespace-nowrap ${isEditMode ? 'cursor-pointer hover:opacity-75 transition-opacity' : ''}`}
                                              style={{ backgroundColor: cfg.bg, color: cfg.color }}
                                              onClick={() => toggleManualStatus(rowMatch.id, st)}
-                                             title={isEditMode ? "Klik untuk merubah status manual" : undefined}
+                                             title={isEditMode ? "Klik untuk merubah status manual" : acc ? acceptTitle(v) : undefined}
                                            >
                                              <StatusIcon size={12} />
                                              {cfg.label}
                                            </div>
+                                           {acc && <span className="text-[10px] font-semibold text-[#17663D]" title={acceptTitle(v)}>✓ Valid</span>}
+                                           </>
                                          );
                                        })()}
 

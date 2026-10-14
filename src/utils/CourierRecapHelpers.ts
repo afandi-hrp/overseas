@@ -185,7 +185,11 @@ export function recapGroupDue(g: RecapGroup, todayIso: string): RecapDue {
 export function recapGroupStatus(g: RecapGroup): { label: string; tone: 'green' | 'amber' | 'blue' | 'grey' } {
   const n = g.rows.length
   if (n > 0 && g.paid === n) return { label: 'Paid', tone: 'green' }
-  if (n > 0 && g.submitted === n) return { label: g.paid > 0 ? `Submitted · ${g.paid}/${n} paid` : 'Submitted to Finance', tone: 'blue' }
+  // Tanggal Submit (dipilih user di dialog Submit, 2026-10-14) ikut tampil di status: tanggal terakhir dari semua invoice AWB.
+  const lastSubmit = g.rows.map(r => r.submit_date).filter(Boolean).map(String).sort().pop()
+  const m = lastSubmit ? /^(\d{4})-(\d{2})-(\d{2})/.exec(lastSubmit) : null
+  const at = m ? ` ${m[3]} ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(m[2]) - 1]} ${m[1]}` : ''
+  if (n > 0 && g.submitted === n) return { label: g.paid > 0 ? `Submitted · ${g.paid}/${n} paid` : `Submitted to Finance${at ? ' ·' + at : ''}`, tone: 'blue' }
   if (g.submitted > 0) return { label: `${g.submitted}/${n} submitted`, tone: 'amber' }
   return { label: 'Not submitted', tone: 'grey' }
 }

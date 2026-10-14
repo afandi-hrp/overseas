@@ -16,9 +16,13 @@
 //   ("Document review"); riwayat PIB/CN tetap di jendela Open Audit Courier.
 // - Shipment Info bisa dilipat (2026-10-06, laporan user di laptop 14": isi tab tertutup header). Default terlipat kalau
 //   tinggi jendela < 1000px; pilihan disimpan di localStorage (per browser).
+// - Kunci Submit all to Finance (2026-10-14, permintaan user; CourierRecapRules.ts): invoice baru (dibuat setelah fitur aktif) & belum
+//   di-Submit -> tombol abu-abu 🔒 sampai Cost Validation = 100% DAN Doc Validation = 100% (Checklist tidak wajib); strip info di
+//   bawah header menyebut persen keduanya. Persen = nilai live tab (ringkasan mengirim onPctChange) atau badge kartu. Setelah semua
+//   invoice di-Submit tombol menjadi "✓ Submitted <tgl>". Tanggal Submit dipilih di dialog (SharedDataTable).
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Send, ExternalLink, Pencil, ChevronDown, ChevronUp, Unlock } from 'lucide-react'
+import { X, Send, ExternalLink, Pencil, ChevronDown, ChevronUp, Unlock, Lock, CheckCircle2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { SA_BTN_OUTLINE, SA_BTN_GREEN, Pill, PtBadge } from './SeaAirAuditUi'
 import { fmtRp, companyFullName } from '../utils/SeaAirAuditHelpers'
@@ -32,6 +36,8 @@ import CostValidationModalLegacy from './CostValidationModalLegacy'
 import CourierCostSummary from './CourierCostSummary'
 import CourierRecapInvoicesTab from './CourierRecapInvoicesTab'
 import { useCourierDutyRaw, courierTotalBreakdown, courierSubmitLock } from '../utils/CourierTotalBreakdown'
+import { courierValidationLock, courierLockTitle, courierRowUnderRules } from '../utils/CourierRecapRules'
+import type { CnInvoiceInfo } from './CourierCreditNoteBox'
 
 export type RecapPanelTab = ValidationTabKey | 'invoices' | 'trail'
 
@@ -312,6 +318,14 @@ export default function CourierRecapValidationPanel({
   const dutyRaw = useCourierDutyRaw(audit, g.byKind.duty.length > 0)
   const bd = useMemo(() => courierTotalBreakdown(g, dutyRaw, audit), [g, dutyRaw, audit])
   const submitLock = courierSubmitLock(bd, g.rows)
+  // Kunci validasi (2026-10-14): hanya invoice baru yang belum di-Submit.
+  const rulesApply = unsubmitted.some(courierRowUnderRules)
+  const validationLock = courierValidationLock(unsubmitted, !!rec, pct.doc, pct.cost)
+  const lastSubmit = g.rows.map(r => r.submit_date).filter(Boolean).map(String).sort().pop() || null
+  const cnInvoices: CnInvoiceInfo[] = useMemo(() => g.byKind.cn.map(r => ({
+    side: /DUTY/i.test(String(r.invoice_type || '')) ? 'duty' as const : 'freight' as const,
+    no: String(r.no_invoice || '—'), receivedAt: r.tgl_terima_email || null,
+  })), [g])
   const vendor = rec?.vendor || g.rows.map(r => r.vendor).find(hasVal)
   const editOf = (t: ValidationTabKey) => draft && canEditValidation[t]
   const tabLabel: Record<RecapPanelTab, string> = { checklist: 'Checklist', doc: 'Doc Validation', cost: 'Cost Validation', invoices: `Invoices (${g.rows.length})`, trail: 'Audit trail' }
@@ -332,12 +346,22 @@ export default function CourierRecapValidationPanel({
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div className="min-w-0 flex flex-wrap items-center gap-1.5 pt-0.5">
             {colOk('an') && g.an && <PtBadge code={g.an} title={companyFullName(companyNames, g.an)} />}
-            {canEditRecap && unsubmitted.length > 0 && (
+            {canEditRecap && unsubmitted.length > 0 && (validationLock ? (
+              <button type="button" disabled className={`${SA_BTN_OUTLINE} h-8 !bg-[#F3EEEA] !text-[#8A7A8B] !border-[#E5DCD5] cursor-not-allowed`} data-submit-lock={validationLock}
+                title={courierLockTitle(validationLock, pct.doc, pct.cost)}>
+                <Lock size={12} /> {unsubmitted.length === g.rows.length ? 'Submit all to Finance' : `Submit all (${unsubmitted.length} left)`}
+              </button>
+            ) : (
               <button type="button" disabled={busy || !!submitLock} className={`${SA_BTN_GREEN} h-8`} data-submit-lock={submitLock || 'none'}
                 title={submitLock === 'needs_remarks' ? 'Needs check — fill in Internal remarks (Invoices tab) to unlock Submit to Finance' : submitLock === 'loading' ? 'Reading the Invoice Duty content…' : undefined}
                 onClick={() => onSubmit(unsubmitted.map(r => String(r.id)))}>
                 <Send size={12} /> {busy ? 'Submitting…' : unsubmitted.length === g.rows.length ? 'Submit all to Finance' : `Submit all (${unsubmitted.length} left)`}
               </button>
+            ))}
+            {unsubmitted.length === 0 && g.rows.length > 0 && lastSubmit && (
+              <span className={`${SA_BTN_OUTLINE} h-8 !text-[#17663D] !border-[#BFE3CD] !bg-[#EAF6EF] cursor-default`} data-submitted-badge>
+                <CheckCircle2 size={12} /> Submitted {fmtCourierDate(lastSubmit)}
+              </span>
             )}
             {!g.key.startsWith('ID:') && <button type="button" className={`${SA_BTN_OUTLINE} h-8`} onClick={onViewInAudit}><ExternalLink size={12} /> View in Audit</button>}
             {canEditRecap && <button type="button" className={`${SA_BTN_OUTLINE} h-8`} onClick={onEditInList} title="Edit the invoices of this AWB in the List view"><Pencil size={12} /> Edit in List</button>}
@@ -357,6 +381,20 @@ export default function CourierRecapValidationPanel({
             <button type="button" onClick={onClose} aria-label="Close panel" title="Close" className="w-8 h-8 inline-flex items-center justify-center hover:bg-[#F6EFEA] rounded-xl text-[#6E5E70]"><X size={17} /></button>
           </div>
         </div>
+        {rulesApply && canEditRecap && (
+          validationLock ? (
+            <div className="mt-2 rounded-lg border border-[#E5DCD5] bg-[#F7F3F0] px-2.5 py-1.5 text-[11.5px] text-[#6E5E70] flex items-center gap-1.5" data-validation-lock-info>
+              <Lock size={12} className="shrink-0" />
+              {validationLock === 'no_audit'
+                ? <span>Submit &amp; Paid Date are locked — this AWB has no PIB / CN in Audit yet, so it cannot be validated.</span>
+                : <span>Submit &amp; Paid Date are locked until validation is complete: Cost Validation <b className={(pct.cost ?? 0) >= 100 ? 'text-[#17663D]' : 'text-[#A8231A]'}>{pct.cost ?? 0}%</b> · Doc Validation <b className={(pct.doc ?? 0) >= 100 ? 'text-[#17663D]' : 'text-[#A8231A]'}>{pct.doc ?? 0}%</b> (Checklist not required)</span>}
+            </div>
+          ) : (
+            <div className="mt-2 rounded-lg border border-[#BFE3CD] bg-[#EAF6EF] px-2.5 py-1.5 text-[11.5px] text-[#17663D] flex items-center gap-1.5" data-validation-lock-info="open">
+              <CheckCircle2 size={12} className="shrink-0" /> Cost Validation &amp; Doc Validation are 100%. Submit to Finance is available.
+            </div>
+          )
+        )}
         <div className="flex items-end gap-1.5 mt-2 overflow-x-auto" role="tablist">
           {tabs.map(t => {
             const dot = t === 'invoices' || t === 'trail' ? undefined : pct[t]
@@ -430,7 +468,7 @@ export default function CourierRecapValidationPanel({
           )}
           {rec && access.cost && visited.cost && (
             <div className={tab === 'cost' ? '' : 'hidden'} role="tabpanel">
-              <CourierCostSummary docType={docType} auditId={rec.id} canEdit={editOf('cost')} reloadKey={reloadKey}
+              <CourierCostSummary docType={docType} auditId={rec.id} canEdit={editOf('cost')} reloadKey={reloadKey} cnInvoices={cnInvoices}
                 onPctChange={onCostPct} onChanged={onChanged} onOpenDetails={() => openDetails('cost')} />
             </div>
           )}

@@ -1362,11 +1362,12 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   };
 
   const stats = useMemo(() => {
-    let match = 0, mismatch = 0, partial = 0, empty = 0;
+    let match = 0, mismatch = 0, partial = 0, empty = 0, accepted = 0;
     activeSections.forEach(s => s.rows.forEach(r => {
       const v = values[r.id] || {src: '', cmp: ''};
       const stComputed = computeStatus(v.src, v.cmp, r.isFormat, r.field, debugData.raw?.is_po_non_imi, getDocChecklistFlag(r.compareDoc, docCompletenessFlags));
       const st = v.manual_status || stComputed;
+      if (st === "match" && v.manual_status === 'match' && v.accept_note) accepted++;
       if (st === "match") match++;
       else if (st === "mismatch") mismatch++;
       else if (st === "partial") partial++;
@@ -1380,7 +1381,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     const checked = match + mismatch;
     const totalItems = match + mismatch + partial + empty;
     const pct = checked === 0 ? 0 : Math.round((match / checked) * 100);
-    return { match, mismatch, partial, empty, checked, pct, total: totalItems };
+    return { match, mismatch, partial, empty, checked, pct, total: totalItems, accepted };
   }, [values, activeSections, computeStatus, pibStats, debugData, docCompletenessFlags]);
 
   // Override status baris kalkulasi yg di-Accept (mode summary).
@@ -1573,8 +1574,14 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   const txtSec = "#64748b";
   const txtWarn = "#92400e";
 
+  // Accepted (2026-10-14, permintaan user): field Mismatch yang di-Accept dgn catatan (manual_status 'match' + accept_note) tampil
+  // "Accepted" (hijau tua), BUKAN Match -- tetap dihitung lolos di akurasi. Undo -> kembali Mismatch (status sebelum Accept).
+  const isAcceptedVal = (v: any, st: string) => st === 'match' && v?.manual_status === 'match' && !!v?.accept_note;
+  const shownSt = (v: any, st: string) => (isAcceptedVal(v, st) ? 'accepted' : st);
+  const acceptTitle = (v: any) => `${v?.accept_note || ''}${v?.accept_by ? ` — ${v.accept_by}` : ''}${v?.accept_at ? ` · ${fmtDateEN(v.accept_at)}` : ''}`;
   const getCfg = (st: string) => {
     // Warna chip status = token Sea & Air (2026-10-01).
+    if (st === 'accepted') return { label: "Accepted", bg: "#17663D", color: "#FFFFFF", icon: "ti-check" };
     if (st === 'match') return { label: "Match", bg: "#EAF6EF", color: "#17663D", icon: "ti-check" };
     if (st === 'mismatch') return { label: "Mismatch", bg: "#FDE7E4", color: "#A8231A", icon: "ti-x" };
     if (st === 'partial') return { label: "Incomplete", bg: "#FFF1D6", color: "#7A4F00", icon: "ti-clock" };
@@ -1613,7 +1620,8 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
         </div>
         <div className="flex items-center gap-1.5 print:hidden">
           {([
-            ['Match', stats.match, VW_TILE_TONE.green],
+            ['Match', stats.match - stats.accepted, VW_TILE_TONE.green],
+            ['Accepted', stats.accepted, 'bg-[#17663D] text-white'],
             ['Mismatch', stats.mismatch, VW_TILE_TONE.red],
             ['Not filled', stats.empty + stats.partial, VW_TILE_TONE.grey],
           ] as const).map(([label, value, cls]) => (
@@ -1969,7 +1977,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     };
     const chip = (st: string, manual?: boolean) => {
       const cfg = getCfg(st);
-      const StatusIcon = st === 'match' ? CheckCircle2 : st === 'mismatch' ? XCircle : Clock;
+      const StatusIcon = st === 'match' || st === 'accepted' ? CheckCircle2 : st === 'mismatch' ? XCircle : Clock;
       return (
         <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-bold whitespace-nowrap" style={{ backgroundColor: cfg.bg, color: cfg.color }}>
           <StatusIcon size={11} />{cfg.label}{manual ? ' ✎' : ''}
@@ -2021,7 +2029,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                       const v = values[rowMatch.id] || { src: '', cmp: '' };
                       const st = v.manual_status || computeStatus(v.src, v.cmp, rowMatch.isFormat, rowMatch.field, debugData.raw?.is_po_non_imi, getDocChecklistFlag(rowMatch.compareDoc, docCompletenessFlags));
                       const errNpwp = v.cmp && hasNpwpError(rowMatch.id, v.cmp);
-                      const cfgSt = getCfg(st);
+                      const cfgSt = getCfg(shownSt(v, st));
                       const StatusIcon = st === 'match' ? CheckCircle2 : st === 'mismatch' ? XCircle : Clock;
                       return (
                         <td key={doc} className="p-3 border-r border-slate-300 last:border-r-0 align-middle min-w-[150px]" data-matrix-cell={rowMatch.id}>
@@ -2034,8 +2042,9 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                               <span className={`text-[10px] break-words px-1 ${v.cmp_edited ? 'text-blue-700 font-bold' : 'text-[#5A305A]/70'}`}>({formatViewValue(v.cmp, field)}){v.cmp_edited ? ' ✎' : ''}</span>
                             )}
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold whitespace-nowrap" style={{ backgroundColor: cfgSt.bg, color: cfgSt.color }}>
-                              <StatusIcon size={12} />{cfgSt.label}{v.manual_status ? ' ✎' : ''}
+                              <StatusIcon size={12} />{cfgSt.label}{v.manual_status && !isAcceptedVal(v, st) ? ' ✎' : ''}
                             </span>
+                            {isAcceptedVal(v, st) && <span className="text-[10px] font-semibold text-[#17663D]" title={acceptTitle(v)}>✓ Valid</span>}
                             {(errNpwp || v.npwp_status === 'not_found') && <span className="text-[9.5px] text-[#7A4F00] bg-[#FFF1D6] px-2 py-0.5 rounded-md font-bold uppercase">NPWP tidak terdaftar</span>}
                           </div>
                         </td>
@@ -2075,7 +2084,8 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
               <div className="text-[11.5px] text-[#6E5E70]">The same field compared across the documents{hasSourceData ? ` · ${stats.pct}% match` : ''}</div>
             </div>
             {([
-              ['Match', stats.match, VW_TILE_TONE.green],
+              ['Match', stats.match - stats.accepted, VW_TILE_TONE.green],
+              ['Accepted', stats.accepted, 'bg-[#17663D] text-white'],
               ['Mismatch', stats.mismatch, VW_TILE_TONE.red],
               ['Not filled', stats.empty + stats.partial, VW_TILE_TONE.grey],
             ] as const).map(([label, value, cls]) => (
@@ -2219,7 +2229,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                                     </>
                                   )}
                                   {v.srcNote && <span className="text-[10.5px] text-[#8A7A8B]"> · {v.srcNote}</span>}
-                                  {v.manual_status === 'match' && v.accept_note && <span className="text-[10.5px] text-[#17663D]" title={`${v.accept_by || ''}${v.accept_at ? ' · ' + fmtDateEN(v.accept_at) : ''}`}> · Accepted: {v.accept_note}</span>}
+                                  {isAcceptedVal(v, st) && <span className="text-[10.5px] font-semibold text-[#17663D]" title={acceptTitle(v)}> · ✓ Valid</span>}
                                   {hasOtherCost && Number(otherCostVal) !== 0 && (
                                     <span className="text-[10.5px] italic text-[#6E5E70]"> · Other cost {new Intl.NumberFormat('id-ID', { maximumFractionDigits: 4 }).format(Number(otherCostVal))}{v.otherCost_edited ? ' ✎' : ''}</span>
                                   )}
@@ -2228,10 +2238,10 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                                   <button type="button" data-status-toggle={rowMatch.id} title="Click to switch Match ⇄ Mismatch"
                                     onClick={() => applyManualStatus(rowMatch.id, st === 'match' ? 'mismatch' : 'match')}
                                     className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-bold whitespace-nowrap cursor-pointer hover:brightness-95"
-                                    style={{ backgroundColor: getCfg(st).bg, color: getCfg(st).color }}>
-                                    {st === 'match' ? <CheckCircle2 size={11} /> : <XCircle size={11} />}{getCfg(st).label}{v.manual_status ? ' ✎' : ''}<ArrowLeftRight size={10} className="opacity-60" />
+                                    style={{ backgroundColor: getCfg(shownSt(v, st)).bg, color: getCfg(shownSt(v, st)).color }}>
+                                    {st === 'match' ? <CheckCircle2 size={11} /> : <XCircle size={11} />}{getCfg(shownSt(v, st)).label}{v.manual_status && !isAcceptedVal(v, st) ? ' ✎' : ''}<ArrowLeftRight size={10} className="opacity-60" />
                                   </button>
-                                ) : chip(st, !!v.manual_status)}
+                                ) : chip(shownSt(v, st), !!v.manual_status && !isAcceptedVal(v, st))}
                                 {(errNpwp || v.npwp_status === 'not_found') && <span className="text-[9.5px] text-[#7A4F00] bg-[#FFF1D6] px-2 py-0.5 rounded-md font-bold uppercase">NPWP tidak terdaftar</span>}
                                 {reviewUi && canEdit && (
                                   <span className="flex items-center gap-2 text-[11px] font-semibold print:hidden">
@@ -2712,19 +2722,23 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
 
                                        {/* STATUS PILL */}
                                        {(() => {
-                                         const cfg = getCfg(st);
+                                         const acc = isAcceptedVal(v, st);
+                                         const cfg = getCfg(shownSt(v, st));
                                          const StatusIcon = st === 'match' ? CheckCircle2 : st === 'mismatch' ? XCircle : Clock;
                                          return (
+                                           <>
                                            <div
                                              className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-bold whitespace-nowrap ${isEditMode ? 'cursor-pointer hover:opacity-75 transition-opacity' : ''}`}
                                              style={{ backgroundColor: cfg.bg, color: cfg.color }}
                                              onClick={() => toggleManualStatus(rowMatch.id, st)}
-                                             title={isEditMode ? "Klik untuk merubah status manual" : undefined}
+                                             title={isEditMode ? "Klik untuk merubah status manual" : acc ? acceptTitle(v) : undefined}
                                            >
                                              <StatusIcon size={11} />
                                              {cfg.label}
-                                             {v.manual_status && <span className="opacity-70">· manual</span>}
+                                             {v.manual_status && !acc && <span className="opacity-70">· manual</span>}
                                            </div>
+                                           {acc && <span className="text-[10px] font-semibold text-[#17663D]" title={acceptTitle(v)}>✓ Valid</span>}
+                                           </>
                                          );
                                        })()}
 
