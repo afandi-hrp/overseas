@@ -94,7 +94,7 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
             <tr>
               <th className={TH}>No</th><th className={TH}>Description</th><th className={TH}>Cost item</th>
               <th className={`${TH} text-right`} title="Amount (qty × price below)">Amount</th><th className={TH}>Compare</th>
-              <th className={TH}>Remark</th><th className={`${TH} text-center`} title="Use as cost reference after approval">Ref</th><th className={`${TH} text-center`}>Verified</th>
+              <th className={TH}>Remark</th><th className={`${TH} text-center sticky right-[64px] z-20 w-[48px] min-w-[48px] shadow-[-6px_0_6px_-6px_rgba(59,27,61,0.18)]`} title="Use as cost reference after approval">Ref</th><th className={`${TH} text-center sticky right-0 z-20 w-[64px] min-w-[64px]`}>Verified</th>
             </tr>
           </thead>
           <tbody>
@@ -103,12 +103,16 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
               const rowBusy = busy === l.id || busy === 'all'
               const newItem = !l.cost_item_id || l.compare_flag === 'item_baru'
               const remarkVal = remarks[l.id] ?? (l.remark || '')
+              // Latar baris juga dipakai sel sticky Ref/Verified (harus pekat supaya isi kolom lain tidak tembus saat digeser).
+              const rowBg = l.compare_flag === 'naik' ? 'bg-[#FFF6F4]' : newItem ? 'bg-[#FFFBF0]' : 'bg-white'
+              // Remark multi-baris: tinggi ikut panjang teks (maks 6 baris) supaya catatan panjang terbaca semua.
+              const remarkRows = Math.min(6, Math.max(1, remarkVal.split('\n').reduce((n, ln) => n + Math.max(1, Math.ceil(ln.length / 22)), 0)))
               return (
                 <React.Fragment key={l.id}>
-                  <tr className={`border-t border-[#F3EEEA] ${l.compare_flag === 'naik' ? 'bg-[#FFF6F4]' : newItem ? 'bg-[#FFFBF0]' : ''} ${rowBusy ? 'opacity-60' : ''}`}>
+                  <tr className={`border-t border-[#F3EEEA] ${rowBg} ${rowBusy ? 'opacity-60' : ''}`}>
                     <td className={`${TD} tabular-nums`}>{l.line_no}</td>
-                    <td className={`${TD} min-w-[170px]`}>{l.description_raw}</td>
-                    <td className={`${TD} min-w-[170px] max-w-[240px]`}>
+                    <td className={`${TD} min-w-[150px]`}>{l.description_raw}</td>
+                    <td className={`${TD} min-w-[150px] max-w-[220px]`}>
                       {editable ? (
                         <select className={`${SA_INPUT} h-8 text-[12px] pr-6`} value={l.cost_item_id ?? ''} disabled={rowBusy}
                           onChange={e => run(l.id, () => verify(l, { costItemId: e.target.value ? Number(e.target.value) : null, learnAlias: !!e.target.value }))}>
@@ -131,12 +135,12 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                       <div className="font-semibold">{fmtMoney(l.amount, currency)}</div>
                       {(l.qty != null || l.unit_price != null) && <div className="text-[11px] text-[#8A7A8B]">{fmtNumber(l.qty, 3)}{l.unit ? ` ${l.unit}` : ''} × {fmtNumber(l.unit_price)}</div>}
                     </td>
-                    <td className={`${TD} whitespace-nowrap`}>
-                      <div className="flex items-center gap-1">
+                    <td className={`${TD} min-w-[130px]`}>
+                      <div className="flex flex-wrap items-center gap-1">
                         <CompareFlagChip flag={l.compare_flag} diffPct={l.compare_diff_pct} />
                         <SimilarityBadge value={l.compare_similarity} />
                       </div>
-                      <div className="mt-1 flex items-center gap-2">
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 whitespace-nowrap">
                         <button type="button" className="text-[11px] font-semibold text-[#6B3470] hover:underline inline-flex items-center gap-0.5" onClick={() => setBrowseFor(l)}>
                           <History size={11} /> Browse history
                         </button>
@@ -149,18 +153,19 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                         )}
                       </div>
                     </td>
-                    <td className={`${TD} min-w-[120px]`}>
+                    <td className={`${TD} min-w-[140px] max-w-[220px]`}>
                       {editable ? (
-                        <input className={`${SA_INPUT} h-8 text-[12px]`} value={remarkVal} disabled={rowBusy} placeholder="—"
+                        <textarea className={`${SA_INPUT} !h-auto min-h-8 py-1.5 text-[12px] leading-snug resize-y`} rows={remarkRows} value={remarkVal} disabled={rowBusy} placeholder="—"
+                          title={remarkVal || undefined}
                           onChange={e => setRemarks(p => ({ ...p, [l.id]: e.target.value }))}
                           onBlur={() => { const v = remarkVal.trim(); if (v && v !== (l.remark || '')) run(l.id, () => verify(l, { remark: v })) }} />
-                      ) : <span className="text-[#6E5E70]">{l.remark || '—'}</span>}
+                      ) : <span className="text-[#6E5E70] whitespace-pre-wrap [overflow-wrap:anywhere]">{l.remark || '—'}</span>}
                     </td>
-                    <td className={`${TD} text-center`}>
+                    <td className={`${TD} text-center sticky right-[64px] w-[48px] min-w-[48px] ${rowBg} shadow-[-6px_0_6px_-6px_rgba(59,27,61,0.18)]`}>
                       <input type="checkbox" aria-label="Use as reference" checked={l.include_in_history} disabled={!editable || rowBusy}
                         onChange={() => run(l.id, () => verify(l, { includeInHistory: !l.include_in_history }))} className="w-4 h-4 accent-[#6B3470]" />
                     </td>
-                    <td className={`${TD} text-center`}>
+                    <td className={`${TD} text-center sticky right-0 w-[64px] min-w-[64px] ${rowBg}`}>
                       <input type="checkbox" aria-label="Verified" checked={l.is_verified} disabled={!editable || rowBusy}
                         title={l.verified_by ? `By ${l.verified_by}` : undefined}
                         onChange={() => run(l.id, () => verify(l, { isVerified: !l.is_verified, learnAlias: !l.is_verified && !!l.cost_item_id }))} className="w-4 h-4 accent-[#17663D]" />
@@ -187,9 +192,11 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                           </div>
                         </td>
                         <td className={`${TD} py-1 text-right tabular-nums text-[11.5px] text-[#6E5E70] whitespace-nowrap`}>{fmtMoney(h.amount, currency)}</td>
-                        <td className={`${TD} py-1 text-[11.5px] whitespace-nowrap tabular-nums ${diff > 0 ? 'text-[#A8231A]' : diff < 0 ? 'text-[#2F4FA8]' : 'text-[#6E5E70]'}`} colSpan={4}>
+                        <td className={`${TD} py-1 text-[11.5px] whitespace-nowrap tabular-nums ${diff > 0 ? 'text-[#A8231A]' : diff < 0 ? 'text-[#2F4FA8]' : 'text-[#6E5E70]'}`} colSpan={2}>
                           Δ {diff > 0 ? '+' : ''}{fmtMoney(diff, currency)}{pct !== null ? ` (${fmtPct(pct)})` : ''}
                         </td>
+                        <td className="sticky right-[64px] bg-[#FCFAF8] shadow-[-6px_0_6px_-6px_rgba(59,27,61,0.18)]" />
+                        <td className="sticky right-0 bg-[#FCFAF8]" />
                       </tr>
                     )
                   })}
@@ -234,7 +241,7 @@ function AddCostItemModal({ line, costItems, actor, onClose, onAdded }: {
   line: CostAgentInvoiceLine; costItems: CostAgentCostItem[]; actor: string | null; onClose: () => void; onAdded: (id: number) => void
 }) {
   const [code, setCode] = useState('')
-  const [codeOpen, setCodeOpen] = useState(false)
+  const [codeOpen, setCodeOpen] = useState(true) // daftar cost item langsung tampil saat modal dibuka
   const [name, setName] = useState(line.description_raw.slice(0, 80))
   const [category, setCategory] = useState('PORT')
   const [gl, setGl] = useState('')
@@ -271,14 +278,14 @@ function AddCostItemModal({ line, costItems, actor, onClose, onAdded }: {
         <button type="button" className={SA_BTN_OUTLINE} onClick={onClose} disabled={busy}>Cancel</button>
         <button type="button" className={SA_BTN_PRIMARY} onClick={save} disabled={busy}>{busy ? 'Saving…' : existing ? 'Use for this line' : 'Add & use for this line'}</button>
       </>}>
-      <div className="p-5 grid grid-cols-2 gap-3">
+      <div className="p-5 grid grid-cols-2 gap-3 content-start min-h-[460px]">
         <div className="relative">
           <FieldLabel required hint="pick existing or type a new one">Code</FieldLabel>
           <input className={SA_INPUT} value={code} placeholder="e.g. PORT_CLEARANCE" autoFocus
             onFocus={() => setCodeOpen(true)} onBlur={() => setTimeout(() => setCodeOpen(false), 150)}
             onChange={e => { setCode(e.target.value.toUpperCase()); setCodeOpen(true) }} />
           {codeOpen && (
-            <div className="absolute z-[90] mt-1 w-[min(560px,85vw)] max-h-60 overflow-y-auto bg-white border border-[#EADFD6] rounded-lg shadow-xl">
+            <div className="absolute z-[90] mt-1 w-[min(560px,85vw)] max-h-72 overflow-y-auto bg-white border border-[#EADFD6] rounded-lg shadow-xl">
               {codeTerm && !existing && (
                 <button type="button" onMouseDown={e => { e.preventDefault(); setCodeOpen(false) }}
                   className="w-full text-left px-3 py-1.5 text-[12.5px] font-semibold text-[#6B3470] hover:bg-[#F5EDF3] border-b border-[#F3EEEA] inline-flex items-center gap-1">

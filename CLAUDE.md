@@ -64,7 +64,8 @@ yang berlaku lintas modul. Rujukan lama di docs berbunyi "lihat CLAUDE.md bagian
   Cost Agent (versi user ber-guard) + 055 seed master; 056 RPC `fn_cost_agent_delete_invoice` (hapus invoice Cost Agent, Admin,
   masa uji coba -- cost-agent.md). **KEPUTUSAN TERTUNDA (user): nasib fitur hapus invoice Cost Agent setelah uji coba (cabut
   grant / hapus tombol / pertahankan) -- JANGAN diubah sebelum user memutuskan.** SQL baru: file `sql/NNN_*.sql` baru (lanjut
-  **057**; buat ulang folder `sql/`), idempotent + pre-check nama fungsi, user yang menjalankan manual -- tidak ada akses DB dari
+  **059**; 057 Cost Agent history = file user, SUDAH dijalankan; `sql/058` grant delete_invoice BELUM dijalankan per 2026-10-14 --
+  cost-agent.md), idempotent + pre-check nama fungsi, user yang menjalankan manual -- tidak ada akses DB dari
   sesi. **Tambah user baru**: template `docs/sql-templates/add-users.sql` (edit daftar email/nama/password/divisi/role; buat akun
   auth + identities + profil + divisi + role; email lama tidak diubah password-nya; diuji PGlite 27 cek).
 - **Kondisi DB production (stack `supabase3`)**: `anon` tanpa hak di schema public, GraphQL ditutup, semua tabel RLS

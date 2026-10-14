@@ -326,7 +326,14 @@ Agency Invoices yg berubah (Voyages & Approval Matrix tidak disentuh; `CostAgent
   menunjuk invoice ini dikosongkan; dicatat ke `audit_trail` format "Invoice Cost Agent — Lama: #id (status) → Baru: dihapus".
   File Google Drive TIDAK dihapus. Alias cost item hasil belajar TETAP.
 - UI: ikon tempat sampah di kolom Status daftar + tombol **Delete** di header review -- hanya `isAdmin && canEdit('cost_agent_invoice')`
-  & status bukan journal/paid (`canDeleteInvoice`); konfirmasi; review tertutup bila invoice yg dibuka dihapus.
+  & status bukan journal/paid (`canDeleteInvoice`); review tertutup bila invoice yg dibuka dihapus. Konfirmasi = **modal**
+  (`CostAgentModal` z-[85] di `CostAgentInvoicePage.tsx`, 2026-10-14; dulu `window.confirm`): peringatan, Reason opsional (kosong =
+  "Hapus data uji coba" -> p_reason), tombol merah "Delete invoice"; error RPC tampil di modal (modal tetap terbuka).
+- **Insiden 2026-10-14**: "permission denied for function fn_cost_agent_delete_invoice" -- grant EXECUTE authenticated dari 056
+  tercabut (dugaan: blok revoke massal `fn_cost_agent_*` + grant allowlist yg dijalankan ulang di 057 tanpa delete_invoice).
+  Perbaikan `sql/058_cost_agent_delete_invoice_grant.sql` (pre-check fungsi, revoke public/anon, grant authenticated+service_role,
+  query cek). **BELUM DIJALANKAN** per 2026-10-14. SQL berikutnya yg memakai pola revoke massal + allowlist WAJIB memasukkan
+  `fn_cost_agent_delete_invoice(bigint, text)` selama fitur hapus masih dipertahankan (keputusan tertunda di bawah).
 - **KEPUTUSAN TERTUNDA (user, 2026-10-13)**: nasib fitur hapus setelah masa uji coba (cabut grant RPC / hapus tombol /
   pertahankan) akan ditentukan user -- JANGAN diubah sebelum ada keputusan (juga dicatat di CLAUDE.md bagian SQL).
 
@@ -338,6 +345,11 @@ Agency Invoices yg berubah (Voyages & Approval Matrix tidak disentuh; `CostAgent
   CostAgentInvoiceLines) -- hemat 1 baris.
 - Tabel baris 8 kolom: Qty × Price dipindah ke bawah Amount; min-width kolom diturunkan; sub-baris history 1 baris
   (`max-w-0` + truncate, detail di tooltip). Diukur headless Chrome: tabel di ruang 960–1150px overflow-x = 0.
+- **2026-10-14 (laporan user, setelah update 057 menambah badge similarity + Browse history)**: kolom **Ref & Verified `sticky right`**
+  (Verified `right-0` 64px, Ref `right-[64px]` 48px, latar = latar baris `rowBg`; sub-baris history punya 2 sel sticky kosong) -> selalu
+  terlihat di laptop 14" walau tabel melebar; kolom Compare kini boleh pindah baris (dulu `whitespace-nowrap`). **Remark** = textarea yg
+  tingginya ikut panjang teks (maks 6 baris, bisa ditarik), tampilan baca saja `whitespace-pre-wrap`. **Add new cost item**: body
+  `min-h-[460px]`, daftar Code langsung terbuka saat modal tampil (`codeOpen` awal true), dropdown `max-h-72`.
 
 ## Konvensi lanjutan
 

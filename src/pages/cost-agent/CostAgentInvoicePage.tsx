@@ -7,12 +7,12 @@
 // multi-select -> "Create AP Note / PV" (antrean, 1 request per invoice) bila canEdit('cost_agent_payment').
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { RefreshCw, UploadCloud, X, RotateCcw, FileText, Loader2, Wallet, ShieldCheck, Trash2 } from 'lucide-react'
+import { RefreshCw, UploadCloud, X, RotateCcw, FileText, Loader2, Wallet, ShieldCheck, Trash2, AlertTriangle } from 'lucide-react'
 import { useAuth } from '../../lib/AuthContext'
 import PaginationFooter from '../../components/PaginationFooter'
 import { LoadingTableRow } from '../../components/LoadingState'
-import { CostAgentPageHeader, StatusChip, FilterPanel, FilterSearch, FilterField, FilterButton, FILTER_SELECT, FILTER_SELECT_WIDE } from '../../components/CostAgentUi'
-import { Chip, SA_BTN_OUTLINE, SA_CARD } from '../../components/SeaAirAuditUi'
+import { CostAgentPageHeader, CostAgentModal, StatusChip, FilterPanel, FilterSearch, FilterField, FilterButton, FILTER_SELECT, FILTER_SELECT_WIDE } from '../../components/CostAgentUi'
+import { Chip, SA_BTN_OUTLINE, SA_CARD, SA_INPUT } from '../../components/SeaAirAuditUi'
 import CostAgentUploadModal from '../../components/CostAgentUploadModal'
 import CostAgentInvoiceReviewModal from '../../components/CostAgentInvoiceReviewModal'
 import CostAgentPaymentModal from '../../components/CostAgentPaymentModal'
@@ -140,16 +140,23 @@ export default function CostAgentInvoicePage() {
   // Hapus invoice (masa uji coba, sql/056): Admin saja, status journal/paid tidak bisa. Anak invoice ikut terhapus.
   const canDelete = isAdmin && canEditInvoice
   const [deleting, setDeleting] = useState<number | null>(null)
-  const deleteInvoice = async (r: { id: number; invoice_no: string | null; status: string }) => {
-    if (!window.confirm(`Delete invoice ${r.invoice_no || '#' + r.id} (${INVOICE_STATUS_META[r.status as CostAgentInvoiceStatus]?.label || r.status})?\n\nIts cost lines, documents, approvals and history are deleted too. Files in Google Drive are kept. This cannot be undone.`)) return
-    setDeleting(r.id)
+  // Konfirmasi lewat modal (bukan window.confirm); error RPC tampil di dalam modal.
+  const [confirmDelete, setConfirmDelete] = useState<{ id: number; invoice_no: string | null; status: string } | null>(null)
+  const [deleteReason, setDeleteReason] = useState('')
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const deleteInvoice = (r: { id: number; invoice_no: string | null; status: string }) => { setConfirmDelete(r); setDeleteReason(''); setDeleteError(null) }
+  const doDelete = async () => {
+    const r = confirmDelete
+    if (!r) return
+    setDeleting(r.id); setDeleteError(null)
     try {
-      await costAgentDeleteInvoice(r.id, 'Hapus data uji coba')
+      await costAgentDeleteInvoice(r.id, deleteReason.trim() || 'Hapus data uji coba')
+      setConfirmDelete(null)
       showToast(`Invoice ${r.invoice_no || '#' + r.id} deleted.`)
       if (openId === r.id) closeInvoice()
       fetchList(true)
     } catch (e: any) {
-      showToast(e.message || String(e), 'warn')
+      setDeleteError(e.message || String(e))
     } finally {
       setDeleting(null)
     }
@@ -318,6 +325,29 @@ export default function CostAgentInvoicePage() {
         <React.Fragment key={openId}><CostAgentInvoiceReviewModal invoiceId={openId} companies={companies} vendors={vendors} vessels={vessels} ports={ports}
           costItems={costItems} canEdit={canEditInvoice} canPay={canPay} actor={actor} onClose={closeInvoice} onChanged={() => fetchList(true)}
           onToast={showToast} onDelete={canDelete ? deleteInvoice : undefined} /></React.Fragment>
+      )}
+      {confirmDelete && (
+        <CostAgentModal z="z-[85]" maxWidth="max-w-md" onClose={() => { if (deleting === null) setConfirmDelete(null) }}
+          title="Delete invoice?" subtitle={<>{confirmDelete.invoice_no || `#${confirmDelete.id}`} · {INVOICE_STATUS_META[confirmDelete.status as CostAgentInvoiceStatus]?.label || confirmDelete.status}</>}
+          footer={<>
+            <button type="button" className={SA_BTN_OUTLINE} onClick={() => setConfirmDelete(null)} disabled={deleting !== null}>Cancel</button>
+            <button type="button" onClick={doDelete} disabled={deleting !== null}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 h-9 rounded-xl bg-[#A8231A] hover:bg-[#8C1D15] text-white text-xs font-semibold shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+              {deleting !== null ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} {deleting !== null ? 'Deleting…' : 'Delete invoice'}
+            </button>
+          </>}>
+          <div className="p-5 space-y-3 text-[12.5px] text-[#3B1B3D]">
+            <div className="rounded-lg border border-[#F4C3BC] bg-[#FDE7E4] px-3 py-2 text-[#A8231A] flex items-start gap-2">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+              <span>Its cost lines, documents, approvals and the cost history from this invoice are deleted too. Files in Google Drive are kept. <b>This cannot be undone.</b></span>
+            </div>
+            <div>
+              <label className="block text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B] mb-1">Reason <span className="normal-case tracking-normal font-normal text-[#6E5E70]">optional</span></label>
+              <input className={SA_INPUT} value={deleteReason} onChange={e => setDeleteReason(e.target.value)} placeholder="e.g. trial data" disabled={deleting !== null} />
+            </div>
+            {deleteError && <div className="rounded-lg border border-[#F4C3BC] bg-[#FDE7E4] px-3 py-2 text-[#A8231A]">{deleteError}</div>}
+          </div>
+        </CostAgentModal>
       )}
       {payIds && (
         <CostAgentPaymentModal invoiceIds={payIds} actor={actor} onClose={() => { setPayIds(null); setSelected([]) }} onDone={() => fetchList(true)} />
