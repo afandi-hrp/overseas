@@ -64,8 +64,9 @@ yang berlaku lintas modul. Rujukan lama di docs berbunyi "lihat CLAUDE.md bagian
   Cost Agent (versi user ber-guard) + 055 seed master; 056 RPC `fn_cost_agent_delete_invoice` (hapus invoice Cost Agent, Admin,
   masa uji coba -- cost-agent.md). **KEPUTUSAN TERTUNDA (user): nasib fitur hapus invoice Cost Agent setelah uji coba (cabut
   grant / hapus tombol / pertahankan) -- JANGAN diubah sebelum user memutuskan.** SQL baru: file `sql/NNN_*.sql` baru (lanjut
-  **062**; 057 / 058_cost_agent_compare_v2 / 059 / 060 / 061 Cost Agent = file user, SUDAH dijalankan (060 & 061 ada di `sql/`); `sql/058_cost_agent_delete_invoice_grant`
-  (repo) SUDAH dijalankan 2026-10-14 -- nomor 058 dipakai 2 file, cost-agent.md), idempotent + pre-check nama fungsi, user yang menjalankan manual -- tidak ada akses DB dari
+  **062**; 057–061 Cost Agent SEMUA SUDAH dijalankan (konfirmasi user 2026-10-14; nomor 058 dipakai 2 file: compare_v2 user & delete_invoice_grant repo),
+  folder `sql/` DIHAPUS lagi 2026-10-14 -- isi terakhir 058_cost_agent_delete_invoice_grant / 060 / 061: `git show 2fc583b:sql/<file>`; 057, 058_compare_v2
+  & 059 tidak pernah masuk repo, cost-agent.md), idempotent + pre-check nama fungsi, user yang menjalankan manual -- tidak ada akses DB dari
   sesi. **Tambah user baru**: template `docs/sql-templates/add-users.sql` (edit daftar email/nama/password/divisi/role; buat akun
   auth + identities + profil + divisi + role; email lama tidak diubah password-nya; diuji PGlite 27 cek).
 - **Kondisi DB production (stack `supabase3`)**: `anon` tanpa hak di schema public, GraphQL ditutup, semua tabel RLS

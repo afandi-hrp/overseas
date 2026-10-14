@@ -307,6 +307,12 @@ Dianalisa 2026-10-14 thd isi asli `git show a21e206:sql/054_cost_agent_schema.sq
   dihapus; app memang tidak punya hapus cost item).
 - SISA TEMUAN #1 (`mark_paid` tanpa cek status) TETAP terbuka.
 
+### File SQL Cost Agent di repo (2026-10-14)
+
+Semua SQL 057–061 SUDAH dijalankan (konfirmasi user 2026-10-14) & folder `sql/` DIHAPUS. Isi terakhir file yang pernah di repo:
+`git show 2fc583b:sql/058_cost_agent_delete_invoice_grant.sql`, `…:sql/060_cost_agent_compare_fix.sql`, `…:sql/061_cost_agent_compare_alternative.sql`.
+057, 058_cost_agent_compare_v2 & 059 tidak pernah masuk repo (isinya dianalisa di bagian masing2 di atas). SQL berikutnya: 062.
+
 ### Update 061 -- pembanding alternatif & "Check reference" (2026-10-14)
 
 `sql/060_cost_agent_compare_fix.sql` & `sql/061_cost_agent_compare_alternative.sql` = file USER, SUDAH dijalankan (konfirmasi user);
