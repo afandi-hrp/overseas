@@ -20,8 +20,9 @@ export const SeaAirRecapKpiCards: React.FC<{ summary: RecapSummary | null; loadi
   return (
     <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
       {card('Shipments', v(s => s.total), v(s => `${s.fcl} FCL · ${s.lcl} LCL · ${s.air} AIR`))}
-      {card('Landed cost', v(s => fmtRpShort(s.landedSum)), 'invoices only (excl. duty & tax)')}
-      {card('Duty & tax', v(s => fmtRpShort(s.dutySum)), 'paid via Billing DJBC · not in landed cost')}
+      {/* Landed cost & Duty & tax ditulis penuh dlm rupiah (2026-10-14, permintaan user; dulu ringkas "Rp 75,9M"). */}
+      {card('Landed cost', v(s => fmtRp(s.landedSum)), 'invoices only (excl. duty & tax)')}
+      {card('Duty & tax', v(s => fmtRp(s.dutySum)), 'paid via Billing DJBC · not in landed cost')}
       {card('Needs attention', v(s => s.needsAttention), 'low score not yet confirmed', 'text-[#A8231A]')}
       {card('Not submitted to Finance', v(s => s.notSubmitted), v(s => fmtRpShort(s.notSubmittedLanded)), 'text-[#7A4F00]')}
     </div>
@@ -179,11 +180,25 @@ const RecapRowCard: React.FC<{ rec: any; onOpen: (rec: any) => void; selected?: 
 
         {/* 2. Supplier + rute, lalu PO + tanggal */}
         <div className="min-w-0">
-          {/* Rute + ATD/ATA SATU baris (revisi 2026-10-13, permintaan user): ATD & ATA tepat di SEBELAH chip origin → destination
-              (sebelumnya di bawahnya, 2026-10-12). Kartu sempit: ATD/ATA turun ke baris berikut (flex-wrap), tetap 1 grup dgn rute. */}
+          {/* Rute + ATD/ATA (revisi 2026-10-14, permintaan user): ATD & ATA kembali DI BAWAH chip origin → destination (1 grup kolom,
+              2026-10-13 sempat di sebelahnya). Grup tetap di sebelah vendor; kartu sempit turun ke bawah vendor.
+              Nomor PO TEPAT di bawah nama vendor tanpa jarak (2026-10-14, permintaan user): vendor + PO = satu kolom kiri; dulu baris PO
+              berada di bawah SELURUH baris vendor + rute (grup rute 2 baris -> ada celah di bawah vendor). */}
           <div className="flex flex-wrap items-start gap-x-2.5 gap-y-1.5 min-w-0">
-            <span className="text-[13px] font-bold text-[#3B1B3D] uppercase truncate max-w-full leading-[22px]" title={rec.vendor || ''}>{rec.vendor || '—'}</span>
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 min-w-0 max-w-full">
+            <div className="min-w-0 max-w-full">
+            <span className="block text-[13px] font-bold text-[#3B1B3D] uppercase truncate max-w-full leading-[22px]" title={rec.vendor || ''}>{rec.vendor || '—'}</span>
+            {pos.length === 0 ? <div className="text-[11px] text-[#6E5E70]">No PO</div> : (
+              <div className="flex items-start gap-1.5 min-w-0 text-[11px] text-[#6E5E70]" data-card-po>
+                <div className="min-w-0">{(expanded ? pos : pos.slice(0, 1)).map((p, i) => <div key={i} className="truncate" title={p.po_no}>{p.po_no || '—'}{partialOf(p.po_no) && <span className="ml-1 text-[10px] font-bold text-[#6B3470]" title="Partial shipment of this PO">{partialOf(p.po_no)}</span>}</div>)}</div>
+                {pos.length > 1 && (
+                  <button type="button" onClick={() => setExpanded(v => !v)} className="shrink-0 px-1.5 py-[1px] rounded-full border border-[#D9C7DA] bg-[#F5EDF3] text-[#6B3470] text-[10.5px] font-semibold hover:bg-[#EFE2EC]">
+                    {expanded ? 'Hide' : `+${pos.length - 1} PO`}
+                  </button>
+                )}
+              </div>
+            )}
+            </div>
+            <div className="flex flex-col items-start gap-y-1.5 min-w-0 max-w-full">
               <span className="inline-flex items-center px-2.5 py-[2px] rounded-full bg-[#EFE8EC] text-[#3B1B3D] text-[10.5px] font-semibold uppercase tracking-wide whitespace-nowrap max-w-full truncate"
                 title={`${rec.origin || '—'} → ${rec.destination || '—'}`}>
                 {rec.origin || '—'} <span className="mx-1 text-[#8A7A8B]">→</span> {rec.destination || '—'}
@@ -193,19 +208,11 @@ const RecapRowCard: React.FC<{ rec: any; onOpen: (rec: any) => void; selected?: 
               </div>
             </div>
           </div>
-          <div className="flex flex-wrap items-start gap-x-2 gap-y-1 mt-1.5 text-[11px] text-[#6E5E70] min-w-0">
-            {pos.length === 0 ? <span>No PO</span> : (
-              <div className="flex items-start gap-1.5 min-w-0">
-                <div className="min-w-0">{(expanded ? pos : pos.slice(0, 1)).map((p, i) => <div key={i} className="truncate" title={p.po_no}>{p.po_no || '—'}{partialOf(p.po_no) && <span className="ml-1 text-[10px] font-bold text-[#6B3470]" title="Partial shipment of this PO">{partialOf(p.po_no)}</span>}</div>)}</div>
-                {pos.length > 1 && (
-                  <button type="button" onClick={() => setExpanded(v => !v)} className="shrink-0 px-1.5 py-[1px] rounded-full border border-[#D9C7DA] bg-[#F5EDF3] text-[#6B3470] text-[10.5px] font-semibold hover:bg-[#EFE2EC]">
-                    {expanded ? 'Hide' : `+${pos.length - 1} PO`}
-                  </button>
-                )}
-              </div>
-            )}
-            {dateChip('ETD', rec.etd)}{dateChip('ETA', rec.eta)}
-          </div>
+          {(rec.etd || rec.eta) && (
+            <div className="flex flex-wrap items-start gap-x-2 gap-y-1 mt-1.5 text-[11px] text-[#6E5E70] min-w-0">
+              {dateChip('ETD', rec.etd)}{dateChip('ETA', rec.eta)}
+            </div>
+          )}
         </div>
 
         {/* 3. Status */}

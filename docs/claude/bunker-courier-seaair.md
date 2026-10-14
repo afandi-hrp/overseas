@@ -956,3 +956,32 @@ Tab Checklist Invoice Recap: kotak "Checklist Note" kini SELALU tampil (bukan ha
   tercatat atas nama user); `trg_seaair_auto_draft` BEFORE INSERT saja; `trg_seaair_flag_duplicate` BEFORE INSERT saja; `trg_seaair_guard_mark_audited` BEFORE INSERT,UPDATE **OF status**
   (tidak terpicu update yang hanya mengisi `remarks`); `trg_seaair_snapshot_ai` BEFORE INSERT,UPDATE tanpa batas kolom (cabang UPDATE hanya melindungi kolom snapshot AI dari user; sinkron tidak
   menyentuhnya). Sinkron Remarks hanya mengirim `{remarks}` ke `update_seaair_row`. Re-read from AI kini juga menyinkronkan Remarks -> Checklist Note bila Remarks berubah.
+
+## Sea & Air — Audit PIB & Invoice Recap: revisi tata letak 2026-10-14 (permintaan user, 12 poin)
+
+**Audit PIB** (`SeaAirAuditCardList.tsx`, `SeaAirAuditDetailModal.tsx`):
+- Kartu 24" (`@7xl`): kolom PIB 260 → 300px (nomor PIB tidak terpotong, PT·supplier·PO bergeser ke kanan) & kolom Duty & tax 200 → 260px (angka
+  rata kanan bergeser ke kanan): `300px_minmax(0,600px)_260px_minmax(230px,1fr)_110px`. Laptop 14" (`@5xl`) tidak berubah.
+- Kartu 2 kolom (`@md`–`@5xl`, mis. panel detail terbuka): urutan lewat `@md:order-*` (reset `@5xl:order-none`) = PIB | Duty & tax, lalu
+  supplier·PO | validasi, lalu Status/Open (dulu supplier·PO di kanan atas & Duty & tax di kiri). Kartu 1 kolom (< 448px) urutan biasa.
+- KPI **Customs value** ditulis penuh `fmtRp` (dulu `fmtRpShort` "Rp 1,5B"). KPI Duties & taxes tetap ringkas (tidak diminta).
+- Jendela Open: tab **Overview | Audit trail** (gaya tab Courier, netral; audit trail dulu kartu di bawah Overview).
+  **Tab Audit trail = tampilan SAMA Invoice Recap** (susulan 2026-10-14, permintaan user): komponen "Activity" dipindah dari `SeaAirRecapDetailModal`
+  ke `src/components/SeaAirActivityTrail.tsx` (isi TIDAK berubah: per hari, timeline + titik, chip aksi, entri menit/user/aksi sama digabung, deskripsi
+  generik trigger "Edit data SEAAIR-… AWB: …" disembunyikan, "Field — Lama: a → Baru: b" dirapikan, 12 event + Show all) & dipakai kedua jendela.
+  Audit PIB memetakan `fetchSeaAirAuditLog` -> `verb` = `what` huruf kecil, tanpa chip modul. Versi ringkas lama (mergeTrail ×N, 6 baris) dihapus.
+  Overview: kiri **Document + Customs value (as recorded)**, kanan **Goods per PO + Duties & taxes** (Customs value & Goods per PO ditukar).
+  Kartu **Checks disembunyikan default** -> tombol "Show checks · x of y passed" / "Hide checks" (state lokal, tidak disimpan).
+- Diuji: render SSR komponen asli + CSS build di 470 / 620 / 1280 / 1720px (headless Chrome, screenshot).
+
+**Invoice Recap** (`SeaAirRecapCardList.tsx`, `SeaAirRecapDetailModal.tsx`):
+- Kartu lebar: chip **ATD / ATA kembali DI BAWAH** chip origin → destination (revisi 2026-10-13 di sebelahnya dibatalkan; grup kolom di sebelah vendor).
+  **Nomor PO TEPAT di bawah nama vendor** (susulan 2026-10-14, permintaan user: "jangan ada jarak"): vendor + PO (+N PO) = satu kolom kiri, grup rute + ATD/ATA
+  di sebelahnya (kartu 14": rute turun ke bawah kolom itu). Dulu baris PO di bawah SELURUH baris vendor + rute -> celah setinggi grup rute. ETD/ETA tetap baris
+  sendiri di bawah, hanya tampil bila ada nilainya (dulu di baris PO). Diuji render SSR 1300 / 1720px.
+- KPI **Landed cost** & **Duty & tax** ditulis penuh `fmtRp` (dulu "Rp 75,9M").
+- Jendela Open: strip **Shipment info** + sel **"Origin → Destination"** (setelah Invoice no) -- 10 sel: 5 kolom = 2 baris penuh, 3 kolom = sel ini & Type
+  `@lg:col-span-2` (4 baris penuh), 2 kolom = 5 baris; dulu ada kotak kosong. Latar area isi **putih** (dulu `#F6EFEA`).
+- **Tab gaya panel Validation Courier**: pil `rounded-t-lg`, latar per persen (`tabToneClass`: 100% hijau muda, >=60% kuning muda, <60% merah muda,
+  belum ada data abu; Overview & Audit trail netral), titik warna + persen di label ("Checklist 75%"), badge jumlah temuan tetap; tab aktif garis
+  bawah ungu tebal. Sumber persen sama (checklist_pct / doc_validation_pct / cost_validation_pct).

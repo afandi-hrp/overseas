@@ -21,7 +21,8 @@ export const SeaAirAuditKpiCards: React.FC<{ summary: SeaAirAuditSummary | null;
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       {card('PIB records', v(s => s.total), v(s => `${s.draft} draft · ${s.audited} audited`))}
-      {card('Customs value', v(s => fmtRpShort(s.cvSum)), 'CIF value in rupiah')}
+      {/* Customs value ditulis penuh (2026-10-14, permintaan user; dulu ringkas "Rp 1,5B"). */}
+      {card('Customs value', v(s => fmtRp(s.cvSum)), 'CIF value in rupiah')}
       {card('Duties & taxes (PIB)', v(s => fmtRpShort(s.dutySum)), v(s => `BM ${fmtRpShort(s.bmSum)} · PPN ${fmtRpShort(s.ppnSum)} · PPh ${fmtRpShort(s.pphSum)}`))}
       {card('Not validated yet', v(s => (s.notValidated === null ? '—' : s.notValidated)), 'draft PIB waiting for Invoice Recap validation', 'text-[#A8231A]')}
     </div>
@@ -62,9 +63,10 @@ const SeaAirAuditRowCard: React.FC<{
       data-audit-card={rec.id} aria-current={selected || undefined} onClick={openFromCard}>
       {/* Susunan 2026-10-05 (gambar user): 5 kolom -- PIB | PT+supplier+PO | validasi | duty | status+Open.
           Lebar kolom ikut LEBAR KARTU (container query): @5xl = laptop 14" (ringkas), @7xl = monitor 24" (lega). */}
-      <div className="grid grid-cols-1 @md:grid-cols-2 @5xl:grid-cols-[215px_minmax(0,1fr)_165px_185px_92px] @7xl:grid-cols-[260px_minmax(0,600px)_200px_minmax(230px,1fr)_110px] gap-x-4 @7xl:gap-x-6 gap-y-3 px-4 py-3.5 items-center">
-        {/* 1. PIB */}
-        <div className="min-w-0">
+      <div className="grid grid-cols-1 @md:grid-cols-2 @5xl:grid-cols-[215px_minmax(0,1fr)_165px_185px_92px] @7xl:grid-cols-[300px_minmax(0,600px)_260px_minmax(230px,1fr)_110px] gap-x-4 @7xl:gap-x-6 gap-y-3 px-4 py-3.5 items-center">
+        {/* 1. PIB. Urutan kartu 2 kolom (@md, mis. panel detail terbuka) 2026-10-14 (permintaan user): PIB | Duty & tax, lalu
+            supplier·PO | validasi (Duty & tax ditukar dgn supplier·PO); mulai @5xl kembali urutan kolom biasa. */}
+        <div className="min-w-0 @md:order-1 @5xl:order-none">
           <div className="text-[11px] text-[#8A7A8B] font-medium">PIB · {fmtDateShort(rec.tgl_ppjk)}</div>
           <div className="text-[13.5px] font-bold text-[#3B1B3D] truncate tabular-nums" title={formatNoAju(rec.no_aju) || ''}>{formatNoAju(rec.no_aju) || '—'}</div>
           <div className="flex items-center gap-1.5 mt-1 min-w-0">
@@ -75,7 +77,7 @@ const SeaAirAuditRowCard: React.FC<{
         </div>
 
         {/* 2. PT + supplier + PO */}
-        <div className="min-w-0">
+        <div className="min-w-0 @md:order-3 @5xl:order-none">
           <div className="flex items-center gap-2 min-w-0">
             <PtBadge code={rec.impor_an} title={companyFullName(companyNames, rec.impor_an)} />
             <span className="text-[13px] font-bold text-[#3B1B3D] truncate" title={rec.vendor || ''}>{rec.vendor || '—'}</span>
@@ -105,7 +107,7 @@ const SeaAirAuditRowCard: React.FC<{
         </div>
 
         {/* 3. Duty & tax (ditukar dgn validasi 2026-10-13, permintaan user: Duty & tax sebelum status validasi) */}
-        <div className="@5xl:text-right min-w-0">
+        <div className="@5xl:text-right min-w-0 @md:order-2 @5xl:order-none">
           <div className={SA_LABEL}>Duty &amp; tax</div>
           <div className="text-[18px] font-bold text-[#3B1B3D] tabular-nums leading-tight">{fmtRp(rec.total_pib)}</div>
           <div className="text-[11px] text-[#6E5E70] tabular-nums">
@@ -115,7 +117,7 @@ const SeaAirAuditRowCard: React.FC<{
 
         {/* 4. Validasi Invoice Recap + field yang beda */}
         {/* 24" (@7xl): blok ini didorong ke ujung kanan kolomnya (dekat Draft/Open) sementara Duty & tax tetap bergeser ke kiri. */}
-        <div className="min-w-0 flex flex-col items-start gap-1.5 @7xl:justify-self-end">
+        <div className="min-w-0 flex flex-col items-start gap-1.5 @7xl:justify-self-end @md:order-4 @5xl:order-none">
           <Chip tone={info ? VALIDATION_META[info.validation].tone : 'grey'} title={info ? (hasDiff ? `Fields: ${info.diffFields.join(', ')}` : VALIDATION_META[info.validation].sub) : undefined}>{validationLabel(info)}</Chip>
           {(hasDiff || waitingDocs || reaudit || rec.duplicate_of) && (
             <div className="flex flex-wrap items-center gap-1.5">
@@ -128,7 +130,7 @@ const SeaAirAuditRowCard: React.FC<{
         </div>
 
         {/* 5. Status + Open */}
-        <div className="flex flex-col @5xl:items-end gap-1.5 min-w-0">
+        <div className="flex flex-col @5xl:items-end gap-1.5 min-w-0 @md:order-5 @5xl:order-none">
           <Chip tone={draft ? 'amber' : 'green'}>{draft ? 'Draft' : 'Audited'}</Chip>
           <button type="button" onClick={() => onOpen(rec)} className={`inline-flex items-center justify-center px-4 h-8 rounded-xl text-white text-xs font-semibold ${selected ? 'bg-[#3B1B3D]' : 'bg-[#6B3470] hover:bg-[#5A2A5E]'}`}>{selected ? 'Opened' : 'Open'}</button>
         </div>

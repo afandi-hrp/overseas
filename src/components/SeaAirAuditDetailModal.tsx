@@ -2,9 +2,11 @@
 // checks) MURNI hitungan tampilan dari kolom tersimpan -- tidak ada yang ditulis balik ke DB.
 // Aksi tulis HANYA status (Mark as audited / Reopen as draft) lewat RPC lama `update_seaair_row`
 // (dipanggil parent), Edit & Delete memakai form/modal masing-masing.
+// 2026-10-14 (permintaan user): tab Overview | Audit trail (audit trail dulu kartu di bawah), kartu "Customs value (as recorded)" ditukar
+// dgn "Goods per PO" (kiri: Document + Customs value; kanan: Goods per PO + Duties & taxes), kartu Checks disembunyikan default (tombol).
 import React, { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Check, AlertTriangle, Info, Pencil, Trash2, RotateCcw, ExternalLink, CheckCircle2, XCircle, Circle, Maximize2, Minimize2 } from 'lucide-react'
+import { X, Check, AlertTriangle, Info, Pencil, Trash2, RotateCcw, ExternalLink, CheckCircle2, XCircle, Circle, Maximize2, Minimize2, ChevronDown, ChevronUp } from 'lucide-react'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_GREEN, Chip, StatusPill, SectionCard, type Tone } from './SeaAirAuditUi'
 import {
   fmtRp, fmtValas, fmtDateShort, formatNoAju, buildGoodsLines, parseLooseNumber,
@@ -14,26 +16,9 @@ import {
 import { poManualFor, type PoManualEntry } from '../utils/SeaAirRecapHelpers'
 import { compareSeaAirDuty, fetchSeaAirDutyMatrix } from '../utils/SeaAirAuditHelpers'
 import SeaAirDutyCompareTable from './SeaAirDutyCompareTable'
+import SeaAirActivityTrail from './SeaAirActivityTrail'
 
-// Audit trail ringkas (2026-10-06, permintaan user: log panjang -> scroll terlalu panjang). Entri berturutan yg identik
-// (aksi + user + detail, hari sama) digabung "×N"; awalnya hanya AUDIT_TRAIL_PREVIEW baris terbaru, "Show all" membuka
-// sisanya di area ber-scroll sendiri (tinggi maks). Data SAMA (`fetchSeaAirAuditLog`), murni tampilan.
-const AUDIT_TRAIL_PREVIEW = 6
-const TRAIL_TONE: Record<string, string> = {
-  Created: 'text-[#17663D] bg-[#EAF6EF]', Recorded: 'text-[#6E5E70] bg-[#F3EEEA]',
-  Updated: 'text-[#6B3470] bg-[#F5EDF3]', Deleted: 'text-[#A8231A] bg-[#FDE7E4]',
-}
-type TrailRow = { at: string; who: string; what: string; detail: string; count: number; last: string }
-const mergeTrail = (log: { at: string; who: string; what: string; detail: string }[]): TrailRow[] => {
-  const out: TrailRow[] = []
-  log.forEach(e => {
-    const prev = out[out.length - 1]
-    const sameDay = prev && String(prev.at).slice(0, 10) === String(e.at).slice(0, 10)
-    if (prev && sameDay && prev.what === e.what && prev.who === e.who && prev.detail === e.detail) { prev.count++; prev.last = e.at }
-    else out.push({ ...e, count: 1, last: e.at })
-  })
-  return out
-}
+// Audit trail: tampilan SAMA Invoice Recap (SeaAirActivityTrail, 2026-10-14) -- versi ringkas lama (mergeTrail ×N + Show all) dihapus.
 
 const fmtDateTime = (v: any) => {
   if (!v) return '—'
@@ -92,7 +77,8 @@ export default function SeaAirAuditDetailModal({
 }) {
   const isPanel = variant === 'panel'
   const [busy, setBusy] = useState(false)
-  const [trailAll, setTrailAll] = useState(false)
+  const [tab, setTab] = useState<'overview' | 'trail'>('overview')
+  const [showChecks, setShowChecks] = useState(false)
   const [log, setLog] = useState<SeaAirAuditLogEntry[] | null>(null)
   // Info validasi dari parent (baris di halaman aktif); kalau tidak ada (mis. baris pindah tab
   // setelah ubah status) diambil sendiri.
@@ -251,9 +237,19 @@ export default function SeaAirAuditDetailModal({
             </button>
           </div>
         </div>
+        {/* Tab Overview | Audit trail (2026-10-14, permintaan user; gaya tab Invoice Recap Courier). */}
+        <div className="flex items-end gap-1.5 px-5 pt-2 border-b border-[#EADFD6] shrink-0" role="tablist">
+          {([['overview', 'Overview'], ['trail', `Audit trail${log && log.length ? ` (${log.length})` : ''}`]] as const).map(([k, label]) => (
+            <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
+              className={`shrink-0 px-3 pt-1.5 pb-1.5 rounded-t-lg text-[12.5px] font-semibold border-b-[3px] transition-colors bg-[#F3EEEA] text-[#3B1B3D] ${tab === k ? 'border-[#6B3470] font-bold' : 'border-transparent opacity-80 hover:opacity-100'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto bg-[#FBF7F4] p-4 flex flex-col gap-3">
+          {tab === 'overview' && <>
           {draft && rec.reaudit_reason && (
             <div className="rounded-[14px] border border-[#D9C2EA] bg-[#F3ECF9] px-4 py-2.5 text-[12.5px] text-[#5B2E8C]">
               <b>↻ Changed in Invoice Recap — please re-audit.</b> {rec.reaudit_reason}{rec.reaudit_at ? ` · ${fmtDateTime(rec.reaudit_at)}` : ''}
@@ -305,6 +301,36 @@ export default function SeaAirAuditDetailModal({
                 <Fact label="Notes"><span className="whitespace-pre-wrap font-medium">{rec.notes || '—'}</span></Fact>
               </SectionCard>
 
+
+              <SectionCard title="Customs value (as recorded)" right={<>Balance <b className="text-[#3B1B3D] tabular-nums">{fmtRp(build.balance)}</b></>} bodyClassName="px-4 pb-3">
+                <div className="flex justify-between gap-3 py-1.5 text-[12.5px]">
+                  <span className="text-[#3B1B3D]">Goods value{build.goodsRate ? ` (${curLabel ? `${curLabel} ` : ''}${fmtValas(build.goodsValas)} × ${fmtValas(Math.round(build.goodsRate * 100) / 100)})` : ''}</span>
+                  <span className="font-semibold tabular-nums text-[#3B1B3D] whitespace-nowrap">{fmtRp(build.goodsIdr)}</span>
+                </div>
+                <div className="flex justify-between gap-3 py-1.5 text-[12.5px]">
+                  <span className="text-[#3B1B3D]">{freightLabel}</span>
+                  <span className="font-semibold tabular-nums text-[#6E5E70] whitespace-nowrap">{fmtRp(build.freight)}</span>
+                </div>
+                <div className="flex justify-between gap-3 py-1.5 text-[12.5px]">
+                  <span className="text-[#3B1B3D]">{insuranceLabel}</span>
+                  <span className="font-semibold tabular-nums text-[#3B1B3D] whitespace-nowrap">{fmtRp(build.insurance)}</span>
+                </div>
+                <div className="flex justify-between gap-3 py-1.5 text-[12.5px]">
+                  <span className={build.isRounding ? 'text-[#3B1B3D]' : 'text-[#A8231A] font-semibold'}>{build.isRounding ? 'Rounding' : 'Unexplained balance'}</span>
+                  <span className={`font-semibold tabular-nums whitespace-nowrap ${build.isRounding ? 'text-[#6E5E70]' : 'text-[#A8231A]'}`}>{fmtRp(Math.round(build.residual * 100) / 100)}</span>
+                </div>
+                <div className="flex justify-between gap-3 pt-2.5 mt-1 border-t border-[#EADFD6]">
+                  <div>
+                    <div className="text-[13.5px] font-bold text-[#3B1B3D]">Customs value (CIF)</div>
+                    <div className="text-[11px] text-[#8A7A8B]">{curLabel ? `${curLabel} ` : ''}{fmtValas(build.valasDpp)} (valas DPP) × {fmtValas(build.kursNdpbm)} (kurs NDPBM)</div>
+                  </div>
+                  <div className="text-[16px] font-bold tabular-nums text-[#3B1B3D] whitespace-nowrap">{fmtRp(build.cv)}</div>
+                </div>
+              </SectionCard>
+            </div>
+
+            {/* Kanan */}
+            <div className="flex flex-col gap-3 min-w-0">
               <SectionCard
                 title="Goods per PO"
                 right={<span className="tabular-nums">{curLabel ? `${curLabel} ` : ''}{fmtValas(rec.item_price)} · {fmtRp(rec.item_price_idr)}</span>}
@@ -362,35 +388,6 @@ export default function SeaAirAuditDetailModal({
                   <div className="flex justify-between"><span>Item price (Rp)</span><span className="tabular-nums font-semibold text-[#3B1B3D]">{fmtRp(rec.item_price_idr)}</span></div>
                 </div>
               </SectionCard>
-            </div>
-
-            {/* Kanan */}
-            <div className="flex flex-col gap-3 min-w-0">
-              <SectionCard title="Customs value (as recorded)" right={<>Balance <b className="text-[#3B1B3D] tabular-nums">{fmtRp(build.balance)}</b></>} bodyClassName="px-4 pb-3">
-                <div className="flex justify-between gap-3 py-1.5 text-[12.5px]">
-                  <span className="text-[#3B1B3D]">Goods value{build.goodsRate ? ` (${curLabel ? `${curLabel} ` : ''}${fmtValas(build.goodsValas)} × ${fmtValas(Math.round(build.goodsRate * 100) / 100)})` : ''}</span>
-                  <span className="font-semibold tabular-nums text-[#3B1B3D] whitespace-nowrap">{fmtRp(build.goodsIdr)}</span>
-                </div>
-                <div className="flex justify-between gap-3 py-1.5 text-[12.5px]">
-                  <span className="text-[#3B1B3D]">{freightLabel}</span>
-                  <span className="font-semibold tabular-nums text-[#6E5E70] whitespace-nowrap">{fmtRp(build.freight)}</span>
-                </div>
-                <div className="flex justify-between gap-3 py-1.5 text-[12.5px]">
-                  <span className="text-[#3B1B3D]">{insuranceLabel}</span>
-                  <span className="font-semibold tabular-nums text-[#3B1B3D] whitespace-nowrap">{fmtRp(build.insurance)}</span>
-                </div>
-                <div className="flex justify-between gap-3 py-1.5 text-[12.5px]">
-                  <span className={build.isRounding ? 'text-[#3B1B3D]' : 'text-[#A8231A] font-semibold'}>{build.isRounding ? 'Rounding' : 'Unexplained balance'}</span>
-                  <span className={`font-semibold tabular-nums whitespace-nowrap ${build.isRounding ? 'text-[#6E5E70]' : 'text-[#A8231A]'}`}>{fmtRp(Math.round(build.residual * 100) / 100)}</span>
-                </div>
-                <div className="flex justify-between gap-3 pt-2.5 mt-1 border-t border-[#EADFD6]">
-                  <div>
-                    <div className="text-[13.5px] font-bold text-[#3B1B3D]">Customs value (CIF)</div>
-                    <div className="text-[11px] text-[#8A7A8B]">{curLabel ? `${curLabel} ` : ''}{fmtValas(build.valasDpp)} (valas DPP) × {fmtValas(build.kursNdpbm)} (kurs NDPBM)</div>
-                  </div>
-                  <div className="text-[16px] font-bold tabular-nums text-[#3B1B3D] whitespace-nowrap">{fmtRp(build.cv)}</div>
-                </div>
-              </SectionCard>
 
               <SectionCard
                 title={<>Duties &amp; taxes <span className="text-[11.5px] font-normal text-[#8A7A8B]">same check as Invoice Recap › Doc Validation</span></>}
@@ -402,57 +399,26 @@ export default function SeaAirAuditDetailModal({
             </div>
           </div>
 
-          {/* Checks */}
-          <SectionCard title="Checks" right={<span><b className="text-[#3B1B3D]">{passed}</b> of {counted} checks passed</span>} bodyClassName="px-4 pb-3 grid grid-cols-1 md:grid-cols-2 gap-x-6">
+          {/* Checks -- disembunyikan default (2026-10-14, permintaan user), tombol menampilkan / menyembunyikan. */}
+          <div className="flex justify-start">
+            <button type="button" onClick={() => setShowChecks(v => !v)} aria-expanded={showChecks} data-toggle-checks
+              className={`${SA_BTN_OUTLINE} h-8`}>
+              {showChecks ? <ChevronUp size={13} /> : <ChevronDown size={13} />} {showChecks ? 'Hide checks' : 'Show checks'} · <b className="tabular-nums">{passed}</b> of {counted} passed
+            </button>
+          </div>
+          {showChecks && <SectionCard title="Checks" right={<span><b className="text-[#3B1B3D]">{passed}</b> of {counted} checks passed</span>} bodyClassName="px-4 pb-3 grid grid-cols-1 md:grid-cols-2 gap-x-6">
             {['Customs value', 'Links & validation'].map(g => (
               <div key={g}>
                 <div className={`${SA_LABEL} pt-1 pb-0.5`}>{g}</div>
                 {checks.filter(c => c.group === g).map((c, i) => <CheckRow key={i} ok={c.ok} label={c.label} hint={c.hint} />)}
               </div>
             ))}
-          </SectionCard>
+          </SectionCard>}
 
-          {/* Audit trail -- ringkas + "Show all" ber-scroll (2026-10-06) */}
-          {(() => {
-            const rows = log ? mergeTrail(log) : []
-            const shown = trailAll ? rows : rows.slice(0, AUDIT_TRAIL_PREVIEW)
-            return (
-              <div className={`${SA_CARD}`} data-audit-trail>
-                <div className="px-4 pt-3.5 pb-2 flex items-center justify-between gap-2">
-                  <span className="text-[14px] font-bold text-[#3B1B3D]">Audit trail</span>
-                  {log && log.length > 0 && <span className="text-[11px] text-[#8A7A8B]">{log.length} entr{log.length === 1 ? 'y' : 'ies'}</span>}
-                </div>
-                <div className="px-4 pb-3">
-                  {log === null ? (
-                    <div className="text-[12px] text-[#8A7A8B] py-1">Loading…</div>
-                  ) : rows.length === 0 ? (
-                    <div className="text-[12px] text-[#8A7A8B] py-1">No activity recorded</div>
-                  ) : (
-                    <>
-                      <div className={trailAll ? 'max-h-[340px] overflow-y-auto pr-1 -mr-1' : ''}>
-                        {shown.map((e, i) => (
-                          <div key={i} className="grid grid-cols-[118px_minmax(0,140px)_minmax(0,1fr)] gap-3 py-1.5 text-[12px] border-t border-[#F1E8E1] first:border-t-0 items-start">
-                            <span className="text-[#6E5E70] tabular-nums" title={e.count > 1 ? `${fmtDateTime(e.last)} – ${fmtDateTime(e.at)}` : undefined}>{fmtDateTime(e.at)}</span>
-                            <span className="font-semibold text-[#3B1B3D] truncate" title={e.who}>{e.who}</span>
-                            <span className="text-[#3B1B3D] [overflow-wrap:anywhere] flex flex-wrap items-center gap-1.5">
-                              <span className={`px-1.5 py-[1px] rounded-md text-[10.5px] font-bold ${TRAIL_TONE[e.what] || 'text-[#6E5E70] bg-[#F3EEEA]'}`}>{e.what}</span>
-                              {e.count > 1 && <span className="px-1.5 py-[1px] rounded-md text-[10.5px] font-bold text-[#6E5E70] bg-[#F3EEEA]" title={`${e.count} identical entries`}>×{e.count}</span>}
-                              {e.detail && <span className="min-w-0">{e.detail}</span>}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                      {rows.length > AUDIT_TRAIL_PREVIEW && (
-                        <button type="button" onClick={() => setTrailAll(v => !v)} className="mt-1.5 text-[12px] font-semibold text-[#6B3470] hover:underline">
-                          {trailAll ? 'Show less' : `Show all (${rows.length - AUDIT_TRAIL_PREVIEW} more)`}
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-            )
-          })()}
+          </>}
+          {/* Audit trail -- tab sendiri; tampilan SAMA tab Audit trail Invoice Recap (SeaAirActivityTrail, 2026-10-14, permintaan user).
+              Entri Audit PIB = verb dari `what` (Created/Updated/Deleted/Recorded), tanpa chip modul (semua dari tabel PIB ini). */}
+          {tab === 'trail' && <SeaAirActivityTrail log={log ? log.map(e => ({ ...e, verb: String(e.what || '').toLowerCase() })) : null} />}
         </div>
       </div>
   )

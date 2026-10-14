@@ -18,6 +18,7 @@ import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_GREEN, Chip, Pill, PtBadge, t
 import SeaAirRecapCostsTab from './SeaAirRecapCostsTab'
 import SeaAirRecapDocumentsTab from './SeaAirRecapDocumentsTab'
 import { CostMixBar, containerLabel } from './SeaAirRecapCardList'
+import SeaAirActivityTrail from './SeaAirActivityTrail'
 import { fmtRp, fmtDateShort, fmtValas, companyFullName } from '../utils/SeaAirAuditHelpers'
 import {
   computeLandedCost, parsePoDetail, recapStatus, fetchRecapLog, todayLocalIso, isRecapLocked,
@@ -44,6 +45,17 @@ const ShipInfoCell: React.FC<{ label: string; className?: string; children: Reac
     <div className="text-[12px] font-semibold text-[#3B1B3D] leading-snug [overflow-wrap:anywhere]">{children}</div>
   </div>
 )
+
+// Tab gaya panel Validation Courier (2026-10-14, permintaan user): latar per persen (100% hijau muda, >=60% kuning muda, <60% merah muda,
+// belum ada data abu) + titik warna + persen di label; tab tanpa skor (Overview, Audit trail) netral.
+const tabToneClass = (pct: number | null | undefined, has: boolean | undefined) =>
+  has === undefined ? 'bg-[#F3EEEA] text-[#3B1B3D]'
+    : !has || pct == null ? 'bg-[#F3EEEA] text-[#6E5E70]'
+      : pct >= 100 ? 'bg-[#EAF6EF] text-[#17663D]'
+        : pct >= 60 ? 'bg-[#FFF1D6] text-[#7A4F00]'
+          : 'bg-[#FDE7E4] text-[#A8231A]'
+const tabDotClass = (pct: number | null | undefined, has: boolean) =>
+  !has || pct == null ? 'bg-[#B7A9B8]' : pct >= 100 ? 'bg-[#17663D]' : pct >= 60 ? 'bg-[#E0A526]' : 'bg-[#A8231A]'
 
 const scoreTone = (pct: number | null | undefined, has: boolean): Tone => (!has || pct == null ? 'grey' : pct >= 100 ? 'green' : pct >= 60 ? 'amber' : 'red')
 
@@ -77,105 +89,6 @@ const allocate = (total: number | null, weights: number[]): (number | null)[] =>
   return parts
 }
 const fmtPct = (v: number) => `${(Math.round(v * 1000) / 10).toLocaleString('id-ID', { maximumFractionDigits: 1 })}%`
-
-// ── Audit trail tab (2026-10-06, permintaan user: dipercantik) ──────────────────────────────────────────────
-// Per hari; entri di menit yg sama oleh user yg sama dgn aksi sama digabung jadi 1 baris + chip modul (mis. hapus
-// shipment = Invoice Recap + Audit PIB + Document/Cost validation sekaligus). Deskripsi generik trigger
-// ("Edit data SEAAIR-... AWB: ...") disembunyikan; catatan format app "X — Lama: a → Baru: b" ditampilkan rapi.
-const TRAIL_VERB: Record<string, { label: string; icon: React.ReactNode; tone: string; dot: string }> = {
-  created: { label: 'Created', icon: <PlusCircle size={13} />, tone: 'text-[#17663D] bg-[#EAF6EF]', dot: 'bg-[#17663D]' },
-  updated: { label: 'Updated', icon: <Pencil size={12} />, tone: 'text-[#6B3470] bg-[#F5EDF3]', dot: 'bg-[#6B3470]' },
-  deleted: { label: 'Deleted', icon: <Trash2 size={12} />, tone: 'text-[#A8231A] bg-[#FDE7E4]', dot: 'bg-[#A8231A]' },
-  recorded: { label: 'Recorded', icon: <FileInput size={12} />, tone: 'text-[#6E5E70] bg-[#F3EEEA]', dot: 'bg-[#8A7A8B]' },
-  changed: { label: 'Changed', icon: <History size={12} />, tone: 'text-[#6E5E70] bg-[#F3EEEA]', dot: 'bg-[#8A7A8B]' },
-}
-const ENTITY_TONE: Record<string, string> = {
-  'Invoice Recap': 'bg-[#EEF1FA] text-[#2F4FA8]', 'Audit PIB': 'bg-[#F5EDF3] text-[#6B3470]',
-  'Document validation': 'bg-[#FFF1D6] text-[#7A4F00]', 'Cost validation': 'bg-[#EAF6EF] text-[#17663D]',
-}
-const GENERIC_DETAIL = /^(edit|hapus|tambah|input|insert|update|delete)\s+data\b/i
-const parseChange = (d: string) => {
-  const m = String(d || '').match(/^(.*?)\s+—\s+Lama:\s*([\s\S]*?)\s+→\s+Baru:\s*([\s\S]*)$/)
-  return m ? { field: m[1].trim(), from: m[2].trim(), to: m[3].trim() } : null
-}
-const localDay = (v: any) => { const d = new Date(v); return isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
-const localTime = (v: any) => { const d = new Date(v); return isNaN(d.getTime()) ? '' : `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
-type TrailCluster = { key: string; day: string; time: string; who: string; verb: string; entities: string[]; details: string[]; count: number }
-const clusterTrail = (log: RecapLogEntry[]): TrailCluster[] => {
-  const out: TrailCluster[] = []
-  log.forEach(e => {
-    const verb = e.verb || 'changed'
-    const day = localDay(e.at), time = localTime(e.at)
-    const key = `${day} ${time}|${e.who}|${verb}`
-    const detail = e.detail && !GENERIC_DETAIL.test(e.detail) ? e.detail : ''
-    const last = out[out.length - 1]
-    if (last && last.key === key) {
-      if (e.entity && !last.entities.includes(e.entity)) last.entities.push(e.entity)
-      else last.count++
-      if (detail && !last.details.includes(detail)) last.details.push(detail)
-    } else {
-      out.push({ key, day, time, who: e.who, verb, entities: e.entity ? [e.entity] : [], details: detail ? [detail] : [], count: 1 })
-    }
-  })
-  return out
-}
-const TRAIL_PREVIEW = 12
-
-const RecapAuditTrail: React.FC<{ log: RecapLogEntry[] | null }> = ({ log }) => {
-  const [all, setAll] = useState(false)
-  if (log === null) return <div className={`${SA_CARD} px-4 py-3 text-[12px] text-[#8A7A8B]`}>Loading…</div>
-  const clusters = clusterTrail(log)
-  if (clusters.length === 0) return <div className={`${SA_CARD} px-4 py-3 text-[12px] text-[#8A7A8B]`}>No activity recorded</div>
-  const shown = all ? clusters : clusters.slice(0, TRAIL_PREVIEW)
-  const days: { day: string; items: TrailCluster[] }[] = []
-  shown.forEach(c => { const d = days[days.length - 1]; if (d && d.day === c.day) d.items.push(c); else days.push({ day: c.day, items: [c] }) })
-  return (
-    <div className={`${SA_CARD} px-4 py-3`} data-recap-trail>
-      <div className="flex items-center justify-between gap-2 mb-1">
-        <span className="text-[13px] font-bold text-[#3B1B3D]">Activity</span>
-        <span className="text-[11px] text-[#8A7A8B]">{log.length} entr{log.length === 1 ? 'y' : 'ies'} · {clusters.length} event{clusters.length === 1 ? '' : 's'}</span>
-      </div>
-      {days.map(d => (
-        <div key={d.day} className="mt-2">
-          <div className="text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B] mb-1">{d.day ? fmtDateShort(d.day) : 'Unknown date'}</div>
-          <div className="relative pl-5">
-            <span className="absolute left-[7px] top-1 bottom-1 w-px bg-[#EADFD6]" aria-hidden="true" />
-            {d.items.map((c, i) => {
-              const v = TRAIL_VERB[c.verb] || TRAIL_VERB.changed
-              return (
-                <div key={i} className="relative py-1.5" data-trail-event>
-                  <span className={`absolute -left-[17px] top-[11px] w-2.5 h-2.5 rounded-full ring-2 ring-white ${v.dot}`} aria-hidden="true" />
-                  <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
-                    <span className="tabular-nums text-[#6E5E70] w-[38px] shrink-0">{c.time}</span>
-                    <span className={`inline-flex items-center gap-1 px-1.5 py-[1px] rounded-md text-[11px] font-bold ${v.tone}`}>{v.icon}{v.label}</span>
-                    {c.entities.map(en => <span key={en} className={`px-1.5 py-[1px] rounded-md text-[10.5px] font-semibold ${ENTITY_TONE[en] || 'bg-[#F3EEEA] text-[#6E5E70]'}`}>{en}</span>)}
-                    {c.count > 1 && <span className="px-1.5 py-[1px] rounded-md text-[10.5px] font-bold bg-[#F3EEEA] text-[#6E5E70]" title={`${c.count} entries`}>×{c.count}</span>}
-                    <span className="text-[#6E5E70] truncate">· {c.who}</span>
-                  </div>
-                  {c.details.map((dt, j) => {
-                    const ch = parseChange(dt)
-                    return ch ? (
-                      <div key={j} className="ml-[46px] mt-0.5 text-[11.5px] text-[#3B1B3D] [overflow-wrap:anywhere]">
-                        <span className="font-semibold">{ch.field}</span>: <span className="line-through text-[#8A7A8B]">{ch.from || '—'}</span> → <span className="font-semibold">{ch.to || '—'}</span>
-                      </div>
-                    ) : (
-                      <div key={j} className="ml-[46px] mt-0.5 text-[11.5px] text-[#6E5E70] [overflow-wrap:anywhere]">{dt}</div>
-                    )
-                  })}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      ))}
-      {clusters.length > TRAIL_PREVIEW && (
-        <button type="button" onClick={() => setAll(v => !v)} className="mt-2 text-[12px] font-semibold text-[#6B3470] hover:underline">
-          {all ? 'Show less' : `Show all (${clusters.length - TRAIL_PREVIEW} more)`}
-        </button>
-      )}
-    </div>
-  )
-}
 
 const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
   <div className="min-w-0">
@@ -421,17 +334,19 @@ export default function SeaAirRecapDetailModal({
             </div>
           </div>
           <div className="flex flex-wrap items-end justify-between gap-2 mt-3">
-            <div className="flex items-center gap-1" role="tablist">
-              {tabs.map(t => (
-                <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => goTab(t.key)}
-                  className={`px-3 pb-2 pt-1 text-[13px] font-semibold border-b-2 transition-colors flex items-center gap-1.5 ${tab === t.key ? 'border-[#6B3470] text-[#3B1B3D]' : 'border-transparent text-[#6E5E70] hover:text-[#3B1B3D]'}`}>
-                  {t.label}
-                  {t.badge ? <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[#E0A526] text-white text-[10px] font-bold flex items-center justify-center">{t.badge}</span> : null}
-                  {t.scores?.map(sc => (
-                    <Chip key={sc.title} tone={scoreTone(sc.pct, sc.has)} title={sc.title}>{sc.label ? `${sc.label} ` : ''}{sc.has && sc.pct != null ? `${sc.pct}%` : '—'}</Chip>
-                  ))}
-                </button>
-              ))}
+            <div className="flex items-end gap-1.5 overflow-x-auto" role="tablist">
+              {tabs.map(t => {
+                const sc = t.scores?.[0]
+                return (
+                  <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => goTab(t.key)} title={sc?.title}
+                    data-tab-tone={!sc ? 'neutral' : !sc.has || sc.pct == null ? 'none' : sc.pct >= 100 ? 'ok' : sc.pct >= 60 ? 'warn' : 'bad'}
+                    className={`shrink-0 flex items-center gap-1.5 px-3 pt-1.5 pb-1.5 rounded-t-lg text-[12.5px] font-semibold border-b-[3px] transition-colors ${tabToneClass(sc?.pct, sc ? sc.has : undefined)} ${tab === t.key ? 'border-[#6B3470] font-bold' : 'border-transparent opacity-80 hover:opacity-100'}`}>
+                    {sc && <span className={`w-2 h-2 rounded-full shrink-0 ${tabDotClass(sc.pct, sc.has)}`} />}
+                    {t.label}{sc ? ` ${sc.has && sc.pct != null ? `${sc.pct}%` : '—'}` : ''}
+                    {t.badge ? <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[#E0A526] text-white text-[10px] font-bold flex items-center justify-center">{t.badge}</span> : null}
+                  </button>
+                )
+              })}
             </div>
           </div>
         </div>
@@ -461,12 +376,15 @@ export default function SeaAirRecapDetailModal({
                     <ShipInfoCell label="Company">{ptName}</ShipInfoCell>
                     <ShipInfoCell label="Supplier">{rec.vendor || '—'}</ShipInfoCell>
                     <ShipInfoCell label="Invoice no">{rec.no_invoice || '—'}</ShipInfoCell>
+                    {/* Origin → Destination (2026-10-14, permintaan user: mengisi kotak kosong). Susunan 10 sel: 5 kolom = 2 baris penuh;
+                        3 kolom = sel ini & Type selebar 2 kolom (4 baris penuh); 2 kolom = 5 baris penuh. */}
+                    <ShipInfoCell label="Origin → Destination" className="@lg:col-span-2 @4xl:col-span-1">{rec.origin || '—'} → {rec.destination || '—'}</ShipInfoCell>
                     <ShipInfoCell label="Recap date">{fmtDateShort(rec.tgl)}</ShipInfoCell>
                     <ShipInfoCell label="Delivery term">{deliveryTerm || '—'}</ShipInfoCell>
                     <ShipInfoCell label="Weight / volume">{weightVolText}</ShipInfoCell>
                     <ShipInfoCell label="ETD → ETA">{fmtDateShort(rec.etd)} → {fmtDateShort(rec.eta)}</ShipInfoCell>
                     <ShipInfoCell label="ATD → ATA">{fmtDateShort(rec.atd)} → {fmtDateShort(rec.ata)}</ShipInfoCell>
-                    <ShipInfoCell label="Type" className="col-span-2 @lg:col-span-1 @4xl:col-span-2">{typeLabel}</ShipInfoCell>
+                    <ShipInfoCell label="Type" className="@lg:col-span-2 @4xl:col-span-1">{typeLabel}</ShipInfoCell>
                   </div>
                 </div>
               </>
@@ -477,7 +395,8 @@ export default function SeaAirRecapDetailModal({
         {/* Body -- `[&>*]:shrink-0`: kartu ber-`overflow-hidden` (mis. Split per PO) di kolom flex yang
             di-scroll boleh menyusut sampai tinggal header saat "By vendor" dibuka (laporan user 2026-10-05);
             anak-anak dilarang menyusut supaya tinggi penuh & area ini yang di-scroll. */}
-        <div className="flex-1 overflow-y-auto bg-[#F6EFEA] p-4 flex flex-col gap-3 [&>*]:shrink-0">
+        {/* Latar isi PUTIH (2026-10-14, permintaan user; dulu krem #F6EFEA). */}
+        <div className="flex-1 overflow-y-auto bg-white p-4 flex flex-col gap-3 [&>*]:shrink-0">
           {submitted ? (
             <div className="rounded-[14px] border border-[#BFE3CD] bg-[#EAF6EF] px-4 py-2.5 flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-3">
@@ -700,7 +619,7 @@ export default function SeaAirRecapDetailModal({
             </div>
           )}
 
-          {tab === 'trail' && <RecapAuditTrail log={log} />}
+          {tab === 'trail' && <SeaAirActivityTrail log={log} />}
 
           {!seaairId && tab !== 'overview' && tab !== 'trail' && (
             <div className="text-[11.5px] text-[#8A7A8B]">This Invoice Recap row is not linked to an Audit PIB record (seaair_id is empty).</div>
