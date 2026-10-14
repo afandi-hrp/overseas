@@ -98,6 +98,9 @@ Spek user + 3 screenshot mockup (hanya tata letak). SATU sumber aturan: `src/uti
   menghitungnya Mismatch). `ValidasiPerhitunganPIB` & `ValidasiPerhitunganPIBLegacy` (dipakai Details) prop `statusOverrides`: `'accepted'` -> badge **"Accepted · Valid"**
   (hijau tua) & dihitung 'match' di stats/header/onRowsChange; Actual/Expected/Difference TIDAK berubah (warna selisih tetap dari status hitungan). Undo (hapus
   manual_status) -> kembali status hitungan (Mismatch). Pencocokan = id baris (SAMA di kedua komponen: asuransi, nilaiPabean, totalBMPPNPPH, sanksiAdm, totalSppbmcp, …).
+  **BUG halaman putih (laporan user 2026-10-14, sudah diperbaiki)**: `calcOverrides` (useMemo) di `ValidasiModalLegacy` sempat diletakkan SESUDAH `if (loading) return`
+  -> jumlah hook beda antara render loading & render data -> React crash, klik Details di tab Doc Validation = halaman blank. Kini di ATAS `if (loading)`.
+  **Aturan**: hook baru di komponen yang punya `return` bersyarat WAJIB di atas return tsb (`tsc` tidak menangkap ini).
 - **Kunci Submit all to Finance** (panel `CourierRecapValidationPanel`): invoice baru belum Submit -> tombol abu-abu 🔒 sampai Cost = 100% & Doc = 100% (Checklist tidak
   wajib; persen live tab / badge kartu). Strip info di bawah header ("Submit & Paid Date are locked until validation is complete: Cost x% · Doc y%" / hijau "…100%.
   Submit to Finance is available"). AWB baru tanpa PIB/CN di Audit = terkunci (`no_audit`). Kunci "Needs check" lama (Internal remarks) tetap berlaku sesudahnya.

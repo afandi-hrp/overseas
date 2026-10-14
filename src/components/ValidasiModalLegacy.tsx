@@ -1406,6 +1406,15 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   // Jumlah field yang punya data dokumen lebih baru (banner "Recompute") -- dihitung dari fungsi yang SAMA.
   const recomputePending = useMemo(() => (computedSnapshot ? planCourierDocRecompute(values, computedSnapshot).total : 0), [values, computedSnapshot]);
 
+  // WAJIB di atas `if (loading) return` (hook!) -- 2026-10-14 sempat di bawahnya -> jumlah hook beda antar-render -> halaman putih.
+  // Override baris kalkulasi PIB/SPPBMCP yg di-Accept di ringkasan Doc Validation (values_json['pibcalc:<id>'], 2026-10-14) -- SAMA ValidasiModal:
+  // dgn catatan = 'accepted' (badge "Accepted · Valid"), tanpa catatan = 'match'. Dulu tidak diteruskan -> tabel Details tetap Mismatch & pibStats
+  // (total_mismatch autosave) ikut menghitung baris itu sbg Mismatch.
+  const calcOverridesKey = Object.keys(values || {}).filter(k => k.startsWith('pibcalc:') && values[k]?.manual_status === 'match')
+    .map(k => `${k}=${values[k]?.accept_note ? 'accepted' : 'match'}`).sort().join('|');
+  const calcOverrides = useMemo<Record<string, string>>(
+    () => Object.fromEntries(calcOverridesKey ? calcOverridesKey.split('|').map(kv => { const [k, v] = kv.split('='); return [k.slice('pibcalc:'.length), v]; }) : []),
+    [calcOverridesKey]);
   if (loading) {
     if (embedded) {
       return (
@@ -1439,14 +1448,6 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   // ringkasan Doc Validation) tampil "Accepted" hijau tua + "✓ Valid", BUKAN Match. Tetap dihitung lolos; Undo -> Mismatch.
   const isAcceptedVal = (v: any, st: string) => st === 'match' && v?.manual_status === 'match' && !!v?.accept_note;
   const acceptTitle = (v: any) => `${v?.accept_note || ''}${v?.accept_by ? ` — ${v.accept_by}` : ''}${v?.accept_at ? ` · ${fmtDateEN(v.accept_at)}` : ''}`;
-  // Override baris kalkulasi PIB/SPPBMCP yg di-Accept di ringkasan Doc Validation (values_json['pibcalc:<id>'], 2026-10-14) -- SAMA ValidasiModal:
-  // dgn catatan = 'accepted' (badge "Accepted · Valid"), tanpa catatan = 'match'. Dulu tidak diteruskan -> tabel Details tetap Mismatch & pibStats
-  // (total_mismatch autosave) ikut menghitung baris itu sbg Mismatch.
-  const calcOverridesKey = Object.keys(values || {}).filter(k => k.startsWith('pibcalc:') && values[k]?.manual_status === 'match')
-    .map(k => `${k}=${values[k]?.accept_note ? 'accepted' : 'match'}`).sort().join('|');
-  const calcOverrides = useMemo<Record<string, string>>(
-    () => Object.fromEntries(calcOverridesKey ? calcOverridesKey.split('|').map(kv => { const [k, v] = kv.split('='); return [k.slice('pibcalc:'.length), v]; }) : []),
-    [calcOverridesKey]);
   const getCfg = (st: string) => {
     if (st === 'accepted') return { label: "Accepted", bg: "#17663D", color: "#FFFFFF", icon: "ti-check" };
     if (st === 'match') return { label: "Match", bg: bgSuccess, color: txtSuccess, icon: "ti-check" };
