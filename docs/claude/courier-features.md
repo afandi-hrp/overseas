@@ -91,6 +91,13 @@ Spek user + 3 screenshot mockup (hanya tata letak). SATU sumber aturan: `src/uti
 - **Accepted di Doc Validation** (`ValidasiModal` + `ValidasiModalLegacy`/Details): field `manual_status 'match'` + `accept_note` (hasil Accept ringkasan) tampil chip
   **Accepted** hijau tua (`#17663D`, teks putih) + "✓ Valid" di bawahnya (catatan lengkap di tooltip) -- matriks Details, matriks penuh, matriks Finance, tampilan per
   field; chip header/tile "N Accepted" (Match = match − accepted). Akurasi TIDAK berubah (Accepted tetap lolos). Undo (ringkasan) -> status sebelum Accept = Mismatch.
+- **Accepted ikut ke tabel Validasi PIB / SPPBMCP** (susulan 2026-10-14, laporan user: AWB CN 878418271103 Sanksi Administrasi & Total BM+PPN+PPH+Sanksi ADM,
+  AWB PIB 877270952213 Asuransi (24) & Nilai Pabean (26) Accepted di atas tapi Mismatch di tabel bawah). Accept baris kalkulasi = `values_json['pibcalc:<id>']`
+  (`manual_status 'match'` + `accept_note`). Override kini `'accepted'` (dgn catatan) / `'match'` (tanpa) -- `calcOverrides` di `ValidasiModal` (ringkasan, mode penuh,
+  matriks) DAN `ValidasiModalLegacy` (jendela **Details**, dulu TIDAK meneruskan override sama sekali -> tetap Mismatch & `pibStats` -> `total_mismatch` autosave ikut
+  menghitungnya Mismatch). `ValidasiPerhitunganPIB` & `ValidasiPerhitunganPIBLegacy` (dipakai Details) prop `statusOverrides`: `'accepted'` -> badge **"Accepted · Valid"**
+  (hijau tua) & dihitung 'match' di stats/header/onRowsChange; Actual/Expected/Difference TIDAK berubah (warna selisih tetap dari status hitungan). Undo (hapus
+  manual_status) -> kembali status hitungan (Mismatch). Pencocokan = id baris (SAMA di kedua komponen: asuransi, nilaiPabean, totalBMPPNPPH, sanksiAdm, totalSppbmcp, …).
 - **Kunci Submit all to Finance** (panel `CourierRecapValidationPanel`): invoice baru belum Submit -> tombol abu-abu 🔒 sampai Cost = 100% & Doc = 100% (Checklist tidak
   wajib; persen live tab / badge kartu). Strip info di bawah header ("Submit & Paid Date are locked until validation is complete: Cost x% · Doc y%" / hijau "…100%.
   Submit to Finance is available"). AWB baru tanpa PIB/CN di Audit = terkunci (`no_audit`). Kunci "Needs check" lama (Internal remarks) tetap berlaku sesudahnya.

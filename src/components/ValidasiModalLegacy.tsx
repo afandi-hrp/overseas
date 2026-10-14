@@ -1439,6 +1439,14 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   // ringkasan Doc Validation) tampil "Accepted" hijau tua + "✓ Valid", BUKAN Match. Tetap dihitung lolos; Undo -> Mismatch.
   const isAcceptedVal = (v: any, st: string) => st === 'match' && v?.manual_status === 'match' && !!v?.accept_note;
   const acceptTitle = (v: any) => `${v?.accept_note || ''}${v?.accept_by ? ` — ${v.accept_by}` : ''}${v?.accept_at ? ` · ${fmtDateEN(v.accept_at)}` : ''}`;
+  // Override baris kalkulasi PIB/SPPBMCP yg di-Accept di ringkasan Doc Validation (values_json['pibcalc:<id>'], 2026-10-14) -- SAMA ValidasiModal:
+  // dgn catatan = 'accepted' (badge "Accepted · Valid"), tanpa catatan = 'match'. Dulu tidak diteruskan -> tabel Details tetap Mismatch & pibStats
+  // (total_mismatch autosave) ikut menghitung baris itu sbg Mismatch.
+  const calcOverridesKey = Object.keys(values || {}).filter(k => k.startsWith('pibcalc:') && values[k]?.manual_status === 'match')
+    .map(k => `${k}=${values[k]?.accept_note ? 'accepted' : 'match'}`).sort().join('|');
+  const calcOverrides = useMemo<Record<string, string>>(
+    () => Object.fromEntries(calcOverridesKey ? calcOverridesKey.split('|').map(kv => { const [k, v] = kv.split('='); return [k.slice('pibcalc:'.length), v]; }) : []),
+    [calcOverridesKey]);
   const getCfg = (st: string) => {
     if (st === 'accepted') return { label: "Accepted", bg: "#17663D", color: "#FFFFFF", icon: "ti-check" };
     if (st === 'match') return { label: "Match", bg: bgSuccess, color: txtSuccess, icon: "ti-check" };
@@ -1976,6 +1984,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                 jenisDokumen={record?.jenis_dokumen || (mainTab === 'audit' && subTab === 'pib' ? 'PIB' : (mainTab === 'audit' && subTab === 'cn' ? 'CN' : ''))} 
                 onStatsChange={setPibStats}
                 isEditMode={isEditMode}
+                statusOverrides={calcOverrides}
               />
             </div>
 

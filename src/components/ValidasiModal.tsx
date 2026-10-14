@@ -1385,9 +1385,12 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   }, [values, activeSections, computeStatus, pibStats, debugData, docCompletenessFlags]);
 
   // Override status baris kalkulasi yg di-Accept (mode summary).
-  const calcOverridesKey = Object.keys(values).filter(k => k.startsWith('pibcalc:') && values[k]?.manual_status === 'match').sort().join('|');
+  // 2026-10-14: di-Accept DENGAN catatan -> 'accepted' (badge "Accepted · Valid" di tabel Validasi PIB/SPPBMCP); tanpa catatan -> 'match'.
+  // Undo menghapus manual_status -> baris kembali ke status hitungan (Mismatch).
+  const calcOverridesKey = Object.keys(values).filter(k => k.startsWith('pibcalc:') && values[k]?.manual_status === 'match')
+    .map(k => `${k}=${values[k]?.accept_note ? 'accepted' : 'match'}`).sort().join('|');
   const calcOverrides = useMemo<Record<string, string>>(
-    () => Object.fromEntries(calcOverridesKey ? calcOverridesKey.split('|').map(k => [k.slice('pibcalc:'.length), 'match']) : []),
+    () => Object.fromEntries(calcOverridesKey ? calcOverridesKey.split('|').map(kv => { const [k, v] = kv.split('='); return [k.slice('pibcalc:'.length), v]; }) : []),
     [calcOverridesKey]);
   useEffect(() => {
     if (!onPctChange || loading) return;

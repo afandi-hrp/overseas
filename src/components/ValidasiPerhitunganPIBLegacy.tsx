@@ -106,6 +106,14 @@ function statusOf(actualStr: any, expected: number) {
 
 function StatusBadge({ st, isEditMode, onClick }: { st: string, isEditMode?: boolean, onClick?: () => void }) {
   const baseClasses = isEditMode ? "cursor-pointer hover:opacity-75 transition-opacity" : "";
+  // 'accepted' (2026-10-14): di-Accept dgn catatan di ringkasan Doc Validation -- warna SAMA chip Accepted.
+  if (st === "accepted") {
+    return (
+      <div className={`flex items-center justify-center ${baseClasses}`} onClick={onClick} title={isEditMode ? "Click to change the status manually" : "Accepted with a note in Doc Validation — counted as valid"}>
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-[#17663D] text-white"><CheckCircle2 size={13} /> Accepted · Valid</span>
+      </div>
+    );
+  }
   if (st === "match") {
     return (
       <div className={`flex items-center justify-center text-emerald-600 font-bold ${baseClasses}`} onClick={onClick} title={isEditMode ? "Click to change the status manually" : undefined}>
@@ -150,7 +158,10 @@ const newItem = (idx: number) => ({
 });
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, onStatsChange, isEditMode }: { dataValidasiRaw?: any, jenisDokumen?: string, onStatsChange?: (stats: any) => void, isEditMode?: boolean }) {
+// `statusOverrides` (2026-10-14, SAMA ValidasiPerhitunganPIB): id baris -> 'accepted' (Accept + catatan, badge "Accepted · Valid") | 'match';
+// mengalahkan status manual/hitungan; dihitung 'match' di stats. Dulu jendela Details tidak menerimanya -> baris Accepted tetap Mismatch.
+export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, onStatsChange, isEditMode, statusOverrides }: { dataValidasiRaw?: any, jenisDokumen?: string, onStatsChange?: (stats: any) => void, isEditMode?: boolean, statusOverrides?: Record<string, string> }) {
+  const ovr = (id: string): string | undefined => { const o = statusOverrides?.[id]; return o === 'accepted' ? 'match' : o; };
   const [ndpbm, setNdpbm] = useState("");
   const [items, setItems] = useState<any[]>([newItem(0)]);
 
@@ -450,14 +461,14 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
     rows.forEach((r: any) => {
       if (r.ignoreForStats) return;
       const stComputed = r.customStatus ? r.customStatus(r.ak, r.expected) : statusOf(r.ak, r.expected);
-      const st = manualStatus[r.id] || stComputed;
+      const st = ovr(r.id) || manualStatus[r.id] || stComputed;
       if (st === "match") match++;
       else if (st === "mismatch") mismatch++;
       else empty++;
     });
     onStatsChange({ match, mismatch, empty });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jnsUpper, aktualPIB, aktualSPPBMCP, calc, manualStatus]);
+  }, [jnsUpper, aktualPIB, aktualSPPBMCP, calc, manualStatus, statusOverrides]);
 
   function ValidationTable({ title, rows }: { title: string, rows: any[] }) {
     return (
@@ -485,7 +496,8 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
           <tbody>
             {rows.map((row, idx) => {
               const stComputed = row.customStatus ? row.customStatus(row.ak, row.expected) : statusOf(row.ak, row.expected);
-              const st = manualStatus[row.id] || stComputed;
+              const st = ovr(row.id) || manualStatus[row.id] || stComputed;
+              const accepted = statusOverrides?.[row.id] === 'accepted';
               
               const isSPPBMCP = title === "Validasi SPPBMCP";
               const toleransi = isSPPBMCP ? 1000 : 1;
@@ -496,7 +508,8 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
                 selisih = actualValue - row.expected;
               }
 
-              const isMatch = st === "match";
+              // Baris Accepted: warna selisih tetap dari status hitungan (selisih memang ada, dibenarkan lewat catatan).
+              const isMatch = accepted ? stComputed === "match" : st === "match";
 
               return (
                 <tr key={row.id} className="border-b border-slate-200 last:border-b-0 hover:bg-slate-50/50 transition-colors">
@@ -531,7 +544,7 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
                     {['bm', 'ppn', 'pph', 'freight'].includes(row.id) || (isSPPBMCP && row.id === 'ndpbmXnilai') ? (
                       <span className="text-[#5A305A]">—</span>
                     ) : (
-                      <StatusBadge st={st} isEditMode={isEditMode} onClick={() => toggleManualStatus(row.id, st)} />
+                      <StatusBadge st={accepted ? 'accepted' : st} isEditMode={isEditMode} onClick={() => toggleManualStatus(row.id, st)} />
                     )}
                   </td>
                 </tr>
