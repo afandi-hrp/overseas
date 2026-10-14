@@ -14,6 +14,7 @@ import { Chip, SA_CARD } from '../../components/SeaAirAuditUi'
 import { CostAgentCardScroller, CostAgentVoyageCard } from '../../components/CostAgentCards'
 import CostAgentVoyageForm from '../../components/CostAgentVoyageForm'
 import CostAgentVoyageDrawer from '../../components/CostAgentVoyageDrawer'
+import CostAgentUploadModal from '../../components/CostAgentUploadModal'
 import CostAgentVoyageImportModal from '../../components/CostAgentVoyageImportModal'
 import CostAgentVoyageMonthlyReport from '../../components/CostAgentVoyageMonthlyReport'
 import { CostAgentVoyagePullModal, CostAgentVoyageAiModal } from '../../components/CostAgentVoyageSourceModals'
@@ -104,6 +105,9 @@ export default function CostAgentVoyagePage() {
   const [showImport, setShowImport] = useState(false)
   const [showPull, setShowPull] = useState(false)
   const [showAi, setShowAi] = useState(false)
+  // Upload invoice per port call LANGSUNG dari halaman ini (2026-10-14) -- form & proxy n8n SAMA halaman Agency Invoices.
+  const [upload, setUpload] = useState<{ callId: number; company: string } | null>(null)
+  const openUpload = (callId: number, companyCode: string | null) => setUpload({ callId, company: companyCode || company || '' })
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const start = (page - 1) * pageSize + 1
@@ -186,7 +190,7 @@ export default function CostAgentVoyagePage() {
               {drawerId !== null && (
                 <div key={drawerId} className="lg:flex-1 min-w-0 min-h-0 flex flex-col max-lg:min-h-[640px]">
                   <CostAgentVoyageDrawer embedded voyageId={drawerId} ports={ports} reloadKey={reloadKey} canEdit={canEditVoyage} canUploadInvoice={canUploadInvoice}
-                    onClose={() => setDrawerId(null)} onEdit={id => setForm({ id })} />
+                    onClose={() => setDrawerId(null)} onEdit={id => setForm({ id })} onUploadInvoice={openUpload} />
                 </div>
               )}
             </div>
@@ -256,7 +260,12 @@ export default function CostAgentVoyagePage() {
 
       {drawerId !== null && view !== 'card' && (
         <CostAgentVoyageDrawer voyageId={drawerId} ports={ports} reloadKey={reloadKey} canEdit={canEditVoyage} canUploadInvoice={canUploadInvoice}
-          onClose={() => setDrawerId(null)} onEdit={id => setForm({ id })} />
+          onClose={() => setDrawerId(null)} onEdit={id => setForm({ id })} onUploadInvoice={openUpload} />
+      )}
+      {upload && (
+        <CostAgentUploadModal companies={companies} defaultCompany={upload.company} presetCallId={upload.callId}
+          onClose={() => setUpload(null)}
+          onSent={ids => { showToast(`${ids.length || 'The'} invoice${ids.length === 1 ? '' : 's'} sent to AI — see Agency Invoices (Processing).`); refresh() }} />
       )}
       {form && (
         <CostAgentVoyageForm voyageId={form.id} vessels={vessels} ports={ports} companies={companies} actor={actor}

@@ -3,6 +3,8 @@
 // utk port call itu (membuka upload halaman invoice dgn voyage_call_id terisi -- dibangun Prompt 3).
 // `embedded` (2026-10-14, tampilan Card): isi SAMA, dirender sbg PANEL SAMPING di kanan daftar kartu (pola panel Invoice Recap
 // Courier) tanpa overlay/portal; klik kartu lain = ganti isi. Mode List / Monthly Report tetap drawer overlay.
+// `onUploadInvoice` (2026-10-14, permintaan user): "Upload invoice for this port call" membuka form upload DI HALAMAN INI (dulu pindah
+// ke Agency Invoices lewat ?upload=1&call=). Tanpa prop ini tetap link lama.
 import React, { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
@@ -19,8 +21,9 @@ const TIMES = [
   ['arrived_at', 'Arrival'], ['berthed_at', 'Berthed'], ['commenced_at', 'Commenced'], ['completed_at', 'Completed'], ['departed_at', 'Departure'],
 ] as const
 
-export default function CostAgentVoyageDrawer({ voyageId, ports, reloadKey, canEdit, canUploadInvoice, onClose, onEdit, embedded = false }: {
+export default function CostAgentVoyageDrawer({ voyageId, ports, reloadKey, canEdit, canUploadInvoice, onClose, onEdit, embedded = false, onUploadInvoice }: {
   embedded?: boolean
+  onUploadInvoice?: (callId: number, companyCode: string | null) => void
   voyageId: number
   ports: CostAgentPort[]
   reloadKey: number
@@ -122,11 +125,15 @@ export default function CostAgentVoyageDrawer({ voyageId, ports, reloadKey, canE
                             <span className="ml-auto tabular-nums text-[#3B1B3D]">{fmtMoney(inv.grand_total)}</span>
                           </Link>
                         ))}
-                        {canUploadInvoice && (
+                        {canUploadInvoice && (onUploadInvoice ? (
+                          <button type="button" onClick={() => onUploadInvoice(c.id, data.company_code)} className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-[#6B3470] hover:underline">
+                            <UploadCloud size={12} /> Upload invoice for this port call
+                          </button>
+                        ) : (
                           <Link to={`/cost-agent/invoice?upload=1&call=${c.id}`} className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-[#6B3470] hover:underline">
                             <UploadCloud size={12} /> Upload invoice for this port call
                           </Link>
-                        )}
+                        ))}
                       </div>
                     </li>
                   ))}
