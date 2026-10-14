@@ -46,14 +46,8 @@ const ShipInfoCell: React.FC<{ label: string; className?: string; children: Reac
   </div>
 )
 
-// Tab gaya panel Validation Courier (2026-10-14, permintaan user): latar per persen (100% hijau muda, >=60% kuning muda, <60% merah muda,
-// belum ada data abu) + titik warna + persen di label; tab tanpa skor (Overview, Audit trail) netral.
-const tabToneClass = (pct: number | null | undefined, has: boolean | undefined) =>
-  has === undefined ? 'bg-[#F3EEEA] text-[#3B1B3D]'
-    : !has || pct == null ? 'bg-[#F3EEEA] text-[#6E5E70]'
-      : pct >= 100 ? 'bg-[#EAF6EF] text-[#17663D]'
-        : pct >= 60 ? 'bg-[#FFF1D6] text-[#7A4F00]'
-          : 'bg-[#FDE7E4] text-[#A8231A]'
+// Tab gaya gambar user (revisi 2026-10-14): latar tab NETRAL (abu muda, aktif putih + garis bawah ungu); warna status HANYA di titik
+// (100% hijau, >=60% kuning, <60% merah, belum ada data abu) + persen di label.
 const tabDotClass = (pct: number | null | undefined, has: boolean) =>
   !has || pct == null ? 'bg-[#B7A9B8]' : pct >= 100 ? 'bg-[#17663D]' : pct >= 60 ? 'bg-[#E0A526]' : 'bg-[#A8231A]'
 
@@ -277,12 +271,8 @@ export default function SeaAirRecapDetailModal({
                 {rec.duplicate_of && <Chip tone="red" title="Another Invoice Recap row with the same BL / AWB already exists">Possible duplicate upload</Chip>}
                 {locked && <Chip tone="grey" title="Submitted to Finance — read-only"><Lock size={10} /> Locked</Chip>}
               </div>
-              <div className="text-[12px] text-[#6E5E70] mt-0.5">{rec.origin || '—'} → {rec.destination || '—'}</div>
-              {/* ATD / ATA tepat di bawah rute (2026-10-12, permintaan user: sama dgn kartu). */}
-              <div className="flex flex-wrap items-center gap-1.5 mt-1" data-header-atd-ata>
-                <Chip tone="grey"><b>ATD</b> {fmtDateShort(rec.atd) || '—'}</Chip>
-                <Chip tone="blue"><b>ATA</b> {fmtDateShort(rec.ata) || '—'}</Chip>
-              </div>
+              {/* Teks origin → destination header DIHAPUS 2026-10-14 (permintaan user) -- ada di strip Shipment info. */}
+              {/* Chip ATD / ATA header DIHAPUS 2026-10-14 (permintaan user) -- tanggalnya ada di strip Shipment info (ATD → ATA). */}
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
               <div className="text-right mr-2">
@@ -333,14 +323,14 @@ export default function SeaAirRecapDetailModal({
               <button type="button" onClick={requestClose} aria-label="Close" className="inline-flex items-center justify-center h-9 w-9 rounded-xl text-[#6E5E70] hover:bg-[#F6EFEA]"><X size={18} /></button>
             </div>
           </div>
-          <div className="flex flex-wrap items-end justify-between gap-2 mt-3">
+          <div className="flex flex-wrap items-end justify-between gap-2 mt-3" data-tab-bar>
             <div className="flex items-end gap-1.5 overflow-x-auto" role="tablist">
               {tabs.map(t => {
                 const sc = t.scores?.[0]
                 return (
                   <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => goTab(t.key)} title={sc?.title}
                     data-tab-tone={!sc ? 'neutral' : !sc.has || sc.pct == null ? 'none' : sc.pct >= 100 ? 'ok' : sc.pct >= 60 ? 'warn' : 'bad'}
-                    className={`shrink-0 flex items-center gap-1.5 px-3 pt-1.5 pb-1.5 rounded-t-lg text-[12.5px] font-semibold border-b-[3px] transition-colors ${tabToneClass(sc?.pct, sc ? sc.has : undefined)} ${tab === t.key ? 'border-[#6B3470] font-bold' : 'border-transparent opacity-80 hover:opacity-100'}`}>
+                    className={`shrink-0 flex items-center gap-1.5 px-3 pt-1.5 pb-1.5 rounded-t-lg text-[12.5px] font-semibold border-b-[3px] transition-colors text-[#3B1B3D] ${tab === t.key ? 'bg-white border-[#6B3470] font-bold' : 'bg-[#F3EEEA] border-transparent hover:bg-[#EDE5E1]'}`}>
                     {sc && <span className={`w-2 h-2 rounded-full shrink-0 ${tabDotClass(sc.pct, sc.has)}`} />}
                     {t.label}{sc ? ` ${sc.has && sc.pct != null ? `${sc.pct}%` : '—'}` : ''}
                     {t.badge ? <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[#E0A526] text-white text-[10px] font-bold flex items-center justify-center">{t.badge}</span> : null}
@@ -353,7 +343,8 @@ export default function SeaAirRecapDetailModal({
 
         {/* Shipment info (2026-10-13, permintaan user): SAMA di tab Costs / Documents / Audit trail (Overview sudah punya panel Shipment),
             dibekukan di atas area scroll dgn latar ungu muda, bisa dilipat jadi 1 baris ringkas. Pola Invoice Recap Courier. */}
-        {tab !== 'overview' && (
+        {/* 2026-10-14 (permintaan user): strip ini juga di tab Overview (panel "Shipment" Overview yang lama dihapus -- isinya sama). */}
+        {(
           <div className="shrink-0 px-3 py-2 bg-[#F5EDF3] border-b border-[#D9C7DA] @container" data-shipment-frozen>
             {!shipInfoOpen ? (
               <div className="flex items-center gap-x-4 gap-y-1 flex-wrap text-[11.5px]" data-shipment-collapsed>
@@ -439,26 +430,11 @@ export default function SeaAirRecapDetailModal({
 
           {tab === 'overview' && (
             <>
-              <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-3">
-                <div className={`${SA_CARD} p-4`}>
-                  <h3 className="text-[14px] font-bold text-[#3B1B3D] mb-3">Shipment</h3>
-                  <div className="grid grid-cols-2 gap-x-5 gap-y-3">
-                    <Field label="Company">{ptName}</Field>
-                    <Field label="Supplier">{rec.vendor || '—'}</Field>
-                    <Field label="Invoice no">{rec.no_invoice || '—'}</Field>
-                    <Field label="Recap date">{fmtDateShort(rec.tgl)}</Field>
-                    <Field label="Delivery term">{deliveryTerm || '—'}</Field>
-                    <Field label="Weight / volume">{rec.weight_kg != null && rec.weight_kg !== '' ? `${fmtValas(rec.weight_kg)} kg` : '—'} · {cbm != null && cbm !== '' ? `${fmtValas(Math.round(Number(cbm) * 100) / 100)} m³` : '—'}</Field>
-                    <Field label="ETD → ETA">{fmtDateShort(rec.etd)} → {fmtDateShort(rec.eta)}</Field>
-                    <Field label="ATD → ATA">{fmtDateShort(rec.atd)} → {fmtDateShort(rec.ata)}</Field>
-                    {/* Type (2026-10-13, permintaan user; dulu "Containers"): FCL = "FCL • 1 × 20 GP" (jenis + jumlah × tipe kontainer), LCL / AIR = jenis saja. */}
-                    <Field label="Type">{typeLabel}</Field>
-                  </div>
-                  {rec.notes && (
-                    <div className="mt-3 rounded-xl bg-[#FFF8EA] border border-[#F3D9A4] px-3 py-2 text-[12px] text-[#7A4F00] whitespace-pre-wrap"><b>AI note</b> · {rec.notes}</div>
-                  )}
-                </div>
-
+              {/* Panel "Shipment" DIHAPUS 2026-10-14 (permintaan user): diganti strip Shipment info di atas (sama tab lain). AI note dipindah ke sini. */}
+              {rec.notes && (
+                <div className="rounded-xl bg-[#FFF8EA] border border-[#F3D9A4] px-3 py-2 text-[12px] text-[#7A4F00] whitespace-pre-wrap"><b>AI note</b> · {rec.notes}</div>
+              )}
+              <div className="grid grid-cols-1 gap-3">
                 <div className={`${SA_CARD} p-4`}>
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="text-[14px] font-bold text-[#3B1B3D]">Landed cost</h3>

@@ -982,6 +982,12 @@ Tab Checklist Invoice Recap: kotak "Checklist Note" kini SELALU tampil (bukan ha
 - KPI **Landed cost** & **Duty & tax** ditulis penuh `fmtRp` (dulu "Rp 75,9M").
 - Jendela Open: strip **Shipment info** + sel **"Origin → Destination"** (setelah Invoice no) -- 10 sel: 5 kolom = 2 baris penuh, 3 kolom = sel ini & Type
   `@lg:col-span-2` (4 baris penuh), 2 kolom = 5 baris; dulu ada kotak kosong. Latar area isi **putih** (dulu `#F6EFEA`).
-- **Tab gaya panel Validation Courier**: pil `rounded-t-lg`, latar per persen (`tabToneClass`: 100% hijau muda, >=60% kuning muda, <60% merah muda,
+- **Overview pakai strip Shipment info** (susulan 2026-10-14, permintaan user): strip beku "Shipment info" kini tampil di SEMUA tab termasuk Overview; kartu
+  "Shipment" Overview (grid Field) DIHAPUS (isi sama), "AI note" (`rec.notes`) dipindah ke atas isi Overview, kartu Landed cost selebar penuh.
+  **Chip ATD / ATA & teks origin → destination di header jendela Open DIHAPUS** (2026-10-14, permintaan user; ada di strip Shipment info "ATD → ATA" &
+  "Origin → Destination"). Header kini: AWB + chip kontainer/PT. Kartu daftar TIDAK berubah.
+  **Warna tab (revisi 2026-10-14, koreksi user)**: latar tab NETRAL `#F3EEEA` (tab aktif putih + garis bawah ungu), warna status HANYA di titik -- revisi
+  sebelumnya (latar tab ikut warna persen, `tabToneClass`) & latar baris tab ungu muda DIBATALKAN.
+- **Tab gaya panel Validation Courier** (latar per persen DIBATALKAN, lihat bullet di atas): pil `rounded-t-lg`, latar per persen (`tabToneClass`: 100% hijau muda, >=60% kuning muda, <60% merah muda,
   belum ada data abu; Overview & Audit trail netral), titik warna + persen di label ("Checklist 75%"), badge jumlah temuan tetap; tab aktif garis
   bawah ungu tebal. Sumber persen sama (checklist_pct / doc_validation_pct / cost_validation_pct).
