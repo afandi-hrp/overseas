@@ -986,7 +986,7 @@ Tab Checklist Invoice Recap: kotak "Checklist Note" kini SELALU tampil (bukan ha
   "Shipment" Overview (grid Field) DIHAPUS (isi sama), "AI note" (`rec.notes`) dipindah ke atas isi Overview, kartu Landed cost selebar penuh.
   **Chip ATD / ATA & teks origin → destination di header jendela Open DIHAPUS** (2026-10-14, permintaan user; ada di strip Shipment info "ATD → ATA" &
   "Origin → Destination"). Header kini: AWB + chip kontainer/PT. Kartu daftar TIDAK berubah.
-  **Warna tab (revisi 2026-10-14, koreksi user)**: latar tab NETRAL `#F3EEEA` (tab aktif putih + garis bawah ungu), warna status HANYA di titik -- revisi
+  **Warna tab (revisi 2026-10-14, koreksi user)**: latar tab UNGU MUDA `#F5EDF3`, teks `#5A305A` (susulan 2026-10-14, permintaan user; sempat abu `#F3EEEA`) (tab aktif putih + garis bawah ungu), warna status HANYA di titik -- revisi
   sebelumnya (latar tab ikut warna persen, `tabToneClass`) & latar baris tab ungu muda DIBATALKAN.
 - **Tab gaya panel Validation Courier** (latar per persen DIBATALKAN, lihat bullet di atas): pil `rounded-t-lg`, latar per persen (`tabToneClass`: 100% hijau muda, >=60% kuning muda, <60% merah muda,
   belum ada data abu; Overview & Audit trail netral), titik warna + persen di label ("Checklist 75%"), badge jumlah temuan tetap; tab aktif garis

@@ -46,7 +46,7 @@ const ShipInfoCell: React.FC<{ label: string; className?: string; children: Reac
   </div>
 )
 
-// Tab gaya gambar user (revisi 2026-10-14): latar tab NETRAL (abu muda, aktif putih + garis bawah ungu); warna status HANYA di titik
+// Tab gaya gambar user (revisi 2026-10-14): latar tab UNGU MUDA #F5EDF3 (permintaan user, dulu abu), aktif putih + garis bawah ungu; warna status HANYA di titik
 // (100% hijau, >=60% kuning, <60% merah, belum ada data abu) + persen di label.
 const tabDotClass = (pct: number | null | undefined, has: boolean) =>
   !has || pct == null ? 'bg-[#B7A9B8]' : pct >= 100 ? 'bg-[#17663D]' : pct >= 60 ? 'bg-[#E0A526]' : 'bg-[#A8231A]'
@@ -330,7 +330,7 @@ export default function SeaAirRecapDetailModal({
                 return (
                   <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => goTab(t.key)} title={sc?.title}
                     data-tab-tone={!sc ? 'neutral' : !sc.has || sc.pct == null ? 'none' : sc.pct >= 100 ? 'ok' : sc.pct >= 60 ? 'warn' : 'bad'}
-                    className={`shrink-0 flex items-center gap-1.5 px-3 pt-1.5 pb-1.5 rounded-t-lg text-[12.5px] font-semibold border-b-[3px] transition-colors text-[#3B1B3D] ${tab === t.key ? 'bg-white border-[#6B3470] font-bold' : 'bg-[#F3EEEA] border-transparent hover:bg-[#EDE5E1]'}`}>
+                    className={`shrink-0 flex items-center gap-1.5 px-3 pt-1.5 pb-1.5 rounded-t-lg text-[12.5px] font-semibold border-b-[3px] transition-colors ${tab === t.key ? 'bg-white text-[#3B1B3D] border-[#6B3470] font-bold' : 'bg-[#F5EDF3] text-[#5A305A] border-transparent hover:bg-[#EADBE7]'}`}>
                     {sc && <span className={`w-2 h-2 rounded-full shrink-0 ${tabDotClass(sc.pct, sc.has)}`} />}
                     {t.label}{sc ? ` ${sc.has && sc.pct != null ? `${sc.pct}%` : '—'}` : ''}
                     {t.badge ? <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[#E0A526] text-white text-[10px] font-bold flex items-center justify-center">{t.badge}</span> : null}
