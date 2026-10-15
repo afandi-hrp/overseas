@@ -4,7 +4,7 @@
 // (dipanggil parent), Edit & Delete memakai form/modal masing-masing.
 // 2026-10-14 (permintaan user): tab Overview | Audit trail (audit trail dulu kartu di bawah), kartu "Customs value (as recorded)" ditukar
 // dgn "Goods per PO" (kiri: Document + Customs value; kanan: Goods per PO + Duties & taxes), kartu Checks disembunyikan default (tombol).
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Check, AlertTriangle, Info, Pencil, Trash2, RotateCcw, ExternalLink, CheckCircle2, XCircle, Circle, Maximize2, Minimize2, ChevronDown, ChevronUp } from 'lucide-react'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_GREEN, Chip, StatusPill, SectionCard, type Tone } from './SeaAirAuditUi'
@@ -79,6 +79,13 @@ export default function SeaAirAuditDetailModal({
   const [busy, setBusy] = useState(false)
   const [tab, setTab] = useState<'overview' | 'trail'>('overview')
   const [showChecks, setShowChecks] = useState(false)
+  const checksRef = useRef<HTMLDivElement>(null)
+  // Checks dibuka -> gulir area isi ke kartu Checks (isi langsung terlihat).
+  useEffect(() => {
+    if (!showChecks) return
+    const t = setTimeout(() => checksRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }), 30)
+    return () => clearTimeout(t)
+  }, [showChecks])
   const [log, setLog] = useState<SeaAirAuditLogEntry[] | null>(null)
   // Info validasi dari parent (baris di halaman aktif); kalau tidak ada (mis. baris pindah tab
   // setelah ubah status) diambil sendiri.
@@ -189,19 +196,25 @@ export default function SeaAirAuditDetailModal({
         : '@container bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[94vh] flex flex-col overflow-hidden'} data-audit-detail={variant}>
         {/* Header. Panel (2026-10-15, permintaan user: di laptop 14" tombol header memakan tempat sampai isi tidak terlihat): ringkas --
             padding/judul lebih kecil, tombol h-8, Edit & Re-read jadi ikon saja bila panel sempit (< @5xl), aksi rata kanan. */}
-        <div className={`flex flex-wrap items-start justify-between border-b border-[#EADFD6] shrink-0 ${isPanel ? 'gap-x-3 gap-y-1.5 px-4 py-2.5' : 'gap-3 px-5 py-4'}`}>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className={`${isPanel ? 'text-[16px]' : 'text-[18px]'} font-bold text-[#3B1B3D] tabular-nums [overflow-wrap:anywhere]`}>{formatNoAju(rec.no_aju) || '—'}</h2>
-              <StatusPill draft={draft} />
-              {draft && rec.reaudit_reason && <Chip tone="purple" title={rec.reaudit_reason}>↻ Changed in Invoice Recap — please re-audit</Chip>}
-              {rec.duplicate_of && <Chip tone="red" title="Another PIB with the same BL / AWB already exists">Possible duplicate upload</Chip>}
+        {/* Panel: SELALU 1 baris (2026-10-15, laporan user 14") -- tanpa wrap; aksi `shrink-0`, Mark as audited/Edit/Re-read ikon saja
+            bila panel < @5xl; nomor PIB dipotong "…" hanya bila tetap tidak muat. Jendela penuh tetap boleh wrap. */}
+        <div className={`flex items-start justify-between border-b border-[#EADFD6] shrink-0 ${isPanel ? 'flex-nowrap gap-x-3 px-4 py-2.5' : 'flex-wrap gap-3 px-5 py-4'}`}>
+          <div className={isPanel ? 'min-w-0 flex-1' : 'min-w-[min(340px,100%)] flex-1'}>
+            {/* Nomor PIB + chip Draft/Audited SELALU 1 baris (2026-10-15, laporan user: di 14" chip Draft turun ke bawah) -- nomor
+                dipotong "…" bila benar-benar tidak muat (title = nomor lengkap); chip re-audit / duplikat di baris berikutnya bila ada. */}
+            <div className="flex items-center gap-2 min-w-0">
+              <h2 className={`${isPanel ? 'text-[16px]' : 'text-[18px]'} font-bold text-[#3B1B3D] tabular-nums truncate min-w-0`} title={formatNoAju(rec.no_aju) || undefined}>{formatNoAju(rec.no_aju) || '—'}</h2>
+              <span className="shrink-0"><StatusPill draft={draft} /></span>
             </div>
-            <div className={`${isPanel ? 'text-[11.5px]' : 'text-[12px]'} text-[#6E5E70] mt-0.5`}>
-              {fmtDateShort(rec.tgl_ppjk)} · {rec.via || '—'} · {rec.delivery_term || '—'} · {ptName}
-            </div>
+            {((draft && rec.reaudit_reason) || rec.duplicate_of) && (
+              <div className="flex items-center gap-2 flex-wrap mt-1">
+                {draft && rec.reaudit_reason && <Chip tone="purple" title={rec.reaudit_reason}>↻ Changed in Invoice Recap — please re-audit</Chip>}
+                {rec.duplicate_of && <Chip tone="red" title="Another PIB with the same BL / AWB already exists">Possible duplicate upload</Chip>}
+              </div>
+            )}
+            {/* Baris "tgl PPJK · via · term · PT" di bawah nomor PIB DIHAPUS 2026-10-15 (permintaan user) -- isinya ada di kartu Document. */}
           </div>
-          <div className={`flex items-center flex-wrap justify-end ${isPanel ? 'gap-1.5' : 'gap-2'}`}>
+          <div className={`flex items-center justify-end ${isPanel ? 'flex-nowrap shrink-0 gap-1.5' : 'flex-wrap gap-2'}`}>
             <div className={`text-right ${isPanel ? 'mr-1' : 'mr-2'}`}>
               <div className={SA_LABEL}>Total PIB</div>
               <div className={`${isPanel ? 'text-[17px]' : 'text-[20px]'} font-bold text-[#3B1B3D] tabular-nums leading-tight whitespace-nowrap`}>{fmtRp(rec.total_pib)}</div>
@@ -216,8 +229,8 @@ export default function SeaAirAuditDetailModal({
             )}
             {canEdit && draft && (
               <button type="button" className={`${SA_BTN_GREEN}${btnSm}`} disabled={busy || !!auditBlocker} onClick={() => setStatus('LENGKAP')}
-                title={auditBlocker ? `${auditBlocker} — the PIB can be marked as audited once Invoice Recap is ready to submit.` : undefined}>
-                {busy ? 'Saving…' : 'Mark as audited'}
+                aria-label="Mark as audited" title={auditBlocker ? `${auditBlocker} — the PIB can be marked as audited once Invoice Recap is ready to submit.` : 'Mark as audited'}>
+                {isPanel && <CheckCircle2 size={14} className="@5xl:hidden" />}<span className={btnLabel}>{busy ? 'Saving…' : 'Mark as audited'}</span>
               </button>
             )}
             {canEdit && !draft && (
@@ -310,7 +323,7 @@ export default function SeaAirAuditDetailModal({
           <div className="flex flex-col gap-3 min-w-0">
             <SectionCard title="Customs value" right={<>Balance <b className="text-[#3B1B3D] tabular-nums">{fmtRp(build.balance)}</b></>} bodyClassName="px-4 pb-3">
               <div className="flex justify-between gap-3 py-1.5 text-[12.5px]">
-                <span className="text-[#3B1B3D]">Goods value{build.goodsRate ? ` (${curLabel ? `${curLabel} ` : ''}${fmtValas(build.goodsValas)} × ${fmtValas(Math.round(build.goodsRate * 100) / 100)})` : ''}</span>
+                <span className="text-[#3B1B3D]">Goods value{build.goodsRate ? <> ({curLabel ? `${curLabel} ` : ''}{fmtValas(build.goodsValas)} × <b className="font-bold" data-goods-rate>{fmtValas(Math.round(build.goodsRate * 100) / 100)}</b>)</> : ''}</span>
                 <span className="font-semibold tabular-nums text-[#3B1B3D] whitespace-nowrap">{fmtRp(build.goodsIdr)}</span>
               </div>
               <div className="flex justify-between gap-3 py-1.5 text-[12.5px]">
@@ -397,21 +410,26 @@ export default function SeaAirAuditDetailModal({
                 </div>
               </SectionCard>
 
-          {/* Checks -- disembunyikan default (2026-10-14, permintaan user), tombol menampilkan / menyembunyikan. */}
-          <div className="flex justify-start">
+          {/* Checks -- disembunyikan default (2026-10-14). 2026-10-15 (permintaan user): bar SELEBAR PANEL; dibuka -> isi tampil langsung di
+              bawah bar dalam kartu yang sama & area isi di-scroll ke kartu ini (tidak perlu scroll manual). */}
+          <div ref={checksRef} className="shrink-0 bg-white rounded-[14px] border border-[#EADFD6] shadow-[0_1px_2px_rgba(59,27,61,0.04)] overflow-hidden" data-checks-card>
             <button type="button" onClick={() => setShowChecks(v => !v)} aria-expanded={showChecks} data-toggle-checks
-              className={`${SA_BTN_OUTLINE} h-8`}>
-              {showChecks ? <ChevronUp size={13} /> : <ChevronDown size={13} />} {showChecks ? 'Hide checks' : 'Show checks'} · <b className="tabular-nums">{passed}</b> of {counted} passed
+              className="w-full flex items-center gap-2 px-4 h-10 text-left text-[12.5px] font-semibold text-[#3B1B3D] hover:bg-[#FBF7F4]">
+              {showChecks ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              <span>{showChecks ? 'Hide checks' : 'Show checks'}</span>
+              <span className="ml-auto text-[#6E5E70] font-normal"><b className="tabular-nums text-[#3B1B3D]">{passed}</b> of {counted} checks passed</span>
             </button>
-          </div>
-          {showChecks && <SectionCard title="Checks" right={<span><b className="text-[#3B1B3D]">{passed}</b> of {counted} checks passed</span>} bodyClassName="px-4 pb-3 grid grid-cols-1 md:grid-cols-2 gap-x-6">
-            {['Customs value', 'Links & validation'].map(g => (
-              <div key={g}>
-                <div className={`${SA_LABEL} pt-1 pb-0.5`}>{g}</div>
-                {checks.filter(c => c.group === g).map((c, i) => <CheckRow key={i} ok={c.ok} label={c.label} hint={c.hint} />)}
+            {showChecks && (
+              <div className="px-4 pb-3 pt-1 border-t border-[#F1E8E1] grid grid-cols-1 md:grid-cols-2 gap-x-6">
+                {['Customs value', 'Links & validation'].map(g => (
+                  <div key={g}>
+                    <div className={`${SA_LABEL} pt-2 pb-0.5`}>{g}</div>
+                    {checks.filter(c => c.group === g).map((c, i) => <CheckRow key={i} ok={c.ok} label={c.label} hint={c.hint} />)}
+                  </div>
+                ))}
               </div>
-            ))}
-          </SectionCard>}
+            )}
+          </div>
 
           </>}
           {/* Audit trail -- tab sendiri; tampilan SAMA tab Audit trail Invoice Recap (SeaAirActivityTrail, 2026-10-14, permintaan user).

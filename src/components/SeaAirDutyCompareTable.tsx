@@ -45,8 +45,11 @@ export default function SeaAirDutyCompareTable({ cmp, loading, hideIntro = false
               {(cmp?.rows || []).map(r => (
                 <tr key={r.key} className={`border-b border-[#F1E8E1] last:border-b-0 ${r.key === 'total' ? 'bg-[#FBF7F4]' : ''}`}>
                   <td className="px-4 py-2">
-                    <div className={`text-[#3B1B3D] ${r.key === 'total' ? 'font-bold' : 'font-semibold'}`}>{r.label}</div>
-                    {r.rateText && <div className="text-[11px] text-[#8A7A8B]">{r.rateText}</div>}
+                    {/* Rate di SAMPING nama (BM · Rate 0%), 1 baris -- 2026-10-15, permintaan user (dulu di bawah nama). */}
+                    <div className="flex flex-wrap items-baseline gap-x-2">
+                      <span className={`text-[#3B1B3D] ${r.key === 'total' ? 'font-bold' : 'font-semibold'}`}>{r.label}</span>
+                      {r.rateText && <span className="text-[11px] text-[#8A7A8B]" data-duty-rate>{r.rateText}</span>}
+                    </div>
                   </td>
                   <td className={`px-3 py-2 text-right tabular-nums text-[#3B1B3D] whitespace-nowrap ${r.key === 'total' ? 'font-bold' : 'font-semibold'}`}>{fmtIDR(r.actual)}</td>
                   <td className="px-4 py-2 text-right"><SeaAirDutyStatusChip m={r.status} emptyLabel={r.expected === null ? 'Not calculated' : 'Not checked'} /></td>

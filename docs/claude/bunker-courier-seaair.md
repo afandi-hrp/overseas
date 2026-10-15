@@ -957,6 +957,18 @@ Revisi (2026-10-13): di `@7xl` blok status validasi tetap DEKAT tombol Draft/Ope
 
 - **Tab Overview | Audit trail** Audit PIB = warna SAMA tab Invoice Recap (`bg-[#F5EDF3] text-[#5A305A]`, aktif putih + garis bawah ungu).
 - **Nama panel**: "Customs value (as recorded)" -> **Customs value**, "Duties & taxes" -> **Duty Tax**.
+- Susulan 2026-10-15 (permintaan user): kurs di baris "Goods value (USD x × **kurs**)" bold; baris "tgl PPJK · via · term · PT" di bawah
+  nomor PIB header jendela Open DIHAPUS (isi ada di kartu Document).
+- Susulan 2026-10-15 (laporan user 14": chip Draft turun ke bawah nomor PIB): nomor PIB + chip Draft/Audited SELALU 1 baris (`h2` truncate +
+  title, chip `shrink-0`). Revisi berikutnya (laporan user: tombol jadi baris ke-2 di 14"): header PANEL `flex-nowrap` -- SELALU 1 baris; kolom judul
+  `min-w-0 flex-1`, aksi `shrink-0`; **Mark as audited** ikut jadi ikon (CheckCircle2 + title/aria-label) bila panel < `@5xl` (seperti Edit &
+  Re-read); nomor PIB dipotong "…" hanya bila tetap tidak muat. Jendela penuh tetap boleh wrap. Chip re-audit / duplikat di baris kedua judul.
+  Diuji screenshot Edge panel 640 / 760 / 1080px.
+- Susulan 2026-10-15 (permintaan user): tabel Duty Tax (`SeaAirDutyCompareTable`) -- teks "Rate x%" di SAMPING nama BM / PPN / PPh (1 baris), dulu di bawahnya.
+- Susulan 2026-10-15 (permintaan user): **Show checks** = bar SELEBAR panel (kartu `data-checks-card`, "x of y checks passed" di kanan); dibuka -> isi Checks
+  langsung di bawah bar dalam kartu yang sama (dulu tombol kecil + kartu terpisah) & area isi digulir ke kartu itu (`scrollIntoView` nearest).
+  **WAJIB `shrink-0`** (bug sempat terjadi: kartu ber-`overflow-hidden` di kolom flex yang di-scroll mengecil jadi garis tipis -- kartu baru
+  ber-overflow-hidden di area isi panel/modal flex-col WAJIB `shrink-0`).
 - **Susunan Overview** (revisi 2026-10-15, sketsa user): grid 2 kolom `@3xl` -- kiri **Document** (1 kolom fakta, setinggi kolom kanan), kanan
   **Customs value** di atas **Duty Tax**; lalu **Goods per PO** lebar penuh. Panel sempit = 1 kolom berurutan. (Versi sebelumnya: Document lebar penuh di atas.) Kartu validasi, banner kunci & Checks tetap di tempatnya.
 - **Duty Tax**: subjudul "same check as Invoice Recap › Doc Validation", "Import value Rp …" (kanan judul) & baris keterangan "Expected from customs
