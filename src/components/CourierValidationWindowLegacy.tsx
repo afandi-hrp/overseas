@@ -8,7 +8,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { X, Printer, ShieldCheck, Package } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import ValidasiModal from './ValidasiModalLegacy';
+// Tab Doc Validation (2026-10-15, permintaan user): komponen Doc Validation TERPADU (ValidasiModal variant unified) -- SAMA
+// dgn popup Audit mode Card, Invoice Recap Details & Finance Handover (dulu ValidasiModalLegacy).
+import ValidasiModal from './ValidasiModal';
 import CostValidationModal from './CostValidationModalLegacy';
 
 // Jendela "Validation" Audit Courier (Draft/PIB/CN, 2026-09-30) -- menggabungkan 3 tombol lama
@@ -247,16 +249,19 @@ export default function CourierValidationWindow({
         <div className="flex-1 min-h-0 flex flex-col cvw-fill">
           {access.checklist && tabBody('checklist', renderChecklist({ onPctChange: onChecklistPct, onSaved: onChecklistSaved }))}
           {access.doc && tabBody('doc', (
-            <ValidasiModal
-              record={record}
-              mainTab={mainTab}
-              subTab={subTab}
-              onClose={onClose}
-              canEdit={editAccess.doc}
-              embedded
-              onPctChange={onDocPct}
-              checklistVersion={checklistVersion}
-            />
+            <div className="flex-1 min-h-0 overflow-y-auto bg-[#FBF7F4] p-4 print:overflow-visible">
+              <ValidasiModal
+                record={record}
+                mainTab={mainTab}
+                subTab={subTab}
+                onClose={onClose}
+                canEdit={editAccess.doc}
+                embedded
+                variant="unified"
+                onPctChange={onDocPct}
+                checklistVersion={checklistVersion}
+              />
+            </div>
           ))}
           {access.cost && tabBody('cost', (
             <CostValidationModal

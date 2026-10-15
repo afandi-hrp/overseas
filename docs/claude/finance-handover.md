@@ -120,3 +120,19 @@ Spek user + referensi tampilan `finance_handover_courier.html` (root repo; HANYA
   dalam kartu, 3 tab (tanpa Checklist) + % + titik, Invoices kurung/total/tanpa AWB, Cost header & tanpa aksi + catatan,
   Doc 3 tabel & tanpa aksi/meta, catatan SPPBMCP jalur PIB, tanpa pasangan Audit, Print + keterangan, 1 kartu terbuka, Accept 3 RPC, Mark paid
   2 RPC + ref, Undo Admin 3 RPC, view-only) + regresi finance lama 57 — 0 gagal; `tsc` bersih, `vite build` sukses. Belum dites di production.
+
+## Courier: Cost Validation & Doc Validation jadi tombol POP-UP (2026-10-15, permintaan user)
+
+- Kartu terbuka (`FinanceCourierAwbDetail`): tab DIHAPUS -> isi = **Invoices** (tetap); baris atas: label Invoices · tombol
+  **Cost Validation x%** · **Doc Validation x%** (titik hijau/oranye/abu SAMA dulu) · View only · Print, satu baris.
+- Pop-up = portal ke body (`data-finance-popup`), tutup ✕ / Esc / klik luar; kedua pop-up tetap terpasang selama kartu terbuka
+  (tersembunyi) supaya persen di tombol langsung akurat. Prop `tab` dipertahankan: `'invoices'` = tidak ada pop-up.
+- Cost = `CostValidationModalLegacy financeView` (SAMA dulu). Doc = **Doc Validation TERPADU** (`ValidasiModal variant="unified"`,
+  canEdit=false, prop `financeView`; List | Columns, Show only mismatches) -- data & sinkron SAMA Audit Courier & Invoice Recap Details
+  (courier-features.md "Doc Validation TERPADU"). **Finance TETAP dibatasi** (keputusan user 2026-10-15, sempat dibuka penuh sehari):
+  hanya `FINANCE_DOC_MATRIX` (Invoice Freight & Invoice Duty: baris No. AWB · No Invoice PPJK · Subtotal/DPP/PPN × kolom Invoice Duty ·
+  FP Freight/Duty · CN Invoice Freight/Duty · FP Revisi Freight/Duty; Tabel NPWP: kolom tertentu), SPPBMCP, kalkulasi PIB/SPPBMCP
+  (tetap dipasang tersembunyi), meta/Manual change notes & banner Recompute TIDAK tampil; filter & badge mismatch hanya dari baris yang
+  tampil; ringkasan Match/Mismatch/Not filled & Accuracy TETAP dari seluruh pemeriksaan. Diuji jsdom popup Finance 20 cek.
+- Print: tombol di baris kartu = kartu + Invoices (`#finance-courier-print-area`); tombol Print di pop-up = isi pop-up
+  (`#finance-courier-popup-print-area`, index.css; kartu disembunyikan saat cetak). FAR Overseas & Sea & Air TIDAK berubah.

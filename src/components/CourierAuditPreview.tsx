@@ -5,7 +5,7 @@
 // - Tab: Overview | Audit trail (tab Documents & Costs DIHAPUS).
 // - Overview: 1 PO & Vendor, 2 Shipment, 3 Customs Value & Duties, 4 Completeness & Validation. Baris Checklist / Cost Validation /
 //   Doc Validation di Section 4 membuka POPUP masing-masing (komponen embedded LAMA: ChecklistModal / CostValidationModal /
-//   ValidasiModal `reviewUi`); Check difference hanya info. Tutup popup (✕ / Esc / klik luar) kembali ke preview.
+//   ValidasiModal `variant="unified"` sejak 2026-10-15 -- komponen Doc Validation yang SAMA Invoice Recap Details & Finance); Check difference hanya info. Tutup popup (✕ / Esc / klik luar) kembali ke preview.
 // MURNI tampilan dari kolom tersimpan (+ auto-calc yg sudah di-apply saat fetch); kolom yang tidak diizinkan role tidak tampil
 // (`colOk`). Validasi = info saja, TIDAK pernah mengunci Mark as audited.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -414,7 +414,7 @@ export default function CourierAuditPreview({
         <ValidationPopup title={popupTitle} subtitle={popupSubtitle} wide={popup !== 'checklist'} onRequestClose={closePopup}>
           {popup === 'checklist' && access.checklist && renderChecklist({ onPctChange: onChecklistPct, onSaved: onChecklistSaved, onDirtyChange: onChecklistDirty })}
           {popup === 'doc' && access.doc && (
-            <ValidasiModal record={rec} mainTab={mainTab} subTab={subTab} onClose={closePopup} canEdit={editAccess.doc} embedded reviewUi
+            <ValidasiModal record={rec} mainTab={mainTab} subTab={subTab} onClose={closePopup} canEdit={editAccess.doc} embedded variant="unified"
               onPctChange={onDocPct} onDirtyChange={onDocDirty} checklistVersion={checklistVersion} />
           )}
           {popup === 'cost' && access.cost && (

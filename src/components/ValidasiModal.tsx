@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { planCourierDocRecompute, docRecomputeMessage, docRecomputePendingText } from '../utils/CourierDocRecompute';
 import { LoadingSpinner } from './LoadingState';
 import { beratKgPair } from '../utils/ValidasiHelper';
 import { supabase } from '../lib/supabase';
-import { Receipt, FileText, Landmark, Ship, Sailboat, FileCheck2, FileDigit, IdCard, Scale, ClipboardList, Edit3, CheckCircle2, XCircle, Clock, Building2, Plane, CalendarDays, UserCheck, ChevronDown, ChevronUp, ChevronRight, RefreshCw, RotateCcw, ArrowLeftRight } from 'lucide-react';
+import { Receipt, FileText, Landmark, Ship, Sailboat, FileCheck2, FileDigit, IdCard, Scale, ClipboardList, Edit3, CheckCircle2, XCircle, Clock, Building2, Plane, CalendarDays, UserCheck, ChevronDown, ChevronUp, ChevronRight, RefreshCw, RotateCcw, ArrowLeftRight, List as ListIcon, Columns3, X } from 'lucide-react';
 import ValidasiPerhitunganPIB, { type CalcRowInfo } from './ValidasiPerhitunganPIB';
 import { VW_LABEL, VW_BTN_PRIMARY, VW_BTN_SECONDARY, VW_BTN_SUCCESS, VW_BTN_DANGER, VW_CARD, VW_INPUT, VW_TILE, VW_TILE_TONE, vwPctBar, vwPctText } from './validationWindowStyles';
 import { Pill } from './SeaAirAuditUi';
@@ -12,6 +13,27 @@ import { appendNoteLine, removeNoteLinesWhere } from '../utils/NoteLines';
 
 // Catatan Accept milik 1 field di Manual Change Notes -- format baru "<field> · <sumber> ✓ ..." & lama "- <field> · <sumber>: ...".
 const isDocNoteOf = (label: string) => (line: string) => line.startsWith(`${label} ✓ `) || line.startsWith(`- ${label}: `);
+
+// Sinkron antar-instans Doc Validation (2026-10-15, permintaan user: Audit, Invoice Recap & Finance Handover = SATU sumber
+// data `tabel_checklist_validasi`). Tiap simpan berhasil diumumkan dgn kunci `PIB:<id>` / `CN:<id>`: instans lain di tab
+// yang sama (event window) & tab browser lain (BroadcastChannel) utk shipment yang sama membaca ulang data dari DB --
+// KECUALI instans itu sedang punya perubahan belum disimpan (tidak ditimpa).
+const DOC_SYNC_EVENT = 'beehive:courier-doc-validation-saved';
+let docSyncChannel: BroadcastChannel | null | undefined;
+const getDocSyncChannel = (): BroadcastChannel | null => {
+  if (docSyncChannel === undefined) {
+    try { docSyncChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('beehive-courier-doc-validation') : null; } catch { docSyncChannel = null; }
+  }
+  return docSyncChannel;
+};
+const announceDocSaved = (key: string, from: string) => {
+  const detail = { key, from };
+  try { window.dispatchEvent(new CustomEvent(DOC_SYNC_EVENT, { detail })); } catch { /* abaikan */ }
+  try { getDocSyncChannel()?.postMessage(detail); } catch { /* abaikan */ }
+};
+// Pilihan tampilan List / Columns diingat per browser (kenyamanan saja).
+const DOC_VIEW_KEY = 'beehive_courier_docval_view';
+const readDocView = (): 'list' | 'columns' => { try { return localStorage.getItem(DOC_VIEW_KEY) === 'columns' ? 'columns' : 'list'; } catch { return 'list'; } };
 
 // Format tanggal seragam di seluruh aplikasi: DD-MMMM-YYYY, nama bulan Bahasa Inggris.
 const MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -882,6 +904,12 @@ const STATUS_CONFIG: any = {
 // per baris = SATU tombol toggle (klik = ganti Match <-> Mismatch, `applyManualStatus`); (2) tombol "Correct" per baris DIHAPUS ->
 // 1 tombol "Edit" di kiri atas utk mengedit SEMUA nilai (juga baris Incomplete); (3) "Checked — accept" hanya di baris Mismatch.
 // Tanpa prop ini tampilan embedded lama (Invoice Recap / jendela lama) TIDAK berubah.
+// `variant="unified"` (2026-10-15, permintaan user; WAJIB bersama `embedded`): SATU tampilan Doc Validation yang dipakai Audit
+// Courier (popup Section 4 mode Card & tab Doc Validation jendela List), Invoice Recap (jendela Details) & Finance Handover
+// (popup, canEdit=false). Toggle List | Columns (+ diingat localStorage), switch "Show only mismatches" (baris Mismatch +
+// Accepted), Accept = dialog catatan WAJIB -> ditambahkan ke Manual change notes & langsung disimpan, Undo -> status sebelum
+// Accept, Edit (semua nilai) + bar Save/Discard. Load/simpan/akurasi SAMA mode lain (persistChecklist). `financeView` + unified =
+// tampilan Finance terbatas (FINANCE_DOC_MATRIX). Prop `reviewUi` tidak dipakai pemanggil mana pun lagi (kode dibiarkan).
 export const FINANCE_DOC_MATRIX: { id: string; cols: string[]; rows?: string[] }[] = [
   { id: 's_inv_freight_duty',
     cols: ['Invoice Duty', 'FP Freight', 'FP Duty', 'CN INVOICE FREIGHT', 'CN INVOICE DUTY', 'FP Revisi Freight', 'FP Revisi Duty'],
@@ -889,7 +917,7 @@ export const FINANCE_DOC_MATRIX: { id: string; cols: string[]; rows?: string[] }
   { id: 's_tabel_npwp',
     cols: ['PIB', 'SPPBMCP', 'FP Freight', 'FP Duty', 'FP Revisi Freight', 'FP Revisi Duty', 'Invoice Freight', 'Invoice Duty', 'CN Freight', 'CN Duty'] },
 ];
-export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdit = true, embedded = false, onPctChange, onDirtyChange, checklistVersion = 0, variant = 'full', onOpenDetails, reloadKey = 0, onChanged, financeView = false, reviewUi = false }: { record: any, mainTab: string, subTab?: string, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, onDirtyChange?: (dirty: boolean) => void, checklistVersion?: number, variant?: 'full' | 'summary', onOpenDetails?: () => void, reloadKey?: number, onChanged?: () => void, financeView?: boolean, reviewUi?: boolean }) {
+export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdit = true, embedded = false, onPctChange, onDirtyChange, checklistVersion = 0, variant = 'full', onOpenDetails, reloadKey = 0, onChanged, financeView = false, reviewUi = false }: { record: any, mainTab: string, subTab?: string, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, onDirtyChange?: (dirty: boolean) => void, checklistVersion?: number, variant?: 'full' | 'summary' | 'unified', onOpenDetails?: () => void, reloadKey?: number, onChanged?: () => void, financeView?: boolean, reviewUi?: boolean }) {
   const { profile, user } = useAuth();
   const [docType, setDocType] = useState<'PIB'|'CN'|null>(null);
   const [debugData, setDebugData] = useState<any>({ raw: {}, doc: {} });
@@ -1007,6 +1035,14 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   const [acceptSaving, setAcceptSaving] = useState(false);
   const [showAccepted, setShowAccepted] = useState(false);
   const [loadedOnce, setLoadedOnce] = useState(false);
+  // Mode unified: tampilan, filter mismatch, dialog Accept.
+  const [viewMode, setViewMode] = useState<'list' | 'columns'>(readDocView);
+  const [onlyMismatch, setOnlyMismatch] = useState(false);
+  const [acceptDlg, setAcceptDlg] = useState<{ id: string; field: string; docLabel: string; valueText: string; calc?: CalcRowInfo } | null>(null);
+  // Sinkron antar-instans (lihat announceDocSaved).
+  const instanceIdRef = useRef(Math.random().toString(36).slice(2));
+  const syncKeyRef = useRef<string | null>(null);
+  const [syncTick, setSyncTick] = useState(0);
 
   useEffect(() => {
     supabase.from('tabel_npwp').select('*').then(({data}) => {
@@ -1063,6 +1099,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
         setDocCompletenessFlags({ ada_po: !!dc?.ada_po, ada_cipl: !!dc?.ada_cipl, ada_final_invoice: !!dc?.ada_final_invoice });
       }
 
+      syncKeyRef.current = pib_id ? `PIB:${pib_id}` : cn_id ? `CN:${cn_id}` : null;
       const queryPib_cnid = [];
       if (pib_id) queryPib_cnid.push(`pib_id.eq.${pib_id}`);
       if (cn_id) queryPib_cnid.push(`cn_id.eq.${cn_id}`);
@@ -1137,7 +1174,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     };
 
     doLoad().then(() => setLoadedOnce(true));
-  }, [record, mainTab, subTab, reloadKey]);
+  }, [record, mainTab, subTab, reloadKey, syncTick]);
 
   // Simpan checklist dokumen ke tabel_checklist_validasi -- isi SAMA PERSIS autosave lama (dipakai
   // autosave mode standalone & tombol "Save changes" mode embedded). Return pesan error / null.
@@ -1216,6 +1253,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
           const { error } = await supabase.from('tabel_checklist_validasi').insert([payload]);
           if (error) return error.message || 'Failed to save';
        }
+       announceDocSaved(pib_id ? `PIB:${pib_id}` : `CN:${cn_id}`, instanceIdRef.current);
        return null;
   };
 
@@ -1242,6 +1280,22 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     return JSON.stringify({ values, awbNo, tanggal, namaChecker, catatanManual }) !== JSON.stringify(docSnap);
   }, [embedded, loading, docSnap, values, awbNo, tanggal, namaChecker, catatanManual]);
   useEffect(() => { onDirtyChange?.(docDirty); }, [onDirtyChange, docDirty]);
+  const docDirtyRef = useRef(false);
+  docDirtyRef.current = docDirty;
+  useEffect(() => {
+    if (!embedded) return;
+    const onSaved = (d: any) => {
+      if (!d || !d.key || d.from === instanceIdRef.current || d.key !== syncKeyRef.current) return;
+      if (docDirtyRef.current) return; // perubahan lokal belum disimpan -> jangan ditimpa
+      setSyncTick(t => t + 1);
+    };
+    const onWin = (e: Event) => onSaved((e as CustomEvent).detail);
+    const onMsg = (e: MessageEvent) => onSaved(e.data);
+    window.addEventListener(DOC_SYNC_EVENT, onWin);
+    const ch = getDocSyncChannel();
+    ch?.addEventListener('message', onMsg);
+    return () => { window.removeEventListener(DOC_SYNC_EVENT, onWin); ch?.removeEventListener('message', onMsg); };
+  }, [embedded]);
   const showDocToast = (msg: string, type: 'success' | 'error') => { setDocToast({ msg, type }); setTimeout(() => setDocToast(null), 3000); };
   const saveDoc = async () => {
     userActionRef.current = true;
@@ -1252,6 +1306,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
       setDocSnap(makeDocSnap());
       setCorrecting(null);
       showDocToast('Document validation saved.', 'success');
+      onChanged?.();
       return true;
     } catch (e: any) {
       console.error('[ValidasiModal] simpan gagal', e);
@@ -1548,7 +1603,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   const recomputePending = useMemo(() => (computedSnapshot ? planCourierDocRecompute(values, computedSnapshot).total : 0), [values, computedSnapshot]);
 
   // Mode summary: baca ulang (reloadKey) senyap -- tidak menampilkan spinner lagi setelah pernah dimuat.
-  if (loading && !(variant === 'summary' && loadedOnce)) {
+  if (loading && !((variant === 'summary' || variant === 'unified') && loadedOnce)) {
     if (embedded) {
       return (
         <div className="bg-white rounded-[14px] border border-[#EADFD6] flex flex-col items-center justify-center py-14 text-[#5A305A]">
@@ -1720,6 +1775,663 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   // ── Mode summary (2026-10-05, panel Validation Invoice Recap Courier) -- lihat komentar di atas komponen.
   //    Hanya field Mismatch (Incomplete/Not checked TIDAK ditampilkan); Accept = manual_status 'match' + catatan
   //    alasan WAJIB, langsung disimpan (persistChecklist). Field yang sudah di-Accept hilang dari daftar.
+  // ── Accept / Undo / Recompute (bersama mode summary & unified) ──
+  // Accept: manual_status 'match' + accept_note/_by/_at (+ accept_prev_status utk Undo) di values_json; catatan WAJIB & ditambahkan
+  // ke "Manual Change Notes" (format "<Nama field> · <Sumber> ✓ <catatan>", catatan lama field yg sama diganti); langsung disimpan.
+  // `label` = "<Nama field> · <Sumber>" (kunci baris catatan). `calc` = baris tabel Validasi PIB/SPPBMCP (id `pibcalc:<id>`).
+  type AcceptTarget = { id: string; label: string; calc?: CalcRowInfo };
+  const acceptField = async (t: AcceptTarget, rawNote: string): Promise<boolean> => {
+    const note = rawNote.trim();
+    if (!note) return false;
+    const prevValues = values;
+    const prevNotes = catatanManual;
+    const cur = values[t.id] || { src: '', cmp: '' };
+    const nextValues = { ...values, [t.id]: { ...cur, manual_status: 'match', accept_prev_status: cur.manual_status ?? null, accept_note: note, accept_by: profile?.nama || user?.email || null, accept_at: new Date().toISOString() } };
+    const nextNotes = appendNoteLine(removeNoteLinesWhere(catatanManual, isDocNoteOf(t.label)), `${t.label} ✓ ${note.replace(/\s*\n\s*/g, ' ')}`);
+    userActionRef.current = true;
+    setValues(nextValues);
+    setCatatanManual(nextNotes);
+    setAcceptSaving(true);
+    try {
+      // Baris kalkulasi yg di-Accept: mismatch -> match di hitungan tersimpan (state pibStats baru ikut setelah render).
+      const adj = t.calc ? { match: pibStats.match + 1, mismatch: Math.max(0, pibStats.mismatch - 1), empty: pibStats.empty } : undefined;
+      const err = await persistChecklist(nextValues, nextNotes, adj);
+      if (err) { setValues(prevValues); setCatatanManual(prevNotes); showDocToast('Failed to save: ' + err, 'error'); return false; }
+      setDocSnap(JSON.parse(JSON.stringify({ values: nextValues, awbNo, tanggal, namaChecker, catatanManual: nextNotes })));
+      setAcceptingId(null); setAcceptNote(''); setAcceptDlg(null);
+      showDocToast('Accepted — the field is counted as a match.', 'success');
+      onChanged?.();
+      return true;
+    } catch (e: any) {
+      setValues(prevValues);
+      setCatatanManual(prevNotes);
+      showDocToast('Failed to save: ' + (e?.message || ''), 'error');
+      return false;
+    } finally {
+      setAcceptSaving(false);
+    }
+  };
+  // Undo Accept (revisi 2026-10-05): status kembali seperti sebelum Accept, catatannya dihapus dari Manual Change Notes.
+  const undoAccept = async (t: AcceptTarget) => {
+    const cur = values[t.id] || { src: '', cmp: '' };
+    const { accept_note, accept_by, accept_at, accept_prev_status, ...rest } = cur;
+    void accept_note; void accept_by; void accept_at;
+    const nextValues = { ...values, [t.id]: { ...rest, manual_status: accept_prev_status ?? null } };
+    const nextNotes = removeNoteLinesWhere(catatanManual, isDocNoteOf(t.label));
+    const prevValues = values;
+    const prevNotes = catatanManual;
+    userActionRef.current = true;
+    setValues(nextValues);
+    setCatatanManual(nextNotes);
+    setAcceptSaving(true);
+    try {
+      const adj = t.calc && t.calc.computed === 'mismatch' ? { match: Math.max(0, pibStats.match - 1), mismatch: pibStats.mismatch + 1, empty: pibStats.empty } : undefined;
+      const err = await persistChecklist(nextValues, nextNotes, adj);
+      if (err) { setValues(prevValues); setCatatanManual(prevNotes); showDocToast('Failed to undo: ' + err, 'error'); return; }
+      setDocSnap(JSON.parse(JSON.stringify({ values: nextValues, awbNo, tanggal, namaChecker, catatanManual: nextNotes })));
+      showDocToast('Accept undone.', 'success');
+      onChanged?.();
+    } catch (e: any) {
+      setValues(prevValues);
+      setCatatanManual(prevNotes);
+      showDocToast('Failed to undo: ' + (e?.message || ''), 'error');
+    } finally {
+      setAcceptSaving(false);
+    }
+  };
+  // Recompute (2026-10-05): logika SAMA handleRecomputeMissing (planCourierDocRecompute), hasilnya langsung disimpan.
+  const recomputeAndSave = async () => {
+    const computed = computedValuesRef.current;
+    if (!computed) return;
+    const plan = planCourierDocRecompute(values, computed);
+    if (plan.total === 0) { showDocToast(docRecomputeMessage(plan), 'success'); return; }
+    const prevValues = values;
+    userActionRef.current = true;
+    setValues(plan.next);
+    setAcceptSaving(true);
+    try {
+      const err = await persistChecklist(plan.next);
+      if (err) { setValues(prevValues); showDocToast('Failed to save: ' + err, 'error'); return; }
+      setDocSnap(JSON.parse(JSON.stringify({ values: plan.next, awbNo, tanggal, namaChecker, catatanManual })));
+      showDocToast(docRecomputeMessage(plan), 'success');
+      onChanged?.();
+    } catch (e: any) {
+      setValues(prevValues);
+      showDocToast('Failed to save: ' + (e?.message || ''), 'error');
+    } finally {
+      setAcceptSaving(false);
+    }
+  };
+
+  // ── Mode unified (2026-10-15, permintaan user) -- SATU tampilan Doc Validation utk Audit, Invoice Recap (Details) & Finance
+  //    Handover. Lihat komentar di atas komponen. Status/akurasi/simpan memakai fungsi yang SAMA mode lain.
+  const renderUnified = () => {
+    const groupKey = (r: any) => r.rowLabel || r.field;
+    // Finance (`financeView`, keputusan user 2026-10-15: Finance TETAP dibatasi): hanya FINANCE_DOC_MATRIX (Invoice Freight &
+    // Invoice Duty: baris/kolom tertentu; Tabel NPWP: kolom tertentu), SPPBMCP & kalkulasi PIB/SPPBMCP & meta tidak tampil.
+    // Ringkasan Match/Mismatch/Not filled & Accuracy TETAP dari seluruh pemeriksaan (sama seperti sebelumnya).
+    const finCfg = (id: string) => FINANCE_DOC_MATRIX.find(c => c.id === id);
+    const shownSections = financeView ? activeSections.filter(s => !!finCfg(s.id)) : activeSections;
+    const rowsOf = (section: any): any[] => {
+      if (!financeView) return section.rows;
+      const cfg = finCfg(section.id);
+      return cfg ? section.rows.filter((r: any) => cfg.cols.includes(r.compareDoc) && (!cfg.rows || cfg.rows.includes(groupKey(r)))) : [];
+    };
+    const rowState = (r: any) => {
+      const v = values[r.id] || { src: '', cmp: '' };
+      const st = v.manual_status || computeStatus(v.src, v.cmp, r.isFormat, r.field, debugData.raw?.is_po_non_imi, getDocChecklistFlag(r.compareDoc, docCompletenessFlags));
+      return { v, st };
+    };
+    // "Show only mismatches" = baris Mismatch + baris yang sudah di-Accept (supaya Undo tetap terjangkau).
+    const isFlagged = (r: any) => { const { v, st } = rowState(r); return st === 'mismatch' || isAcceptedVal(v, st); };
+    const calcAccepted = (id: string) => { const v = values[`pibcalc:${id}`]; return v?.manual_status === 'match' && !!v?.accept_note; };
+    // Baris kalkulasi yang ikut akurasi (sama mode summary): Freight/BM/PPN/PPH (ignoreForStats) & baris tersembunyi tidak.
+    const calcShown = calcRows.filter(r => !r.hidden && !r.ignoreForStats);
+    const calcFlagged = (r: CalcRowInfo) => r.status === 'mismatch' || calcAccepted(r.id);
+    let flaggedCount = 0;
+    shownSections.forEach(s => rowsOf(s).forEach((r: any) => { if (isFlagged(r)) flaggedCount++; }));
+    if (!financeView) calcShown.forEach(r => { if (calcFlagged(r)) flaggedCount++; });
+    // Kunci catatan Accept baris kalkulasi = SAMA mode summary ("<label> · Validasi PIB/SPPBMCP").
+    const CALC_DOC_LABEL = 'Validasi PIB/SPPBMCP';
+    const calcTitle = docType === 'CN' ? 'SPPBMCP calculation check' : 'PIB calculation check';
+    const canAct = canEdit && !editAll;
+    const fmtNumID = (n: number) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 4 }).format(n);
+    const setView = (m: 'list' | 'columns') => { setViewMode(m); try { localStorage.setItem(DOC_VIEW_KEY, m); } catch { /* abaikan */ } };
+    const allOpen = shownSections.length > 0 && shownSections.every(s => !!openSections?.[s.id]);
+    const isCellChanged = (id: string) => !!docSnap && JSON.stringify(docSnap.values?.[id] ?? null) !== JSON.stringify(values[id] ?? null);
+    const undoCell = (id: string) => {
+      if (!docSnap) return;
+      setValues((prev: any) => {
+        const next = { ...prev };
+        if (docSnap.values?.[id] === undefined) delete next[id];
+        else next[id] = JSON.parse(JSON.stringify(docSnap.values[id]));
+        return next;
+      });
+    };
+    const srcText = (v: any, field: string) => (v.srcDisplay ? v.srcDisplay : formatViewValue(v.src, field));
+    const valueTextOf = (r: any, v: any, field: string) => (r.isFormat ? srcText(v, field) : `${srcText(v, field)} (${formatViewValue(v.cmp, field)})`);
+    const otherCostOfV = (v: any) => (v.otherCost !== undefined && v.otherCost !== null && v.otherCost !== '' ? v.otherCost : (debugData.raw?.other_cost_valas ?? ''));
+
+    // Chip status: Accepted (hijau tua, catatan di tooltip) / Match / Mismatch / Incomplete / Not checked yet. Mode Edit: chip
+    // Match/Mismatch (bukan Accepted) = tombol ganti status manual (pola Edit lama).
+    const statusChip = (id: string, v: any, st: string) => {
+      const acc = isAcceptedVal(v, st);
+      const cfg = getCfg(acc ? 'accepted' : st);
+      const Icon = st === 'match' ? CheckCircle2 : st === 'mismatch' ? XCircle : Clock;
+      const cls = 'shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-bold whitespace-nowrap';
+      const body = <><Icon size={11} />{cfg.label}{v.manual_status && !acc ? ' ✎' : ''}</>;
+      if (canEdit && editAll && !acc && (st === 'match' || st === 'mismatch')) {
+        return (
+          <button type="button" data-status-toggle={id} title="Click to switch Match ⇄ Mismatch" onClick={() => applyManualStatus(id, st === 'match' ? 'mismatch' : 'match')}
+            className={`${cls} cursor-pointer hover:brightness-95`} style={{ backgroundColor: cfg.bg, color: cfg.color }}>
+            {body}<ArrowLeftRight size={10} className="opacity-60" />
+          </button>
+        );
+      }
+      return <span className={cls} style={{ backgroundColor: cfg.bg, color: cfg.color }} title={acc ? acceptTitle(v) : undefined} data-doc-status={acc ? 'accepted' : st}>{body}</span>;
+    };
+    // Accept (Mismatch -> dialog catatan WAJIB) / Undo (Accepted -> status sebelum Accept). Disembunyikan selama mode Edit.
+    type DlgTarget = { id: string; field: string; docLabel: string; valueText: string; calc?: CalcRowInfo };
+    const actionBtns = (t: DlgTarget, st: string, accepted: boolean) => {
+      if (!canAct) return null;
+      if (accepted) {
+        return (
+          <button type="button" data-doc-undo={t.id} disabled={acceptSaving} title="Undo accept — restore the previous status"
+            className="shrink-0 inline-flex items-center gap-0.5 text-[11px] font-semibold text-[#A8231A] hover:underline disabled:opacity-50 print:hidden"
+            onClick={() => undoAccept({ id: t.id, label: `${t.field} · ${t.docLabel}`, calc: t.calc })}>
+            <RotateCcw size={10} />Undo
+          </button>
+        );
+      }
+      if (st !== 'mismatch') return null;
+      return (
+        <button type="button" data-doc-accept={t.id} disabled={acceptSaving} onClick={() => { setAcceptNote(''); setAcceptDlg(t); }}
+          className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-md border border-[#BFE3CD] bg-white text-[#17663D] text-[10.5px] font-bold hover:bg-[#EAF6EF] disabled:opacity-50 print:hidden">
+          Accept
+        </button>
+      );
+    };
+    const calcExtra = (rowId: string, status: string) => {
+      const r = calcRows.find(x => x.id === rowId);
+      if (!r || r.ignoreForStats || r.hidden) return null;
+      return actionBtns({ id: `pibcalc:${rowId}`, field: r.label, docLabel: CALC_DOC_LABEL, valueText: `${r.actual} (${r.expected})`, calc: r }, status, status === 'accepted');
+    };
+    const sectionHeadIcon = (ss: { match: number; mismatch: number; total: number }) => (ss.mismatch > 0
+      ? <XCircle size={16} className="text-[#A8231A] shrink-0" />
+      : ss.match === ss.total && ss.total > 0 ? <CheckCircle2 size={16} className="text-[#17663D] shrink-0" /> : <Clock size={16} className="text-[#B7A9B8] shrink-0" />);
+    const fieldsOf = (section: any) => {
+      const all: string[] = [];
+      rowsOf(section).forEach((r: any) => { const k = groupKey(r); if (!all.includes(k)) all.push(k); });
+      return onlyMismatch ? all.filter(f => rowsOf(section).some((r: any) => groupKey(r) === f && isFlagged(r))) : all;
+    };
+
+    // ── Tampilan List: kartu per grup (section), per field daftar dokumen + nilai (pembanding) + status + Accept/Undo ──
+    const renderList = () => {
+      const blocks = shownSections.map(section => {
+        const fields = fieldsOf(section);
+        if (fields.length === 0) return null;
+        const ss = sectionStats({ ...section, rows: rowsOf(section) });
+        const allMatch = ss.match === ss.total && ss.total > 0;
+        const notChecked = ss.total - ss.match - ss.mismatch;
+        const isOpen = onlyMismatch || !!openSections?.[section.id];
+        return (
+          <div key={section.id} className={`${VW_CARD} overflow-hidden`} data-doc-section={section.id}>
+            <button type="button" disabled={onlyMismatch} onClick={() => setOpenSections(p => ({ ...(p || {}), [section.id]: !isOpen }))}
+              className="w-full flex flex-wrap items-center gap-3 px-4 py-2.5 text-left hover:bg-[#FBF7F4] disabled:cursor-default disabled:hover:bg-transparent print:pointer-events-none">
+              {sectionHeadIcon(ss)}
+              <div className="mr-auto min-w-0">
+                <div className="text-[13px] font-bold text-[#3B1B3D]">{SECTION_TITLE[section.id] || section.label}</div>
+                <div className="text-[11px] text-[#6E5E70]">{section.id === 's_sptnp' ? 'If applicable — PIB path only · ' : ''}{SECTION_SUB[section.id] || ''}</div>
+              </div>
+              <span className="text-[11.5px] text-[#6E5E70] tabular-nums">{ss.match} / {ss.total} match</span>
+              <Pill tone={ss.mismatch > 0 ? 'red' : allMatch ? 'green' : 'grey'}>{ss.mismatch > 0 ? `${ss.mismatch} mismatch` : allMatch ? 'All match' : `${notChecked} not checked`}</Pill>
+              {!onlyMismatch && <span className="text-[11.5px] text-[#6B3470] font-semibold flex items-center gap-1 print:hidden">{isOpen ? 'Hide' : `Show all ${fields.length} field${fields.length === 1 ? '' : 's'}`}{isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>}
+            </button>
+            <div className={isOpen ? 'border-t border-[#EADFD6] divide-y divide-[#F1E8E1]' : 'hidden print:block border-t border-[#EADFD6] divide-y divide-[#F1E8E1]'}>
+              {fields.map(field => {
+                const rowsOfField = rowsOf(section).filter((r: any) => groupKey(r) === field && (!onlyMismatch || isFlagged(r)));
+                const hints = Array.from(new Set(rowsOf(section).filter((r: any) => groupKey(r) === field && r.hint).map((r: any) => r.hint)));
+                const refRow: any = rowsOf(section).find((r: any) => groupKey(r) === field);
+                const refV = refRow ? (values[refRow.id] || { src: '', cmp: '' }) : null;
+                return (
+                  <div key={field} className="px-4 py-2.5 grid grid-cols-1 md:grid-cols-[200px_minmax(0,1fr)] gap-3" data-doc-field={field}>
+                    <div className="min-w-0">
+                      <div className="text-[12.5px] font-semibold text-[#3B1B3D]">{field}</div>
+                      {hints.map((h, i) => <div key={i} className="text-[10.5px] text-[#8A7A8B]">{h as string}</div>)}
+                      {section.id === 's_pib' && refV && (
+                        <div className="text-[11px] text-[#6E5E70] [overflow-wrap:anywhere] mt-0.5">
+                          Reference: <span className={refV.src_edited ? 'text-[#2F4FA8] font-bold' : 'text-[#3B1B3D] font-semibold'}>{srcText(refV, field)}</span>{refV.src_edited ? ' ✎' : ''}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-1.5 min-w-0">
+                      {rowsOfField.map((rowMatch: any, rowIdx: number) => {
+                        const { v, st } = rowState(rowMatch);
+                        const acc = isAcceptedVal(v, st);
+                        const otherCostVal = otherCostOfV(v);
+                        const errNpwp = v.cmp && hasNpwpError(rowMatch.id, v.cmp);
+                        const colorObj = getHeaderColor(rowMatch.compareDoc);
+                        const docLabel = getColumnDisplayLabel(rowMatch.compareDoc, docType);
+                        const hasOtherCost = rowMatch.id === 'po_item_value_vs_pib' || rowMatch.id === 'cipl01';
+                        return (
+                          <div key={rowMatch.id} data-doc-row={rowMatch.id} className={`rounded-lg border px-2.5 py-1.5 ${st === 'mismatch' ? 'border-[#F4C3BC] bg-[#FFF8F7]' : 'border-[#F1E8E1] bg-white'}`}>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-[11px] font-semibold text-[#6E5E70] w-[150px] shrink-0 inline-flex items-center gap-1.5 min-w-0" title={docLabel}>
+                                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: colorObj.text }} />
+                                <span className="truncate">{docLabel}</span>
+                              </span>
+                              <span className="flex-1 min-w-0 text-[12px] text-[#3B1B3D] [overflow-wrap:anywhere]">
+                                {section.id === 's_pib' ? (
+                                  <span className={v.cmp_edited ? 'text-[#2F4FA8] font-bold' : 'font-semibold'}>{formatViewValue(v.cmp, field)}{v.cmp_edited ? ' ✎' : ''}</span>
+                                ) : (
+                                  <>
+                                    <span className={v.src_edited ? 'text-[#2F4FA8] font-bold' : 'font-semibold'}>{srcText(v, field)}{v.src_edited ? ' ✎' : ''}</span>
+                                    {!rowMatch.isFormat && (
+                                      <span className={`text-[11px] ml-1 ${v.cmp_edited ? 'text-[#2F4FA8] font-bold' : 'text-[#6E5E70]'}`}>({formatViewValue(v.cmp, field)}){v.cmp_edited ? ' ✎' : ''}</span>
+                                    )}
+                                  </>
+                                )}
+                                {v.srcNote && <span className="text-[10.5px] text-[#8A7A8B]"> · {v.srcNote}</span>}
+                                {acc && <span className="text-[10.5px] font-semibold text-[#17663D]" title={acceptTitle(v)}> · ✓ Valid</span>}
+                                {hasOtherCost && Number(otherCostVal) !== 0 && (
+                                  <span className="text-[10.5px] italic text-[#6E5E70]"> · Other cost {fmtNumID(Number(otherCostVal))}{v.otherCost_edited ? ' ✎' : ''}</span>
+                                )}
+                              </span>
+                              {statusChip(rowMatch.id, v, st)}
+                              {(errNpwp || v.npwp_status === 'not_found') && <span className="text-[9.5px] text-[#7A4F00] bg-[#FFF1D6] px-2 py-0.5 rounded-md font-bold uppercase">NPWP tidak terdaftar</span>}
+                              {actionBtns({ id: rowMatch.id, field, docLabel, valueText: valueTextOf(rowMatch, v, field) }, st, acc)}
+                              {canEdit && editAll && isCellChanged(rowMatch.id) && (
+                                <button type="button" className="text-[11px] font-semibold text-[#6E5E70] hover:underline inline-flex items-center gap-0.5 print:hidden" onClick={() => undoCell(rowMatch.id)}><RotateCcw size={10} />Undo change</button>
+                              )}
+                            </div>
+                            {acc && v.accept_note && <div className="mt-0.5 text-[11px] text-[#17663D] [overflow-wrap:anywhere]" data-doc-accept-note>✓ {v.accept_note}<span className="text-[#8A7A8B]"> — {v.accept_by || '—'}{v.accept_at ? ` · ${fmtDateEN(v.accept_at)}` : ''}</span></div>}
+                            {canEdit && editAll && (
+                              <div className="mt-2 flex flex-wrap items-end gap-2 print:hidden">
+                                {/* s_pib: nilai Reference sama utk semua dokumen 1 field -> kotaknya cukup di baris pertama. */}
+                                {!(section.id === 's_pib' && rowIdx > 0) && (
+                                  <label className="flex flex-col gap-1 min-w-[180px] flex-1">
+                                    <span className={VW_LABEL}>{section.id === 's_pib' ? 'Reference (PIB) — all documents in this row' : `Value from ${getSrcTooltipLabel(rowMatch, section)}`}</span>
+                                    <input aria-label="Correct source value" className={`${VW_INPUT} w-full`} value={v.src || ""}
+                                      placeholder={rowMatch.isFormat ? "Format..." : ""}
+                                      onChange={e => section.id === 's_pib' ? setSrcForGroup(section, field, e.target.value) : setObj(rowMatch.id, 'src', e.target.value)} />
+                                  </label>
+                                )}
+                                {!rowMatch.isFormat && (
+                                  <label className="flex flex-col gap-1 min-w-[180px] flex-1">
+                                    <span className={VW_LABEL}>Value from {docLabel}</span>
+                                    <input aria-label="Correct compared value" className={`${VW_INPUT} w-full ${(errNpwp || v.npwp_status === 'not_found') ? '!border-[#E0A526] !bg-[#FFF8EB]' : ''}`} value={v.cmp || ""}
+                                      onChange={e => {
+                                        setObj(rowMatch.id, 'cmp', e.target.value);
+                                        setValues((prev: any) => ({ ...prev, [rowMatch.id]: { ...prev[rowMatch.id], npwp_status: null } }));
+                                      }} />
+                                  </label>
+                                )}
+                                {hasOtherCost && (
+                                  <label className="flex flex-col gap-1 w-36">
+                                    <span className={VW_LABEL}>Other cost</span>
+                                    <input aria-label="Other cost" className={`${VW_INPUT} w-full`} value={otherCostVal} onChange={e => setObj(rowMatch.id, 'otherCost', e.target.value)} />
+                                  </label>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      });
+      // Grup "Validasi PIB/SPPBMCP" versi List (mode Edit -> tabel lengkap di bawah, nilainya bisa dikoreksi di sana).
+      const calcList = calcShown.filter(r => !onlyMismatch || calcFlagged(r));
+      const cm = calcShown.filter(r => r.status === 'mismatch').length;
+      const cOk = calcShown.filter(r => r.status === 'match').length;
+      const calcBlock = !financeView && !editAll && calcList.length > 0 ? (
+        <div className={`${VW_CARD} overflow-hidden`} data-doc-section="calc">
+          <div className="flex flex-wrap items-center gap-3 px-4 py-2.5">
+            {sectionHeadIcon({ match: cOk, mismatch: cm, total: calcShown.length })}
+            <div className="mr-auto min-w-0">
+              <div className="text-[13px] font-bold text-[#3B1B3D]">{calcTitle}</div>
+              <div className="text-[11px] text-[#6E5E70]">Actual on the document (expected from the recalculation) · switch to Columns for the full table</div>
+            </div>
+            <span className="text-[11.5px] text-[#6E5E70] tabular-nums">{cOk} / {calcShown.length} match</span>
+            <Pill tone={cm > 0 ? 'red' : cOk === calcShown.length ? 'green' : 'grey'}>{cm > 0 ? `${cm} mismatch` : cOk === calcShown.length ? 'All match' : `${calcShown.length - cOk} not checked`}</Pill>
+          </div>
+          <div className="border-t border-[#EADFD6] divide-y divide-[#F1E8E1]">
+            {calcList.map(r => {
+              const acc = calcAccepted(r.id);
+              const v = values[`pibcalc:${r.id}`] || {};
+              const cfg = getCfg(acc ? 'accepted' : r.status);
+              const Icon = r.status === 'match' ? CheckCircle2 : r.status === 'mismatch' ? XCircle : Clock;
+              return (
+                <div key={r.id} data-doc-row={`pibcalc:${r.id}`} className="px-4 py-2.5 grid grid-cols-1 md:grid-cols-[200px_minmax(0,1fr)] gap-3">
+                  <div className="text-[12.5px] font-semibold text-[#3B1B3D]">{r.label}</div>
+                  <div className={`rounded-lg border px-2.5 py-1.5 ${r.status === 'mismatch' ? 'border-[#F4C3BC] bg-[#FFF8F7]' : 'border-[#F1E8E1] bg-white'}`}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="flex-1 min-w-0 text-[12px] text-[#3B1B3D] tabular-nums [overflow-wrap:anywhere]">
+                        <span className="font-semibold">{r.actual}</span> <span className="text-[11px] text-[#6E5E70]">(exp. {r.expected})</span>
+                        {r.selisih && r.computed === 'mismatch' && <span className="ml-1.5 px-1.5 py-[1px] rounded-md bg-[#FDE7E4] text-[#A8231A] text-[11px] font-bold">Selisih {r.selisih}</span>}
+                      </span>
+                      <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-bold whitespace-nowrap" style={{ backgroundColor: cfg.bg, color: cfg.color }}
+                        title={acc ? acceptTitle(v) : undefined} data-doc-status={acc ? 'accepted' : r.status}><Icon size={11} />{cfg.label}</span>
+                      {actionBtns({ id: `pibcalc:${r.id}`, field: r.label, docLabel: CALC_DOC_LABEL, valueText: `${r.actual} (${r.expected})`, calc: r }, r.status, acc)}
+                    </div>
+                    {acc && v.accept_note && <div className="mt-0.5 text-[11px] text-[#17663D] [overflow-wrap:anywhere]">✓ {v.accept_note}<span className="text-[#8A7A8B]"> — {v.accept_by || '—'}{v.accept_at ? ` · ${fmtDateEN(v.accept_at)}` : ''}</span></div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null;
+      return <>{blocks}{calcBlock}</>;
+    };
+
+    // ── Tampilan Columns: matriks per grup -- baris = field, kolom = dokumen (warna header SAMA), sel = nilai (pembanding) +
+    //    status + Accept/Undo; kolom Field sticky saat digeser. Pola tabel Details lama (ValidasiModalLegacy).
+    const renderColumns = () => shownSections.map(section => {
+      const fields = fieldsOf(section);
+      if (fields.length === 0) return null;
+      const rowsShown = rowsOf(section).filter((r: any) => fields.includes(groupKey(r)));
+      const docs: string[] = [];
+      rowsShown.forEach((r: any) => { if (!docs.includes(r.compareDoc)) docs.push(r.compareDoc); });
+      const ss = sectionStats({ ...section, rows: rowsOf(section) });
+      const badge = ss.match === ss.total && ss.total > 0 ? `${ss.total}/${ss.total} match` : ss.mismatch > 0 ? `${ss.mismatch} mismatch` : `${ss.match}/${ss.total} match`;
+      const TH = 'p-3 border-b border-r last:border-r-0 border-slate-300 text-[11px] font-bold uppercase tracking-widest text-center min-w-[150px]';
+      return (
+        <div key={section.id} className="flex flex-col md:flex-row border border-[#EADFD6] rounded-[14px] overflow-hidden bg-white" data-doc-matrix={section.id}>
+          <div className="w-full md:w-36 bg-[#FBF7F4] flex flex-row md:flex-col items-center justify-center p-3 border-b md:border-b-0 md:border-r border-[#EADFD6] shrink-0 gap-2.5">
+            <div className="w-11 h-11 bg-[#5A305A] text-white rounded-xl flex items-center justify-center shrink-0">{sectionIcons[section.id] || <FileText size={22} />}</div>
+            <div className="text-center font-bold text-[#5A305A] text-[10.5px] tracking-wider uppercase">{SECTION_TITLE[section.id] || section.label}</div>
+            <span className={`ml-auto md:ml-0 text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${ss.mismatch > 0 ? 'bg-[#FDE7E4] text-[#A8231A]' : 'bg-[#EAF6EF] text-[#17663D]'}`} data-matrix-badge>{badge}</span>
+          </div>
+          <DualScrollTable>
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr>
+                  <th className="p-3 bg-slate-100 border-b border-r border-slate-300 text-[11px] font-bold text-[#5A305A] uppercase tracking-wide whitespace-normal w-[160px] min-w-[160px] max-w-[160px] sticky left-0 z-10 shadow-[1px_0_0_0_#cbd5e1]">Field</th>
+                  {section.id === 's_pib' && <th className={`${TH} bg-slate-200 text-[#5A305A]`}>Reference</th>}
+                  {docs.map(doc => {
+                    const colorObj = getHeaderColor(doc);
+                    return <th key={doc} className={TH} style={{ backgroundColor: colorObj.bg, color: colorObj.text }}>{getColumnDisplayLabel(doc, docType)}</th>;
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {fields.map(field => {
+                  const refRow: any = rowsOf(section).find((r: any) => groupKey(r) === field);
+                  const refV = refRow ? (values[refRow.id] || { src: '', cmp: '' }) : null;
+                  return (
+                    <tr key={field} className="border-b border-slate-200 last:border-b-0" data-doc-field={field}>
+                      <td className="p-3 border-r border-slate-300 text-xs font-bold text-[#5A305A] bg-white whitespace-normal w-[160px] min-w-[160px] max-w-[160px] break-words sticky left-0 z-10 align-middle shadow-[1px_0_0_0_#cbd5e1]">
+                        {field}
+                        {Array.from(new Set(rowsOf(section).filter((r: any) => groupKey(r) === field && r.hint).map((r: any) => r.hint))).map((h, i) => (
+                          <div key={i} className="text-[10px] text-[#5A305A] mt-1 font-medium leading-tight">{h as string}</div>
+                        ))}
+                      </td>
+                      {section.id === 's_pib' && (
+                        <td className="p-3 border-r border-slate-300 align-middle min-w-[150px] bg-slate-50/60 text-center">
+                          {!refV ? '-' : canEdit && editAll ? (
+                            <input aria-label="Reference value" className={`${CELL_INPUT}`} value={refV.src || ""} placeholder="Reference"
+                              title="Reference value (PIB) — applies to every document column in this row" onChange={e => setSrcForGroup(section, field, e.target.value)} />
+                          ) : (
+                            <span className={`text-xs break-words ${refV.src_edited ? 'text-blue-700 font-bold' : 'text-[#5A305A] font-medium'}`}>{srcText(refV, field)}{refV.src_edited ? ' ✎' : ''}</span>
+                          )}
+                        </td>
+                      )}
+                      {docs.map(doc => {
+                        const rowMatch: any = rowsOf(section).find((r: any) => r.compareDoc === doc && groupKey(r) === field);
+                        if (!rowMatch) return <td key={doc} className="p-3 border-r border-slate-300 last:border-r-0 text-center text-[#5A305A] align-middle bg-slate-50/30 min-w-[150px]">-</td>;
+                        const { v, st } = rowState(rowMatch);
+                        const acc = isAcceptedVal(v, st);
+                        const otherCostVal = otherCostOfV(v);
+                        const errNpwp = v.cmp && hasNpwpError(rowMatch.id, v.cmp);
+                        const hasOtherCost = rowMatch.id === 'po_item_value_vs_pib' || rowMatch.id === 'cipl01';
+                        const docLabel = getColumnDisplayLabel(rowMatch.compareDoc, docType);
+                        // Filter aktif: sel lain di baris yang sama tetap tampil (redup) supaya baris tetap bisa dibaca.
+                        const dim = onlyMismatch && st !== 'mismatch' && !acc;
+                        return (
+                          <td key={doc} className={`p-3 border-r border-slate-300 last:border-r-0 align-middle min-w-[150px] ${st === 'mismatch' ? 'bg-[#FFF8F7]' : ''} ${dim ? 'opacity-50' : ''}`} data-matrix-cell={rowMatch.id}>
+                            <div className="flex flex-col gap-1.5 items-center w-full text-center">
+                              {canEdit && editAll ? (
+                                <>
+                                  {section.id !== 's_pib' && (
+                                    <input aria-label="Correct source value" className={CELL_INPUT} value={v.src || ""} placeholder={rowMatch.isFormat ? "Format..." : ""}
+                                      title={`Value from ${getSrcTooltipLabel(rowMatch, section)}`} onChange={e => setObj(rowMatch.id, 'src', e.target.value)} />
+                                  )}
+                                  {!rowMatch.isFormat && (
+                                    <input aria-label="Correct compared value" className={`${CELL_INPUT} ${(errNpwp || v.npwp_status === 'not_found') ? '!border-[#E0A526] !bg-[#FFF8EB]' : ''}`} value={v.cmp || ""}
+                                      title={`Value from ${docLabel}`}
+                                      onChange={e => {
+                                        setObj(rowMatch.id, 'cmp', e.target.value);
+                                        setValues((prev: any) => ({ ...prev, [rowMatch.id]: { ...prev[rowMatch.id], npwp_status: null } }));
+                                      }} />
+                                  )}
+                                  {hasOtherCost && <input aria-label="Other cost" className={`${CELL_INPUT} italic`} value={otherCostVal} placeholder="Other cost" onChange={e => setObj(rowMatch.id, 'otherCost', e.target.value)} />}
+                                </>
+                              ) : section.id === 's_pib' ? (
+                                <span className={`text-xs break-words px-1 ${v.cmp_edited ? 'text-blue-700 font-bold' : 'text-[#5A305A] font-medium'}`}>{formatViewValue(v.cmp, field)}{v.cmp_edited ? ' ✎' : ''}</span>
+                              ) : (
+                                <>
+                                  <span className={`text-xs break-words px-1 ${v.src_edited ? 'text-blue-700 font-bold' : 'text-[#5A305A] font-medium'}`}>
+                                    {srcText(v, field)}{v.src_edited ? ' ✎' : ''}
+                                    {v.srcNote && <div className="text-[10px] font-normal text-[#8A7A8B] mt-0.5">{v.srcNote}</div>}
+                                  </span>
+                                  {!rowMatch.isFormat && (
+                                    <span className={`text-[10px] break-words px-1 ${v.cmp_edited ? 'text-blue-700 font-bold' : 'text-[#5A305A]/70'}`}>({formatViewValue(v.cmp, field)}){v.cmp_edited ? ' ✎' : ''}</span>
+                                  )}
+                                </>
+                              )}
+                              {!(canEdit && editAll) && hasOtherCost && Number(otherCostVal) !== 0 && (
+                                <span className="text-[10px] italic text-[#6E5E70]">Other cost: {fmtNumID(Number(otherCostVal))}{v.otherCost_edited ? ' ✎' : ''}</span>
+                              )}
+                              {statusChip(rowMatch.id, v, st)}
+                              {acc && <span className="text-[10px] font-semibold text-[#17663D] [overflow-wrap:anywhere]" title={acceptTitle(v)}>✓ Valid</span>}
+                              {(errNpwp || v.npwp_status === 'not_found') && <span className="text-[9.5px] text-[#7A4F00] bg-[#FFF1D6] px-2 py-0.5 rounded-md font-bold uppercase">NPWP tidak terdaftar</span>}
+                              {actionBtns({ id: rowMatch.id, field, docLabel, valueText: valueTextOf(rowMatch, v, field) }, st, acc)}
+                              {canEdit && editAll && isCellChanged(rowMatch.id) && (
+                                <button type="button" className="text-[10.5px] font-semibold text-[#6E5E70] hover:underline inline-flex items-center gap-0.5 print:hidden" onClick={() => undoCell(rowMatch.id)}><RotateCcw size={10} />Undo change</button>
+                              )}
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </DualScrollTable>
+        </div>
+      );
+    });
+
+    // Tabel kalkulasi lengkap tampil di Columns & selama Edit; di List (bukan Edit) diganti grup List di atas tapi TETAP dipasang
+    // (tersembunyi) -- satu instans, sumber pibStats/calcRows & akurasi.
+    const showCalcTable = !financeView && (viewMode === 'columns' || editAll);
+    const dlg = acceptDlg;
+
+    return (
+      <div className="flex flex-col gap-3 min-w-0" data-doc-unified data-doc-view={viewMode}>
+        {docToast && <div className={`px-3 py-2 rounded-xl border text-[12.5px] font-semibold ${docToast.type === 'success' ? 'bg-[#EAF6EF] border-[#BFE3CD] text-[#17663D]' : 'bg-[#FDE7E4] border-[#F4C3BC] text-[#A8231A]'}`}>{docToast.msg}</div>}
+
+        {/* Ringkasan + meta */}
+        <div className={`${VW_CARD} px-4 py-3`}>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="mr-auto min-w-0">
+              <div className="text-[14px] font-bold text-[#3B1B3D]">Document validation</div>
+              <div className="text-[11.5px] text-[#6E5E70]">The same field compared across the documents · {financeView ? 'Finance view: invoice freight & duty and NPWP tables' : 'one shared record for Audit, Invoice Recap & Finance Handover'}</div>
+            </div>
+            {([
+              ['Match', stats.match - stats.accepted, VW_TILE_TONE.green],
+              ['Accepted', stats.accepted, 'bg-[#17663D] text-white'],
+              ['Mismatch', stats.mismatch, VW_TILE_TONE.red],
+              ['Not filled', stats.empty + stats.partial, VW_TILE_TONE.grey],
+            ] as const).map(([label, value, cls]) => (
+              <div key={label} className={`${VW_TILE} ${cls}`} data-doc-tile={label}>
+                <div className="text-[17px] font-bold leading-tight tabular-nums">{value}</div>
+                <div className="text-[10px] font-semibold">{label}</div>
+              </div>
+            ))}
+            <div className="w-40">
+              <div className="flex justify-between items-baseline mb-1 text-[11px] text-[#6E5E70]"><span>Accuracy</span><b className={vwPctText(stats.pct)} data-doc-accuracy>{stats.match}/{stats.checked} · {stats.pct}%</b></div>
+              <div className="h-2 rounded-full bg-[#F3EEEA] overflow-hidden"><div className={`h-full transition-all duration-500 ${vwPctBar(stats.pct)}`} style={{ width: `${stats.pct}%` }} /></div>
+            </div>
+          </div>
+          {!financeView && <div className="mt-3 pt-3 border-t border-[#F1E8E1] flex flex-wrap items-end gap-x-4 gap-y-2">
+            <div className="min-w-0">
+              <div className={VW_LABEL}>Check date</div>
+              {canEdit && editAll ? <input type="date" aria-label="Check date" className={`${VW_INPUT} mt-1 w-40`} value={tanggal || ""} onChange={e => { userActionRef.current = true; setTanggal(e.target.value); }} />
+                : <div className="text-[12.5px] font-semibold text-[#3B1B3D] mt-1">{fmtDateEN(tanggal)}</div>}
+            </div>
+            <div className="min-w-0">
+              <div className={VW_LABEL}>Checked by</div>
+              {canEdit && editAll ? <input aria-label="Checked by" className={`${VW_INPUT} mt-1 w-44`} value={namaChecker || ""} onChange={e => { userActionRef.current = true; setNamaChecker(e.target.value); }} placeholder="Checker's name" />
+                : <div className="text-[12.5px] font-semibold text-[#3B1B3D] mt-1">{namaChecker || "—"}</div>}
+            </div>
+            <div className="min-w-0">
+              <div className={VW_LABEL}>No. AWB (checker)</div>
+              {canEdit && editAll ? <input aria-label="No. AWB (checker)" className={`${VW_INPUT} mt-1 w-44`} value={awbNo || ""} onChange={e => { userActionRef.current = true; setAwbNo(e.target.value); }} placeholder="e.g. 1234567890" />
+                : <div className="text-[12.5px] font-semibold text-[#3B1B3D] mt-1">{awbNo || "—"}</div>}
+            </div>
+            <div className="flex-1 min-w-[220px]">
+              <div className={VW_LABEL}>Manual change notes</div>
+              {canEdit && editAll ? (
+                <textarea aria-label="Manual change notes" value={catatanManual} rows={2}
+                  onChange={e => { userActionRef.current = true; setCatatanManual(e.target.value); }}
+                  placeholder="Reason or notes for any value changed manually…"
+                  className={`${VW_INPUT} mt-1 block w-full py-1.5 min-h-8 leading-[1.35] resize-y`} />
+              ) : (
+                <div className="mt-1 rounded-lg border border-[#F1E8E1] bg-[#FBF7F4] px-2.5 py-1.5 text-[12px] text-[#3B1B3D] whitespace-pre-wrap [overflow-wrap:anywhere]" data-doc-notes>{catatanManual || <span className="italic text-[#8A7A8B]">No notes yet.</span>}</div>
+              )}
+            </div>
+          </div>}
+        </div>
+
+        {/* Toolbar: List | Columns · Show only mismatches · aksi */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[#EADFD6] pb-2.5 print:hidden">
+          <div className="inline-flex gap-0.5 rounded-lg bg-[#F3EEEA] p-[3px]" role="group" aria-label="Doc validation view">
+            {([['list', 'List', ListIcon], ['columns', 'Columns', Columns3]] as const).map(([m, label, Icon]) => (
+              <button key={m} type="button" aria-pressed={viewMode === m} data-doc-view-btn={m} onClick={() => setView(m)}
+                className={`inline-flex items-center gap-1.5 h-7 px-3.5 rounded-md text-[12px] font-semibold transition-colors ${viewMode === m ? 'bg-[#6B3470] text-white shadow-sm' : 'text-[#6E5E70] hover:text-[#3B1B3D]'}`}>
+                <Icon size={13} />{label}
+              </button>
+            ))}
+          </div>
+          <button type="button" role="switch" aria-checked={onlyMismatch} data-only-mismatch onClick={() => setOnlyMismatch(v => !v)}
+            className="inline-flex items-center gap-2 text-[12px] font-semibold text-[#6E5E70] hover:text-[#3B1B3D]">
+            Show only mismatches
+            <span className={`px-1.5 py-[1px] rounded-full text-[10.5px] font-bold ${flaggedCount > 0 ? 'bg-[#FDE7E4] text-[#A8231A]' : 'bg-[#F3EEEA] text-[#8A7A8B]'}`} data-only-mismatch-count>{flaggedCount}</span>
+            <span className={`relative inline-block w-9 h-5 rounded-full transition-colors ${onlyMismatch ? 'bg-[#6B3470]' : 'bg-[#D9CCD3]'}`}>
+              <span className={`absolute top-[3px] w-[14px] h-[14px] rounded-full bg-white shadow transition-all ${onlyMismatch ? 'left-[19px]' : 'left-[3px]'}`} />
+            </span>
+          </button>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            {viewMode === 'list' && !onlyMismatch && (
+              <button type="button" className={VW_BTN_SECONDARY} onClick={() => {
+                const next: Record<string, boolean> = {};
+                if (!allOpen) shownSections.forEach(s => { next[s.id] = true; });
+                setOpenSections(next);
+              }}>
+                {allOpen ? <><ChevronUp size={13} /> Collapse all</> : <><ChevronDown size={13} /> Expand all</>}
+              </button>
+            )}
+            {canEdit && !editAll && hasSourceData && (
+              <button type="button" className={VW_BTN_SECONDARY} disabled={acceptSaving} onClick={recomputeAndSave}
+                title="Fill and update fields from the latest document data (e.g. an additional document) — manually edited fields are never overwritten">
+                <RefreshCw size={13} /> Recompute
+              </button>
+            )}
+            {canEdit && (editAll ? (
+              <>
+                <button type="button" className={VW_BTN_SECONDARY} disabled={docSaving} onClick={() => {
+                  if (docDirty && !window.confirm('Discard the unsaved changes?')) return;
+                  discardDoc(); setEditAll(false);
+                }}>Cancel</button>
+                <button type="button" className={VW_BTN_PRIMARY} disabled={docSaving} data-edit-all onClick={async () => {
+                  if (docDirty && !(await saveDoc())) return;
+                  setEditAll(false);
+                }}><CheckCircle2 size={13} /> {docSaving ? 'Saving…' : 'Save changes'}</button>
+              </>
+            ) : (
+              <button type="button" className={VW_BTN_SECONDARY} data-edit-all onClick={() => setEditAll(true)}><Edit3 size={13} /> Edit</button>
+            ))}
+          </div>
+          {editAll && <div className="basis-full text-[11px] font-semibold text-[#7A4F00]">Edit mode: every value can be corrected (also Incomplete rows); click a Match / Mismatch status to change it manually. Accept &amp; Undo are available after saving.</div>}
+        </div>
+
+        {!hasSourceData && <div className={`${VW_CARD} px-4 py-4 text-[12.5px] text-[#6E5E70]`}>No AI document reading for this shipment yet{canEdit ? ' — values can still be filled in manually (Edit).' : '.'}</div>}
+        {recomputeMsg && <div className="rounded-lg bg-[#EEF1FA] text-[#2F4FA8] text-[12px] font-semibold px-3 py-1.5">{recomputeMsg}</div>}
+        {!financeView && !recomputeMsg && recomputePending > 0 && <div data-recompute-pending className="rounded-lg bg-[#FFF8EA] border border-[#F3D9A4] text-[#7A4F00] text-[12px] font-semibold px-3 py-1.5">{docRecomputePendingText(recomputePending, canEdit)}</div>}
+        {onlyMismatch && flaggedCount === 0 && (
+          <div className="rounded-[14px] border border-dashed border-[#D9CCD3] bg-white px-4 py-6 text-center text-[12.5px] text-[#6E5E70]" data-doc-empty>No mismatches for this AWB.</div>
+        )}
+
+        {viewMode === 'list' ? renderList() : renderColumns()}
+
+        <div className={showCalcTable ? 'min-w-0' : 'hidden'}>
+          <ValidasiPerhitunganPIB
+            dataValidasiRaw={debugData?.raw}
+            jenisDokumen={record?.jenis_dokumen || (mainTab === 'audit' && subTab === 'pib' ? 'PIB' : (mainTab === 'audit' && subTab === 'cn' ? 'CN' : ''))}
+            onStatsChange={setPibStats}
+            isEditMode={canEdit && editAll}
+            statusOverrides={calcOverrides}
+            onRowsChange={onCalcRows}
+            onlyMismatch={onlyMismatch && !editAll}
+            renderStatusExtra={calcExtra}
+          />
+        </div>
+
+        <div className="text-[11px] text-[#8A7A8B] px-1">Value in brackets = the compared document · ✎ = changed manually · Accepted = mismatch accepted with a note (counted as a match) · Format pass = vessel no. must contain " - " (dash).</div>
+
+        {docDirty && canEdit && (
+          <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 px-4 py-3 rounded-[14px] bg-white border border-[#E0A526] shadow-lg print:hidden">
+            <span className="text-[12.5px] font-bold text-[#7A4F00] mr-auto">Unsaved changes in document validation</span>
+            <button type="button" className={VW_BTN_SECONDARY} disabled={docSaving} onClick={() => { if (window.confirm('Discard the unsaved changes?')) { discardDoc(); setEditAll(false); } }}>Discard</button>
+            <button type="button" className={VW_BTN_PRIMARY} disabled={docSaving} onClick={async () => { if (await saveDoc()) setEditAll(false); }}>{docSaving ? 'Saving…' : 'Save changes'}</button>
+          </div>
+        )}
+
+        {dlg && createPortal(
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[90] flex items-center justify-center p-4 print:hidden" role="dialog" aria-modal="true" aria-label="Accept mismatch"
+            onMouseDown={e => { if (e.target === e.currentTarget && !acceptSaving) setAcceptDlg(null); }}
+            onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); if (!acceptSaving) setAcceptDlg(null); } }}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[480px] flex flex-col gap-3 p-5" data-accept-dialog>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className="text-[15px] font-bold text-[#3B1B3D]">Accept mismatch</h3>
+                  <div className="text-[12px] text-[#6E5E70] mt-0.5 [overflow-wrap:anywhere]">{dlg.field} · {dlg.docLabel}</div>
+                </div>
+                <button type="button" aria-label="Close" disabled={acceptSaving} onClick={() => setAcceptDlg(null)} className="w-8 h-8 shrink-0 inline-flex items-center justify-center rounded-lg hover:bg-[#F6EFEA] text-[#6E5E70]"><X size={16} /></button>
+              </div>
+              <div className="rounded-lg border border-[#F4C3BC] bg-[#FFF8F7] px-3 py-2 text-[12px] font-semibold text-[#3B1B3D] [overflow-wrap:anywhere]">{dlg.valueText}</div>
+              <label className="flex flex-col gap-1">
+                <span className={VW_LABEL}>Manual change note (required)</span>
+                <textarea autoFocus aria-label="Manual change note" rows={3} value={acceptNote} onChange={e => setAcceptNote(e.target.value)}
+                  placeholder="Reason for accepting this difference"
+                  className={`${VW_INPUT} w-full py-1.5 min-h-[76px] leading-[1.35] resize-y`} />
+              </label>
+              <div className="text-[11px] text-[#8A7A8B]">The note is added to Manual change notes and the field is counted as a match in Accuracy. Undo restores the previous status and removes the note.</div>
+              <div className="flex justify-end gap-2">
+                <button type="button" className={VW_BTN_SECONDARY} disabled={acceptSaving} onClick={() => setAcceptDlg(null)}>Cancel</button>
+                <button type="button" className={VW_BTN_PRIMARY} disabled={acceptSaving || !acceptNote.trim()} data-accept-save
+                  onClick={() => acceptField({ id: dlg.id, label: `${dlg.field} · ${dlg.docLabel}`, calc: dlg.calc }, acceptNote)}>
+                  {acceptSaving ? 'Saving…' : 'Accept'}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+      </div>
+    );
+  };
+
+  if (variant === 'unified') return renderUnified();
+
   if (variant === 'summary') {
     type SumItem = { id: string; sectionTitle: string; field: string; hint?: string; docLabel: string; v: any; st: string; isFormat?: boolean; calc?: CalcRowInfo };
     const unmatched: SumItem[] = [];
@@ -1741,92 +2453,13 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
       if (r.status === 'mismatch') unmatched.push(item);
       else if (v.manual_status === 'match' && v.accept_note) accepted.push(item);
     });
+    // Accept / Undo / Recompute = fungsi bersama (acceptField / undoAccept / recomputeAndSave) -- SAMA dgn mode unified.
     const doAccept = async (id: string) => {
-      const note = acceptNote.trim();
-      if (!note) return;
       const it = unmatched.find(x => x.id === id);
-      const prevValues = values;
-      const prevNotes = catatanManual;
-      const cur = values[id] || { src: '', cmp: '' };
-      // accept_prev_status = status manual sebelum Accept (dipulihkan saat Undo).
-      const nextValues = { ...values, [id]: { ...cur, manual_status: 'match', accept_prev_status: cur.manual_status ?? null, accept_note: note, accept_by: profile?.nama || user?.email || null, accept_at: new Date().toISOString() } };
-      // 2026-10-05 (keputusan user): catatan Accept juga ditambahkan ke "Manual Change Notes" (1 baris per catatan).
-      // Format (revisi 2026-10-05): "<Nama field> · <Sumber> ✓ <catatan>"; catatan lama utk field yg sama diganti.
-      const label = it ? `${it.field} · ${it.docLabel}` : id;
-      const nextNotes = appendNoteLine(removeNoteLinesWhere(catatanManual, isDocNoteOf(label)), `${label} ✓ ${note.replace(/\s*\n\s*/g, ' ')}`);
-      userActionRef.current = true;
-      setValues(nextValues);
-      setCatatanManual(nextNotes);
-      setAcceptSaving(true);
-      try {
-        // Baris kalkulasi yg di-Accept: mismatch -> match di hitungan tersimpan (state pibStats baru ikut setelah render).
-        const adj = it?.calc ? { match: pibStats.match + 1, mismatch: Math.max(0, pibStats.mismatch - 1), empty: pibStats.empty } : undefined;
-        const err = await persistChecklist(nextValues, nextNotes, adj);
-        if (err) { setValues(prevValues); setCatatanManual(prevNotes); showDocToast('Failed to save: ' + err, 'error'); return; }
-        setDocSnap(JSON.parse(JSON.stringify({ values: nextValues, awbNo, tanggal, namaChecker, catatanManual: nextNotes })));
-        setAcceptingId(null); setAcceptNote('');
-        showDocToast('Accepted — the field is counted as a match.', 'success');
-        onChanged?.();
-      } catch (e: any) {
-        setValues(prevValues);
-        setCatatanManual(prevNotes);
-        showDocToast('Failed to save: ' + (e?.message || ''), 'error');
-      } finally {
-        setAcceptSaving(false);
-      }
+      await acceptField({ id, label: it ? `${it.field} · ${it.docLabel}` : id, calc: it?.calc }, acceptNote);
     };
-    // Undo Accept (revisi 2026-10-05): status kembali seperti sebelum Accept, catatannya dihapus dari Manual Change Notes.
-    const doUndo = async (it: SumItem) => {
-      const cur = values[it.id] || { src: '', cmp: '' };
-      const { accept_note, accept_by, accept_at, accept_prev_status, ...rest } = cur;
-      void accept_note; void accept_by; void accept_at;
-      const nextValues = { ...values, [it.id]: { ...rest, manual_status: accept_prev_status ?? null } };
-      const nextNotes = removeNoteLinesWhere(catatanManual, isDocNoteOf(`${it.field} · ${it.docLabel}`));
-      const prevValues = values;
-      const prevNotes = catatanManual;
-      userActionRef.current = true;
-      setValues(nextValues);
-      setCatatanManual(nextNotes);
-      setAcceptSaving(true);
-      try {
-        const adj = it.calc && it.calc.computed === 'mismatch' ? { match: Math.max(0, pibStats.match - 1), mismatch: pibStats.mismatch + 1, empty: pibStats.empty } : undefined;
-        const err = await persistChecklist(nextValues, nextNotes, adj);
-        if (err) { setValues(prevValues); setCatatanManual(prevNotes); showDocToast('Failed to undo: ' + err, 'error'); return; }
-        setDocSnap(JSON.parse(JSON.stringify({ values: nextValues, awbNo, tanggal, namaChecker, catatanManual: nextNotes })));
-        showDocToast('Accept undone.', 'success');
-        onChanged?.();
-      } catch (e: any) {
-        setValues(prevValues);
-        setCatatanManual(prevNotes);
-        showDocToast('Failed to undo: ' + (e?.message || ''), 'error');
-      } finally {
-        setAcceptSaving(false);
-      }
-    };
-    // Recompute (2026-10-05, keputusan user: pindah dari Details ke ringkasan, sejajar Details) -- logika SAMA
-    // handleRecomputeMissing (planCourierDocRecompute), hasilnya langsung disimpan.
-    const doRecompute = async () => {
-      const computed = computedValuesRef.current;
-      if (!computed) return;
-      const plan = planCourierDocRecompute(values, computed);
-      if (plan.total === 0) { showDocToast(docRecomputeMessage(plan), 'success'); return; }
-      const prevValues = values;
-      userActionRef.current = true;
-      setValues(plan.next);
-      setAcceptSaving(true);
-      try {
-        const err = await persistChecklist(plan.next);
-        if (err) { setValues(prevValues); showDocToast('Failed to save: ' + err, 'error'); return; }
-        setDocSnap(JSON.parse(JSON.stringify({ values: plan.next, awbNo, tanggal, namaChecker, catatanManual })));
-        showDocToast(docRecomputeMessage(plan), 'success');
-        onChanged?.();
-      } catch (e: any) {
-        setValues(prevValues);
-        showDocToast('Failed to save: ' + (e?.message || ''), 'error');
-      } finally {
-        setAcceptSaving(false);
-      }
-    };
+    const doUndo = (it: SumItem) => undoAccept({ id: it.id, label: `${it.field} · ${it.docLabel}`, calc: it.calc });
+    const doRecompute = recomputeAndSave;
     const valueText = (it: SumItem) => {
       if (it.calc) return `${it.calc.actual} (${it.calc.expected})`;
       const src = it.v.srcDisplay ? it.v.srcDisplay : formatViewValue(it.v.src, it.field);

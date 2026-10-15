@@ -9,7 +9,7 @@
 //   (riwayat centang dokumen, tabel courier_checklist_doc_log sql/041).
 // - Doc Validation = ValidasiModal variant summary (Mismatch + Accept bercatatan); Cost Validation =
 //   CourierCostSummary (Over/Undercharge + Accept per baris). Tombol Details = jendela penuh tabel lama
-//   (ValidasiModalLegacy: Edit -- Recompute pindah ke ringkasan 2026-10-05 / CostValidationModalLegacy: Edit) -- logika simpan SAMA mode List.
+//   (Doc = ValidasiModal variant unified sejak 2026-10-15 -- List/Columns, SAMA popup Audit & Finance / CostValidationModalLegacy: Edit) -- logika simpan SAMA mode List.
 // - Validasi bisa diubah hanya selama PIB/CN Draft (aturan SAMA Audit Courier).
 // - Tab "Audit trail" (2026-10-06, permintaan user): riwayat INVOICE AWB ini (v_audit_trail rekapan_courier, loader
 //   `fetchRecapCourierLog` -- dulu bagian lipat di bawah tab Invoices). Riwayat centang dokumen tetap di tab Checklist
@@ -31,7 +31,6 @@ import { recapGroupStatus, fetchRecapCourierLog, type RecapGroup, type RecapAudi
 import CourierAuditTrail from './CourierAuditTrail'
 import { courierShipmentInfo, fmtCourierDate, validationDotClass, validationDotLabel, rowValidationPct, type ValidationTabKey } from './CourierValidationWindow'
 import ValidasiModal from './ValidasiModal'
-import ValidasiModalLegacy from './ValidasiModalLegacy'
 import CostValidationModalLegacy from './CostValidationModalLegacy'
 import CourierCostSummary from './CourierCostSummary'
 import CourierRecapInvoicesTab from './CourierRecapInvoicesTab'
@@ -292,7 +291,12 @@ export default function CourierRecapValidationPanel({
   const detailsMutatedRef = useRef(false)
   const markDetailsMutated = useCallback(() => { detailsMutatedRef.current = true }, [])
   const openDetails = (k: 'doc' | 'cost') => { detailsMutatedRef.current = false; setDetails(k) }
+  // Perubahan Doc Validation di Details belum disimpan -> konfirmasi saat ditutup.
+  const docDetailsDirtyRef = useRef(false)
+  const setDocDetailsDirty = useCallback((d: boolean) => { docDetailsDirtyRef.current = d }, [])
   const closeDetails = () => {
+    if (details === 'doc' && docDetailsDirtyRef.current && !window.confirm('Discard the unsaved changes in Doc Validation?')) return
+    docDetailsDirtyRef.current = false
     setDetails(null)
     if (detailsMutatedRef.current) { detailsMutatedRef.current = false; bump() }
   }
@@ -487,7 +491,11 @@ export default function CourierRecapValidationPanel({
 
       {rec && details === 'doc' && (
         <DetailsWindow title={`Doc Validation · ${docType} ${courierDocNo(rec, docType) || ''} · ${rec.awb || ''}`} onClose={closeDetails}>
-          <ValidasiModalLegacy record={rec} mainTab="courier" subTab="courier_audit" onClose={closeDetails} canEdit={editOf('doc')} embedded hideRecompute onMutated={markDetailsMutated} />
+          {/* Doc Validation TERPADU (2026-10-15): komponen & data SAMA popup Audit Courier & Finance Handover (dulu ValidasiModalLegacy). */}
+          <div className="flex-1 min-h-0 overflow-y-auto bg-[#FBF7F4] p-4">
+            <ValidasiModal record={rec} mainTab="courier" subTab="courier_audit" onClose={closeDetails} canEdit={editOf('doc')} embedded variant="unified"
+              onChanged={markDetailsMutated} onDirtyChange={setDocDetailsDirty} />
+          </div>
         </DetailsWindow>
       )}
       {rec && details === 'cost' && (

@@ -166,7 +166,10 @@ export type CalcRowInfo = {
 // (2026-10-14) nilai 'accepted' = di-Accept DENGAN catatan: badge "Accepted · Valid", dihitung SAMA 'match' (stats/onRowsChange/header);
 // Actual/Expected/Difference tidak berubah (warna selisih tetap dari status hitungan).
 // status manual/hasil hitung; ikut hitungan onStatsChange. `onRowsChange` memancarkan SEMUA baris tabel aktif.
-export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, onStatsChange, isEditMode, statusOverrides: rawOverrides, onRowsChange }: { dataValidasiRaw?: any, jenisDokumen?: string, onStatsChange?: (stats: any) => void, isEditMode?: boolean, statusOverrides?: Record<string, string>, onRowsChange?: (rows: CalcRowInfo[]) => void }) {
+// (2026-10-15, Doc Validation terpadu) `onlyMismatch` = hanya baris ber-status Mismatch / Accepted yang tampil (rincian item &
+// tabel tanpa baris tsb disembunyikan; hitungan TIDAK berubah). `renderStatusExtra(id, status)` = aksi tambahan di sel Status
+// (tombol Accept / Undo milik ValidasiModal) -- hanya baris yang punya status (bukan BM/PPN/PPH/Freight).
+export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, onStatsChange, isEditMode, statusOverrides: rawOverrides, onRowsChange, onlyMismatch = false, renderStatusExtra }: { dataValidasiRaw?: any, jenisDokumen?: string, onStatsChange?: (stats: any) => void, isEditMode?: boolean, statusOverrides?: Record<string, string>, onRowsChange?: (rows: CalcRowInfo[]) => void, onlyMismatch?: boolean, renderStatusExtra?: (rowId: string, status: string) => React.ReactNode }) {
   // Override utk HITUNGAN: 'accepted' diperlakukan 'match'. Badge memakai `rawOverrides` (lihat tabel).
   const statusOverrides = useMemo<Record<string, string> | undefined>(() => (rawOverrides
     ? Object.fromEntries(Object.entries(rawOverrides).map(([k, v]) => [k, v === 'accepted' ? 'match' : v]))
@@ -507,8 +510,17 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
     'Validasi PIB': { title: 'PIB calculation check', sub: 'Values on the PIB vs. the recalculation from the customs items' },
     'Validasi SPPBMCP': { title: 'SPPBMCP calculation check', sub: 'Values on the SPPBMCP vs. the recalculation' },
   };
-  function ValidationTable({ title, rows }: { title: string, rows: any[] }) {
+  function ValidationTable({ title, rows: allRows }: { title: string, rows: any[] }) {
     const disp = VALIDATION_TITLE[title] || { title, sub: '' };
+    const noStatus = (row: any) => ['bm', 'ppn', 'pph', 'freight'].includes(row.id) || (title === "Validasi SPPBMCP" && row.id === 'ndpbmXnilai');
+    // Filter "Show only mismatches": baris Mismatch + baris yang di-Accept (supaya Undo tetap terjangkau).
+    const rows = onlyMismatch ? allRows.filter((row: any) => {
+      if (row.ignoreForStats || noStatus(row)) return false;
+      const stc = row.customStatus ? row.customStatus(row.ak, row.expected) : statusOf(row.ak, row.expected);
+      const s2 = statusOverrides?.[row.id] || manualStatus[row.id] || stc;
+      return s2 === 'mismatch' || rawOverrides?.[row.id] === 'accepted';
+    }) : allRows;
+    if (onlyMismatch && rows.length === 0) return null;
     // Ringkasan header kartu -- hitungan SAMA dgn onStatsChange (ignoreForStats dilewati).
     let m = 0, mm = 0;
     rows.forEach((r: any) => {
@@ -593,7 +605,10 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
                     {['bm', 'ppn', 'pph', 'freight'].includes(row.id) || (isSPPBMCP && row.id === 'ndpbmXnilai') ? (
                       <span className="text-[#B7A9B8]">—</span>
                     ) : (
-                      <StatusBadge st={accepted ? 'accepted' : st} isEditMode={isEditMode} onClick={() => toggleManualStatus(row.id, st)} />
+                      <span className="inline-flex flex-wrap items-center justify-end gap-1.5">
+                        <StatusBadge st={accepted ? 'accepted' : st} isEditMode={isEditMode} onClick={() => toggleManualStatus(row.id, st)} />
+                        {renderStatusExtra?.(row.id, accepted ? 'accepted' : st)}
+                      </span>
                     )}
                   </td>
                 </tr>
@@ -609,7 +624,7 @@ export default function ValidasiPerhitunganPIB({ dataValidasiRaw, jenisDokumen, 
   return (
     <div className="w-full">
       {/* Tabel Rincian Item Pabean (Halaman Lanjutan) — berlaku untuk jalur PIB maupun CN (SPPBMCP) */}
-      {(jnsUpper === 'PIB' || jnsUpper === 'CN' || jnsUpper === '') && items.length > 0 && (
+      {!onlyMismatch && (jnsUpper === 'PIB' || jnsUpper === 'CN' || jnsUpper === '') && items.length > 0 && (
         <div className="bg-white rounded-[14px] border border-[#EADFD6] shadow-[0_1px_2px_rgba(59,27,61,0.04)] overflow-hidden mb-3">
           <div className="px-4 py-2.5 hover:bg-[#FBF7F4]">
             <button

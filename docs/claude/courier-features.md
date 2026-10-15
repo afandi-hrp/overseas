@@ -1,5 +1,39 @@
 <!-- Dipindah dari CLAUDE.md 2026-10-06 (CLAUDE.md diringkas; file ini dibaca saat modulnya dikerjakan). -->
 
+## Doc Validation TERPADU — List | Columns, satu komponen & satu data (2026-10-15, permintaan user; acuan `doc_validation_clickable.html`)
+
+- **Satu komponen**: `ValidasiModal` `embedded variant="unified"` dipakai di: (1) Audit Courier mode Card › Open › Section 4 ›
+  popup Doc Validation (`CourierAuditPreview`, dulu `reviewUi`); (2) Audit Courier mode List › Validation › tab Doc Validation
+  (`CourierValidationWindowLegacy`, dulu `ValidasiModalLegacy`); (3) Invoice Recap (Card) › Validation › tab Doc Validation ›
+  **Details** (`CourierRecapValidationPanel` DetailsWindow, dulu `ValidasiModalLegacy`; tutup dgn perubahan belum disimpan =
+  konfirmasi); (4) Finance Handover Courier › Open › tombol pop-up Doc Validation (canEdit=false, finance-handover.md).
+  Ringkasan tab Doc Validation Invoice Recap (`variant="summary"`) TETAP, Accept/Undo/Recompute-nya kini fungsi bersama
+  (`acceptField`/`undoAccept`/`recomputeAndSave`). `ValidasiModalLegacy` tidak dipakai pemanggil mana pun lagi (file dibiarkan);
+  prop `reviewUi`/`financeView` juga tidak dipakai lagi (kode dibiarkan).
+- **Satu sumber data**: tetap `tabel_checklist_validasi` (payload `persistChecklist` SAMA, TANPA SQL baru). **Sinkron langsung**:
+  tiap simpan berhasil diumumkan (`announceDocSaved`, kunci `PIB:<id>`/`CN:<id>`) lewat event window (tab yang sama) +
+  `BroadcastChannel('beehive-courier-doc-validation')` (tab browser lain) -> instans lain utk shipment yang sama baca ulang senyap
+  (`syncTick`), KECUALI instans itu punya perubahan belum disimpan. Berlaku utk semua instans `embedded` (summary juga).
+- **Tampilan**: ringkasan Match/Accepted/Mismatch/Not filled + Accuracy (rumus `stats` SAMA) + meta Check date/Checked by/No. AWB/
+  Manual change notes (bisa diubah hanya saat Edit). Toolbar: toggle **List | Columns** (diingat `localStorage`
+  `beehive_courier_docval_view`), switch **Show only mismatches** + badge jumlah (baris Mismatch + Accepted, termasuk baris
+  kalkulasi PIB/SPPBMCP yang ikut akurasi; berlaku di kedua tampilan; kosong -> "No mismatches for this AWB."), Expand/Collapse all
+  (List), Recompute (langsung disimpan), Edit.
+  - **List** = kartu per grup (section) -> field -> baris per dokumen (nilai (pembanding) · status · Accept/Undo) + grup
+    "PIB/SPPBMCP calculation check" versi List (dari `calcRows`; tabel lengkap tetap dipasang tersembunyi = sumber `pibStats`).
+  - **Columns** = matriks per grup (pola Details lama): baris = field, kolom = dokumen (warna header `getHeaderColor`), kolom
+    Reference utk PIB, kolom Field sticky; filter aktif = hanya field bermasalah, sel lain di baris itu redup. Tabel kalkulasi
+    lengkap (`ValidasiPerhitunganPIB`, prop BARU `onlyMismatch` + `renderStatusExtra` utk tombol Accept/Undo) tampil di bawah.
+- **Rule dipertahankan**: Accept (hanya status Mismatch) = dialog catatan WAJIB (`data-accept-dialog`) -> `manual_status 'match'` +
+  `accept_note/_by/_at/accept_prev_status`, catatan masuk Manual change notes (format "<field> · <sumber> ✓ <catatan>", kunci SAMA
+  summary) & langsung disimpan; Undo (status Accepted) -> status sebelum Accept + catatan dihapus; Accuracy ikut otomatis. Mode
+  **Edit** = semua nilai jadi kotak isian (juga Incomplete), chip Match/Mismatch bisa diganti manual, Accept/Undo disembunyikan,
+  disimpan lewat Save changes / bar Unsaved changes (tanpa autosave). Hak edit tetap per page_key lama (`courier_dokumen_validation`,
+  Audit hanya selama Draft).
+- **Diuji 2026-10-15** (jsdom, skrip scratch): unified 36 cek (List/Columns, filter, Accept wajib catatan -> DB + catatan + akurasi,
+  sinkron ke instans kedua, Undo, Edit simpan + persen), summary + sinkron 6 cek, popup Finance 14 cek. `tsc` bersih, `vite build`
+  sukses. Belum dites di browser / production (tampilan, Print, BroadcastChannel antar-tab).
+
 ## SharedDataTable — catatan kolom/filter Courier (dipindah dari CLAUDE.md "Struktur routing")
 
 **`SharedDataTable.tsx`** (`src/components/`, ~3800 baris) komponen generik besar: Courier

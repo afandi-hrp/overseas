@@ -372,6 +372,71 @@
   }
 }
 
+/* Print pop-up Cost Validation / Doc Validation Finance Handover Courier (2026-10-15) -- pop-up yang terbuka (portal ke body)
+   = area cetak; kartu AWB di belakangnya TIDAK ikut tercetak. Overlay fixed + tinggi tetap dilepas supaya isi mengalir ke
+   beberapa halaman; tabel matriks Doc Validation dipadatkan (pola #finance-courier-print-area). */
+@media print {
+  body:has(#finance-courier-popup-print-area) #finance-courier-print-area {
+    display: none !important;
+  }
+  *:has(#finance-courier-popup-print-area) {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+  }
+  #finance-courier-popup-print-area,
+  #finance-courier-popup-print-area * {
+    visibility: visible;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  #finance-courier-popup-print-area {
+    position: absolute !important;
+    inset: auto !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    display: block !important;
+    padding: 0 !important;
+    background: #fff !important;
+    backdrop-filter: none !important;
+  }
+  #finance-courier-popup-print-area > div,
+  #finance-courier-popup-print-area .cvw-fill {
+    height: auto !important;
+    max-height: none !important;
+    max-width: none !important;
+    min-height: 0 !important;
+    flex: none !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+  }
+  #finance-courier-popup-print-area .overflow-y-auto,
+  #finance-courier-popup-print-area .overflow-x-auto,
+  #finance-courier-popup-print-area .overflow-auto,
+  #finance-courier-popup-print-area .overflow-hidden {
+    overflow: visible !important;
+  }
+  #finance-courier-popup-print-area .sticky {
+    position: static !important;
+  }
+  #finance-courier-popup-print-area [data-doc-matrix] th,
+  #finance-courier-popup-print-area [data-doc-matrix] td {
+    min-width: 0 !important;
+    width: auto !important;
+    padding: 4px !important;
+  }
+  #finance-courier-popup-print-area [data-doc-matrix] .scrollbar-visible {
+    display: none !important;
+  }
+  #finance-courier-popup-print-area tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
+
 /* Print "Requisition RH" (RequisitionRhPage, 2026-10-06) -- area cetak = portal ke body
    (`hidden print:block`), pola sama #bunker-print-area: semua elemen body lain sudah
    visibility:hidden oleh aturan print di atas, area ini dipaksa absolute dari pojok kertas
