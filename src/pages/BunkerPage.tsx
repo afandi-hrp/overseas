@@ -320,14 +320,14 @@ export default function BunkerPage() {
           jadi SELALU utuh kelihatan di layar, tidak pernah "terpotong" krn discroll lewat. Pola
           ini REPLIKA `SharedDataTable.tsx`/`FarOverseasAirPage.tsx`. */}
       <div className="flex-1 h-full flex flex-col overflow-hidden min-w-0">
-        <header className="px-3 pt-1 pb-1 shrink-0">
+        <header className="px-3 pt-0 pb-1 shrink-0">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0 shadow-sm">
                 <Fuel size={20} />
               </div>
               <div>
-                <h1 className="font-bold text-[#5A305A] text-base leading-tight">Bunker</h1>
+                <h1 className="font-bold text-[#5A305A] text-base leading-none">Bunker</h1>
                 <p className="text-xs font-light text-[#5A305A] mt-0.5">Bunker document verification</p>
               </div>
             </div>
@@ -335,7 +335,7 @@ export default function BunkerPage() {
           </div>
         </header>
 
-        <main className="px-3 pt-2 pb-2 flex-1 flex flex-col overflow-hidden gap-5">
+        <main className="px-3 pt-2 pb-0 flex-1 flex flex-col overflow-hidden gap-5">
 
           {activeJobId && activeJobStatus === 'PENDING' && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-3 shrink-0">

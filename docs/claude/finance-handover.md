@@ -136,3 +136,6 @@ Spek user + referensi tampilan `finance_handover_courier.html` (root repo; HANYA
   tampil; ringkasan Match/Mismatch/Not filled & Accuracy TETAP dari seluruh pemeriksaan. Diuji jsdom popup Finance 20 cek.
 - Print: tombol di baris kartu = kartu + Invoices (`#finance-courier-print-area`); tombol Print di pop-up = isi pop-up
   (`#finance-courier-popup-print-area`, index.css; kartu disembunyikan saat cetak). FAR Overseas & Sea & Air TIDAK berubah.
+- **Susulan 2026-10-15** (Revisi Menu Courier, courier-features.md): pop-up Cost Validation `max-w-[920px]`, Doc Validation `max-w-[min(1460px,95vw)]`;
+  Cost Validation memakai kotak ringkasan baru (OK | Accepted | Difference | N/A) & status "✓ ACCEPTED" -- sama Audit & Invoice Recap.
+

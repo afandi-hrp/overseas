@@ -58,10 +58,10 @@ export default function AccountPage() {
 
   return (
     <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
-      <header className="px-3 pt-1 pb-1">
+      <header className="px-3 pt-0 pb-1">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">My Account</h1>
+            <h1 className="font-bold text-2xl text-[#5A305A] leading-none">My Account</h1>
             <p className="text-[#5A305A] font-light text-sm mt-1">Manage your profile info and login password.</p>
           </div>
           <Greeting />

@@ -256,16 +256,22 @@ export default function SeaAirRecapDetailModal({
     { key: 'trail', label: 'Audit trail' },
   ]
 
+  // Tombol header ringkas di panel; label Edit disembunyikan bila panel sempit (container < @5xl, mis. laptop 14").
+  const btnSm = isPanel ? ' !h-8 !px-2.5' : ''
+  const btnLabel = isPanel ? 'hidden @5xl:inline' : ''
+  const iconBtn = isPanel ? 'h-8 w-8' : 'h-9 w-9'
+
   const content = (
       <div className={isPanel
         ? '@container bg-white rounded-2xl shadow-sm border border-[#EADFD6] w-full flex-1 min-h-0 flex flex-col overflow-hidden'
         : '@container bg-white rounded-2xl shadow-2xl w-full max-w-[1560px] h-[94vh] max-[1600px]:max-w-none max-[1600px]:h-full flex flex-col overflow-hidden'}>
-        {/* Header */}
-        <div className="px-5 pt-4 pb-0 border-b border-[#EADFD6] shrink-0">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
+        {/* Header. Panel (2026-10-15, permintaan user: di laptop 14" tombol turun ke baris bawah & header memakan tempat): ringkas --
+            padding/judul lebih kecil, tombol h-8, label Edit jadi ikon bila panel sempit (< @5xl), judul `flex-1` supaya aksi tetap 1 baris. */}
+        <div className={`border-b border-[#EADFD6] shrink-0 ${isPanel ? 'px-4 pt-2.5 pb-0' : 'px-5 pt-4 pb-0'}`}>
+          <div className={`flex flex-wrap items-start justify-between ${isPanel ? 'gap-x-3 gap-y-1.5' : 'gap-3'}`}>
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-[18px] font-bold text-[#3B1B3D] [overflow-wrap:anywhere]">{rec.awb || '—'}</h2>
+                <h2 className={`${isPanel ? 'text-[16px]' : 'text-[18px]'} font-bold text-[#3B1B3D] [overflow-wrap:anywhere]`}>{rec.awb || '—'}</h2>
                 <Chip tone="blue">{containerLabel(rec)}</Chip>
                 {rec.a_n && <PtBadge code={rec.a_n} title={ptName} />}
                 {rec.duplicate_of && <Chip tone="red" title="Another Invoice Recap row with the same BL / AWB already exists">Possible duplicate upload</Chip>}
@@ -274,23 +280,23 @@ export default function SeaAirRecapDetailModal({
               {/* Teks origin → destination header DIHAPUS 2026-10-14 (permintaan user) -- ada di strip Shipment info. */}
               {/* Chip ATD / ATA header DIHAPUS 2026-10-14 (permintaan user) -- tanggalnya ada di strip Shipment info (ATD → ATA). */}
             </div>
-            <div className="flex items-center gap-2 flex-wrap justify-end">
-              <div className="text-right mr-2">
+            <div className={`flex items-center flex-wrap justify-end ${isPanel ? 'gap-1.5' : 'gap-2'}`}>
+              <div className={`text-right ${isPanel ? 'mr-1' : 'mr-2'}`}>
                 <div className={SA_LABEL}>Landed cost</div>
-                <div className="text-[20px] font-bold text-[#3B1B3D] tabular-nums leading-tight">{fmtRp(lc.landed)}</div>
+                <div className={`${isPanel ? 'text-[17px]' : 'text-[20px]'} font-bold text-[#3B1B3D] tabular-nums leading-tight whitespace-nowrap`}>{fmtRp(lc.landed)}</div>
               </div>
-              {canEdit && <button type="button" className={`${SA_BTN_OUTLINE} disabled:opacity-50 disabled:cursor-not-allowed`} onClick={() => onEdit(rec)} disabled={locked} title={locked ? 'Locked — submitted to Finance. Ask an Admin to unlock it first.' : undefined}><Pencil size={13} /> Edit</button>}
+              {canEdit && <button type="button" className={`${SA_BTN_OUTLINE}${btnSm} disabled:opacity-50 disabled:cursor-not-allowed`} onClick={() => onEdit(rec)} disabled={locked} aria-label="Edit" title={locked ? 'Locked — submitted to Finance. Ask an Admin to unlock it first.' : 'Edit'}><Pencil size={13} /> <span className={btnLabel}>Edit</span></button>}
               {canEdit && !submitted && (
                 <button type="button" onClick={handleSubmit} disabled={submitting || !!submitBlocker}
                   title={submitBlocker ? `${submitBlocker}${issues.length ? '\n' + issues.map(i => `• ${i.text}`).join('\n') : ''}` : undefined}
-                  className={submitBlocker ? 'inline-flex items-center gap-1.5 px-3.5 h-9 rounded-xl bg-[#B9A9BA] text-white text-xs font-semibold cursor-not-allowed' : SA_BTN_GREEN}>
+                  className={`${submitBlocker ? 'inline-flex items-center gap-1.5 px-3.5 h-9 rounded-xl bg-[#B9A9BA] text-white text-xs font-semibold cursor-not-allowed' : SA_BTN_GREEN}${btnSm}`}>
                   <Send size={13} /> {submitting ? 'Submitting…' : issues.length ? `Submit to Finance · ${issues.length} to fix` : 'Submit to Finance'}
                 </button>
               )}
               {submitted && <Pill tone="green">{status.label}</Pill>}
               {canEdit && (
                 <div className="relative">
-                  <button type="button" aria-label="More actions" onClick={() => setMenuOpen(v => !v)} className="inline-flex items-center justify-center h-9 w-9 rounded-xl border border-[#EADFD6] text-[#3B1B3D] hover:bg-[#F6EFEA]"><MoreHorizontal size={16} /></button>
+                  <button type="button" aria-label="More actions" onClick={() => setMenuOpen(v => !v)} className={`inline-flex items-center justify-center ${iconBtn} rounded-xl border border-[#EADFD6] text-[#3B1B3D] hover:bg-[#F6EFEA]`}><MoreHorizontal size={16} /></button>
                   {menuOpen && (
                     <div className="absolute right-0 mt-1 w-56 rounded-xl border border-[#EADFD6] bg-white shadow-lg z-10 py-1 text-[12.5px]">
                       {seaairId && (() => {
@@ -316,21 +322,21 @@ export default function SeaAirRecapDetailModal({
               )}
               {onToggleVariant && (
                 <button type="button" onClick={onToggleVariant} aria-label={isPanel ? 'Expand to full window' : 'Collapse to side panel'} title={isPanel ? 'Expand to full window' : 'Collapse to side panel'}
-                  className="inline-flex items-center justify-center h-9 w-9 rounded-xl text-[#6E5E70] hover:bg-[#F6EFEA]" data-variant-toggle>
+                  className={`inline-flex items-center justify-center ${iconBtn} rounded-xl text-[#6E5E70] hover:bg-[#F6EFEA]`} data-variant-toggle>
                   {isPanel ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
                 </button>
               )}
-              <button type="button" onClick={requestClose} aria-label="Close" className="inline-flex items-center justify-center h-9 w-9 rounded-xl text-[#6E5E70] hover:bg-[#F6EFEA]"><X size={18} /></button>
+              <button type="button" onClick={requestClose} aria-label="Close" className={`inline-flex items-center justify-center ${iconBtn} rounded-xl text-[#6E5E70] hover:bg-[#F6EFEA]`}><X size={18} /></button>
             </div>
           </div>
-          <div className="flex flex-wrap items-end justify-between gap-2 mt-3" data-tab-bar>
+          <div className={`flex flex-wrap items-end justify-between gap-2 ${isPanel ? 'mt-2' : 'mt-3'}`} data-tab-bar>
             <div className="flex items-end gap-1.5 overflow-x-auto" role="tablist">
               {tabs.map(t => {
                 const sc = t.scores?.[0]
                 return (
                   <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} onClick={() => goTab(t.key)} title={sc?.title}
                     data-tab-tone={!sc ? 'neutral' : !sc.has || sc.pct == null ? 'none' : sc.pct >= 100 ? 'ok' : sc.pct >= 60 ? 'warn' : 'bad'}
-                    className={`shrink-0 flex items-center gap-1.5 px-3 pt-1.5 pb-1.5 rounded-t-lg text-[12.5px] font-semibold border-b-[3px] transition-colors ${tab === t.key ? 'bg-white text-[#3B1B3D] border-[#6B3470] font-bold' : 'bg-[#F5EDF3] text-[#5A305A] border-transparent hover:bg-[#EADBE7]'}`}>
+                    className={`shrink-0 flex items-center gap-1.5 px-3 ${isPanel ? 'pt-1 pb-1' : 'pt-1.5 pb-1.5'} rounded-t-lg text-[12.5px] font-semibold border-b-[3px] transition-colors ${tab === t.key ? 'bg-white text-[#3B1B3D] border-[#6B3470] font-bold' : 'bg-[#F5EDF3] text-[#5A305A] border-transparent hover:bg-[#EADBE7]'}`}>
                     {sc && <span className={`w-2 h-2 rounded-full shrink-0 ${tabDotClass(sc.pct, sc.has)}`} />}
                     {t.label}{sc ? ` ${sc.has && sc.pct != null ? `${sc.pct}%` : '—'}` : ''}
                     {t.badge ? <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[#E0A526] text-white text-[10px] font-bold flex items-center justify-center">{t.badge}</span> : null}

@@ -1,5 +1,31 @@
 <!-- Dipindah dari CLAUDE.md 2026-10-06 (CLAUDE.md diringkas; file ini dibaca saat modulnya dikerjakan). -->
 
+## Revisi Menu Courier -- Audit & Invoice Recap (2026-10-15, permintaan user; mockup `Courier Audit Revisi.html`, TANPA SQL)
+
+- **A. Cost Validation = SATU komponen** `CostValidationModalLegacy` (layout Invoice Recap: tabel Invoice Freight / Invoice Duty Validation,
+  Catatan Perubahan Manual, Edit Cost Validasi) di popup Audit Card (`CourierAuditPreview`, dulu `CostValidationModal` baru), jendela List
+  Audit, Details Invoice Recap & popup Finance. Header embedded = kotak ringkasan versi Audit: "Cost validation · X of Y invoices match the
+  rate sheet" + OK | **Accepted** | Difference | N/A + Accuracy (+ Edit Cost Validasi bila boleh, bukan Finance; `data-cost-summary-box`). Strip
+  STATUS kecil lama & kotak ringkasan BAWAH (Total Validable / Overall Accuracy / status invoice) DIHAPUS. Prop BARU `onDirtyChange` (= mode Edit).
+- **Lebar**: Cost Validation `max-w-[920px]`, Doc Validation `max-w-[min(1460px,95vw)]` -- popup Audit (`POPUP_WIDTH`), DetailsWindow Recap
+  (prop `kind`) & popup Finance SAMA. Isi Doc Validation tidak berubah.
+- **E. Accepted** (bug: baris yang di-Accept tetap tampil UNDER/OVERCHARGE): `computeLiveCostSummary` (SATU sumber -- badge kartu/KPI/panel/
+  Finance lewat `fetchCourierValidationBadgePct`) field BARU `total_accepted` (baris berselisih yang di-Accept per baris sql/041 atau per
+  invoice sql/038; `total_ok` tetap TERMASUK mereka -> OK murni = total_ok − total_accepted, pct TIDAK berubah = (OK+Accepted)/(OK+Accepted+
+  Difference), N/A tidak dihitung), `freight_total_accepted` / `duty_total_accepted`. Tabel: baris -> "✓ ACCEPTED · Undercharge/Overcharge"
+  (hijau tua `#17663D`, tooltip catatan; Selisih tetap), TOTAL -> "✓ ACCEPTED" bila semua selisihnya di-Accept. **Aturan lama TETAP**:
+  Undercharge yang BELUM di-Accept dihitung OK (bukan Difference) -- **KEPUTUSAN USER 2026-10-15: dipertahankan** (mockup menghitungnya
+  Difference; JANGAN ubah `classifyRow`). Accept tetap lewat panel Invoice Recap (CourierCostSummary) / kotak review per invoice; **KEPUTUSAN
+  USER 2026-10-15: modal TIDAK diberi tombol Accept per baris** (modal hanya menampilkan status).
+- **C. KPI Audit** (`CourierAuditKpiCards`, `fetchCourierAuditSummary().byTab`): 4 kartu sama lebar -- Records | Customs value (fmtRp penuh +
+  "PIB Rp … | CN Rp …") | Duties & taxes (penuh + PIB | CN + **"Rincian ▾"** popover melayang `data-duty-breakdown`: BM/PPN/PPh/Adm fee-SPTNP ×
+  PIB/CN/Total, tutup klik luar / Esc) | **Outstanding Final Check** (dulu "Not submitted to NAS"). "Validation incomplete" DIHAPUS (tidak dihitung
+  lagi). Semua angka ikut tab aktif (Draft = semua draft, PIB/CN = baris audited jenis itu) + tanggal PPJK + company + search. Duties & taxes
+  KPI kini = BM + PPN + PPh + Adm fee (CN `sanksi_adm`) / SPTNP (PIB `sptnp_total`) = rumus "Total Duty Tax" kartu (dulu `total_pib_cn`) -- **disetujui user 2026-10-15**.
+- **D. Tab Draft**: badge abu disembunyikan bila badge kuning "N without NAS Submit Date" tampil (angka sama). PIB/CN tetap.
+- Diuji jsdom: Cost Validation 20 cek (Undercharge belum/sudah Accept, Overcharge belum/sudah, Finance tanpa Edit, footer hilang), KPI 12 cek
+  (4 kartu, angka penuh, split, popover, ganti tab); regresi Doc Validation 36 & popup Finance 20. `tsc` bersih, `vite build` sukses.
+
 ## Doc Validation TERPADU — List | Columns, satu komponen & satu data (2026-10-15, permintaan user; acuan `doc_validation_clickable.html`)
 
 - **Satu komponen**: `ValidasiModal` `embedded variant="unified"` dipakai di: (1) Audit Courier mode Card › Open › Section 4 ›

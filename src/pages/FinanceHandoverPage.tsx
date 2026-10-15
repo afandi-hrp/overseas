@@ -363,10 +363,10 @@ export default function FinanceHandoverPage() {
 
   return (
     <div className="flex-1 h-full flex flex-col overflow-hidden min-w-0">
-      <header className="px-3 pt-1 pb-1 shrink-0">
+      <header className="px-3 pt-0 pb-1 shrink-0">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <h1 className="font-bold text-2xl text-[#3B1B3D] leading-tight">Finance Handover</h1>
+            <h1 className="font-bold text-2xl text-[#3B1B3D] leading-none">Finance Handover</h1>
             <p className="text-[#6E5E70] text-[12.5px] mt-0.5">
               {isFinance
                 ? 'Viewing as Finance — receive each handover, then record the transfer to mark it paid.'
@@ -377,7 +377,7 @@ export default function FinanceHandoverPage() {
         </div>
       </header>
 
-      <main className="flex-1 min-h-0 flex flex-col gap-3 px-3 pt-2 pb-2">
+      <main className="flex-1 min-h-0 flex flex-col gap-3 px-3 pt-2 pb-0">
         {seeSea && !seaCols && (
           <div className="rounded-[14px] border border-[#F3D9A4] bg-[#FFF8EA] px-4 py-2.5 text-[12.5px] text-[#7A4F00] shrink-0">
             Sea &amp; Air Finance Handover database update (<b>sql/034 + sql/035</b>) is not installed — Sea &amp; Air items are read-only.

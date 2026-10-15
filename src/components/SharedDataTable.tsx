@@ -4752,21 +4752,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       if (cancelled) return;
       setCourierSummary(s);
       setCourierSummaryLoading(false);
-      // "Validation incomplete" = baris Draft yg salah satu tab validasi (yg boleh dilihat) < 100% /
-      // belum ada -- persen dihitung dgn fungsi yg SAMA tombol Validation (mergeChecklistData +
-      // fetchCourierValidationBadgePct). Info saja.
-      if (!s || courierValidationTabs.length === 0) { setCourierValidationIncomplete(null); return; }
-      const draftRows = s.draftRows;
-      await mergeChecklistData(draftRows);
-      const { docPctMap, costPctMap } = await fetchCourierValidationBadgePct(draftRows);
-      if (cancelled) return;
-      let n = 0;
-      draftRows.forEach(r => {
-        const key = r.jenis_dokumen === 'CN' ? `cn_${r.id}` : `pib_${r.id}`;
-        const pct = rowValidationPct({ ...r, doc_validation_pct: docPctMap[key] ?? 0, cost_validation_pct: costPctMap[key] ?? 0 });
-        if (courierValidationTabs.some(t => pct[t] === null || (pct[t] as number) < 100)) n++;
-      });
-      setCourierValidationIncomplete(n);
+      // Kartu "Validation incomplete" DIHAPUS 2026-10-15 (permintaan user) -> tidak dihitung lagi.
     })().catch(e => { console.error('[CourierAudit] ringkasan gagal', e); if (!cancelled) setCourierSummaryLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -6410,10 +6396,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         {isCourierAuditView ? (
         /* Header Audit Courier (2026-10-01): eyebrow + judul. Export & "+ Add manually" mode Card DIPINDAH ke panel
            filter (2026-10-02, permintaan user); mode List: Export/Add Data tetap di toolbar lama. */
-        <header className="px-3 pt-1 pb-1 shrink-0">
+        <header className="px-3 pt-0 pb-1 shrink-0">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <h1 className="font-bold text-2xl text-[#3B1B3D] leading-tight">PIB &amp; CN Audit</h1>
+              <h1 className="font-bold text-2xl text-[#3B1B3D] leading-none">PIB &amp; CN Audit</h1>
               <p className="text-[#6E5E70] text-[12.5px] mt-0.5">Courier customs documents (PIB &amp; SPPBMCP) read by AI — check the validation, then mark as audited.</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -6423,10 +6409,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         </header>
         ) : isCourierRecapView ? (
         /* Header Invoice Recap Courier (2026-10-02): judul + keterangan. Export mode Card DIPINDAH ke panel filter (mode List: toolbar lama). */
-        <header className="px-3 pt-1 pb-1 shrink-0">
+        <header className="px-3 pt-0 pb-1 shrink-0">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <h1 className="font-bold text-2xl text-[#3B1B3D] leading-tight">Invoice Recap</h1>
+              <h1 className="font-bold text-2xl text-[#3B1B3D] leading-none">Invoice Recap</h1>
               <p className="text-[#6E5E70] text-[12.5px] mt-0.5">Courier invoices per AWB (freight, duty &amp; credit notes) — review the amounts, then submit to Finance.</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -6437,10 +6423,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         ) : isSeaAirAudit ? (
         /* Header Audit PIB Sea & Air (2026-09-30): judul + keterangan. Export & "+ Add manually" DIPINDAH ke panel
            filter (2026-10-06, permintaan user -- di laptop 14" tombol + Greeting berdesakan; pola sama Courier). */
-        <header className="px-3 pt-1 pb-1 shrink-0">
+        <header className="px-3 pt-0 pb-1 shrink-0">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <h1 className="font-bold text-2xl text-[#3B1B3D] leading-tight">PIB Audit</h1>
+              <h1 className="font-bold text-2xl text-[#3B1B3D] leading-none">PIB Audit</h1>
               <p className="text-[#6E5E70] text-[12.5px] mt-0.5">Sea &amp; Air PIB documents read by AI — check against Invoice Recap, then mark as audited.</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -6451,10 +6437,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         ) : isSeaAirRekapan ? (
         /* Header Invoice Recap Sea & Air (2026-10-01): judul + keterangan. Export & Upload documents DIPINDAH ke panel
            filter (2026-10-06, permintaan user -- sama Audit PIB Sea & Air; di laptop 14" berdesakan dgn Greeting). */
-        <header className="px-3 pt-1 pb-1 shrink-0">
+        <header className="px-3 pt-0 pb-1 shrink-0">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <h1 className="font-bold text-2xl text-[#3B1B3D] leading-tight">Invoice Recap</h1>
+              <h1 className="font-bold text-2xl text-[#3B1B3D] leading-none">Invoice Recap</h1>
               <p className="text-[#6E5E70] text-[12.5px] mt-0.5">Sea &amp; Air shipment invoices per BL / AWB — validate costs &amp; documents, then submit to Finance.</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -6463,10 +6449,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           </div>
         </header>
         ) : (
-        <header className="px-3 pt-1 pb-1 shrink-0">
+        <header className="px-3 pt-0 pb-1 shrink-0">
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-3">
-              <h1 className="font-bold text-xl text-[#5A305A] leading-tight">
+              <h1 className="font-bold text-xl text-[#5A305A] leading-none">
                 {tab?.label || mainTabObj?.label || 'Dashboard'}
               </h1>
               {mainTabObj?.label && tab?.label !== mainTabObj?.label && (
@@ -6481,7 +6467,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         </header>
         )}
 
-        <main className="px-3 pt-2 pb-2 flex-1 flex flex-col overflow-hidden">
+        <main className="px-3 pt-2 pb-0 flex-1 flex flex-col overflow-hidden">
 
                               {/* ── Tabs & Search ── */}
             <div className="flex flex-col gap-4 mb-4">
@@ -6603,7 +6589,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 /* Audit Courier mode Card (2026-10-01): 5 kartu KPI + 1 kartu filter (tab Draft/PIB/CN,
                    Search, PPJK date, Company, Card/List, Refresh). State filter SAMA toolbar lama. */
                 <div className="flex flex-col gap-3">
-                  <CourierAuditKpiCards summary={courierSummary} loading={courierSummaryLoading} validationIncomplete={courierValidationIncomplete} colOk={courierColOk} />
+                  <CourierAuditKpiCards summary={courierSummary} loading={courierSummaryLoading} tab={courierAuditType as 'archive' | 'pib' | 'cn'} colOk={courierColOk} />
                   {/* 1 baris di laptop 14" (2026-10-06, permintaan user): wrapper = container, baris dalam `nowrap` mulai lebar
                       panel 1100px (Search yang menyusut, min 120px); < 1500px kontrol diringkas (Export ikon saja, padding tab). */}
                   <div className="@container bg-white rounded-[14px] border border-[#EADFD6] shadow-sm px-3 py-2.5">
@@ -6625,9 +6611,13 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                             className={`flex items-center gap-1.5 px-2 @min-[1500px]:px-3 h-8 rounded-lg text-xs font-bold transition-colors ${active ? 'bg-[#3B1B3D] text-white shadow-sm' : 'text-[#3B1B3D] hover:bg-white'}`}
                           >
                             {t.label}
+                            {/* Tab Draft (2026-10-15, permintaan user): badge abu & kuning berisi angka sama -> hanya badge kuning
+                                (tooltip "N without NAS Submit Date"); badge abu tampil bila badge kuning tidak ada. PIB/CN tetap. */}
+                            {!(t.id === 'archive' && !!nas) && (
                             <span className={`min-w-[20px] px-1.5 h-[18px] rounded-full text-[10.5px] flex items-center justify-center tabular-nums ${active ? 'bg-white/20 text-white' : 'bg-white text-[#6E5E70]'}`}>
                               {t.count ?? '…'}
                             </span>
+                            )}
                             {!!nas && <span className="min-w-[18px] px-1 h-[18px] rounded-full bg-amber-400 text-[#3B1B3D] text-[10px] flex items-center justify-center tabular-nums" aria-label="Without NAS Submit Date">{nas > 99 ? '99+' : nas}</span>}
                           </button>
                         );

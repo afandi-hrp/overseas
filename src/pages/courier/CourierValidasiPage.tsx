@@ -313,14 +313,14 @@ export default function CourierValidasiPage() {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
-      <header className="px-3 pt-1 pb-1 shrink-0">
+      <header className="px-3 pt-0 pb-1 shrink-0">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
               <FileCheck2 size={17} />
             </div>
             <div>
-              <h1 className="font-bold text-xl text-[#5A305A] leading-tight">Validasi Courier</h1>
+              <h1 className="font-bold text-xl text-[#5A305A] leading-none">Validasi Courier</h1>
               <p className="text-xs font-light text-[#5A305A]/70 mt-0.5">Daftar rekapan validasi dokumen</p>
             </div>
           </div>
@@ -328,7 +328,7 @@ export default function CourierValidasiPage() {
         </div>
       </header>
 
-      <main className="px-3 pt-2 pb-2 flex-1 flex flex-col overflow-hidden">
+      <main className="px-3 pt-2 pb-0 flex-1 flex flex-col overflow-hidden">
         {/* Panel utama -- toolbar + daftar record + pagination SEKARANG 1 kartu menyatu
             (rounded-2xl tunggal), pola SAMA PERSIS dgn halaman list lain di app ini
             (SharedDataTable.tsx/AuditPoPage.tsx/BunkerPage.tsx/PiLocalPage.tsx/

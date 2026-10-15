@@ -63,7 +63,14 @@ export type CostDiffRow = {
 
 export type CostValidationSummary = {
   total_cost_cek: number;
+  // total_ok TERMASUK baris berselisih yang sudah di-Accept (per baris sql/041 atau per invoice sql/038). `total_accepted` =
+  // jumlah baris itu (2026-10-15, permintaan user: kotak Accepted terpisah) -> OK murni = total_ok - total_accepted.
+  // Accuracy (pct) = (OK + Accepted) / (OK + Accepted + Difference) -- N/A tidak dihitung (rumus TIDAK berubah).
   total_ok: number;
+  total_accepted?: number;
+  // TOTAL tabel Invoice Freight / Invoice Duty sudah di-Accept seluruh selisihnya (label "✓ ACCEPTED").
+  freight_total_accepted?: boolean;
+  duty_total_accepted?: boolean;
   total_selisih: number;
   total_na: number;
   status_cost: 'OK' | 'ADA SELISIH' | 'N/A';
@@ -104,7 +111,7 @@ const resolveDiffStatus = (status: any, selisih: number | null): CostDiffRow['st
 // n8n waktu data pertama dibuat dan tidak ikut ter-update saat user edit manual).
 export function computeLiveCostSummary(data: any, jenisDokumen?: string | null, reviews?: CostReviewMap | null): CostValidationSummary {
   if (!data) {
-    return { total_cost_cek: 0, total_ok: 0, total_selisih: 0, total_na: 0, status_cost: 'N/A', invoice_freight_status: 'N/A', invoice_duty_status: 'N/A', pct: 0, section_diff: { FREIGHT: false, DUTY: false }, diff_rows: [] };
+    return { total_cost_cek: 0, total_ok: 0, total_accepted: 0, total_selisih: 0, total_na: 0, status_cost: 'N/A', invoice_freight_status: 'N/A', invoice_duty_status: 'N/A', pct: 0, section_diff: { FREIGHT: false, DUTY: false }, diff_rows: [] };
   }
 
   const isPib = (jenisDokumen || data.jenis_dokumen || '').toUpperCase() === 'PIB';
@@ -122,7 +129,7 @@ export function computeLiveCostSummary(data: any, jenisDokumen?: string | null, 
     { key: 'vat_duty', label: 'VAT duty', exp: 'cv_vat_duty_expected', act: 'cv_vat_duty_actual_net', sec: 'DUTY', visible: isRowVisible(data.cv_vat_duty_status, data.cv_vat_duty_expected, data.cv_vat_duty_actual_net), status: data.cv_vat_duty_status, selisih: Number(data.cv_vat_duty_selisih) },
   ];
 
-  let total_ok = 0, total_selisih = 0, total_na = 0;
+  let total_ok = 0, total_selisih = 0, total_na = 0, total_accepted = 0;
   const rowDiff = { FREIGHT: false, DUTY: false };
   const diff_rows: CostDiffRow[] = [];
   mainFields.forEach(f => {
@@ -144,6 +151,8 @@ export function computeLiveCostSummary(data: any, jenisDokumen?: string | null, 
       rowDiff[sec] = true;
       if (sectionOk || itemOk) cls = 'OK';
     }
+    // Accepted = baris berselisih (Over/Undercharge -- Undercharge memang sudah dihitung OK) yang di-Accept (2026-10-15).
+    if (diffStatus && (sectionOk || itemOk) && cls === 'OK') total_accepted++;
     if (cls === 'OK') total_ok++;
     else if (cls === 'SELISIH') total_selisih++;
     else total_na++;
@@ -190,6 +199,10 @@ export function computeLiveCostSummary(data: any, jenisDokumen?: string | null, 
   const dutyTotalOk = totalAccepted('DUTY', 'total_duty', 'Invoice duty total', invoiceDutyStatus,
     dutyExpectedNum, dutyActualNum, dutyActualNum - dutyExpectedNum);
 
+  // Total invoice di-Accept (semua selisih baris utama / total di-Accept, atau review per invoice) -> label "✓ ACCEPTED" di TOTAL tabel.
+  const isDiffLike = (st: string) => st === 'OVERCHARGE' || st === 'UNDERCHARGE' || st === 'SELISIH';
+  const freight_total_accepted = (reviews?.FREIGHT === 'MATCH' || freightTotalOk) && isDiffLike(invoiceFreightStatus);
+  const duty_total_accepted = (reviews?.DUTY === 'MATCH' || dutyTotalOk) && isDiffLike(invoiceDutyStatus);
   if ((reviews?.FREIGHT === 'MATCH' || freightTotalOk) && isOverchargeLike(invoiceFreightStatus)) invoiceFreightStatus = 'OK';
   if ((reviews?.DUTY === 'MATCH' || dutyTotalOk) && isOverchargeLike(invoiceDutyStatus)) invoiceDutyStatus = 'OK';
   const overallStatusCost = (isOverchargeLike(invoiceFreightStatus) || isOverchargeLike(invoiceDutyStatus)) ? 'ADA SELISIH' : 'OK';
@@ -210,6 +223,9 @@ export function computeLiveCostSummary(data: any, jenisDokumen?: string | null, 
   return {
     total_cost_cek,
     total_ok,
+    total_accepted,
+    freight_total_accepted,
+    duty_total_accepted,
     total_selisih,
     total_na,
     status_cost: overallStatusCost,

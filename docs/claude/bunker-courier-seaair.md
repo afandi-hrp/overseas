@@ -957,8 +957,8 @@ Revisi (2026-10-13): di `@7xl` blok status validasi tetap DEKAT tombol Draft/Ope
 
 - **Tab Overview | Audit trail** Audit PIB = warna SAMA tab Invoice Recap (`bg-[#F5EDF3] text-[#5A305A]`, aktif putih + garis bawah ungu).
 - **Nama panel**: "Customs value (as recorded)" -> **Customs value**, "Duties & taxes" -> **Duty Tax**.
-- **Susunan Overview**: **Document** paling atas lebar penuh (fakta 2 kolom bila panel `@3xl`), lalu **Customs value | Duty Tax** kiri-kanan
-  (`items-start`), lalu **Goods per PO** lebar penuh. Kartu validasi, banner kunci & Checks tetap di tempatnya.
+- **Susunan Overview** (revisi 2026-10-15, sketsa user): grid 2 kolom `@3xl` -- kiri **Document** (1 kolom fakta, setinggi kolom kanan), kanan
+  **Customs value** di atas **Duty Tax**; lalu **Goods per PO** lebar penuh. Panel sempit = 1 kolom berurutan. (Versi sebelumnya: Document lebar penuh di atas.) Kartu validasi, banner kunci & Checks tetap di tempatnya.
 - **Duty Tax**: subjudul "same check as Invoice Recap › Doc Validation", "Import value Rp …" (kanan judul) & baris keterangan "Expected from customs
   value × rate … (tolerance) · NDPBM · N customs items" DIHAPUS -- `SeaAirDutyCompareTable` prop BARU `hideIntro` (tabel & rumus TIDAK berubah).
 - **Kartu Invoice Recap (lebar, sebelum Open)** ikut gambar user: [chip jenis/kontainer + chip PT abu, AWB, "Upload: <tgl>"] | [vendor, origin → destination
@@ -969,6 +969,12 @@ Revisi (2026-10-13): di `@7xl` blok status validasi tetap DEKAT tombol Draft/Ope
   ruang kosong besar setelah vendor -- `@7xl` = `minmax(200px,1fr) minmax(0,1.5fr) auto minmax(0,1fr) minmax(200px,1fr)`, sisa lebar dibagi rata
   ke kolom AWB/vendor/skor/landed; 14" nomor PO utuh -- kolom PO `auto` + nowrap, "+N PO" turun baris bila sempit).
 - Diuji: render SSR komponen asli + CSS build, screenshot Edge headless 1300 / 1750px. Belum dites di browser dgn data asli.
+- **Susulan 2 (2026-10-15, permintaan user)** -- kartu lebar: baris kolom 1 & 2 disejajarkan (chip | vendor h 22px, AWB | rute 24px, Upload | ATD/ATA
+  18px); kolom NO. PO & skor LEBAR TETAP (`@5xl` 215/275px, `@7xl` 240px / `minmax(300px,1fr)`) -> posisi PO sama di semua kartu ada/tidaknya "+N PO";
+  skor diberi jarak (`@5xl:pl-3`); nomor PO TIDAK bold; chip jenis/kontainer kembali biru + PT `PtBadge` (seperti semula). Kartu ringkas (panel
+  terbuka): ATD/ATA kembali chip ber-highlight. **Header panel detail Invoice Recap** (`SeaAirRecapDetailModal` `variant='panel'`): ringkas spt Audit
+  PIB -- padding/judul kecil, tombol `!h-8`, label Edit ikon saja bila panel < `@5xl`, judul `flex-1` -> aksi tetap 1 baris di 14" (dulu turun ke bawah).
+  **Pagination** (`PaginationFooter`, komponen BERSAMA -- lihat ui-layout.md) di-redesain & lebih pendek.
 
 ## Sea & Air — Invoice Recap: tab Checklist terpisah dari Doc Validation (2026-10-13, permintaan user; pola Invoice Recap Courier)
 

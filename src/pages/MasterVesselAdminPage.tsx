@@ -60,14 +60,14 @@ export default function MasterVesselAdminPage() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <header className="px-3 pt-1 pb-1 shrink-0">
+      <header className="px-3 pt-0 pb-1 shrink-0">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
               <Ship size={17} />
             </div>
             <div>
-              <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Master Vessel</h1>
+              <h1 className="font-bold text-2xl text-[#5A305A] leading-none">Master Vessel</h1>
               <p className="text-[#5A305A] font-light text-sm mt-1">Master data kapal & entri non-kapal untuk modul Reporting</p>
             </div>
           </div>
@@ -75,7 +75,7 @@ export default function MasterVesselAdminPage() {
         </div>
       </header>
 
-      <main className="px-3 pt-2 pb-2 flex-1 flex flex-col min-h-0">
+      <main className="px-3 pt-2 pb-0 flex-1 flex flex-col min-h-0">
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-3 shrink-0">
           <div className="flex flex-nowrap items-center gap-3 overflow-x-auto">
             <div className="relative">

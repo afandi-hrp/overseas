@@ -156,10 +156,11 @@ pageKey | pageKeys | adminOnly>`.
 
 - Brand ungu `#5A305A` (hover `#73507B`) utk tombol utama & ikon header (modul FAR punya palet sendiri `#6B3470`,
   Audit/Recap Sea & Air & Courier pakai token `SeaAirAuditUi.tsx` — sengaja). Font app **Sora** (global `index.css`).
-- Header halaman: `<div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">` → `<header className="px-3 pt-1
+- Header halaman: `<div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">` → `<header className="px-3 pt-0
   pb-1">` full-width berisi kotak ikon `w-9 h-9 rounded-xl bg-[#5A305A]` + `<h1 className="font-bold text-2xl
-  text-[#5A305A]">` + subjudul `font-light text-sm` + `<Greeting />` di kanan → `<main className="px-3 pt-2 …">`.
-  **Semua halaman `px-3`** (JANGAN `px-4`/`px-6`). Halaman list "shell tinggi tetap" `main` `pb-2`.
+  text-[#5A305A] leading-none">` (pt-0 + leading-none = huruf judul sejajar tepi atas sidebar, 2026-10-15; dulu pt-1/leading-tight) + subjudul `font-light text-sm` + `<Greeting />` di kanan → `<main className="px-3 pt-2 …">`.
+  **Semua halaman `px-3`** (JANGAN `px-4`/`px-6`). Halaman list "shell tinggi tetap" `main` **`pb-0`** (sejak 2026-10-15: kartu/pagination
+  sejajar ujung bawah sidebar; dulu `pb-2`). Halaman yang ikut scroll (SPB/QFP/LSA/Auto Rename) tetap `pb-2`.
 - Shell list tinggi tetap: wrapper `flex flex-col overflow-hidden`, header/toolbar `shrink-0`, kartu list `flex-1
   min-h-0`, tabel `overflow-auto flex-1 min-h-0` + `<thead className="sticky top-0 z-20">`, pagination `shrink-0`.
 - Toolbar/filter yang harus tetap rapi di laptop 14" & monitor 24": pakai `@container` + container query (BUKAN

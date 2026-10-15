@@ -208,7 +208,26 @@ export type CourierAuditSummary = {
   cvSum: number; bmSum: number; ppnSum: number; pphSum: number; admSum: number; dutySum: number
   nasEmpty: number; nasEmptyDraft: number; nasEmptyPib: number; nasEmptyCn: number
   draftRows: any[]   // baris Draft (lengkap) -> dipakai parent utk hitung "Validation incomplete"
+  // KPI per tab (2026-10-15, permintaan user: angka KPI ikut tab aktif Draft / PIB / CN + tanggal + company). Kunci = id tab.
+  byTab: Record<CourierAuditTab, CourierAuditTabKpi>
 }
+export type CourierAuditTab = 'archive' | 'pib' | 'cn'
+export type CourierDutyParts = { bm: number; ppn: number; pph: number; adm: number }
+// Angka 1 tab: Records (+ rincian draft/PIB/CN), Customs value per jenis dokumen, Duties & taxes per komponen per jenis
+// (BM, PPN, PPh, Adm fee [CN = sanksi_adm] / SPTNP [PIB = sptnp_total] -- rumus SAMA "Total Duty Tax" kartu, courierTotalDutyTax),
+// Outstanding Final Check = tanpa NAS Submit Date.
+export type CourierAuditTabKpi = {
+  records: number; recDraft: number; recPib: number; recCn: number
+  cv: { PIB: number; CN: number }
+  duty: { PIB: CourierDutyParts; CN: CourierDutyParts }
+  nas: number; nasDraft: number; nasPib: number; nasCn: number
+}
+const emptyTabKpi = (): CourierAuditTabKpi => ({
+  records: 0, recDraft: 0, recPib: 0, recCn: 0, cv: { PIB: 0, CN: 0 },
+  duty: { PIB: { bm: 0, ppn: 0, pph: 0, adm: 0 }, CN: { bm: 0, ppn: 0, pph: 0, adm: 0 } },
+  nas: 0, nasDraft: 0, nasPib: 0, nasCn: 0,
+})
+export const courierDutyPartsTotal = (d: CourierDutyParts) => d.bm + d.ppn + d.pph + d.adm
 
 const PAGE = 1000
 function applyFilters(q: any, f: CourierAuditFilters, cols: string[]) {
@@ -233,7 +252,8 @@ async function fetchAllRows(table: string, f: CourierAuditFilters, cols: string[
 export async function fetchCourierAuditSummary(f: CourierAuditFilters): Promise<CourierAuditSummary | null> {
   const [pib, cn] = await Promise.all([fetchAllRows('tabel_audit_pib', f, f.searchColsPib), fetchAllRows('tabel_audit_cn', f, f.searchColsCn)])
   if (!pib || !cn) return null
-  const s: CourierAuditSummary = { total: 0, draft: 0, pib: 0, cn: 0, cvSum: 0, bmSum: 0, ppnSum: 0, pphSum: 0, admSum: 0, dutySum: 0, nasEmpty: 0, nasEmptyDraft: 0, nasEmptyPib: 0, nasEmptyCn: 0, draftRows: [] }
+  const s: CourierAuditSummary = { total: 0, draft: 0, pib: 0, cn: 0, cvSum: 0, bmSum: 0, ppnSum: 0, pphSum: 0, admSum: 0, dutySum: 0, nasEmpty: 0, nasEmptyDraft: 0, nasEmptyPib: 0, nasEmptyCn: 0, draftRows: [],
+    byTab: { archive: emptyTabKpi(), pib: emptyTabKpi(), cn: emptyTabKpi() } }
   const add = (r: any, t: CourierDocType) => {
     const row = { ...r, jenis_dokumen: t }
     Object.assign(row, computeCourierAuditCalc(row, t, row.manual_override_fields))
@@ -244,10 +264,19 @@ export async function fetchCourierAuditSummary(f: CourierAuditFilters): Promise<
     s.bmSum += n(row.bm); s.ppnSum += n(row.ppn_nilai); s.pphSum += n(row.pph_nilai)
     if (t === 'CN') s.admSum += n(row.sanksi_adm)
     s.dutySum += n(row.total_pib_cn)
-    if (row.tgl_submit_nas === null || row.tgl_submit_nas === undefined || row.tgl_submit_nas === '') {
+    const nasMissing = row.tgl_submit_nas === null || row.tgl_submit_nas === undefined || row.tgl_submit_nas === ''
+    if (nasMissing) {
       s.nasEmpty++
       if (draft) s.nasEmptyDraft++; else if (t === 'PIB') s.nasEmptyPib++; else s.nasEmptyCn++
     }
+    // KPI per tab: Draft = semua baris draft (PIB & CN), PIB / CN = baris sudah diaudit jenis itu (filter SAMA tab daftar).
+    const k = s.byTab[draft ? 'archive' : t === 'PIB' ? 'pib' : 'cn']
+    k.records++
+    if (draft) k.recDraft++; else if (t === 'PIB') k.recPib++; else k.recCn++
+    k.cv[t] += n(row.total_nilai_pabean)
+    const d = k.duty[t]
+    d.bm += n(row.bm); d.ppn += n(row.ppn_nilai); d.pph += n(row.pph_nilai); d.adm += courierAdmOrSptnp(row, t)
+    if (nasMissing) { k.nas++; if (draft) k.nasDraft++; else if (t === 'PIB') k.nasPib++; else k.nasCn++ }
   }
   pib.forEach(r => add(r, 'PIB'))
   cn.forEach(r => add(r, 'CN'))

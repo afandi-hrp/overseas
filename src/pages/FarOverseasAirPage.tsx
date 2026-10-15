@@ -1202,14 +1202,14 @@ export default function FarOverseasAirPage() {
       )}
 
       <div className="flex-1 h-full overflow-hidden min-w-0 flex flex-col" style={{ fontFamily: FAR_FONT_FAMILY }}>
-        <header className="px-3 pt-1 pb-1 shrink-0">
+        <header className="px-3 pt-0 pb-1 shrink-0">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-[#6B3470] text-white flex items-center justify-center shrink-0">
                 <FileCheck2 size={17} />
               </div>
               <div>
-                <h1 className="font-extrabold text-2xl text-[#2A1A2C] leading-tight">FAR Overseas</h1>
+                <h1 className="font-extrabold text-2xl text-[#2A1A2C] leading-none">FAR Overseas</h1>
                 <p className="text-[#6E5E70] text-sm mt-0.5">Combined PO informal freight approval memo</p>
               </div>
             </div>
@@ -1217,7 +1217,7 @@ export default function FarOverseasAirPage() {
           </div>
         </header>
 
-        <main className="px-3 pt-2 pb-2 flex-1 flex flex-col overflow-hidden gap-3 min-h-0">
+        <main className="px-3 pt-2 pb-0 flex-1 flex flex-col overflow-hidden gap-3 min-h-0">
           {/* Tab + aksi utama */}
           <div className="flex items-center justify-between gap-2 flex-wrap shrink-0">
             <div className="flex items-center gap-1 bg-white border border-[#EADFD6] rounded-xl p-1">

@@ -41,14 +41,14 @@ export default function SettingsPage() {
 
   return (
     <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
-      <header className="px-3 pt-1 pb-1">
+      <header className="px-3 pt-0 pb-1">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0 shadow-sm">
               <SettingsIcon size={20} />
             </div>
             <div>
-              <h1 className="font-bold text-[#5A305A] text-base leading-tight">Pengaturan</h1>
+              <h1 className="font-bold text-[#5A305A] text-base leading-none">Pengaturan</h1>
               <p className="text-xs font-light text-[#5A305A] mt-0.5">Kelola modul aplikasi</p>
             </div>
           </div>

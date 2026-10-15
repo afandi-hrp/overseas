@@ -580,14 +580,14 @@ export default function ReportingCostPerVesselPage({ embedded }: { embedded?: bo
   return (
     <div className="flex-1 h-full overflow-hidden min-w-0 flex flex-col">
       {!embedded && (
-        <header className="px-3 pt-1 pb-1 shrink-0">
+        <header className="px-3 pt-0 pb-1 shrink-0">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
                 <BarChart3 size={17} />
               </div>
               <div>
-                <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Cost per Vessel</h1>
+                <h1 className="font-bold text-2xl text-[#5A305A] leading-none">Cost per Vessel</h1>
                 <p className="text-[#5A305A] font-light text-sm mt-1">Cost summary per vessel — Courier, Sea, Air, FAR Overseas</p>
               </div>
             </div>
@@ -602,7 +602,7 @@ export default function ReportingCostPerVesselPage({ embedded }: { embedded?: bo
           `shrink-0` jadi SELALU terlihat (tidak perlu sticky, memang tidak pernah ikut scroll),
           & tabel dapat area `flex-1` sendiri yg BENERAN scroll (`scrollRef`), thead `sticky
           top-0` & baris GRAND TOTAL `sticky bottom-0` di dalam area scroll itu. */}
-      <main className="px-3 pt-2 pb-2 w-full flex-1 flex flex-col min-h-0">
+      <main className="px-3 pt-2 pb-0 w-full flex-1 flex flex-col min-h-0">
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-3 shrink-0">
           {/* Dropdown method (2026-09 poin B2, GANTI TOTAL dari deretan tombol tab) -- "All
               Method" default. Multi-select Bulan/Tahun (poin B4) -- bulan kosong = seluruh 12

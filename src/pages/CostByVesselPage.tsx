@@ -84,14 +84,14 @@ export default function CostByVesselPage() {
       {/* Header standar (pola "Header halaman" di CLAUDE.md) -- satu2nya header yg tampil,
           menggantikan header bawaan `ReportingDashboardPage`/`ReportingCostPerVesselPage`
           (di-skip via prop `embedded` di bawah). */}
-      <header className="px-3 pt-1 pb-1 shrink-0">
+      <header className="px-3 pt-0 pb-1 shrink-0">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
               <Ship size={17} />
             </div>
             <div>
-              <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Overseas Cost by Vessel</h1>
+              <h1 className="font-bold text-2xl text-[#5A305A] leading-none">Overseas Cost by Vessel</h1>
               <p className="text-[#5A305A] font-light text-sm mt-1">Cost summary per vessel — Courier, Sea, Air, FAR Overseas</p>
             </div>
           </div>

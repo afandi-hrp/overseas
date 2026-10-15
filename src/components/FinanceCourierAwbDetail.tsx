@@ -90,7 +90,8 @@ export default function FinanceCourierAwbDetail({ item, tab, onTab, onPrint }: {
     <div className={popup === k ? 'fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-3 max-[1600px]:p-2.5' : 'hidden'}
       id={popup === k ? 'finance-courier-popup-print-area' : undefined} role="dialog" aria-modal="true" aria-label={popupTitle(k)} aria-hidden={popup !== k}
       data-finance-popup={k} onMouseDown={e => { if (e.target === e.currentTarget) closePopup() }}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[1400px] h-[92vh] max-[1600px]:h-full flex flex-col overflow-hidden">
+      {/* Lebar SAMA popup Audit & Invoice Recap (2026-10-15): Cost ±920px, Doc ±1460px / 95vw. */}
+      <div className={`bg-white rounded-2xl shadow-2xl w-full ${k === 'cost' ? 'max-w-[920px]' : 'max-w-[min(1460px,95vw)]'} h-[92vh] max-[1600px]:h-full flex flex-col overflow-hidden`}>
         <div className="shrink-0 flex items-start justify-between gap-3 px-5 py-3.5 border-b border-[#EADFD6]">
           <div className="min-w-0">
             <h2 className="text-[16px] font-bold text-[#3B1B3D] leading-tight [overflow-wrap:anywhere]">{popupTitle(k)}</h2>
@@ -107,7 +108,7 @@ export default function FinanceCourierAwbDetail({ item, tab, onTab, onPrint }: {
             </button>
           </div>
         </div>
-        <div className="flex-1 min-h-0 overflow-y-auto bg-[#FBF7F4] p-4 cvw-fill">{body}</div>
+        <div className={k === 'cost' ? 'flex-1 min-h-0 flex flex-col cvw-fill' : 'flex-1 min-h-0 overflow-y-auto bg-[#FBF7F4] p-4 cvw-fill'}>{body}</div>
       </div>
     </div>,
     document.body,
@@ -145,10 +146,8 @@ export default function FinanceCourierAwbDetail({ item, tab, onTab, onPrint }: {
       {!rec && <div className="mt-3">{noAudit}</div>}
 
       {rec && popupShell('cost', (
-        <div className="rounded-[14px] border border-[#EADFD6] overflow-hidden bg-white">
-          <CostValidationModalLegacy awb={rec.awb} jenisDokumen={docType} docId={rec.id} rawRecord={rec} onClose={noop}
-            canEdit={false} embedded financeView onPctChange={setPctOf.cost} />
-        </div>
+        <CostValidationModalLegacy awb={rec.awb} jenisDokumen={docType} docId={rec.id} rawRecord={rec} onClose={noop}
+          canEdit={false} embedded financeView onPctChange={setPctOf.cost} />
       ))}
       {rec && popupShell('doc', (
         <ValidasiModal record={rec} mainTab="courier" subTab="courier_audit" onClose={noop} canEdit={false} embedded variant="unified" financeView

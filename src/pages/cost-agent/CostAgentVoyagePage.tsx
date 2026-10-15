@@ -126,7 +126,7 @@ export default function CostAgentVoyagePage() {
       <div className="flex-1 h-full flex flex-col overflow-hidden min-w-0">
         <CostAgentPageHeader title="Voyages" subtitle="Monthly voyage reports per vessel — port calls, cargo and agency invoices." />
 
-        <main className="px-3 pt-2 pb-2 flex-1 flex flex-col overflow-hidden gap-3 min-h-0">
+        <main className="px-3 pt-2 pb-0 flex-1 flex flex-col overflow-hidden gap-3 min-h-0">
           {masterError && <div className="rounded-lg border border-[#F4C3BC] bg-[#FDE7E4] px-3 py-2 text-[12.5px] text-[#A8231A] shrink-0">Failed to load master data: {masterError}</div>}
 
           {/* Filter 1 baris di laptop 14" & monitor 24" (FilterPanel); aksi halaman di ujung kanan panel. Panel paling padat ->

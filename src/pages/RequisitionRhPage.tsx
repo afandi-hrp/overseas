@@ -246,14 +246,14 @@ export default function RequisitionRhPage() {
 
   return (
     <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10" style={SORA}>
-      <header className="px-3 pt-1 pb-1">
+      <header className="px-3 pt-0 pb-1">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
               <ClipboardCheck size={17} />
             </div>
             <div>
-              <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">Requisition RH</h1>
+              <h1 className="font-bold text-2xl text-[#5A305A] leading-none">Requisition RH</h1>
               <p className="text-[#5A305A] font-light text-sm mt-1">AI verification of requisition / PO against the Running Hours report.</p>
             </div>
           </div>

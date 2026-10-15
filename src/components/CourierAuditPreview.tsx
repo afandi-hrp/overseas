@@ -17,7 +17,8 @@ import {
 } from '../utils/CourierAuditHelpers'
 import { VALIDATION_TAB_LABEL, rowValidationPct, validationDotClass, type ValidationTabKey } from './CourierValidationWindow'
 import ValidasiModal from './ValidasiModal'
-import CostValidationModal from './CostValidationModal'
+// Cost Validation = komponen SAMA Invoice Recap & Finance (CostValidationModalLegacy, revisi 2026-10-15).
+import CostValidationModal from './CostValidationModalLegacy'
 import CourierAuditTrail from './CourierAuditTrail'
 
 const hasVal = (v: any) => v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim() !== '-' && String(v).trim() !== '—'
@@ -54,10 +55,12 @@ const pctTone = (pct: number | null) =>
 type PopupKey = ValidationTabKey
 
 // ─── Popup (modal) validasi ───────────────────────────────────────────────────
-const ValidationPopup: React.FC<{ title: string; subtitle: string; wide?: boolean; onRequestClose: () => void; children: React.ReactNode }> = ({ title, subtitle, wide, onRequestClose, children }) => (
+// Lebar (2026-10-15, permintaan user): Cost Validation ±920px, Doc Validation ±1460px / 95vw -- SAMA Invoice Recap & Finance.
+const POPUP_WIDTH: Record<'checklist' | 'cost' | 'doc', string> = { checklist: 'max-w-[760px]', cost: 'max-w-[920px]', doc: 'max-w-[min(1460px,95vw)]' }
+const ValidationPopup: React.FC<{ title: string; subtitle: string; size: 'checklist' | 'cost' | 'doc'; onRequestClose: () => void; children: React.ReactNode }> = ({ title, subtitle, size, onRequestClose, children }) => (
   <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-3 max-[1600px]:p-2.5 print:hidden" role="dialog" aria-modal="true" aria-label={title}
     onMouseDown={e => { if (e.target === e.currentTarget) onRequestClose() }}>
-    <div className={`bg-white rounded-2xl shadow-2xl w-full ${wide ? 'max-w-[1100px]' : 'max-w-[760px]'} max-h-full flex flex-col overflow-hidden`}>
+    <div className={`bg-white rounded-2xl shadow-2xl w-full ${POPUP_WIDTH[size]} max-h-full flex flex-col overflow-hidden`}>
       <div className="shrink-0 flex items-start justify-between gap-3 px-5 py-3.5 border-b border-[#EADFD6]">
         <div className="min-w-0">
           <h2 className="text-[16px] font-bold text-[#3B1B3D] leading-tight [overflow-wrap:anywhere]">{title}</h2>
@@ -67,7 +70,8 @@ const ValidationPopup: React.FC<{ title: string; subtitle: string; wide?: boolea
           <X size={18} />
         </button>
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto bg-[#FBF7F4] p-4 cvw-fill">{children}</div>
+      {/* Cost Validation punya area scroll & padding sendiri (komponen embedded) -> tanpa padding/scroll ganda. */}
+      <div className={size === 'cost' ? 'flex-1 min-h-0 flex flex-col cvw-fill' : 'flex-1 min-h-0 overflow-y-auto bg-[#FBF7F4] p-4 cvw-fill'}>{children}</div>
     </div>
   </div>
 )
@@ -411,7 +415,7 @@ export default function CourierAuditPreview({
 
       {/* Popup validasi -- komponen embedded LAMA (data, simpan & hak edit SAMA). Dipasang hanya selama popup terbuka. */}
       {popup && (
-        <ValidationPopup title={popupTitle} subtitle={popupSubtitle} wide={popup !== 'checklist'} onRequestClose={closePopup}>
+        <ValidationPopup title={popupTitle} subtitle={popupSubtitle} size={popup} onRequestClose={closePopup}>
           {popup === 'checklist' && access.checklist && renderChecklist({ onPctChange: onChecklistPct, onSaved: onChecklistSaved, onDirtyChange: onChecklistDirty })}
           {popup === 'doc' && access.doc && (
             <ValidasiModal record={rec} mainTab={mainTab} subTab={subTab} onClose={closePopup} canEdit={editAccess.doc} embedded variant="unified"

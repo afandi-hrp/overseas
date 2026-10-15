@@ -353,14 +353,14 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
 
       <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
         {fixedType && (
-          <header className="px-3 pt-1 pb-1">
+          <header className="px-3 pt-0 pb-1">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="flex items-center gap-3">
                 <div className="w-11 h-11 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0 shadow-sm">
                   {fixedType === 'sea_air' ? <Ship size={20} /> : <Plane size={20} />}
                 </div>
                 <div>
-                  <h1 className="font-bold text-[#5A305A] text-base leading-tight">
+                  <h1 className="font-bold text-[#5A305A] text-base leading-none">
                     {fixedType === 'sea_air' ? 'Sea & Air' : 'Courier'} Document Upload
                   </h1>
                   <p className="text-xs font-light text-[#5A305A] mt-0.5">

@@ -204,9 +204,10 @@ const UnlockAllControl: React.FC<{ rows: any[]; busy: boolean; onUnlockMany: (id
 // ─── Jendela penuh "Details" (tabel lama) ─────────────────────────────────────
 // Lebar (2026-10-05, permintaan user): hampir selebar layar di monitor besar (maks 1880px) supaya tabel matriks
 // terlihat semua; laptop 14" (<=1600px) tetap penuh layar seperti sebelumnya.
-const DetailsWindow: React.FC<{ title: React.ReactNode; onClose: () => void; children: React.ReactNode }> = ({ title, onClose, children }) => createPortal(
+// Lebar (2026-10-15, permintaan user): Cost Validation ±920px, Doc Validation ±1460px / 95vw -- SAMA popup Audit & Finance.
+const DetailsWindow: React.FC<{ title: React.ReactNode; kind: 'doc' | 'cost'; onClose: () => void; children: React.ReactNode }> = ({ title, kind, onClose, children }) => createPortal(
   <div className="fixed inset-0 z-[80] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-3 md:p-5 max-[1600px]:p-2.5" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
-    <div className="bg-white w-full max-w-[1880px] h-[94vh] max-[1600px]:h-full rounded-2xl shadow-2xl flex flex-col overflow-hidden" role="dialog" aria-label="Details">
+    <div className={`bg-white w-full ${kind === 'cost' ? 'max-w-[920px]' : 'max-w-[min(1460px,95vw)]'} h-[94vh] max-[1600px]:h-full rounded-2xl shadow-2xl flex flex-col overflow-hidden`} role="dialog" aria-label="Details">
       <div className="shrink-0 flex items-center justify-between gap-3 px-5 py-3 border-b border-[#EADFD6]">
         <h2 className="text-[16px] font-bold text-[#3B1B3D] [overflow-wrap:anywhere]">{title}</h2>
         <button type="button" onClick={onClose} aria-label="Close details" title="Close" className="w-9 h-9 inline-flex items-center justify-center hover:bg-[#F6EFEA] rounded-xl text-[#6E5E70]"><X size={18} /></button>
@@ -490,7 +491,7 @@ export default function CourierRecapValidationPanel({
       </div>
 
       {rec && details === 'doc' && (
-        <DetailsWindow title={`Doc Validation · ${docType} ${courierDocNo(rec, docType) || ''} · ${rec.awb || ''}`} onClose={closeDetails}>
+        <DetailsWindow kind="doc" title={`Doc Validation · ${docType} ${courierDocNo(rec, docType) || ''} · ${rec.awb || ''}`} onClose={closeDetails}>
           {/* Doc Validation TERPADU (2026-10-15): komponen & data SAMA popup Audit Courier & Finance Handover (dulu ValidasiModalLegacy). */}
           <div className="flex-1 min-h-0 overflow-y-auto bg-[#FBF7F4] p-4">
             <ValidasiModal record={rec} mainTab="courier" subTab="courier_audit" onClose={closeDetails} canEdit={editOf('doc')} embedded variant="unified"
@@ -499,7 +500,7 @@ export default function CourierRecapValidationPanel({
         </DetailsWindow>
       )}
       {rec && details === 'cost' && (
-        <DetailsWindow title={`Cost Validation · ${docType} ${courierDocNo(rec, docType) || ''} · ${rec.awb || ''}`} onClose={closeDetails}>
+        <DetailsWindow kind="cost" title={`Cost Validation · ${docType} ${courierDocNo(rec, docType) || ''} · ${rec.awb || ''}`} onClose={closeDetails}>
           <CostValidationModalLegacy awb={rec.awb} jenisDokumen={docType} docId={rec.id} rawRecord={rec} onClose={closeDetails} canEdit={editOf('cost')} embedded onMutated={markDetailsMutated} />
         </DetailsWindow>
       )}

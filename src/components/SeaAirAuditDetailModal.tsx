@@ -287,10 +287,11 @@ export default function SeaAirAuditDetailModal({
             ) : null}
           </div>
 
-          {/* Susunan Overview (2026-10-15, permintaan user): Document paling atas (lebar penuh, fakta 2 kolom di panel lebar), lalu
-              Customs value | Duty Tax kiri-kanan, lalu Goods per PO lebar penuh. Judul "Customs value (as recorded)" -> "Customs value",
-              "Duties & taxes" -> "Duty Tax" (subjudul, Import value & keterangan rumus/NDPBM dihapus). */}
-              <SectionCard title="Document" bodyClassName="px-4 pb-3 grid grid-cols-1 @3xl:grid-cols-2 gap-x-8">
+          {/* Susunan Overview (revisi 2026-10-15, sketsa user): kiri Document (setinggi 2 panel kanan), kanan Customs value di atas
+              Duty Tax, lalu Goods per PO lebar penuh di bawah. Panel sempit (< @3xl) = 1 kolom berurutan. Judul "Customs value (as recorded)"
+              -> "Customs value", "Duties & taxes" -> "Duty Tax" (subjudul, Import value & keterangan rumus/NDPBM dihapus). */}
+          <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-3">
+              <SectionCard title="Document" bodyClassName="px-4 pb-3">
                 <Fact label="PIB no.">{formatNoAju(rec.no_aju) || '—'}</Fact>
                 <Fact label="PIB date">{fmtDateShort(rec.tgl_ppjk)}</Fact>
                 <Fact label="Via · delivery term">{rec.via || '—'} · {rec.delivery_term || '—'}</Fact>
@@ -306,7 +307,7 @@ export default function SeaAirAuditDetailModal({
                 <Fact label="Notes"><span className="whitespace-pre-wrap font-medium">{rec.notes || '—'}</span></Fact>
               </SectionCard>
 
-          <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-3 items-start">
+          <div className="flex flex-col gap-3 min-w-0">
             <SectionCard title="Customs value" right={<>Balance <b className="text-[#3B1B3D] tabular-nums">{fmtRp(build.balance)}</b></>} bodyClassName="px-4 pb-3">
               <div className="flex justify-between gap-3 py-1.5 text-[12.5px]">
                 <span className="text-[#3B1B3D]">Goods value{build.goodsRate ? ` (${curLabel ? `${curLabel} ` : ''}${fmtValas(build.goodsValas)} × ${fmtValas(Math.round(build.goodsRate * 100) / 100)})` : ''}</span>
@@ -335,6 +336,7 @@ export default function SeaAirAuditDetailModal({
             <SectionCard title="Duty Tax" bodyClassName="pb-0">
               <SeaAirDutyCompareTable cmp={dutyCmp} loading={dutyMatrix === undefined} hideIntro />
             </SectionCard>
+          </div>
           </div>
 
               <SectionCard

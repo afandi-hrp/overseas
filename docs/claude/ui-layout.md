@@ -42,7 +42,7 @@ bagian tersendiri di bawah.
 - **Header halaman** (pola wajib, contoh: `FarOverseasVendorTarifPage.tsx`, `KursBIPage.tsx`):
   ```jsx
   <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
-    <header className="px-3 pt-1 pb-1">
+    <header className="px-3 pt-0 pb-1">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
@@ -63,9 +63,9 @@ bagian tersendiri di bawah.
   ```
   Header **full-width** (BUKAN di dalam `max-w-* mx-auto`, atau `<Greeting/>` kepental ke bawah
   judul di layar sempit). Nilai STANDAR (SEMUA halaman baru wajib ikuti — versi lama `pb-2`/
-  `pt-3`/`pt-4`/`px-6`/`px-4` sudah tidak berlaku): `header` `px-3 pt-1 pb-1`; `main` `px-3`,
+  `pt-3`/`pt-4`/`px-6`/`px-4` sudah tidak berlaku): `header` `px-3 pt-0 pb-1` (+ judul `h1` `leading-none`; revisi 2026-10-15, lihat "Margin atas halaman = sejajar sidebar"); `main` `px-3`,
   top-padding `pt-2`, `max-w-7xl` (tabel lebar)/`max-w-2xl`/`max-w-5xl` (form sempit). Bottom
-  padding `main` **`pb-2`** utk SEMUA halaman list "shell tinggi tetap" (`BunkerPage.tsx`,
+  padding `main` **`pb-0`** (revisi 2026-10-15, lihat bagian "Margin bawah halaman list = sejajar sidebar" di bawah; dulu `pb-2`) utk SEMUA halaman list "shell tinggi tetap" (`BunkerPage.tsx`,
   `AuditPoPage.tsx`, `AuditPoOverseasPage.tsx`, `PiLocalPage.tsx`, `SharedDataTable.tsx`,
   `CourierValidasiPage.tsx`, `FarOverseasAirPage.tsx` — diselaraskan 2026-09, laporan user margin
   bawah tabel tidak sejajar sidebar) — HANYA `RateTablesAdmin.tsx`/`FuelSurchargePage.tsx` masih
@@ -153,4 +153,27 @@ itu sudah selesai diterjemahkan penuh**, cuma teks loading-nya saja).
   data..." `SharedDataTable.tsx` + 6 modal (Validasi/Checklist/Cost Validation Courier, Sea & Air,
   FAR Overseas). TIDAK ikut: spinner inline tombol aksi, indikator antrian proses (amber) Bunker/
   FAR, animasi UploadPage, ikon `RefreshCw` berputar. Loading data baru WAJIB pakai komponen ini.
+
+## Pagination footer -- redesain lebih ringkas (2026-10-15, permintaan user: halaman Courier & Sea & Air)
+
+`src/components/PaginationFooter.tsx` (komponen BERSAMA -> ikut berubah di SEMUA pemakai: SharedDataTable Courier/Sea & Air, kartu Recap
+Courier, Finance Handover, Cost Agent, Auto Rename; props TIDAK berubah): tinggi ±40px (dulu ±56px, `py-1.5`), latar putih + garis atas
+`#EADFD6`, teks "Showing a–b of N unit", select Rows `h-7`, navigasi ‹ › ikon + NOMOR HALAMAN (maks 7 item: 1 … p-1 p p+1 … N; aktif ungu
+`#6B3470`), aria-label "Previous page" / "Next page" / "Page n of N" (aria-current). Diuji render SSR + screenshot Edge 1300 / 1750px.
+
+## Margin bawah halaman list = sejajar sidebar (2026-10-15, laporan user: pagination tidak sejajar navigasi sidebar)
+
+Layout (`MainLayout`) `md:p-4` -> sidebar berakhir 16px dari bawah layar; isi halaman setinggi kolom yang sama. Dgn `main` `pb-2` kartu list
++ pagination berhenti 8px DI ATAS ujung sidebar. Kini `main` halaman list "shell tinggi tetap" = **`pb-0`**: `SharedDataTable.tsx`
+(Courier & Sea & Air & Audit Trail), `FinanceHandoverPage`, `FarOverseasAirPage`, `BunkerPage`, `AuditPoPage`, `AuditPoOverseasPage`,
+`PiLocalPage`, `AccountingRekapPage`, `CourierValidasiPage`, `CostAgentInvoicePage`, `CostAgentVoyagePage`, `MasterVesselAdminPage`,
+`ReportingCostPerVesselPage`. Halaman yang ikut scroll (`AutoRenamePage`, `LsaPage`, `OilRequestPage`, `RequisitionRhPage`,
+`VerificationQfpPage`) TETAP `pb-2`. Halaman list baru WAJIB `pb-0`.
+
+## Margin atas halaman = sejajar sidebar (2026-10-15, laporan user: judul halaman lebih rendah dari tepi atas sidebar)
+
+Sidebar mulai tepat di `md:p-4` layout; judul halaman dulu turun ±7px (header `pt-1` 4px + ruang `leading-tight` 3px). Kini SEMUA 32 header
+halaman `<header className="px-3 pt-0 pb-1 …">` dan judul `h1` halaman (`text-2xl` / `text-xl` / `text-base` + `leading-tight`) -> `leading-none`
+-> huruf judul sejajar tepi atas sidebar (diukur Edge headless + font Sora: tepi sidebar y=14 = puncak huruf judul y=14). Header baru WAJIB ikut.
+Halaman tanpa `<header>` standar (LoginPage, LockScreen, FarOverseasMemoPaper) tidak terpengaruh.
 

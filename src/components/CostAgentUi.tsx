@@ -44,14 +44,14 @@ export const MatchLevelLabel: React.FC<{ level: CostAgentMatchLevel | null | und
 
 // Header halaman modul Cost Agent (pola header wajib CLAUDE.md: kotak ikon ungu + judul + subjudul + Greeting).
 export const CostAgentPageHeader: React.FC<{ title: string; subtitle: string; right?: React.ReactNode }> = ({ title, subtitle, right }) => (
-  <header className="px-3 pt-1 pb-1 shrink-0">
+  <header className="px-3 pt-0 pb-1 shrink-0">
     <div className="flex items-center justify-between gap-3 flex-wrap">
       <div className="flex items-center gap-3 min-w-0">
         <div className="w-9 h-9 rounded-xl bg-[#5A305A] text-white flex items-center justify-center shrink-0">
           <Anchor size={17} />
         </div>
         <div className="min-w-0">
-          <h1 className="font-bold text-2xl text-[#5A305A] leading-tight">{title}</h1>
+          <h1 className="font-bold text-2xl text-[#5A305A] leading-none">{title}</h1>
           <p className="font-light text-sm text-[#5A305A]">{subtitle}</p>
         </div>
       </div>

@@ -87,7 +87,14 @@ const ActualInlineInput = ({
 // Details, header diganti ringkasan gaya jendela Open Audit (OK/Difference/N/A + "x of y invoices match the rate sheet" +
 // akurasi, angka dari computeLiveCostSummary yg SAMA) dan SEMUA tombol aksi (Potong CN, Revisi, Update Estimasi, Hitung
 // Ulang Estimasi) disembunyikan. Catatan Perubahan Manual tetap tampil.
-export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecord, onClose, canEdit = true, embedded = false, onPctChange, onDataChange, financeView = false, onMutated }: { awb: string, jenisDokumen: string, docId?: string, rawRecord?: any, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, onDataChange?: (data: any) => void, financeView?: boolean, onMutated?: () => void }) {
+// Revisi 2026-10-15 (permintaan user, mockup "Courier Audit Revisi.html"): komponen SATU-SATUNYA Cost Validation Courier -- dipakai
+// popup Audit (Card), jendela List Audit, Invoice Recap Details & Finance Handover. Header embedded = kotak ringkasan versi Audit
+// ("Cost validation · X of Y invoices match the rate sheet" + OK | Accepted | Difference | N/A + Accuracy) + tombol Edit Cost Validasi
+// (bukan Finance); kotak ringkasan bawah (Total Validable / Overall Accuracy / status invoice) DIHAPUS. Baris berselisih yang sudah
+// di-Accept (per baris sql/041 atau per invoice sql/038 -- `computeLiveCostSummary().diff_rows[].accepted`, SATU sumber dgn badge
+// kartu/KPI/Finance) tampil "✓ ACCEPTED · Undercharge/Overcharge" (hijau tua), Selisih tetap; TOTAL tabel "✓ ACCEPTED" bila semua
+// selisihnya di-Accept. `onDirtyChange` = sedang mode Edit (popup Audit konfirmasi saat ditutup).
+export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecord, onClose, canEdit = true, embedded = false, onPctChange, onDataChange, financeView = false, onMutated, onDirtyChange }: { awb: string, jenisDokumen: string, docId?: string, rawRecord?: any, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, onDataChange?: (data: any) => void, financeView?: boolean, onMutated?: () => void, onDirtyChange?: (dirty: boolean) => void }) {
   // `onMutated` = dipanggil SETELAH perubahan (Edit / Credit Note) benar-benar tersimpan (panel Invoice Recap menyegarkan daftar hanya kalau ada ini).
   const act = !financeView;
   const [data, setData] = useState<any>(null);
@@ -465,6 +472,18 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
   };
 
 
+  // "✓ ACCEPTED · Undercharge/Overcharge" (hijau tua, SAMA chip Accepted Doc Validation). `dir` = status selisih sebelum Accept.
+  const acceptedBadge = (dir: string | null, note?: string | null) => (
+    <span className="inline-flex items-center px-2 py-0.5 rounded font-bold text-xs bg-[#17663D] text-white whitespace-nowrap" title={note || 'Accepted'} data-cost-accepted>
+      ✓ ACCEPTED{dir ? ` · ${dir === 'UNDERCHARGE' ? 'Undercharge' : dir === 'OVERCHARGE' ? 'Overcharge' : 'Difference'}` : ''}
+    </span>
+  );
+  // Kolom status -> kunci baris di computeLiveCostSummary.
+  const STATUS_FIELD_KEY: Record<string, string> = {
+    cv_freight_status: 'freight', cv_fuel_status: 'fuel', cv_vat_freight_status: 'vat_freight', cv_duties_status: 'duties',
+    cv_nonroutine_status: 'nonroutine', cv_disbursement_status: 'disbursement', cv_processing_fee_status: 'processing_fee',
+    cv_storage_status: 'storage', cv_vat_duty_status: 'vat_duty',
+  };
   const formatStatus = (status: string, selisih?: number) => {
     let finalStatus = status;
     if (finalStatus === 'SELISIH' && selisih !== undefined && selisih !== null) {
@@ -501,6 +520,17 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
   const setReview = (section: 'FREIGHT' | 'DUTY') => (r: CourierCostReview | null) =>
     setReviews(p => { const n = { ...p }; if (r) n[section] = r; else delete n[section]; return n; });
   const liveSummary = useMemo(() => computeLiveCostSummary(data, jenisDokumen, reviewMap), [data, jenisDokumen, reviewMap]);
+  // Baris berselisih yang sudah di-Accept (kunci baris -> diff row) -- dari computeLiveCostSummary (satu sumber).
+  const acceptedRows = useMemo(() => {
+    const m: Record<string, { status: string; note: string | null }> = {};
+    liveSummary.diff_rows.forEach(r => {
+      if (!r.accepted) return;
+      const note = r.accepted === 'item' ? (reviews.items?.[r.key]?.catatan ?? null) : (reviews[r.section]?.catatan ?? null);
+      m[r.key] = { status: r.status, note };
+    });
+    return m;
+  }, [liveSummary, reviews]);
+  useEffect(() => { onDirtyChange?.(isEditing); }, [onDirtyChange, isEditing]);
 
   // % utk label tab jendela Validation -- selama Edit, ikut isian form (status yang sedang
   // dipilih) supaya label berubah live; formula tetap computeLiveCostSummary (satu sumber).
@@ -709,8 +739,14 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
 
 
 
+  const statusView = (field: string) => {
+    const acc = acceptedRows[STATUS_FIELD_KEY[field]];
+    if (acc) return acceptedBadge(acc.status, acc.note);
+    return formatStatus(data[field], data[field.replace('_status', '_selisih')]);
+  };
+
   const FreightStatusDropdown = ({ field }: { field: string }) => {
-    if (!isEditing) return formatStatus(data[field], data[field.replace('_status', '_selisih')]);
+    if (!isEditing) return statusView(field);
     return (
       <select 
         value={editForm[field] || ''} 
@@ -729,7 +765,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
   }
 
   const DutyStatusDropdown = ({ field }: { field: string }) => {
-    if (!isEditing) return formatStatus(data[field], data[field.replace('_status', '_selisih')]);
+    if (!isEditing) return statusView(field);
     return (
       <select 
         value={editForm[field] || ''} 
@@ -777,13 +813,14 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
       )}
     <div className={embedded ? 'flex flex-col flex-1 min-h-0 w-full cvw-fill' : 'fixed inset-0 z-50 flex items-center justify-center p-2 bg-slate-900/50 backdrop-blur-sm shadow-2xl'}>
       <div className={embedded ? 'bg-white w-full flex-1 min-h-0 overflow-hidden flex flex-col cvw-fill' : 'bg-white rounded-2xl w-full max-w-6xl overflow-hidden shadow-2xl flex flex-col max-h-[97vh]'}>
-        {embedded && financeView ? (
+        {embedded ? (
           data && (() => {
             const invoicesOk = [liveSummary.invoice_freight_status, liveSummary.invoice_duty_status].filter(st => st && st !== 'N/A');
             const invoicesMatch = invoicesOk.filter(st => st === 'OK').length;
+            const accepted = liveSummary.total_accepted ?? 0;
             return (
-              <div className="px-5 pt-3">
-                <div className={`${FV_CARD} px-4 py-3 flex flex-wrap items-center gap-4`} data-finance-cost-summary>
+              <div className="px-5 pt-3 shrink-0">
+                <div className={`${FV_CARD} px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-3`} data-cost-summary-box data-finance-cost-summary={financeView || undefined}>
                   <div className="mr-auto min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-[14px] font-bold text-[#3B1B3D]">Cost validation</span>
@@ -792,67 +829,37 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                     <div className="text-[11.5px] text-[#6E5E70]">{invoicesOk.length ? `${invoicesMatch} of ${invoicesOk.length} invoice${invoicesOk.length === 1 ? '' : 's'} match the rate sheet` : 'Each invoice line vs. the rate sheet'}</div>
                   </div>
                   {([
-                    ['OK', liveSummary.total_ok, FV_TILE_TONE.green],
+                    ['OK', liveSummary.total_ok - accepted, FV_TILE_TONE.green],
+                    ['Accepted', accepted, 'bg-[#17663D] text-white'],
                     ['Difference', liveSummary.total_selisih, FV_TILE_TONE.red],
                     ['N/A', liveSummary.total_na, FV_TILE_TONE.grey],
                   ] as const).map(([label, value, cls]) => (
-                    <div key={label} className={`${FV_TILE} ${cls}`}>
+                    <div key={label} className={`${FV_TILE} ${cls}`} data-cost-tile={label}>
                       <div className="text-[18px] font-bold leading-tight tabular-nums">{value}</div>
                       <div className="text-[10px] font-semibold">{label}</div>
                     </div>
                   ))}
                   <div className="min-w-[150px]">
-                    <div className="flex justify-between text-[11px] text-[#6E5E70] mb-1"><span>Accuracy</span><b className="text-[#3B1B3D]">{liveSummary.pct}%</b></div>
+                    <div className="flex justify-between text-[11px] text-[#6E5E70] mb-1"><span>Accuracy</span><b className="text-[#3B1B3D]" data-cost-accuracy>{liveSummary.pct}%</b></div>
                     <div className="h-2 rounded-full bg-[#F3EEEA] overflow-hidden"><div className={`h-full ${fvPctBar(liveSummary.pct)}`} style={{ width: `${liveSummary.pct}%` }} /></div>
                   </div>
+                  {act && canEdit && (
+                    <div className="flex items-center gap-2 print:hidden basis-full justify-end">
+                      {isEditing && <span className="text-[11px] font-medium text-amber-700 mr-auto">Editing — summary updates after saving</span>}
+                      {!isEditing ? (
+                        <button onClick={handleEditClick} className={VW_BTN_PRIMARY}><span>✏️</span> Edit Cost Validasi</button>
+                      ) : (
+                        <>
+                          <button onClick={handleCancelEdit} className={VW_BTN_SECONDARY}>Batal</button>
+                          <button onClick={handleSaveEdit} disabled={savingEdit} className={VW_BTN_SUCCESS}>{savingEdit ? 'Menyimpan...' : '💾 Simpan'}</button>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             );
           })()
-        ) : embedded ? (
-          /* Toolbar tab "Cost Validation" (jendela Validation) -- ringkasan status/akurasi di kiri,
-             tombol Edit Cost Validasi / Batal / Simpan di kanan. Beda isi dari toolbar Doc
-             Validation, gaya sama (lihat validationWindowStyles.ts). */
-          data && (
-          <div className={VW_TOOLBAR}>
-            <div className="flex items-center gap-3 flex-wrap min-w-0">
-              <span className={VW_LABEL}>Status</span>
-              {formatStatus(liveSummary.status_cost)}
-              {data.is_edited && !isEditing && <span className="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider">✏️ Edited</span>}
-              <div className="flex items-center gap-1.5 print:hidden">
-                <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 text-emerald-700 px-2 py-1 text-[11px] font-semibold"><b className="text-[13px]">{liveSummary.total_ok}</b> OK</span>
-                <span className="inline-flex items-center gap-1 rounded-md bg-red-50 text-red-700 px-2 py-1 text-[11px] font-semibold"><b className="text-[13px]">{liveSummary.total_selisih}</b> Selisih</span>
-                <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 text-slate-600 px-2 py-1 text-[11px] font-semibold"><b className="text-[13px]">{liveSummary.total_na}</b> N/A</span>
-              </div>
-              <div className="w-36 print:hidden">
-                <div className="flex justify-between items-baseline mb-1">
-                  <span className="text-[10px] text-slate-500">Accuracy</span>
-                  <span className={`text-[11px] font-bold ${vwPctText(liveSummary.pct)}`}>{liveSummary.pct}%</span>
-                </div>
-                <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
-                  <div className={`h-full transition-all duration-500 ${vwPctBar(liveSummary.pct)}`} style={{ width: `${liveSummary.pct}%` }} />
-                </div>
-              </div>
-              {isEditing && <span className="text-[11px] font-medium text-amber-700 print:hidden">Editing — summary updates after saving</span>}
-            </div>
-            {canEdit && (
-              <div className="ml-auto flex items-center gap-2 print:hidden">
-                {!isEditing ? (
-                  <button onClick={handleEditClick} className={VW_BTN_PRIMARY}>
-                    <span>✏️</span> Edit Cost Validasi
-                  </button>
-                ) : (
-                  <>
-                    <button onClick={handleCancelEdit} className={VW_BTN_SECONDARY}>Batal</button>
-                    <button onClick={handleSaveEdit} disabled={savingEdit} className={VW_BTN_SUCCESS}>
-                      {savingEdit ? 'Menyimpan...' : '💾 Simpan'}
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-          )
         ) : (
         <div className="px-5 py-2.5 border-b border-slate-100 flex justify-between items-center bg-slate-50">
           <div>
@@ -1183,6 +1190,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                           <td className="px-4 py-3 text-[#5A305A]">{formatRp(totalActualNum)}</td>
                           {!isEditing && <td className="px-4 py-3 text-[#5A305A]">{formatRp(totalSelisihNum)}</td>}
                           <td className="px-4 py-3 text-center">
+                             {(totalStatusStr === 'OVERCHARGE' || totalStatusStr === 'UNDERCHARGE' || totalStatusStr === 'SELISIH') && liveSummary.freight_total_accepted ? acceptedBadge(null) :
                              <span className={`inline-flex items-center rounded-md font-bold border whitespace-nowrap uppercase ${
                                totalStatusStr === 'OK' ? 'px-2.5 py-1 text-[11px] bg-emerald-50 text-emerald-700 border-emerald-200' :
                                totalStatusStr === 'UNDERCHARGE' ? 'px-3 py-1.5 text-[14px] bg-blue-100 text-blue-700 border-blue-300 shadow-sm' :
@@ -1191,7 +1199,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                                'px-2.5 py-1 text-[11px] bg-rose-50 text-rose-700 border-rose-200'
                              }`}>
                                <span className="mr-1">{totalStatusStr === 'OK' ? '✅' : (!totalStatusStr || totalStatusStr === 'N/A') ? '⬜' : '⚠️'}</span> {totalStatusStr}
-                             </span>
+                             </span>}
                           </td>
                         </tr>
                       );
@@ -1395,6 +1403,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                           <td className="px-4 py-3 text-[#5A305A]">{formatRp(dutyActualNum)}</td>
                           {!isEditing && <td className="px-4 py-3 text-[#5A305A]">{formatRp(dutySelisihNum)}</td>}
                           <td className="px-4 py-3 text-center">
+                             {(dutyStatusStr === 'OVERCHARGE' || dutyStatusStr === 'UNDERCHARGE') && liveSummary.duty_total_accepted ? acceptedBadge(null) :
                              <span className={`inline-flex items-center rounded-md font-bold border whitespace-nowrap uppercase ${
                                dutyStatusStr === 'OK' ? 'px-2.5 py-1 text-[11px] bg-emerald-50 text-emerald-700 border-emerald-200' :
                                dutyStatusStr === 'UNDERCHARGE' ? 'px-3 py-1.5 text-[14px] bg-blue-100 text-blue-700 border-blue-300 shadow-sm' :
@@ -1403,7 +1412,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                                'px-2.5 py-1 text-[11px] bg-rose-50 text-rose-700 border-rose-200'
                              }`}>
                                <span className="mr-1">{dutyStatusStr === 'OK' ? '✅' : dutyStatusStr === 'N/A' ? '⬜' : '⚠️'}</span> {dutyStatusStr}
-                             </span>
+                             </span>}
                           </td>
                         </tr>
                       );
@@ -1693,53 +1702,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                 )}
               </div>
               
-              {/* Summary Footer */}
-              {!isEditing && (
-                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col gap-4 text-sm mt-4">
-                   <div className="flex justify-between items-center pb-4 border-b border-slate-100">
-                     <div className="flex gap-4">
-                       <span className="font-semibold text-[#5A305A]">Total Validable: {liveSummary.total_cost_cek}</span>
-                       <span className="text-emerald-600 font-semibold">{liveSummary.total_ok} OK</span>
-                       <span className="text-red-600 font-semibold">{liveSummary.total_selisih} SELISIH</span>
-                       <span className="text-[#5A305A] font-semibold">{liveSummary.total_na} N/A</span>
-                     </div>
-                     <div className="flex items-center gap-2">
-                       <span className="font-bold text-[#5A305A]">STATUS:</span>
-                       {formatStatus(liveSummary.status_cost)}
-                     </div>
-                   </div>
-
-                   <div className="flex justify-end">
-                     <div className="min-w-[220px]">
-                       <div className="flex justify-between mb-1.5">
-                         <span className="text-[11px] text-[#5A305A] font-medium">Overall Accuracy</span>
-                         <span className="text-[11px] font-bold text-[#5A305A]">{liveSummary.pct}%</span>
-                       </div>
-                       <div className="h-2 rounded-full bg-slate-100 overflow-hidden shadow-inner">
-                         <div
-                           className={`h-full transition-all duration-500 ${liveSummary.pct >= 90 ? 'bg-emerald-600' : liveSummary.pct >= 60 ? 'bg-amber-500' : 'bg-red-600'}`}
-                           style={{ width: `${liveSummary.pct}%` }}
-                         />
-                       </div>
-                     </div>
-                   </div>
-
-                   <div className="flex justify-end gap-6">
-                     <div className="flex flex-col items-end gap-1">
-                       <span className="text-[10px] font-bold text-[#5A305A] tracking-wider uppercase">Invoice Freight</span>
-                       <span className={`px-2 py-0.5 rounded font-bold text-xs ${liveSummary.invoice_freight_status === 'OK' ? 'bg-emerald-100 text-emerald-700' : liveSummary.invoice_freight_status === 'N/A' ? 'bg-slate-100 text-[#5A305A]' : 'bg-red-100 text-red-700'}`}>
-                         {liveSummary.invoice_freight_status === 'OK' ? '✅ OK' : liveSummary.invoice_freight_status === 'N/A' ? '⬜ N/A' : '⚠️ ADA SELISIH'}
-                       </span>
-                     </div>
-                     <div className="flex flex-col items-end gap-1">
-                       <span className="text-[10px] font-bold text-[#5A305A] tracking-wider uppercase">Invoice Duty</span>
-                       <span className={`px-2 py-0.5 rounded font-bold text-xs ${liveSummary.invoice_duty_status === 'OK' ? 'bg-emerald-100 text-emerald-700' : liveSummary.invoice_duty_status === 'N/A' ? 'bg-slate-100 text-[#5A305A]' : 'bg-red-100 text-red-700'}`}>
-                         {liveSummary.invoice_duty_status === 'OK' ? '✅ OK' : liveSummary.invoice_duty_status === 'N/A' ? '⬜ N/A' : '⚠️ ADA SELISIH'}
-                       </span>
-                     </div>
-                   </div>
-                 </div>
-              )}
+              {/* Kotak ringkasan bawah (Total Validable / Overall Accuracy / status invoice) DIHAPUS 2026-10-15 -- isinya ada di kotak ringkasan atas. */}
               </div>
             </div>
           )}

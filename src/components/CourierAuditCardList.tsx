@@ -6,41 +6,104 @@ import React from 'react'
 import { SA_CARD, SA_LABEL, Chip, Pill, PtBadge } from './SeaAirAuditUi'
 import { fmtRp, fmtRpShort, fmtDateShort, companyFullName } from '../utils/SeaAirAuditHelpers'
 import {
-  courierDocNo, courierRowKey, courierTotalDutyTax, courierTotalExpenses, isCourierDraft,
-  type CourierAuditSummary, type CourierDocType,
+  courierDocNo, courierRowKey, courierTotalDutyTax, courierTotalExpenses, isCourierDraft, courierDutyPartsTotal,
+  type CourierAuditSummary, type CourierDocType, type CourierAuditTab, type CourierAuditTabKpi, type CourierDutyParts,
 } from '../utils/CourierAuditHelpers'
 
 const hasVal = (v: any) => v !== null && v !== undefined && String(v).trim() !== '' && String(v).trim() !== '-'
 
 // ─── Kartu KPI ────────────────────────────────────────────────────────────────
+// Revisi 2026-10-15 (permintaan user, mockup "Courier Audit Revisi.html"): 4 kartu sama lebar -- Records | Customs value |
+// Duties & taxes (+ "Rincian ▾" popover BM/PPN/PPh/Adm fee-SPTNP × PIB/CN/Total) | Outstanding Final Check (dulu "Not submitted
+// to NAS"). Kartu "Validation incomplete" DIHAPUS. Angka ditulis lengkap (fmtRp) & mengikuti tab aktif + filter tanggal/company
+// (`summary.byTab[tab]`). Duties & taxes = BM + PPN + PPh + Adm fee (CN) / SPTNP (PIB) -- rumus SAMA "Total Duty Tax" kartu.
+const DUTY_ROWS: { key: keyof CourierDutyParts; label: string }[] = [
+  { key: 'bm', label: 'BM' }, { key: 'ppn', label: 'PPN' }, { key: 'pph', label: 'PPh' }, { key: 'adm', label: 'Adm fee / SPTNP' },
+]
+const fmtNum = (v: number) => Math.round(v).toLocaleString('id-ID')
+
+const DutyBreakdownPopover: React.FC<{ k: CourierAuditTabKpi; onClose: () => void }> = ({ k, onClose }) => {
+  const ref = React.useRef<HTMLDivElement>(null)
+  React.useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement
+      if (ref.current?.contains(t) || t.closest?.('[data-duty-breakdown-btn]')) return
+      onClose()
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [onClose])
+  const totP = courierDutyPartsTotal(k.duty.PIB), totC = courierDutyPartsTotal(k.duty.CN)
+  const TH = 'px-2 py-1 text-[10.5px] font-semibold text-[#8A7A8B] text-right border-b border-[#EADFD6]'
+  const TD = 'px-2 py-1.5 text-right tabular-nums whitespace-nowrap border-b border-dashed border-[#EADFD6]'
+  return (
+    <div ref={ref} role="dialog" aria-label="Duties & taxes breakdown" data-duty-breakdown
+      className="absolute left-0 top-[calc(100%+6px)] z-30 w-[min(420px,calc(100vw-48px))] bg-white border border-[#EADFD6] rounded-xl shadow-[0_12px_30px_rgba(60,20,40,0.18)] px-3 py-2.5">
+      <table className="w-full border-collapse text-[12px] text-[#3B1B3D]">
+        <thead><tr><th className={`${TH} text-left`}>Komponen</th><th className={TH}>PIB</th><th className={TH}>CN</th><th className={TH}>Total</th></tr></thead>
+        <tbody>
+          {DUTY_ROWS.map(r => (
+            <tr key={r.key}>
+              <td className={`${TD} !text-left`}>{r.label}</td>
+              <td className={TD}>{fmtNum(k.duty.PIB[r.key])}</td>
+              <td className={TD}>{fmtNum(k.duty.CN[r.key])}</td>
+              <td className={TD}>{fmtNum(k.duty.PIB[r.key] + k.duty.CN[r.key])}</td>
+            </tr>
+          ))}
+          <tr className="font-extrabold">
+            <td className="px-2 py-1.5">Total</td>
+            <td className="px-2 py-1.5 text-right tabular-nums">{fmtNum(totP)}</td>
+            <td className="px-2 py-1.5 text-right tabular-nums">{fmtNum(totC)}</td>
+            <td className="px-2 py-1.5 text-right tabular-nums">{fmtNum(totP + totC)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 export const CourierAuditKpiCards: React.FC<{
   summary: CourierAuditSummary | null
   loading: boolean
-  validationIncomplete: number | null
+  tab: CourierAuditTab
   colOk: (key: string) => boolean
-}> = ({ summary, loading, validationIncomplete, colOk }) => {
-  const v = (fn: (s: CourierAuditSummary) => React.ReactNode) => (summary ? fn(summary) : loading ? '…' : '—')
-  const card = (label: string, value: React.ReactNode, sub: React.ReactNode, valueClass = 'text-[#3B1B3D]') => (
-    <div className={`${SA_CARD} px-4 py-3 min-w-0`}>
-      <div className="text-[11.5px] font-semibold text-[#6E5E70]">{label}</div>
+}> = ({ summary, loading, tab, colOk }) => {
+  const [dutyOpen, setDutyOpen] = React.useState(false)
+  const closeDuty = React.useCallback(() => setDutyOpen(false), [])
+  const k = summary ? summary.byTab[tab] : null
+  const v = (fn: (k: CourierAuditTabKpi) => React.ReactNode) => (k ? fn(k) : loading ? '…' : '—')
+  const card = (label: React.ReactNode, value: React.ReactNode, sub: React.ReactNode, valueClass = 'text-[#3B1B3D]', extra?: React.ReactNode) => (
+    <div className={`${SA_CARD} relative px-4 py-3 min-w-0`}>
+      <div className="text-[11.5px] font-semibold text-[#6E5E70] flex items-center gap-2">{label}</div>
       <div className={`text-[22px] leading-tight font-bold mt-0.5 tabular-nums truncate ${valueClass}`}>{value}</div>
       <div className="text-[11px] text-[#8A7A8B] mt-0.5 truncate">{sub}</div>
+      {extra}
     </div>
   )
   const hidden = 'Hidden for your role'
+  const split = (pib: number, cn: number) => <>PIB <b className="text-[#6E5E70]">{fmtRp(pib)}</b> | CN <b className="text-[#6E5E70]">{fmtRp(cn)}</b></>
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-      {card('Records', v(s => s.total), v(s => `${s.draft} draft · ${s.pib} PIB · ${s.cn} CN`))}
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" data-courier-kpi>
+      {card('Records', v(k => k.records), v(k => `${k.recDraft} draft · ${k.recPib} PIB · ${k.recCn} CN`))}
       {colOk('total_nilai_pabean')
-        ? card('Customs value', v(s => fmtRpShort(s.cvSum)), 'total customs value in rupiah')
+        ? card('Customs value', v(k => fmtRp(k.cv.PIB + k.cv.CN)), v(k => split(k.cv.PIB, k.cv.CN)))
         : card('Customs value', '—', hidden)}
       {colOk('total_pib_cn')
-        ? card('Duties & taxes', v(s => fmtRpShort(s.dutySum)), v(s => `BM ${fmtRpShort(s.bmSum)} · PPN ${fmtRpShort(s.ppnSum)} · PPh ${fmtRpShort(s.pphSum)}${s.admSum ? ` · Adm ${fmtRpShort(s.admSum)}` : ''}`))
+        ? card(
+          <>Duties &amp; taxes
+            {k && <button type="button" data-duty-breakdown-btn aria-expanded={dutyOpen} onClick={() => setDutyOpen(o => !o)}
+              className="text-[11px] font-semibold text-[#6B3470] hover:underline">{dutyOpen ? 'Tutup ▴' : 'Rincian ▾'}</button>}
+          </>,
+          v(k => fmtRp(courierDutyPartsTotal(k.duty.PIB) + courierDutyPartsTotal(k.duty.CN))),
+          v(k => split(courierDutyPartsTotal(k.duty.PIB), courierDutyPartsTotal(k.duty.CN))),
+          'text-[#3B1B3D]',
+          dutyOpen && k ? <DutyBreakdownPopover k={k} onClose={closeDuty} /> : null)
         : card('Duties & taxes', '—', hidden)}
       {colOk('tgl_submit_nas')
-        ? card('Not submitted to NAS', v(s => s.nasEmpty), v(s => `${s.nasEmptyDraft} draft · ${s.nasEmptyPib} PIB · ${s.nasEmptyCn} CN`), 'text-[#7A4F00]')
-        : card('Not submitted to NAS', '—', hidden)}
-      {card('Validation incomplete', validationIncomplete === null ? (loading ? '…' : '—') : validationIncomplete, 'draft · checklist / doc / cost below 100% (info only)', 'text-[#A8231A]')}
+        ? card('Outstanding Final Check', v(k => k.nas), v(k => `${k.nasDraft} draft · ${k.nasPib} PIB · ${k.nasCn} CN`), 'text-[#7A4F00]')
+        : card('Outstanding Final Check', '—', hidden)}
     </div>
   )
 }
