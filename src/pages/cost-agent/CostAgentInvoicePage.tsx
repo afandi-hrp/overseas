@@ -289,7 +289,10 @@ export default function CostAgentInvoicePage() {
                         )}
                         <td className={`${TD} whitespace-nowrap`}>{fmtDate(r.invoice_date)}</td>
                         <td className={`${TD} font-semibold min-w-[160px]`}>{r.vendor_name || <span className="text-[#8A7A8B] font-normal">—</span>}</td>
-                        <td className={`${TD} whitespace-nowrap`}>{r.invoice_no || <span className="text-[#8A7A8B]">#{r.id}</span>}</td>
+                        <td className={`${TD} whitespace-nowrap max-w-[260px]`}>
+                          {r.invoice_no || <span className="text-[#8A7A8B]">#{r.id}</span>}
+                          {r.description && <div className="text-[11px] text-[#8A7A8B] truncate" title={r.description} data-invoice-desc>{r.description}</div>}
+                        </td>
                         <td className={`${TD} whitespace-nowrap`}>{r.vessel_name || '—'}</td>
                         <td className={`${TD} whitespace-nowrap`} title={r.port_name || undefined}>{r.port_code || '—'}</td>
                         <td className={`${TD} whitespace-nowrap`}>{r.voyage_no ? `Voy ${r.voyage_no}` : '—'}</td>

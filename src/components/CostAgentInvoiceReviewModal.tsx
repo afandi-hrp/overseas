@@ -20,7 +20,7 @@ import CostAgentPaymentModal from './CostAgentPaymentModal'
 import type { HistoryCache } from './CostAgentHistoryBrowser'
 import {
   costAgentGetInvoiceHistory, costAgentUpdateInvoiceHeader, costAgentSubmitForApproval, costAgentUpload,
-  costAgentAddVendor, searchCostAgentVendors, formatNpwp,
+  costAgentAddVendor, searchCostAgentVendors, formatNpwp, costAgentSetInvoiceDescription, COST_AGENT_DESCRIPTION_MAX,
   fetchCostAgentCallOptions, callOptionLabel, drivePreviewUrl, isInvoiceEditable, canUploadSupporting,
   fmtMoney, fmtDate, fmtDateTimePort, fmtDateTimeCompact, tzAbbrev, fmtNumber, CHECK_NOTE_LABEL, canDeleteInvoice, activeApprovalStep, isApproverOf, notifyCostAgentApprovalsChanged,
   type CostAgentInvoiceHistory, type CostAgentCompany, type CostAgentVendor, type CostAgentVessel, type CostAgentPort,
@@ -181,12 +181,19 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
               {(inv.check_notes || []).filter(n => n.type !== 'susulan_mismatch').length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {inv.check_notes.filter(n => n.type !== 'susulan_mismatch').map((n, i) => (
-                    <div key={i} className="rounded-md border border-[#F2D58A] bg-[#FFF8E6] px-2 py-0.5 text-[11.5px] text-[#7A4F00] flex items-start gap-1.5">
+                    <div key={i} className="rounded-md border border-[#F2D58A] bg-[#FFF8E6] px-2 py-0.5 text-[11.5px] text-[#7A4F00] flex items-start gap-1.5" data-check-note={n.type || ''}>
                       <AlertTriangle size={12} className="mt-0.5 shrink-0" /><span><b>{CHECK_NOTE_LABEL[n.type || ''] || n.type || 'Note'}:</b> {n.msg || n.message || ''}</span>
+                      {/* sql/063 vessel_fuzzy: nama kapal ditebak dari salah ketik -> user memastikan lewat koreksi header. */}
+                      {n.type === 'vessel_fuzzy' && headerEditable && !editHeader && (
+                        <button type="button" className="shrink-0 ml-1 font-semibold text-[#6B3470] hover:underline inline-flex items-center gap-0.5" onClick={() => setEditHeader(true)}>
+                          <Pencil size={11} /> Correct header
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
               )}
+              <InvoiceDescription inv={inv} editable={headerEditable} actor={actor} onSaved={reload} onToast={onToast} />
               {inv.status === 'failed' && (
                 <div className="mt-2.5 rounded-md border border-[#F4C3BC] bg-[#FDE7E4] px-2.5 py-1.5 text-[12px] text-[#A8231A] flex items-center gap-2 flex-wrap">
                   <AlertTriangle size={12} /> <span className="flex-1">AI processing failed: {inv.error_message || 'unknown error'}</span>
@@ -562,5 +569,61 @@ function FilePreviewFrame({ src, drive, exit = false, onFullScreen }: { src: str
         </button>
       )}
     </>
+  )
+}
+
+// Keterangan invoice (sql/064): tampil di header (lebar penuh, di bawah Vessel/Port), badge Auto / Edited. Ubah (pensil) -> input
+// maks 300 + Save / Cancel -> fn_cost_agent_set_invoice_description lalu reload; "Reset to auto" (hanya bila Edited) = RPC dgn ''.
+// Hanya status verification/rejected/failed & canEdit (`editable` = headerEditable modal).
+function InvoiceDescription({ inv, editable, actor, onSaved, onToast }: {
+  inv: CostAgentInvoiceHistory['invoice']; editable: boolean; actor: string | null; onSaved: () => Promise<void> | void; onToast: (msg: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const auto = inv.description_auto !== false
+  const save = async (value: string, okMsg: string) => {
+    setBusy(true); setError(null)
+    try {
+      await costAgentSetInvoiceDescription(inv.id, value, actor)
+      setEditing(false)
+      await onSaved()
+      onToast(okMsg)
+    } catch (e: any) { setError(e.message || String(e)) } finally { setBusy(false) }
+  }
+  return (
+    <div className="mt-2 text-[12.5px]" data-invoice-description>
+      <div className="flex items-center gap-1.5">
+        <span className={SA_LABEL}>Description</span>
+        <span className={`px-1.5 py-[1px] rounded text-[10px] font-bold ${auto ? 'bg-[#EEF1FA] text-[#2F4FA8]' : 'bg-[#F5EDF3] text-[#6B3470]'}`} data-description-badge>{auto ? 'Auto' : 'Edited'}</span>
+      </div>
+      {editing ? (
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <input className={`${SA_INPUT} flex-1 min-w-[260px] uppercase`} value={text} maxLength={COST_AGENT_DESCRIPTION_MAX} autoFocus disabled={busy} aria-label="Invoice description"
+            onChange={e => setText(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && text.trim()) save(text, 'Description saved.'); if (e.key === 'Escape') { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); setEditing(false) } }} />
+          <span className="text-[11px] text-[#8A7A8B] tabular-nums">{text.length}/{COST_AGENT_DESCRIPTION_MAX}</span>
+          <button type="button" className={SA_BTN_OUTLINE} disabled={busy} onClick={() => { setEditing(false); setError(null) }}>Cancel</button>
+          <button type="button" className={SA_BTN_PRIMARY} disabled={busy || !text.trim()} onClick={() => save(text, 'Description saved.')}>{busy ? 'Saving…' : 'Save'}</button>
+        </div>
+      ) : (
+        <div className="mt-0.5 flex items-start gap-2 min-w-0">
+          <span className="text-[#3B1B3D] font-medium [overflow-wrap:anywhere] min-w-0">{inv.description || <span className="text-[#8A7A8B] font-normal">—</span>}</span>
+          {editable && (
+            <>
+              <button type="button" aria-label="Edit description" title="Edit description" className="shrink-0 p-1 -mt-0.5 rounded-md text-[#6B3470] hover:bg-[#F5EDF3]"
+                onClick={() => { setText(inv.description || ''); setError(null); setEditing(true) }}><Pencil size={12} /></button>
+              {!auto && (
+                <button type="button" disabled={busy} className="shrink-0 text-[11.5px] font-semibold text-[#6B3470] hover:underline disabled:opacity-50 inline-flex items-center gap-0.5"
+                  onClick={() => save('', 'Description reset to automatic.')}><RotateCcw size={11} /> Reset to auto</button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+      <div className="text-[11px] text-[#8A7A8B] mt-0.5">Saved to history as the invoice title when approved. Auto text follows vessel/port/voyage until edited.</div>
+      {error && <div className="text-[11.5px] text-[#A8231A] mt-0.5">{error}</div>}
+    </div>
   )
 }

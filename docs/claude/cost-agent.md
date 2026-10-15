@@ -191,7 +191,11 @@ File: `src/pages/cost-agent/CostAgentInvoicePage.tsx` (daftar), `src/components/
   company -> `fn_cost_agent_update_invoice_header`.
   Tab **Cost lines**: split view viewer file (`files[]` / `file_url`; link Drive -> `/preview` iframe, lainnya tombol Open;
   disembunyikan < lg) | tabel baris. Tab **Documents & Tax**. Tab **Timeline** (status_log).
-- **Baris** (edit hanya verification/rejected & `canEdit('cost_agent_invoice')`): select cost item (per kategori) ->
+- **Baris** (edit hanya verification/rejected & `canEdit('cost_agent_invoice')`): pilih cost item (per kategori; sejak 2026-10-15
+  BISA DIKETIK utk mencari -- `CostAgentCostItemPicker.tsx`: cari code/nama/kategori/keyword alias, ↑/↓ Enter Esc, daftar portal
+  `fixed` supaya tidak terpotong tabel; simpan SAMA select lama; diuji jsdom 11 cek). **Zoom 90%** (laptop 14", laporan user
+  2026-10-15: daftar menutupi kotak ketik): posisi = koordinat layar / faktor zoom yang DIUKUR dari lebar daftar (`scale`), diverifikasi
+  Edge headless; baris "Search: <teks>" sticky di atas daftar. Pola ini berlaku utk dropdown portal `fixed` lain di bawah zoom ->
   `verify_line(learn_alias true)`; Verified (learn alias saat dicentang); "Ref" = include_in_history; Remark disimpan saat blur
   (RPC memakai coalesce -> remark tidak bisa dikosongkan). Baris tanpa cost item / item_baru: "Not in cost master yet" + **Add as new
   cost item** (code/name/category/GL/keywords -> `add_cost_item` -> `verify_line(id baru, verified)`). Field **Code** = combobox
@@ -478,6 +482,29 @@ disalin user ke ROOT repo (memicu crash watcher Vite EBUSY) -> dipindah ke `sql/
   `sandbox="allow-scripts allow-same-origin allow-forms"` (TANPA allow-popups) + tombol kita (48px, kanan atas) MENUTUPI ikon pop-out
   Drive (Full screen / Exit full screen) -- `FilePreviewFrame`. File non-Drive tidak di-sandbox (viewer PDF Chrome menolak iframe
   ber-sandbox) & tampil langsung di overlay.
+
+## Agent Invoice -- Description invoice, vessel_fuzzy, label match method (2026-10-15; sql/063 & sql/064 SUDAH DIJALANKAN, konfirmasi user)
+
+HANYA halaman Agent Invoice (Voyage / Approval Matrix / routing / permissions TIDAK berubah). File: `CostAgentHelpers.ts`,
+`CostAgentInvoiceReviewModal.tsx`, `CostAgentInvoiceLines.tsx`, `CostAgentInvoicePage.tsx`, `CostAgentCards.tsx` (hanya `CostAgentInvoiceCard`).
+- **Data (sql/064)**: `cost_agent_invoices.description` (keterangan, mis. "BY. AGEN DLL DI BJM - MV. CEMTRANS VOY 12", otomatis dari template
+  `cost_agent_settings.invoice_description_template[_<PT>]` lewat trigger selama `description_auto`) + `description_auto` (true = otomatis).
+  Ikut ke history (`invoice_description`) saat approve = judul di history/Browse history. RPC `fn_cost_agent_set_invoice_description(p_invoice_id,
+  p_description, p_actor) -> text` (huruf besar, maks 300, '' = kembali otomatis; hanya verification/rejected/failed + `cost_agent_invoice` edit;
+  dicatat di status_log). Wrapper `costAgentSetInvoiceDescription`, konstanta `COST_AGENT_DESCRIPTION_MAX`. Tipe `CostAgentInvoice.description/
+  description_auto`, `CostAgentInvoiceListRow.description` (opsional).
+- **A. Header modal review** (`InvoiceDescription`, lebar penuh di bawah strip Vessel/Port/Voyage/nominal): teks + badge **Auto**/**Edited**; pensil
+  -> input (maks 300, penghitung, Enter = Save, Esc = Cancel tanpa menutup modal) + Save / Cancel -> RPC lalu reload; **Reset to auto** hanya bila
+  Edited (RPC dgn ''). Hak = `headerEditable` (canEdit + verification/rejected/failed), selain itu baca saja. Helper text sesuai spek.
+- **B. check_notes `vessel_fuzzy`** (sql/063, nama kapal dikenali dari salah ketik 1 huruf): label "Vessel name recognised from a typo" di
+  `CHECK_NOTE_LABEL`, alert kuning sama note lain + tombol **Correct header** (membuka HeaderEditor) bila header boleh dikoreksi.
+- **C. Match method** (`MATCH_METHOD_LABEL`): baris dgn cost item & `match_method` keyword_synonym / history / alias_pattern -> teks kecil abu di
+  bawah Cost item ("Keyword (typo/synonym)" / "Similar past line" / "Learned alias", tooltip "Matched by: …"). Metode lain tanpa label.
+- **D. Daftar**: description = teks kecil abu di bawah Invoice No (List & Card), truncate 1 baris, tooltip penuh. View `cost_agent_invoice_list_v`
+  BELUM memuat kolom ini (064 tidak mengubah view) -> `fetchCostAgentInvoiceList` membaca `id, description` dari `cost_agent_invoices` utk id
+  halaman itu (1 query; error -> tanpa keterangan, console.warn). Kalau view kelak ditambah kolom `description`, query tambahan otomatis dilewati.
+- **Diuji 2026-10-15**: jsdom modal review 15 cek (tampil + badge Auto, helper text, note vessel_fuzzy + Correct header, label match method,
+  Edit -> RPC -> Edited, Reset to auto -> '' -> Auto, baca saja saat approved). `tsc` (lint) bersih. Belum dites di browser / production.
 
 ## Konvensi lanjutan
 

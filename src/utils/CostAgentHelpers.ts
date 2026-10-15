@@ -77,6 +77,8 @@ export interface CostAgentInvoiceListRow {
   po_numbers?: string[] | null
   document_count?: number | null
   documents_processing?: number | null
+  // sql/064: keterangan invoice -- view list BELUM memuatnya; diisi `fetchCostAgentInvoiceList` dari cost_agent_invoices (fail-open).
+  description?: string | null
   created_at: string
   updated_at: string
 }
@@ -293,6 +295,10 @@ export interface CostAgentInvoice {
   paid_at: string | null
   paid_ref: string | null
   po_numbers?: string[] | null // versi 2
+  // sql/064: keterangan invoice (mis. "BY. AGEN DLL DI BJM - MV. CEMTRANS VOY 12"), ikut ke history saat approve.
+  // description_auto = true selama masih otomatis dari template (ikut vessel/port/voyage), false bila sudah diubah user.
+  description?: string | null
+  description_auto?: boolean | null
   voyage: Record<string, any> | null
   voyage_call: Record<string, any> | null
   created_at: string
@@ -375,8 +381,21 @@ export const COST_AGENT_INVOICE_SEARCH_COLS = ['invoice_no', 'vendor_name', 'ves
 
 export const fetchCostAgentVoyageList = (p: CostAgentListParams) =>
   fetchCostAgentList<CostAgentVoyageListRow>('cost_agent_voyage_list_v', { searchCols: COST_AGENT_VOYAGE_SEARCH_COLS, ...p })
-export const fetchCostAgentInvoiceList = (p: CostAgentListParams) =>
-  fetchCostAgentList<CostAgentInvoiceListRow>('cost_agent_invoice_list_v', { searchCols: COST_AGENT_INVOICE_SEARCH_COLS, ...p })
+export async function fetchCostAgentInvoiceList(p: CostAgentListParams) {
+  const res = await fetchCostAgentList<CostAgentInvoiceListRow>('cost_agent_invoice_list_v', { searchCols: COST_AGENT_INVOICE_SEARCH_COLS, ...p })
+  // sql/064: view list belum punya kolom `description` -> ambil dari cost_agent_invoices utk baris halaman ini saja.
+  // Gagal (mis. kolom/hak) -> daftar tetap tampil tanpa keterangan.
+  const missing = res.rows.filter(r => r.description === undefined).map(r => r.id)
+  if (missing.length) {
+    const { data, error } = await supabase.from('cost_agent_invoices').select('id, description').in('id', missing)
+    if (error) console.warn('[CostAgent] keterangan invoice tidak terbaca:', error.message)
+    else {
+      const m = new Map((data || []).map((d: any) => [Number(d.id), d.description ?? null]))
+      res.rows.forEach(r => { if (r.description === undefined) r.description = m.get(Number(r.id)) ?? null })
+    }
+  }
+  return res
+}
 
 // Master utk dropdown/combobox (kecil; dibaca sekali per halaman).
 async function selectAll<T>(table: string, cols: string, order: string): Promise<T[]> {
@@ -416,6 +435,11 @@ export const costAgentUpdateInvoiceHeader = (a: {
   p_invoice_id: a.invoiceId, p_vendor_id: a.vendorId, p_vessel_id: a.vesselId, p_port_id: a.portId,
   p_voyage_call_id: a.voyageCallId, p_company_code: a.companyCode, p_actor: a.actor ?? null,
 })
+// sql/064: ubah keterangan invoice (status verification/rejected/failed, canEdit cost_agent_invoice). '' = kembali otomatis.
+// Server menyimpan huruf besar, maks 300 karakter; mengembalikan keterangan tersimpan.
+export const COST_AGENT_DESCRIPTION_MAX = 300
+export const costAgentSetInvoiceDescription = (invoiceId: number, description: string, actor?: string | null) =>
+  callCostAgentRpc<string | null>('fn_cost_agent_set_invoice_description', { p_invoice_id: invoiceId, p_description: description, p_actor: actor ?? null })
 export const costAgentVerifyLine = (a: {
   lineId: number; costItemId: number | null; isVerified: boolean; remark?: string | null; includeInHistory: boolean
   learnAlias: boolean; actor?: string | null
@@ -729,6 +753,14 @@ export const CHECK_NOTE_LABEL: Record<string, string> = {
   vendor_unknown: 'Vendor not in master', vessel_unknown: 'Vessel not in master', port_unknown: 'Port not in master',
   voyage_unmatched: 'Voyage / port call not matched', duplicate: 'Possible duplicate', total_mismatch: 'Total mismatch',
   susulan_mismatch: 'Supporting document refers to another invoice',
+  vessel_fuzzy: 'Vessel name recognised from a typo', // sql/063
+}
+
+// Label cara baris dicocokkan ke cost item (`match_method`, sql/063). Metode lain -> tidak diberi label.
+export const MATCH_METHOD_LABEL: Record<string, string> = {
+  keyword_synonym: 'Keyword (typo/synonym)',
+  history: 'Similar past line',
+  alias_pattern: 'Learned alias',
 }
 
 // Jumlah invoice per status (tab) -- head count per status, filter sama daftar (tanpa filter status).

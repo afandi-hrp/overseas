@@ -13,9 +13,10 @@ import React, { useMemo, useState } from 'react'
 import { Plus, CheckCheck, AlertTriangle, History, RotateCcw, Pin } from 'lucide-react'
 import { CompareFlagChip, MatchLevelLabel, CostAgentModal, FieldLabel } from './CostAgentUi'
 import { SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_INPUT, Chip } from './SeaAirAuditUi'
+import CostAgentCostItemPicker from './CostAgentCostItemPicker'
 import CostAgentHistoryBrowser, { LineMatchBadge, ChosenByUserLabel, type HistoryCache } from './CostAgentHistoryBrowser'
 import {
-  costAgentVerifyLine, costAgentAddCostItem, costAgentSetLineReference, fmtMoney, fmtNumber, fmtPct, fmtDate, daysDiffLabel, COMPARE_FLAG_META,
+  costAgentVerifyLine, costAgentAddCostItem, costAgentSetLineReference, MATCH_METHOD_LABEL, fmtMoney, fmtNumber, fmtPct, fmtDate, daysDiffLabel, COMPARE_FLAG_META,
   type CostAgentInvoiceLine, type CostAgentCostItem, type CostAgentCompareFlag, type CostAgentPort, type CostAgentVessel, type CostAgentVendor,
 } from '../utils/CostAgentHelpers'
 
@@ -46,11 +47,6 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
   const [onlyCheck, setOnlyCheck] = useState(false) // footer "Needs check": tampilkan hanya baris compare_check
 
   const items = useMemo(() => costItems.filter(c => c.is_active !== false), [costItems])
-  const itemsByCat = useMemo(() => {
-    const m = new Map<string, CostAgentCostItem[]>()
-    items.forEach(c => { const k = c.category || 'OTHER'; m.set(k, [...(m.get(k) || []), c]) })
-    return [...m.entries()].sort(([a], [b]) => a.localeCompare(b))
-  }, [items])
 
   const run = async (key: number | 'all', fn: () => Promise<unknown>) => {
     setBusy(key); setError(null)
@@ -123,15 +119,17 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                     <td className={`${TD} min-w-[150px]`}>{l.description_raw}</td>
                     <td className={`${TD} min-w-[150px] max-w-[220px]`}>
                       {editable ? (
-                        <select className={`${SA_INPUT} h-8 text-[12px] pr-6`} value={l.cost_item_id ?? ''} disabled={rowBusy}
-                          onChange={e => run(l.id, () => verify(l, { costItemId: e.target.value ? Number(e.target.value) : null, learnAlias: !!e.target.value }))}>
-                          <option value="">— not mapped —</option>
-                          {itemsByCat.map(([cat, list]) => (
-                            <optgroup key={cat} label={cat}>{list.map(c => <option key={c.id} value={c.id}>{c.code} — {c.name}</option>)}</optgroup>
-                          ))}
-                        </select>
+                        // Bisa diketik utk mencari (2026-10-15, CostAgentCostItemPicker); simpan SAMA <select> lama.
+                        <CostAgentCostItemPicker items={items} value={l.cost_item_id ?? null} disabled={rowBusy}
+                          onChange={id => run(l.id, () => verify(l, { costItemId: id, learnAlias: id !== null }))} />
                       ) : (
                         <span>{l.cost_item_code ? `${l.cost_item_code} — ${l.cost_item_name}` : '—'}</span>
+                      )}
+                      {/* sql/063: cara AI mencocokkan cost item (hanya metode yang diberi label). */}
+                      {l.cost_item_id && l.match_method && MATCH_METHOD_LABEL[l.match_method] && (
+                        <div className="mt-0.5 text-[10.5px] text-[#8A7A8B] truncate" title={`Matched by: ${MATCH_METHOD_LABEL[l.match_method]}`} data-match-method={l.match_method}>
+                          {MATCH_METHOD_LABEL[l.match_method]}
+                        </div>
                       )}
                       {newItem && (
                         <div className="mt-1 flex items-center gap-2 flex-wrap">

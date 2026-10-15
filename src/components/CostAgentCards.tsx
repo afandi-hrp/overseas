@@ -109,6 +109,7 @@ export const CostAgentInvoiceCard: React.FC<{
             </div>
             <div className="mt-1 text-[14px] font-bold text-[#3B1B3D] truncate" title={r.vendor_name || undefined}>{r.vendor_name || <span className="text-[#8A7A8B] font-normal">Unknown vendor</span>}</div>
             <div className="text-[12px] text-[#6E5E70] truncate">{r.invoice_no || `#${r.id}`}</div>
+            {r.description && <div className="text-[11px] text-[#8A7A8B] truncate" title={r.description} data-invoice-desc>{r.description}</div>}
           </div>
         </div>
         <div className="min-w-0 text-[12px] grid grid-cols-[52px_1fr] gap-x-2 gap-y-1">
