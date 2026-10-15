@@ -58,6 +58,12 @@ const SeaAirAuditRowCard: React.FC<{
   const waitingDocs = draft && info?.missingDocs && info.missingDocs.length > 0 ? info.missingDocs : null
   const reaudit = draft && !!rec.reaudit_reason
 
+  // Status + Open: dipakai kolom 5 (kartu lebar) ATAU di samping Duty & tax (kartu 1-2 kolom).
+  const statusOpen = <>
+    <Chip tone={draft ? 'amber' : 'green'}>{draft ? 'Draft' : 'Audited'}</Chip>
+    <button type="button" onClick={() => onOpen(rec)} className={`inline-flex items-center justify-center px-4 h-8 rounded-xl text-white text-xs font-semibold ${selected ? 'bg-[#3B1B3D]' : 'bg-[#6B3470] hover:bg-[#5A2A5E]'}`}>{selected ? 'Opened' : 'Open'}</button>
+  </>
+
   return (
     <div className={`@container ${SA_CARD} border-l-4 ${borderColor} overflow-hidden cursor-pointer ${selected ? 'ring-2 ring-[#6B3470]' : 'hover:border-[#D9C7DA]'}`}
       data-audit-card={rec.id} aria-current={selected || undefined} onClick={openFromCard}>
@@ -106,13 +112,18 @@ const SeaAirAuditRowCard: React.FC<{
           </div>
         </div>
 
-        {/* 3. Duty & tax (ditukar dgn validasi 2026-10-13, permintaan user: Duty & tax sebelum status validasi) */}
-        <div className="@5xl:text-right min-w-0 @md:order-2 @5xl:order-none">
-          <div className={SA_LABEL}>Duty &amp; tax</div>
-          <div className="text-[18px] font-bold text-[#3B1B3D] tabular-nums leading-tight">{fmtRp(rec.total_pib)}</div>
-          <div className="text-[11px] text-[#6E5E70] tabular-nums">
-            BM <b className="text-[#3B1B3D]">{rate('bm')}</b> · PPN <b className="text-[#3B1B3D]">{rate('ppn')}</b> · PPh <b className="text-[#3B1B3D]">{rate('pph')}</b>
+        {/* 3. Duty & tax (ditukar dgn validasi 2026-10-13, permintaan user: Duty & tax sebelum status validasi).
+            2026-10-15 (permintaan user): kartu 1-2 kolom (< @5xl -- panel detail terbuka, di 14" maupun 24") -> Draft + Open di SAMPING
+            Duty & tax (kolom 5 disembunyikan), kartu jadi lebih pendek. Kartu lebar (@5xl+) tetap kolom Status + Open sendiri. */}
+        <div className="min-w-0 @md:order-2 @5xl:order-none flex items-start justify-between gap-3 @5xl:block @5xl:text-right">
+          <div className="min-w-0">
+            <div className={SA_LABEL}>Duty &amp; tax</div>
+            <div className="text-[18px] font-bold text-[#3B1B3D] tabular-nums leading-tight whitespace-nowrap">{fmtRp(rec.total_pib)}</div>
+            <div className="text-[11px] text-[#6E5E70] tabular-nums">
+              BM <b className="text-[#3B1B3D]">{rate('bm')}</b> · PPN <b className="text-[#3B1B3D]">{rate('ppn')}</b> · PPh <b className="text-[#3B1B3D]">{rate('pph')}</b>
+            </div>
           </div>
+          <div className="flex flex-col items-end gap-1.5 shrink-0 @5xl:hidden" data-card-status-inline>{statusOpen}</div>
         </div>
 
         {/* 4. Validasi Invoice Recap + field yang beda */}
@@ -130,10 +141,7 @@ const SeaAirAuditRowCard: React.FC<{
         </div>
 
         {/* 5. Status + Open */}
-        <div className="flex flex-col @5xl:items-end gap-1.5 min-w-0 @md:order-5 @5xl:order-none">
-          <Chip tone={draft ? 'amber' : 'green'}>{draft ? 'Draft' : 'Audited'}</Chip>
-          <button type="button" onClick={() => onOpen(rec)} className={`inline-flex items-center justify-center px-4 h-8 rounded-xl text-white text-xs font-semibold ${selected ? 'bg-[#3B1B3D]' : 'bg-[#6B3470] hover:bg-[#5A2A5E]'}`}>{selected ? 'Opened' : 'Open'}</button>
-        </div>
+        <div className="hidden @5xl:flex flex-col items-end gap-1.5 min-w-0">{statusOpen}</div>
       </div>
     </div>
   )

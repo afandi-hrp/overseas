@@ -179,76 +179,81 @@ export default function SeaAirAuditDetailModal({
 
   const hasSptnp = !!(rec.no_sptnp || rec.tgl_sptnp || rec.sptnp_total)
 
+  // Tombol header ringkas di panel; label Edit / Re-read disembunyikan bila panel sempit (container < @5xl, mis. laptop 14").
+  const btnSm = isPanel ? ' !h-8 !px-2.5' : ''
+  const btnLabel = isPanel ? 'hidden @5xl:inline' : ''
+
   const content = (
       <div className={isPanel
         ? '@container bg-white rounded-2xl shadow-sm border border-[#EADFD6] w-full flex-1 min-h-0 flex flex-col overflow-hidden'
         : '@container bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[94vh] flex flex-col overflow-hidden'} data-audit-detail={variant}>
-        {/* Header */}
-        <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-4 border-b border-[#EADFD6] shrink-0">
-          <div className="min-w-0">
+        {/* Header. Panel (2026-10-15, permintaan user: di laptop 14" tombol header memakan tempat sampai isi tidak terlihat): ringkas --
+            padding/judul lebih kecil, tombol h-8, Edit & Re-read jadi ikon saja bila panel sempit (< @5xl), aksi rata kanan. */}
+        <div className={`flex flex-wrap items-start justify-between border-b border-[#EADFD6] shrink-0 ${isPanel ? 'gap-x-3 gap-y-1.5 px-4 py-2.5' : 'gap-3 px-5 py-4'}`}>
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-[18px] font-bold text-[#3B1B3D] tabular-nums [overflow-wrap:anywhere]">{formatNoAju(rec.no_aju) || '—'}</h2>
+              <h2 className={`${isPanel ? 'text-[16px]' : 'text-[18px]'} font-bold text-[#3B1B3D] tabular-nums [overflow-wrap:anywhere]`}>{formatNoAju(rec.no_aju) || '—'}</h2>
               <StatusPill draft={draft} />
               {draft && rec.reaudit_reason && <Chip tone="purple" title={rec.reaudit_reason}>↻ Changed in Invoice Recap — please re-audit</Chip>}
               {rec.duplicate_of && <Chip tone="red" title="Another PIB with the same BL / AWB already exists">Possible duplicate upload</Chip>}
             </div>
-            <div className="text-[12px] text-[#6E5E70] mt-0.5">
+            <div className={`${isPanel ? 'text-[11.5px]' : 'text-[12px]'} text-[#6E5E70] mt-0.5`}>
               {fmtDateShort(rec.tgl_ppjk)} · {rec.via || '—'} · {rec.delivery_term || '—'} · {ptName}
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap justify-end">
-            <div className="text-right mr-2">
+          <div className={`flex items-center flex-wrap justify-end ${isPanel ? 'gap-1.5' : 'gap-2'}`}>
+            <div className={`text-right ${isPanel ? 'mr-1' : 'mr-2'}`}>
               <div className={SA_LABEL}>Total PIB</div>
-              <div className="text-[20px] font-bold text-[#3B1B3D] tabular-nums leading-tight">{fmtRp(rec.total_pib)}</div>
+              <div className={`${isPanel ? 'text-[17px]' : 'text-[20px]'} font-bold text-[#3B1B3D] tabular-nums leading-tight whitespace-nowrap`}>{fmtRp(rec.total_pib)}</div>
             </div>
             {canEdit && draft && (
-              <button type="button" className={SA_BTN_OUTLINE} onClick={() => onEdit(rec)}><Pencil size={13} /> Edit</button>
+              <button type="button" className={`${SA_BTN_OUTLINE}${btnSm}`} onClick={() => onEdit(rec)} title="Edit" aria-label="Edit"><Pencil size={13} /> <span className={btnLabel}>Edit</span></button>
             )}
             {canEdit && draft && rec.ai_snapshot_at && (
-              <button type="button" className={SA_BTN_OUTLINE} disabled={busy} onClick={reread} title={`Restore the PIB values read by AI (${fmtDateShort(rec.ai_snapshot_at)})`}>
-                <RotateCcw size={13} /> Re-read from AI
+              <button type="button" className={`${SA_BTN_OUTLINE}${btnSm}`} disabled={busy} onClick={reread} aria-label="Re-read from AI" title={`Re-read from AI — restore the PIB values read by AI (${fmtDateShort(rec.ai_snapshot_at)})`}>
+                <RotateCcw size={13} /> <span className={btnLabel}>Re-read from AI</span>
               </button>
             )}
             {canEdit && draft && (
-              <button type="button" className={SA_BTN_GREEN} disabled={busy || !!auditBlocker} onClick={() => setStatus('LENGKAP')}
+              <button type="button" className={`${SA_BTN_GREEN}${btnSm}`} disabled={busy || !!auditBlocker} onClick={() => setStatus('LENGKAP')}
                 title={auditBlocker ? `${auditBlocker} — the PIB can be marked as audited once Invoice Recap is ready to submit.` : undefined}>
                 {busy ? 'Saving…' : 'Mark as audited'}
               </button>
             )}
             {canEdit && !draft && (
-              <button type="button" className={SA_BTN_OUTLINE} disabled={busy} onClick={() => setStatus('ARCHIVED')}>
+              <button type="button" className={`${SA_BTN_OUTLINE}${btnSm}`} disabled={busy} onClick={() => setStatus('ARCHIVED')}>
                 <RotateCcw size={13} /> {busy ? 'Saving…' : 'Reopen as draft'}
               </button>
             )}
             {canEdit && draft && (
               <button type="button" title="Delete this draft PIB" onClick={() => onDelete(rec)}
-                className="inline-flex items-center justify-center h-9 w-9 rounded-xl border border-[#F4C3BC] text-[#A8231A] hover:bg-[#FDE7E4] transition-colors">
+                className={`inline-flex items-center justify-center ${isPanel ? 'h-8 w-8' : 'h-9 w-9'} rounded-xl border border-[#F4C3BC] text-[#A8231A] hover:bg-[#FDE7E4] transition-colors`}>
                 <Trash2 size={14} />
               </button>
             )}
             {onToggleVariant && (
               <button type="button" onClick={onToggleVariant} aria-label={isPanel ? 'Expand to full window' : 'Collapse to side panel'} title={isPanel ? 'Expand to full window' : 'Collapse to side panel'}
-                className="inline-flex items-center justify-center h-9 w-9 rounded-xl text-[#6E5E70] hover:bg-[#F6EFEA]" data-variant-toggle>
+                className={`inline-flex items-center justify-center ${isPanel ? 'h-8 w-8' : 'h-9 w-9'} rounded-xl text-[#6E5E70] hover:bg-[#F6EFEA]`} data-variant-toggle>
                 {isPanel ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
               </button>
             )}
-            <button type="button" onClick={onClose} aria-label="Close" className="inline-flex items-center justify-center h-9 w-9 rounded-xl text-[#6E5E70] hover:bg-[#F6EFEA]">
+            <button type="button" onClick={onClose} aria-label="Close" className={`inline-flex items-center justify-center ${isPanel ? 'h-8 w-8' : 'h-9 w-9'} rounded-xl text-[#6E5E70] hover:bg-[#F6EFEA]`}>
               <X size={18} />
             </button>
           </div>
         </div>
-        {/* Tab Overview | Audit trail (2026-10-14, permintaan user; gaya tab Invoice Recap Courier). */}
-        <div className="flex items-end gap-1.5 px-5 pt-2 border-b border-[#EADFD6] shrink-0" role="tablist">
+        {/* Tab Overview | Audit trail (2026-10-14, permintaan user). Warna ungu muda SAMA tab Invoice Recap Sea & Air (2026-10-15, permintaan user). */}
+        <div className={`flex items-end gap-1.5 border-b border-[#EADFD6] shrink-0 ${isPanel ? 'px-4 pt-1.5' : 'px-5 pt-2'}`} role="tablist">
           {([['overview', 'Overview'], ['trail', `Audit trail${log && log.length ? ` (${log.length})` : ''}`]] as const).map(([k, label]) => (
             <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
-              className={`shrink-0 px-3 pt-1.5 pb-1.5 rounded-t-lg text-[12.5px] font-semibold border-b-[3px] transition-colors bg-[#F3EEEA] text-[#3B1B3D] ${tab === k ? 'border-[#6B3470] font-bold' : 'border-transparent opacity-80 hover:opacity-100'}`}>
+              className={`shrink-0 px-3 ${isPanel ? 'pt-1 pb-1' : 'pt-1.5 pb-1.5'} rounded-t-lg text-[12.5px] font-semibold border-b-[3px] transition-colors ${tab === k ? 'bg-white text-[#3B1B3D] border-[#6B3470] font-bold' : 'bg-[#F5EDF3] text-[#5A305A] border-transparent hover:bg-[#EADBE7]'}`}>
               {label}
             </button>
           ))}
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto bg-[#FBF7F4] p-4 flex flex-col gap-3">
+        <div className={`flex-1 overflow-y-auto bg-[#FBF7F4] flex flex-col ${isPanel ? 'p-3 gap-2.5' : 'p-4 gap-3'}`}>
           {tab === 'overview' && <>
           {draft && rec.reaudit_reason && (
             <div className="rounded-[14px] border border-[#D9C2EA] bg-[#F3ECF9] px-4 py-2.5 text-[12.5px] text-[#5B2E8C]">
@@ -282,10 +287,10 @@ export default function SeaAirAuditDetailModal({
             ) : null}
           </div>
 
-          <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-3">
-            {/* Kiri */}
-            <div className="flex flex-col gap-3 min-w-0">
-              <SectionCard title="Document" bodyClassName="px-4 pb-3">
+          {/* Susunan Overview (2026-10-15, permintaan user): Document paling atas (lebar penuh, fakta 2 kolom di panel lebar), lalu
+              Customs value | Duty Tax kiri-kanan, lalu Goods per PO lebar penuh. Judul "Customs value (as recorded)" -> "Customs value",
+              "Duties & taxes" -> "Duty Tax" (subjudul, Import value & keterangan rumus/NDPBM dihapus). */}
+              <SectionCard title="Document" bodyClassName="px-4 pb-3 grid grid-cols-1 @3xl:grid-cols-2 gap-x-8">
                 <Fact label="PIB no.">{formatNoAju(rec.no_aju) || '—'}</Fact>
                 <Fact label="PIB date">{fmtDateShort(rec.tgl_ppjk)}</Fact>
                 <Fact label="Via · delivery term">{rec.via || '—'} · {rec.delivery_term || '—'}</Fact>
@@ -301,36 +306,37 @@ export default function SeaAirAuditDetailModal({
                 <Fact label="Notes"><span className="whitespace-pre-wrap font-medium">{rec.notes || '—'}</span></Fact>
               </SectionCard>
 
+          <div className="grid grid-cols-1 @3xl:grid-cols-2 gap-3 items-start">
+            <SectionCard title="Customs value" right={<>Balance <b className="text-[#3B1B3D] tabular-nums">{fmtRp(build.balance)}</b></>} bodyClassName="px-4 pb-3">
+              <div className="flex justify-between gap-3 py-1.5 text-[12.5px]">
+                <span className="text-[#3B1B3D]">Goods value{build.goodsRate ? ` (${curLabel ? `${curLabel} ` : ''}${fmtValas(build.goodsValas)} × ${fmtValas(Math.round(build.goodsRate * 100) / 100)})` : ''}</span>
+                <span className="font-semibold tabular-nums text-[#3B1B3D] whitespace-nowrap">{fmtRp(build.goodsIdr)}</span>
+              </div>
+              <div className="flex justify-between gap-3 py-1.5 text-[12.5px]">
+                <span className="text-[#3B1B3D]">{freightLabel}</span>
+                <span className="font-semibold tabular-nums text-[#6E5E70] whitespace-nowrap">{fmtRp(build.freight)}</span>
+              </div>
+              <div className="flex justify-between gap-3 py-1.5 text-[12.5px]">
+                <span className="text-[#3B1B3D]">{insuranceLabel}</span>
+                <span className="font-semibold tabular-nums text-[#3B1B3D] whitespace-nowrap">{fmtRp(build.insurance)}</span>
+              </div>
+              <div className="flex justify-between gap-3 py-1.5 text-[12.5px]">
+                <span className={build.isRounding ? 'text-[#3B1B3D]' : 'text-[#A8231A] font-semibold'}>{build.isRounding ? 'Rounding' : 'Unexplained balance'}</span>
+                <span className={`font-semibold tabular-nums whitespace-nowrap ${build.isRounding ? 'text-[#6E5E70]' : 'text-[#A8231A]'}`}>{fmtRp(Math.round(build.residual * 100) / 100)}</span>
+              </div>
+              <div className="flex justify-between gap-3 pt-2.5 mt-1 border-t border-[#EADFD6]">
+                <div>
+                  <div className="text-[13.5px] font-bold text-[#3B1B3D]">Customs value (CIF)</div>
+                  <div className="text-[11px] text-[#8A7A8B]">{curLabel ? `${curLabel} ` : ''}{fmtValas(build.valasDpp)} (valas DPP) × {fmtValas(build.kursNdpbm)} (kurs NDPBM)</div>
+                </div>
+                <div className="text-[16px] font-bold tabular-nums text-[#3B1B3D] whitespace-nowrap">{fmtRp(build.cv)}</div>
+              </div>
+            </SectionCard>
+            <SectionCard title="Duty Tax" bodyClassName="pb-0">
+              <SeaAirDutyCompareTable cmp={dutyCmp} loading={dutyMatrix === undefined} hideIntro />
+            </SectionCard>
+          </div>
 
-              <SectionCard title="Customs value (as recorded)" right={<>Balance <b className="text-[#3B1B3D] tabular-nums">{fmtRp(build.balance)}</b></>} bodyClassName="px-4 pb-3">
-                <div className="flex justify-between gap-3 py-1.5 text-[12.5px]">
-                  <span className="text-[#3B1B3D]">Goods value{build.goodsRate ? ` (${curLabel ? `${curLabel} ` : ''}${fmtValas(build.goodsValas)} × ${fmtValas(Math.round(build.goodsRate * 100) / 100)})` : ''}</span>
-                  <span className="font-semibold tabular-nums text-[#3B1B3D] whitespace-nowrap">{fmtRp(build.goodsIdr)}</span>
-                </div>
-                <div className="flex justify-between gap-3 py-1.5 text-[12.5px]">
-                  <span className="text-[#3B1B3D]">{freightLabel}</span>
-                  <span className="font-semibold tabular-nums text-[#6E5E70] whitespace-nowrap">{fmtRp(build.freight)}</span>
-                </div>
-                <div className="flex justify-between gap-3 py-1.5 text-[12.5px]">
-                  <span className="text-[#3B1B3D]">{insuranceLabel}</span>
-                  <span className="font-semibold tabular-nums text-[#3B1B3D] whitespace-nowrap">{fmtRp(build.insurance)}</span>
-                </div>
-                <div className="flex justify-between gap-3 py-1.5 text-[12.5px]">
-                  <span className={build.isRounding ? 'text-[#3B1B3D]' : 'text-[#A8231A] font-semibold'}>{build.isRounding ? 'Rounding' : 'Unexplained balance'}</span>
-                  <span className={`font-semibold tabular-nums whitespace-nowrap ${build.isRounding ? 'text-[#6E5E70]' : 'text-[#A8231A]'}`}>{fmtRp(Math.round(build.residual * 100) / 100)}</span>
-                </div>
-                <div className="flex justify-between gap-3 pt-2.5 mt-1 border-t border-[#EADFD6]">
-                  <div>
-                    <div className="text-[13.5px] font-bold text-[#3B1B3D]">Customs value (CIF)</div>
-                    <div className="text-[11px] text-[#8A7A8B]">{curLabel ? `${curLabel} ` : ''}{fmtValas(build.valasDpp)} (valas DPP) × {fmtValas(build.kursNdpbm)} (kurs NDPBM)</div>
-                  </div>
-                  <div className="text-[16px] font-bold tabular-nums text-[#3B1B3D] whitespace-nowrap">{fmtRp(build.cv)}</div>
-                </div>
-              </SectionCard>
-            </div>
-
-            {/* Kanan */}
-            <div className="flex flex-col gap-3 min-w-0">
               <SectionCard
                 title="Goods per PO"
                 right={<span className="tabular-nums">{curLabel ? `${curLabel} ` : ''}{fmtValas(rec.item_price)} · {fmtRp(rec.item_price_idr)}</span>}
@@ -388,16 +394,6 @@ export default function SeaAirAuditDetailModal({
                   <div className="flex justify-between"><span>Item price (Rp)</span><span className="tabular-nums font-semibold text-[#3B1B3D]">{fmtRp(rec.item_price_idr)}</span></div>
                 </div>
               </SectionCard>
-
-              <SectionCard
-                title={<>Duties &amp; taxes <span className="text-[11.5px] font-normal text-[#8A7A8B]">same check as Invoice Recap › Doc Validation</span></>}
-                right={<>Import value <b className="text-[#3B1B3D] tabular-nums">{fmtRp(duty.importValueStored ?? duty.importValueCalc)}</b></>}
-                bodyClassName="pb-0"
-              >
-                <SeaAirDutyCompareTable cmp={dutyCmp} loading={dutyMatrix === undefined} />
-              </SectionCard>
-            </div>
-          </div>
 
           {/* Checks -- disembunyikan default (2026-10-14, permintaan user), tombol menampilkan / menyembunyikan. */}
           <div className="flex justify-start">

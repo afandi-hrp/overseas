@@ -16,10 +16,11 @@ export const SeaAirDutyStatusChip: React.FC<{ m: boolean | null; emptyLabel?: st
     : <Chip tone="amber"><Circle size={11} />{emptyLabel}</Chip>
 )
 
-export default function SeaAirDutyCompareTable({ cmp, loading }: { cmp: SeaAirDutyCompare | null; loading?: boolean }) {
+// `hideIntro` (2026-10-15, Audit PIB "Duty Tax", permintaan user): baris keterangan rumus/toleransi + NDPBM · jumlah item tidak tampil.
+export default function SeaAirDutyCompareTable({ cmp, loading, hideIntro = false }: { cmp: SeaAirDutyCompare | null; loading?: boolean; hideIntro?: boolean }) {
   return (
     <>
-      <div className="px-4 pb-2 text-[11.5px] text-[#6E5E70] flex flex-wrap items-center gap-x-3 gap-y-0.5">
+      <div className={hideIntro ? 'hidden' : 'px-4 pb-2 text-[11.5px] text-[#6E5E70] flex flex-wrap items-center gap-x-3 gap-y-0.5'}>
         <span>Expected from customs value × rate vs actual on the PIB (tolerance Rp {SEA_AIR_DUTY_TOLERANCE.toLocaleString('id-ID')})</span>
         {cmp?.ndpbm != null && <span>NDPBM <b className="text-[#3B1B3D] tabular-nums">{cmp.ndpbm.toLocaleString('id-ID', { maximumFractionDigits: 4 })}</b> · {cmp.itemCount} customs item{cmp.itemCount === 1 ? '' : 's'}</span>}
       </div>

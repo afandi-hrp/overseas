@@ -943,6 +943,33 @@ menyerap sisa lebar (`minmax(110px,1fr)`), sehingga Duty & tax + status validasi
 Revisi (2026-10-13): di `@7xl` blok status validasi tetap DEKAT tombol Draft/Open -- kolom validasi = `minmax(230px,1fr)` dgn `justify-self-end` (rata ujung kanan kolom), kolom Status
 `110px` tetap; hanya Duty & tax yang bergeser ke kiri (kolom supplier maks 600px).
 
+## Sea & Air — Audit PIB: kartu & panel detail ringkas di 14" / 24" (2026-10-15, permintaan user)
+
+- **Kartu** (`SeaAirAuditCardList`): bila kartu 1-2 kolom (< `@5xl`, mis. panel detail terbuka -- di 14" maupun 24") chip **Draft/Audited +
+  tombol Open pindah ke SAMPING blok Duty & tax** (`data-card-status-inline`, elemen `statusOpen` dipakai bersama); kolom 5 (Status + Open)
+  `hidden @5xl:flex` -> baris ke-3 hilang, kartu lebih pendek. Kartu lebar (`@5xl+`, tanpa panel) TIDAK berubah.
+- **Panel detail** (`SeaAirAuditDetailModal` `variant='panel'`): header ringkas (padding `py-2.5`, judul 16px, Total PIB 17px, tombol `!h-8 !px-2.5`,
+  ikon 32px), label **Edit** & **Re-read from AI** disembunyikan bila panel < `@5xl` (ikon saja + title/aria-label), tab & isi padding lebih kecil
+  -> area isi lebih tinggi di laptop 14". Jendela penuh (`modal`) TIDAK berubah.
+- Diuji: render SSR komponen asli + CSS build, screenshot Edge headless 1380 / 1800px.
+
+## Sea & Air — Audit PIB Open (tab ungu, susunan Overview, Duty Tax) & kartu Invoice Recap (2026-10-15, permintaan user, 5 poin)
+
+- **Tab Overview | Audit trail** Audit PIB = warna SAMA tab Invoice Recap (`bg-[#F5EDF3] text-[#5A305A]`, aktif putih + garis bawah ungu).
+- **Nama panel**: "Customs value (as recorded)" -> **Customs value**, "Duties & taxes" -> **Duty Tax**.
+- **Susunan Overview**: **Document** paling atas lebar penuh (fakta 2 kolom bila panel `@3xl`), lalu **Customs value | Duty Tax** kiri-kanan
+  (`items-start`), lalu **Goods per PO** lebar penuh. Kartu validasi, banner kunci & Checks tetap di tempatnya.
+- **Duty Tax**: subjudul "same check as Invoice Recap › Doc Validation", "Import value Rp …" (kanan judul) & baris keterangan "Expected from customs
+  value × rate … (tolerance) · NDPBM · N customs items" DIHAPUS -- `SeaAirDutyCompareTable` prop BARU `hideIntro` (tabel & rumus TIDAK berubah).
+- **Kartu Invoice Recap (lebar, sebelum Open)** ikut gambar user: [chip jenis/kontainer + chip PT abu, AWB, "Upload: <tgl>"] | [vendor, origin → destination
+  teks biasa, "ATD: … ATA: …" (+ "ETD/ETA" bila ada)] | [NO. PO] | [titik skor Doc match/Cost/Doc complete 1 baris sejajar -- kolom sendiri, susulan
+  2026-10-15] | [LANDED COST, chip status + Validation].
+  **ATD/ATA tidak di-highlight lagi** (teks biasa; juga di kartu ringkas saat panel terbuka) -- helper `dateText` menggantikan `dateChip`. Cost mix
+  bar DIHAPUS dari kartu (komponen `CostMixBar` tetap diekspor). Kolom `@5xl`+ = `minmax(170px,1fr) minmax(0,2fr) auto auto minmax(170px,1fr)` (susulan 2026-10-15, gambar user: 24" tidak ada
+  ruang kosong besar setelah vendor -- `@7xl` = `minmax(200px,1fr) minmax(0,1.5fr) auto minmax(0,1fr) minmax(200px,1fr)`, sisa lebar dibagi rata
+  ke kolom AWB/vendor/skor/landed; 14" nomor PO utuh -- kolom PO `auto` + nowrap, "+N PO" turun baris bila sempit).
+- Diuji: render SSR komponen asli + CSS build, screenshot Edge headless 1300 / 1750px. Belum dites di browser dgn data asli.
+
 ## Sea & Air — Invoice Recap: tab Checklist terpisah dari Doc Validation (2026-10-13, permintaan user; pola Invoice Recap Courier)
 
 Tab jendela Open kini: **Overview | Costs | Checklist | Doc Validation | Audit trail** (dulu satu tab "Documents" memuat Checklist + Document validation berdampingan).
