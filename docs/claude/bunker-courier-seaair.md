@@ -363,6 +363,25 @@ saat itu. **JANGAN duplikat logic pencocokan ini di tempat ketiga** -- kalau alg
 perlu diubah lagi ke depan, ubah SATU-SATUNYA di `SeaAirValidasiHelpers.ts`, otomatis ikut ke
 badge & modal.
 
+## Settings › Kurs BI Harian — Import Excel + Download Template (2026-10-15, permintaan user; sql/062 SUDAH DIJALANKAN 2026-10-15, konfirmasi user: 1.091 baris, kurs_beli masih kosong semua)
+
+- Header "Form Input Kurs" (`KursBIPage`, hanya editor `settings_kurs_bi`): tombol **Import Excel** (`KursBIImportModal.tsx`) &
+  **Download Template** (dibuat di browser, `downloadKursTemplate` di `src/utils/KursBIImport.ts`: sheet "Kurs BI" kolom Tanggal ·
+  Mata Uang · Kurs Jual · Kurs Beli · Kurs Tengah [rumus `(C+D)/2`] · Catatan + 2 contoh, sheet "Petunjuk").
+- Parsing (`parseKursSheet`, logika murni): kolom dicari dari NAMA header (urutan bebas); tanggal = sel tanggal Excel / YYYY-MM-DD /
+  DD/MM/YYYY / "15-Oktober-2026" (D/M/Y, bukan M/D/Y); angka number Excel atau teks "16.550,25" / "16,550.25" / "Rp 16.550";
+  **Kurs Tengah = round2((Kurs Jual + Kurs Beli) / 2)** (nilai Kurs Tengah di file diabaikan + peringatan bila beda; hanya dipakai
+  kalau Jual/Beli tidak lengkap); duplikat Mata Uang+Tanggal di 1 file = baris terakhir; baris error dilewati & didaftar.
+- Preview: Baru / Diperbarui (cek `kurs_bi_seaair` Mata Uang+Tanggal), peringatan. Simpan per baris (4 paralel) lewat RPC
+  `upsert_kurs_bi` yang SAMA form manual (p_kurs_jual, p_kurs_tengah; catatan kosong di file -> catatan lama dipertahankan). Setelah
+  import tabel pindah ke bulan data terbaru yang diimport.
+- **Kurs Beli**: kolom `kurs_beli` BARU (sql/062, idempotent `add column if not exists`). Frontend mendeteksi otomatis
+  (`select('kurs_beli')` error -> belum ada): sebelum 062 Kurs Beli hanya dipakai menghitung Kurs Tengah (tidak disimpan, banner di
+  modal); sesudah 062 kolom Kurs Beli tampil di tabel & form (Kurs Tengah otomatis dari Jual + Beli) dan disimpan dgn UPDATE langsung
+  ke tabel setelah upsert -> policy UPDATE `kurs_bi_seaair_update` (`has_edit_access('settings_kurs_bi')`) SUDAH ADA (dicek user 2026-10-15; 4 policy RLS lengkap). `get_kurs_efektif` TIDAK berubah.
+- Diuji 2026-10-15: unit parsing + round-trip file Excel 27 cek, jsdom modal 10 cek (preview, baris error, RPC args, kurs_beli,
+  catatan lama). `tsc` bersih. Belum dites di browser / production.
+
 ## Sea & Air — kolom khusus
 
 - **Audit, "No. PIB" dari `no_aju`** (bukan `no_pib`) — permintaan eksplisit HANYA Sea & Air,
@@ -660,6 +679,8 @@ hitung DPP dari nilai subtotal/harga_jual dokumen tsb + nomor seri faktur pajakn
 mentah tunggal, JANGAN dicari sbg 1 kolom `raw.*` langsung).
 
 ## Courier — Document Validation (`ValidasiModal.tsx`)
+
+> **2026-10-15**: tampilan Doc Validation Audit/Invoice Recap Details/Finance kini SATU (`variant="unified"`, List | Columns) -- lihat courier-features.md "Doc Validation TERPADU".
 
 - **Status Accepted (2026-10-14)**: field yang di-Accept dgn catatan (`manual_status 'match'` + `accept_note`) tampil chip "Accepted" hijau tua + "✓ Valid"
   (tooltip = catatan) di `ValidasiModal` & `ValidasiModalLegacy` (helper lokal `isAcceptedVal`/`shownSt`, `getCfg('accepted')`); hitungan/akurasi TIDAK

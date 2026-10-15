@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
-import { Landmark, X, Trash2, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Landmark, X, Trash2, Search, ChevronLeft, ChevronRight, FileSpreadsheet, Download } from 'lucide-react';
 import Greeting from '../components/Greeting';
 import { LoadingTableRow } from '../components/LoadingState';
+import KursBIImportModal from '../components/KursBIImportModal';
+import { downloadKursTemplate } from '../utils/KursBIImport';
 
 const BULAN_ID = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 
@@ -38,7 +40,15 @@ export default function KursBIPage() {
   const [mataUangManual, setMataUangManual] = useState(false);
   const [tanggal, setTanggal] = useState(new Date().toISOString().substring(0, 10));
   const [kursJual, setKursJual] = useState('');
+  const [kursBeli, setKursBeli] = useState('');
   const [kursTengah, setKursTengah] = useState('');
+  // Import Excel + template (2026-10-15). Kolom `kurs_beli` (sql/062) dideteksi sekali: belum ada -> Kurs Beli hanya dipakai
+  // menghitung Kurs Tengah (tidak disimpan) & kolomnya tidak tampil di tabel.
+  const [showImport, setShowImport] = useState(false);
+  const [hasKursBeli, setHasKursBeli] = useState(false);
+  useEffect(() => {
+    supabase.from('kurs_bi_seaair').select('kurs_beli').limit(1).then(({ error }) => setHasKursBeli(!error));
+  }, []);
   const [catatan, setCatatan] = useState('');
   
   const [history, setHistory] = useState<any[]>([]);
@@ -65,8 +75,7 @@ export default function KursBIPage() {
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState<number | 'ALL'>(new Date().getMonth());
 
-  useEffect(() => {
-    const loadYearRange = async () => {
+  const loadYearRange = async (jumpToNewest = true) => {
       const [{ data: oldest }, { data: newest }] = await Promise.all([
         supabase.from('kurs_bi_seaair').select('tanggal').order('tanggal', { ascending: true }).limit(1),
         supabase.from('kurs_bi_seaair').select('tanggal').order('tanggal', { ascending: false }).limit(1),
@@ -79,14 +88,24 @@ export default function KursBIPage() {
       setAvailableYears(years);
       // Default: tahun & bulan TERBARU yang benar-benar ada datanya (bukan selalu tahun berjalan
       // -- kalau data terbaru masih dari bulan lalu, langsung buka ke situ biar tidak nampak kosong).
-      if (newest?.[0]?.tanggal) {
+      if (jumpToNewest && newest?.[0]?.tanggal) {
         const [ny, nm] = String(newest[0].tanggal).split('-');
         setSelectedYear(Number(ny));
         setSelectedMonth(Number(nm) - 1);
       }
-    };
-    loadYearRange();
-  }, []);
+  };
+  useEffect(() => { loadYearRange(); }, []);
+
+  // Setelah import: daftar tahun dibaca ulang & tabel pindah ke bulan data TERBARU yang diimport.
+  const handleImported = (_saved: number, latest: string | null) => {
+    loadYearRange(false);
+    if (latest) {
+      const [ly, lm] = latest.split('-');
+      const y = Number(ly), m = Number(lm) - 1;
+      if (y === selectedYear && m === selectedMonth) fetchHistory();
+      else { setSelectedYear(y); setSelectedMonth(m); }
+    } else fetchHistory();
+  };
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 400);
@@ -158,6 +177,14 @@ export default function KursBIPage() {
     setTimeout(() => setToast(null), 3000);
   };
 
+  // Kurs Tengah otomatis = (Kurs Jual + Kurs Beli) / 2 saat keduanya terisi (form manual, sama rumus import).
+  const onKursJualBeli = (jual: string, beli: string) => {
+    setKursJual(jual); setKursBeli(beli);
+    if (jual !== '' && beli !== '' && !isNaN(Number(jual)) && !isNaN(Number(beli))) {
+      setKursTengah(String(Math.round(((Number(jual) + Number(beli)) / 2) * 100) / 100));
+    }
+  };
+
   const handleSave = async () => {
     if (!mataUang || !tanggal) {
       showToast('Mata Uang dan Tanggal wajib diisi', 'error');
@@ -175,8 +202,13 @@ export default function KursBIPage() {
       
       if (error) throw error;
       
+      if (hasKursBeli) {
+        const { error: e2 } = await supabase.from('kurs_bi_seaair').update({ kurs_beli: kursBeli ? Number(kursBeli) : null }).eq('mata_uang', mataUang).eq('tanggal', tanggal);
+        if (e2) throw e2;
+      }
       showToast('Kurs berhasil disimpan', 'success');
       setKursJual('');
+      setKursBeli('');
       setKursTengah('');
       setCatatan('');
       setEditingId(null);
@@ -195,6 +227,7 @@ export default function KursBIPage() {
     setMataUangManual(!MATA_UANG_OPTIONS.includes(rec.mata_uang));
     setTanggal(rec.tanggal);
     setKursJual(rec.kurs_jual?.toString() || '');
+    setKursBeli(rec.kurs_beli?.toString() || '');
     setKursTengah(rec.kurs_tengah?.toString() || '');
     setCatatan(rec.catatan || '');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -206,6 +239,7 @@ export default function KursBIPage() {
     setMataUangManual(false);
     setTanggal(new Date().toISOString().substring(0, 10));
     setKursJual('');
+    setKursBeli('');
     setKursTengah('');
     setCatatan('');
   };
@@ -249,7 +283,17 @@ export default function KursBIPage() {
         {canEditKursBI && (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-6">
           <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-            <h2 className="font-semibold text-[#5A305A]">Form Input Kurs</h2>
+            <div className="flex items-center gap-3 flex-wrap">
+              <h2 className="font-semibold text-[#5A305A]">Form Input Kurs</h2>
+              <button type="button" onClick={() => setShowImport(true)} data-kurs-open-import
+                className="inline-flex items-center gap-1.5 bg-[#5A305A] hover:bg-[#73507B] text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors shadow-sm">
+                <FileSpreadsheet size={13} /> Import Excel
+              </button>
+              <button type="button" onClick={() => downloadKursTemplate().catch(e => { console.error(e); showToast('Gagal membuat template', 'error'); })}
+                className="inline-flex items-center gap-1.5 border border-slate-300 bg-white hover:bg-slate-50 text-[#5A305A] text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
+                <Download size={13} /> Download Template
+              </button>
+            </div>
             {toast && (
               <span className={`text-xs px-3 py-1 rounded-full font-medium ${toast.type === 'success' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
                 {toast.message}
@@ -268,7 +312,7 @@ export default function KursBIPage() {
             </div>
           )}
           <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+            <div className={`grid grid-cols-1 md:grid-cols-2 ${hasKursBeli ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-4 mb-4`}>
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="block text-xs font-semibold text-[#5A305A]">Mata Uang</label>
@@ -315,12 +359,24 @@ export default function KursBIPage() {
                   type="number"
                   placeholder="Contoh: 16500"
                   value={kursJual}
-                  onChange={(e) => setKursJual(e.target.value)}
+                  onChange={(e) => onKursJualBeli(e.target.value, kursBeli)}
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+              {hasKursBeli && (
+                <div>
+                  <label className="block text-xs font-semibold text-[#5A305A] mb-1">Kurs Beli</label>
+                  <input
+                    type="number"
+                    placeholder="Contoh: 16300"
+                    value={kursBeli}
+                    onChange={(e) => onKursJualBeli(kursJual, e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              )}
               <div>
-                <label className="block text-xs font-semibold text-[#5A305A] mb-1">Kurs Tengah</label>
+                <label className="block text-xs font-semibold text-[#5A305A] mb-1">Kurs Tengah{hasKursBeli && <span className="font-normal text-[#5A305A]/60"> · otomatis (Jual + Beli) / 2</span>}</label>
                 <input 
                   type="number"
                   placeholder="Contoh: 16400"
@@ -428,6 +484,7 @@ export default function KursBIPage() {
                   <th className="px-5 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider">Tanggal</th>
                   <th className="px-5 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider">Mata Uang</th>
                   <th className="px-5 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider text-right">Kurs Jual</th>
+                  {hasKursBeli && <th className="px-5 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider text-right">Kurs Beli</th>}
                   <th className="px-5 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider text-right">Kurs Tengah</th>
                   <th className="px-5 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider">Catatan</th>
                   <th className="px-5 py-3 text-xs font-bold text-[#5A305A] uppercase tracking-wider text-center">Aksi</th>
@@ -435,10 +492,10 @@ export default function KursBIPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
-                  <LoadingTableRow colSpan={6} />
+                  <LoadingTableRow colSpan={hasKursBeli ? 7 : 6} />
                 ) : history.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-5 py-8 text-center text-sm text-[#5A305A]">
+                    <td colSpan={hasKursBeli ? 7 : 6} className="px-5 py-8 text-center text-sm text-[#5A305A]">
                       {debouncedSearch ? 'Tidak ada kurs yang cocok dengan pencarian.' : 'Belum ada data kurs.'}
                     </td>
                   </tr>
@@ -446,7 +503,7 @@ export default function KursBIPage() {
                   groupedHistory.map(group => (
                     <React.Fragment key={group.key}>
                       <tr>
-                        <td colSpan={6} className="px-5 py-2 text-[11px] font-bold text-[#5A305A] uppercase tracking-wider bg-[#FFF5C5]/60 border-y border-[#5A305A]/10">
+                        <td colSpan={hasKursBeli ? 7 : 6} className="px-5 py-2 text-[11px] font-bold text-[#5A305A] uppercase tracking-wider bg-[#FFF5C5]/60 border-y border-[#5A305A]/10">
                           {group.label} <span className="font-normal normal-case text-[#5A305A]/60">({group.rows.length} data)</span>
                         </td>
                       </tr>
@@ -463,6 +520,11 @@ export default function KursBIPage() {
                           <td className="px-5 py-3 text-sm font-mono text-[#5A305A] text-right">
                             {rec.kurs_jual ? rec.kurs_jual.toLocaleString('id-ID') : '-'}
                           </td>
+                          {hasKursBeli && (
+                            <td className="px-5 py-3 text-sm font-mono text-[#5A305A] text-right">
+                              {rec.kurs_beli ? rec.kurs_beli.toLocaleString('id-ID') : '-'}
+                            </td>
+                          )}
                           <td className="px-5 py-3 text-sm font-mono text-[#5A305A] text-right">
                             {rec.kurs_tengah ? rec.kurs_tengah.toLocaleString('id-ID') : '-'}
                           </td>
@@ -528,6 +590,7 @@ export default function KursBIPage() {
         </div>
 
       </main>
+      {showImport && <KursBIImportModal hasKursBeli={hasKursBeli} onClose={() => setShowImport(false)} onImported={handleImported} />}
     </div>
   );
 }
