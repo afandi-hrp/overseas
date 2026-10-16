@@ -195,23 +195,22 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                   </div>
                 ) : (
                   <>
-                    <CompareHeadline line={l} h={main} currency={currency}
+                    <MainReference line={l} h={main} currency={currency} folded={folded}
                       toggle={quiet && !showAllCompares ? { open: !folded, onClick: () => toggleExpanded(l.id) } : undefined} />
-                    {!folded && <HistoryDetail line={l} h={main} />}
                     {!folded && others.length > 0 && (
                       othersOpen ? (
-                        <div className="mt-1 flex flex-col gap-1 border-t border-dashed border-[#EADFD6] pt-1">
+                        <div className="mt-1.5 flex flex-col gap-1.5 border-t border-dashed border-[#EADFD6] pt-1.5">
                           {others.map(o => (
                             <React.Fragment key={`${o.pick}-${o.history_id}`}><OtherReference line={l} h={o} currency={currency}
                               onUse={o.pick === 'alternative' && editable ? () => run(l.id, () => costAgentSetLineReference(l.id, o.history_id, actor)) : undefined}
                               useDisabled={busy !== null} /></React.Fragment>
                           ))}
                           {!showAllCompares && !l.compare_check && (
-                            <button type="button" className={`${LINK} !text-[#8A7A8B] self-start`} onClick={() => toggleMore(l.id)}>Hide other reference{others.length > 1 ? 's' : ''}</button>
+                            <button type="button" className={`${LINK} !text-[#8A7A8B] self-start ml-[108px] @min-[1000px]:ml-[124px]`} onClick={() => toggleMore(l.id)}>Hide other reference{others.length > 1 ? 's' : ''}</button>
                           )}
                         </div>
                       ) : (
-                        <button type="button" className={`${LINK} !text-[#8A7A8B] mt-0.5`} onClick={() => toggleMore(l.id)}>
+                        <button type="button" className={`${LINK} !text-[#8A7A8B] mt-1 ml-[108px] @min-[1000px]:ml-[124px]`} onClick={() => toggleMore(l.id)}>
                           + {others.length} more reference{others.length > 1 ? 's' : ''}
                         </button>
                       )
@@ -351,88 +350,101 @@ function ActionBtn({ data, onClick, disabled, active, icon, title, children }: {
   )
 }
 
-// Kalimat utama kolom Compare: [flag] vs history Rp X (selisih Rp) + Check reference. Contoh: "▼ Lower −84%  vs history Rp 15.600.000 (−Rp 13.100.000)".
-function CompareHeadline({ line, h, currency, toggle }: {
-  line: CostAgentInvoiceLine; h: CostAgentLineHistory; currency: string; toggle?: { open: boolean; onClick: () => void }
+// 2026-10-16 v6 (permintaan user): kolom Compare = NOMINAL HISTORY DI KIRI (blok 112px, langsung bersanding dgn nominal invoice di
+// ujung kanan kolom Invoice line) + selisih Rp di bawahnya; di kanannya: [flag / 2nd ref / Alternative] [line_match] nama baris cost
+// history, lalu baris kecil sumber · vessel · port + ⓘ (tgl, DWT, vendor, invoice no, voyage, invoice title tetap di popover).
+const sourceLabel = (h: CostAgentLineHistory) => matchLevelLabel(h.match_level, { dwt_diff: h.dwt_diff, distance_km: h.distance_km })
+const AMT_COL = 'w-[96px] @min-[1000px]:w-[112px] shrink-0 tabular-nums'
+const diffCls = (diff: number, neutral = false) => neutral || diff === 0 ? 'text-[#8A7A8B]' : diff > 0 ? 'text-[#A8231A]' : 'text-[#17663D]'
+const signedMoney = (v: number, currency: string) => `${v > 0 ? '+' : ''}${fmtMoney(v, currency)}`
+
+// Baris kecil: sumber · vessel · port ⓘ.
+function RefWhere({ line, h, showMainLabel }: { line: CostAgentInvoiceLine; h: CostAgentLineHistory; showMainLabel?: boolean }) {
+  const manual = h.pick === 'manual' || h.match_level === 'manual'
+  const where = [h.vessel_name, h.port_code ? `${h.port_code}${h.port_name ? ` — ${h.port_name}` : ''}` : null].filter(Boolean).join(' · ')
+  return (
+    <div className="min-w-0 text-[11px] leading-snug text-[#8A7A8B] [overflow-wrap:anywhere]">
+      <span title={`${manual ? 'Chosen by user' : sourceLabel(h)}${where ? ` · ${where}` : ''}`}>
+        {/* sql/061: primary tetap dikirim walau ada pembanding manual -> "Main reference" hanya tanpa manual. */}
+        {manual ? <span className="font-semibold text-[#6B3470]">Chosen by user</span>
+          : <>{showMainLabel && h.pick === 'primary' && line.ref_history_id == null ? <span className="font-semibold text-[#6B3470]">Main reference: </span> : null}{sourceLabel(h)}</>}
+        {where && <> · <span className="text-[#6E5E70] font-medium">{where}</span></>}
+      </span>{' '}
+      <span className="inline-block align-middle"><HistoryInfo h={h} /></span>
+    </div>
+  )
+}
+
+// Pembanding utama (flag dihitung dari sini). folded = baris tenang dilipat (hanya baris 1).
+function MainReference({ line, h, currency, folded, toggle }: {
+  line: CostAgentInvoiceLine; h: CostAgentLineHistory; currency: string; folded: boolean; toggle?: { open: boolean; onClick: () => void }
 }) {
   const { diff } = diffOf(line, h)
   const manual = h.pick === 'manual' || h.match_level === 'manual'
-  return (
-    <div className="flex items-center gap-x-2 gap-y-0.5 flex-wrap min-h-[22px]" data-compare-headline data-compare-summary={toggle && !toggle.open ? true : undefined}>
-      <CompareFlagChip flag={line.compare_flag} diffPct={line.compare_diff_pct} />
-      <span className="text-[12px] text-[#6E5E70]">vs {manual ? 'chosen' : ''} history <b className="text-[#3B1B3D] tabular-nums">{fmtMoney(h.amount, currency)}</b></span>
-      {diff !== 0 && <span className={`text-[11px] tabular-nums ${line.compare_flag === 'sesuai' ? 'text-[#8A7A8B]' : diff > 0 ? 'text-[#A8231A]' : 'text-[#17663D]'}`} data-diff>({diff > 0 ? '+' : ''}{fmtMoney(diff, currency)})</span>}
-      {toggle && !toggle.open && <LineMatchBadge match={h.line_match} similarity={h.similarity} />}
-      {line.compare_check && (
-        <Chip tone="amber" title={`Main reference: ${fmtMoney(line.compare_ref_amount, currency)} · Same-line alternative: ${fmtMoney(line.compare_alt_amount, currency)}`}>
-          <AlertTriangle size={10} /> Check reference
-        </Chip>
-      )}
-      {toggle && (
-        // tanpa ml-auto (2026-10-16): dulu terdorong ke kanan & menabrak tombol History di sampingnya.
-        <button type="button" className={`${LINK} !text-[#8A7A8B] whitespace-nowrap`} onClick={toggle.onClick}>
-          {toggle.open ? <><ChevronUp size={11} /> Less</> : <><ChevronDown size={11} /> Details</>}
-        </button>
-      )}
-    </div>
+  const toggleBtn = toggle && (
+    <button type="button" className={`${LINK} !text-[#8A7A8B] whitespace-nowrap shrink-0`} onClick={toggle.onClick}>
+      {toggle.open ? <><ChevronUp size={11} /> Less</> : <><ChevronDown size={11} /> Details</>}
+    </button>
   )
-}
-
-// Update kecil 2026-10-16: detail "tgl (x days) · kapal (DWT) · port · vendor" DISEMBUNYIKAN dari panel compare -> ikon ⓘ di samping label
-// sumber (hover desktop / klik mobile) membuka popover berisi detail tsb + invoice no + voyage. Drawer Browse history TIDAK berubah.
-const sourceLabel = (h: CostAgentLineHistory) => matchLevelLabel(h.match_level, { dwt_diff: h.dwt_diff, distance_km: h.distance_km })
-
-// Detail pembanding utama (2 baris kecil): [line_match] teks baris history (description_raw saja) / sumber + ⓘ.
-// Judul invoice lama (invoice_description) hanya di popover ⓘ "Invoice title" (2026-10-16).
-function HistoryDetail({ line, h }: { line: CostAgentInvoiceLine; h: CostAgentLineHistory }) {
-  const manual = h.pick === 'manual' || h.match_level === 'manual'
   return (
-    <div className={`mt-0.5 pl-2 border-l-2 ${manual ? 'border-[#6B3470]' : 'border-[#EADFD6]'} text-[11px] leading-snug min-w-0`} data-comparator="main" data-history-pick={h.pick || undefined}>
-      <div className="flex items-center gap-1.5 min-w-0" title={h.description_raw || undefined}>
-        <span className="shrink-0"><LineMatchBadge match={h.line_match} similarity={h.similarity} /></span>
-        <span className="text-[#3B1B3D] truncate">{h.description_raw || '—'}</span>
+    <div className="flex items-start gap-3 min-w-0" data-compare-headline data-comparator="main" data-history-pick={h.pick || undefined}
+      data-compare-summary={folded ? true : undefined}>
+      <div className={AMT_COL} data-history-amount>
+        <div className="text-[13px] font-bold text-[#3B1B3D] whitespace-nowrap leading-snug">{fmtMoney(h.amount, currency)}</div>
+        <div className={`text-[10.5px] whitespace-nowrap ${diffCls(diff, line.compare_flag === 'sesuai')}`} data-diff>{diff === 0 ? 'same amount' : signedMoney(diff, currency)}</div>
       </div>
-      <div className="flex items-center gap-1 min-w-0 text-[#8A7A8B]">
-        {/* sql/061: primary tetap dikirim walau ada pembanding manual -> "Main reference" hanya tanpa manual. */}
-        <span className="truncate min-w-0">
-          {manual ? <span className="font-semibold text-[#6B3470]">Chosen by user</span>
-            : <>{h.pick === 'primary' && line.ref_history_id == null ? <span className="font-semibold text-[#6B3470]">Main reference: </span> : null}{sourceLabel(h)}</>}
-        </span>
-        <HistoryInfo h={h} />
+      <div className={`flex-1 min-w-0 pl-2 border-l-2 ${manual ? 'border-[#6B3470]' : 'border-[#EADFD6]'}`}>
+        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+          <CompareFlagChip flag={line.compare_flag} diffPct={line.compare_diff_pct} />
+          <LineMatchBadge match={h.line_match} similarity={h.similarity} />
+          {line.compare_check && (
+            <Chip tone="amber" title={`Main reference: ${fmtMoney(line.compare_ref_amount, currency)} · Same-line alternative: ${fmtMoney(line.compare_alt_amount, currency)}`}>
+              <AlertTriangle size={10} /> Check reference
+            </Chip>
+          )}
+          <span className="min-w-[140px] flex-1 text-[12px] font-medium text-[#3B1B3D] truncate" title={h.description_raw || undefined}>{h.description_raw || '—'}</span>
+          {folded && toggleBtn}
+        </div>
+        {!folded && (
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex-1 min-w-0"><RefWhere line={line} h={h} showMainLabel /></div>
+            {toggleBtn}
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-// Pembanding lain (next / alternative) -- 2026-10-16 fix (laporan user "ada baris yang terlewat"): dulu 1 baris dgn teks history di UJUNG
-// (truncate) -> di kolom sempit lebarnya 0 & teks hilang. Kini pola SAMA pembanding utama (2 baris, garis kiri):
-//   baris 1: [2nd ref / Alternative · same line] [line_match] teks history (truncate, tetap dapat lebar)
-//   baris 2: sumber ⓘ · Rp X (this line +Rp … · +x%) [Use as comparison]  -- flex-wrap, tidak ada elemen yang hilang.
+// Pembanding lain (next / alternative): pola SAMA pembanding utama, lebih tipis. Nominal di kiri + selisih (Rp & %), lalu
+// [2nd ref / Alternative · same line] [line_match] nama baris cost / sumber · vessel · port ⓘ [Use as comparison].
 function OtherReference({ line, h, currency, onUse, useDisabled }: {
   line: CostAgentInvoiceLine; h: CostAgentLineHistory; currency: string; onUse?: () => void; useDisabled?: boolean
 }) {
   const { diff, pct } = diffOf(line, h)
   const alt = h.pick === 'alternative'
   return (
-    <div className={`pl-2 border-l-2 ${alt ? 'border-dashed border-[#B9A6DC]' : 'border-[#EADFD6]'} text-[11px] leading-snug min-w-0`} data-comparator="second" data-history-pick={h.pick || undefined}>
-      <div className="flex items-center gap-1.5 min-w-0" title={h.description_raw || undefined}>
-        {alt ? <span className="shrink-0 px-1.5 py-px rounded bg-[#ECE6F7] text-[#5B2E8C] text-[10px] font-bold" title="Same service found elsewhere. The flag is still based on the main reference — check which one fits.">Alternative · same line</span>
-          : <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.04em] text-[#8A7A8B]">2nd ref</span>}
-        <span className="shrink-0"><LineMatchBadge match={h.line_match} similarity={h.similarity} /></span>
-        <span className="min-w-0 text-[#3B1B3D] truncate">{h.description_raw || '—'}</span>
+    <div className="flex items-start gap-3 min-w-0" data-comparator="second" data-history-pick={h.pick || undefined}>
+      <div className={AMT_COL}>
+        <div className="text-[12px] font-semibold text-[#6E5E70] whitespace-nowrap leading-snug">{fmtMoney(h.amount, currency)}</div>
+        <div className={`text-[10.5px] leading-tight ${diffCls(diff)}`}>{diff === 0 ? 'same amount' : <><span className="whitespace-nowrap">{signedMoney(diff, currency)}</span>{pct !== null ? <> <span className="whitespace-nowrap">({fmtPct(pct)})</span></> : null}</>}</div>
       </div>
-      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 min-w-0 text-[#8A7A8B]">
-        <span className="whitespace-nowrap">{h.match_level === 'manual' ? 'Chosen by user' : sourceLabel(h)}</span>
-        <HistoryInfo h={h} />
-        <span className="whitespace-nowrap">·</span>
-        <b className="tabular-nums text-[#3B1B3D] whitespace-nowrap">{fmtMoney(h.amount, currency)}</b>
-        {pct !== null && diff !== 0 && <span className={`tabular-nums whitespace-nowrap ${diff > 0 ? 'text-[#A8231A]' : 'text-[#17663D]'}`}>(this line {diff > 0 ? '+' : ''}{fmtMoney(diff, currency)} · {fmtPct(pct)})</span>}
-        {onUse && (
-          <button type="button" disabled={useDisabled} onClick={onUse} className="ml-auto inline-flex items-center gap-0.5 font-semibold text-[#5B2E8C] hover:underline disabled:opacity-50 whitespace-nowrap"
-            title="Use this same-line history as the comparison for this invoice line">
-            <Pin size={11} /> Use as comparison
-          </button>
-        )}
+      <div className={`flex-1 min-w-0 pl-2 border-l-2 ${alt ? 'border-dashed border-[#B9A6DC]' : 'border-[#EADFD6]'} text-[11px] leading-snug`}>
+        <div className="flex flex-wrap items-center gap-1.5 min-w-0" title={h.description_raw || undefined}>
+          {alt ? <span className="shrink-0 px-1.5 py-px rounded bg-[#ECE6F7] text-[#5B2E8C] text-[10px] font-bold" title="Same service found elsewhere. The flag is still based on the main reference — check which one fits.">Alternative · same line</span>
+            : <span className="shrink-0 text-[10px] font-bold uppercase tracking-[0.04em] text-[#8A7A8B]">2nd ref</span>}
+          <span className="shrink-0"><LineMatchBadge match={h.line_match} similarity={h.similarity} /></span>
+          <span className="min-w-[140px] flex-1 text-[#3B1B3D] truncate">{h.description_raw || '—'}</span>
+        </div>
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="flex-1 min-w-0"><RefWhere line={line} h={h} /></div>
+          {onUse && (
+            <button type="button" disabled={useDisabled} onClick={onUse} className="shrink-0 inline-flex items-center gap-0.5 font-semibold text-[#5B2E8C] hover:underline disabled:opacity-50 whitespace-nowrap"
+              title="Use this same-line history as the comparison for this invoice line">
+              <Pin size={11} /> Use as comparison
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

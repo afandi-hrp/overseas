@@ -640,6 +640,12 @@ File: `CostAgentInvoiceReviewModal.tsx`, `CostAgentInvoiceLines.tsx`.
   di kolom Compare sempit (laptop 14" + file terbuka) lebarnya 0 & teks hilang. Kini 2 baris seperti pembanding utama (garis kiri; alternative
   putus-putus): [2nd ref / Alternative · same line] [line_match] teks history / sumber ⓘ · Rp X (this line +Rp … · +x%) [Use as comparison],
   `flex-wrap`. Toggle Details/Less di headline tidak lagi `ml-auto` (dulu menabrak tombol History). Diuji headless Chrome 760px + Show all compares.
+- **v6 nominal history di kiri (2026-10-16, permintaan user)** -- MENGGANTIKAN headline "[flag] vs history Rp X" & `HistoryDetail`: kolom Compare
+  per pembanding = blok nominal KIRI (`AMT_COL` 96px / 112px mulai panel 1000px: Rp history tebal + selisih Rp kecil, "same amount" bila sama;
+  pembanding lain + %) langsung bersanding dgn nominal invoice di ujung kanan kolom Invoice line; di kanannya (garis kiri) baris 1 = [flag /
+  2nd ref / Alternative] [line_match] [Check reference] **nama baris cost** history (`min-w-[140px]`, turun baris bila sempit), baris 2 =
+  `RefWhere` "Main reference: <sumber> · **<vessel> · <port kode — nama>**" + ⓘ (boleh membungkus; tgl/DWT/vendor/invoice/voyage/invoice title
+  tetap di popover). Komponen `MainReference` (folded = baris 1 saja + Details/Less) & `OtherReference`. Diuji headless Chrome 1420 & 820px.
 - **Invoice title hanya di ⓘ (2026-10-16)**: `invoice_description` (judul invoice lama, mis. "BY. AGEN DLL DI TJP - …") TIDAK lagi tampil di
   kolom Compare (pembanding utama, 2nd ref / alternative, ringkasan terlipat) maupun tooltip-nya -- yang tampil hanya `description_raw`.
   Dipindah ke popover ⓘ (`HistoryInfo`) baris **Invoice title**. Drawer Browse history tidak berubah.
