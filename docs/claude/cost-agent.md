@@ -646,6 +646,41 @@ File: `CostAgentInvoiceReviewModal.tsx`, `CostAgentInvoiceLines.tsx`.
   2nd ref / Alternative] [line_match] [Check reference] **nama baris cost** history (`min-w-[140px]`, turun baris bila sempit), baris 2 =
   `RefWhere` "Main reference: <sumber> · **<vessel> · <port kode — nama>**" + ⓘ (boleh membungkus; tgl/DWT/vendor/invoice/voyage/invoice title
   tetap di popover). Komponen `MainReference` (folded = baris 1 saja + Details/Less) & `OtherReference`. Diuji headless Chrome 1420 & 820px.
+- **v7 tata letak mockup user (2026-10-16)** -- MENGGANTIKAN v2–v6 (3 kolom + judul kolom sticky + pemisah): tiap baris = grid container query
+  `@min-[1000px]:grid-cols-[32px_minmax(0,1.15fr)_118px_82px_118px_minmax(0,1.35fr)_120px]`: **No** (kotak abu) | **Invoice line** (nama tebal,
+  cost item picker maks 260px, tombol **Edit line** (+ Add as new cost item), chip: "⚠ Not in master record" (tanpa cost item, dulu "Not mapped"),
+  remark = chip abu, match method, qty × price) | **Invoice** (label kecil + Rp tebal) | **pill selisih** (`DiffPill`: naik merah "▲ 75,0%", turun
+  biru "▼ 60,3%", sesuai hijau "= 0,0%", New item, No history; % = `compare_diff_pct`) | **History** (label + Rp, rata kanan) | **detail history**
+  (nama baris cost HURUF BESAR + badge line_match; `RefWhere` "sumber · vessel · port kode" + ⓘ; link **View history**, "+n more reference" /
+  Hide, Less/Details utk baris tenang, Reset to automatic, chip Check reference; pembanding lain `OtherReference` ringkas di bawahnya) |
+  **Verify** + **Remark/Edit remark** (h-8). Tanpa judul kolom (label Invoice/History di sel). Panel < 1000px: No | (line, baris angka
+  Invoice-pill-History, detail) | aksi. Textarea remark selebar kolom 2–6. Komponen lama `MainReference`/`CompareHeadline`/`HistoryDetail` dihapus.
+  Diuji headless Chrome 1420 & 820px.
+  **Revisi (2026-10-16, permintaan user)**: judul kolom sticky KEMBALI (`data-lines-header`, hanya panel >= 1000px, grid sama baris): # | Invoice
+  line | Invoice vs history (span 3 kolom angka) | Main reference | Action (rata kanan). Tombol **Edit** (dulu "Edit line" di bawah picker) di
+  SAMPING nama biaya. Chip remark (mis. "In/Out") DIHAPUS -- remark tetap lewat tombol Remark/Edit remark (tooltip berisi isinya). `ActionBtn`
+  dihapus (tidak terpakai).
+  **Main reference ringkas (2026-10-16, permintaan user)**: nama baris history (description_raw) + badge line_match DISEMBUNYIKAN dari kolom Main
+  reference -- yang tampil hanya `RefWhere strong` "sumber · vessel · port" TEBAL + ⓘ; popover ⓘ (`HistoryInfo`) kini juga memuat **History
+  line** & **Line match** ("Different line — check manually"). Toggle Details/Less & logika lipat (`isQuietLine`, `expanded`) DIHAPUS -- tidak ada
+  lagi detail yg dilipat; "Show only differences / Show all compares" kini hanya mengatur pembanding lain (selain via "+n more reference" &
+  compare_check).
+- **v8 tabel ber-kolom (2026-10-16, permintaan user: "3 kolom terpisah" + rapi di laptop 14" & saat PDF tampil)** -- MENGGANTIKAN tata letak v7:
+  Invoice / Diff / History kini 3 KOLOM TERPISAH dgn judul sendiri & garis pemisah `border-l` di semua kolom (padding di sel supaya garis penuh).
+  Container query panel: **>= 1100px** `grid-cols-[28px_minmax(0,1.1fr)_122px_80px_130px_minmax(0,1.3fr)_132px]` = # | Invoice line | Invoice |
+  Diff | History | Main reference | Action; **640–1099px** (laptop 14", PDF terbuka) `grid-cols-[28px_minmax(0,1fr)_118px_78px_126px_132px]` = sama tanpa
+  kolom Main reference -- Main reference turun ke baris 2 (kolom 2–5, garis atas putus-putus, label kecil "MAIN REFERENCE"); **< 640px** bertumpuk
+  (angka 1 baris flex dgn label Invoice/History). Judul kolom sticky tampil mulai 640px (Main reference hanya >= 1100px). Wrapper angka
+  `@min-[640px]:contents` -> tiap sel jadi kolom grid. **PENTING**: posisi sel memakai `[grid-column:…]` / `[grid-row:…]` eksplisit -- `col-span-*`/
+  `row-span-*` Tailwind v4 = shorthand `grid-column: span N` yg MENIMPA `col-start-*` (sempat membuat baris berantakan di 900px). Diuji headless Chrome
+  1420 / 900 / 560px.
+- **v9 (2026-10-16, koreksi user: "3 kolom" = Invoice line | Invoice vs history | Main reference, bukan 5; & tampilan SAMA saat PDF tampil)** --
+  MENGGANTIKAN v8: Invoice · pill % · History kembali dalam SATU kolom "Invoice vs history" (sel = `@container`: lebar sel >= 270px sebaris, lebih
+  sempit -> pill turun di tengah bawah). Kolom: # | Invoice line | Invoice vs history | Main reference | Action, garis pemisah `border-l`.
+  Main reference TIDAK lagi turun ke baris 2 saat file/PDF tampil -- satu tata letak utk semua panel >= 640px, hanya lebar kolom yg menyesuaikan:
+  640–1199px `grid-cols-[28px_minmax(0,0.9fr)_296px_minmax(0,1fr)_128px]`, >= 1200px `grid-cols-[28px_minmax(0,1fr)_320px_minmax(0,1.2fr)_132px]`;
+  < 640px bertumpuk. Judul kolom Invoice line / Invoice vs history / Main reference / Action rata tengah. Baris "Alternative" di Main reference `flex-wrap` (Use as comparison turun bila sempit). Diuji headless Chrome 1420 / 900 /
+  760 / 560px.
 - **Invoice title hanya di ⓘ (2026-10-16)**: `invoice_description` (judul invoice lama, mis. "BY. AGEN DLL DI TJP - …") TIDAK lagi tampil di
   kolom Compare (pembanding utama, 2nd ref / alternative, ringkasan terlipat) maupun tooltip-nya -- yang tampil hanya `description_raw`.
   Dipindah ke popover ⓘ (`HistoryInfo`) baris **Invoice title**. Drawer Browse history tidak berubah.
