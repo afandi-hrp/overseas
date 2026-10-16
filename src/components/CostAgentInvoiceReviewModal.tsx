@@ -168,7 +168,7 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
             <>
               {/* Strip info = bubble (2026-10-16): bubble (pill) hanya di isian, label polos di atas. Baris 1 Vessel/Port/Voyage, baris 2
                   Subtotal/VAT/WHT/Stamp (Lines total dihapus; selisih lines total vs subtotal ditandai di bubble Subtotal).
-                  v3 (2026-10-16, permintaan user "kanan terlalu kosong"): header 2 kolom -- KIRI bubble, KANAN Description + daftar alert
+                  v3 (2026-10-16, permintaan user "kanan terlalu kosong"): header 2 kolom -- KIRI bubble, KANAN (rata kanan, alert selebar teksnya) Description + daftar alert
                   (check_notes, semua tipe kecuali susulan_mismatch) dgn tombol Fix. Bubble field yg punya alert tetap bergaris kuning. */}
               <div className="mt-2.5 flex flex-wrap items-start gap-x-8 gap-y-2" data-header-info>
                 <div className="min-w-0 flex flex-col gap-1.5 text-[12.5px]">
@@ -197,18 +197,18 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
                     <InfoBubble label="Stamp" money>{fmtMoney(inv.materai, inv.currency)}</InfoBubble>
                   </div>
                 </div>
-                <div className="flex-1 min-w-[340px] flex flex-col gap-2" data-header-side>
+                <div className="ml-auto min-w-0 max-w-full flex flex-col items-end gap-1.5" data-header-side>
                   <InvoiceDescription inv={inv} editable={headerEditable} actor={actor} onSaved={reload} onToast={onToast} />
                   {allNotes.length > 0 && (
-                    <div className="flex flex-col gap-1" data-header-alerts>
+                    <div className="flex flex-col items-end gap-1 max-w-full" data-header-alerts>
                       {allNotes.map((n, i) => {
                         const fixable = !!fixHeader && FIXABLE_NOTES.has(n.type || '')
                         return (
-                          <div key={i} className="rounded-lg border border-[#F2D58A] bg-[#FFF8E6] px-2.5 py-1 text-[11.5px] text-[#7A4F00] flex items-start gap-1.5" data-check-note={n.type || ''}>
+                          <div key={i} className="w-fit max-w-full rounded-lg border border-[#F2D58A] bg-[#FFF8E6] px-2.5 py-1 text-[11.5px] text-[#7A4F00] flex items-start gap-1.5" data-check-note={n.type || ''}>
                             <AlertTriangle size={12} className="mt-0.5 shrink-0" />
-                            <span className="flex-1 min-w-0 [overflow-wrap:anywhere] font-semibold">{noteText(n, inv)}</span>
+                            <span className="min-w-0 [overflow-wrap:anywhere] font-semibold">{noteText(n, inv)}</span>
                             {fixable && (
-                              <button type="button" onClick={fixHeader} className="shrink-0 font-semibold text-[#6B3470] hover:underline inline-flex items-center gap-0.5"><Pencil size={11} /> Fix</button>
+                              <button type="button" onClick={fixHeader} className="shrink-0 ml-2 font-semibold text-[#6B3470] hover:underline inline-flex items-center gap-0.5"><Pencil size={11} /> Fix</button>
                             )}
                           </div>
                         )
@@ -661,7 +661,7 @@ function InvoiceDescription({ inv, editable, actor, onSaved, onToast }: {
   }
   return (
     // 2026-10-16 (permintaan user): label + badge + isi dalam SATU baris (isi di samping label); helper text dihapus.
-    <div className="text-[12.5px] flex flex-wrap items-center gap-x-2 gap-y-1" data-invoice-description>
+    <div className="text-[12.5px] flex flex-wrap items-center justify-end gap-x-2 gap-y-1" data-invoice-description>
       <span className={SA_LABEL}>Description</span>
       <span className={`px-1.5 py-[1px] rounded text-[10px] font-bold ${auto ? 'bg-[#EEF1FA] text-[#2F4FA8]' : 'bg-[#F5EDF3] text-[#6B3470]'}`} data-description-badge>{auto ? 'Auto' : 'Edited'}</span>
       {editing ? (

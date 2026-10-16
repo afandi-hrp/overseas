@@ -434,6 +434,13 @@ disalin user ke ROOT repo (memicu crash watcher Vite EBUSY) -> dipindah ke `sql/
   lebar daftar 380–1700px, data panjang: vendor 40+ huruf, 3 PO, 5 chip, error failed): 0 elemen terpotong/meluber di semua lebar; tinggi
   kartu invoice 93px (1450px) / 114px (1280px, laptop 14") / 190px (520px); voyage 108px (>=1150px) / 180px (520–1024px); 380–450px = 1
   kolom (2 kolom di lebar itu memotong rute & vendor).
+- **Port call 3 kolom di panel/drawer detail voyage (2026-10-16, permintaan user: ruang kanan kosong)** -- `CostAgentVoyageDrawer.tsx`: tiap port
+  call (di bawah judul #seq port + aktivitas) = grid container query `@min-[720px]:grid-cols-[auto_minmax(0,1fr)_auto]` (body panel `@container`):
+  kolom 1 jam Arrival…Departure + Handling/Port stay; kolom 2 **Matched invoices (n)** = kartu per invoice (status + grand total, no invoice,
+  vendor; link `/cost-agent/invoice/:id`) atau "No invoice matched to this port call yet."; kolom 3 tombol **Upload invoice** (`SA_BTN_PRIMARY`,
+  dulu link teks "Upload invoice for this port call") di TENGAH kolom (vertikal & horizontal, kolom min 180px); pemisah `border-l`. Panel < 720px:
+  bertumpuk (tombol rata kiri). Diuji (RPC di-mock) headless Chrome 1150 &
+  640px.
 - **Upload invoice per port call LANGSUNG dari Voyages (2026-10-14, permintaan user)**: tombol "Upload invoice for this port call" di
   panel/drawer membuka `CostAgentUploadModal` di halaman Voyages (prop `onUploadInvoice` drawer; port call terisi, company = company
   voyage, fallback filter Company halaman). Form, proxy n8n (`cost_agent`) & meta SAMA halaman Agency Invoices; selesai -> toast + daftar &
@@ -559,6 +566,8 @@ File: `CostAgentInvoiceReviewModal.tsx`, `CostAgentInvoiceLines.tsx`.
   KIRI bubble (2 baris), KANAN (`flex-1 min-w-[340px]`) Description + daftar SEMUA alert check_notes (kecuali susulan_mismatch; termasuk vendor
   / duplicate yg dulu di judul) = kotak kuning "⚠ Label: pesan" + tombol **Fix** (Correct header) utk vendor/kapal/pelabuhan/voyage. Bubble field
   yg punya alert tetap bergaris kuning (`InfoBubble warn`). `FieldNote` dihapus. Layar sempit: kolom kanan turun ke bawah bubble.
+  **Rata kanan (2026-10-16, laporan user "terlalu ke kiri, alert banyak ruang kosong")**: blok kanan `ml-auto items-end` (Description `justify-end`),
+  tiap alert `w-fit` (selebar teksnya, dulu selebar kolom), tombol Fix `ml-2`. Diuji (RPC di-mock) headless Chrome 1420 & 1700px.
 - **Teks alert check_notes Inggris (2026-10-16)**: field `msg` (Indonesia) TIDAK ditampilkan lagi. Helper BARU `src/utils/CostAgentNotes.ts`
   `noteText(note, invoice)` = SATU baris per alert dari `type` + data invoice: vendor_unknown "Vendor not in master: <vendor_name_raw>",
   vessel_unknown / port_unknown sama pola, vessel_fuzzy "Vessel matched by similar name: <raw> → <vessel_name> — please check", voyage_unmatched

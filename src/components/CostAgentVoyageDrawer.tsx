@@ -76,7 +76,7 @@ export default function CostAgentVoyageDrawer({ voyageId, ports, reloadKey, canE
           <button type="button" onClick={onClose} aria-label="Close" className="p-1.5 rounded-full hover:bg-[#F6EFEA] text-[#6E5E70]"><X size={18} /></button>
         </div>
 
-        <div className="flex-1 overflow-y-auto min-h-0 px-5 py-4 space-y-5">
+        <div className="flex-1 overflow-y-auto min-h-0 px-5 py-4 space-y-5 @container">
           {loading ? <LoadingState fullHeight={false} /> : error ? (
             <p className="text-sm text-[#A8231A]">{error}</p>
           ) : !data ? (
@@ -107,33 +107,53 @@ export default function CostAgentVoyageDrawer({ voyageId, ports, reloadKey, canE
                         <span className="text-[12px] text-[#6E5E70]">{c.port_name}</span>
                         <Chip tone={c.activity === 'muat' ? 'green' : 'blue'}>{ACTIVITY_LABEL[c.activity] || c.activity}</Chip>
                       </div>
-                      <dl className="grid grid-cols-[90px_1fr] gap-x-2 gap-y-0.5 mt-1.5 text-[12px]">
-                        {TIMES.map(([k, label]) => (
-                          <React.Fragment key={k}>
-                            <dt className="text-[#8A7A8B]">{label}</dt>
-                            <dd className="text-[#3B1B3D] tabular-nums">{fmtDateTimePort(c[k], c.port_tz)}</dd>
-                          </React.Fragment>
-                        ))}
-                      </dl>
-                      <div className="text-[11.5px] text-[#6E5E70] mt-1">Handling <b className="text-[#3B1B3D]">{fmtHours(c.handling_hours)}</b> · Port stay <b className="text-[#3B1B3D]">{fmtHours(c.port_stay_hours)}</b></div>
-                      <div className="mt-2 space-y-1">
-                        {(c.invoices || []).map(inv => (
-                          <Link key={inv.id} to={`/cost-agent/invoice/${inv.id}`} className="flex items-center gap-2 text-[12px] rounded-md border border-[#EADFD6] px-2 py-1 hover:bg-[#FBF7F4]">
-                            <StatusChip status={inv.status} />
-                            <span className="font-semibold text-[#3B1B3D] truncate">{inv.invoice_no || `#${inv.id}`}</span>
-                            <span className="text-[#6E5E70] truncate">{inv.vendor_name || ''}</span>
-                            <span className="ml-auto tabular-nums text-[#3B1B3D]">{fmtMoney(inv.grand_total)}</span>
-                          </Link>
-                        ))}
-                        {canUploadInvoice && (onUploadInvoice ? (
-                          <button type="button" onClick={() => onUploadInvoice(c.id, data.company_code)} className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-[#6B3470] hover:underline">
-                            <UploadCloud size={12} /> Upload invoice for this port call
-                          </button>
-                        ) : (
-                          <Link to={`/cost-agent/invoice?upload=1&call=${c.id}`} className="inline-flex items-center gap-1.5 text-[11.5px] font-semibold text-[#6B3470] hover:underline">
-                            <UploadCloud size={12} /> Upload invoice for this port call
-                          </Link>
-                        ))}
+                      {/* 2026-10-16 (permintaan user): port call = 3 kolom (container query panel >= 720px; di bawahnya bertumpuk):
+                          jam (Arrival…Departure + Handling/Port stay) | invoice ter-match | tombol Upload invoice (dulu link teks di bawah). */}
+                      <div className="mt-1.5 grid gap-x-4 gap-y-2 @min-[720px]:grid-cols-[auto_minmax(0,1fr)_auto]" data-port-call-cols>
+                        <div className="min-w-0">
+                          <dl className="grid grid-cols-[90px_auto] gap-x-2 gap-y-0.5 text-[12px]">
+                            {TIMES.map(([k, label]) => (
+                              <React.Fragment key={k}>
+                                <dt className="text-[#8A7A8B]">{label}</dt>
+                                <dd className="text-[#3B1B3D] tabular-nums whitespace-nowrap">{fmtDateTimePort(c[k], c.port_tz)}</dd>
+                              </React.Fragment>
+                            ))}
+                          </dl>
+                          <div className="text-[11.5px] text-[#6E5E70] mt-1">Handling <b className="text-[#3B1B3D]">{fmtHours(c.handling_hours)}</b> · Port stay <b className="text-[#3B1B3D]">{fmtHours(c.port_stay_hours)}</b></div>
+                        </div>
+                        <div className="min-w-0 @min-[720px]:border-l @min-[720px]:border-[#EADFD6] @min-[720px]:pl-4" data-port-call-invoices>
+                          <div className={`${SA_LABEL} mb-1`}>Matched invoices{(c.invoices || []).length ? ` (${(c.invoices || []).length})` : ''}</div>
+                          {(c.invoices || []).length === 0 ? (
+                            <p className="text-[12px] text-[#8A7A8B] italic">No invoice matched to this port call yet.</p>
+                          ) : (
+                            <div className="space-y-1">
+                              {(c.invoices || []).map(inv => (
+                                <Link key={inv.id} to={`/cost-agent/invoice/${inv.id}`} className="block text-[12px] rounded-lg border border-[#EADFD6] px-2.5 py-1.5 hover:bg-[#FBF7F4] min-w-0">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <StatusChip status={inv.status} />
+                                    <span className="ml-auto tabular-nums font-semibold text-[#3B1B3D] whitespace-nowrap">{fmtMoney(inv.grand_total)}</span>
+                                  </div>
+                                  <div className="mt-0.5 font-semibold text-[#3B1B3D] truncate" title={inv.invoice_no || undefined}>{inv.invoice_no || `#${inv.id}`}</div>
+                                  {inv.vendor_name && <div className="text-[11px] text-[#6E5E70] truncate" title={inv.vendor_name}>{inv.vendor_name}</div>}
+                                </Link>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {canUploadInvoice && (
+                          // Tombol di TENGAH kolom (vertikal & horizontal) saat 3 kolom; bertumpuk = rata kiri.
+                          <div className="flex items-start @min-[720px]:items-center @min-[720px]:justify-center @min-[720px]:min-w-[180px] @min-[720px]:border-l @min-[720px]:border-[#EADFD6] @min-[720px]:pl-4" data-port-call-upload>
+                            {onUploadInvoice ? (
+                              <button type="button" onClick={() => onUploadInvoice(c.id, data.company_code)} className={`${SA_BTN_PRIMARY} whitespace-nowrap`}>
+                                <UploadCloud size={14} /> Upload invoice
+                              </button>
+                            ) : (
+                              <Link to={`/cost-agent/invoice?upload=1&call=${c.id}`} className={`${SA_BTN_PRIMARY} whitespace-nowrap`}>
+                                <UploadCloud size={14} /> Upload invoice
+                              </Link>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </li>
                   ))}
