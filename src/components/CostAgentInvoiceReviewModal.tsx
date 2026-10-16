@@ -170,7 +170,11 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
                   Subtotal/VAT/WHT/Stamp (Lines total dihapus; selisih lines total vs subtotal ditandai di bubble Subtotal).
                   v3 (2026-10-16, permintaan user "kanan terlalu kosong"): header 2 kolom -- KIRI bubble, KANAN (rata kanan, alert selebar teksnya) Description + daftar alert
                   (check_notes, semua tipe kecuali susulan_mismatch) dgn tombol Fix. Bubble field yg punya alert tetap bergaris kuning. */}
-              <div className="mt-2.5 flex flex-wrap items-start gap-x-8 gap-y-2" data-header-info>
+              {/* Responsif (2026-10-16, laporan user: laptop 14" + alert banyak + description panjang -> blok kanan turun ke bawah bubble,
+                  kiri kosong). Grid container query: header >= 1250px = [bubble | kanan minmax(0,1fr)] -- blok kanan TIDAK pernah turun,
+                  teks description membungkus di kolomnya, alert mendatar flex-wrap rata kanan; < 1250px bertumpuk rata kiri. */}
+              <div className="@container mt-2.5">
+              <div className="grid items-start gap-x-8 gap-y-2 @min-[1250px]:grid-cols-[auto_minmax(0,1fr)]" data-header-info>
                 <div className="min-w-0 flex flex-col gap-1.5 text-[12.5px]">
                   <div className="flex flex-wrap items-start gap-x-4 gap-y-1.5" data-header-bubbles>
                     <InfoBubble label="Vessel" warn={notesFor('vessel').length > 0}
@@ -197,10 +201,10 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
                     <InfoBubble label="Stamp" money>{fmtMoney(inv.materai, inv.currency)}</InfoBubble>
                   </div>
                 </div>
-                <div className="ml-auto min-w-0 max-w-full flex flex-col items-end gap-1.5" data-header-side>
+                <div className="min-w-0 flex flex-col items-start @min-[1250px]:items-end gap-1.5" data-header-side>
                   <InvoiceDescription inv={inv} editable={headerEditable} actor={actor} onSaved={reload} onToast={onToast} />
                   {allNotes.length > 0 && (
-                    <div className="flex flex-col items-end gap-1 max-w-full" data-header-alerts>
+                    <div className="flex flex-wrap justify-start @min-[1250px]:justify-end gap-1 max-w-full" data-header-alerts>
                       {allNotes.map((n, i) => {
                         const fixable = !!fixHeader && FIXABLE_NOTES.has(n.type || '')
                         return (
@@ -216,6 +220,7 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
                     </div>
                   )}
                 </div>
+              </div>
               </div>
               {inv.status === 'failed' && (
                 <div className="mt-2.5 rounded-md border border-[#F4C3BC] bg-[#FDE7E4] px-2.5 py-1.5 text-[12px] text-[#A8231A] flex items-center gap-2 flex-wrap">
@@ -661,7 +666,7 @@ function InvoiceDescription({ inv, editable, actor, onSaved, onToast }: {
   }
   return (
     // 2026-10-16 (permintaan user): label + badge + isi dalam SATU baris (isi di samping label); helper text dihapus.
-    <div className="text-[12.5px] flex flex-wrap items-center justify-end gap-x-2 gap-y-1" data-invoice-description>
+    <div className="max-w-full text-[12.5px] flex flex-wrap items-center justify-start @min-[1250px]:justify-end gap-x-2 gap-y-1" data-invoice-description>
       <span className={SA_LABEL}>Description</span>
       <span className={`px-1.5 py-[1px] rounded text-[10px] font-bold ${auto ? 'bg-[#EEF1FA] text-[#2F4FA8]' : 'bg-[#F5EDF3] text-[#6B3470]'}`} data-description-badge>{auto ? 'Auto' : 'Edited'}</span>
       {editing ? (
@@ -674,8 +679,8 @@ function InvoiceDescription({ inv, editable, actor, onSaved, onToast }: {
           <button type="button" className={SA_BTN_PRIMARY} disabled={busy || !text.trim()} onClick={() => save(text, 'Description saved.')}>{busy ? 'Saving…' : 'Save'}</button>
         </div>
       ) : (
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[#3B1B3D] font-medium [overflow-wrap:anywhere] min-w-0">{inv.description || <span className="text-[#8A7A8B] font-normal">—</span>}</span>
+        <div className="flex items-start gap-1 min-w-0 max-w-full">
+          <span className="text-[#3B1B3D] font-medium [overflow-wrap:anywhere] min-w-0 @min-[1250px]:text-right">{inv.description || <span className="text-[#8A7A8B] font-normal">—</span>}</span>
           {editable && (
             <>
               <button type="button" aria-label="Edit description" title="Edit description" className="shrink-0 p-1 -mt-0.5 rounded-md text-[#6B3470] hover:bg-[#F5EDF3]"

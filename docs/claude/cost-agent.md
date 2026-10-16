@@ -568,6 +568,11 @@ File: `CostAgentInvoiceReviewModal.tsx`, `CostAgentInvoiceLines.tsx`.
   yg punya alert tetap bergaris kuning (`InfoBubble warn`). `FieldNote` dihapus. Layar sempit: kolom kanan turun ke bawah bubble.
   **Rata kanan (2026-10-16, laporan user "terlalu ke kiri, alert banyak ruang kosong")**: blok kanan `ml-auto items-end` (Description `justify-end`),
   tiap alert `w-fit` (selebar teksnya, dulu selebar kolom), tombol Fix `ml-2`. Diuji (RPC di-mock) headless Chrome 1420 & 1700px.
+  **Responsif (2026-10-16, laporan user: laptop 14" + 3 alert + description panjang -> blok kanan turun ke bawah bubble, kiri kosong)**: header
+  info = wrapper `@container` + grid; lebar header >= 1250px `grid-cols-[auto_minmax(0,1fr)]` (bubble | kanan, blok kanan TIDAK pernah turun,
+  teks description membungkus & rata kanan, alert mendatar `flex-wrap` rata kanan); < 1250px bertumpuk rata kiri (description 1 baris, alert
+  mendatar). Dulu `flex-wrap` + `ml-auto` -> blok kanan selebar description & pindah baris. Diuji (RPC di-mock, data sama screenshot user)
+  1366 / 1100 / 820px.
 - **Teks alert check_notes Inggris (2026-10-16)**: field `msg` (Indonesia) TIDAK ditampilkan lagi. Helper BARU `src/utils/CostAgentNotes.ts`
   `noteText(note, invoice)` = SATU baris per alert dari `type` + data invoice: vendor_unknown "Vendor not in master: <vendor_name_raw>",
   vessel_unknown / port_unknown sama pola, vessel_fuzzy "Vessel matched by similar name: <raw> → <vessel_name> — please check", voyage_unmatched
