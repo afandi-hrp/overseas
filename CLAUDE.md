@@ -25,6 +25,7 @@ yang berlaku lintas modul. Rujukan lama di docs berbunyi "lihat CLAUDE.md bagian
 | RLS, RPC guard, role_page_access, jabatan approval, kolom per role, translasi (detail & riwayat) | `docs/claude/rbac-security.md` |
 | Zoom 90%, shell tabel, navigasi mobile, menu sidebar, loading state (detail) | `docs/claude/ui-layout.md` |
 | Sisa pekerjaan / backlog per modul | `docs/claude/status-backlog.md` |
+| Rencana backend API (endpoint baru, DB lain, payment gateway) -- BELUM dikerjakan | `docs/claude/backend-plan.md` |
 
 ## Tech stack
 
@@ -83,6 +84,15 @@ yang berlaku lintas modul. Rujukan lama di docs berbunyi "lihat CLAUDE.md bagian
   jumlah param beda = overload baru → panggilan ambigu ("Could not choose the best candidate function").
 - Signup publik ditutup di ketiga stack (`DISABLE_SIGNUP=true`). Stack `supabase`/`supabase2` belum diaudit level DB.
 - Penulis "service" (n8n / SQL Editor) = `auth.email() IS NULL` — trigger audit & guard tertentu sengaja melewatinya.
+
+## Rencana backend API (2026-10-16, BELUM dikerjakan -- detail `docs/claude/backend-plan.md`)
+
+- Kebutuhan user ke depan: endpoint baru, koneksi ke database lain, payment gateway, keamanan data -> backend API terpisah dari `server.ts`
+  (Node.js + TypeScript), mode **hybrid**: halaman lama tetap langsung ke Supabase (RLS tetap lapis pertama), fitur yang menyentuh sistem
+  luar WAJIB lewat backend `/api/...` (JWT Supabase + `get_my_access()`).
+- Kredensial DB lain, server key payment gateway & service role key HANYA di backend. Payment: nominal dihitung server, webhook wajib
+  verifikasi signature + idempotent + cek ulang status ke gateway; sandbox dulu.
+- Sebelum mulai, tanyakan user: jenis DB lain, payment gateway pilihan, lokasi deploy backend.
 
 ## Routing & halaman (`src/App.tsx`)
 
