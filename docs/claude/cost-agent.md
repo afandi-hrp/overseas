@@ -197,7 +197,7 @@ File: `src/pages/cost-agent/CostAgentInvoicePage.tsx` (daftar), `src/components/
   2026-10-15: daftar menutupi kotak ketik): posisi = koordinat layar / faktor zoom yang DIUKUR dari lebar daftar (`scale`), diverifikasi
   Edge headless; baris "Search: <teks>" sticky di atas daftar. Pola ini berlaku utk dropdown portal `fixed` lain di bawah zoom ->
   `verify_line(learn_alias true)`; Verified (learn alias saat dicentang); "Ref" = include_in_history (DIHAPUS 065, selalu true); Remark disimpan saat blur
-  (RPC memakai coalesce -> remark tidak bisa dikosongkan). Baris tanpa cost item / item_baru: "Not in cost master yet" + **Add as new
+  (RPC memakai coalesce(p_remark, remark): null tidak mengubah; sejak 2026-10-16 frontend mengirim '' utk MENGOSONGKAN remark). Baris tanpa cost item / item_baru: "Not in cost master yet" + **Add as new
   cost item** (code/name/category/GL/keywords -> `add_cost_item` -> `verify_line(id baru, verified)`). Field **Code** = combobox
   (2026-10-13): daftar cost item aktif (cari code/nama/kategori, maks 60) + "New code"; code yg cocok persis dgn item yg ada ->
   mode "Use existing cost item" (field lain read-only berisi data item itu, TANPA `add_cost_item`) -> `verify_line(id item lama,
@@ -681,6 +681,13 @@ File: `CostAgentInvoiceReviewModal.tsx`, `CostAgentInvoiceLines.tsx`.
   640–1199px `grid-cols-[28px_minmax(0,0.9fr)_296px_minmax(0,1fr)_128px]`, >= 1200px `grid-cols-[28px_minmax(0,1fr)_320px_minmax(0,1.2fr)_132px]`;
   < 640px bertumpuk. Judul kolom Invoice line / Invoice vs history / Main reference / Action rata tengah. Baris "Alternative" di Main reference `flex-wrap` (Use as comparison turun bila sempit). Diuji headless Chrome 1420 / 900 /
   760 / 560px.
+- **Remark di kolom Main reference (2026-10-16, permintaan user)**: remark baris tampil di AKHIR sel Main reference (setelah link View history /
+  +n more & daftar pembanding lain -> ikut turun saat "+n more reference" dibuka) sbg kotak kecil abu (ikon pesan, teks utuh `whitespace-pre-wrap`,
+  `data-line-remark`). Tombol Remark/Edit remark (kolom Action) membuka textarea DI POSISI YANG SAMA (dulu textarea selebar baris di bawah
+  baris), simpan saat blur. **Mengosongkan remark** (2026-10-16, laporan user "tidak tersimpan"): dulu frontend hanya menyimpan bila teks tidak
+  kosong; kini teks kosong dikirim `''` -> RPC `verify_line` (`remark = coalesce(p_remark, remark)`, versi a21e206) mengosongkan remark.
+  **Diverifikasi user 2026-10-16 (pg_get_functiondef live)**: `remark = coalesce(p_remark, remark)` tanpa nullif -> '' mengosongkan, tanpa SQL baru.
+  Catatan: verify_line SELALU mengisi `verified_by`/`verified_at` (juga saat hanya simpan remark / unverify) -- perilaku server, tidak diubah.
 - **Invoice title hanya di ⓘ (2026-10-16)**: `invoice_description` (judul invoice lama, mis. "BY. AGEN DLL DI TJP - …") TIDAK lagi tampil di
   kolom Compare (pembanding utama, 2nd ref / alternative, ringkasan terlipat) maupun tooltip-nya -- yang tampil hanya `description_raw`.
   Dipindah ke popover ⓘ (`HistoryInfo`) baris **Invoice title**. Drawer Browse history tidak berubah.

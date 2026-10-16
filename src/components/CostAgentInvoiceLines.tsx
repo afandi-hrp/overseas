@@ -239,6 +239,25 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                     )}
                   </div>
                 )}
+                {/* Remark (2026-10-16, permintaan user): di kolom Main reference, SETELAH link & pembanding lain -> ikut turun saat
+                    "+n more reference" dibuka. Edit = textarea di posisi yang sama (simpan saat blur). */}
+                {editingRemark ? (
+                  <div className="mt-2" data-line-remark>
+                    <textarea className={`${SA_INPUT} !h-auto min-h-7 py-1 text-[12px] leading-snug resize-y`} rows={remarkRows} value={remarkVal} disabled={rowBusy} placeholder="Remark — saved when you leave the box"
+                      aria-label="Remark" autoFocus
+                      onChange={e => setRemarks(p => ({ ...p, [l.id]: e.target.value }))}
+                      onBlur={() => {
+                        const v = remarkVal.trim()
+                        setRemarkOpen(p => { const n = new Set(p); n.delete(l.id); return n })
+                        // Dikosongkan = kirim '' (RPC verify_line: remark = coalesce(p_remark, remark) -> null TIDAK mengubah, '' mengosongkan).
+                        if (v !== (l.remark || '')) run(l.id, () => verify(l, { remark: v }))
+                      }} />
+                  </div>
+                ) : l.remark ? (
+                  <div className="mt-2 flex items-start gap-1.5 rounded-md bg-[#FBF7F4] border border-[#F0E8E2] px-2 py-1 text-[11.5px] text-[#6E5E70] [overflow-wrap:anywhere] whitespace-pre-wrap" data-line-remark>
+                    <MessageSquare size={12} className="mt-0.5 shrink-0 text-[#8A7A8B]" /><span className="min-w-0">{l.remark}</span>
+                  </div>
+                ) : null}
               </div>
 
               {/* Action: Verify + Remark */}
@@ -260,18 +279,6 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                 )}
               </div>
 
-              {editingRemark && (
-                <div className="[grid-column:2/span_2] [grid-row:4] px-3 pb-3 @min-[640px]:[grid-column:2/span_3] @min-[640px]:[grid-row:2]">
-                  <textarea className={`${SA_INPUT} !h-auto min-h-7 py-1 text-[12px] leading-snug resize-y`} rows={remarkRows} value={remarkVal} disabled={rowBusy} placeholder="Remark — saved when you leave the box"
-                    aria-label="Remark" autoFocus
-                    onChange={e => setRemarks(p => ({ ...p, [l.id]: e.target.value }))}
-                    onBlur={() => {
-                      const v = remarkVal.trim()
-                      setRemarkOpen(p => { const n = new Set(p); n.delete(l.id); return n })
-                      if (v && v !== (l.remark || '')) run(l.id, () => verify(l, { remark: v }))
-                    }} />
-                </div>
-              )}
             </div>
           )
         })}
