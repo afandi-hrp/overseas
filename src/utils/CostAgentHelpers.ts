@@ -239,7 +239,7 @@ export interface CostAgentInvoiceLine {
   compare_ref_amount: number | null
   compare_diff_pct: number | null
   remark: string | null
-  include_in_history: boolean
+  include_in_history: boolean // sql/065: selalu true (semua baris masuk history saat approve; checkbox "Ref" dihapus)
   is_verified: boolean
   verified_by: string | null
   verified_at: string | null
@@ -250,7 +250,7 @@ export interface CostAgentInvoiceLine {
   history: CostAgentLineHistory[]
 }
 // check_notes dari fn_cost_agent_ingest_invoice: {type, msg} -- type vendor_unknown | vessel_unknown | port_unknown |
-// voyage_unmatched | duplicate | total_mismatch | (v2) susulan_mismatch. msg Indonesia (tampil apa adanya).
+// voyage_unmatched | duplicate | total_mismatch | (v2) susulan_mismatch | vessel_fuzzy. msg Indonesia TIDAK ditampilkan (noteText).
 export interface CostAgentCheckNote { type?: string; msg?: string; message?: string; [k: string]: unknown }
 export interface CostAgentInvoice {
   id: number
@@ -440,12 +440,24 @@ export const costAgentUpdateInvoiceHeader = (a: {
 export const COST_AGENT_DESCRIPTION_MAX = 300
 export const costAgentSetInvoiceDescription = (invoiceId: number, description: string, actor?: string | null) =>
   callCostAgentRpc<string | null>('fn_cost_agent_set_invoice_description', { p_invoice_id: invoiceId, p_description: description, p_actor: actor ?? null })
+// sql/065: p_include_in_history SELALU true (semua baris masuk history saat approve; "Use as reference" dihapus dari UI).
 export const costAgentVerifyLine = (a: {
-  lineId: number; costItemId: number | null; isVerified: boolean; remark?: string | null; includeInHistory: boolean
+  lineId: number; costItemId: number | null; isVerified: boolean; remark?: string | null
   learnAlias: boolean; actor?: string | null
 }) => callCostAgentRpc<void>('fn_cost_agent_verify_line', {
   p_line_id: a.lineId, p_cost_item_id: a.costItemId, p_is_verified: a.isVerified, p_remark: a.remark ?? null,
-  p_include_in_history: a.includeInHistory, p_learn_alias: a.learnAlias, p_actor: a.actor ?? null,
+  p_include_in_history: true, p_learn_alias: a.learnAlias, p_actor: a.actor ?? null,
+})
+// sql/065: edit manual baris (status verification/rejected + canEdit cost_agent_invoice). Server: baris jadi BELUM verified,
+// cost item dikenali ulang bila teks berubah (kecuali sudah dipilih manual), lines_total & compare dihitung ulang, dicatat di
+// Timeline. Description wajib (maks 500), amount wajib; qty/unit price opsional. changed=false = tidak ada yang berubah.
+export const COST_AGENT_LINE_DESCRIPTION_MAX = 500
+export interface CostAgentUpdateLineResult { changed: boolean; changes?: string[] }
+export const costAgentUpdateLine = (a: {
+  lineId: number; description: string; qty: number | null; unitPrice: number | null; amount: number; actor?: string | null
+}) => callCostAgentRpc<CostAgentUpdateLineResult>('fn_cost_agent_update_line', {
+  p_line_id: a.lineId, p_description: a.description, p_qty: a.qty, p_unit_price: a.unitPrice, p_amount: a.amount,
+  p_actor: a.actor ?? null,
 })
 export const costAgentAddCostItem = (a: {
   code: string; name: string; category: string; glAccount?: string | null; keywords?: string[]; actor?: string | null
@@ -749,12 +761,7 @@ export const isInvoiceEditable = (st: string | null | undefined) => st === 'veri
 // Dokumen susulan boleh dikirim di semua status kecuali processing / cancelled.
 export const canUploadSupporting = (st: string | null | undefined) => !!st && st !== 'processing' && st !== 'cancelled'
 
-export const CHECK_NOTE_LABEL: Record<string, string> = {
-  vendor_unknown: 'Vendor not in master', vessel_unknown: 'Vessel not in master', port_unknown: 'Port not in master',
-  voyage_unmatched: 'Voyage / port call not matched', duplicate: 'Possible duplicate', total_mismatch: 'Total mismatch',
-  susulan_mismatch: 'Supporting document refers to another invoice',
-  vessel_fuzzy: 'Vessel name recognised from a typo', // sql/063
-}
+// Teks alert check_notes: src/utils/CostAgentNotes.ts noteText() (2026-10-16; CHECK_NOTE_LABEL + msg Indonesia tidak dipakai lagi).
 
 // Label cara baris dicocokkan ke cost item (`match_method`, sql/063). Metode lain -> tidak diberi label.
 export const MATCH_METHOD_LABEL: Record<string, string> = {

@@ -196,7 +196,7 @@ File: `src/pages/cost-agent/CostAgentInvoicePage.tsx` (daftar), `src/components/
   `fixed` supaya tidak terpotong tabel; simpan SAMA select lama; diuji jsdom 11 cek). **Zoom 90%** (laptop 14", laporan user
   2026-10-15: daftar menutupi kotak ketik): posisi = koordinat layar / faktor zoom yang DIUKUR dari lebar daftar (`scale`), diverifikasi
   Edge headless; baris "Search: <teks>" sticky di atas daftar. Pola ini berlaku utk dropdown portal `fixed` lain di bawah zoom ->
-  `verify_line(learn_alias true)`; Verified (learn alias saat dicentang); "Ref" = include_in_history; Remark disimpan saat blur
+  `verify_line(learn_alias true)`; Verified (learn alias saat dicentang); "Ref" = include_in_history (DIHAPUS 065, selalu true); Remark disimpan saat blur
   (RPC memakai coalesce -> remark tidak bisa dikosongkan). Baris tanpa cost item / item_baru: "Not in cost master yet" + **Add as new
   cost item** (code/name/category/GL/keywords -> `add_cost_item` -> `verify_line(id baru, verified)`). Field **Code** = combobox
   (2026-10-13): daftar cost item aktif (cari code/nama/kategori, maks 60) + "New code"; code yg cocok persis dgn item yg ada ->
@@ -505,6 +505,135 @@ HANYA halaman Agent Invoice (Voyage / Approval Matrix / routing / permissions TI
   halaman itu (1 query; error -> tanpa keterangan, console.warn). Kalau view kelak ditambah kolom `description`, query tambahan otomatis dilewati.
 - **Diuji 2026-10-15**: jsdom modal review 15 cek (tampil + badge Auto, helper text, note vessel_fuzzy + Correct header, label match method,
   Edit -> RPC -> Edited, Reset to auto -> '' -> Auto, baca saja saat approved). `tsc` (lint) bersih. Belum dites di browser / production.
+
+## Agent Invoice -- update 065: compare kiri–kanan, edit baris, wajib cost item (2026-10-16; sql/065 SUDAH DIJALANKAN, konfirmasi user)
+
+HANYA halaman Agent Invoice (Voyage / Approval Matrix / routing / permissions / MainLayout / server.ts TIDAK berubah; SQL tidak ditulis
+dari sesi ini -- file `065_cost_agent_app_feedback.sql` milik user di root repo). File: `CostAgentHelpers.ts`, `CostAgentInvoiceLines.tsx`,
+`CostAgentInvoiceReviewModal.tsx`.
+- **Data/RPC (065)**: `fn_cost_agent_update_line(p_line_id, p_description, p_qty, p_unit_price, p_amount, p_actor) -> {changed, changes[]}`
+  (verification/rejected + edit `cost_agent_invoice`; baris jadi BELUM verified, cost item dikenali ulang bila teks berubah & match_method
+  bukan manual, lines_total + compare dihitung ulang, status_log "Baris #n diedit manual: …"). Wrapper `costAgentUpdateLine`,
+  `COST_AGENT_LINE_DESCRIPTION_MAX` (500), tipe `CostAgentUpdateLineResult`. `submit_for_approval` MENOLAK baris `cost_item_id` null.
+  `include_in_history` selalu true. check_notes hilang sendiri setelah header dikoreksi / voyage tertaut (cukup reload). Allowlist GRANT = 18 RPC.
+- **A. "Use as reference" DIHAPUS**: kolom/checkbox Ref hilang; `costAgentVerifyLine` tidak punya param `includeInHistory` lagi, SELALU
+  mengirim `p_include_in_history: true`.
+- **B. Baris tanpa cost item**: chip merah "Not mapped"; tombol Verify disable (tooltip "Choose a cost item first (or LAIN_LAIN)"; unverify
+  tetap bisa); Verify all matching melewatinya (sudah sejak awal: syarat `cost_item_id`); toolbar "n without cost item"; footer modal
+  Submit disable + "· n line(s) without cost item" (prioritas di atas "· n not verified").
+- **C. Edit baris** (`EditLineModal`, tombol "Edit" ber-ikon pensil, hanya `editable`): Description (wajib, maks 500, penghitung), Qty & Unit
+  price opsional, Amount wajib -- otomatis qty × unit price (dibulatkan 2 desimal) setiap qty/price diubah & keduanya valid, tetap bisa
+  diketik. Angka diterima "1.250.000" / "1,5" / "2.5" (`parseAmountInput`: separator terakhir = desimal bila ada titik & koma; 1 titik saja =
+  desimal; banyak titik = ribuan) + pratinjau Rupiah. Kotak "Original: …" = nilai baris SAAT INI (bukan nilai AI dari Timeline -- keputusan
+  spek). Save -> RPC -> reload + toast "Line updated — please verify again"; `changed=false` -> toast "No changes to save.". Toast lewat prop
+  baru `onToast` (diteruskan modal review).
+- **D. Tampilan kiri–kanan** (menggantikan tabel 8 kolom + sub-baris history): tiap baris = blok `grid xl:grid-cols-2` (layar >= 1280px 2
+  kolom, di bawahnya bertumpuk), garis kiri hijau bila verified. Kiri: No, Description, Edit + Verify (tombol, dulu checkbox), cost item
+  picker + label match method, Amount + qty × price, chip flag / line_match / Check reference / Not mapped, "Not in cost master yet" + Add
+  as new cost item, Browse history / Reset to automatic, Remark (textarea, blur = simpan). Kanan (`ComparatorCard`): pembanding utama =
+  pick manual > primary > history[0] (`pickComparators`) -- label Main reference / Chosen by user, sumber (`MatchLevelLabel`), line_match,
+  description_raw + invoice_description kecil, tgl (x days before/after) · kapal (DWT) · port · vendor, Amount, selisih Rp & % (merah naik /
+  hijau turun / abu sama atau flag `sesuai`). Pembanding ke-2 = pick next / alternative (lebih tipis); alternative tetap chip "Alternative ·
+  same line" + **Use as comparison**. Tanpa history: "Not in cost master yet" (item_baru / tanpa cost item) atau "No history yet".
+- **E. Auto-hide**: panel kanan DILIPAT bila `compare_flag = 'sesuai'` && line_match pembanding utama = `same_line` && `!compare_check` ->
+  ringkasan "✓ Same line · Rp <ref> · <%>" + "Show compare" (per baris, bisa "Hide compare" lagi). Toggle toolbar **Show only differences**
+  (default) | **Show all compares** -- state komponen saja (tanpa localStorage).
+- **Diuji 2026-10-16**: `tsc` (= `npm run lint`) bersih; render Vite SSR komponen asli 4 baris contoh (sesuai+same_line, naik+alternative,
+  item_baru tanpa cost item, tanpa_history) editable & baca saja: 1 terlipat + ringkasan benar, 1 kartu utama + 1 ke-2, Use as comparison
+  hanya editable, Verify disable+tooltip baris Not mapped, Verify all = 1, tanpa "Use as reference". Belum dites di browser / DB.
+
+### Rapikan modal review (2026-10-16, permintaan user dgn screenshot)
+
+File: `CostAgentInvoiceReviewModal.tsx`, `CostAgentInvoiceLines.tsx`.
+- **Header = bubble** (`InfoBubble`, rounded-xl border, label kecil di atas nilai): Vessel, Port, Voyage · port call, Subtotal, VAT, WHT, Stamp,
+  Lines total (merah bila beda > 1 dari subtotal). Dulu strip polos + VAT·WHT digabung.
+- **Alert langsung di field** (`NOTE_FIELD`): vessel_unknown/vessel_fuzzy -> bubble Vessel, port_unknown -> Port, voyage_unmatched -> Voyage,
+  total_mismatch -> Lines total, vendor_unknown/duplicate -> di samping judul vendor. Chip kuning `FieldNote` = label `CHECK_NOTE_LABEL`, pesan
+  Indonesia di tooltip, tombol **Fix** (buka Correct header) utk catatan vendor/kapal/pelabuhan/voyage bila `headerEditable`. Tipe lain (tak
+  dikenal) tetap baris chip di bawah bubble; susulan_mismatch tetap di tab Documents.
+- **Header v2 (2026-10-16, permintaan user)**: bubble (pill `rounded-full`) HANYA membungkus isian, label polos di atasnya. Baris 1 Vessel / Port /
+  Voyage · port call; baris 2 (di bawah Vessel) Subtotal / VAT / WHT / Stamp. **Lines total DIHAPUS** -- selisih lines total vs subtotal (> 1)
+  + note `total_mismatch` kini ditandai di bubble Subtotal (merah + tooltip "Cost lines total Rp … differs from subtotal"). Description: label +
+  badge Auto/Edited + isi + pensil dalam SATU baris; helper text "Saved to history as the invoice title…" DIHAPUS.
+- **Header v3 (2026-10-16, permintaan user "kanan terlalu kosong")** -- MENGGANTIKAN alert per field di atas: header info 2 kolom (`flex-wrap`):
+  KIRI bubble (2 baris), KANAN (`flex-1 min-w-[340px]`) Description + daftar SEMUA alert check_notes (kecuali susulan_mismatch; termasuk vendor
+  / duplicate yg dulu di judul) = kotak kuning "⚠ Label: pesan" + tombol **Fix** (Correct header) utk vendor/kapal/pelabuhan/voyage. Bubble field
+  yg punya alert tetap bergaris kuning (`InfoBubble warn`). `FieldNote` dihapus. Layar sempit: kolom kanan turun ke bawah bubble.
+- **Teks alert check_notes Inggris (2026-10-16)**: field `msg` (Indonesia) TIDAK ditampilkan lagi. Helper BARU `src/utils/CostAgentNotes.ts`
+  `noteText(note, invoice)` = SATU baris per alert dari `type` + data invoice: vendor_unknown "Vendor not in master: <vendor_name_raw>",
+  vessel_unknown / port_unknown sama pola, vessel_fuzzy "Vessel matched by similar name: <raw> → <vessel_name> — please check", voyage_unmatched
+  "Voyage / port call not matched", duplicate "Possible duplicate of invoice #<duplicate_of>", total_mismatch "Line total does not match invoice
+  total (Lines: Rp … · Invoice: Rp <grand_total ?? subtotal>)", susulan_mismatch "Supporting document refers to a different invoice number",
+  tipe lain "Check required"; nilai raw kosong -> tanpa ": …". Dipakai di daftar alert header modal review & alert susulan tab Documents & Tax
+  (daftar invoice tidak menampilkan check_notes). `CHECK_NOTE_LABEL` (CostAgentHelpers) DIHAPUS. Tombol Fix tetap. Diuji 9 tipe × data
+  lengkap/kosong via Vite SSR.
+- **Grand total** pindah ke footer tab Cost lines (prop baru `footerRight` CostAgentInvoiceLines, ujung kanan sebelah ringkasan flag); di tab lain
+  tampil di footer aksi kiri (`GrandTotal`).
+- **Viewer file default tersembunyi** (`showViewer` awal false; tombol Show file tetap).
+- **Baris (laporan "bingung dibaca")**: 2 kolom kini **container query** panel `@min-[900px]` (dulu layar `xl:`) dgn proporsi 1 : 1.15 + judul kolom
+  sticky "Invoice line" | "Compared with history — the flag follows the main reference". Kiri: baris 1 = No + teks + Amount (qty × price kecil);
+  baris 2 = cost item + chip flag/Check reference/Not mapped/match method; baris 3 = Add as new cost item · Browse history · Reset · **+ Remark**
+  (remark hanya tampil bila ada isi / diklik) + Edit/Verify di kanan. Badge line_match hanya di kartu kanan (tidak dobel). Kartu pembanding:
+  baris label (Main reference / 2nd reference / Alternative · sumber · line_match), teks history, judul invoice lama HANYA bila beda dgn teks
+  baris (dulu tampil 2x), tgl (x days before) · kapal (DWT) · port · vendor; kanan = nominal history + chip kalimat "▼ This line 84% lower" /
+  "▲ This line 20% higher" / "Same amount" + selisih Rp kecil.
+- **Diuji 2026-10-16**: `tsc` bersih; komponen baris asli dirender (Vite SSR + CSS index.css) & di-screenshot headless Chrome lebar 1420 / 900px:
+  2 kolom rapi, tanpa teks terpotong/meluber. Header bubble belum di-screenshot (butuh data RPC) -- cek di browser.
+- **v2 -- 3 kolom (2026-10-16, laporan user: compare masih membingungkan, baris terlalu tinggi, "seperti bursa saham")** -- MENGGANTIKAN tata
+  letak 2 kolom + kartu di atas. Grid `@min-[900px]:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)_auto]` (ditulis LITERAL; Tailwind tidak membaca
+  kelas interpolasi), judul kolom sticky **Invoice line | Compare with history | Action**; < 900px: kolom 1 penuh, lalu Compare | Action.
+  Baris PUTIH (latar merah/kuning per flag dihapus; warna hanya di chip), garis kiri hijau = verified.
+  - Kolom 1: No + teks + Amount; cost item picker (lebar 260) + Not mapped / Add as new cost item / match method / qty × price; remark tersimpan
+    = 1 baris italic kecil.
+  - Kolom 2 (`CompareHeadline`): **[chip flag] vs history Rp X (selisih Rp)** + Check reference -- flag pindah ke sini (dulu di kolom kiri).
+    `HistoryDetail` 2 baris kecil: [line_match] teks history · tgl (x days before) / "Main reference:" atau "Chosen by user" + sumber · kapal
+    (DWT) · port · vendor (truncate, lengkap di tooltip). Pembanding lain (`OtherReference`, alternative didahulukan) = 1 baris ringkas, dilipat
+    di balik "+n more reference" -- otomatis terbuka bila compare_check atau "Show all compares". Baris tenang (auto-hide 065 E) = headline saja
+    + badge Same line + toggle Details/Less. Tanpa history: chip flag + "Not in cost master yet — nothing to compare" / "No history yet for this
+    cost item".
+  - Kolom 3 (lebar 112): tombol **Verify/Verified** + ikon Edit, Browse history, Remark (buka textarea selebar baris, simpan saat blur lalu
+    tertutup), Reset to automatic (bila pembanding manual).
+  - Diuji: `tsc` bersih; screenshot headless Chrome 1420px (6 baris contoh, tinggi baris ±70–90px, 3 kolom) & 800px (bertumpuk) tanpa luber.
+- **Detail history -> ikon ⓘ (2026-10-16, update kecil)**: di kolom Compare (`HistoryDetail` utama + `OtherReference` next/alternative) teks
+  "tgl (x days before/after) · kapal (DWT) · port · vendor" DISEMBUNYIKAN. Tetap tampil: label sumber (Main reference / Chosen by user /
+  `matchLevelLabel`, Alternative · same line / 2nd ref), badge line_match, description_raw (+ judul invoice kecil bila beda), Amount & selisih
+  Rp/% (headline utama; baris lain "(this line +Rp … · +x%)"). Komponen `HistoryInfo` = ikon ⓘ di samping label sumber: hover (desktop,
+  tutup 150 ms setelah kursor keluar, popover bisa disentuh) / klik (mobile, toggle; klik di luar menutup) -> popover Date (+ days), Vessel
+  (DWT), Port (kode — nama), Vendor, Invoice no, Voyage. Popover = portal `fixed` z-[120] (tidak terpotong panel scroll), posisi dibagi faktor
+  zoom yg diukur (rect / offsetWidth) & dijepit ke viewport. Ringkasan baris terlipat & drawer Browse history TIDAK berubah. Diuji: `tsc`
+  bersih; halaman uji di dev server + headless Chrome (zoom 90%): 3 ikon ⓘ, klik -> popover berisi 6 field & tepat di bawah ikon, panel
+  tidak lagi memuat vendor / "days before".
+- **Pemisah kolom + 1 tombol menu (2026-10-16, permintaan user)**: garis vertikal `@min-[900px]:border-l border-[#E4D8CF] pl-4` di kolom Compare &
+  Action (header & baris). Padding vertikal dipindah dari baris ke SEL (`pt-2 pb-2`, baris `gap-y-0`) supaya garis menyambung penuh antar baris;
+  header memakai `border-l-4 border-l-transparent px-3` = sama dgn baris (garis header lurus dgn garis baris). Kolom Action (lebar 136) = **Verify** +
+  tombol **⋯** (`ActionMenu`, portal `fixed`, rata kanan tombol, klik luar / Esc menutup menu saja): Edit line, Browse history, Add/Edit remark,
+  Reset comparison to automatic (hanya bila pembanding manual; Edit/Remark/Reset hanya `editable`). Dulu 3–4 ikon terpisah di bawah Verify.
+  Posisi popover bersama `useFixedPopover` (juga dipakai ⓘ) + `useOutsideClick`. Diuji di dev server + headless Chrome (zoom 90%): garis kolom 2
+  & 3 di x yang sama utk semua baris, menu berisi 4 aksi & tampil di bawah tombol.
+- **v3 (2026-10-16, permintaan user)** -- MENGGANTIKAN menu ⋯: (1) semua tombol aksi TERLIHAT, vertikal di kolom Action (`ActionBtn` h-6 ikon +
+  label): Verify, Edit line, History, Remark/Edit remark, Reset (hanya pembanding manual; tooltip "Reset comparison…"); `ActionMenu` dihapus.
+  (2) Ringkasan jumlah & total per flag di footer DIHAPUS -- footer = Needs check (kiri) + Grand total (kanan). (3) Tombol **Submit for
+  approval** dipertegas: siap = hijau pekat h-10 font bold + ring; belum siap = kotak kuning tebal (border-2, TIDAK pudar) + chip alasan
+  "n line(s) without cost item" / "n not verified". Diuji: `tsc` bersih; screenshot headless Chrome 1420px (baris + footer); tombol Submit di
+  modal belum di-screenshot (butuh data RPC).
+- **Laptop 14" + file terbuka (2026-10-16, laporan user: tampilan "jelek", beda dgn 24")**: penyebab = panel baris < 900px saat viewer file tampil ->
+  kolom bertumpuk. Batas 3 kolom diturunkan ke container **640px** (`@min-[640px]`); kolom Action `w-[120px]` (136px mulai panel 1000px), padding
+  pemisah `pl-3`; baris 1 kolom Invoice line `flex-wrap` (teks min 110px, Amount `ml-auto` turun ke kanan bila sempit). Diuji headless Chrome
+  zoom 90% lebar panel 760 & 980px: 3 kolom, tanpa teks terpotong/meluber.
+- **v4 tombol per kolom (2026-10-16, permintaan user)**: **Remark / Edit remark** pindah ke kolom Invoice line (bar bawah, + teks remark italic di
+  sampingnya), **History** (+ **Reset to automatic** bila pembanding manual) pindah ke kolom Compare (bar bawah). Kolom Action = Verify + Edit line.
+  Kolom 1 & 2 `flex flex-col`, bar tombol `mt-auto` -> tombol Remark & History sejajar di dasar baris; semua `ActionBtn` setinggi Verify (h-7).
+  Diuji headless Chrome zoom 90% lebar 820 & 1420px.
+- **v5 (2026-10-16, permintaan user: "jangan di bawah, buat di samping")** -- MENGGANTIKAN bar bawah v4: **Remark** di SAMPING cost item picker
+  (picker `flex-1 min-w-[140px] max-w-[260px]` menyempit supaya tombol muat), teks remark italic menyusul di baris itu; **History** (+ **Reset**)
+  di kanan kolom Compare sejajar headline (`flex items-start`, isi compare `flex-1`). Tinggi baris kembali ±70px. Diuji 820 & 1420px.
+- **Fix 2nd ref "terlewat" (2026-10-16, laporan user)**: `OtherReference` dulu 1 baris dgn teks history (description_raw) di UJUNG setelah nominal ->
+  di kolom Compare sempit (laptop 14" + file terbuka) lebarnya 0 & teks hilang. Kini 2 baris seperti pembanding utama (garis kiri; alternative
+  putus-putus): [2nd ref / Alternative · same line] [line_match] teks history / sumber ⓘ · Rp X (this line +Rp … · +x%) [Use as comparison],
+  `flex-wrap`. Toggle Details/Less di headline tidak lagi `ml-auto` (dulu menabrak tombol History). Diuji headless Chrome 760px + Show all compares.
+- **Invoice title hanya di ⓘ (2026-10-16)**: `invoice_description` (judul invoice lama, mis. "BY. AGEN DLL DI TJP - …") TIDAK lagi tampil di
+  kolom Compare (pembanding utama, 2nd ref / alternative, ringkasan terlipat) maupun tooltip-nya -- yang tampil hanya `description_raw`.
+  Dipindah ke popover ⓘ (`HistoryInfo`) baris **Invoice title**. Drawer Browse history tidak berubah.
 
 ## Konvensi lanjutan
 

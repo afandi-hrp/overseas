@@ -7,6 +7,7 @@ import { ExternalLink, AlertTriangle, CheckCircle2, X } from 'lucide-react'
 import { CostAgentFileDrop, FieldLabel } from './CostAgentUi'
 import { Chip, SA_BTN_PRIMARY, SA_INPUT, SA_LABEL, SA_CARD } from './SeaAirAuditUi'
 import { LoadingSpinner } from './LoadingState'
+import { noteText } from '../utils/CostAgentNotes'
 import {
   costAgentUpload, fetchCostAgentDocumentsByJob, fmtDate, fmtMoney, fmtDateTimePort, DOC_TYPE_LABEL, TAX_STATUS_META,
   type CostAgentInvoiceHistory, type CostAgentInvoiceDocument,
@@ -76,7 +77,7 @@ export default function CostAgentInvoiceDocuments({ data, canUpload, onChanged }
     <div className="p-4 space-y-4">
       {susulanNotes.map((n, i) => (
         <div key={i} className="rounded-lg border border-[#F2D58A] bg-[#FFF8E6] px-3 py-2 text-[12.5px] text-[#7A4F00] flex items-start gap-1.5">
-          <AlertTriangle size={14} className="mt-0.5 shrink-0" /> {n.msg || n.message || 'A supporting document refers to another invoice number.'}
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" /> {noteText(n, inv)}
         </div>
       ))}
 
