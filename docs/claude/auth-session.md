@@ -40,7 +40,7 @@ Panel TERBAWAH Settings → Manage Roles & Access (`UserActivityPanel.tsx`, **Ad
   INVOKER), `fn_user_activity` (SECURITY DEFINER + guard `is_admin()`, `set search_path`, revoke dari public/anon). Diuji PGlite 12 cek (upsert, isolasi antar-user, non-admin ditolak, anon
   ditolak, idempotent) + 17 cek fungsi murni.
 
-## Wajib ganti password -- user baru / password default (2026-10-19, permintaan user; `sql/066_force_password_change.sql` BELUM DIJALANKAN)
+## Wajib ganti password -- user baru / password default (2026-10-19, permintaan user; `sql/066_force_password_change.sql` SUDAH DIJALANKAN 2026-10-19, konfirmasi user)
 
 Permintaan: user baru / password default / pertama kali login WAJIB ganti password; kalau belum, TIDAK bisa akses aplikasi.
 - **Penanda** = tabel `public.user_security` (`user_id` PK -> auth.users cascade, `must_change_password`, `flagged_at`,
@@ -70,6 +70,29 @@ Permintaan: user baru / password default / pertama kali login WAJIB ganti passwo
 - Uji: PGlite 19 cek sql/066 (backfill, isolasi baca, user tidak bisa update/delete/insert penanda, non-Admin ditolak RPC, anon
   ditolak, login tidak menghapus penanda, ganti password menghapus, trigger error tidak menggagalkan auth, idempotent, cascade);
   7 cek aturan password.
+
+## Reset password user oleh Admin + profil terkunci ke nama (2026-10-19, permintaan user; `sql/067_profiles_lock_and_admin_reset_password.sql` BELUM DIJALANKAN)
+
+- **UI**: Settings -> Manage Roles & Access -> panel Roles per User, sel user: badge "Must change password" (dari
+  `user_security`, Admin baca semua) + tombol "Reset password" (tidak tampil utk diri sendiri) -> `ResetUserPasswordModal.tsx`.
+  Modal: password sementara ACAK 12 karakter (`crypto.getRandomValues`, tanpa karakter mirip 0/O/1/l/I, pasti ada huruf+angka,
+  bisa diedit/acak ulang/copy) -> "Reset Password" -> tampil sekali + Copy. Aksi sekunder: "Only require password change"
+  (`fn_set_must_change_password(true)`, password tetap) / "Cancel password change requirement" (false).
+- **RPC `fn_admin_reset_user_password(p_user_id uuid, p_new_password text)`** (SECURITY DEFINER, guard `is_admin()`): tolak diri
+  sendiri & password < 8 / tanpa huruf+angka; `auth.users.encrypted_password = extensions.crypt(pw, gen_salt('bf'))` (bcrypt
+  kompatibel GoTrue) -> trigger 066 menghapus penanda -> RPC MENANDAI LAGI (`must_change_password = true`,
+  `password_reset_at/by`) -> hapus `auth.refresh_tokens` & `auth.sessions` user itu (logout paksa semua perangkat; dibungkus
+  EXCEPTION + `to_regclass`). Access token lama tetap valid <= 1 jam tapi user tertahan layar wajib ganti password + gateway.
+- **profiles**: `revoke update on profiles from authenticated; grant update (nama, updated_at)` -- dulu user bisa mengubah
+  SEMUA kolom profil sendiri (divisi, approval_tier, email) lewat API. Kolom lain hanya lewat RPC Admin SECURITY DEFINER
+  (`fn_set_user_divisi`) / service role. Satu-satunya update profil di frontend = My Account (nama + updated_at).
+- `grant select on user_security to claude_ro` (MCP read-only; tabel dibuat di luar default privileges role itu).
+- Uji PGlite 26 cek (066 lalu 067): nama boleh, divisi/approval_tier/email ditolak, profil user lain 0 baris, RPC divisi Admin
+  tetap jalan, reset: non-Admin/diri sendiri/password lemah/user tak ada ditolak tanpa mengubah password, password = sementara,
+  penanda aktif lagi + jejak reset, sesi & refresh token user itu saja yang dicabut, ganti password sendiri menghapus penanda,
+  tanpa `auth.sessions` tetap jalan, anon ditolak, claude_ro bisa baca, idempotent.
+- Catatan: kalau `log_statement`/pgaudit Postgres mencatat parameter, password sementara bisa muncul di log DB (default Supabase
+  tidak). Gateway TIDAK mencatat body.
 
 ## Pindah tab browser TIDAK boleh me-refresh halaman (`AuthContext.tsx`, 2026-10-01)
 

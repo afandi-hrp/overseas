@@ -5,7 +5,9 @@ import { PAGE_REGISTRY, PAGE_GROUPS, APPROVAL_TIER_PAGES, ACCESS_MATRIX_ORDER, t
 import {
   Plus, Trash2, ShieldCheck, Users, LayoutGrid, Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns3, X, Search,
   Plane, Ship, FileCheck2, Wallet, BarChart3, GitCompare, ClipboardList, ScrollText, Settings as SettingsIcon, CornerDownRight, Building2,
+  KeyRound,
 } from 'lucide-react';
+import ResetUserPasswordModal, { type ResetTarget } from '../components/ResetUserPasswordModal';
 import Greeting from '../components/Greeting';
 import UserActivityPanel from '../components/UserActivityPanel';
 import { LoadingState } from '../components/LoadingState';
@@ -104,6 +106,10 @@ export default function RoleManagementPage() {
   // Jabatan approval per user PER HALAMAN -- userId -> { page_key: tier }. Lihat catatan besar
   // di atas file ini soal kenapa per-user-per-halaman (bukan per-role, bukan 1 kolom global).
   const [userApprovalTiers, setUserApprovalTiers] = useState<Record<string, Record<string, string>>>({});
+  // User yang WAJIB ganti password (sql/066 `user_security`, Admin baca semua baris) -> badge di sel user.
+  // Tabel belum ada / gagal = kosong (badge tidak tampil, tombol reset tetap ada).
+  const [mustChangeUsers, setMustChangeUsers] = useState<Set<string>>(new Set());
+  const [resetTarget, setResetTarget] = useState<ResetTarget | null>(null);
   const [newRoleName, setNewRoleName] = useState('');
   const [savingNewRole, setSavingNewRole] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
@@ -132,13 +138,15 @@ export default function RoleManagementPage() {
 
   const fetchAll = async () => {
     setLoading(true);
-    const [rolesRes, accessRes, profilesRes, userRolesRes, approvalTiersRes] = await Promise.all([
+    const [rolesRes, accessRes, profilesRes, userRolesRes, approvalTiersRes, securityRes] = await Promise.all([
       supabase.from('roles').select('id, name, description, is_protected').order('is_protected', { ascending: false }).order('name'),
       supabase.from('role_page_access').select('role_id, page_key, can_edit, visible_columns'),
       supabase.from('profiles').select('id, email, nama, divisi').order('nama'),
       supabase.from('user_roles').select('user_id, role_id'),
       supabase.from('user_approval_tiers').select('user_id, page_key, tier'),
+      supabase.from('user_security').select('user_id').eq('must_change_password', true),
     ]);
+    setMustChangeUsers(new Set(securityRes.error ? [] : (securityRes.data || []).map((r: any) => r.user_id)));
 
     if (rolesRes.error) {
       showToast('Failed to load role data: ' + rolesRes.error.message, 'error');
@@ -751,6 +759,23 @@ export default function RoleManagementPage() {
                                     {divisiAvailable && (
                                       <DivisionPicker value={p.divisi} options={divisionOptions} onChange={v => updateUserDivisi(p, v)} />
                                     )}
+                                    {/* Reset password (sql/067) + badge wajib ganti password (sql/066). Tidak utk diri sendiri. */}
+                                    <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                                      {mustChangeUsers.has(p.id) && (
+                                        <span title="This user must change their password before using BeeHive" className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800">
+                                          Must change password
+                                        </span>
+                                      )}
+                                      {p.id !== currentUser?.id && (
+                                        <button
+                                          onClick={() => setResetTarget({ id: p.id, nama: p.nama, email: p.email, mustChangePassword: mustChangeUsers.has(p.id) })}
+                                          title="Reset this user's password"
+                                          className="text-[10px] font-semibold text-[#5A305A]/75 hover:text-[#5A305A] bg-white/90 border border-[#5A305A]/20 hover:border-[#5A305A]/50 rounded-md px-1.5 py-0.5 inline-flex items-center gap-1 transition-colors"
+                                        >
+                                          <KeyRound size={10} /> Reset password
+                                        </button>
+                                      )}
+                                    </div>
                                   </td>
                                   {APPROVAL_TIER_PAGES.map(page => (
                                     <td key={page.key} className="px-4 py-3 text-center border-b border-slate-100">
@@ -801,6 +826,20 @@ export default function RoleManagementPage() {
             {/* Panel TERBAWAH (2026-10-09, permintaan user): siapa online + terakhir masuk + halaman saat ini (Admin saja; sql/051). */}
             <UserActivityPanel />
           </>
+        )}
+        {resetTarget && (
+          <ResetUserPasswordModal
+            target={resetTarget}
+            onClose={() => setResetTarget(null)}
+            onChanged={(userId, must) => {
+              setMustChangeUsers(prev => {
+                const next = new Set(prev);
+                if (must) next.add(userId); else next.delete(userId);
+                return next;
+              });
+              setResetTarget(prev => (prev && prev.id === userId ? { ...prev, mustChangePassword: must } : prev));
+            }}
+          />
         )}
       </main>
     </div>
