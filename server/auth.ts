@@ -4,16 +4,41 @@ import { takeRateLimit } from './rateLimit';
 
 // `email` = klaim email JWT (dibaca SETELAH PostgREST menerima token = tanda tangan sah) -- dipakai Cost Agent utk
 // menimpa `uploaded_by`/`requested_by` (jangan percaya nilai dari client).
-export type UserAccess = { isAdmin: boolean; pageKeys: Set<string>; editKeys: Set<string>; email: string | null };
+// `mustChangePassword` = user wajib ganti password dulu (tabel user_security, sql/066) -- semua akses data ditolak
+// kecuali yang dibutuhkan layar ganti password (lihat authorize opsi `allowPasswordChangePending` & dbGateway).
+export type UserAccess = {
+  isAdmin: boolean; pageKeys: Set<string>; editKeys: Set<string>; email: string | null; mustChangePassword: boolean;
+};
 
-function emailFromJwt(token: string): string | null {
+function jwtClaim(token: string, claim: 'email' | 'sub'): string | null {
   try {
     const part = token.split('.')[1];
     if (!part) return null;
     const payload = JSON.parse(Buffer.from(part.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
-    return typeof payload?.email === 'string' && payload.email.trim() ? payload.email.trim() : null;
+    return typeof payload?.[claim] === 'string' && payload[claim].trim() ? payload[claim].trim() : null;
   } catch {
     return null;
+  }
+}
+
+// Penanda wajib ganti password milik user token ini. Fail-OPEN (false) kalau tabel belum ada (sql/066 belum jalan) /
+// error -- layar wajib ganti password di frontend tetap jadi lapis lain. Filter user_id WAJIB (Admin bisa baca semua baris).
+async function fetchMustChangePassword(token: string, userId: string | null): Promise<boolean> {
+  if (!userId || !/^[0-9a-f-]{36}$/i.test(userId)) return false;
+  try {
+    const r = await fetch(
+      `${SUPABASE_INTERNAL_URL}/rest/v1/user_security?select=must_change_password&user_id=eq.${userId}`,
+      { headers: { apikey: DB_GATEWAY_APIKEY, Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10000) },
+    );
+    if (!r.ok) {
+      if (r.status !== 404) console.warn('[Security] Cek user_security gagal (fail-open):', r.status);
+      return false;
+    }
+    const rows: any = await r.json();
+    return Array.isArray(rows) && rows[0]?.must_change_password === true;
+  } catch (e) {
+    console.warn('[Security] Cek user_security error (fail-open):', e);
+    return false;
   }
 }
 const ACCESS_CACHE_TTL_MS = 60_000;
@@ -41,10 +66,15 @@ async function resolveUserAccess(token: string): Promise<UserAccess | null> {
     isAdmin: d?.is_admin === true,
     pageKeys: new Set(Array.isArray(d?.page_keys) ? d.page_keys : []),
     editKeys: new Set(Array.isArray(d?.edit_page_keys) ? d.edit_page_keys : []),
-    email: emailFromJwt(token),
+    email: jwtClaim(token, 'email'),
+    mustChangePassword: await fetchMustChangePassword(token, jwtClaim(token, 'sub')),
   };
-  if (accessCache.size > 2000) accessCache.clear();
-  accessCache.set(token, { access, exp: now + ACCESS_CACHE_TTL_MS });
+  // User yg masih wajib ganti password TIDAK di-cache -- begitu password diganti (token sama), request berikutnya
+  // langsung lolos tanpa menunggu cache 60 dtk habis.
+  if (!access.mustChangePassword) {
+    if (accessCache.size > 2000) accessCache.clear();
+    accessCache.set(token, { access, exp: now + ACCESS_CACHE_TTL_MS });
+  }
   return access;
 }
 
@@ -58,13 +88,17 @@ export function hasAnyAccess(access: UserAccess, rules: AccessRule[]): boolean {
 
 // Verifikasi login + hak akses + rate limit. true = lanjut; false = respons error SUDAH dikirim.
 // Hasil disimpan di `res.locals.userAccess` utk handler berikutnya (mis. email user Cost Agent, log request).
-// rules = 'any-page' -> cukup user login yang punya akses ke MINIMAL 1 halaman (Data Gateway; akses per tabel tetap
-// dijaga RLS di DB). `rate` = kuota & nama bucket terpisah (default kuota /api umum).
+// rules = 'logged-in' -> cukup token user yang sah; pemanggil (Data Gateway) WAJIB memutuskan sendiri apa yang boleh
+// (user tanpa role / wajib ganti password hanya dapat endpoint self-service, akses per tabel tetap RLS).
+// `rate` = kuota & nama bucket terpisah (default kuota /api umum).
+// `allowPasswordChangePending` = jangan tolak user yg masih wajib ganti password (default: DITOLAK 403
+// `PASSWORD_CHANGE_REQUIRED` -- semua upload/n8n/preview tertutup sampai password diganti).
 export async function authorize(
   req: express.Request,
   res: express.Response,
-  rules: AccessRule[] | 'any-page',
+  rules: AccessRule[] | 'logged-in',
   rate: { bucket: string; perMin: number } = { bucket: 'api', perMin: API_RATE_LIMIT_PER_MIN },
+  opts: { allowPasswordChangePending?: boolean } = {},
 ): Promise<boolean> {
   if (!SUPABASE_CONFIGURED) {
     console.error('[Security] SUPABASE_URL/SUPABASE_ANON_KEY tidak di-set di env server -- semua /api/* ditolak (fail-closed).');
@@ -95,7 +129,11 @@ export async function authorize(
     res.status(429).json({ status: 'error', pesan: 'Terlalu banyak permintaan. Coba lagi sebentar.' });
     return false;
   }
-  const allowed = rules === 'any-page' ? access.isAdmin || access.pageKeys.size > 0 : hasAnyAccess(access, rules);
+  if (access.mustChangePassword && !opts.allowPasswordChangePending) {
+    res.status(403).json({ status: 'error', code: 'PASSWORD_CHANGE_REQUIRED', pesan: 'Anda wajib mengganti password terlebih dahulu.' });
+    return false;
+  }
+  const allowed = rules === 'logged-in' || hasAnyAccess(access, rules);
   if (!allowed) {
     res.status(403).json({ status: 'error', pesan: 'Anda tidak punya akses ke fitur ini.' });
     return false;

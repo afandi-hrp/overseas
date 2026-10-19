@@ -67,7 +67,7 @@ yang berlaku lintas modul. Rujukan lama di docs berbunyi "lihat CLAUDE.md bagian
   Cost Agent (versi user ber-guard) + 055 seed master; 056 RPC `fn_cost_agent_delete_invoice` (hapus invoice Cost Agent, Admin,
   masa uji coba -- cost-agent.md). **KEPUTUSAN TERTUNDA (user): nasib fitur hapus invoice Cost Agent setelah uji coba (cabut
   grant / hapus tombol / pertahankan) -- JANGAN diubah sebelum user memutuskan.** SQL baru: file `sql/NNN_*.sql` baru (lanjut
-  **066**; `065_cost_agent_app_feedback.sql` (file user di root) SUDAH DIJALANKAN 2026-10-16 (cost-agent.md "update 065"); `sql/062_kurs_bi_kurs_beli.sql` SUDAH DIJALANKAN 2026-10-15 (kolom Kurs Beli, bunker-courier-seaair.md "Kurs BI Harian — Import Excel"; folder `sql/` DIHAPUS lagi 2026-10-15 -- isi: `git show e4d5000:sql/062_kurs_bi_kurs_beli.sql`); 063 (`063_cost_agent_classify_fix`) & 064 (`064_cost_agent_invoice_description`) Cost Agent SUDAH DIJALANKAN (user, 2026-10-15; file sempat di root repo, DIHAPUS -- isi: `git show e361e7a:<file>`, cost-agent.md); 057–061 Cost Agent SEMUA SUDAH dijalankan (konfirmasi user 2026-10-14; nomor 058 dipakai 2 file: compare_v2 user & delete_invoice_grant repo),
+  **067**; `sql/066_force_password_change.sql` (wajib ganti password, auth-session.md) BELUM DIJALANKAN 2026-10-19; `065_cost_agent_app_feedback.sql` (file user di root) SUDAH DIJALANKAN 2026-10-16 (cost-agent.md "update 065"); `sql/062_kurs_bi_kurs_beli.sql` SUDAH DIJALANKAN 2026-10-15 (kolom Kurs Beli, bunker-courier-seaair.md "Kurs BI Harian — Import Excel"; folder `sql/` DIHAPUS lagi 2026-10-15 -- isi: `git show e4d5000:sql/062_kurs_bi_kurs_beli.sql`); 063 (`063_cost_agent_classify_fix`) & 064 (`064_cost_agent_invoice_description`) Cost Agent SUDAH DIJALANKAN (user, 2026-10-15; file sempat di root repo, DIHAPUS -- isi: `git show e361e7a:<file>`, cost-agent.md); 057–061 Cost Agent SEMUA SUDAH dijalankan (konfirmasi user 2026-10-14; nomor 058 dipakai 2 file: compare_v2 user & delete_invoice_grant repo),
   folder `sql/` DIHAPUS lagi 2026-10-14 -- isi terakhir 058_cost_agent_delete_invoice_grant / 060 / 061: `git show 2fc583b:sql/<file>`; 057, 058_compare_v2
   & 059 tidak pernah masuk repo, cost-agent.md), idempotent + pre-check nama fungsi, user yang menjalankan manual -- sesi Claude hanya
   punya akses BACA (MCP `beehive-prod-ro`, lihat bawah). **Tambah user baru**: template `docs/sql-templates/add-users.sql` (edit daftar email/nama/password/divisi/role; buat akun
@@ -101,7 +101,10 @@ yang berlaku lintas modul. Rujukan lama di docs berbunyi "lihat CLAUDE.md bagian
   server yang sama, kode di repo ini): supabase-js diberi fetch kustom ke gateway, gateway meneruskan **token user** (RLS tetap
   lapis kedua) + whitelist tabel/RPC per page_key, batas baris, rate limit, log. Lalu Kong REST ditutup dari jaringan user.
   Fase 0 (folder `server/`) & Fase 1 (gateway `server/routes/dbGateway.ts`, flag build `VITE_DB_GATEWAY=on`, mode `log`) kode
-  SELESAI & LIVE di production 2026-10-19 (mode `log`; Kong belum ditutup = Fase 2). **Tabel/RPC/bucket baru yang dipanggil frontend WAJIB ditambahkan ke `server/db/whitelist.ts`.**
+  SELESAI & LIVE di production 2026-10-19 (mode `log`). **TERTUNDA (keputusan user 2026-10-19, dikerjakan NANTI):**
+  (a) cek `UNLISTED` ±26-10 lalu `DB_GATEWAY_MODE=enforce`; (b) Fase 2 tutup Kong `/rest/v1` utk anon key (consumer Kong
+  khusus gateway; butuh `volumes/api/kong.yml` supabase3 dari user, key disamarkan) -- sampai itu, Kong 8002/domain publik
+  MASIH bisa ditembak langsung dgn anon key + token user. Ingatkan user bila relevan. **Tabel/RPC/bucket baru yang dipanggil frontend WAJIB ditambahkan ke `server/db/whitelist.ts`.**
 - Fitur yang menyentuh sistem luar WAJIB lewat backend `/api/...` (JWT Supabase + `get_my_access()`).
 - Kredensial DB lain, server key payment gateway & service role key HANYA di backend. Payment: nominal dihitung server, webhook wajib
   verifikasi signature + idempotent + cek ulang status ke gateway; sandbox dulu.
@@ -143,6 +146,9 @@ pageKey | pageKeys | adminOnly>`.
 - Semua `signOut()` otomatis WAJIB `await` + `console.error('[Auto-logout] ...')`.
 - Pindah tab browser TIDAK boleh me-refresh halaman: setter state akses/profil/sesi di AuthContext WAJIB lewat helper
   `keepSet`/`keepJson`/`sameSession` (jangan `setX(new ...)` polos).
+- **Wajib ganti password** (sql/066): penanda `user_security.must_change_password` (BUKAN kolom profiles -- user bisa update
+  profil sendiri), hilang HANYA via trigger saat password berubah; `ProtectedRoute` -> `ForceChangePasswordScreen`; gateway &
+  `authorize()` menolak selain self-service. Admin reset password user -> tandai lagi `fn_set_must_change_password(uuid, true)`.
 
 ## RBAC (ringkas — detail `docs/claude/rbac-security.md`)
 

@@ -52,6 +52,12 @@ type AuthContextValue = {
   // `null` = semua kolom boleh dilihat (Admin selalu null).
   getAllowedColumns: (pageKey: string) => Set<string> | null;
   isAdmin: boolean;
+  // Wajib ganti password dulu (sql/066, tabel `user_security` -- user baru / password default / ditandai Admin).
+  // true -> ProtectedRoute (App.tsx) menampilkan ForceChangePasswordScreen MENGGANTIKAN seluruh aplikasi; gateway
+  // /api/db juga menolak data selain self-service. Dibaca bersama fetchAccess(); fail-OPEN (false) kalau tabel
+  // belum ada / gagal dibaca (penegakan server tetap jalan sendiri). Hilang otomatis begitu password diganti
+  // (trigger DB) lalu refreshProfile() dipanggil.
+  mustChangePassword: boolean;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   // Layar kunci (lock screen) -- true saat sesi berakhir SENDIRI di tab ini (idle-timeout /
@@ -183,6 +189,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [approvalTiersByPage, setApprovalTiersByPage] = useState<Record<string, string>>({});
   const [columnAccessByPage, setColumnAccessByPage] = useState<Record<string, string[]>>({});
   const [isAdmin, setIsAdmin] = useState(false);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
   const [sessionLoading, setSessionLoading] = useState(true);
   // Loading akses (get_my_access) DIPISAH dari loading sesi -- kalau digabung jadi satu flag
   // yang selesai begitu sesi ke-cek, ProtectedRoute/DefaultLandingRedirect sempat render
@@ -248,6 +255,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     approvalTiersByPage: Record<string, string>;
     columnAccessByPage: Record<string, string[]>;
     isAdmin: boolean;
+    mustChangePassword: boolean;
   } | null>(null);
 
   if (session) {
@@ -275,7 +283,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         provider_token: session.provider_token ? '[redacted-while-locked]' : session.provider_token,
         provider_refresh_token: session.provider_refresh_token ? '[redacted-while-locked]' : session.provider_refresh_token,
       },
-      profile, allowedPageKeys, editPageKeys, approvalTiersByPage, columnAccessByPage, isAdmin,
+      profile, allowedPageKeys, editPageKeys, approvalTiersByPage, columnAccessByPage, isAdmin, mustChangePassword,
     };
   }
 
@@ -287,6 +295,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const exposedApprovalTiersByPage = lockScreenActive ? frozenRef.current!.approvalTiersByPage : approvalTiersByPage;
   const exposedColumnAccessByPage = lockScreenActive ? frozenRef.current!.columnAccessByPage : columnAccessByPage;
   const exposedIsAdmin = lockScreenActive ? frozenRef.current!.isAdmin : isAdmin;
+  const exposedMustChangePassword = lockScreenActive ? frozenRef.current!.mustChangePassword : mustChangePassword;
 
   // DIAGNOSTIK SEMENTARA (2026-09) -- dipasang setelah user lapor lock screen "seperti tidak
   // jalan". Log ini WAJIB muncul di Console browser TEPAT SAAT sesi berakhir SELAGI tab masih
@@ -398,6 +407,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
     }
     setColumnAccessByPage(keepJson(colMap));
+
+    // Wajib ganti password (sql/066) -- baris milik user sendiri (Admin bisa baca semua baris, jadi filter user_id WAJIB).
+    // Fail-OPEN: tabel belum ada / error -> false (lihat komentar mustChangePassword di AuthContextValue).
+    const { data: sessData } = await supabase.auth.getSession();
+    const uid = sessData.session?.user?.id;
+    if (uid) {
+      const { data: secData, error: secError } = await supabase
+        .from('user_security').select('must_change_password').eq('user_id', uid).maybeSingle();
+      if (secError) console.warn('[Security] user_security gagal dibaca (dianggap tidak wajib ganti password):', secError.message);
+      setMustChangePassword(!secError && secData?.must_change_password === true);
+    } else {
+      setMustChangePassword(false);
+    }
   };
 
   // Lacak user id terakhir yang diketahui -- dipakai buat bedakan "login/ganti user
@@ -459,6 +481,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setApprovalTiersByPage({});
         setColumnAccessByPage({});
         setIsAdmin(false);
+        setMustChangePassword(false);
         setAccessLoading(false);
       }
     });
@@ -632,6 +655,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       columnAccessByPage: exposedColumnAccessByPage,
       getAllowedColumns,
       isAdmin: exposedIsAdmin,
+      mustChangePassword: exposedMustChangePassword,
       loading,
       signOut,
       refreshProfile,

@@ -155,6 +155,8 @@ const MANUAL_TABLES: Record<string, DbOp[]> = {
   cost_agent_vendor_bank: ['select'],
   cost_agent_vessels: ['select'],
   cost_agent_voyage_list_v: ['select'],
+  // Wajib ganti password (sql/066) -- AuthContext membaca penanda milik sendiri
+  user_security: ['select'],
 };
 for (const [t, ops] of Object.entries(MANUAL_TABLES)) {
   TABLE_WHITELIST[t] = [...new Set([...(TABLE_WHITELIST[t] ?? []), ...ops])];
@@ -172,6 +174,8 @@ for (const [t, ops] of Object.entries(MANUAL_TABLES)) {
   'fn_cost_agent_search_history', 'fn_cost_agent_set_invoice_description', 'fn_cost_agent_set_line_reference',
   'fn_cost_agent_submit_for_approval', 'fn_cost_agent_update_invoice_header', 'fn_cost_agent_update_line',
   'fn_cost_agent_upsert_voyages', 'fn_cost_agent_verify_line',
+  // Admin: tandai/lepas wajib ganti password (sql/066)
+  'fn_set_must_change_password',
 ].forEach(r => RPC_WHITELIST.add(r));
 
 // Bucket Storage yang boleh diakses lewat gateway (FarOverseasAirDocumentsModal: download + signed URL bukti bayar).

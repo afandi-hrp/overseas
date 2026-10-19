@@ -40,6 +40,37 @@ Panel TERBAWAH Settings → Manage Roles & Access (`UserActivityPanel.tsx`, **Ad
   INVOKER), `fn_user_activity` (SECURITY DEFINER + guard `is_admin()`, `set search_path`, revoke dari public/anon). Diuji PGlite 12 cek (upsert, isolasi antar-user, non-admin ditolak, anon
   ditolak, idempotent) + 17 cek fungsi murni.
 
+## Wajib ganti password -- user baru / password default (2026-10-19, permintaan user; `sql/066_force_password_change.sql` BELUM DIJALANKAN)
+
+Permintaan: user baru / password default / pertama kali login WAJIB ganti password; kalau belum, TIDAK bisa akses aplikasi.
+- **Penanda** = tabel `public.user_security` (`user_id` PK -> auth.users cascade, `must_change_password`, `flagged_at`,
+  `flagged_by`, `password_changed_at`). SENGAJA BUKAN kolom `profiles`: policy profiles "Users can update own profile"
+  mengizinkan user meng-update SEMUA kolom barisnya sendiri -> penanda bisa dihapus user lewat API. `user_security`: RLS
+  4 policy (select = milik sendiri/Admin; insert/update/delete = Admin), grant ke authenticated HANYA `select`.
+- **Hilang hanya kalau password BENAR-BENAR berubah**: trigger `trg_user_security_password_change` AFTER UPDATE OF
+  encrypted_password ON auth.users WHEN (old IS DISTINCT FROM new) -> `fn_user_security_on_password_change()` (SECURITY
+  DEFINER, dibungkus EXCEPTION -> tidak pernah menggagalkan login/ganti password GoTrue). Login biasa (GoTrue menulis ulang
+  kolom dgn nilai sama) TIDAK menghapus penanda. Berlaku juga utk reset via email & reset oleh Admin -> setelah Admin reset
+  password user, TANDAI LAGI: `select public.fn_set_must_change_password('<uuid>', true);`.
+- **Siapa yang ditandai**: user BARU dari `docs/sql-templates/add-users.sql` (otomatis); backfill sql/066 = user yang belum
+  pernah login (`last_sign_in_at is null`) + password masih salah satu daftar default (`'Waruna123'`, edit di file); Admin
+  manual via RPC `fn_set_must_change_password(p_user_id uuid, p_value boolean)` (SECURITY DEFINER, guard `is_admin()`).
+- **Frontend**: AuthContext `mustChangePassword` (dibaca di `fetchAccess()` dari `user_security` filter `user_id` = sesi;
+  fail-OPEN kalau tabel belum ada/error; ikut `frozenRef` & reset saat logout). `ProtectedRoute` (App.tsx): `mustChangePassword`
+  -> render `ForceChangePasswordScreen` (+ LockScreen di atasnya kalau lock aktif) MENGGANTIKAN `<Outlet/>` -- halaman app
+  tidak pernah di-mount. Layar: password saat ini (diverifikasi `signInWithPassword`, user sama -> bukan "ganti user") + baru +
+  konfirmasi -> `updateUser({password})` -> `refreshProfile()` membaca ulang penanda -> app terbuka. Tombol Log out.
+- **Aturan password** `src/utils/passwordPolicy.ts` (`validateNewPassword`, dipakai layar wajib ganti & My Account): min 8
+  karakter, huruf + angka, beda dgn password saat ini, bukan password default (`KNOWN_DEFAULT_PASSWORDS`, samakan dgn backfill
+  sql/066), tidak mengandung nama email. Validasi browser saja (GoTrue tetap min 6).
+- **Server** (`server/auth.ts`): `UserAccess.mustChangePassword` (REST `user_security?user_id=eq.<sub JWT>` dgn token user;
+  fail-open; user ber-penanda TIDAK di-cache -> lolos begitu password diganti). `authorize()` menolak 403
+  `code: PASSWORD_CHANGE_REQUIRED` (semua upload/n8n/preview) kecuali opsi `allowPasswordChangePending`. Data Gateway hanya
+  memberi endpoint self-service (lihat backend-plan.md "self-service").
+- Uji: PGlite 19 cek sql/066 (backfill, isolasi baca, user tidak bisa update/delete/insert penanda, non-Admin ditolak RPC, anon
+  ditolak, login tidak menghapus penanda, ganti password menghapus, trigger error tidak menggagalkan auth, idempotent, cascade);
+  7 cek aturan password.
+
 ## Pindah tab browser TIDAK boleh me-refresh halaman (`AuthContext.tsx`, 2026-10-01)
 
 Supabase memancarkan ulang event `SIGNED_IN` tiap tab browser kembali fokus (user & token sama).

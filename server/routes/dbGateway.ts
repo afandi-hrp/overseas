@@ -9,7 +9,8 @@ import { RPC_WHITELIST, STORAGE_BUCKET_WHITELIST, TABLE_WHITELIST, type DbOp } f
 // ── Data Gateway (Fase 1, docs/claude/backend-plan.md) ─────────────────────────────────────────────────────────
 // Browser (supabase-js, fetch kustom di src/lib/supabase.ts saat VITE_DB_GATEWAY=on) -> /api/db/rest/v1/* &
 // /api/db/storage/v1/* -> server ini -> Kong INTERNAL (SUPABASE_INTERNAL_URL) -> PostgREST/Storage.
-// - Login wajib (token user diverifikasi + minimal 1 page_key) + rate limit per user (bucket 'db').
+// - Login wajib (token user diverifikasi) + rate limit per user (bucket 'db'). User tanpa role / masih wajib ganti
+//   password (user_security, sql/066) hanya boleh endpoint self-service (isSelfService).
 // - Token USER diteruskan apa adanya (BUKAN service role) -> RLS & guard RPC tetap berlaku sbg lapis kedua.
 // - Whitelist tabel+operasi / RPC / bucket (server/db/whitelist.ts). Mode 'log': pelanggaran dicatat
 //   `[DB-GW] UNLISTED` tapi diteruskan; mode 'enforce': ditolak 403.
@@ -64,6 +65,18 @@ function classifyStorage(sub: string, req: express.Request): Target {
   return { ok: true, kind: 'storage', name: sub.split('/').slice(0, 2).join('/') || '(root)', op: 'storage-read', listed: false };
 }
 
+// Endpoint SELF-SERVICE: yang dibutuhkan AuthContext + layar wajib ganti password + halaman Account, utk user yang
+// (a) masih wajib ganti password, atau (b) belum punya role sama sekali. Baris yang terbaca tetap dibatasi RLS
+// (profiles/user_security = milik sendiri). Update profil sendiri hanya utk (b) -- user (a) harus ganti password dulu.
+const SELF_SERVICE_RPCS = new Set(['get_my_access', 'get_my_approval_tiers', 'get_my_column_access', 'fn_user_heartbeat']);
+function isSelfService(kind: string, name: string, op: string, limited: 'password' | 'no-role'): boolean {
+  if (kind === 'rpc') return SELF_SERVICE_RPCS.has(name);
+  if (kind !== 'table') return false;
+  if (name === 'user_security') return op === 'select';
+  if (name === 'profiles') return op === 'select' || (limited === 'no-role' && op === 'update');
+  return false;
+}
+
 function badProfile(req: express.Request): boolean {
   const p = [req.headers['accept-profile'], req.headers['content-profile']].filter(v => v !== undefined);
   return p.some(v => v !== 'public');
@@ -77,7 +90,8 @@ function gateway(service: 'rest' | 'storage') {
     // 1) Auth + rate limit SEBELUM body dibaca.
     async (req: express.Request, res: express.Response, next: express.NextFunction) => {
       try {
-        if (await authorize(req, res, 'any-page', { bucket: 'db', perMin: DB_RATE_LIMIT_PER_MIN })) next();
+        const rate = { bucket: 'db', perMin: DB_RATE_LIMIT_PER_MIN };
+        if (await authorize(req, res, 'logged-in', rate, { allowPasswordChangePending: true })) next();
       } catch (e) {
         console.error('[DB-GW] authorize error:', e);
         if (!res.headersSent) res.status(500).json({ status: 'error', pesan: 'Gagal memverifikasi akses.' });
@@ -95,6 +109,15 @@ function gateway(service: 'rest' | 'storage') {
       if ('pesan' in t) return res.status(t.status).json({ status: 'error', pesan: t.pesan });
 
       const label = `${t.op} ${t.kind}:${t.name}`;
+      // User wajib ganti password / tanpa role sama sekali -> HANYA endpoint self-service (di kedua mode).
+      const access = res.locals.userAccess as UserAccess;
+      const limited = access.mustChangePassword ? 'password' : (!access.isAdmin && access.pageKeys.size === 0 ? 'no-role' : null);
+      if (limited && !isSelfService(t.kind, t.name, t.op, limited)) {
+        if (limited === 'password') {
+          return res.status(403).json({ status: 'error', code: 'PASSWORD_CHANGE_REQUIRED', pesan: 'Anda wajib mengganti password terlebih dahulu.' });
+        }
+        return res.status(403).json({ status: 'error', pesan: 'Akun Anda belum diberi akses halaman mana pun.' });
+      }
       if (!t.listed) {
         console.warn(`[DB-GW] UNLISTED ${req.method} ${label} user=${email} mode=${DB_GATEWAY_MODE}`);
         if (DB_GATEWAY_MODE === 'enforce') {

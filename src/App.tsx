@@ -18,6 +18,7 @@ import WebhookSettingsPage from './pages/WebhookSettingsPage';
 import MainLayout from './components/MainLayout';
 import AdminLayout from './components/AdminLayout';
 import LockScreen from './components/LockScreen';
+import ForceChangePasswordScreen from './components/ForceChangePasswordScreen';
 import LoginPage from './pages/LoginPage';
 import RoleManagementPage from './pages/RoleManagementPage';
 import RequirePageAccess from './components/RequirePageAccess';
@@ -53,7 +54,7 @@ import CostAgentInvoicePage from './pages/cost-agent/CostAgentInvoicePage';
 import CostAgentApprovalMatrixPage from './pages/cost-agent/CostAgentApprovalMatrixPage';
 
 function ProtectedRoute() {
-  const { session, loading, lockScreenActive } = useAuth();
+  const { session, loading, lockScreenActive, mustChangePassword } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -70,6 +71,18 @@ function ProtectedRoute() {
   // pengecekan `lockScreenActive` di bawah, BUKAN `!session` saja, yang menentukan render mana.
   if (!session && !lockScreenActive) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  // Wajib ganti password (sql/066): layar ganti password MENGGANTIKAN seluruh aplikasi (halaman di balik Outlet
+  // tidak pernah di-mount/fetch data). Struktur tetap sama selama lock screen (nilai beku AuthContext), jadi
+  // idle-timeout di layar ini memunculkan LockScreen di atasnya, BUKAN halaman aplikasi yang di-blur.
+  if (mustChangePassword) {
+    return (
+      <>
+        <ForceChangePasswordScreen />
+        {lockScreenActive && <LockScreen />}
+      </>
+    );
   }
 
   // `<Outlet/>` SENGAJA dirender polos, TIDAK PERNAH dibungkus wrapper apa pun di sini --

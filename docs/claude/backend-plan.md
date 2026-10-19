@@ -85,6 +85,12 @@ Browser ──► server.ts /api/db/* ──► PostgREST/Storage (jaringan inte
   CourierCostReviewHelpers, VendorMasterPage, CostAgentHelpers) + bucket `far-overseas-payment-proofs`. **Tabel/RPC baru di frontend
   WAJIB ditambahkan ke sini** (kalau tidak: mode log = muncul UNLISTED, mode enforce = 403).
 - `server/auth.ts` `resolveUserAccess` kini ke `SUPABASE_INTERNAL_URL` + `DB_GATEWAY_APIKEY` (tetap jalan setelah Fase 2).
+- **Self-service (2026-10-19)**: gateway memakai `authorize(..., 'logged-in', rate, {allowPasswordChangePending: true})` lalu
+  memutuskan sendiri: user **wajib ganti password** (sql/066, auth-session.md) ATAU **tanpa role sama sekali** (bukan Admin, 0
+  page_key) hanya boleh `isSelfService()`: RPC `get_my_access`/`get_my_approval_tiers`/`get_my_column_access`/`fn_user_heartbeat`,
+  `select` `profiles` & `user_security` (+ `update profiles` utk user tanpa role -- simpan nama di My Account). Selain itu 403
+  (`code: PASSWORD_CHANGE_REQUIRED` / "belum diberi akses"). Fix efek samping Fase 1 awal: dulu syarat "minimal 1 page_key" membuat
+  user tanpa role tidak bisa memanggil `get_my_access` & membaca profil sendiri (halaman My Account rusak).
 - Frontend `src/lib/supabase.ts`: `VITE_DB_GATEWAY=on` (BUILD-TIME) -> `global.fetch` membelokkan `<VITE_SUPABASE_URL>/rest/v1/` &
   `/storage/v1/` ke `/api/db/...`. `/auth/v1` tetap langsung. Signed URL storage (`createSignedUrl`) tetap menunjuk domain publik
   (dibuka browser langsung, ber-token 300 dtk) -> di Fase 2 path `/storage/v1/object/sign/` Kong tetap dibuka.

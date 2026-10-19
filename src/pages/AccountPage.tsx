@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
 import Greeting from '../components/Greeting';
+import { PASSWORD_MIN_LENGTH, validateNewPassword } from '../utils/passwordPolicy';
 
 export default function AccountPage() {
   const { user, profile, refreshProfile } = useAuth();
@@ -35,8 +36,10 @@ export default function AccountPage() {
 
   const handleChangePassword = async () => {
     setPwMsg(null);
-    if (pw1.length < 6) {
-      setPwMsg({ type: 'gagal', text: 'Password must be at least 6 characters.' });
+    // Aturan sama dgn layar wajib ganti password (utils/passwordPolicy.ts).
+    const invalid = validateNewPassword(pw1, { email: user?.email });
+    if (invalid) {
+      setPwMsg({ type: 'gagal', text: invalid });
       return;
     }
     if (pw1 !== pw2) {
@@ -109,7 +112,7 @@ export default function AccountPage() {
                   type="password"
                   value={pw1}
                   onChange={e => setPw1(e.target.value)}
-                  placeholder="At least 6 characters"
+                  placeholder={`At least ${PASSWORD_MIN_LENGTH} characters, letters + numbers`}
                   className="w-full border border-slate-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#5A305A]/20 focus:border-[#5A305A] transition-all"
                 />
               </div>

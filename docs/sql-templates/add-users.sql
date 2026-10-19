@@ -5,7 +5,8 @@
 --   1. Edit HANYA daftar di LANGKAH 1 (satu baris = satu user). Kolom:
 --        email     : email login (otomatis disimpan huruf kecil)
 --        nama      : nama tampil (mis. 'SELLY')
---        password  : password awal, minimal 6 karakter (minta user ganti setelah login pertama)
+--        password  : password awal, minimal 6 karakter (user BARU otomatis WAJIB ganti password saat login pertama --
+--                    tabel public.user_security, sql/066; tanpa sql/066 langkah ini dilewati)
 --        divisi    : grup di Manage Roles & Access, mis. 'FINANCE' / 'PURCHASING' / 'SHIPMENT' (boleh null)
 --        role_name : nama role yang SUDAH ADA di Manage Roles & Access, mis. 'AP Finance' (boleh null = tanpa role)
 --      Cek nama role yang ada:  select name from public.roles order by name;
@@ -41,7 +42,9 @@ declare
   v_role_id uuid;
   v_has_provider_id boolean;
   v_has_divisi boolean;
+  v_has_user_security boolean;
 begin
+  select to_regclass('public.user_security') is not null into v_has_user_security;
   select exists (select 1 from information_schema.columns
                  where table_schema = 'auth' and table_name = 'identities' and column_name = 'provider_id')
     into v_has_provider_id;
@@ -81,6 +84,14 @@ begin
         execute 'insert into auth.identities (id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
                  values ($1::text, $1, $2, ''email'', now(), now(), now())'
           using v_id, jsonb_build_object('sub', v_id::text, 'email', v_email);
+      end if;
+      -- Wajib ganti password saat login pertama (sql/066).
+      if v_has_user_security then
+        execute 'insert into public.user_security (user_id, must_change_password, flagged_at, flagged_by, updated_at)
+                 values ($1, true, now(), ''add-users.sql'', now())
+                 on conflict (user_id) do update set must_change_password = true, flagged_at = now(),
+                   flagged_by = ''add-users.sql'', updated_at = now()'
+          using v_id;
       end if;
       raise notice 'DIBUAT  : %', v_email;
     else
