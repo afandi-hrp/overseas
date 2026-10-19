@@ -164,7 +164,7 @@ const UnlockAllControl: React.FC<{ rows: any[]; busy: boolean; onUnlockMany: (id
     <>
       <button type="button" disabled={busy || eligible.length === 0} className={`${SA_BTN_OUTLINE} h-8`} data-unlock-all
         onClick={() => setOpen(true)}
-        title={eligible.length === 0 ? 'No submitted invoice can be unlocked (already received / paid by Finance)' : `Unlock all ${eligible.length} submitted invoice${eligible.length === 1 ? '' : 's'} of this AWB`}>
+        title={eligible.length === 0 ? 'Sudah Received / Paid — batalkan Paid/Received dulu di Finance Handover' : `Unlock all ${eligible.length} submitted invoice${eligible.length === 1 ? '' : 's'} of this AWB`}>
         <Unlock size={12} /> Unlock all (Admin)
       </button>
       {open && createPortal(

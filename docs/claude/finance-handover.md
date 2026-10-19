@@ -64,6 +64,37 @@ receipt oleh Admin, lihat di bawah); font
 - **Diuji**: jsdom 53 cek (tile/filter/search/PT, Accept & Mark paid FAR + Sea & Air + RPC, viewer kedua sumber,
   view-only, master vendor, status Recap) + 5 cek toggle Urgent; PGlite 22 cek (035).
 
+## Undo status handover Courier — Paid → Accepted → Approved (2026-10-19, permintaan user; mockup `mockup_undo_handover_1.html`; `sql/068_courier_finance_undo_paid.sql` BELUM DIJALANKAN)
+
+Contoh uji user: DHL NO. 2990120674 (Submitted 16 Oct → Accepted 19 Oct → Paid 19 Oct, 2 invoice) -- dulu tidak bisa dibatalkan
+(Undo receipt sql/040 menolak invoice yang sudah Paid; RPC undo Paid belum ada).
+- **Hak**: Undo & Unlock HANYA Admin; role lain link/tombol tidak tampil (UI) & RPC menolak (`is_admin()`).
+- **RPC BARU `fn_courier_finance_undo_paid(p_id uuid, p_reason text)`** (sql/068, pola SAMA `fn_courier_finance_undo_receive`):
+  alasan min. 5 karakter; hanya invoice Paid; kosongkan `tgl_lunas` + `paid_reference` + `paid_by` (Received TETAP -> Accepted);
+  kolom itu termasuk daftar bebas kunci Submit (sql/038) -> invoice tetap terkunci; audit_trail "Finance paid (undo) — Lama: <tgl> ·
+  ref <ref|-> · by <paid_by> → Baru: - · reason: <alasan>". Uji PGlite 22 cek (dgn salinan live trigger kunci, undo_receive, unlock):
+  Paid -> Unlock & undo receipt ditolak; non-Admin/anon/alasan pendek/invoice tak ada ditolak; undo Paid 2 invoice; kunci tetap; undo
+  receipt; Unlock; bisa diedit; 3 catatan audit; idempotent.
+- **Lokasi 1 Finance Handover** (`CourierAwbCard` + `Timeline` prop `undo`): link merah kecil **"↺ Undo"** di bawah label langkah TERAKHIR
+  yang selesai (Paid bila AWB `paid`, Accepted bila `received`; Approved/waiting = tidak ada). Link lama "Undo receipt…" di bawah tombol
+  kartu Courier DIHAPUS (digantikan; FAR & Sea & Air tetap lewat menu View). Klik -> `Dialog` kecil "Undo Paid?/Undo Accepted?" +
+  "Status kembali ke Accepted/Approved" + daftar invoice ikut diproses (`CourierAffected`) + alasan wajib + [Batal] [Undo] (merah) ->
+  `undoPaidHandover` (paidIds, BARU `CourierAwbHandover.paidIds`) / `undoReceiveHandover` (receivedIds), per invoice berurutan
+  (`eachCourierInvoice`) -> `load()` -> pill status, chip Received/Paid tabel Total, KPI atas ikut berubah. Teks popup Bahasa
+  Indonesia mengikuti spek user.
+- **Deep link** `courierHandoverLink(groupKey, awb)` = `/finance-handover?source=courier&q=<AWB>&open=courier:<key>`: halaman membaca
+  param sekali (filter Courier + cari AWB + kartu terbuka + digulir ke tengah), lalu menghapusnya dari URL.
+- **Lokasi 2 Invoice Recap** (`CourierRecapInvoicesTab` `UnlockControl`, Admin saja): selama Received/Paid teks "Unlock unavailable —
+  already paid" DIGANTI link **"Batalkan Paid|Received dulu di Finance Handover ↗"** ke kartu AWB itu. "Unlock all (Admin)" tetap nonaktif
+  (aturan `eligible` lama, tooltip diperbarui); setelah Paid & Received dibatalkan -> aktif -> popup alasan lama -> `fn_courier_unlock_submit`.
+- **Lokasi 3 Audit trail**: catatan RPC (format "— Lama: … → Baru: …") tampil di tab Audit trail panel Invoice Recap (`fetchRecapCourierLog`)
+  DAN pop-up BARU **"Audit trail"** di kartu Finance Handover (`FinanceCourierAwbDetail` tab `trail`, komponen & loader SAMA, dipasang
+  hanya saat dibuka). Isi: langkah yang dibatalkan, user (email), tanggal-jam, alasan.
+- Whitelist gateway: `fn_courier_finance_undo_paid`.
+- Diuji jsdom 25 cek (alur Paid -> Accepted -> Approved di halaman asli dgn Supabase tiruan: link, popup, RPC per invoice, status/tombol
+  berubah, non-Admin tanpa link, deep link membuka kartu, pop-up Audit trail, tab Invoices Paid/Received/Approved/non-Admin, href link) +
+  regresi Cost Validation 25 + 30. `tsc` bersih, `vite build` sukses. Belum dites di production.
+
 ## Tab Courier: 1 kartu per AWB + Open di dalam kartu (2026-10-06, keputusan user)
 
 Spek user + referensi tampilan `finance_handover_courier.html` (root repo; HANYA tata letak — warna/font tetap gaya app).

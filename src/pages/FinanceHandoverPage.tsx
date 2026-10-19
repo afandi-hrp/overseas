@@ -13,7 +13,7 @@
 // tab aktif saja. FAR Overseas & Sea & Air TIDAK berubah.
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal, flushSync } from 'react-dom'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ChevronDown, ChevronUp, Search, X } from 'lucide-react'
 import PaginationFooter from '../components/PaginationFooter'
 import Greeting from '../components/Greeting'
@@ -25,7 +25,7 @@ import FinanceCourierAwbDetail, { COURIER_DETAIL_TAB_LABEL, type CourierDetailTa
 import { fmtRp, fmtDateShort, fetchCompanyNameMap, companyFullName } from '../utils/SeaAirAuditHelpers'
 import {
   fetchFarHandovers, fetchSeaAirHandovers, fetchCourierHandovers, probeSeaAirFinanceColumns, probeCourierFinanceColumns, sortHandovers, matchesHandoverSearch, isOverdue,
-  receiveHandover, undoReceiveHandover, markHandoverPaid, todayIso, courierInvoiceLabel, type HandoverItem, type HandoverSource, type HandoverStage,
+  receiveHandover, undoReceiveHandover, undoPaidHandover, markHandoverPaid, todayIso, courierInvoiceLabel, type HandoverItem, type HandoverSource, type HandoverStage,
 } from '../utils/FinanceHandoverHelpers'
 
 type StageTab = HandoverStage | 'all'
@@ -35,7 +35,9 @@ const PAGE_KEY: Record<HandoverSource, string> = { far: 'far_overseas_finance', 
 const ROW_BG: Record<HandoverStage, string> = { waiting: 'bg-[#FFFBF2]', received: 'bg-white', paid: 'bg-[#F5FBF7]' }
 
 // `labels` (2026-10-07): Courier memakai "Approved" / "Accepted" (logika tanggal SAMA), sumber lain tetap Sent / Received.
-function Timeline({ it, labels = ['Sent', 'Received'] }: { it: HandoverItem; labels?: [string, string] }) {
+// `undo` (2026-10-19, Courier, Admin saja): link kecil merah "↺ Undo" di bawah label langkah TERAKHIR yang sudah selesai
+// (step 2 = Paid -> Accepted, step 1 = Accepted -> Approved). Mundur 1 langkah per klik.
+function Timeline({ it, labels = ['Sent', 'Received'], undo }: { it: HandoverItem; labels?: [string, string]; undo?: { step: 1 | 2; onClick: () => void } | null }) {
   const steps = [
     { label: labels[0], date: it.sentDate, who: null as string | null },
     { label: labels[1], date: it.receivedDate, who: it.receivedBy },
@@ -55,6 +57,10 @@ function Timeline({ it, labels = ['Sent', 'Received'] }: { it: HandoverItem; lab
             <div className="text-[10px] text-[#6E5E70] truncate" title={done && s.who ? `${fmtDateShort(s.date)} · ${s.who}` : undefined}>
               {done ? `${fmtDateShort(s.date)}${s.who ? ` · ${s.who}` : ''}` : 'Pending'}
             </div>
+            {undo && undo.step === i && done && (
+              <button type="button" onClick={undo.onClick} data-handover-undo={s.label}
+                className="text-[10.5px] font-bold text-[#A8231A] hover:underline mt-0.5 print:hidden">↺ Undo</button>
+            )}
           </div>
         )
       })}
@@ -131,7 +137,8 @@ function CourierAwbCard({ it, companyNames, act, overdue, open, onOpen, onAccept
   onOpen: () => void
   onAccept: () => void
   onPay: () => void
-  onUndo: (() => void) | null
+  // Undo 1 langkah (Admin saja, 2026-10-19): Paid -> Accepted / Accepted -> Approved. null = link tidak tampil.
+  onUndo: ((step: 'paid' | 'received') => void) | null
   children?: React.ReactNode
 }) {
   const c = it.courier!
@@ -168,7 +175,9 @@ function CourierAwbCard({ it, companyNames, act, overdue, open, onOpen, onAccept
               : it.dueDate ? `${overdue ? 'Overdue · due' : 'Due'} ${fmtDateShort(it.dueDate)}${it.topLabel ? ` · ${it.topLabel}` : ''}` : 'Due —'}
           </div>
         </div>
-        <Timeline it={it} labels={['Approved', 'Accepted']} />
+        <Timeline it={it} labels={['Approved', 'Accepted']}
+          undo={onUndo && it.stage === 'paid' ? { step: 2, onClick: () => onUndo('paid') }
+            : onUndo && it.stage === 'received' ? { step: 1, onClick: () => onUndo('received') } : null} />
         <div className="flex flex-col items-start @4xl:items-end gap-1 print:hidden">
           <div className="flex flex-nowrap @4xl:justify-end gap-1.5">
             {act && it.stage === 'waiting' && <button type="button" className={`${SA_BTN_PRIMARY} h-8`} onClick={onAccept}>Accept</button>}
@@ -178,7 +187,6 @@ function CourierAwbCard({ it, companyNames, act, overdue, open, onOpen, onAccept
               {open ? <>Close <ChevronUp size={13} /></> : <>Open <ChevronDown size={13} /></>}
             </button>
           </div>
-          {onUndo && <button type="button" onClick={onUndo} className="text-[11px] font-semibold text-[#A8231A] hover:underline">Undo receipt…</button>}
         </div>
       </div>
       {open && children}
@@ -242,6 +250,7 @@ export default function FinanceHandoverPage() {
   const [payDate, setPayDate] = useState('')
   const [payRef, setPayRef] = useState('')
   const [undoFor, setUndoFor] = useState<HandoverItem | null>(null)
+  const [courierUndo, setCourierUndo] = useState<{ it: HandoverItem; step: 'paid' | 'received' } | null>(null)
   const [undoReason, setUndoReason] = useState('')
   const [dialogErr, setDialogErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -257,6 +266,19 @@ export default function FinanceHandoverPage() {
     const before = () => flushSync(() => setPrintedAt(new Date()))
     window.addEventListener('beforeprint', before)
     return () => window.removeEventListener('beforeprint', before)
+  }, [])
+  // Deep link dari Invoice Recap (2026-10-19, courierHandoverLink): ?source=courier&q=<AWB>&open=courier:<key> -> filter
+  // Courier + cari AWB + kartu itu terbuka & digulir ke tengah. Parameter dihapus dari URL setelah dibaca.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const deepLinkKey = React.useRef<string | null>(null)
+  useEffect(() => {
+    const s = searchParams.get('source'), q = searchParams.get('q'), o = searchParams.get('open')
+    if (!s && q === null && !o) return
+    if (s === 'courier' || s === 'far' || s === 'seaair') setSource(s)
+    if (q !== null) setSearch(q)
+    if (o) { setOpenCourier(o); setCourierTab('invoices'); deepLinkKey.current = o }
+    setSearchParams({}, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const toggleCourier = (key: string) => {
     setOpenCourier(k => (k === key ? null : key))
@@ -286,6 +308,12 @@ export default function FinanceHandoverPage() {
   }, [seeFar, seeSea, seeCourier])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    const k = deepLinkKey.current
+    if (!k || !items) return
+    deepLinkKey.current = null
+    requestAnimationFrame(() => document.querySelector(`[data-courier-card="${k.replace(/["\\]/g, '\\$&')}"]`)?.scrollIntoView?.({ block: 'center' }))
+  }, [items])
   useEffect(() => {
     let cancelled = false
     fetchCompanyNameMap().then(m => { if (!cancelled) setCompanyNames(m) })
@@ -344,6 +372,22 @@ export default function FinanceHandoverPage() {
     if (error) { setDialogErr(error.message || 'Failed to undo the receipt.'); return }
     showToast(`${undoFor.ref} receipt undone.`)
     setUndoFor(null)
+    load()
+  }
+
+  // Undo Courier per langkah (2026-10-19, Admin saja): Paid -> Accepted (sql/068 fn_courier_finance_undo_paid) /
+  // Accepted -> Approved (sql/040 fn_courier_finance_undo_receive). Alasan wajib (min. 5, ditegakkan DB), popup kecil.
+  const openCourierUndo = (it: HandoverItem, step: 'paid' | 'received') => { setCourierUndo({ it, step }); setUndoReason(''); setDialogErr(null) }
+  const submitCourierUndo = async () => {
+    if (!courierUndo) return
+    const { it, step } = courierUndo
+    if (undoReason.trim().length < 5) { setDialogErr('Alasan wajib diisi (min. 5 karakter).'); return }
+    setBusy(true)
+    const { error } = step === 'paid' ? await undoPaidHandover(it, undoReason.trim()) : await undoReceiveHandover(it, undoReason.trim())
+    setBusy(false)
+    if (error) { setDialogErr(error.message || 'Undo gagal.'); return }
+    showToast(`${it.ref}: ${step === 'paid' ? 'Paid' : 'Accepted'} dibatalkan.`)
+    setCourierUndo(null)
     load()
   }
 
@@ -443,7 +487,7 @@ export default function FinanceHandoverPage() {
                 <React.Fragment key={it.key}>
                 <CourierAwbCard it={it} companyNames={companyNames} act={act} overdue={overdue} open={openCourier === it.key}
                   onOpen={() => toggleCourier(it.key)} onAccept={() => openReceive(it)} onPay={() => openPay(it)}
-                  onUndo={isAdmin && act && it.stage === 'received' ? () => openUndo(it) : null}>
+                  onUndo={isAdmin && act && (it.stage === 'paid' || it.stage === 'received') ? step => openCourierUndo(it, step) : null}>
                   <div className="hidden print:block px-4 pb-2 text-[11px] font-semibold text-[#6E5E70]" data-print-note>
                     Finance Handover · Courier · {COURIER_DETAIL_TAB_LABEL[courierTab]} · printed {printedAt.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   </div>
@@ -577,6 +621,29 @@ export default function FinanceHandoverPage() {
           <div className="flex justify-end gap-2">
             <button type="button" className={SA_BTN_OUTLINE} onClick={() => setUndoFor(null)}>Cancel</button>
             <button type="button" className={SA_BTN_PRIMARY} disabled={busy || undoReason.trim().length < 5} onClick={submitUndo}>{busy ? 'Saving…' : 'Undo receipt'}</button>
+          </div>
+        </Dialog>
+      )}
+
+      {courierUndo && (
+        <Dialog title={`Undo ${courierUndo.step === 'paid' ? 'Paid' : 'Accepted'}?`} onClose={() => setCourierUndo(null)}>
+          <div className="text-[13px] font-bold text-[#3B1B3D]">{courierUndo.it.ref}</div>
+          <div className="text-[12px] text-[#6E5E70] mb-3" data-courier-undo-sub>
+            {courierUndo.step === 'paid'
+              ? <>Status kembali ke <b>Accepted</b> — Paid date{courierUndo.it.paidReference ? ` & data transfer (${courierUndo.it.paidReference})` : ' & data transfer'} dihapus.</>
+              : <>Status kembali ke <b>Approved</b> — Received date dihapus.</>}
+          </div>
+          <CourierAffected it={courierUndo.it} ids={courierUndo.step === 'paid' ? courierUndo.it.courier?.paidIds : courierUndo.it.courier?.receivedIds}
+            verb={courierUndo.step === 'paid' ? 'set back to Accepted' : 'set back to Approved'} />
+          <textarea aria-label="Alasan undo" rows={3} value={undoReason} onChange={e => setUndoReason(e.target.value)} autoFocus
+            placeholder="Alasan undo (wajib, min. 5 karakter)" className={`${SA_INPUT} h-auto py-2 w-full mb-3`} />
+          {dialogErr && <div className="mb-3 text-[12px] font-semibold text-[#A8231A]">{dialogErr}</div>}
+          <div className="flex justify-end gap-2">
+            <button type="button" className={SA_BTN_OUTLINE} onClick={() => setCourierUndo(null)}>Batal</button>
+            <button type="button" data-courier-undo-confirm disabled={busy || undoReason.trim().length < 5} onClick={submitCourierUndo}
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 h-9 rounded-xl bg-[#A8231A] hover:bg-[#8E1D16] text-white text-xs font-semibold shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+              {busy ? 'Saving…' : 'Undo'}
+            </button>
           </div>
         </Dialog>
       )}

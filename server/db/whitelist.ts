@@ -176,6 +176,8 @@ for (const [t, ops] of Object.entries(MANUAL_TABLES)) {
   'fn_cost_agent_upsert_voyages', 'fn_cost_agent_verify_line',
   // Admin: tandai/lepas wajib ganti password (sql/066) & reset password user (sql/067)
   'fn_set_must_change_password', 'fn_admin_reset_user_password',
+  // Finance Handover Courier: undo Paid (sql/068)
+  'fn_courier_finance_undo_paid',
 ].forEach(r => RPC_WHITELIST.add(r));
 
 // Bucket Storage yang boleh diakses lewat gateway (FarOverseasAirDocumentsModal: download + signed URL bukti bayar).

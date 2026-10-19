@@ -16,7 +16,9 @@
 // (`#finance-courier-popup-print-area`, kartu tidak ikut tercetak) -- aturan di index.css.
 import React, { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Printer, X } from 'lucide-react'
+import { History, Printer, X } from 'lucide-react'
+import CourierAuditTrail from './CourierAuditTrail'
+import { fetchRecapCourierLog } from '../utils/CourierRecapHelpers'
 import ValidasiModal from './ValidasiModal'
 import CostValidationModalLegacy from './CostValidationModalLegacy'
 import { VW_CARD } from './validationWindowStyles'
@@ -26,11 +28,14 @@ import type { HandoverItem } from '../utils/FinanceHandoverHelpers'
 import { useCourierDutyRaw, courierTotalBreakdown } from '../utils/CourierTotalBreakdown'
 import { CourierTotalSummary } from './CourierRecapInvoicesTab'
 
-export type CourierDetailTab = 'invoices' | 'cost' | 'doc'
-type DetailValidationTab = Exclude<CourierDetailTab, 'invoices'>
-export const COURIER_DETAIL_TABS: CourierDetailTab[] = ['invoices', 'cost', 'doc']
+// 'trail' (2026-10-19, revisi Undo status handover): pop-up Audit trail = data & tampilan SAMA tab Audit trail Invoice Recap
+// (fetchRecapCourierLog + CourierAuditTrail) -> Undo Paid / Undo Accepted / Unlock tercatat & terlihat di kedua tempat.
+export type CourierDetailTab = 'invoices' | 'cost' | 'doc' | 'trail'
+type DetailValidationTab = Exclude<CourierDetailTab, 'invoices' | 'trail'>
+type DetailPopup = Exclude<CourierDetailTab, 'invoices'>
+export const COURIER_DETAIL_TABS: CourierDetailTab[] = ['invoices', 'cost', 'doc', 'trail']
 export const COURIER_DETAIL_TAB_LABEL: Record<CourierDetailTab, string> = {
-  invoices: 'Invoices', cost: 'Cost Validation', doc: 'Doc Validation',
+  invoices: 'Invoices', cost: 'Cost Validation', doc: 'Doc Validation', trail: 'Audit trail',
 }
 
 const noop = () => {}
@@ -72,7 +77,9 @@ export default function FinanceCourierAwbDetail({ item, tab, onTab, onPrint }: {
   }, [])
   useEffect(() => { if (!rec) setPct({ cost: null, doc: null }) }, [rec])
 
-  const popup: DetailValidationTab | null = tab === 'invoices' ? null : tab
+  const popup: DetailPopup | null = tab === 'invoices' ? null : tab
+  const group = item.courier?.group || null
+  const trailLoader = useMemo(() => () => (group ? fetchRecapCourierLog(group) : Promise.resolve([])), [group])
   const closePopup = () => onTab('invoices')
   // Esc menutup pop-up.
   useEffect(() => {
@@ -82,16 +89,17 @@ export default function FinanceCourierAwbDetail({ item, tab, onTab, onPrint }: {
     return () => window.removeEventListener('keydown', h)
   }, [popup, onTab])
 
-  const popupTitle = (k: DetailValidationTab) =>
-    `${COURIER_DETAIL_TAB_LABEL[k]} · ${docType}${rec && courierDocNo(rec, docType) ? ` ${courierDocNo(rec, docType)}` : ''} · ${item.ref}`
+  const popupTitle = (k: DetailPopup) => k === 'trail'
+    ? `${COURIER_DETAIL_TAB_LABEL[k]} · ${item.ref}`
+    : `${COURIER_DETAIL_TAB_LABEL[k]} · ${docType}${rec && courierDocNo(rec, docType) ? ` ${courierDocNo(rec, docType)}` : ''} · ${item.ref}`
 
   // Pop-up validasi (portal ke body). Tetap terpasang selama kartu terbuka -- disembunyikan bila bukan yang aktif.
-  const popupShell = (k: DetailValidationTab, body: React.ReactNode) => createPortal(
+  const popupShell = (k: DetailPopup, body: React.ReactNode) => createPortal(
     <div className={popup === k ? 'fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex items-center justify-center p-3 max-[1600px]:p-2.5' : 'hidden'}
       id={popup === k ? 'finance-courier-popup-print-area' : undefined} role="dialog" aria-modal="true" aria-label={popupTitle(k)} aria-hidden={popup !== k}
       data-finance-popup={k} onMouseDown={e => { if (e.target === e.currentTarget) closePopup() }}>
       {/* Lebar SAMA popup Audit & Invoice Recap (2026-10-15): Cost ±920px, Doc ±1460px / 95vw. */}
-      <div className={`bg-white rounded-2xl shadow-2xl w-full ${k === 'cost' ? 'max-w-[920px]' : 'max-w-[min(1460px,95vw)]'} h-[92vh] max-[1600px]:h-full flex flex-col overflow-hidden`}>
+      <div className={`bg-white rounded-2xl shadow-2xl w-full ${k === 'doc' ? 'max-w-[min(1460px,95vw)]' : 'max-w-[920px]'} h-[92vh] max-[1600px]:h-full flex flex-col overflow-hidden`}>
         <div className="shrink-0 flex items-start justify-between gap-3 px-5 py-3.5 border-b border-[#EADFD6]">
           <div className="min-w-0">
             <h2 className="text-[16px] font-bold text-[#3B1B3D] leading-tight [overflow-wrap:anywhere]">{popupTitle(k)}</h2>
@@ -135,6 +143,12 @@ export default function FinanceCourierAwbDetail({ item, tab, onTab, onPrint }: {
             </button>
           )
         })}
+        {group && (
+          <button type="button" aria-haspopup="dialog" aria-expanded={popup === 'trail'} onClick={() => onTab('trail')} data-finance-popup-btn="trail"
+            className="inline-flex items-center gap-1.5 px-3 h-8 rounded-lg border border-[#EADFD6] bg-white hover:bg-[#FBF7F4] hover:border-[#6B3470]/40 text-[#3B1B3D] text-[12px] font-bold">
+            <History size={13} /> {COURIER_DETAIL_TAB_LABEL.trail}
+          </button>
+        )}
         <span className="text-[11px] font-bold text-[#8A7A8B] bg-[#F3EEEA] px-2 py-0.5 rounded-md">View only</span>
         <button type="button" onClick={onPrint} aria-label="Print invoices"
           className="inline-flex items-center gap-1.5 px-3 h-8 rounded-lg border border-[#EADFD6] bg-white hover:bg-[#FBF7F4] text-[#3B1B3D] text-[12px] font-bold">
@@ -152,6 +166,10 @@ export default function FinanceCourierAwbDetail({ item, tab, onTab, onPrint }: {
       {rec && popupShell('doc', (
         <ValidasiModal record={rec} mainTab="courier" subTab="courier_audit" onClose={noop} canEdit={false} embedded variant="unified" financeView
           onPctChange={setPctOf.doc} />
+      ))}
+      {/* Audit trail -- dipasang hanya saat dibuka (dibaca ulang tiap dibuka, termasuk sesudah Undo). */}
+      {group && popup === 'trail' && popupShell('trail', (
+        <CourierAuditTrail loader={trailLoader} loadKey={`${group.key}:${item.stage}:${group.rows.length}`} />
       ))}
     </div>
   )

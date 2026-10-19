@@ -13,6 +13,8 @@
 // BM · PPN · PPh) / Credit Note / Grand Total, kolom No. Invoice · Invoice PPJK Date · Amount · Status · Tgl Submit. Rumus di
 // `CourierTotalBreakdown.ts` (SATU sumber, juga dipakai Finance Handover); AWB yang sudah dikirim ke Finance angkanya TIDAK berubah.
 import React, { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { courierHandoverLink } from '../utils/FinanceHandoverHelpers'
 import { AlertTriangle, Lock, Unlock } from 'lucide-react'
 import { SA_LABEL, SA_BTN_OUTLINE, SA_BTN_GREEN, Chip, SectionCard } from './SeaAirAuditUi'
 import { fmtRp, fmtDateShort } from '../utils/SeaAirAuditHelpers'
@@ -34,12 +36,17 @@ export const financeChips = (r: any) => (
 // Kunci Submit to Finance (sql/038, 2026-10-02, sama Sea & Air): invoice yang sudah di-submit TERKUNCI (Edit di List
 // & Delete nonaktif, DB menolak perubahan). Hanya Admin bisa Unlock dgn alasan (min. 5 karakter); ditolak kalau Finance
 // sudah menerima.
-const UnlockControl: React.FC<{ r: any; busy: boolean; onUnlock: (id: string, reason: string) => Promise<boolean> }> = ({ r, busy, onUnlock }) => {
+// Revisi 2026-10-19 (Undo status handover): selama Received/Paid, Unlock tetap tidak bisa -> petunjuk + link ke kartu AWB di
+// Finance Handover (Admin membatalkan Paid lalu Received di sana, 1 langkah per klik), setelah itu Unlock aktif lagi.
+const UnlockControl: React.FC<{ r: any; busy: boolean; onUnlock: (id: string, reason: string) => Promise<boolean>; handoverLink?: string }> = ({ r, busy, onUnlock, handoverLink }) => {
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState('')
   const [saving, setSaving] = useState(false)
   if (r.finance_received_at || r.tgl_lunas) {
-    return <div className="text-[11px] text-[#8A7A8B]" title="Finance has already received or paid this invoice">Unlock unavailable — {r.tgl_lunas ? 'already paid' : 'received by Finance'}</div>
+    const step = r.tgl_lunas ? 'Paid' : 'Received'
+    return handoverLink
+      ? <Link to={handoverLink} data-handover-link className="text-[11px] font-semibold text-[#6B3470] hover:underline" title="Open this AWB in Finance Handover">Batalkan {step} dulu di Finance Handover ↗</Link>
+      : <div className="text-[11px] text-[#8A7A8B]">Batalkan {step} dulu di Finance Handover</div>
   }
   if (!open) {
     return (
@@ -186,7 +193,7 @@ export function CourierTotalSummary({
                     title={!r.submit_date && r.submit_unlock_reason ? `Last unlock: ${r.submit_unlocked_by || 'Admin'}${r.submit_unlocked_at ? ` · ${fmtDateShort(r.submit_unlocked_at)}` : ''} — ${r.submit_unlock_reason}` : undefined}>
                     <div className="flex flex-col items-start gap-1">
                       {statusChips(r)}
-                      {r.submit_date && isAdmin && onUnlock && <UnlockControl r={r} busy={busy} onUnlock={onUnlock} />}
+                      {r.submit_date && isAdmin && onUnlock && <UnlockControl r={r} busy={busy} onUnlock={onUnlock} handoverLink={courierHandoverLink(g.key, r.awb || g.awbRaw)} />}
                     </div>
                   </td>
                   <td className="px-3 py-2 text-[#6E5E70] whitespace-nowrap" data-submit-date>{r.submit_date ? fmtDateShort(r.submit_date) : '—'}</td>

@@ -61,8 +61,13 @@ export type CourierAwbHandover = {
   jalur: CourierDocType | null  // PIB / CN dari pasangan Audit Courier (null = tidak ketemu)
   vendor: string
   waitingIds: string[]          // belum diterima Finance -> Accept
-  receivedIds: string[]         // diterima, belum Paid -> Mark paid / Undo receipt
+  receivedIds: string[]         // diterima, belum Paid -> Mark paid / Undo Accepted
+  paidIds: string[]             // sudah Paid -> Undo Paid (sql/068, 2026-10-19)
 }
+
+// Link dari Invoice Recap ke kartu AWB ini di Finance Handover (filter Courier + cari AWB + kartu terbuka) -- 2026-10-19.
+export const courierHandoverLink = (groupKey: string, awb?: string | null) =>
+  `/finance-handover?source=courier&q=${encodeURIComponent(String(awb || ''))}&open=${encodeURIComponent(`courier:${groupKey}`)}`
 
 export const DEFAULT_SEAAIR_TOP_DAYS = 14
 export const DEFAULT_COURIER_TOP_DAYS = 14
@@ -293,6 +298,7 @@ export function courierGroupToItem(g: RecapGroup, vendors: Record<string, SeaAir
       vendor,
       waitingIds: waiting.map(r => String(r.id)),
       receivedIds: received.map(r => String(r.id)),
+      paidIds: paidRows.map(r => String(r.id)),
     },
   }
 }
@@ -356,6 +362,12 @@ export async function undoReceiveHandover(it: HandoverItem, reason: string) {
   if (it.source === 'far') return supabase.rpc('fn_far_overseas_finance_undo_receive', { p_id: it.id, p_reason: reason })
   if (it.source === 'courier') return eachCourierInvoice(it.courier?.receivedIds || [], id => supabase.rpc('fn_courier_finance_undo_receive', { p_id: id, p_reason: reason }))
   return supabase.rpc('fn_seaair_finance_undo_receive', { p_rekapan_id: it.id, p_reason: reason })
+}
+// Undo "Paid" Courier (sql/068, 2026-10-19): Admin saja, alasan min. 5 karakter; Paid -> Accepted (Received · unpaid) utk SEMUA
+// invoice AWB yang sudah Paid. Undo berikutnya (Accepted -> Approved) = undoReceiveHandover.
+export async function undoPaidHandover(it: HandoverItem, reason: string) {
+  if (it.source !== 'courier') return { error: { message: 'Undo paid is only available for Courier.' } }
+  return eachCourierInvoice(it.courier?.paidIds || [], id => supabase.rpc('fn_courier_finance_undo_paid', { p_id: id, p_reason: reason }))
 }
 export async function markHandoverPaid(it: HandoverItem, paidDate: string, reference: string | null) {
   if (it.source === 'far') return supabase.rpc('fn_far_overseas_mark_paid', { p_id: it.id, p_paid_date: paidDate, p_proof_path: null, p_reference: reference })

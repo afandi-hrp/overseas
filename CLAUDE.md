@@ -67,7 +67,8 @@ yang berlaku lintas modul. Rujukan lama di docs berbunyi "lihat CLAUDE.md bagian
   Cost Agent (versi user ber-guard) + 055 seed master; 056 RPC `fn_cost_agent_delete_invoice` (hapus invoice Cost Agent, Admin,
   masa uji coba -- cost-agent.md). **KEPUTUSAN TERTUNDA (user): nasib fitur hapus invoice Cost Agent setelah uji coba (cabut
   grant / hapus tombol / pertahankan) -- JANGAN diubah sebelum user memutuskan.** SQL baru: file `sql/NNN_*.sql` baru (lanjut
-  **068**; `066_force_password_change` (wajib ganti password) & `067_profiles_lock_and_admin_reset_password` (profil hanya kolom
+  **069**; `sql/068_courier_finance_undo_paid.sql` (Undo Paid Finance Handover Courier, finance-handover.md) BELUM DIJALANKAN 2026-10-19;
+  `066_force_password_change` (wajib ganti password) & `067_profiles_lock_and_admin_reset_password` (profil hanya kolom
   nama + RPC Admin reset password) SUDAH DIJALANKAN 2026-10-19 (konfirmasi user, diverifikasi via MCP read-only), folder `sql/`
   DIHAPUS lagi -- isi: `git show 4c03e2a:sql/<file>`, auth-session.md; `065_cost_agent_app_feedback.sql` (file user di root) SUDAH DIJALANKAN 2026-10-16 (cost-agent.md "update 065"); `sql/062_kurs_bi_kurs_beli.sql` SUDAH DIJALANKAN 2026-10-15 (kolom Kurs Beli, bunker-courier-seaair.md "Kurs BI Harian — Import Excel"; folder `sql/` DIHAPUS lagi 2026-10-15 -- isi: `git show e4d5000:sql/062_kurs_bi_kurs_beli.sql`); 063 (`063_cost_agent_classify_fix`) & 064 (`064_cost_agent_invoice_description`) Cost Agent SUDAH DIJALANKAN (user, 2026-10-15; file sempat di root repo, DIHAPUS -- isi: `git show e361e7a:<file>`, cost-agent.md); 057–061 Cost Agent SEMUA SUDAH dijalankan (konfirmasi user 2026-10-14; nomor 058 dipakai 2 file: compare_v2 user & delete_invoice_grant repo),
   folder `sql/` DIHAPUS lagi 2026-10-14 -- isi terakhir 058_cost_agent_delete_invoice_grant / 060 / 061: `git show 2fc583b:sql/<file>`; 057, 058_compare_v2
@@ -261,7 +262,7 @@ kosong (cek whitelist dulu). Daftar di bawah disimpulkan dari `.rpc('...')` di f
 - Courier: `fn_delete_pib`/`_cn`, `fn_archive_pib`/`_cn`, `fn_undraft_pib`/`_cn`, `fn_hitung_storage`,
   `fn_save_storage_estimate`, `fn_update_actual_value`, `fn_apply_credit_note`, `fn_recompute_totals`,
   `fn_revise_credit_note`, `fn_courier_recap_awb_page`, `fn_courier_recap_summary`, `fn_courier_awb_norm`,
-  `fn_courier_finance_accept`, `fn_courier_finance_mark_paid`, `fn_courier_finance_undo_receive`,
+  `fn_courier_finance_accept`, `fn_courier_finance_mark_paid`, `fn_courier_finance_undo_receive`, `fn_courier_finance_undo_paid` (sql/068),
   `fn_courier_unlock_submit`.
 - Reporting: `fn_reporting_distinct_pt`, `fn_reporting_vendor_stats` (tidak dipakai lagi oleh 4 halaman Compare
   Doc), `fn_reporting_kategori_stats`, `fn_reporting_courier_distinct`.
