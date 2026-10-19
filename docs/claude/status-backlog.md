@@ -6,6 +6,14 @@ Daftar terkini pekerjaan yg belum selesai/ditahan per modul. Item dicoret = sele
 
 ## STATUS & SISA PEKERJAAN — Audit & Invoice Recap Sea & Air + Courier / Finance Handover (per 2026-10-02)
 
+**Courier — Cost Validation rule (2026-10-19), sisi n8n BELUM (di luar repo)**: app sudah merapikan TAMPILAN (courier-features.md "Cost
+Validation — perbaikan rule & notifikasi"), tapi akar masalah ada di workflow n8n: (1) upload ulang / dokumen susulan MENAMBAH item
+"OTHER CHARGES" RULE_NOT_FOUND ke `cv_other_charges_*` baris tertaut padahal biayanya sudah terbaca sbg rule -> harus MENGGANTI hasil baca
+invoice itu (pertahankan baris `is_edited`/Accept); (2) n8n membuat baris `tabel_cost_validasi` BARU tanpa `pib_id`/`cn_id` (74 AWB, 210
+baris per 2026-10-19) -> upsert ke baris tertaut; (3) cocokkan deskripsi biaya ke rule sebelum RULE_NOT_FOUND; (4) Invoice Freight menyusul
+-> hitung ulang freight; (5) total tersimpan n8n kadang tanpa Bonded Storage (samakan rumus `fn_recompute_totals`). Opsi pembersihan DB
+(trigger/SQL) DITOLAK user 2026-10-19 (pilih "hanya tampilan").
+
 **Courier — Section Total (2026-10-09), tahap berikutnya**: (1) angka KARTU & KPI "Freight + Duty" Invoice Recap masih rumus lama (`total_amount`) -> samakan dgn
 `courierTotalBreakdown` (KPI dihitung di browser; butuh baca `import_export_duties_idr` banyak AWB -> view kecil `security_invoker` atau batch `dokumen_validasi`); (2) dedupe
 duty tax di `ReportingCourierHelpers` (hitung SEKALI per AWB); (3) verifikasi sinyal `import_export_duties_idr` utk FedEx/EMS/UPS (Query E/F belum dijalankan user);

@@ -9,6 +9,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { LoadingSpinner } from './LoadingState';
 import { supabase } from '../lib/supabase';
 import { computeLiveCostSummary, isRowVisible } from '../utils/CostValidationHelpers';
+import { normalizeCourierCostView, fetchCourierCostContexts, courierCostCtxKey, type CourierCostContext, type CostMergeInfo } from '../utils/CourierCostNormalize';
 import { courierStorageActualDays, computeCourierStorageExpected, saveCourierStorageEstimate } from '../utils/CourierStorageEstimate';
 import { fetchCourierCostReviews, reviewMapOf, type CourierCostReviews, type CourierCostReview } from '../utils/CourierCostReviewHelpers';
 import CourierCostReviewBox from './CourierCostReviewBox';
@@ -78,6 +79,19 @@ const ActualInlineInput = ({
 };
 
 
+// Keterangan baris dobel yang disembunyikan di tabel (revisi 2026-10-19) -- data DB tetap ada (terlihat lagi saat Edit).
+const MergedNote = ({ items }: { items: CostMergeInfo[] }) => (items.length === 0 ? null : (
+  <div className="mt-2 text-[11px] text-slate-500" data-cost-merged>
+    {items.map(m => (
+      <div key={`${m.section}-${m.index}`}>
+        {m.into === '(empty line)'
+          ? <>Empty line hidden: {m.name || 'Other charge'}</>
+          : <>Duplicate line hidden: {m.name || 'Other charge'} {m.actual !== null ? formatRp(m.actual) : ''} → {m.into}</>}
+      </div>
+    ))}
+  </div>
+));
+
 // `embedded` (2026-09-30) -- dirender sbg tab "Cost Validation" di CourierValidationWindow: tanpa
 // overlay/judul/tombol X. Panel Shipment Info dipindah ke level jendela; selama Edit Cost Validasi
 // aktif, 3 field Shipment Info yang memang bisa diedit (Ship Date, Origin, Chargeable Weight)
@@ -94,10 +108,17 @@ const ActualInlineInput = ({
 // di-Accept (per baris sql/041 atau per invoice sql/038 -- `computeLiveCostSummary().diff_rows[].accepted`, SATU sumber dgn badge
 // kartu/KPI/Finance) tampil "✓ ACCEPTED · Undercharge/Overcharge" (hijau tua), Selisih tetap; TOTAL tabel "✓ ACCEPTED" bila semua
 // selisihnya di-Accept. `onDirtyChange` = sedang mode Edit (popup Audit konfirmasi saat ditutup).
-export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecord, onClose, canEdit = true, embedded = false, onPctChange, onDataChange, financeView = false, onMutated, onDirtyChange }: { awb: string, jenisDokumen: string, docId?: string, rawRecord?: any, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, onDataChange?: (data: any) => void, financeView?: boolean, onMutated?: () => void, onDirtyChange?: (dirty: boolean) => void }) {
+// Revisi 2026-10-19 (rule & notifikasi, `mockup_cost_validation_rule.html`, keputusan user: perbaikan HANYA di tampilan):
+// `data` = salinan TAMPILAN (normalizeCourierCostView: baris dobel OTHER CHARGES disembunyikan, TOTAL rumus fn_recompute_totals),
+// `rawData` = baris DB apa adanya -> dipakai Edit/Simpan/estimasi storage (index other charges & nilai pembanding tetap asli).
+// Status turunan Checklist (Menunggu Invoice Freight / N/A / ZONE NOT FOUND) & TOTAL vs dokumen invoice dari
+// computeLiveCostSummary + konteks fetchCourierCostContexts. `startEditing` = buka langsung mode Edit (kartu "Zone not found").
+export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecord, onClose, canEdit = true, embedded = false, onPctChange, onDataChange, financeView = false, onMutated, onDirtyChange, startEditing = false }: { awb: string, jenisDokumen: string, docId?: string, rawRecord?: any, onClose: () => void, canEdit?: boolean, embedded?: boolean, onPctChange?: (pct: number | null) => void, onDataChange?: (data: any) => void, financeView?: boolean, onMutated?: () => void, onDirtyChange?: (dirty: boolean) => void, startEditing?: boolean }) {
   // `onMutated` = dipanggil SETELAH perubahan (Edit / Credit Note) benar-benar tersimpan (panel Invoice Recap menyegarkan daftar hanya kalau ada ini).
   const act = !financeView;
   const [data, setData] = useState<any>(null);
+  const [rawData, setRawData] = useState<any>(null);
+  const viewData = data;
   const [loading, setLoading] = useState(true);
   
   // Storage manual states
@@ -183,7 +204,8 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
     }
     
     cvData = { ...cvData, cv_duty_tax_expected: dutyExpected, vendor };
-    setData(cvData);
+    setRawData(cvData);
+    setData(normalizeCourierCostView(cvData));
   };
 
   const fetchData = async () => {
@@ -217,7 +239,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
     if (!etaDate || !releaseDate || !data || !storageExpectedResult) return;
     setUpdating(true);
     try {
-      const freshRow = await saveCourierStorageEstimate(data, etaDate, releaseDate, storageWeightManual, storageExpectedResult);
+      const freshRow = await saveCourierStorageEstimate(rawData || data, etaDate, releaseDate, storageWeightManual, storageExpectedResult);
       if (freshRow) {
         await enrichAndSetData(freshRow);
       } else {
@@ -233,7 +255,8 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
   };
 
   const handleEditClick = () => {
-    setEditForm(JSON.parse(JSON.stringify(data)));
+    // Edit SELALU dari baris DB asli (bukan salinan tampilan) -- baris dobel tampil lagi saat Edit, index tetap benar.
+    setEditForm(JSON.parse(JSON.stringify(rawData || data)));
     setIsEditing(true);
     setEditStorageManual(false);
   };
@@ -249,6 +272,8 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
 
   const handleSaveEdit = async () => {
     setSavingEdit(true);
+    // Pembanding perubahan = baris DB asli (salinan tampilan bisa beda: storage terisi dari OTHER CHARGES, TOTAL dihitung ulang).
+    const data = rawData || viewData;
     try {
       const form = { ...editForm };
       
@@ -494,7 +519,8 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
     if (!finalStatus || finalStatus === 'N/A') return <span className="px-2 py-0.5 bg-slate-100 text-[#5A305A] rounded font-bold text-xs">⬜ N/A</span>;
     if (finalStatus === 'OK') return <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded font-bold text-xs">✅ OK</span>;
     if (finalStatus === 'MANUAL') return <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded font-bold text-xs">🔍 MANUAL</span>;
-    if (finalStatus.includes('NOT_FOUND')) return <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded font-bold text-xs">❓ {finalStatus}</span>;
+    if (finalStatus === 'WAITING_FREIGHT') return <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded font-bold text-xs whitespace-nowrap" data-cost-waiting>◷ Menunggu Invoice Freight</span>;
+    if (finalStatus.includes('NOT_FOUND')) return <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded font-bold text-xs whitespace-nowrap">❓ {finalStatus.replace(/_/g, ' ')}</span>;
     if (finalStatus === 'UNDERCHARGE') return <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded font-bold text-xs">⚠️ {finalStatus}</span>;
     if (finalStatus === 'OVERCHARGE') return <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded font-bold text-xs">⚠️ {finalStatus}</span>;
     return <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded font-bold text-xs">⚠️ {finalStatus}</span>;
@@ -519,7 +545,27 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
   const reviewMap = useMemo(() => reviewMapOf(reviews), [reviews]);
   const setReview = (section: 'FREIGHT' | 'DUTY') => (r: CourierCostReview | null) =>
     setReviews(p => { const n = { ...p }; if (r) n[section] = r; else delete n[section]; return n; });
-  const liveSummary = useMemo(() => computeLiveCostSummary(data, jenisDokumen, reviewMap), [data, jenisDokumen, reviewMap]);
+  // Konteks revisi 2026-10-19 (Invoice Freight di Checklist + total dokumen invoice) -- SAMA panel depan & badge.
+  const [costCtx, setCostCtx] = useState<CourierCostContext | null>(null);
+  useEffect(() => {
+    let alive = true;
+    if (!reviewAuditId) { setCostCtx(null); return; }
+    fetchCourierCostContexts([{ docType: jenisDokumen, id: reviewAuditId }])
+      .then(m => { if (alive) setCostCtx(m[courierCostCtxKey(jenisDokumen, reviewAuditId)] || null); });
+    return () => { alive = false; };
+  }, [jenisDokumen, reviewAuditId, rawData]);
+  const liveSummary = useMemo(() => computeLiveCostSummary(data, jenisDokumen, reviewMap, costCtx), [data, jenisDokumen, reviewMap, costCtx]);
+  // Status turunan baris Freight (Menunggu Invoice Freight / N/A / ZONE NOT FOUND) & baris dobel yang disembunyikan.
+  const freightDerived = isEditing ? null : (liveSummary.freight_derived ?? null);
+  const freightForced = freightDerived === 'WAITING_FREIGHT' || freightDerived === 'ZONE_NOT_FOUND';
+  const mergedOf = (sec: 'FREIGHT' | 'DUTY'): CostMergeInfo[] => (isEditing ? [] : ((data?._cv_merged || []) as CostMergeInfo[]).filter(m => m.section === sec));
+  // Dibuka dari kartu "Zone not found" (panel Invoice Recap) -> langsung mode Edit sekali setelah data termuat.
+  const autoEditDone = React.useRef(false);
+  useEffect(() => {
+    if (!startEditing || autoEditDone.current || !rawData || !act || !canEdit || isEditing) return;
+    autoEditDone.current = true;
+    handleEditClick();
+  }, [startEditing, rawData, act, canEdit, isEditing]);
   // Baris berselisih yang sudah di-Accept (kunci baris -> diff row) -- dari computeLiveCostSummary (satu sumber).
   const acceptedRows = useMemo(() => {
     const m: Record<string, { status: string; note: string | null }> = {};
@@ -536,8 +582,8 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
   // dipilih) supaya label berubah live; formula tetap computeLiveCostSummary (satu sumber).
   const reportedPct = useMemo(() => {
     if (!data) return null;
-    return computeLiveCostSummary(isEditing && editForm ? editForm : data, jenisDokumen, reviewMap).pct;
-  }, [data, editForm, isEditing, jenisDokumen, reviewMap]);
+    return computeLiveCostSummary(isEditing && editForm ? editForm : data, jenisDokumen, reviewMap, costCtx).pct;
+  }, [data, editForm, isEditing, jenisDokumen, reviewMap, costCtx]);
   useEffect(() => {
     if (!onPctChange || loading) return;
     onPctChange(reportedPct);
@@ -602,7 +648,9 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
     const filtered = rowsWithIndex.filter((row: any) => {
         // Tampilkan semua data dari API (meskipun 0) kecuali jika jenisnya STORAGE
         // Storage sudah dirender secara terpisah di baris "Bonded Storage"
-        if (row.status === 'STORAGE') return false; 
+        if (row.status === 'STORAGE') return false;
+        // Baris dobel (OTHER CHARGES RULE_NOT_FOUND yang sama dgn rule lain) disembunyikan di tampilan -- revisi 2026-10-19.
+        if (!isEditing && row._merged_into) return false;
         return true;
     });
 
@@ -703,6 +751,9 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                                   <option value="N/A">⬜ N/A</option>
                                 </select>
                             ) : (() => {
+                                // Di-Accept per baris dari panel Invoice Recap (kunci SAMA computeLiveCostSummary) -- revisi 2026-10-19.
+                                const acc = acceptedRows[`other_${type}_${row.original_idx}`];
+                                if (acc) return acceptedBadge(acc.status, acc.note);
                                 let badgeStatus = row.status;
                                 if (!row.isManual && badgeStatus === 'SELISIH' && row.selisih != null) {
                                     if (row.selisih > 1000) badgeStatus = 'OVERCHARGE';
@@ -740,6 +791,8 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
 
 
   const statusView = (field: string) => {
+    // Freight ZONE_NOT_FOUND -> status turunan Checklist utk Freight, Fuel & VAT freight (revisi 2026-10-19).
+    if (freightDerived && ['cv_freight_status', 'cv_fuel_status', 'cv_vat_freight_status'].includes(field)) return formatStatus(freightDerived);
     const acc = acceptedRows[STATUS_FIELD_KEY[field]];
     if (acc) return acceptedBadge(acc.status, acc.note);
     return formatStatus(data[field], data[field.replace('_status', '_selisih')]);
@@ -833,6 +886,8 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                     ['Accepted', accepted, 'bg-[#17663D] text-white'],
                     ['Difference', liveSummary.total_selisih, FV_TILE_TONE.red],
                     ['N/A', liveSummary.total_na, FV_TILE_TONE.grey],
+                    // "Menunggu Invoice Freight" (revisi 2026-10-19): bukan Difference, tapi belum 100%. Hanya tampil bila ada.
+                    ...((liveSummary.total_waiting ?? 0) > 0 ? [['Menunggu', liveSummary.total_waiting ?? 0, FV_TILE_TONE.amber] as const] : []),
                   ] as const).map(([label, value, cls]) => (
                     <div key={label} className={`${FV_TILE} ${cls}`} data-cost-tile={label}>
                       <div className="text-[18px] font-bold leading-tight tabular-nums">{value}</div>
@@ -1065,7 +1120,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {(isEditing || isRowVisible(data.cv_freight_status, data.cv_freight_expected, data.cv_freight_actual)) && (
+                    {(isEditing || freightForced || isRowVisible(data.cv_freight_status, data.cv_freight_expected, data.cv_freight_actual)) && (
                       <tr>
                         <td className="px-4 py-3 text-[#5A305A] font-medium bg-white align-top">
                           <div className="flex flex-col gap-2">
@@ -1096,7 +1151,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                         <td className="px-4 py-3 bg-white align-top"><FreightStatusDropdown field="cv_freight_status" /></td>
                       </tr>
                     )}
-                    {(isEditing || isRowVisible(data.cv_fuel_status, data.cv_fuel_expected, data.cv_fuel_actual)) && (
+                    {(isEditing || freightForced || isRowVisible(data.cv_fuel_status, data.cv_fuel_expected, data.cv_fuel_actual)) && (
                       <tr>
                         <td className="px-4 py-3 text-[#5A305A] font-medium bg-white align-top">
                           <div className="flex flex-col gap-2">
@@ -1128,7 +1183,7 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                       </tr>
                     )}
                     {renderOtherChargesRows(data.cv_other_charges_freight, 'freight')}
-                    {(isEditing || isRowVisible(data.cv_vat_freight_status, data.cv_vat_freight_expected, data.cv_vat_freight_actual_net)) && (
+                    {(isEditing || freightForced || isRowVisible(data.cv_vat_freight_status, data.cv_vat_freight_expected, data.cv_vat_freight_actual_net)) && (
                       <tr>
                         <td className="px-4 py-3 text-[#5A305A] font-medium bg-white align-top">
                           <div className="flex flex-col gap-2">
@@ -1182,15 +1237,23 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                         if (totalSelisihNum > 1000) totalStatusStr = 'OVERCHARGE';
                         else if (totalSelisihNum < -1000) totalStatusStr = 'UNDERCHARGE';
                       }
+                      // A4 (2026-10-19): TOTAL Actual vs total dokumen invoice -> SELISIH bila beda.
+                      const docF = isEditing ? undefined : liveSummary.doc_check?.FREIGHT;
+                      const docMismatchF = !!docF && !docF.match;
+                      if (docMismatchF) totalStatusStr = 'SELISIH';
+                      const totalAcceptedF = docMismatchF ? docF!.accepted : liveSummary.freight_total_accepted;
 
                       return (
                         <tr className="bg-slate-50 font-bold border-t-2 border-slate-200">
-                          <td className="px-4 py-3 text-[#5A305A]">TOTAL</td>
+                          <td className="px-4 py-3 text-[#5A305A]">TOTAL
+                            {docMismatchF && <div className="text-[11px] font-semibold text-rose-700" data-cost-doc-total="FREIGHT">Invoice document {formatRp(docF!.document)}</div>}
+                          </td>
                           <td className="px-4 py-3 text-[#5A305A]">{formatRp(data.cv_total_freight_expected)}</td>
                           <td className="px-4 py-3 text-[#5A305A]">{formatRp(totalActualNum)}</td>
                           {!isEditing && <td className="px-4 py-3 text-[#5A305A]">{formatRp(totalSelisihNum)}</td>}
                           <td className="px-4 py-3 text-center">
-                             {(totalStatusStr === 'OVERCHARGE' || totalStatusStr === 'UNDERCHARGE' || totalStatusStr === 'SELISIH') && liveSummary.freight_total_accepted ? acceptedBadge(null) :
+                             {freightDerived === 'WAITING_FREIGHT' ? formatStatus('WAITING_FREIGHT') :
+                              (totalStatusStr === 'OVERCHARGE' || totalStatusStr === 'UNDERCHARGE' || totalStatusStr === 'SELISIH') && totalAcceptedF ? acceptedBadge(null) :
                              <span className={`inline-flex items-center rounded-md font-bold border whitespace-nowrap uppercase ${
                                totalStatusStr === 'OK' ? 'px-2.5 py-1 text-[11px] bg-emerald-50 text-emerald-700 border-emerald-200' :
                                totalStatusStr === 'UNDERCHARGE' ? 'px-3 py-1.5 text-[14px] bg-blue-100 text-blue-700 border-blue-300 shadow-sm' :
@@ -1206,7 +1269,8 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                     })()}
                   </tbody>
                 </table>
-                
+                <MergedNote items={mergedOf('FREIGHT')} />
+
                 {!isEditing && Number(data.cv_cn_freight_total) > 0 && (
                   <div className="mt-4 p-4 bg-orange-50 border border-orange-200 rounded-lg">
                     <h3 className="font-bold text-orange-900 mb-2 flex items-center">
@@ -1395,15 +1459,22 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                       } else {
                         dutyStatusStr = 'UNDERCHARGE';
                       }
+                      // A4 (2026-10-19): TOTAL Actual vs total dokumen invoice duty (adm fee + duty & tax bila divalidasi).
+                      const docD = isEditing ? undefined : liveSummary.doc_check?.DUTY;
+                      const docMismatchD = !!docD && !docD.match;
+                      if (docMismatchD) dutyStatusStr = 'SELISIH';
+                      const totalAcceptedD = docMismatchD ? docD!.accepted : liveSummary.duty_total_accepted;
 
                       return (
                         <tr className="bg-slate-50 font-bold border-t-2 border-slate-200">
-                          <td className="px-4 py-3 text-[#5A305A]">TOTAL</td>
+                          <td className="px-4 py-3 text-[#5A305A]">TOTAL
+                            {docMismatchD && <div className="text-[11px] font-semibold text-rose-700" data-cost-doc-total="DUTY">Invoice document {formatRp(docD!.document)}</div>}
+                          </td>
                           <td className="px-4 py-3 text-[#5A305A]">{formatRp(dutyExpectedNum)}</td>
                           <td className="px-4 py-3 text-[#5A305A]">{formatRp(dutyActualNum)}</td>
                           {!isEditing && <td className="px-4 py-3 text-[#5A305A]">{formatRp(dutySelisihNum)}</td>}
                           <td className="px-4 py-3 text-center">
-                             {(dutyStatusStr === 'OVERCHARGE' || dutyStatusStr === 'UNDERCHARGE') && liveSummary.duty_total_accepted ? acceptedBadge(null) :
+                             {(dutyStatusStr === 'OVERCHARGE' || dutyStatusStr === 'UNDERCHARGE' || dutyStatusStr === 'SELISIH') && totalAcceptedD ? acceptedBadge(null) :
                              <span className={`inline-flex items-center rounded-md font-bold border whitespace-nowrap uppercase ${
                                dutyStatusStr === 'OK' ? 'px-2.5 py-1 text-[11px] bg-emerald-50 text-emerald-700 border-emerald-200' :
                                dutyStatusStr === 'UNDERCHARGE' ? 'px-3 py-1.5 text-[14px] bg-blue-100 text-blue-700 border-blue-300 shadow-sm' :
@@ -1419,7 +1490,8 @@ export default function CostValidationModal({ awb, jenisDokumen, docId, rawRecor
                     })()}
                   </tbody>
                 </table>
-                
+                <MergedNote items={mergedOf('DUTY')} />
+
                 {!isEditing && Number(data.cv_cn_duty_total) > 0 && (
                   <div className="mt-4 p-4 bg-orange-50 border border-orange-200 rounded-lg">
                     <h3 className="font-bold text-orange-900 mb-2 flex items-center">

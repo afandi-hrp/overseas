@@ -1,5 +1,50 @@
 <!-- Dipindah dari CLAUDE.md 2026-10-06 (CLAUDE.md diringkas; file ini dibaca saat modulnya dikerjakan). -->
 
+## Cost Validation — perbaikan rule & notifikasi (2026-10-19, permintaan user; mockup `mockup_cost_validation_rule.html`, TANPA SQL)
+
+**Keputusan user**: (1) perbaikan baris dobel **HANYA di tampilan** -- data `tabel_cost_validasi` TIDAK diubah, n8n tidak disentuh;
+(2) **Undercharge belum di-Accept TETAP dihitung OK** (keputusan 2026-10-15 dipertahankan) walau sekarang muncul di notifikasi.
+Satu sumber: `src/utils/CourierCostNormalize.ts` + `computeLiveCostSummary(data, jenis, reviews, ctx)` -> panel Invoice Recap,
+Details, popup Audit, jendela List Audit, Finance Handover, badge/KPI/needs attention/kunci Submit SAMA.
+- **Akar masalah (data production 2026-10-19)**: upload ulang -> n8n MENAMBAH "OTHER CHARGES" RULE_NOT_FOUND ke baris lama yang
+  tertaut PIB/CN DAN membuat baris baru yang TIDAK tertaut (`pib_id`/`cn_id` kosong; 74 AWB punya >1 baris, 210 baris). App membaca
+  baris tertaut (`.eq(pib_id/cn_id)` terbaru) -> yang dobel. Perbaikan di n8n (upsert/ganti, bukan append) BELUM -- di luar repo.
+- **A. Normalisasi tampilan** (`normalizeCourierCostView`, idempotent `_cv_view`): item `RULE_NOT_FOUND` di `cv_other_charges_*`
+  DITANDAI `_merged_into` (TIDAK dihapus -> index array tetap utk Edit / Potong CN / `fn_update_actual_value` ber-index): nilai 0 ->
+  "(empty line)"; nama storage/bonded/gudang -> Bonded Storage (Actual storage kosong diisi nilai itu di tampilan); nama sama dgn item
+  rule lain; nilai sama (±Rp1) dgn item rule lain / baris utama invoice yang sama. Selain itu tetap RULE NOT FOUND. **TOTAL selalu
+  dihitung ulang rumus `fn_recompute_totals`** (total tersimpan n8n kadang tanpa Bonded Storage, mis. 160 vs 14.660). Details:
+  baris ditandai disembunyikan + keterangan "Duplicate line hidden: … → …" (`MergedNote`); **mode Edit memakai baris DB asli**
+  (`rawData`: editForm, pembanding simpan, estimasi storage) -> baris dobel tampil lagi saat Edit.
+- **A4. TOTAL vs dokumen invoice** (`courierInvoiceDocTotal`, ctx dari `rekapan_courier` per pib_id/cn_id): Freight = SUM(total_amount)
+  invoice FREIGHT; Duty = SUM(courier_adm_fee) invoice DUTY (+ SUM(total_duty_tax) bila Duty & Tax ikut divalidasi, `cv_import_export_duties`
+  > 0) -- total_amount Duty memuat BM/PPN/PPh yang TIDAK divalidasi di Cost. Tidak dibandingkan bila ada Credit Note di bagian itu.
+  Beda > Rp1.000 -> diff row `doc_total_freight|duty` "TOTAL vs invoice document" status SELISIH (Difference, bisa Accept per baris),
+  TOTAL tabel "SELISIH" + "Invoice document Rp …". Dicek production: Freight 93/96, Duty 105/110 cocok; sisanya selisih nyata.
+- **B. Notifikasi "Cost differences"** (`CourierCostSummary`): SEMUA status selain OK & N/A -- OVERCHARGE | UNDERCHARGE | SELISIH |
+  RULE NOT FOUND | ZONE NOT FOUND | Menunggu Invoice Freight, termasuk baris Other charges (dulu tidak dihitung sama sekali; kunci
+  `other_freight_<idx>` / `other_duty_<idx>`, status SAMA tabel Details). Kartu model lama; tombol: Accept + **Edit** (buka Details);
+  ZONE NOT FOUND -> **Edit Shipment Info** (Details langsung mode Edit, prop `startEditing`); Menunggu -> chip + link **"lihat Checklist"**
+  (pindah tab Checklist, tanpa Accept). Teks kosong "No cost difference to review." Accepted tetap di "Show accepted (n)".
+  Kotak Details: NOT FOUND = Difference; tile **"Menunggu"** (amber) hanya bila ada. Label "Menunggu Invoice Freight"/"lihat Checklist"
+  SENGAJA Bahasa Indonesia mengikuti teks spek user (pengecualian aturan translasi).
+- **C. ZONE NOT FOUND ikut Checklist** (`courierFreightDerived`, ctx dari `dokumen_checklist`): HANYA bila `cv_freight_status` =
+  ZONE_NOT_FOUND -> Freight, Fuel & VAT freight berstatus sama: `ada_invoice_freight` false = **WAITING_FREIGHT** (kategori sendiri
+  `total_waiting`: bukan Difference, tapi ikut penyebut -> belum 100%, Submit tetap terkunci); di `accepted_docs` + Checklist Note terisi
+  (aturan Valid (note) sql/049) = **N/A**; invoice ada = **ZONE_NOT_FOUND** (Difference). Data production: 15 baris ZNF tertaut = 11
+  menunggu + 4 accept-with-note. Bonus: Fuel 0/0 berstatus "OK" di baris ZNF tidak lagi dihitung OK. C4 (validasi ulang saat Invoice
+  Freight menyusul) = n8n (di luar repo).
+- `fetchCourierCostContexts(items)` (batch 50, gagal -> konteks kosong = perilaku lama) dipanggil `fetchCourierValidationBadgePct`,
+  `CourierCostSummary` (+ poll 30 dtk) & `CostValidationModalLegacy`. `classifyRow`: hanya ditambah `*_NOT_FOUND`=SELISIH &
+  WAITING_FREIGHT=WAIT (Undercharge TIDAK diubah). `CostValidationModal.tsx` (versi non-Legacy) tidak dirender di mana pun -- tidak diubah.
+- **Efek ke persen**: record dgn Other charges SELISIH/RULE NOT FOUND, TOTAL ≠ dokumen invoice, atau freight ZNF kini < 100% (dulu
+  bisa 100%) -> badge kartu/needs attention/kunci Submit ikut.
+- **Diuji** dgn baris production asli (dump read-only): logika 30 cek (dobel 878021573327 -> 1.126.213 & 14.660, total n8n dihitung
+  ulang, 878418271103 Menunggu/N/A/ZNF/tanpa konteks, total vs dokumen, RNF asli tetap, Accept RNF, Undercharge tetap OK, idempotent) +
+  render jsdom 25 cek (kartu & tombol panel depan, link Checklist, Edit Shipment Info -> Edit, teks kosong, tabel Details tanpa dobel +
+  keterangan, mode Edit menampilkan data asli, chip & tile Menunggu, Invoice document). `tsc` bersih, `vite build` sukses. Belum dites di
+  production.
+
 ## Revisi Menu Courier -- Audit & Invoice Recap (2026-10-15, permintaan user; mockup `Courier Audit Revisi.html`, TANPA SQL)
 
 - **A. Cost Validation = SATU komponen** `CostValidationModalLegacy` (layout Invoice Recap: tabel Invoice Freight / Invoice Duty Validation,

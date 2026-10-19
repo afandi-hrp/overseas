@@ -4,6 +4,10 @@
 // JANGAN duplikat logic ini di tempat lain -- kalau aturan visibilitas/klasifikasi baris
 // berubah, cukup ubah di sini, otomatis konsisten di kedua tempat.
 import { courierCnStates, courierHasStorage, courierStorageSaved, isCourierRulesRecord, type CnSide } from './CourierRecapRules';
+import {
+  normalizeCourierCostView, courierFreightDerived, courierInvoiceDocTotal, parseCostArray, parseAdjustments,
+  type CourierCostContext, type FreightDerived,
+} from './CourierCostNormalize';
 
 export function isRowVisible(status: string | undefined, expected: any, actual?: any): boolean {
   const isNa = !status || status.toUpperCase() === 'N/A';
@@ -14,9 +18,14 @@ export function isRowVisible(status: string | undefined, expected: any, actual?:
   return !(isEmptyEx && isEmptyAc);
 }
 
-function classifyRow(status: any, selisih?: number): 'OK' | 'SELISIH' | 'NA' {
+// Revisi 2026-10-19: RULE/ZONE/RATE NOT FOUND = Difference; WAITING_FREIGHT ("Menunggu Invoice Freight") = kategori
+// sendiri (bukan Difference, tapi ikut penyebut -> belum 100%). Undercharge belum di-Accept TETAP OK (keputusan user
+// 2026-10-15, dikonfirmasi lagi 2026-10-19).
+function classifyRow(status: any, selisih?: number): 'OK' | 'SELISIH' | 'NA' | 'WAIT' {
   const s = (status || '').toString().toUpperCase();
   if (s === 'OK') return 'OK';
+  if (s === 'WAITING_FREIGHT') return 'WAIT';
+  if (s.endsWith('_NOT_FOUND')) return 'SELISIH';
   if (['SELISIH', 'OVERCHARGE', 'UNDERCHARGE'].includes(s)) {
     let direction = s;
     if (direction === 'SELISIH' && selisih !== undefined && selisih !== null && !isNaN(selisih)) {
@@ -46,8 +55,11 @@ export type CostReviewSection = 'FREIGHT' | 'DUTY';
 export type CostItemReview = { status: 'MATCH' | 'MISMATCH'; expected: number | null; actual: number | null };
 export type CostReviewMap = Partial<Record<CostReviewSection, 'MATCH' | 'MISMATCH'>> & { items?: Record<string, CostItemReview> };
 
-// Baris biaya yang punya selisih (Overcharge / Undercharge / Difference) -- sumber ringkasan panel Validation.
-// `accepted`: 'item' = di-Accept per baris (sql/041), 'section' = invoice di-Accept (review per invoice sql/038).
+// Baris biaya berstatus selain OK & N/A -- sumber notifikasi "Cost differences" panel Validation (revisi 2026-10-19:
+// dulu hanya Overcharge/Undercharge/Difference; kini + RULE/ZONE NOT FOUND, Menunggu Invoice Freight, Selisih total vs
+// dokumen invoice, termasuk baris Other charges). `accepted`: 'item' = di-Accept per baris (sql/041), 'section' = invoice
+// di-Accept (review per invoice sql/038). WAITING_FREIGHT tidak bisa di-Accept (selesai lewat Checklist).
+export type CostDiffStatus = 'OVERCHARGE' | 'UNDERCHARGE' | 'DIFFERENCE' | 'SELISIH' | 'RULE_NOT_FOUND' | 'ZONE_NOT_FOUND' | 'RATE_NOT_FOUND' | 'WAITING_FREIGHT';
 export type CostDiffRow = {
   key: string;
   section: CostReviewSection;
@@ -55,7 +67,7 @@ export type CostDiffRow = {
   expected: number | null;
   actual: number | null;
   selisih: number | null;
-  status: 'OVERCHARGE' | 'UNDERCHARGE' | 'DIFFERENCE';
+  status: CostDiffStatus;
   accepted: 'item' | 'section' | null;
   // Pernah di-Accept per baris tapi nilainya berubah sesudahnya.
   stale: boolean;
@@ -73,6 +85,11 @@ export type CostValidationSummary = {
   duty_total_accepted?: boolean;
   total_selisih: number;
   total_na: number;
+  // Baris "Menunggu Invoice Freight" (bukan Difference, tapi ikut total_cost_cek -> belum 100%).
+  total_waiting?: number;
+  // Status turunan baris Freight dari Checklist (C) & cek TOTAL vs dokumen invoice (A4) -- dipakai tabel Details.
+  freight_derived?: FreightDerived;
+  doc_check?: Partial<Record<CostReviewSection, { document: number; actual: number; match: boolean; accepted: boolean }>>;
   status_cost: 'OK' | 'ADA SELISIH' | 'N/A';
   invoice_freight_status: 'OK' | 'N/A' | 'ADA SELISIH';
   invoice_duty_status: 'OK' | 'N/A' | 'ADA SELISIH';
@@ -97,6 +114,7 @@ const resolveDiffStatus = (status: any, selisih: number | null): CostDiffRow['st
   const s = (status || '').toString().toUpperCase();
   if (s === 'OVERCHARGE') return 'OVERCHARGE';
   if (s === 'UNDERCHARGE') return 'UNDERCHARGE';
+  if (s === 'RULE_NOT_FOUND' || s === 'ZONE_NOT_FOUND' || s === 'RATE_NOT_FOUND' || s === 'WAITING_FREIGHT') return s;
   if (s === 'SELISIH') {
     if (selisih !== null && selisih > 1000) return 'OVERCHARGE';
     if (selisih !== null && selisih < -1000) return 'UNDERCHARGE';
@@ -109,12 +127,19 @@ const resolveDiffStatus = (status: any, selisih: number | null): CostDiffRow['st
 // baris yang BENERAN tampil di tabel Invoice Freight Validation & Invoice Duty Validation,
 // bukan dibaca langsung dari kolom tersimpan (total_cost_cek/status_cost dst, yang cuma diisi
 // n8n waktu data pertama dibuat dan tidak ikut ter-update saat user edit manual).
-export function computeLiveCostSummary(data: any, jenisDokumen?: string | null, reviews?: CostReviewMap | null): CostValidationSummary {
-  if (!data) {
-    return { total_cost_cek: 0, total_ok: 0, total_accepted: 0, total_selisih: 0, total_na: 0, status_cost: 'N/A', invoice_freight_status: 'N/A', invoice_duty_status: 'N/A', pct: 0, section_diff: { FREIGHT: false, DUTY: false }, diff_rows: [] };
+// Revisi 2026-10-19: `data` dinormalisasi dulu (normalizeCourierCostView: baris dobel OTHER CHARGES ditandai, TOTAL dihitung
+// ulang rumus fn_recompute_totals); `ctx` (fetchCourierCostContexts) = status Invoice Freight di Checklist + total dokumen
+// invoice. Tanpa ctx: status freight & cek total dokumen tidak diterapkan (perilaku lama).
+export function computeLiveCostSummary(dataRaw: any, jenisDokumen?: string | null, reviews?: CostReviewMap | null, ctx?: CourierCostContext | null): CostValidationSummary {
+  if (!dataRaw) {
+    return { total_cost_cek: 0, total_ok: 0, total_accepted: 0, total_selisih: 0, total_na: 0, total_waiting: 0, status_cost: 'N/A', invoice_freight_status: 'N/A', invoice_duty_status: 'N/A', pct: 0, section_diff: { FREIGHT: false, DUTY: false }, diff_rows: [] };
   }
+  const data = normalizeCourierCostView(dataRaw);
 
   const isPib = (jenisDokumen || data.jenis_dokumen || '').toUpperCase() === 'PIB';
+  // C: baris Freight ZONE_NOT_FOUND mengikuti Checklist -> Freight, Fuel & VAT freight berstatus sama.
+  const freightDerived = courierFreightDerived(data, ctx);
+  const FREIGHT_KEYS = ['freight', 'fuel', 'vat_freight'];
 
   // `key` = kunci Accept per baris (sql/041); `exp`/`act` = kolom Expected/Actual baris itu (snapshot Accept).
   const mainFields = [
@@ -129,24 +154,34 @@ export function computeLiveCostSummary(data: any, jenisDokumen?: string | null, 
     { key: 'vat_duty', label: 'VAT duty', exp: 'cv_vat_duty_expected', act: 'cv_vat_duty_actual_net', sec: 'DUTY', visible: isRowVisible(data.cv_vat_duty_status, data.cv_vat_duty_expected, data.cv_vat_duty_actual_net), status: data.cv_vat_duty_status, selisih: Number(data.cv_vat_duty_selisih) },
   ];
 
-  let total_ok = 0, total_selisih = 0, total_na = 0, total_accepted = 0;
+  if (freightDerived) {
+    mainFields.forEach(f => {
+      if (!FREIGHT_KEYS.includes(f.key)) return;
+      f.status = freightDerived;
+      f.selisih = NaN;
+      if (freightDerived !== 'N/A') f.visible = true;
+    });
+  }
+
+  let total_ok = 0, total_selisih = 0, total_na = 0, total_accepted = 0, total_waiting = 0;
   const rowDiff = { FREIGHT: false, DUTY: false };
   const diff_rows: CostDiffRow[] = [];
-  mainFields.forEach(f => {
-    if (!f.visible) return;
-    const sec = f.sec as CostReviewSection;
-    const selisihNum = isNaN(f.selisih) ? null : f.selisih;
-    const itemRev = reviews?.items?.[f.key];
-    const itemOk = itemReviewValid(itemRev, data[f.exp], data[f.act]);
-    const sectionOk = reviews?.[sec] === 'MATCH';
-    const diffStatus = resolveDiffStatus(f.status, selisihNum);
+  // 1 baris biaya -> diff_rows (status selain OK/N/A) + hitungan kotak OK/Accepted/Difference/N/A/Menunggu.
+  const countRow = (key: string, sec: CostReviewSection, label: string, status: any, selisihRaw: number | null, expected: any, actual: any) => {
+    const selisihNum = selisihRaw === null || isNaN(selisihRaw) ? null : selisihRaw;
+    const itemRev = reviews?.items?.[key];
+    const diffStatus = resolveDiffStatus(status, selisihNum);
+    const waiting = diffStatus === 'WAITING_FREIGHT';
+    // Menunggu Invoice Freight tidak bisa di-Accept (selesai lewat Checklist).
+    const itemOk = !waiting && itemReviewValid(itemRev, expected, actual);
+    const sectionOk = !waiting && reviews?.[sec] === 'MATCH';
     if (diffStatus) {
       diff_rows.push({
-        key: f.key, section: sec, label: f.label, expected: numOrNull(data[f.exp]), actual: numOrNull(data[f.act]), selisih: selisihNum,
-        status: diffStatus, accepted: itemOk ? 'item' : sectionOk ? 'section' : null, stale: !!itemRev && !itemOk,
+        key, section: sec, label, expected: numOrNull(expected), actual: numOrNull(actual), selisih: selisihNum,
+        status: diffStatus, accepted: itemOk ? 'item' : sectionOk ? 'section' : null, stale: !!itemRev && !itemOk && !waiting,
       });
     }
-    let cls = classifyRow(f.status, f.selisih);
+    let cls = classifyRow(status, selisihNum ?? undefined);
     if (cls === 'SELISIH') {
       rowDiff[sec] = true;
       if (sectionOk || itemOk) cls = 'OK';
@@ -155,8 +190,32 @@ export function computeLiveCostSummary(data: any, jenisDokumen?: string | null, 
     if (diffStatus && (sectionOk || itemOk) && cls === 'OK') total_accepted++;
     if (cls === 'OK') total_ok++;
     else if (cls === 'SELISIH') total_selisih++;
+    else if (cls === 'WAIT') total_waiting++;
     else total_na++;
+  };
+  mainFields.forEach(f => {
+    if (!f.visible) return;
+    countRow(f.key, f.sec as CostReviewSection, f.label, f.status, f.selisih, data[f.exp], data[f.act]);
   });
+  // Other charges (revisi 2026-10-19: ikut dihitung & dinotifikasi -- dulu tidak dihitung sama sekali). Status SAMA tabel
+  // Details (renderOtherChargesRows): Expected ada & status tidak diatur manual -> OK bila |Actual − adjustment CN − Expected|
+  // <= Rp 1.000, selain itu SELISIH. Item STORAGE & item yang ditandai dobel (_merged_into) dilewati.
+  ([['FREIGHT', 'cv_other_charges_freight', 'cv_other_freight_adjustments'], ['DUTY', 'cv_other_charges_duty', 'cv_other_duty_adjustments']] as const)
+    .forEach(([sec, field, adjField]) => {
+      const adj = parseAdjustments(data[adjField]);
+      parseCostArray(data[field]).forEach((it: any, i: number) => {
+        if (!it || it._merged_into || String(it.status || '').toUpperCase() === 'STORAGE') return;
+        const actual = (Number(it.actual) || 0) - (adj[i] || 0);
+        let selisih = numOrNull(it.selisih);
+        let status = String(it.status || '').toUpperCase();
+        if (it.expected !== null && it.expected !== undefined && it.expected !== '' && !it.status_manual) {
+          selisih = actual - Number(it.expected);
+          status = Math.abs(selisih) <= 1000 ? 'OK' : 'SELISIH';
+        }
+        countRow(`other_${sec === 'FREIGHT' ? 'freight' : 'duty'}_${i}`, sec, String(it.name || it.surcharge_name || 'Other charge'),
+          status, selisih, it.expected, actual);
+      });
+    });
 
   let invoiceFreightStatus = data.cv_total_freight_status || 'N/A';
   const freightAdj = sumAdjustments(data.cv_other_freight_adjustments);
@@ -175,6 +234,31 @@ export function computeLiveCostSummary(data: any, jenisDokumen?: string | null, 
     else if (dutyActualNum > dutyExpectedNum) invoiceDutyStatus = 'OVERCHARGE';
     else invoiceDutyStatus = 'UNDERCHARGE';
   }
+
+  // A4 (2026-10-19): TOTAL Actual harus = total dokumen invoice (courierInvoiceDocTotal). Beda > Rp 1.000 -> baris "TOTAL vs
+  // invoice document" berstatus SELISIH (Difference, bisa di-Accept per baris). Cocok / tidak dibandingkan -> tidak dihitung.
+  const doc_check: CostValidationSummary['doc_check'] = {};
+  (['FREIGHT', 'DUTY'] as const).forEach(sec => {
+    const document = courierInvoiceDocTotal(data, sec, ctx);
+    if (document === null) return;
+    const actual = Number(sec === 'FREIGHT' ? data.cv_total_freight_actual : data.cv_total_duty_actual) || 0;
+    const match = Math.abs(actual - document) <= 1000;
+    let accepted = false;
+    if (!match) {
+      const key = `doc_total_${sec === 'FREIGHT' ? 'freight' : 'duty'}`;
+      const itemRev = reviews?.items?.[key];
+      const itemOk = itemReviewValid(itemRev, document, actual);
+      const sectionOk = reviews?.[sec] === 'MATCH';
+      accepted = itemOk || sectionOk;
+      diff_rows.push({
+        key, section: sec, label: 'TOTAL vs invoice document', expected: document, actual, selisih: actual - document,
+        status: 'SELISIH', accepted: itemOk ? 'item' : sectionOk ? 'section' : null, stale: !!itemRev && !itemOk,
+      });
+      rowDiff[sec] = true;
+      if (accepted) { total_ok++; total_accepted++; } else total_selisih++;
+    }
+    doc_check[sec] = { document, actual, match, accepted };
+  });
 
   const isOverchargeLike = (s: string) => s === 'OVERCHARGE' || s === 'SELISIH';
   const section_diff = { FREIGHT: rowDiff.FREIGHT || isOverchargeLike(invoiceFreightStatus), DUTY: rowDiff.DUTY || isOverchargeLike(invoiceDutyStatus) };
@@ -205,6 +289,9 @@ export function computeLiveCostSummary(data: any, jenisDokumen?: string | null, 
   const duty_total_accepted = (reviews?.DUTY === 'MATCH' || dutyTotalOk) && isDiffLike(invoiceDutyStatus);
   if ((reviews?.FREIGHT === 'MATCH' || freightTotalOk) && isOverchargeLike(invoiceFreightStatus)) invoiceFreightStatus = 'OK';
   if ((reviews?.DUTY === 'MATCH' || dutyTotalOk) && isOverchargeLike(invoiceDutyStatus)) invoiceDutyStatus = 'OK';
+  // Total vs dokumen invoice belum cocok & belum di-Accept -> invoice itu tetap berselisih.
+  if (doc_check.FREIGHT && !doc_check.FREIGHT.match && !doc_check.FREIGHT.accepted) invoiceFreightStatus = 'SELISIH';
+  if (doc_check.DUTY && !doc_check.DUTY.match && !doc_check.DUTY.accepted) invoiceDutyStatus = 'SELISIH';
   const overallStatusCost = (isOverchargeLike(invoiceFreightStatus) || isOverchargeLike(invoiceDutyStatus)) ? 'ADA SELISIH' : 'OK';
 
   // Syarat 100% tambahan (2026-10-14): tiap Credit Note = 1 cek (OK bila sisa subtotal & VAT = 0), Bonded storage = 1 cek
@@ -218,7 +305,7 @@ export function computeLiveCostSummary(data: any, jenisDokumen?: string | null, 
     if (courierHasStorage(data)) { if (storage_pending) total_selisih++; else total_ok++; }
   }
 
-  const total_cost_cek = total_ok + total_selisih;
+  const total_cost_cek = total_ok + total_selisih + total_waiting;
 
   return {
     total_cost_cek,
@@ -228,6 +315,9 @@ export function computeLiveCostSummary(data: any, jenisDokumen?: string | null, 
     duty_total_accepted,
     total_selisih,
     total_na,
+    total_waiting,
+    freight_derived: freightDerived,
+    doc_check,
     status_cost: overallStatusCost,
     invoice_freight_status: classifyRow(invoiceFreightStatus) === 'NA' ? 'N/A' : (classifyRow(invoiceFreightStatus) === 'OK' ? 'OK' : 'ADA SELISIH'),
     invoice_duty_status: classifyRow(invoiceDutyStatus) === 'NA' ? 'N/A' : (classifyRow(invoiceDutyStatus) === 'OK' ? 'OK' : 'ADA SELISIH'),

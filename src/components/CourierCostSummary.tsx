@@ -1,6 +1,7 @@
 // Ringkasan Cost Validation di panel Validation Invoice Recap Courier (2026-10-05, keputusan user).
-// - HANYA baris biaya Overcharge / Undercharge / Difference (N/A & OK tidak tampil) -- daftar & persen dari
-//   `computeLiveCostSummary` (SATU sumber, sama badge kartu/KPI & tabel lengkap).
+// - Revisi 2026-10-19: SEMUA baris berstatus selain OK & N/A (Over/Undercharge, Selisih, RULE/ZONE NOT FOUND, Menunggu Invoice
+//   Freight, TOTAL vs dokumen invoice, termasuk Other charges) -- daftar & persen dari `computeLiveCostSummary` + konteks
+//   `fetchCourierCostContexts` (SATU sumber, sama badge kartu/KPI & tabel lengkap). Lihat docs/claude/courier-features.md.
 // - Accept PER BARIS (sql/041): catatan alasan WAJIB, snapshot Expected/Actual; baris yang di-Accept hilang dari
 //   daftar. Kalau nilainya berubah sesudahnya (upload susulan -> n8n menghitung ulang), Accept gugur & baris muncul
 //   lagi (ditandai "values changed since accepted"). Review per invoice lama (sql/038) tetap dihormati.
@@ -23,6 +24,7 @@ import { useAuth } from '../lib/AuthContext';
 import { LoadingSpinner } from './LoadingState';
 import { VW_BTN_PRIMARY, VW_BTN_SECONDARY, VW_INPUT, vwPctBar, vwPctText } from './validationWindowStyles';
 import { computeLiveCostSummary, type CostDiffRow } from '../utils/CostValidationHelpers';
+import { fetchCourierCostContexts, courierCostCtxKey, type CourierCostContext } from '../utils/CourierCostNormalize';
 import {
   fetchCourierCostReviews, reviewMapOf, saveCourierCostItemReview, deleteCourierCostItemReview,
   type CourierCostReviews, type CourierCostItemReviewRow,
@@ -35,7 +37,12 @@ import CourierCreditNoteBox, { CnLogList, cnNosOf, cnSideLabel, type CnInvoiceIn
 
 export const COST_SUMMARY_POLL_MS = 30000;
 
-const STATUS_LABEL: Record<CostDiffRow['status'], string> = { OVERCHARGE: 'Overcharge', UNDERCHARGE: 'Undercharge', DIFFERENCE: 'Difference' };
+// Revisi 2026-10-19: notifikasi menampilkan SEMUA status selain OK & N/A. Label "Menunggu Invoice Freight" mengikuti teks spek user.
+const STATUS_LABEL: Record<CostDiffRow['status'], string> = {
+  OVERCHARGE: 'Overcharge', UNDERCHARGE: 'Undercharge', DIFFERENCE: 'Difference', SELISIH: 'Selisih',
+  RULE_NOT_FOUND: 'Rule not found', ZONE_NOT_FOUND: 'Zone not found', RATE_NOT_FOUND: 'Rate not found', WAITING_FREIGHT: 'Menunggu Invoice Freight',
+};
+const STATUS_TEXT: Partial<Record<CostDiffRow['status'], string>> = { UNDERCHARGE: 'text-[#7A4F00]', WAITING_FREIGHT: 'text-[#7A4F00]', ZONE_NOT_FOUND: 'text-[#C2410C]' };
 const fmtDateTime = (v: any) => {
   if (!v) return '';
   const d = new Date(v);
@@ -121,12 +128,14 @@ const StorageEstimateBox: React.FC<{ data: any; docType: string; canEdit: boolea
   );
 };
 
-export default function CourierCostSummary({ docType, auditId, canEdit, reloadKey = 0, onOpenDetails, onPctChange, onChanged, cnInvoices = [] }: {
+export default function CourierCostSummary({ docType, auditId, canEdit, reloadKey = 0, onOpenDetails, onOpenChecklist, onEditShipment, onPctChange, onChanged, cnInvoices = [] }: {
   docType: string;
   auditId: any;
   canEdit: boolean;
   reloadKey?: number;
   onOpenDetails?: () => void;
+  onOpenChecklist?: () => void;   // kartu "Menunggu Invoice Freight" -> tab Checklist panel
+  onEditShipment?: () => void;    // kartu "Zone not found" -> Details dalam mode Edit (Edit Shipment Info)
   onPctChange?: (pct: number | null) => void;
   onChanged?: () => void;
   cnInvoices?: CnInvoiceInfo[]; // invoice Credit Note AWB ini (nomor & tanggal email) utk label kartu CN
@@ -135,6 +144,7 @@ export default function CourierCostSummary({ docType, auditId, canEdit, reloadKe
   const isCn = String(docType || '').toUpperCase() === 'CN';
   const [data, setData] = useState<any>(null);
   const [reviews, setReviews] = useState<CourierCostReviews>({});
+  const [ctx, setCtx] = useState<CourierCostContext | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [accepting, setAccepting] = useState<string | null>(null);
   const [note, setNote] = useState('');
@@ -148,13 +158,15 @@ export default function CourierCostSummary({ docType, auditId, canEdit, reloadKe
 
   const load = useCallback(async () => {
     const my = ++seq.current;
-    const [{ data: rows }, rv] = await Promise.all([
+    const [{ data: rows }, rv, ctxMap] = await Promise.all([
       supabase.from('tabel_cost_validasi').select('*').eq(isCn ? 'cn_id' : 'pib_id', auditId).order('created_at', { ascending: false }).limit(1),
       fetchCourierCostReviews(docType, auditId),
+      fetchCourierCostContexts([{ docType, id: auditId }]),
     ]);
     if (my !== seq.current) return;
     setData(rows && rows.length > 0 ? rows[0] : null);
     setReviews(rv);
+    setCtx(ctxMap[courierCostCtxKey(docType, auditId)] || null);
     setLoaded(true);
   }, [auditId, docType, isCn]);
 
@@ -164,7 +176,7 @@ export default function CourierCostSummary({ docType, auditId, canEdit, reloadKe
     return () => clearInterval(iv);
   }, [load]);
 
-  const summary = useMemo(() => computeLiveCostSummary(data, docType, reviewMapOf(reviews)), [data, docType, reviews]);
+  const summary = useMemo(() => computeLiveCostSummary(data, docType, reviewMapOf(reviews), ctx), [data, docType, reviews, ctx]);
   const pct = data ? summary.pct : null;
   useEffect(() => { if (loaded) onPctChange?.(pct); }, [loaded, pct, onPctChange]);
 
@@ -236,22 +248,41 @@ export default function CourierCostSummary({ docType, auditId, canEdit, reloadKe
       {!data ? (
         <div className="rounded-xl border border-[#EADFD6] bg-white px-3 py-2.5 text-[12px] text-[#6E5E70]">No cost validation for this shipment yet.</div>
       ) : open.length === 0 ? (
-        <div className="rounded-xl border border-[#BFE3CD] bg-[#EAF6EF] px-3 py-2.5 text-[12px] font-semibold text-[#17663D]">No overcharge or undercharge to review.</div>
-      ) : open.map(r => (
-        <div key={r.key} data-cost-diff={r.key} className="rounded-r-xl border-l-[3px] border-l-[#A8231A] bg-[#FFF8F7] border border-[#F4C3BC] px-3 py-2">
+        <div className="rounded-xl border border-[#BFE3CD] bg-[#EAF6EF] px-3 py-2.5 text-[12px] font-semibold text-[#17663D]">No cost difference to review.</div>
+      ) : open.map(r => {
+        // Kartu SAMA model mismatch lama; "Menunggu Invoice Freight" kuning + link Checklist (tanpa Accept); Zone not found -> Edit Shipment Info.
+        const waiting = r.status === 'WAITING_FREIGHT';
+        const zone = r.status === 'ZONE_NOT_FOUND';
+        return (
+        <div key={r.key} data-cost-diff={r.key} data-cost-status={r.status}
+          className={`rounded-r-xl border-l-[3px] px-3 py-2 border ${waiting ? 'border-l-[#C98A00] bg-[#FFF8E6] border-[#F2D58A]' : 'border-l-[#A8231A] bg-[#FFF8F7] border-[#F4C3BC]'}`}>
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="text-[12.5px] font-semibold text-[#3B1B3D]">{r.label}</div>
               <div className="text-[11px] text-[#6E5E70]">Invoice {r.section === 'FREIGHT' ? 'freight' : 'duty'}{r.stale ? ' · values changed since accepted' : ''}</div>
             </div>
-            <span className={`shrink-0 text-[11px] font-bold ${r.status === 'UNDERCHARGE' ? 'text-[#7A4F00]' : 'text-[#A8231A]'}`}>{STATUS_LABEL[r.status]}</span>
+            <span className={`shrink-0 text-[11px] font-bold ${STATUS_TEXT[r.status] || 'text-[#A8231A]'}`}>{STATUS_LABEL[r.status]}</span>
           </div>
           <div className="text-[12px] text-[#3B1B3D] mt-1 tabular-nums">
-            Expected {r.expected === null ? '—' : fmtRp(r.expected)} · Actual {r.actual === null ? '—' : fmtRp(r.actual)} · <b>{fmtDiff(r.selisih)}</b>
+            Expected {r.expected === null ? '—' : fmtRp(r.expected)} · Actual {r.actual === null ? '—' : fmtRp(r.actual)}{waiting ? '' : <> · <b>{fmtDiff(r.selisih)}</b></>}
           </div>
-          {canEdit && accepting !== r.key && (
+          {waiting && (
             <div className="flex justify-end mt-1">
-              <button type="button" className={VW_BTN_SECONDARY} onClick={() => { setAccepting(r.key); setNote(''); }}>Accept</button>
+              <button type="button" data-open-checklist className="text-[11.5px] font-semibold text-[#6B3470] hover:underline disabled:opacity-50" disabled={!onOpenChecklist} onClick={() => onOpenChecklist?.()}>
+                lihat Checklist
+              </button>
+            </div>
+          )}
+          {!waiting && canEdit && accepting !== r.key && (
+            <div className="flex justify-end gap-2 mt-1">
+              {zone ? (
+                onEditShipment && <button type="button" data-edit-shipment className={VW_BTN_SECONDARY} onClick={onEditShipment}>Edit Shipment Info</button>
+              ) : (
+                <>
+                  {onOpenDetails && <button type="button" data-cost-edit className={VW_BTN_SECONDARY} onClick={onOpenDetails}>Edit</button>}
+                  <button type="button" className={VW_BTN_SECONDARY} onClick={() => { setAccepting(r.key); setNote(''); }}>Accept</button>
+                </>
+              )}
             </div>
           )}
           {canEdit && accepting === r.key && (
@@ -266,7 +297,8 @@ export default function CourierCostSummary({ docType, auditId, canEdit, reloadKe
             </div>
           )}
         </div>
-      ))}
+        );
+      })}
       {(acceptedRows.length > 0 || cnDone.length > 0 || (hasStorage && storageSaved && !editStorage)) && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1" data-cost-toggles>
           {acceptedRows.length > 0 && (

@@ -287,6 +287,8 @@ export default function CourierRecapValidationPanel({
   const [checklistDirty, setChecklistDirty] = useState(false)
   useEffect(() => { onDirtyChange?.(checklistDirty) }, [checklistDirty, onDirtyChange])
   const [details, setDetails] = useState<'doc' | 'cost' | null>(null)
+  // Details Cost dibuka dari kartu "Zone not found" -> langsung mode Edit (panel Edit Shipment Info). Reset saat ditutup.
+  const [costDetailsEdit, setCostDetailsEdit] = useState(false)
   // Jendela Details (tabel lama) HANYA menyegarkan ringkasan & daftar kartu kalau ada perubahan yang benar-benar tersimpan di dalamnya
   // (2026-10-09, laporan user: tutup Details tanpa mengubah apa pun tidak boleh memicu update baris/daftar).
   const detailsMutatedRef = useRef(false)
@@ -299,6 +301,7 @@ export default function CourierRecapValidationPanel({
     if (details === 'doc' && docDetailsDirtyRef.current && !window.confirm('Discard the unsaved changes in Doc Validation?')) return
     docDetailsDirtyRef.current = false
     setDetails(null)
+    setCostDetailsEdit(false)
     if (detailsMutatedRef.current) { detailsMutatedRef.current = false; bump() }
   }
 
@@ -474,7 +477,9 @@ export default function CourierRecapValidationPanel({
           {rec && access.cost && visited.cost && (
             <div className={tab === 'cost' ? '' : 'hidden'} role="tabpanel">
               <CourierCostSummary docType={docType} auditId={rec.id} canEdit={editOf('cost')} reloadKey={reloadKey} cnInvoices={cnInvoices}
-                onPctChange={onCostPct} onChanged={onChanged} onOpenDetails={() => openDetails('cost')} />
+                onPctChange={onCostPct} onChanged={onChanged} onOpenDetails={() => { setCostDetailsEdit(false); openDetails('cost') }}
+                onOpenChecklist={tabs.includes('checklist') ? () => goTab('checklist') : undefined}
+                onEditShipment={() => { setCostDetailsEdit(true); openDetails('cost') }} />
             </div>
           )}
           {tab === 'invoices' && (
@@ -501,7 +506,8 @@ export default function CourierRecapValidationPanel({
       )}
       {rec && details === 'cost' && (
         <DetailsWindow kind="cost" title={`Cost Validation · ${docType} ${courierDocNo(rec, docType) || ''} · ${rec.awb || ''}`} onClose={closeDetails}>
-          <CostValidationModalLegacy awb={rec.awb} jenisDokumen={docType} docId={rec.id} rawRecord={rec} onClose={closeDetails} canEdit={editOf('cost')} embedded onMutated={markDetailsMutated} />
+          <CostValidationModalLegacy awb={rec.awb} jenisDokumen={docType} docId={rec.id} rawRecord={rec} onClose={closeDetails} canEdit={editOf('cost')} embedded onMutated={markDetailsMutated}
+            startEditing={costDetailsEdit} />
         </DetailsWindow>
       )}
     </div>

@@ -4,6 +4,7 @@
 import { supabase } from '../lib/supabase';
 import { computeLiveCostSummary } from './CostValidationHelpers';
 import { fetchCourierCostReviewMaps } from './CourierCostReviewHelpers';
+import { fetchCourierCostContexts, courierCostCtxKey } from './CourierCostNormalize';
 import { SECTIONS, computeStatus } from './ValidasiHelper';
 import { generateValues } from './ValidasiFill';
 import { calculatePibStats } from './ValidasiPibHelper';
@@ -65,10 +66,12 @@ export async function fetchCourierValidationBadgePct(rows: any[]): Promise<{ doc
     }
   };
   // Review cost per invoice (sql/038) ikut dihitung -- SAMA jendela Validation (computeLiveCostSummary + review).
-  const reviewMaps = await fetchCourierCostReviewMaps([
+  const docItems = [
     ...pibIds.map(id => ({ docType: 'PIB', id })),
     ...cnIds.map(id => ({ docType: 'CN', id })),
-  ]);
+  ];
+  // Konteks revisi 2026-10-19 (status Invoice Freight di Checklist + total dokumen invoice) -- SAMA panel & Details.
+  const [reviewMaps, costCtx] = await Promise.all([fetchCourierCostReviewMaps(docItems), fetchCourierCostContexts(docItems)]);
   const fetchCostPct = async (idKey: 'pib_id' | 'cn_id', ids: any[], keyPrefix: string, jenisDok: 'PIB' | 'CN') => {
     for (let i = 0; i < ids.length; i += chunkSize) {
       const chunk = ids.slice(i, i + chunkSize);
@@ -76,7 +79,7 @@ export async function fetchCourierValidationBadgePct(rows: any[]): Promise<{ doc
       (cvRows || []).forEach((cv: any) => {
         const mapKey = `${keyPrefix}${cv[idKey]}`;
         if (costPctMap[mapKey] !== undefined) return; // sudah ada baris LEBIH BARU (order desc), skip
-        costPctMap[mapKey] = computeLiveCostSummary(cv, jenisDok, reviewMaps[`${jenisDok}:${cv[idKey]}`]).pct;
+        costPctMap[mapKey] = computeLiveCostSummary(cv, jenisDok, reviewMaps[`${jenisDok}:${cv[idKey]}`], costCtx[courierCostCtxKey(jenisDok, cv[idKey])]).pct;
       });
     }
   };
