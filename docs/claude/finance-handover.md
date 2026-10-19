@@ -64,7 +64,7 @@ receipt oleh Admin, lihat di bawah); font
 - **Diuji**: jsdom 53 cek (tile/filter/search/PT, Accept & Mark paid FAR + Sea & Air + RPC, viewer kedua sumber,
   view-only, master vendor, status Recap) + 5 cek toggle Urgent; PGlite 22 cek (035).
 
-## Undo status handover Courier — Paid → Accepted → Approved (2026-10-19, permintaan user; mockup `mockup_undo_handover_1.html`; `sql/068_courier_finance_undo_paid.sql` BELUM DIJALANKAN)
+## Undo status handover Courier — Paid → Accepted → Approved (2026-10-19, permintaan user; mockup `mockup_undo_handover_1.html`; `sql/068_courier_finance_undo_paid.sql` SUDAH DIJALANKAN 2026-10-19, file dihapus -- `git show e3003e9:sql/068_courier_finance_undo_paid.sql`)
 
 Contoh uji user: DHL NO. 2990120674 (Submitted 16 Oct → Accepted 19 Oct → Paid 19 Oct, 2 invoice) -- dulu tidak bisa dibatalkan
 (Undo receipt sql/040 menolak invoice yang sudah Paid; RPC undo Paid belum ada).
