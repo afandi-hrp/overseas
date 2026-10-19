@@ -33,9 +33,11 @@ yang berlaku lintas modul. Rujukan lama di docs berbunyi "lihat CLAUDE.md bagian
 - Data: Supabase (Postgres + RLS + RPC), client `src/lib/supabase.ts`. Auth/akses: `src/lib/AuthContext.tsx`
   (`useAuth()` → `user`, `profile`, `allowedPageKeys`, `isAdmin`, `canEdit(pageKey)`, `canApproveTier`,
   `getAllowedColumns`, `signOut`, `refreshProfile`).
-- `server.ts` (Express) HANYA proxy: upload ke n8n (`/api/n8n-proxy-start`) & preview Google Drive
-  (`/api/drive-file-proxy?id=`). **`npm run dev` (tsx) TIDAK hot-reload `server.ts`** — tiap ubah, restart manual
-  (kalau tidak, endpoint baru jatuh ke SPA fallback & balikin `index.html`, bukan 404). Port dev = `PORT` di `.env` (3002).
+- Backend Express = entry `server.ts` (menyajikan SPA + `/api/*`) + modul di folder `server/` (sejak 2026-10-19):
+  `config.ts`, `auth.ts` (`authorize`/`requireAccess` + rate limit per user), `security.ts`, `logging.ts`, `routes/*` (n8n
+  upload/json, Drive preview, `GET /api/health` tanpa login). Endpoint baru = router baru di `server/routes/` + mount di
+  `server.ts`. `/api/*` tak dikenal -> 404 JSON. **`npm run dev` (tsx) TIDAK hot-reload `server.ts`/`server/`** — tiap ubah,
+  restart manual. Port dev = `PORT` di `.env` (3002).
   Vite watcher bisa crash `EBUSY` kalau ada file yang sedang disalin/terkunci di root proyek — restart `npm run dev`.
 - Verifikasi standar setelah edit: `npx tsc --noEmit` (harus bersih); perubahan besar juga `npx vite build`.
 - `document.title` = `'<Judul Halaman> · BeeHive'`.
@@ -44,8 +46,8 @@ yang berlaku lintas modul. Rujukan lama di docs berbunyi "lihat CLAUDE.md bagian
 ## Keamanan (WAJIB dipatuhi kode baru)
 
 - **Endpoint `server.ts` `/api/*` WAJIB login**: frontend lewat `apiFetch()` (`src/lib/apiFetch.ts`, bearer token
-  hanya ke URL relatif `/api/`); server `authorize()` (verifikasi token + `get_my_access()`, aturan `UPLOAD_ACCESS`/
-  `DRIVE_PREVIEW_ACCESS`). Endpoint baru WAJIB `authorize()`; pemanggil baru WAJIB `apiFetch`, JANGAN `fetch` polos.
+  hanya ke URL relatif `/api/`); server `authorize()` (`server/auth.ts`: verifikasi token + `get_my_access()` + rate limit,
+  aturan `UPLOAD_ACCESS`/`DRIVE_PREVIEW_ACCESS` di `server/routes/`). Endpoint baru WAJIB `authorize()`/`requireAccess()`; pemanggil baru WAJIB `apiFetch`, JANGAN `fetch` polos.
   Env runtime wajib `SUPABASE_URL`+`SUPABASE_ANON_KEY` (fallback `VITE_*`), tanpa itu `/api/*` 503. `x-webhook-url`
   hanya ke origin n8n terdaftar (`VITE_N8N_*` + `N8N_ALLOWED_ORIGINS`). Upload multer 50MB/file, 30 file.
   (Pengecualian sadar: 5 halaman migrasi SPB/QFP/LSA memanggil webhook n8n LANGSUNG dari browser, sama versi asli.)
@@ -93,11 +95,13 @@ yang berlaku lintas modul. Rujukan lama di docs berbunyi "lihat CLAUDE.md bagian
 - Signup publik ditutup di ketiga stack (`DISABLE_SIGNUP=true`). Stack `supabase`/`supabase2` belum diaudit level DB.
 - Penulis "service" (n8n / SQL Editor) = `auth.email() IS NULL` — trigger audit & guard tertentu sengaja melewatinya.
 
-## Rencana backend API (2026-10-16, BELUM dikerjakan -- detail `docs/claude/backend-plan.md`)
+## Rencana backend API (SEDANG DIKERJAKAN -- detail & status fase `docs/claude/backend-plan.md`)
 
-- Kebutuhan user ke depan: endpoint baru, koneksi ke database lain, payment gateway, keamanan data -> backend API terpisah dari `server.ts`
-  (Node.js + TypeScript), mode **hybrid**: halaman lama tetap langsung ke Supabase (RLS tetap lapis pertama), fitur yang menyentuh sistem
-  luar WAJIB lewat backend `/api/...` (JWT Supabase + `get_my_access()`).
+- Keputusan user 2026-10-19: browser TIDAK boleh bicara langsung ke DB -> **Data Gateway** `/api/db/*` di `server.ts` (proses &
+  server yang sama, kode di repo ini): supabase-js diberi fetch kustom ke gateway, gateway meneruskan **token user** (RLS tetap
+  lapis kedua) + whitelist tabel/RPC per page_key, batas baris, rate limit, log. Lalu Kong REST ditutup dari jaringan user.
+  Fase 0 (folder `server/`) SELESAI 2026-10-19; Fase 1 (gateway, mode log-saja dulu) berikutnya.
+- Fitur yang menyentuh sistem luar WAJIB lewat backend `/api/...` (JWT Supabase + `get_my_access()`).
 - Kredensial DB lain, server key payment gateway & service role key HANYA di backend. Payment: nominal dihitung server, webhook wajib
   verifikasi signature + idempotent + cek ulang status ke gateway; sandbox dulu.
 - Sebelum mulai, tanyakan user: jenis DB lain, payment gateway pilihan, lokasi deploy backend.
