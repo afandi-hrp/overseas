@@ -101,7 +101,7 @@ yang berlaku lintas modul. Rujukan lama di docs berbunyi "lihat CLAUDE.md bagian
   server yang sama, kode di repo ini): supabase-js diberi fetch kustom ke gateway, gateway meneruskan **token user** (RLS tetap
   lapis kedua) + whitelist tabel/RPC per page_key, batas baris, rate limit, log. Lalu Kong REST ditutup dari jaringan user.
   Fase 0 (folder `server/`) & Fase 1 (gateway `server/routes/dbGateway.ts`, flag build `VITE_DB_GATEWAY=on`, mode `log`) kode
-  SELESAI 2026-10-19. **Tabel/RPC/bucket baru yang dipanggil frontend WAJIB ditambahkan ke `server/db/whitelist.ts`.**
+  SELESAI & LIVE di production 2026-10-19 (mode `log`; Kong belum ditutup = Fase 2). **Tabel/RPC/bucket baru yang dipanggil frontend WAJIB ditambahkan ke `server/db/whitelist.ts`.**
 - Fitur yang menyentuh sistem luar WAJIB lewat backend `/api/...` (JWT Supabase + `get_my_access()`).
 - Kredensial DB lain, server key payment gateway & service role key HANYA di backend. Payment: nominal dihitung server, webhook wajib
   verifikasi signature + idempotent + cek ulang status ke gateway; sandbox dulu.

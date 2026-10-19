@@ -45,7 +45,7 @@ Browser ──► server.ts /api/db/* ──► PostgREST/Storage (jaringan inte
 | Fase | Isi | Status |
 |---|---|---|
 | 0. Fondasi | `server.ts` dipecah ke `server/` (config, auth, security, logging, rateLimit, routes/*), health check, log, rate limit per user | **SELESAI 2026-10-19** |
-| 1. Data Gateway | `/api/db/*` + whitelist tabel/RPC/bucket, mode log-saja -> blokir; frontend diarahkan ke gateway | **KODE SELESAI 2026-10-19** (uji lokal user OK); deploy production mode `log` -> kumpulkan UNLISTED -> `enforce` |
+| 1. Data Gateway | `/api/db/*` + whitelist tabel/RPC/bucket, mode log-saja -> blokir; frontend diarahkan ke gateway | **LIVE di production 2026-10-19** (mode `log`; 252 request awal semua 2xx, 0 UNLISTED). Berikutnya: pantau UNLISTED 3–7 hari -> `enforce` |
 | 2. Tutup akses langsung | REST/Storage Kong hanya dari backend (& n8n bila perlu): Kong ip-restriction / Docker network / reverse proxy | belum |
 | 3. Endpoint khusus (opsional) | payment, Finance Handover, export massal -- per alur | belum |
 
