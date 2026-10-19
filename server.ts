@@ -8,6 +8,7 @@ import { apiRequestLogger } from './server/logging';
 import { healthRouter } from './server/routes/health';
 import { n8nRouter, ALLOWED_WEBHOOK_ORIGINS } from './server/routes/n8n';
 import { driveRouter } from './server/routes/drive';
+import { dbGatewayRouter } from './server/routes/dbGateway';
 
 // Entry backend BeeHive: menyajikan SPA (Vite dev / dist) + endpoint /api/*. Logika ada di folder server/
 // (config, auth = authorize()/rate limit, security headers, logging, routes/*). Endpoint baru WAJIB lewat
@@ -21,6 +22,7 @@ app.use('/api', apiRequestLogger);
 app.use('/api', healthRouter);
 app.use('/api', n8nRouter);
 app.use('/api', driveRouter);
+app.use('/api', dbGatewayRouter);
 
 // /api/* yang tidak dikenal -> 404 JSON (dulu jatuh ke SPA fallback & balikin index.html).
 app.use('/api', (_req, res) => {
@@ -32,8 +34,8 @@ app.use('/api', (err: any, _req: express.Request, res: express.Response, next: e
   if (err instanceof multer.MulterError) {
     return res.status(err.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ status: 'error', pesan: `Upload ditolak: ${err.message}` });
   }
-  // Error body JSON (/api/n8n-proxy-json): terlalu besar / bukan JSON valid.
-  if (err?.type === 'entity.too.large') return res.status(413).json({ status: 'error', pesan: 'Body terlalu besar (maks 64 KB).' });
+  // Error body (/api/n8n-proxy-json maks 64 KB, /api/db maks 10 MB): terlalu besar / bukan JSON valid.
+  if (err?.type === 'entity.too.large') return res.status(413).json({ status: 'error', pesan: 'Body terlalu besar.' });
   if (err?.type === 'entity.parse.failed') return res.status(400).json({ status: 'error', pesan: 'Body bukan JSON yang valid.' });
   next(err);
 });

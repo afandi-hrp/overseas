@@ -1,0 +1,17 @@
+# Build context Docker (Dockerfile: COPY . . lalu npm install + npm run build DI DALAM container).
+# .env SENGAJA TIDAK diabaikan -- app membaca .env saat build (VITE_*) & runtime (dotenv).
+node_modules
+dist
+.git
+.gitignore
+.claude
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+# File kerja lokal di ROOT yang tidak dibutuhkan app (JANGAN pakai pola *.xlsx global -- public/templates/*.xlsx dipakai app)
+MASTER VESSEL.xlsx
+*.sql
+validation_table_part.txt
+update_css.sh
+query.js

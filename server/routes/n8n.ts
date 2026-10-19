@@ -1,6 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import { requireAccess, type AccessRule, type UserAccess } from '../auth';
+import { UPLOAD_MAX_TOTAL_MB } from '../config';
 
 // Proxy upload & aksi JSON ke webhook n8n. Router di-mount di /api (server.ts).
 export const n8nRouter = express.Router();
@@ -118,7 +119,18 @@ const uploadRules = (req: express.Request): AccessRule[] | null => {
   return Object.hasOwn(UPLOAD_ACCESS, type) ? UPLOAD_ACCESS[type] : null;
 };
 
-n8nRouter.post('/n8n-proxy-start', requireAccess(uploadRules), upload.any(), async (req, res) => {
+// Tolak upload yang total ukurannya melebihi UPLOAD_MAX_TOTAL_MB SEBELUM multer mem-buffer ke RAM (multer hanya
+// membatasi per file). Nilainya disamakan dgn `client_max_body_size` nginx supaya pesan error konsisten.
+const MAX_UPLOAD_BYTES = UPLOAD_MAX_TOTAL_MB * 1024 * 1024;
+function limitUploadSize(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const len = Number(req.headers['content-length'] || 0);
+  if (len > MAX_UPLOAD_BYTES) {
+    return res.status(413).json({ status: 'error', pesan: `Upload ditolak: total ukuran file melebihi ${UPLOAD_MAX_TOTAL_MB} MB.` });
+  }
+  next();
+}
+
+n8nRouter.post('/n8n-proxy-start', limitUploadSize, requireAccess(uploadRules), upload.any(), async (req, res) => {
   try {
     const webhookType = String(req.headers['x-webhook-type'] || 'courier');
     const { url: webhookUrl, error } = resolveWebhookUrl(req, webhookType);

@@ -1,5 +1,5 @@
 import type express from 'express';
-import { API_RATE_LIMIT_PER_MIN, SUPABASE_ANON_KEY, SUPABASE_CONFIGURED, SUPABASE_URL } from './config';
+import { API_RATE_LIMIT_PER_MIN, DB_GATEWAY_APIKEY, SUPABASE_CONFIGURED, SUPABASE_INTERNAL_URL } from './config';
 import { takeRateLimit } from './rateLimit';
 
 // `email` = klaim email JWT (dibaca SETELAH PostgREST menerima token = tanda tangan sah) -- dipakai Cost Agent utk
@@ -28,9 +28,10 @@ async function resolveUserAccess(token: string): Promise<UserAccess | null> {
   if (cached && cached.exp > now) return cached.access;
   if (!SUPABASE_CONFIGURED) return null;
 
-  const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_my_access`, {
+  // Jalur internal + apikey gateway (sama dgn Data Gateway) -- tetap jalan setelah anon key ditolak Kong di /rest/v1 (Fase 2).
+  const r = await fetch(`${SUPABASE_INTERNAL_URL}/rest/v1/rpc/get_my_access`, {
     method: 'POST',
-    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    headers: { apikey: DB_GATEWAY_APIKEY, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: '{}',
     signal: AbortSignal.timeout(10000),
   });
@@ -57,7 +58,14 @@ export function hasAnyAccess(access: UserAccess, rules: AccessRule[]): boolean {
 
 // Verifikasi login + hak akses + rate limit. true = lanjut; false = respons error SUDAH dikirim.
 // Hasil disimpan di `res.locals.userAccess` utk handler berikutnya (mis. email user Cost Agent, log request).
-export async function authorize(req: express.Request, res: express.Response, rules: AccessRule[]): Promise<boolean> {
+// rules = 'any-page' -> cukup user login yang punya akses ke MINIMAL 1 halaman (Data Gateway; akses per tabel tetap
+// dijaga RLS di DB). `rate` = kuota & nama bucket terpisah (default kuota /api umum).
+export async function authorize(
+  req: express.Request,
+  res: express.Response,
+  rules: AccessRule[] | 'any-page',
+  rate: { bucket: string; perMin: number } = { bucket: 'api', perMin: API_RATE_LIMIT_PER_MIN },
+): Promise<boolean> {
   if (!SUPABASE_CONFIGURED) {
     console.error('[Security] SUPABASE_URL/SUPABASE_ANON_KEY tidak di-set di env server -- semua /api/* ditolak (fail-closed).');
     res.status(503).json({ status: 'error', pesan: 'Server belum dikonfigurasi (Supabase env).' });
@@ -81,13 +89,14 @@ export async function authorize(req: express.Request, res: express.Response, rul
   }
   res.locals.userAccess = access;
   // Kunci rate limit = email (1 user banyak tab/token tetap 1 kuota), fallback token.
-  const rl = takeRateLimit(access.email || token, API_RATE_LIMIT_PER_MIN);
+  const rl = takeRateLimit(`${rate.bucket}:${access.email || token}`, rate.perMin);
   if (!rl.ok) {
     res.setHeader('Retry-After', String(rl.retryAfterSec));
     res.status(429).json({ status: 'error', pesan: 'Terlalu banyak permintaan. Coba lagi sebentar.' });
     return false;
   }
-  if (!hasAnyAccess(access, rules)) {
+  const allowed = rules === 'any-page' ? access.isAdmin || access.pageKeys.size > 0 : hasAnyAccess(access, rules);
+  if (!allowed) {
     res.status(403).json({ status: 'error', pesan: 'Anda tidak punya akses ke fitur ini.' });
     return false;
   }

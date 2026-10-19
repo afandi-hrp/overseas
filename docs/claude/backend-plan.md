@@ -45,7 +45,7 @@ Browser ──► server.ts /api/db/* ──► PostgREST/Storage (jaringan inte
 | Fase | Isi | Status |
 |---|---|---|
 | 0. Fondasi | `server.ts` dipecah ke `server/` (config, auth, security, logging, rateLimit, routes/*), health check, log, rate limit per user | **SELESAI 2026-10-19** |
-| 1. Data Gateway | `/api/db/*` + whitelist 65 tabel & ±100 RPC per page_key, batas baris, kolom sensitif, mode log-saja -> blokir; frontend diarahkan ke gateway | belum |
+| 1. Data Gateway | `/api/db/*` + whitelist tabel/RPC/bucket, mode log-saja -> blokir; frontend diarahkan ke gateway | **KODE SELESAI 2026-10-19** (uji lokal user OK); deploy production mode `log` -> kumpulkan UNLISTED -> `enforce` |
 | 2. Tutup akses langsung | REST/Storage Kong hanya dari backend (& n8n bila perlu): Kong ip-restriction / Docker network / reverse proxy | belum |
 | 3. Endpoint khusus (opsional) | payment, Finance Handover, export massal -- per alur | belum |
 
@@ -66,6 +66,36 @@ Browser ──► server.ts /api/db/* ──► PostgREST/Storage (jaringan inte
 - Baru: `/api/*` tak dikenal -> **404 JSON** (dulu jatuh ke SPA fallback & balikin `index.html`).
 - Smoke test (bundle production, port uji): health 200; upload/json tanpa token 401; tipe `constructor` 400; token palsu 401;
   endpoint tak dikenal 404; route SPA 200 HTML.
+
+## Fase 1 -- Data Gateway (2026-10-19)
+
+- `server/routes/dbGateway.ts`: `ALL /api/db/rest/v1/*` & `/api/db/storage/v1/*`.
+  1. `authorize(req,res,'any-page',{bucket:'db', perMin: DB_RATE_LIMIT_PER_MIN})` -- user login dgn >=1 page_key (akses per tabel
+     tetap RLS), kuota terpisah dari /api lain (default 1500/menit).
+  2. Klasifikasi: tabel (GET/HEAD=select, POST=insert / upsert bila `Prefer: resolution=`, PATCH=update, DELETE=delete), `rpc/<fn>`,
+     storage (`object/sign/<bucket>/..` POST, `object/[authenticated/]<bucket>/..` GET).
+  3. Selalu ditolak: root `/rest/v1/` (OpenAPI), nama tidak cocok `^[a-z_][a-z0-9_]{0,62}$`, `Accept-Profile`/`Content-Profile` selain
+     `public`, method lain.
+  4. Di luar whitelist -> log `[DB-GW] UNLISTED <METHOD> <op> <kind>:<name> user=.. mode=..`; mode `enforce` -> 403.
+  5. Diteruskan ke `SUPABASE_INTERNAL_URL` dgn `apikey = DB_GATEWAY_APIKEY` (fallback anon key) + header whitelist (Authorization user,
+     Prefer, Range, Content-Type, ...). apikey dari browser DIBUANG. Body maks 10 MB. Timeout 120 dtk. Respons di-stream.
+  6. Log `[DB-GW] METHOD op kind:name status ms bytesB user=email` (`DB_GATEWAY_LOG=unlisted` -> hanya pelanggaran & 5xx).
+     `/api/db/*` dilewati `apiRequestLogger` (tidak dobel).
+- `server/db/whitelist.ts`: seed otomatis dari scan `src/` (65 tabel + 58 RPC statis) + MANUAL utk nama dinamis (SharedDataTable,
+  CourierCostReviewHelpers, VendorMasterPage, CostAgentHelpers) + bucket `far-overseas-payment-proofs`. **Tabel/RPC baru di frontend
+  WAJIB ditambahkan ke sini** (kalau tidak: mode log = muncul UNLISTED, mode enforce = 403).
+- `server/auth.ts` `resolveUserAccess` kini ke `SUPABASE_INTERNAL_URL` + `DB_GATEWAY_APIKEY` (tetap jalan setelah Fase 2).
+- Frontend `src/lib/supabase.ts`: `VITE_DB_GATEWAY=on` (BUILD-TIME) -> `global.fetch` membelokkan `<VITE_SUPABASE_URL>/rest/v1/` &
+  `/storage/v1/` ke `/api/db/...`. `/auth/v1` tetap langsung. Signed URL storage (`createSignedUrl`) tetap menunjuk domain publik
+  (dibuka browser langsung, ber-token 300 dtk) -> di Fase 2 path `/storage/v1/object/sign/` Kong tetap dibuka.
+- Env server baru: `SUPABASE_INTERNAL_URL` (prod: `http://172.16.9.5:8002`), `VITE_DB_GATEWAY`, `DB_GATEWAY_MODE` (log|enforce),
+  `DB_GATEWAY_LOG` (all|unlisted), `DB_GATEWAY_APIKEY` (Fase 2), `DB_RATE_LIMIT_PER_MIN`, `UPLOAD_MAX_TOTAL_MB` (default 100 = harus
+  sama dgn `client_max_body_size` nginx app).
+- Uji 2026-10-19: penolakan (tanpa token / token palsu / anon key sbg bearer -> 401); uji login user di dev lokal: 87 request
+  (Courier, Sea & Air, Cost Agent, Master Vessel) semua 2xx, 0 UNLISTED. FAR/Finance/Reporting/Compare Doc belum terekam -> pantau
+  log production.
+- Deploy (server 172.16.9.5, Docker compose `import-doc-app` + `import-doc-nginx` port 8090): `.dockerignore` di repo; nginx
+  `client_max_body_size 100M`; log rotation docker wajib (log gateway per request). Saklar balik: `VITE_DB_GATEWAY=off` + rebuild.
 
 ## Aturan per kebutuhan (berlaku utk semua fase)
 
