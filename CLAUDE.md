@@ -67,9 +67,17 @@ yang berlaku lintas modul. Rujukan lama di docs berbunyi "lihat CLAUDE.md bagian
   grant / hapus tombol / pertahankan) -- JANGAN diubah sebelum user memutuskan.** SQL baru: file `sql/NNN_*.sql` baru (lanjut
   **066**; `065_cost_agent_app_feedback.sql` (file user di root) SUDAH DIJALANKAN 2026-10-16 (cost-agent.md "update 065"); `sql/062_kurs_bi_kurs_beli.sql` SUDAH DIJALANKAN 2026-10-15 (kolom Kurs Beli, bunker-courier-seaair.md "Kurs BI Harian — Import Excel"; folder `sql/` DIHAPUS lagi 2026-10-15 -- isi: `git show e4d5000:sql/062_kurs_bi_kurs_beli.sql`); 063 (`063_cost_agent_classify_fix`) & 064 (`064_cost_agent_invoice_description`) Cost Agent SUDAH DIJALANKAN (user, 2026-10-15; file sempat di root repo, DIHAPUS -- isi: `git show e361e7a:<file>`, cost-agent.md); 057–061 Cost Agent SEMUA SUDAH dijalankan (konfirmasi user 2026-10-14; nomor 058 dipakai 2 file: compare_v2 user & delete_invoice_grant repo),
   folder `sql/` DIHAPUS lagi 2026-10-14 -- isi terakhir 058_cost_agent_delete_invoice_grant / 060 / 061: `git show 2fc583b:sql/<file>`; 057, 058_compare_v2
-  & 059 tidak pernah masuk repo, cost-agent.md), idempotent + pre-check nama fungsi, user yang menjalankan manual -- tidak ada akses DB dari
-  sesi. **Tambah user baru**: template `docs/sql-templates/add-users.sql` (edit daftar email/nama/password/divisi/role; buat akun
+  & 059 tidak pernah masuk repo, cost-agent.md), idempotent + pre-check nama fungsi, user yang menjalankan manual -- sesi Claude hanya
+  punya akses BACA (MCP `beehive-prod-ro`, lihat bawah). **Tambah user baru**: template `docs/sql-templates/add-users.sql` (edit daftar email/nama/password/divisi/role; buat akun
   auth + identities + profil + divisi + role; email lama tidak diubah password-nya; diuji PGlite 27 cek).
+- **Akses DB dari sesi Claude (2026-10-19): MCP `beehive-prod-ro` = READ-ONLY ke production `supabase3`** (tool `query`;
+  role `claude_ro` = SELECT + `bypassrls` + `default_transaction_read_only` + `statement_timeout 15s`, conn limit 3; lewat
+  Supavisor session `172.16.9.5:5434`, user `claude_ro.your-tenant-id`). Server MCP = Node kecil di LUAR repo
+  `~/.claude/mcp-servers/pg-readonly/server.mjs` (BEGIN READ ONLY + ROLLBACK, extended protocol tolak multi-statement,
+  hanya SELECT/WITH/EXPLAIN/SHOW); terdaftar scope local (`~/.claude.json`, password di sana, JANGAN dibaca/ditampilkan).
+  Pakai utk: `pg_get_functiondef`, cek whitelist RPC, cek pemanggil di `pg_proc`, cek data/skema sebelum menulis SQL.
+  **Perubahan SQL/fungsi TETAP diberikan ke user sbg file/teks utk di-paste manual** (keputusan user) -- tidak ada staging,
+  Claude TIDAK punya akses tulis. Hindari query berat (production). Port 5433/5435 = DB lain, bukan BeeHive.
 - **Kondisi DB production (stack `supabase3`)**: `anon` tanpa hak di schema public, GraphQL ditutup, semua tabel RLS
   (`has_page_access`/`has_edit_access`, tidak ada `using (true)`), view `security_invoker`, RPC `SECURITY DEFINER`
   ber-`search_path` & guard. **Aturan objek baru**: tabel WAJIB RLS 4 policy; RPC `SECURITY DEFINER` WAJIB guard
@@ -214,7 +222,8 @@ pageKey | pageKeys | adminOnly>`.
 ## Peta RPC Supabase
 
 **WAJIB sebelum membuat RPC/function BARU**: project ini dipakai bersama n8n & user (SQL Editor) — RPC bisa sudah ada
-tanpa tercermin di kode. Tanya user & minta `select pg_get_functiondef('nama'::regproc)` dulu (error "does not exist" =
+tanpa tercermin di kode. Cek sendiri lewat MCP `beehive-prod-ro` `select pg_get_functiondef('nama'::regproc)` (kalau MCP
+tidak tersedia: tanya user) dulu (error "does not exist" =
 aman buat baru), terutama nama generik (`upsert_*`/`update_*`/`get_*`). Insiden: RPC Tarif Vendor FAR dibuat ulang dgn
 signature beda → `42P13`; whitelist `v_allowed_columns` RPC buatan user bisa basi → field "tersimpan" tapi kembali
 kosong (cek whitelist dulu). Daftar di bawah disimpulkan dari `.rpc('...')` di frontend, bisa basi.
