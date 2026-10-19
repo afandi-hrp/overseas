@@ -74,6 +74,9 @@ export const SECTIONS = [
       { id: "cipl01", compareDoc: "PO",             field: "Total Item Value" },
       { id: "cipl03", compareDoc: "Final Invoice",  field: "No. Invoice" },
       { id: "cipl04", compareDoc: "Final Invoice",  field: "Total Item Value" },
+      // Kolom BT Vendor (2026-10-19, permintaan user): src CIPL, cmp bt_vendor_v.item_value / bt_vendor_v.no_invoice.
+      { id: "cipl_bt_vendor_item_value", compareDoc: "BT Vendor", field: "Total Item Value" },
+      { id: "cipl_bt_vendor_no_invoice", compareDoc: "BT Vendor", field: "No. Invoice" },
     ]
   },
   {

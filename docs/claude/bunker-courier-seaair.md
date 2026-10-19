@@ -1,5 +1,19 @@
 <!-- Dipindah dari CLAUDE.md 2026-10-06 (CLAUDE.md diringkas; file ini dibaca saat modulnya dikerjakan). -->
 
+## Doc Validation Courier — tabel CIPL (CN path only) + kolom BT Vendor (2026-10-19, permintaan user)
+
+- 2 baris BARU section `s_cipl` (compareDoc `BT Vendor` -> kolom BT Vendor muncul otomatis setelah PO | Final Invoice, warna pink
+  yang sudah ada): `cipl_bt_vendor_item_value` (field "Total Item Value": src `cipl_v.total_value`, cmp `bt_vendor_v.item_value`) &
+  `cipl_bt_vendor_no_invoice` (field "No. Invoice": src `cipl_v.no_invoice`, cmp `bt_vendor_v.no_invoice`, mentah SAMA `cipl03`;
+  `compareInvoices` sudah toleran spasi & urutan "A + B"). Diubah di 6 tempat yang WAJIB sinkron: SECTIONS `ValidasiHelper.ts` /
+  `ValidasiModal.tsx` / `ValidasiModalLegacy.tsx` + fill `ValidasiFill.ts` / `buildValidationValues` kedua modal.
+- Checklist yang SUDAH tersimpan (`tabel_checklist_validasi`) belum punya 2 id ini -> banner "N field(s) have newer document data" +
+  Recompute mengisinya (aturan lama, tidak retroaktif); record belum tersimpan langsung terisi. Persen Doc Validation CN ikut menghitung
+  2 baris ini (live calc / setelah disimpan).
+- Data production 2026-10-19: `bt_vendor_v.item_value` & `.no_invoice` ada di 61 dokumen CN (& 44 PIB). Uji 12 cek dgn data asli
+  (877392309670 300 / XS260827-087-YM; "CI AST202611" vs "CIAST202611"; "JWA26-0710 + JWA26-0709" urutan terbalik -> Match; nilai beda ->
+  Mismatch; tanpa BT Vendor -> partial).
+
 ## Relasi Audit PIB ↔ Invoice Recap Sea & Air — "bagian 2" (2026-10-01, kode SELESAI, sql/031+032 SUDAH DIJALANKAN 2026-10-01)
 
 Item yang menyangkut KEDUA halaman dikerjakan bareng. **Pelurusan user**: n8n HANYA membaca dokumen

@@ -309,6 +309,9 @@ const SECTIONS: SectionConfig[] = [
       { id: "cipl01", compareDoc: "PO",             field: "Total Item Value" },
       { id: "cipl03", compareDoc: "Final Invoice",  field: "No. Invoice" },
       { id: "cipl04", compareDoc: "Final Invoice",  field: "Total Item Value" },
+      // Kolom BT Vendor (2026-10-19, permintaan user): src CIPL, cmp bt_vendor_v.item_value / bt_vendor_v.no_invoice.
+      { id: "cipl_bt_vendor_item_value", compareDoc: "BT Vendor", field: "Total Item Value" },
+      { id: "cipl_bt_vendor_no_invoice", compareDoc: "BT Vendor", field: "No. Invoice" },
     ]
   },
   {
@@ -658,6 +661,8 @@ function buildValidationValues(raw: any, docAwb: string, localNpwps: any[]): Rec
   fill("po_alamat_npwp", raw.po_alamat || "", findNpwpByName(raw.po_penerima)?.alamat || "");
   fill("cipl03", ciplV.no_invoice || "", fi.inv_no || "");
   fill("cipl04", ciplV.total_value || "", fi.total_value || "");
+  fill("cipl_bt_vendor_item_value", ciplV.total_value || "", btVendorV.item_value || "");
+  fill("cipl_bt_vendor_no_invoice", ciplV.no_invoice || "", btVendorV.no_invoice || "");
   fill("cipl05", raw.cipl_vessel || "", "");
 
   // PO

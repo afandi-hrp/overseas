@@ -150,6 +150,8 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
         fill("po_alamat_npwp", raw.po_alamat || "", findNpwpByName(raw.po_penerima)?.alamat || "");
         fill("cipl03", ciplV.no_invoice || "", fi.inv_no || "");
         fill("cipl04", ciplV.total_value || "", fi.total_value || "");
+        fill("cipl_bt_vendor_item_value", ciplV.total_value || "", btVendorV.item_value || "");
+        fill("cipl_bt_vendor_no_invoice", ciplV.no_invoice || "", btVendorV.no_invoice || "");
         fill("cipl05", raw.cipl_vessel || "", "");
 
         // PO
