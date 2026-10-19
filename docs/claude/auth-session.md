@@ -71,7 +71,12 @@ Permintaan: user baru / password default / pertama kali login WAJIB ganti passwo
   ditolak, login tidak menghapus penanda, ganti password menghapus, trigger error tidak menggagalkan auth, idempotent, cascade);
   7 cek aturan password.
 
-## Reset password user oleh Admin + profil terkunci ke nama (2026-10-19, permintaan user; `sql/067_profiles_lock_and_admin_reset_password.sql` BELUM DIJALANKAN)
+## Reset password user oleh Admin + profil terkunci ke nama (2026-10-19, permintaan user; `sql/067_profiles_lock_and_admin_reset_password.sql` SUDAH DIJALANKAN 2026-10-19)
+
+<!-- File sql/066 & sql/067 dihapus dari repo setelah dijalankan; isi: `git show 4c03e2a:sql/066_force_password_change.sql` /
+`git show 4c03e2a:sql/067_profiles_lock_and_admin_reset_password.sql`. Kondisi awal production setelah 066: 25 user ditandai
+wajib ganti password (backfill: belum pernah login / password masih default). -->
+
 
 - **UI**: Settings -> Manage Roles & Access -> panel Roles per User, sel user: badge "Must change password" (dari
   `user_security`, Admin baca semua) + tombol "Reset password" (tidak tampil utk diri sendiri) -> `ResetUserPasswordModal.tsx`.
