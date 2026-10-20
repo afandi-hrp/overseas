@@ -54,28 +54,15 @@ yang berlaku lintas modul. Rujukan lama di docs berbunyi "lihat CLAUDE.md bagian
 - **HTML dari backend/n8n WAJIB disanitasi `DOMPurify`** sebelum `dangerouslySetInnerHTML` (hasil AI = input tak
   tepercaya). Kalau HTML n8n butuh script (Oil Request): render di `<iframe sandbox>` TANPA `allow-same-origin`,
   JANGAN `eval`/innerHTML di halaman.
-- **SQL**: semua migrasi `sql/001`–`sql/056` SUDAH dijalankan di production & folder `sql/` DIHAPUS dari repo (001–047:
-  2026-10-06; 048–056: 2026-10-13; konfirmasi user). Isi terakhir: 041–047 di git commit `4286a34`, 048–056 di commit
-  `a21e206` (`git show <commit>:sql/<file>`), yang lebih lama di commit sebelumnya. Catatan "BELUM DIJALANKAN" di
-  `docs/claude/*.md` utk file ≤056 TIDAK berlaku. Ringkas 045–056: 045 seed 3 akun @purchasing.com; 046 `profiles.divisi` +
-  RPC `fn_set_user_divisi`; 047 isi divisi dari domain email; 048 RPC `fn_audit_trail_users()` + index Audit Trail (RPC error ->
-  dropdown User fallback 2.000 baris terbaru; bunker-courier-seaair.md "Audit Trail server-side"); 049 Checklist Courier
-  "Valid (note)" (`dokumen_checklist.accepted_docs` + trigger `hitung_kelengkapan`); 050 centang manual Checklist Courier hanya
-  Admin; 051 User Activity (`user_presence`, `fn_user_heartbeat`/`fn_user_activity`, auth-session.md); 052 KPI "Freight + Duty"
-  Invoice Recap Courier (`fn_courier_recap_summary` + `fn_courier_raw_json`, courier-features.md); 053
-  `fn_seaair_recap_issue_count` lewati section cost belum dikonfirmasi bila % Cost >= 90 (bunker-courier-seaair.md); 054 skema
-  Cost Agent (versi user ber-guard) + 055 seed master; 056 RPC `fn_cost_agent_delete_invoice` (hapus invoice Cost Agent, Admin,
-  masa uji coba -- cost-agent.md). **KEPUTUSAN TERTUNDA (user): nasib fitur hapus invoice Cost Agent setelah uji coba (cabut
-  grant / hapus tombol / pertahankan) -- JANGAN diubah sebelum user memutuskan.** SQL baru: file `sql/NNN_*.sql` baru (lanjut
-  **069**; `068_courier_finance_undo_paid` (Undo Paid Finance Handover Courier, finance-handover.md) SUDAH DIJALANKAN 2026-10-19
-  (diverifikasi MCP: definer, anon tanpa execute), file dihapus -- isi: `git show e3003e9:sql/068_courier_finance_undo_paid.sql`;
-  `066_force_password_change` (wajib ganti password) & `067_profiles_lock_and_admin_reset_password` (profil hanya kolom
-  nama + RPC Admin reset password) SUDAH DIJALANKAN 2026-10-19 (konfirmasi user, diverifikasi via MCP read-only), folder `sql/`
-  DIHAPUS lagi -- isi: `git show 4c03e2a:sql/<file>`, auth-session.md; `065_cost_agent_app_feedback.sql` (file user di root) SUDAH DIJALANKAN 2026-10-16 (cost-agent.md "update 065"); `sql/062_kurs_bi_kurs_beli.sql` SUDAH DIJALANKAN 2026-10-15 (kolom Kurs Beli, bunker-courier-seaair.md "Kurs BI Harian — Import Excel"; folder `sql/` DIHAPUS lagi 2026-10-15 -- isi: `git show e4d5000:sql/062_kurs_bi_kurs_beli.sql`); 063 (`063_cost_agent_classify_fix`) & 064 (`064_cost_agent_invoice_description`) Cost Agent SUDAH DIJALANKAN (user, 2026-10-15; file sempat di root repo, DIHAPUS -- isi: `git show e361e7a:<file>`, cost-agent.md); 057–061 Cost Agent SEMUA SUDAH dijalankan (konfirmasi user 2026-10-14; nomor 058 dipakai 2 file: compare_v2 user & delete_invoice_grant repo),
-  folder `sql/` DIHAPUS lagi 2026-10-14 -- isi terakhir 058_cost_agent_delete_invoice_grant / 060 / 061: `git show 2fc583b:sql/<file>`; 057, 058_compare_v2
-  & 059 tidak pernah masuk repo, cost-agent.md), idempotent + pre-check nama fungsi, user yang menjalankan manual -- sesi Claude hanya
-  punya akses BACA (MCP `beehive-prod-ro`, lihat bawah). **Tambah user baru**: template `docs/sql-templates/add-users.sql` (edit daftar email/nama/password/divisi/role; buat akun
-  auth + identities + profil + divisi + role; email lama tidak diubah password-nya; diuji PGlite 27 cek).
+- **SQL**: semua migrasi `sql/001`–`sql/068` SUDAH dijalankan (069 menyusul) di production & folder `sql/` DIHAPUS dari repo (riwayat isi
+  file: `git show <commit>:sql/<file>`; 041–047 di `4286a34`, 048–056 di `a21e206`, 066–067 di `4c03e2a`, 068 di `e3003e9`;
+  sisanya cari lewat `git log --all -- sql/<file>`). Catatan "BELUM DIJALANKAN" di `docs/claude/*.md` utk file ≤068 TIDAK
+  berlaku. Penjelasan tiap migrasi ada di doc modulnya (courier-features, bunker-courier-seaair, cost-agent, auth-session,
+  finance-handover). SQL baru: file `sql/NNN_*.sql` baru (`069_cost_agent_update_invoice_amounts` BELUM DIJALANKAN -- file di `sql/`, cost-agent.md; lanjut **070**), idempotent + pre-check nama fungsi, user yang
+  menjalankan manual -- sesi Claude hanya punya akses BACA (MCP `beehive-prod-ro`, lihat bawah).
+  **KEPUTUSAN TERTUNDA (user): nasib fitur hapus invoice Cost Agent (RPC `fn_cost_agent_delete_invoice`, sql/056, masa uji
+  coba; cabut grant / hapus tombol / pertahankan) -- JANGAN diubah sebelum user memutuskan.**
+  **Tambah user baru**: template `docs/sql-templates/add-users.sql` (edit daftar email/nama/password/divisi/role).
 - **Akses DB dari sesi Claude (2026-10-19): MCP `beehive-prod-ro` = READ-ONLY ke production `supabase3`** (tool `query`;
   role `claude_ro` = SELECT + `bypassrls` + `default_transaction_read_only` + `statement_timeout 15s`, conn limit 3; lewat
   Supavisor session `172.16.9.5:5434`, user `claude_ro.your-tenant-id`). Server MCP = Node kecil di LUAR repo

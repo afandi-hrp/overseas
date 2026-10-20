@@ -172,7 +172,7 @@ for (const [t, ops] of Object.entries(MANUAL_TABLES)) {
   'fn_cost_agent_decide_approval', 'fn_cost_agent_delete_invoice', 'fn_cost_agent_get_invoice_history',
   'fn_cost_agent_get_voyage', 'fn_cost_agent_mark_paid', 'fn_cost_agent_matrix_for', 'fn_cost_agent_save_voyage',
   'fn_cost_agent_search_history', 'fn_cost_agent_set_invoice_description', 'fn_cost_agent_set_line_reference',
-  'fn_cost_agent_submit_for_approval', 'fn_cost_agent_update_invoice_header', 'fn_cost_agent_update_line',
+  'fn_cost_agent_submit_for_approval', 'fn_cost_agent_update_invoice_amounts', 'fn_cost_agent_update_invoice_header', 'fn_cost_agent_update_line',
   'fn_cost_agent_upsert_voyages', 'fn_cost_agent_verify_line',
   // Admin: tandai/lepas wajib ganti password (sql/066) & reset password user (sql/067)
   'fn_set_must_change_password', 'fn_admin_reset_user_password',

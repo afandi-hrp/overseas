@@ -3,13 +3,13 @@
 // daftar berbagi lebar dgn panel samping). Murni tampilan: baris = hasil query daftar yang SAMA dgn mode List (view
 // cost_agent_voyage_list_v / cost_agent_invoice_list_v), tanpa query tambahan.
 import React from 'react'
-import { Loader2, FileText, RotateCcw, Trash2 } from 'lucide-react'
-import { RouteBadges, StatusChip } from './CostAgentUi'
+import { Loader2, RotateCcw, Trash2 } from 'lucide-react'
+import { RouteBadges } from './CostAgentUi'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, Chip, PtBadge, type Tone } from './SeaAirAuditUi'
 import { LoadingState } from './LoadingState'
 import {
   fmtDate, fmtMoney, fmtNumber, fmtReportMonth, fmtDateTimeCompact, fmtDateTimePort, tzAbbrev, routePorts,
-  INVOICE_STATUS_META, VOYAGE_STATUS_META, VOYAGE_SOURCE_LABEL, TAX_STATUS_META,
+  INVOICE_STATUS_META, VOYAGE_STATUS_META, VOYAGE_SOURCE_LABEL,
   type CostAgentInvoiceListRow, type CostAgentVoyageListRow,
 } from '../utils/CostAgentHelpers'
 
@@ -80,6 +80,21 @@ export const CostAgentVoyageCard: React.FC<{ r: CostAgentVoyageListRow; tzByCode
 }
 
 // ─── Agency invoice ──────────────────────────────────────────────────────────────────────────────────────────
+// Progres invoice (2026-10-20, permintaan user): 4 pil Completed -> Verified -> Approved -> Paid, hijau bila tahap sudah dilewati.
+// Completed = AI selesai membaca (bukan processing/failed/cancelled); Verified = semua baris terverifikasi (verification dgn 0 baris
+// belum verif, atau sudah lewat); Approved = approved/journal/paid; Paid = paid.
+export const invoiceProgress = (r: Pick<CostAgentInvoiceListRow, 'status' | 'line_count' | 'unverified_count'>) => {
+  const completed = !['processing', 'failed', 'cancelled'].includes(r.status)
+  const approved = ['approved', 'journal', 'paid'].includes(r.status)
+  const verified = approved || r.status === 'waiting_approval' || (r.status === 'verification' && r.line_count > 0 && r.unverified_count === 0)
+  return [
+    { key: 'completed', label: 'Completed', done: completed },
+    { key: 'verified', label: 'Verified', done: verified },
+    { key: 'approved', label: 'Approved', done: approved },
+    { key: 'paid', label: 'Paid', done: r.status === 'paid' },
+  ]
+}
+
 export const CostAgentInvoiceCard: React.FC<{
   r: CostAgentInvoiceListRow
   selected: boolean // invoice yg sedang dibuka di modal
@@ -92,47 +107,37 @@ export const CostAgentInvoiceCard: React.FC<{
   deleting?: boolean
 }> = ({ r, selected, onOpen, checkbox, error, onReprocess, reprocessing, onDelete, deleting }) => {
   const st = INVOICE_STATUS_META[r.status]
-  const tax = r.tax_status ? TAX_STATUS_META[r.tax_status] : null
   const stop = (e: React.SyntheticEvent) => e.stopPropagation()
   return (
     <div className={cardCls(st?.tone || 'grey', selected)} onClick={onOpen} data-invoice-card={r.id} aria-current={selected || undefined}>
-      <div className="grid grid-cols-1 @md:grid-cols-2 @5xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1.2fr)_190px] gap-x-4 gap-y-2.5 px-3.5 py-3 items-start">
+      <div className="grid grid-cols-1 @md:grid-cols-2 @5xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(0,1.2fr)_190px] gap-x-4 gap-y-2.5 px-3.5 py-3 items-center">
         <div className="min-w-0 flex gap-2.5">
           {checkbox && (
             <input type="checkbox" aria-label={`Select invoice ${r.invoice_no || r.id}`} className="mt-1 w-4 h-4 accent-[#6B3470] shrink-0" checked={checkbox.checked}
               onClick={stop} onChange={e => checkbox.onChange(e.target.checked)} />
           )}
           <div className="min-w-0">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {r.company_code && <PtBadge code={r.company_code} />}
-              <span className="text-[11px] font-semibold text-[#6E5E70]">{fmtDate(r.invoice_date)}</span>
-            </div>
-            <div className="mt-1 text-[14px] font-bold text-[#3B1B3D] truncate" title={r.vendor_name || undefined}>{r.vendor_name || <span className="text-[#8A7A8B] font-normal">Unknown vendor</span>}</div>
+            {r.company_code && <PtBadge code={r.company_code} />}
+            <div className="mt-1 text-[15px] font-extrabold text-[#3B1B3D] truncate" title={r.vendor_name || undefined}>{r.vendor_name || <span className="text-[#8A7A8B] font-normal">Unknown vendor</span>}</div>
             <div className="text-[12px] text-[#6E5E70] truncate">{r.invoice_no || `#${r.id}`}</div>
-            {r.description && <div className="text-[11px] text-[#8A7A8B] truncate" title={r.description} data-invoice-desc>{r.description}</div>}
           </div>
         </div>
-        <div className="min-w-0 text-[12px] grid grid-cols-[52px_1fr] gap-x-2 gap-y-1">
+        <div className="min-w-0 text-[12.5px] grid grid-cols-[52px_1fr] gap-x-2 gap-y-1">
           <span className="text-[#8A7A8B]">Vessel</span>
-          <span className="font-semibold text-[#3B1B3D] truncate" title={r.vessel_name || undefined}>{r.vessel_name || '—'}{r.voyage_no ? <span className="font-normal text-[#6E5E70]"> · Voy {r.voyage_no}</span> : null}</span>
+          <span className="font-bold text-[#3B1B3D] truncate" title={r.vessel_name || undefined}>{r.vessel_name || '—'}</span>
           <span className="text-[#8A7A8B]">Port</span>
-          <span className="text-[#3B1B3D] truncate" title={r.port_name || undefined}>{r.port_code ? `${r.port_code}${r.port_name ? ` — ${r.port_name}` : ''}` : '—'}</span>
-          <span className="text-[#8A7A8B]">Docs</span>
-          <span className="text-[#6E5E70] inline-flex items-center gap-1">
-            {(r.documents_processing ?? 0) > 0 ? <><Loader2 size={12} className="animate-spin text-[#2F4FA8]" /> processing</>
-              : r.document_count != null ? <><FileText size={12} /> {r.document_count}</> : '—'}
-            {r.po_numbers?.length ? <span className="ml-1 inline-flex flex-wrap gap-1">{r.po_numbers.slice(0, 2).map(p => <Chip key={p} tone="plum">{p}</Chip>)}{r.po_numbers.length > 2 && <Chip tone="grey">+{r.po_numbers.length - 2}</Chip>}</span> : null}
-          </span>
+          <span className="font-semibold text-[#3B1B3D] truncate" title={r.port_name || undefined}>{r.port_code ? `${r.port_code}${r.port_name ? ` — ${r.port_name}` : ''}` : '—'}</span>
+          <span className="text-[#8A7A8B]">Voy</span>
+          <span className="font-bold text-[#3B1B3D] truncate">{r.voyage_no || '—'}</span>
         </div>
         <div className="min-w-0">
-          <div className="flex flex-wrap gap-1">
-            {r.naik_count > 0 && <Chip tone="red">▲ {r.naik_count} higher</Chip>}
-            {r.baru_count > 0 && <Chip tone="amber">{r.baru_count} new item{r.baru_count > 1 ? 's' : ''}</Chip>}
+          <div className="flex flex-wrap gap-1.5" data-invoice-progress>
+            {r.status === 'processing' && <Chip tone="blue"><Loader2 size={11} className="inline animate-spin mr-1" />Processing</Chip>}
+            {r.status === 'failed' && <Chip tone="red">Failed</Chip>}
+            {r.status === 'rejected' && <Chip tone="red">Rejected</Chip>}
             {r.duplicate_of && <Chip tone="red">Duplicate of #{r.duplicate_of}</Chip>}
-            <Chip tone={tax?.tone || 'grey'}>Tax: {tax ? tax.label.toLowerCase() : '—'}</Chip>
-            {r.status === 'verification' && r.unverified_count > 0 && <Chip tone="grey">{r.unverified_count} to verify</Chip>}
+            {invoiceProgress(r).map(p => <Chip key={p.key} tone={p.done ? 'green' : 'grey'}>{p.done ? '✓ ' : ''}{p.label}</Chip>)}
           </div>
-          <div className="mt-1 text-[11px] text-[#8A7A8B]">{r.line_count} line{r.line_count === 1 ? '' : 's'}</div>
           {r.status === 'failed' && (
             <div className="mt-1.5 flex items-start gap-2 flex-wrap">
               <span className="text-[11.5px] text-[#A8231A] [overflow-wrap:anywhere]">{error || 'AI processing failed.'}</span>
@@ -147,18 +152,15 @@ export const CostAgentInvoiceCard: React.FC<{
         <div className="flex @5xl:flex-col items-center @5xl:items-end justify-between gap-1.5 flex-wrap">
           <div className="@5xl:text-right">
             <div className={SA_LABEL}>Grand total</div>
-            <div className="text-[16px] leading-tight font-bold text-[#3B1B3D] tabular-nums">{fmtMoney(r.grand_total, r.currency)}</div>
+            <div className="text-[18px] leading-tight font-bold text-[#3B1B3D] tabular-nums">{fmtMoney(r.grand_total, r.currency)}</div>
           </div>
-          <div className="flex items-center gap-1.5">
-            <StatusChip status={r.status} />
-            {onDelete && (
-              <button type="button" aria-label={`Delete invoice ${r.invoice_no || r.id}`} title="Delete (Admin, trial data)" disabled={deleting}
-                onClick={e => { stop(e); onDelete() }}
-                className="p-1.5 rounded-lg text-[#8A7A8B] hover:text-[#A8231A] hover:bg-[#FDE7E4] disabled:opacity-50">
-                {deleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-              </button>
-            )}
-          </div>
+          {onDelete && (
+            <button type="button" aria-label={`Delete invoice ${r.invoice_no || r.id}`} title="Delete (Admin, trial data)" disabled={deleting}
+              onClick={e => { stop(e); onDelete() }}
+              className="p-1.5 rounded-lg text-[#8A7A8B] hover:text-[#A8231A] hover:bg-[#FDE7E4] disabled:opacity-50">
+              {deleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+            </button>
+          )}
         </div>
       </div>
     </div>

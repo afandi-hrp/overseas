@@ -703,3 +703,18 @@ Pola acuan: BunkerPage (list, pagination server-side, Card/List, polling `setInt
 BunkerUploadModal (upload), FarOverseasAirDetailModal (detail + approval, route `:id?`), FinanceHandoverPage (mark paid),
 `PaginationFooter` + `LoadingState` wajib. JANGAN sentuh `SharedDataTable`. Toast per halaman. Waktu voyage = jam lokal
 pelabuhan (`ports.tz`), kirim ke RPC "YYYY-MM-DD HH:mm" tanpa offset. Angka Rupiah/liter format id-ID.
+
+## Agency Invoices -- kartu progres, header & footer nominal editable (2026-10-20, permintaan user; sql/069 BELUM DIJALANKAN)
+
+- **Kartu** (`CostAgentCards.tsx`): chip higher/new item/tax/to verify/jumlah baris/status DIHAPUS -> 4 pil progres **Completed / Verified / Approved / Paid**
+  (`invoiceProgress()`; hijau + centang bila tahap terlewati, abu bila belum). Completed = bukan processing/failed/cancelled; Verified = semua baris
+  verified (verification dgn 0 baris belum verif, atau waiting_approval dst); Approved = approved/journal/paid; Paid = paid. processing/failed/rejected/
+  duplicate tetap chip merah/biru di depan pil. Kiri: PT badge + vendor + invoice no; tengah: Vessel / Port / Voy; kanan: Grand total.
+- **Modal review** (`CostAgentInvoiceReviewModal.tsx`): header kanan = tombol alert (`AlertsButton`, ikon + badge jumlah check_notes, klik -> daftar +
+  Fix) + pensil Correct header (ikon saja) + Delete + X. Baris pil: Vessel / Port (bisa diedit langsung: pensil -> combobox -> pilih = simpan via
+  `fn_cost_agent_update_invoice_header`; ganti vessel melepas port call) / Voyage · port call / Description. Alert tidak lagi tampil terbuka di header.
+- **Footer** (semua tab): pil Subtotal / VAT / WHT / Stamp (+ pensil -> edit 4 angka, Save) + Grand total (footerRight Lines tidak dipakai lagi).
+  Simpan = RPC BARU `fn_cost_agent_update_invoice_amounts` (`sql/069_cost_agent_update_invoice_amounts.sql`, definer, guard `assert_edit`, status
+  verification/rejected/failed): grand_total dihitung server = subtotal + ppn - pph + materai, catatan `total_mismatch` dibuang bila selisih <= 1,
+  dicatat ke status_log. Sudah masuk `server/db/whitelist.ts`. Hak edit = `headerEditable`. **Frontend butuh 069 dijalankan dulu** (Vessel/Port
+  memakai RPC lama, jalan tanpa 069).

@@ -435,6 +435,12 @@ export const costAgentUpdateInvoiceHeader = (a: {
   p_invoice_id: a.invoiceId, p_vendor_id: a.vendorId, p_vessel_id: a.vesselId, p_port_id: a.portId,
   p_voyage_call_id: a.voyageCallId, p_company_code: a.companyCode, p_actor: a.actor ?? null,
 })
+// sql/069: koreksi nominal header (status verification/rejected/failed). Server menghitung ulang grand total = subtotal + ppn - pph + materai
+// dan mengembalikannya.
+export const costAgentUpdateInvoiceAmounts = (a: { invoiceId: number; subtotal: number; ppn: number; pph: number; materai: number; actor?: string | null }) =>
+  callCostAgentRpc<number>('fn_cost_agent_update_invoice_amounts', {
+    p_invoice_id: a.invoiceId, p_subtotal: a.subtotal, p_ppn: a.ppn, p_pph: a.pph, p_materai: a.materai, p_actor: a.actor ?? null,
+  })
 // sql/064: ubah keterangan invoice (status verification/rejected/failed, canEdit cost_agent_invoice). '' = kembali otomatis.
 // Server menyimpan huruf besar, maks 300 karakter; mengembalikan keterangan tersimpan.
 export const COST_AGENT_DESCRIPTION_MAX = 300

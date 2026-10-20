@@ -21,7 +21,7 @@ import CostAgentPaymentsPanel from './CostAgentPaymentsPanel'
 import CostAgentPaymentModal from './CostAgentPaymentModal'
 import type { HistoryCache } from './CostAgentHistoryBrowser'
 import {
-  costAgentGetInvoiceHistory, costAgentUpdateInvoiceHeader, costAgentSubmitForApproval, costAgentUpload,
+  costAgentGetInvoiceHistory, costAgentUpdateInvoiceHeader, costAgentUpdateInvoiceAmounts, costAgentSubmitForApproval, costAgentUpload,
   costAgentAddVendor, searchCostAgentVendors, formatNpwp, costAgentSetInvoiceDescription, COST_AGENT_DESCRIPTION_MAX,
   fetchCostAgentCallOptions, callOptionLabel, drivePreviewUrl, isInvoiceEditable, canUploadSupporting,
   fmtMoney, fmtDate, fmtDateTimePort, fmtDateTimeCompact, tzAbbrev, fmtNumber, canDeleteInvoice, activeApprovalStep, isApproverOf, notifyCostAgentApprovalsChanged,
@@ -55,6 +55,7 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [editHeader, setEditHeader] = useState(false)
+  const [savingField, setSavingField] = useState(false) // simpan cepat Vessel / Port dari pil header
   const [showPay, setShowPay] = useState(false)
   // Viewer file layar penuh DI HALAMAN INI (2026-10-14, permintaan user: jangan buka tab baru).
   const [fullView, setFullView] = useState(false)
@@ -118,6 +119,23 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
   const notesFor = (field: NoteField) => allNotes.filter(n => noteField(n.type) === field)
   const fixHeader = headerEditable && !editHeader ? () => setEditHeader(true) : undefined
   const linesMismatch = !!inv && inv.lines_total != null && inv.subtotal != null && Math.abs(Number(inv.lines_total) - Number(inv.subtotal)) > 1
+  const vesselOpts: ComboOption[] = useMemo(() => vessels.map(v => ({ value: v.id, label: v.name, sub: [v.vessel_type, v.dwt ? `DWT ${fmtNumber(v.dwt, 0)}` : null].filter(Boolean).join(' · ') })), [vessels])
+  const portOpts: ComboOption[] = useMemo(() => ports.map(p => ({ value: p.id, label: `${p.code} — ${p.name}`, keywords: (p.aliases || []).join(' '), warn: p.is_verified ? undefined : 'Port not verified yet' })), [ports])
+  // Ubah Vessel / Port langsung dari pil header (2026-10-20): RPC koreksi header yg sama dgn tombol pensil. Ganti vessel -> port call
+  // dilepas (port call milik vessel lama), ganti port -> port call tetap.
+  const saveHeaderField = async (f: { vesselId?: number | null; portId?: number | null }) => {
+    if (!inv) return
+    setSavingField(true); setActionError(null)
+    try {
+      const vesselChanged = f.vesselId !== undefined && f.vesselId !== inv.vessel_id
+      await costAgentUpdateInvoiceHeader({
+        invoiceId: inv.id, vendorId: inv.vendor_id, vesselId: f.vesselId !== undefined ? f.vesselId : inv.vessel_id,
+        portId: f.portId !== undefined ? f.portId : inv.port_id, voyageCallId: vesselChanged ? null : inv.voyage_call_id,
+        companyCode: inv.company_code, actor,
+      })
+      await reload(); onToast('Header saved.')
+    } catch (e: any) { setActionError(e.message || String(e)) } finally { setSavingField(false) }
+  }
   const call = inv?.voyage_call as any
   const callTz = call?.port_id ? ports.find(p => p.id === call.port_id)?.tz : null
   const activeStep = inv?.status === 'waiting_approval' ? activeApprovalStep(data?.approvals || []) : null
@@ -143,84 +161,57 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[1560px] h-[94vh] max-[1600px]:max-w-none max-[1600px]:h-full flex flex-col overflow-hidden">
         {/* Header */}
         <div className="px-5 pt-3 pb-0 border-b border-[#EADFD6] shrink-0">
+          {/* Header (2026-10-20, permintaan user): kiri judul, kanan = tombol alert (jumlah catatan) + pensil Correct header + Delete + tutup;
+              baris pil Vessel / Port / Voyage / Description di bawahnya. Nominal (Subtotal/VAT/WHT/Stamp) pindah ke footer. */}
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-[18px] font-bold text-[#3B1B3D]">{title}</h2>
-                {inv && <span className="text-[14px] font-semibold text-[#6E5E70]">{inv.invoice_no || `#${inv.id}`}</span>}
-                {inv && <StatusChip status={inv.status} />}
+                {inv && <span className="text-[12px] font-semibold text-[#6E5E70]">{inv.invoice_no || `#${inv.id}`}</span>}
                 {inv?.company_code && <PtBadge code={inv.company_code} />}
+                {inv && <StatusChip status={inv.status} />}
                 {inv?.duplicate_of && <Link to={`/cost-agent/invoice/${inv.duplicate_of}`}><Chip tone="red">Duplicate of #{inv.duplicate_of}</Chip></Link>}
               </div>
               {inv && <div className="text-[12px] text-[#6E5E70] mt-0.5">Invoice date {fmtDate(inv.invoice_date)} · Service date {fmtDate(inv.service_date)} · Uploaded by {inv.uploaded_by || '—'}</div>}
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              {headerEditable && !editHeader && <button type="button" className={SA_BTN_OUTLINE} onClick={() => setEditHeader(true)}><Pencil size={13} /> Correct header</button>}
+              {inv && allNotes.length > 0 && (
+                <AlertsButton notes={allNotes} inv={inv} onFix={fixHeader} />
+              )}
+              {headerEditable && !editHeader && (
+                <button type="button" className={`${SA_BTN_OUTLINE} !px-2.5`} onClick={() => setEditHeader(true)} aria-label="Correct header" title="Correct header (vendor, vessel, port call, company)"><Pencil size={13} /></button>
+              )}
               {onDelete && inv && canDeleteInvoice(inv.status) && (
                 <button type="button" className={`${SA_BTN_OUTLINE} text-[#A8231A] hover:border-[#F4C3BC] hover:bg-[#FDE7E4]`} title="Delete this invoice (Admin, trial data)"
                   onClick={() => onDelete({ id: inv.id, invoice_no: inv.invoice_no, status: inv.status })}><Trash2 size={13} /> Delete</button>
               )}
-              <button type="button" onClick={onClose} aria-label="Close" className="p-1.5 rounded-full hover:bg-[#F6EFEA] text-[#6E5E70]"><X size={18} /></button>
+              <button type="button" onClick={onClose} aria-label="Close" className={`${SA_BTN_OUTLINE} !px-2.5`}><X size={15} /></button>
             </div>
           </div>
 
           {inv && (
             <>
-              {/* Strip info = bubble (2026-10-16): bubble (pill) hanya di isian, label polos di atas. Baris 1 Vessel/Port/Voyage, baris 2
-                  Subtotal/VAT/WHT/Stamp (Lines total dihapus; selisih lines total vs subtotal ditandai di bubble Subtotal).
-                  v3 (2026-10-16, permintaan user "kanan terlalu kosong"): header 2 kolom -- KIRI bubble, KANAN (rata kanan, alert selebar teksnya) Description + daftar alert
-                  (check_notes, semua tipe kecuali susulan_mismatch) dgn tombol Fix. Bubble field yg punya alert tetap bergaris kuning. */}
-              {/* Responsif (2026-10-16, laporan user: laptop 14" + alert banyak + description panjang -> blok kanan turun ke bawah bubble,
-                  kiri kosong). Grid container query: header >= 1250px = [bubble | kanan minmax(0,1fr)] -- blok kanan TIDAK pernah turun,
-                  teks description membungkus di kolomnya, alert mendatar flex-wrap rata kanan; < 1250px bertumpuk rata kiri. */}
-              <div className="@container mt-2.5">
-              <div className="grid items-start gap-x-8 gap-y-2 @min-[1250px]:grid-cols-[auto_minmax(0,1fr)]" data-header-info>
-                <div className="min-w-0 flex flex-col gap-1.5 text-[12.5px]">
-                  <div className="flex flex-wrap items-start gap-x-4 gap-y-1.5" data-header-bubbles>
-                    <InfoBubble label="Vessel" warn={notesFor('vessel').length > 0}
-                      title={[inv.vessel_name || inv.vessel_name_raw, inv.vessel_type, inv.vessel_dwt ? `DWT ${fmtNumber(inv.vessel_dwt, 0)}` : null].filter(Boolean).join(' · ')}>
-                      <span className="truncate max-w-[300px] inline-block align-bottom">{inv.vessel_name || <span className="text-[#A8231A]">{inv.vessel_name_raw || '—'} (unmatched)</span>}</span>
-                      {inv.vessel_dwt ? <span className="text-[#6E5E70] font-normal"> · DWT {fmtNumber(inv.vessel_dwt, 0)}</span> : null}
-                    </InfoBubble>
-                    <InfoBubble label="Port" warn={notesFor('port').length > 0} title={inv.port_name || inv.port_name_raw || undefined}>
-                      {inv.port_code ? `${inv.port_code} — ${inv.port_name}` : <span className="text-[#A8231A]">{inv.port_name_raw || '—'} (unmatched)</span>}
-                    </InfoBubble>
-                    <InfoBubble label="Voyage · port call" warn={notesFor('voyage').length > 0}
-                      title={call ? `${fmtDateTimePort(call.arrived_at, callTz)} → ${fmtDateTimePort(call.departed_at, callTz)}` : undefined}>
-                      {inv.voyage ? `Voy ${(inv.voyage as any).voyage_no}` : <span className="text-[#A8231A]">{inv.voyage_no_raw ? `Voy ${inv.voyage_no_raw} (unmatched)` : 'Not matched'}</span>}
-                      {call && <span className="text-[#6E5E70] font-normal"> · {fmtDateTimeCompact(call.arrived_at, callTz)} → {fmtDateTimeCompact(call.departed_at, callTz)} {tzAbbrev(callTz)}</span>}
-                    </InfoBubble>
-                  </div>
-                  <div className="flex flex-wrap items-start gap-x-4 gap-y-1.5" data-header-amounts>
-                    <InfoBubble label="Subtotal" money warn={notesFor('total').length > 0} bad={linesMismatch}
-                      title={linesMismatch ? `Cost lines total ${fmtMoney(inv.lines_total, inv.currency)} differs from subtotal` : undefined}>
-                      {fmtMoney(inv.subtotal, inv.currency)}
-                    </InfoBubble>
-                    <InfoBubble label="VAT" money>{fmtMoney(inv.ppn, inv.currency)}</InfoBubble>
-                    <InfoBubble label="WHT" money>{fmtMoney(inv.pph, inv.currency)}</InfoBubble>
-                    <InfoBubble label="Stamp" money>{fmtMoney(inv.materai, inv.currency)}</InfoBubble>
-                  </div>
+              <div className="mt-2.5 flex flex-wrap items-start gap-x-4 gap-y-1.5 text-[12.5px]" data-header-info>
+                <div data-header-bubbles className="contents">
+                  <InlinePick label="Vessel" warn={notesFor('vessel').length > 0} editable={headerEditable && !editHeader} options={vesselOpts} value={inv.vessel_id}
+                    placeholder="Vessel…" busy={savingField} onPick={v => saveHeaderField({ vesselId: v })}
+                    title={[inv.vessel_name || inv.vessel_name_raw, inv.vessel_type, inv.vessel_dwt ? `DWT ${fmtNumber(inv.vessel_dwt, 0)}` : null].filter(Boolean).join(' · ')}>
+                    <span className="truncate max-w-[300px] inline-block align-bottom">{inv.vessel_name || <span className="text-[#A8231A]">{inv.vessel_name_raw || '—'} (unmatched)</span>}</span>
+                    {inv.vessel_dwt ? <span className="text-[#6E5E70] font-normal"> · DWT {fmtNumber(inv.vessel_dwt, 0)}</span> : null}
+                  </InlinePick>
+                  <InlinePick label="Port" warn={notesFor('port').length > 0} editable={headerEditable && !editHeader} options={portOpts} value={inv.port_id}
+                    placeholder="Port…" busy={savingField} onPick={v => saveHeaderField({ portId: v })} title={inv.port_name || inv.port_name_raw || undefined}>
+                    {inv.port_code ? `${inv.port_code} — ${inv.port_name}` : <span className="text-[#A8231A]">{inv.port_name_raw || '—'} (unmatched)</span>}
+                  </InlinePick>
+                  <InfoBubble label="Voyage · port call" warn={notesFor('voyage').length > 0}
+                    title={call ? `${fmtDateTimePort(call.arrived_at, callTz)} → ${fmtDateTimePort(call.departed_at, callTz)}` : undefined}>
+                    {inv.voyage ? `Voy ${(inv.voyage as any).voyage_no}` : <span className="text-[#A8231A]">{inv.voyage_no_raw ? `Voy ${inv.voyage_no_raw} (unmatched)` : 'Not matched'}</span>}
+                    {call && <span className="text-[#6E5E70] font-normal"> · {fmtDateTimeCompact(call.arrived_at, callTz)} → {fmtDateTimeCompact(call.departed_at, callTz)} {tzAbbrev(callTz)}</span>}
+                  </InfoBubble>
                 </div>
-                <div className="min-w-0 flex flex-col items-start @min-[1250px]:items-end gap-1.5" data-header-side>
+                <div className="flex-1 min-w-[320px]" data-header-side>
                   <InvoiceDescription inv={inv} editable={headerEditable} actor={actor} onSaved={reload} onToast={onToast} />
-                  {allNotes.length > 0 && (
-                    <div className="flex flex-wrap justify-start @min-[1250px]:justify-end gap-1 max-w-full" data-header-alerts>
-                      {allNotes.map((n, i) => {
-                        const fixable = !!fixHeader && FIXABLE_NOTES.has(n.type || '')
-                        return (
-                          <div key={i} className="w-fit max-w-full rounded-lg border border-[#F2D58A] bg-[#FFF8E6] px-2.5 py-1 text-[11.5px] text-[#7A4F00] flex items-start gap-1.5" data-check-note={n.type || ''}>
-                            <AlertTriangle size={12} className="mt-0.5 shrink-0" />
-                            <span className="min-w-0 [overflow-wrap:anywhere] font-semibold">{noteText(n, inv)}</span>
-                            {fixable && (
-                              <button type="button" onClick={fixHeader} className="shrink-0 ml-2 font-semibold text-[#6B3470] hover:underline inline-flex items-center gap-0.5"><Pencil size={11} /> Fix</button>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
                 </div>
-              </div>
               </div>
               {inv.status === 'failed' && (
                 <div className="mt-2.5 rounded-md border border-[#F4C3BC] bg-[#FDE7E4] px-2.5 py-1.5 text-[12px] text-[#A8231A] flex items-center gap-2 flex-wrap">
@@ -267,7 +258,6 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
               <div className="flex-1 min-w-0 flex flex-col min-h-0">
                 <div className="flex-1 min-h-0">
                   <CostAgentInvoiceLines lines={data.lines} currency={data.invoice.currency} costItems={costItems} editable={editable} actor={actor} onChanged={reload} onToast={onToast}
-                    footerRight={<GrandTotal value={fmtMoney(data.invoice.grand_total, data.invoice.currency)} />}
                     invoice={data.invoice} ports={ports} vessels={vessels} vendors={vendors} historyCache={historyCache.current}
                     toolbarLeft={
                       <button type="button" className="text-[11.5px] text-[#6E5E70] hover:text-[#6B3470] inline-flex items-center gap-1 max-lg:hidden" onClick={() => setShowViewer(v => !v)}
@@ -318,7 +308,7 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
         {/* Footer aksi */}
         {inv && (
           <div className="px-5 py-2.5 border-t border-[#EADFD6] bg-[#FBF7F4] flex items-center gap-3 flex-wrap shrink-0">
-            {tab !== 'lines' && <GrandTotal value={fmtMoney(inv.grand_total, inv.currency)} />}
+            <AmountsBar inv={inv} editable={headerEditable} bad={linesMismatch} warn={notesFor('total').length > 0} actor={actor} onSaved={reload} onToast={onToast} />
             {actionError && <span className="text-[12.5px] text-[#A8231A] flex items-center gap-1.5"><AlertTriangle size={13} /> {actionError}</span>}
             {inv.status === 'waiting_approval' && (
               <span className="text-[12.5px] text-[#5B2E8C]">Waiting for approval{activeStep ? ` — step ${activeStep.step_no}: ${activeStep.approver_label}` : ''}.</span>
@@ -393,25 +383,150 @@ const noteField = (type: string | undefined): NoteField => NOTE_FIELD[type || ''
 // Catatan yg bisa dibereskan lewat Correct header (vendor/kapal/pelabuhan/voyage).
 const FIXABLE_NOTES = new Set(['vendor_unknown', 'vessel_unknown', 'vessel_fuzzy', 'port_unknown', 'voyage_unmatched'])
 
-function InfoBubble({ label, children, warn, title, money, bad }: {
-  label: string; children: React.ReactNode; warn?: boolean; title?: string; money?: boolean; bad?: boolean
+function InfoBubble({ label, children, warn, title, money, bad, small, action }: {
+  label: string; children: React.ReactNode; warn?: boolean; title?: string; money?: boolean; bad?: boolean; small?: boolean; action?: React.ReactNode
 }) {
   // v2 (2026-10-16, permintaan user): label polos di atas, bubble (pill) HANYA membungkus isian.
   warn = warn || bad
   return (
     <div className="min-w-0" title={title} data-bubble={label}>
       <div className={`${SA_LABEL} mb-0.5 pl-1`}>{label}</div>
-      <div className={`inline-block max-w-full rounded-full border px-3 py-0.5 whitespace-nowrap leading-snug ${warn ? 'border-[#F2D58A] bg-[#FFFBF0]' : 'border-[#EADFD6] bg-[#FBF7F4]'} ${money ? 'tabular-nums' : 'font-medium'} ${bad ? 'text-[#A8231A] font-semibold' : 'text-[#3B1B3D]'}`} data-bubble-value>{children}</div>
+      <div className={`inline-block max-w-full rounded-full border ${small ? 'px-2.5 text-[11.5px]' : 'px-3'} py-0.5 whitespace-nowrap leading-snug ${warn ? 'border-[#F2D58A] bg-[#FFFBF0]' : 'border-[#EADFD6] bg-[#FBF7F4]'} ${money ? 'tabular-nums' : 'font-medium'} ${bad ? 'text-[#A8231A] font-semibold' : 'text-[#3B1B3D]'}`} data-bubble-value>{children}{action}</div>
     </div>
   )
 }
 
 function GrandTotal({ value }: { value: string }) {
   return (
-    <span className="inline-flex items-baseline gap-2 rounded-xl border border-[#D9C3D6] bg-white px-3 py-1 whitespace-nowrap" data-grand-total>
+    <span className="inline-flex items-baseline gap-2 whitespace-nowrap" data-grand-total>
       <span className={SA_LABEL}>Grand total</span>
-      <span className="text-[15px] font-bold text-[#3B1B3D] tabular-nums">{value}</span>
+      <span className="text-[16px] font-bold text-[#3B1B3D] tabular-nums">{value}</span>
     </span>
+  )
+}
+
+// Tombol alert (2026-10-20): ikon peringatan + jumlah catatan di samping tombol edit header; klik -> daftar catatan (+ Fix).
+function AlertsButton({ notes, inv, onFix }: { notes: CostAgentInvoiceHistory['invoice']['check_notes']; inv: CostAgentInvoiceHistory['invoice']; onFix?: () => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [open])
+  return (
+    <div className="relative" ref={ref} data-header-alerts>
+      <button type="button" onClick={() => setOpen(o => !o)} aria-label={`${notes.length} alert${notes.length === 1 ? '' : 's'}`} aria-expanded={open}
+        className="relative h-9 w-9 inline-flex items-center justify-center rounded-lg border border-[#F2D58A] bg-[#FFF3CF] text-[#7A4F00] hover:bg-[#FFE9A8]">
+        <AlertTriangle size={16} />
+        <span className="absolute -top-1.5 -right-1.5 min-w-[17px] h-[17px] px-1 rounded-full bg-[#A8231A] text-white text-[10px] font-bold inline-flex items-center justify-center">{notes.length}</span>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1.5 z-[90] w-[min(440px,86vw)] rounded-xl border border-[#F2D58A] bg-white shadow-xl p-2 flex flex-col gap-1">
+          {notes.map((n, i) => {
+            const fixable = !!onFix && FIXABLE_NOTES.has(n.type || '')
+            return (
+              <div key={i} className="rounded-lg border border-[#F2D58A] bg-[#FFF8E6] px-2.5 py-1.5 text-[12px] text-[#7A4F00] flex items-start gap-1.5" data-check-note={n.type || ''}>
+                <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                <span className="min-w-0 flex-1 [overflow-wrap:anywhere] font-semibold">{noteText(n, inv)}</span>
+                {fixable && (
+                  <button type="button" onClick={() => { setOpen(false); onFix?.() }} className="shrink-0 ml-2 font-semibold text-[#6B3470] hover:underline inline-flex items-center gap-0.5"><Pencil size={11} /> Fix</button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Pil header yg bisa diubah langsung (Vessel / Port): pensil -> combobox -> pilih = simpan.
+function InlinePick({ label, children, warn, title, editable, options, value, placeholder, busy, onPick }: {
+  label: string; children: React.ReactNode; warn?: boolean; title?: string; editable: boolean
+  options: ComboOption[]; value: number | null; placeholder: string; busy: boolean; onPick: (v: number | null) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const wrap = useRef<HTMLDivElement>(null)
+  useEffect(() => { if (editing) wrap.current?.querySelector('input')?.focus() }, [editing])
+  if (editing) {
+    return (
+      <div className="min-w-[240px]" data-bubble={label}>
+        <div className={`${SA_LABEL} mb-0.5 pl-1`}>{label}</div>
+        <div className="flex items-center gap-1" ref={wrap}>
+          <CostAgentCombobox className="flex-1" options={options} value={value} allowClear={false} placeholder={placeholder}
+            onChange={v => { setEditing(false); if (v !== null && Number(v) !== value) onPick(Number(v)) }} />
+          <button type="button" aria-label="Cancel" onClick={() => setEditing(false)} className="p-1 rounded-md text-[#6E5E70] hover:bg-[#F5EDF3]"><X size={14} /></button>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <InfoBubble label={label} warn={warn} title={title}
+      action={editable ? <button type="button" disabled={busy} aria-label={`Edit ${label}`} title={`Edit ${label}`} onClick={() => setEditing(true)}
+        className="ml-1.5 -mr-1 p-0.5 rounded-full text-[#6B3470] hover:bg-[#F5EDF3] disabled:opacity-50 align-middle inline-flex"><Pencil size={11} /></button> : undefined}>
+      {children}
+    </InfoBubble>
+  )
+}
+
+// Footer nominal (2026-10-20): Subtotal / VAT / WHT / Stamp + Grand total. Pensil -> keempat angka bisa diubah (fn_cost_agent_update_invoice_amounts,
+// sql/069); Grand total = subtotal + VAT - WHT + Stamp (dihitung server, pratinjau live saat edit).
+function AmountsBar({ inv, editable, bad, warn, actor, onSaved, onToast }: {
+  inv: CostAgentInvoiceHistory['invoice']; editable: boolean; bad: boolean; warn: boolean; actor: string | null
+  onSaved: () => Promise<void> | void; onToast: (msg: string, tone?: 'ok' | 'warn') => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [f, setF] = useState({ subtotal: '', ppn: '', pph: '', materai: '' })
+  const start = () => {
+    const v = (n: number | null) => (n == null ? '' : String(Number(n)))
+    setF({ subtotal: v(inv.subtotal), ppn: v(inv.ppn), pph: v(inv.pph), materai: v(inv.materai) }); setError(null); setEditing(true)
+  }
+  const num = (t: string) => (t.trim() === '' ? 0 : Number(t))
+  const valid = f.subtotal.trim() !== '' && [f.subtotal, f.ppn, f.pph, f.materai].every(t => Number.isFinite(num(t)) && num(t) >= 0)
+  const preview = num(f.subtotal) + num(f.ppn) - num(f.pph) + num(f.materai)
+  const save = async () => {
+    if (!valid) { setError('Subtotal is required; amounts cannot be negative.'); return }
+    setBusy(true); setError(null)
+    try {
+      await costAgentUpdateInvoiceAmounts({ invoiceId: inv.id, subtotal: num(f.subtotal), ppn: num(f.ppn), pph: num(f.pph), materai: num(f.materai), actor })
+      setEditing(false); await onSaved(); onToast('Amounts saved.')
+    } catch (e: any) { setError(e.message || String(e)) } finally { setBusy(false) }
+  }
+  if (editing) {
+    const fields: [keyof typeof f, string][] = [['subtotal', 'Subtotal'], ['ppn', 'VAT'], ['pph', 'WHT'], ['materai', 'Stamp']]
+    return (
+      <div className="flex flex-wrap items-end gap-2" data-amounts-edit>
+        {fields.map(([k, label]) => (
+          <div key={k}>
+            <div className={`${SA_LABEL} mb-0.5 pl-1`}>{label}</div>
+            <input type="number" min={0} step="0.01" inputMode="decimal" className={`${SA_INPUT} w-[130px] tabular-nums`} value={f[k]} disabled={busy} aria-label={label}
+              onChange={e => setF(p => ({ ...p, [k]: e.target.value }))}
+              onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); setEditing(false) } }} />
+          </div>
+        ))}
+        <GrandTotal value={fmtMoney(valid ? preview : null, inv.currency)} />
+        <button type="button" className={SA_BTN_OUTLINE} disabled={busy} onClick={() => setEditing(false)}>Cancel</button>
+        <button type="button" className={SA_BTN_PRIMARY} disabled={busy || !valid} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
+        {error && <span className="basis-full text-[12px] text-[#A8231A]">{error}</span>}
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-wrap items-end gap-x-3 gap-y-1.5" data-header-amounts>
+      <InfoBubble label="Subtotal" money small warn={warn} bad={bad}
+        title={bad ? `Cost lines total ${fmtMoney(inv.lines_total, inv.currency)} differs from subtotal` : undefined}>{fmtMoney(inv.subtotal, inv.currency)}</InfoBubble>
+      <InfoBubble label="VAT" money small>{fmtMoney(inv.ppn, inv.currency)}</InfoBubble>
+      <InfoBubble label="WHT" money small>{fmtMoney(inv.pph, inv.currency)}</InfoBubble>
+      <InfoBubble label="Stamp" money small>{fmtMoney(inv.materai, inv.currency)}</InfoBubble>
+      {editable && (
+        <button type="button" onClick={start} aria-label="Edit amounts" title="Edit Subtotal / VAT / WHT / Stamp" className="mb-0.5 p-1.5 rounded-lg text-[#6B3470] hover:bg-[#F5EDF3]"><Pencil size={13} /></button>
+      )}
+      <GrandTotal value={fmtMoney(inv.grand_total, inv.currency)} />
+    </div>
   )
 }
 
@@ -666,9 +781,11 @@ function InvoiceDescription({ inv, editable, actor, onSaved, onToast }: {
   }
   return (
     // 2026-10-16 (permintaan user): label + badge + isi dalam SATU baris (isi di samping label); helper text dihapus.
-    <div className="max-w-full text-[12.5px] flex flex-wrap items-center justify-start @min-[1250px]:justify-end gap-x-2 gap-y-1" data-invoice-description>
-      <span className={SA_LABEL}>Description</span>
-      <span className={`px-1.5 py-[1px] rounded text-[10px] font-bold ${auto ? 'bg-[#EEF1FA] text-[#2F4FA8]' : 'bg-[#F5EDF3] text-[#6B3470]'}`} data-description-badge>{auto ? 'Auto' : 'Edited'}</span>
+    <div className="max-w-full text-[12.5px] flex flex-wrap items-center gap-x-2 gap-y-1" data-invoice-description>
+      <div className="basis-full flex items-center gap-2 pl-1">
+        <span className={SA_LABEL}>Description</span>
+        <span className={`px-1.5 py-[1px] rounded text-[10px] font-bold ${auto ? 'bg-[#EEF1FA] text-[#2F4FA8]' : 'bg-[#F5EDF3] text-[#6B3470]'}`} data-description-badge>{auto ? 'Auto' : 'Edited'}</span>
+      </div>
       {editing ? (
         <div className="flex-1 min-w-[320px] flex flex-wrap items-center gap-2">
           <input className={`${SA_INPUT} flex-1 min-w-[260px] uppercase`} value={text} maxLength={COST_AGENT_DESCRIPTION_MAX} autoFocus disabled={busy} aria-label="Invoice description"
@@ -680,7 +797,7 @@ function InvoiceDescription({ inv, editable, actor, onSaved, onToast }: {
         </div>
       ) : (
         <div className="flex items-start gap-1 min-w-0 max-w-full">
-          <span className="text-[#3B1B3D] font-medium [overflow-wrap:anywhere] min-w-0 @min-[1250px]:text-right">{inv.description || <span className="text-[#8A7A8B] font-normal">—</span>}</span>
+          <span className="text-[#3B1B3D] font-medium [overflow-wrap:anywhere] min-w-0 rounded-full border border-[#EADFD6] bg-[#FBF7F4] px-3 py-0.5 leading-snug">{inv.description || <span className="text-[#8A7A8B] font-normal">—</span>}</span>
           {editable && (
             <>
               <button type="button" aria-label="Edit description" title="Edit description" className="shrink-0 p-1 -mt-0.5 rounded-md text-[#6B3470] hover:bg-[#F5EDF3]"
