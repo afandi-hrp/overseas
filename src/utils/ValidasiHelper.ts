@@ -62,8 +62,8 @@ export const SECTIONS = [
     label: "BILLING DJBC",
     srcLabel: "Billing DJBC",
     rows: [
-      { id: "bdjbc03", compareDoc: "BPN",  field: "Nomor Aju" },
-      { id: "bdjbc04", compareDoc: "BPN",  field: "Total" },
+      { id: "bdjbc03_cn", compareDoc: "BPN",  field: "Nomor Aju" },
+      { id: "bdjbc04_cn", compareDoc: "BPN",  field: "Total" },
     ]
   },
   {

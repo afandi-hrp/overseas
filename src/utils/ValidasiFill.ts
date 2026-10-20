@@ -12,7 +12,7 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
   const invDutyCost = raw.invoice_duty_cost || {};
   const fpD = raw.faktur_pajak_duty || {};
   const fi = raw.final_invoice || {};
-  const bdjbc = raw.billing_djbc_amount;
+  const bdjbc = raw.billing_djbc_total; // key sama dgn buildValidationValues di ValidasiModal (dulu salah: billing_djbc_amount)
   
   const npwpClean = (val: any) => val ? String(val).replace(/D/g, '') : '';
   const findNpwp = (clean: string) => {
@@ -143,6 +143,9 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
         fill("bdjbc02", bdjbc || "", pibV.total_bayar || "");
         fill("bdjbc03", bpnV.nomor_aju || "", bpnV.nomor_dokumen || "");
         fill("bdjbc04", bdjbc || "", bpnV.total || "");
+        // Jalur CN (section s_billing): src dari Billing DJBC, cmp dari BPN -- SAMA dgn buildValidationValues di ValidasiModal.
+        fill("bdjbc03_cn", raw.billing_djbc_nomor_aju || "", bpnV.nomor_dokumen || "");
+        fill("bdjbc04_cn", bdjbc || "", bpnV.total || "");
 
         // CIPL
         fill("cipl01", ciplV.total_value || "", raw.po_total_value || "");

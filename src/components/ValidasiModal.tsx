@@ -297,8 +297,10 @@ const SECTIONS: SectionConfig[] = [
     label: "BILLING DJBC",
     srcLabel: "Billing DJBC",
     rows: [
-      { id: "bdjbc03", compareDoc: "BPN",  field: "Nomor Aju" },
-      { id: "bdjbc04", compareDoc: "BPN",  field: "Total" },
+      // Jalur CN (2026-10-20): src = Billing DJBC sendiri (billing_djbc_nomor_aju / billing_djbc_total), cmp = BPN.
+      // id BEDA dari bdjbc03/04 di s_pib (jalur PIB: src = PIB) supaya tidak saling menimpa.
+      { id: "bdjbc03_cn", compareDoc: "BPN",  field: "Nomor Aju" },
+      { id: "bdjbc04_cn", compareDoc: "BPN",  field: "Total" },
     ]
   },
   {
@@ -653,6 +655,9 @@ function buildValidationValues(raw: any, docAwb: string, localNpwps: any[]): Rec
   fill("bdjbc02", pibV.total_bayar || "", bdjbc || "");
   fill("bdjbc03", pibV.no_pengajuan || "", bpnV.nomor_dokumen || "");
   fill("bdjbc04", pibV.total_bayar || "", bpnV.total || "");
+  // Jalur CN (section s_billing): src dari Billing DJBC, cmp dari BPN.
+  fill("bdjbc03_cn", raw.billing_djbc_nomor_aju || "", bpnV.nomor_dokumen || "");
+  fill("bdjbc04_cn", bdjbc || "", bpnV.total || "");
 
   // CIPL
   fill("cipl01", ciplV.total_value || "", raw.po_total_value || "");

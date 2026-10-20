@@ -670,6 +670,14 @@ revisi di atas) — `raw` = `dokumen_validasi.data_validasi_raw` (jsonb, di-pars
 | No. AWB | PIB | `invoice_freight_v.awb \|\| invoice_duty_v.awb` | `pib_v.no_awb` |
 | No. AWB | BPN/HTBK | `bpn_v.awb` | `invoice_freight_v.awb` |
 | No. AWB | AWB | `docAwb` | `docAwb` kalau `awb_detail_v` ada isi, else kosong |
+| Nomor Aju (section `s_billing`, KHUSUS CN, id `bdjbc03_cn`) | BPN | `billing_djbc_nomor_aju` | `bpn_v.nomor_dokumen` |
+| Total (section `s_billing`, KHUSUS CN, id `bdjbc04_cn`) | BPN | `billing_djbc_total` | `bpn_v.total` |
+
+(2026-10-20) Dua baris `s_billing` di atas DULU memakai id `bdjbc03`/`bdjbc04` (src = `pib_v`, kosong utk CN). Kini id
+`*_cn` terpisah dari `bdjbc03`/`bdjbc04` di `s_pib` (jalur PIB, src tetap `pib_v`). Checklist CN tersimpan lama belum punya
+id `*_cn` -> kosong sampai "Recompute Missing Data". `generateValues` (ValidasiFill.ts) kini membaca `billing_djbc_total`
+(dulu keliru `billing_djbc_amount`). Baris `bdjbc01`-`04` di `generateValues` (jalur PIB) MASIH beda dari modal
+(src `bpn_v.*` vs `pib_v.*`) -- belum disamakan.
 | No Invoice PPJK | FP Freight | `faktur_pajak_freight.no_referensi` | `invoice_freight_v.no_invoice` |
 | No Invoice PPJK | FP Duty | `faktur_pajak_duty.no_referensi` | `invoice_duty_v.no_invoice` |
 | No Invoice PPJK | FP Revisi Freight | `fp_revisi_freight.no_referensi` | `invoice_freight_v.no_invoice` |
