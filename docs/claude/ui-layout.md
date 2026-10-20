@@ -177,3 +177,7 @@ halaman `<header className="px-3 pt-0 pb-1 …">` dan judul `h1` halaman (`text-
 -> huruf judul sejajar tepi atas sidebar (diukur Edge headless + font Sora: tepi sidebar y=14 = puncak huruf judul y=14). Header baru WAJIB ikut.
 Halaman tanpa `<header>` standar (LoginPage, LockScreen, FarOverseasMemoPaper) tidak terpengaruh.
 
+
+## Sidebar desktop -- ikon di tengah (2026-10-20, laporan user)
+- Sidebar menciut 80px: tombol menu utama `pl-[13px] pr-2.5` (10 padding container + 1 border + 13 + 16 = 40 = tengah), tautan footer (My Account / Settings / nama akun / Logout, tanpa border) `pl-[14px] pr-2.5`.
+  Dulu `px-2.5` -> pusat ikon 3-4px di kiri tengah. Posisi ikon sama saat sidebar dibuka (tidak bergeser).

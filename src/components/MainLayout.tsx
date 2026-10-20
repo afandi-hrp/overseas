@@ -475,7 +475,8 @@ export default function MainLayout() {
                     // Subtab pertama yg BOLEH diakses (visibleTabs sudah difilter) -- mis. user SPB yg hanya
                     // punya Oil Request tidak dilempar ke Requisition RH. Akses penuh = sama dgn t.path.
                     onClick={() => navigate(t.subTabs?.[0]?.path ?? t.path)}
-                    className={`flex items-center justify-between px-2.5 py-2.5 rounded-xl border transition-all ${
+                    // pl-[13px] (bukan px-2.5): kotak ikon 32px tepat di TENGAH sidebar 80px saat menciut (10 + 1 border + 13 + 16 = 40).
+                    className={`flex items-center justify-between pl-[13px] pr-2.5 py-2.5 rounded-xl border transition-all ${
                       isActive
                         ? 'text-white bg-white/10 backdrop-blur-md border-white/20 shadow-lg shadow-[#5A305A]/10'
                         : 'text-[#a394a8] border-transparent hover:bg-white/5 hover:text-white'
@@ -537,7 +538,7 @@ export default function MainLayout() {
             <hr className="border-white/10 my-1 mx-1" />
             <Link
               to="/account"
-              className={`flex items-center gap-3 px-2.5 py-1.5 rounded-xl transition-all whitespace-nowrap overflow-hidden ${
+              className={`flex items-center gap-3 pl-[14px] pr-2.5 py-1.5 rounded-xl transition-all whitespace-nowrap overflow-hidden ${
                 location.pathname === '/account' ? 'text-white bg-white/10' : 'text-[#a394a8] hover:bg-white/5 hover:text-white'
               }`}
               title={!isSidebarOpen ? "My Account" : undefined}
@@ -553,7 +554,7 @@ export default function MainLayout() {
             </Link>
             <Link
               to="/settings"
-              className={`flex items-center gap-3 px-2.5 py-1.5 rounded-xl transition-all whitespace-nowrap overflow-hidden text-[#a394a8] hover:bg-white/5 hover:text-white`}
+              className={`flex items-center gap-3 pl-[14px] pr-2.5 py-1.5 rounded-xl transition-all whitespace-nowrap overflow-hidden text-[#a394a8] hover:bg-white/5 hover:text-white`}
               title={!isSidebarOpen ? "Settings" : undefined}
             >
               <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-white/5">
@@ -568,7 +569,7 @@ export default function MainLayout() {
 
             {/* Nama akun yang sedang login -- tepat di atas tombol Keluar */}
             <div
-              className="flex items-center gap-3 px-2.5 py-1.5 rounded-xl whitespace-nowrap overflow-hidden text-[#a394a8]"
+              className="flex items-center gap-3 pl-[14px] pr-2.5 py-1.5 rounded-xl whitespace-nowrap overflow-hidden text-[#a394a8]"
               title={!isSidebarOpen ? accountName : undefined}
             >
               <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-white/10 text-white text-xs font-bold">
@@ -583,7 +584,7 @@ export default function MainLayout() {
 
             <button
               onClick={handleLogout}
-              className="flex items-center gap-3 px-2.5 py-1.5 rounded-xl transition-all whitespace-nowrap overflow-hidden text-[#a394a8] hover:bg-white/5 hover:text-white w-full"
+              className="flex items-center gap-3 pl-[14px] pr-2.5 py-1.5 rounded-xl transition-all whitespace-nowrap overflow-hidden text-[#a394a8] hover:bg-white/5 hover:text-white w-full"
               title={!isSidebarOpen ? "Logout" : undefined}
             >
               <span className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-white/5">
