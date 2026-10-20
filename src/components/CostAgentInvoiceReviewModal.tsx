@@ -9,9 +9,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
-import { X, Pencil, Send, Maximize2, Minimize2, AlertTriangle, RotateCcw, PanelLeftClose, PanelLeftOpen, FileText, Wallet, ShieldCheck, Trash2, Plus } from 'lucide-react'
+import { X, Pencil, Send, Maximize2, Minimize2, AlertTriangle, RotateCcw, PanelLeftClose, PanelLeftOpen, FileText, Wallet, ShieldCheck, Trash2, Plus, ChevronDown, ChevronUp } from 'lucide-react'
 import { StatusChip, CostAgentCombobox, CostAgentModal, FieldLabel, type ComboOption } from './CostAgentUi'
-import { Chip, PtBadge, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_BTN_GREEN, SA_INPUT, SA_LABEL } from './SeaAirAuditUi'
+import { Chip, PtBadge, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_BTN_GREEN, SA_INPUT, SA_LABEL, SA_CARD } from './SeaAirAuditUi'
 import { LoadingState, LoadingSpinner } from './LoadingState'
 import CostAgentInvoiceLines from './CostAgentInvoiceLines'
 import { noteText } from '../utils/CostAgentNotes'
@@ -30,6 +30,21 @@ import {
 } from '../utils/CostAgentHelpers'
 
 type Tab = 'lines' | 'documents' | 'approval' | 'payments' | 'timeline'
+
+// Strip info header (Vessel / Port / Voyage / Description) bisa dilipat -- pola "Shipment Info" panel Validation Courier. Pilihan disimpan
+// per browser; default terlipat bila tinggi jendela < 900px (laptop 14").
+const INFO_KEY = 'beehive_cost_agent_invoice_info_open'
+const initialInfoOpen = (): boolean => {
+  try {
+    const v = window.localStorage.getItem(INFO_KEY)
+    if (v === '1') return true
+    if (v === '0') return false
+  } catch { /* storage tidak tersedia */ }
+  return typeof window !== 'undefined' && window.innerHeight >= 900
+}
+// Titik status kecil di tab (hanya tampilan, dihitung dari data yg sudah ada).
+const DOT_CLS = { ok: 'bg-[#17663D]', warn: 'bg-[#E0A526]', bad: 'bg-[#A8231A]' }
+type Dot = keyof typeof DOT_CLS | null
 
 export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vendors, vessels, ports, costItems, canEdit, canPay, actor, onClose, onChanged, onToast, onDelete }: {
   invoiceId: number
@@ -58,6 +73,12 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
   const [showPay, setShowPay] = useState(false)
   // Viewer file layar penuh DI HALAMAN INI (2026-10-14, permintaan user: jangan buka tab baru).
   const [fullView, setFullView] = useState(false)
+  const [infoOpen, setInfoOpen] = useState<boolean>(initialInfoOpen)
+  const toggleInfo = () => setInfoOpen(v => {
+    const next = !v
+    try { window.localStorage.setItem(INFO_KEY, next ? '1' : '0') } catch { /* abaikan */ }
+    return next
+  })
   const onChangedRef = useRef(onChanged)
   onChangedRef.current = onChanged
   const historyCache = useRef<HistoryCache>(new Map()) // hasil Browse history per filter (hidup selama modal terbuka)
@@ -123,6 +144,14 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
   const activeStep = inv?.status === 'waiting_approval' ? activeApprovalStep(data?.approvals || []) : null
   const iAmApprover = isApproverOf(activeStep, actor)
   const hasActivePayment = (data?.payments || []).some(p => ['draft', 'submitted', 'posted', 'paid'].includes(p.status))
+  // Titik status di tab (tampilan saja).
+  const tabDot: Record<Tab, Dot> = {
+    lines: !data || data.lines.length === 0 ? null : unverified > 0 || unmapped > 0 ? 'warn' : 'ok',
+    documents: null,
+    approval: !inv ? null : ['approved', 'journal', 'paid'].includes(inv.status) ? 'ok' : inv.status === 'waiting_approval' ? 'warn' : inv.status === 'rejected' ? 'bad' : null,
+    payments: !inv ? null : inv.status === 'paid' ? 'ok' : (data?.payments.length ? 'warn' : null),
+    timeline: null,
+  }
 
   const submit = async () => {
     if (!inv || unverified > 0 || unmapped > 0) return
@@ -148,9 +177,9 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-[18px] font-bold text-[#3B1B3D]">{title}</h2>
-                {inv && <span className="text-[12px] font-semibold text-[#6E5E70]">{inv.invoice_no || `#${inv.id}`}</span>}
                 {inv?.company_code && <PtBadge code={inv.company_code} />}
+                <h2 className="text-[18px] font-bold text-[#3B1B3D]">{title}</h2>
+                {inv && <span className="text-[12px] font-semibold text-[#6E5E70] px-2 py-0.5 rounded-md bg-[#F3EEEA]">{inv.invoice_no || `#${inv.id}`}</span>}
                 {inv && <StatusChip status={inv.status} />}
                 {inv?.duplicate_of && <Link to={`/cost-agent/invoice/${inv.duplicate_of}`}><Chip tone="red">Duplicate of #{inv.duplicate_of}</Chip></Link>}
               </div>
@@ -173,26 +202,6 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
 
           {inv && (
             <>
-              <div className="mt-2.5 flex flex-wrap items-start gap-x-4 gap-y-1.5 text-[12.5px]" data-header-info>
-                <div data-header-bubbles className="contents">
-                  <InfoBubble label="Vessel" warn={notesFor('vessel').length > 0}
-                    title={[inv.vessel_name || inv.vessel_name_raw, inv.vessel_type, inv.vessel_dwt ? `DWT ${fmtNumber(inv.vessel_dwt, 0)}` : null].filter(Boolean).join(' · ')}>
-                    <span className="truncate max-w-[300px] inline-block align-bottom">{inv.vessel_name || <span className="text-[#A8231A]">{inv.vessel_name_raw || '—'} (unmatched)</span>}</span>
-                    {inv.vessel_dwt ? <span className="text-[#6E5E70] font-normal"> · DWT {fmtNumber(inv.vessel_dwt, 0)}</span> : null}
-                  </InfoBubble>
-                  <InfoBubble label="Port" warn={notesFor('port').length > 0} title={inv.port_name || inv.port_name_raw || undefined}>
-                    {inv.port_code ? `${inv.port_code} — ${inv.port_name}` : <span className="text-[#A8231A]">{inv.port_name_raw || '—'} (unmatched)</span>}
-                  </InfoBubble>
-                  <InfoBubble label="Voyage · port call" warn={notesFor('voyage').length > 0}
-                    title={call ? `${fmtDateTimePort(call.arrived_at, callTz)} → ${fmtDateTimePort(call.departed_at, callTz)}` : undefined}>
-                    {inv.voyage ? `Voy ${(inv.voyage as any).voyage_no}` : <span className="text-[#A8231A]">{inv.voyage_no_raw ? `Voy ${inv.voyage_no_raw} (unmatched)` : 'Not matched'}</span>}
-                    {call && <span className="text-[#6E5E70] font-normal"> · {fmtDateTimeCompact(call.arrived_at, callTz)} → {fmtDateTimeCompact(call.departed_at, callTz)} {tzAbbrev(callTz)}</span>}
-                  </InfoBubble>
-                </div>
-                <div className="flex-1 min-w-[320px]" data-header-side>
-                  <InvoiceDescription inv={inv} editable={headerEditable} actor={actor} onSaved={reload} onToast={onToast} />
-                </div>
-              </div>
               {inv.status === 'failed' && (
                 <div className="mt-2.5 rounded-md border border-[#F4C3BC] bg-[#FDE7E4] px-2.5 py-1.5 text-[12px] text-[#A8231A] flex items-center gap-2 flex-wrap">
                   <AlertTriangle size={12} /> <span className="flex-1">AI processing failed: {inv.error_message || 'unknown error'}</span>
@@ -207,19 +216,29 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
             </>
           )}
 
-          <div className="flex gap-1 mt-2" role="tablist">
+          <div className="flex items-end gap-1.5 mt-2 overflow-x-auto" role="tablist">
             {([['lines', `Cost lines${data ? ` (${data.lines.length})` : ''}`], ['documents', `Documents & Tax${data?.tax_checks.length ? ` (${data.tax_checks.length})` : ''}`],
               ['approval', `Approval${iAmApprover ? ' •' : ''}`], ['payments', `Payments${data?.payments.length ? ` (${data.payments.length})` : ''}`], ['timeline', 'Timeline']] as [Tab, string][]).map(([k, label]) => (
               <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
-                className={`px-3.5 py-1.5 text-[12.5px] font-semibold border-b-2 -mb-px ${tab === k ? 'border-[#6B3470] text-[#6B3470]' : 'border-transparent text-[#6E5E70] hover:text-[#3B1B3D]'}`}>{label}</button>
+                className={`shrink-0 flex items-center gap-1.5 px-3 pt-1.5 pb-1.5 rounded-t-lg text-[12.5px] font-semibold border-b-[3px] transition-colors ${tab === k ? 'bg-[#F5EDF3] text-[#6B3470] border-[#6B3470] font-bold' : 'bg-[#F3EEEA] text-[#3B1B3D] border-transparent opacity-80 hover:opacity-100'}`}>
+                {tabDot[k] && <span className={`w-2 h-2 rounded-full shrink-0 ${DOT_CLS[tabDot[k]!]}`} />}
+                {label}
+              </button>
             ))}
           </div>
         </div>
 
+        {/* Strip info (2026-10-20, permintaan user "cantikkan" -- pola Shipment Info panel Validation Courier): latar ungu muda, sel berlabel. */}
+        {inv && (
+          <InfoStrip inv={inv} open={infoOpen} onToggle={toggleInfo} vesselWarn={notesFor('vessel').length > 0} portWarn={notesFor('port').length > 0}
+            voyageWarn={notesFor('voyage').length > 0} call={call} callTz={callTz}
+            description={<InvoiceDescription inv={inv} editable={headerEditable} actor={actor} onSaved={reload} onToast={onToast} />} />
+        )}
+
         {/* Body */}
-        <div className="flex-1 min-h-0 overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-hidden bg-[#FBF7F4]">
           {loading ? <LoadingState /> : error ? <p className="p-5 text-sm text-[#A8231A]">{error}</p> : !data ? null : tab === 'lines' ? (
-            <div className="h-full flex min-h-0">
+            <div className="h-full p-2.5 min-h-0"><div className={`${SA_CARD} h-full flex min-h-0 overflow-hidden`}>
               {showViewer && (
                 <div className="w-[36%] max-w-[640px] min-w-[280px] border-r border-[#EADFD6] flex flex-col min-h-0 max-lg:hidden">
                   <div className="flex items-center gap-1.5 px-3 py-2 border-b border-[#EADFD6] shrink-0 flex-wrap">
@@ -247,7 +266,7 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
                     } />
                 </div>
               </div>
-            </div>
+            </div></div>
           ) : tab === 'approval' ? (
             <div className="h-full overflow-y-auto">
               <CostAgentApprovalPanel data={data} email={actor} canEdit={canEdit} actor={actor} onDecided={async (r, decision) => {
@@ -265,7 +284,7 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
           ) : tab === 'documents' ? (
             <div className="h-full overflow-y-auto"><CostAgentInvoiceDocuments data={data} canUpload={canEdit && canUploadSupporting(data.invoice.status)} onChanged={reload} /></div>
           ) : (
-            <div className="h-full overflow-y-auto p-5">
+            <div className="h-full overflow-y-auto p-3"><div className={`${SA_CARD} p-5`}>
               {data.timeline.length === 0 ? <p className="text-sm text-[#6E5E70] italic">No status history.</p> : (
                 <ol className="relative border-l-2 border-[#EADFD6] ml-2 space-y-3">
                   {data.timeline.map(t => (
@@ -281,7 +300,7 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
                   ))}
                 </ol>
               )}
-            </div>
+            </div></div>
           )}
         </div>
 
@@ -372,6 +391,70 @@ function InfoBubble({ label, children, warn, title, money, bad, small, action }:
     <div className="min-w-0" title={title} data-bubble={label}>
       <div className={`${SA_LABEL} mb-0.5 pl-1`}>{label}</div>
       <div className={`inline-block max-w-full rounded-full border ${small ? 'px-2.5 text-[11.5px]' : 'px-3'} py-0.5 whitespace-nowrap leading-snug ${warn ? 'border-[#F2D58A] bg-[#FFFBF0]' : 'border-[#EADFD6] bg-[#FBF7F4]'} ${money ? 'tabular-nums' : 'font-medium'} ${bad ? 'text-[#A8231A] font-semibold' : 'text-[#3B1B3D]'}`} data-bubble-value>{children}{action}</div>
+    </div>
+  )
+}
+
+// Sel strip info (pola InfoCell panel Validation Courier). `warn` = ada catatan check_notes untuk field ini.
+function InfoCell({ label, children, warn, title, extra, className = '', ...rest }: {
+  label: string; children: React.ReactNode; warn?: boolean; title?: string; extra?: React.ReactNode; className?: string
+} & Record<`data-${string}`, string | undefined>) {
+  return (
+    <div className={`min-w-0 px-2.5 py-1.5 ${warn ? 'bg-[#FFFBF0]' : 'bg-[#FCF8FB]'} ${className}`} title={title} data-cell={label} {...rest}>
+      <div className="flex items-center gap-1.5 mb-1">
+        <p className="text-[9.5px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B] leading-none">{label}</p>
+        {warn && <AlertTriangle size={10} className="text-[#B7791F]" />}
+        {extra}
+      </div>
+      <div className="text-[12px] font-semibold text-[#3B1B3D] leading-snug [overflow-wrap:anywhere]">{children}</div>
+    </div>
+  )
+}
+
+// Strip info di bawah header modal: Vessel / Port / Voyage · port call / Description. Bisa dilipat jadi 1 baris ringkas.
+function InfoStrip({ inv, open, onToggle, vesselWarn, portWarn, voyageWarn, call, callTz, description }: {
+  inv: CostAgentInvoiceHistory['invoice']; open: boolean; onToggle: () => void; vesselWarn: boolean; portWarn: boolean; voyageWarn: boolean
+  call: any; callTz: string | null | undefined; description: React.ReactNode
+}) {
+  const bad = (t: string) => <span className="text-[#A8231A]">{t}</span>
+  const vessel = inv.vessel_name || bad(`${inv.vessel_name_raw || '—'} (unmatched)`)
+  const port = inv.port_code ? `${inv.port_code} — ${inv.port_name}` : bad(`${inv.port_name_raw || '—'} (unmatched)`)
+  const voyage = inv.voyage ? `Voy ${(inv.voyage as any).voyage_no}` : bad(inv.voyage_no_raw ? `Voy ${inv.voyage_no_raw} (unmatched)` : 'Not matched')
+  const callText = call ? `${fmtDateTimeCompact(call.arrived_at, callTz)} → ${fmtDateTimeCompact(call.departed_at, callTz)} ${tzAbbrev(callTz)}` : null
+  const callTitle = call ? `${fmtDateTimePort(call.arrived_at, callTz)} → ${fmtDateTimePort(call.departed_at, callTz)}` : undefined
+  return (
+    <div className="shrink-0 px-3 py-2 bg-[#F5EDF3] border-b border-[#D9C7DA] @container" data-header-info>
+      {!open ? (
+        <div className="flex items-center gap-x-4 gap-y-1 flex-wrap text-[11.5px]" data-info-collapsed>
+          <span className="min-w-0"><span className="text-[#8A7A8B]">Vessel </span><b className="text-[#3B1B3D]">{vessel}</b></span>
+          <span className="min-w-0"><span className="text-[#8A7A8B]">Port </span><b className="text-[#3B1B3D]">{port}</b></span>
+          <span className="min-w-0"><span className="text-[#8A7A8B]">Voyage </span><b className="text-[#3B1B3D]">{voyage}</b></span>
+          <button type="button" onClick={onToggle} className="ml-auto inline-flex items-center gap-1 text-[11.5px] font-semibold text-[#6B3470] hover:underline shrink-0">
+            Show all info <ChevronDown size={13} />
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="flex justify-end mb-1">
+            <button type="button" onClick={onToggle} className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#6B3470] hover:underline">
+              Hide info <ChevronUp size={13} />
+            </button>
+          </div>
+          <div className="rounded-[12px] border border-[#D9C7DA] overflow-hidden">
+            <div className="grid grid-cols-2 @4xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.5fr)] gap-px bg-[#E4D3E2]" data-header-bubbles>
+              <InfoCell label="Vessel" warn={vesselWarn}
+                title={[inv.vessel_name || inv.vessel_name_raw, inv.vessel_type, inv.vessel_dwt ? `DWT ${fmtNumber(inv.vessel_dwt, 0)}` : null].filter(Boolean).join(' · ')}>
+                {vessel}{inv.vessel_dwt ? <span className="text-[#6E5E70] font-normal"> · DWT {fmtNumber(inv.vessel_dwt, 0)}</span> : null}
+              </InfoCell>
+              <InfoCell label="Port" warn={portWarn} title={inv.port_name || inv.port_name_raw || undefined}>{port}</InfoCell>
+              <InfoCell label="Voyage · port call" warn={voyageWarn} title={callTitle} className="col-span-2 @4xl:col-span-1">
+                {voyage}{callText && <span className="text-[#6E5E70] font-normal"> · {callText}</span>}
+              </InfoCell>
+              {description}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -751,20 +834,17 @@ function InvoiceDescription({ inv, editable, actor, onSaved, onToast }: {
     } catch (e: any) { setError(e.message || String(e)) } finally { setBusy(false) }
   }
   return (
-    // 2026-10-16 (permintaan user): label + badge + isi dalam SATU baris (isi di samping label); helper text dihapus.
-    <div className="max-w-full text-[12.5px] flex flex-wrap items-center gap-x-2 gap-y-1" data-invoice-description>
-      <div className="basis-full flex items-center gap-2 pl-1">
-        <span className={SA_LABEL}>Description</span>
-        <span className={`px-1.5 py-[1px] rounded text-[10px] font-bold ${auto ? 'bg-[#EEF1FA] text-[#2F4FA8]' : 'bg-[#F5EDF3] text-[#6B3470]'}`} data-description-badge>{auto ? 'Auto' : 'Edited'}</span>
-      </div>
-      <div className="flex items-start gap-1 min-w-0 max-w-full">
-        <span className="text-[#3B1B3D] font-medium [overflow-wrap:anywhere] min-w-0 rounded-full border border-[#EADFD6] bg-[#FBF7F4] px-3 py-0.5 leading-snug">{inv.description || <span className="text-[#8A7A8B] font-normal">—</span>}</span>
+    // 2026-10-20 (permintaan user "cantikkan"): jadi sel strip info (InfoCell) -- label + badge Auto/Edited di atas, isi di bawah.
+    <InfoCell label="Description" className="col-span-2 @4xl:col-span-1" data-invoice-description="true"
+      extra={<>
+        <span className={`px-1.5 py-[1px] rounded text-[10px] font-bold normal-case tracking-normal leading-none ${auto ? 'bg-[#EEF1FA] text-[#2F4FA8]' : 'bg-[#F5EDF3] text-[#6B3470]'}`} data-description-badge>{auto ? 'Auto' : 'Edited'}</span>
         {editable && !auto && (
-          <button type="button" disabled={busy} className="shrink-0 text-[11.5px] font-semibold text-[#6B3470] hover:underline disabled:opacity-50 inline-flex items-center gap-0.5"
-            onClick={resetToAuto}><RotateCcw size={11} /> Reset to auto</button>
+          <button type="button" disabled={busy} className="ml-auto text-[11px] font-semibold text-[#6B3470] hover:underline disabled:opacity-50 inline-flex items-center gap-0.5"
+            onClick={resetToAuto}><RotateCcw size={10} /> Reset to auto</button>
         )}
-      </div>
-      {error && <div className="basis-full text-[11.5px] text-[#A8231A]">{error}</div>}
-    </div>
+      </>}>
+      {inv.description || <span className="text-[#8A7A8B] font-normal">—</span>}
+      {error && <div className="text-[11.5px] text-[#A8231A] font-normal">{error}</div>}
+    </InfoCell>
   )
 }

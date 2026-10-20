@@ -726,3 +726,12 @@ pelabuhan (`ports.tz`), kirim ke RPC "YYYY-MM-DD HH:mm" tanpa offset. Angka Rupi
   VAT / WHT / Stamp; panah spinner input angka dihilangkan.
 - **Vendor di Correct header**: invoice yang vendornya SUDAH ter-match (`vendor_id` terisi) -> field terkunci (read-only). Belum ter-match -> `VendorCombobox addOnly`: tidak ada daftar
   pilih, hanya "+ Add vendor" (server mengembalikan id lama bila nama/alias/NPWP sudah ada). **Pembatasan di UI saja** -- RPC koreksi header masih menerima `vendorId`.
+
+## Agency Invoices — modal review dipercantik (2026-10-20, permintaan user; DISETUJUI user)
+- Murni tampilan, pola panel Validation Courier; tanpa perubahan RPC/state/handler. `CostAgentInvoiceReviewModal.tsx`: header = badge PT + judul + no invoice (label abu) + chip status;
+  Vessel / Port / Voyage·port call / Description jadi **strip info** (`InfoStrip` + `InfoCell`, latar `#F5EDF3`, sel amber + ikon bila ada check_note) yang bisa dilipat
+  ("Hide info"/"Show all info", localStorage `beehive_cost_agent_invoice_info_open`, default terlipat bila tinggi jendela < 900px); tab gaya Courier (sudut atas membulat, garis
+  bawah 3px) dgn titik status (Cost lines hijau/kuning, Approval, Payments); area isi latar krem + kartu putih (Cost lines, Timeline). Footer nominal tidak berubah.
+- `CostAgentInvoiceLines.tsx`: tiap baris = **kartu** (garis kiri hijau = verified / amber = tanpa cost item / abu), header kolom ungu muda, nomor baris bulatan plum,
+  Edit/View history/"+n more reference"/Reset = chip ungu lembut (`LINK`), Verify hijau lembut (verified = hijau pekat + CheckCircle2), Remark ungu bila ada remark (kotak remark kuning),
+  pill selisih bulat dgn ikon panah, toolbar = chip jumlah + segmen toggle seperti Courier.

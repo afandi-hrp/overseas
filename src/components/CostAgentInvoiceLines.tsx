@@ -12,7 +12,7 @@
 // DILIPAT bila flag sesuai + pembanding same_line + bukan compare_check (toggle "Show all compares" / "Show only differences").
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Plus, CheckCheck, AlertTriangle, History, RotateCcw, Pin, Pencil, Check, MessageSquare, Info } from 'lucide-react'
+import { Plus, CheckCheck, AlertTriangle, History, RotateCcw, Pin, Pencil, Check, CheckCircle2, MessageSquare, Info, ArrowUp, ArrowDown, Equal } from 'lucide-react'
 import { CompareFlagChip, MatchLevelLabel, CostAgentModal, FieldLabel } from './CostAgentUi'
 import { SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_INPUT, Chip } from './SeaAirAuditUi'
 import CostAgentCostItemPicker from './CostAgentCostItemPicker'
@@ -25,7 +25,8 @@ import {
 } from '../utils/CostAgentHelpers'
 
 const CATEGORIES = ['PORT', 'AGENCY', 'CREW', 'DOCUMENT', 'WATER', 'ADMIN', 'TAX', 'OTHER']
-const LINK = 'text-[11px] font-semibold text-[#6B3470] hover:underline inline-flex items-center gap-0.5 disabled:opacity-50'
+// Tautan aksi kecil = chip lembut (2026-10-20, permintaan user: tombol/ikon lebih cantik) -- fungsi tetap.
+const LINK = 'h-6 px-2 rounded-full border border-[#E4D3E2] bg-[#F5EDF3] text-[11px] font-semibold text-[#6B3470] hover:bg-[#EFE2EC] hover:border-[#C9A9C4] inline-flex items-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
 
 // Pembanding utama = pilihan user (manual) > primary (sql/061) > baris pertama (data lama tanpa `pick`).
 // Pembanding lain = next / alternative (alternative didahulukan: alasan "Check reference").
@@ -101,20 +102,22 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-[#EADFD6] shrink-0 flex-wrap">
         <div className="text-[12.5px] text-[#3B1B3D] flex items-center gap-3 flex-wrap">
           {toolbarLeft}
-          <span><b>{lines.length}</b> line{lines.length === 1 ? '' : 's'} · <span className={unverified ? 'text-[#7A4F00] font-semibold' : 'text-[#17663D] font-semibold'}>{unverified ? `${unverified} not verified` : 'all verified'}</span>
-            {unmapped > 0 && <> · <span className="text-[#A8231A] font-semibold" data-unmapped-count>{unmapped} without cost item</span></>}
+          <span className="inline-flex items-center gap-1.5 flex-wrap">
+            <Chip tone="plum"><b>{lines.length}</b> line{lines.length === 1 ? '' : 's'}</Chip>
+            <Chip tone={unverified ? 'amber' : 'green'}>{unverified ? <AlertTriangle size={10} /> : <CheckCircle2 size={10} />}{unverified ? `${unverified} not verified` : 'all verified'}</Chip>
+            {unmapped > 0 && <span data-unmapped-count><Chip tone="red">{unmapped} without cost item</Chip></span>}
           </span>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="inline-flex rounded-lg border border-[#EADFD6] overflow-hidden text-[11.5px] font-semibold" role="group" aria-label="Compare display">
+          <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[#F5EDF3] text-[11.5px] font-bold" role="group" aria-label="Compare display">
             <button type="button" aria-pressed={!showAllCompares} onClick={() => setShowAllCompares(false)} data-compare-toggle="differences"
-              className={`px-2.5 py-1 ${!showAllCompares ? 'bg-[#6B3470] text-white' : 'bg-white text-[#6E5E70] hover:bg-[#FBF7F4]'}`}
+              className={`px-2.5 h-7 rounded-lg transition-colors ${!showAllCompares ? 'bg-[#3B1B3D] text-white shadow-sm' : 'text-[#3B1B3D] hover:bg-white'}`}
               title="Fold the comparison of lines that match the same line in history">Show only differences</button>
             <button type="button" aria-pressed={showAllCompares} onClick={() => setShowAllCompares(true)} data-compare-toggle="all"
-              className={`px-2.5 py-1 border-l border-[#EADFD6] ${showAllCompares ? 'bg-[#6B3470] text-white' : 'bg-white text-[#6E5E70] hover:bg-[#FBF7F4]'}`}>Show all compares</button>
+              className={`px-2.5 h-7 rounded-lg transition-colors ${showAllCompares ? 'bg-[#3B1B3D] text-white shadow-sm' : 'text-[#3B1B3D] hover:bg-white'}`}>Show all compares</button>
           </div>
           {editable && (
-            <button type="button" className={SA_BTN_OUTLINE} disabled={!matching.length || busy !== null} onClick={verifyAllMatching}
+            <button type="button" className={`${SA_BTN_OUTLINE} !border-[#BFE3CD] !bg-[#EAF6EF] !text-[#17663D] hover:!bg-[#DDF0E5]`} disabled={!matching.length || busy !== null} onClick={verifyAllMatching}
               title="Verify every line whose amount is in line with history (lines without a cost item are skipped)">
               <CheckCheck size={13} /> {busy === 'all' ? 'Verifying…' : `Verify all matching (${matching.length})`}
             </button>
@@ -126,17 +129,20 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
           Main reference -- + # & Action, garis pemisah antar kolom. Tata letak SAMA saat file/PDF tampil (hanya lebar kolom menyesuaikan,
           Main reference TIDAK turun ke bawah): panel >= 640px `grid-cols-[28px_minmax(0,0.9fr)_296px_minmax(0,1fr)_128px]`, >= 1200px `grid-cols-[28px_minmax(0,1fr)_320px_minmax(0,1.2fr)_132px]`; < 640px bertumpuk.
           Posisi sel memakai [grid-column]/[grid-row] eksplisit (col-span/row-span Tailwind v4 menimpa col-start). */}
-      <div className="overflow-auto flex-1 min-h-0 @container" data-lines-scroll>
+      <div className="overflow-auto flex-1 min-h-0 @container bg-[#FBF7F4] pb-2.5" data-lines-scroll>
         {lines.length > 0 && (
-          <div className="hidden @min-[640px]:grid @min-[640px]:grid-cols-[28px_minmax(0,0.9fr)_296px_minmax(0,1fr)_128px] @min-[1200px]:grid-cols-[28px_minmax(0,1fr)_320px_minmax(0,1.2fr)_132px] border-l-4 border-l-transparent border-b border-[#EADFD6] bg-[#FBF7F4] sticky top-0 z-10 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[#6E5E70]" data-lines-header>
-            <span className="px-2 py-2">#</span>
-            <span className="px-3 py-2 text-center">Invoice line</span>
-            <span className="px-3 py-2 text-center @min-[640px]:border-l @min-[640px]:border-[#EFE6E0]">Invoice vs history</span>
-            <span className="px-3 py-2 text-center @min-[640px]:border-l @min-[640px]:border-[#EFE6E0]">Main reference</span>
-            <span className="px-3 py-2 text-center @min-[640px]:border-l @min-[640px]:border-[#EFE6E0]">Action</span>
+          <div className="hidden @min-[640px]:block sticky top-0 z-10 bg-[#FBF7F4] px-2.5 pt-2.5 pb-2" data-lines-header-wrap>
+            <div className="grid grid-cols-[28px_minmax(0,0.9fr)_296px_minmax(0,1fr)_128px] @min-[1200px]:grid-cols-[28px_minmax(0,1fr)_320px_minmax(0,1.2fr)_132px] rounded-xl border border-transparent border-l-4 border-l-transparent bg-[#F5EDF3] text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#6B3470]" data-lines-header>
+              <span className="px-2 py-2">#</span>
+              <span className="px-3 py-2 text-center">Invoice line</span>
+              <span className="px-3 py-2 text-center border-l border-[#E4D3E2]">Invoice vs history</span>
+              <span className="px-3 py-2 text-center border-l border-[#E4D3E2]">Main reference</span>
+              <span className="px-3 py-2 text-center border-l border-[#E4D3E2]">Action</span>
+            </div>
           </div>
         )}
         {lines.length === 0 && <div className="px-4 py-8 text-center text-sm text-[#6E5E70] italic">No cost lines.</div>}
+        <div className="flex flex-col gap-2 px-2.5 pt-2.5 @min-[640px]:pt-0">
         {shownLines.map(l => {
           const rowBusy = busy === l.id || busy === 'all'
           const { main, others } = pickComparators(l)
@@ -151,10 +157,10 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
           const mainDiff = main ? diffOf(l, main) : null
           return (
             <div key={l.id} data-line-id={l.id}
-              className={`grid grid-cols-[28px_minmax(0,1fr)_112px] @min-[640px]:grid-cols-[28px_minmax(0,0.9fr)_296px_minmax(0,1fr)_128px] @min-[1200px]:grid-cols-[28px_minmax(0,1fr)_320px_minmax(0,1.2fr)_132px] border-b border-[#F0E8E2] border-l-4 bg-white hover:bg-[#FDFBFA] ${l.is_verified ? 'border-l-[#17663D]' : 'border-l-transparent'} ${rowBusy ? 'opacity-60' : ''}`}>
+              className={`grid grid-cols-[28px_minmax(0,1fr)_112px] @min-[640px]:grid-cols-[28px_minmax(0,0.9fr)_296px_minmax(0,1fr)_128px] @min-[1200px]:grid-cols-[28px_minmax(0,1fr)_320px_minmax(0,1.2fr)_132px] rounded-xl border border-[#EADFD6] border-l-4 shadow-[0_1px_2px_rgba(59,27,61,0.04)] transition-colors ${l.is_verified ? 'bg-[#F8FCFA] border-l-[#17663D]' : noCostItem ? 'bg-white border-l-[#E0A526] hover:bg-[#FFFEFB]' : 'bg-white border-l-[#D9CFD6] hover:bg-[#FDFBFA]'} ${rowBusy ? 'opacity-60' : ''}`}>
               {/* # */}
               <div className="px-2 py-3 [grid-column:1] [grid-row:1/span_3] @min-[640px]:[grid-row:1]">
-                <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-[#F3EEEA] text-[11px] font-semibold text-[#6E5E70] tabular-nums">{l.line_no}</span>
+                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[#3B1B3D] text-[11px] font-bold text-white tabular-nums">{l.line_no}</span>
               </div>
 
               {/* Invoice line */}
@@ -163,7 +169,7 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                   <div className="min-w-0 text-[13px] font-bold text-[#3B1B3D] leading-snug [overflow-wrap:anywhere]">{l.description_raw}</div>
                   {editable && (
                     <button type="button" data-action="edit-line" disabled={rowBusy} onClick={() => setEditFor(l)} title="Edit line text, qty, price or amount"
-                      className="shrink-0 -mt-0.5 inline-flex items-center gap-1 h-6 px-2 rounded-md border border-[#EADFD6] bg-white text-[11px] font-semibold text-[#6E5E70] hover:text-[#6B3470] hover:border-[#C9A9C4] disabled:opacity-40">
+                      className="shrink-0 -mt-0.5 inline-flex items-center gap-1 h-6 px-2 rounded-full border border-[#E4D3E2] bg-[#F5EDF3] text-[11px] font-semibold text-[#6B3470] hover:bg-[#EFE2EC] hover:border-[#C9A9C4] transition-colors disabled:opacity-40">
                       <Pencil size={11} /> Edit
                     </button>
                   )}
@@ -193,13 +199,13 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                 {/* sel = container sendiri: lebar sel >= 270px -> Invoice | pill | History sebaris; lebih sempit -> pill turun di bawah, tengah. */}
                 <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] @min-[270px]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-x-2 gap-y-1 items-start">
                   <div className="min-w-0 [grid-column:1] [grid-row:1]" data-invoice-amount>
-                    <div className="text-[10.5px] text-[#8A7A8B]">Invoice</div>
-                    <div className="text-[13.5px] font-bold text-[#3B1B3D] tabular-nums whitespace-nowrap">{fmtMoney(l.amount, currency)}</div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B]">Invoice</div>
+                    <div className="text-[14.5px] font-extrabold text-[#3B1B3D] tabular-nums whitespace-nowrap">{fmtMoney(l.amount, currency)}</div>
                   </div>
                   <div className="[grid-column:1/span_2] [grid-row:2] flex justify-center @min-[270px]:[grid-column:2] @min-[270px]:[grid-row:1] @min-[270px]:pt-3.5"><DiffPill line={l} pct={mainDiff?.pct ?? null} /></div>
                   <div className="min-w-0 text-right [grid-column:2] [grid-row:1] @min-[270px]:[grid-column:3]" data-history-amount>
-                    <div className="text-[10.5px] text-[#8A7A8B]">History</div>
-                    <div className="text-[13.5px] text-[#3B1B3D] tabular-nums whitespace-nowrap">{main ? fmtMoney(main.amount, currency) : '—'}</div>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B]">History</div>
+                    <div className="text-[13.5px] text-[#6E5E70] tabular-nums whitespace-nowrap">{main ? fmtMoney(main.amount, currency) : '—'}</div>
                   </div>
                 </div>
               </div>
@@ -210,7 +216,7 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                 {!main ? (
                   <div className="text-[12px] text-[#6E5E70]">{newItem ? 'Not in cost master yet — nothing to compare' : 'No history yet for this cost item'}</div>
                 ) : (
-                  <div data-comparator="main" data-history-pick={main.pick || undefined}>
+                  <div data-comparator="main" data-history-pick={main.pick || undefined} className="rounded-lg bg-[#FBF7F4] border border-[#F0E8E2] px-2.5 py-1.5">
                     {/* nama baris history + badge line_match di popover ⓘ; yang tampil "sumber · vessel · port" tebal. */}
                     <RefWhere h={main} strong />
                     <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
@@ -254,8 +260,8 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                       }} />
                   </div>
                 ) : l.remark ? (
-                  <div className="mt-2 flex items-start gap-1.5 rounded-md bg-[#FBF7F4] border border-[#F0E8E2] px-2 py-1 text-[11.5px] text-[#6E5E70] [overflow-wrap:anywhere] whitespace-pre-wrap" data-line-remark>
-                    <MessageSquare size={12} className="mt-0.5 shrink-0 text-[#8A7A8B]" /><span className="min-w-0">{l.remark}</span>
+                  <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-[#FFF8E6] border border-[#F2D58A] px-2 py-1 text-[11.5px] text-[#7A4F00] [overflow-wrap:anywhere] whitespace-pre-wrap" data-line-remark>
+                    <MessageSquare size={12} className="mt-0.5 shrink-0 text-[#B7791F]" /><span className="min-w-0">{l.remark}</span>
                   </div>
                 ) : null}
               </div>
@@ -265,15 +271,15 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                 {editable ? (
                   <button type="button" data-verify-line disabled={rowBusy || (!l.is_verified && noCostItem)} title={verifyTitle}
                     onClick={() => run(l.id, () => verify(l, { isVerified: !l.is_verified, learnAlias: !l.is_verified && !!l.cost_item_id }))}
-                    className={`inline-flex items-center justify-center gap-1 h-8 rounded-lg text-[12px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed ${l.is_verified ? 'bg-[#17663D] text-white hover:bg-[#12522F]' : 'border border-[#9FD3B4] bg-white text-[#17663D] hover:bg-[#EAF7EF]'}`}>
-                    <Check size={13} /> {l.is_verified ? 'Verified' : 'Verify'}
+                    className={`inline-flex items-center justify-center gap-1.5 h-8 rounded-xl text-[12px] font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${l.is_verified ? 'bg-[#17663D] text-white shadow-sm hover:bg-[#12522F]' : 'border border-[#9FD3B4] bg-[#EAF6EF] text-[#17663D] hover:bg-[#DDF0E5]'}`}>
+                    {l.is_verified ? <CheckCircle2 size={14} /> : <Check size={14} />} {l.is_verified ? 'Verified' : 'Verify'}
                   </button>
                 ) : (
                   <Chip tone={l.is_verified ? 'green' : 'grey'} className="justify-center h-8" title={l.verified_by ? `By ${l.verified_by}` : undefined}>{l.is_verified ? <><Check size={10} /> Verified</> : 'Not verified'}</Chip>
                 )}
                 {editable && (
                   <button type="button" data-action="remark" onClick={() => setRemarkOpen(p => new Set(p).add(l.id))} title={l.remark || 'Add a remark'}
-                    className={`inline-flex items-center justify-center gap-1.5 h-8 rounded-lg border text-[12px] font-semibold whitespace-nowrap ${editingRemark ? 'border-[#C9A9C4] bg-[#F5EDF3] text-[#6B3470]' : 'border-[#EADFD6] bg-white text-[#6E5E70] hover:text-[#6B3470] hover:border-[#C9A9C4]'}`}>
+                    className={`inline-flex items-center justify-center gap-1.5 h-8 rounded-xl border text-[12px] font-bold whitespace-nowrap transition-colors ${editingRemark || l.remark ? 'border-[#C9A9C4] bg-[#F5EDF3] text-[#6B3470]' : 'border-[#E4D3E2] bg-white text-[#6E5E70] hover:bg-[#F5EDF3] hover:text-[#6B3470] hover:border-[#C9A9C4]'}`}>
                     <MessageSquare size={13} /> {l.remark ? 'Edit remark' : 'Remark'}
                   </button>
                 )}
@@ -282,6 +288,7 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
             </div>
           )
         })}
+        </div>
       </div>
       {/* 2026-10-16 (permintaan user): ringkasan jumlah & total per flag DIHAPUS; footer = Needs check + Grand total. */}
       {(needsCheck.length > 0 || footerRight) && (
@@ -374,10 +381,10 @@ const pct1 = (v: number) => `${Math.abs(v).toLocaleString('id-ID', { minimumFrac
 function DiffPill({ line, pct }: { line: CostAgentInvoiceLine; pct: number | null }) {
   const p = line.compare_diff_pct ?? pct
   const f = line.compare_flag
-  const base = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold whitespace-nowrap tabular-nums'
-  if (f === 'naik') return <span className={`${base} bg-[#FDE7E4] text-[#A8231A]`} data-diff-pill title="Higher than history">▲ {p != null ? pct1(p) : 'Higher'}</span>
-  if (f === 'turun') return <span className={`${base} bg-[#E6ECFA] text-[#2F4FA8]`} data-diff-pill title="Lower than history">▼ {p != null ? pct1(p) : 'Lower'}</span>
-  if (f === 'sesuai') return <span className={`${base} bg-[#E3F4EA] text-[#17663D]`} data-diff-pill title="In line with history">= {p != null ? pct1(p) : 'In line'}</span>
+  const base = 'inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold whitespace-nowrap tabular-nums'
+  if (f === 'naik') return <span className={`${base} bg-[#FDE7E4] text-[#A8231A]`} data-diff-pill title="Higher than history"><ArrowUp size={11} />{p != null ? pct1(p) : 'Higher'}</span>
+  if (f === 'turun') return <span className={`${base} bg-[#E6ECFA] text-[#2F4FA8]`} data-diff-pill title="Lower than history"><ArrowDown size={11} />{p != null ? pct1(p) : 'Lower'}</span>
+  if (f === 'sesuai') return <span className={`${base} bg-[#E3F4EA] text-[#17663D]`} data-diff-pill title="In line with history"><Equal size={11} />{p != null ? pct1(p) : 'In line'}</span>
   if (f === 'item_baru') return <span className={`${base} bg-[#FFF1D6] text-[#7A4F00]`} data-diff-pill>New item</span>
   if (f === 'tanpa_history') return <span className={`${base} bg-[#F1ECEF] text-[#6E5E70]`} data-diff-pill>No history</span>
   return <span className={`${base} bg-[#F1ECEF] text-[#8A7A8B]`} data-diff-pill>—</span>
