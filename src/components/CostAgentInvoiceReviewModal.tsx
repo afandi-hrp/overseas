@@ -55,7 +55,6 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [editHeader, setEditHeader] = useState(false)
-  const [savingField, setSavingField] = useState(false) // simpan cepat Vessel / Port dari pil header
   const [showPay, setShowPay] = useState(false)
   // Viewer file layar penuh DI HALAMAN INI (2026-10-14, permintaan user: jangan buka tab baru).
   const [fullView, setFullView] = useState(false)
@@ -119,23 +118,6 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
   const notesFor = (field: NoteField) => allNotes.filter(n => noteField(n.type) === field)
   const fixHeader = headerEditable && !editHeader ? () => setEditHeader(true) : undefined
   const linesMismatch = !!inv && inv.lines_total != null && inv.subtotal != null && Math.abs(Number(inv.lines_total) - Number(inv.subtotal)) > 1
-  const vesselOpts: ComboOption[] = useMemo(() => vessels.map(v => ({ value: v.id, label: v.name, sub: [v.vessel_type, v.dwt ? `DWT ${fmtNumber(v.dwt, 0)}` : null].filter(Boolean).join(' · ') })), [vessels])
-  const portOpts: ComboOption[] = useMemo(() => ports.map(p => ({ value: p.id, label: `${p.code} — ${p.name}`, keywords: (p.aliases || []).join(' '), warn: p.is_verified ? undefined : 'Port not verified yet' })), [ports])
-  // Ubah Vessel / Port langsung dari pil header (2026-10-20): RPC koreksi header yg sama dgn tombol pensil. Ganti vessel -> port call
-  // dilepas (port call milik vessel lama), ganti port -> port call tetap.
-  const saveHeaderField = async (f: { vesselId?: number | null; portId?: number | null }) => {
-    if (!inv) return
-    setSavingField(true); setActionError(null)
-    try {
-      const vesselChanged = f.vesselId !== undefined && f.vesselId !== inv.vessel_id
-      await costAgentUpdateInvoiceHeader({
-        invoiceId: inv.id, vendorId: inv.vendor_id, vesselId: f.vesselId !== undefined ? f.vesselId : inv.vessel_id,
-        portId: f.portId !== undefined ? f.portId : inv.port_id, voyageCallId: vesselChanged ? null : inv.voyage_call_id,
-        companyCode: inv.company_code, actor,
-      })
-      await reload(); onToast('Header saved.')
-    } catch (e: any) { setActionError(e.message || String(e)) } finally { setSavingField(false) }
-  }
   const call = inv?.voyage_call as any
   const callTz = call?.port_id ? ports.find(p => p.id === call.port_id)?.tz : null
   const activeStep = inv?.status === 'waiting_approval' ? activeApprovalStep(data?.approvals || []) : null
@@ -193,16 +175,14 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
             <>
               <div className="mt-2.5 flex flex-wrap items-start gap-x-4 gap-y-1.5 text-[12.5px]" data-header-info>
                 <div data-header-bubbles className="contents">
-                  <InlinePick label="Vessel" warn={notesFor('vessel').length > 0} editable={headerEditable && !editHeader} options={vesselOpts} value={inv.vessel_id}
-                    placeholder="Vessel…" busy={savingField} onPick={v => saveHeaderField({ vesselId: v })}
+                  <InfoBubble label="Vessel" warn={notesFor('vessel').length > 0}
                     title={[inv.vessel_name || inv.vessel_name_raw, inv.vessel_type, inv.vessel_dwt ? `DWT ${fmtNumber(inv.vessel_dwt, 0)}` : null].filter(Boolean).join(' · ')}>
                     <span className="truncate max-w-[300px] inline-block align-bottom">{inv.vessel_name || <span className="text-[#A8231A]">{inv.vessel_name_raw || '—'} (unmatched)</span>}</span>
                     {inv.vessel_dwt ? <span className="text-[#6E5E70] font-normal"> · DWT {fmtNumber(inv.vessel_dwt, 0)}</span> : null}
-                  </InlinePick>
-                  <InlinePick label="Port" warn={notesFor('port').length > 0} editable={headerEditable && !editHeader} options={portOpts} value={inv.port_id}
-                    placeholder="Port…" busy={savingField} onPick={v => saveHeaderField({ portId: v })} title={inv.port_name || inv.port_name_raw || undefined}>
+                  </InfoBubble>
+                  <InfoBubble label="Port" warn={notesFor('port').length > 0} title={inv.port_name || inv.port_name_raw || undefined}>
                     {inv.port_code ? `${inv.port_code} — ${inv.port_name}` : <span className="text-[#A8231A]">{inv.port_name_raw || '—'} (unmatched)</span>}
-                  </InlinePick>
+                  </InfoBubble>
                   <InfoBubble label="Voyage · port call" warn={notesFor('voyage').length > 0}
                     title={call ? `${fmtDateTimePort(call.arrived_at, callTz)} → ${fmtDateTimePort(call.departed_at, callTz)}` : undefined}>
                     {inv.voyage ? `Voy ${(inv.voyage as any).voyage_no}` : <span className="text-[#A8231A]">{inv.voyage_no_raw ? `Voy ${inv.voyage_no_raw} (unmatched)` : 'Not matched'}</span>}
@@ -442,35 +422,6 @@ function AlertsButton({ notes, inv, onFix }: { notes: CostAgentInvoiceHistory['i
   )
 }
 
-// Pil header yg bisa diubah langsung (Vessel / Port): pensil -> combobox -> pilih = simpan.
-function InlinePick({ label, children, warn, title, editable, options, value, placeholder, busy, onPick }: {
-  label: string; children: React.ReactNode; warn?: boolean; title?: string; editable: boolean
-  options: ComboOption[]; value: number | null; placeholder: string; busy: boolean; onPick: (v: number | null) => void
-}) {
-  const [editing, setEditing] = useState(false)
-  const wrap = useRef<HTMLDivElement>(null)
-  useEffect(() => { if (editing) wrap.current?.querySelector('input')?.focus() }, [editing])
-  if (editing) {
-    return (
-      <div className="min-w-[240px]" data-bubble={label}>
-        <div className={`${SA_LABEL} mb-0.5 pl-1`}>{label}</div>
-        <div className="flex items-center gap-1" ref={wrap}>
-          <CostAgentCombobox className="flex-1" options={options} value={value} allowClear={false} placeholder={placeholder}
-            onChange={v => { setEditing(false); if (v !== null && Number(v) !== value) onPick(Number(v)) }} />
-          <button type="button" aria-label="Cancel" onClick={() => setEditing(false)} className="p-1 rounded-md text-[#6E5E70] hover:bg-[#F5EDF3]"><X size={14} /></button>
-        </div>
-      </div>
-    )
-  }
-  return (
-    <InfoBubble label={label} warn={warn} title={title}
-      action={editable ? <button type="button" disabled={busy} aria-label={`Edit ${label}`} title={`Edit ${label}`} onClick={() => setEditing(true)}
-        className="ml-1.5 -mr-1 p-0.5 rounded-full text-[#6B3470] hover:bg-[#F5EDF3] disabled:opacity-50 align-middle inline-flex"><Pencil size={11} /></button> : undefined}>
-      {children}
-    </InfoBubble>
-  )
-}
-
 // Footer nominal (2026-10-20): Subtotal / VAT / WHT / Stamp + Grand total. Pensil -> keempat angka bisa diubah (fn_cost_agent_update_invoice_amounts,
 // sql/069); Grand total = subtotal + VAT - WHT + Stamp (dihitung server, pratinjau live saat edit).
 function AmountsBar({ inv, editable, bad, warn, actor, onSaved, onToast }: {
@@ -486,24 +437,28 @@ function AmountsBar({ inv, editable, bad, warn, actor, onSaved, onToast }: {
     setF({ subtotal: v(inv.subtotal), ppn: v(inv.ppn), pph: v(inv.pph), materai: v(inv.materai) }); setError(null); setEditing(true)
   }
   const num = (t: string) => (t.trim() === '' ? 0 : Number(t))
-  const valid = f.subtotal.trim() !== '' && [f.subtotal, f.ppn, f.pph, f.materai].every(t => Number.isFinite(num(t)) && num(t) >= 0)
-  const preview = num(f.subtotal) + num(f.ppn) - num(f.pph) + num(f.materai)
+  // Subtotal & Grand total TIDAK bisa diedit (2026-10-20, permintaan user): subtotal hanya tampil (nilai tersimpan dikirim apa adanya ke RPC),
+  // grand total = pratinjau subtotal + VAT - WHT + Stamp.
+  const subtotalFixed = inv.subtotal == null ? null : Number(inv.subtotal)
+  const valid = subtotalFixed != null && Number.isFinite(subtotalFixed) && [f.ppn, f.pph, f.materai].every(t => Number.isFinite(num(t)) && num(t) >= 0)
+  const preview = (subtotalFixed ?? 0) + num(f.ppn) - num(f.pph) + num(f.materai)
   const save = async () => {
-    if (!valid) { setError('Subtotal is required; amounts cannot be negative.'); return }
+    if (!valid) { setError('Amounts cannot be negative.'); return }
     setBusy(true); setError(null)
     try {
-      await costAgentUpdateInvoiceAmounts({ invoiceId: inv.id, subtotal: num(f.subtotal), ppn: num(f.ppn), pph: num(f.pph), materai: num(f.materai), actor })
+      await costAgentUpdateInvoiceAmounts({ invoiceId: inv.id, subtotal: subtotalFixed as number, ppn: num(f.ppn), pph: num(f.pph), materai: num(f.materai), actor })
       setEditing(false); await onSaved(); onToast('Amounts saved.')
     } catch (e: any) { setError(e.message || String(e)) } finally { setBusy(false) }
   }
   if (editing) {
-    const fields: [keyof typeof f, string][] = [['subtotal', 'Subtotal'], ['ppn', 'VAT'], ['pph', 'WHT'], ['materai', 'Stamp']]
+    const fields: [keyof typeof f, string][] = [['ppn', 'VAT'], ['pph', 'WHT'], ['materai', 'Stamp']]
     return (
       <div className="flex flex-wrap items-end gap-2" data-amounts-edit>
+        <InfoBubble label="Subtotal" money small title="Subtotal cannot be edited">{fmtMoney(inv.subtotal, inv.currency)}</InfoBubble>
         {fields.map(([k, label]) => (
           <div key={k}>
             <div className={`${SA_LABEL} mb-0.5 pl-1`}>{label}</div>
-            <input type="number" min={0} step="0.01" inputMode="decimal" className={`${SA_INPUT} w-[130px] tabular-nums`} value={f[k]} disabled={busy} aria-label={label}
+            <input type="number" min={0} step="0.01" inputMode="decimal" className={`${SA_INPUT} w-[130px] tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`} value={f[k]} disabled={busy} aria-label={label}
               onChange={e => setF(p => ({ ...p, [k]: e.target.value }))}
               onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); setEditing(false) } }} />
           </div>
@@ -523,7 +478,7 @@ function AmountsBar({ inv, editable, bad, warn, actor, onSaved, onToast }: {
       <InfoBubble label="WHT" money small>{fmtMoney(inv.pph, inv.currency)}</InfoBubble>
       <InfoBubble label="Stamp" money small>{fmtMoney(inv.materai, inv.currency)}</InfoBubble>
       {editable && (
-        <button type="button" onClick={start} aria-label="Edit amounts" title="Edit Subtotal / VAT / WHT / Stamp" className="mb-0.5 p-1.5 rounded-lg text-[#6B3470] hover:bg-[#F5EDF3]"><Pencil size={13} /></button>
+        <button type="button" onClick={start} aria-label="Edit amounts" title="Edit VAT / WHT / Stamp" className="mb-0.5 p-1.5 rounded-lg text-[#6B3470] hover:bg-[#F5EDF3]"><Pencil size={13} /></button>
       )}
       <GrandTotal value={fmtMoney(inv.grand_total, inv.currency)} />
     </div>
@@ -537,10 +492,14 @@ function HeaderEditor({ data, companies, vendors, vessels, ports, actor, onToast
   const inv = data.invoice
   const [vendor, setVendor] = useState<{ id: number; name: string } | null>(inv.vendor_id ? { id: inv.vendor_id, name: inv.vendor_name || `#${inv.vendor_id}` } : null)
   const vendorId = vendor?.id ?? null
+  // Vendor yang SUDAH ada di database (invoice sudah ter-match) tidak boleh diganti; belum ter-match -> hanya boleh "+ Add vendor" (2026-10-20,
+  // permintaan user). Pembatasan di UI saja -- RPC koreksi header tetap menerima vendorId.
+  const vendorLocked = !!inv.vendor_id
   const [vesselId, setVesselId] = useState<number | null>(inv.vessel_id)
   const [portId, setPortId] = useState<number | null>(inv.port_id)
   const [callId, setCallId] = useState<number | null>(inv.voyage_call_id)
   const [company, setCompany] = useState(inv.company_code || '')
+  const [description, setDescription] = useState(inv.description || '')
   const [calls, setCalls] = useState<CostAgentCallOption[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -566,6 +525,9 @@ function HeaderEditor({ data, companies, vendors, vessels, ports, actor, onToast
     setBusy(true); setError(null)
     try {
       await costAgentUpdateInvoiceHeader({ invoiceId: inv.id, vendorId, vesselId, portId, voyageCallId: callId, companyCode: company || null, actor })
+      // Keterangan (dulu pensil inline di header): hanya bila berubah & tidak kosong (kosong = biarkan; "Reset to auto" ada di header).
+      const descNew = description.trim()
+      if (descNew && descNew !== (inv.description || '').trim()) await costAgentSetInvoiceDescription(inv.id, descNew, actor)
       onSaved()
     } catch (e: any) { setError(e.message || String(e)); setBusy(false) }
   }
@@ -573,7 +535,13 @@ function HeaderEditor({ data, companies, vendors, vessels, ports, actor, onToast
   return (
     <div className="mt-3 rounded-xl border border-[#EADFD6] bg-[#FBF7F4] p-3">
       <div className="grid grid-cols-1 md:grid-cols-5 gap-2.5">
-        <div><FieldLabel>Vendor</FieldLabel><VendorCombobox value={vendor} onChange={setVendor} rawName={inv.vendor_name_raw} knownVendors={vendors} actor={actor} onToast={onToast} /><AsWritten raw={inv.vendor_name_raw} /></div>
+        <div>
+          <FieldLabel hint={vendorLocked ? 'already in database' : 'new vendors only'}>Vendor</FieldLabel>
+          {vendorLocked
+            ? <div className={`${SA_INPUT} flex items-center bg-[#F6EFEA] text-[#6E5E70] cursor-not-allowed`} title="This vendor is already in the database and cannot be changed" aria-readonly="true"><span className="truncate">{vendor?.name}</span></div>
+            : <VendorCombobox addOnly value={vendor} onChange={setVendor} rawName={inv.vendor_name_raw} knownVendors={vendors} actor={actor} onToast={onToast} />}
+          <AsWritten raw={inv.vendor_name_raw} />
+        </div>
         <div><FieldLabel>Vessel</FieldLabel><CostAgentCombobox options={vesselOpts} value={vesselId} onChange={v => { setVesselId(v === null ? null : Number(v)); setCallId(null) }} placeholder={inv.vessel_name_raw || 'Vessel…'} /><AsWritten raw={inv.vessel_name_raw} /></div>
         <div className="md:col-span-2"><FieldLabel hint="sets the port">Voyage port call</FieldLabel><CostAgentCombobox options={callOpts} value={callId} onChange={pickCall} placeholder={vesselId ? 'Port call of this vessel…' : 'Pick a vessel first'} disabled={!vesselId} /></div>
         <div><FieldLabel>Port</FieldLabel><CostAgentCombobox options={portOpts} value={portId} onChange={v => setPortId(v === null ? null : Number(v))} placeholder={inv.port_name_raw || 'Port…'} /><AsWritten raw={inv.port_name_raw} /></div>
@@ -583,7 +551,11 @@ function HeaderEditor({ data, companies, vendors, vessels, ports, actor, onToast
             <option value="">—</option>{companies.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
           </select>
         </div>
-        <div className="md:col-span-4 flex items-end justify-end gap-2">
+        <div className="md:col-span-4">
+          <FieldLabel hint={`${description.length}/${COST_AGENT_DESCRIPTION_MAX}`}>Description</FieldLabel>
+          <input className={`${SA_INPUT} uppercase`} value={description} maxLength={COST_AGENT_DESCRIPTION_MAX} onChange={e => setDescription(e.target.value)} aria-label="Invoice description" />
+        </div>
+        <div className="md:col-span-5 flex items-end justify-end gap-2">
           {error && <span className="text-[12px] text-[#A8231A] mr-auto">{error}</span>}
           <button type="button" className={SA_BTN_OUTLINE} onClick={onCancel} disabled={busy}>Cancel</button>
           <button type="button" className={SA_BTN_PRIMARY} onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save header'}</button>
@@ -600,7 +572,8 @@ function AsWritten({ raw }: { raw: string | null | undefined }) {
 }
 
 // Combobox vendor: cari cost_agent_vendors di server (name ilike, maks 20); tidak ketemu -> "+ Add vendor "<teks>"".
-function VendorCombobox({ value, onChange, rawName, knownVendors, actor, onToast }: {
+function VendorCombobox({ value, onChange, rawName, knownVendors, actor, onToast, addOnly = false }: {
+  addOnly?: boolean // true: TANPA memilih vendor yang sudah ada -- hanya "+ Add vendor" (server mengembalikan id lama bila nama/alias/NPWP sudah ada)
   value: { id: number; name: string } | null
   onChange: (v: { id: number; name: string } | null) => void
   rawName: string | null
@@ -617,7 +590,7 @@ function VendorCombobox({ value, onChange, rawName, knownVendors, actor, onToast
   const seq = useRef(0)
 
   useEffect(() => {
-    if (!open) return
+    if (!open || addOnly) return
     const my = ++seq.current
     const t = setTimeout(async () => {
       setLoading(true); setError(null)
@@ -626,7 +599,7 @@ function VendorCombobox({ value, onChange, rawName, knownVendors, actor, onToast
       finally { if (my === seq.current) setLoading(false) }
     }, 250)
     return () => clearTimeout(t)
-  }, [q, open])
+  }, [q, open, addOnly])
 
   const term = q.trim()
   const exact = !!term && results.some(v => v.name.trim().toLowerCase() === term.toLowerCase())
@@ -644,7 +617,8 @@ function VendorCombobox({ value, onChange, rawName, knownVendors, actor, onToast
       </div>
       {open && (
         <div className="absolute z-[90] mt-1 w-full min-w-[240px] max-h-64 overflow-y-auto bg-white border border-[#EADFD6] rounded-lg shadow-xl">
-          {loading && results.length === 0 ? <div className="px-3 py-2"><LoadingSpinner /></div>
+          {addOnly ? (!term && <div className="px-3 py-2 text-[12px] text-[#8A7A8B]">Type the new vendor's name, then choose “+ Add vendor”.</div>)
+            : loading && results.length === 0 ? <div className="px-3 py-2"><LoadingSpinner /></div>
             : error ? <div className="px-3 py-2 text-[12px] text-[#A8231A]">{error}</div>
             : results.length === 0 ? <div className="px-3 py-2 text-[12px] text-[#8A7A8B]">No vendor found</div>
             : results.map(v => (
@@ -654,7 +628,7 @@ function VendorCombobox({ value, onChange, rawName, knownVendors, actor, onToast
                 {v.npwp && <span className="block text-[11px] text-[#6E5E70] truncate">{v.npwp}</span>}
               </button>
             ))}
-          {term && !exact && !loading && (
+          {term && (addOnly || (!exact && !loading)) && (
             <button type="button" onMouseDown={e => { e.preventDefault(); setAdding(term); setOpen(false) }}
               className="w-full text-left px-3 py-1.5 text-[12.5px] font-semibold text-[#6B3470] hover:bg-[#F5EDF3] border-t border-[#F3EEEA] inline-flex items-center gap-1">
               <Plus size={12} /> Add vendor "{term}"
@@ -759,24 +733,21 @@ function FilePreviewFrame({ src, drive, exit = false, onFullScreen }: { src: str
   )
 }
 
-// Keterangan invoice (sql/064): tampil di header (lebar penuh, di bawah Vessel/Port), badge Auto / Edited. Ubah (pensil) -> input
-// maks 300 + Save / Cancel -> fn_cost_agent_set_invoice_description lalu reload; "Reset to auto" (hanya bila Edited) = RPC dgn ''.
-// Hanya status verification/rejected/failed & canEdit (`editable` = headerEditable modal).
+// Keterangan invoice (sql/064): tampil di header (lebar penuh, di bawah Vessel/Port), badge Auto / Edited. TANPA pensil inline (2026-10-20,
+// permintaan user): mengubah keterangan lewat "Correct header" (HeaderEditor -> fn_cost_agent_set_invoice_description). "Reset to auto"
+// (hanya bila Edited) = RPC dgn '' tetap di sini. Hanya status verification/rejected/failed & canEdit (`editable` = headerEditable modal).
 function InvoiceDescription({ inv, editable, actor, onSaved, onToast }: {
   inv: CostAgentInvoiceHistory['invoice']; editable: boolean; actor: string | null; onSaved: () => Promise<void> | void; onToast: (msg: string) => void
 }) {
-  const [editing, setEditing] = useState(false)
-  const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const auto = inv.description_auto !== false
-  const save = async (value: string, okMsg: string) => {
+  const resetToAuto = async () => {
     setBusy(true); setError(null)
     try {
-      await costAgentSetInvoiceDescription(inv.id, value, actor)
-      setEditing(false)
+      await costAgentSetInvoiceDescription(inv.id, '', actor)
       await onSaved()
-      onToast(okMsg)
+      onToast('Description reset to automatic.')
     } catch (e: any) { setError(e.message || String(e)) } finally { setBusy(false) }
   }
   return (
@@ -786,30 +757,13 @@ function InvoiceDescription({ inv, editable, actor, onSaved, onToast }: {
         <span className={SA_LABEL}>Description</span>
         <span className={`px-1.5 py-[1px] rounded text-[10px] font-bold ${auto ? 'bg-[#EEF1FA] text-[#2F4FA8]' : 'bg-[#F5EDF3] text-[#6B3470]'}`} data-description-badge>{auto ? 'Auto' : 'Edited'}</span>
       </div>
-      {editing ? (
-        <div className="flex-1 min-w-[320px] flex flex-wrap items-center gap-2">
-          <input className={`${SA_INPUT} flex-1 min-w-[260px] uppercase`} value={text} maxLength={COST_AGENT_DESCRIPTION_MAX} autoFocus disabled={busy} aria-label="Invoice description"
-            onChange={e => setText(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && text.trim()) save(text, 'Description saved.'); if (e.key === 'Escape') { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); setEditing(false) } }} />
-          <span className="text-[11px] text-[#8A7A8B] tabular-nums">{text.length}/{COST_AGENT_DESCRIPTION_MAX}</span>
-          <button type="button" className={SA_BTN_OUTLINE} disabled={busy} onClick={() => { setEditing(false); setError(null) }}>Cancel</button>
-          <button type="button" className={SA_BTN_PRIMARY} disabled={busy || !text.trim()} onClick={() => save(text, 'Description saved.')}>{busy ? 'Saving…' : 'Save'}</button>
-        </div>
-      ) : (
-        <div className="flex items-start gap-1 min-w-0 max-w-full">
-          <span className="text-[#3B1B3D] font-medium [overflow-wrap:anywhere] min-w-0 rounded-full border border-[#EADFD6] bg-[#FBF7F4] px-3 py-0.5 leading-snug">{inv.description || <span className="text-[#8A7A8B] font-normal">—</span>}</span>
-          {editable && (
-            <>
-              <button type="button" aria-label="Edit description" title="Edit description" className="shrink-0 p-1 -mt-0.5 rounded-md text-[#6B3470] hover:bg-[#F5EDF3]"
-                onClick={() => { setText(inv.description || ''); setError(null); setEditing(true) }}><Pencil size={12} /></button>
-              {!auto && (
-                <button type="button" disabled={busy} className="shrink-0 text-[11.5px] font-semibold text-[#6B3470] hover:underline disabled:opacity-50 inline-flex items-center gap-0.5"
-                  onClick={() => save('', 'Description reset to automatic.')}><RotateCcw size={11} /> Reset to auto</button>
-              )}
-            </>
-          )}
-        </div>
-      )}
+      <div className="flex items-start gap-1 min-w-0 max-w-full">
+        <span className="text-[#3B1B3D] font-medium [overflow-wrap:anywhere] min-w-0 rounded-full border border-[#EADFD6] bg-[#FBF7F4] px-3 py-0.5 leading-snug">{inv.description || <span className="text-[#8A7A8B] font-normal">—</span>}</span>
+        {editable && !auto && (
+          <button type="button" disabled={busy} className="shrink-0 text-[11.5px] font-semibold text-[#6B3470] hover:underline disabled:opacity-50 inline-flex items-center gap-0.5"
+            onClick={resetToAuto}><RotateCcw size={11} /> Reset to auto</button>
+        )}
+      </div>
       {error && <div className="basis-full text-[11.5px] text-[#A8231A]">{error}</div>}
     </div>
   )

@@ -717,3 +717,12 @@ pelabuhan (`ports.tz`), kirim ke RPC "YYYY-MM-DD HH:mm" tanpa offset. Angka Rupi
   Simpan = RPC BARU `fn_cost_agent_update_invoice_amounts` (`sql/069_cost_agent_update_invoice_amounts.sql`, definer, guard `assert_edit`, status
   verification/rejected/failed): grand_total dihitung server = subtotal + ppn - pph + materai, catatan `total_mismatch` dibuang bila selisih <= 1,
   dicatat ke status_log. Sudah masuk `server/db/whitelist.ts`. Hak edit = `headerEditable`. 
+
+## Agency Invoices — pembersihan header & Correct header (2026-10-20, permintaan user)
+- **Subjudul halaman dihapus** di Agency Invoices & Voyages (`CostAgentPageHeader` `subtitle` kini opsional; Approval Matrix tetap pakai subjudul).
+- **Pensil inline Vessel / Port / Description di header modal invoice DIHAPUS** (`InlinePick` & `saveHeaderField` dibuang). Semua koreksi header lewat **Correct header**
+  (`HeaderEditor`); Description kini field di editor itu (disimpan via `fn_cost_agent_set_invoice_description` hanya bila berubah & tidak kosong). "Reset to auto" tetap di header.
+- **Footer nominal**: Subtotal & Grand total TIDAK bisa diedit (Subtotal tampil read-only saat edit, nilai tersimpan dikirim apa adanya ke `fn_cost_agent_update_invoice_amounts`); hanya
+  VAT / WHT / Stamp; panah spinner input angka dihilangkan.
+- **Vendor di Correct header**: invoice yang vendornya SUDAH ter-match (`vendor_id` terisi) -> field terkunci (read-only). Belum ter-match -> `VendorCombobox addOnly`: tidak ada daftar
+  pilih, hanya "+ Add vendor" (server mengembalikan id lama bila nama/alias/NPWP sudah ada). **Pembatasan di UI saja** -- RPC koreksi header masih menerima `vendorId`.

@@ -198,7 +198,7 @@ export default function CostAgentInvoicePage() {
       )}
 
       <div className="flex-1 h-full flex flex-col overflow-hidden min-w-0">
-        <CostAgentPageHeader title="Agency Invoices" subtitle="Agency invoices read by AI — verify against cost history, approve and pay." />
+        <CostAgentPageHeader title="Agency Invoices" />
 
         <main className="px-3 pt-2 pb-0 flex-1 flex flex-col overflow-hidden gap-3 min-h-0">
           {masterError && <div className="rounded-lg border border-[#F4C3BC] bg-[#FDE7E4] px-3 py-2 text-[12.5px] text-[#A8231A] shrink-0">Failed to load master data: {masterError}</div>}
