@@ -313,7 +313,12 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
       const res  = await apiFetch('/api/n8n-proxy-start', { method: 'POST', body: formData, headers })
       const data = await res.json()
 
-      if (!res.ok) throw new Error(data.pesan || 'Failed to start the process on the automation server.')
+      if (!res.ok) {
+        // Sertakan isi respons n8n (proxy menaruhnya di `data`) di "technical details" supaya penyebab penolakan workflow terlihat.
+        const n8nBody = typeof data?.data === 'string' ? data.data : data?.data ? JSON.stringify(data.data) : ''
+        const detail = n8nBody ? ` [HTTP ${res.status}] ${n8nBody.slice(0, 600)}` : ` [HTTP ${res.status}]`
+        throw new Error((data.pesan || 'Failed to start the process on the automation server.') + detail)
+      }
 
       // Success quick response
       if (data.status === 'warning') {
