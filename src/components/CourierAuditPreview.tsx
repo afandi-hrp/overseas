@@ -376,7 +376,7 @@ export default function CourierAuditPreview({
                 {(colOk('valas_dpp') || colOk('kurs_ndpbm') || colOk('total_nilai_pabean')) && (
                   <>
                     <GroupLabel>Customs Value</GroupLabel>
-                    {colOk('valas_dpp') && <LRow label="Valas DPP">{hasVal(rec.valas_dpp) ? `${curLabel ? `${curLabel} ` : ''}${fmtValas(rec.valas_dpp)}` : <Dash />}</LRow>}
+                    {colOk('valas_dpp') && <LRow label="Valas DPP">{hasVal(rec.valas_dpp) ? `${curLabel && docType !== 'CN' ? `${curLabel} ` : ''}${fmtValas(rec.valas_dpp)}` : <Dash />}</LRow>}
                     {colOk('kurs_ndpbm') && <LRow label="Kurs NDPBM">{hasVal(rec.kurs_ndpbm) ? fmtValas(rec.kurs_ndpbm) : <Dash />}</LRow>}
                     {colOk('total_nilai_pabean') && <LRow label="Total Customs Value" tone="hl">{fmtRp(build.cv)}</LRow>}
                   </>
