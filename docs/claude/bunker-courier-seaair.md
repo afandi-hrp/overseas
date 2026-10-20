@@ -1118,8 +1118,8 @@ apa pun** -- semua lewat webhook Sea & Air yang sama dgn upload normal. Tanpa SQ
 
 ## Sea & Air — panel "Vendor payments (goods)" (2026-10-20, permintaan user)
 
-Panel baru di tab **Doc Validation** jendela Open Invoice Recap (di bawah Document validation; `SeaAirVendorPaymentsPanel.tsx`, dirender dari `SeaAirRecapDocumentsTab`
-bagian `part !== 'checklist'`, TIDAK di Finance Handover/`financeView`). Menggantikan teks placeholder "Vendor payments (goods) are not tracked yet."
+Panel baru di tab **Overview** jendela Open Invoice Recap (paling bawah, setelah Split per PO; `SeaAirVendorPaymentsPanel.tsx`, dirender langsung dari `SeaAirRecapDetailModal`;
+sempat di tab Doc Validation, DIPINDAH 2026-10-20 permintaan user; TIDAK di Finance Handover). Prop `refreshNonce` = `vpNonce` modal. Menggantikan teks placeholder "Vendor payments (goods) are not tracked yet."
 - **Semua angka/status dihitung DATABASE**; frontend hanya menampilkan (jangan menghitung ulang). Memuat datanya SENDIRI lewat `fn_vp_ambil_seaair(p_seaair_id)` -- TIDAK lewat
   `load()` tab (yang mereset `dirty`). Prop `refreshNonce` (dari `SeaAirRecapDocumentsTab.vendorPaymentsNonce`; dinaikkan `SeaAirRecapDetailModal.handleSusulanCompleted` setelah
   dokumen susulan SUCCESS) -> muat ulang tanpa layar Loading.
@@ -1135,8 +1135,10 @@ bagian `part !== 'checklist'`, TIDAK di Finance Handover/`financeView`). Menggan
   "Vendor payment calculation failed — ask IT to check." (teks `error` mentah hanya utk Admin).
 - **`blocker_count`** = jumlah item review severity `blocker` yang BELUM di-accept. **Gate Submit to Finance**: DB menolak submit bila > 0 (`Cannot submit to Finance: N vendor payment item(s) …`).
   `SeaAirRecapDetailModal.handleSubmit` membaca ringan `seaair_vp_hasil.blocker_count` dulu; > 0 -> alert "N vendor payment item(s) need review before submitting to Finance", pindah ke tab
-  Doc Validation & scroll ke panel (`VP_PANEL_ID`). Pembacaan gagal (mis. tabel belum ada) -> lanjut; error dari DB tetap tampil lewat jalur submit yang ada.
+  Overview & scroll ke panel (`VP_PANEL_ID`). Pembacaan gagal (mis. tabel belum ada) -> lanjut; error dari DB tetap tampil lewat jalur submit yang ada.
 - **Audit trail**: RPC menulis `audit_trail` dgn `tabel='seaair_vp_input'`, `jenis='SEAAIR-VENDOR-PAYMENT - …'`. `fetchRecapLog` (SeaAirRecapHelpers) kini menyertakan tabel itu
   (label "Vendor payments"; detail = aksi + catatan). Halaman global Audit Trail (`TRAIL_APP_WRITTEN_FILTER`, catatan harus null / berformat "— Lama:") TIDAK berubah -> baris ini mungkin tidak muncul di sana.
 - **Sinkron Doc/Cost validation**: panel TIDAK punya logika validasi di frontend (semua dari DB), jadi aturan "WAJIB sinkron" tidak terpicu. `SeaAirValidasiModal` (mode List) TIDAK diberi panel ini --
   user mode List melihatnya lewat jendela Open. Keputusan produk: apakah perlu juga di sana / di Finance Handover.
+
+- **Bug 2026-10-20** "UPDATE requires a WHERE clause" (panel merah): `fn_hitung_vendor_payments_seaair` punya `UPDATE _vp_inv SET oblig = …;` tanpa WHERE -> ditolak ekstensi safeupdate. Patch: `sql/070_fix_vp_update_where.sql` (DO block, menambah `WHERE true`; dijalankan manual, idempotent).

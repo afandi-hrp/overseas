@@ -22,7 +22,6 @@ import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_PRIMARY, Chip, Pill } from '.
 import { relaxSeaAirDocChecks, SEA_AIR_PIB_MATRIX_ROWS, SEA_AIR_INVOICE_COLS, isCountedDocCheck, toNum } from '../utils/SeaAirValidasiHelpers'
 import { calcSeaAirDuty, SEA_AIR_DUTY_TOLERANCE } from '../utils/SeaAirAuditHelpers'
 import SeaAirUploadSusulanButton, { type SusulanRec } from './SeaAirUploadSusulanButton'
-import SeaAirVendorPaymentsPanel from './SeaAirVendorPaymentsPanel'
 
 // ── Salinan PERSIS formatter/parser modal lama ──
 const fmtIDR = (val: any) => {
@@ -133,15 +132,13 @@ const OPTIONAL_DOCS = [
 const DUTY_DOC_KEYS = new Set(['ada_pib', 'ada_sppb', 'ada_billing_djbc', 'ada_bpn', 'ada_sptnp', 'ada_billing_sptnp', 'ada_bpn_sptnp'])
 const ALWAYS_OPTIONAL = new Set(['ada_form_e', 'ada_e_coo', 'ada_form_ak', 'ada_sptnp', 'ada_billing_sptnp', 'ada_bpn_sptnp'])
 
-export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage, isAdmin = false, locked = false, financeView = false, onChanged, onDirtyChange, origin, part = 'all', susulan, reloadNonce = 0, vendorPaymentsNonce = 0 }: {
+export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage, isAdmin = false, locked = false, financeView = false, onChanged, onDirtyChange, origin, part = 'all', susulan, reloadNonce = 0 }: {
   seaairId: any
   // Tombol "Upload Additional Document" (dokumen susulan, 2026-10-20) di kartu Checklist. Hanya di jendela Open Invoice Recap;
   // Finance Handover (financeView) TIDAK pernah menampilkannya. `onCompleted` = job susulan SUCCESS.
   susulan?: { rec: SusulanRec; onCompleted: () => void }
   // Naik -> `load()` dijalankan ulang (data baru dari dokumen susulan). Induk yang memutuskan kapan (jangan saat ada perubahan belum disimpan).
   reloadNonce?: number
-  // Naik -> panel "Vendor payments (goods)" memuat ulang datanya sendiri (tidak lewat `load()`, jadi aman walau ada perubahan belum disimpan).
-  vendorPaymentsNonce?: number
   // 'all' = Checklist + Doc validation berdampingan (Finance Handover); 'checklist' / 'doc' = salah satu saja -- jendela Open Invoice Recap memakai
   // 2 tab terpisah (Checklist | Doc Validation, 2026-10-13, permintaan user; pola Invoice Recap Courier).
   part?: 'all' | 'checklist' | 'doc'
@@ -687,10 +684,7 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
           </>
         )}
 
-        {/* Panel Vendor payments (goods) -- memuat datanya SENDIRI (RPC fn_vp_*), di luar `load()`. Tidak tampil di Finance Handover. */}
-        {!financeView && seaairId && (
-          <SeaAirVendorPaymentsPanel seaairId={seaairId} locked={locked} refreshNonce={vendorPaymentsNonce} />
-        )}
+        {/* Panel Vendor payments (goods) PINDAH ke tab Overview jendela Open (SeaAirRecapDetailModal, 2026-10-20, permintaan user). */}
 
         {dirty && (
           <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 px-4 py-3 rounded-[14px] bg-white border border-[#E0A526] shadow-lg">

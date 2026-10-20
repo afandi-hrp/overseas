@@ -19,7 +19,7 @@ import SeaAirRecapCostsTab from './SeaAirRecapCostsTab'
 import SeaAirRecapDocumentsTab from './SeaAirRecapDocumentsTab'
 import { CostMixBar, containerLabel } from './SeaAirRecapCardList'
 import SeaAirActivityTrail from './SeaAirActivityTrail'
-import { VP_PANEL_ID } from './SeaAirVendorPaymentsPanel'
+import SeaAirVendorPaymentsPanel, { VP_PANEL_ID } from './SeaAirVendorPaymentsPanel'
 import { fmtRp, fmtDateShort, fmtValas, companyFullName, notifySeaAirAuditChanged } from '../utils/SeaAirAuditHelpers'
 import {
   computeLandedCost, parsePoDetail, recapStatus, fetchRecapLog, todayLocalIso, isRecapLocked,
@@ -231,10 +231,8 @@ export default function SeaAirRecapDetailModal({
       const n = !vpErr && vp ? Number((vp as any).blocker_count) || 0 : 0
       if (n > 0) {
         window.alert(`${n} vendor payment item${n === 1 ? '' : 's'} need review before submitting to Finance.`)
-        if (canSeeDocs) {
-          goTab('documents')
-          setTimeout(() => document.getElementById(VP_PANEL_ID)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150)
-        }
+        goTab('overview')
+        setTimeout(() => document.getElementById(VP_PANEL_ID)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150)
         return
       }
     }
@@ -623,6 +621,9 @@ export default function SeaAirRecapDetailModal({
                   </div>
                 )}
               </div>
+
+              {/* Vendor payments (goods) -- memuat datanya SENDIRI (RPC fn_vp_*); refreshNonce naik setelah dokumen susulan SUCCESS. */}
+              {seaairId && <SeaAirVendorPaymentsPanel seaairId={seaairId} locked={locked} refreshNonce={vpNonce} />}
             </>
           )}
 
@@ -643,7 +644,7 @@ export default function SeaAirRecapDetailModal({
 
           {canSeeDocs && visited.documents && (
             <div className={tab === 'documents' ? '' : 'hidden'}>
-              <SeaAirRecapDocumentsTab part="doc" seaairId={rec.seaair_id || rec.id} origin={rec.origin} canEdit={canEditDocs} isAdmin={isAdmin} locked={locked} onChanged={onChanged} onDirtyChange={onDocsDirty} reloadNonce={tabsNonce} vendorPaymentsNonce={vpNonce} />
+              <SeaAirRecapDocumentsTab part="doc" seaairId={rec.seaair_id || rec.id} origin={rec.origin} canEdit={canEditDocs} isAdmin={isAdmin} locked={locked} onChanged={onChanged} onDirtyChange={onDocsDirty} reloadNonce={tabsNonce} />
             </div>
           )}
 
