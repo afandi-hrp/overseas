@@ -704,7 +704,7 @@ BunkerUploadModal (upload), FarOverseasAirDetailModal (detail + approval, route 
 `PaginationFooter` + `LoadingState` wajib. JANGAN sentuh `SharedDataTable`. Toast per halaman. Waktu voyage = jam lokal
 pelabuhan (`ports.tz`), kirim ke RPC "YYYY-MM-DD HH:mm" tanpa offset. Angka Rupiah/liter format id-ID.
 
-## Agency Invoices -- kartu progres, header & footer nominal editable (2026-10-20, permintaan user; sql/069 BELUM DIJALANKAN)
+## Agency Invoices -- kartu progres, header & footer nominal editable (2026-10-20, permintaan user; sql/069 SUDAH DIJALANKAN 2026-10-20, file dihapus: `git show 79d908a:sql/069_cost_agent_update_invoice_amounts.sql`)
 
 - **Kartu** (`CostAgentCards.tsx`): chip higher/new item/tax/to verify/jumlah baris/status DIHAPUS -> 4 pil progres **Completed / Verified / Approved / Paid**
   (`invoiceProgress()`; hijau + centang bila tahap terlewati, abu bila belum). Completed = bukan processing/failed/cancelled; Verified = semua baris
@@ -716,5 +716,4 @@ pelabuhan (`ports.tz`), kirim ke RPC "YYYY-MM-DD HH:mm" tanpa offset. Angka Rupi
 - **Footer** (semua tab): pil Subtotal / VAT / WHT / Stamp (+ pensil -> edit 4 angka, Save) + Grand total (footerRight Lines tidak dipakai lagi).
   Simpan = RPC BARU `fn_cost_agent_update_invoice_amounts` (`sql/069_cost_agent_update_invoice_amounts.sql`, definer, guard `assert_edit`, status
   verification/rejected/failed): grand_total dihitung server = subtotal + ppn - pph + materai, catatan `total_mismatch` dibuang bila selisih <= 1,
-  dicatat ke status_log. Sudah masuk `server/db/whitelist.ts`. Hak edit = `headerEditable`. **Frontend butuh 069 dijalankan dulu** (Vessel/Port
-  memakai RPC lama, jalan tanpa 069).
+  dicatat ke status_log. Sudah masuk `server/db/whitelist.ts`. Hak edit = `headerEditable`. 

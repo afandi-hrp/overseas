@@ -54,11 +54,11 @@ yang berlaku lintas modul. Rujukan lama di docs berbunyi "lihat CLAUDE.md bagian
 - **HTML dari backend/n8n WAJIB disanitasi `DOMPurify`** sebelum `dangerouslySetInnerHTML` (hasil AI = input tak
   tepercaya). Kalau HTML n8n butuh script (Oil Request): render di `<iframe sandbox>` TANPA `allow-same-origin`,
   JANGAN `eval`/innerHTML di halaman.
-- **SQL**: semua migrasi `sql/001`–`sql/068` SUDAH dijalankan (069 menyusul) di production & folder `sql/` DIHAPUS dari repo (riwayat isi
+- **SQL**: semua migrasi `sql/001`–`sql/069` SUDAH dijalankan di production & folder `sql/` DIHAPUS dari repo (riwayat isi
   file: `git show <commit>:sql/<file>`; 041–047 di `4286a34`, 048–056 di `a21e206`, 066–067 di `4c03e2a`, 068 di `e3003e9`;
   sisanya cari lewat `git log --all -- sql/<file>`). Catatan "BELUM DIJALANKAN" di `docs/claude/*.md` utk file ≤068 TIDAK
   berlaku. Penjelasan tiap migrasi ada di doc modulnya (courier-features, bunker-courier-seaair, cost-agent, auth-session,
-  finance-handover). SQL baru: file `sql/NNN_*.sql` baru (`069_cost_agent_update_invoice_amounts` BELUM DIJALANKAN -- file di `sql/`, cost-agent.md; lanjut **070**), idempotent + pre-check nama fungsi, user yang
+  finance-handover). SQL baru: file `sql/NNN_*.sql` baru (`069_cost_agent_update_invoice_amounts` SUDAH DIJALANKAN 2026-10-20, file dihapus -- isi: `git show 79d908a:sql/069_cost_agent_update_invoice_amounts.sql`, cost-agent.md; lanjut **070**), idempotent + pre-check nama fungsi, user yang
   menjalankan manual -- sesi Claude hanya punya akses BACA (MCP `beehive-prod-ro`, lihat bawah).
   **KEPUTUSAN TERTUNDA (user): nasib fitur hapus invoice Cost Agent (RPC `fn_cost_agent_delete_invoice`, sql/056, masa uji
   coba; cabut grant / hapus tombol / pertahankan) -- JANGAN diubah sebelum user memutuskan.**
