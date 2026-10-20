@@ -246,7 +246,7 @@ export default function CostAgentInvoicePage() {
                   </label>
                 ) : undefined}>
                 {rows.map(r => (
-                  <CostAgentInvoiceCard key={r.id} r={r} selected={r.id === openId} onOpen={() => openInvoice(r.id)}
+                  <CostAgentInvoiceCard key={r.id} r={r} selected={r.id === openId} onOpen={() => openInvoice(r.id)} mine={r.status === 'waiting_approval' && !!myIds?.includes(r.id)}
                     checkbox={selectable ? { checked: selected.includes(r.id), onChange: v => setSelected(p => (v ? [...p, r.id] : p.filter(x => x !== r.id))) } : undefined}
                     error={errors[r.id]} onReprocess={canEditInvoice ? () => reprocess(r.id) : undefined} reprocessing={reprocessing === r.id}
                     onDelete={canDelete && canDeleteInvoice(r.status) ? () => deleteInvoice(r) : undefined} deleting={deleting === r.id} />

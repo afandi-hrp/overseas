@@ -735,3 +735,12 @@ pelabuhan (`ports.tz`), kirim ke RPC "YYYY-MM-DD HH:mm" tanpa offset. Angka Rupi
 - `CostAgentInvoiceLines.tsx`: tiap baris = **kartu** (garis kiri hijau = verified / amber = tanpa cost item / abu), header kolom ungu muda, nomor baris bulatan plum,
   Edit/View history/"+n more reference"/Reset = chip ungu lembut (`LINK`), Verify hijau lembut (verified = hijau pekat + CheckCircle2), Remark ungu bila ada remark (kotak remark kuning),
   pill selisih bulat dgn ikon panah, toolbar = chip jumlah + segmen toggle seperti Courier.
+
+## Agency Invoices — kartu daftar disederhanakan (2026-10-20, permintaan user; DISETUJUI user)
+- `CostAgentCards.tsx` `CostAgentInvoiceCard`: kartu putih polos, garis kiri 4px mengikuti nada status, SATU warna tombol (ungu). Grid 3 kolom (`@5xl`; `@3xl` 2 kolom; sempit ditumpuk):
+  kiri = badge PT + vendor + label no invoice, **pil Vessel (plum) / Port (biru) / Voy (hijau)**, tanggal invoice/service + dokumen + PO; tengah = `InvoiceStepper`
+  (garis progres Completed -> Verified -> Approved -> Paid ala Timeline Finance Handover: simpul bulat, selesai = hijau + centang, tahap berjalan bercincin per nada status
+  (amber/ungu/biru spinner/merah X), keterangan "Done / n to verify / Waiting / Rejected / AI reading… / Failed / Pending"); kanan = Grand total + tombol Review + ikon hapus (Admin)
+  di PALING UJUNG. Chip status, chip alert, "n lines · n to verify" & Description/strip info SENGAJA dihapus dari kartu (keputusan user; semuanya ada di modal).
+- Chip "Duplicate of #id" & "Your approval" tetap tampil hanya bila relevan; prop `mine` (invoice `waiting_approval` yg step aktifnya memuat email user, dari `myIds` halaman) -> tombol "Decide".
+- Isi modal yg TIDAK ada di data daftar (Subtotal/VAT/WHT/Stamp, uploaded by, jam port call, detail alert) belum bisa ditampilkan di kartu -- butuh kolom baru di view `cost_agent_invoice_list_v` (SQL, belum dikerjakan).
