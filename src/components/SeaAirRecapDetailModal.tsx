@@ -19,6 +19,7 @@ import SeaAirRecapCostsTab from './SeaAirRecapCostsTab'
 import SeaAirRecapDocumentsTab from './SeaAirRecapDocumentsTab'
 import { CostMixBar, containerLabel } from './SeaAirRecapCardList'
 import SeaAirActivityTrail from './SeaAirActivityTrail'
+import SeaAirEditAwbButton from './SeaAirEditAwbDialog'
 import SeaAirVendorPaymentsPanel, { VP_PANEL_ID } from './SeaAirVendorPaymentsPanel'
 import { fmtRp, fmtDateShort, fmtValas, companyFullName, notifySeaAirAuditChanged } from '../utils/SeaAirAuditHelpers'
 import {
@@ -94,7 +95,7 @@ const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, 
 
 export default function SeaAirRecapDetailModal({
   rec, companyNames, canEdit, canSeeCosts, canEditCosts, canSeeDocs, canEditDocs, isAdmin = false, onUnlock, onClose, onEdit, onSubmit, onToggleDraft, onDelete, onChanged,
-  variant = 'modal', onToggleVariant, onAnyDirtyChange,
+  variant = 'modal', onToggleVariant, onAnyDirtyChange, onAwbChanged,
 }: {
   rec: any
   companyNames: Record<string, string>
@@ -116,6 +117,7 @@ export default function SeaAirRecapDetailModal({
   variant?: 'modal' | 'panel'
   onToggleVariant?: () => void
   onAnyDirtyChange?: (dirty: boolean) => void
+  onAwbChanged?: (newAwb: string) => void
 }) {
   const isPanel = variant === 'panel'
   const [tab, setTab] = useState<TabKey>('overview')
@@ -187,6 +189,13 @@ export default function SeaAirRecapDetailModal({
     setVpNonce(n => n + 1)
     if (anyDirty) setStaleBanner(true)
     else setTabsNonce(n => n + 1)
+  }
+  // AWB diubah (RPC fn_ubah_awb_seaair): data yang sama berubah seperti setelah susulan (Audit PIB, Checklist, Doc Validation, Costs,
+  // Vendor payments, daftar Recap) -> pakai jalur muat-ulang yang sama; induk menambal snapshot supaya judul & tombol Upload Additional
+  // Document langsung memakai AWB baru walau baris sudah tidak cocok dengan filter pencarian lama.
+  const handleAwbChanged = (newAwb: string) => {
+    onAwbChanged?.(newAwb)
+    handleSusulanCompleted()
   }
   const reloadAfterSusulan = () => {
     if (anyDirty && !window.confirm('Reloading discards your unsaved changes in Doc Validation / Cost Validation. Continue?')) return
@@ -309,6 +318,7 @@ export default function SeaAirRecapDetailModal({
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className={`${isPanel ? 'text-[16px]' : 'text-[18px]'} font-bold text-[#3B1B3D] [overflow-wrap:anywhere]`}>{rec.awb || '—'}</h2>
+                <SeaAirEditAwbButton seaairId={seaairId} awb={rec.awb} locked={locked} onChanged={handleAwbChanged} className="-ml-1" />
                 <Chip tone="blue">{containerLabel(rec)}</Chip>
                 {rec.a_n && <PtBadge code={rec.a_n} title={ptName} />}
                 {rec.duplicate_of && <Chip tone="red" title="Another Invoice Recap row with the same BL / AWB already exists">Possible duplicate upload</Chip>}

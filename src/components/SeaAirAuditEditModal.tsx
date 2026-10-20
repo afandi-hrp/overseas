@@ -207,7 +207,7 @@ export default function SeaAirAuditEditModal({
         if ((DATE_FIELDS as readonly string[]).includes(k)) return (o ? String(o).substring(0, 10) : null) === v
         return ((o === null || o === undefined || String(o).trim() === '') ? null : String(o).trim()) === v
       }
-      Object.entries(next).forEach(([k, v]) => { if (!same(k, v)) payload[k] = v })
+      Object.entries(next).forEach(([k, v]) => { if (k !== 'awb' && !same(k, v)) payload[k] = v }) // AWB hanya lewat fn_ubah_awb_seaair
       Object.assign(payload, goods)
     }
 
@@ -262,7 +262,9 @@ export default function SeaAirAuditEditModal({
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <Field label="PIB no. *"><input value={form.no_aju} onChange={e => set('no_aju', e.target.value)} className={SA_INPUT} /></Field>
                 <Field label="PIB date *"><input type="date" value={form.tgl_ppjk} onChange={e => set('tgl_ppjk', e.target.value)} className={SA_INPUT} /></Field>
-                <Field label="BL / AWB *"><input value={form.awb} onChange={e => set('awb', e.target.value)} className={SA_INPUT} /></Field>
+                <Field label="BL / AWB *" hint={isCreate ? undefined : 'To correct it, use the pencil icon next to the AWB in the shipment detail.'}>
+                  <input value={form.awb} onChange={e => set('awb', e.target.value)} disabled={!isCreate} className={SA_INPUT} />
+                </Field>
               </div>
               <div className="flex flex-wrap items-end gap-4 mt-3">
                 <Field label="Via"><Segmented value={form.via} options={VIA_OPTIONS} onChange={v => set('via', v)} /></Field>

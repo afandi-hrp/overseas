@@ -17,6 +17,7 @@ import { poManualFor, type PoManualEntry } from '../utils/SeaAirRecapHelpers'
 import { compareSeaAirDuty, fetchSeaAirDutyMatrix } from '../utils/SeaAirAuditHelpers'
 import SeaAirDutyCompareTable from './SeaAirDutyCompareTable'
 import SeaAirActivityTrail from './SeaAirActivityTrail'
+import SeaAirEditAwbButton from './SeaAirEditAwbDialog'
 
 // Audit trail: tampilan SAMA Invoice Recap (SeaAirActivityTrail, 2026-10-14) -- versi ringkas lama (mergeTrail ×N + Show all) dihapus.
 
@@ -58,7 +59,7 @@ const CheckRow: React.FC<{ ok: boolean | null; label: string; hint?: string }> =
 )
 
 export default function SeaAirAuditDetailModal({
-  rec, info: infoProp, companyNames, canEdit, onClose, onEdit, onDelete, onSetStatus, onOpenRecap, onReread, variant = 'modal', onToggleVariant,
+  rec, info: infoProp, companyNames, canEdit, onClose, onEdit, onDelete, onSetStatus, onOpenRecap, onReread, onAwbChanged, variant = 'modal', onToggleVariant,
 }: {
   rec: any
   info?: SeaAirAuditLinkInfo
@@ -70,6 +71,8 @@ export default function SeaAirAuditDetailModal({
   onSetStatus: (rec: any, status: 'ARCHIVED' | 'LENGKAP') => Promise<boolean>
   onOpenRecap: (rec: any) => void
   onReread: (rec: any) => Promise<boolean>
+  // AWB diubah lewat dialog Edit AWB (RPC fn_ubah_awb_seaair) -> induk memuat ulang baris & daftar.
+  onAwbChanged?: (rec: any) => void
   // 'panel' = dirender di dalam halaman (panel kanan daftar kartu, 2026-10-13, sama Invoice Recap); 'modal' = jendela penuh (portal).
   // `onToggleVariant` = tombol Expand (panel -> modal) / Collapse (modal -> panel).
   variant?: 'modal' | 'panel'
@@ -308,7 +311,12 @@ export default function SeaAirAuditDetailModal({
                 <Fact label="PIB no.">{formatNoAju(rec.no_aju) || '—'}</Fact>
                 <Fact label="PIB date">{fmtDateShort(rec.tgl_ppjk)}</Fact>
                 <Fact label="Via · delivery term">{rec.via || '—'} · {rec.delivery_term || '—'}</Fact>
-                <Fact label="BL / AWB">{rec.awb || '—'}</Fact>
+                <Fact label="BL / AWB">
+                  <span className="inline-flex items-center gap-1.5 max-w-full">
+                    <span className="[overflow-wrap:anywhere]">{rec.awb || '—'}</span>
+                    <SeaAirEditAwbButton seaairId={rec.id} awb={rec.awb} locked={!!info?.recapSubmittedAt} onChanged={() => onAwbChanged?.(rec)} />
+                  </span>
+                </Fact>
                 <Fact label="Importer">{ptName}{ptName !== String(rec.impor_an || '') && rec.impor_an ? <span className="text-[#8A7A8B] font-medium"> ({rec.impor_an})</span> : null}</Fact>
                 <Fact label="Supplier">{rec.vendor || '—'}</Fact>
                 <Fact label="HS code">{rec.hs_code || '—'}</Fact>

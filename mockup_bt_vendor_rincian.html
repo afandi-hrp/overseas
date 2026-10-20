@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rincian BT Minimalis</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--plum:#5b2a4e;--ink:#2b1a26;--mute:#8a7d86;--line:#eee4e0;--ok-bg:#e6f6ec;--ok:#1d7a45;--warn-bg:#fff1cc;--warn:#8a5d00;--bad-bg:#fde6e6;--bad:#b42323;--info-bg:#e8efff;--info:#2c4a9a}
+*{box-sizing:border-box}
+body{margin:0;font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:var(--ink);font-size:13px;background:linear-gradient(135deg,#fde9c9,#fbd3bf 55%,#f6b9a4);min-height:100vh}
+.wrap{max-width:1480px;margin:0 auto;padding:16px}
+h1{margin:0;font-size:19px}.sub{color:var(--mute);font-size:11.5px}
+.seg{display:inline-flex;background:#fff;border-radius:9px;padding:3px;border:1px solid var(--line);flex-wrap:wrap}
+.seg button{border:0;background:none;padding:6px 12px;border-radius:7px;font:inherit;font-weight:700;cursor:pointer;color:var(--mute);font-size:12px}
+.seg button.on{background:var(--plum);color:#fff}
+.modal{background:#fff;border-radius:14px;margin-top:12px;box-shadow:0 10px 40px rgba(0,0,0,.12);overflow:hidden}
+.mh{padding:14px 18px;border-bottom:1px solid var(--line)}
+.mh h3{margin:0;font-size:16px}
+.mb{padding:14px 18px;background:#fbf8f6}
+.grp{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:auto}
+table.g{border-collapse:collapse;width:100%;min-width:1150px}
+table.g th{font-size:10.5px;font-weight:800;padding:11px 8px;border:1px solid #f0e8e5;letter-spacing:.3px}
+table.g td{padding:12px 8px;border:1px solid #f0e8e5;text-align:center;vertical-align:middle;font-size:12px}
+table.g td.f{text-align:left;font-weight:700;width:150px}
+table.g td.gl{width:110px;background:#faf6f4;font-weight:800;color:var(--plum);font-size:11px}
+td.hl{background:#fff9f0}
+.chip{display:inline-block;font-size:10px;font-weight:700;border-radius:6px;padding:2px 7px;white-space:nowrap;margin-top:4px}
+.c-ok{background:var(--ok-bg);color:var(--ok)}.c-bad{background:var(--bad-bg);color:var(--bad)}.c-warn{background:var(--warn-bg);color:var(--warn)}.c-info{background:var(--info-bg);color:var(--info)}.c-gray{background:#efeceb;color:#6b6466}
+.big{font-size:13px;font-weight:700}
+.sm{font-size:10.5px;color:var(--mute);line-height:1.5}
+.link{border:0;background:none;color:var(--plum);font:inherit;font-weight:700;cursor:pointer;padding:0;font-size:11px}
+.btn{border:1px solid var(--plum);background:var(--plum);color:#fff;border-radius:7px;padding:4px 10px;font:inherit;font-weight:700;font-size:11px;cursor:pointer}
+.rin{background:#fff;border:1px solid var(--line);border-radius:12px;margin-top:12px;padding:12px 14px}
+.rin h4{margin:0 0 4px;font-size:13.5px}
+table.r{border-collapse:collapse;width:100%;max-width:900px;font-size:12px;margin-top:8px}
+table.r th{font-size:9.5px;color:var(--mute);font-weight:800;text-align:left;padding:5px 8px;border-bottom:1px solid var(--line)}
+table.r td{padding:6px 8px;border-bottom:1px dashed var(--line)}
+table.r .rt{text-align:right}
+table.r tr.mine td{background:#f2fbf5;font-weight:600}
+table.r tr.other td{color:#a99ea6}
+table.r tr.tot td{font-weight:800;border-top:1px solid var(--line);border-bottom:0}
+.checks{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.ck{border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:11.5px;background:#fff}
+.ck b{display:block;font-size:12.5px}
+.ck.ok{border-color:#bfe3cb;background:#f4fbf6}.ck.bad{border-color:#f3c4c4;background:#fff8f8}.ck.warn{border-color:#f1d38a;background:#fffaf0}
+td.hl{position:relative}
+.tg{border:0;background:none;color:var(--plum);font:inherit;font-weight:700;font-size:11px;cursor:pointer;padding:0;margin-top:5px;display:block;margin-left:auto;margin-right:auto}
+.rp{position:absolute;right:6px;top:calc(100% - 6px);width:380px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px rgba(60,20,40,.18);padding:10px 12px;z-index:30;text-align:left;font-size:11.5px}
+.rp .ln{display:flex;justify-content:space-between;gap:8px;padding:3px 0}
+.rp .ln b{font-weight:700}
+.ok{color:var(--ok)}.wr{color:var(--warn)}.bd{color:var(--bad)}
+.rp table{width:100%;border-collapse:collapse;margin-top:6px}
+.grp{overflow:visible!important}
+table.g .rp td{padding:4px 2px;border:0;border-top:1px dashed var(--line);font-size:11px;text-align:left;vertical-align:middle}
+table.g .rp td.r{text-align:right}
+.rp .oth td{color:#ab9fa7}
+.note{background:#fff;border-left:3px solid var(--plum);border-radius:8px;padding:10px 12px;margin-top:12px;font-size:12px;line-height:1.55}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>BT Vendor – pembayaran gabungan beberapa shipment</h1>
+  <div class="sub">Contoh nyata: DHL 2150385204 · SHANGHAI BANNER · 1 BT USD 8.153,70 dipakai untuk 14 invoice (5 di AWB ini)</div>
+  <div style="margin-top:10px" class="seg" id="seg">
+    <button class="on" data-s="rin">1 · Ada rincian BT</button>
+    <button data-s="rem">2 · Tanpa rincian (remarks BT terpotong)</button>
+    <button data-s="diff">3 · Nilai di BT beda dengan CIPL</button>
+    <button data-s="single">4 · BT untuk 1 shipment saja</button>
+  </div>
+
+  <div class="modal">
+    <div class="mh"><h3>Doc Validation · DHL NO. 2150385204</h3><div class="sub">The same field compared across the documents · grup PIB (kolom Columns)</div></div>
+    <div class="mb">
+      <div class="grp"><table class="g" id="tbl"></table></div>
+      <div id="rin" style="display:none"></div>
+      <div class="note" id="note"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const f=n=>n.toLocaleString('id-ID',{minimumFractionDigits:2,maximumFractionDigits:2});
+const r2=n=>Math.round(n*100)/100;
+// invoice di AWB ini (CIPL / Final Invoice)
+const MINE={SO260706006:1058.90,SO260716003:574.00,SO260717003:575.90,SO260721002:255.00,SO260723001:58.45};
+const CIPL=r2(Object.values(MINE).reduce((a,b)=>a+b,0)); // 2.522,25
+// rincian BT vendor (dokumen asli)
+const RIN=[['2507/0201/IMI','SO250723005',2115.00],['2606/0031/IMI','SO260605001',438.15],['2605/0131/IMI','SO260603004',1361.10],['2606/0026/IMI(1)','SO260610007',370.00],['2607/0070/IMI','SO260716003',574.00],['2607/0129/IMI','SO260721002',255.00],['2607/0073/IMI','SO260717003',575.90],['2607/0143/IMI','SO260723001',58.45],['2607/0030/IMI','SO260706006',1058.90],['2607/0144/IMI','SO260723004',300.00],['2607/0186/IMI','SO260803002',60.00],['2607/0190/IMI','SO260803004',403.20],['2608/0018/IMI','SO260807001',75.00],['2607/0184/IMI','SO260731001',509.00]];
+// payment remarks BT (terpotong "+")
+const REM=[['SO250723005',2115],['SO260605001',438.15],['SO260603004',1361.10],['SO260610007',370],['SO260716003',574],['SO260721002',255],['SO260717003',575.90]];
+
+const S={
+ rin:{bt:8153.70,src:'Rincian BT Vendor',lines:RIN},
+ rem:{bt:8153.70,src:'Payment Remarks BT',lines:REM.map(x=>['—',x[0],x[1]]),cut:true},
+ diff:{bt:8149.70,src:'Rincian BT Vendor',lines:RIN.map(x=>x[1]==='SO260716003'?[x[0],x[1],570.00]:x)},
+ single:{bt:2522.25,src:'Nilai BT',lines:Object.entries(MINE).map(([k,v])=>['—',k,v]),single:true}
+};
+let SC='rin';
+function rinPop(s,found,sum,rinOk,nFound,nMine,diffs){
+ const ic=(c)=>c===true?'<span class="ok">✓</span>':c===false?'<span class="bd">✕</span>':'<span class="wr">!</span>';
+ const oth=s.lines.filter(x=>MINE[x[1]]===undefined);
+ let h=`<div style="font-weight:800;margin-bottom:4px">Rincian BT · <span class="sub">${s.src}</span></div>
+ <div class="ln"><span>${ic(rinOk===null?null:rinOk)} Total rincian = BT</span><b>${rinOk===null?'remarks terpotong':f(sum)+' / '+f(s.bt)}</b></div>
+ <div class="ln"><span>${ic(nFound===nMine?true:null)} Invoice AWB ini ditemukan</span><b>${nFound}/${nMine}</b></div>
+ <div class="ln"><span>${ic(diffs.length?false:true)} Nilai per invoice = CIPL</span><b>${diffs.length?diffs.length+' beda':'semua sama'}</b></div>
+ <table>`+found.map(x=>{const d=x.bt===null?null:r2(x.bt-x.cipl);return `<tr><td>${x.inv}</td><td class="r">${x.bt===null?'–':f(x.bt)}</td><td class="r">${x.bt===null?'<span class="wr">tidak ada</span>':d?`<span class="bd">${d>0?'+':''}${f(d)}</span>`:'<span class="ok">✓</span>'}</td></tr>`}).join('');
+ if(oth.length)h+=`<tr><td colspan="3"><button class="tg" style="margin:0" id="tgo">${window.SHOWO?'▾':'▸'} ${oth.length} invoice shipment lain</button></td></tr>`+(window.SHOWO?oth.map(x=>`<tr class="oth"><td>${x[1]}</td><td class="r">${f(x[2])}</td><td class="r">diabaikan</td></tr>`).join(''):'');
+ h+='</table>';
+ if(s.cut)h+='<div style="margin-top:8px"><button class="btn">⇪ Upload rincian BT</button></div>';
+ return `<div class="rp" onclick="event.stopPropagation()">${h}</div>`;
+}
+function render(){
+ const s=S[SC];
+ const sum=r2(s.lines.reduce((a,x)=>a+x[2],0));
+ const found=Object.keys(MINE).map(inv=>{const l=s.lines.find(x=>x[1]===inv);return{inv,cipl:MINE[inv],bt:l?l[2]:null}});
+ const nFound=found.filter(x=>x.bt!==null).length, nMine=found.length;
+ const btMine=r2(found.reduce((a,x)=>a+(x.bt||0),0));
+ const diffs=found.filter(x=>x.bt!==null&&r2(x.bt-x.cipl)!==0);
+ const rinOk=s.cut?null:r2(sum-s.bt)===0;
+ const others=s.lines.length-nFound;
+ // status
+ let st,chip;
+ if(s.single){st='ok';chip='<span class="chip c-ok">✓ Match</span>'}
+ else if(nFound<nMine){st='warn';chip='<span class="chip c-warn">◷ Perlu rincian BT</span>'}
+ else if(diffs.length){st='bad';chip='<span class="chip c-bad">⊗ Mismatch</span>'}
+ else if(rinOk===false){st='warn';chip='<span class="chip c-warn">⚠ Rincian ≠ total BT</span>'}
+ else{st='ok';chip='<span class="chip c-ok">✓ Match</span>'}
+ const gab=s.single?'':`<div><span class="chip c-info">Gabungan · ${nFound}/${nMine} invoice AWB ini dari ${s.lines.length}${s.cut?'+':''} di BT</span></div>`;
+ let OPENP=window.OPENP||false;const btItem=`<div class="big">${f(s.single?s.bt:btMine)}</div><div class="sm">${s.single?'BT 1 shipment':'porsi AWB ini<br>Total BT '+f(s.bt)}</div>${gab}${chip}${s.single?'':`<button class="tg" id="tg">${window.OPENP?'▾ Tutup rincian':'▸ Rincian BT'}</button>`}${window.OPENP&&!s.single?rinPop(s,found,sum,rinOk,nFound,nMine,diffs):''}`;
+ const invList=found.map(x=>`${x.inv} ${x.bt===null?'<span style="color:var(--warn)">✕</span>':(r2(x.bt-x.cipl)?'<span style="color:var(--bad)">≠</span>':'<span style="color:var(--ok)">✓</span>')}`).join('<br>');
+ const btInv=`<div>${invList}</div>${others>0&&!s.single?`<div class="sm">+${others} invoice shipment lain (diabaikan)</div>`:''}${nFound<nMine?'<span class="chip c-warn">◷ '+(nMine-nFound)+' tidak ada di '+s.src+'</span>':'<span class="chip c-ok">✓ Match</span>'}`;
+ const cipInv=Object.keys(MINE).join(' +<br>');
+ tbl.innerHTML=`<tr><th style="background:#f5f0ee"></th><th style="background:#f5f0ee;text-align:left">FIELD</th><th style="background:#ffd9e2">BILLING DJBC</th><th style="background:#c9e9ff">BPN</th><th style="background:#fff3a6">PO</th><th style="background:#c9e9ff">CIPL</th><th style="background:#ead9ff">FINAL INVOICE</th><th style="background:#ffd9e2">BT VENDOR</th></tr>
+ <tr><td class="gl" rowspan="4">PIB</td><td class="f">No. Pengajuan vs No. Aju</td><td>05010000622320260805045528<br><span class="chip c-ok">✓ Match</span></td><td>05010000622320260805045528<br><span class="chip c-ok">✓ Match</span></td><td>–</td><td>–</td><td>–</td><td>–</td></tr>
+ <tr><td class="f">Item Value</td><td>–</td><td>–</td><td><span class="sm">(fitur PO partial)</span></td><td>${f(CIPL)}<br><span class="chip c-ok">✓ Match</span></td><td>${f(CIPL)}<br><span class="chip c-ok">✓ Match</span></td><td class="hl">${btItem}</td></tr>
+ <tr><td class="f">No Invoice Vendor</td><td>–</td><td>–</td><td>–</td><td>${cipInv}<br><span class="chip c-ok">✓ Match</span></td><td>${cipInv}<br><span class="chip c-ok">✓ Match</span></td><td class="hl" style="text-align:left">${btInv}</td></tr>
+ <tr><td class="f">Total Duty Impor</td><td>10.253.986<br><span class="chip c-ok">✓ Match</span></td><td>10.253.986<br><span class="chip c-ok">✓ Match</span></td><td>–</td><td>–</td><td>–</td><td>–</td></tr>`;
+
+ // rincian panel
+ let h=`<h4>Rincian BT Vendor <span class="sub">· sumber: ${s.src}</span></h4>`;
+ h+=`<div class="checks">
+  <div class="ck ${s.single?'ok':(rinOk===null?'warn':rinOk?'ok':'warn')}"><span class="sub">1. Jumlah rincian = total BT</span><b>${s.single?'BT = CIPL '+f(s.bt):(rinOk===null?'Tidak bisa dicek (remarks terpotong)':f(sum)+(rinOk?' = ':' ≠ ')+f(s.bt))}</b></div>
+  <div class="ck ${nFound<nMine?'warn':'ok'}"><span class="sub">2. Invoice AWB ini ditemukan di BT</span><b>${nFound}/${nMine} invoice</b></div>
+  <div class="ck ${diffs.length?'bad':'ok'}"><span class="sub">3. Nilai per invoice BT vs CIPL</span><b>${diffs.length?diffs.map(d=>d.inv+' '+(d.bt-d.cipl>0?'+':'')+f(r2(d.bt-d.cipl))).join(', '):'Semua sama'}</b></div>
+  <div class="ck ${st==='ok'?'ok':st==='bad'?'bad':'warn'}"><span class="sub">Porsi BT untuk AWB ini</span><b>${f(s.single?s.bt:btMine)} vs CIPL ${f(CIPL)}</b></div></div>`;
+ if(!s.single){
+  h+=`<table class="r"><tr><th>PO</th><th>Invoice</th><th class="rt">Nilai di BT (USD)</th><th class="rt">CIPL AWB ini</th><th>Keterangan</th></tr>`;
+  s.lines.forEach(x=>{const m=MINE[x[1]]!==undefined;const d=m?r2(x[2]-MINE[x[1]]):0;
+   h+=`<tr class="${m?'mine':'other'}"><td>${x[0]}</td><td>${x[1]}</td><td class="rt">${f(x[2])}</td><td class="rt">${m?f(MINE[x[1]]):'–'}</td><td>${m?(d?`<span class="chip c-bad">Selisih ${d>0?'+':''}${f(d)}</span>`:'<span class="chip c-ok">✓ AWB ini</span>'):'shipment lain'}</td></tr>`});
+  found.filter(x=>x.bt===null).forEach(x=>{h+=`<tr class="mine"><td>?</td><td>${x.inv}</td><td class="rt">–</td><td class="rt">${f(x.cipl)}</td><td><span class="chip c-warn">Tidak ada di ${s.src}</span></td></tr>`});
+  h+=`<tr class="tot"><td colspan="2">Total ${s.cut?'(terbaca dari remarks)':''}</td><td class="rt">${f(sum)}</td><td class="rt">${f(CIPL)}</td><td></td></tr></table>`;
+  if(s.cut)h+=`<div style="margin-top:8px;display:flex;gap:8px;align-items:center"><button class="btn">⇪ Upload rincian BT</button><span class="sub">atau Accept manual dengan catatan (alur Accept yang sudah ada)</span></div>`;
+  if(diffs.length)h+=`<div style="margin-top:8px"><button class="btn">Accept</button> <span class="sub">catatan masuk ke Manual change notes</span></div>`;
+ }
+ rin.innerHTML=h;
+ note.innerHTML={
+  rin:'<b>Ada rincian BT:</b> sistem hanya mengambil baris rincian yang invoicenya ada di AWB ini (5 baris), dijumlah = 2.522,25 = CIPL → <b>Match</b>. 9 invoice lain dianggap milik shipment lain dan diabaikan. Total rincian 8.153,70 = nilai BT → rincian valid.',
+  rem:'<b>Tanpa rincian:</b> sistem membaca pasangan Invoice(nilai) dari Payment Remarks BT. Remarks terpotong ("+"), hanya 3 dari 5 invoice yang terbaca → status <b>Perlu rincian BT</b> (kuning, bukan Mismatch). User upload rincian BT, atau Accept manual.',
+  diff:'<b>Nilai beda:</b> di rincian BT invoice SO260716003 tertulis 570,00, CIPL 574,00 → <b>Mismatch</b> pada invoice itu saja (selisih -4,00). Perlu Accept dengan catatan (mis. potongan/diskon dari vendor).',
+  single:'<b>BT 1 shipment:</b> nilai BT = total CIPL → langsung <b>Match</b> seperti sekarang, tanpa perlu rincian.'}[SC];
+}
+document.addEventListener('click',e=>{if(e.target.id==='tg'){window.OPENP=!window.OPENP;render()}else if(e.target.id==='tgo'){window.SHOWO=!window.SHOWO;render()}else if(window.OPENP&&!e.target.closest('.rp')){window.OPENP=false;render()}});
+seg.querySelectorAll('button').forEach(b=>b.onclick=()=>{seg.querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');SC=b.dataset.s;render()});
+render();
+</script>
+</body>
+</html>

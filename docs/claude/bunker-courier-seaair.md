@@ -1142,3 +1142,9 @@ sempat di tab Doc Validation, DIPINDAH 2026-10-20 permintaan user; TIDAK di Fina
   user mode List melihatnya lewat jendela Open. Keputusan produk: apakah perlu juga di sana / di Finance Handover.
 
 - **Bug 2026-10-20** "UPDATE requires a WHERE clause" (panel merah): `fn_hitung_vendor_payments_seaair` punya `UPDATE _vp_inv SET oblig = …;` tanpa WHERE -> ditolak ekstensi safeupdate. Patch: `sql/070_fix_vp_update_where.sql` (DO block, menambah `WHERE true`; dijalankan manual, idempotent).
+
+## Sea & Air — Edit AWB / House BL (2026-10-20, permintaan user)
+
+- AI bisa salah baca nomor BL/AWB -> user mengoreksi lewat RPC **`fn_ubah_awb_seaair(p_seaair_id uuid, p_awb_baru text)`** (sudah ada di DB; return `{ok, awb, awb_lama, berubah}`). RPC menyinkronkan Audit, Recap, Checklist, Validation & kunci data mentah Upload Additional Document; menolak nomor duplikat / < 5 huruf-angka / shipment sudah submit Finance (kecuali Admin unlock). Frontend TIDAK menulis tabel utk fitur ini. RPC didaftarkan di `server/db/whitelist.ts`.
+- Komponen `SeaAirEditAwbDialog.tsx` (default export `SeaAirEditAwbButton` = ikon pensil + dialog + toast; `SeaAirEditAwbDialog` = dialognya). Dipakai di Fact "BL / AWB" detail Audit PIB (`SeaAirAuditDetailModal`, terkunci bila `info.recapSubmittedAt`) dan di header `SeaAirRecapDetailModal` (terkunci bila `isRecapLocked(rec)`; muat ulang lewat `handleSusulanCompleted`). Hak = `canEdit('sea_air_audit')` (tanpa hak: ikon disembunyikan; terkunci / tak terhubung ke Audit PIB: nonaktif + tooltip). Pesan error server ditampilkan apa adanya di dalam dialog.
+- AWB **read-only di jalur edit biasa**: form Edit PIB (`SeaAirAuditEditModal`, input disabled & tidak ikut payload; tetap bisa diisi saat Add manually), inline edit List Audit/Recap (`SharedDataTable`, `c.key !== 'awb'` + `handleInlineSaveRow` membuang `awb` utk tab Sea & Air), EditModal generik (disabled).

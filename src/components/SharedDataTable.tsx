@@ -795,6 +795,8 @@ function EditModal({ record, tab, cols, onClose, onSaved, isCreate, createDefaul
                     step="any"
                     value={form[c.key] ?? ''}
                     onChange={e => set(c.key, e.target.value)}
+                    disabled={c.key === 'awb' && !isCreate && tab.id.startsWith('sea_air')}
+                    title={c.key === 'awb' && !isCreate && tab.id.startsWith('sea_air') ? 'Use "Edit AWB" in the shipment detail to change the AWB' : undefined}
                     placeholder={c.type === 'date' ? 'YYYY-MM-DD' : `Enter ${c.label}...`}
                     className="w-full border border-blue-200 bg-blue-50/30 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-medium text-[#5A305A] h-[34px]"
                   />
@@ -2486,7 +2488,7 @@ const SeaAirAuditRowGroup: React.FC<{
               
               const additionalClasses = !isRepeating && isFirst && rowCount > 1 && isExpanded ? 'border-r border-slate-200 bg-white group-hover:bg-blue-50/30' : '';
               
-              if (isEditing && isInlineEditable(c.key) && (!isRepeating || isFirst) && c.key !== 'po_no' && c.key !== 'vessel' && c.key !== 'po_ori' && c.key !== 'vendor_inv_no' && c.key !== 'po_harga_detail') {
+              if (isEditing && isInlineEditable(c.key) && c.key !== 'awb' && (!isRepeating || isFirst) && c.key !== 'po_no' && c.key !== 'vessel' && c.key !== 'po_ori' && c.key !== 'vendor_inv_no' && c.key !== 'po_harga_detail') {
                 let inputEl;
                 if (c.type === 'date' || c.type === 'date_dash_if_null' || c.type === 'datetime' || c.type === 'date_badge_if_null') {
                   const val = editForm[c.key] ? String(editForm[c.key]).substring(0, 10) : '';
@@ -3326,7 +3328,7 @@ const SeaAirRekapanRowGroup: React.FC<{
               
               const additionalClasses = !isRepeating && isFirst && rowCount > 1 && isExpanded ? 'border-r border-slate-200 bg-white group-hover:bg-blue-50/30' : '';
               
-              if (isEditing && isInlineEditable(c.key) && (!isRepeating || isFirst) && c.key !== 'po_no' && c.key !== 'vessel' && c.key !== 'po_ori' && c.key !== 'vendor_inv_no' && c.key !== 'po_harga_detail') {
+              if (isEditing && isInlineEditable(c.key) && c.key !== 'awb' && (!isRepeating || isFirst) && c.key !== 'po_no' && c.key !== 'vessel' && c.key !== 'po_ori' && c.key !== 'vendor_inv_no' && c.key !== 'po_harga_detail') {
                 let inputEl;
                 if (c.type === 'date' || c.type === 'date_dash_if_null' || c.type === 'datetime' || c.type === 'date_badge_if_null') {
                   const val = editForm[c.key] ? String(editForm[c.key]).substring(0, 10) : '';
@@ -4651,6 +4653,13 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       onSetStatus={handleSeaAirSetStatus}
       onOpenRecap={handleSeaAirOpenRecap}
       onReread={handleSeaAirReread}
+      onAwbChanged={async rec => {
+        // AWB baru dari RPC fn_ubah_awb_seaair -> baca ulang baris (judul/Overview) + daftar, ringkasan & badge sidebar.
+        const fresh = await reloadSeaAirRow(rec.id);
+        if (fresh) setSeaAirDetailRecord(fresh);
+        refreshSeaAirAudit();
+        notifySeaAirRecapChanged();
+      }}
     />
     </React.Fragment>
   ) : null
@@ -5058,6 +5067,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           }}
           onDelete={rec => { setRecapDetailId(null); setDeleteRecord(rec); }}
           onChanged={refreshRecap}
+          onAwbChanged={newAwb => setRecapDetailSnapshot((prev: any) => (prev ? { ...prev, awb: newAwb } : prev))}
         />
   );
   // PENTING: panel dirender LAZY (`renderRecapPanel()` dipanggil di JSX return) -- `renderRecapDetail` membaca handleRecapUnlock dkk yang
@@ -5385,6 +5395,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       Object.keys(cleanedPayload).forEach(key => {
         if (cleanedPayload[key] === '') cleanedPayload[key] = null;
       });
+      // Sea & Air: AWB HANYA boleh diubah lewat RPC fn_ubah_awb_seaair (dialog Edit AWB) supaya semua tabel tetap sinkron.
+      if (activeMainTab === 'sea_air') delete cleanedPayload.awb;
 
       let activeCols: any[] = [];
       if (activeMainTab === 'sea_air' && activeSubTab === 'sea_air_audit') activeCols = SEA_AIR_AUDIT_COLS;

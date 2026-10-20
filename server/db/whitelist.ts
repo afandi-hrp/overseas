@@ -105,6 +105,7 @@ export const RPC_WHITELIST = new Set<string>([
   'fn_seaair_reread_from_ai',
   'fn_seaair_unlock_submit',
   'fn_set_user_divisi',
+  'fn_ubah_awb_seaair',
   'fn_update_actual_value',
   'fn_user_activity',
   'fn_user_heartbeat',
