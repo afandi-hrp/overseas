@@ -21,6 +21,8 @@ import { LoadingState } from './LoadingState'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_PRIMARY, Chip, Pill } from './SeaAirAuditUi'
 import { relaxSeaAirDocChecks, SEA_AIR_PIB_MATRIX_ROWS, SEA_AIR_INVOICE_COLS, isCountedDocCheck, toNum } from '../utils/SeaAirValidasiHelpers'
 import { calcSeaAirDuty, SEA_AIR_DUTY_TOLERANCE } from '../utils/SeaAirAuditHelpers'
+import SeaAirUploadSusulanButton, { type SusulanRec } from './SeaAirUploadSusulanButton'
+import SeaAirVendorPaymentsPanel from './SeaAirVendorPaymentsPanel'
 
 // ── Salinan PERSIS formatter/parser modal lama ──
 const fmtIDR = (val: any) => {
@@ -131,8 +133,15 @@ const OPTIONAL_DOCS = [
 const DUTY_DOC_KEYS = new Set(['ada_pib', 'ada_sppb', 'ada_billing_djbc', 'ada_bpn', 'ada_sptnp', 'ada_billing_sptnp', 'ada_bpn_sptnp'])
 const ALWAYS_OPTIONAL = new Set(['ada_form_e', 'ada_e_coo', 'ada_form_ak', 'ada_sptnp', 'ada_billing_sptnp', 'ada_bpn_sptnp'])
 
-export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage, isAdmin = false, locked = false, financeView = false, onChanged, onDirtyChange, origin, part = 'all' }: {
+export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage, isAdmin = false, locked = false, financeView = false, onChanged, onDirtyChange, origin, part = 'all', susulan, reloadNonce = 0, vendorPaymentsNonce = 0 }: {
   seaairId: any
+  // Tombol "Upload Additional Document" (dokumen susulan, 2026-10-20) di kartu Checklist. Hanya di jendela Open Invoice Recap;
+  // Finance Handover (financeView) TIDAK pernah menampilkannya. `onCompleted` = job susulan SUCCESS.
+  susulan?: { rec: SusulanRec; onCompleted: () => void }
+  // Naik -> `load()` dijalankan ulang (data baru dari dokumen susulan). Induk yang memutuskan kapan (jangan saat ada perubahan belum disimpan).
+  reloadNonce?: number
+  // Naik -> panel "Vendor payments (goods)" memuat ulang datanya sendiri (tidak lewat `load()`, jadi aman walau ada perubahan belum disimpan).
+  vendorPaymentsNonce?: number
   // 'all' = Checklist + Doc validation berdampingan (Finance Handover); 'checklist' / 'doc' = salah satu saja -- jendela Open Invoice Recap memakai
   // 2 tab terpisah (Checklist | Doc Validation, 2026-10-13, permintaan user; pola Invoice Recap Courier).
   part?: 'all' | 'checklist' | 'doc'
@@ -276,6 +285,14 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
     setLoading(false)
   }, [seaairId])
   useEffect(() => { load() }, [load])
+  // Muat ulang "diam-diam" (tanpa layar Loading): kartu Checklist memuat tombol susulan + strip statusnya (notifikasi sukses) -- kalau
+  // seluruh isi diganti spinner, komponen itu ikut ter-unmount dan notifikasinya hilang.
+  const quietReload = React.useRef(false)
+  useEffect(() => {
+    if (reloadNonce <= 0) return
+    quietReload.current = true
+    load().finally(() => { quietReload.current = false })
+  }, [reloadNonce]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Aksi -- SALINAN logika modal lama ──
   const updateCheckValue = (section: string, row: string, col: string, newValue: any) => {
@@ -356,7 +373,7 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
     return Math.abs(toNum(String(actual).trim()) - expected) <= SEA_AIR_DUTY_TOLERANCE
   }
 
-  if (loading) return <LoadingState fullHeight={false} />
+  if (loading && !quietReload.current) return <LoadingState fullHeight={false} />
 
   const chinaFormE = !financeView && isChinaOrigin(origin)
   const requiredDocs = financeView ? REQUIRED_DOCS.filter(([k]) => !DUTY_DOC_KEYS.has(k)) : REQUIRED_DOCS
@@ -388,6 +405,9 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
           <span className="text-[16px] font-bold text-[#3B1B3D]">{pct === null ? '—' : `${pct}%`}</span>
         </div>
         <div className="h-2 rounded-full bg-[#F3EEEA] overflow-hidden mt-2"><div className={`h-full ${complete ? 'bg-[#17663D]' : 'bg-[#E0A526]'}`} style={{ width: `${pct || 0}%` }} /></div>
+        {!financeView && susulan && (
+          <SeaAirUploadSusulanButton className="mt-3" rec={susulan.rec} seaairId={seaairId} checklist={checklist} onCompleted={susulan.onCompleted} />
+        )}
         {/* Kotak "Checklist Note" (2026-10-13, permintaan user: SAMA tab Checklist Courier -- kartu kuning, judul + keterangan, kotak teks, baris
             keterangan biru) SELALU tampil. Isinya = catatan per shipment (tabel seaair_form_e_note, sql/044) yang tersinkron dgn kolom Remarks
             Audit PIB (SeaAirRemarksSync, opsi a keputusan user). WAJIB (min. 5 karakter) hanya utk barang dari China tanpa Form E: Submit to
@@ -664,8 +684,12 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
                 </tbody>
               </table>
             </div>}
-            {!financeView && <div className="text-[11px] text-[#8A7A8B]">Vendor payments (goods) are not tracked yet.</div>}
           </>
+        )}
+
+        {/* Panel Vendor payments (goods) -- memuat datanya SENDIRI (RPC fn_vp_*), di luar `load()`. Tidak tampil di Finance Handover. */}
+        {!financeView && seaairId && (
+          <SeaAirVendorPaymentsPanel seaairId={seaairId} locked={locked} refreshNonce={vendorPaymentsNonce} />
         )}
 
         {dirty && (

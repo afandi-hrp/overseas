@@ -6366,6 +6366,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         <SeaAirChecklistModal
           record={seaAirChecklistRecord}
           onClose={() => setSeaAirChecklistRecord(null)}
+          onCompleted={refreshRecap}
         />
       )}
 

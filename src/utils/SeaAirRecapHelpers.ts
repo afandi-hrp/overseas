@@ -392,12 +392,13 @@ const TABLE_LABEL: Record<string, string> = {
   cost_validasi_seaair: 'Cost validation',
   dokumen_validasi_matriks_seaair: 'Document validation',
   tabel_audit_seaair: 'Audit PIB',
+  seaair_vp_input: 'Vendor payments', // dicatat RPC fn_vp_*_seaair (jenis 'SEAAIR-VENDOR-PAYMENT - …', 2026-10-20)
 }
 export async function fetchRecapLog(rec: any): Promise<RecapLogEntry[]> {
   const entries: RecapLogEntry[] = []
   if (rec?.awb) {
     const { data, error } = await supabase.from('v_audit_trail')
-      .select('created_at, user_email, action, tabel, deskripsi, catatan')
+      .select('created_at, user_email, action, tabel, jenis, deskripsi, catatan')
       .in('tabel', Object.keys(TABLE_LABEL))
       .or(`awb.eq.${quote(rec.awb)}`)
       .order('created_at', { ascending: false })
@@ -411,7 +412,10 @@ export async function fetchRecapLog(rec: any): Promise<RecapLogEntry[]> {
         at: r.created_at,
         who: r.user_email || 'System',
         what: `${TABLE_LABEL[r.tabel] || r.tabel} ${verb}`,
-        detail: cat.includes('— Lama:') ? cat : (r.deskripsi || ''),
+        // Vendor payments: aksi (jenis, mis. ADD TRANSFER PROOF) + catatan ditulis RPC -- deskripsi generik view tidak informatif.
+        detail: r.tabel === 'seaair_vp_input'
+          ? [String(r.jenis || '').replace(/^SEAAIR-VENDOR-PAYMENT\s*-\s*/i, ''), cat].filter(Boolean).join(' — ')
+          : cat.includes('— Lama:') ? cat : (r.deskripsi || ''),
         entity: TABLE_LABEL[r.tabel] || r.tabel,
         verb,
       })

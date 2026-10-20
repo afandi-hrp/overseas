@@ -1079,3 +1079,64 @@ Tab Checklist Invoice Recap: kotak "Checklist Note" kini SELALU tampil (bukan ha
 - **Tab gaya panel Validation Courier** (latar per persen DIBATALKAN, lihat bullet di atas): pil `rounded-t-lg`, latar per persen (`tabToneClass`: 100% hijau muda, >=60% kuning muda, <60% merah muda,
   belum ada data abu; Overview & Audit trail netral), titik warna + persen di label ("Checklist 75%"), badge jumlah temuan tetap; tab aktif garis
   bawah ungu tebal. Sumber persen sama (checklist_pct / doc_validation_pct / cost_validation_pct).
+
+## Sea & Air — Upload Additional Document / dokumen susulan (2026-10-20, permintaan user)
+
+Tiru fitur Courier (`CourierUploadSusulanModal`, yang TIDAK diubah), tapi komponen terpisah. **Backend (n8n + Supabase) sudah siap; frontend tidak menulis ke tabel hasil
+apa pun** -- semua lewat webhook Sea & Air yang sama dgn upload normal. Tanpa SQL baru.
+- **File**: `SeaAirUploadSusulanModal.tsx` (dialog: info shipment, kelengkapan `dokumen_checklist_seaair`, pemilih file, Advanced options `replace`, modal error
+  "Failed to Send Document" + Try Again; z-[80], error z-[9999], portal ke body) dan `SeaAirUploadSusulanButton.tsx` (tombol + syarat nonaktif + polling job +
+  strip status + callback `onCompleted`). Dialog boleh ditutup saat proses jalan -- polling hidup di tombol, bukan di dialog.
+- **Kontrak kirim**: `POST /api/n8n-proxy-start` via `apiFetch`, `X-Webhook-Type: sea_air` (TANPA `X-Webhook-Url`: server memilih webhook SUSULAN sendiri =
+  env `VITE_N8N_SEAAIR_SUSULAN_WEBHOOK_URL`, cadangan `…/webhook/proses-susulan-seaair`; WAJIB di-set juga di env production, lalu restart); field multipart
+  `file_0…n`, `awb_hint` (= kolom `awb` shipment, bukan input bebas), `mode=susulan`, `replace` (opsional, dipisah koma; nilai valid = `SEA_AIR_REPLACE_OPTIONS`).
+  Minimal 1 file (aturan 4 file hanya utk upload normal), PDF/JPG/PNG, dedupe `name_size`, 50 MB/file, 30 file.
+- **Server** (`server/routes/n8n.ts`, BUKAN `server.ts` -- proxy sudah dipindah ke `server/`): (1) `UPLOAD_ACCESS.sea_air` + `{ key:'sea_air_audit', edit:true }`;
+  (2) khusus `sea_air` + `mode=susulan`: teruskan `mode` & `replace` (regex `^[a-z0-9_]+(,[a-z0-9_]+)*$`, maks 300 karakter -- angka diizinkan krn
+  `invoice_ocean_freight_2`), dan WAJIB hak EDIT `sea_air_audit` (Admin lolos) -> 403 bila tidak (aturan `sea_air_upload` view-only tetap utk upload normal, tak berubah);
+  (3) respons non-2xx `422 {error:true,message}` dari n8n -> `pesan` = `message` apa adanya (maks 500 karakter) supaya tampil verbatim di modal error. `mode` selain `susulan`
+  diabaikan. Tipe webhook lain tidak berubah. **Restart dev server** tiap ubah file ini.
+- **Tombol** (`SA_BTN_OUTLINE`, "Upload Additional Document") ada di: footer `SeaAirChecklistModal` (mode List) dan kartu **Checklist** di `SeaAirRecapDocumentsTab`
+  (`part !== 'doc'`, tidak pernah di `financeView`/Finance Handover) lewat prop `susulan`. Nonaktif + tooltip: tanpa `canEdit('sea_air_audit')`; `awb` kosong;
+  `isRecapLocked(rec)` ("Locked — already submitted to Finance. Ask an Admin to unlock it first."); ada job `PENDING`/`PROCESSING` utk AWB yang sama
+  ("A process is already running for this AWB" -- dicari lagi lewat `tabel_processing_queue.seaair_awb_hint`, jendela 15 menit supaya job macet tak memblokir selamanya).
+  Kunci Finance dijaga di UI karena trigger DB tidak menolak penulis service (n8n); backend menolak juga (422).
+- **Polling**: `tabel_processing_queue` per id tiap 4 dtk; berhenti saat `SUCCESS`/`FAILED`; **12 menit** -> "Still processing — check again later" (BUKAN gagal; ada link
+  "Check now"). `SUCCESS` + `seaair_peringatan` -> strip kuning; `FAILED` -> `error_message` + "Technical details" (`error_step`) + Try Again; respons tanpa `job_id` -> status `SENT`.
+- **Muat ulang setelah SUCCESS** (tanpa reload halaman): `onChanged` (= `refreshRecap`: daftar + KPI + badge sidebar Recap) + `notifySeaAirAuditChanged()` (badge Draft Audit PIB) +
+  baris Audit PIB jendela Open dibaca ulang. `SeaAirRecapDocumentsTab`/`SeaAirRecapCostsTab` punya prop `reloadNonce` (naik -> `load()`); `load()` mereset perubahan belum
+  disimpan, jadi `SeaAirRecapDetailModal.handleSusulanCompleted` hanya memuat ulang Doc Validation/Costs bila `anyDirty` false -- kalau tidak, banner kuning "Data updated by
+  additional documents — Reload" (konfirmasi sebelum membuang perubahan). Kartu Checklist dimuat ulang "diam-diam" (`quietReload`, tanpa spinner) supaya tombol & notifikasi sukses tidak ter-unmount.
+  Shipment kembali Draft; `reaudit_reason` ("Dokumen susulan: …") tampil lewat chip/banner re-audit Audit PIB yang sudah ada (teksnya "Changed in Invoice Recap — please re-audit").
+- **Badge konfirmasi ulang** (`SeaAirRecapCostsTab`): chip kuning "Data updated after confirmation — please re-confirm" di baris "Reviewed …" bila ada job `SUSULAN`+`SUCCESS`
+  utk `seaair_id` yang `updated_at`-nya > `dikonfirmasi_at`. Hanya tampilan -- catatan konfirmasi TIDAK diubah/dihapus; aturan penulisnya (Admin) tak berubah. Tabel antrean hanya
+  terbaca pemilik halaman upload/audit (RLS) -> user lain tanpa badge.
+- **Batasan diketahui**: polling berhenti kalau tombol ter-unmount (jendela Open ditutup) -- saat dibuka lagi, data dibaca segar dan job yang masih jalan ditemukan lagi; panel "Vendor
+  payments (goods)" belum ada (hanya teks placeholder di tab Doc Validation) sehingga belum ada yang dimuat ulang; tombol "+ Add quotation" di Cost Validation (Freight) KINI membuka dialog susulan yang sama
+  (`SeaAirUploadSusulanButton variant="link" context="quotation"`, prop `susulan` di `SeaAirRecapCostsTab`; petunjuk khusus quotation, TANPA `replace` otomatis -- user boleh memilihnya sendiri
+  di Advanced options). Tab Costs dimuat ulang "diam-diam" (`quietReload`) supaya strip status job tidak hilang.
+
+## Sea & Air — panel "Vendor payments (goods)" (2026-10-20, permintaan user)
+
+Panel baru di tab **Doc Validation** jendela Open Invoice Recap (di bawah Document validation; `SeaAirVendorPaymentsPanel.tsx`, dirender dari `SeaAirRecapDocumentsTab`
+bagian `part !== 'checklist'`, TIDAK di Finance Handover/`financeView`). Menggantikan teks placeholder "Vendor payments (goods) are not tracked yet."
+- **Semua angka/status dihitung DATABASE**; frontend hanya menampilkan (jangan menghitung ulang). Memuat datanya SENDIRI lewat `fn_vp_ambil_seaair(p_seaair_id)` -- TIDAK lewat
+  `load()` tab (yang mereset `dirty`). Prop `refreshNonce` (dari `SeaAirRecapDocumentsTab.vendorPaymentsNonce`; dinaikkan `SeaAirRecapDetailModal.handleSusulanCompleted` setelah
+  dokumen susulan SUCCESS) -> muat ulang tanpa layar Loading.
+- **6 RPC** (`SECURITY DEFINER`, guard `_seaair_vp_cek_akses`: tulis = edit `sea_air_audit` ATAU `sea_air_dokumen_validation` ATAU Admin, ditolak bila sudah Submit to Finance; baca = akses
+  salah satu halaman Sea & Air): `fn_vp_ambil_seaair`, `fn_vp_tambah_bukti_seaair`, `fn_vp_hapus_bukti_seaair`, `fn_vp_konfirmasi_ref_seaair`, `fn_vp_terima_review_seaair`,
+  `fn_vp_batal_terima_seaair`. Tiap RPC aksi mengembalikan jsonb yang SAMA dgn `fn_vp_ambil_seaair` -> `setData(hasil)`, tanpa refetch. Error DB (Inggris) ditampilkan verbatim
+  (`alert('Failed to …: ' + message)`). Semuanya + tabel `seaair_vp_hasil` (select) sudah ditambahkan ke `server/db/whitelist.ts`.
+- **UI**: ringkasan per mata uang + chip status + chip oranye "N to check" (`blocker_count`); daftar "Needs review" (item `severity='blocker'`: Accept… dgn catatan WAJIB, Undo bila
+  sudah diterima; item `info` = teks biru kecil); `REF_BELUM_KONFIRMASI` punya kontrol Confirm / Not this (saran invoice) + "Assign to invoice…" + checkbox berlaku utk semua BT dgn kode itu;
+  satu kartu per Final Invoice (default tertutup, `aria-expanded`): tabel dokumen, tile termin, TRANSFER PROOFS (baris manual berlabel + hapus), Open balance + "+ Add transfer proof"
+  (validasi client: nominal > 0, <= `remaining`, salah satu ref/file wajib, mata uang terkunci = invoice; DB menolak juga). Tombol aksi disembunyikan tanpa hak edit, dinonaktifkan +
+  tooltip "Locked — already submitted to Finance. Ask an Admin to unlock it first." bila `tgl_submit_finance` terisi. `ada_data=false` -> `alasan` (kotak abu); dgn `error` -> kotak merah
+  "Vendor payment calculation failed — ask IT to check." (teks `error` mentah hanya utk Admin).
+- **`blocker_count`** = jumlah item review severity `blocker` yang BELUM di-accept. **Gate Submit to Finance**: DB menolak submit bila > 0 (`Cannot submit to Finance: N vendor payment item(s) …`).
+  `SeaAirRecapDetailModal.handleSubmit` membaca ringan `seaair_vp_hasil.blocker_count` dulu; > 0 -> alert "N vendor payment item(s) need review before submitting to Finance", pindah ke tab
+  Doc Validation & scroll ke panel (`VP_PANEL_ID`). Pembacaan gagal (mis. tabel belum ada) -> lanjut; error dari DB tetap tampil lewat jalur submit yang ada.
+- **Audit trail**: RPC menulis `audit_trail` dgn `tabel='seaair_vp_input'`, `jenis='SEAAIR-VENDOR-PAYMENT - …'`. `fetchRecapLog` (SeaAirRecapHelpers) kini menyertakan tabel itu
+  (label "Vendor payments"; detail = aksi + catatan). Halaman global Audit Trail (`TRAIL_APP_WRITTEN_FILTER`, catatan harus null / berformat "— Lama:") TIDAK berubah -> baris ini mungkin tidak muncul di sana.
+- **Sinkron Doc/Cost validation**: panel TIDAK punya logika validasi di frontend (semua dari DB), jadi aturan "WAJIB sinkron" tidak terpicu. `SeaAirValidasiModal` (mode List) TIDAK diberi panel ini --
+  user mode List melihatnya lewat jendela Open. Keputusan produk: apakah perlu juga di sana / di Finance Handover.

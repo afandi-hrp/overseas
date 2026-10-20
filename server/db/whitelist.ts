@@ -157,6 +157,8 @@ const MANUAL_TABLES: Record<string, DbOp[]> = {
   cost_agent_voyage_list_v: ['select'],
   // Wajib ganti password (sql/066) -- AuthContext membaca penanda milik sendiri
   user_security: ['select'],
+  // Sea & Air panel Vendor payments (goods): baca ringan blocker_count utk gate Submit to Finance (2026-10-20)
+  seaair_vp_hasil: ['select'],
 };
 for (const [t, ops] of Object.entries(MANUAL_TABLES)) {
   TABLE_WHITELIST[t] = [...new Set([...(TABLE_WHITELIST[t] ?? []), ...ops])];
@@ -178,6 +180,9 @@ for (const [t, ops] of Object.entries(MANUAL_TABLES)) {
   'fn_set_must_change_password', 'fn_admin_reset_user_password',
   // Finance Handover Courier: undo Paid (sql/068)
   'fn_courier_finance_undo_paid',
+  // Sea & Air panel Vendor payments (goods) (2026-10-20): ambil hasil + 5 aksi
+  'fn_vp_ambil_seaair', 'fn_vp_tambah_bukti_seaair', 'fn_vp_hapus_bukti_seaair', 'fn_vp_konfirmasi_ref_seaair',
+  'fn_vp_terima_review_seaair', 'fn_vp_batal_terima_seaair',
 ].forEach(r => RPC_WHITELIST.add(r));
 
 // Bucket Storage yang boleh diakses lewat gateway (FarOverseasAirDocumentsModal: download + signed URL bukti bayar).

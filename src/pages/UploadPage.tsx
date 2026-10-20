@@ -268,7 +268,9 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
 
   const panduan   = PANDUAN[jenis]
   const canEditUpload = canEdit(webhookType === 'sea_air' ? 'sea_air_upload' : 'courier_upload')
-  const canSubmit = files.length >= 4 && !loading && canEditUpload
+  // Minimal file: Sea & Air = 2, Courier tetap 4 (2026-10-20, permintaan user).
+  const MIN_FILES = webhookType === 'sea_air' ? 2 : 4
+  const canSubmit = files.length >= MIN_FILES && !loading && canEditUpload
 
   const addFiles = useCallback((newFiles: FileList | null) => {
     if(!newFiles) return
@@ -404,7 +406,7 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
               <p className="text-[10px] font-bold text-[#5A305A] uppercase tracking-widest">Step 1 — Upload All PDFs</p>
               {files.length > 0 && (
                 <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full ${
-                  files.length >= 4 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                  files.length >= MIN_FILES ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
                 }`}>{files.length} file</span>
               )}
             </div>
@@ -417,16 +419,16 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
               onClick={() => inputRef.current?.click()}
               className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all ${
                 dragging ? 'border-[#5A305A] bg-[#5A305A]/5' :
-                files.length >= 4 ? 'border-emerald-300 bg-emerald-50/50 hover:border-emerald-400' :
+                files.length >= MIN_FILES ? 'border-emerald-300 bg-emerald-50/50 hover:border-emerald-400' :
                 'border-slate-200 bg-slate-50 hover:border-[#5A305A]/40 hover:bg-[#5A305A]/5'
               }`}
             >
               <input ref={inputRef} type="file" accept="application/pdf,image/jpeg,image/png" multiple className="hidden"
                 onChange={(e) => addFiles(e.target.files)} />
               <div className={`w-14 h-14 rounded-full mx-auto mb-3 flex items-center justify-center transition-colors ${
-                dragging ? 'bg-[#5A305A] text-white' : files.length >= 4 ? 'bg-emerald-500 text-white' : 'bg-[#5A305A]/8 text-[#5A305A]'
+                dragging ? 'bg-[#5A305A] text-white' : files.length >= MIN_FILES ? 'bg-emerald-500 text-white' : 'bg-[#5A305A]/8 text-[#5A305A]'
               }`}>
-                {dragging ? <FolderOpen size={22} strokeWidth={1.75} /> : files.length >= 4 ? <CheckCircle2 size={22} strokeWidth={1.75} /> : <UploadCloud size={22} strokeWidth={1.75} />}
+                {dragging ? <FolderOpen size={22} strokeWidth={1.75} /> : files.length >= MIN_FILES ? <CheckCircle2 size={22} strokeWidth={1.75} /> : <UploadCloud size={22} strokeWidth={1.75} />}
               </div>
               <p className="font-semibold text-sm text-[#5A305A]">
                 {dragging ? 'Drop files here...' :
@@ -435,7 +437,7 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
               </p>
               <p className="text-xs text-[#5A305A] mt-1">
                 {files.length === 0 ? 'AI will automatically recognize each document type' :
-                 files.length < 4 ? 'Add ' + (4 - files.length) + ' more file(s) (minimum 4 required)' :
+                 files.length < MIN_FILES ? 'Add ' + (MIN_FILES - files.length) + ' more file(s) (minimum ' + MIN_FILES + ' required)' :
                  'That is enough — you may add a vendor invoice if you have one'}
               </p>
             </div>
@@ -485,12 +487,12 @@ export default function UploadPage({ fixedType }: { fixedType?: 'courier' | 'sea
                 ? 'Sending documents...'
                 : !canEditUpload
                   ? 'You do not have access to upload on this page (view-only)'
-                  : files.length < 4
-                    ? 'Add ' + (4 - files.length) + ' more file(s) to continue'
+                  : files.length < MIN_FILES
+                    ? 'Add ' + (MIN_FILES - files.length) + ' more file(s) to continue'
                     : <><Sparkles size={15} /> Process {files.length} Document(s) with AI</>
               }
             </button>
-            {files.length >= 4 && (
+            {files.length >= MIN_FILES && (
               <p className="text-center text-xs text-[#5A305A] mt-2">
                 AI automatically identifies and extracts data from each PDF
               </p>

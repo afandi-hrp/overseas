@@ -16,6 +16,8 @@ export const n8nRouter = express.Router();
 const WEBHOOK_ENV_KEYS: Record<string, string> = {
   courier: 'VITE_N8N_WEBHOOK_URL',
   sea_air: 'VITE_N8N_SEAAIR_WEBHOOK_URL',
+  // Dokumen susulan Sea & Air (mode=susulan) punya webhook n8n SENDIRI (bukan webhook upload normal).
+  sea_air_susulan: 'VITE_N8N_SEAAIR_SUSULAN_WEBHOOK_URL',
   far_overseas_air: 'VITE_N8N_FAR_OVERSEAS_AIR_WEBHOOK_URL',
   bunker: 'VITE_N8N_BUNKER_WEBHOOK_URL',
   cost_agent: 'VITE_N8N_COST_AGENT_WEBHOOK_URL',
@@ -23,11 +25,14 @@ const WEBHOOK_ENV_KEYS: Record<string, string> = {
   cost_agent_voyage_pull: 'VITE_N8N_COST_AGENT_VOYAGE_PULL_URL',
   cost_agent_payment: 'VITE_N8N_COST_AGENT_PAYMENT_URL',
 };
+// Cadangan bila env belum di-set (URL webhook bukan rahasia; kunci env tetap diutamakan).
+const WEBHOOK_FALLBACK_URLS: Record<string, string> = {
+  sea_air_susulan: 'https://automation.waruna-group.co.id/webhook/proses-susulan-seaair',
+};
 const defaultWebhookUrlFor = (type: string): string | undefined =>
-  process.env[Object.hasOwn(WEBHOOK_ENV_KEYS, type) ? WEBHOOK_ENV_KEYS[type] : 'VITE_N8N_WEBHOOK_URL'];
+  process.env[Object.hasOwn(WEBHOOK_ENV_KEYS, type) ? WEBHOOK_ENV_KEYS[type] : 'VITE_N8N_WEBHOOK_URL'] || WEBHOOK_FALLBACK_URLS[type];
 
-const ENV_WEBHOOK_URLS = Object.values(WEBHOOK_ENV_KEYS)
-  .map(k => process.env[k])
+const ENV_WEBHOOK_URLS = [...Object.values(WEBHOOK_ENV_KEYS).map(k => process.env[k]), ...Object.values(WEBHOOK_FALLBACK_URLS)]
   .filter((u): u is string => !!u);
 
 function originOf(u: string): string | null {
@@ -48,7 +53,9 @@ export const ALLOWED_WEBHOOK_ORIGINS = new Set(
 const UPLOAD_ACCESS: Record<string, AccessRule[]> = {
   // courier_checklist_dokumen = tombol "Upload Additional Doc" (CourierUploadSusulanModal.tsx)
   courier: [{ key: 'courier_upload' }, { key: 'courier_checklist_dokumen', edit: true }],
-  sea_air: [{ key: 'sea_air_upload' }],
+  // sea_air_audit = tombol "Upload Additional Document" (SeaAirUploadSusulanButton.tsx). Policy SELECT
+  // `tabel_processing_queue` (polling status job) juga mengizinkan pemilik sea_air_audit.
+  sea_air: [{ key: 'sea_air_upload' }, { key: 'sea_air_audit', edit: true }],
   far_overseas_air: [{ key: 'direct_loading', edit: true }],
   bunker: [{ key: 'bunker', edit: true }],
   // Cost Agent: SATU webhook utk invoice baru DAN dokumen susulan (dibedakan cost_agent_meta.mode).
@@ -133,7 +140,9 @@ function limitUploadSize(req: express.Request, res: express.Response, next: expr
 n8nRouter.post('/n8n-proxy-start', limitUploadSize, requireAccess(uploadRules), upload.any(), async (req, res) => {
   try {
     const webhookType = String(req.headers['x-webhook-type'] || 'courier');
-    const { url: webhookUrl, error } = resolveWebhookUrl(req, webhookType);
+    // Susulan Sea & Air -> webhook susulan (tanpa override `x-webhook-url`: override halaman Webhook Settings adalah utk upload normal).
+    const susulanReq = webhookType === 'sea_air' && req.headers['x-webhook-test'] !== 'true' && req.body?.mode === 'susulan';
+    const { url: webhookUrl, error } = susulanReq ? { url: defaultWebhookUrlFor('sea_air_susulan'), error: undefined } : resolveWebhookUrl(req, webhookType);
     if (error) return res.status(400).json({ status: 'error', pesan: error });
     if (!webhookUrl || typeof webhookUrl !== 'string') {
       return res.status(400).json({ status: 'error', pesan: 'Webhook URL tidak dikonfigurasi di client/server.' });
@@ -141,6 +150,8 @@ n8nRouter.post('/n8n-proxy-start', limitUploadSize, requireAccess(uploadRules), 
 
     const isTest = req.headers['x-webhook-test'] === 'true';
     const formData = new FormData();
+    // Dokumen susulan Sea & Air (2026-10-20): field `mode=susulan` (+ `replace` opsional). Hanya tipe sea_air.
+    const isSeaAirSusulan = susulanReq;
 
     if (isTest) {
       formData.append('test', 'connection');
@@ -160,6 +171,23 @@ n8nRouter.post('/n8n-proxy-start', limitUploadSize, requireAccess(uploadRules), 
       // isinya string kosong (record belum py AWB). Upload courier NORMAL (UploadPage.tsx) TIDAK PERNAH mengirim
       // field ini (req.body.awb_hint tetap undefined), jadi jalur upload pertama tidak terpengaruh.
       if (req.body?.awb_hint !== undefined) formData.append('awb_hint', req.body.awb_hint);
+      // KHUSUS Sea & Air susulan: aturan upload sea_air melonggarkan view-only `sea_air_upload`, padahal susulan
+      // MENIMPA data shipment yang sudah diproses -> wajib hak EDIT sea_air_audit (Admin lolos). `replace` = jenis
+      // dokumen yang diganti total (huruf kecil/angka/underscore dipisah koma, maks 300 karakter). Tipe lain TIDAK terpengaruh.
+      if (isSeaAirSusulan) {
+        const access = res.locals.userAccess as UserAccess | undefined;
+        if (!access || !(access.isAdmin || access.editKeys.has('sea_air_audit'))) {
+          return res.status(403).json({ status: 'error', pesan: 'Anda tidak punya hak edit Audit Sea & Air untuk mengirim dokumen susulan.' });
+        }
+        formData.append('mode', 'susulan');
+        const replace = req.body?.replace;
+        if (replace !== undefined && replace !== '') {
+          if (typeof replace !== 'string' || replace.length > 300 || !/^[a-z0-9_]+(,[a-z0-9_]+)*$/.test(replace)) {
+            return res.status(400).json({ status: 'error', pesan: 'Field replace tidak valid (huruf kecil, angka, underscore, dipisah koma; maks 300 karakter).' });
+          }
+          formData.append('replace', replace);
+        }
+      }
       // KHUSUS Cost Agent (2026-10-13): teruskan `cost_agent_meta` (company_code/voyage_call_id/mode/invoice_id/hint/
       // reprocess_invoice_id), `uploaded_by` ditimpa email user login. Tipe lama TIDAK terpengaruh.
       if (webhookType.startsWith('cost_agent')) {
@@ -191,7 +219,12 @@ n8nRouter.post('/n8n-proxy-start', limitUploadSize, requireAccess(uploadRules), 
     } else if (response.status === 502 || response.status === 504) {
       res.json({ status: 'warning', pesan: 'Dokumen terkirim, namun N8N server timeout (Bad Gateway). Proses ekstraksi Sea & Air mungkin masih berjalan di background.', data });
     } else {
-      res.status(response.status).json({ status: 'error', pesan: 'N8N error - ' + response.statusText, data });
+      // Susulan Sea & Air ditolak n8n SEBELUM diproses: 422 {error:true,message} (Indonesia, sudah ramah) -> `message`
+      // diteruskan apa adanya sebagai `pesan` supaya sampai ke modal error.
+      const rejectMsg = isSeaAirSusulan && response.status === 422 && typeof (data as any)?.message === 'string' && (data as any).message.trim()
+        ? String((data as any).message).slice(0, 500)
+        : null;
+      res.status(response.status).json({ status: 'error', pesan: rejectMsg ?? 'N8N error - ' + response.statusText, data });
     }
   } catch (error: any) {
     console.error('Proxy Error:', error);

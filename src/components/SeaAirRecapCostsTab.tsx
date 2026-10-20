@@ -15,6 +15,7 @@ import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_PRIMARY, Chip, Pill, type Ton
 import { computeSeaAirCostGlobalStats, type SectionConfirmation } from '../utils/SeaAirCostValidasiHelpers'
 import { COST_SECTIONS, isSummaryCostRow } from '../utils/SeaAirRecapHelpers'
 import { fmtRp, fmtDateShort } from '../utils/SeaAirAuditHelpers'
+import SeaAirUploadSusulanButton, { type SusulanRec } from './SeaAirUploadSusulanButton'
 
 type Catatan = { id: any; seaair_id: any; section: string; status_konfirmasi: SectionConfirmation; catatan: string | null; dikonfirmasi_oleh: string | null; dikonfirmasi_at: string | null }
 type Draft = { status: SectionConfirmation; catatan: string }
@@ -71,8 +72,13 @@ const rowStatusChip = (status: string | null) => {
   return <Chip tone="grey">Incomplete</Chip>
 }
 
-export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, isAdmin = false, locked = false, financeView = false, auditRow, onChanged, onDirtyChange, active = true }: {
+export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, isAdmin = false, locked = false, financeView = false, auditRow, onChanged, onDirtyChange, active = true, reloadNonce = 0, susulan }: {
   seaairId: any
+  // "+ Add quotation" (Freight): membuka dialog dokumen susulan (SeaAirUploadSusulanButton) -- quotation_freight lewat webhook susulan. Tanpa prop ini tombol tidak tampil.
+  susulan?: { rec: SusulanRec; onCompleted: () => void }
+  // Naik -> `load()` dijalankan ulang (data baru dari dokumen susulan Sea & Air, 2026-10-20). Induk yang memutuskan kapan
+  // (tidak diam-diam saat ada perubahan belum disimpan -- load() mereset hasUnsaved).
+  reloadNonce?: number
   // Tab sedang tampil -- dipakai utk membaca ulang data duty (bisa baru diubah di tab Documents).
   active?: boolean
   canEdit: boolean
@@ -152,6 +158,27 @@ export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, is
   }, [seaairId])
 
   useEffect(() => { load() }, [load])
+  // Muat ulang "diam-diam" (tanpa layar Loading): tombol "+ Add quotation" memuat strip status job -- kalau isi diganti spinner, notifikasi sukses ikut hilang.
+  const quietReload = React.useRef(false)
+  useEffect(() => {
+    if (reloadNonce <= 0) return
+    quietReload.current = true
+    load().finally(() => { quietReload.current = false })
+  }, [reloadNonce]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Waktu job dokumen susulan SUCCESS terakhir utk shipment ini -> badge "re-confirm" di segmen yang sudah dikonfirmasi lebih lama
+  // (hanya TAMPILAN; catatan konfirmasi TIDAK diubah/dihapus otomatis). Tabel antrean hanya terbaca oleh pemilik halaman
+  // upload/audit (RLS) -- bagi user lain hasilnya kosong = tanpa badge.
+  const [lastSusulanAt, setLastSusulanAt] = useState<string | null>(null)
+  useEffect(() => {
+    if (!seaairId || financeView) { setLastSusulanAt(null); return }
+    let cancelled = false
+    supabase.from('tabel_processing_queue').select('updated_at')
+      .eq('seaair_id', seaairId).eq('seaair_mode', 'SUSULAN').eq('status', 'SUCCESS')
+      .order('updated_at', { ascending: false }).limit(1)
+      .then(({ data, error }) => { if (!cancelled) setLastSusulanAt(error || !data?.length ? null : (data[0] as any).updated_at || null) })
+    return () => { cancelled = true }
+  }, [seaairId, financeView, reloadNonce])
 
   // SALINAN PERSIS updateCheck modal lama.
   const updateCheck = (section: string, rowName: string, vendor_name: string | undefined, field: string, val: string) => {
@@ -273,7 +300,7 @@ export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, is
     return `${ok} of ${secs.length} invoice${secs.length === 1 ? '' : 's'} match the contract rate`
   })()
 
-  if (loading) return <LoadingState fullHeight={false} />
+  if (loading && !quietReload.current) return <LoadingState fullHeight={false} />
 
   const accColor = stats.pct >= 90 ? 'bg-[#17663D]' : stats.pct >= 60 ? 'bg-[#E0A526]' : 'bg-[#A8231A]'
 
@@ -381,11 +408,8 @@ export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, is
                   // quotation oleh AI (n8n) menyusul -- belum ada tabel/endpoint, jadi klik = info saja.
                   <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-2">
                     <span className="text-[11px] text-[#8A7A8B]">Freight is validated against the quotation for this BL.</span>
-                    {canEditPage && !locked && (
-                      <button type="button" className="text-[12px] font-semibold text-[#6B3470] hover:underline"
-                        onClick={() => window.alert('Quotation upload is coming soon — AI reading of freight quotations per BL is not connected yet.')}>
-                        + Add quotation
-                      </button>
+                    {susulan && !financeView && (
+                      <SeaAirUploadSusulanButton variant="link" label="+ Add quotation" context="quotation" rec={susulan.rec} seaairId={seaairId} onCompleted={susulan.onCompleted} />
                     )}
                   </div>
                 )}
@@ -454,6 +478,9 @@ export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, is
                         </span>
                         <span className="text-[#6E5E70]">by {conf.dikonfirmasi_oleh || '—'}{conf.dikonfirmasi_at ? ` · ${fmtDateShort(conf.dikonfirmasi_at)}` : ''}</span>
                         {conf.catatan && <span className="text-[#3B1B3D] whitespace-pre-wrap">· {conf.catatan}</span>}
+                        {lastSusulanAt && conf.dikonfirmasi_at && new Date(lastSusulanAt).getTime() > new Date(conf.dikonfirmasi_at).getTime() && (
+                          <Chip tone="amber" title="Additional documents were processed after this review">Data updated after confirmation — please re-confirm</Chip>
+                        )}
                         {canEdit && (
                           <span className="ml-auto flex items-center gap-2">
                             <button type="button" className="text-[#6B3470] font-semibold hover:underline" onClick={() => setReviewOpen(p => ({ ...p, [sec.key]: true }))}>Change</button>

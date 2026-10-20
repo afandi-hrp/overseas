@@ -19,7 +19,8 @@ import SeaAirRecapCostsTab from './SeaAirRecapCostsTab'
 import SeaAirRecapDocumentsTab from './SeaAirRecapDocumentsTab'
 import { CostMixBar, containerLabel } from './SeaAirRecapCardList'
 import SeaAirActivityTrail from './SeaAirActivityTrail'
-import { fmtRp, fmtDateShort, fmtValas, companyFullName } from '../utils/SeaAirAuditHelpers'
+import { VP_PANEL_ID } from './SeaAirVendorPaymentsPanel'
+import { fmtRp, fmtDateShort, fmtValas, companyFullName, notifySeaAirAuditChanged } from '../utils/SeaAirAuditHelpers'
 import {
   computeLandedCost, parsePoDetail, recapStatus, fetchRecapLog, todayLocalIso, isRecapLocked,
   parsePoManual, poManualFor, recapPoKgs, RECAP_SEGMENTS, COST_GROUP_COLORS, COST_GROUP_LABELS,
@@ -136,6 +137,14 @@ export default function SeaAirRecapDetailModal({
   const [unlockOpen, setUnlockOpen] = useState(false)
   const [unlockReason, setUnlockReason] = useState('')
   const [unlocking, setUnlocking] = useState(false)
+  // Dokumen susulan (2026-10-20): setelah job SUCCESS tab Checklist/Doc Validation/Costs + baris Audit PIB dimuat ulang. Tab yang
+  // masih punya perubahan BELUM disimpan TIDAK direset diam-diam (load() mereset perubahan) -> banner "Reload", user yang memutuskan.
+  const [checklistNonce, setChecklistNonce] = useState(0)
+  const [tabsNonce, setTabsNonce] = useState(0)
+  const [auditNonce, setAuditNonce] = useState(0)
+  const [staleBanner, setStaleBanner] = useState(false)
+  // Panel Vendor payments (goods) memuat datanya sendiri -> boleh dimuat ulang kapan saja setelah susulan (tidak mereset perubahan belum disimpan).
+  const [vpNonce, setVpNonce] = useState(0)
 
   const seaairId = rec.seaair_id || null
   const issues: RecapIssue[] = rec.recap_issues || []
@@ -168,6 +177,22 @@ export default function SeaAirRecapDetailModal({
     if (anyDirty && !window.confirm('There are unsaved changes in Doc Validation or Cost Validation. Close anyway?')) return
     onClose()
   }
+  // Job dokumen susulan SUCCESS: shipment kembali Draft di Audit PIB (badge sidebar), daftar/ringkasan Recap dimuat ulang (onChanged),
+  // checklist selalu dimuat ulang (baca saja), Doc Validation/Costs hanya bila tidak ada perubahan belum disimpan.
+  const handleSusulanCompleted = () => {
+    onChanged()
+    notifySeaAirAuditChanged()
+    setAuditNonce(n => n + 1)
+    setChecklistNonce(n => n + 1)
+    setVpNonce(n => n + 1)
+    if (anyDirty) setStaleBanner(true)
+    else setTabsNonce(n => n + 1)
+  }
+  const reloadAfterSusulan = () => {
+    if (anyDirty && !window.confirm('Reloading discards your unsaved changes in Doc Validation / Cost Validation. Continue?')) return
+    setTabsNonce(n => n + 1)
+    setStaleBanner(false)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -179,7 +204,7 @@ export default function SeaAirRecapDetailModal({
       setAuditRow(data || null)
     })
     return () => { cancelled = true }
-  }, [seaairId, rec.id])
+  }, [seaairId, rec.id, auditNonce])
 
   useEffect(() => {
     if (tab !== 'trail') return
@@ -199,6 +224,20 @@ export default function SeaAirRecapDetailModal({
 
   const handleSubmit = async () => {
     if (submitBlocker) return
+    // Gate vendor payments: DB menolak submit selama ada item review "blocker" yang belum di-accept. Cek ringan dulu supaya pesannya jelas dan
+    // user diarahkan ke panel. Pembacaan gagal (mis. tabel belum ada) -> lanjut seperti biasa; DB tetap penjaga.
+    if (seaairId) {
+      const { data: vp, error: vpErr } = await supabase.from('seaair_vp_hasil').select('blocker_count').eq('seaair_id', seaairId).maybeSingle()
+      const n = !vpErr && vp ? Number((vp as any).blocker_count) || 0 : 0
+      if (n > 0) {
+        window.alert(`${n} vendor payment item${n === 1 ? '' : 's'} need review before submitting to Finance.`)
+        if (canSeeDocs) {
+          goTab('documents')
+          setTimeout(() => document.getElementById(VP_PANEL_ID)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150)
+        }
+        return
+      }
+    }
     const today = todayLocalIso()
     if (!window.confirm(`Submit this shipment to Finance?\nDate recorded: ${fmtDateShort(today)}\n\nAfter submitting, the shipment is locked. Only an Admin can unlock it.`)) return
     setSubmitting(true)
@@ -428,6 +467,12 @@ export default function SeaAirRecapDetailModal({
               </ul>
             </div>
           ) : null}
+          {staleBanner && (
+            <div role="alert" className="rounded-[14px] border border-[#F3D9A4] bg-[#FFF8EA] px-4 py-2.5 flex flex-wrap items-center gap-3" data-susulan-stale>
+              <span className="text-[12.5px] font-semibold text-[#7A4F00] mr-auto">Data updated by additional documents — Reload. Unsaved changes in Doc Validation / Cost Validation will be discarded.</span>
+              <button type="button" className={SA_BTN_OUTLINE} onClick={reloadAfterSusulan}>Reload</button>
+            </div>
+          )}
           {!submitted && rec.submit_unlocked_at && (
             <div className="rounded-[14px] border border-[#EADFD6] bg-white px-4 py-2 text-[12px] text-[#6E5E70]">
               <Unlock size={12} className="inline mr-1 -mt-0.5" />Unlocked by Admin{rec.submit_unlocked_by ? ` (${rec.submit_unlocked_by})` : ''} · {fmtDateShort(rec.submit_unlocked_at)}{rec.submit_unlock_reason ? ` — ${rec.submit_unlock_reason}` : ''}
@@ -585,19 +630,20 @@ export default function SeaAirRecapDetailModal({
               perubahan belum disimpan tidak hilang saat pindah tab. */}
           {canSeeCosts && visited.costs && (
             <div className={tab === 'costs' ? '' : 'hidden'}>
-              <SeaAirRecapCostsTab seaairId={rec.seaair_id || rec.id} active={tab === 'costs'} canEdit={canEditCosts} isAdmin={isAdmin} locked={locked} auditRow={auditRow} onChanged={onChanged} onDirtyChange={onCostsDirty} />
+              <SeaAirRecapCostsTab seaairId={rec.seaair_id || rec.id} active={tab === 'costs'} canEdit={canEditCosts} isAdmin={isAdmin} locked={locked} auditRow={auditRow} onChanged={onChanged} onDirtyChange={onCostsDirty} reloadNonce={tabsNonce} susulan={{ rec, onCompleted: handleSusulanCompleted }} />
             </div>
           )}
 
           {canSeeDocs && visited.checklist && (
             <div className={tab === 'checklist' ? '' : 'hidden'}>
-              <SeaAirRecapDocumentsTab part="checklist" seaairId={rec.seaair_id || rec.id} origin={rec.origin} canEdit={canEditDocs} isAdmin={isAdmin} locked={locked} onChanged={onChanged} />
+              <SeaAirRecapDocumentsTab part="checklist" seaairId={rec.seaair_id || rec.id} origin={rec.origin} canEdit={canEditDocs} isAdmin={isAdmin} locked={locked} onChanged={onChanged}
+                susulan={{ rec, onCompleted: handleSusulanCompleted }} reloadNonce={checklistNonce} />
             </div>
           )}
 
           {canSeeDocs && visited.documents && (
             <div className={tab === 'documents' ? '' : 'hidden'}>
-              <SeaAirRecapDocumentsTab part="doc" seaairId={rec.seaair_id || rec.id} origin={rec.origin} canEdit={canEditDocs} isAdmin={isAdmin} locked={locked} onChanged={onChanged} onDirtyChange={onDocsDirty} />
+              <SeaAirRecapDocumentsTab part="doc" seaairId={rec.seaair_id || rec.id} origin={rec.origin} canEdit={canEditDocs} isAdmin={isAdmin} locked={locked} onChanged={onChanged} onDirtyChange={onDocsDirty} reloadNonce={tabsNonce} vendorPaymentsNonce={vpNonce} />
             </div>
           )}
 

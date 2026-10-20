@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { LoadingSpinner } from './LoadingState';
 import { CheckCircle2, XCircle, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import SeaAirUploadSusulanButton from './SeaAirUploadSusulanButton';
+import { notifySeaAirAuditChanged } from '../utils/SeaAirAuditHelpers';
 
 // Nilai `status` APA ADANYA dari database -- JANGAN diubah. STATUS_LABELS cuma lapisan
 // translasi tampilan (Indonesia -> Inggris), murni kosmetik, tidak menyentuh nilai yang
@@ -38,25 +40,28 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-export default function SeaAirChecklistModal({ record, onClose }: { record: any, onClose: () => void }) {
+// onCompleted = dipanggil setelah job dokumen susulan SUCCESS (induk memuat ulang daftar Invoice Recap).
+export default function SeaAirChecklistModal({ record, onClose, onCompleted }: { record: any, onClose: () => void, onCompleted?: () => void }) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
+  // Naik tiap job susulan SUCCESS -> checklist dibaca ulang TANPA layar "Loading data..." (tombol/strip status tidak ikut terhapus).
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   useEffect(() => {
     const fetchChecklist = async () => {
-      setLoading(true);
+      if (reloadNonce === 0) setLoading(true);
       const { data: result } = await supabase
         .from('dokumen_checklist_seaair')
         .select('*')
         .eq('seaair_id', record.seaair_id || record.id)
         .limit(1)
         .single();
-      
+
       setData(result || {});
       setLoading(false);
     };
     fetchChecklist();
-  }, [record]);
+  }, [record, reloadNonce]);
 
   if (loading) {
     return (
@@ -209,6 +214,16 @@ export default function SeaAirChecklistModal({ record, onClose }: { record: any,
               );
             })}
           </div>
+        </div>
+
+        {/* Dokumen susulan (2026-10-20): footer modal -- tombol + status job (SeaAirUploadSusulanButton.tsx). */}
+        <div className="px-6 py-3 border-t border-slate-100 bg-slate-50 shrink-0">
+          <SeaAirUploadSusulanButton
+            rec={record}
+            seaairId={record.seaair_id || record.id}
+            checklist={data}
+            onCompleted={() => { setReloadNonce(n => n + 1); notifySeaAirAuditChanged(); onCompleted?.(); }}
+          />
         </div>
       </div>
     </div>
