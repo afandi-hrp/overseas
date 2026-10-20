@@ -182,7 +182,7 @@ pageKey | pageKeys | adminOnly>`.
   pb-1">` full-width berisi kotak ikon `w-9 h-9 rounded-xl bg-[#5A305A]` + `<h1 className="font-bold text-2xl
   text-[#5A305A] leading-none">` (pt-0 + leading-none = huruf judul sejajar tepi atas sidebar, 2026-10-15; dulu pt-1/leading-tight) + subjudul `font-light text-sm` + `<Greeting />` di kanan → `<main className="px-3 pt-2 …">`.
   **Semua halaman `px-3`** (JANGAN `px-4`/`px-6`). Halaman list "shell tinggi tetap" `main` **`pb-0`** (sejak 2026-10-15: kartu/pagination
-  sejajar ujung bawah sidebar; dulu `pb-2`). Halaman yang ikut scroll (SPB/QFP/LSA/Auto Rename) tetap `pb-2`.
+  sejajar ujung bawah sidebar; dulu `pb-2`). Halaman yang ikut scroll (SPB Requisition/Oil Request, QFP, LSA) tetap `pb-2`; Auto Rename = shell tinggi tetap (`pb-0`).
 - Shell list tinggi tetap: wrapper `flex flex-col overflow-hidden`, header/toolbar `shrink-0`, kartu list `flex-1
   min-h-0`, tabel `overflow-auto flex-1 min-h-0` + `<thead className="sticky top-0 z-20">`, pagination `shrink-0`.
 - Toolbar/filter yang harus tetap rapi di laptop 14" & monitor 24": pakai `@container` + container query (BUKAN

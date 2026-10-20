@@ -84,20 +84,34 @@ di-assign ke role -- hanya Admin sampai di-assign di Kelola Role & Akses. **Cata
 versi asli)**: URL webhook n8n terlihat di bundle & webhook tidak butuh login; polling berhenti kalau user pindah
 halaman (job n8n tetap jalan). Diuji jsdom 38 cek, `tsc` bersih, `vite build` sukses. Belum dites ke n8n production.
 
-### Auto Rename (`/spb/auto-rename`, `src/pages/AutoRenamePage.tsx`, 2026-10-08)
+### Auto Rename (`/spb/auto-rename`, `src/pages/AutoRenamePage.tsx`, PORT PENUH 2026-10-20)
 
-Migrasi `auto Rename.html` ("Item Names AI -- Item Normalization Workspace", normalisasi nama item T01), submenu ke-3 **SPB**
-(page_key `auto_rename`, BELUM di-assign ke role -- hanya Admin). Tanpa tabel Supabase. SAMA dgn file asli: upload
-.xlsx/.xls (maks 4 MB), dibaca di browser dgn **SheetJS 0.20.3**, sheet pertama yg punya header `ItemName` dipilih otomatis
-(dropdown ganti sheet), baris kosong dibuang, id baris `R<n>`; "Process with AI" membangun ulang xlsx 1 sheet `Items` dari
-sheet terpilih -> FormData `data` (`items-to-validate.xlsx`) POST LANGSUNG ke `https://n8.waruna-group.co.id/webhook/validate-excel-ai-v2`
-(timeout 180 dtk, maks 2.000 item); respons (`[]` / `results` / `data.results`) dipasangkan per `row_id` + `ItemCode`
-(duplikat / tidak ada / kode beda = NEED_REVIEW, rekomendasi = nama asli); modal Review -> Save & Approve disimpan di browser;
-Export Excel (sheet `AI Review`, 5 kolom hasil ditambah, nama asli tidak ditimpa); Try Sample; semua pesan toast Indonesia apa adanya.
-**Dependency `xlsx`** dipasang dari tarball resmi SheetJS (`https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`) -- JANGAN
-ganti ke `xlsx` npm (0.18.5, usang & ada CVE); `exceljs` tidak bisa baca .xls. Di-`import()` dinamis (chunk terpisah ±500 KB).
-Nilai n8n dirender sbg teks React (tanpa innerHTML/DOMPurify). BEDA (tampilan): gaya app (header ikon ungu, kartu, `PaginationFooter`
-15 baris/halaman, modal & toast gaya app); sidebar/topbar file asli dibuang; kartu stat "Need Review" bisa diklik = filter
-Need Review (pengganti menu "AI Review" sidebar asli). Diuji jsdom 34 cek (xlsx + xls, sheet pertama tanpa ItemName,
-tolak ekstensi/ukuran, mapping hasil, filter/search, review, Esc, export, 404). **Belum dites ke n8n production** -- perlu
-CORS (Allowed Origins) di node Webhook mengizinkan origin BeeHive.
+Port penuh `auto Rename new.html` ("Item Name Control -- Waruna Data Workspace": normalisasi nama item T01 + kontrol kualitas), submenu ke-3 **SPB**
+(page_key `auto_rename`, BELUM di-assign ke role -- hanya Admin). MENGGANTIKAN versi lama 2026-10-08 (upload .xlsx -> webhook
+`validate-excel-ai-v2`, kartu/pagination 15 baris) -- yang lama dihapus (git history). Tanpa tabel Supabase; semua data lewat webhook n8n.
+
+- **Arsitektur** (pola engine + view): logika = `src/utils/autoRename/` -- `store.ts` (objek `state` mutabel SAMA dgn file asli + `emit()`/`subscribe()`;
+  `emit()` SINKRON, React menggabung render; input terkontrol aman), `rows.ts` (parsing sheet, hash validasi DB `vState`/`isAV`/`isDone`, status review v3
+  `v3Of`, guardian kategori, duplikat (indeks `dupIndex`, bukan O(n²)), keputusan/bulk/quick/undo, kolom-sort-filter grid, model tampilan `gridModel`/
+  `statsModel`/`pagerModel`...), `source.ts` (muat tab Sheets/DB, Run AI, simpan RESULT, kirim ERP, Ready for ERP, jadwal ERP/AI, referensi & learning,
+  statistik, Wrangler, ekspor Excel), `net.ts` (pengaturan koneksi `itemControl.conn`, `postN8n`, `processBatch`), `wrangler.ts` (rumus aman tanpa eval).
+  Tampilan = `src/components/autorename/` (`ArSidebar`, `ArReview` (grid), `ArPanels` (Explorer/Schema/Wrangler/Monitor/References/Ready for ERP),
+  `ArDialogs` (Review/Save/Connection/Shortcuts, modal React), `autorename.css` = CSS file asli yang di-scope `.ar` + penyesuaian BeeHive). Pembacaan DOM
+  file asli (`$('x').value`) diganti `state.ui.*` / `state.forms.*`. State modul bertahan saat pindah halaman (tidak di-reset kecuali tombol Clear / ganti sumber).
+- **Fitur (sama file asli)**: sumber **Database (AIR)** (`AIR.dbo.Dummy` -> kategori -> family, paging server, filter/sort/duplikat dihitung server) atau
+  **Google Sheets**; upload Excel (maks 4 MB, SheetJS `import('xlsx')`) / Try sample; Run AI (batch 20 per family via `validate-excel-ai-v3`, retry baris salah-pasang,
+  konteks referensi APPROVED + contoh revisi reviewer); status review v3 (Ready to Review / Needs Reference / Needs Confirmation / Wrong Category / Possible
+  Duplicate / On Hold / Approved / Rejected) dgn tombol aksi per status; keputusan Approve/Reject/Hold (quick ✓ ✕ ⟲, bulk, quick-by-status, server bulk, Undo);
+  edit inline Final/PartNo/Specification (dblclick / E); Confirm & Save -> RESULT (approved TIDAK ditulis ke AIR saat Save -- hanya lewat tab **Ready for ERP**:
+  Send / Schedule / Return to Review); References (lookup internet, review) & Learning (konflik revisi, saran rule); Wrangler (14 langkah + rumus + preview +
+  undo); Monitor (jadwal AI malam, laporan progres DB, riwayat batch); view **Operational** vs **PIC / Admin**; layout compact/full-screen/kolom bisa diurut-
+  digeser-disembunyikan (localStorage `itemControl.*`); shortcut keyboard (`?`).
+- **Webhook n8n**: 25 endpoint (daftar & label di `net.ts` `CONN_DEFAULT`/`CONN_LABEL`, bisa diganti di dialog "Connection settings"), base default
+  `https://n8.waruna-group.co.id/webhook`, dipanggil LANGSUNG dari browser (pengecualian sadar CLAUDE.md) -> **CORS n8n WAJIB mengizinkan origin BeeHive**.
+  Endpoint yang belum dipublish -> pesan error di UI (404 = "webhook not found"), fitur terkait saja yang mati.
+- **BEDA dari file asli (sengaja)**: fallback `/api/process`, `/api/sheets`, `/api/sheet`, `/api/results` (server Vercel) DIHAPUS (tidak ada di BeeHive; error n8n
+  langsung ditampilkan); `guardian.json` dibaca dari `/guardian.json` (`public/guardian.json`, versi 2026-10-17 dari user, read-only profil kata pertama nama per kategori/family; bila hilang Category Guardian mati diam-diam); font app (Sora) menggantikan Inter/Poppins; sidebar/topbar file asli diganti header halaman BeeHive; dialog `<dialog>` -> modal React;
+  `prompt()`/`confirm()` tetap native. Halaman = shell tinggi tetap (`main` `pb-0`).
+- **Diuji 2026-10-20**: jsdom (React asli, webhook di-mock) 51 cek -- muat DB -> family -> grid, Run AI, approve, edit inline, Save (hanya RESULT), filter chip,
+  7 tab, Wrangler (+rumus), jadwal, ERP queue + Send, References, sumber Sheets (sort/cari/bulk/undo), upload Excel; screenshot headless Chrome grid/More/
+  full/op/Wrangler/Monitor/ERP. `tsc` & `vite build` bersih. **BELUM dites ke n8n production** (25 webhook + CORS).

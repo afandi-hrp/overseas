@@ -167,7 +167,7 @@ Layout (`MainLayout`) `md:p-4` -> sidebar berakhir 16px dari bawah layar; isi ha
 + pagination berhenti 8px DI ATAS ujung sidebar. Kini `main` halaman list "shell tinggi tetap" = **`pb-0`**: `SharedDataTable.tsx`
 (Courier & Sea & Air & Audit Trail), `FinanceHandoverPage`, `FarOverseasAirPage`, `BunkerPage`, `AuditPoPage`, `AuditPoOverseasPage`,
 `PiLocalPage`, `AccountingRekapPage`, `CourierValidasiPage`, `CostAgentInvoicePage`, `CostAgentVoyagePage`, `MasterVesselAdminPage`,
-`ReportingCostPerVesselPage`. Halaman yang ikut scroll (`AutoRenamePage`, `LsaPage`, `OilRequestPage`, `RequisitionRhPage`,
+`ReportingCostPerVesselPage`, `AutoRenamePage` (port penuh 2026-10-20). Halaman yang ikut scroll (`LsaPage`, `OilRequestPage`, `RequisitionRhPage`,
 `VerificationQfpPage`) TETAP `pb-2`. Halaman list baru WAJIB `pb-0`.
 
 ## Margin atas halaman = sejajar sidebar (2026-10-15, laporan user: judul halaman lebih rendah dari tepi atas sidebar)
