@@ -10,24 +10,10 @@
 // Catatan data: Payment Remarks (`bt_vendor_v.no_invoice`) HANYA berisi nomor invoice, tanpa nominal per invoice -> tanpa Rincian BT
 // porsi tidak bisa dihitung (-> "Needs BT details"). Cek "rincian = remarks" per invoice = cek KEANGGOTAAN (bukan nilai).
 import { parseNumeric } from './ValidasiHelper';
-import { supabase } from '../lib/supabase';
 
-// Toleransi pembulatan (selisih <= nilai ini = Match). Satu angka utk semua validasi BT Vendor Courier; diatur Admin di Settings
-// (tabel courier_doc_settings, key 'bt_tolerance', sql/072). Dibaca sekali per ±60 dtk lewat `loadCourierDocTolerance()` (dipanggil sebelum
-// menghitung nilai Doc Validation); sebelum/tanpa data memakai bawaan 0,5.
-export const COURIER_DOC_TOLERANCE_DEFAULT = 0.5;
-let tolerance = COURIER_DOC_TOLERANCE_DEFAULT;
-let toleranceAt = 0;
-export const courierDocTolerance = () => tolerance;
-export const setCourierDocTolerance = (v: number) => { tolerance = isFinite(v) && v >= 0 ? v : COURIER_DOC_TOLERANCE_DEFAULT; toleranceAt = Date.now(); };
-export async function loadCourierDocTolerance(force = false): Promise<number> {
-  if (!force && Date.now() - toleranceAt < 60_000) return tolerance;
-  try {
-    const { data } = await supabase.from('courier_doc_settings').select('value').eq('key', 'bt_tolerance').maybeSingle();
-    setCourierDocTolerance(data && data.value !== null && data.value !== undefined ? Number(data.value) : COURIER_DOC_TOLERANCE_DEFAULT);
-  } catch { toleranceAt = Date.now(); }
-  return tolerance;
-}
+// Toleransi pembulatan (selisih <= nilai ini = Match "rounding", dalam mata uang BT). Konstanta tetap -- BUKAN setting Admin (keputusan user 2026-10-21).
+export const COURIER_DOC_TOLERANCE = 0.5;
+const tolerance = COURIER_DOC_TOLERANCE;
 
 export type BtState = 'ok' | 'bad' | 'needs';
 

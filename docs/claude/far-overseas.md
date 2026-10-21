@@ -1061,10 +1061,10 @@ refresh. Judul baru itu OTOMATIS ikut muncul lagi di sesi BERIKUTNYA begitu bari
   `h-9`); layar sempit turun ke baris berikut. Simpan (`savePeople`) & hak (`canPickPeople`) tidak berubah.
 - **Tombol Sign** (desktop) diperbesar `h-10`, `px-5`, teks 13px; Reject ikut `h-10`. Bar bawah HP (>= 44px) tidak berubah.
 
-## FAR Overseas Air — revisi 2026-10-21 (permintaan user; SQL `sql/073_far_overseas_pic_optional_non_po_types.sql` lokal, dijalankan manual)
+## FAR Overseas Air — revisi 2026-10-21 (permintaan user; SQL `sql/072_far_overseas_pic_optional_non_po_types.sql` lokal, dijalankan manual)
 
 1. **Notes (Manual) dihapus** dari modal Cost Validation (kartu & syarat). Syarat "unit price tidak match -> Notes wajib" DICABUT di aplikasi (`tier1BlockedByNotes` kini hanya
-   "cost validation belum ada", warning `deriveMemoWarnings`) DAN di `fn_far_overseas_prepared_by_blockers` (sql/073). Kolom `notes_manual` tetap ada & ikut disimpan apa adanya.
+   "cost validation belum ada", warning `deriveMemoWarnings`) DAN di `fn_far_overseas_prepared_by_blockers` (sql/072). Kolom `notes_manual` tetap ada & ikut disimpan apa adanya.
 2. **Billed to PT dihapus** dari panel Memo without PO (Type + Goods owner saja); tidak lagi wajib (helper + blockers). Kolom `non_po_billed_company_code` tetap ada (fallback `po_pt_display`).
 3. **Via / service** (NOTE 1) dropdown hanya `Air Freight` / `Sea Freight` (bukan dari jenis_layanan tarif). Memo lama bernilai lain tampil kosong sampai dipilih ulang.
 4. **PIC Shipment OPSIONAL**: blocker "PIC Shipment is not assigned" dicabut. Prepared By (Exim) memilih PIC di panel Prepared By SEBELUM sign; kalau dipilih -> `TIER1_DONE`
@@ -1073,4 +1073,4 @@ refresh. Judul baru itu OTOMATIS ikut muncul lagi di sesi BERIKUTNYA begitu bari
 5. **Lonceng header** = alarm memo yang SUDAH overdue (badge `dueAlert.overdue`, klik = filter overdue / klik lagi = semua). Antrean approval tetap di tab My Approvals;
    banner "Payment due alert" & strip kartu (overdue + segera jatuh tempo) TIDAK berubah.
 6. **Type memo Non-PO bisa ditambah**: dropdown = 2 bawaan (`PERSONAL_GOODS`, `PO_TO_FOLLOW`) + nilai unik yang sudah tersimpan + "+ Add type..." (disimpan HURUF BESAR apa adanya,
-   tanpa tabel master; pola Memo title). Butuh sql/073 melepas CHECK `rekapan_far_non_po_kind_chk`. Goods owner tetap hanya aktif utk `PERSONAL_GOODS`.
+   tanpa tabel master; pola Memo title). Butuh sql/072 melepas CHECK `rekapan_far_non_po_kind_chk`. Goods owner tetap hanya aktif utk `PERSONAL_GOODS`.

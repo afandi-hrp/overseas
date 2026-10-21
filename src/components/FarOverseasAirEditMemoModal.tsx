@@ -42,7 +42,7 @@ export type EditMemoCtx = {
   phase2: boolean;
 };
 
-// Type memo Non-PO. 2 nilai bawaan punya label panjang; type tambahan disimpan sbg teks HURUF BESAR apa adanya (sql/073 melepas CHECK lama).
+// Type memo Non-PO. 2 nilai bawaan punya label panjang; type tambahan disimpan sbg teks HURUF BESAR apa adanya (sql/072 melepas CHECK lama).
 export const NON_PO_KIND_BUILTIN: Record<string, string> = {
   PERSONAL_GOODS: 'Personal goods — shipped on their behalf',
   PO_TO_FOLLOW: 'PO to follow',

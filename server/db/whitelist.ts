@@ -156,8 +156,6 @@ const MANUAL_TABLES: Record<string, DbOp[]> = {
   cost_agent_vendor_bank: ['select'],
   cost_agent_vessels: ['select'],
   cost_agent_voyage_list_v: ['select'],
-  // Toleransi validasi dokumen Courier (sql/072) -- halaman Settings + dibaca Doc Validation
-  courier_doc_settings: ['select', 'upsert'],
   // Wajib ganti password (sql/066) -- AuthContext membaca penanda milik sendiri
   user_security: ['select'],
   // Sea & Air panel Vendor payments (goods): baca ringan blocker_count utk gate Submit to Finance (2026-10-20)

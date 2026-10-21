@@ -6,7 +6,6 @@ import { LoadingState } from '../../components/LoadingState';
 import { Search, ChevronLeft, ChevronRight, RefreshCw, Download, X, FileCheck2 } from 'lucide-react';
 import { SECTIONS, computeStatus } from '../../utils/ValidasiHelper';
 import { generateValues } from '../../utils/ValidasiFill';
-import { loadCourierDocTolerance } from '../../utils/BtVendorCombined';
 import { calculatePibStats } from '../../utils/ValidasiPibHelper';
 import Greeting from '../../components/Greeting';
 
@@ -41,7 +40,6 @@ export default function CourierValidasiPage() {
   const [totalRecords, setTotalRecords] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  useEffect(() => { loadCourierDocTolerance(); }, []); // toleransi BT Vendor (Settings) dipakai generateValues
 
   const getExportData = async (startDate?: string, endDate?: string) => {
     let query = supabase
