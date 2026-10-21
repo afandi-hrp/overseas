@@ -1061,7 +1061,7 @@ refresh. Judul baru itu OTOMATIS ikut muncul lagi di sesi BERIKUTNYA begitu bari
   `h-9`); layar sempit turun ke baris berikut. Simpan (`savePeople`) & hak (`canPickPeople`) tidak berubah.
 - **Tombol Sign** (desktop) diperbesar `h-10`, `px-5`, teks 13px; Reject ikut `h-10`. Bar bawah HP (>= 44px) tidak berubah.
 
-## FAR Overseas Air — revisi 2026-10-21 (permintaan user; SQL `sql/072_far_overseas_pic_optional_non_po_types.sql` lokal, dijalankan manual)
+## FAR Overseas Air — revisi 2026-10-21 (permintaan user; SQL `sql/072_far_overseas_pic_optional_non_po_types.sql` SUDAH DIJALANKAN 2026-10-21, diverifikasi via MCP)
 
 1. **Notes (Manual) dihapus** dari modal Cost Validation (kartu & syarat). Syarat "unit price tidak match -> Notes wajib" DICABUT di aplikasi (`tier1BlockedByNotes` kini hanya
    "cost validation belum ada", warning `deriveMemoWarnings`) DAN di `fn_far_overseas_prepared_by_blockers` (sql/072). Kolom `notes_manual` tetap ada & ikut disimpan apa adanya.
