@@ -1,5 +1,10 @@
 <!-- Dipindah dari CLAUDE.md 2026-10-06 (CLAUDE.md diringkas; file ini dibaca saat modulnya dikerjakan). -->
 
+## Kartu Invoice Recap Sea & Air — revisi 2026-10-21 (permintaan user)
+
+- Kartu lebar (`SeaAirRecapCardList.tsx`, @5xl+): kolom vendor/rute/ATD-ATA, NO. PO & skor rata TENGAH (dulu rata kiri -> celah besar & skor menempel ke NO. PO saat zoom out);
+  chip status ("Ready to submit" / "⚠ N issues" / Submitted) pindah ke ATAS titik skor (Doc match · Cost · Doc complete) di kolom skor; kolom kanan hanya Landed cost + Validation.
+
 ## Doc Validation Courier — BT Vendor GABUNGAN (1 BT utk beberapa shipment, 2026-10-21, permintaan user; mockup `mockup_bt_pib_cn.html`)
 
 - Hanya LOGIKA aplikasi (ekstraksi AI tak berubah). Logika murni di `src/utils/BtVendorCombined.ts` (`computeBtCombined`, `applyBtVendorRows`) dipakai
