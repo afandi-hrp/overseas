@@ -58,11 +58,12 @@ yang berlaku lintas modul. Rujukan lama di docs berbunyi "lihat CLAUDE.md bagian
   file: `git show <commit>:sql/<file>`; 041–047 di `4286a34`, 048–056 di `a21e206`, 066–067 di `4c03e2a`, 068 di `e3003e9`;
   sisanya cari lewat `git log --all -- sql/<file>`). Catatan "BELUM DIJALANKAN" di `docs/claude/*.md` utk file ≤068 TIDAK
   berlaku. Penjelasan tiap migrasi ada di doc modulnya (courier-features, bunker-courier-seaair, cost-agent, auth-session,
-  finance-handover). SQL baru: file `sql/NNN_*.sql` baru (`069_cost_agent_update_invoice_amounts` SUDAH DIJALANKAN 2026-10-20, file dihapus -- isi: `git show 79d908a:sql/069_cost_agent_update_invoice_amounts.sql`, cost-agent.md; lanjut **070**), idempotent + pre-check nama fungsi, user yang
+  finance-handover). SQL baru: file `sql/NNN_*.sql` baru (`069_cost_agent_update_invoice_amounts` SUDAH DIJALANKAN 2026-10-20, file dihapus -- isi: `git show 79d908a:sql/069_cost_agent_update_invoice_amounts.sql`, cost-agent.md; lanjut **072**; 070-071 SUDAH DIJALANKAN 2026-10-21; folder `sql/` sejak itu di-.gitignore = tempat file SQL lokal, TIDAK di-commit), idempotent + pre-check nama fungsi, user yang
   menjalankan manual -- sesi Claude hanya punya akses BACA (MCP `beehive-prod-ro`, lihat bawah).
   **KEPUTUSAN TERTUNDA (user): nasib fitur hapus invoice Cost Agent (RPC `fn_cost_agent_delete_invoice`, sql/056, masa uji
   coba; cabut grant / hapus tombol / pertahankan) -- JANGAN diubah sebelum user memutuskan.**
   **Tambah user baru**: template `docs/sql-templates/add-users.sql` (edit daftar email/nama/password/divisi/role).
+  **Hapus user**: template `docs/sql-templates/delete-users.sql` (mode PREVIEW dulu, `v_eksekusi := true` utk hapus).
 - **Akses DB dari sesi Claude (2026-10-19): MCP `beehive-prod-ro` = READ-ONLY ke production `supabase3`** (tool `query`;
   role `claude_ro` = SELECT + `bypassrls` + `default_transaction_read_only` + `statement_timeout 15s`, conn limit 3; lewat
   Supavisor session `172.16.9.5:5434`, user `claude_ro.your-tenant-id`). Server MCP = Node kecil di LUAR repo
