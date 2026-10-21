@@ -177,7 +177,7 @@ const RecapRowCard: React.FC<{ rec: any; onOpen: (rec: any) => void; selected?: 
           (1fr : 2fr : 1fr) supaya di 24" tidak ada satu ruang kosong besar setelah vendor. */}
       {/* Susulan 2 (2026-10-15, permintaan user): kolom NO. PO & skor LEBAR TETAP (dulu `auto` -> posisi PO bergeser antar kartu bila ada /
           tidak ada "+N PO"); skor diberi jarak dari PO. Baris kolom 1 & 2 disejajarkan: chip | vendor, AWB | rute, Upload | ATD/ATA. */}
-      <div className="grid grid-cols-1 @2xl:grid-cols-2 @5xl:grid-cols-[minmax(160px,1fr)_minmax(0,2fr)_215px_275px_minmax(170px,1fr)] @7xl:grid-cols-[minmax(200px,1fr)_minmax(0,1.5fr)_240px_minmax(300px,1fr)_minmax(200px,1fr)] gap-x-4 @7xl:gap-x-6 gap-y-3 px-4 py-3.5 items-start">
+      <div className="grid grid-cols-1 @2xl:grid-cols-2 @5xl:grid-cols-[minmax(160px,1fr)_minmax(0,2fr)_215px_275px_minmax(170px,1fr)] @7xl:grid-cols-[minmax(200px,1fr)_minmax(0,1.4fr)_minmax(240px,1fr)_minmax(300px,1fr)_minmax(200px,1fr)] gap-x-4 @7xl:gap-x-6 gap-y-3 px-4 py-3.5 items-start">
         {/* 1. Jenis + PT, AWB, tanggal upload */}
         <div className="min-w-0">
           {/* Chip jenis/kontainer & PT ber-highlight seperti semula (biru + badge PT ungu, 2026-10-15 susulan, permintaan user). */}
@@ -190,25 +190,25 @@ const RecapRowCard: React.FC<{ rec: any; onOpen: (rec: any) => void; selected?: 
           <div className="text-[11.5px] text-[#6E5E70] mt-0.5 leading-[18px]">Upload: {fmtDateShort(rec.created_at || rec.tgl)}</div>
         </div>
 
-        {/* 2. Vendor, rute, tanggal -- rata TENGAH di kartu lebar (2026-10-21, permintaan user) */}
-        <div className="min-w-0 @5xl:text-center">
+        {/* 2. Vendor, rute, tanggal */}
+        <div className="min-w-0">
           <div className="text-[13px] font-bold text-[#3B1B3D] uppercase truncate leading-[22px]" title={rec.vendor || ''}>{rec.vendor || '—'}</div>
           <div className="text-[11.5px] text-[#6E5E70] truncate mt-1.5 leading-[24px]" title={`${rec.origin || '—'} → ${rec.destination || '—'}`}>{rec.origin || '—'} → {rec.destination || '—'}</div>
-          <div className="flex flex-wrap @5xl:justify-center gap-x-3 gap-y-0.5 mt-0.5 leading-[18px] text-[11.5px] text-[#3B1B3D]" data-card-atd-ata>
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 leading-[18px] text-[11.5px] text-[#3B1B3D]" data-card-atd-ata>
             {dateText('ATD', rec.atd)}{dateText('ATA', rec.ata)}
           </div>
           {(rec.etd || rec.eta) && (
-            <div className="flex flex-wrap @5xl:justify-center gap-x-3 gap-y-0.5 text-[11.5px] text-[#3B1B3D]">
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11.5px] text-[#3B1B3D]">
               {rec.etd && dateText('ETD', rec.etd)}{rec.eta && dateText('ETA', rec.eta)}
             </div>
           )}
         </div>
 
-        {/* 3. NO. PO -- rata tengah di kartu lebar */}
-        <div className="min-w-0 @5xl:text-center">
+        {/* 3. NO. PO */}
+        <div className="min-w-0">
           <div className={SA_LABEL}>No. PO</div>
           {pos.length === 0 ? <div className="text-[12.5px] text-[#6E5E70] mt-0.5">No PO</div> : (
-            <div className="flex items-start @5xl:justify-center gap-x-1.5 min-w-0 mt-0.5" data-card-po>
+            <div className="flex items-start gap-x-1.5 min-w-0 mt-0.5" data-card-po>
               <div className="min-w-0 text-[13px] font-normal text-[#3B1B3D]">{(expanded ? pos : pos.slice(0, 1)).map((p, i) => <div key={i} className="truncate" title={p.po_no}>{p.po_no || '—'}{partialOf(p.po_no) && <span className="ml-1 text-[10px] font-bold text-[#6B3470]" title="Partial shipment of this PO">{partialOf(p.po_no)}</span>}</div>)}</div>
               {pos.length > 1 && (
                 <button type="button" onClick={() => setExpanded(v => !v)} className="shrink-0 mt-0.5 px-1.5 py-[1px] rounded-full border border-[#D9C7DA] bg-[#F5EDF3] text-[#6B3470] text-[10.5px] font-semibold hover:bg-[#EFE2EC]">
@@ -221,9 +221,9 @@ const RecapRowCard: React.FC<{ rec: any; onOpen: (rec: any) => void; selected?: 
 
         {/* 4. Status (Ready to submit / issues / Submitted) DI ATAS skor validasi -- 1 baris skor (kartu sempit < @5xl boleh turun baris).
             Rata tengah di kartu lebar supaya tetap terpisah dari NO. PO saat di-zoom out (2026-10-21, permintaan user). */}
-        <div className="min-w-0 flex flex-col @5xl:items-center gap-1.5" data-card-scores>
+        <div className="min-w-0 flex flex-col items-start gap-1.5" data-card-scores>
           <Chip tone={statusTone(status.kind)} title={issues.length ? issues.map(i => `• ${i.text}`).join('\n') : undefined}>{status.label}</Chip>
-          <div className="flex flex-wrap @5xl:flex-nowrap items-center @5xl:justify-center gap-x-2.5 gap-y-1 whitespace-nowrap">
+          <div className="flex flex-wrap @5xl:flex-nowrap items-center gap-x-2.5 gap-y-1 whitespace-nowrap">
             <ScoreDot label="Doc match" pct={rec.doc_validation_pct} has={!!has.doc} />
             <ScoreDot label="Cost" pct={rec.cost_validation_pct} has={!!has.cost} />
             <ScoreDot label="Doc complete" pct={rec.checklist_pct} has={!!has.checklist} />

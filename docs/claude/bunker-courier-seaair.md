@@ -2,8 +2,8 @@
 
 ## Kartu Invoice Recap Sea & Air — revisi 2026-10-21 (permintaan user)
 
-- Kartu lebar (`SeaAirRecapCardList.tsx`, @5xl+): kolom vendor/rute/ATD-ATA, NO. PO & skor rata TENGAH (dulu rata kiri -> celah besar & skor menempel ke NO. PO saat zoom out);
-  chip status ("Ready to submit" / "⚠ N issues" / Submitted) pindah ke ATAS titik skor (Doc match · Cost · Doc complete) di kolom skor; kolom kanan hanya Landed cost + Validation.
+- Kartu lebar (`SeaAirRecapCardList.tsx`): teks tetap rata KIRI per kolom (revisi: rata tengah teks ditolak user); di @7xl (zoom out / monitor lebar) semua kolom berlebar `fr` (1 : 1,4 : 1 : 1 : 1)
+  sehingga kolom-kolom tersebar rata di badan kartu & skor tidak menempel NO. PO. Chip status ("Ready to submit" / "⚠ N issues" / Submitted) di ATAS titik skor; kolom kanan hanya Landed cost + Validation.
 
 ## Doc Validation Courier — BT Vendor GABUNGAN (1 BT utk beberapa shipment, 2026-10-21, permintaan user; mockup `mockup_bt_pib_cn.html`)
 
