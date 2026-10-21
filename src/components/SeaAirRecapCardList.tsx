@@ -177,7 +177,7 @@ const RecapRowCard: React.FC<{ rec: any; onOpen: (rec: any) => void; selected?: 
           (1fr : 2fr : 1fr) supaya di 24" tidak ada satu ruang kosong besar setelah vendor. */}
       {/* Susulan 2 (2026-10-15, permintaan user): kolom NO. PO & skor LEBAR TETAP (dulu `auto` -> posisi PO bergeser antar kartu bila ada /
           tidak ada "+N PO"); skor diberi jarak dari PO. Baris kolom 1 & 2 disejajarkan: chip | vendor, AWB | rute, Upload | ATD/ATA. */}
-      <div className="grid grid-cols-1 @2xl:grid-cols-2 @5xl:grid-cols-[minmax(160px,1fr)_minmax(0,2fr)_215px_275px_minmax(170px,1fr)] @7xl:grid-cols-[minmax(200px,1fr)_minmax(0,1.4fr)_minmax(240px,1fr)_minmax(300px,1fr)_minmax(200px,1fr)] gap-x-4 @7xl:gap-x-6 gap-y-3 px-4 py-3.5 items-start">
+      <div className="grid grid-cols-1 @2xl:grid-cols-2 @5xl:grid-cols-[minmax(160px,1fr)_minmax(0,2fr)_215px_275px_minmax(170px,1fr)] @7xl:grid-cols-[minmax(200px,1fr)_minmax(0,1.4fr)_minmax(240px,1fr)_minmax(300px,1fr)_minmax(200px,1fr)] gap-x-4 @7xl:gap-x-6 gap-y-3 px-4 py-3.5 items-start @5xl:items-center">
         {/* 1. Jenis + PT, AWB, tanggal upload */}
         <div className="min-w-0">
           {/* Chip jenis/kontainer & PT ber-highlight seperti semula (biru + badge PT ungu, 2026-10-15 susulan, permintaan user). */}
