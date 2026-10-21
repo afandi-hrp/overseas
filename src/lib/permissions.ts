@@ -110,6 +110,8 @@ export const PAGE_REGISTRY: PageEntry[] = [
   { key: 'settings_webhooks', label: 'Konfigurasi Webhook Otomasi', path: '/settings/webhooks', group: 'Settings' },
   { key: 'admin_rates', label: 'Rate Tables & PPJK', path: '/admin/rates', group: 'Settings' },
   { key: 'settings_fuel_surcharge', label: 'Fuel Surcharge', path: '/settings/fuel-surcharge', group: 'Settings' },
+  // Toleransi validasi dokumen Courier (2026-10-21, sql/072): selisih <= toleransi dianggap Match (BT Vendor gabungan).
+  { key: 'settings_courier_validation', label: 'Courier Validation Tolerance', path: '/settings/courier-validation', group: 'Settings' },
   { key: 'settings_kurs_bi', label: 'Kurs BI Harian', path: '/settings/kurs-bi', group: 'Settings' },
   { key: 'settings_kurs_rule_vendor', label: 'Aturan Kurs Vendor', path: '/settings/kurs-rule-vendor', group: 'Settings' },
   { key: 'settings_tarif_kontrak', label: 'Tarif Kontrak Vendor', path: '/settings/tarif-kontrak', group: 'Settings' },

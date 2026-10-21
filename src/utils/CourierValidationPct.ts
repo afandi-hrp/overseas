@@ -7,6 +7,7 @@ import { fetchCourierCostReviewMaps } from './CourierCostReviewHelpers';
 import { fetchCourierCostContexts, courierCostCtxKey } from './CourierCostNormalize';
 import { SECTIONS, computeStatus } from './ValidasiHelper';
 import { generateValues } from './ValidasiFill';
+import { loadCourierDocTolerance } from './BtVendorCombined';
 import { calculatePibStats } from './ValidasiPibHelper';
 import type { ValidationTabKey } from '../components/CourierValidationWindow';
 
@@ -116,6 +117,7 @@ export async function fetchCourierValidationBadgePct(rows: any[]): Promise<{ doc
     }
 
     if (allDokumenValidasi.length > 0) {
+      await loadCourierDocTolerance();
       const { data: npwpData } = await supabase.from('tabel_npwp').select('*');
       const localNpwps = npwpData || [];
 

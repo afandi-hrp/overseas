@@ -16,7 +16,9 @@
 - UI `BtCombinedUi.tsx`, dipasang di `ValidasiModal` (unified List/Columns + variant summary = Unmatched fields): porsi + "BT total" + chip Combined, link
   "BT details" (Columns = popover portal, List = expand), label status "Needs BT details" (amber) + tombol Upload BT details (CourierUploadSusulanModal) / Accept.
   Finance Handover (financeView) tidak menampilkan kolom BT, tapi akurasinya ikut status baru. Teks UI Bahasa Inggris (Rincian BT = "BT details").
-- Toleransi `COURIER_DOC_TOLERANCE = 0.5` = KONSTANTA di kode (belum setting Admin -- butuh tabel setting + halaman Settings, belum dikerjakan).
+- Toleransi (default 0,5, dalam mata uang BT) diatur di Settings > "Courier Validation Tolerance" (`/settings/courier-validation`, page_key `settings_courier_validation`,
+  tabel `courier_doc_settings` key `bt_tolerance`, sql/072 -- file lokal `sql/072_courier_doc_settings.sql`, dijalankan manual). Dibaca `loadCourierDocTolerance()` (cache 60 dtk) sebelum
+  `buildValidationValues`/`generateValues`; tanpa tabel/baris memakai bawaan 0,5. SELECT semua user login, tulis `has_edit_access`.
 
 ## Doc Validation Courier — tabel CIPL (CN path only) + kolom BT Vendor (2026-10-19, permintaan user)
 

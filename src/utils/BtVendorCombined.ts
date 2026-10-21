@@ -10,9 +10,24 @@
 // Catatan data: Payment Remarks (`bt_vendor_v.no_invoice`) HANYA berisi nomor invoice, tanpa nominal per invoice -> tanpa Rincian BT
 // porsi tidak bisa dihitung (-> "Needs BT details"). Cek "rincian = remarks" per invoice = cek KEANGGOTAAN (bukan nilai).
 import { parseNumeric } from './ValidasiHelper';
+import { supabase } from '../lib/supabase';
 
-// Toleransi pembulatan (selisih <= nilai ini = Match). Satu angka utk semua validasi BT Vendor Courier.
-export const COURIER_DOC_TOLERANCE = 0.5;
+// Toleransi pembulatan (selisih <= nilai ini = Match). Satu angka utk semua validasi BT Vendor Courier; diatur Admin di Settings
+// (tabel courier_doc_settings, key 'bt_tolerance', sql/072). Dibaca sekali per ±60 dtk lewat `loadCourierDocTolerance()` (dipanggil sebelum
+// menghitung nilai Doc Validation); sebelum/tanpa data memakai bawaan 0,5.
+export const COURIER_DOC_TOLERANCE_DEFAULT = 0.5;
+let tolerance = COURIER_DOC_TOLERANCE_DEFAULT;
+let toleranceAt = 0;
+export const courierDocTolerance = () => tolerance;
+export const setCourierDocTolerance = (v: number) => { tolerance = isFinite(v) && v >= 0 ? v : COURIER_DOC_TOLERANCE_DEFAULT; toleranceAt = Date.now(); };
+export async function loadCourierDocTolerance(force = false): Promise<number> {
+  if (!force && Date.now() - toleranceAt < 60_000) return tolerance;
+  try {
+    const { data } = await supabase.from('courier_doc_settings').select('value').eq('key', 'bt_tolerance').maybeSingle();
+    setCourierDocTolerance(data && data.value !== null && data.value !== undefined ? Number(data.value) : COURIER_DOC_TOLERANCE_DEFAULT);
+  } catch { toleranceAt = Date.now(); }
+  return tolerance;
+}
 
 export type BtState = 'ok' | 'bad' | 'needs';
 
@@ -41,7 +56,7 @@ export interface BtRowValue { src: string; cmp: string; bt: BtCombinedInfo | nul
 
 const norm = (s: any) => String(s ?? '').replace(/\s+/g, '').toLowerCase();
 const splitInv = (s: any): string[] => String(s ?? '').split(/[+,]/).map(x => x.trim()).filter(Boolean);
-const eq = (a: number, b: number) => Math.abs(a - b) <= COURIER_DOC_TOLERANCE;
+const eq = (a: number, b: number) => Math.abs(a - b) <= tolerance;
 
 // rincian_bt_vendor_v tersimpan sbg STRING JSON (n8n) atau objek.
 export function parseRincianBt(raw: any): { items: { po_no: string; amount: number; ref_no: string }[]; total: number | null; currency: string } | null {
@@ -61,7 +76,7 @@ export function computeBtCombined(raw: any, acuanVal: any, thisInvoicesRaw: any)
   const total = parseNumeric(bt.item_value);
   const acuan = parseNumeric(acuanVal);
   if (total === null || acuan === null) return null;
-  if (total <= acuan + COURIER_DOC_TOLERANCE) return null;               // BT <= acuan -> logika lama (Match / Mismatch langsung)
+  if (total <= acuan + tolerance) return null;               // BT <= acuan -> logika lama (Match / Mismatch langsung)
 
   const thisList = splitInv(thisInvoicesRaw);
   if (thisList.length === 0) return null;

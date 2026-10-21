@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../lib/AuthContext';
 import {
   Settings as SettingsIcon, FileCheck2, Fuel, Table2, Flame, Landmark,
-  SlidersHorizontal, FileText, ShieldCheck, ArrowRight, Webhook, Ship, Building2,
+  SlidersHorizontal, FileText, ShieldCheck, ArrowRight, Webhook, Ship, Building2, Scale,
 } from 'lucide-react';
 import Greeting from '../components/Greeting';
 
@@ -70,6 +70,9 @@ export default function SettingsPage() {
             )}
             {canSee('settings_fuel_surcharge') && (
               <ModuleCard icon={Flame} title="Fuel Surcharge" description="Atur persentase fuel surcharge mingguan untuk DHL dan FedEx." to="/settings/fuel-surcharge" actionLabel="Kelola Rate" />
+            )}
+            {canSee('settings_courier_validation') && (
+              <ModuleCard icon={Scale} title="Courier Validation Tolerance" description="Atur toleransi selisih (pembulatan) yang dianggap Match pada Doc Validation Courier, mis. BT Vendor gabungan." to="/settings/courier-validation" actionLabel="Kelola Toleransi" />
             )}
             {canSee('settings_kurs_bi') && (
               <ModuleCard icon={Landmark} title="Kurs BI Harian" description="Kelola data nilai tukar mata uang Bank Indonesia (BI)." to="/settings/kurs-bi" actionLabel="Kelola Kurs" />

@@ -9,6 +9,7 @@ import UploadPage from './pages/UploadPage';
 import SettingsPage from './pages/SettingsPage';
 import AccountPage from './pages/AccountPage';
 import FuelSurchargePage from './pages/FuelSurchargePage';
+import CourierValidationSettingsPage from './pages/CourierValidationSettingsPage';
 import KursBIPage from './pages/KursBIPage';
 import KursRuleVendorPage from './pages/KursRuleVendorPage';
 import TarifKontrakPage from './pages/TarifKontrakPage';
@@ -186,6 +187,7 @@ export default function App() {
               <Route path="/settings/webhooks" element={<RequirePageAccess pageKey="settings_webhooks"><WebhookSettingsPage /></RequirePageAccess>} />
               <Route path="/admin/rates" element={<RequirePageAccess pageKey="admin_rates"><RateTablesAdmin /></RequirePageAccess>} />
               <Route path="/settings/fuel-surcharge" element={<RequirePageAccess pageKey="settings_fuel_surcharge"><FuelSurchargePage /></RequirePageAccess>} />
+              <Route path="/settings/courier-validation" element={<RequirePageAccess pageKey="settings_courier_validation"><CourierValidationSettingsPage /></RequirePageAccess>} />
               <Route path="/settings/kurs-bi" element={<RequirePageAccess pageKey="settings_kurs_bi"><KursBIPage /></RequirePageAccess>} />
               <Route path="/settings/kurs-rule-vendor" element={<RequirePageAccess pageKey="settings_kurs_rule_vendor"><KursRuleVendorPage /></RequirePageAccess>} />
               <Route path="/settings/tarif-kontrak" element={<RequirePageAccess pageKey="settings_tarif_kontrak"><TarifKontrakPage /></RequirePageAccess>} />

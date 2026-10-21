@@ -10,7 +10,7 @@ import { VW_LABEL, VW_BTN_PRIMARY, VW_BTN_SECONDARY, VW_BTN_SUCCESS, VW_BTN_DANG
 import { Pill } from './SeaAirAuditUi';
 import { useAuth } from '../lib/AuthContext';
 import { appendNoteLine, removeNoteLinesWhere } from '../utils/NoteLines';
-import { applyBtVendorRows, fmt as fmtBt } from '../utils/BtVendorCombined';
+import { applyBtVendorRows, loadCourierDocTolerance, fmt as fmtBt } from '../utils/BtVendorCombined';
 import { BtItemValue, BtInvoiceValue, BtDetailsToggle, btStatusLabel } from './BtCombinedUi';
 import CourierUploadSusulanModal from './CourierUploadSusulanModal';
 
@@ -1154,6 +1154,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
       // di atas komponen ini) -- SELALU dihitung sekarang (dulu logic ini inline di sini & HANYA
       // jalan kalau BELUM ada checklist tersimpan). Disimpan ke ref supaya tombol "Recompute
       // Missing Data" bisa pakai versi TERBARU ini kapan saja tanpa fetch ulang.
+      await loadCourierDocTolerance(); // toleransi BT Vendor (Settings) harus sudah termuat sebelum menghitung
       const computed = buildValidationValues(raw, docAwb, localNpwps);
       computedValuesRef.current = computed;
       setComputedSnapshot(computed);

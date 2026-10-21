@@ -3,9 +3,9 @@
 import { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { CheckCircle2, XCircle, AlertCircle, ChevronDown, ChevronRight, Upload } from 'lucide-react';
-import { fmt, COURIER_DOC_TOLERANCE, type BtCombinedInfo } from '../utils/BtVendorCombined';
+import { fmt, courierDocTolerance, type BtCombinedInfo } from '../utils/BtVendorCombined';
 
-const eq = (a: number, b: number) => Math.abs(a - b) <= COURIER_DOC_TOLERANCE;
+const eq = (a: number, b: number) => Math.abs(a - b) <= courierDocTolerance();
 const money = (bt: BtCombinedInfo, n: number) => `${bt.currency ? bt.currency + ' ' : ''}${fmt(n)}`;
 
 export const btStatusLabel = (bt: BtCombinedInfo | null | undefined, st: string): string | null =>
