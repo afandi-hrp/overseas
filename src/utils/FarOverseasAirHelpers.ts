@@ -990,8 +990,8 @@ export function deriveMemoWarnings(rec: any, cost: CostInfo | undefined, now: Da
     // Ada nomor PO -> otomatis With PO (sql/043), tidak perlu peringatan konfirmasi.
     if (!effectivePaymentType(rec)) {
       w.push({ level: 'amber', text: rec.payment_type_ai === 'UNSURE' ? 'AI is not sure — confirm With PO / Non-PO' : 'Payment type (With PO / Non-PO) not confirmed' });
-    } else if (effectivePaymentType(rec) === 'NON_PO' && (!rec.non_po_kind || !rec.non_po_billed_company_code || (rec.non_po_kind === 'PERSONAL_GOODS' && !String(rec.non_po_goods_owner || '').trim()))) {
-      w.push({ level: 'amber', text: 'Complete non-PO data (type, goods owner, billed PT)' });
+    } else if (effectivePaymentType(rec) === 'NON_PO' && (!rec.non_po_kind || (rec.non_po_kind === 'PERSONAL_GOODS' && !String(rec.non_po_goods_owner || '').trim()))) {
+      w.push({ level: 'amber', text: 'Complete non-PO data (type, goods owner)' });
     }
     const goods = goodsReceivedBlocker(rec);
     if (goods) w.push({ level: 'amber', text: 'Goods received date not filled — Prepared By cannot sign yet (Octagon)' });
@@ -1004,16 +1004,11 @@ export function deriveMemoWarnings(rec: any, cost: CostInfo | undefined, now: Da
     else if (pl.length === 0 && !String(rec.vessel_internal_note || '').trim()) w.push({ level: 'amber', text: 'Vessel not filled in' });
   }
   if (isOnHold(rec) && isPaymentAlarmActive(rec)) w.push({ level: 'grey', text: 'On hold — goods not received yet' });
-  // Overcharge/Undercharge yang sudah dikonfirmasi = cukup (sql/043), Notes (Manual) tidak wajib lagi.
-  if (pending && cost && cost.unitPriceStatus !== 'MATCH' && !(cost.notesManual && cost.notesManual.trim()) && !confirmed('OVERCHARGE') && !confirmed('UNDERCHARGE')) {
-    w.push({ level: 'amber', text: 'Unit price not matched — Cost Validation notes required before Prepared By can sign' });
-  }
   if (cost?.rateAmbiguous) w.push({ level: 'amber', text: 'Several rates match — select one in Cost Validation' });
   else if (cost?.status === 'BELUM_LENGKAP') w.push({ level: 'amber', text: 'Cost validation incomplete' });
   // Tanpa baris cost validation, modal Memo juga memblokir tanda tangan Prepared By (gating
   // Notes Manual tidak bisa dipenuhi) -- jadi KUNING saat masih Pending Prepared By.
   if (!cost) w.push({ level: pending ? 'amber' : 'grey', text: pending ? 'Cost validation not available yet — Prepared By cannot sign' : 'Cost validation not available' });
-  if ((pending || status === 'TIER1_DONE') && !rec?.pic_user_id) w.push({ level: 'amber', text: 'PIC Shipment not assigned' });
   if (!rec?.dominant_company_code && status !== 'REJECTED') w.push({ level: 'amber', text: 'Paying PT not set' });
   const poList = getPoList(rec);
   const bdUnit = getBreakdownUnit(rec, poList);

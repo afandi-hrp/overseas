@@ -893,48 +893,6 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                   </div>
                 )}
               </div>
-
-              {/* Notes (Manual) -- wajib HANYA kalau Unit Price tidak MATCH (lihat header file). */}
-              {(() => {
-                const notesRequired = unitPriceCostStatus !== 'MATCH';
-                const notesEmpty = !notesManual || !notesManual.trim();
-                return (
-                  <div className={`bg-white rounded-2xl border overflow-hidden ${notesRequired && notesEmpty ? 'border-amber-300' : 'border-[#EADFD6]'}`}>
-                    <div className="px-4 py-3 border-b border-[#EADFD6] flex items-center justify-between gap-2">
-                      <div>
-                        <h3 className="text-sm font-bold text-[#2A1A2C]">Notes (Manual) {notesRequired && <span className="text-rose-600">*</span>}</h3>
-                        <p className="text-[11px] text-[#6E5E70] mt-0.5">
-                          {notesRequired
-                            ? 'Required before Prepared By can sign — unit price (from description) is not a match.'
-                            : 'Optional — unit price (from description) is a match.'}
-                        </p>
-                      </div>
-                      {notesRequired && notesEmpty && (
-                        <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 flex items-center gap-1 shrink-0">
-                          <AlertTriangle size={11} /> Empty
-                        </span>
-                      )}
-                    </div>
-                    <div className="p-4">
-                      {isEditMode ? (
-                        <textarea
-                          value={notesManual ?? ''}
-                          onChange={e => updateNotesManual(e.target.value)}
-                          rows={3}
-                          placeholder="Explain the finding (e.g. why the unit price differs from the quotation)..."
-                          className="w-full border border-[#EADFD6] rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#6B3470]/20 focus:border-[#6B3470]"
-                        />
-                      ) : notesManual && notesManual.trim() ? (
-                        <p className="text-sm text-[#2A1A2C] whitespace-pre-wrap">{notesManual}</p>
-                      ) : notesRequired ? (
-                        <p className="text-xs text-amber-800 italic">Not filled in yet — Prepared By cannot sign until this is filled in. {canEditDirectLoading ? 'Click Edit above.' : ''}</p>
-                      ) : (
-                        <p className="text-xs text-[#6E5E70] italic">Not filled in.</p>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
             </div>
           )}
         </div>

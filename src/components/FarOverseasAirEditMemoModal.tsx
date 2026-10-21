@@ -32,6 +32,9 @@ export type EditMemoCtx = {
   companyOptions: CompanyOption[];
   memoTitleOptions: string[];
   addMemoTitleOption: (title: string) => void;
+  // Type memo Non-PO (2026-10-21): 2 bawaan + nilai unik yang sudah dipakai + "+ Add type..." (sama pola Memo title).
+  nonPoKindOptions: string[];
+  addNonPoKindOption: (kind: string) => void;
   tarifVendorRows: RateRow[];
   costCity: string;
   // SQL tahap 2 sudah terpasang (kolom payment_type/due_date/dst ada). false -> field tahap 2
@@ -39,10 +42,12 @@ export type EditMemoCtx = {
   phase2: boolean;
 };
 
-const NON_PO_KIND_OPTIONS = [
-  { value: 'PERSONAL_GOODS', label: 'Personal goods — shipped on their behalf, billed to a PT' },
-  { value: 'PO_TO_FOLLOW', label: 'PO to follow' },
-];
+// Type memo Non-PO. 2 nilai bawaan punya label panjang; type tambahan disimpan sbg teks HURUF BESAR apa adanya (sql/073 melepas CHECK lama).
+export const NON_PO_KIND_BUILTIN: Record<string, string> = {
+  PERSONAL_GOODS: 'Personal goods — shipped on their behalf',
+  PO_TO_FOLLOW: 'PO to follow',
+};
+const ADD_NEW_NON_PO_KIND = '__ADD_NEW_KIND__';
 
 // Validasi sebelum simpan (spek: With PO -> nomor PO wajib). Dipanggil halaman sebelum RPC.
 export function validateMemoEdits(merged: any, phase2: boolean): string | null {
@@ -141,7 +146,8 @@ function RouteNoteSelects({ value, shipVia, tarifVendorRows, onChange, disabled 
   const vendorRows = tarifVendorRows.filter(t => t.vendor_name === vendorTarget && t.aktif !== false);
   const originOptions = Array.from(new Set(vendorRows.map(t => t.origin).filter(Boolean) as string[])).sort();
   const tujuanOptions = Array.from(new Set(vendorRows.map(t => t.tujuan).filter(Boolean) as string[])).sort();
-  const jenisOptions = Array.from(new Set(vendorRows.map(t => t.jenis_layanan).filter(Boolean) as string[])).sort();
+  // Via / service dibatasi 2 pilihan (2026-10-21, permintaan user) -- bukan lagi dari jenis_layanan tarif.
+  const jenisOptions = ['Air Freight', 'Sea Freight'];
 
   const parsed = parseRouteNote(value);
   const findMatch = (options: string[], parsedVal: string | undefined): string => {
@@ -535,6 +541,8 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
     if (iso && ctx.costCity) setVal(row, 'status_note', composeStatusNote(ctx.costCity, iso));
   };
   const nonPoOwner = String(merged.non_po_goods_owner || '');
+  const [addingKind, setAddingKind] = useState(false);
+  const [newKind, setNewKind] = useState('');
   const aiType: string | null = row.payment_type_ai || null;
   const aiFindings = parseJsonField(row.ai_findings_confirmed);
   // Non-PO (tahap 2): field PO number disembunyikan (nilai lama TIDAK dihapus).
@@ -681,12 +689,22 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
                   <div className="mt-3 rounded-xl bg-white border border-[#EADFD6] p-3">
                     <p className="text-xs font-bold text-[#2A1A2C]">Memo without PO</p>
                     <p className="text-[11px] text-[#6E5E70] mb-2">Must be complete before Prepared By can sign.</p>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                       <label className="block"><Label field="non_po_kind">Type</Label>
-                        <select value={merged.non_po_kind || ''} disabled={readOnly} onChange={e => setVal(row, 'non_po_kind', e.target.value || null)} className={inputCls}>
-                          <option value="">— Select —</option>
-                          {NON_PO_KIND_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
+                        {addingKind ? (
+                          <input autoFocus type="text" value={newKind} placeholder="New type..." className={inputCls}
+                            onChange={e => setNewKind(e.target.value)}
+                            onBlur={() => { const v = newKind.trim().toUpperCase().replace(/\s+/g, ' '); setAddingKind(false); if (!v) return; ctx.addNonPoKindOption(v); setVal(row, 'non_po_kind', v); }}
+                            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); else if (e.key === 'Escape') { setNewKind(''); setAddingKind(false); } }} />
+                        ) : (
+                          <select value={merged.non_po_kind || ''} disabled={readOnly} className={inputCls}
+                            onChange={e => { if (e.target.value === ADD_NEW_NON_PO_KIND) { setNewKind(''); setAddingKind(true); return; } setVal(row, 'non_po_kind', e.target.value || null); }}>
+                            <option value="">— Select —</option>
+                            {merged.non_po_kind && !ctx.nonPoKindOptions.includes(merged.non_po_kind) && <option value={merged.non_po_kind}>{merged.non_po_kind}</option>}
+                            {ctx.nonPoKindOptions.map(o => <option key={o} value={o}>{NON_PO_KIND_BUILTIN[o] || o}</option>)}
+                            {!readOnly && <option value={ADD_NEW_NON_PO_KIND}>+ Add type...</option>}
+                          </select>
+                        )}
                       </label>
                       <label className="block"><Label field="non_po_goods_owner">Goods owner</Label>
                         <input type="text" value={nonPoOwner} disabled={readOnly || merged.non_po_kind !== 'PERSONAL_GOODS'}
@@ -697,12 +715,6 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
                             // Spek: kapal utk barang pribadi = "BARANG PRIBADI <NAMA PEMILIK>".
                             if (getPoList(merged).length === 0) setVal(row, 'vessel_internal_note', v.trim() ? `BARANG PRIBADI ${v.trim().toUpperCase()}` : null);
                           }} className={inputCls} />
-                      </label>
-                      <label className="block"><Label field="non_po_billed_company_code">Billed to PT</Label>
-                        <select value={merged.non_po_billed_company_code || ''} disabled={readOnly} onChange={e => setVal(row, 'non_po_billed_company_code', e.target.value || null)} className={inputCls}>
-                          <option value="">— Select —</option>
-                          {ctx.companyOptions.map(c => <option key={c.company_code} value={c.company_code}>{c.company_code} · {c.company_name_full}</option>)}
-                        </select>
                       </label>
                     </div>
                   </div>

@@ -232,12 +232,13 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
   const unitPriceIsMatch = unitPriceCostStatus === 'MATCH';
   // Overcharge/Undercharge yang sudah dikonfirmasi menggantikan syarat Notes (Manual) (SAMA sql/043).
   const priceConfirmed = !!getConfirmedFinding(rec, 'OVERCHARGE') || !!getConfirmedFinding(rec, 'UNDERCHARGE');
-  const tier1BlockedByNotes = signStep === 'TIER1' && costNotesLoaded && !unitPriceIsMatch && !priceConfirmed && !(costNotesManual && costNotesManual.trim());
+  // Notes (Manual) DIHAPUS dari Cost Validation (2026-10-21, permintaan user) -> tidak lagi jadi syarat Prepared By; tinggal wajib ada baris cost validation.
+  const tier1BlockedByNotes = signStep === 'TIER1' && costNotesLoaded && !costExists;
   // Syarat Octagon "goods received date" (sql/043) juga dicek lokal -- tetap tampil walau SQL belum jalan.
   const goodsBlock = phase2 ? goodsReceivedBlocker(rec) : null;
   const baseBlockers: string[] = signStep !== 'TIER1' ? []
     : serverBlockers?.available ? serverBlockers.blockers
-    : tier1BlockedByNotes ? [costExists ? 'Unit price in Cost Validation is not a match — fill in "Notes (Manual)" first' : 'Cost validation for this memo is not available yet'] : [];
+    : tier1BlockedByNotes ? ['Cost validation for this memo is not available yet'] : [];
   const blockerList: string[] = signStep === 'TIER1' && goodsBlock && !baseBlockers.includes(goodsBlock) ? [...baseBlockers, goodsBlock] : baseBlockers;
   const prepBlocked = blockerList.length > 0;
 
@@ -276,7 +277,8 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
     }
   };
 
-  const lastStep = LAST_SIGNED_STEP[rec.approval_status || ''];
+  // PIC dilewati (tak ada tanda tangan PIC): tanda tangan terakhir di status PIC_DONE = Prepared By.
+  const lastStep = rec.approval_status === 'PIC_DONE' && !findApprovalEntry(entries, 'PIC') ? 'TIER1' : LAST_SIGNED_STEP[rec.approval_status || ''];
   const lastEntry = lastStep ? findApprovalEntry(entries, lastStep) : undefined;
   const canUndo = phase2 && canEditDirectLoading && !!lastEntry && !!user?.email && lastEntry.user_email === user.email && !rec.finance_received_at;
   const handleUndo = async () => {
@@ -346,7 +348,8 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
     const entry = findApprovalEntry(entries, step);
     if (entry) return { name: entry.nama || '—', sub: `Signed ${formatDateShort(entry.approved_at)}` };
     if (step === 'TIER1') return { name: 'Exim Officer', sub: signStep === 'TIER1' ? 'Waiting' : '—' };
-    if (step === 'PIC') return rec.pic_name ? { name: rec.pic_name, sub: signStep === 'PIC' ? 'Waiting' : 'Assigned' } : { name: 'Not assigned', sub: 'PIC shipment' };
+    // PIC OPSIONAL (2026-10-21): tanpa PIC saat Prepared By sign -> tahap PIC dilewati langsung ke SPV.
+    if (step === 'PIC') return rec.pic_name ? { name: rec.pic_name, sub: signStep === 'PIC' ? 'Waiting' : 'Assigned' } : { name: 'No PIC', sub: ['PIC_DONE', 'TIER2_DONE', 'APPROVED'].includes(rec.approval_status || '') ? 'Skipped' : 'Optional — skipped if not chosen' };
     if (step === 'TIER2') return { name: signer?.tier2_name || 'Exim Supervisor', sub: signer?.tier2_role || 'Checked By' };
     return { name: signer?.tier3_name || 'Director', sub: signer?.tier3_role || 'Checked By' };
   };
@@ -588,8 +591,8 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
                         const u = picUsers.find(p => p.id === id);
                         savePeople({ pic_user_id: id, pic_name: u ? (u.nama || u.email || '') : null });
                       }}
-                      className={`flex-1 min-w-0 h-8 border rounded-lg px-2 text-[12.5px] text-[#2A1A2C] bg-white focus:outline-none focus:ring-2 focus:ring-[#6B3470]/25 disabled:opacity-60 ${rec.pic_user_id ? 'border-[#EADFD6]' : 'border-amber-300'}`}>
-                      <option value="">— Not assigned —</option>
+                      className="flex-1 min-w-0 h-8 border border-[#EADFD6] rounded-lg px-2 text-[12.5px] text-[#2A1A2C] bg-white focus:outline-none focus:ring-2 focus:ring-[#6B3470]/25 disabled:opacity-60">
+                      <option value="">— None (optional) —</option>
                       {rec.pic_user_id && !picUsers.some(u => u.id === rec.pic_user_id) && <option value={rec.pic_user_id}>{rec.pic_name || 'Current PIC'}</option>}
                       {picUsers.map(u => <option key={u.id} value={u.id}>{u.nama || u.email}</option>)}
                     </select>
