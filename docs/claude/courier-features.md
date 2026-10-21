@@ -1561,3 +1561,12 @@ kolom terpisah).
   Export ikon saja (`renderExportBtn(true, true, true)`), label pendek (Email/PT/Attention). Di bawah 1350px tetap `flex-wrap` (cadangan; ~1290px = lebar minimum 1 baris).
 - **Kartu** (`CourierRecapGroupCard`): grid 2 kolom mulai lebar KARTU 448px (`@md`, dulu `@xl` 576px) -> saat panel samping terbuka (daftar 35%) kartu berbentuk 2x2
   [identitas | email·PO·origin] / [status | grand total + Validation], tidak lagi 4 blok bertumpuk. Padding sedikit dirapatkan (`px-3.5 py-3`) di bawah `@4xl`.
+
+## Percepatan pemuatan kartu Courier / Sea & Air (2026-10-21, hasil ukur Network user: 101-175 request /halaman)
+
+- Penyebab: query kecil yang saling lepas diambil BERURUTAN (`await` dalam loop) & `tabel_npwp select=*` diunduh 3-5x per muat. Perbaikan (hasil data TIDAK berubah):
+  `src/utils/NpwpMaster.ts` (`fetchNpwpMaster()` = 1 permintaan dibagi + cache 60 dtk; `invalidateNpwpMaster()` dipanggil NPWPEditor setelah simpan/hapus);
+  `CourierValidationPct.ts` (potongan id checklist/cost/dokumen_validasi + NPWP via `Promise.all`), `mergeChecklistFields` (PIB & CN bersamaan);
+  `SharedDataTable.fetchRecords`: query SPTNP dobel di Audit Courier DIHAPUS, status cost Recap Courier & 5 tabel + Form E kartu Recap Sea & Air dijalankan bersamaan.
+- Belum: hitung persen Doc/Cost di DB (RPC) supaya JSON mentah (`data_validasi_raw`, `checks`) tidak diunduh -- butuh SQL baru; `fetchCourierValidationBadgePct` masih dipanggil >1x
+  per muat dari beberapa tempat (sidebar badge + halaman).

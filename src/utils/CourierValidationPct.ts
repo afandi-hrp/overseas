@@ -7,6 +7,7 @@ import { fetchCourierCostReviewMaps } from './CourierCostReviewHelpers';
 import { fetchCourierCostContexts, courierCostCtxKey } from './CourierCostNormalize';
 import { SECTIONS, computeStatus } from './ValidasiHelper';
 import { generateValues } from './ValidasiFill';
+import { fetchNpwpMaster } from './NpwpMaster';
 import { calculatePibStats } from './ValidasiPibHelper';
 import type { ValidationTabKey } from '../components/CourierValidationWindow';
 
@@ -22,16 +23,20 @@ export async function mergeChecklistFields(records: any[], fields: string[], doc
   const checklistByCnId: Record<string, any> = {}
   const chunkSize = 50
 
+  // Potongan id PIB & CN diambil BERSAMAAN (dulu satu per satu berurutan).
   const fetchChunked = async (idKey: 'pib_id' | 'cn_id', ids: any[], target: Record<string, any>) => {
+    const jobs: PromiseLike<any>[] = []
     for (let i = 0; i < ids.length; i += chunkSize) {
-      const chunkIds = ids.slice(i, i + chunkSize)
-      const { data } = await supabase.from('dokumen_checklist').select('*').in(idKey, chunkIds)
-      if (data) data.forEach((c: any) => { target[c[idKey]] = c })
+      jobs.push(supabase.from('dokumen_checklist').select('*').in(idKey, ids.slice(i, i + chunkSize)))
     }
+    const results = await Promise.all(jobs)
+    results.forEach((res: any) => (res?.data || []).forEach((c: any) => { target[c[idKey]] = c }))
   }
 
-  if (pibIds.length > 0) await fetchChunked('pib_id', pibIds, checklistByPibId)
-  if (cnIds.length > 0) await fetchChunked('cn_id', cnIds, checklistByCnId)
+  await Promise.all([
+    pibIds.length > 0 ? fetchChunked('pib_id', pibIds, checklistByPibId) : Promise.resolve(),
+    cnIds.length > 0 ? fetchChunked('cn_id', cnIds, checklistByCnId) : Promise.resolve(),
+  ])
 
   records.forEach(r => {
     const c = isPibRec(r) ? checklistByPibId[r.id] : (isCnRec(r) ? checklistByCnId[r.id] : undefined)
@@ -56,14 +61,14 @@ export async function fetchCourierValidationBadgePct(rows: any[]): Promise<{ doc
   const chunkSize = 50;
 
   const fetchChecklistPct = async (idKey: 'pib_id' | 'cn_id', ids: any[], keyPrefix: string) => {
+    const jobs: PromiseLike<any>[] = [];
     for (let i = 0; i < ids.length; i += chunkSize) {
-      const chunk = ids.slice(i, i + chunkSize);
-      const { data: chk } = await supabase.from('tabel_checklist_validasi').select(`${idKey}, total_match, total_mismatch`).in(idKey, chunk);
-      (chk || []).forEach((c: any) => {
-        const checked = (c.total_match || 0) + (c.total_mismatch || 0);
-        docPctMap[`${keyPrefix}${c[idKey]}`] = checked > 0 ? Math.round((c.total_match / checked) * 100) : 0;
-      });
+      jobs.push(supabase.from('tabel_checklist_validasi').select(`${idKey}, total_match, total_mismatch`).in(idKey, ids.slice(i, i + chunkSize)));
     }
+    (await Promise.all(jobs)).forEach((res: any) => (res?.data || []).forEach((c: any) => {
+      const checked = (c.total_match || 0) + (c.total_mismatch || 0);
+      docPctMap[`${keyPrefix}${c[idKey]}`] = checked > 0 ? Math.round((c.total_match / checked) * 100) : 0;
+    }));
   };
   // Review cost per invoice (sql/038) ikut dihitung -- SAMA jendela Validation (computeLiveCostSummary + review).
   const docItems = [
@@ -73,15 +78,15 @@ export async function fetchCourierValidationBadgePct(rows: any[]): Promise<{ doc
   // Konteks revisi 2026-10-19 (status Invoice Freight di Checklist + total dokumen invoice) -- SAMA panel & Details.
   const [reviewMaps, costCtx] = await Promise.all([fetchCourierCostReviewMaps(docItems), fetchCourierCostContexts(docItems)]);
   const fetchCostPct = async (idKey: 'pib_id' | 'cn_id', ids: any[], keyPrefix: string, jenisDok: 'PIB' | 'CN') => {
+    const jobs: PromiseLike<any>[] = [];
     for (let i = 0; i < ids.length; i += chunkSize) {
-      const chunk = ids.slice(i, i + chunkSize);
-      const { data: cvRows } = await supabase.from('tabel_cost_validasi').select('*').in(idKey, chunk).order('created_at', { ascending: false });
-      (cvRows || []).forEach((cv: any) => {
-        const mapKey = `${keyPrefix}${cv[idKey]}`;
-        if (costPctMap[mapKey] !== undefined) return; // sudah ada baris LEBIH BARU (order desc), skip
-        costPctMap[mapKey] = computeLiveCostSummary(cv, jenisDok, reviewMaps[`${jenisDok}:${cv[idKey]}`], costCtx[courierCostCtxKey(jenisDok, cv[idKey])]).pct;
-      });
+      jobs.push(supabase.from('tabel_cost_validasi').select('*').in(idKey, ids.slice(i, i + chunkSize)).order('created_at', { ascending: false }));
     }
+    (await Promise.all(jobs)).forEach((res: any) => (res?.data || []).forEach((cv: any) => {
+      const mapKey = `${keyPrefix}${cv[idKey]}`;
+      if (costPctMap[mapKey] !== undefined) return; // sudah ada baris LEBIH BARU (order desc), skip
+      costPctMap[mapKey] = computeLiveCostSummary(cv, jenisDok, reviewMaps[`${jenisDok}:${cv[idKey]}`], costCtx[courierCostCtxKey(jenisDok, cv[idKey])]).pct;
+    }));
   };
 
   await Promise.all([
@@ -103,21 +108,19 @@ export async function fetchCourierValidationBadgePct(rows: any[]): Promise<{ doc
   const missingPibIds = pibIds.filter(id => docPctMap[`pib_${id}`] === undefined);
   const missingCnIds = cnIds.filter(id => docPctMap[`cn_${id}`] === undefined);
   if (missingPibIds.length > 0 || missingCnIds.length > 0) {
-    let allDokumenValidasi: any[] = [];
+    // Semua potongan id + master NPWP diambil BERSAMAAN (dulu berurutan satu per satu; NPWP dibagi lewat cache bersama).
+    const dvJobs: PromiseLike<any>[] = [];
     for (let i = 0; i < missingPibIds.length; i += chunkSize) {
-      const chunk = missingPibIds.slice(i, i + chunkSize);
-      const { data: dv } = await supabase.from('dokumen_validasi').select('pib_id, cn_id, jenis_dokumen, awb, data_validasi_raw').in('pib_id', chunk);
-      if (dv) allDokumenValidasi = [...allDokumenValidasi, ...dv];
+      dvJobs.push(supabase.from('dokumen_validasi').select('pib_id, cn_id, jenis_dokumen, awb, data_validasi_raw').in('pib_id', missingPibIds.slice(i, i + chunkSize)));
     }
     for (let i = 0; i < missingCnIds.length; i += chunkSize) {
-      const chunk = missingCnIds.slice(i, i + chunkSize);
-      const { data: dv } = await supabase.from('dokumen_validasi').select('pib_id, cn_id, jenis_dokumen, awb, data_validasi_raw').in('cn_id', chunk);
-      if (dv) allDokumenValidasi = [...allDokumenValidasi, ...dv];
+      dvJobs.push(supabase.from('dokumen_validasi').select('pib_id, cn_id, jenis_dokumen, awb, data_validasi_raw').in('cn_id', missingCnIds.slice(i, i + chunkSize)));
     }
+    const [dvResults, localNpwpsAll] = await Promise.all([Promise.all(dvJobs), fetchNpwpMaster()]);
+    const allDokumenValidasi: any[] = dvResults.flatMap((res: any) => res?.data || []);
 
     if (allDokumenValidasi.length > 0) {
-      const { data: npwpData } = await supabase.from('tabel_npwp').select('*');
-      const localNpwps = npwpData || [];
+      const localNpwps = localNpwpsAll || [];
 
       allDokumenValidasi.forEach((r: any) => {
         let raw: any = {};

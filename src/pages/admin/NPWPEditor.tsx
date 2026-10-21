@@ -1,3 +1,4 @@
+import { invalidateNpwpMaster } from '../../utils/NpwpMaster';
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../lib/AuthContext';
@@ -60,6 +61,7 @@ export default function NPWPEditor() {
         if (error) throw error;
         showToast('success', 'Master NPWP berhasil ditambahkan.');
       }
+      invalidateNpwpMaster();
       setShowModal(false);
       fetchData();
     } catch (err: any) {
@@ -75,6 +77,7 @@ export default function NPWPEditor() {
         const { error } = await supabase.from('tabel_npwp').delete().eq('id', id);
         if (error) throw error;
         showToast('success', 'Data Master NPWP berhasil dihapus.');
+        invalidateNpwpMaster();
         fetchData();
       } catch (err: any) {
         showToast('error', err.message || 'Terjadi kesalahan saat menghapus.');

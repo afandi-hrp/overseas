@@ -4317,33 +4317,17 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         const awbList = data.map(r => r.awb).filter(Boolean);
         if (awbList.length > 0) {
           const chunkSize = 25;
-          let allCvData: any[] = [];
+          const cvJobs: PromiseLike<any>[] = [];
           for (let i = 0; i < awbList.length; i += chunkSize) {
-            const chunkAwbs = awbList.slice(i, i + chunkSize);
-            const { data: cvDataChunk } = await supabase.from('tabel_cost_validasi').select('awb, status_cost').in('awb', chunkAwbs).order('created_at', { ascending: false });
-            if (cvDataChunk) allCvData = [...allCvData, ...cvDataChunk];
+            cvJobs.push(supabase.from('tabel_cost_validasi').select('awb, status_cost').in('awb', awbList.slice(i, i + chunkSize)).order('created_at', { ascending: false }));
           }
-          costValidations = allCvData;
+          // Semua potongan diambil BERSAMAAN; urutan antar-potongan dipertahankan (hasil per awb tidak lintas potongan).
+          costValidations = (await Promise.all(cvJobs)).flatMap((res: any) => res?.data || []);
         }
       }
 
       if ((activeMainTab === 'courier' && activeSubTab === 'courier_audit') && data && data.length > 0) {
-        const pibIds = data.filter(r => r.jenis_dokumen === 'PIB' || courierAuditType === 'pib' || courierAuditType === 'archive').map(r => r.id).filter(Boolean);
-        if (pibIds.length > 0) {
-          const chunkSize = 50;
-          let allSptnpData: any[] = [];
-          for (let i = 0; i < pibIds.length; i += chunkSize) {
-            const chunkIds = pibIds.slice(i, i + chunkSize);
-            const { data: sptnpChunk } = await supabase.from('tabel_audit_pib').select('id, sptnp_total').in('id', chunkIds);
-            if (sptnpChunk) allSptnpData = [...allSptnpData, ...sptnpChunk];
-          }
-          const sptnpMap = Object.fromEntries(allSptnpData.map(r => [r.id, r.sptnp_total]));
-          data.forEach(r => {
-            if ((r.jenis_dokumen === 'PIB' || courierAuditType === 'pib' || courierAuditType === 'archive') && sptnpMap[r.id] !== undefined) {
-              r.sptnp_total = sptnpMap[r.id];
-            }
-          });
-        }
+        // `sptnp_total` SUDAH ikut `select('*')` di atas -- query ulang per-50-id yang dulu ada di sini dobel & dibuang (2026-10-21).
         await mergeChecklistData(data, courierAuditType === 'pib' ? 'pib' : (courierAuditType === 'cn' ? 'cn' : undefined));
 
         // Live-compute 7 kolom turunan Audit Courier (lihat COURIER_AUDIT_CALC_FIELDS di atas)
@@ -4378,27 +4362,28 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         const seaairIds = Array.from(new Set(data.map(r => r.seaair_id).filter(Boolean)));
         if (seaairIds.length > 0) {
           const chunkSize = 50;
-          let allStatusData: any[] = [];
-          let allMatriksData: any[] = [];
-          let allCostValidasiData: any[] = [];
-          let allChecklistData: any[] = [];
-          let allCatatanKonfirmasiData: any[] = [];
+          // 5 tabel per potongan id + Form E diambil BERSAMAAN (dulu 5 query berurutan per potongan, lalu Form E menyusul -> ±7x bolak-balik).
+          const chunkJobs = [] as Promise<any[]>[][];
           for (let i = 0; i < seaairIds.length; i += chunkSize) {
             const chunkIds = seaairIds.slice(i, i + chunkSize);
-            const { data: statusChunk } = await supabase.from('tabel_audit_seaair').select('id, status').in('id', chunkIds);
-            if (statusChunk) allStatusData = [...allStatusData, ...statusChunk];
-            const { data: matriksChunk } = await supabase.from('dokumen_validasi_matriks_seaair').select('seaair_id, checks').in('seaair_id', chunkIds);
-            if (matriksChunk) allMatriksData = [...allMatriksData, ...matriksChunk];
-            const { data: costChunk } = await supabase.from('cost_validasi_seaair').select('seaair_id, checks').in('seaair_id', chunkIds);
-            if (costChunk) allCostValidasiData = [...allCostValidasiData, ...costChunk];
-            const { data: checklistChunk } = await supabase.from('dokumen_checklist_seaair').select('seaair_id, pct_kelengkapan, dokumen_kurang, ada_form_e').in('seaair_id', chunkIds);
-            if (checklistChunk) allChecklistData = [...allChecklistData, ...checklistChunk];
-            // Catatan Konfirmasi Manual per-Segmen (2026-09) -- lihat catatan di bawah dekat
-            // seaAirCostValidationPctMap, dipakai supaya badge % ikut memperhitungkan segmen
-            // yang sudah dikonfirmasi manual, SAMA persis dgn ValidasiShipmentInvoiceLengkap.tsx.
-            const { data: catatanChunk } = await supabase.from('cost_validasi_catatan_seaair').select('seaair_id, section, status_konfirmasi').in('seaair_id', chunkIds);
-            if (catatanChunk) allCatatanKonfirmasiData = [...allCatatanKonfirmasiData, ...catatanChunk];
+            chunkJobs.push([
+              Promise.resolve(supabase.from('tabel_audit_seaair').select('id, status').in('id', chunkIds)).then((r: any) => r.data || []),
+              Promise.resolve(supabase.from('dokumen_validasi_matriks_seaair').select('seaair_id, checks').in('seaair_id', chunkIds)).then((r: any) => r.data || []),
+              Promise.resolve(supabase.from('cost_validasi_seaair').select('seaair_id, checks').in('seaair_id', chunkIds)).then((r: any) => r.data || []),
+              Promise.resolve(supabase.from('dokumen_checklist_seaair').select('seaair_id, pct_kelengkapan, dokumen_kurang, ada_form_e').in('seaair_id', chunkIds)).then((r: any) => r.data || []),
+              // Catatan Konfirmasi Manual per-Segmen (2026-09): badge % ikut segmen yg dikonfirmasi manual, SAMA persis dgn ValidasiShipmentInvoiceLengkap.tsx.
+              Promise.resolve(supabase.from('cost_validasi_catatan_seaair').select('seaair_id, section, status_konfirmasi').in('seaair_id', chunkIds)).then((r: any) => r.data || []),
+            ]);
           }
+          const [chunkResults, formENotes] = await Promise.all([
+            Promise.all(chunkJobs.map(j => Promise.all(j))),
+            fetchFormENotes(seaairIds), // Form E utk barang dari China (sql/044) -- null = tabel catatan belum ada (aturan dimatikan).
+          ]);
+          const allStatusData: any[] = chunkResults.flatMap(c => c[0]);
+          const allMatriksData: any[] = chunkResults.flatMap(c => c[1]);
+          const allCostValidasiData: any[] = chunkResults.flatMap(c => c[2]);
+          const allChecklistData: any[] = chunkResults.flatMap(c => c[3]);
+          const allCatatanKonfirmasiData: any[] = chunkResults.flatMap(c => c[4]);
           seaAirAuditStatusMap = Object.fromEntries(allStatusData.map(r => [r.id, r.status]));
 
           // Persentase badge tombol Checklist -- langsung dari kolom tersimpan pct_kelengkapan
@@ -4449,8 +4434,6 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           const matriksBy = new Map(allMatriksData.map(m => [String(m.seaair_id), m.checks]));
           const costBy = new Map(allCostValidasiData.map(c => [String(c.seaair_id), c.checks]));
           const checklistBy = new Map(allChecklistData.map(c => [String(c.seaair_id), c]));
-          // Form E utk barang dari China (sql/044) -- null = tabel catatan belum ada (aturan dimatikan).
-          const formENotes = await fetchFormENotes(seaairIds);
           const originBy = new Map((data || []).map((r: any) => [String(r.seaair_id), r.origin]));
           seaairIds.forEach(sid => {
             const k = String(sid);

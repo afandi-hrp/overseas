@@ -6,6 +6,7 @@ import { LoadingState } from '../../components/LoadingState';
 import { Search, ChevronLeft, ChevronRight, RefreshCw, Download, X, FileCheck2 } from 'lucide-react';
 import { SECTIONS, computeStatus } from '../../utils/ValidasiHelper';
 import { generateValues } from '../../utils/ValidasiFill';
+import { fetchNpwpMaster } from '../../utils/NpwpMaster';
 import { calculatePibStats } from '../../utils/ValidasiPibHelper';
 import Greeting from '../../components/Greeting';
 
@@ -101,8 +102,8 @@ export default function CourierValidasiPage() {
     });
 
     if (needsCalculation) {
-       const { data: npwpData } = await supabase.from('tabel_npwp').select('*');
-       if (npwpData) localNpwps = npwpData;
+       const npwpData = await fetchNpwpMaster();
+       if (npwpData.length) localNpwps = npwpData;
     }
 
     return resData.map((r: any) => {
@@ -237,8 +238,8 @@ export default function CourierValidasiPage() {
       });
 
       if (needsCalculation) {
-         const { data: npwpData } = await supabase.from('tabel_npwp').select('*');
-         if (npwpData) localNpwps = npwpData;
+         const npwpData = await fetchNpwpMaster();
+         if (npwpData.length) localNpwps = npwpData;
       }
 
       const finalRecords = resData.map((r: any) => {

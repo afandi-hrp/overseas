@@ -10,6 +10,7 @@ import { VW_LABEL, VW_BTN_PRIMARY, VW_BTN_SECONDARY, VW_BTN_SUCCESS, VW_BTN_DANG
 import { Pill } from './SeaAirAuditUi';
 import { useAuth } from '../lib/AuthContext';
 import { appendNoteLine, removeNoteLinesWhere } from '../utils/NoteLines';
+import { fetchNpwpMaster } from '../utils/NpwpMaster';
 import { applyBtVendorRows, fmt as fmtBt } from '../utils/BtVendorCombined';
 import { BtItemValue, BtInvoiceValue, BtDetailsToggle, btStatusLabel } from './BtCombinedUi';
 import CourierUploadSusulanModal from './CourierUploadSusulanModal';
@@ -1058,9 +1059,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   const [syncTick, setSyncTick] = useState(0);
 
   useEffect(() => {
-    supabase.from('tabel_npwp').select('*').then(({data}) => {
-       if (data) setNpwps(data);
-    });
+    fetchNpwpMaster().then(data => { if (data.length) setNpwps(data); });
   }, []);
 
   useEffect(() => {
@@ -1143,8 +1142,8 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
       // `handleRecomputeMissing`).
       let localNpwps = npwps;
       if (localNpwps.length === 0) {
-        const { data: nData } = await supabase.from('tabel_npwp').select('*');
-        if (nData) {
+        const nData = await fetchNpwpMaster();
+        if (nData.length) {
           localNpwps = nData;
           setNpwps(nData);
         }
