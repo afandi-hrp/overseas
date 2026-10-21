@@ -193,7 +193,7 @@ const RecapRowCard: React.FC<{ rec: any; onOpen: (rec: any) => void; selected?: 
         {/* 2. Vendor, rute, tanggal */}
         <div className="min-w-0">
           <div className="text-[13px] font-bold text-[#3B1B3D] uppercase truncate leading-[22px]" title={rec.vendor || ''}>{rec.vendor || '—'}</div>
-          <div className="text-[11.5px] text-[#6E5E70] truncate mt-1.5 leading-[24px]" title={`${rec.origin || '—'} → ${rec.destination || '—'}`}>{rec.origin || '—'} → {rec.destination || '—'}</div>
+          <div className="text-[11.5px] text-[#6E5E70] truncate mt-0 leading-[20px]" title={`${rec.origin || '—'} → ${rec.destination || '—'}`}>{rec.origin || '—'} → {rec.destination || '—'}</div>
           <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 leading-[18px] text-[11.5px] text-[#3B1B3D]" data-card-atd-ata>
             {dateText('ATD', rec.atd)}{dateText('ATA', rec.ata)}
           </div>
