@@ -334,7 +334,7 @@ export default function MainLayout() {
   ) : null);
 
   return (
-    <div className="flex flex-col md:flex-row h-screen overflow-hidden bg-gradient-to-br from-[#FFF5C5] to-[#F58C77] md:p-4 md:gap-4">
+    <div className="flex flex-col md:flex-row h-screen overflow-hidden bg-gradient-to-br from-[#FFF5C5] to-[#F58C77] md:py-4 md:pl-4 md:pr-1 md:gap-1">
       
       {/* ── Mobile Top Bar (compact, hamburger only) ── */}
       <div className="md:hidden flex items-center justify-between px-5 py-4 shrink-0 bg-[#5A305A] text-white z-50 shadow-md rounded-b-[1.5rem]">
