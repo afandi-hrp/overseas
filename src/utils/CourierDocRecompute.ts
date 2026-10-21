@@ -17,17 +17,23 @@ export function planCourierDocRecompute(prev: Record<string, any>, computed: Rec
   Object.keys(computed).forEach(id => {
     const cur = (prev || {})[id] || {};
     const comp = computed[id] || {};
+    // Baris BT Vendor (BtVendorCombined.ts) membawa `bt` (null = bukan gabungan): cmp KOSONG di sini bermakna ("Perlu rincian BT") dan
+    // harus menimpa nilai lama; meta `bt` ikut diperbarui supaya tampilan sama dgn status hasil hitung.
+    const isBtRow = 'bt' in comp;
     const takeSrc = !cur.src_edited && filled(comp.src) && String(comp.src) !== String(cur.src ?? '');
-    const takeCmp = !cur.cmp_edited && filled(comp.cmp) && String(comp.cmp) !== String(cur.cmp ?? '');
-    if (!takeSrc && !takeCmp) return;
+    const takeCmp = !cur.cmp_edited && (filled(comp.cmp) || (isBtRow && !!comp.bt)) && String(comp.cmp ?? '') !== String(cur.cmp ?? '');
+    const takeBt = isBtRow && !cur.src_edited && !cur.cmp_edited && JSON.stringify(comp.bt ?? null) !== JSON.stringify(cur.bt ?? null);
+    if (!takeSrc && !takeCmp && !takeBt) return;
     if (takeSrc) { if (filled(cur.src)) nUpdated++; else nFilled++; }
     if (takeCmp) { if (filled(cur.cmp)) nUpdated++; else nFilled++; }
+    if (takeBt && !takeSrc && !takeCmp) nUpdated++;
     next[id] = {
       ...cur,
       src: takeSrc ? comp.src : cur.src,
       cmp: takeCmp ? comp.cmp : cur.cmp,
       srcDisplay: takeSrc ? comp.srcDisplay : cur.srcDisplay,
       srcNote: takeSrc ? comp.srcNote : cur.srcNote,
+      ...(takeBt || (isBtRow && (takeSrc || takeCmp)) ? { bt: comp.bt ?? null } : {}),
     };
   });
   return { next, filled: nFilled, updated: nUpdated, total: nFilled + nUpdated };

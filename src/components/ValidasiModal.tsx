@@ -10,6 +10,9 @@ import { VW_LABEL, VW_BTN_PRIMARY, VW_BTN_SECONDARY, VW_BTN_SUCCESS, VW_BTN_DANG
 import { Pill } from './SeaAirAuditUi';
 import { useAuth } from '../lib/AuthContext';
 import { appendNoteLine, removeNoteLinesWhere } from '../utils/NoteLines';
+import { applyBtVendorRows, fmt as fmtBt } from '../utils/BtVendorCombined';
+import { BtItemValue, BtInvoiceValue, BtDetailsToggle, btStatusLabel } from './BtCombinedUi';
+import CourierUploadSusulanModal from './CourierUploadSusulanModal';
 
 // Catatan Accept milik 1 field di Manual Change Notes -- format baru "<field> · <sumber> ✓ ..." & lama "- <field> · <sumber>: ...".
 const isDocNoteOf = (label: string) => (line: string) => line.startsWith(`${label} ✓ `) || line.startsWith(`- ${label}: `);
@@ -607,8 +610,6 @@ function buildValidationValues(raw: any, docAwb: string, localNpwps: any[]): Rec
   fill("pib02", invF.awb || invD.awb || "", sppbV.no_awb || "");
   fill("pib03", normalizeInvoiceSeparator(pibV.no_invoice) || "", normalizeInvoiceSeparator(ciplV.no_invoice) || "");
   fill("pib04", pibV.item_value || "", ciplV.total_value || "");
-  fill("bt_vendor_no_invoice_vs_pib", normalizeInvoiceSeparator(pibV.no_invoice) || "", normalizeInvoiceSeparator(btVendorV.no_invoice) || "");
-  fill("bt_vendor_item_value_vs_pib", pibV.item_value || "", btVendorV.item_value || "");
   fill("pib06", normalizeInvoiceSeparator(pibV.no_invoice) || "", normalizeInvoiceSeparator(fi.inv_no) || "");
   fill("pib07", pibV.item_value || "", fi.total_value || "");
   fill("po_item_value_vs_pib", pibV.item_value || "", raw.po_total_value || "");
@@ -666,8 +667,8 @@ function buildValidationValues(raw: any, docAwb: string, localNpwps: any[]): Rec
   fill("po_alamat_npwp", raw.po_alamat || "", findNpwpByName(raw.po_penerima)?.alamat || "");
   fill("cipl03", ciplV.no_invoice || "", fi.inv_no || "");
   fill("cipl04", ciplV.total_value || "", fi.total_value || "");
-  fill("cipl_bt_vendor_item_value", ciplV.total_value || "", btVendorV.item_value || "");
-  fill("cipl_bt_vendor_no_invoice", ciplV.no_invoice || "", btVendorV.no_invoice || "");
+  // 4 baris BT Vendor (PIB & CN) -- termasuk BT GABUNGAN (1 BT utk beberapa shipment), lihat BtVendorCombined.ts (SAMA ValidasiFill).
+  applyBtVendorRows(raw, normalizeInvoiceSeparator, (id, src, cmp, bt) => { fill(id, src, cmp); if (out[id]) out[id].bt = bt; });
   fill("cipl05", raw.cipl_vessel || "", "");
 
   // PO
@@ -1025,6 +1026,8 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
   const [docSnap, setDocSnap] = useState<any>(null);
   const [docSaving, setDocSaving] = useState(false);
   const [docToast, setDocToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  // Upload "BT details" (Rincian BT) dari baris BT Vendor gabungan yang berstatus "Needs BT details" -- modal upload susulan Courier yang SAMA Checklist.
+  const [btUploadOpen, setBtUploadOpen] = useState(false);
   const [correcting, setCorrecting] = useState<string | null>(null);
   // reviewUi: mode Edit global (semua nilai jadi kotak isian).
   const [editAll, setEditAll] = useState(false);
@@ -1307,6 +1310,14 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     return () => { window.removeEventListener(DOC_SYNC_EVENT, onWin); ch?.removeEventListener('message', onMsg); };
   }, [embedded]);
   const showDocToast = (msg: string, type: 'success' | 'error') => { setDocToast({ msg, type }); setTimeout(() => setDocToast(null), 3000); };
+  const btUploadModal = btUploadOpen && (
+    <CourierUploadSusulanModal
+      awbHint={record?.awb || undefined}
+      onClose={() => setBtUploadOpen(false)}
+      onJobStarted={() => { setBtUploadOpen(false); showDocToast('BT details sent — click Recompute once the document has been processed.', 'success'); }}
+      onSentNoJob={(message, isWarning) => { setBtUploadOpen(false); showDocToast(message, isWarning ? 'error' : 'success'); }}
+    />
+  );
   const saveDoc = async () => {
     userActionRef.current = true;
     setDocSaving(true);
@@ -1893,7 +1904,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
       return { v, st };
     };
     // "Show only mismatches" = baris Mismatch + baris yang sudah di-Accept (supaya Undo tetap terjangkau).
-    const isFlagged = (r: any) => { const { v, st } = rowState(r); return st === 'mismatch' || isAcceptedVal(v, st); };
+    const isFlagged = (r: any) => { const { v, st } = rowState(r); return st === 'mismatch' || isAcceptedVal(v, st) || (st === 'partial' && v.bt?.state === 'needs'); };
     const calcAccepted = (id: string) => { const v = values[`pibcalc:${id}`]; return v?.manual_status === 'match' && !!v?.accept_note; };
     // Baris kalkulasi yang ikut akurasi (sama mode summary): Freight/BM/PPN/PPH (ignoreForStats) & baris tersembunyi tidak.
     const calcShown = calcRows.filter(r => !r.hidden && !r.ignoreForStats);
@@ -1919,6 +1930,18 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
       });
     };
     const srcText = (v: any, field: string) => (v.srcDisplay ? v.srcDisplay : formatViewValue(v.src, field));
+    // Baris BT Vendor GABUNGAN (v.bt): porsi AWB ini + Total BT + chip (Item Value) / invoice AWB ini ✓✕ (No. Invoice) + link "BT details".
+    const openBtUpload = canEdit ? () => setBtUploadOpen(true) : undefined;
+    const btBody = (rowId: string, v: any, mode: 'columns' | 'list') => {
+      if (!v.bt) return null;
+      const isItem = rowId.includes('item_value');
+      return (
+        <span className={`flex flex-col gap-1 ${mode === 'columns' ? 'items-center' : 'items-start'}`} data-bt-combined={rowId}>
+          {isItem ? <BtItemValue bt={v.bt} left={mode === 'list'} /> : <BtInvoiceValue bt={v.bt} left={mode === 'list'} />}
+          {isItem && <BtDetailsToggle bt={v.bt} mode={mode} onUpload={openBtUpload} />}
+        </span>
+      );
+    };
     const valueTextOf = (r: any, v: any, field: string) => (r.isFormat ? srcText(v, field) : `${srcText(v, field)} (${formatViewValue(v.cmp, field)})`);
     const otherCostOfV = (v: any) => (v.otherCost !== undefined && v.otherCost !== null && v.otherCost !== '' ? v.otherCost : (debugData.raw?.other_cost_valas ?? ''));
 
@@ -1929,7 +1952,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
       const cfg = getCfg(acc ? 'accepted' : st);
       const Icon = st === 'match' ? CheckCircle2 : st === 'mismatch' ? XCircle : Clock;
       const cls = 'shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-bold whitespace-nowrap';
-      const body = <><Icon size={11} />{cfg.label}{v.manual_status && !acc ? ' ✎' : ''}</>;
+      const body = <><Icon size={11} />{btStatusLabel(v.bt, st) || cfg.label}{v.manual_status && !acc ? ' ✎' : ''}</>;
       if (canEdit && editAll && !acc && (st === 'match' || st === 'mismatch')) {
         return (
           <button type="button" data-status-toggle={id} title="Click to switch Match ⇄ Mismatch" onClick={() => applyManualStatus(id, st === 'match' ? 'mismatch' : 'match')}
@@ -1953,7 +1976,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
           </button>
         );
       }
-      if (st !== 'mismatch') return null;
+      if (st !== 'mismatch' && !(st === 'partial' && values[t.id]?.bt?.state === 'needs')) return null;
       return (
         <button type="button" data-doc-accept={t.id} disabled={acceptSaving} onClick={() => { setAcceptNote(''); setAcceptDlg(t); }}
           className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-md border border-[#BFE3CD] bg-white text-[#17663D] text-[10.5px] font-bold hover:bg-[#EAF6EF] disabled:opacity-50 print:hidden">
@@ -2031,7 +2054,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                                 <span className="truncate">{docLabel}</span>
                               </span>
                               <span className="flex-1 min-w-0 text-[12px] text-[#3B1B3D] [overflow-wrap:anywhere]">
-                                {section.id === 's_pib' ? (
+                                {v.bt ? btBody(rowMatch.id, v, 'list') : section.id === 's_pib' ? (
                                   <span className={v.cmp_edited ? 'text-[#2F4FA8] font-bold' : 'font-semibold'}>{formatViewValue(v.cmp, field)}{v.cmp_edited ? ' ✎' : ''}</span>
                                 ) : (
                                   <>
@@ -2222,7 +2245,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
                                   )}
                                   {hasOtherCost && <input aria-label="Other cost" className={`${CELL_INPUT} italic`} value={otherCostVal} placeholder="Other cost" onChange={e => setObj(rowMatch.id, 'otherCost', e.target.value)} />}
                                 </>
-                              ) : section.id === 's_pib' ? (
+                              ) : v.bt ? btBody(rowMatch.id, v, 'columns') : section.id === 's_pib' ? (
                                 <span className={`text-xs break-words px-1 ${v.cmp_edited ? 'text-blue-700 font-bold' : 'text-[#5A305A] font-medium'}`}>{formatViewValue(v.cmp, field)}{v.cmp_edited ? ' ✎' : ''}</span>
                               ) : (
                                 <>
@@ -2266,6 +2289,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
 
     return (
       <div className="flex flex-col gap-3 min-w-0" data-doc-unified data-doc-view={viewMode}>
+        {btUploadModal}
         {docToast && <div className={`px-3 py-2 rounded-xl border text-[12.5px] font-semibold ${docToast.type === 'success' ? 'bg-[#EAF6EF] border-[#BFE3CD] text-[#17663D]' : 'bg-[#FDE7E4] border-[#F4C3BC] text-[#A8231A]'}`}>{docToast.msg}</div>}
 
         {/* Ringkasan + meta */}
@@ -2450,7 +2474,8 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
       const v = values[r.id] || { src: '', cmp: '' };
       const st = v.manual_status || computeStatus(v.src, v.cmp, r.isFormat, r.field, debugData.raw?.is_po_non_imi, getDocChecklistFlag(r.compareDoc, docCompletenessFlags));
       const item: SumItem = { id: r.id, sectionTitle: SECTION_TITLE[section.id] || section.label, field: r.rowLabel || r.field, hint: r.hint, docLabel: getColumnDisplayLabel(r.compareDoc, docType), v, st, isFormat: r.isFormat };
-      if (st === 'mismatch') unmatched.push(item);
+      // BT Vendor gabungan yang "Needs BT details" (status partial) tetap tampil (kuning) + Upload BT details / Accept.
+      if (st === 'mismatch' || (st === 'partial' && v.bt?.state === 'needs')) unmatched.push(item);
       else if (v.manual_status === 'match' && v.accept_note) accepted.push(item);
     }));
     // Baris tabel "Validasi PIB / SPPBMCP" yg Mismatch ikut notifikasi (2026-10-08, keputusan user) -- HANYA baris yg memang
@@ -2472,6 +2497,11 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     const doRecompute = recomputeAndSave;
     const valueText = (it: SumItem) => {
       if (it.calc) return `${it.calc.actual} (${it.calc.expected})`;
+      const bt = it.v.bt;
+      if (bt) {
+        if (!it.id.includes('item_value')) return `${bt.invoices.map((i: any) => `${i.inv} ${bt.hasRincian && i.amount === null ? '✕' : '✓'}`).join(' + ')}`;
+        return `${bt.hasRincian ? `BT portion ${fmtBt(bt.porsi)}` : 'BT portion unknown'} / Reference ${fmtBt(bt.acuan)} · Combined ${bt.nFound}/${bt.nThis} invoice${bt.nThis === 1 ? '' : 's'} of ${bt.nBt}${bt.truncated ? '+' : ''} in BT${bt.reason ? ` · ${bt.reason}` : ''}`;
+      }
       const src = it.v.srcDisplay ? it.v.srcDisplay : formatViewValue(it.v.src, it.field);
       if (it.isFormat) return src;
       return `${src} (${formatViewValue(it.v.cmp, it.field)})`;
@@ -2482,6 +2512,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     const fmtSel = (n: number, unit = '') => `${n > 0.0000001 ? '+' : n < -0.0000001 ? '−' : ''}${Math.abs(n).toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 2 })}${unit}`;
     const selisihOf = (it: SumItem): string | null => {
       if (it.calc) return it.calc.selisih ? `Selisih ${it.calc.selisih}` : null;
+      if (it.v.bt) return null; // BT gabungan: selisih sudah ada di alasan
       if (it.id !== 'id04' && !ITEM_VALUE_IDS.includes(it.id)) return null;
       const a = parseNumeric(it.v.src), b = parseNumeric(it.v.cmp);
       if (a === null || b === null) return null;
@@ -2497,6 +2528,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     if (!loadedOnce) return <div className="py-10 flex justify-center"><LoadingSpinner /></div>;
     return (
       <div className="flex flex-col gap-3 min-w-0" data-doc-summary>
+        {btUploadModal}
         {/* Kalkulasi PIB/SPPBMCP tetap dipasang (tersembunyi) supaya Accuracy SAMA tabel lengkap. */}
         <div className="hidden">
           <ValidasiPerhitunganPIB
@@ -2526,13 +2558,15 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
           <div className="rounded-xl border border-[#BFE3CD] bg-[#EAF6EF] px-3 py-2.5 text-[12px] font-semibold text-[#17663D]">No unmatched fields.</div>
         )}
         {unmatched.map(it => (
-          <div key={it.id} data-doc-unmatched={it.id} className="rounded-r-xl border-l-[3px] border-l-[#A8231A] bg-[#FFF8F7] border border-[#F4C3BC] px-3 py-2">
+          <div key={it.id} data-doc-unmatched={it.id} className={it.st === 'partial' ? 'rounded-r-xl border-l-[3px] border-l-[#D9A441] bg-[#FFFAF0] border border-[#F1D38A] px-3 py-2' : 'rounded-r-xl border-l-[3px] border-l-[#A8231A] bg-[#FFF8F7] border border-[#F4C3BC] px-3 py-2'}>
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
                 <div className="text-[12.5px] font-semibold text-[#3B1B3D]">{it.field}</div>
                 {!it.calc && <div className="text-[11px] text-[#6E5E70]">{it.sectionTitle} · {it.docLabel}{it.hint ? ` · ${it.hint}` : ''}</div>}
               </div>
-              <span className="shrink-0 text-[11px] font-bold text-[#A8231A]">Mismatch{it.v.manual_status ? ' ✎' : ''}</span>
+              {it.st === 'partial'
+                ? <span className="shrink-0 text-[11px] font-bold text-[#7A4F00]">Needs BT details</span>
+                : <span className="shrink-0 text-[11px] font-bold text-[#A8231A]">Mismatch{it.v.manual_status ? ' ✎' : ''}</span>}
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px] text-[#3B1B3D] [overflow-wrap:anywhere]">
               <span data-unmatched-values>{valueText(it)}</span>
@@ -2540,7 +2574,8 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
               {otherCostOf(it) && <span data-unmatched-othercost className="px-1.5 py-[1px] rounded-md bg-[#EEE7FA] text-[#5B3FA0] text-[11px] font-bold">{otherCostOf(it)}</span>}
             </div>
             {canEdit && acceptingId !== it.id && (
-              <div className="flex justify-end mt-1">
+              <div className="flex justify-end gap-1.5 mt-1">
+                {it.st === 'partial' && <button type="button" className={VW_BTN_PRIMARY} onClick={() => setBtUploadOpen(true)}>Upload BT details</button>}
                 <button type="button" className={VW_BTN_SECONDARY} onClick={() => { setAcceptingId(it.id); setAcceptNote(''); }}>Accept</button>
               </div>
             )}

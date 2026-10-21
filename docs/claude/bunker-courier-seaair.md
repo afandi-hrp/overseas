@@ -1,5 +1,23 @@
 <!-- Dipindah dari CLAUDE.md 2026-10-06 (CLAUDE.md diringkas; file ini dibaca saat modulnya dikerjakan). -->
 
+## Doc Validation Courier — BT Vendor GABUNGAN (1 BT utk beberapa shipment, 2026-10-21, permintaan user; mockup `mockup_bt_pib_cn.html`)
+
+- Hanya LOGIKA aplikasi (ekstraksi AI tak berubah). Logika murni di `src/utils/BtVendorCombined.ts` (`computeBtCombined`, `applyBtVendorRows`) dipakai
+  `buildValidationValues` (ValidasiModal) DAN `generateValues` (ValidasiFill -> persen kartu). `ValidasiModalLegacy` tidak dipakai lagi (tidak diubah).
+- Data: `raw.rincian_bt_vendor_v` tersimpan sbg STRING JSON ({items:[{po_no,amount,ref_no}], total, currency}) -> `parseRincianBt`. `bt_vendor_v` TIDAK punya
+  currency/`remarks_truncated`; currency diambil dari rincian; "terpotong" = `no_invoice` berakhiran "+" / flag `remarks_truncated` bila kelak ada / remarks
+  adalah awalan urutan rincian. **Payment Remarks hanya berisi nomor invoice, TANPA nominal** -> tanpa Rincian BT porsi tak bisa dihitung ("Needs BT details");
+  cek "rincian = remarks" per invoice = cek KEANGGOTAAN invoice (bukan nilai).
+- Gabungan hanya bila Amount BT > acuan (+toleransi) DAN ada invoice shipment lain/terpotong; selain itu logika LAMA (compare langsung). Acuan: PIB
+  `pib_v.item_value`, CN `cipl_v.total_value`; daftar invoice AWB ini = No. Invoice CIPL / Final Invoice.
+- Status di-encode ke `src`/`cmp` supaya `computeStatus` biasa tetap benar: Match -> cmp=src; Mismatch -> cmp=porsi (atau Total BT utk "details != BT");
+  Needs BT details -> cmp="" (partial). Meta `bt` (BtCombinedInfo) di `values_json[id].bt` utk tampilan; `planCourierDocRecompute` ikut menimpa cmp kosong & meta
+  utk baris ber-`bt` (record tersimpan lama diperbarui lewat Recompute / banner "newer data").
+- UI `BtCombinedUi.tsx`, dipasang di `ValidasiModal` (unified List/Columns + variant summary = Unmatched fields): porsi + "BT total" + chip Combined, link
+  "BT details" (Columns = popover portal, List = expand), label status "Needs BT details" (amber) + tombol Upload BT details (CourierUploadSusulanModal) / Accept.
+  Finance Handover (financeView) tidak menampilkan kolom BT, tapi akurasinya ikut status baru. Teks UI Bahasa Inggris (Rincian BT = "BT details").
+- Toleransi `COURIER_DOC_TOLERANCE = 0.5` = KONSTANTA di kode (belum setting Admin -- butuh tabel setting + halaman Settings, belum dikerjakan).
+
 ## Doc Validation Courier — tabel CIPL (CN path only) + kolom BT Vendor (2026-10-19, permintaan user)
 
 - 2 baris BARU section `s_cipl` (compareDoc `BT Vendor` -> kolom BT Vendor muncul otomatis setelah PO | Final Invoice, warna pink

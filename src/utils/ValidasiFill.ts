@@ -1,4 +1,5 @@
 import { SECTIONS, hitungDppCmp, normalizeInvoiceSeparator, beratKgPair } from './ValidasiHelper';
+import { applyBtVendorRows } from './BtVendorCombined';
 
 export const generateValues = (raw: any, docAwb: string, localNpwps: any[]) => {
 let newV: any = {};
@@ -96,8 +97,6 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
         fill("pib02", pibV.no_awb || "", sppbV.no_awb || "");
         fill("pib03", normalizeInvoiceSeparator(pibV.no_invoice) || "", normalizeInvoiceSeparator(ciplV.no_invoice) || "");
         fill("pib04", pibV.item_value || "", ciplV.total_value || "");
-        fill("bt_vendor_no_invoice_vs_pib", normalizeInvoiceSeparator(pibV.no_invoice) || "", normalizeInvoiceSeparator(btVendorV.no_invoice) || "");
-        fill("bt_vendor_item_value_vs_pib", pibV.item_value || "", btVendorV.item_value || "");
         fill("pib06", normalizeInvoiceSeparator(pibV.no_invoice) || "", normalizeInvoiceSeparator(fi.inv_no) || "");
         fill("pib07", pibV.item_value || "", fi.total_value || "");
         fill("po_item_value_vs_pib", pibV.item_value || "", raw.po_total_value || "");
@@ -153,8 +152,8 @@ SECTIONS.forEach(s => s.rows.forEach(r => { newV[r.id] = { src: "", cmp: "" }; }
         fill("po_alamat_npwp", raw.po_alamat || "", findNpwpByName(raw.po_penerima)?.alamat || "");
         fill("cipl03", ciplV.no_invoice || "", fi.inv_no || "");
         fill("cipl04", ciplV.total_value || "", fi.total_value || "");
-        fill("cipl_bt_vendor_item_value", ciplV.total_value || "", btVendorV.item_value || "");
-        fill("cipl_bt_vendor_no_invoice", ciplV.no_invoice || "", btVendorV.no_invoice || "");
+        // 4 baris BT Vendor (PIB & CN) -- termasuk BT GABUNGAN (1 BT utk beberapa shipment), lihat BtVendorCombined.ts.
+        applyBtVendorRows(raw, normalizeInvoiceSeparator, (id, src, cmp, bt) => { fill(id, src, cmp); if (newV[id]) newV[id].bt = bt; });
         fill("cipl05", raw.cipl_vessel || "", "");
 
         // PO
