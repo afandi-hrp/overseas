@@ -534,7 +534,7 @@ function AmountsBar({ inv, editable, bad, warn, actor, onSaved, onToast }: {
     } catch (e: any) { setError(e.message || String(e)) } finally { setBusy(false) }
   }
   if (editing) {
-    const fields: [keyof typeof f, string][] = [['ppn', 'VAT'], ['pph', 'WHT'], ['materai', 'Stamp']]
+    const fields: [keyof typeof f, string][] = [['ppn', 'PPN'], ['pph', 'PPH'], ['materai', 'Stamp']]
     return (
       <div className="flex flex-wrap items-end gap-2" data-amounts-edit>
         <InfoBubble label="Subtotal" money small title="Subtotal cannot be edited">{fmtMoney(inv.subtotal, inv.currency)}</InfoBubble>
@@ -557,11 +557,11 @@ function AmountsBar({ inv, editable, bad, warn, actor, onSaved, onToast }: {
     <div className="flex flex-wrap items-end gap-x-3 gap-y-1.5" data-header-amounts>
       <InfoBubble label="Subtotal" money small warn={warn} bad={bad}
         title={bad ? `Cost lines total ${fmtMoney(inv.lines_total, inv.currency)} differs from subtotal` : undefined}>{fmtMoney(inv.subtotal, inv.currency)}</InfoBubble>
-      <InfoBubble label="VAT" money small>{fmtMoney(inv.ppn, inv.currency)}</InfoBubble>
-      <InfoBubble label="WHT" money small>{fmtMoney(inv.pph, inv.currency)}</InfoBubble>
+      <InfoBubble label="PPN" money small>{fmtMoney(inv.ppn, inv.currency)}</InfoBubble>
+      <InfoBubble label="PPH" money small>{fmtMoney(inv.pph, inv.currency)}</InfoBubble>
       <InfoBubble label="Stamp" money small>{fmtMoney(inv.materai, inv.currency)}</InfoBubble>
       {editable && (
-        <button type="button" onClick={start} aria-label="Edit amounts" title="Edit VAT / WHT / Stamp" className="mb-0.5 p-1.5 rounded-lg text-[#6B3470] hover:bg-[#F5EDF3]"><Pencil size={13} /></button>
+        <button type="button" onClick={start} aria-label="Edit amounts" title="Edit PPN / PPH / Stamp" className="mb-0.5 p-1.5 rounded-lg text-[#6B3470] hover:bg-[#F5EDF3]"><Pencil size={13} /></button>
       )}
       <GrandTotal value={fmtMoney(inv.grand_total, inv.currency)} />
     </div>
