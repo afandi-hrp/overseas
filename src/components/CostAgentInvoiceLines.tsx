@@ -274,7 +274,7 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
               </div>
 
               {/* Action: Verify + Remark */}
-              <div className="[grid-column:3] [grid-row:1/span_3] px-2 py-3 flex flex-col items-stretch gap-1.5 @min-[640px]:[grid-column:5] @min-[640px]:[grid-row:1] @min-[640px]:px-3 @min-[640px]:border-l @min-[640px]:border-[#EFE6E0]" data-line-actions>
+              <div className="[grid-column:3] [grid-row:1/span_3] px-2 py-3 flex flex-col items-stretch gap-1.5 @min-[640px]:justify-center @min-[640px]:[grid-column:5] @min-[640px]:[grid-row:1] @min-[640px]:px-3 @min-[640px]:border-l @min-[640px]:border-[#EFE6E0]" data-line-actions>
                 {editable ? (
                   <button type="button" data-verify-line disabled={rowBusy || (!l.is_verified && noCostItem)} title={verifyTitle}
                     onClick={() => run(l.id, () => verify(l, { isVerified: !l.is_verified, learnAlias: !l.is_verified && !!l.cost_item_id }))}
