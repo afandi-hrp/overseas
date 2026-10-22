@@ -2474,7 +2474,9 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
       const st = v.manual_status || computeStatus(v.src, v.cmp, r.isFormat, r.field, debugData.raw?.is_po_non_imi, getDocChecklistFlag(r.compareDoc, docCompletenessFlags));
       const item: SumItem = { id: r.id, sectionTitle: SECTION_TITLE[section.id] || section.label, field: r.rowLabel || r.field, hint: r.hint, docLabel: getColumnDisplayLabel(r.compareDoc, docType), v, st, isFormat: r.isFormat };
       // BT Vendor gabungan yang "Needs BT details" (status partial) tetap tampil (kuning) + Upload BT details / Accept.
-      if (st === 'mismatch' || (st === 'partial' && v.bt?.state === 'needs')) unmatched.push(item);
+      // Kartu BT Vendor HANYA utk baris Item Value (baris No. Invoice tidak jadi kartu sendiri; alasannya sudah di kartu Item Value).
+      const btInvoiceRow = !!v.bt && !r.id.includes('item_value');
+      if (!btInvoiceRow && (st === 'mismatch' || (st === 'partial' && v.bt?.state === 'needs'))) unmatched.push(item);
       else if (v.manual_status === 'match' && v.accept_note) accepted.push(item);
     }));
     // Baris tabel "Validasi PIB / SPPBMCP" yg Mismatch ikut notifikasi (2026-10-08, keputusan user) -- HANYA baris yg memang
@@ -2497,10 +2499,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
     const valueText = (it: SumItem) => {
       if (it.calc) return `${it.calc.actual} (${it.calc.expected})`;
       const bt = it.v.bt;
-      if (bt) {
-        if (!it.id.includes('item_value')) return `${bt.invoices.map((i: any) => `${i.inv} ${bt.hasRincian && i.amount === null ? '✕' : '✓'}`).join(' + ')}`;
-        return `${bt.hasRincian ? `BT portion ${fmtBt(bt.porsi)}` : 'BT portion unknown'} / Reference ${fmtBt(bt.acuan)} · Combined ${bt.nFound}/${bt.nThis} invoice${bt.nThis === 1 ? '' : 's'} of ${bt.nBt}${bt.truncated ? '+' : ''} in BT${bt.reason ? ` · ${bt.reason}` : ''}`;
-      }
+      if (bt) return bt.reason || `${bt.hasRincian ? `BT portion ${fmtBt(bt.porsi)}` : 'BT portion unknown'} / Reference ${fmtBt(bt.acuan)}`;
       const src = it.v.srcDisplay ? it.v.srcDisplay : formatViewValue(it.v.src, it.field);
       if (it.isFormat) return src;
       return `${src} (${formatViewValue(it.v.cmp, it.field)})`;
@@ -2572,6 +2571,7 @@ export default function ValidasiModal({ record, mainTab, subTab, onClose, canEdi
               {selisihOf(it) && <span data-unmatched-selisih className="px-1.5 py-[1px] rounded-md bg-[#FDE7E4] text-[#A8231A] text-[11px] font-bold">{selisihOf(it)}</span>}
               {otherCostOf(it) && <span data-unmatched-othercost className="px-1.5 py-[1px] rounded-md bg-[#EEE7FA] text-[#5B3FA0] text-[11px] font-bold">{otherCostOf(it)}</span>}
             </div>
+            {it.v.bt && <div className="mt-0.5"><BtDetailsToggle bt={it.v.bt} mode="columns" onUpload={canEdit ? () => setBtUploadOpen(true) : undefined} /></div>}
             {canEdit && acceptingId !== it.id && (
               <div className="flex justify-end gap-1.5 mt-1">
                 {it.st === 'partial' && <button type="button" className={VW_BTN_PRIMARY} onClick={() => setBtUploadOpen(true)}>Upload BT details</button>}

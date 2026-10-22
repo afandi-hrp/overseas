@@ -4,6 +4,18 @@
 
 - **Upload dokumen > Document Processing Queue > "View Detail" (2026-10-22)**: `ProcessingQueue.tsx` `openItemDetail` membuka langsung data AWB itu lewat deep link yang sudah ada: Sea & Air `/sea-air/rekapan?open=<seaair_id>` (tanpa akses Invoice Recap -> `/sea-air/audit?q=<AWB>`), Courier `/courier/audit?open=PIB:<id>|CN:<id>`. Dulu `window.location.href='/dashboard'` (tidak ada).
 
+## BT Vendor GABUNGAN — REVISI 2026-10-22 (referensi `mockup_bt_final_1.html`)
+
+- **Payment Remarks kosong / "-" / tanpa satu pun nomor invoice Rincian BT** -> cek remarks DILEWATI (`rvrSkip: 'no_list'`, "no invoice list in BT"), sama dgn remarks terpotong (`'truncated'`). Dulu dianggap lengkap -> semua invoice "differs".
+- **Gabungan juga bila rincian BELUM diupload** & BT > acuan & invoice AWB ini tak terdaftar di remarks (mis. Olive Marine remarks kosong): "Needs BT details · 0/n found" + Upload (`reasonCode`).
+- **Status per invoice** = nilai Rincian BT vs CIPL; nomor dicocokkan PERSIS (huruf besar/kecil & spasi diabaikan, TANPA normalisasi I/1, O/0). **Keterbatasan data**: `cipl_v` hanya total + daftar invoice
+  (tak ada nilai per invoice) -> kolom CIPL per invoice terisi HANYA utk AWB dgn 1 invoice (= acuan); utk beberapa invoice nilai dicek lewat total porsi vs acuan (alasan "BT portion x vs Reference y · diff z").
+- **Popover "BT details"** (`BtCombinedUi.tsx` `Panel`): judul `BT details · vendor · currency` + status; tabel CEK | BT DETAILS | PEMBANDING | status (Total vs Amount BT, Porsi AWB ini vs Reference PIB/Final Invoice,
+  Payment Remarks skipped / "n differ ▸ show"); tabel INVOICE AWB INI "x/y found" (INVOICE | BT DETAILS | CIPL | status); "▸ n other shipment invoices" tersembunyi; Upload bila Needs. Maks ±60vh + scroll
+  di dalam, TANPA lapisan penghalang (modal tetap bisa di-scroll; posisi mengikuti tombol), tampil di ATAS tombol bila ruang bawah kurang.
+- **Kartu Unmatched fields** ringkas: hanya kartu baris Item Value (baris No. Invoice tidak jadi kartu), 1 baris alasan (`BtCombinedInfo.reason`: portion / invoice differs from CIPL / BT details total vs BT amount /
+  n invoices differ from Payment Remarks / not uploaded · possibly combined payment / x/y invoices found · no. not in BT details) + Upload/Accept + link "BT details".
+
 ## Kartu Invoice Recap Sea & Air — revisi 2026-10-21 (permintaan user)
 
 - Kartu lebar (`SeaAirRecapCardList.tsx`): teks tetap rata KIRI per kolom (revisi: rata tengah teks ditolak user); di @7xl (zoom out / monitor lebar) semua kolom berlebar `fr` (1 : 1,4 : 1 : 1 : 1)
