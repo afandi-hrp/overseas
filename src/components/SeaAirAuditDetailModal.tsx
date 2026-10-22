@@ -260,7 +260,7 @@ export default function SeaAirAuditDetailModal({
         </div>
         {/* Tab Overview | Audit trail (2026-10-14, permintaan user). Warna ungu muda SAMA tab Invoice Recap Sea & Air (2026-10-15, permintaan user). */}
         <div className={`flex items-end gap-1.5 border-b border-[#EADFD6] shrink-0 ${isPanel ? 'px-4 pt-1.5' : 'px-5 pt-2'}`} role="tablist">
-          {([['overview', 'Overview'], ['trail', `Audit trail${log && log.length ? ` (${log.length})` : ''}`]] as const).map(([k, label]) => (
+          {([['overview', 'Overview'], ['trail', 'Audit trail']] as const).map(([k, label]) => (
             <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
               className={`shrink-0 px-3 ${isPanel ? 'pt-1 pb-1' : 'pt-1.5 pb-1.5'} rounded-t-lg text-[12.5px] font-semibold border-b-[3px] transition-colors ${tab === k ? 'bg-white text-[#3B1B3D] border-[#6B3470] font-bold' : 'bg-[#F5EDF3] text-[#5A305A] border-transparent hover:bg-[#EADBE7]'}`}>
               {label}
