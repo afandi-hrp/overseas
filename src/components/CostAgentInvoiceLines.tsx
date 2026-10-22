@@ -164,7 +164,7 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
               </div>
 
               {/* Invoice line */}
-              <div className="min-w-0 px-3 pt-3 pb-2 @min-[640px]:pb-3 [grid-column:2] [grid-row:1]" data-line-left>
+              <div className="min-w-0 px-3 pt-3 pb-2 @min-[640px]:pb-3 @min-[640px]:self-center [grid-column:2] [grid-row:1]" data-line-left>
                 <div className="flex items-start gap-2">
                   <div className="min-w-0 text-[13px] font-bold text-[#3B1B3D] leading-snug [overflow-wrap:anywhere]">{l.description_raw}</div>
                   {editable && (
@@ -218,7 +218,7 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
               </div>
 
               {/* Main reference -- kolom sendiri (juga saat PDF tampil) */}
-              <div className="[grid-column:2] [grid-row:3] min-w-0 px-3 pb-3 @min-[640px]:[grid-column:4] @min-[640px]:[grid-row:1] @min-[640px]:pt-3 @min-[640px]:border-l @min-[640px]:border-[#EFE6E0]" data-line-right>
+              <div className="[grid-column:2] [grid-row:3] min-w-0 px-3 pb-3 @min-[640px]:[grid-column:4] @min-[640px]:[grid-row:1] @min-[640px]:pt-3 @min-[640px]:flex @min-[640px]:flex-col @min-[640px]:justify-center @min-[640px]:border-l @min-[640px]:border-[#EFE6E0]" data-line-right>
                 <div className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[#8A7A8B] mb-0.5 @min-[640px]:hidden">Main reference</div>
                 {!main ? (
                   <div className="text-[12px] text-[#6E5E70]">{newItem ? 'Not in cost master yet — nothing to compare' : 'No history yet for this cost item'}</div>
