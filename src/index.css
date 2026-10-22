@@ -71,6 +71,12 @@
    -- JANGAN reintroduce pendekatan ini tanpa diminta ulang & tanpa kriteria sukses yang lebih
    terukur (bukan cuma "kelihatan sama/beda" dari mata/foto). */
 
+/* Progress tak-tentu (Cost Agent: menunggu respons AI n8n) */
+@keyframes ca-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
+}
+
 @keyframes spin-slow {
   to { transform: rotate(360deg); }
 }

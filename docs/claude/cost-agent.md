@@ -744,3 +744,8 @@ pelabuhan (`ports.tz`), kirim ke RPC "YYYY-MM-DD HH:mm" tanpa offset. Angka Rupi
   di PALING UJUNG. Chip status, chip alert, "n lines · n to verify" & Description/strip info SENGAJA dihapus dari kartu (keputusan user; semuanya ada di modal).
 - Chip "Duplicate of #id" & "Your approval" tetap tampil hanya bila relevan; prop `mine` (invoice `waiting_approval` yg step aktifnya memuat email user, dari `myIds` halaman) -> tombol "Decide".
 - Isi modal yg TIDAK ada di data daftar (Subtotal/VAT/WHT/Stamp, uploaded by, jam port call, detail alert) belum bisa ditampilkan di kartu -- butuh kolom baru di view `cost_agent_invoice_list_v` (SQL, belum dikerjakan).
+
+## Read Voyage Report (AI) — panel progres (2026-10-22, permintaan user)
+
+- `CostAgentVoyageAiModal` (`CostAgentVoyageSourceModals.tsx`): selagi menunggu respons webhook n8n, form diganti panel `AiWaitPanel` (ikon berdenyut, bar tak-tentu `ca-indeterminate` di `index.css`, 4 tahap
+  yang berganti menurut lama menunggu + penghitung detik). n8n TIDAK mengirim progres sungguhan -> sengaja TANPA persentase palsu. Gagal -> form kembali + pesan error.

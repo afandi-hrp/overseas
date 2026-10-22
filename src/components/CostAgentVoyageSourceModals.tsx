@@ -4,7 +4,7 @@
 // - Read Voyage Report (AI): upload PDF/foto laporan via proxy multipart (X-Webhook-Type cost_agent_voyage,
 //   cost_agent_meta {company_code, hint}) -> voyage tersimpan sbg DRAFT; ai.cargo_total_match=false -> peringatan.
 // Bentuk respons n8n dibaca longgar (field opsional) -- kontrak final di workflow n8n.
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { UploadCloud, FileText, X, AlertTriangle, CheckCircle2, Sparkles } from 'lucide-react'
 import { CostAgentModal, FieldLabel } from './CostAgentUi'
 import { SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_INPUT } from './SeaAirAuditUi'
@@ -76,6 +76,28 @@ export function CostAgentVoyagePullModal({ vessels, onClose, onDone }: {
   )
 }
 
+// Panel progres selagi menunggu respons AI n8n (2026-10-22, permintaan user; pola "Processing (AI)" Agency Invoices). n8n tidak mengirim progres
+// sungguhan -> bar tak-tentu + tahap yang berganti menurut lama menunggu + penghitung detik (bukan persentase palsu).
+function AiWaitPanel({ fileCount }: { fileCount: number }) {
+  const [sec, setSec] = useState(0)
+  useEffect(() => { const t = setInterval(() => setSec(s => s + 1), 1000); return () => clearInterval(t) }, [])
+  const steps = ['Uploading the report', 'AI is reading the report', 'Extracting voyages, ports and cargo', 'Saving draft voyages']
+  const idx = sec < 3 ? 0 : sec < 12 ? 1 : sec < 35 ? 2 : 3
+  return (
+    <div className="rounded-2xl border border-[#EADFD6] bg-[#FBF7F4] px-5 py-6 text-center" role="status" aria-live="polite" data-ai-wait>
+      <div className="mx-auto w-12 h-12 rounded-full bg-[#5A305A] text-white flex items-center justify-center shadow-sm"><Sparkles size={22} className="animate-pulse" /></div>
+      <p className="mt-3 text-sm font-bold text-[#3B1B3D]">{steps[idx]}…</p>
+      <p className="text-[11.5px] text-[#6E5E70] mt-0.5">{fileCount} file{fileCount === 1 ? '' : 's'} · {sec}s{sec >= 35 ? ' — long reports can take a minute or two, please keep this window open' : ''}</p>
+      <div className="mt-4 h-1.5 rounded-full bg-[#EADFD6] overflow-hidden"><div className="h-full w-2/5 rounded-full bg-[#6B3470]" style={{ animation: 'ca-indeterminate 1.4s ease-in-out infinite' }} /></div>
+      <ol className="mt-4 flex items-center justify-center gap-1.5 text-[10.5px] font-semibold">
+        {steps.map((st, i) => (
+          <li key={st} className={`px-2 py-0.5 rounded-full ${i < idx ? 'bg-[#EAF6EF] text-[#17663D]' : i === idx ? 'bg-[#5A305A] text-white' : 'bg-white text-[#8A7A8B] border border-[#EADFD6]'}`}>{i < idx ? '✓ ' : ''}{i + 1}</li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
 export function CostAgentVoyageAiModal({ companies, defaultCompany, onClose, onDone }: {
   companies: CostAgentCompany[]
   defaultCompany: string
@@ -127,7 +149,8 @@ export function CostAgentVoyageAiModal({ companies, defaultCompany, onClose, onD
         {!result && <button type="button" className={SA_BTN_PRIMARY} onClick={run} disabled={busy || !files.length}>{busy ? 'AI is reading the report…' : <><Sparkles size={13} /> Read with AI</>}</button>}
       </>}>
       <div className="p-5 space-y-3">
-        {!result && (
+        {busy && <AiWaitPanel fileCount={files.length} />}
+        {!result && !busy && (
           <>
             <div className="grid grid-cols-2 gap-3">
               <div>
