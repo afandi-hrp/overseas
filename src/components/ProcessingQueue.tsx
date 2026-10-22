@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../lib/AuthContext';
 import { Clock, X } from 'lucide-react';
 
 export default function ProcessingQueue({ onOpenDetail, type }: { onOpenDetail?: (id: string, type: string) => void, type?: 'courier' | 'sea_air' }) {
+    const navigate = useNavigate();
+    const { allowedPageKeys, isAdmin } = useAuth();
     const [queue, setQueue] = useState<any[]>([]);
     const [isOpen, setIsOpen] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
@@ -74,6 +77,20 @@ export default function ProcessingQueue({ onOpenDetail, type }: { onOpenDetail?:
         } catch(err: any) {
             showToast("Failed to delete item: " + (err.message || String(err)));
         }
+    };
+
+    // "View Detail" (2026-10-22, permintaan user): langsung membuka halaman AWB itu -- Sea & Air: jendela Open Invoice Recap (`?open=<seaair_id>`; user tanpa akses
+    // Invoice Recap -> Audit Sea & Air dgn pencarian AWB); Courier: jendela Open PIB/CN Audit Courier (`?open=PIB:<id>` / `CN:<id>`).
+    const openItemDetail = (item: any) => {
+        if (onOpenDetail && (item.pib_id || item.cn_id)) { onOpenDetail(item.pib_id || item.cn_id, item.pib_id ? 'pib' : 'cn'); return; }
+        if (item.seaair_id) {
+            if (isAdmin || allowedPageKeys.has('sea_air_rekapan')) navigate(`/sea-air/rekapan?open=${encodeURIComponent(String(item.seaair_id))}`);
+            else navigate(`/sea-air/audit?q=${encodeURIComponent(String(item.awb || ''))}`);
+            return;
+        }
+        if (item.pib_id) { navigate(`/courier/audit?open=${encodeURIComponent(`PIB:${item.pib_id}`)}`); return; }
+        if (item.cn_id) { navigate(`/courier/audit?open=${encodeURIComponent(`CN:${item.cn_id}`)}`); return; }
+        showToast('This document has no linked record yet.');
     };
 
     const formatTime = (ts: string) => {
@@ -174,7 +191,7 @@ export default function ProcessingQueue({ onOpenDetail, type }: { onOpenDetail?:
                                             </div>
                                             <div className="mt-1">
                                                 {/* In typical usage, the parent handles opening modal via CN/PIB ID, but we just link to it if we can't open the modal directly... or emit an event. Let's just use a text hint or pseudo-link. */}
-                                                <span className="text-emerald-700 font-medium underline cursor-pointer" onClick={() => { if (onOpenDetail && (item.pib_id || item.cn_id)) onOpenDetail(item.pib_id || item.cn_id, item.pib_id ? "pib" : "cn"); else window.location.href = '/dashboard'; }}>View Detail →</span>
+                                                <span className="text-emerald-700 font-medium underline cursor-pointer" onClick={() => openItemDetail(item)}>View Detail →</span>
                                             </div>
                                         </div>
                                     )
