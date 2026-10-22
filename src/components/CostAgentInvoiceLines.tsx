@@ -196,18 +196,27 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
 
               {/* Invoice vs history -- SATU kolom: Invoice | pill % | History */}
               <div className="[grid-column:2] [grid-row:2] px-3 pb-2 @min-[640px]:[grid-column:3] @min-[640px]:[grid-row:1] @min-[640px]:py-3 @min-[640px]:border-l @min-[640px]:border-[#EFE6E0] @container" data-line-amounts>
-                {/* sel = container sendiri: lebar sel >= 270px -> Invoice | pill | History sebaris; lebih sempit -> pill turun di bawah, tengah. */}
-                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] @min-[270px]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-x-2 gap-y-1 items-start">
-                  <div className="min-w-0 [grid-column:1] [grid-row:1]" data-invoice-amount>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B]">Invoice</div>
-                    <div className="text-[14.5px] font-extrabold text-[#3B1B3D] tabular-nums whitespace-nowrap">{fmtMoney(l.amount, currency)}</div>
-                  </div>
-                  <div className="[grid-column:1/span_2] [grid-row:2] flex justify-center @min-[270px]:[grid-column:2] @min-[270px]:[grid-row:1] @min-[270px]:pt-3.5"><DiffPill line={l} pct={mainDiff?.pct ?? null} /></div>
-                  <div className="min-w-0 text-right [grid-column:2] [grid-row:1] @min-[270px]:[grid-column:3]" data-history-amount>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B]">History</div>
-                    <div className="text-[13.5px] text-[#6E5E70] tabular-nums whitespace-nowrap">{main ? fmtMoney(main.amount, currency) : '—'}</div>
-                  </div>
-                </div>
+                {/* sel = container sendiri: lebar sel >= 270px -> Invoice | pill | History sebaris; lebih sempit -> pill turun di bawah, tengah.
+                    Pill 3 digit (>= 100%, mis. "↑ 360,6%") lebih lebar -> ambang sebaris dinaikkan ke 340px supaya nominal tidak tertimpa (2026-10-22). */}
+                {(() => {
+                  const wide = Math.abs(mainDiff?.pct ?? 0) >= 100
+                  const grid = wide ? '@min-[340px]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]' : '@min-[270px]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]'
+                  const pillPos = wide ? '@min-[340px]:[grid-column:2] @min-[340px]:[grid-row:1] @min-[340px]:pt-3.5' : '@min-[270px]:[grid-column:2] @min-[270px]:[grid-row:1] @min-[270px]:pt-3.5'
+                  const histPos = wide ? '@min-[340px]:[grid-column:3]' : '@min-[270px]:[grid-column:3]'
+                  return (
+                    <div className={`grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] ${grid} gap-x-2 gap-y-1 items-start`}>
+                      <div className="min-w-0 [grid-column:1] [grid-row:1]" data-invoice-amount>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B]">Invoice</div>
+                        <div className="text-[14.5px] font-extrabold text-[#3B1B3D] tabular-nums whitespace-nowrap">{fmtMoney(l.amount, currency)}</div>
+                      </div>
+                      <div className={`[grid-column:1/span_2] [grid-row:2] flex justify-center ${pillPos}`}><DiffPill line={l} pct={mainDiff?.pct ?? null} /></div>
+                      <div className={`min-w-0 text-right [grid-column:2] [grid-row:1] ${histPos}`} data-history-amount>
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B]">History</div>
+                        <div className="text-[13.5px] text-[#6E5E70] tabular-nums whitespace-nowrap">{main ? fmtMoney(main.amount, currency) : '—'}</div>
+                      </div>
+                    </div>
+                  )
+                })()}
               </div>
 
               {/* Main reference -- kolom sendiri (juga saat PDF tampil) */}
