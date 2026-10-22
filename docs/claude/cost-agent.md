@@ -61,6 +61,7 @@ Group `'Cost Agent'` (PAGE_GROUPS & sidebar: setelah SPB, sebelum Audit Trail; i
 |---|---|---|---|---|
 | `cost_agent` | `/api/n8n-proxy-start` (multipart) | `VITE_N8N_COST_AGENT_WEBHOOK_URL` (`/webhook/proses-dokumen-cost-agent`) | `cost_agent_invoice` | `n8n_cost_agent_webhook_url` |
 | `cost_agent_voyage` | `/api/n8n-proxy-start` (multipart) | `VITE_N8N_COST_AGENT_VOYAGE_WEBHOOK_URL` (`/webhook/baca-voyage-report-cost-agent`) | `cost_agent_voyage` | `n8n_cost_agent_voyage_webhook_url` |
+| `cost_agent_noon` | `/api/n8n-proxy-start` (multipart) | `VITE_N8N_COST_AGENT_NOON_WEBHOOK_URL` (`/webhook/baca-noon-report-cost-agent`; cadangan kode di `WEBHOOK_FALLBACK_URLS`) | `cost_agent_voyage` | `n8n_cost_agent_noon_webhook_url` |
 | `cost_agent_voyage_pull` | `/api/n8n-proxy-json` | `VITE_N8N_COST_AGENT_VOYAGE_PULL_URL` (`/webhook/tarik-voyage-cost-agent`) | `cost_agent_voyage` | `n8n_cost_agent_voyage_pull_url` |
 | `cost_agent_payment` | `/api/n8n-proxy-json` | `VITE_N8N_COST_AGENT_PAYMENT_URL` (`/webhook/posting-pembayaran-cost-agent`) | `cost_agent_payment` | `n8n_cost_agent_payment_url` |
 
@@ -162,6 +163,28 @@ File: `src/pages/cost-agent/CostAgentVoyagePage.tsx` (halaman), `src/components/
 - **Diuji 2026-10-13**: `tsc` bersih, `vite build` sukses, parse template via helper (3 voyage, 0 problem, cargo benar),
   formatter/qty/validasi waktu dicek di Node. App jalan di dev (route, template, proxy 401 tanpa token). BELUM dites ke DB
   (sql/054 belum dijalankan) & n8n.
+
+## Voyages — Noon Report (2026-10-22; sisi aplikasi. Backend SQL/n8n dari user SUDAH ada di DB production: view punya `input_source`, `fn_cost_agent_get_voyage` membawa `noon`, dicek via MCP)
+
+Voyage punya 2 sumber terpisah: dokumen SOF/Time Sheet (Medan, AI) dan **Noon Report Excel** (Jakarta, dibaca KODE di n8n). Voyage noon selalu
+`draft` + `input_source = 'noon_report'`; semua jam port call, handling/port stay & cargo = `null` (noon hanya kondisi jam 12.00; tanggal kegiatan ada di
+`remarks` port call + daftar harian `noon`).
+- **Upload**: tombol "Upload Noon Report" (Voyages, `canEdit('cost_agent_voyage')`) -> `CostAgentNoonUploadModal.tsx` (HANYA .xlsx/.xlsm, multi-file, maks 50 MB/file
+  ditolak di dialog sebelum kirim; company opsional). `costAgentUpload('cost_agent_noon', ...)` -> proxy `cost_agent_noon` (tabel di atas; `server/routes/n8n.ts`:
+  `WEBHOOK_ENV_KEYS`, `WEBHOOK_FALLBACK_URLS`, `UPLOAD_ACCESS`). Beda dgn tipe lain: gagal dari n8n `{ok:false,error}` (mis. HTTP 502) diteruskan sbg `pesan`
+  apa adanya (tipe lain: 502/504 diubah jadi warning "timeout"). Klik ganda dicegah (`sendingRef`); tanpa timeout klien (fetch bawaan).
+- **Hasil**: ringkasan "N port calls, N days saved, N days skipped", tabel voyage/port call, warnings (kuning, gabungan `voyages[].warnings` + `ai.warnings`),
+  errors (merah), notes, "Skipped days (n)" collapsible (`ai.skipped`). `ok:true` + `saved:0` = info "No loading/discharge days found in this file" (BUKAN error).
+  Teks server (Indonesia) ditampilkan apa adanya. Selesai (saved > 0): filter ke Draft + semua bulan, list di-refresh (pola Read report AI).
+- **List**: kolom view `cost_agent_voyage_list_v.input_source` -> badge "Noon Report" (kartu & List); filter baru "Input" (All / Noon Report / Documents & manual =
+  `input_source IS NULL`, lewat param baru `isNull` di `fetchCostAgentList`) -- terpisah dari filter "Source" (kolom `source`).
+- **Drawer**: `fn_cost_agent_get_voyage` kini membawa array `noon[]` (tipe `CostAgentNoonDay`) -> section "Daily Noon Report" (Date, Doc No, Location + "STS with <partner>",
+  ROB/Consumption/Received x LSFO/LSMGO/MDO/HSFO/FW, Weather, ikon ⚠ tooltip `warnings`; footer Total consumption; angka maks. 3 desimal, null = "—"; scroll horizontal).
+  Voyage noon (`isNoonReportVoyage`: `input_source` atau `extra.input`) -> banner info + cargo kosong "Cargo is not available in noon reports."; `remarks` port call tampil di
+  bawah nama pelabuhan (rentang tanggal, no. dokumen, kapal STS). Waktu null otomatis "—" (`fmtDateTimePort`/`fmtHours`). Confirm/Edit manual tetap seperti draft lain.
+- Webhook Settings: kartu baru "Cost Agent — Upload Noon Report (Excel)". Env baru `VITE_N8N_COST_AGENT_NOON_WEBHOOK_URL` (repo tidak punya `.env.example`; `.env` lokal sudah
+  ditambah, **production perlu env ini atau pakai cadangan kode** -- server perlu restart).
+- Diuji: `tsc` bersih, `vite build` sukses. BELUM dites dgn n8n/file asli (`NOON_REPORT_OKTOBER_2026_1.xlsx`).
 
 ## Agency Invoices (`/cost-agent/invoice/:id?`, Prompt 3, 2026-10-13)
 

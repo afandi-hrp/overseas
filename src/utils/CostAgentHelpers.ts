@@ -47,6 +47,8 @@ export interface CostAgentVoyageListRow {
   invoice_count: number
   next_port_code: string | null
   next_eta_at: string | null
+  // 'noon_report' = voyage draft dari Noon Report Excel (jam/handling/cargo kosong); null = dokumen SOF/Time Sheet atau manual.
+  input_source?: string | null
   updated_at: string
 }
 
@@ -140,6 +142,27 @@ export interface CostAgentVoyageCall {
 export interface CostAgentVoyageCargo {
   id: number; voyage_id: number; call_id: number | null; seq: number; product: string; qty: number; unit: string; remarks: string | null
 }
+// Baris harian Noon Report (fn_cost_agent_get_voyage -> `noon`, urut tanggal). Angka sudah number; null = kosong. `*_lo` = teks (SYS ME / CYL OIL / SYS AE).
+export interface CostAgentNoonDay {
+  report_date: string
+  doc_no: string | null
+  leg_type: string | null
+  leg_seq: number | null
+  call_id: number | null
+  location: string | null
+  partner: string | null
+  weather: string | null
+  latitude: number | null
+  longitude: number | null
+  master: string | null
+  rob_hsfo: number | null; rob_lsfo: number | null; rob_mdo: number | null; rob_lsmgo: number | null; rob_fw: number | null; rob_lo: string | null
+  recv_hsfo: number | null; recv_lsfo: number | null; recv_mdo: number | null; recv_lsmgo: number | null; recv_fw: number | null; recv_lo: string | null
+  cons_hsfo: number | null; cons_lsfo: number | null; cons_mdo: number | null; cons_lsmgo: number | null; cons_fw: number | null; cons_lo: string | null
+  nav?: Record<string, unknown> | null
+  cargo?: unknown[] | null
+  warnings: string[] | null
+  source_file: string | null
+}
 export interface CostAgentVoyageDetail {
   id: number
   vessel_id: number
@@ -159,8 +182,11 @@ export interface CostAgentVoyageDetail {
   source: CostAgentVoyageSource
   remarks: string | null
   external_ref: string | null
+  input_source?: string | null
+  extra?: Record<string, any> | null
   calls: CostAgentVoyageCall[]
   cargo: CostAgentVoyageCargo[]
+  noon?: CostAgentNoonDay[] | null
   cargo_total: number | null
   created_at: string
   updated_at: string
@@ -354,6 +380,7 @@ export interface CostAgentListParams {
   eq?: Record<string, string | number | boolean | (string | number)[] | null | undefined>
   gte?: Record<string, string | number | null | undefined>
   lte?: Record<string, string | number | null | undefined>
+  isNull?: string[] // kolom yang harus NULL (`.is(k, null)`)
   orderBy?: string
   ascending?: boolean
 }
@@ -366,6 +393,7 @@ export async function fetchCostAgentList<T>(table: string, p: CostAgentListParam
   })
   Object.entries(p.gte || {}).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') q = q.gte(k, v) })
   Object.entries(p.lte || {}).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') q = q.lte(k, v) })
+  ;(p.isNull || []).forEach(k => { q = q.is(k, null) })
   const term = (p.search || '').trim()
   if (term && p.searchCols?.length) q = q.or(p.searchCols.map(c => `${c}.ilike.%${orSafe(term)}%`).join(','))
   q = q.order(p.orderBy || 'updated_at', { ascending: !!p.ascending })
@@ -534,6 +562,7 @@ export const costAgentMarkPaid = (invoiceId: number, paidAt: string, paidRef: st
 export const COST_AGENT_WEBHOOK_STORAGE_KEYS = {
   cost_agent: 'n8n_cost_agent_webhook_url',
   cost_agent_voyage: 'n8n_cost_agent_voyage_webhook_url',
+  cost_agent_noon: 'n8n_cost_agent_noon_webhook_url',
   cost_agent_voyage_pull: 'n8n_cost_agent_voyage_pull_url',
   cost_agent_payment: 'n8n_cost_agent_payment_url',
 } as const
@@ -558,7 +587,7 @@ async function readProxyResponse(res: Response): Promise<any> {
 
 // Upload multipart (invoice baru / dokumen susulan / voyage report). `meta` -> field `cost_agent_meta` (JSON, maks 4 KB);
 // `uploaded_by` diisi server dari sesi login. Respons n8n dikembalikan apa adanya (mis. {job_id, invoice_id, mode}).
-export async function costAgentUpload(type: 'cost_agent' | 'cost_agent_voyage', files: File[], meta: Record<string, unknown>): Promise<any> {
+export async function costAgentUpload(type: 'cost_agent' | 'cost_agent_voyage' | 'cost_agent_noon', files: File[], meta: Record<string, unknown>): Promise<any> {
   const fd = new FormData()
   files.forEach((f, i) => fd.append('file_' + i, f))
   fd.append('cost_agent_meta', JSON.stringify(meta))
@@ -601,6 +630,30 @@ export const VOYAGE_SOURCE_LABEL: Record<CostAgentVoyageSource, string> = { manu
 export const ACTIVITY_LABEL: Record<CostAgentActivity, string> = {
   muat: 'Load', bongkar: 'Discharge', bongkar_muat: 'Load & Discharge', sts: 'STS', bunker: 'Bunker', docking: 'Docking', lainnya: 'Other',
 }
+
+// ─── Noon Report (2026-10-22) ───────────────────────────────────────────────────────────────────────────────────
+// Respons webhook n8n `baca-noon-report-cost-agent` (via proxy cost_agent_noon). Teks warnings/reason/notes dari server berbahasa
+// Indonesia -- ditampilkan apa adanya.
+export interface CostAgentNoonUploadResult {
+  ok?: boolean
+  saved?: number
+  days_saved?: number
+  skipped_days?: number
+  voyages?: {
+    vessel_name?: string | null; voyage_no?: string | null; voyage_id?: number | null; call_id?: number | null; seq?: number | null
+    activity?: string | null; status?: string | null; created_voyage?: boolean; days?: number | null
+    warnings?: ({ msg?: string } | string)[] | null
+  }[]
+  errors?: ({ error?: string; voyage_no?: string | null; doc_no?: string | null; port?: string | null } | string)[]
+  notes?: (string | { msg?: string })[]
+  ai?: {
+    summary?: { sheets?: number; saved_days?: number; calls?: number; skipped_days?: number }
+    warnings?: ({ msg?: string } | string)[]
+    skipped?: { date?: string; reason?: string }[]
+  }
+}
+export const isNoonReportVoyage = (v: { input_source?: string | null; extra?: Record<string, any> | null } | null | undefined): boolean =>
+  !!v && (v.input_source === 'noon_report' || v.extra?.input === 'noon_report')
 
 export const COMPARE_FLAG_META: Record<CostAgentCompareFlag, { label: string; tone: Tone }> = {
   sesuai: { label: 'In line', tone: 'green' },

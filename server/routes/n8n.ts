@@ -22,12 +22,15 @@ const WEBHOOK_ENV_KEYS: Record<string, string> = {
   bunker: 'VITE_N8N_BUNKER_WEBHOOK_URL',
   cost_agent: 'VITE_N8N_COST_AGENT_WEBHOOK_URL',
   cost_agent_voyage: 'VITE_N8N_COST_AGENT_VOYAGE_WEBHOOK_URL',
+  // Noon Report Excel (2026-10-22): voyage draft dari laporan noon (n8n membaca Excel dgn kode, bukan AI).
+  cost_agent_noon: 'VITE_N8N_COST_AGENT_NOON_WEBHOOK_URL',
   cost_agent_voyage_pull: 'VITE_N8N_COST_AGENT_VOYAGE_PULL_URL',
   cost_agent_payment: 'VITE_N8N_COST_AGENT_PAYMENT_URL',
 };
 // Cadangan bila env belum di-set (URL webhook bukan rahasia; kunci env tetap diutamakan).
 const WEBHOOK_FALLBACK_URLS: Record<string, string> = {
   sea_air_susulan: 'https://automation.waruna-group.co.id/webhook/proses-susulan-seaair',
+  cost_agent_noon: 'https://automation.waruna-group.co.id/webhook/baca-noon-report-cost-agent',
 };
 const defaultWebhookUrlFor = (type: string): string | undefined =>
   process.env[Object.hasOwn(WEBHOOK_ENV_KEYS, type) ? WEBHOOK_ENV_KEYS[type] : 'VITE_N8N_WEBHOOK_URL'] || WEBHOOK_FALLBACK_URLS[type];
@@ -61,6 +64,7 @@ const UPLOAD_ACCESS: Record<string, AccessRule[]> = {
   // Cost Agent: SATU webhook utk invoice baru DAN dokumen susulan (dibedakan cost_agent_meta.mode).
   cost_agent: [{ key: 'cost_agent_invoice', edit: true }],
   cost_agent_voyage: [{ key: 'cost_agent_voyage', edit: true }],
+  cost_agent_noon: [{ key: 'cost_agent_voyage', edit: true }],
 };
 
 // Aksi JSON tanpa file (/api/n8n-proxy-json).
@@ -214,7 +218,13 @@ n8nRouter.post('/n8n-proxy-start', limitUploadSize, requireAccess(uploadRules), 
       data = responseText;
     }
 
-    if (response.ok) {
+    // Noon Report: n8n membalas gagal sbg {ok:false, error} (HTTP 502 dst.) -> teruskan `error` apa adanya sbg `pesan`
+    // (jangan diganti pesan "timeout" generik di bawah).
+    const noonErr = webhookType === 'cost_agent_noon' && !response.ok && data && typeof data === 'object' && typeof (data as any).error === 'string'
+      ? String((data as any).error).slice(0, 1000) : null;
+    if (noonErr) {
+      res.status(response.status).json({ status: 'error', pesan: noonErr, data });
+    } else if (response.ok) {
       res.json(data);
     } else if (response.status === 502 || response.status === 504) {
       res.json({ status: 'warning', pesan: 'Dokumen terkirim, namun N8N server timeout (Bad Gateway). Proses ekstraksi Sea & Air mungkin masih berjalan di background.', data });

@@ -5,7 +5,7 @@
 // 2026-10-14 (keputusan user): tampilan Card = DEFAULT (List tetap ada), klik kartu -> panel detail SAMPING (drawer `embedded`, pola
 // panel Invoice Recap Courier: daftar 35% kiri, panel kanan; klik kartu lain = ganti isi). List / Monthly Report tetap drawer overlay.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { RefreshCw, Plus, FileSpreadsheet, CloudDownload, Sparkles, X } from 'lucide-react'
+import { RefreshCw, Plus, FileSpreadsheet, CloudDownload, Sparkles, X, FileUp } from 'lucide-react'
 import { useAuth } from '../../lib/AuthContext'
 import PaginationFooter from '../../components/PaginationFooter'
 import { LoadingTableRow } from '../../components/LoadingState'
@@ -16,6 +16,7 @@ import CostAgentVoyageForm from '../../components/CostAgentVoyageForm'
 import CostAgentVoyageDrawer from '../../components/CostAgentVoyageDrawer'
 import CostAgentUploadModal from '../../components/CostAgentUploadModal'
 import CostAgentVoyageImportModal from '../../components/CostAgentVoyageImportModal'
+import CostAgentNoonUploadModal from '../../components/CostAgentNoonUploadModal'
 import CostAgentVoyageMonthlyReport from '../../components/CostAgentVoyageMonthlyReport'
 import { CostAgentVoyagePullModal, CostAgentVoyageAiModal } from '../../components/CostAgentVoyageSourceModals'
 import {
@@ -60,10 +61,12 @@ export default function CostAgentVoyagePage() {
   const [month, setMonth] = useState(currentMonth())
   const [status, setStatus] = useState<'' | CostAgentVoyageStatus>('')
   const [source, setSource] = useState<'' | CostAgentVoyageSource>('')
+  // Input (2026-10-22): '' = semua | noon_report = dari Noon Report Excel | documents = dokumen SOF/Time Sheet & manual (input_source NULL).
+  const [inputSrc, setInputSrc] = useState<'' | 'noon_report' | 'documents'>('')
   const [view, setView] = useState<'card' | 'list' | 'monthly'>('card')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
-  useEffect(() => { setPage(1) }, [debounced, company, vesselId, month, status, source, pageSize])
+  useEffect(() => { setPage(1) }, [debounced, company, vesselId, month, status, source, inputSrc, pageSize])
   const vesselOptions = useMemo(() => vessels.filter(v => !company || v.company_code === company), [vessels, company])
 
   // ── Data ──
@@ -79,7 +82,8 @@ export default function CostAgentVoyagePage() {
     try {
       const r = await fetchCostAgentVoyageList({
         page, pageSize, search: debounced,
-        eq: { company_code: company, vessel_id: vesselId, report_month: month ? `${month}-01` : null, status, source },
+        eq: { company_code: company, vessel_id: vesselId, report_month: month ? `${month}-01` : null, status, source, input_source: inputSrc === 'noon_report' ? 'noon_report' : null },
+        isNull: inputSrc === 'documents' ? ['input_source'] : undefined,
         orderBy: 'report_month', ascending: false,
       })
       if (seq !== seqRef.current) return
@@ -89,7 +93,7 @@ export default function CostAgentVoyagePage() {
     } finally {
       if (seq === seqRef.current) setLoading(false)
     }
-  }, [page, pageSize, debounced, company, vesselId, month, status, source])
+  }, [page, pageSize, debounced, company, vesselId, month, status, source, inputSrc])
   useEffect(() => { if (view !== 'monthly') fetchList() }, [fetchList, view, reloadKey])
   const refresh = () => setReloadKey(k => k + 1)
 
@@ -105,6 +109,7 @@ export default function CostAgentVoyagePage() {
   const [showImport, setShowImport] = useState(false)
   const [showPull, setShowPull] = useState(false)
   const [showAi, setShowAi] = useState(false)
+  const [showNoon, setShowNoon] = useState(false)
   // Upload invoice per port call LANGSUNG dari halaman ini (2026-10-14) -- form & proxy n8n SAMA halaman Agency Invoices.
   const [upload, setUpload] = useState<{ callId: number; company: string } | null>(null)
   const openUpload = (callId: number, companyCode: string | null) => setUpload({ callId, company: companyCode || company || '' })
@@ -163,12 +168,20 @@ export default function CostAgentVoyagePage() {
                 {(Object.keys(VOYAGE_SOURCE_LABEL) as CostAgentVoyageSource[]).map(s => <option key={s} value={s}>{VOYAGE_SOURCE_LABEL[s]}</option>)}
               </select>
             </FilterField>
+            <FilterField label="Input" labelFrom={1750}>
+              <select aria-label="Input source" className={FILTER_SELECT} value={inputSrc} onChange={e => setInputSrc(e.target.value as any)}>
+                <option value="">All input</option>
+                <option value="noon_report">Noon Report</option>
+                <option value="documents">Documents &amp; manual</option>
+              </select>
+            </FilterField>
             <FilterSegment value={view} onChange={changeView} options={[{ value: 'card', label: 'Card' }, { value: 'list', label: 'List' }, { value: 'monthly', label: 'Monthly Report', short: 'Report' }]} />
             <FilterButton icon={RefreshCw} label="Refresh" labelFrom={2000} onClick={refresh} disabled={loading && view !== 'monthly'} spin={loading && view !== 'monthly'} />
             {canEditVoyage && (
               <>
                 <FilterButton icon={CloudDownload} label="Pull" labelFrom={2000} title="Pull voyages from the source system" onClick={() => setShowPull(true)} />
                 <FilterButton icon={Sparkles} label="Read report (AI)" labelFrom={2000} title="Read a Voyage Report (PDF/photo) with AI" onClick={() => setShowAi(true)} />
+                <FilterButton icon={FileUp} label="Upload Noon Report" short="Noon" labelFrom={2000} title="Upload a Noon Report Excel (.xlsx / .xlsm)" onClick={() => setShowNoon(true)} />
                 <FilterButton icon={FileSpreadsheet} label="Import Excel" labelFrom={2000} onClick={() => setShowImport(true)} />
                 <FilterButton icon={Plus} label="New voyage" short="New" variant="primary" onClick={() => setForm({ id: null })} />
               </>
@@ -221,6 +234,7 @@ export default function CostAgentVoyagePage() {
                           <td className={TD}>
                             <div className="font-semibold whitespace-nowrap">{r.vessel_name}</div>
                             {r.vessel_type && <div className="text-[11px] text-[#6E5E70] whitespace-nowrap">{r.vessel_type}</div>}
+                            {r.input_source === 'noon_report' && <div className="mt-0.5"><Chip tone="blue" title="Created from a Noon Report">Noon Report</Chip></div>}
                           </td>
                           <td className={`${TD} whitespace-nowrap`}>
                             <span className="font-semibold">{r.voyage_no}</span>
@@ -274,6 +288,10 @@ export default function CostAgentVoyagePage() {
       )}
       {showImport && (
         <CostAgentVoyageImportModal actor={actor} onClose={() => setShowImport(false)} onImported={n => { showToast(`${n} voyage${n === 1 ? '' : 's'} imported.`); refresh() }} />
+      )}
+      {showNoon && (
+        <CostAgentNoonUploadModal companies={companies} defaultCompany={company} onClose={() => setShowNoon(false)}
+          onDone={() => { setStatus('draft'); setMonth(''); setView(v => (v === 'monthly' ? 'card' : v)); refresh() }} />
       )}
       {showPull && <CostAgentVoyagePullModal vessels={vessels} onClose={() => setShowPull(false)} onDone={refresh} />}
       {showAi && (

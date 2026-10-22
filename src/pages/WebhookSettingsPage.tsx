@@ -5,7 +5,7 @@ import { COST_AGENT_WEBHOOK_STORAGE_KEYS } from '../utils/CostAgentHelpers';
 import Greeting from '../components/Greeting';
 
 type WebhookType = 'courier' | 'sea_air' | 'far_overseas_air' | 'bunker'
-  | 'cost_agent' | 'cost_agent_voyage' | 'cost_agent_voyage_pull' | 'cost_agent_payment';
+  | 'cost_agent' | 'cost_agent_voyage' | 'cost_agent_noon' | 'cost_agent_voyage_pull' | 'cost_agent_payment';
 
 const WEBHOOK_META: Record<WebhookType, { label: string; icon: React.ElementType }> = {
   courier: { label: 'Courier', icon: Plane },
@@ -14,6 +14,7 @@ const WEBHOOK_META: Record<WebhookType, { label: string; icon: React.ElementType
   bunker: { label: 'Bunker', icon: Fuel },
   cost_agent: { label: 'Cost Agent — Agency Invoice (invoice & susulan)', icon: Anchor },
   cost_agent_voyage: { label: 'Cost Agent — Read Voyage Report (AI)', icon: Anchor },
+  cost_agent_noon: { label: 'Cost Agent — Upload Noon Report (Excel)', icon: Anchor },
   cost_agent_voyage_pull: { label: 'Cost Agent — Pull Voyages (source system)', icon: Anchor },
   cost_agent_payment: { label: 'Cost Agent — Payment Posting (AP/PV)', icon: Anchor },
 };

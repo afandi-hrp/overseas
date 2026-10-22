@@ -8,18 +8,92 @@
 import React, { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
-import { X, Pencil, UploadCloud, CheckCircle2, Ship } from 'lucide-react'
+import { X, Pencil, UploadCloud, CheckCircle2, Ship, AlertTriangle } from 'lucide-react'
 import { StatusChip } from './CostAgentUi'
 import { Chip, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_LABEL } from './SeaAirAuditUi'
 import { LoadingState } from './LoadingState'
 import {
-  costAgentGetVoyage, fmtDateTimePort, fmtHours, fmtNumber, fmtMoney, fmtReportMonth, ACTIVITY_LABEL, VOYAGE_SOURCE_LABEL,
-  type CostAgentPort, type CostAgentVoyageDetail,
+  costAgentGetVoyage, fmtDateTimePort, fmtHours, fmtNumber, fmtMoney, fmtReportMonth, fmtDate, isNoonReportVoyage, ACTIVITY_LABEL, VOYAGE_SOURCE_LABEL,
+  type CostAgentPort, type CostAgentVoyageDetail, type CostAgentNoonDay,
 } from '../utils/CostAgentHelpers'
 
 const TIMES = [
   ['arrived_at', 'Arrival'], ['berthed_at', 'Berthed'], ['commenced_at', 'Commenced'], ['completed_at', 'Completed'], ['departed_at', 'Departure'],
 ] as const
+
+// Bahan bakar Noon Report: label kolom -> akhiran field (rob_/cons_/recv_ + akhiran). Urutan kolom sesuai permintaan user.
+const NOON_FUELS = [['LSFO', 'lsfo'], ['LSMGO', 'lsmgo'], ['MDO', 'mdo'], ['HSFO', 'hsfo'], ['FW', 'fw']] as const
+const NOON_GROUPS = [['ROB', 'rob'], ['Consumption', 'cons'], ['Received', 'recv']] as const
+const noonNum = (d: CostAgentNoonDay, pre: string, k: string): number | null => {
+  const v = (d as any)[`${pre}_${k}`]
+  return v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Number(v)
+}
+const NOON_TH = 'px-2 py-1.5 text-[10.5px] font-semibold uppercase tracking-[0.05em] text-[#6E5E70] whitespace-nowrap bg-[#FBF7F4]'
+
+// "Daily Noon Report" (2026-10-22): data harian jam 12.00 dari `noon` (fn_cost_agent_get_voyage); null = "—"; angka maks. 3 desimal.
+function DailyNoonReport({ days }: { days: CostAgentNoonDay[] }) {
+  const totals = NOON_FUELS.map(([, k]) => {
+    const vals = days.map(d => noonNum(d, 'cons', k)).filter((v): v is number => v !== null)
+    return vals.length ? vals.reduce((a, b) => a + b, 0) : null
+  })
+  return (
+    <section data-daily-noon>
+      <h3 className="text-[14px] font-bold text-[#3B1B3D] mb-2">Daily Noon Report</h3>
+      <div className="overflow-x-auto rounded-lg border border-[#EADFD6]">
+        <table className="min-w-full text-[12px]">
+          <thead>
+            <tr>
+              <th className={`${NOON_TH} text-left`} rowSpan={2}>Date</th>
+              <th className={`${NOON_TH} text-left`} rowSpan={2}>Doc No</th>
+              <th className={`${NOON_TH} text-left`} rowSpan={2}>Location</th>
+              {NOON_GROUPS.map(([g]) => <th key={g} colSpan={NOON_FUELS.length} className={`${NOON_TH} text-center border-l border-[#EADFD6]`}>{g}</th>)}
+              <th className={`${NOON_TH} text-left border-l border-[#EADFD6]`} rowSpan={2}>Weather</th>
+              <th className={`${NOON_TH} text-center`} rowSpan={2} title="Warnings">⚠</th>
+            </tr>
+            <tr>
+              {NOON_GROUPS.flatMap(([g]) => NOON_FUELS.map(([f], i) => (
+                <th key={g + f} className={`${NOON_TH} text-right ${i === 0 ? 'border-l border-[#EADFD6]' : ''}`}>{f}</th>
+              )))}
+            </tr>
+          </thead>
+          <tbody>
+            {days.map((d, i) => {
+              const warns = (d.warnings || []).filter(Boolean)
+              return (
+                <tr key={`${d.report_date}-${d.doc_no}-${i}`} className="border-t border-[#F3EEEA] text-[#3B1B3D] align-top">
+                  <td className="px-2 py-1.5 whitespace-nowrap tabular-nums font-semibold">{fmtDate(d.report_date)}</td>
+                  <td className="px-2 py-1.5 whitespace-nowrap">{d.doc_no || '—'}</td>
+                  <td className="px-2 py-1.5 min-w-[150px]">
+                    <div>{d.location || '—'}</div>
+                    {d.partner && <div className="text-[11px] text-[#6E5E70]">STS with {d.partner}</div>}
+                  </td>
+                  {NOON_GROUPS.flatMap(([g, pre]) => NOON_FUELS.map(([f, k], j) => (
+                    <td key={g + f} className={`px-2 py-1.5 text-right tabular-nums whitespace-nowrap ${j === 0 ? 'border-l border-[#F3EEEA]' : ''}`}>{fmtNumber(noonNum(d, pre, k), 3)}</td>
+                  )))}
+                  <td className="px-2 py-1.5 border-l border-[#F3EEEA] min-w-[130px]">{d.weather || '—'}</td>
+                  <td className="px-2 py-1.5 text-center">
+                    {warns.length > 0 && <span className="inline-flex text-[#B7791F] cursor-help" title={warns.join('\n')} aria-label={`${warns.length} warning(s): ${warns.join('; ')}`}><AlertTriangle size={14} /></span>}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-[#EADFD6] bg-[#FBF7F4] font-bold text-[#3B1B3D]">
+              <td className="px-2 py-1.5" colSpan={3}>Total consumption</td>
+              {NOON_GROUPS.flatMap(([g, pre]) => NOON_FUELS.map(([f], j) => (
+                <td key={g + f} className={`px-2 py-1.5 text-right tabular-nums whitespace-nowrap ${j === 0 ? 'border-l border-[#EADFD6]' : ''}`}>
+                  {pre === 'cons' ? fmtNumber(totals[j], 3) : ''}
+                </td>
+              )))}
+              <td colSpan={2} />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </section>
+  )
+}
 
 export default function CostAgentVoyageDrawer({ voyageId, ports, reloadKey, canEdit, canUploadInvoice, onClose, onEdit, embedded = false, onUploadInvoice }: {
   embedded?: boolean
@@ -53,6 +127,8 @@ export default function CostAgentVoyageDrawer({ voyageId, ports, reloadKey, canE
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  const isNoon = isNoonReportVoyage(data)
+  const noonDays = data?.noon || []
   const nextTz = data?.next_port_id ? ports.find(p => p.id === data.next_port_id)?.tz : null
   const cargoByUnit = new Map<string, number>()
   data?.cargo.forEach(g => cargoByUnit.set(g.unit, (cargoByUnit.get(g.unit) || 0) + Number(g.qty || 0)))
@@ -83,6 +159,11 @@ export default function CostAgentVoyageDrawer({ voyageId, ports, reloadKey, canE
             <p className="text-sm text-[#6E5E70]">Voyage not found.</p>
           ) : (
             <>
+              {isNoon && (
+                <div className="rounded-lg border border-[#C9D6F2] bg-[#EEF3FD] px-3 py-2 text-[12px] text-[#2F4FA8]" data-noon-banner>
+                  Created from Noon Report. Arrival/berth/commence/complete/departure times and cargo are not available from this source — fill them in manually if needed.
+                </div>
+              )}
               {data.status === 'draft' && (
                 <div className="rounded-lg border border-[#F2D58A] bg-[#FFF8E6] px-3 py-2 text-[12px] text-[#7A4F00]">
                   Draft — check the data (e.g. read by AI or imported), then open Edit and click <b>Confirm</b>.
@@ -107,6 +188,7 @@ export default function CostAgentVoyageDrawer({ voyageId, ports, reloadKey, canE
                         <span className="text-[12px] text-[#6E5E70]">{c.port_name}</span>
                         <Chip tone={c.activity === 'muat' ? 'green' : 'blue'}>{ACTIVITY_LABEL[c.activity] || c.activity}</Chip>
                       </div>
+                      {c.remarks && <p className="mt-0.5 text-[11.5px] text-[#6E5E70] whitespace-pre-wrap" data-call-remarks>{c.remarks}</p>}
                       {/* 2026-10-16 (permintaan user): port call = 3 kolom (container query panel >= 720px; di bawahnya bertumpuk):
                           jam (Arrival…Departure + Handling/Port stay) | invoice ter-match | tombol Upload invoice (dulu link teks di bawah). */}
                       <div className="mt-1.5 grid gap-x-4 gap-y-2 @min-[720px]:grid-cols-[auto_minmax(0,1fr)_auto]" data-port-call-cols>
@@ -162,7 +244,7 @@ export default function CostAgentVoyageDrawer({ voyageId, ports, reloadKey, canE
 
               <section>
                 <h3 className="text-[14px] font-bold text-[#3B1B3D] mb-2">Cargo</h3>
-                {data.cargo.length === 0 ? <p className="text-[12px] text-[#8A7A8B] italic">No cargo.</p> : (
+                {data.cargo.length === 0 ? <p className="text-[12px] text-[#8A7A8B] italic">{isNoon ? 'Cargo is not available in noon reports.' : 'No cargo.'}</p> : (
                   <table className="w-full text-[12.5px]">
                     <thead><tr className="text-left"><th className={`${SA_LABEL} pb-1`}>Product</th><th className={`${SA_LABEL} pb-1`}>Discharge</th><th className={`${SA_LABEL} pb-1 text-right`}>Qty</th></tr></thead>
                     <tbody>
@@ -180,6 +262,8 @@ export default function CostAgentVoyageDrawer({ voyageId, ports, reloadKey, canE
                   </table>
                 )}
               </section>
+
+              {noonDays.length > 0 && <DailyNoonReport days={noonDays} />}
             </>
           )}
         </div>

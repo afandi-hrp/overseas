@@ -43,6 +43,7 @@ export const CostAgentVoyageCard: React.FC<{ r: CostAgentVoyageListRow; tzByCode
           <div className="flex items-center gap-1.5 flex-wrap">
             {r.company_code && <PtBadge code={r.company_code} />}
             <span className="text-[11px] font-semibold text-[#6E5E70]">{fmtReportMonth(r.report_month)}</span>
+            {r.input_source === 'noon_report' && <Chip tone="blue" title="Created from a Noon Report">Noon Report</Chip>}
           </div>
           <div className="mt-1 text-[14px] font-bold text-[#3B1B3D] truncate" title={r.vessel_name}>{r.vessel_name}</div>
           <div className="text-[12px] text-[#6E5E70]">
