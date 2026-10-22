@@ -88,8 +88,11 @@ export default function ProcessingQueue({ onOpenDetail, type }: { onOpenDetail?:
             else navigate(`/sea-air/audit?q=${encodeURIComponent(String(item.awb || ''))}`);
             return;
         }
-        if (item.pib_id) { navigate(`/courier/audit?open=${encodeURIComponent(`PIB:${item.pib_id}`)}`); return; }
-        if (item.cn_id) { navigate(`/courier/audit?open=${encodeURIComponent(`CN:${item.cn_id}`)}`); return; }
+        if (item.pib_id || item.cn_id) {
+            if (isAdmin || allowedPageKeys.has('courier_audit')) navigate(`/courier/audit?open=${encodeURIComponent(item.pib_id ? `PIB:${item.pib_id}` : `CN:${item.cn_id}`)}`);
+            else navigate(`/courier/rekapan?q=${encodeURIComponent(String(item.awb || ''))}`); // tanpa akses Audit Courier -> Invoice Recap Courier dgn pencarian AWB
+            return;
+        }
         showToast('This document has no linked record yet.');
     };
 
