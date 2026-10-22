@@ -34,6 +34,10 @@
 - Status di-encode ke `src`/`cmp` supaya `computeStatus` biasa tetap benar: Match -> cmp=src; Mismatch -> cmp=porsi (atau Total BT utk "details != BT");
   Needs BT details -> cmp="" (partial). Meta `bt` (BtCombinedInfo) di `values_json[id].bt` utk tampilan; `planCourierDocRecompute` ikut menimpa cmp kosong & meta
   utk baris ber-`bt` (record tersimpan lama diperbarui lewat Recompute / banner "newer data").
+  **Bug banner "N field(s) have newer document data" muncul lagi setelah Recompute + refresh (2026-10-22)**: `values_json` bertipe **jsonb** -> Postgres
+  mengurutkan ulang key objek `bt`, sehingga `JSON.stringify(comp.bt) !== JSON.stringify(cur.bt)` selalu true walau isi sama (2 baris:
+  `cipl_bt_vendor_item_value` & `cipl_bt_vendor_no_invoice`). Fix: `stableJson` (key terurut) di `CourierDocRecompute.ts`. Pelajaran: bandingkan objek dari
+  jsonb dgn serialisasi berurutan, jangan `JSON.stringify` polos.
 - UI `BtCombinedUi.tsx`, dipasang di `ValidasiModal` (unified List/Columns + variant summary = Unmatched fields): porsi + "BT total" + chip Combined, link
   "BT details" (Columns = popover portal, List = expand), label status "Needs BT details" (amber) + tombol Upload BT details (CourierUploadSusulanModal) / Accept.
   Finance Handover (financeView) tidak menampilkan kolom BT, tapi akurasinya ikut status baru. Teks UI Bahasa Inggris (Rincian BT = "BT details").

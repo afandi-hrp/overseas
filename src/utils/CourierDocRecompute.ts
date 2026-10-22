@@ -8,6 +8,14 @@
 // (Versi 2026-09 hanya mengisi sisi yang masih KOSONG -> nilai yang diganti dokumen susulan tidak ikut terbaru.)
 const filled = (v: any) => v !== null && v !== undefined && String(v).trim() !== '';
 
+// JSON dgn urutan key terurut. Kolom `values_json` bertipe jsonb: Postgres mengurutkan ulang key objek (pendek dulu, lalu abjad),
+// jadi `JSON.stringify` objek `bt` hasil hitung != versi tersimpan walau isinya sama -> banner "newer document data" muncul lagi
+// tiap buka ulang padahal sudah di-Recompute (2026-10-22).
+const stableJson = (v: any): string => JSON.stringify(v, (_k, val) =>
+  val && typeof val === 'object' && !Array.isArray(val)
+    ? Object.keys(val).sort().reduce((o: Record<string, any>, k) => { o[k] = val[k]; return o; }, {})
+    : val);
+
 export type DocRecomputePlan = { next: Record<string, any>; filled: number; updated: number; total: number };
 
 export function planCourierDocRecompute(prev: Record<string, any>, computed: Record<string, any> | null | undefined): DocRecomputePlan {
@@ -22,7 +30,7 @@ export function planCourierDocRecompute(prev: Record<string, any>, computed: Rec
     const isBtRow = 'bt' in comp;
     const takeSrc = !cur.src_edited && filled(comp.src) && String(comp.src) !== String(cur.src ?? '');
     const takeCmp = !cur.cmp_edited && (filled(comp.cmp) || (isBtRow && !!comp.bt)) && String(comp.cmp ?? '') !== String(cur.cmp ?? '');
-    const takeBt = isBtRow && !cur.src_edited && !cur.cmp_edited && JSON.stringify(comp.bt ?? null) !== JSON.stringify(cur.bt ?? null);
+    const takeBt = isBtRow && !cur.src_edited && !cur.cmp_edited && stableJson(comp.bt ?? null) !== stableJson(cur.bt ?? null);
     if (!takeSrc && !takeCmp && !takeBt) return;
     if (takeSrc) { if (filled(cur.src)) nUpdated++; else nFilled++; }
     if (takeCmp) { if (filled(cur.cmp)) nUpdated++; else nFilled++; }
