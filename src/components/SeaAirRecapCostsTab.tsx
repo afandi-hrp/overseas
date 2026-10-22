@@ -367,16 +367,19 @@ export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, is
           return row
         })
         const detail = rows.filter(r => !isSummaryCostRow(r))
-        const hasOver = detail.some(r => r.status === 'OVERCHARGE')
-        const hasUnder = detail.some(r => r.status === 'UNDERCHARGE')
+        // Segmen SURVEYOR (2026-10-22, permintaan user): status tabel HANYA dari baris "SURVEYOR" -- baris KURS BI & NILAI RUPIAH hanya
+        // informasi (tidak ikut status). Surveyor Match -> tabel Match.
+        const statusRows = sec.key === 'SURVEYOR' ? detail.filter(r => String(r.row || '').trim().toUpperCase() === 'SURVEYOR') : detail
+        const hasOver = statusRows.some(r => r.status === 'OVERCHARGE')
+        const hasUnder = statusRows.some(r => r.status === 'UNDERCHARGE')
         const hasIssue = hasOver || hasUnder
-        const anyIncomplete = detail.some(r => r.status !== 'MATCH' && r.status !== 'OVERCHARGE' && r.status !== 'UNDERCHARGE')
+        const anyIncomplete = statusRows.some(r => r.status !== 'MATCH' && r.status !== 'OVERCHARGE' && r.status !== 'UNDERCHARGE') || statusRows.length === 0
         const conf = catatanMap[sec.key] || null
         const vendor = rows.find(r => r.vendor_name)?.vendor_name || ''
         const totalRow = rows.find(r => String(r.row || '').toUpperCase() === 'TOTAL') || rows.find(r => String(r.row || '').toUpperCase() === 'TOTAL KESELURUHAN')
         const amount = totalRow && totalRow.actual != null && totalRow.actual !== '' ? Number(totalRow.actual) : detail.reduce((s, r) => s + (Number(r.actual) || 0), 0)
         const amountRow = totalRow || detail[0] || {}
-        const overSum = detail.filter(r => r.status === 'OVERCHARGE').reduce((s, r) => s + (Number(r.selisih) || 0), 0)
+        const overSum = statusRows.filter(r => r.status === 'OVERCHARGE').reduce((s, r) => s + (Number(r.selisih) || 0), 0)
         let pill: { tone: Tone; text: string }
         if (sec.confirmable && conf) pill = conf.status_konfirmasi === 'MATCH' ? { tone: 'green', text: 'Reviewed · accepted' } : { tone: 'red', text: 'Reviewed · ask vendor' }
         else if (hasOver && hasUnder) pill = { tone: 'amber', text: 'Needs review' }

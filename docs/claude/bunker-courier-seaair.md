@@ -1,5 +1,7 @@
 <!-- Dipindah dari CLAUDE.md 2026-10-06 (CLAUDE.md diringkas; file ini dibaca saat modulnya dikerjakan). -->
 
+- **Cost Validation Recap Sea & Air, segmen Surveyor (2026-10-22)**: pill status tabel (Match/Incomplete/Over/Under, `SeaAirRecapCostsTab.tsx` `statusRows`) HANYA dari baris `SURVEYOR`; baris KURS BI & NILAI RUPIAH tetap tampil tapi tidak ikut status. Statistik/% global sudah mengecualikan SURVEYOR (tak berubah).
+
 ## Kartu Invoice Recap Sea & Air — revisi 2026-10-21 (permintaan user)
 
 - Kartu lebar (`SeaAirRecapCardList.tsx`): teks tetap rata KIRI per kolom (revisi: rata tengah teks ditolak user); di @7xl (zoom out / monitor lebar) semua kolom berlebar `fr` (1 : 1,4 : 1 : 1 : 1)
