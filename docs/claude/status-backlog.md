@@ -4,6 +4,21 @@ Daftar terkini pekerjaan yg belum selesai/ditahan per modul. Item dicoret = sele
 
 <!-- Dipindah dari CLAUDE.md 2026-10-06 (CLAUDE.md diringkas; file ini dibaca saat modulnya dikerjakan). -->
 
+## BACKLOG PERFORMA (dicatat 2026-10-22, MENUNGGU evaluasi user atas commit `90bc252`) — hitung persen Doc/Cost di DATABASE
+
+**Konteks**: kartu Courier (Audit/Recap) & Sea & Air Recap lambat saat tampilan awal (user ukur Network: 101-175 request, ±3,6 MB tak terkompres). Tahap 1 (SUDAH, `90bc252`) = query paralel,
+cache NPWP bersama (`utils/NpwpMaster.ts`), buang query SPTNP dobel -- lihat courier-features.md "Percepatan pemuatan kartu". **Tahap 2 (BELUM, tunggu user selesai evaluasi tahap 1 + ukur ulang
+Network tanpa throttling)**:
+
+1. Hitung persen Doc/Cost per baris DI DB lewat RPC/view (satu panggilan per halaman, balik hanya angka), supaya JSON besar tidak diunduh ke browser:
+   - Courier: `dokumen_validasi.data_validasi_raw` (fallback live-calc `generateValues`/`computeStatus`/`calculatePibStats` di `fetchCourierValidationBadgePct`), `tabel_cost_validasi`,
+     `cost_validasi_review_courier(_item)`, konteks cost (`fetchCourierCostContexts`). Rumus WAJIB sama dgn modal (`computeLiveCostSummary`, Doc match/(match+mismatch), tolak duplikasi formula).
+   - Sea & Air: `dokumen_validasi_matriks_seaair.checks` (`relaxSeaAirDocChecks`+`countedDocChecks`), `cost_validasi_seaair.checks` (`computeSeaAirCostGlobalStats` + konfirmasi per segmen), `dokumen_checklist_seaair`.
+   - Alternatif lebih murah: simpan persen ke kolom (diisi trigger/n8n saat dokumen berubah) -> kartu cukup `select` kolom. Pilih setelah lihat hasil ukur.
+2. Dedup panggilan `fetchCourierValidationBadgePct` (dipanggil >1x per muat: halaman + badge sidebar `enrichCourierValidationPct` + refresh baris).
+3. Kurangi `select('*')` di query utama kartu (kolom JSON besar tak perlu); `fetchOutstandingCount` Recap Courier `limit(20000)` -> ganti hitung di DB (`count`/RPC).
+4. SQL baru mulai **073**; aturan DB (RLS, guard RPC `has_page_access`, `search_path`, whitelist `server/db/whitelist.ts`) lihat CLAUDE.md. Ukur ulang Network sebelum & sesudah tiap langkah.
+
 ## STATUS & SISA PEKERJAAN — Audit & Invoice Recap Sea & Air + Courier / Finance Handover (per 2026-10-02)
 
 **Courier — Cost Validation rule (2026-10-19), sisi n8n BELUM (di luar repo)**: app sudah merapikan TAMPILAN (courier-features.md "Cost

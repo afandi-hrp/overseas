@@ -24,7 +24,7 @@ yang berlaku lintas modul. Rujukan lama di docs berbunyi "lihat CLAUDE.md bagian
 | AuthContext / lock screen / auto-logout / pindah tab | `docs/claude/auth-session.md` |
 | RLS, RPC guard, role_page_access, jabatan approval, kolom per role, translasi (detail & riwayat) | `docs/claude/rbac-security.md` |
 | Zoom 90%, shell tabel, navigasi mobile, menu sidebar, loading state (detail) | `docs/claude/ui-layout.md` |
-| Sisa pekerjaan / backlog per modul | `docs/claude/status-backlog.md` |
+| Sisa pekerjaan / backlog per modul (termasuk **tahap 2 percepatan kartu: persen Doc/Cost di DB**, menunggu evaluasi user) | `docs/claude/status-backlog.md` |
 | Rencana backend API (endpoint baru, DB lain, payment gateway) -- BELUM dikerjakan | `docs/claude/backend-plan.md` |
 
 ## Tech stack
