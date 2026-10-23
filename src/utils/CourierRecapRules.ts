@@ -8,6 +8,15 @@
 //   Syarat CN habis + storage disimpan ikut menentukan 100% Cost Validation, juga hanya utk data setelah tanggal yang sama.
 // Kunci HANYA di frontend (pola kunci "Needs check" Section Total) -- DB tidak menolak.
 
+// ── Kunci SETELAH Submit Date terisi (2026-10-23, permintaan user; DB: sql/075 `fn_courier_recap_lock`) ──
+// Dulu: invoice ber-Submit Date terkunci SELURUH baris. Kini semua kolom TETAP BISA DIEDIT kecuali kolom di bawah (nama kolom `rekapan_courier`); kolom itu hanya bisa
+// diubah setelah Unlock (Admin, cara unlock TIDAK berubah). DELETE tetap ditolak. Kolom Finance (finance_received_*, tgl_lunas, paid_*) tetap bebas; aturan akses Paid Date TIDAK berubah.
+export const COURIER_RECAP_LOCKED_COLUMNS: readonly string[] = [
+  'no_invoice', 'courier_adm_fee', 'total_duty_tax', 'total_freight', 'total_amount', 'bm', 'ppn', 'pph', 'ntpn', 'awb',
+  'breakdown_courier_adm_vessel', 'breakdown_duty_vessel', 'breakdown_freight_vessel', 'breakdown_bm_vessel', 'breakdown_ppnpph_vessel', 'created_at',
+]
+export const courierRecapColumnLocked = (r: any, key: string): boolean => !!r?.submit_date && COURIER_RECAP_LOCKED_COLUMNS.includes(key)
+
 // Tanggal fitur aktif (jam lokal WIB). Data yang dibuat sebelum ini TIDAK terkena aturan kunci & syarat CN/storage.
 export const COURIER_RECAP_RULES_FROM = '2026-10-14T00:00:00+07:00'
 const RULES_FROM_MS = new Date(COURIER_RECAP_RULES_FROM).getTime()

@@ -80,7 +80,7 @@ const fmtCn = (n: number) => `(${n.toLocaleString('id-ID', { maximumFractionDigi
 const statusChips = (r: any) => (
   <span className="inline-flex flex-wrap items-center gap-1">
     {r.submit_date
-      ? <Chip tone="grey" title="Submitted to Finance — editing & deleting are locked"><Lock size={11} className="inline -mt-0.5" /> Locked</Chip>
+      ? <Chip tone="grey" title="Submitted to Finance — invoice no., amounts, taxes, NTPN, AWB and breakdown columns are locked; the invoice cannot be deleted"><Lock size={11} className="inline -mt-0.5" /> Locked</Chip>
       : <Chip tone="grey">Not submitted</Chip>}
     {r.finance_received_at && <Chip tone="plum" title={r.finance_received_by ? `Received by ${r.finance_received_by}` : undefined}>Received {fmtDateShort(r.finance_received_at)}</Chip>}
     {r.tgl_lunas && <Chip tone="green" title={r.paid_reference ? `Ref ${r.paid_reference}` : undefined}>Paid {fmtDateShort(r.tgl_lunas)}</Chip>}

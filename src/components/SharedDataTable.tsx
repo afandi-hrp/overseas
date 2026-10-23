@@ -22,7 +22,7 @@ import SeaAirValidasiModal from '../components/SeaAirValidasiModal'
 import ValidasiShipmentInvoiceLengkap from '../components/ValidasiShipmentInvoiceLengkap'
 import { computeLiveCostSummary } from '../utils/CostValidationHelpers'
 import { mergeChecklistFields, fetchCourierValidationBadgePct, enrichCourierValidationPct } from '../utils/CourierValidationPct'
-import { courierRowUnderRules, courierValidationLock, courierLockTitle } from '../utils/CourierRecapRules'
+import { courierRowUnderRules, courierValidationLock, courierLockTitle, courierRecapColumnLocked, COURIER_RECAP_LOCKED_COLUMNS } from '../utils/CourierRecapRules'
 import { relaxSeaAirDocChecks, countedDocChecks } from '../utils/SeaAirValidasiHelpers'
 import { computeSeaAirCostGlobalStats } from '../utils/SeaAirCostValidasiHelpers'
 import { SECTIONS, computeStatus } from '../utils/ValidasiHelper'
@@ -3021,8 +3021,9 @@ const CourierRekapanRowGroup: React.FC<{
 
   // Kunci Submit to Finance (sql/038, 2026-10-02, sama Sea & Air): invoice yg sudah punya Submit Date tidak bisa
   // diedit/dihapus (DB juga menolak) -- Admin membuka kunci lewat jendela Open (Unlock + alasan).
+  // 2026-10-23: Submit Date terisi TIDAK lagi mengunci seluruh baris -- hanya kolom di COURIER_RECAP_LOCKED_COLUMNS (baca-saja di bawah) & hapus.
   const recapLocked = !!rec.submit_date;
-  const canBulkEdit = !!(getVal && setVal) && !recapLocked;
+  const canBulkEdit = !!(getVal && setVal);
   const editingThisRow = (!!editMode || rowEditOn) && canBulkEdit;
 
   let poVesselPairs: { po: string, vessel: string }[] = [];
@@ -3147,7 +3148,7 @@ const CourierRekapanRowGroup: React.FC<{
                 );
               }
 
-              if (editingThisRow && canBulkEdit && isInlineEditable(c.key) && (!isRepeating || isFirst) && c.key !== 'po_no' && c.key !== 'vessel' && c.key !== 'po_ori' && c.key !== 'vendor_inv_no' && c.key !== 'po_harga_detail') {
+              if (editingThisRow && canBulkEdit && isInlineEditable(c.key) && !courierRecapColumnLocked(rec, c.key) && (!isRepeating || isFirst) && c.key !== 'po_no' && c.key !== 'vessel' && c.key !== 'po_ori' && c.key !== 'vendor_inv_no' && c.key !== 'po_harga_detail') {
                 const cellVal = getVal!(rec, c.key);
                 let inputEl;
                 if (c.type === 'date' || c.type === 'date_dash_if_null' || c.type === 'datetime' || c.type === 'date_badge_if_null') {
@@ -3226,7 +3227,7 @@ const CourierRekapanRowGroup: React.FC<{
                             </button>
                           )}
                           {recapLocked && (
-                            <span title="Submitted to Finance — locked. An Admin can unlock it from the Card view (Open › Invoices)." className="w-[80px] text-center text-[10px] font-bold px-2 py-1.5 rounded-md border border-slate-200 bg-white text-slate-500">🔒 Locked</span>
+                            <span title="Submitted to Finance — invoice no., amounts, taxes, NTPN, AWB, breakdown columns and Created At are locked (other columns can be edited, the invoice cannot be deleted). An Admin can unlock it from the Card view (Open › Invoices)." className="w-[80px] text-center text-[10px] font-bold px-2 py-1.5 rounded-md border border-slate-200 bg-white text-slate-500">🔒 Locked</span>
                           )}
                         </div>
                       )}
@@ -5573,7 +5574,13 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         // 6 kolom turunan Rekapan Courier (lihat COURIER_REKAPAN_CALC_FIELDS) -- pola sama
         // persis dgn courier_audit di atas: hitung ulang dari gabungan record lama + perubahan
         // baru, field kalkulasi yg diketik langsung ditandai override permanen.
-        if (record) {
+        if (record?.submit_date) {
+          // Invoice sudah Submit (2026-10-23): kolom terkunci (COURIER_RECAP_LOCKED_COLUMNS) TIDAK PERNAH dikirim & kolom turunan (total/breakdown) TIDAK dihitung ulang --
+          // DB (sql/075) menolak perubahan kolom itu. Kolom lain (mis. vessel, notes, tanggal) disimpan normal.
+          COURIER_RECAP_LOCKED_COLUMNS.forEach(k => { delete cleanedPayload[k]; });
+          Object.keys(cleanedPayload).forEach(k => { if (cleanedPayload[k] === '') cleanedPayload[k] = null; });
+          if (Object.keys(cleanedPayload).length === 0) return true;
+        } else if (record) {
           const existingOverrides: string[] = Array.isArray(record.manual_override_fields) ? record.manual_override_fields : [];
           const newlyOverridden = COURIER_REKAPAN_CALC_FIELDS.filter(f => f in cleanedPayload);
           const mergedOverrides = Array.from(new Set([...existingOverrides, ...newlyOverridden]));
@@ -6296,7 +6303,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[420px] p-5" role="dialog" aria-label="Submit to Finance" data-submit-date-dialog>
             <h3 className="text-[15px] font-bold text-[#3B1B3D]">Submit to Finance</h3>
             <p className="text-[12.5px] text-[#6E5E70] mt-1">
-              {courierSubmitDialog.ids.length} invoice{courierSubmitDialog.ids.length === 1 ? '' : 's'} will be submitted. After submitting, the invoice is locked (no edit / delete) — only an Admin can unlock it.
+              {courierSubmitDialog.ids.length} invoice{courierSubmitDialog.ids.length === 1 ? '' : 's'} will be submitted. After submitting, its invoice no., amounts, taxes, NTPN, AWB and breakdown columns are locked (and it cannot be deleted) — only an Admin can unlock it.
             </p>
             <label className="block mt-3">
               <span className="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B]">Submit date</span>

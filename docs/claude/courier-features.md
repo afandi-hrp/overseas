@@ -45,6 +45,20 @@ Details, popup Audit, jendela List Audit, Finance Handover, badge/KPI/needs atte
   keterangan, mode Edit menampilkan data asli, chip & tile Menunggu, Invoice document). `tsc` bersih, `vite build` sukses. Belum dites di
   production.
 
+## Invoice Recap Courier -- kunci setelah Submit Date terisi DILONGGARKAN (2026-10-23, permintaan user; SQL `sql/075_courier_recap_lock_partial.sql` -- file lokal, BELUM DIJALANKAN per tulisan ini)
+
+- **Dulu** (sql/038): baris ber-`submit_date` terkunci SELURUH baris. **Kini**: semua kolom TETAP BISA DIEDIT kecuali `COURIER_RECAP_LOCKED_COLUMNS` (`CourierRecapRules.ts`, 16 kolom: no_invoice, courier_adm_fee,
+  total_duty_tax, total_freight, total_amount, bm, ppn, pph, ntpn, awb, breakdown_courier_adm/duty/freight/bm/ppnpph_vessel, created_at) -- baru bisa diubah setelah Unlock (Admin + alasan, cara TIDAK berubah). DELETE tetap
+  ditolak. Aturan akses Paid Date TIDAK berubah (kolom Finance `tgl_lunas`/`finance_received_*`/`paid_*` memang bebas di trigger).
+- **DB**: `fn_courier_recap_lock` (trigger BEFORE UPDATE/DELETE) diganti: baris ber-submit_date -> tiap kolom di `v_locked` dibandingkan old vs new (jsonb) dan ditolak bila berubah
+  ("Locked — column X of invoice … cannot be changed…"); penulis service & flag `app.courier_unlock` tetap lolos; audit "Submit to Finance" tetap. **Sebelum SQL dijalankan** trigger lama masih menolak SEMUA edit baris submitted
+  (aplikasi akan menampilkan error "Locked — …" saat Save).
+- **UI List** (`CourierRekapanRowGroup`): `canBulkEdit` tidak lagi mensyaratkan belum-Submit -> Edit Mode / Edit per baris aktif untuk baris submitted; sel kolom terkunci tetap baca-saja (`courierRecapColumnLocked`); badge "🔒 Locked" tetap
+  (tooltip dijelaskan), tombol Delete tetap hilang. **Simpan** (`handleInlineSaveRow`, cabang courier_rekapan): utk baris ber-submit_date kolom terkunci DIBUANG dari payload & kolom turunan (total/breakdown) TIDAK dihitung ulang
+  (mengubah Vessel di baris submitted tidak mengubah breakdown). **Card & List sinkron** karena membaca/menulis baris `rekapan_courier` yang sama (Card membaca ulang setelah simpan). Teks konfirmasi Submit & tooltip chip Locked Card diperbarui.
+- **Catatan**: `submit_date` TIDAK ada di daftar terkunci -> ikut bisa diedit (mengosongkannya = praktis unlock tanpa alasan Admin); tambahkan ke `v_locked` / `COURIER_RECAP_LOCKED_COLUMNS` bila tidak diinginkan. Sinkron Remarks/Internal remarks
+  antar-invoice AWB (`CourierRemarksSync`, `saveInternalRemarks`) masih MELEWATI baris submitted (tidak diubah).
+
 ## Revisi Menu Courier -- Audit & Invoice Recap, 7 poin (2026-10-23, permintaan user; mockup `mockup_audit_revisi_7poin.html`; SQL opsional `sql/074`)
 
 - **1. Document Review di Checklist Audit Card**: `ChecklistModal` prop BARU `documentReview` -> section "Document review" (`CourierDocumentReview`, SATU komponen dgn tab Checklist Invoice Recap,
