@@ -111,10 +111,12 @@ const NeedsCheckNote: React.FC<{ bd: TotalBreakdown; rows: any[]; canEdit: boole
           <ul className="font-normal list-disc pl-4 mt-0.5">{bd.checks.map(c => <li key={c}>{CHECK_MESSAGE[c]}</li>)}</ul>
         </div>
       </div>
-      {!bd.frozen && (
+      {/* 2026-10-23 (permintaan user): Internal remarks tetap tampil & bisa diedit walau semua invoice sudah di-Submit (`keterangan` tidak ada di daftar kunci, sql/075);
+          disimpan ke SEMUA invoice AWB. */}
+      {(
         <div className="mt-2 text-[#3B1B3D]">
           <label className="block text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B] mb-1">
-            Internal remarks {lock ? '— required before Submit to Finance' : '— filled, Submit to Finance is unlocked'}
+            Internal remarks {bd.frozen ? '' : lock ? '— required before Submit to Finance' : '— filled, Submit to Finance is unlocked'}
           </label>
           <textarea value={text} onChange={e => setText(e.target.value)} rows={2} disabled={!canEdit || saving} aria-label="Internal remarks"
             placeholder="Explain why this AWB is correct as it is…"

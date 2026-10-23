@@ -44,7 +44,7 @@ import {
   courierTableOf, makeColOk, isCourierDraft, notifyCourierAuditChanged, type CourierAuditSummary, type CourierDocType,
 } from '../utils/CourierAuditHelpers'
 import { CourierAuditCardList, CourierAuditKpiCards } from './CourierAuditCardList'
-import { syncChecklistNoteToRemarks, syncRemarkToGroup } from '../utils/CourierRemarksSync'
+import { syncChecklistNoteToRemarks, syncRemarkToGroup, syncInternalRemarksToGroup } from '../utils/CourierRemarksSync'
 import { syncRemarksToChecklistNote } from '../utils/SeaAirRemarksSync'
 import { COURIER_REKAPAN_CALC_FIELDS, courierAwbNorm, awbDisplay, computeCourierRekapanCalc, submitRecapInvoices, notifyCourierRecapChanged, fetchCourierRecapSummary, buildRecapGroup, fetchRecapAuditLinks, type RecapFilters, type RecapGroup, type RecapSummaryCourier, type RecapKpiFilter } from '../utils/CourierRecapHelpers'
 import { CourierRecapCardView, CourierRecapKpiCards } from './CourierRecapCardList'
@@ -5596,6 +5596,11 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
 
         const res = await supabase.from('rekapan_courier').update(cleanedPayload).eq('id', id);
         error = res.error;
+        // Internal Remarks (keterangan) berubah -> semua invoice AWB itu (termasuk yang sudah Submit) ikut, SAMA kotak Internal remarks di Card (2026-10-23).
+        if (!res.error && record && 'keterangan' in cleanedPayload && String(record.keterangan ?? '').trim() !== String(cleanedPayload.keterangan ?? '').trim()) {
+          const synced = await syncInternalRemarksToGroup({ ...record, ...cleanedPayload }, cleanedPayload.keterangan ?? null)
+          if (synced.length > 0) setRecords(prev => prev.map(r => synced.includes(String(r.id)) ? { ...r, keterangan: cleanedPayload.keterangan ?? null } : r))
+        }
         // Remarks (notes) berubah -> sinkron ke invoice lain AWB itu (belum Submit) & Checklist Note PIB/CN Draft
         // (2026-10-08, CourierRemarksSync); baris List invoice lain ikut di-patch di state.
         if (!res.error && record && 'notes' in cleanedPayload && String(record.notes ?? '').trim() !== String(cleanedPayload.notes ?? '').trim()) {
@@ -7433,7 +7438,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                       navigate(`/courier/audit?${params.toString()}`);
                     }}
                     onEditInList={() => { const g = courierRecapPanel.g; closeCourierRecapPanel(); switchCourierRecapView('list'); setSearch(g.awb); }}
-                    onChanged={() => setCourierRecapNonce(n => n + 1)}
+                    onChanged={() => { setCourierRecapNonce(n => n + 1); fetchRecords() }}
                     onDirtyChange={d => { courierRecapPanelDirty.current = d }}
                   />
                   </React.Fragment>

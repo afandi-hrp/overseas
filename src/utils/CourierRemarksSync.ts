@@ -21,11 +21,11 @@ export async function fetchGroupInvoices(awb: any, link?: { col: 'pib_id' | 'cn_
   const key = courierAwbNorm(awb)
   const out = new Map<string, any>()
   if (key) {
-    const { data } = await supabase.from('rekapan_courier').select('id, awb, notes, submit_date, pib_id, cn_id').ilike('awb', `%${key.replace(/[%_,()"]/g, '_')}%`)
+    const { data } = await supabase.from('rekapan_courier').select('id, awb, notes, keterangan, submit_date, pib_id, cn_id').ilike('awb', `%${key.replace(/[%_,()"]/g, '_')}%`)
     ;(data || []).forEach((r: any) => { if (courierAwbNorm(r.awb) === key) out.set(String(r.id), r) })
   }
   if (link && link.id != null) {
-    const { data } = await supabase.from('rekapan_courier').select('id, awb, notes, submit_date, pib_id, cn_id').eq(link.col, link.id)
+    const { data } = await supabase.from('rekapan_courier').select('id, awb, notes, keterangan, submit_date, pib_id, cn_id').eq(link.col, link.id)
     ;(data || []).forEach((r: any) => out.set(String(r.id), r))
   }
   return Array.from(out.values())
@@ -44,6 +44,23 @@ export async function syncChecklistNoteToRemarks(auditRec: any, note: string | n
   } catch (e) {
     console.warn('[RemarksSync] Checklist Note -> Remarks error', e)
     return 0
+  }
+}
+
+// Internal remarks (`keterangan`) 1 invoice -> SEMUA invoice lain AWB itu, termasuk yang sudah Submit (2026-10-23). Dipanggil setelah kolom Internal Remarks diedit di List --
+// SAMA perilaku kotak Internal remarks di Card (`saveInternalRemarks`). Mengembalikan id invoice lain yang diperbarui (utk patch state tampilan).
+export async function syncInternalRemarksToGroup(row: any, value: string | null): Promise<string[]> {
+  try {
+    const v = clean(value)
+    const rows = await fetchGroupInvoices(row?.awb, row?.pib_id ? { col: 'pib_id', id: row.pib_id } : row?.cn_id ? { col: 'cn_id', id: row.cn_id } : undefined)
+    const others = rows.filter(r => String(r.id) !== String(row?.id) && (clean(r.keterangan) ?? '') !== (v ?? '')).map(r => r.id)
+    if (others.length === 0) return []
+    const { error } = await supabase.from('rekapan_courier').update({ keterangan: v }).in('id', others)
+    if (error) { console.warn('[RemarksSync] Internal remarks -> invoice lain gagal', error.message); return [] }
+    return others.map(String)
+  } catch (e) {
+    console.warn('[RemarksSync] Internal remarks -> grup error', e)
+    return []
   }
 }
 

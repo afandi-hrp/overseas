@@ -59,6 +59,8 @@ Details, popup Audit, jendela List Audit, Finance Handover, badge/KPI/needs atte
   (file lokal, BELUM DIJALANKAN per tulisan ini; menggantikan fungsi 075 dgn `v_locked` 17 kolom; Submit baru NULL -> terisi & RPC Unlock `app.courier_unlock` tetap lolos). (2) **Sinkron Remarks MENCAKUP invoice yang sudah Submit**:
   `CourierRemarksSync` (`syncChecklistNoteToRemarks`, `syncRemarkToGroup`) tidak lagi melewati baris ber-submit_date, patch state List `notes` ikut semua invoice AWB, dan `saveInternalRemarks` (`keterangan`) menulis ke SEMUA invoice AWB
   (`notes` & `keterangan` tidak ada di daftar kunci). Sinkron tetap HANYA saat ada yang mengedit.
+  (3) **Internal Remarks tetap bisa diedit setelah Submit & sinkron List <-> Card**: kolom List `keterangan` ("Internal Remarks") yang diedit inline kini disebarkan ke SEMUA invoice AWB-nya (`syncInternalRemarksToGroup`, sama kotak Card) & state List
+  ditambal; kotak "Internal remarks" di Card (`NeedsCheckNote`) tetap tampil & bisa diedit walau semua invoice sudah Submit (`bd.frozen`; dulu disembunyikan; kotak tetap hanya muncul saat "Needs check"); simpan di Card membaca ulang List (`onChanged` panel -> `fetchRecords`).
 
 ## Revisi Menu Courier -- Audit & Invoice Recap, 7 poin (2026-10-23, permintaan user; mockup `mockup_audit_revisi_7poin.html`; SQL opsional `sql/074`)
 
