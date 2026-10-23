@@ -104,6 +104,8 @@ menggantikan `setPreviewTarget({...})` di tombol PDF / Hasil Audit / Dokumen (Ca
 - **Pagination server-side**: penanda menyimpan nomor halaman (`mark.page`). Bila user pindah halaman, pil menampilkan "· hal. N" & tombol jadi **"Ke hal. N"** -> `setPage(N)`, tunggu `loadingList`
   menyala lalu selesai (hook menerima `nav {page,setPage,loading}`), baru scroll. Baris tak ada lagi (filter/urutan berubah) -> pil "Baris tidak ditemukan" 5 detik.
 - Saat preview DITUTUP daftar otomatis `scrollIntoView` ke baris itu. Penanda hilang bila ✕ diklik atau preview baris lain dibuka; tidak disimpan ke DB/localStorage.
+- **Bunker juga memakainya** (2026-10-23): pemicunya modal **Compare Doc** & **Completeness** (`openCompare`/`openKelengkapan` di `BunkerPage.tsx`, judul "Compare Doc — <No PO>");
+  membuka Compare Doc dari antrean upload (`openCompareFromQueue`) TIDAK memberi penanda (halaman barisnya tak diketahui). History/Delete tidak memberi penanda.
 - Baris diidentifikasi `data-review-row={id}` (DocRow & `<tr>`). Halaman baru bergaya sama: pasang 4 hal itu juga (DocRow juga dipakai Bunker -- tanpa prop baru tampilannya sama seperti dulu).
 
 ## Tampilan Card | List — Audit AP Local/Overseas, PI Local, Accounting Rekap (2026-10-02)

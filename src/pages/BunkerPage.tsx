@@ -12,7 +12,7 @@ import BunkerCompareDocModal from '../components/BunkerCompareDocModal';
 import BunkerAuditLogModal from '../components/BunkerAuditLogModal';
 import Greeting from '../components/Greeting';
 import { LoadingState, LoadingTableRow } from '../components/LoadingState';
-import { ViewModeToggle, DocRow, RowEyebrow, RowTitle, RowChip, RowLabel, CardAction, type CompareDocViewMode } from '../components/CompareDocCards';
+import { ViewModeToggle, DocRow, RowEyebrow, RowTitle, RowChip, RowLabel, CardAction, useReviewMark, ReviewMarkPill, type CompareDocViewMode } from '../components/CompareDocCards';
 
 // ── Kontrak data (Supabase, sudah dibuat backend n8n -- lihat BunkerHelpers.ts) ──
 // bunker_dokumen (1 baris = 1 No PO): no_po, no_po_key(unik, internal), vendor, kapal, lokasi,
@@ -164,6 +164,10 @@ export default function BunkerPage() {
   const [queue, setQueue] = useState<any[]>([]);
   const [kelengkapanRow, setKelengkapanRow] = useState<any | null>(null);
   const [compareRow, setCompareRow] = useState<any | null>(null);
+  // Penanda baris yang sedang direview (modal Compare Doc / Completeness dibuka) -- lihat CompareDocCards.tsx `useReviewMark`.
+  const { mark: reviewMark, setMark: setReviewMark, clear: clearReviewMark, pill: reviewPill } = useReviewMark(!!compareRow || !!kelengkapanRow, { page, setPage, loading: loadingList });
+  const openCompare = (r: any) => { setReviewMark({ id: r.id, title: `Compare Doc — ${r.no_po || r.vendor || r.id}`, page }); setCompareRow(r); };
+  const openKelengkapan = (r: any) => { setReviewMark({ id: r.id, title: `Completeness — ${r.no_po || r.vendor || r.id}`, page }); setKelengkapanRow(r); };
   const [auditLogRow, setAuditLogRow] = useState<any | null>(null);
   const [deleteConfirmRow, setDeleteConfirmRow] = useState<any | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -456,6 +460,9 @@ export default function BunkerPage() {
                         <DocRow
                           key={r.id}
                           alignTop
+                          rowId={r.id}
+                          marked={reviewMark?.id === r.id ? reviewMark.title : null}
+                          onClearMark={clearReviewMark}
                           left={<>
                             {/* Kiri (susunan final 2026-10-02, permintaan user): No PO paling atas (sejajar
                                 Vendor), Workflow Status sebaris labelnya, status sistem + Updated paling bawah. */}
@@ -481,8 +488,8 @@ export default function BunkerPage() {
                             <div className={`font-bold text-[20px] leading-tight ${pctClass}`}>{matchStats.pct}%</div>
                           </>}
                           actions={<>
-                            <CardAction tone="primary" icon={FileCheck2} label="Completeness" title="Document Completeness" onClick={() => setKelengkapanRow(r)} />
-                            <CardAction tone="primary" icon={ClipboardList} label="Compare Doc" onClick={() => setCompareRow(r)} />
+                            <CardAction tone="primary" icon={FileCheck2} label="Completeness" title="Document Completeness" onClick={() => openKelengkapan(r)} />
+                            <CardAction tone="primary" icon={ClipboardList} label="Compare Doc" onClick={() => openCompare(r)} />
                             <CardAction iconOnly tone="warn" icon={History} label="History" title="Change History" onClick={() => setAuditLogRow(r)} />
                             {canEditBunker && <CardAction iconOnly icon={Trash2} label="Delete" tone="danger" onClick={() => openDeleteConfirm(r)} />}
                           </>}
@@ -516,7 +523,8 @@ export default function BunkerPage() {
                     rows.map(r => {
                     const matchStats = computeMatrixMatchStats(r.matrix_perbandingan);
                     return (
-                      <tr key={r.id} className="group bg-white hover:bg-slate-50 transition-colors">
+                      <tr key={r.id} data-review-row={r.id} data-marked={reviewMark?.id === r.id ? 'true' : undefined}
+                        className={`group transition-colors ${reviewMark?.id === r.id ? 'bg-[#F5EDF3] shadow-[inset_4px_0_0_#5A305A]' : 'bg-white hover:bg-slate-50'}`}>
                         <td className="px-3 py-3 align-top text-[#5A305A] font-semibold whitespace-nowrap">{r.no_po || '-'}</td>
                         <td className="px-3 py-3 align-top text-[#5A305A]">{r.vendor || '-'}</td>
                         <td className="px-3 py-3 align-top text-[#5A305A]">{r.kapal || '-'}</td>
@@ -524,17 +532,17 @@ export default function BunkerPage() {
                         <td className="px-3 py-3 align-top"><StatusBadge row={r} /></td>
                         <td className="px-3 py-3 align-top"><WorkflowSelect row={r} onChanged={fetchList} canEdit={canEditBunker} /></td>
                         <td className="px-3 py-3 align-top text-[#5A305A] whitespace-nowrap">{formatDateTimeID(r.updated_at)}</td>
-                        <td className="px-2 py-3 align-top sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-10 border-l border-slate-200 transition-colors">
+                        <td className="px-2 py-3 align-top sticky right-0 bg-white group-hover:bg-slate-50 group-data-[marked=true]:bg-[#F5EDF3] shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-10 border-l border-slate-200 transition-colors">
                           <div className="flex flex-col gap-1 w-[110px]">
                             <button
-                              onClick={() => setKelengkapanRow(r)}
+                              onClick={() => openKelengkapan(r)}
                               title="Document Completeness"
                               className="w-full flex items-center gap-1 px-1.5 py-1 rounded-lg border border-slate-200 text-[9px] font-semibold text-[#5A305A] hover:bg-slate-100 transition-colors"
                             >
                               <FileCheck2 size={10} /> Completeness
                             </button>
                             <button
-                              onClick={() => setCompareRow(r)}
+                              onClick={() => openCompare(r)}
                               title="Compare Doc"
                               className="relative w-full flex items-center gap-1 px-1.5 py-1 rounded-lg border border-slate-200 text-[9px] font-semibold text-[#5A305A] hover:bg-slate-100 transition-colors"
                             >
@@ -609,6 +617,8 @@ export default function BunkerPage() {
       {compareRow && (
         <BunkerCompareDocModal record={compareRow} onClose={() => setCompareRow(null)} onChanged={fetchList} canEdit={canEditBunker} />
       )}
+
+      <ReviewMarkPill {...reviewPill} hidden={!!compareRow || !!kelengkapanRow} />
 
       {auditLogRow && (
         <BunkerAuditLogModal record={auditLogRow} onClose={() => setAuditLogRow(null)} />
