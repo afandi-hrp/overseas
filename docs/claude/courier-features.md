@@ -72,7 +72,7 @@ Details, popup Audit, jendela List Audit, Finance Handover, badge/KPI/needs atte
 - **4. Search**: kotak Search Courier (Audit & Recap, Card & List) = **AWB, invoice no., PO, vendor, PIB no., NTPN** (placeholder diganti). Audit TIDAK punya kolom Invoice no/NTPN (adanya di
   `rekapan_courier.no_invoice/ntpn`) -> `src/utils/CourierSearch.ts` `resolveAuditSearchExtra` mencari dulu di rekapan lalu menambah kondisi OR (`id.in.(id PIB/CN terhubung)` + `awb.ilike` AWB cocok); Recap List:
   + `ntpn` & `resolveRecapSearchExtra` (No. PIB dari `tabel_audit_pib` -> `pib_id.in` / AWB). Berlaku di daftar, hitungan tab/PPJK, ringkasan KPI & Export. Aktif hanya bila kata kunci >= 3 karakter (maks 60 cocok,
-  cache 20 dtk). Recap **Card** memakai RPC: app mengirim kolom `'ntpn'`+`'pib_no'`; **`sql/074_courier_recap_search_ntpn_pibno.sql`** (BELUM DIJALANKAN per tulisan ini) membuat
+  cache 20 dtk). Recap **Card** memakai RPC: app mengirim kolom `'ntpn'`+`'pib_no'`; **`sql/074_courier_recap_search_ntpn_pibno.sql`** (SUDAH DIJALANKAN user 2026-10-23; dicek via MCP: kedua RPC memuat `ntpn`, `pib_no` & CTE `pm`) membuat
   `fn_courier_recap_awb_page` & `fn_courier_recap_summary` mengenalinya (RPC lama mengabaikan kolom tak dikenal -> aman). Catatan: `vendor_inv_no` (No. invoice vendor, mis. "INV NO. HG26103995") sudah dicari
   sejak dulu; "Invoice no" baru di Audit = nomor invoice courier (rekapan `no_invoice`).
 - **5. Label kartu Audit** (`CourierAuditCardList`): "Accepted <tgl>" (abu) pindah ke kolom BARU antara Vendor & Total Expenses, **Audited** (hijau) di bawahnya; "NAS submitted <tgl>" DIHAPUS dari kartu
