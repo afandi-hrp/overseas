@@ -182,6 +182,13 @@ Voyage punya 2 sumber terpisah: dokumen SOF/Time Sheet (Medan, AI) dan **Noon Re
   ROB/Consumption/Received x LSFO/LSMGO/MDO/HSFO/FW, Weather, ikon ⚠ tooltip `warnings`; footer Total consumption; angka maks. 3 desimal, null = "—"; scroll horizontal).
   Voyage noon (`isNoonReportVoyage`: `input_source` atau `extra.input`) -> banner info + cargo kosong "Cargo is not available in noon reports."; `remarks` port call tampil di
   bawah nama pelabuhan (rentang tanggal, no. dokumen, kapal STS). Waktu null otomatis "—" (`fmtDateTimePort`/`fmtHours`). Confirm/Edit manual tetap seperti draft lain.
+- **Kartu Voyage dipercantik (2026-10-23, permintaan user "terlalu simple")**: `CostAgentVoyageCard` 4 blok -- identitas (ubin ikon kapal, nama, PT/bulan, chip Voy #seq / charter / tipe kapal /
+  Noon Report), **jalur rute bertitik** (hijau = pelabuhan pertama, biru = terakhir, putih = tengah; > 6 pelabuhan -> tengah diringkas "+n") + Arrival/Departure berwarna, status (+ titik utk Draft) +
+  source + "Updated <tgl>" + panah. Blok angka (tile Cargo / Invoices / Next ETA) sempat dibuat lalu **DIHAPUS atas permintaan user** (kartu = 3 blok; cargo/invoice/next ETA ada di drawer
+  & mode List). Data = baris view yang sama, container query lama (`@md`/`@5xl`) dipertahankan.
+  Penyempurnaan (permintaan user): kolom `@5xl` = `1fr | 1.5fr | 1fr` (kiri-kanan sama lebar -> rute TEPAT di tengah badan kartu, lebar garis maks 560px, label "Route" di tengah; Arrival rata kiri di
+  bawah titik pertama, Departure rata kanan di bawah titik terakhir); blok status = `Pill` status, chip source berikon (AI ungu/Sparkles, API biru/Cloud, Import hijau, Manual abu), jam + tanggal
+  diperbarui, dan tombol panah bulat di ujung kanan.
 - **Hapus voyage (2026-10-23, permintaan user; sql/073 `fn_cost_agent_delete_voyage(p_voyage_id, p_reason)` -- file lokal `sql/073_cost_agent_delete_voyage.sql`, SUDAH DIJALANKAN user
   2026-10-23, dicek via MCP: SECURITY DEFINER, authenticated boleh, anon tidak)**: sebelumnya tidak ada RPC hapus & policy DELETE tabel voyage = false. Tombol **Delete** di footer drawer
   (`data-delete-voyage`, hanya `canEdit('cost_agent_voyage')` -> prop `onDeleted`), konfirmasi `window.confirm` (sebut jumlah port call/cargo/hari noon). RPC: guard
