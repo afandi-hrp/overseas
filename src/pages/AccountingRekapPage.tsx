@@ -11,7 +11,7 @@ import {
   type AccountingRekapRow,
 } from '../utils/AccountingRekapHelpers';
 import Greeting from '../components/Greeting';
-import { ViewModeToggle, CardSortBar, DocRow, RowEyebrow, RowTitle, RowChip, RowLabel, CardAction, type CompareDocViewMode } from '../components/CompareDocCards';
+import { ViewModeToggle, CardSortBar, DocRow, RowEyebrow, RowTitle, RowChip, RowLabel, CardAction, useReviewMark, ReviewMarkPill, type CompareDocViewMode } from '../components/CompareDocCards';
 import { LoadingState, LoadingTableRow } from '../components/LoadingState';
 
 // ── Kontrak data (Supabase, diisi otomasi backend) ──
@@ -808,6 +808,9 @@ export default function AccountingRekapPage() {
 
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [previewTarget, setPreviewTarget] = useState<PreviewTarget | null>(null);
+  // Penanda baris yang sedang direview (PDF / Hasil Audit dibuka) -- lihat CompareDocCards.tsx `useReviewMark`.
+  const { mark: reviewMark, setMark: setReviewMark, clear: clearReviewMark, pill: reviewPill } = useReviewMark(!!previewTarget, { page, setPage, loading: loadingList });
+  const openPreview = (rowId: string, t: PreviewTarget) => { setReviewMark({ id: rowId, title: t.title, page }); setPreviewTarget(t); };
   const [openActionsRowId, setOpenActionsRowId] = useState<string | null>(null);
   // Tampilan daftar: Card (default, 2026-10-02 permintaan user) | List (tabel lama apa adanya).
   // Data, filter, sort, pagination & semua aksi SAMA di kedua mode -- hanya bentuk tampilannya beda.
@@ -1014,6 +1017,9 @@ export default function AccountingRekapPage() {
                     <DocRow
                       key={r.id}
                       alignTop
+                      rowId={r.id}
+                      marked={reviewMark?.id === r.id ? reviewMark.title : null}
+                      onClearMark={clearReviewMark}
                       left={<>
                         {/* Susunan SAMA Bunker (2026-10-02, permintaan user): Nomor PO paling atas (sejajar
                             Vendor), Status Proses sebaris labelnya, badge PT + tanggal paling bawah. */}
@@ -1041,7 +1047,7 @@ export default function AccountingRekapPage() {
                         <CardAction tone="primary" icon={FileDown} label="Preview" title="Preview Dokumen" onClick={r.url_view ? () => {
                           const kind = guessPreviewKind(r.url_view);
                           const src = buildPreviewSrc(r.drive_file_id, r.url_view);
-                          if (src) setPreviewTarget({ title: `Dokumen — ${r.nomor_po || r.vendor || r.id}`, src, externalUrl: r.url_view!, kind });
+                          if (src) openPreview(r.id, { title: `Dokumen — ${r.nomor_po || r.vendor || r.id}`, src, externalUrl: r.url_view!, kind });
                         } : undefined} />
                         {canEditAccountingRekap && <CardAction iconOnly tone="info" icon={Pencil} label="Edit" onClick={() => setEditRow(r)} />}
                         {canEditAccountingRekap && <CardAction iconOnly icon={Trash2} label="Hapus" tone="danger" onClick={() => openDeleteConfirm(r)} />}
@@ -1093,7 +1099,8 @@ export default function AccountingRekapPage() {
                   <tr><td colSpan={9} className="text-center py-10 text-[#5A305A] text-sm italic">Belum ada data Accounting Rekap.</td></tr>
                 ) : (
                   rows.map((r) => (
-                    <tr key={r.id} className="group bg-white hover:bg-slate-50 transition-colors">
+                    <tr key={r.id} data-review-row={r.id} data-marked={reviewMark?.id === r.id ? 'true' : undefined}
+                      className={`group transition-colors ${reviewMark?.id === r.id ? 'bg-[#F5EDF3] shadow-[inset_4px_0_0_#5A305A]' : 'bg-white hover:bg-slate-50'}`}>
                       <td className="px-3 py-3 align-top text-[#5A305A] break-words">{formatDateTimeID(r.created_at)}</td>
                       <td className="px-3 py-3 align-top text-[#5A305A] break-words">{r.tanggal_dokumen || '-'}</td>
                       <td className="px-3 py-3 align-top"><PtBadge pt={r.pt_internal} /></td>
@@ -1102,7 +1109,7 @@ export default function AccountingRekapPage() {
                       <td className="px-3 py-3 align-top text-[#5A305A] break-words">{r.bank || '-'}</td>
                       <td className="px-3 py-3 align-top text-[#5A305A] font-mono break-words">{formatRupiah(r.total_bayar)}</td>
                       <td className="px-3 py-3 align-top break-words"><StatusBadge status={r.status_proses} /></td>
-                      <td className="px-2 py-3 align-top sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-10 border-l border-slate-200 transition-colors">
+                      <td className="px-2 py-3 align-top sticky right-0 bg-white group-hover:bg-slate-50 group-data-[marked=true]:bg-[#F5EDF3] shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-10 border-l border-slate-200 transition-colors">
                         <div className="flex flex-col items-center gap-1.5 w-[92px] mx-auto">
                           <button
                             onClick={() => setOpenActionsRowId(openActionsRowId === r.id ? null : r.id)}
@@ -1140,7 +1147,7 @@ export default function AccountingRekapPage() {
                                   onClick={() => {
                                     const kind = guessPreviewKind(r.url_view);
                                     const src = buildPreviewSrc(r.drive_file_id, r.url_view);
-                                    if (src) setPreviewTarget({ title: `Dokumen — ${r.nomor_po || r.vendor || r.id}`, src, externalUrl: r.url_view!, kind });
+                                    if (src) openPreview(r.id, { title: `Dokumen — ${r.nomor_po || r.vendor || r.id}`, src, externalUrl: r.url_view!, kind });
                                   }}
                                   title="Preview Dokumen"
                                   className="w-full flex items-center gap-1 px-1.5 py-1 rounded-md border border-slate-200 bg-white text-[9px] font-semibold text-[#5A305A] hover:bg-slate-100 transition-colors"
@@ -1201,6 +1208,8 @@ export default function AccountingRekapPage() {
     {previewTarget && (
       <PreviewModal target={previewTarget} onClose={() => setPreviewTarget(null)} />
     )}
+
+    <ReviewMarkPill {...reviewPill} hidden={!!previewTarget} />
 
     {editRow && (
       <EditAccountingRekapModal record={editRow} onClose={() => setEditRow(null)} onSaved={handleRowSaved} />

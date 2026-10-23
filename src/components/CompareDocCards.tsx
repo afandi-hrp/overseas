@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutGrid, List, ArrowUp, ArrowDown } from 'lucide-react';
+import { LayoutGrid, List, ArrowUp, ArrowDown, X, Crosshair } from 'lucide-react';
 
 // Komponen tampilan kartu BERSAMA utk 4 halaman "Compare Doc" (Audit AP Local, Audit AP Overseas,
 // PI Local, Accounting Rekap) -- 2026-10-02, permintaan user "list dibuat bentuk card tanpa
@@ -67,8 +67,12 @@ export function CardSortBar<K extends string>({ total, options, sortBy, sortDir,
 // 1 data = 1 BARIS kartu lebar penuh (2026-10-02, permintaan user: "tetap seperti list tapi di
 // improve", acuan tampilan kartu Audit Courier). Kolom: identitas (kiri) | isi utama | ringkasan
 // (rata kanan) | tombol aksi. Di layar < lg kolom ditumpuk ke bawah.
-export function DocRow({ left, main, side, actions, alignTop = false }: {
+export function DocRow({ left, main, side, actions, alignTop = false, rowId, marked = null, onClearMark }: {
   key?: React.Key;
+  // Penanda "sedang direview" (2026-10-23): baris yang PDF / Hasil Audit-nya baru dibuka diberi cincin ungu + chip, dan jadi tujuan scroll saat preview ditutup.
+  rowId?: string;
+  marked?: string | null;
+  onClearMark?: () => void;
   // true = kolom kiri & tengah rata ATAS (baris pertama keduanya sejajar, mis. No PO & Vendor
   // di Bunker); kolom ringkasan & aksi tetap di tengah vertikal. Default: semua kolom di tengah.
   alignTop?: boolean;
@@ -78,11 +82,100 @@ export function DocRow({ left, main, side, actions, alignTop = false }: {
   actions: React.ReactNode;
 }) {
   return (
-    <div className={`bg-white rounded-2xl border border-slate-200 border-l-[3px] border-l-[#5A305A]/70 shadow-sm hover:shadow-md transition-shadow px-5 py-3.5 grid grid-cols-1 lg:grid-cols-[minmax(220px,290px)_minmax(0,1fr)_minmax(140px,210px)_auto] gap-x-6 gap-y-3 ${alignTop ? 'items-start' : 'items-center'} min-w-0`}>
+    <div data-review-row={rowId} data-marked={marked ? 'true' : undefined}
+      className={`relative rounded-2xl border border-l-[3px] hover:shadow-md transition-shadow px-5 py-3.5 grid grid-cols-1 lg:grid-cols-[minmax(220px,290px)_minmax(0,1fr)_minmax(140px,210px)_auto] gap-x-6 gap-y-3 ${alignTop ? 'items-start' : 'items-center'} min-w-0 ${marked ? 'bg-[#FBF5FA] border-[#5A305A] border-l-[#5A305A] ring-2 ring-[#5A305A]/30 shadow-md' : 'bg-white border-slate-200 border-l-[#5A305A]/70 shadow-sm'}`}>
+      {marked && (
+        <span className="absolute top-1.5 right-3 inline-flex items-center gap-1 pl-2 pr-1 py-0.5 rounded-full bg-[#5A305A] text-white text-[10px] font-bold" title={marked}>
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" aria-hidden />Sedang direview
+          {onClearMark && <button type="button" onClick={onClearMark} aria-label="Hapus penanda" className="ml-0.5 w-4 h-4 rounded-full hover:bg-white/20 inline-flex items-center justify-center"><X size={10} /></button>}
+        </span>
+      )}
       <div className="min-w-0">{left}</div>
       <div className="min-w-0">{main}</div>
       <div className="min-w-0 lg:text-right lg:self-center">{side}</div>
       <div className="flex flex-wrap items-center gap-1.5 lg:justify-end lg:self-center">{actions}</div>
+    </div>
+  );
+}
+
+// ── Penanda "sedang direview" (2026-10-23, permintaan user): di 4 halaman Compare Doc, PDF / Hasil Audit dibuka lewat modal preview; saat daftar panjang
+// & di-scroll user lupa baris mana yang sedang dibuka. Baris itu ditandai (DocRow `marked` / tr `data-marked`), muncul pil melayang "Sedang direview: <judul>"
+// (tombol "Ke baris" + hapus), dan saat preview ditutup daftar otomatis scroll ke baris itu. Penanda hilang bila diganti baris lain / diklik ✕.
+export type ReviewMark = { id: string; title: string; page: number };
+
+// `nav` = pagination halaman (server-side): baris yang ditandai bisa berada di halaman lain -> "Ke baris" pindah ke halaman tempat preview dibuka
+// (`mark.page`), tunggu data selesai dimuat, baru scroll. Bila baris tetap tidak ada (filter/urutan sudah berubah) pil menampilkan pesan.
+export function useReviewMark(previewOpen: boolean, nav: { page: number; setPage: (p: number) => void; loading: boolean }) {
+  const [mark, setMark] = React.useState<ReviewMark | null>(null);
+  const [notFound, setNotFound] = React.useState(false);
+  const markRef = React.useRef<ReviewMark | null>(null);
+  markRef.current = mark;
+  const navRef = React.useRef(nav);
+  navRef.current = nav;
+  const pending = React.useRef<'idle' | 'waitLoad' | 'waitDone'>('idle');
+
+  const scrollToMark = React.useCallback((): boolean => {
+    const id = markRef.current?.id;
+    if (!id) return false;
+    const el = document.querySelector(`[data-review-row="${CSS.escape(id)}"]`);
+    if (!el) return false;
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    return true;
+  }, []);
+
+  const goTo = React.useCallback(() => {
+    const m = markRef.current;
+    if (!m) return;
+    setNotFound(false);
+    if (scrollToMark()) return;
+    if (m.page !== navRef.current.page) {
+      pending.current = 'waitLoad'; // setPage -> fetch -> loading true -> false
+      navRef.current.setPage(m.page);
+    } else {
+      setNotFound(true);
+    }
+  }, [scrollToMark]);
+
+  // Setelah pindah halaman: tunggu loading menyala lalu selesai, baru scroll.
+  React.useEffect(() => {
+    if (pending.current === 'idle') return;
+    if (nav.loading) { pending.current = 'waitDone'; return; }
+    if (pending.current === 'waitDone') {
+      pending.current = 'idle';
+      requestAnimationFrame(() => { if (!scrollToMark()) setNotFound(true); });
+    }
+  }, [nav.loading, scrollToMark]);
+
+  React.useEffect(() => { setNotFound(false); }, [mark]);
+  React.useEffect(() => {
+    if (!notFound) return;
+    const t = setTimeout(() => setNotFound(false), 5000);
+    return () => clearTimeout(t);
+  }, [notFound]);
+
+  const wasOpen = React.useRef(false);
+  React.useEffect(() => {
+    if (wasOpen.current && !previewOpen) requestAnimationFrame(goTo); // preview baru ditutup -> kembali ke baris
+    wasOpen.current = previewOpen;
+  }, [previewOpen, goTo]);
+
+  const clear = React.useCallback(() => setMark(null), []);
+  return { mark, setMark, clear, goTo, pill: { mark, notFound, currentPage: nav.page, onGo: goTo, onClear: clear } };
+}
+
+export function ReviewMarkPill({ mark, hidden = false, onGo, onClear, currentPage, notFound = false }: {
+  mark: ReviewMark | null; hidden?: boolean; onGo: () => void; onClear: () => void; currentPage?: number; notFound?: boolean;
+}) {
+  if (!mark || hidden) return null;
+  const otherPage = currentPage !== undefined && mark.page !== currentPage;
+  return (
+    <div className="fixed bottom-16 left-1/2 -translate-x-1/2 z-[60] max-w-[min(92vw,680px)] print:hidden flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-full bg-[#5A305A] text-white shadow-xl text-[11.5px] font-semibold" role="status" data-review-pill>
+      <span className={`w-2 h-2 rounded-full shrink-0 ${notFound ? 'bg-amber-300' : 'bg-emerald-300 animate-pulse'}`} aria-hidden />
+      <span className="truncate" title={mark.title}>
+        {notFound ? 'Baris tidak ditemukan — filter / urutan sudah berubah' : <>Sedang direview: {mark.title}{otherPage && <span className="opacity-70 font-normal"> · hal. {mark.page}</span>}</>}
+      </span>
+      <button type="button" onClick={onGo} className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/15 hover:bg-white/25 transition-colors"><Crosshair size={12} />{otherPage ? `Ke hal. ${mark.page}` : 'Ke baris'}</button>
+      <button type="button" onClick={onClear} aria-label="Hapus penanda" className="shrink-0 w-6 h-6 rounded-full hover:bg-white/20 inline-flex items-center justify-center"><X size={13} /></button>
     </div>
   );
 }

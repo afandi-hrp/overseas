@@ -10,7 +10,7 @@ import {
 } from '../utils/PiLocalHelpers';
 import { logAuditPoAudit, logAuditPoDelete } from '../utils/AuditPoLogHelpers';
 import Greeting from '../components/Greeting';
-import { ViewModeToggle, CardSortBar, DocRow, RowEyebrow, RowTitle, RowChip, RowLabel, CardAction, type CompareDocViewMode } from '../components/CompareDocCards';
+import { ViewModeToggle, CardSortBar, DocRow, RowEyebrow, RowTitle, RowChip, RowLabel, CardAction, useReviewMark, ReviewMarkPill, type CompareDocViewMode } from '../components/CompareDocCards';
 import { LoadingState, LoadingTableRow } from '../components/LoadingState';
 import AuditPoLogModal from '../components/AuditPoLogModal';
 
@@ -1332,6 +1332,9 @@ export default function PiLocalPage() {
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [previewTarget, setPreviewTarget] = useState<PreviewTarget | null>(null);
+  // Penanda baris yang sedang direview (PDF / Hasil Audit dibuka) -- lihat CompareDocCards.tsx `useReviewMark`.
+  const { mark: reviewMark, setMark: setReviewMark, clear: clearReviewMark, pill: reviewPill } = useReviewMark(!!previewTarget, { page, setPage, loading: loadingList });
+  const openPreview = (rowId: string, t: PreviewTarget) => { setReviewMark({ id: rowId, title: t.title, page }); setPreviewTarget(t); };
   const [openActionsRowId, setOpenActionsRowId] = useState<string | null>(null);
   // Tampilan daftar: Card (default, 2026-10-02 permintaan user) | List (tabel lama apa adanya).
   // Data, filter, sort, pagination & semua aksi SAMA di kedua mode -- hanya bentuk tampilannya beda.
@@ -1589,6 +1592,9 @@ export default function PiLocalPage() {
                     <DocRow
                       key={r.id}
                       alignTop
+                      rowId={r.id}
+                      marked={reviewMark?.id === r.id ? reviewMark.title : null}
+                      onClearMark={clearReviewMark}
                       left={<>
                         {/* Susunan SAMA Bunker (2026-10-02, permintaan user): Nomor PO paling atas (sejajar
                             Vendor), Kategori sebaris labelnya, badge PT + tanggal paling bawah. */}
@@ -1617,11 +1623,11 @@ export default function PiLocalPage() {
                       actions={<>
                         <CardAction tone="primary" icon={FileDown} label="PDF" title="Preview PDF" onClick={r.url_pdf ? () => {
                           const src = buildPreviewSrc(r.drive_file_id_pdf, r.url_pdf);
-                          if (src) setPreviewTarget({ title: `PDF — ${r.nomor_po || r.vendor_name || r.id}`, src, externalUrl: r.url_pdf!, kind: 'pdf' });
+                          if (src) openPreview(r.id, { title: `PDF — ${r.nomor_po || r.vendor_name || r.id}`, src, externalUrl: r.url_pdf!, kind: 'pdf' });
                         } : undefined} />
                         <CardAction tone="primary" icon={FileText} label="Hasil Audit" title="Preview Hasil Audit" onClick={r.url_html ? () => {
                           const src = buildPreviewSrc(r.drive_file_id_html, r.url_html);
-                          if (src) setPreviewTarget({ title: `Hasil Audit — ${r.nomor_po || r.vendor_name || r.id}`, src, externalUrl: r.url_html!, kind: 'html' });
+                          if (src) openPreview(r.id, { title: `Hasil Audit — ${r.nomor_po || r.vendor_name || r.id}`, src, externalUrl: r.url_html!, kind: 'html' });
                         } : undefined} />
                         <CardAction iconOnly tone="warn" icon={History} label="Riwayat" title="Riwayat Perubahan" onClick={() => setLogRow(r)} />
                         {canEditPiLocal && <CardAction iconOnly tone="info" icon={Pencil} label="Edit" onClick={() => setEditRow(r)} />}
@@ -1672,7 +1678,8 @@ export default function PiLocalPage() {
                   <tr><td colSpan={9} className="text-center py-10 text-[#5A305A] text-sm italic">Belum ada data PI Local.</td></tr>
                 ) : (
                   rows.map((r) => (
-                    <tr key={r.id} className="group bg-white hover:bg-slate-50 transition-colors">
+                    <tr key={r.id} data-review-row={r.id} data-marked={reviewMark?.id === r.id ? 'true' : undefined}
+                      className={`group transition-colors ${reviewMark?.id === r.id ? 'bg-[#F5EDF3] shadow-[inset_4px_0_0_#5A305A]' : 'bg-white hover:bg-slate-50'}`}>
                       <td className="px-3 py-3 align-top text-[#5A305A] break-words">{formatDateTimeID(r.created_at)}</td>
                       <td className="px-3 py-3 align-top"><PtBadge pt={r.nama_pt} /></td>
                       <td className="px-3 py-3 align-top text-[#5A305A] font-semibold break-words">{r.nomor_po || '-'}</td>
@@ -1683,7 +1690,7 @@ export default function PiLocalPage() {
                       {/* Baris dekat bawah tabel buka dropdown ke ATAS -- lihat catatan sama di
                           AuditPoPage.tsx (2026-09, porting fix "kategori tidak terlihat"). */}
                       <td className="px-3 py-3 align-top"><KategoriCell row={r} onChanged={handleKategoriChanged} canEdit={canEditPiLocal} /></td>
-                      <td className="px-2 py-3 align-top sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-10 border-l border-slate-200 transition-colors">
+                      <td className="px-2 py-3 align-top sticky right-0 bg-white group-hover:bg-slate-50 group-data-[marked=true]:bg-[#F5EDF3] shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-10 border-l border-slate-200 transition-colors">
                         <div className="flex flex-col items-center gap-1.5 w-[92px]">
                           <button
                             onClick={() => setOpenActionsRowId(openActionsRowId === r.id ? null : r.id)}
@@ -1727,7 +1734,7 @@ export default function PiLocalPage() {
                                 <button
                                   onClick={() => {
                                     const src = buildPreviewSrc(r.drive_file_id_pdf, r.url_pdf);
-                                    if (src) setPreviewTarget({ title: `PDF — ${r.nomor_po || r.vendor_name || r.id}`, src, externalUrl: r.url_pdf!, kind: 'pdf' });
+                                    if (src) openPreview(r.id, { title: `PDF — ${r.nomor_po || r.vendor_name || r.id}`, src, externalUrl: r.url_pdf!, kind: 'pdf' });
                                   }}
                                   title="Preview PDF"
                                   className="w-full flex items-center gap-1 px-1.5 py-1 rounded-md border border-slate-200 bg-white text-[9px] font-semibold text-[#5A305A] hover:bg-slate-100 transition-colors"
@@ -1743,7 +1750,7 @@ export default function PiLocalPage() {
                                 <button
                                   onClick={() => {
                                     const src = buildPreviewSrc(r.drive_file_id_html, r.url_html);
-                                    if (src) setPreviewTarget({ title: `Hasil Audit — ${r.nomor_po || r.vendor_name || r.id}`, src, externalUrl: r.url_html!, kind: 'html' });
+                                    if (src) openPreview(r.id, { title: `Hasil Audit — ${r.nomor_po || r.vendor_name || r.id}`, src, externalUrl: r.url_html!, kind: 'html' });
                                   }}
                                   title="Preview Hasil Audit"
                                   className="w-full flex items-center gap-1 px-1.5 py-1 rounded-md border border-slate-200 bg-white text-[9px] font-semibold text-[#5A305A] hover:bg-slate-100 transition-colors"
@@ -1808,6 +1815,8 @@ export default function PiLocalPage() {
     {previewTarget && (
       <PreviewModal target={previewTarget} onClose={() => setPreviewTarget(null)} />
     )}
+
+    <ReviewMarkPill {...reviewPill} hidden={!!previewTarget} />
 
     {editRow && (
       <EditPiLocalModal record={editRow} onClose={() => setEditRow(null)} onSaved={handleRowSaved} />

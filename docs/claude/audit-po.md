@@ -94,6 +94,18 @@ halaman. Rule ini dinyatakan SEKALI di sini.
     `.order(sortBy,{ascending, nullsFirst:false})` — fix bug baris kosong nongol di atas saat
     sort ASC (Postgres default NULL=largest).
 
+## Penanda baris "Sedang direview" — 4 halaman Compare Doc (2026-10-23, permintaan user)
+
+Masalah: PDF / Hasil Audit dibuka lewat modal preview; di daftar panjang yang di-scroll user tidak tahu baris mana yang sedang ia review. Solusi (BERSAMA, di
+`CompareDocCards.tsx`, bukan duplikasi): hook `useReviewMark(previewOpen)` + `ReviewMarkPill` + prop `DocRow` `rowId`/`marked`/`onClearMark`. Tiap halaman: `openPreview(r.id, target)`
+menggantikan `setPreviewTarget({...})` di tombol PDF / Hasil Audit / Dokumen (Card DAN List) -> mengisi `reviewMark {id, title}`.
+- **Card**: baris ber-cincin ungu + latar tipis + chip "● Sedang direview ✕" di pojok kanan atas. **List**: `<tr>` ber-tint + garis ungu kiri (sel Aksi sticky ikut warna lewat `group-data-[marked=true]`).
+- **Pil melayang** (`fixed bottom-16`, tengah, z-60, tersembunyi selama modal preview terbuka): "Sedang direview: <judul preview>" + tombol **Ke baris** + ✕.
+- **Pagination server-side**: penanda menyimpan nomor halaman (`mark.page`). Bila user pindah halaman, pil menampilkan "· hal. N" & tombol jadi **"Ke hal. N"** -> `setPage(N)`, tunggu `loadingList`
+  menyala lalu selesai (hook menerima `nav {page,setPage,loading}`), baru scroll. Baris tak ada lagi (filter/urutan berubah) -> pil "Baris tidak ditemukan" 5 detik.
+- Saat preview DITUTUP daftar otomatis `scrollIntoView` ke baris itu. Penanda hilang bila ✕ diklik atau preview baris lain dibuka; tidak disimpan ke DB/localStorage.
+- Baris diidentifikasi `data-review-row={id}` (DocRow & `<tr>`). Halaman baru bergaya sama: pasang 4 hal itu juga (DocRow juga dipakai Bunker -- tanpa prop baru tampilannya sama seperti dulu).
+
 ## Tampilan Card | List — Audit AP Local/Overseas, PI Local, Accounting Rekap (2026-10-02)
 
 Permintaan user: daftar dibuat bentuk kartu "tanpa merubah fungsi". Toggle **Card | List** di ujung
