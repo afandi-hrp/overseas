@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
 import { Fuel, UploadCloud, Clock, X, CheckCircle2, AlertTriangle, ClipboardList, FileCheck2, Trash2, Search, RefreshCw, History } from 'lucide-react';
 import {
-  formatDateTimeID, summaryStatusMeta, STATUS_WORKFLOW_OPTIONS, workflowMeta, updateBunkerDokumen,
+  formatDateTimeID, effectiveSummaryStatusMeta, STATUS_WORKFLOW_OPTIONS, workflowMeta, updateBunkerDokumen,
   computeMatrixMatchStats,
 } from '../utils/BunkerHelpers';
 import BunkerUploadModal from '../components/BunkerUploadModal';
@@ -106,9 +106,10 @@ function DeleteConfirmModal({ record, onConfirm, onClose, deleting, error }: {
   );
 }
 
-function StatusBadge({ status }: { status: string | null }) {
-  const meta = summaryStatusMeta(status);
-  return <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${meta.badgeClass}`}>{meta.label}</span>;
+// "Needs Review" -> "Reviewed" (hijau) bila semua baris Mismatch/Warning sudah dikonfirmasi manual; persen Match tidak ikut berubah (BunkerHelpers.isBunkerReviewed).
+function StatusBadge({ row }: { row: any }) {
+  const meta = effectiveSummaryStatusMeta(row.status, row.matrix_perbandingan, row.status_manual);
+  return <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${meta.badgeClass}`} title={meta.label === 'Reviewed' ? 'All Mismatch / Warning rows were confirmed manually' : undefined}>{meta.label}</span>;
 }
 
 function WorkflowSelect({ row, onChanged, canEdit }: { row: any; onChanged: () => void; canEdit: boolean }) {
@@ -464,7 +465,7 @@ export default function BunkerPage() {
                               <WorkflowSelect row={r} onChanged={fetchList} canEdit={canEditBunker} />
                             </div>
                             <div className="mt-2">
-                              <RowEyebrow><StatusBadge status={r.status} /><span>Updated {formatDateTimeID(r.updated_at)}</span></RowEyebrow>
+                              <RowEyebrow><StatusBadge row={r} /><span>Updated {formatDateTimeID(r.updated_at)}</span></RowEyebrow>
                             </div>
                           </>}
                           main={<>
@@ -520,7 +521,7 @@ export default function BunkerPage() {
                         <td className="px-3 py-3 align-top text-[#5A305A]">{r.vendor || '-'}</td>
                         <td className="px-3 py-3 align-top text-[#5A305A]">{r.kapal || '-'}</td>
                         <td className="px-3 py-3 align-top text-[#5A305A]">{r.lokasi || '-'}</td>
-                        <td className="px-3 py-3 align-top"><StatusBadge status={r.status} /></td>
+                        <td className="px-3 py-3 align-top"><StatusBadge row={r} /></td>
                         <td className="px-3 py-3 align-top"><WorkflowSelect row={r} onChanged={fetchList} canEdit={canEditBunker} /></td>
                         <td className="px-3 py-3 align-top text-[#5A305A] whitespace-nowrap">{formatDateTimeID(r.updated_at)}</td>
                         <td className="px-2 py-3 align-top sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-10 border-l border-slate-200 transition-colors">

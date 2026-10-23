@@ -107,6 +107,27 @@ export function summaryStatusMeta(status: string | null | undefined) {
   return (status && SUMMARY_STATUS_META[status]) || { label: status || 'No Data Yet', badgeClass: 'bg-slate-100 text-[#5A305A]', bannerClass: 'bg-slate-50 border-slate-200 text-[#5A305A]' };
 }
 
+// Status turunan "Reviewed" (2026-10-23, permintaan user): status sistem 'BUTUH REVIEW' (kolom `status` / `summary.status`, ditulis n8n, TIDAK diubah)
+// ditampilkan sbg "Reviewed" (hijau) bila SEMUA baris matrix ber-row_status Mismatch/Warning SUDAH dikonfirmasi manual (`status_manual[row.field].confirmed_match`).
+// Murni tampilan: persentase (`computeMatrixMatchStats`, dari row_status) & nilai di DB TIDAK berubah. Batalkan konfirmasi -> kembali "Needs Review".
+// BUTUH REVIEW tanpa baris Mismatch/Warning (mis. sebab lain) TIDAK dianggap reviewed.
+export function isBunkerReviewed(status: string | null | undefined, rawMatrix: unknown, rawStatusManual: unknown): boolean {
+  if (status !== 'BUTUH REVIEW') return false;
+  const parsed = parseJsonField(rawMatrix);
+  const rows: any[] = Array.isArray(parsed) ? parsed : [];
+  const flagged = rows.filter(r => r?.row_status === 'Mismatch' || r?.row_status === 'Warning');
+  if (flagged.length === 0) return false;
+  const manual = parseJsonField(rawStatusManual) || {};
+  return flagged.every(r => manual?.[r.field]?.confirmed_match === true);
+}
+
+const REVIEWED_META = { label: 'Reviewed', badgeClass: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-300', bannerClass: 'bg-emerald-50 border-emerald-200 text-emerald-800' };
+
+// Meta status ringkasan yang MEMPERHITUNGKAN konfirmasi manual -- pakai ini (bukan summaryStatusMeta langsung) di kartu, list & modal.
+export function effectiveSummaryStatusMeta(status: string | null | undefined, rawMatrix: unknown, rawStatusManual: unknown) {
+  return isBunkerReviewed(status, rawMatrix, rawStatusManual) ? REVIEWED_META : summaryStatusMeta(status);
+}
+
 // status_workflow BEBAS diedit dari aplikasi -- n8n tidak pernah menyentuh kolom ini. Nilai
 // (KEY) di `STATUS_WORKFLOW_OPTIONS` TIDAK diubah (tersimpan apa adanya di DB) -- HANYA `label`
 // tampilan di `STATUS_WORKFLOW_META` yang ditranslate (2026-09).

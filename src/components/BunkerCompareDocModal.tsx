@@ -4,7 +4,7 @@ import DOMPurify from 'dompurify';
 import { createPortal } from 'react-dom';
 import { X, AlertTriangle, ListChecks, ClipboardList, Save, ShieldCheck, CheckCircle2, XCircle, RotateCcw, Printer, FileText, Eye, Download } from 'lucide-react';
 import {
-  parseJsonField, getMatrixColumns, resolveAcuanColumnKey, summaryStatusMeta,
+  parseJsonField, getMatrixColumns, resolveAcuanColumnKey, effectiveSummaryStatusMeta,
   STATUS_WORKFLOW_OPTIONS, workflowMeta, rowStatusClass, rowStatusMeta, updateBunkerDokumen,
   setStatusManualEntry, clearStatusManualEntry, friendlyDbError, formatDateTimeID,
   computeMatrixMatchStats, logBunkerAudit,
@@ -472,7 +472,7 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged, canE
   const actions: string[] = Array.isArray(summary.actions) ? summary.actions : [];
   const wrongRowWarnings = mismatches.filter(isWrongRowMismatch);
   const normalMismatches = mismatches.filter(m => !isWrongRowMismatch(m));
-  const statusMeta = summaryStatusMeta(summary.status);
+  const statusMeta = effectiveSummaryStatusMeta(summary.status, rec.matrix_perbandingan, rec.status_manual);
 
   // Ringkasan Match/Warning/Mismatch + persentase akurasi -- lihat computeMatrixMatchStats
   // (BunkerHelpers.ts), dipakai juga oleh badge di tombol "Compare Doc" pada BunkerPage.tsx.

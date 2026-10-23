@@ -628,6 +628,11 @@ dari batch query `dokumen_checklist_seaair`.
 
 - `computeMatrixMatchStats()` (`BunkerHelpers.ts`) — SATU-SATUNYA sumber Match/Warning/Mismatch
   + %, dari `row_status` `matrix_perbandingan`.
+- **Status "Reviewed" (2026-10-23, permintaan user)**: badge status ringkasan `BUTUH REVIEW` (kartu, List & modal) tampil **"Reviewed" (hijau)** bila SEMUA baris matrix ber-`row_status`
+  Mismatch/Warning sudah dikonfirmasi manual (`status_manual[row.field].confirmed_match`) -- `isBunkerReviewed()` / `effectiveSummaryStatusMeta()` di `BunkerHelpers.ts`. Murni tampilan:
+  kolom `status`/`summary.status` (ditulis n8n) TIDAK diubah, **persen Match tetap dari `row_status`** (`computeMatrixMatchStats`, tidak ikut konfirmasi). Cancel konfirmasi -> kembali "Needs Review".
+  BUTUH REVIEW tanpa baris Mismatch/Warning (sebab lain) tidak dianggap reviewed. Dropdown filter Status halaman = filter DB (`status`), jadi "Needs Review" masih memuat baris yang sudah Reviewed.
+  Data production dicek 2026-10-23: BUTUH REVIEW selalu punya >= 1 baris Mismatch; belum ada kasus Warning-saja.
 - **Riwayat Perubahan** (`BunkerAuditLogModal.tsx`) — pakai ulang tabel `audit_trail` existing.
   **Kolom ASLI tabel**: `id`, `created_at`, `tabel`, `action`, `awb`, `no_dokumen`, `jenis`,
   `user_email`, `catatan` — TIDAK ADA `deskripsi`/`old_value`/`new_value` (`deskripsi` cuma
