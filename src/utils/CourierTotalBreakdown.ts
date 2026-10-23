@@ -217,10 +217,10 @@ export function courierSubmitLock(bd: TotalBreakdown, rows: any[]): 'loading' | 
   return null
 }
 
-// Simpan Internal remarks (rekapan_courier.keterangan) ke semua invoice AWB yang BELUM di-Submit (yang sudah Submit terkunci sql/038).
+// Simpan Internal remarks (rekapan_courier.keterangan) ke SEMUA invoice AWB, termasuk yang sudah di-Submit (2026-10-23: `keterangan` tidak ada di daftar kunci Submit, sql/075).
 export async function saveInternalRemarks(rows: any[], text: string): Promise<{ ok: boolean; error?: string }> {
-  const ids = rows.filter(r => !r.submit_date).map(r => r.id)
-  if (ids.length === 0) return { ok: false, error: 'All invoices are already submitted.' }
+  const ids = rows.map(r => r.id)
+  if (ids.length === 0) return { ok: false, error: 'No invoice to save the remarks to.' }
   const value = text.trim() === '' ? null : text.trim()
   const { error } = await supabase.from('rekapan_courier').update({ keterangan: value }).in('id', ids)
   return error ? { ok: false, error: error.message } : { ok: true }

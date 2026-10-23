@@ -14,6 +14,7 @@
 export const COURIER_RECAP_LOCKED_COLUMNS: readonly string[] = [
   'no_invoice', 'courier_adm_fee', 'total_duty_tax', 'total_freight', 'total_amount', 'bm', 'ppn', 'pph', 'ntpn', 'awb',
   'breakdown_courier_adm_vessel', 'breakdown_duty_vessel', 'breakdown_freight_vessel', 'breakdown_bm_vessel', 'breakdown_ppnpph_vessel', 'created_at',
+  'submit_date', // keputusan user 2026-10-23: Submit Date ikut terkunci (mengosongkannya = membuka kunci tanpa Unlock Admin & alasan) -- DB: sql/076
 ]
 export const courierRecapColumnLocked = (r: any, key: string): boolean => !!r?.submit_date && COURIER_RECAP_LOCKED_COLUMNS.includes(key)
 

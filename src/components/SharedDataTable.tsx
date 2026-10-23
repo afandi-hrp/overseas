@@ -5602,7 +5602,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
           await syncRemarkToGroup({ ...record, ...cleanedPayload }, cleanedPayload.notes ?? null)
           const key = courierAwbNorm(record.awb)
           if (key) {
-            setRecords(prev => prev.map(r => (String(r.id) !== String(id) && !r.submit_date && courierAwbNorm(r.awb) === key) ? { ...r, notes: cleanedPayload.notes ?? null } : r))
+            setRecords(prev => prev.map(r => (String(r.id) !== String(id) && courierAwbNorm(r.awb) === key) ? { ...r, notes: cleanedPayload.notes ?? null } : r))
           }
         }
       } else {

@@ -1,7 +1,7 @@
 // Sinkron "Checklist Note" (dokumen_checklist.catatan_checklist, per record PIB/CN) <-> "Remarks" (rekapan_courier.notes, per
 // invoice) -- 2026-10-08, keputusan user (Invoice Recap Courier, "Valid (note)"). Aturan:
-// - Satu AWB bisa punya beberapa invoice: Remarks SEMUA invoice AWB itu diisi sama (hanya yang BELUM di-Submit; invoice
-//   ber-submit_date terkunci sql/038 & tetap memakai Remarks lamanya).
+// - Satu AWB bisa punya beberapa invoice: Remarks SEMUA invoice AWB itu diisi sama -- TERMASUK yang sudah di-Submit (2026-10-23, permintaan
+//   user; kolom `notes` tidak ada di daftar kunci Submit, sql/075). Dulu invoice ber-submit_date dilewati.
 // - Sinkron HANYA saat ada yang mengedit (tidak ada penimpaan otomatis saat tampil/baca).
 // - Checklist hanya bisa diedit selama PIB/CN masih Draft: edit Remarks tidak mengubah Checklist Note kalau PIB/CN Audited.
 // - Tulis langsung ke tabel (BUKAN lewat jalur simpan List/Checklist) supaya dua arah tidak saling memicu berulang.
@@ -31,12 +31,12 @@ export async function fetchGroupInvoices(awb: any, link?: { col: 'pib_id' | 'cn_
   return Array.from(out.values())
 }
 
-// Checklist Note -> Remarks semua invoice AWB yang belum di-Submit. Dipanggil setelah Checklist Note berubah & tersimpan.
+// Checklist Note -> Remarks semua invoice AWB (termasuk yang sudah di-Submit). Dipanggil setelah Checklist Note berubah & tersimpan.
 export async function syncChecklistNoteToRemarks(auditRec: any, note: string | null): Promise<number> {
   try {
     const isCn = String(auditRec?.jenis_dokumen || '').toUpperCase() === 'CN'
     const rows = await fetchGroupInvoices(auditRec?.awb, { col: isCn ? 'cn_id' : 'pib_id', id: auditRec?.id })
-    const ids = rows.filter(r => !r.submit_date && (clean(r.notes) ?? '') !== (clean(note) ?? '')).map(r => r.id)
+    const ids = rows.filter(r => (clean(r.notes) ?? '') !== (clean(note) ?? '')).map(r => r.id)
     if (ids.length === 0) return 0
     const { error } = await supabase.from('rekapan_courier').update({ notes: clean(note) }).in('id', ids)
     if (error) { console.warn('[RemarksSync] Checklist Note -> Remarks gagal', error.message); return 0 }
@@ -47,13 +47,13 @@ export async function syncChecklistNoteToRemarks(auditRec: any, note: string | n
   }
 }
 
-// Remarks 1 invoice -> invoice lain AWB itu (belum Submit) + Checklist Note record PIB/CN-nya (kalau masih Draft).
+// Remarks 1 invoice -> invoice lain AWB itu (termasuk yang sudah Submit) + Checklist Note record PIB/CN-nya (kalau masih Draft).
 export async function syncRemarkToGroup(row: any, note: string | null): Promise<void> {
   try {
     const value = clean(note)
     // 1. invoice lain di AWB yang sama
     const rows = await fetchGroupInvoices(row?.awb, row?.pib_id ? { col: 'pib_id', id: row.pib_id } : row?.cn_id ? { col: 'cn_id', id: row.cn_id } : undefined)
-    const others = rows.filter(r => String(r.id) !== String(row?.id) && !r.submit_date && (clean(r.notes) ?? '') !== (value ?? '')).map(r => r.id)
+    const others = rows.filter(r => String(r.id) !== String(row?.id) && (clean(r.notes) ?? '') !== (value ?? '')).map(r => r.id)
     if (others.length > 0) {
       const { error } = await supabase.from('rekapan_courier').update({ notes: value }).in('id', others)
       if (error) console.warn('[RemarksSync] Remarks -> invoice lain gagal', error.message)
