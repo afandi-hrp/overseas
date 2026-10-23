@@ -182,7 +182,8 @@ const InvoiceStepper: React.FC<{ r: CostAgentInvoiceListRow }> = ({ r }) => {
         const n = note(s.key, s.done)
         const now = i === cur
         return (
-          <div key={s.key} className="flex-1 min-w-[68px]">
+          // Langkah TERAKHIR selebar isinya (titik + label), bukan slot flex-1: dulu slot kosong ±seperempat kolom di kanan titik "Paid" = jarak ke nominal terlalu lebar.
+          <div key={s.key} className={i === steps.length - 1 ? 'shrink-0 min-w-[68px]' : 'flex-1 min-w-[68px]'}>
             <div className="flex items-center">
               <span className={`w-[22px] h-[22px] rounded-full shrink-0 inline-flex items-center justify-center border-2 ${s.done ? 'bg-[#17663D] border-[#17663D] text-white shadow-sm' : now ? `${STEP_NOW[curTone]} ring-4 ring-black/[0.04]` : 'bg-white border-[#E4DCD6] text-[#C9BEC8]'}`}>
                 {s.done ? <Check size={12} strokeWidth={3.5} />
@@ -219,7 +220,9 @@ export const CostAgentInvoiceCard: React.FC<{
   // Grand total, tombol. Layar sempit: ditumpuk.
   return (
     <div className={cardCls(st?.tone || 'grey', selected)} onClick={onOpen} data-invoice-card={r.id} aria-current={selected || undefined}>
-      <div className="grid grid-cols-1 @3xl:grid-cols-2 @5xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1.1fr)_auto] gap-x-6 gap-y-3 px-4 py-3 items-center">
+      {/* 3 KOLOM (2026-10-23, permintaan user): Identitas | Garis progres | Nominal + aksi. Kolom kanan LEBAR TETAP (dulu `auto` -> lebarnya mengikuti isi, mis. "—" saat AI masih
+          membaca vs "Rp 15.803.330", sehingga garis progres tiap kartu mulai di posisi berbeda). >= 896px (laptop 14" ikut) 3 kolom; di bawahnya ditumpuk. */}
+      <div className="grid grid-cols-1 @4xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_264px] @7xl:grid-cols-[minmax(0,520px)_minmax(0,1fr)_264px] gap-x-5 gap-y-3 px-5 py-3.5 items-center" data-invoice-card-grid>
         {/* 1. Identitas */}
         <div className="min-w-0 flex gap-2.5">
           {checkbox && (
@@ -266,19 +269,19 @@ export const CostAgentInvoiceCard: React.FC<{
           </div>
         </div>
 
-        {/* 2. Garis progres */}
-        <div className="min-w-0"><InvoiceStepper r={r} /></div>
+        {/* 2. Garis progres -- layar lebar (>= 1280px): identitas lebar tetap 520px | progres mengisi sisanya | nominal 264px -> jarak identitas->progres dan progres->nominal sama kecil (tanpa ruang kosong besar di monitor 24"). */}
+        <div className="min-w-0 w-full"><InvoiceStepper r={r} /></div>
 
         {/* 3. Chip status / alert, lalu Cost lines + Grand total + aksi */}
-        <div className="min-w-0 flex flex-col @5xl:items-end gap-1.5 @3xl:col-span-2 @5xl:col-span-1">
+        <div className="min-w-0 flex flex-col @4xl:items-end gap-1.5">
           {(r.duplicate_of || mine) && (
-            <div className="flex flex-wrap items-center gap-1.5 @5xl:justify-end">
+            <div className="flex flex-wrap items-center gap-1.5 @4xl:justify-end">
               {r.duplicate_of && <Chip tone="red">Duplicate of #{r.duplicate_of}</Chip>}
               {mine && <Chip tone="purple" title="This invoice is waiting for your approval"><ShieldCheck size={10} /> Your approval</Chip>}
             </div>
           )}
-          <div className="flex items-center gap-4 @5xl:justify-end">
-            <div className="text-[18px] leading-tight font-bold text-[#3B1B3D] tabular-nums whitespace-nowrap" title="Grand total">{fmtMoney(r.grand_total, r.currency)}</div>
+          <div className="flex items-center justify-between @4xl:justify-end gap-3 @4xl:w-full">
+            <div className="text-[18px] leading-tight font-bold text-[#3B1B3D] tabular-nums whitespace-nowrap @4xl:flex-1 @4xl:text-right" title="Grand total">{fmtMoney(r.grand_total, r.currency)}</div>
             <button type="button" onClick={e => { stop(e); onOpen() }} aria-pressed={selected} title="Open the invoice review" data-invoice-review
               className={`inline-flex items-center justify-center px-4 h-8 rounded-xl text-xs font-semibold text-white transition-colors ${selected ? 'bg-[#3B1B3D]' : 'bg-[#6B3470] hover:bg-[#5A2A5E]'}`}>
               {mine ? 'Decide' : 'Review'}
@@ -291,6 +294,8 @@ export const CostAgentInvoiceCard: React.FC<{
                 {deleting ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
               </button>
             )}
+            {/* Tanpa tombol hapus (bukan Admin): ruangnya tetap dicadangkan supaya tombol Review lurus antar kartu. */}
+            {!onDelete && <span aria-hidden className="hidden @4xl:block w-8 h-8 -ml-2 shrink-0" />}
           </div>
         </div>
       </div>

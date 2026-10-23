@@ -164,6 +164,39 @@ File: `src/pages/cost-agent/CostAgentVoyagePage.tsx` (halaman), `src/components/
   formatter/qty/validasi waktu dicek di Node. App jalan di dev (route, template, proxy 401 tanpa token). BELUM dites ke DB
   (sql/054 belum dijalankan) & n8n.
 
+## Agency Invoices — update sql/071 + sql/072 (2026-10-23; SQL SUDAH dijalankan user, file lokal `071_cost_agent_amount_stamp_company.sql` & `072_cost_agent_documents_compare.sql` di root repo -- JANGAN di-commit)
+
+HANYA halaman Agent Invoice yang diubah (Voyage & Approval Matrix, permissions.ts, MainLayout, App, server.ts TIDAK disentuh). Teks UI Inggris.
+- **Rupiah bulat tanpa desimal** (071): `fmtMoney(v, _currency?)` kini MENGABAIKAN currency & selalu `formatMoney(v)` = `fmtRupiah` ("Rp 21.384.734", titik ribuan id-ID seperti seluruh aplikasi; contoh spek
+  memakai koma -- sengaja mengikuti format aplikasi). Tidak ada pemilih mata uang / USD / 2 desimal. Input Amount modal "Edit line": `type=number step=1`, bagian sen dibuang saat mengetik, qty × unit price
+  dipotong (`Math.trunc`); nilai dikirim apa adanya (database yang memotong).
+- **Upload** (`CostAgentUploadModal`): TIDAK ada lagi Single/Batch & Company; satu request multipart (X-Webhook-Type cost_agent) `cost_agent_meta {voyage_call_id?, hint?}` berisi SEMUA file (n8n mendeteksi 1 atau banyak
+  invoice, PT dari master kapal). Modal menutup begitu balasan `{job_id, invoice_id}` datang; **`useCostAgentUploadTracker`** (`CostAgentUploadResultDialog.tsx`) polling 5 dtk (maks 10 menit) ke
+  `cost_agent_invoice_documents` (job_id) + status invoice (`fetchCostAgentJobSnapshot`): selesai = tak ada dokumen/invoice `processing`. 1 invoice -> toast "Invoice ready for review" + dibuka; >1 -> toast
+  "N invoices detected from this upload" + dialog daftar (nomor / vendor / total / status / Open); gagal -> `error_message`. Prop `onJob` opsional: halaman Voyages (pemanggil lama, TIDAK diubah) tetap memakai `onSent`;
+  prop `companies`/`defaultCompany` dipertahankan opsional & diabaikan.
+- **Kotak total** (footer modal review, `AmountsBar`): Cost lines (incl. stamp duty) = `lines_total` | VAT = `ppn` | VAT not collected = `ppn_not_collected` (abu-abu, hanya > 0, tooltip "Already deducted from VAT") |
+  WHT = `pph` | Grand total. Stamp BUKAN lagi kelompok pajak (baris biasa, cost item MATERAI). Pensil mengubah VAT & WHT saja (subtotal & materai dikirim apa adanya ke `fn_cost_agent_update_invoice_amounts`); Grand total =
+  subtotal + VAT + materai − WHT. Penanda selisih `linesMismatch`: lines_total harus = subtotal ATAU subtotal + materai (toleransi Rp 1 per baris).
+- **check_notes**: teks baru `company_unknown`, `grand_mismatch`, `susulan_mismatch`, `non_idr_currency` (peringatan biasa) di `CostAgentNotes.ts`; `note.msg` (Indonesia, server) tampil KECIL abu-abu di bawah teks Inggris
+  (`noteMsg`; keputusan lama 2026-10-16 "msg tak ditampilkan" DIGANTI permintaan ini) di daftar alert header & tab Documents. `company_unknown` bisa "Fix" (Correct header): dropdown Company di-highlight kuning;
+  **Submit for approval nonaktif selama company kosong** (tooltip "Choose the company first").
+- **Tab Documents & Tax** ditulis ulang (`CostAgentInvoiceDocuments.tsx`): data `fn_cost_agent_get_invoice_documents` (tipe `CostAgentDocCompare`, `DocCmp*` di CostAgentHelpers). Banner chip overall (Not analysed abu / Incomplete biru /
+  Attention merah / OK hijau) + "n red flags" + **Add documents** (alur susulan lama; selesai -> baca ulang + toast "Documents added — comparison updated") + **Analyse again** (`fn_cost_agent_start_redo` -> webhook
+  `{mode:'redo_docs', invoice_id, job_id}` TANPA file -> polling job -> baca ulang; toast "Documents are being analysed again — invoice data is not changed"). Tabel: 1 Document completeness, 2 Invoice vs attachments & 3 Invoice vs tax invoice
+  (per dokumen), 4 Dates, 5 Line comparison (chip per sisi: Match / Match · section total / Match · sum of n items / Match · combined in one row / Different + Δ / Not in attachment / Not in tax invoice / Waiting for tax invoice /
+  No VAT / No attachment; baris diff = border kiri merah, none = amber, baris bersih ringkas; toggle "Show only differences" default off; klik baris = drawer semua referensi; footer Orphans), 6 Tax totals (+ kartu per FP).
+  Daftar file + dokumen terbaca (duplikat `duplicate_of` abu-abu "Duplicate of #id — not used in comparison"). Invoice lama (`analysed=false`) -> kartu "Not analysed yet"; FP belum ada -> "Waiting for tax invoice" tanpa error.
+  Membaca ulang senyap tiap 5 dtk selama ada file `processing`. Daftar `tax_checks` lama tetap di paling bawah. Invoice, baris & status TIDAK berubah oleh Add documents / Analyse again.
+- **Kartu Agency Invoices = 3 kolom tetap** (2026-10-23, laporan user "timeline progres tidak rata"): `@4xl` (>= 896px, laptop 14" ikut) `grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_264px]` = Identitas | Garis progres | Nominal + Review (+ hapus).
+  Penyebab lama: kolom kanan `auto` -> lebar mengikuti isi ("—" saat AI membaca vs "Rp 15.803.330") sehingga kolom progres tiap kartu bergeser. Nominal rata kanan `flex-1`, ruang tombol hapus dicadangkan
+  (non-Admin) supaya Review lurus antar kartu; di bawah 896px ditumpuk 1 kolom (nominal kiri, tombol kanan). Padding `px-5 py-3.5`, gap-x 20px.
+  **Layar lebar** (zoom out / monitor 24", laporan user "tidak simetris"): `@7xl` (>= 1280px) `grid-cols-[minmax(0,520px)_minmax(0,1fr)_264px]` -- identitas 520px tetap | progres mengisi sisanya | nominal 264px, sehingga jarak identitas->progres dan progres->nominal sama kecil
+  (percobaan 1fr|520px|1fr lalu 1fr|1,7fr|1fr ditolak: nominal rata kanan meninggalkan ruang kosong besar di kiri-kanan progres di monitor 24"). Langkah TERAKHIR stepper (`Paid`) selebar isinya (`shrink-0`),
+  bukan slot `flex-1` (slot kosong di kanan titik Paid ikut melebarkan jarak ke nominal).
+- Whitelist gateway (`server/db/whitelist.ts`): + `fn_cost_agent_get_invoice_documents`, `fn_cost_agent_start_redo`. Opsi F (chip dokumen di list invoice) TIDAK dikerjakan (tidak memanggil RPC per baris).
+- Diuji: `tsc` bersih, `vite build` sukses. BELUM dites ke n8n / data asli (RPC perbandingan tak bisa dibaca role read-only) -- bentuk JSON mengikuti spesifikasi, semua akses null-safe.
+
 ## Voyages — Noon Report (2026-10-22; sisi aplikasi. Backend SQL/n8n dari user SUDAH ada di DB production: view punya `input_source`, `fn_cost_agent_get_voyage` membawa `noon`, dicek via MCP)
 
 Voyage punya 2 sumber terpisah: dokumen SOF/Time Sheet (Medan, AI) dan **Noon Report Excel** (Jakarta, dibaca KODE di n8n). Voyage noon selalu

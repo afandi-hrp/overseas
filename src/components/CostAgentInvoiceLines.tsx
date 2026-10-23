@@ -509,7 +509,8 @@ function EditLineModal({ line, currency, actor, onClose, onSaved }: {
 
   const recalc = (q: string, p: string) => {
     const qn = parseAmountInput(q), pn = parseAmountInput(p)
-    if (qn !== null && pn !== null) setAmount(String(Math.round(qn * pn * 100) / 100))
+    // Rupiah bulat (sql/071): sen dibuang (dipotong, bukan dibulatkan) -- sama perilaku database.
+    if (qn !== null && pn !== null) setAmount(String(Math.trunc(qn * pn)))
   }
   const qtyN = parseAmountInput(qty), priceN = parseAmountInput(price), amountN = parseAmountInput(amount)
 
@@ -550,11 +551,13 @@ function EditLineModal({ line, currency, actor, onClose, onSaved }: {
         </div>
         <div className="col-span-2">
           <FieldLabel required hint="auto = qty × unit price when both are filled">Amount</FieldLabel>
-          <input className={SA_INPUT} inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)} />
-          <p className="mt-1 text-[11px] text-[#6E5E70] tabular-nums">{amountN !== null ? fmtMoney(amountN, currency) : amount.trim() ? 'Not a valid number' : '—'}</p>
+          {/* Rupiah bulat tanpa desimal: step 1, bagian sen dibuang saat mengetik; nilai dikirim apa adanya, database yang memotong. */}
+          <input className={SA_INPUT} type="number" step={1} inputMode="numeric" value={amount} data-amount-input
+            onChange={e => setAmount(e.target.value.includes('.') || e.target.value.includes(',') ? e.target.value.split(/[.,]/)[0] : e.target.value)} />
+          <p className="mt-1 text-[11px] text-[#6E5E70] tabular-nums">{amountN !== null ? fmtMoney(amountN) : amount.trim() ? 'Not a valid number' : '—'}</p>
         </div>
         <div className="col-span-2 rounded-lg border border-[#EADFD6] bg-[#FBF7F4] px-3 py-2 text-[11px] text-[#6E5E70] [overflow-wrap:anywhere]" data-original>
-          Original: <i>{line.description_raw}</i> · {line.qty != null || line.unit_price != null ? `${fmtNumber(line.qty, 3)} × ${fmtNumber(line.unit_price)} · ` : ''}{fmtMoney(line.amount, currency)}
+          Original: <i>{line.description_raw}</i> · {line.qty != null || line.unit_price != null ? `${fmtNumber(line.qty, 3)} × ${fmtNumber(line.unit_price)} · ` : ''}{fmtMoney(line.amount)}
         </div>
         {error && <div className="col-span-2 rounded-lg border border-[#F4C3BC] bg-[#FDE7E4] px-3 py-2 text-[12.5px] text-[#A8231A]">{error}</div>}
       </div>

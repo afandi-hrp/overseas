@@ -18,6 +18,7 @@ import { CostAgentPageHeader, CostAgentModal, StatusChip, FilterPanel, FilterSea
 import { CostAgentCardScroller, CostAgentInvoiceCard } from '../../components/CostAgentCards'
 import { Chip, SA_BTN_OUTLINE, SA_CARD, SA_INPUT } from '../../components/SeaAirAuditUi'
 import CostAgentUploadModal from '../../components/CostAgentUploadModal'
+import { useCostAgentUploadTracker } from '../../components/CostAgentUploadResultDialog'
 import CostAgentInvoiceReviewModal from '../../components/CostAgentInvoiceReviewModal'
 import CostAgentPaymentModal from '../../components/CostAgentPaymentModal'
 import {
@@ -186,6 +187,8 @@ export default function CostAgentInvoicePage() {
   const allCount = useMemo(() => Object.values(counts).reduce<number>((a, b) => a + Number(b || 0), 0), [counts])
   const openInvoice = (id: number) => navigate(`/cost-agent/invoice/${id}`)
   const closeInvoice = useCallback(() => navigate('/cost-agent/invoice'), [navigate])
+  // Hasil upload (2026-10-23): modal menutup begitu n8n membalas {job_id, invoice_id}; pelacak polling 5 dtk -> toast / buka invoice / dialog daftar invoice.
+  const uploadTracker = useCostAgentUploadTracker({ onToast: showToast, onOpenInvoice: openInvoice, onRefresh: () => fetchList(true) })
 
   return (
     <>
@@ -348,10 +351,12 @@ export default function CostAgentInvoicePage() {
       </div>
 
       {upload && (
-        <CostAgentUploadModal companies={companies} defaultCompany={company} presetCallId={upload.callId}
+        <CostAgentUploadModal presetCallId={upload.callId}
           onClose={() => setUpload(null)}
-          onSent={ids => { showToast(`${ids.length || 'The'} invoice${ids.length === 1 ? '' : 's'} sent to AI — shown as Processing.`); setStatusTab('all'); refresh() }} />
+          onSent={() => { setStatusTab('all'); refresh() }}
+          onJob={job => { uploadTracker.track(job); setStatusTab('all'); refresh() }} />
       )}
+      {uploadTracker.dialog}
       {openId !== null && (
         // key per invoice -- state modal bersih saat pindah invoice (mis. link "Duplicate of #id").
         <React.Fragment key={openId}><CostAgentInvoiceReviewModal invoiceId={openId} companies={companies} vendors={vendors} vessels={vessels} ports={ports}

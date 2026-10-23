@@ -12,6 +12,12 @@ const withValue = (label: string, value: string | number | null | undefined) => 
   return v ? `${label}: ${v}` : label
 }
 
+// Pesan asli server (`msg`, Indonesia) -- ditampilkan KECIL & abu-abu di bawah teks Inggris (permintaan 2026-10-23); kosong -> null.
+export function noteMsg(note: CostAgentCheckNote): string | null {
+  const m = (note?.msg ?? note?.message) as unknown
+  return typeof m === 'string' && m.trim() ? m.trim() : null
+}
+
 export function noteText(note: CostAgentCheckNote, inv: NoteInvoice): string {
   switch (note.type) {
     case 'vendor_unknown': return withValue('Vendor not in master', inv.vendor_name_raw)
@@ -26,12 +32,15 @@ export function noteText(note: CostAgentCheckNote, inv: NoteInvoice): string {
     case 'duplicate': return inv.duplicate_of != null ? `Possible duplicate of invoice #${inv.duplicate_of}` : 'Possible duplicate invoice'
     case 'total_mismatch': {
       const invTotal = inv.grand_total ?? inv.subtotal
-      const cur = inv.currency || 'IDR'
       return inv.lines_total != null && invTotal != null
-        ? `Line total does not match invoice total (Lines: ${fmtMoney(inv.lines_total, cur)} · Invoice: ${fmtMoney(invTotal, cur)})`
+        ? `Line total does not match invoice total (Lines: ${fmtMoney(inv.lines_total)} · Invoice: ${fmtMoney(invTotal)})`
         : 'Line total does not match invoice total'
     }
-    case 'susulan_mismatch': return 'Supporting document refers to a different invoice number'
+    case 'susulan_mismatch': return 'A supporting document refers to a different invoice number.'
+    // 2026-10-23 (sql/071 & 072): PT tak bisa ditentukan dari kapal; grand total tak cocok; mata uang bukan IDR (angka tetap dianggap rupiah).
+    case 'company_unknown': return 'Company could not be determined from the vessel. Please choose the company.'
+    case 'grand_mismatch': return 'Grand total does not match subtotal + VAT + stamp duty − WHT. Please check the figures.'
+    case 'non_idr_currency': return 'A currency other than IDR was found on the document — amounts are treated as rupiah. Please check.'
     default: return 'Check required'
   }
 }

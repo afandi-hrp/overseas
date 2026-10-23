@@ -14,7 +14,7 @@ import { StatusChip, CostAgentCombobox, CostAgentModal, FieldLabel, type ComboOp
 import { Chip, PtBadge, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_BTN_GREEN, SA_INPUT, SA_LABEL, SA_CARD } from './SeaAirAuditUi'
 import { LoadingState, LoadingSpinner } from './LoadingState'
 import CostAgentInvoiceLines from './CostAgentInvoiceLines'
-import { noteText } from '../utils/CostAgentNotes'
+import { noteText, noteMsg } from '../utils/CostAgentNotes'
 import CostAgentInvoiceDocuments from './CostAgentInvoiceDocuments'
 import CostAgentApprovalPanel from './CostAgentApprovalPanel'
 import CostAgentPaymentsPanel from './CostAgentPaymentsPanel'
@@ -138,7 +138,15 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
   const allNotes = (inv?.check_notes || []).filter(n => n.type !== 'susulan_mismatch')
   const notesFor = (field: NoteField) => allNotes.filter(n => noteField(n.type) === field)
   const fixHeader = headerEditable && !editHeader ? () => setEditHeader(true) : undefined
-  const linesMismatch = !!inv && inv.lines_total != null && inv.subtotal != null && Math.abs(Number(inv.lines_total) - Number(inv.subtotal)) > 1
+  // 2026-10-23 (sql/071): lines_total = jumlah SEMUA baris termasuk materai; subtotal = biaya TANPA materai. Cocok bila lines_total = subtotal
+  // (data lama, materai belum jadi baris) ATAU subtotal + materai. Toleransi Rp 1 per baris (sen dibuang di database).
+  const linesMismatch = !!inv && inv.lines_total != null && inv.subtotal != null && (() => {
+    const lt = Number(inv.lines_total), st = Number(inv.subtotal), mt = Number(inv.materai || 0)
+    const tol = Math.max(1, (data?.lines.length || 0))
+    return Math.abs(lt - st) > tol && Math.abs(lt - (st + mt)) > tol
+  })()
+  // PT kosong (tak bisa ditentukan dari kapal -> catatan company_unknown): Submit nonaktif sampai dipilih di Correct header.
+  const companyMissing = !!inv && !inv.company_code
   const call = inv?.voyage_call as any
   const callTz = call?.port_id ? ports.find(p => p.id === call.port_id)?.tz : null
   const activeStep = inv?.status === 'waiting_approval' ? activeApprovalStep(data?.approvals || []) : null
@@ -154,7 +162,7 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
   }
 
   const submit = async () => {
-    if (!inv || unverified > 0 || unmapped > 0) return
+    if (!inv || unverified > 0 || unmapped > 0 || companyMissing) return
     if (!window.confirm(`Submit invoice ${inv.invoice_no || '#' + inv.id} for approval?`)) return
     setBusy(true); setActionError(null)
     try { await costAgentSubmitForApproval(inv.id, actor); await reload(); notifyCostAgentApprovalsChanged(); onToast('Submitted for approval.'); setTab('approval') } catch (e: any) { setActionError(e.message || String(e)) } finally { setBusy(false) }
@@ -292,7 +300,7 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
                 onChanged={async msg => { await reload(); if (msg) onToast(msg) }} />
             </div>
           ) : tab === 'documents' ? (
-            <div className="h-full overflow-y-auto"><CostAgentInvoiceDocuments data={data} canUpload={canEdit && canUploadSupporting(data.invoice.status)} onChanged={reload} /></div>
+            <div className="h-full overflow-y-auto"><CostAgentInvoiceDocuments data={data} canUpload={canEdit && canUploadSupporting(data.invoice.status)} actor={actor} onChanged={reload} onToast={onToast} /></div>
           ) : (
             <div className="h-full overflow-y-auto p-3"><div className={`${SA_CARD} p-5`}>
               {data.timeline.length === 0 ? <p className="text-sm text-[#6E5E70] italic">No status history.</p> : (
@@ -336,9 +344,9 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
               {editable && (
                 // 2026-10-23 (permintaan user): tombol TANPA alert (ringkasan "N/M not verified" ada di header). Belum siap = abu (nonaktif,
                 // alasan di tooltip); siap = hijau pekat. (2026-10-16: dulu kotak kuning dgn chip alasan di dalam tombol.)
-                <button type="button" disabled={busy || unverified > 0 || unmapped > 0} onClick={submit} data-submit-approval
-                  title={unmapped ? 'Choose a cost item (or LAIN_LAIN) for every line first' : unverified ? 'Verify every cost line first' : undefined}
-                  className={unverified || unmapped
+                <button type="button" disabled={busy || unverified > 0 || unmapped > 0 || companyMissing} onClick={submit} data-submit-approval
+                  title={companyMissing ? 'Choose the company first' : unmapped ? 'Choose a cost item (or LAIN_LAIN) for every line first' : unverified ? 'Verify every cost line first' : undefined}
+                  className={unverified || unmapped || companyMissing
                     ? 'inline-flex items-center gap-2 h-10 px-5 rounded-xl border border-[#D9D1CB] bg-[#EDE8E4] text-[#8A7A8B] text-[13px] font-bold cursor-not-allowed'
                     : 'inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-[#17663D] hover:bg-[#12532F] text-white text-[13px] font-bold shadow-md ring-2 ring-[#17663D]/20 disabled:opacity-60'}>
                   <Send size={15} /> {busy ? 'Submitting…' : 'Submit for approval'}
@@ -381,21 +389,21 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
 type NoteField = 'title' | 'vessel' | 'port' | 'voyage' | 'total' | 'other'
 const NOTE_FIELD: Record<string, NoteField> = {
   vendor_unknown: 'title', duplicate: 'title', vessel_unknown: 'vessel', vessel_fuzzy: 'vessel', port_unknown: 'port',
-  voyage_unmatched: 'voyage', total_mismatch: 'total',
+  voyage_unmatched: 'voyage', total_mismatch: 'total', grand_mismatch: 'total',
 }
 const noteField = (type: string | undefined): NoteField => NOTE_FIELD[type || ''] || 'other'
 // Catatan yg bisa dibereskan lewat Correct header (vendor/kapal/pelabuhan/voyage).
-const FIXABLE_NOTES = new Set(['vendor_unknown', 'vessel_unknown', 'vessel_fuzzy', 'port_unknown', 'voyage_unmatched'])
+const FIXABLE_NOTES = new Set(['vendor_unknown', 'vessel_unknown', 'vessel_fuzzy', 'port_unknown', 'voyage_unmatched', 'company_unknown'])
 
-function InfoBubble({ label, children, warn, title, money, bad, small, action }: {
-  label: string; children: React.ReactNode; warn?: boolean; title?: string; money?: boolean; bad?: boolean; small?: boolean; action?: React.ReactNode
+function InfoBubble({ label, children, warn, title, money, bad, small, action, muted }: {
+  label: string; children: React.ReactNode; warn?: boolean; title?: string; money?: boolean; bad?: boolean; small?: boolean; action?: React.ReactNode; muted?: boolean
 }) {
   // v2 (2026-10-16, permintaan user): label polos di atas, bubble (pill) HANYA membungkus isian.
   warn = warn || bad
   return (
     <div className="min-w-0" title={title} data-bubble={label}>
       <div className={`${SA_LABEL} mb-0.5 pl-1`}>{label}</div>
-      <div className={`inline-block max-w-full rounded-full border ${small ? 'px-2.5 text-[11.5px]' : 'px-3'} py-0.5 whitespace-nowrap leading-snug ${warn ? 'border-[#F2D58A] bg-[#FFFBF0]' : 'border-[#EADFD6] bg-[#FBF7F4]'} ${money ? 'tabular-nums' : 'font-medium'} ${bad ? 'text-[#A8231A] font-semibold' : 'text-[#3B1B3D]'}`} data-bubble-value>{children}{action}</div>
+      <div className={`inline-block max-w-full rounded-full border ${small ? 'px-2.5 text-[11.5px]' : 'px-3'} py-0.5 whitespace-nowrap leading-snug ${warn ? 'border-[#F2D58A] bg-[#FFFBF0]' : 'border-[#EADFD6] bg-[#FBF7F4]'} ${money ? 'tabular-nums' : 'font-medium'} ${bad ? 'text-[#A8231A] font-semibold' : muted ? 'text-[#8A7A8B]' : 'text-[#3B1B3D]'}`} data-bubble-value>{children}{action}</div>
     </div>
   )
 }
@@ -497,7 +505,10 @@ function AlertsButton({ notes, inv, onFix }: { notes: CostAgentInvoiceHistory['i
             return (
               <div key={i} className="rounded-lg border border-[#F2D58A] bg-[#FFF8E6] px-2.5 py-1.5 text-[12px] text-[#7A4F00] flex items-start gap-1.5" data-check-note={n.type || ''}>
                 <AlertTriangle size={12} className="mt-0.5 shrink-0" />
-                <span className="min-w-0 flex-1 [overflow-wrap:anywhere] font-semibold">{noteText(n, inv)}</span>
+                <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
+                  <span className="font-semibold">{noteText(n, inv)}</span>
+                  {noteMsg(n) && <span className="block text-[10.5px] font-normal text-[#8A7A8B]" data-note-msg>{noteMsg(n)}</span>}
+                </span>
                 {fixable && (
                   <button type="button" onClick={() => { setOpen(false); onFix?.() }} className="shrink-0 ml-2 font-semibold text-[#6B3470] hover:underline inline-flex items-center gap-0.5"><Pencil size={11} /> Fix</button>
                 )}
@@ -510,8 +521,10 @@ function AlertsButton({ notes, inv, onFix }: { notes: CostAgentInvoiceHistory['i
   )
 }
 
-// Footer nominal (2026-10-20): Subtotal / VAT / WHT / Stamp + Grand total. Pensil -> keempat angka bisa diubah (fn_cost_agent_update_invoice_amounts,
-// sql/069); Grand total = subtotal + VAT - WHT + Stamp (dihitung server, pratinjau live saat edit).
+// Footer nominal (2026-10-23, sql/071): urutan Cost lines (incl. stamp duty) = lines_total | VAT = ppn | VAT not collected = ppn_not_collected (abu-abu, hanya bila > 0,
+// "Already deducted from VAT") | WHT = pph | Grand total. Bea materai BUKAN lagi kelompok pajak: ia baris biasa (cost item MATERAI) dan sudah ada di Cost lines.
+// Pensil -> VAT & WHT bisa diubah (fn_cost_agent_update_invoice_amounts, sql/069; subtotal & materai dikirim apa adanya); Grand total = subtotal + VAT + materai - WHT
+// (dihitung server, pratinjau live saat edit). Semua nominal rupiah bulat tanpa desimal.
 function AmountsBar({ inv, editable, bad, warn, actor, onSaved, onToast }: {
   inv: CostAgentInvoiceHistory['invoice']; editable: boolean; bad: boolean; warn: boolean; actor: string | null
   onSaved: () => Promise<void> | void; onToast: (msg: string, tone?: 'ok' | 'warn') => void
@@ -519,56 +532,61 @@ function AmountsBar({ inv, editable, bad, warn, actor, onSaved, onToast }: {
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [f, setF] = useState({ subtotal: '', ppn: '', pph: '', materai: '' })
+  const [f, setF] = useState({ ppn: '', pph: '' })
   const start = () => {
-    const v = (n: number | null) => (n == null ? '' : String(Number(n)))
-    setF({ subtotal: v(inv.subtotal), ppn: v(inv.ppn), pph: v(inv.pph), materai: v(inv.materai) }); setError(null); setEditing(true)
+    const v = (n: number | null) => (n == null ? '' : String(Math.trunc(Number(n))))
+    setF({ ppn: v(inv.ppn), pph: v(inv.pph) }); setError(null); setEditing(true)
   }
   const num = (t: string) => (t.trim() === '' ? 0 : Number(t))
-  // Subtotal & Grand total TIDAK bisa diedit (2026-10-20, permintaan user): subtotal hanya tampil (nilai tersimpan dikirim apa adanya ke RPC),
-  // grand total = pratinjau subtotal + VAT - WHT + Stamp.
   const subtotalFixed = inv.subtotal == null ? null : Number(inv.subtotal)
-  const valid = subtotalFixed != null && Number.isFinite(subtotalFixed) && [f.ppn, f.pph, f.materai].every(t => Number.isFinite(num(t)) && num(t) >= 0)
-  const preview = (subtotalFixed ?? 0) + num(f.ppn) - num(f.pph) + num(f.materai)
+  const materaiFixed = Number(inv.materai || 0)
+  const valid = subtotalFixed != null && Number.isFinite(subtotalFixed) && [f.ppn, f.pph].every(t => Number.isFinite(num(t)) && num(t) >= 0)
+  const preview = (subtotalFixed ?? 0) + num(f.ppn) + materaiFixed - num(f.pph)
   const save = async () => {
     if (!valid) { setError('Amounts cannot be negative.'); return }
     setBusy(true); setError(null)
     try {
-      await costAgentUpdateInvoiceAmounts({ invoiceId: inv.id, subtotal: subtotalFixed as number, ppn: num(f.ppn), pph: num(f.pph), materai: num(f.materai), actor })
+      await costAgentUpdateInvoiceAmounts({ invoiceId: inv.id, subtotal: subtotalFixed as number, ppn: num(f.ppn), pph: num(f.pph), materai: materaiFixed, actor })
       setEditing(false); await onSaved(); onToast('Amounts saved.')
     } catch (e: any) { setError(e.message || String(e)) } finally { setBusy(false) }
   }
+  const linesBubble = (
+    <InfoBubble label="Cost lines (incl. stamp duty)" money small warn={warn} bad={bad}
+      title={bad ? `Cost lines total ${fmtMoney(inv.lines_total)} differs from the subtotal (+ stamp duty)` : 'Sum of all cost lines, including stamp duty'}>{fmtMoney(inv.lines_total)}</InfoBubble>
+  )
   if (editing) {
-    const fields: [keyof typeof f, string][] = [['ppn', 'PPN'], ['pph', 'PPH'], ['materai', 'Stamp']]
+    const fields: [keyof typeof f, string][] = [['ppn', 'VAT'], ['pph', 'WHT']]
     return (
       <div className="flex flex-wrap items-end gap-2" data-amounts-edit>
-        <InfoBubble label="Subtotal" money small title="Subtotal cannot be edited">{fmtMoney(inv.subtotal, inv.currency)}</InfoBubble>
+        {linesBubble}
         {fields.map(([k, label]) => (
           <div key={k}>
             <div className={`${SA_LABEL} mb-0.5 pl-1`}>{label}</div>
-            <input type="number" min={0} step="0.01" inputMode="decimal" className={`${SA_INPUT} w-[130px] tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`} value={f[k]} disabled={busy} aria-label={label}
-              onChange={e => setF(p => ({ ...p, [k]: e.target.value }))}
+            <input type="number" min={0} step={1} inputMode="numeric" className={`${SA_INPUT} w-[130px] tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`} value={f[k]} disabled={busy} aria-label={label}
+              onChange={e => setF(p => ({ ...p, [k]: e.target.value.includes('.') ? e.target.value.split('.')[0] : e.target.value }))}
               onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); setEditing(false) } }} />
           </div>
         ))}
-        <GrandTotal value={fmtMoney(valid ? preview : null, inv.currency)} />
+        <GrandTotal value={fmtMoney(valid ? preview : null)} />
         <button type="button" className={SA_BTN_OUTLINE} disabled={busy} onClick={() => setEditing(false)}>Cancel</button>
         <button type="button" className={SA_BTN_PRIMARY} disabled={busy || !valid} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
         {error && <span className="basis-full text-[12px] text-[#A8231A]">{error}</span>}
       </div>
     )
   }
+  const notCollected = Number(inv.ppn_not_collected || 0)
   return (
     <div className="flex flex-wrap items-end gap-x-3 gap-y-1.5" data-header-amounts>
-      <InfoBubble label="Subtotal" money small warn={warn} bad={bad}
-        title={bad ? `Cost lines total ${fmtMoney(inv.lines_total, inv.currency)} differs from subtotal` : undefined}>{fmtMoney(inv.subtotal, inv.currency)}</InfoBubble>
-      <InfoBubble label="PPN" money small>{fmtMoney(inv.ppn, inv.currency)}</InfoBubble>
-      <InfoBubble label="PPH" money small>{fmtMoney(inv.pph, inv.currency)}</InfoBubble>
-      <InfoBubble label="Stamp" money small>{fmtMoney(inv.materai, inv.currency)}</InfoBubble>
-      {editable && (
-        <button type="button" onClick={start} aria-label="Edit amounts" title="Edit PPN / PPH / Stamp" className="mb-0.5 p-1.5 rounded-lg text-[#6B3470] hover:bg-[#F5EDF3]"><Pencil size={13} /></button>
+      {linesBubble}
+      <InfoBubble label="VAT" money small>{fmtMoney(inv.ppn)}</InfoBubble>
+      {notCollected > 0 && (
+        <InfoBubble label="VAT not collected" money small muted title="Already deducted from VAT">{fmtMoney(notCollected)}</InfoBubble>
       )}
-      <GrandTotal value={fmtMoney(inv.grand_total, inv.currency)} />
+      <InfoBubble label="WHT" money small>{fmtMoney(inv.pph)}</InfoBubble>
+      {editable && (
+        <button type="button" onClick={start} aria-label="Edit amounts" title="Edit VAT / WHT" className="mb-0.5 p-1.5 rounded-lg text-[#6B3470] hover:bg-[#F5EDF3]"><Pencil size={13} /></button>
+      )}
+      <GrandTotal value={fmtMoney(inv.grand_total)} />
     </div>
   )
 }
@@ -587,6 +605,8 @@ function HeaderEditor({ data, companies, vendors, vessels, ports, actor, onToast
   const [portId, setPortId] = useState<number | null>(inv.port_id)
   const [callId, setCallId] = useState<number | null>(inv.voyage_call_id)
   const [company, setCompany] = useState(inv.company_code || '')
+  // company_unknown (sql/071): PT tak bisa ditentukan dari kapal -> dropdown Company di-highlight kuning sampai dipilih.
+  const companyUnknown = !company && (inv.check_notes || []).some(n => n.type === 'company_unknown')
   const [description, setDescription] = useState(inv.description || '')
   const [calls, setCalls] = useState<CostAgentCallOption[]>([])
   const [busy, setBusy] = useState(false)
@@ -634,8 +654,8 @@ function HeaderEditor({ data, companies, vendors, vessels, ports, actor, onToast
         <div className="md:col-span-2"><FieldLabel hint="sets the port">Voyage port call</FieldLabel><CostAgentCombobox options={callOpts} value={callId} onChange={pickCall} placeholder={vesselId ? 'Port call of this vessel…' : 'Pick a vessel first'} disabled={!vesselId} /></div>
         <div><FieldLabel>Port</FieldLabel><CostAgentCombobox options={portOpts} value={portId} onChange={v => setPortId(v === null ? null : Number(v))} placeholder={inv.port_name_raw || 'Port…'} /><AsWritten raw={inv.port_name_raw} /></div>
         <div>
-          <FieldLabel>Company</FieldLabel>
-          <select className={SA_INPUT} value={company} onChange={e => setCompany(e.target.value)}>
+          <FieldLabel hint={companyUnknown ? 'required' : undefined}>Company</FieldLabel>
+          <select className={`${SA_INPUT} ${companyUnknown ? '!border-[#E0B84F] !bg-[#FFF6DD] ring-2 ring-[#F2D58A]' : ''}`} value={company} onChange={e => setCompany(e.target.value)} data-company-unknown={companyUnknown ? 'true' : undefined}>
             <option value="">—</option>{companies.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
           </select>
         </div>

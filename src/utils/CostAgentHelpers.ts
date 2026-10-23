@@ -305,7 +305,8 @@ export interface CostAgentInvoice {
   subtotal: number | null
   ppn: number | null
   pph: number | null
-  materai: number | null
+  materai: number | null // sql/071: informasi saja -- nilainya SUDAH ada sbg baris biaya (cost item MATERAI)
+  ppn_not_collected?: number | null // sql/071: PPN "tidak dipungut" (informasi; sudah dikurangkan dari `ppn`)
   grand_total: number | null
   lines_total: number | null
   file_url: string | null
@@ -459,6 +460,53 @@ export const costAgentUpsertVoyages =(rows: unknown[], actor?: string | null) =>
   callCostAgentRpc<CostAgentUpsertVoyagesResult>('fn_cost_agent_upsert_voyages', { p_rows: rows, p_source: 'import', p_actor: actor ?? null })
 export const costAgentGetInvoiceHistory = (invoiceId: number) =>
   callCostAgentRpc<CostAgentInvoiceHistory | null>('fn_cost_agent_get_invoice_history', { p_invoice_id: invoiceId })
+// ─── Perbandingan dokumen (sql/072: fn_cost_agent_get_invoice_documents / fn_cost_agent_start_redo) ──────────────
+export type DocCmpOverall = 'not_analysed' | 'incomplete' | 'attention' | 'ok'
+export type DocCmpStatus = 'ok' | 'diff' | 'warn' | 'na'
+export type DocCmpLineStatus = 'match' | 'match_group' | 'match_sum' | 'match_agg' | 'diff' | 'none' | 'no_doc' | 'not_in_fp' | 'pending' | 'not_required'
+export interface DocCmpRef { part_id: number; item_id: number | null; doc_type: string | null; doc_no: string | null; description: string | null; group_name: string | null; kind: string | null; amount: number | null }
+export interface DocCmpFile {
+  id: number; seq: number | null; file_name: string | null; file_url: string | null; doc_type: CostAgentDocType | string; status: CostAgentDocStatus | string
+  mode: string | null; job_id: string | null; analysis: 'analysed' | 'processing' | 'failed' | 'not_analysed' | string; analysis_error: string | null; created_at: string
+}
+export interface DocCmpPart {
+  id: number; file_id: number | null; file_name: string | null; doc_type: string | null; is_tax_equivalent: boolean | null; doc_no: string | null; doc_date: string | null
+  issuer_name: string | null; buyer_name: string | null; vessel_name: string | null; total_amount: number | null; dpp: number | null; ppn: number | null; tax_status: string | null
+  invoice_ref: string | null; dates: Record<string, string | null> | null; page_from: number | null; page_to: number | null; summary: string | null
+  duplicate_of: number | null; items_n: number | null; items_sum: number | null
+}
+export interface DocCmpCompleteness {
+  key: 'invoice' | 'attachment' | 'tax_invoice' | 'receipt' | 'po' | string; label: string; required: boolean
+  status: 'present' | 'missing' | 'pending' | 'not_required' | string; docs: { doc_no: string | null; doc_date: string | null; doc_type: string | null; part_id: number | null }[] | null
+}
+export interface DocCmpHeaderCheck { group: 'tax' | 'attachment' | string; part_id: number | null; field: string; invoice_value: string | number | null; doc_value: string | number | null; status: DocCmpStatus | string; note?: string | null }
+export interface DocCmpDateCheck { part_id: number | null; source: string | null; doc_no: string | null; label: string; date: string | null; compare_to: string | null; gap_days: number | null; status: DocCmpStatus | string; note: string | null }
+export interface DocCmpLineSide { status: DocCmpLineStatus | string; matched_amount: number | null; diff: number | null; refs: DocCmpRef[] | null }
+export interface DocCmpLine { line_id: number; line_no: number; description: string | null; cost_item: string | null; amount: number | null; attachment: DocCmpLineSide | null; tax: DocCmpLineSide | null }
+export interface DocCmpOrphan { part_id: number; item_id: number | null; doc_type: string | null; doc_no: string | null; description: string | null; amount: number | null }
+export interface DocCmpTaxTotals {
+  fp_count: number | null; selling_price: number | null; covered_lines: number | null; dpp: number | null; ppn_collected: number | null; ppn_not_collected: number | null
+  checks: { label: string; invoice_value: number | string | null; doc_value: number | string | null; diff: number | null; status: DocCmpStatus | string; note: string | null }[] | null
+  rate_checks: { doc_no: string | null; rate_pct: number | null; status: DocCmpStatus | string; note: string | null }[] | null
+}
+export interface CostAgentDocCompare {
+  analysed: boolean
+  invoice?: Record<string, any> | null
+  summary: { overall: DocCmpOverall; red_flags: number; attachment?: Record<string, number> | null; tax?: Record<string, number> | null } | null
+  files: DocCmpFile[] | null
+  parts: DocCmpPart[] | null
+  completeness: DocCmpCompleteness[] | null
+  header_checks: DocCmpHeaderCheck[] | null
+  date_checks: DocCmpDateCheck[] | null
+  lines: DocCmpLine[] | null
+  orphans: { attachment: DocCmpOrphan[] | null; tax: DocCmpOrphan[] | null } | null
+  tax_totals: DocCmpTaxTotals | null
+}
+export const costAgentGetInvoiceDocuments = (invoiceId: number) =>
+  callCostAgentRpc<CostAgentDocCompare | null>('fn_cost_agent_get_invoice_documents', { p_invoice_id: invoiceId })
+// Analisis ulang: job baru (invoice, baris & status TIDAK berubah). Lanjutkan dgn `costAgentRedoDocs` (webhook n8n) lalu polling.
+export const costAgentStartRedo = (invoiceId: number, actor?: string | null) =>
+  callCostAgentRpc<{ job_id: string; invoice_id: number; files: number }>('fn_cost_agent_start_redo', { p_invoice_id: invoiceId, p_actor: actor ?? null })
 export const costAgentUpdateInvoiceHeader = (a: {
   invoiceId: number; vendorId: number | null; vesselId: number | null; portId: number | null; voyageCallId: number | null
   companyCode: string | null; actor?: string | null
@@ -598,6 +646,32 @@ export async function costAgentUpload(type: 'cost_agent' | 'cost_agent_voyage' |
   return readProxyResponse(res)
 }
 
+// Analisis ulang dokumen (2026-10-23): proxy multipart TANPA file, cost_agent_meta {mode:'redo_docs', invoice_id, job_id} (job_id dari costAgentStartRedo).
+export const costAgentRedoDocs = (invoiceId: number, jobId: string) =>
+  costAgentUpload('cost_agent', [], { mode: 'redo_docs', invoice_id: invoiceId, job_id: jobId })
+
+// Status job upload / analisis ulang (polling 5 dtk): dokumen per job_id + status invoice-nya. `done` = tidak ada dokumen 'processing' DAN tidak ada invoice 'processing'.
+export interface CostAgentJobSnapshot {
+  done: boolean
+  invoiceIds: number[]
+  docs: { invoice_id: number | null; status: string; error_message: string | null; file_name: string | null }[]
+  invoices: { id: number; status: CostAgentInvoiceStatus }[]
+}
+export async function fetchCostAgentJobSnapshot(jobId: string, knownInvoiceIds: number[] = []): Promise<CostAgentJobSnapshot> {
+  const { data: docs, error } = await supabase.from('cost_agent_invoice_documents').select('invoice_id, status, error_message, file_name').eq('job_id', jobId)
+  if (error) throw new Error(error.message)
+  const list = (docs || []) as CostAgentJobSnapshot['docs']
+  const ids = Array.from(new Set([...knownInvoiceIds, ...list.map(d => d.invoice_id).filter((x): x is number => x != null).map(Number)]))
+  let invoices: CostAgentJobSnapshot['invoices'] = []
+  if (ids.length) {
+    const { data: inv, error: e2 } = await supabase.from('cost_agent_invoices').select('id, status').in('id', ids)
+    if (e2) throw new Error(e2.message)
+    invoices = (inv || []).map((r: any) => ({ id: Number(r.id), status: r.status }))
+  }
+  const done = !list.some(d => d.status === 'processing') && !invoices.some(i => i.status === 'processing')
+  return { done, invoiceIds: ids, docs: list, invoices }
+}
+
 // Aksi tanpa file (tarik voyage / posting pembayaran). `requested_by` diisi server.
 export async function costAgentJsonAction(type: 'cost_agent_voyage_pull' | 'cost_agent_payment', body: Record<string, unknown>): Promise<any> {
   const res = await apiFetch('/api/n8n-proxy-json', {
@@ -707,9 +781,11 @@ const toNumber = (v: unknown): number | null => {
 export const fmtNumber = (v: unknown, maxFrac = 2): string => { const n = toNumber(v); return n === null ? '—' : idNum(maxFrac).format(n) }
 // Rupiah: titik ribuan, tanpa desimal ("Rp 1.250.000").
 export const fmtRupiah = (v: unknown): string => { const n = toNumber(v); return n === null ? '—' : `Rp ${idNum(0).format(Math.round(n))}` }
-// Nominal dgn mata uang (IDR -> Rupiah, lainnya 2 desimal + kode).
-export const fmtMoney = (v: unknown, currency = 'IDR'): string =>
-  currency === 'IDR' ? fmtRupiah(v) : (toNumber(v) === null ? '—' : `${currency} ${idNum(2).format(toNumber(v)!)}`)
+// Nominal biaya keagenan (2026-10-23, sql/071): SELALU rupiah bulat TANPA desimal & tanpa pilihan mata uang -- sen sudah dibuang di database
+// (format campuran USD / 2 desimal berisiko utk AP Note). `formatMoney` = nama di spesifikasi; `fmtMoney` dipertahankan (banyak pemanggil) dan
+// parameter currency-nya DIABAIKAN. Format titik ribuan id-ID ("Rp 21.384.734") = SAMA seluruh aplikasi.
+export const formatMoney = (v: unknown): string => fmtRupiah(v)
+export const fmtMoney = (v: unknown, _currency?: string): string => formatMoney(v)
 // Liter (cargo L15): titik ribuan.
 export const fmtLiter = (v: unknown, unit = 'L'): string => { const n = toNumber(v); return n === null ? '—' : `${idNum(3).format(n)} ${unit}` }
 export const fmtPct = (v: unknown): string => { const n = toNumber(v); return n === null ? '—' : `${n > 0 ? '+' : ''}${idNum(1).format(n)}%` }
