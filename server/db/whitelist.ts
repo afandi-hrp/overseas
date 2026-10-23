@@ -172,7 +172,7 @@ for (const [t, ops] of Object.entries(MANUAL_TABLES)) {
   'fn_seaair_recap_issue_count', 'fn_reporting_vendor_stats',
   // Cost Agent (CostAgentHelpers `rpc(fn)` dinamis)
   'fn_cost_agent_add_cost_item', 'fn_cost_agent_add_vendor', 'fn_cost_agent_create_payment_request',
-  'fn_cost_agent_decide_approval', 'fn_cost_agent_delete_invoice', 'fn_cost_agent_get_invoice_history',
+  'fn_cost_agent_decide_approval', 'fn_cost_agent_delete_invoice', 'fn_cost_agent_delete_voyage', 'fn_cost_agent_get_invoice_history',
   'fn_cost_agent_get_voyage', 'fn_cost_agent_mark_paid', 'fn_cost_agent_matrix_for', 'fn_cost_agent_save_voyage',
   'fn_cost_agent_search_history', 'fn_cost_agent_set_invoice_description', 'fn_cost_agent_set_line_reference',
   'fn_cost_agent_submit_for_approval', 'fn_cost_agent_update_invoice_amounts', 'fn_cost_agent_update_invoice_header', 'fn_cost_agent_update_line',

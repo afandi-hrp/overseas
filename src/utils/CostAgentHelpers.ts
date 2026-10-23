@@ -452,7 +452,10 @@ export const costAgentGetVoyage = (voyageId: number) =>
   callCostAgentRpc<CostAgentVoyageDetail | null>('fn_cost_agent_get_voyage', { p_voyage_id: voyageId })
 export const costAgentSaveVoyage = (voyage: CostAgentVoyagePayload, actor?: string | null) =>
   callCostAgentRpc<CostAgentSaveVoyageResult>('fn_cost_agent_save_voyage', { p_voyage: voyage, p_source: 'manual', p_actor: actor ?? null })
-export const costAgentUpsertVoyages = (rows: unknown[], actor?: string | null) =>
+// sql/073 (2026-10-23): hapus voyage + port call/cargo/noon. Server menolak bila ada invoice terkait atau status closed.
+export const costAgentDeleteVoyage = (voyageId: number, reason?: string | null) =>
+  callCostAgentRpc<{ deleted: number; status: string; calls: number; cargo: number; noon_days: number }>('fn_cost_agent_delete_voyage', { p_voyage_id: voyageId, p_reason: reason ?? null })
+export const costAgentUpsertVoyages =(rows: unknown[], actor?: string | null) =>
   callCostAgentRpc<CostAgentUpsertVoyagesResult>('fn_cost_agent_upsert_voyages', { p_rows: rows, p_source: 'import', p_actor: actor ?? null })
 export const costAgentGetInvoiceHistory = (invoiceId: number) =>
   callCostAgentRpc<CostAgentInvoiceHistory | null>('fn_cost_agent_get_invoice_history', { p_invoice_id: invoiceId })

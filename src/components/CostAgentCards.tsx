@@ -174,24 +174,25 @@ export const CostAgentInvoiceCard: React.FC<{
               <span className="text-[11.5px] font-semibold text-[#6E5E70] px-2 py-0.5 rounded-md bg-[#F3EEEA] whitespace-nowrap">{r.invoice_no || `#${r.id}`}</span>
             </div>
             {/* Vessel / Port / Voyage di-highlight (permintaan user 2026-10-20): 3 pil kecil -- vessel plum, port biru, voyage hijau (palet RouteBadges). */}
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5" data-invoice-ship>
-              <span className="inline-flex items-center gap-1 max-w-[240px] px-2 py-0.5 rounded-md bg-[#F5EDF3] text-[#3B1B3D] text-[12px] font-bold" title={r.vessel_name ? `Vessel: ${r.vessel_name}` : 'Vessel'}>
+            {/* 2026-10-23 (permintaan user): chip & keterangan di bawahnya SATU grid -> Vessel sejajar Invoice date, Port sejajar Service date,
+                Voy sejajar jumlah dokumen (kolom sama, rata kiri). Lebar kolom = yang terlebar di antara chip & teksnya. */}
+            <div className="mt-1.5 grid grid-cols-[repeat(3,minmax(0,auto))_minmax(0,auto)] justify-start items-center gap-x-3 gap-y-0.5" data-invoice-ship>
+              <span className="inline-flex items-center gap-1 max-w-[240px] w-fit min-w-0 px-2 py-0.5 rounded-md bg-[#F5EDF3] text-[#3B1B3D] text-[12px] font-bold" title={r.vessel_name ? `Vessel: ${r.vessel_name}` : 'Vessel'}>
                 <Ship size={12} className="shrink-0 text-[#6B3470]" /><span className="truncate">{r.vessel_name || '—'}</span>
               </span>
-              <span className="inline-flex items-center gap-1 max-w-[260px] px-2 py-0.5 rounded-md bg-[#EEF1FA] text-[#2F4FA8] text-[12px] font-bold" title={r.port_name ? `Port: ${r.port_code} — ${r.port_name}` : 'Port'}>
+              <span className="inline-flex items-center gap-1 max-w-[260px] w-fit min-w-0 px-2 py-0.5 rounded-md bg-[#EEF1FA] text-[#2F4FA8] text-[12px] font-bold" title={r.port_name ? `Port: ${r.port_code} — ${r.port_name}` : 'Port'}>
                 <MapPin size={12} className="shrink-0" /><span className="truncate">{r.port_code ? `${r.port_code}${r.port_name ? ` — ${r.port_name}` : ''}` : '—'}</span>
               </span>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#EAF6EF] text-[#17663D] text-[12px] font-bold whitespace-nowrap" title="Voyage">
+              <span className="inline-flex items-center gap-1 w-fit px-2 py-0.5 rounded-md bg-[#EAF6EF] text-[#17663D] text-[12px] font-bold whitespace-nowrap" title="Voyage">
                 <Navigation size={11} className="shrink-0" />Voy {r.voyage_no || '—'}
               </span>
-            </div>
-            <div className="mt-0.5 flex items-center gap-x-3 gap-y-0.5 flex-wrap text-[11.5px] text-[#8A7A8B]">
-              <span className="whitespace-nowrap">Invoice date {fmtDate(r.invoice_date)}</span>
-              {r.service_date && <span className="whitespace-nowrap">Service date {fmtDate(r.service_date)}</span>}
+              <span aria-hidden />
+              <span className="text-[11.5px] text-[#8A7A8B] truncate">Invoice date {fmtDate(r.invoice_date)}</span>
+              <span className="text-[11.5px] text-[#8A7A8B] truncate">{r.service_date ? `Service date ${fmtDate(r.service_date)}` : ''}</span>
               {(r.documents_processing ?? 0) > 0
-                ? <span className="inline-flex items-center gap-1 text-[#2F4FA8]" title="Documents being processed"><Loader2 size={11} className="animate-spin" />{r.document_count ?? ''} docs</span>
-                : r.document_count != null ? <span className="inline-flex items-center gap-1 text-[#8A7A8B]" title="Documents"><FileText size={11} />{r.document_count} doc{r.document_count === 1 ? '' : 's'}</span> : null}
-              {r.po_numbers?.length ? <span className="text-[#8A7A8B] truncate max-w-[200px]" title={r.po_numbers.join(', ')} data-invoice-po>PO {r.po_numbers.slice(0, 2).join(', ')}{r.po_numbers.length > 2 ? ` +${r.po_numbers.length - 2}` : ''}</span> : null}
+                ? <span className="inline-flex items-center gap-1 min-w-0 overflow-hidden text-[11.5px] text-[#2F4FA8] whitespace-nowrap" title="Documents being processed"><Loader2 size={11} className="animate-spin" />{r.document_count ?? ''} docs</span>
+                : r.document_count != null ? <span className="inline-flex items-center gap-1 min-w-0 overflow-hidden text-[11.5px] text-[#8A7A8B] whitespace-nowrap" title="Documents"><FileText size={11} />{r.document_count} doc{r.document_count === 1 ? '' : 's'}</span> : <span aria-hidden />}
+              {r.po_numbers?.length ? <span className="text-[11.5px] text-[#8A7A8B] truncate max-w-[200px]" title={r.po_numbers.join(', ')} data-invoice-po>PO {r.po_numbers.slice(0, 2).join(', ')}{r.po_numbers.length > 2 ? ` +${r.po_numbers.length - 2}` : ''}</span> : null}
             </div>
             {r.status === 'failed' && (
               <div className="mt-1.5 flex items-start gap-2 flex-wrap">

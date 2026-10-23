@@ -71,7 +71,6 @@ export default function CostAgentInvoiceDocuments({ data, canUpload, onChanged }
 
   const docForTax = (taxId: number) => (docs || []).find(d => d.tax_check_id === taxId)
   const susulanNotes = (inv.check_notes || []).filter(n => n.type === 'susulan_mismatch')
-  const poNumbers = inv.po_numbers || []
 
   return (
     <div className="p-4 space-y-4">
@@ -105,12 +104,6 @@ export default function CostAgentInvoiceDocuments({ data, canUpload, onChanged }
           )}
         </section>
       )}
-
-      <section>
-        <div className={`${SA_LABEL} mb-1.5`}>PO numbers</div>
-        {poNumbers.length ? <div className="flex flex-wrap gap-1.5">{poNumbers.map(p => <Chip key={p} tone="plum">{p}</Chip>)}</div>
-          : <p className="text-[12px] text-[#8A7A8B] italic">{inv.po_numbers === undefined ? 'PO numbers need the updated database (v2).' : 'No PO number found yet.'}</p>}
-      </section>
 
       <section>
         <div className={`${SA_LABEL} mb-1.5`}>Documents</div>

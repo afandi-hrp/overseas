@@ -9,7 +9,7 @@ import { RefreshCw, Plus, FileSpreadsheet, CloudDownload, Sparkles, X, FileUp } 
 import { useAuth } from '../../lib/AuthContext'
 import PaginationFooter from '../../components/PaginationFooter'
 import { LoadingTableRow } from '../../components/LoadingState'
-import { CostAgentPageHeader, RouteBadges, FilterPanel, FilterSearch, FilterField, FilterSegment, FilterButton, FILTER_SELECT, FILTER_SELECT_WIDE } from '../../components/CostAgentUi'
+import { CostAgentPageHeader, RouteBadges, FilterPanel, FilterSearch, FilterField, FilterSegment, FilterButton, FilterMenu, FILTER_SELECT, FILTER_SELECT_SM, FILTER_SELECT_VESSEL } from '../../components/CostAgentUi'
 import { Chip, SA_CARD } from '../../components/SeaAirAuditUi'
 import { CostAgentCardScroller, CostAgentVoyageCard } from '../../components/CostAgentCards'
 import CostAgentVoyageForm from '../../components/CostAgentVoyageForm'
@@ -112,6 +112,8 @@ export default function CostAgentVoyagePage() {
   const [showNoon, setShowNoon] = useState(false)
   // Upload invoice per port call LANGSUNG dari halaman ini (2026-10-14) -- form & proxy n8n SAMA halaman Agency Invoices.
   const [upload, setUpload] = useState<{ callId: number; company: string } | null>(null)
+  // Hapus voyage dari drawer (sql/073): tutup panel, toast, muat ulang daftar.
+  const onVoyageDeleted = (msg: string) => { setDrawerId(null); showToast(msg); refresh() }
   const openUpload = (callId: number, companyCode: string | null) => setUpload({ callId, company: companyCode || company || '' })
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
@@ -145,7 +147,7 @@ export default function CostAgentVoyagePage() {
               </select>
             </FilterField>
             <FilterField label="Vessel" labelFrom={1750}>
-              <select aria-label="Vessel" className={FILTER_SELECT_WIDE} value={vesselId ?? ''} onChange={e => setVesselId(e.target.value ? Number(e.target.value) : null)}>
+              <select aria-label="Vessel" className={FILTER_SELECT_VESSEL} value={vesselId ?? ''} onChange={e => setVesselId(e.target.value ? Number(e.target.value) : null)}>
                 <option value="">All vessels</option>
                 {vesselOptions.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
@@ -155,34 +157,46 @@ export default function CostAgentVoyagePage() {
               {month && <button type="button" title="All months" aria-label="Clear month" onClick={() => setMonth('')} className="text-[#8A7A8B] hover:text-[#A8231A]"><X size={13} /></button>}
             </FilterField>
             <FilterField label="Status" labelFrom={1750}>
-              <select aria-label="Status" className={FILTER_SELECT} value={status} onChange={e => setStatus(e.target.value as any)}>
+              <select aria-label="Status" className={FILTER_SELECT_SM} value={status} onChange={e => setStatus(e.target.value as any)}>
                 <option value="">All status</option>
                 <option value="draft">Draft</option>
                 <option value="confirmed">Confirmed</option>
                 <option value="closed">Closed</option>
               </select>
             </FilterField>
-            <FilterField label="Source" labelFrom={1750}>
-              <select aria-label="Source" className={FILTER_SELECT} value={source} onChange={e => setSource(e.target.value as any)}>
+            <FilterField label="Source" labelFrom={2000}>
+              <select aria-label="Source" className={FILTER_SELECT_SM} value={source} onChange={e => setSource(e.target.value as any)}>
                 <option value="">All source</option>
                 {(Object.keys(VOYAGE_SOURCE_LABEL) as CostAgentVoyageSource[]).map(s => <option key={s} value={s}>{VOYAGE_SOURCE_LABEL[s]}</option>)}
               </select>
             </FilterField>
-            <FilterField label="Input" labelFrom={1750}>
-              <select aria-label="Input source" className={FILTER_SELECT} value={inputSrc} onChange={e => setInputSrc(e.target.value as any)}>
+            <FilterField label="Input" labelFrom={2000}>
+              <select aria-label="Input source" title="Input source" className={FILTER_SELECT_SM} value={inputSrc} onChange={e => setInputSrc(e.target.value as any)}>
                 <option value="">All input</option>
                 <option value="noon_report">Noon Report</option>
-                <option value="documents">Documents &amp; manual</option>
+                <option value="documents">Docs &amp; manual</option>
               </select>
             </FilterField>
             <FilterSegment value={view} onChange={changeView} options={[{ value: 'card', label: 'Card' }, { value: 'list', label: 'List' }, { value: 'monthly', label: 'Monthly Report', short: 'Report' }]} />
             <FilterButton icon={RefreshCw} label="Refresh" labelFrom={2000} onClick={refresh} disabled={loading && view !== 'monthly'} spin={loading && view !== 'monthly'} />
             {canEditVoyage && (
               <>
-                <FilterButton icon={CloudDownload} label="Pull" labelFrom={2000} title="Pull voyages from the source system" onClick={() => setShowPull(true)} />
-                <FilterButton icon={Sparkles} label="Read report (AI)" labelFrom={2000} title="Read a Voyage Report (PDF/photo) with AI" onClick={() => setShowAi(true)} />
-                <FilterButton icon={FileUp} label="Upload Noon Report" short="Noon" labelFrom={2000} title="Upload a Noon Report Excel (.xlsx / .xlsm)" onClick={() => setShowNoon(true)} />
-                <FilterButton icon={FileSpreadsheet} label="Import Excel" labelFrom={2000} onClick={() => setShowImport(true)} />
+                {/* Aksi sekunder (2026-10-23): panel >= 2000px = tombol terpisah; di bawahnya digabung jadi satu menu "Actions" supaya
+                    baris filter tetap 1 baris dan "New voyage" tidak terpotong (laptop 14"). */}
+                <div className="hidden @min-[2000px]:contents">
+                  <FilterButton icon={CloudDownload} label="Pull" labelFrom={2000} title="Pull voyages from the source system" onClick={() => setShowPull(true)} />
+                  <FilterButton icon={Sparkles} label="Read report (AI)" labelFrom={2000} title="Read a Voyage Report (PDF/photo) with AI" onClick={() => setShowAi(true)} />
+                  <FilterButton icon={FileUp} label="Upload Noon Report" labelFrom={2000} title="Upload a Noon Report Excel (.xlsx / .xlsm)" onClick={() => setShowNoon(true)} />
+                  <FilterButton icon={FileSpreadsheet} label="Import Excel" labelFrom={2000} onClick={() => setShowImport(true)} />
+                </div>
+                <div className="@min-[2000px]:hidden shrink-0">
+                  <FilterMenu label="Actions" items={[
+                    { icon: CloudDownload, label: 'Pull from source system', onClick: () => setShowPull(true) },
+                    { icon: Sparkles, label: 'Read report (AI)', title: 'Read a Voyage Report (PDF/photo) with AI', onClick: () => setShowAi(true) },
+                    { icon: FileUp, label: 'Upload Noon Report', title: 'Upload a Noon Report Excel (.xlsx / .xlsm)', onClick: () => setShowNoon(true) },
+                    { icon: FileSpreadsheet, label: 'Import Excel', onClick: () => setShowImport(true) },
+                  ]} />
+                </div>
                 <FilterButton icon={Plus} label="New voyage" short="New" variant="primary" onClick={() => setForm({ id: null })} />
               </>
             )}
@@ -203,7 +217,7 @@ export default function CostAgentVoyagePage() {
               {drawerId !== null && (
                 <div key={drawerId} className="lg:flex-1 min-w-0 min-h-0 flex flex-col max-lg:min-h-[640px]">
                   <CostAgentVoyageDrawer embedded voyageId={drawerId} ports={ports} reloadKey={reloadKey} canEdit={canEditVoyage} canUploadInvoice={canUploadInvoice}
-                    onClose={() => setDrawerId(null)} onEdit={id => setForm({ id })} onUploadInvoice={openUpload} />
+                    onClose={() => setDrawerId(null)} onEdit={id => setForm({ id })} onUploadInvoice={openUpload} onDeleted={canEditVoyage ? onVoyageDeleted : undefined} />
                 </div>
               )}
             </div>
@@ -274,7 +288,7 @@ export default function CostAgentVoyagePage() {
 
       {drawerId !== null && view !== 'card' && (
         <CostAgentVoyageDrawer voyageId={drawerId} ports={ports} reloadKey={reloadKey} canEdit={canEditVoyage} canUploadInvoice={canUploadInvoice}
-          onClose={() => setDrawerId(null)} onEdit={id => setForm({ id })} onUploadInvoice={openUpload} />
+          onClose={() => setDrawerId(null)} onEdit={id => setForm({ id })} onUploadInvoice={openUpload} onDeleted={canEditVoyage ? onVoyageDeleted : undefined} />
       )}
       {upload && (
         <CostAgentUploadModal companies={companies} defaultCompany={upload.company} presetCallId={upload.callId}

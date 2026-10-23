@@ -64,8 +64,9 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
   const [editFor, setEditFor] = useState<CostAgentInvoiceLine | null>(null)
   const [browseFor, setBrowseFor] = useState<CostAgentInvoiceLine | null>(null)
   const [onlyCheck, setOnlyCheck] = useState(false) // footer "Needs check": tampilkan hanya baris compare_check
-  // sql/065 E: default "Show only differences" (baris tenang dilipat); state halaman saja (tanpa localStorage).
-  const [showAllCompares, setShowAllCompares] = useState(false)
+  // sql/065 E: "Show only differences" (baris tenang dilipat) = SATU-SATUNYA mode. Toggle "Show all compares" DIHAPUS 2026-10-23 (permintaan user);
+  // pembanding lain tetap bisa dibuka lewat "+n more reference" per baris.
+  const showAllCompares = false
   const [remarkOpen, setRemarkOpen] = useState<Set<number>>(() => new Set()) // textarea remark sedang dibuka
   const [moreOpen, setMoreOpen] = useState<Set<number>>(() => new Set()) // "+n more reference" dibuka
 
@@ -89,33 +90,18 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
   // compare_check (sql/061) & baris tanpa cost item (sql/065) TIDAK ikut.
   const matching = lines.filter(l => l.compare_flag === 'sesuai' && !l.is_verified && l.cost_item_id && !l.compare_check)
   const needsCheck = lines.filter(l => l.compare_check)
-  const unmapped = lines.filter(l => !l.cost_item_id).length
   const shownLines = onlyCheck && needsCheck.length ? needsCheck : lines
   const verifyAllMatching = () => run('all', async () => {
     for (const l of matching) await verify(l, { isVerified: true, learnAlias: true })
   })
-
-  const unverified = lines.filter(l => !l.is_verified).length
 
   return (
     <div className="flex flex-col min-h-0 h-full">
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-[#EADFD6] shrink-0 flex-wrap">
         <div className="text-[12.5px] text-[#3B1B3D] flex items-center gap-3 flex-wrap">
           {toolbarLeft}
-          <span className="inline-flex items-center gap-1.5 flex-wrap">
-            <Chip tone="plum"><b>{lines.length}</b> line{lines.length === 1 ? '' : 's'}</Chip>
-            <Chip tone={unverified ? 'amber' : 'green'}>{unverified ? <AlertTriangle size={10} /> : <CheckCircle2 size={10} />}{unverified ? `${unverified} not verified` : 'all verified'}</Chip>
-            {unmapped > 0 && <span data-unmapped-count><Chip tone="red">{unmapped} without cost item</Chip></span>}
-          </span>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[#F5EDF3] text-[11.5px] font-bold" role="group" aria-label="Compare display">
-            <button type="button" aria-pressed={!showAllCompares} onClick={() => setShowAllCompares(false)} data-compare-toggle="differences"
-              className={`px-2.5 h-7 rounded-lg transition-colors ${!showAllCompares ? 'bg-[#3B1B3D] text-white shadow-sm' : 'text-[#3B1B3D] hover:bg-white'}`}
-              title="Fold the comparison of lines that match the same line in history">Show only differences</button>
-            <button type="button" aria-pressed={showAllCompares} onClick={() => setShowAllCompares(true)} data-compare-toggle="all"
-              className={`px-2.5 h-7 rounded-lg transition-colors ${showAllCompares ? 'bg-[#3B1B3D] text-white shadow-sm' : 'text-[#3B1B3D] hover:bg-white'}`}>Show all compares</button>
-          </div>
           {editable && (
             <button type="button" className={`${SA_BTN_OUTLINE} !border-[#BFE3CD] !bg-[#EAF6EF] !text-[#17663D] hover:!bg-[#DDF0E5]`} disabled={!matching.length || busy !== null} onClick={verifyAllMatching}
               title="Verify every line whose amount is in line with history (lines without a cost item are skipped)">

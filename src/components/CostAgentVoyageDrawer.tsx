@@ -8,12 +8,12 @@
 import React, { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
-import { X, Pencil, UploadCloud, CheckCircle2, Ship, AlertTriangle } from 'lucide-react'
+import { X, Pencil, UploadCloud, CheckCircle2, Ship, AlertTriangle, Trash2 } from 'lucide-react'
 import { StatusChip } from './CostAgentUi'
 import { Chip, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_LABEL } from './SeaAirAuditUi'
 import { LoadingState } from './LoadingState'
 import {
-  costAgentGetVoyage, fmtDateTimePort, fmtHours, fmtNumber, fmtMoney, fmtReportMonth, fmtDate, isNoonReportVoyage, ACTIVITY_LABEL, VOYAGE_SOURCE_LABEL,
+  costAgentGetVoyage, costAgentDeleteVoyage, fmtDateTimePort, fmtHours, fmtNumber, fmtMoney, fmtReportMonth, fmtDate, isNoonReportVoyage, ACTIVITY_LABEL, VOYAGE_SOURCE_LABEL,
   type CostAgentPort, type CostAgentVoyageDetail, type CostAgentNoonDay,
 } from '../utils/CostAgentHelpers'
 
@@ -95,8 +95,9 @@ function DailyNoonReport({ days }: { days: CostAgentNoonDay[] }) {
   )
 }
 
-export default function CostAgentVoyageDrawer({ voyageId, ports, reloadKey, canEdit, canUploadInvoice, onClose, onEdit, embedded = false, onUploadInvoice }: {
+export default function CostAgentVoyageDrawer({ voyageId, ports, reloadKey, canEdit, canUploadInvoice, onClose, onEdit, embedded = false, onUploadInvoice, onDeleted }: {
   embedded?: boolean
+  onDeleted?: (message: string) => void // ada = tombol Delete tampil (hak edit voyage)
   onUploadInvoice?: (callId: number, companyCode: string | null) => void
   voyageId: number
   ports: CostAgentPort[]
@@ -109,10 +110,13 @@ export default function CostAgentVoyageDrawer({ voyageId, ports, reloadKey, canE
   const [data, setData] = useState<CostAgentVoyageDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
+    setDeleteError(null)
     setError(null)
     costAgentGetVoyage(voyageId)
       .then(d => { if (!cancelled) setData(d) })
@@ -127,6 +131,23 @@ export default function CostAgentVoyageDrawer({ voyageId, ports, reloadKey, canE
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  // Hapus voyage (2026-10-23): konfirmasi -> fn_cost_agent_delete_voyage (sql/073). Server menolak bila ada invoice terkait / status closed.
+  const hasInvoices = !!data?.calls.some(c => (c.invoices || []).length > 0)
+  const deleteVoyage = async () => {
+    if (!data || !onDeleted) return
+    const label = `${data.vessel_name} · Voy ${data.voyage_no}`
+    const noonCount = (data.noon || []).length
+    if (!window.confirm(`Delete voyage ${label}?\n\nThis also removes its ${data.calls.length} port call${data.calls.length === 1 ? '' : 's'}${data.cargo.length ? `, ${data.cargo.length} cargo line${data.cargo.length === 1 ? '' : 's'}` : ''}${noonCount ? ` and ${noonCount} noon report day${noonCount === 1 ? '' : 's'}` : ''}. This cannot be undone.`)) return
+    setDeleting(true); setDeleteError(null)
+    try {
+      await costAgentDeleteVoyage(data.id)
+      onDeleted(`Voyage ${label} deleted.`)
+    } catch (e: any) {
+      setDeleteError(e.message || String(e))
+    } finally {
+      setDeleting(false)
+    }
+  }
   const isNoon = isNoonReportVoyage(data)
   const noonDays = data?.noon || []
   const nextTz = data?.next_port_id ? ports.find(p => p.id === data.next_port_id)?.tz : null
@@ -269,7 +290,15 @@ export default function CostAgentVoyageDrawer({ voyageId, ports, reloadKey, canE
         </div>
 
         {data && canEdit && (
-          <div className="px-5 py-3 border-t border-[#EADFD6] bg-[#FBF7F4] flex justify-end gap-2 shrink-0">
+          <div className="px-5 py-3 border-t border-[#EADFD6] bg-[#FBF7F4] flex items-center justify-end gap-2 shrink-0">
+            {deleteError && <span className="mr-auto text-[12px] text-[#A8231A] flex items-center gap-1.5 min-w-0"><AlertTriangle size={13} className="shrink-0" /> <span className="truncate" title={deleteError}>{deleteError}</span></span>}
+            {onDeleted && (
+              <button type="button" className={`${SA_BTN_OUTLINE} text-[#A8231A] hover:border-[#F4C3BC] hover:bg-[#FDE7E4] ${deleteError ? '' : 'mr-auto'}`} disabled={deleting || hasInvoices || data.status === 'closed'}
+                title={data.status === 'closed' ? 'A closed voyage cannot be deleted' : hasInvoices ? 'This voyage has invoices — delete or move them first' : 'Delete this voyage (port calls, cargo and noon days are removed too)'}
+                onClick={deleteVoyage} data-delete-voyage>
+                <Trash2 size={13} /> {deleting ? 'Deleting…' : 'Delete'}
+              </button>
+            )}
             {data.status === 'draft' ? (
               <button type="button" className={SA_BTN_PRIMARY} onClick={() => onEdit(data.id)}><CheckCircle2 size={13} /> Review &amp; Confirm</button>
             ) : (

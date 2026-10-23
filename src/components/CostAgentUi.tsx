@@ -2,7 +2,7 @@
 // Sea & Air & Courier). Label/warna dari CostAgentHelpers (SATU sumber).
 import React from 'react'
 import { createPortal } from 'react-dom'
-import { Anchor, X, AlertTriangle, UploadCloud, FileText, Search } from 'lucide-react'
+import { Anchor, X, AlertTriangle, UploadCloud, FileText, Search, MoreHorizontal, ChevronDown } from 'lucide-react'
 import Greeting from './Greeting'
 import { Chip, Pill, SA_CARD, SA_INPUT } from './SeaAirAuditUi'
 import {
@@ -245,15 +245,18 @@ export function FilterSearch({ value, onChange, placeholder }: { value: string; 
 
 // Kotak berlabel (label kecil hanya tampil di panel >= `labelFrom`, default 1450px; tooltip = label). Panel padat (Voyages)
 // memakai 1750 supaya isi tidak melebihi panel (2026-10-13: di monitor 24" tombol New voyage terpotong).
-export const FilterField: React.FC<{ label: string; labelFrom?: 1450 | 1750; children: React.ReactNode }> = ({ label, labelFrom = 1450, children }) => (
+export const FilterField: React.FC<{ label: string; labelFrom?: 1450 | 1750 | 2000; children: React.ReactNode }> = ({ label, labelFrom = 1450, children }) => (
   <div className="flex items-center gap-2 h-9 pl-2.5 pr-2 rounded-xl border border-[#EADFD6] bg-white shrink-0" title={label}>
-    <span className={`${labelFrom === 1750 ? 'hidden @min-[1750px]:inline' : 'hidden @min-[1450px]:inline'} text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]`}>{label}</span>
+    <span className={`${labelFrom === 2000 ? 'hidden @min-[2000px]:inline' : labelFrom === 1750 ? 'hidden @min-[1750px]:inline' : 'hidden @min-[1450px]:inline'} text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#8A7A8B]`}>{label}</span>
     {children}
   </div>
 )
 // Kelas select di dalam FilterField (lebar dibatasi di panel sempit).
 export const FILTER_SELECT = 'border-0 bg-transparent text-xs font-bold text-[#3B1B3D] focus:outline-none cursor-pointer max-w-[96px] @min-[1500px]:max-w-[150px]'
-export const FILTER_SELECT_WIDE = 'border-0 bg-transparent text-xs font-bold text-[#3B1B3D] focus:outline-none cursor-pointer max-w-[120px] @min-[1500px]:max-w-[190px]'
+// Varian lebih sempit utk panel Voyages (filter terbanyak, tetap 1 baris): Vessel & Input/Source/Status.
+export const FILTER_SELECT_VESSEL = 'border-0 bg-transparent text-xs font-bold text-[#3B1B3D] focus:outline-none cursor-pointer max-w-[100px] @min-[1500px]:max-w-[130px]'
+export const FILTER_SELECT_SM = 'border-0 bg-transparent text-xs font-bold text-[#3B1B3D] focus:outline-none cursor-pointer max-w-[84px] @min-[1500px]:max-w-[112px]'
+export const FILTER_SELECT_WIDE ='border-0 bg-transparent text-xs font-bold text-[#3B1B3D] focus:outline-none cursor-pointer max-w-[120px] @min-[1500px]:max-w-[190px]'
 
 export function FilterSegment<T extends string>({ value, options, onChange }: {
   value: T; options: { value: T; label: string; short?: string }[]; onChange: (v: T) => void
@@ -266,6 +269,42 @@ export function FilterSegment<T extends string>({ value, options, onChange }: {
           {o.short ? <><span className="@min-[1500px]:hidden">{o.short}</span><span className="hidden @min-[1500px]:inline">{o.label}</span></> : o.label}
         </button>
       ))}
+    </div>
+  )
+}
+
+// Menu aksi di panel filter (2026-10-23): kumpulan aksi sekunder dlm satu tombol dropdown utk panel sempit (laptop 14"), supaya baris
+// filter tetap 1 baris & tombol utama tidak terpotong. Popover `absolute` (BUKAN fixed: html memakai CSS zoom 90% di layar <=1600px).
+export function FilterMenu({ icon: Icon = MoreHorizontal, label, items }: {
+  icon?: React.ElementType; label: string
+  items: { icon: React.ElementType; label: string; title?: string; onClick: () => void }[]
+}) {
+  const [open, setOpen] = React.useState(false)
+  const ref = React.useRef<HTMLDivElement>(null)
+  React.useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [open])
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button type="button" onClick={() => setOpen(o => !o)} title={label} aria-label={label} aria-haspopup="menu" aria-expanded={open}
+        className={`inline-flex items-center justify-center gap-1.5 h-9 px-2.5 rounded-xl text-xs font-bold whitespace-nowrap border transition-colors ${open ? 'bg-[#EFE7F7] border-[#C9B5E0] text-[#5B2E8C]' : 'bg-white border-[#EADFD6] text-[#3B1B3D] hover:bg-[#FBF7F4]'}`}>
+        <Icon size={14} /> <span>{label}</span> <ChevronDown size={13} className={open ? 'rotate-180 transition-transform' : 'transition-transform'} />
+      </button>
+      {open && (
+        <div role="menu" className="absolute right-0 top-full mt-1 z-[60] min-w-[210px] rounded-xl border border-[#EADFD6] bg-white shadow-xl py-1">
+          {items.map(it => (
+            <button key={it.label} type="button" role="menuitem" title={it.title || it.label} onClick={() => { setOpen(false); it.onClick() }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-[#3B1B3D] hover:bg-[#FBF7F4] whitespace-nowrap">
+              <it.icon size={14} className="text-[#6B3470]" /> {it.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

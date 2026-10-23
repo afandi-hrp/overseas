@@ -182,6 +182,22 @@ Voyage punya 2 sumber terpisah: dokumen SOF/Time Sheet (Medan, AI) dan **Noon Re
   ROB/Consumption/Received x LSFO/LSMGO/MDO/HSFO/FW, Weather, ikon ⚠ tooltip `warnings`; footer Total consumption; angka maks. 3 desimal, null = "—"; scroll horizontal).
   Voyage noon (`isNoonReportVoyage`: `input_source` atau `extra.input`) -> banner info + cargo kosong "Cargo is not available in noon reports."; `remarks` port call tampil di
   bawah nama pelabuhan (rentang tanggal, no. dokumen, kapal STS). Waktu null otomatis "—" (`fmtDateTimePort`/`fmtHours`). Confirm/Edit manual tetap seperti draft lain.
+- **Hapus voyage (2026-10-23, permintaan user; sql/073 `fn_cost_agent_delete_voyage(p_voyage_id, p_reason)` -- file lokal `sql/073_cost_agent_delete_voyage.sql`, SUDAH DIJALANKAN user
+  2026-10-23, dicek via MCP: SECURITY DEFINER, authenticated boleh, anon tidak)**: sebelumnya tidak ada RPC hapus & policy DELETE tabel voyage = false. Tombol **Delete** di footer drawer
+  (`data-delete-voyage`, hanya `canEdit('cost_agent_voyage')` -> prop `onDeleted`), konfirmasi `window.confirm` (sebut jumlah port call/cargo/hari noon). RPC: guard
+  `fn_cost_agent_assert_edit('cost_agent_voyage')`; DITOLAK bila ada invoice terkait voyage/port call-nya (FK NO ACTION; tombol juga nonaktif bila `calls[].invoices` ada) atau status
+  `closed`; port call/cargo/noon ikut terhapus (cascade); no. urut kapal+bulan dihitung ulang (`fn_cost_agent_renumber_voyages`); dicatat di `audit_trail`. Whitelist gateway
+  ditambah `fn_cost_agent_delete_voyage`.
+- **Modal Agency Invoices dirapikan (2026-10-23, permintaan user)**: (1) ringkasan "N/M not verified" (+ "N without cost item") PINDAH dari toolbar Cost lines ke **header**
+  modal (kiri tombol alert ⚠; `data-lines-summary`); chip "12 lines" dihapus. (2) Tombol **Submit for approval** tanpa chip alert: **abu nonaktif** bila ada baris belum verified /
+  tanpa cost item (alasan di tooltip), **hijau** bila siap. (3) Toggle "Show only differences / Show all compares" DIHAPUS -> selalu mode "only differences"
+  (`showAllCompares = false` di `CostAgentInvoiceLines`; pembanding lain via "+n more reference"). (4) Tab Documents & Tax: bagian "PO numbers" dihapus (`po_numbers` tetap ada di
+  data & kartu). Catatan lama di bagian bawah dokumen yg menyebut toggle/chip/Submit kuning = sudah tidak berlaku.
+- **Kartu Agency Invoices: chip & keterangan SEJAJAR kolom** (2026-10-23, permintaan user; `CostAgentInvoiceCard`, `data-invoice-ship`): Vessel / Port / Voy (baris 1) dan
+  Invoice date / Service date / jumlah dokumen (baris 2) satu grid 3 kolom (+ kolom ke-4 PO) -> teks tepat di bawah chip-nya. Teks tanggal `truncate` (kartu sempit tidak saling menimpa).
+- **Panel filter Voyages tetap 1 baris** (2026-10-23, permintaan user): filter "Input"/"Source" tanpa label sampai panel >= 2000px, select Vessel/Status/Input/Source dipersempit
+  (`FILTER_SELECT_VESSEL`/`FILTER_SELECT_SM`). Aksi sekunder (Pull, Read report AI, Upload Noon Report, Import Excel) = tombol terpisah hanya di panel >= 2000px; di bawahnya
+  digabung jadi satu dropdown **Actions** (`FilterMenu` di `CostAgentUi.tsx`, popover `absolute` krn html ber-CSS zoom); **Refresh, Card/List dan New voyage tetap tampil**.
 - Webhook Settings: kartu baru "Cost Agent — Upload Noon Report (Excel)". Env baru `VITE_N8N_COST_AGENT_NOON_WEBHOOK_URL` (repo tidak punya `.env.example`; `.env` lokal sudah
   ditambah, **production perlu env ini atau pakai cadangan kode** -- server perlu restart).
 - Diuji: `tsc` bersih, `vite build` sukses. BELUM dites dgn n8n/file asli (`NOON_REPORT_OKTOBER_2026_1.xlsx`).

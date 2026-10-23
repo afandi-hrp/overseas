@@ -9,7 +9,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
-import { X, Pencil, Send, Maximize2, Minimize2, AlertTriangle, RotateCcw, PanelLeftClose, PanelLeftOpen, FileText, Wallet, ShieldCheck, Trash2, Plus, ChevronDown, ChevronUp } from 'lucide-react'
+import { X, Pencil, Send, CheckCircle2, Maximize2, Minimize2, AlertTriangle, RotateCcw, PanelLeftClose, PanelLeftOpen, FileText, Wallet, ShieldCheck, Trash2, Plus, ChevronDown, ChevronUp } from 'lucide-react'
 import { StatusChip, CostAgentCombobox, CostAgentModal, FieldLabel, type ComboOption } from './CostAgentUi'
 import { Chip, PtBadge, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_BTN_GREEN, SA_INPUT, SA_LABEL, SA_CARD } from './SeaAirAuditUi'
 import { LoadingState, LoadingSpinner } from './LoadingState'
@@ -186,6 +186,16 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
               {inv && <div className="text-[12px] text-[#6E5E70] mt-0.5">Invoice date {fmtDate(inv.invoice_date)} · Service date {fmtDate(inv.service_date)} · Uploaded by {inv.uploaded_by || '—'}</div>}
             </div>
             <div className="flex items-center gap-2 flex-wrap">
+              {/* Ringkasan verifikasi baris (2026-10-23, permintaan user: pindah dari toolbar Cost lines ke header; tombol Submit tidak lagi
+                  memuat alert). "10/12 not verified" = baris belum diverifikasi / total baris; chip "N without cost item" ikut pindah. */}
+              {inv && data && data.lines.length > 0 && (
+                <span className="inline-flex items-center gap-1.5 flex-wrap" data-lines-summary>
+                  <Chip tone={unverified ? 'amber' : 'green'} title={`${unverified} of ${data.lines.length} cost lines not verified`}>
+                    {unverified ? <AlertTriangle size={10} /> : <CheckCircle2 size={10} />}{unverified ? `${unverified}/${data.lines.length} not verified` : 'all verified'}
+                  </Chip>
+                  {unmapped > 0 && <span data-unmapped-count><Chip tone="red">{unmapped} without cost item</Chip></span>}
+                </span>
+              )}
               {inv && allNotes.length > 0 && (
                 <AlertsButton notes={allNotes} inv={inv} onFix={fixHeader} />
               )}
@@ -324,19 +334,14 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
                 <button type="button" className={SA_BTN_OUTLINE} onClick={() => setTab('payments')}><Wallet size={13} /> Mark as paid</button>
               )}
               {editable && (
-                // 2026-10-16 (permintaan user "dipertegas"): siap = hijau pekat lebih besar; belum siap = TIDAK pudar (dulu outline opacity 50%)
-                // tapi kotak kuning dgn alasan tebal, supaya jelas apa yang masih kurang.
+                // 2026-10-23 (permintaan user): tombol TANPA alert (ringkasan "N/M not verified" ada di header). Belum siap = abu (nonaktif,
+                // alasan di tooltip); siap = hijau pekat. (2026-10-16: dulu kotak kuning dgn chip alasan di dalam tombol.)
                 <button type="button" disabled={busy || unverified > 0 || unmapped > 0} onClick={submit} data-submit-approval
                   title={unmapped ? 'Choose a cost item (or LAIN_LAIN) for every line first' : unverified ? 'Verify every cost line first' : undefined}
                   className={unverified || unmapped
-                    ? 'inline-flex items-center gap-2 h-10 px-4 rounded-xl border-2 border-[#E0B84F] bg-[#FFF6DD] text-[#7A4F00] text-[13px] font-bold cursor-not-allowed'
+                    ? 'inline-flex items-center gap-2 h-10 px-5 rounded-xl border border-[#D9D1CB] bg-[#EDE8E4] text-[#8A7A8B] text-[13px] font-bold cursor-not-allowed'
                     : 'inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-[#17663D] hover:bg-[#12532F] text-white text-[13px] font-bold shadow-md ring-2 ring-[#17663D]/20 disabled:opacity-60'}>
                   <Send size={15} /> {busy ? 'Submitting…' : 'Submit for approval'}
-                  {(unmapped > 0 || unverified > 0) && (
-                    <span className="inline-flex items-center gap-1 rounded-md bg-white/80 border border-[#E0B84F] px-1.5 py-0.5 text-[11.5px]">
-                      <AlertTriangle size={12} />{unmapped ? `${unmapped} line${unmapped === 1 ? '' : 's'} without cost item` : `${unverified} not verified`}
-                    </span>
-                  )}
                 </button>
               )}
               <button type="button" className={SA_BTN_PRIMARY} onClick={onClose}>Close</button>
