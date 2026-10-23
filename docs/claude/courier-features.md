@@ -45,6 +45,30 @@ Details, popup Audit, jendela List Audit, Finance Handover, badge/KPI/needs atte
   keterangan, mode Edit menampilkan data asli, chip & tile Menunggu, Invoice document). `tsc` bersih, `vite build` sukses. Belum dites di
   production.
 
+## Revisi Menu Courier -- Audit & Invoice Recap, 7 poin (2026-10-23, permintaan user; mockup `mockup_audit_revisi_7poin.html`; SQL opsional `sql/074`)
+
+- **1. Document Review di Checklist Audit Card**: `ChecklistModal` prop BARU `documentReview` -> section "Document review" (`CourierDocumentReview`, SATU komponen dgn tab Checklist Invoice Recap,
+  bingkai/judul bisa diatur lewat prop `className`/`titleClassName`) di paling bawah. Dipakai popup Audit Card (`renderChecklist`) & jendela List. Baca ulang tiap simpan / upload susulan SUCCESS (`docReviewKey`).
+  Invoice Recap TETAP merender `CourierDocumentReview` sendiri di luar `ChecklistModal` (sumber awal). Finance Handover TIDAK diberi section ini.
+- **2. Isi Checklist Audit List = Card** (`ChecklistModal embedded legacy`; tampilan full screen/tab/grid/sidebar TIDAK berubah): tile dokumen kini `docTile(field, required)` berstatus Required (OK / Valid (note) /
+  Missing merah) & Optional, tombol **Accept with note** + Undo (aturan SAMA Card: butuh Checklist Note & `accepted_docs`, centang manual hanya Admin), "Catatan Checklist" -> **"Checklist Note"** (+ teks
+  "Same as the Remarks column", sinkron Remarks via `syncChecklistNoteToRemarks`), Missing Documents tetap, **Document review di bawah Optional Documents**.
+- **3. "View in Invoice Recap"** di header panel Audit Card (`CourierAuditPreview` prop `onViewInRecap`; tampil bila AWB ada & user punya akses `courier_rekapan`): navigate
+  `/courier/rekapan?q=<AWB tanpa prefix>&open=<AWB ternormalisasi>` (kebalikan "View in Audit"). Invoice Recap Card membaca `?open=` di `onLoaded` daftar kartu (`handleCourierRecapOpenParam`):
+  panel AWB itu terbuka SEKALI lalu `open` dihapus (`q` tetap). AWB tak ada di Invoice Recap -> tidak ada yang terbuka.
+- **4. Search**: kotak Search Courier (Audit & Recap, Card & List) = **AWB, invoice no., PO, vendor, PIB no., NTPN** (placeholder diganti). Audit TIDAK punya kolom Invoice no/NTPN (adanya di
+  `rekapan_courier.no_invoice/ntpn`) -> `src/utils/CourierSearch.ts` `resolveAuditSearchExtra` mencari dulu di rekapan lalu menambah kondisi OR (`id.in.(id PIB/CN terhubung)` + `awb.ilike` AWB cocok); Recap List:
+  + `ntpn` & `resolveRecapSearchExtra` (No. PIB dari `tabel_audit_pib` -> `pib_id.in` / AWB). Berlaku di daftar, hitungan tab/PPJK, ringkasan KPI & Export. Aktif hanya bila kata kunci >= 3 karakter (maks 60 cocok,
+  cache 20 dtk). Recap **Card** memakai RPC: app mengirim kolom `'ntpn'`+`'pib_no'`; **`sql/074_courier_recap_search_ntpn_pibno.sql`** (BELUM DIJALANKAN per tulisan ini) membuat
+  `fn_courier_recap_awb_page` & `fn_courier_recap_summary` mengenalinya (RPC lama mengabaikan kolom tak dikenal -> aman). Catatan: `vendor_inv_no` (No. invoice vendor, mis. "INV NO. HG26103995") sudah dicari
+  sejak dulu; "Invoice no" baru di Audit = nomor invoice courier (rekapan `no_invoice`).
+- **5. Label kartu Audit** (`CourierAuditCardList`): "Accepted <tgl>" (abu) pindah ke kolom BARU antara Vendor & Total Expenses, **Audited** (hijau) di bawahnya; "NAS submitted <tgl>" DIHAPUS dari kartu
+  (tanggal tetap di Final Check); label jalur PIB/CN lebih besar & tebal (`12.5px`, extrabold) dari label PT. **Pil "Draft" tetap di kanan atas** (hanya Audited yang dipindah, sesuai spek).
+- **6. KPI Audit**: kartu Customs value & Duties & taxes (+ popover Rincian) = TOTAL seluruh tab Draft+PIB+CN (agregasi `byTab`; tidak berubah saat pindah tab; tetap ikut search/PPJK date/company);
+  kartu ke-4 = **"Total Importase / Total PO"**: `Total AWB / Total PO` (baris kecil "x draft · x PIB · x CN" seluruh tab). Total PO = distinct nomor PO individual (`courierPoKeys`: `po_ori`
+  dipecah `+`/`;`/`,`, nomor sama = 1, "TIDAK ADA PO" tidak dihitung; `summary.poCount`). Records tetap per tab. Total PO tampil "—" bila kolom `po_ori` disembunyikan role.
+- **7. Archived di List Audit**: label "Archived" SEJAJAR (satu baris) di kiri tombol Action (`SharedDataTable`, sel Action baris List), panel Action tetap di bawahnya.
+
 ## Revisi Menu Courier -- Audit & Invoice Recap (2026-10-15, permintaan user; mockup `Courier Audit Revisi.html`, TANPA SQL)
 
 - **A. Cost Validation = SATU komponen** `CostValidationModalLegacy` (layout Invoice Recap: tabel Invoice Freight / Invoice Duty Validation,

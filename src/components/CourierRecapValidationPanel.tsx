@@ -62,7 +62,8 @@ const joinNos = (rows: any[]) => Array.from(new Set(rows.map(r => r.no_invoice).
 type DocLogRow = { id: string; doc_key: string; action: 'ADDED' | 'REMOVED'; changed_by: string | null; created_at: string }
 const fmtDay = (iso: string) => fmtCourierDate(iso).replace(/^(\d{2})-([A-Za-z]{3})[a-z]*-(\d{4})$/, '$1 $2 $3')
 
-export const CourierDocumentReview: React.FC<{ rec: any; docType: CourierDocType; labels: Record<string, string>; reloadKey: number }> = ({ rec, docType, labels, reloadKey }) => {
+// `className` / `titleClassName` (2026-10-23): dipakai juga di Checklist Audit (Card & List) -- bingkai/judul bisa disesuaikan tanpa mengubah isi (SATU komponen = isi sinkron di 3 tempat).
+export const CourierDocumentReview: React.FC<{ rec: any; docType: CourierDocType; labels: Record<string, string>; reloadKey: number; className?: string; titleClassName?: string }> = ({ rec, docType, labels, reloadKey, className, titleClassName }) => {
   const [log, setLog] = useState<DocLogRow[] | null>(null)
   const [missing, setMissing] = useState(false)
   const [checklist, setChecklist] = useState<any>(null)
@@ -104,8 +105,8 @@ export const CourierDocumentReview: React.FC<{ rec: any; docType: CourierDocType
   }, [checklist, log, labels])
 
   return (
-    <div className="bg-white rounded-[14px] border border-[#EADFD6] px-4 py-3" data-document-review>
-      <div className="text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B] mb-2">Document review</div>
+    <div className={className ?? 'bg-white rounded-[14px] border border-[#EADFD6] px-4 py-3'} data-document-review>
+      <div className={titleClassName ?? 'text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B] mb-2'}>Document review</div>
       {log === null ? <div className="text-[12px] text-[#8A7A8B]">Loading…</div> : (
         <div className="flex flex-col gap-2">
           {missing && <div className="text-[11.5px] text-[#8A7A8B]">Document history is not available yet.</div>}

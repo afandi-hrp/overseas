@@ -5,6 +5,7 @@
 // Keputusan user: tab Draft / PIB / CN; Mark as audited TIDAK PERNAH dikunci walau validasi belum
 // lengkap (ada kasus invoice freight memang tidak ditagihkan); fitur tabel lama tetap di mode List.
 import { supabase } from '../lib/supabase'
+import { courierSearchOr, EMPTY_SEARCH_EXTRA, type CourierSearchExtra } from './CourierSearch'
 import { normPct } from './SeaAirAuditHelpers'
 import { toNum } from './SeaAirValidasiHelpers'
 
@@ -201,12 +202,19 @@ export function courierPoRate(rec: any): number | null {
 // credit note masing-masing, jadi TIDAK ada pengurangan Credit Note lagi & tidak ada query tambahan).
 export const courierTotalExpenses = (rec: any): number => n(rec?.total_inv_freight) + n(rec?.total_inv_duty)
 
+// Nomor PO individual dari kolom `po_ori` (1 baris bisa memuat beberapa PO "A + B + C"). Dipakai hitungan Total PO distinct KPI Audit.
+export function courierPoKeys(raw: any): string[] {
+  return String(raw ?? '').split(/\s*[+;]\s*|,\s+/).map(x => x.trim().toUpperCase()).filter(x => x && x !== 'TIDAK ADA PO' && x !== '-')
+}
+
 // ─── Ringkasan KPI ────────────────────────────────────────────────────────────
-export type CourierAuditFilters = { importAn: string; startDate: string; endDate: string; search: string; searchColsPib: string[]; searchColsCn: string[] }
+export type CourierAuditFilters = { importAn: string; startDate: string; endDate: string; search: string; searchColsPib: string[]; searchColsCn: string[]; extra?: CourierSearchExtra }
 export type CourierAuditSummary = {
   total: number; draft: number; pib: number; cn: number
   cvSum: number; bmSum: number; ppnSum: number; pphSum: number; admSum: number; dutySum: number
   nasEmpty: number; nasEmptyDraft: number; nasEmptyPib: number; nasEmptyCn: number
+  // Total PO DISTINCT seluruh tabel Draft + PIB + CN (2026-10-23): `po_ori` dipecah per "+" / "," / ";", nomor sama (PO partial ke-1 & ke-2) = 1; "TIDAK ADA PO" tidak dihitung.
+  poCount: number
   draftRows: any[]   // baris Draft (lengkap) -> dipakai parent utk hitung "Validation incomplete"
   // KPI per tab (2026-10-15, permintaan user: angka KPI ikut tab aktif Draft / PIB / CN + tanggal + company). Kunci = id tab.
   byTab: Record<CourierAuditTab, CourierAuditTabKpi>
@@ -230,17 +238,18 @@ const emptyTabKpi = (): CourierAuditTabKpi => ({
 export const courierDutyPartsTotal = (d: CourierDutyParts) => d.bm + d.ppn + d.pph + d.adm
 
 const PAGE = 1000
-function applyFilters(q: any, f: CourierAuditFilters, cols: string[]) {
+function applyFilters(q: any, f: CourierAuditFilters, cols: string[], mode: 'pib' | 'cn') {
   if (f.importAn && f.importAn !== 'All') q = q.eq('impor_an', f.importAn)
   if (f.startDate) q = q.gte('tgl_ppjk', f.startDate)
   if (f.endDate) q = q.lte('tgl_ppjk', `${f.endDate} 23:59:59`)
-  if (f.search && cols.length) q = q.or(cols.map(c => `${c}.ilike.%${f.search}%`).join(','))
+  if (f.search && cols.length) q = q.or(courierSearchOr(f.search, cols, f.extra || EMPTY_SEARCH_EXTRA, mode))
   return q
 }
 async function fetchAllRows(table: string, f: CourierAuditFilters, cols: string[]): Promise<any[] | null> {
+  const mode = table === 'tabel_audit_cn' ? 'cn' : 'pib'
   const rows: any[] = []
   for (let from = 0; ; from += PAGE) {
-    const { data, error } = await applyFilters(supabase.from(table).select('*'), f, cols).order('id', { ascending: true }).range(from, from + PAGE - 1)
+    const { data, error } = await applyFilters(supabase.from(table).select('*'), f, cols, mode).order('id', { ascending: true }).range(from, from + PAGE - 1)
     if (error) { console.error('[CourierAudit] ringkasan gagal', table, error); return null }
     rows.push(...(data || []))
     if (!data || data.length < PAGE) break
@@ -252,10 +261,12 @@ async function fetchAllRows(table: string, f: CourierAuditFilters, cols: string[
 export async function fetchCourierAuditSummary(f: CourierAuditFilters): Promise<CourierAuditSummary | null> {
   const [pib, cn] = await Promise.all([fetchAllRows('tabel_audit_pib', f, f.searchColsPib), fetchAllRows('tabel_audit_cn', f, f.searchColsCn)])
   if (!pib || !cn) return null
-  const s: CourierAuditSummary = { total: 0, draft: 0, pib: 0, cn: 0, cvSum: 0, bmSum: 0, ppnSum: 0, pphSum: 0, admSum: 0, dutySum: 0, nasEmpty: 0, nasEmptyDraft: 0, nasEmptyPib: 0, nasEmptyCn: 0, draftRows: [],
+  const s: CourierAuditSummary = { total: 0, draft: 0, pib: 0, cn: 0, cvSum: 0, bmSum: 0, ppnSum: 0, pphSum: 0, admSum: 0, dutySum: 0, nasEmpty: 0, nasEmptyDraft: 0, nasEmptyPib: 0, nasEmptyCn: 0, poCount: 0, draftRows: [],
     byTab: { archive: emptyTabKpi(), pib: emptyTabKpi(), cn: emptyTabKpi() } }
+  const poKeys = new Set<string>()
   const add = (r: any, t: CourierDocType) => {
     const row = { ...r, jenis_dokumen: t }
+    courierPoKeys(row.po_ori).forEach(k => poKeys.add(k))
     Object.assign(row, computeCourierAuditCalc(row, t, row.manual_override_fields))
     s.total++
     const draft = isCourierDraft(row)
@@ -280,6 +291,7 @@ export async function fetchCourierAuditSummary(f: CourierAuditFilters): Promise<
   }
   pib.forEach(r => add(r, 'PIB'))
   cn.forEach(r => add(r, 'CN'))
+  s.poCount = poKeys.size
   return s
 }
 

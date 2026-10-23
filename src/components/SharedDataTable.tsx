@@ -37,6 +37,7 @@ import { SeaAirAuditCardList, SeaAirAuditKpiCards } from './SeaAirAuditCardList'
 import SeaAirAuditDetailModal from './SeaAirAuditDetailModal'
 import SeaAirAuditEditModal from './SeaAirAuditEditModal'
 import { orSafe, fetchAllPages } from '../utils/supabaseQueryHelpers'
+import { resolveAuditSearchExtra, resolveRecapSearchExtra, courierSearchOr, EMPTY_SEARCH_EXTRA } from '../utils/CourierSearch'
 import { computeRecapIssues, fetchFormENotes, fetchRecapSummary, isRecapLocked, notifySeaAirRecapChanged, todayLocalIso, type RecapSummary, type RecapIssue } from '../utils/SeaAirRecapHelpers'
 import {
   COURIER_AUDIT_CALC_FIELDS, computeCourierAuditCalc, courierAuditCalcNum, fetchCourierAuditSummary, courierDocType, courierDocNo,
@@ -45,9 +46,9 @@ import {
 import { CourierAuditCardList, CourierAuditKpiCards } from './CourierAuditCardList'
 import { syncChecklistNoteToRemarks, syncRemarkToGroup } from '../utils/CourierRemarksSync'
 import { syncRemarksToChecklistNote } from '../utils/SeaAirRemarksSync'
-import { COURIER_REKAPAN_CALC_FIELDS, courierAwbNorm, computeCourierRekapanCalc, submitRecapInvoices, notifyCourierRecapChanged, fetchCourierRecapSummary, buildRecapGroup, fetchRecapAuditLinks, type RecapFilters, type RecapGroup, type RecapSummaryCourier, type RecapKpiFilter } from '../utils/CourierRecapHelpers'
+import { COURIER_REKAPAN_CALC_FIELDS, courierAwbNorm, awbDisplay, computeCourierRekapanCalc, submitRecapInvoices, notifyCourierRecapChanged, fetchCourierRecapSummary, buildRecapGroup, fetchRecapAuditLinks, type RecapFilters, type RecapGroup, type RecapSummaryCourier, type RecapKpiFilter } from '../utils/CourierRecapHelpers'
 import { CourierRecapCardView, CourierRecapKpiCards } from './CourierRecapCardList'
-import CourierRecapValidationPanel, { type RecapPanelTab } from './CourierRecapValidationPanel'
+import CourierRecapValidationPanel, { CourierDocumentReview, type RecapPanelTab } from './CourierRecapValidationPanel'
 import CourierAuditPreview from './CourierAuditPreview'
 import CourierAuditEditModal from './CourierAuditEditModal'
 import { SA_BTN_OUTLINE, SA_BTN_GREEN } from './SeaAirAuditUi'
@@ -1281,7 +1282,8 @@ function mergeChecklistData(records: any[], docTypeHint?: 'pib' | 'cn') {
 // overlay/judul sendiri, Save Checklist TIDAK menutup jendela). `onPctChange` melaporkan % live
 // ke label tab (null = belum ada baris dokumen_checklist & belum ada perubahan).
 // Diekspor (2026-10-02) utk viewer Courier Finance Handover (mode baca saja, canEdit=false).
-export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, embedded = false, legacy = false, onPctChange, onDirtyChange }: { record: any, tab: any, onClose: () => void, onSaved?: () => void, canEdit?: boolean, embedded?: boolean, legacy?: boolean, onPctChange?: (pct: number | null) => void, onDirtyChange?: (dirty: boolean) => void }) {
+// `documentReview` (2026-10-23): tampilkan section "Document review" (riwayat centang dokumen, SAMA tab Checklist Invoice Recap) di bagian bawah -- dipakai Audit Card & Audit List.
+export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, embedded = false, legacy = false, documentReview = false, onPctChange, onDirtyChange }: { record: any, tab: any, onClose: () => void, onSaved?: () => void, canEdit?: boolean, embedded?: boolean, legacy?: boolean, documentReview?: boolean, onPctChange?: (pct: number | null) => void, onDirtyChange?: (dirty: boolean) => void }) {
   const [form, setForm] = useState<Record<string, boolean>>({})
   const [existingId, setExistingId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
@@ -1296,6 +1298,8 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
   const [savedForm, setSavedForm] = useState<Record<string, boolean>>({})
   const [savedCatatan, setSavedCatatan] = useState('')
   const [savedMsg, setSavedMsg] = useState(false)
+  // Pemicu baca ulang "Document review" (naik tiap simpan berhasil / upload susulan selesai).
+  const [docReviewKey, setDocReviewKey] = useState(0)
   // "Valid (note)" (2026-10-08, keputusan user; sql/049): dokumen WAJIB yang Missing di-Accept dgn catatan (Checklist Note).
   // Disimpan di dokumen_checklist.accepted_docs (daftar kolom ada_*); dihitung lengkap selama catatan terisi, dibuang
   // otomatis (trigger) begitu dokumen di-upload susulan. Selama kolom belum ada (sql/049 belum jalan) tombol Accept nonaktif.
@@ -1352,6 +1356,7 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
         if (data.status === 'SUCCESS') {
           setActiveJobStatus('SUCCESS')
           refetchChecklistAfterUpload()
+          setDocReviewKey(k => k + 1)
           onSaved?.()
         } else if (data.status === 'FAILED') {
           setActiveJobStatus('FAILED')
@@ -1475,6 +1480,7 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
       // Checklist Note berubah -> Remarks semua invoice AWB yg belum di-Submit ikut (sinkron dua arah, CourierRemarksSync).
       if (noteChanged) await syncChecklistNoteToRemarks({ ...record, jenis_dokumen: isPib ? 'PIB' : 'CN' }, catatan.trim() ? catatan : null)
       if (onSaved) onSaved()
+      setDocReviewKey(k => k + 1)
       if (embedded) {
         setSavedForm(form)
         setSavedCatatan(catatan)
@@ -1621,23 +1627,72 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
   //    (status + tombol), isi 2 kolom (daftar dokumen | dokumen kurang + catatan). ──
   if (embedded && legacy) {
     const optionalChecked = optionalFields.filter(f => form[f.key]).length
-    const docTile = (field: typeof CHECKLIST_FIELDS[number]) => {
+    // 2026-10-23 (permintaan user): ISI disamakan dgn versi Card (tata letak & gaya List tetap): status dokumen Required (OK / Valid (note) / Missing) &
+    // Optional, tombol "Accept with note" di dokumen wajib yang Missing (+ Undo), aturan SAMA tile Card.
+    const docTile = (field: typeof CHECKLIST_FIELDS[number], required: boolean) => {
       const val = !!form[field.key]
+      const acc = required && isAcc(field.key)
+      const state = val ? 'ok' : acc ? 'accepted' : 'missing'
+      const canAccept = required && !val && !acc && canEdit
+      const acceptBlocked = !noteOk || !hasAcceptedCol
       return (
-        <button
-          type="button"
+        <div
           key={field.key}
-          onClick={canToggle ? () => toggle(field.key) : undefined}
-          disabled={!canToggle}
-          className={`w-full min-w-0 flex items-center justify-between gap-2 px-3 py-2 rounded-lg border text-left transition-colors ${
-            val ? 'border-emerald-200 bg-emerald-50/70' : 'border-slate-200 bg-white'
-          } ${canToggle ? (val ? 'hover:border-emerald-300 cursor-pointer' : 'hover:border-[#5A305A]/30 hover:bg-[#5A305A]/[0.03] cursor-pointer') : 'cursor-default'}`}
+          data-doc-key={field.key}
+          data-doc-state={required ? state : (val ? 'ok' : 'optional')}
+          className={`w-full min-w-0 flex flex-col rounded-lg border transition-colors ${
+            required
+              ? (val ? 'border-emerald-200 bg-emerald-50/70' : acc ? 'border-amber-200 bg-amber-50/80' : 'border-red-200 bg-red-50/60')
+              : 'border-slate-200 bg-white'
+          }`}
         >
-          <span className={`text-[13px] font-medium [overflow-wrap:anywhere] ${val ? 'text-emerald-900' : 'text-[#5A305A]'}`}>{field.label}</span>
-          {val
-            ? <CheckCircle2 size={17} className="text-emerald-500 shrink-0" />
-            : <Circle size={17} className="text-slate-300 shrink-0" />}
-        </button>
+          <button
+            type="button"
+            onClick={canToggle ? () => toggle(field.key) : undefined}
+            disabled={!canToggle}
+            data-manual-toggle={canToggle ? 'on' : 'off'}
+            title={canToggle ? (val ? 'Click to mark as not received' : 'Click to mark as received') : undefined}
+            className={`w-full min-w-0 flex items-center justify-between gap-2 px-3 py-2 text-left ${canToggle ? 'cursor-pointer hover:bg-black/[0.02] rounded-lg' : 'cursor-default disabled:opacity-100'}`}
+          >
+            <span className="min-w-0">
+              <span className={`text-[13px] font-medium [overflow-wrap:anywhere] ${val ? 'text-emerald-900' : 'text-[#5A305A]'}`}>{field.label}</span>
+              {acc && (
+                <>
+                  <span className="ml-1.5 inline-flex items-center px-1.5 py-[1px] rounded-md bg-amber-100 text-amber-800 text-[10px] font-bold align-middle">Valid (note)</span>
+                  <span className="block text-[11px] font-normal text-amber-800 [overflow-wrap:anywhere] line-clamp-2" title={catatan}>{catatan}</span>
+                </>
+              )}
+            </span>
+            {required
+              ? (val ? <CheckCircle2 size={17} className="text-emerald-500 shrink-0" /> : acc ? <StickyNote size={17} className="text-amber-600 shrink-0" /> : <XCircle size={17} className="text-red-400 shrink-0" />)
+              : (val ? <CheckCircle2 size={17} className="text-emerald-500 shrink-0" /> : <Circle size={17} className="text-slate-300 shrink-0" />)}
+          </button>
+          {(canAccept || (required && canEdit && !val && accepted.includes(field.key))) && (
+            <div className="px-3 pb-2 -mt-0.5 flex flex-wrap items-center gap-1.5 print:hidden">
+              {canAccept && (
+                <button type="button" data-accept-doc={field.key} disabled={acceptBlocked}
+                  onClick={() => setAccepted(a => (a.includes(field.key) ? a : [...a, field.key]))}
+                  title={!hasAcceptedCol ? 'Accept with note is unavailable until database migration 049 is applied.' : !noteOk ? 'Fill in the Checklist Note first to accept this missing document.' : 'Accept this missing document as valid, with the Checklist Note'}
+                  className="px-2 h-6 rounded-md border border-slate-300 bg-white text-[10.5px] font-semibold text-[#5A305A] hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                  Accept with note
+                </button>
+              )}
+              {required && canEdit && !val && accepted.includes(field.key) && (
+                <button type="button" data-undo-accept={field.key}
+                  onClick={() => setAccepted(a => a.filter(k => k !== field.key))}
+                  title="Remove the acceptance — the document goes back to Missing"
+                  className="px-2 h-6 rounded-md text-[10.5px] font-semibold text-red-700 hover:underline">
+                  Undo
+                </button>
+              )}
+              {canAccept && !isAdminUser && (
+                <span data-admin-only-hint className="inline-flex items-center gap-1 text-[10.5px] text-slate-500" title="Only an Admin can mark a document as received manually. Upload the document or accept it with a note.">
+                  <Lock size={10} /> Manual check: Admin only
+                </span>
+              )}
+            </div>
+          )}
+        </div>
       )
     }
     return (
@@ -1690,7 +1745,7 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
                   <span className="text-[11px] font-semibold text-slate-500">{checkedMandatoryCount}/{mandatoryCount}</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
-                  {mandatoryFields.map(docTile)}
+                  {mandatoryFields.map(f => docTile(f, true))}
                 </div>
               </section>
               {optionalFields.length > 0 && (
@@ -1700,9 +1755,13 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
                     <span className="text-[11px] font-semibold text-slate-500">{optionalChecked}/{optionalFields.length}</span>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
-                    {optionalFields.map(docTile)}
+                    {optionalFields.map(f => docTile(f, false))}
                   </div>
                 </section>
+              )}
+              {documentReview && (
+                <CourierDocumentReview rec={record} docType={isPib ? 'PIB' : 'CN'} labels={CHECKLIST_LABELS} reloadKey={docReviewKey}
+                  className={`${VW_CARD_L} p-4`} titleClassName={`${VW_CARD_TITLE_L} mb-3`} />
               )}
             </div>
 
@@ -1725,8 +1784,10 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
                 )}
               </section>
               <section className={`${VW_CARD_L} p-4`}>
-                <h3 className={`${VW_CARD_TITLE_L} mb-2.5`}>Catatan Checklist</h3>
+                <h3 className={`${VW_CARD_TITLE_L} mb-1`}>Checklist Note</h3>
+                <p className="text-[11px] text-slate-500 mb-2" data-checklist-note>Required to accept a missing document. Same as the <b>Remarks</b> column in the List view.</p>
                 {catatanInputLegacy}
+                <p className="text-[10.5px] font-semibold text-blue-700 mt-1.5">↔ Synced with the Remarks column (List){hasCatatanCol ? '' : ' — unavailable until migration 028 is applied'}</p>
               </section>
             </div>
           </div>
@@ -1877,6 +1938,12 @@ export function ChecklistModal({ record, tab, onClose, onSaved, canEdit = true, 
             </div>
             <div className="grid grid-cols-2 gap-1.5">{optionalFields.map(f => docTile(f, false))}</div>
           </>
+        )}
+
+        {documentReview && (
+          <div className="mt-3">
+            <CourierDocumentReview rec={record} docType={isPib ? 'PIB' : 'CN'} labels={CHECKLIST_LABELS} reloadKey={docReviewKey} />
+          </div>
         )}
 
         {uploadSusulanModal}
@@ -2818,6 +2885,8 @@ const CourierAuditRowGroup: React.FC<{
             {isFirst && (
               <td className="px-4 py-3 text-center sticky right-0 bg-white group-hover:bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.03)] z-10 transition-colors border-l border-slate-100" rowSpan={isExpanded ? rowCount : 1}>
                 <div className="flex flex-col items-center gap-1.5">
+                  {/* 2026-10-23 (permintaan user): label Archived SEJAJAR (satu baris) di kiri tombol Action, bukan di atasnya. */}
+                  <div className="flex items-center justify-center gap-1.5">
                   {nasSubmitted && (
                     <span
                       title="NAS Submit Date is filled in -- this row's NAS submission is complete"
@@ -2826,7 +2895,6 @@ const CourierAuditRowGroup: React.FC<{
                       🗄️ Archived
                     </span>
                   )}
-                  <>
                     <button
                       onClick={() => setShowActions(!showActions)}
                       className={`w-[80px] flex items-center justify-center gap-1 text-[10px] font-bold px-2 py-2 rounded-lg border transition-all ${
@@ -2838,6 +2906,8 @@ const CourierAuditRowGroup: React.FC<{
                       Action
                       <ChevronDown size={13} className={`transition-transform duration-200 ${showActions ? 'rotate-180' : ''}`} />
                     </button>
+                  </div>
+                  <>
                     {showActions && (
                       <div className="flex flex-col gap-1.5 items-center bg-slate-50 border border-slate-200 rounded-lg p-1.5 shadow-sm animate-in fade-in slide-in-from-top-1 duration-150">
                           {canBulkEdit && (
@@ -4105,8 +4175,10 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         if (debouncedSearch) {
           const searchColsPib = restrictSearchCols('courier_audit', ['awb', 'vendor_inv_no', 'no_pib', 'po_ori', 'vendor']);
           const searchColsCn = restrictSearchCols('courier_audit', ['awb', 'vendor_inv_no', 'po_ori', 'vendor']);
-          queryPib = queryPib.or(searchColsPib.map(col => `${col}.ilike.%${orSafe(debouncedSearch)}%`).join(','));
-          queryCn = queryCn.or(searchColsCn.map(col => `${col}.ilike.%${orSafe(debouncedSearch)}%`).join(','));
+          // Invoice no & NTPN ada di rekapan_courier -> dicari dulu lalu ditambahkan sbg kondisi OR (CourierSearch.ts).
+          const searchExtra = await resolveAuditSearchExtra(debouncedSearch);
+          queryPib = queryPib.or(courierSearchOr(debouncedSearch, searchColsPib, searchExtra, 'pib'));
+          queryCn = queryCn.or(courierSearchOr(debouncedSearch, searchColsCn, searchExtra, 'cn'));
         }
 
         const [resPib, resCn] = await Promise.all([queryPib, queryCn])
@@ -4274,7 +4346,13 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         searchCols = ['awb', 'no_dokumen', 'user_email', 'tabel'];
       }
       if (searchCols.length > 0) {
-        const orCondition = searchCols.map(col => `${col}.ilike.%${orSafe(debouncedSearch)}%`).join(',');
+        let orCondition = searchCols.map(col => `${col}.ilike.%${orSafe(debouncedSearch)}%`).join(',');
+        if (activeMainTab === 'courier' && activeSubTab === 'courier_audit') {
+          orCondition = courierSearchOr(debouncedSearch, searchCols, await resolveAuditSearchExtra(debouncedSearch), courierAuditType === 'cn' ? 'cn' : 'pib');
+        } else if (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') {
+          // List Invoice Recap: + NTPN (kolom rekapan) & No. PIB (tabel_audit_pib -> pib_id / AWB)
+          orCondition = courierSearchOr(debouncedSearch, [...searchCols, 'ntpn'], await resolveRecapSearchExtra(debouncedSearch), 'recap');
+        }
         query = query.or(orCondition);
       }
     }
@@ -4513,7 +4591,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       if (filterEndDate) query = query.lte('tgl_terima_email', `${filterEndDate} 23:59:59`);
       if (debouncedSearch) {
         const searchCols = restrictSearchCols('courier_rekapan', ['awb', 'no_invoice', 'vendor', 'po_pt_imi', 'ppjk']);
-        query = query.or(searchCols.map(col => `${col}.ilike.%${orSafe(debouncedSearch)}%`).join(','));
+        query = query.or(courierSearchOr(debouncedSearch, [...searchCols, 'ntpn'], await resolveRecapSearchExtra(debouncedSearch), 'recap'));
       }
       const { data, error } = await query;
       if (error || !data) {
@@ -4532,12 +4610,13 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     setPpjkOutstandingMap({});
 
     if (activeMainTab === 'courier' && activeSubTab === 'courier_audit') {
+      const outstandingExtra = debouncedSearch ? await resolveAuditSearchExtra(debouncedSearch) : EMPTY_SEARCH_EXTRA;
       const buildQuery = (table: string, searchCols: string[], statusMode: 'archived' | 'active') => {
         let q = supabase.from(table).select('id', { count: 'exact', head: true }).is('tgl_submit_nas', null)
         q = statusMode === 'archived' ? q.eq('status', 'ARCHIVED') : q.neq('status', 'ARCHIVED');
         if (activeCourierImporAnFilter !== 'All') q = q.eq('impor_an', activeCourierImporAnFilter);
         if (debouncedSearch) {
-          q = q.or(searchCols.map(col => `${col}.ilike.%${orSafe(debouncedSearch)}%`).join(','));
+          q = q.or(courierSearchOr(debouncedSearch, searchCols, outstandingExtra, table === 'tabel_audit_cn' ? 'cn' : 'pib'));
         }
         return q;
       }
@@ -4736,8 +4815,9 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     let cancelled = false;
     setCourierSummaryLoading(true);
     (async () => {
+      const summaryExtra = debouncedSearch ? await resolveAuditSearchExtra(debouncedSearch) : EMPTY_SEARCH_EXTRA;
       const s = await fetchCourierAuditSummary({
-        importAn: activeCourierImporAnFilter, startDate: filterStartDate, endDate: filterEndDate, search: debouncedSearch,
+        importAn: activeCourierImporAnFilter, startDate: filterStartDate, endDate: filterEndDate, search: debouncedSearch, extra: summaryExtra,
         searchColsPib: restrictSearchCols('courier_audit', ['awb', 'vendor_inv_no', 'no_pib', 'po_ori', 'vendor']),
         searchColsCn: restrictSearchCols('courier_audit', ['awb', 'vendor_inv_no', 'po_ori', 'vendor']),
       });
@@ -4857,6 +4937,17 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     const iv = setInterval(() => { if (document.visibilityState !== 'hidden') setCourierRecapNonce(n => n + 1) }, 30000)
     return () => clearInterval(iv)
   }, [courierRecapPanelOpen])
+  // `?open=<AWB ternormalisasi>` (2026-10-23, tombol "View in Invoice Recap" di Audit Courier): panel AWB itu terbuka SEKALI setelah daftar kartu
+  // (terfilter `?q=`) selesai dimuat; `open` dihapus dari URL (`q` tetap). AWB tak ada di daftar -> tidak ada yang terbuka.
+  const courierRecapOpenHandledRef = useRef(false)
+  const handleCourierRecapOpenParam = (groups: RecapGroup[]) => {
+    const want = searchParams.get('open')
+    if (!want || courierRecapOpenHandledRef.current || !isCourierRecapView) return
+    courierRecapOpenHandledRef.current = true
+    const hit = groups.find(g => g.key === want)
+    if (hit) openCourierRecapPanel(hit)
+    setSearchParams(prev => { const n = new URLSearchParams(prev); n.delete('open'); return n }, { replace: true })
+  }
   const closeCourierRecapPanel = () => {
     if (courierRecapPanelDirty.current && !window.confirm('The checklist has unsaved changes. Close and discard them?')) return
     courierRecapPanelDirty.current = false
@@ -4906,7 +4997,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     from: filterStartDate || null,
     to: filterEndDate || null,
     search: debouncedSearch || '',
-    searchCols: restrictSearchCols('courier_rekapan', ['awb', 'no_invoice', 'vendor', 'po_pt_imi', 'ppjk']),
+    // + 'ntpn' & 'pib_no' (2026-10-23): dikenali RPC setelah sql/074 dijalankan (RPC lama mengabaikan kolom yang tak dikenal).
+    searchCols: [...restrictSearchCols('courier_rekapan', ['awb', 'no_invoice', 'vendor', 'po_pt_imi', 'ppjk']), 'ntpn', 'pib_no'],
   }), [activePpjkFilter, activeCourierAnFilter, filterStartDate, filterEndDate, debouncedSearch, restrictSearchCols]);
   const isCourierRecapCard = isCourierRecapView && courierRecapView === 'card';
 
@@ -5146,8 +5238,9 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
       if (debouncedSearch) {
         const searchColsPib = restrictSearchCols('courier_audit', ['awb', 'vendor_inv_no', 'no_pib', 'po_ori', 'vendor']);
         const searchColsCn = restrictSearchCols('courier_audit', ['awb', 'vendor_inv_no', 'po_ori', 'vendor']);
-        queryPib = queryPib.or(searchColsPib.map(col => `${col}.ilike.%${orSafe(debouncedSearch)}%`).join(','));
-        queryCn = queryCn.or(searchColsCn.map(col => `${col}.ilike.%${orSafe(debouncedSearch)}%`).join(','));
+        const searchExtra = await resolveAuditSearchExtra(debouncedSearch);
+        queryPib = queryPib.or(courierSearchOr(debouncedSearch, searchColsPib, searchExtra, 'pib'));
+        queryCn = queryCn.or(courierSearchOr(debouncedSearch, searchColsCn, searchExtra, 'cn'));
       }
       
       // Per halaman (lihat fetchAllPages) -- urutan stabil by id; urutan tampilan diatur di bawah.
@@ -5275,7 +5368,12 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         searchCols = ['awb', 'no_dokumen', 'user_email', 'tabel'];
       }
       if (searchCols.length > 0) {
-        const orCondition = searchCols.map(col => `${col}.ilike.%${orSafe(debouncedSearch)}%`).join(',');
+        let orCondition = searchCols.map(col => `${col}.ilike.%${orSafe(debouncedSearch)}%`).join(',');
+        if (activeMainTab === 'courier' && activeSubTab === 'courier_audit') {
+          orCondition = courierSearchOr(debouncedSearch, searchCols, await resolveAuditSearchExtra(debouncedSearch), courierAuditType === 'cn' ? 'cn' : 'pib');
+        } else if (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') {
+          orCondition = courierSearchOr(debouncedSearch, [...searchCols, 'ntpn'], await resolveRecapSearchExtra(debouncedSearch), 'recap');
+        }
         query = query.or(orCondition);
       }
     }
@@ -6256,6 +6354,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
               tab={tab}
               embedded
               legacy
+              documentReview
               onClose={() => { setCourierValidationRecord(null); fetchRecords(); }}
               onSaved={onSaved}
               onPctChange={onPctChange}
@@ -6494,8 +6593,8 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                       <SearchIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A7A8B] pointer-events-none" />
                       <input
                         type="text"
-                        placeholder="Search AWB, invoice no., PO, vendor"
-                        title="Search AWB, invoice no., PO, vendor"
+                        placeholder="Search AWB, invoice no., PO, vendor, PIB no., NTPN"
+                        title="Search AWB, invoice no., PO, vendor, PIB no., NTPN"
                         value={search}
                         onChange={e => setSearch(e.target.value)}
                         className="w-full h-9 rounded-xl pl-8 pr-8 text-[13px] bg-[#FBF7F4] border border-[#EADFD6] text-[#3B1B3D] placeholder:text-[#8A7A8B] focus:outline-none focus:border-[#6B3470] focus:bg-white"
@@ -7284,11 +7383,14 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 validationTabs={courierValidationTabs}
                 enrichAudit={enrichRecapAudit}
                 onValidation={(g, t) => openCourierRecapPanel(g, t)}
-                onLoaded={groups => setCourierRecapPanel(prev => {
-                  if (!prev) return prev
-                  const fresh = groups.find(x => x.key === prev.g.key)
-                  return fresh ? { ...prev, g: fresh } : prev
-                })}
+                onLoaded={groups => {
+                  setCourierRecapPanel(prev => {
+                    if (!prev) return prev
+                    const fresh = groups.find(x => x.key === prev.g.key)
+                    return fresh ? { ...prev, g: fresh } : prev
+                  })
+                  handleCourierRecapOpenParam(groups)
+                }}
                 attentionOnly={courierRecapAttentionOnly}
                 kpiFilter={courierRecapKpi}
                 selectedKey={courierRecapPanel?.g.key || null}
@@ -7410,13 +7512,20 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                       busy={courierBusy}
                       escDisabled={!!courierEditState || !!deleteRecord}
                       renderChecklist={({ onPctChange, onSaved, onDirtyChange }) => (
-                        <ChecklistModal record={rec} tab={tab} embedded onClose={() => {}} onSaved={onSaved} onPctChange={onPctChange} onDirtyChange={onDirtyChange} canEdit={draft && canEdit('courier_checklist_dokumen')} />
+                        <ChecklistModal record={rec} tab={tab} embedded documentReview onClose={() => {}} onSaved={onSaved} onPctChange={onPctChange} onDirtyChange={onDirtyChange} canEdit={draft && canEdit('courier_checklist_dokumen')} />
                       )}
                       onClose={() => setCourierOpen(null)}
                       onEdit={() => setCourierEditState({ record: rec, docType: t })}
                       onSetStatus={target => courierSetStatus(rec, target)}
                       onDelete={() => { setCourierOpen(null); setDeleteRecord(rec); }}
                       onValidationChanged={() => patchCourierRowSilently(rec)}
+                      onViewInRecap={rec.awb && canSee('courier_rekapan') ? () => {
+                        // 2026-10-23: buka Invoice Recap Courier (Card) terfilter AWB ini & panel AWB-nya langsung terbuka (kebalikan "View in Audit").
+                        const params = new URLSearchParams();
+                        params.set('q', awbDisplay(rec.awb));
+                        params.set('open', courierAwbNorm(rec.awb) || '');
+                        navigate(`/courier/rekapan?${params.toString()}`);
+                      } : undefined}
                     />
                     </React.Fragment>
                   </div>

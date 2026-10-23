@@ -74,6 +74,20 @@ export const CourierAuditKpiCards: React.FC<{
   const closeDuty = React.useCallback(() => setDutyOpen(false), [])
   const k = summary ? summary.byTab[tab] : null
   const v = (fn: (k: CourierAuditTabKpi) => React.ReactNode) => (k ? fn(k) : loading ? '…' : '—')
+  // Revisi 2026-10-23 (permintaan user): kartu Customs value, Duties & taxes & Total Importase / Total PO = TOTAL seluruh tab Draft + PIB + CN
+  // (TIDAK berubah saat pindah tab; hanya mengikuti filter search / PPJK date / company, sama dgn `summary`). Records tetap per tab.
+  const all: CourierAuditTabKpi | null = summary ? (() => {
+    const a: CourierAuditTabKpi = { records: 0, recDraft: 0, recPib: 0, recCn: 0, cv: { PIB: 0, CN: 0 },
+      duty: { PIB: { bm: 0, ppn: 0, pph: 0, adm: 0 }, CN: { bm: 0, ppn: 0, pph: 0, adm: 0 } }, nas: 0, nasDraft: 0, nasPib: 0, nasCn: 0 }
+    ;(['archive', 'pib', 'cn'] as CourierAuditTab[]).forEach(t => {
+      const x = summary.byTab[t]
+      a.records += x.records; a.recDraft += x.recDraft; a.recPib += x.recPib; a.recCn += x.recCn
+      a.cv.PIB += x.cv.PIB; a.cv.CN += x.cv.CN
+      ;(['PIB', 'CN'] as const).forEach(j => (['bm', 'ppn', 'pph', 'adm'] as const).forEach(c => { a.duty[j][c] += x.duty[j][c] }))
+    })
+    return a
+  })() : null
+  const va = (fn: (k: CourierAuditTabKpi) => React.ReactNode) => (all ? fn(all) : loading ? '…' : '—')
   const card = (label: React.ReactNode, value: React.ReactNode, sub: React.ReactNode, valueClass = 'text-[#3B1B3D]', extra?: React.ReactNode) => (
     <div className={`${SA_CARD} relative px-4 py-3 min-w-0`}>
       <div className="text-[11.5px] font-semibold text-[#6E5E70] flex items-center gap-2">{label}</div>
@@ -88,22 +102,21 @@ export const CourierAuditKpiCards: React.FC<{
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" data-courier-kpi>
       {card('Records', v(k => k.records), v(k => `${k.recDraft} draft · ${k.recPib} PIB · ${k.recCn} CN`))}
       {colOk('total_nilai_pabean')
-        ? card('Customs value', v(k => fmtRp(k.cv.PIB + k.cv.CN)), v(k => split(k.cv.PIB, k.cv.CN)))
+        ? card('Customs value', va(k => fmtRp(k.cv.PIB + k.cv.CN)), va(k => split(k.cv.PIB, k.cv.CN)))
         : card('Customs value', '—', hidden)}
       {colOk('total_pib_cn')
         ? card(
           <>Duties &amp; taxes
-            {k && <button type="button" data-duty-breakdown-btn aria-expanded={dutyOpen} onClick={() => setDutyOpen(o => !o)}
+            {all && <button type="button" data-duty-breakdown-btn aria-expanded={dutyOpen} onClick={() => setDutyOpen(o => !o)}
               className="text-[11px] font-semibold text-[#6B3470] hover:underline">{dutyOpen ? 'Tutup ▴' : 'Rincian ▾'}</button>}
           </>,
-          v(k => fmtRp(courierDutyPartsTotal(k.duty.PIB) + courierDutyPartsTotal(k.duty.CN))),
-          v(k => split(courierDutyPartsTotal(k.duty.PIB), courierDutyPartsTotal(k.duty.CN))),
+          va(k => fmtRp(courierDutyPartsTotal(k.duty.PIB) + courierDutyPartsTotal(k.duty.CN))),
+          va(k => split(courierDutyPartsTotal(k.duty.PIB), courierDutyPartsTotal(k.duty.CN))),
           'text-[#3B1B3D]',
-          dutyOpen && k ? <DutyBreakdownPopover k={k} onClose={closeDuty} /> : null)
+          dutyOpen && all ? <DutyBreakdownPopover k={all} onClose={closeDuty} /> : null)
         : card('Duties & taxes', '—', hidden)}
-      {colOk('tgl_submit_nas')
-        ? card('Outstanding Final Check', v(k => k.nas), v(k => `${k.nasDraft} draft · ${k.nasPib} PIB · ${k.nasCn} CN`), 'text-[#7A4F00]')
-        : card('Outstanding Final Check', '—', hidden)}
+      {/* Total AWB / Total PO distinct (seluruh Draft + PIB + CN); baris kecil = rincian jumlah AWB per status */}
+      {card('Total Importase / Total PO', va(k => `${k.records} / ${colOk('po_ori') && summary ? summary.poCount : '—'}`), va(k => `${k.recDraft} draft · ${k.recPib} PIB · ${k.recCn} CN`), 'text-[#7A4F00]')}
     </div>
   )
 }
@@ -140,6 +153,7 @@ const CourierAuditRowCard: React.FC<{
   const showDutyTax = colOk('total_pib_cn')
   // Final Check = NAS Submit Date (tgl_submit_nas, kolom tab Draft/PIB/CN versi List; revisi user 2026-10-13).
   const showFinalCheck = colOk('tgl_submit_nas')
+  const acceptedShown = colOk('doc_acceptance') && hasVal(rec.doc_acceptance)
 
   return (
     <div
@@ -147,11 +161,11 @@ const CourierAuditRowCard: React.FC<{
       data-courier-card={`${docType}-${rec.id}`}
       onClick={onOpen ? () => onOpen(rec) : undefined}
     >
-      <div className="grid grid-cols-1 @4xl:grid-cols-[minmax(0,285px)_minmax(0,1fr)_auto_auto] gap-x-5 gap-y-2.5 px-4 py-3.5 items-center">
+      <div className="grid grid-cols-1 @4xl:grid-cols-[minmax(0,285px)_minmax(0,1fr)_minmax(0,150px)_auto_auto] gap-x-5 gap-y-2.5 px-4 py-3.5 items-center">
         {/* 1. Jalur + tgl PPJK, No. PIB (khusus PIB), PT · delivery term · AWB */}
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 text-[11px] text-[#8A7A8B] font-medium">
-            <Chip tone={docType === 'CN' ? 'purple' : 'blue'}>{docType}</Chip>
+            <Chip tone={docType === 'CN' ? 'purple' : 'blue'} className="!text-[12.5px] !font-extrabold !px-2.5 !py-[3px]" title={docType === 'CN' ? 'Jalur CN' : 'Jalur PIB'}>{docType}</Chip>
             {colOk('tgl_ppjk') && <span>{fmtDateShort(rec.tgl_ppjk)}</span>}
           </div>
           {docType === 'PIB' && colOk('no_pib') && (
@@ -166,16 +180,19 @@ const CourierAuditRowCard: React.FC<{
           </div>
         </div>
 
-        {/* 2. Vendor (+ chip Accepted / NAS submitted bila ada) */}
+        {/* 2. Vendor */}
         <div className="min-w-0">
           {colOk('vendor') && <div className="text-[13px] font-bold text-[#3B1B3D] [overflow-wrap:anywhere]" title={rec.vendor || ''}>{rec.vendor || '—'}</div>}
-          {(nasDone || (colOk('doc_acceptance') && hasVal(rec.doc_acceptance))) && (
-            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-              {colOk('doc_acceptance') && hasVal(rec.doc_acceptance) && <Chip tone="grey" title="Doc Acceptance">Accepted {fmtDateShort(rec.doc_acceptance)}</Chip>}
-              {nasDone && <Chip tone="green" title="NAS Submit Date">NAS submitted {fmtDateShort(rec.tgl_submit_nas)}</Chip>}
-            </div>
-          )}
         </div>
+
+        {/* 2b. Area kosong antara Vendor & Total Expenses (revisi 2026-10-23, permintaan user): Accepted (abu-abu) di atas, Audited (hijau) di bawahnya.
+            Label "NAS submitted <tgl>" DIHAPUS dari kartu (tanggalnya tetap tampil di Final Check). */}
+        {(acceptedShown || !draft) ? (
+          <div className="flex flex-col items-start gap-1.5 min-w-0" data-courier-card-status>
+            {acceptedShown && <Chip tone="grey" title="Doc Acceptance">Accepted {fmtDateShort(rec.doc_acceptance)}</Chip>}
+            {!draft && <Pill tone="green">Audited</Pill>}
+          </div>
+        ) : <div className="hidden @4xl:block" aria-hidden />}
 
         {/* 3. Total Expenses · Total Duty Tax · Final Check */}
         <div className="flex flex-wrap @4xl:flex-nowrap gap-x-[18px] gap-y-1.5 @4xl:text-right min-w-0">
@@ -193,7 +210,7 @@ const CourierAuditRowCard: React.FC<{
         {/* 4. Status + Open (kartu sempit: 1 baris, status kiri & Open kanan) */}
         <div className="flex @4xl:flex-col items-center @4xl:items-end justify-between gap-1.5 min-w-0">
           <div className="flex flex-col items-start @4xl:items-end gap-1.5 min-w-0">
-            <Pill tone={draft ? 'amber' : 'green'}>{draft ? 'Draft' : 'Audited'}</Pill>
+            {draft && <Pill tone="amber">Draft</Pill>}
             {/* Re-audit otomatis (sql/037): Invoice Recap diedit setelah Audited -> kembali Draft + alasan. */}
             {rec.reaudit_reason && <Chip tone="purple" title={rec.reaudit_reason}>↻ Changed in Invoice Recap — please re-audit</Chip>}
           </div>

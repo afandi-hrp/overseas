@@ -9,7 +9,7 @@
 // MURNI tampilan dari kolom tersimpan (+ auto-calc yg sudah di-apply saat fetch); kolom yang tidak diizinkan role tidak tampil
 // (`colOk`). Validasi = info saja, TIDAK pernah mengunci Mark as audited.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { X, Printer, ChevronRight } from 'lucide-react'
+import { X, Printer, ChevronRight, ExternalLink } from 'lucide-react'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_GREEN, Chip } from './SeaAirAuditUi'
 import { fmtRp, fmtValas, fmtDateShort, fmtPctShort, buildGoodsLines, splitMoneyEvenly, companyFullName } from '../utils/SeaAirAuditHelpers'
 import {
@@ -80,7 +80,7 @@ const ValidationPopup: React.FC<{ title: string; subtitle: string; size: 'checkl
 export default function CourierAuditPreview({
   rec, docType, companyNames, colOk, validationTabs, access, editAccess, mainTab, subTab,
   canEditAudit, canDelete, busy, escDisabled = false,
-  renderChecklist, onClose, onEdit, onSetStatus, onDelete, onValidationChanged,
+  renderChecklist, onClose, onEdit, onSetStatus, onDelete, onValidationChanged, onViewInRecap,
 }: {
   rec: any
   docType: CourierDocType
@@ -103,6 +103,8 @@ export default function CourierAuditPreview({
   onDelete: () => void
   // Dipanggil saat popup validasi ditutup (data bisa berubah): induk membaca ulang baris itu tanpa reload tabel.
   onValidationChanged: () => void
+  // 2026-10-23: tombol "View in Invoice Recap" (arah kebalikan "View in Audit" Invoice Recap). Tanpa prop = tombol tidak tampil.
+  onViewInRecap?: () => void
 }) {
   const draft = rec?.status === 'ARCHIVED'
   const [tab, setTab] = useState<'overview' | 'trail'>('overview')
@@ -223,6 +225,11 @@ export default function CourierAuditPreview({
             <h2 className="text-[17px] font-bold text-[#3B1B3D] leading-tight [overflow-wrap:anywhere]">{awbText}</h2>
           </div>
           <div className="flex flex-wrap items-center gap-1.5 justify-end print:hidden">
+            {onViewInRecap && (
+              <button type="button" onClick={onViewInRecap} title="Open this AWB in Invoice Recap" data-view-in-recap className={SA_BTN_OUTLINE}>
+                <ExternalLink size={13} /> View in Invoice Recap
+              </button>
+            )}
             {canEditAudit && (
               <>
                 <button type="button" onClick={onEdit} className={SA_BTN_OUTLINE}>Edit</button>
