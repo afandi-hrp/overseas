@@ -180,6 +180,20 @@ export function ReviewMarkPill({ mark, hidden = false, onGo, onClear, currentPag
   );
 }
 
+// Pesan gagal muat daftar (2026-10-26). Dulu `fetchList` membuang `error` -> timeout/403/jaringan tampil sebagai list KOSONG tanpa pesan
+// (insiden Audit AP Local, RLS lambat vs statement_timeout 8s). Dipakai di mode Card (langsung) & List (dibungkus <tr><td colSpan>).
+export function ListLoadError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  const timeout = /timeout|canceling statement/i.test(message);
+  return (
+    <div role="alert" data-list-error className="mx-auto my-8 max-w-xl rounded-xl border border-[#F4C3BC] bg-[#FDE7E4] px-4 py-3 text-center text-sm text-[#A8231A]">
+      <p className="font-bold">Gagal memuat data.</p>
+      {timeout && <p className="mt-0.5 text-xs">Server terlalu lama merespons. Coba lagi sebentar lagi; bila terus berulang, hubungi admin.</p>}
+      <p className="mt-0.5 text-[11px] opacity-80 [overflow-wrap:anywhere]">{message}</p>
+      <button type="button" onClick={onRetry} className="mt-2 inline-flex items-center rounded-lg border border-[#A8231A]/30 bg-white px-3 py-1 text-xs font-bold text-[#A8231A] hover:bg-[#FFF5F4]">Coba lagi</button>
+    </div>
+  );
+}
+
 // Baris kecil di atas judul (mis. badge PT + tanggal).
 export function RowEyebrow({ children }: { children: React.ReactNode }) {
   return <div className="flex items-center gap-2 flex-wrap text-[10px] text-[#5A305A]/70">{children}</div>;

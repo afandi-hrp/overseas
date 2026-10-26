@@ -298,6 +298,27 @@ yang lain.
 - **BELUM porting**: `KategoriPicker` (tidak relevan, tanpa kolom kategori), badge %
   Checklist/Cost Validation (tabel ini tidak py konsep itu spt Courier).
 
+## Insiden 2026-10-26 — Audit AP Local kosong utk SEMUA user non-Admin (RLS per baris, sql/079)
+
+Gejala: filter "Semua PT" kosong utk semua user non-Admin (mis. dewi@finance.com), satu PT (AMT/WNS) normal, Admin normal, PI Local normal. BUKAN soal role/data (policy tanpa syarat PT,
+role identik, data bersih). Penyebab TERUKUR: policy baca `has_page_access('audit_po')` dievaluasi PER BARIS (fungsi SECURITY DEFINER + SET search_path + memanggil `is_admin()`,
+±0,44 ms/baris): `select count(*) from audit_po_ap_comp` sbg Dewi = 2.719 ms (tanpa RLS 2,2 ms). Query halaman = data + count exact, urutan `created_at desc NULLS LAST` tak bisa pakai index
+(`nullsFirst:false` di `fetchList`) -> pindai semua ~6.161 baris dua kali ≈ 5,5 dtk -> menembus `statement_timeout=8s` role `authenticated` saat server sibuk. `fetchList` membuang `error`
+(`if (!error && data)`), jadi layar hanya kosong tanpa pesan. PI Local (776 baris) & satu PT (≤1,7 rb baris) masih di bawah batas; tabel bertambah terus (n8n) -> baru menembus sekarang.
+Perbaikan: **sql/079** (SUDAH DIJALANKAN 2026-10-26; file lokal `sql/079_rls_select_initplan_compare_doc.sql`) -- policy SELECT 4 tabel (`audit_po_ap_comp`, `audit_po_apovs_comp`,
+`audit_po_pi_local_comp`, `accounting_rekap_finance`) diubah ke `using ((select public.has_page_access('<key>')))` -> InitPlan, dievaluasi sekali per query. Hasil uji sbg Dewi:
+`count(*)` 2.719 ms -> 5,9 ms. Rollback ada di komentar file.
+**Lanjutan sql/080** (file lokal `sql/080_rls_select_initplan_semua_tabel.sql`; SUDAH DIJALANKAN user 2026-10-26): satu blok DO (satu transaksi, idempotent, ada
+mode PREVIEW `v_eksekusi := false`) membungkus SEMUA policy baca (cmd `r` dan `*`, hanya USING) yg masih memanggil `has_page_access`/`has_edit_access`/`is_admin` per baris: 83 policy di 59 tabel
+(termasuk `audit_trail` ±8,4 rb baris/5 policy, `tabel_rate_sheet_*`, `kurs_bi_seaair`, `rekapan_courier`, `tabel_cost_validasi`, `seaair_vp_*`, `user_presence`). Policy `cost_agent_*` sudah terbungkus sejak dibuat.
+Transformasi diuji pada semua 83 policy via MCP read-only (0 panggilan helper tersisa di luar pembungkus); pengaman di skrip melewati bentuk tak terduga. Policy tulis (cmd a/w/d) dan WITH CHECK sengaja
+TIDAK diubah (dievaluasi hanya utk baris yg ditulis). Verifikasi (jumlah baris sbg non-Admin harus SAMA sebelum/sesudah) & rollback ada di komentar file.
+**Gagal muat daftar kini tampil (2026-10-26)**: `fetchList` ke-4 halaman (Audit AP Local/Overseas, PI Local, Accounting Rekap) dulu membuang `error` (`if (!error && data)`) -> timeout/403/jaringan = list
+KOSONG tanpa pesan. Kini: state `listError`; saat error -> `rows` & `totalRecords` dikosongkan (tidak menampilkan data basi dari filter sebelumnya), `console.error('[<Halaman>] Gagal memuat daftar:', error)`, dan
+komponen bersama **`ListLoadError`** (`CompareDocCards.tsx`) tampil di mode Card (langsung) & List (`<tr><td colSpan>`): "Gagal memuat data." + pesan server + tombol "Coba lagi" (`fetchList`);
+pesan berisi timeout / "canceling statement" menambah petunjuk "Server terlalu lama merespons". `listSeqRef` = penjaga urutan: respons lama yang terlambat tidak menimpa yang terbaru (sebelumnya balapan bisa
+menampilkan data/filter yang salah). Halaman Compare Doc BARU WAJIB memakai pola yang sama (jangan membuang `error` dari query daftar). Query lain di halaman ini (stat dashboard, dropdown PT) belum diubah.
+
 ## Skalabilitas >100rb baris — dropdown PT & modal Dashboard dipindah ke RPC (2026-09)
 
 Analisa (diminta user): list utama ke-4 halaman (Audit AP Local/Overseas, PI Local, Accounting

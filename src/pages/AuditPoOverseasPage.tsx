@@ -10,7 +10,7 @@ import {
 } from '../utils/AuditPoOverseasHelpers';
 import { logAuditPoAudit, logAuditPoDelete } from '../utils/AuditPoLogHelpers';
 import Greeting from '../components/Greeting';
-import { ViewModeToggle, CardSortBar, DocRow, RowEyebrow, RowTitle, RowChip, RowLabel, CardAction, useReviewMark, ReviewMarkPill, type CompareDocViewMode } from '../components/CompareDocCards';
+import { ViewModeToggle, CardSortBar, DocRow, RowEyebrow, RowTitle, RowChip, RowLabel, CardAction, useReviewMark, ReviewMarkPill, ListLoadError, type CompareDocViewMode } from '../components/CompareDocCards';
 import { LoadingState, LoadingTableRow } from '../components/LoadingState';
 import AuditPoLogModal from '../components/AuditPoLogModal';
 
@@ -1270,6 +1270,8 @@ export default function AuditPoOverseasPage() {
 
   const [rows, setRows] = useState<AuditPoOverseasRow[]>([]);
   const [loadingList, setLoadingList] = useState(true);
+  const [listError, setListError] = useState<string | null>(null); // gagal muat daftar (timeout/403/jaringan) -- jangan tampil sbg list kosong
+  const listSeqRef = useRef(0); // respons lama yang terlambat tidak boleh menimpa yang terbaru
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [totalRecords, setTotalRecords] = useState(0);
@@ -1347,7 +1349,9 @@ export default function AuditPoOverseasPage() {
   }, [searchInput]);
 
   const fetchList = useCallback(async () => {
+    const seq = ++listSeqRef.current;
     setLoadingList(true);
+    setListError(null);
     const startIndex = (page - 1) * pageSize;
     // nullsFirst: false -- baris tanpa kategori (null) SELALU di bawah, baik ASC maupun DESC
     // (2026-09, lihat catatan sama di AuditPoPage.tsx).
@@ -1372,7 +1376,13 @@ export default function AuditPoOverseasPage() {
     if (dateFrom) query = query.gte('created_at', `${dateFrom}T00:00:00`);
     if (dateTo) query = query.lte('created_at', `${dateTo}T23:59:59`);
     const { data, error, count } = await query.range(startIndex, startIndex + pageSize - 1);
-    if (!error && data) {
+    if (seq !== listSeqRef.current) return; // sudah ada permintaan yang lebih baru
+    if (error) {
+      console.error('[Audit AP Overseas] Gagal memuat daftar:', error);
+      setListError(error.message || 'Terjadi kesalahan saat memuat data.');
+      setRows([]);
+      setTotalRecords(0);
+    } else if (data) {
       setRows(data as AuditPoOverseasRow[]);
       setTotalRecords(count || 0);
     }
@@ -1566,6 +1576,8 @@ export default function AuditPoOverseasPage() {
               />
               {loadingList ? (
                 <LoadingState fullHeight={false} />
+              ) : listError ? (
+                <ListLoadError message={listError} onRetry={fetchList} />
               ) : rows.length === 0 ? (
                 <div className="text-center py-10 text-[#5A305A] text-sm italic">Belum ada data Audit AP Overseas.</div>
               ) : (
@@ -1653,6 +1665,8 @@ export default function AuditPoOverseasPage() {
               <tbody className="divide-y divide-slate-100">
                 {loadingList ? (
                   <LoadingTableRow colSpan={8} />
+                ) : listError ? (
+                  <tr><td colSpan={8}><ListLoadError message={listError} onRetry={fetchList} /></td></tr>
                 ) : rows.length === 0 ? (
                   <tr><td colSpan={8} className="text-center py-10 text-[#5A305A] text-sm italic">Belum ada data Audit AP Overseas.</td></tr>
                 ) : (
