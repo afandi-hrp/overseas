@@ -177,6 +177,8 @@ for (const [t, ops] of Object.entries(MANUAL_TABLES)) {
   'fn_cost_agent_search_history', 'fn_cost_agent_set_invoice_description', 'fn_cost_agent_start_redo', 'fn_cost_agent_set_line_reference',
   'fn_cost_agent_submit_for_approval', 'fn_cost_agent_update_invoice_amounts', 'fn_cost_agent_update_invoice_header', 'fn_cost_agent_update_line',
   'fn_cost_agent_upsert_voyages', 'fn_cost_agent_verify_line',
+  // Cost Agent: label hasil belajar AI Noon Report (sql/078)
+  'fn_cost_agent_noon_alias_list', 'fn_cost_agent_noon_alias_set_active', 'fn_cost_agent_noon_alias_add',
   // Admin: tandai/lepas wajib ganti password (sql/066) & reset password user (sql/067)
   'fn_set_must_change_password', 'fn_admin_reset_user_password',
   // Finance Handover Courier: undo Paid (sql/068)

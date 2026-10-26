@@ -37,6 +37,7 @@ const LINE_CHIP: Record<string, { label: string; tone: Tone; tip?: string }> = {
   match_group: { label: 'Match', tone: 'green', tip: 'Matches a section total' },
   match_sum: { label: 'Match', tone: 'green', tip: 'Matches the sum of several items' },
   match_agg: { label: 'Match', tone: 'green', tip: 'Combined in one row' },
+  match_gross: { label: 'Match · incl. VAT', tone: 'green', tip: 'Matches the document including VAT' },
   diff: { label: 'Different', tone: 'red' },
   none: { label: 'Not in attachment', tone: 'amber' },
   not_in_fp: { label: 'Not in tax invoice', tone: 'grey' },
@@ -385,6 +386,7 @@ function SummaryCard({ cmp, loading, analysed, overall, lines, busyJob, redoBusy
 const docAmountOf = (side: DocCmpLineSide | null, invoiceAmount: number | null): number | null => {
   if (!side) return null
   if (side.matched_amount != null) return Number(side.matched_amount)
+  if (side.status === 'match_gross') return invoiceAmount // nominal baris itu sendiri (sudah termasuk PPN)
   if (side.diff != null && invoiceAmount != null) return Number(invoiceAmount) - Number(side.diff)
   return null
 }
@@ -392,13 +394,17 @@ const docAmountOf = (side: DocCmpLineSide | null, invoiceAmount: number | null):
 function SideChip({ side, invoiceAmount }: { side: DocCmpLineSide | null; invoiceAmount: number | null }) {
   if (!side) return <span className="text-[#8A7A8B]">—</span>
   const chip = LINE_CHIP[side.status] || { label: side.status, tone: 'grey' as Tone }
-  const tip = side.status === 'match_sum' ? `Matches the sum of ${(side.refs || []).length} items` : chip.tip
+  const note = side.status === 'match_gross' ? side.note : null // rincian "harga jual + PPN (+ materai)"
+  const tip = side.status === 'match_sum' ? `Matches the sum of ${(side.refs || []).length} items` : note || chip.tip
   const amount = docAmountOf(side, invoiceAmount)
   const diffTip = side.status === 'diff' && side.diff != null ? `Difference vs invoice: ${fmtNumber(side.diff, 0)}` : undefined
   return (
-    <span className="inline-flex items-center gap-1.5 flex-wrap">
-      <Chip tone={chip.tone} title={tip}>{chip.label}</Chip>
-      {amount != null && <span className={`text-[12px] tabular-nums whitespace-nowrap ${side.status === 'diff' ? 'font-bold text-[#A8231A]' : 'font-semibold text-[#3B1B3D]'}`} title={diffTip} data-doc-amount>{fmtMoney(amount)}</span>}
+    <span className="inline-flex flex-col gap-0.5">
+      <span className="inline-flex items-center gap-1.5 flex-wrap">
+        <Chip tone={chip.tone} title={tip}>{chip.label}</Chip>
+        {amount != null && <span className={`text-[12px] tabular-nums whitespace-nowrap ${side.status === 'diff' ? 'font-bold text-[#A8231A]' : 'font-semibold text-[#3B1B3D]'}`} title={diffTip} data-doc-amount>{fmtMoney(amount)}</span>}
+      </span>
+      {note && <span className="max-w-[240px] text-[10.5px] leading-snug text-[#8A7A8B] [overflow-wrap:anywhere]" data-side-note>{note}</span>}
     </span>
   )
 }
@@ -483,11 +489,18 @@ function LineDrawer({ line, partById, onClose }: { line: DocCmpLine; partById: M
   }, [onClose])
   const side = (title: string, s: DocCmpLineSide | null) => {
     const chip = s ? (LINE_CHIP[s.status] || { label: s.status, tone: 'grey' as Tone }) : null
+    const gross = s?.status === 'match_gross'
+    const shownAmount = s?.matched_amount ?? (gross ? line.amount : null) // match_gross: nominal baris itu sendiri, bukan jumlah refs
     return (
       <div className="rounded-xl border border-[#EADFD6] p-3">
         <div className="flex items-center gap-2 flex-wrap"><span className="text-[12.5px] font-bold text-[#3B1B3D]">{title}</span>{chip && <Chip tone={chip.tone} title={chip.tip}>{chip.label}</Chip>}
-          {s?.matched_amount != null && <span className="tabular-nums text-[12px] font-semibold">{fmtMoney(s.matched_amount)}</span>}
+          {shownAmount != null && <span className="tabular-nums text-[12px] font-semibold">{fmtMoney(shownAmount)}</span>}
           {s?.status === 'diff' && s.diff != null && <span className="text-[11.5px] font-semibold text-[#A8231A] tabular-nums">Difference vs invoice: {fmtNumber(s.diff, 0)}</span>}</div>
+        {gross && (s?.note || s?.base != null) && (
+          <p className="mt-1.5 text-[12px] text-[#6E5E70] [overflow-wrap:anywhere]" data-side-note>
+            {s?.note}{s?.base != null && <span className="block text-[11px] text-[#8A7A8B]">Before VAT: <b className="tabular-nums text-[#3B1B3D]">{fmtMoney(s.base)}</b></span>}
+          </p>
+        )}
         {(s?.refs || []).length === 0 ? <p className="mt-1.5 text-[12px] text-[#8A7A8B] italic">No reference.</p> : (
           <ul className="mt-2 space-y-1.5">
             {(s?.refs || []).map((r, i) => {
@@ -613,6 +626,8 @@ function TaxTotals({ cmp, parts, data }: { cmp: CostAgentDocCompare; parts: DocC
   const checks = t?.checks || [], rates = t?.rate_checks || []
   const failed = [...checks.filter(c => isIssueStatus(c.status)).map(c => ({ kind: 'check' as const, c })), ...rates.filter(c => isIssueStatus(c.status)).map(c => ({ kind: 'rate' as const, c }))]
   const passed = checks.length + rates.length - failed.length
+  // Pemeriksaan OK yang tanpa nilai invoice tapi punya note = informasi, bukan error (mis. "VAT is included in the invoice lines (matched including VAT)").
+  const infoNotes = checks.filter(c => !isIssueStatus(c.status) && c.invoice_value == null && !!c.note)
   if (!t && fps.length === 0 && data.tax_checks.length === 0) return <Note>No tax invoice to compare yet.</Note>
   return (
     <div className="p-3 space-y-2.5" data-tax-totals>
@@ -625,7 +640,7 @@ function TaxTotals({ cmp, parts, data }: { cmp: CostAgentDocCompare; parts: DocC
               <div key={p.id} className={`rounded-lg border px-3 py-2 text-[12px] ${dup ? 'border-[#EADFD6] bg-[#F6F1EE] opacity-70' : 'border-[#EADFD6] bg-white'}`} data-fp-card>
                 <div className="flex items-center gap-2 flex-wrap"><b className="text-[#3B1B3D] tabular-nums">{p.doc_no || 'No serial number'}</b><span className="text-[#6E5E70]">{fmtDate(p.doc_date)}</span>
                   <Chip tone={collected ? 'green' : 'grey'} className="ml-auto">{collected ? 'VAT collected' : 'VAT not collected'}</Chip></div>
-                <div className="mt-1 text-[11.5px] text-[#6E5E70]">Selling price <b className="text-[#3B1B3D] tabular-nums">{fmtMoney(p.total_amount)}</b>{collected && <> · VAT <b className="text-[#3B1B3D] tabular-nums">{fmtMoney(p.ppn)}</b></>}</div>
+                <div className="mt-1 text-[11.5px] text-[#6E5E70]">Selling price <b className="text-[#3B1B3D] tabular-nums">{fmtMoney(p.total_amount)}</b>{collected && <> · VAT <b className="text-[#3B1B3D] tabular-nums">{fmtMoney(p.ppn)}</b></>}{Number(p.stamp_duty || 0) > 0 && <> · Stamp duty <b className="text-[#3B1B3D] tabular-nums">{fmtMoney(p.stamp_duty)}</b></>}</div>
                 {dup && <p className="mt-1 text-[11px] text-[#8A7A8B]">Duplicate of #{p.duplicate_of} — not used in comparison</p>}
               </div>
             )
@@ -655,6 +670,11 @@ function TaxTotals({ cmp, parts, data }: { cmp: CostAgentDocCompare; parts: DocC
       )}
       {failed.length === 0 && passed > 0 && <p className="text-[12px] text-[#6E5E70]">{plural(passed, 'check')} passed.</p>}
       {failed.length > 0 && passed > 0 && <p className="text-[11.5px] text-[#6E5E70]">{plural(passed, 'check')} passed.</p>}
+      {infoNotes.length > 0 && (
+        <ul className="space-y-0.5 text-[11.5px] text-[#6E5E70]" data-tax-info-notes>
+          {infoNotes.map((c, i) => <li key={i} className="flex items-start gap-1.5"><Mark status={c.status} /><span className="min-w-0 [overflow-wrap:anywhere]"><b className="text-[#3B1B3D]">{c.label}</b> — {c.note}</span></li>)}
+        </ul>
+      )}
       {data.tax_checks.length > 0 && <LegacyTaxChecks data={data} />}
     </div>
   )

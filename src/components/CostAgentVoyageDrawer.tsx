@@ -8,12 +8,12 @@
 import React, { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
-import { X, Pencil, UploadCloud, CheckCircle2, Ship, AlertTriangle, Trash2 } from 'lucide-react'
+import { X, Pencil, UploadCloud, CheckCircle2, Ship, AlertTriangle, Trash2, Sparkles } from 'lucide-react'
 import { StatusChip } from './CostAgentUi'
 import { Chip, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_LABEL } from './SeaAirAuditUi'
 import { LoadingState } from './LoadingState'
 import {
-  costAgentGetVoyage, costAgentDeleteVoyage, fmtDateTimePort, fmtHours, fmtNumber, fmtMoney, fmtReportMonth, fmtDate, isNoonReportVoyage, ACTIVITY_LABEL, VOYAGE_SOURCE_LABEL,
+  costAgentGetVoyage, costAgentDeleteVoyage, fmtDateTimePort, fmtHours, fmtNumber, fmtMoney, fmtReportMonth, fmtDate, isNoonReportVoyage, isAiReviewWarning, ACTIVITY_LABEL, VOYAGE_SOURCE_LABEL,
   type CostAgentPort, type CostAgentVoyageDetail, type CostAgentNoonDay,
 } from '../utils/CostAgentHelpers'
 
@@ -59,6 +59,7 @@ function DailyNoonReport({ days }: { days: CostAgentNoonDay[] }) {
           <tbody>
             {days.map((d, i) => {
               const warns = (d.warnings || []).filter(Boolean)
+              const aiWarns = warns.filter(isAiReviewWarning), plainWarns = warns.filter(w => !isAiReviewWarning(w))
               return (
                 <tr key={`${d.report_date}-${d.doc_no}-${i}`} className="border-t border-[#F3EEEA] text-[#3B1B3D] align-top">
                   <td className="px-2 py-1.5 whitespace-nowrap tabular-nums font-semibold">{fmtDate(d.report_date)}</td>
@@ -72,7 +73,11 @@ function DailyNoonReport({ days }: { days: CostAgentNoonDay[] }) {
                   )))}
                   <td className="px-2 py-1.5 border-l border-[#F3EEEA] min-w-[130px]">{d.weather || '—'}</td>
                   <td className="px-2 py-1.5 text-center">
-                    {warns.length > 0 && <span className="inline-flex text-[#B7791F] cursor-help" title={warns.join('\n')} aria-label={`${warns.length} warning(s): ${warns.join('; ')}`}><AlertTriangle size={14} /></span>}
+                    {/* "Review AI (hanya peringatan)" = ikon AI review terpisah; teks peringatan tetap apa adanya. */}
+                    <span className="inline-flex items-center justify-center gap-1">
+                      {plainWarns.length > 0 && <span className="inline-flex text-[#B7791F] cursor-help" title={plainWarns.join('\n')} aria-label={`${plainWarns.length} warning(s): ${plainWarns.join('; ')}`}><AlertTriangle size={14} /></span>}
+                      {aiWarns.length > 0 && <span className="inline-flex text-[#5B2E8C] cursor-help" title={aiWarns.join('\n')} aria-label={`AI review: ${aiWarns.join('; ')}`} data-ai-review><Sparkles size={14} /></span>}
+                    </span>
                   </td>
                 </tr>
               )

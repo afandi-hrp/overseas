@@ -5,7 +5,7 @@
 // 2026-10-14 (keputusan user): tampilan Card = DEFAULT (List tetap ada), klik kartu -> panel detail SAMPING (drawer `embedded`, pola
 // panel Invoice Recap Courier: daftar 35% kiri, panel kanan; klik kartu lain = ganti isi). List / Monthly Report tetap drawer overlay.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { RefreshCw, Plus, FileSpreadsheet, CloudDownload, Sparkles, X, FileUp } from 'lucide-react'
+import { RefreshCw, Plus, FileSpreadsheet, CloudDownload, Sparkles, X, FileUp, Tags } from 'lucide-react'
 import { useAuth } from '../../lib/AuthContext'
 import PaginationFooter from '../../components/PaginationFooter'
 import { LoadingTableRow } from '../../components/LoadingState'
@@ -17,6 +17,7 @@ import CostAgentVoyageDrawer from '../../components/CostAgentVoyageDrawer'
 import CostAgentUploadModal from '../../components/CostAgentUploadModal'
 import CostAgentVoyageImportModal from '../../components/CostAgentVoyageImportModal'
 import CostAgentNoonUploadModal from '../../components/CostAgentNoonUploadModal'
+import CostAgentNoonLabelsModal from '../../components/CostAgentNoonLabelsModal'
 import CostAgentVoyageMonthlyReport from '../../components/CostAgentVoyageMonthlyReport'
 import { CostAgentVoyagePullModal, CostAgentVoyageAiModal } from '../../components/CostAgentVoyageSourceModals'
 import {
@@ -110,6 +111,7 @@ export default function CostAgentVoyagePage() {
   const [showPull, setShowPull] = useState(false)
   const [showAi, setShowAi] = useState(false)
   const [showNoon, setShowNoon] = useState(false)
+  const [showNoonLabels, setShowNoonLabels] = useState(false) // label hasil belajar AI Noon Report (sql/078)
   // Upload invoice per port call LANGSUNG dari halaman ini (2026-10-14) -- form & proxy n8n SAMA halaman Agency Invoices.
   const [upload, setUpload] = useState<{ callId: number; company: string } | null>(null)
   // Hapus voyage dari drawer (sql/073): tutup panel, toast, muat ulang daftar.
@@ -187,6 +189,7 @@ export default function CostAgentVoyagePage() {
                   <FilterButton icon={CloudDownload} label="Pull" labelFrom={2000} title="Pull voyages from the source system" onClick={() => setShowPull(true)} />
                   <FilterButton icon={Sparkles} label="Read report (AI)" labelFrom={2000} title="Read a Voyage Report (PDF/photo) with AI" onClick={() => setShowAi(true)} />
                   <FilterButton icon={FileUp} label="Upload Noon Report" labelFrom={2000} title="Upload a Noon Report Excel (.xlsx / .xlsm)" onClick={() => setShowNoon(true)} />
+                  <FilterButton icon={Tags} label="Noon Report labels" labelFrom={2000} title="Review, turn off or add the labels used to read Noon Reports" onClick={() => setShowNoonLabels(true)} />
                   <FilterButton icon={FileSpreadsheet} label="Import Excel" labelFrom={2000} onClick={() => setShowImport(true)} />
                 </div>
                 <div className="@min-[2000px]:hidden shrink-0">
@@ -194,6 +197,7 @@ export default function CostAgentVoyagePage() {
                     { icon: CloudDownload, label: 'Pull from source system', onClick: () => setShowPull(true) },
                     { icon: Sparkles, label: 'Read report (AI)', title: 'Read a Voyage Report (PDF/photo) with AI', onClick: () => setShowAi(true) },
                     { icon: FileUp, label: 'Upload Noon Report', title: 'Upload a Noon Report Excel (.xlsx / .xlsm)', onClick: () => setShowNoon(true) },
+                    { icon: Tags, label: 'Noon Report labels', title: 'Review, turn off or add the labels used to read Noon Reports', onClick: () => setShowNoonLabels(true) },
                     { icon: FileSpreadsheet, label: 'Import Excel', onClick: () => setShowImport(true) },
                   ]} />
                 </div>
@@ -304,9 +308,10 @@ export default function CostAgentVoyagePage() {
         <CostAgentVoyageImportModal actor={actor} onClose={() => setShowImport(false)} onImported={n => { showToast(`${n} voyage${n === 1 ? '' : 's'} imported.`); refresh() }} />
       )}
       {showNoon && (
-        <CostAgentNoonUploadModal companies={companies} defaultCompany={company} onClose={() => setShowNoon(false)}
+        <CostAgentNoonUploadModal companies={companies} defaultCompany={company} onClose={() => setShowNoon(false)} onReviewLabels={() => setShowNoonLabels(true)}
           onDone={() => { setStatus('draft'); setMonth(''); setView(v => (v === 'monthly' ? 'card' : v)); refresh() }} />
       )}
+      {showNoonLabels && <CostAgentNoonLabelsModal onClose={() => setShowNoonLabels(false)} onToast={showToast} />}
       {showPull && <CostAgentVoyagePullModal vessels={vessels} onClose={() => setShowPull(false)} onDone={refresh} />}
       {showAi && (
         <CostAgentVoyageAiModal companies={companies} defaultCompany={company} onClose={() => setShowAi(false)}

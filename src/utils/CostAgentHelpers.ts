@@ -463,7 +463,7 @@ export const costAgentGetInvoiceHistory = (invoiceId: number) =>
 // ─── Perbandingan dokumen (sql/072: fn_cost_agent_get_invoice_documents / fn_cost_agent_start_redo) ──────────────
 export type DocCmpOverall = 'not_analysed' | 'incomplete' | 'attention' | 'ok'
 export type DocCmpStatus = 'ok' | 'diff' | 'warn' | 'na'
-export type DocCmpLineStatus = 'match' | 'match_group' | 'match_sum' | 'match_agg' | 'diff' | 'none' | 'no_doc' | 'not_in_fp' | 'pending' | 'not_required'
+export type DocCmpLineStatus = 'match' | 'match_group' | 'match_sum' | 'match_agg' | 'match_gross' | 'diff' | 'none' | 'no_doc' | 'not_in_fp' | 'pending' | 'not_required'
 export interface DocCmpRef { part_id: number; item_id: number | null; doc_type: string | null; doc_no: string | null; description: string | null; group_name: string | null; kind: string | null; amount: number | null }
 export interface DocCmpFile {
   id: number; seq: number | null; file_name: string | null; file_url: string | null; doc_type: CostAgentDocType | string; status: CostAgentDocStatus | string
@@ -474,6 +474,7 @@ export interface DocCmpPart {
   issuer_name: string | null; buyer_name: string | null; vessel_name: string | null; total_amount: number | null; dpp: number | null; ppn: number | null; tax_status: string | null
   invoice_ref: string | null; dates: Record<string, string | null> | null; page_from: number | null; page_to: number | null; summary: string | null
   duplicate_of: number | null; items_n: number | null; items_sum: number | null
+  stamp_duty?: number | null // nilai materai pada nota/FP (item MATERAI di nota tetap ada seperti biasa)
 }
 export interface DocCmpCompleteness {
   key: 'invoice' | 'attachment' | 'tax_invoice' | 'receipt' | 'po' | string; label: string; required: boolean
@@ -481,7 +482,9 @@ export interface DocCmpCompleteness {
 }
 export interface DocCmpHeaderCheck { group: 'tax' | 'attachment' | string; part_id: number | null; field: string; invoice_value: string | number | null; doc_value: string | number | null; status: DocCmpStatus | string; note?: string | null }
 export interface DocCmpDateCheck { part_id: number | null; source: string | null; doc_no: string | null; label: string; date: string | null; compare_to: string | null; gap_days: number | null; status: DocCmpStatus | string; note: string | null }
-export interface DocCmpLineSide { status: DocCmpLineStatus | string; matched_amount: number | null; diff: number | null; refs: DocCmpRef[] | null }
+// match_gross = nominal baris invoice = harga jual + PPN (+ materai) sebuah nota/faktur pajak, atau item-item nota beserta PPN-nya.
+// `matched_amount` = nominal baris itu sendiri (sudah termasuk PPN, JANGAN dijumlahkan ulang dari refs); `base` = bagian harga jual sebelum PPN; `note` = rincian teks.
+export interface DocCmpLineSide { status: DocCmpLineStatus | string; matched_amount: number | null; diff: number | null; refs: DocCmpRef[] | null; base?: number | null; note?: string | null }
 export interface DocCmpLine { line_id: number; line_no: number; description: string | null; cost_item: string | null; amount: number | null; attachment: DocCmpLineSide | null; tax: DocCmpLineSide | null }
 export interface DocCmpOrphan { part_id: number; item_id: number | null; doc_type: string | null; doc_no: string | null; description: string | null; amount: number | null }
 export interface DocCmpTaxTotals {
@@ -723,12 +726,44 @@ export interface CostAgentNoonUploadResult {
   }[]
   errors?: ({ error?: string; voyage_no?: string | null; doc_no?: string | null; port?: string | null } | string)[]
   notes?: (string | { msg?: string })[]
+  // sql/078: label BARU yang dipelajari AI pada kiriman ini + catatan AI (Indonesia, apa adanya). Anggap [] bila tidak ada.
+  learned_labels?: { label?: string | null; field?: string | null; example_value?: string | null }[] | null
+  ai_notes?: (string | { msg?: string })[] | null
   ai?: {
     summary?: { sheets?: number; saved_days?: number; calls?: number; skipped_days?: number }
     warnings?: ({ msg?: string } | string)[]
-    skipped?: { date?: string; reason?: string }[]
+    skipped?: { date?: string; reason?: string; ai_review?: string | null }[]
   }
 }
+// Peringatan hasil penilaian AI atas hari ambigu ("Review AI (hanya peringatan) ..."): hanya peringatan, keputusan hari tidak diubah AI.
+export const isAiReviewWarning = (w: unknown): boolean => typeof w === 'string' && /^\s*Review AI\b/i.test(w)
+
+// ─── Label Noon Report hasil belajar AI (sql/078) ─────────────────────────────────────────────────────────────
+// Tabel `cost_agent_noon_label_alias` / `cost_agent_noon_ai_cache` TIDAK dibaca client; hanya lewat 3 RPC di bawah.
+export interface CostAgentNoonAlias {
+  id: number; label_norm: string; field: string; source: 'ai' | 'manual' | string; active: boolean
+  example_label: string | null; example_value: string | null; example_file: string | null
+  seen_count: number | null; created_at: string | null; last_seen_at: string | null; changed_by: string | null; changed_at: string | null
+}
+export const costAgentNoonAliasList = async () => (await callCostAgentRpc<CostAgentNoonAlias[] | null>('fn_cost_agent_noon_alias_list', {})) || []
+export const costAgentNoonAliasSetActive = (id: number, active: boolean) =>
+  callCostAgentRpc<{ id: number; label_norm: string; field: string; active: boolean }>('fn_cost_agent_noon_alias_set_active', { p_id: id, p_active: active })
+export const costAgentNoonAliasAdd = (label: string, field: string) =>
+  callCostAgentRpc<{ id: number; label_norm: string; field: string; active: boolean; source: string }>('fn_cost_agent_noon_alias_add', { p_label: label, p_field: field })
+// Nama field baku (persis nilai dari list/RPC) -> nama ramah. Yang tidak ada di sini ditampilkan apa adanya.
+export const NOON_FIELD_LABEL: Record<string, string> = {
+  'NOON POSITION REPORT OF': 'Vessel name', 'VOYAGE NUMBER': 'Voyage number', 'CURRENT LOCATION': 'Current location',
+  LATITUDE: 'Latitude', LONGITUDE: 'Longitude', FROM: 'From', TO: 'To', 'STEAMING TIME': 'Steaming hours', 'DISTANCE TO RUN': 'Distance run',
+  HSFO: 'HSFO (high-sulphur fuel oil)', LSFO: 'LSFO (low-sulphur fuel oil)', MDO: 'MDO (marine diesel oil)',
+  LSMGO: 'LSMGO (low-sulphur marine gas oil)', HSD: 'HSD (high-speed diesel)', FW: 'Fresh water', LO: 'Lubricating oil',
+}
+export const noonFieldLabel = (field: string | null | undefined): string => (field ? NOON_FIELD_LABEL[field] || field : '—')
+// Pilihan dropdown "Add label": urutan & nilai persis field baku yang dikenali n8n.
+export const NOON_FIELD_OPTIONS: string[] = [
+  'NOON POSITION REPORT OF', 'VOYAGE NUMBER', 'NAME OF MASTER', 'FROM', 'TO', 'CURRENT LOCATION', 'LATITUDE', 'LONGITUDE', 'COURSE',
+  'DISTANCE TO RUN', 'TOTAL DISTANCE TO RUN', 'STEAMING TIME', 'TOTAL STEAMING TIME', 'AVERAGE SPEED', 'GENERAL AVERAGE SPEED',
+  'DISTANCE TO GO', 'ETA DATE', 'RPM REV PER MINUTE', 'WEATHER CONDITION', 'HSFO', 'LSFO', 'MDO', 'LSMGO', 'HSD', 'FW', 'LO',
+]
 export const isNoonReportVoyage = (v: { input_source?: string | null; extra?: Record<string, any> | null } | null | undefined): boolean =>
   !!v && (v.input_source === 'noon_report' || v.extra?.input === 'noon_report')
 

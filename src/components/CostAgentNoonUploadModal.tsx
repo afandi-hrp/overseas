@@ -3,11 +3,11 @@
 // 'noon_report'), semua jam & cargo kosong. Hasil: ringkasan, tabel port call, warnings (kuning), errors (merah), notes, dan
 // "Skipped days" (collapsible). Teks dari server (Indonesia) ditampilkan APA ADANYA -- jangan diterjemahkan.
 import { useRef, useState } from 'react'
-import { UploadCloud, FileSpreadsheet, X, AlertTriangle, CheckCircle2, Info, ChevronDown, ChevronRight } from 'lucide-react'
+import { UploadCloud, FileSpreadsheet, X, AlertTriangle, CheckCircle2, Info, ChevronDown, ChevronRight, Sparkles } from 'lucide-react'
 import { CostAgentModal, FieldLabel } from './CostAgentUi'
 import { Chip, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_INPUT } from './SeaAirAuditUi'
 import {
-  costAgentUpload, fmtDate, fmtFileSize, ACTIVITY_LABEL, VOYAGE_STATUS_META,
+  costAgentUpload, fmtDate, fmtFileSize, ACTIVITY_LABEL, VOYAGE_STATUS_META, isAiReviewWarning, noonFieldLabel,
   type CostAgentCompany, type CostAgentNoonUploadResult, type CostAgentActivity, type CostAgentVoyageStatus,
 } from '../utils/CostAgentHelpers'
 
@@ -18,11 +18,12 @@ const errorLine = (e: any): string => (typeof e === 'string' ? e
   : [e?.voyage_no ? `Voy ${e.voyage_no}` : null, e?.doc_no, e?.port, e?.error || e?.message].filter(Boolean).join(' · '))
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 
-export default function CostAgentNoonUploadModal({ companies, defaultCompany, onClose, onDone }: {
+export default function CostAgentNoonUploadModal({ companies, defaultCompany, onClose, onDone, onReviewLabels }: {
   companies: CostAgentCompany[]
   defaultCompany: string
   onClose: () => void
   onDone: () => void
+  onReviewLabels?: () => void // membuka dialog "Noon Report labels" (di atas dialog ini)
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const sendingRef = useRef(false)
@@ -79,6 +80,8 @@ export default function CostAgentNoonUploadModal({ companies, defaultCompany, on
   ].filter(x => x.w)
   const errors = (result?.errors || []).map(errorLine).filter(Boolean)
   const notes = (result?.notes || []).map(textOf).filter(Boolean)
+  const learned = (result?.learned_labels || []).filter(l => l && l.label)
+  const aiNotes = (result?.ai_notes || []).map(textOf).filter(Boolean) // catatan AI: Indonesia, apa adanya
 
   return (
     <CostAgentModal maxWidth="max-w-3xl" onClose={() => { if (!busy) onClose() }} title="Upload Noon Report"
@@ -177,10 +180,29 @@ export default function CostAgentNoonUploadModal({ companies, defaultCompany, on
               </div>
             )}
 
+            {learned.length > 0 && (
+              <div className="rounded-lg border border-[#C9D6F2] bg-[#EEF3FD] px-3 py-2 text-[12px] text-[#2F4FA8]" data-learned-labels>
+                <p className="font-bold flex items-center gap-1.5"><Sparkles size={13} /> The AI learned {learned.length} new label{learned.length === 1 ? '' : 's'} from this file. They are used from now on — please check they are correct.</p>
+                <ul className="mt-1 space-y-0.5 max-h-40 overflow-y-auto text-[#3B1B3D]">
+                  {learned.map((l, i) => (
+                    <li key={i} className="[overflow-wrap:anywhere]">
+                      <b>{l.label}</b> <span className="text-[#6E5E70]">→</span> {noonFieldLabel(l.field)}
+                      {l.example_value && <span className="text-[#6E5E70]"> · e.g. {l.example_value}</span>}
+                    </li>
+                  ))}
+                </ul>
+                {onReviewLabels && <button type="button" onClick={onReviewLabels} className="mt-1.5 font-semibold text-[#2F4FA8] underline hover:no-underline" data-review-labels>Review learned labels</button>}
+              </div>
+            )}
+
             {warnings.length > 0 && (
               <div className="rounded-lg border border-[#F2D58A] bg-[#FFF8E6] px-3 py-2 text-[12px] text-[#7A4F00]">
                 <p className="font-bold mb-0.5 flex items-center gap-1.5"><AlertTriangle size={13} /> Warnings ({warnings.length})</p>
-                <ul className="list-disc pl-5 max-h-40 overflow-y-auto">{warnings.map((x, i) => <li key={i}>{x.ctx ? `${x.ctx}: ` : ''}{x.w}</li>)}</ul>
+                <ul className="pl-5 max-h-40 overflow-y-auto">
+                  {warnings.map((x, i) => isAiReviewWarning(x.w)
+                    ? <li key={i} className="list-none -ml-5 pl-5 relative text-[#5B2E8C]" data-ai-review><Sparkles size={11} className="absolute left-1 top-[3px]" aria-label="AI review" />{x.ctx ? `${x.ctx}: ` : ''}{x.w}</li>
+                    : <li key={i} className="list-disc">{x.ctx ? `${x.ctx}: ` : ''}{x.w}</li>)}
+                </ul>
               </div>
             )}
             {errors.length > 0 && (
@@ -203,10 +225,18 @@ export default function CostAgentNoonUploadModal({ companies, defaultCompany, on
                 </button>
                 {showSkipped && (
                   <ul className="border-t border-[#F3EEEA] px-3 py-2 text-[12px] text-[#3B1B3D] space-y-0.5 max-h-48 overflow-y-auto">
-                    {skippedList.map((s, i) => <li key={i}><b className="tabular-nums">{s.date ? fmtDate(s.date) : '—'}</b> — {s.reason || '—'}</li>)}
+                    {skippedList.map((s, i) => (
+                      <li key={i}>
+                        <b className="tabular-nums">{s.date ? fmtDate(s.date) : '—'}</b> — {s.reason || '—'}
+                        {s.ai_review && <div className="mt-0.5 flex items-start gap-1 text-[11.5px] text-[#7A4F00]" data-ai-review><AlertTriangle size={12} className="mt-0.5 shrink-0" /><span className="min-w-0 [overflow-wrap:anywhere]">{s.ai_review}</span></div>}
+                      </li>
+                    ))}
                   </ul>
                 )}
               </div>
+            )}
+            {aiNotes.length > 0 && (
+              <ul className="text-[11.5px] text-[#8A7A8B] space-y-0.5" data-ai-notes>{aiNotes.map((x, i) => <li key={i} className="[overflow-wrap:anywhere]">{x}</li>)}</ul>
             )}
             {saved > 0 && <p className="text-[12px] text-[#6E5E70]">The list now shows Draft voyages — open each one, check it, then click <b>Confirm</b>.</p>}
           </div>

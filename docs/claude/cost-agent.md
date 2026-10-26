@@ -196,6 +196,12 @@ HANYA halaman Agent Invoice yang diubah (Voyage & Approval Matrix, permissions.t
      faktur pajak LAMA `tax_checks` jadi sub-bagian di dalamnya, bukan panel sendiri). Terbuka otomatis HANYA bila punya masalah DAN overall='attention'.
   4. **Accordion "Files (n)"** (tertutup, paling bawah; badge merah "{k} failed" / biru "{k} processing"; terbuka sendiri selama ada file processing -> polling 5 dtk): satu baris per file (nama link · jenis · status analisis · waktu),
      error analisis + tombol Analyse again di baris file failed, dokumen duplikat abu-abu "Duplicate of #id — not used in comparison".
+  **Status baris `match_gross` (2026-10-24)**: `lines[].attachment.status` / `lines[].tax.status` bisa `'match_gross'` (nominal baris invoice = harga jual + PPN (+ materai) sebuah nota/faktur pajak, atau item-item nota beserta PPN-nya).
+  Objek sisi punya field opsional `base` (harga jual sebelum PPN) & `note` (mis. "Selling price 9,730,199 + VAT 1,070,322 + stamp duty 10,000"); `parts[].stamp_duty` (nilai materai; item MATERAI di nota tetap ada).
+  Tampilan: chip hijau **"Match · incl. VAT"** (`LINE_CHIP`), `note` = tooltip chip + teks kecil abu di bawah chip (`SideChip`); angka di sel = `matched_amount` (= nominal baris itu sendiri, sudah termasuk PPN; bila null
+  -> nominal baris), TIDAK dijumlahkan dari refs. Drawer baris: refs ditampilkan seperti `match_sum` (doc_type · doc_no · description · amount) + satu baris ringkas `note` (+ "Before VAT: base") di atasnya.
+  Dihitung COCOK: `hasIssue()` (filter "Show only items to check") & `resultSentence` hanya menghitung `diff`/`none` sebagai masalah, jadi match_gross otomatis bukan masalah. Tax totals: pemeriksaan `ok`/non-masalah dengan
+  `invoice_value` null + `note` (mis. "Invoice VAT vs FP VAT (collected)" -> "VAT is included in the invoice lines (matched including VAT)") ditampilkan sbg daftar info kecil (`data-tax-info-notes`), bukan error. Kartu FP: + "Stamp duty" bila > 0.
   Perilaku TIDAK berubah: Add documents (susulan) & Analyse again (start_redo -> webhook redo_docs -> polling job -> baca ulang), invoice lama "Not analysed yet", FP belum ada -> "Waiting" + Incomplete tanpa error.
 - **Kartu Agency Invoices = 3 kolom tetap** (2026-10-23, laporan user "timeline progres tidak rata"): `@4xl` (>= 896px, laptop 14" ikut) `grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)_264px]` = Identitas | Garis progres | Nominal + Review (+ hapus).
   Penyebab lama: kolom kanan `auto` -> lebar mengikuti isi ("—" saat AI membaca vs "Rp 15.803.330") sehingga kolom progres tiap kartu bergeser. Nominal rata kanan `flex-1`, ruang tombol hapus dicadangkan
@@ -218,6 +224,19 @@ Voyage punya 2 sumber terpisah: dokumen SOF/Time Sheet (Medan, AI) dan **Noon Re
 - **Hasil**: ringkasan "N port calls, N days saved, N days skipped", tabel voyage/port call, warnings (kuning, gabungan `voyages[].warnings` + `ai.warnings`),
   errors (merah), notes, "Skipped days (n)" collapsible (`ai.skipped`). `ok:true` + `saved:0` = info "No loading/discharge days found in this file" (BUKAN error).
   Teks server (Indonesia) ditampilkan apa adanya. Selesai (saved > 0): filter ke Draft + semua bulan, list di-refresh (pola Read report AI).
+- **Label hasil belajar AI (2026-10-26; backend sql/078 + n8n dari user SUDAH ada)**: kata label template yang belum dikenal kode (mis. "NO. PELAYARAN") dipetakan Gemini ke nama baku, yang lolos
+  pemeriksaan langsung dipakai & DISIMPAN (alias); AI juga menilai hari ambigu dan hanya memberi PERINGATAN ("Review AI (hanya peringatan) ..."). Nilai (angka/tanggal/lokasi) tetap dibaca kode, bukan AI.
+  Sisi aplikasi: (1) 3 RPC baru -- `fn_cost_agent_noon_alias_list()`, `fn_cost_agent_noon_alias_set_active(p_id, p_active)`, `fn_cost_agent_noon_alias_add(p_label, p_field)` -- pembungkus
+  `costAgentNoonAliasList/SetActive/Add` + tipe `CostAgentNoonAlias` di CostAgentHelpers, ditambah ke whitelist gateway; tabel `cost_agent_noon_label_alias` / `cost_agent_noon_ai_cache`
+  TIDAK dibaca client. (2) Dialog hasil Upload Noon Report: respons punya `learned_labels[]` (label baru pada kiriman ini) & `ai_notes[]` (anggap [] bila tak ada) -> kotak biru "The AI learned N new
+  label(s) ..." (label -> nama ramah, contoh nilai, tautan "Review learned labels" membuka dialog di bawah), `ai_notes` teks kecil abu (Indonesia, apa adanya), `ai.skipped[].ai_review` tampil di
+  bawah alasan dilewati dgn ikon ⚠ (di dalam "Skipped days"), peringatan berawalan "Review AI" (`isAiReviewWarning`) pada dialog bergaya ungu + ikon Sparkles; di tabel Daily Noon Report ikon
+  ⚠ (peringatan biasa) dan ikon Sparkles ungu (AI review) dipisah, tooltip tetap teks asli. Remarks port call TIDAK di-parse. (3) **`CostAgentNoonLabelsModal.tsx`** ("Noon Report labels", `z-[80]` di atas
+  dialog upload; tombol di panel >= 2000px & item menu Actions, hanya `canEdit('cost_agent_voyage')`): tabel Label as written (`example_label`, cadangan `label_norm`; tooltip file contoh) | Meaning
+  (`noonFieldLabel`: nama ramah utk field yg disebut spesifikasi -- Voyage number, Vessel name, Current location, Latitude/Longitude, From/To, Steaming hours, Distance run, bahan bakar HSFO/LSFO/MDO/LSMGO/HSD,
+  Fresh water, Lubricating oil; field lain ditampilkan apa adanya) | Example value | Source (badge AI/Manual) | Seen | Last seen | switch Active (optimistic; gagal -> kembali + toast; mematikan butuh konfirmasi
+  inline "This label will no longer be recognised. The AI will not suggest it again."). "Add label" = teks + dropdown `NOON_FIELD_OPTIONS` (nilai baku persis) -> `..._alias_add`, pesan server
+  ditampilkan di form. Perubahan berlaku pada upload BERIKUTNYA. Empty state "No learned labels yet. Built-in labels are always recognised."
 - **List**: kolom view `cost_agent_voyage_list_v.input_source` -> badge "Noon Report" (kartu & List); filter baru "Input" (All / Noon Report / Documents & manual =
   `input_source IS NULL`, lewat param baru `isNull` di `fetchCostAgentList`) -- terpisah dari filter "Source" (kolom `source`).
 - **Drawer**: `fn_cost_agent_get_voyage` kini membawa array `noon[]` (tipe `CostAgentNoonDay`) -> section "Daily Noon Report" (Date, Doc No, Location + "STS with <partner>",
