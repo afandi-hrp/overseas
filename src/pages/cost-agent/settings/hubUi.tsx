@@ -264,7 +264,7 @@ export function MergeModal({ source, options, describe, run, onClose, onDone, to
   )
 }
 
-const LOG_TONE: Record<string, Tone> = { create: 'green', update: 'blue', merge: 'purple', delete: 'red', activate: 'green', deactivate: 'amber' }
+const LOG_TONE: Record<string, Tone> = { create: 'green', update: 'blue', merge: 'purple', delete: 'red', activate: 'green', deactivate: 'amber', rename: 'purple', reclassify: 'purple' }
 
 // Accordion tertutup "Recent changes" di bawah tiap tab: fn_cost_agent_list_master_log(p_entity, 20). Beberapa entitas digabung & diurutkan.
 export function RecentChanges({ entities, reloadKey }: { entities: string[]; reloadKey: number }) {

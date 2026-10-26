@@ -61,7 +61,7 @@ export default function CostItemsTab({ ctx }: { ctx: HubCtx }) {
         <span className="ml-auto text-[12px] text-[#6E5E70]">{data ? `${fmtNumber(all.length, 0)} cost items` : ''}{!ctx.editable ? ' · View only' : ''}</span>
         <button type="button" className={SA_BTN_OUTLINE} onClick={() => setAliasFor({ id: null, title: 'all cost items' })}><Library size={13} /> Learned aliases</button>
         {ctx.editable && <button type="button" className={SA_BTN_OUTLINE} onClick={() => setReclassFor({ id: null, label: '' })}><RefreshCw size={13} /> Re-classify open invoices…</button>}
-        {ctx.editable && <button type="button" className={SA_BTN_PRIMARY} onClick={() => setDrawer({ id: null, init: { code: '', name: '', category: '', gl_account: '', priority: '100', keywords: [], is_active: true }, system: false })}><Plus size={13} /> Add cost item</button>}
+        {ctx.editable && <button type="button" className={SA_BTN_PRIMARY} onClick={() => setDrawer({ id: null, init: { code: '', name: '', category: '', gl_account: '', priority: '500', keywords: [], is_active: true }, system: false })}><Plus size={13} /> Add cost item</button>}
       </HubFilterBar>
 
       {categories.length > 0 && (
