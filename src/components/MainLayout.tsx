@@ -134,7 +134,7 @@ const MAIN_TABS: MainTab[] = [
     subTabs: [
       { id: 'cost_agent_voyage', label: 'Voyages', path: '/cost-agent/voyage', pageKey: 'cost_agent_voyage' },
       { id: 'cost_agent_invoice', label: 'Agency Invoices', path: '/cost-agent/invoice', pageKey: 'cost_agent_invoice' },
-      { id: 'cost_agent_approval_matrix', label: 'Approval Matrix', path: '/cost-agent/approval-matrix', pageKey: 'cost_agent_approval_matrix' },
+      { id: 'cost_agent_approval_matrix', label: 'Cost Agent Settings', path: '/cost-agent/approval-matrix', pageKey: 'cost_agent_approval_matrix' },
     ],
   },
   {

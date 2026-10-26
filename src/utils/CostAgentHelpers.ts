@@ -105,6 +105,7 @@ export interface CostAgentApprovalMatrixRow {
   name: string
   company_code: string | null // null = semua PT
   vendor_id: number | null // null = semua vendor
+  office?: 'MEDAN' | 'JAKARTA' | null // sql/079: null = berlaku utk semua office; terisi = hanya invoice kapal ber-office itu
   min_amount: number
   max_amount: number | null // null = tanpa batas atas
   step_no: number
@@ -604,8 +605,9 @@ export const costAgentSubmitForApproval = (invoiceId: number, actor?: string | n
   callCostAgentRpc<unknown>('fn_cost_agent_submit_for_approval', { p_invoice_id: invoiceId, p_actor: actor ?? null })
 export const costAgentDecideApproval = (invoiceId: number, decision: 'approved' | 'rejected', note: string | null, actor?: string | null) =>
   callCostAgentRpc<unknown>('fn_cost_agent_decide_approval', { p_invoice_id: invoiceId, p_decision: decision, p_note: note, p_actor: actor ?? null })
-export const costAgentMatrixFor = (company: string | null, vendorId: number | null, amount: number) =>
-  callCostAgentRpc<CostAgentMatrixStep[]>('fn_cost_agent_matrix_for', { p_company: company, p_vendor_id: vendorId, p_amount: amount })
+// `office` (sql/079): 'MEDAN' | 'JAKARTA' | null. Aturan paling spesifik per step menang: vendor > office > PT > umum (dihitung server).
+export const costAgentMatrixFor = (company: string | null, vendorId: number | null, amount: number, office: string | null = null) =>
+  callCostAgentRpc<CostAgentMatrixStep[]>('fn_cost_agent_matrix_for', { p_company: company, p_vendor_id: vendorId, p_amount: amount, p_office: office })
 export const costAgentCreatePaymentRequest = (invoiceId: number, docType: CostAgentPaymentDocType, data: Record<string, unknown>, actor?: string | null) =>
   callCostAgentRpc<number>('fn_cost_agent_create_payment_request', { p_invoice_id: invoiceId, p_doc_type: docType, p_data: data, p_actor: actor ?? null })
 export const costAgentMarkPaid = (invoiceId: number, paidAt: string, paidRef: string, actor?: string | null) =>
@@ -1075,9 +1077,11 @@ export async function deleteCostAgentMatrixRule(id: number): Promise<void> {
 // Rentang nominal yg TIDAK tertutup aturan aktif umum (vendor kosong) utk 1 company (null = aturan "all companies" saja).
 // Aturan per vendor tidak dihitung menutup (hanya berlaku utk vendor itu). Submit invoice di celah ini akan gagal.
 // Nominal dianggap rupiah bulat: celah dihitung dgn presisi 1 (min > max sebelumnya + 1 = ada celah).
-export function matrixCoverageGaps(rules: CostAgentApprovalMatrixRow[], company: string | null): { from: number; to: number | null }[] {
+// `office` (sql/079): undefined/null = hanya aturan TANPA office (perilaku lama); 'MEDAN'/'JAKARTA' = aturan umum + aturan office itu (aturan tanpa office ikut menutup semua office).
+export function matrixCoverageGaps(rules: CostAgentApprovalMatrixRow[], company: string | null, office?: string | null): { from: number; to: number | null }[] {
   const ranges = rules
-    .filter(r => r.is_active && r.vendor_id === null && (r.company_code === null || r.company_code === company))
+    .filter(r => r.is_active && r.vendor_id === null && (r.company_code === null || r.company_code === company)
+      && ((r.office ?? null) === null || (office != null && r.office === office)))
     .map(r => ({ min: Number(r.min_amount || 0), max: r.max_amount === null ? null : Number(r.max_amount) }))
     .sort((a, b) => a.min - b.min)
   const gaps: { from: number; to: number | null }[] = []

@@ -177,6 +177,14 @@ for (const [t, ops] of Object.entries(MANUAL_TABLES)) {
   'fn_cost_agent_search_history', 'fn_cost_agent_set_invoice_description', 'fn_cost_agent_start_redo', 'fn_cost_agent_set_line_reference',
   'fn_cost_agent_submit_for_approval', 'fn_cost_agent_update_invoice_amounts', 'fn_cost_agent_update_invoice_header', 'fn_cost_agent_update_line',
   'fn_cost_agent_upsert_voyages', 'fn_cost_agent_verify_line',
+  // Cost Agent Settings (hub, sql/076/077/079): master data, dashboard, history, cost items
+  'fn_cost_agent_dashboard', 'fn_cost_agent_browse_history', 'fn_cost_agent_set_history_active',
+  'fn_cost_agent_list_vessels', 'fn_cost_agent_save_vessel', 'fn_cost_agent_set_vessels_office', 'fn_cost_agent_merge_vessels', 'fn_cost_agent_delete_vessel',
+  'fn_cost_agent_list_cost_items', 'fn_cost_agent_save_cost_item', 'fn_cost_agent_rename_category', 'fn_cost_agent_test_classify',
+  'fn_cost_agent_list_aliases', 'fn_cost_agent_update_alias', 'fn_cost_agent_delete_alias', 'fn_cost_agent_reclassify_open_lines',
+  'fn_cost_agent_list_vendors', 'fn_cost_agent_save_vendor', 'fn_cost_agent_merge_vendors', 'fn_cost_agent_delete_vendor',
+  'fn_cost_agent_list_ports', 'fn_cost_agent_save_port', 'fn_cost_agent_set_ports_verified', 'fn_cost_agent_merge_ports', 'fn_cost_agent_delete_port',
+  'fn_cost_agent_list_companies', 'fn_cost_agent_save_company', 'fn_cost_agent_list_master_log',
   // Cost Agent: label hasil belajar AI Noon Report (sql/078)
   'fn_cost_agent_noon_alias_list', 'fn_cost_agent_noon_alias_set_active', 'fn_cost_agent_noon_alias_add',
   // Admin: tandai/lepas wajib ganti password (sql/066) & reset password user (sql/067)

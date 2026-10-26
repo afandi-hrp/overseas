@@ -455,6 +455,36 @@ disalin user ke ROOT repo (memicu crash watcher Vite EBUSY) -> dipindah ke `sql/
 - **Poin C (ikon check di daftar invoice) DILEWATI**: view `cost_agent_invoice_list_v` tidak membawa hitungan compare_check & spek melarang
   query tambahan berat. Bisa ditambah kalau view diberi kolom (mis. `check_count`).
 
+## Hub "Cost Agent Settings" (2026-10-26, permintaan user; SQL 079 hub dari user; halaman Approval Matrix DIUBAH, bukan halaman baru)
+
+Route `/cost-agent/approval-matrix`, page_key `cost_agent_approval_matrix` dan posisi menu TETAP; satu-satunya perubahan menu = teks label submenu di `MainLayout.tsx` ("Approval Matrix" -> "Cost Agent Settings").
+`permissions.ts` TIDAK diubah, jadi `menuLabel` di registry (dipakai matrix Manage Roles & Access) masih "Approval Matrix" -- ubah di sana bila ingin seragam (perlu izin user).
+- **File**: shell `pages/cost-agent/CostAgentApprovalMatrixPage.tsx` (judul "Cost Agent Settings", tab di query string `?tab=`, tab dimuat malas `React.lazy`+`Suspense`, toast & konteks `HubCtx`)
+  + folder `pages/cost-agent/settings/`: `hubApi.ts` (tipe hasil RPC, pembungkus `hubRpc` yang MEMBAWA kode error Postgres `HubRpcError.code`, `cleanFilter`), `hubUi.tsx` (drawer, ChipInput, ConfirmModal, MergeModal,
+  `RecentChanges`, `StateRow`, `Pager`, `useAsync` dgn penjaga urutan, `useSelection`), tab `DashboardTab` | `HistoryTab` | `MatrixTab` | `VesselsTab` | `CostItemsTab` (+`CostItemDialogs`) | `VendorsTab` | `PortsTab` | `CompaniesTab`.
+  Urutan tab: Dashboard (default), History, Approval Matrix, Vessels, Cost Items, Vendors, Ports, Companies. Tautan Dashboard "Master data health" membuka tab + preset filter lewat query (`?tab=vessels&missing=office`, `?tab=ports&verified=false`, `?tab=vendors&missing=npwp`).
+- **Hak akses**: halaman terbuka bila punya akses `cost_agent_approval_matrix`; SEMUA tombol ubah (Add, Edit, Merge, Delete, Rename category, Re-classify, Move/Delete alias, Set office, Mark verified, Deactivate/Activate history)
+  hanya bila `canEdit('cost_agent_approval_matrix')`; selain itu read-only (daftar, filter, Dashboard dan "Test description" tetap jalan). Server menolak tulis lewat guard RPC; pesan error RPC (Inggris) ditampilkan apa adanya
+  (23505 duplikat -> inline di drawer; 23503 "already used" -> toast merah). Semua tulis lewat RPC (kecuali aturan Approval Matrix yang sejak dulu ditulis langsung ke tabel).
+- **RPC** (semua di whitelist gateway `server/db/whitelist.ts`): `fn_cost_agent_dashboard`, `browse_history`, `set_history_active`, `list/save/merge/delete_vessel(s)` + `set_vessels_office`, `list/save/merge/delete_vendor(s)`,
+  `list/save/merge/delete_port(s)` + `set_ports_verified`, `list_companies`/`save_company`, `list_cost_items`/`save_cost_item`/`rename_category`/`test_classify`/`list_aliases`/`update_alias`/`delete_alias`/`reclassify_open_lines`,
+  `list_master_log`, `matrix_for(p_company, p_vendor_id, p_amount, p_office)`. Payload simpan memakai kunci `is_active` (BUKAN `active`), port `lat`/`lon`/`tz`/`is_verified`, kapal `vessel_type`/`short_code`/`office`;
+  filter list memakai `active` (boolean), `missing`, `verified`, `office` (MEDAN|JAKARTA|NONE), `company_code`. Daftar 50 baris/halaman (`limit`/`offset`), kecuali Cost Items (dimuat sekali limit 500, dipecah di klien).
+- **Tidak ada cache klien** yang perlu di-invalidasi: halaman lain (Voyage/Invoice) membaca master saat dibuka; tab hub memuat ulang daftar + master combobox setelah simpan/gabung/hapus.
+- **Office (sql/079)**: kapal punya `office` (MEDAN | JAKARTA; kosong = belum diisi, label UI "Owner office"), aturan Approval Matrix punya `office` (kosong = semua office). Aturan dihitung SERVER (jangan diimplementasi ulang di klien):
+  aturan ber-office hanya utk invoice kapal ber-office itu; per step aturan paling spesifik menang vendor > office > PT > umum; bila ada aturan khusus office aktif dan kapal invoice belum punya office, pengajuan approval DITOLAK
+  ("The office (Medan / Jakarta) of this vessel is not set. Set it in Cost Agent > Vessels, then submit again."). Tab Approval Matrix = isi halaman lama + kolom/field Office (badge, ladder per (PT, Office), Simulate dgn Office,
+  peringatan celah nominal per (PT, Office) -- aturan tanpa office ikut menutup semua office; `matrixCoverageGaps(rules, company, office?)` & `costAgentMatrixFor(..., office)` di CostAgentHelpers, param opsional). Tab Vessels: badge Medan / Jakarta / "Not set" (amber),
+  chip "Suggested: <office>" dari `office_hint` (Noon Report = Jakarta, SOF / Time Sheet = Medan; klik = isi), aksi massal "Set owner office" & "Apply suggestions on this page" (satu panggilan per office, ringkasan dulu), badge "No DWT".
+- **Pola tab daftar**: toolbar (cari debounce 300 ms + filter + Add), loading `LoadingTableRow`, error + Retry, empty state, hapus hanya aktif bila semua hitungan "Used by" = 0 (tooltip "In use — deactivate or merge it"), merge dgn pilih tujuan + centang "I understand"
+  (toast "{n} records moved, {m} open invoices compared again"), accordion tertutup "Recent changes" (`fn_cost_agent_list_master_log`, 20 baris; Cost Items menggabung entitas cost_item + category + alias; entitas lain vessel/vendor/port/company/history).
+- **Dashboard** read-only (`fn_cost_agent_dashboard`): Needs attention (10 kartu; Agency Invoices belum punya filter status via URL -> hanya angka, satu-satunya tautan "Vessel office not set" -> Vessels ?missing=office), Pipeline 9 status, Monthly trend (batang CSS bertumpuk
+  Medan/Jakarta/Not set, toggle Amount|Invoices -- belum ada library chart), Cost vs history (bar proporsi + 10 baris `top_naik`), Top 8 (cost item / vendor / kapal), Waiting for approval (badge merah > 3 hari), Failed processing, Master data health. Baris invoice menaut ke `/cost-agent/invoice/:id`.
+- **KONDISI DB PRODUCTION (dicek MCP read-only 2026-10-26, sebelum aplikasi ini dipakai)**: RPC hub dari SQL 079 SUDAH ada (dashboard, history, vessels/vendors/ports/companies, matrix_for 4-arg), TAPI **BELUM ada**: `fn_cost_agent_log_master`, tabel `cost_agent_master_log`,
+  `fn_cost_agent_list_master_log`, `fn_cost_agent_delete_vessel`, semua RPC Cost Items (`list_cost_items`, `save_cost_item`, `rename_category`, `test_classify`, `list_aliases`, `update_alias`, `delete_alias`, `reclassify_open_lines`), dan kolom `is_system`/`priority` jenis biaya
+  mungkin berbeda. Akibatnya SEBELUM migrasi 076/077 (Cost Items + master log) dijalankan: tab Cost Items tampil error RPC, "Recent changes" error, dan semua TULIS master (save/merge/delete/set_*) gagal karena memanggil `fn_cost_agent_log_master`; baca/Dashboard/History/Office berfungsi.
+  Bentuk hasil RPC Cost Items / aliases / reclassify / master log dibaca TOLERAN (nama field ditebak dari spesifikasi) -- verifikasi setelah SQL-nya ada. Nomor SQL: file root `079_cost_agent_hub_office_dashboard.sql` (user) BENTROK dgn `sql/079_rls_select_initplan_compare_doc.sql` (RLS); isi beda, tidak saling menimpa.
+
 ## Approval (Prompt 4, 2026-10-13)
 
 - **Approval Matrix** (`src/pages/cost-agent/CostAgentApprovalMatrixPage.tsx`): CRUD langsung `cost_agent_approval_matrix`
