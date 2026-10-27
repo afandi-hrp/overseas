@@ -115,6 +115,38 @@ export interface HubDashboard {
 }
 export const hubDashboard = (f: Record<string, unknown>) => hubRpc<HubDashboard>('fn_cost_agent_dashboard', { p_filter: cleanFilter(f) })
 
+// ─── Documents without invoice (Dashboard) -- bentuk hasil diverifikasi dari pg_get_functiondef production 2026-10-27 ────────────────
+export type UnmatchedStatus = 'pending' | 'attached' | 'dismissed'
+export type UnmatchedFilter = UnmatchedStatus | 'all'
+export interface UnmatchedFile { seq: number | null; file_name: string | null; file_url: string | null; drive_id: string | null }
+export interface UnmatchedDocument {
+  doc_type: string | null; doc_no: string | null; doc_date: string | null; issuer_name: string | null
+  total_amount: string | number | null; invoice_ref: string | null
+}
+export interface UnmatchedCandidate {
+  id: number; invoice_no: string | null; invoice_date: string | null; status: string | null
+  vendor: string | null; vessel: string | null; grand_total: number | null
+}
+export interface UnmatchedRow {
+  id: number; status: UnmatchedStatus; reason: string | null; created_at: string
+  email: { subject?: string | null; sender?: string | null; gmail_id?: string | null; thread_id?: string | null; subject_no?: string | null; filenames?: string[] | null } | null
+  files: UnmatchedFile[] | null
+  documents: UnmatchedDocument[] | null
+  candidates: UnmatchedCandidate[] | null
+  attached_invoice_id: number | null; handled_by: string | null; handled_at: string | null; note: string | null
+}
+export interface UnmatchedList { pending_count: number; rows: UnmatchedRow[] }
+export interface AttachSearchRow extends UnmatchedCandidate { company_code: string | null; currency: string | null }
+export const hubListUnmatchedDocs = (status: UnmatchedFilter, limit = 100) =>
+  hubRpc<UnmatchedList | null>('fn_cost_agent_list_unmatched_docs', { p_status: status, p_limit: limit })
+    .then(r => ({ pending_count: Number(r?.pending_count) || 0, rows: r?.rows || [] }) as UnmatchedList)
+export const hubSearchInvoicesForAttach = (q: string, limit = 20) =>
+  hubRpc<AttachSearchRow[] | null>('fn_cost_agent_search_invoices_for_attach', { p_q: q, p_limit: limit }).then(r => (Array.isArray(r) ? r : []))
+export const hubAttachUnmatchedDocs = (id: number, invoiceId: number) =>
+  hubRpc<Record<string, unknown> | null>('fn_cost_agent_attach_unmatched_docs', { p_id: id, p_invoice_id: invoiceId })
+export const hubDismissUnmatchedDocs = (id: number, note: string | null) =>
+  hubRpc<null>('fn_cost_agent_dismiss_unmatched_docs', { p_id: id, p_note: note })
+
 // ─── Cost items (sql/076-077) -- field dibaca toleran ──────────────────────────────────────────────────────────
 export interface HubCostItem {
   id: number; code: string; name: string; category: string | null; gl_account: string | null; priority: number | null

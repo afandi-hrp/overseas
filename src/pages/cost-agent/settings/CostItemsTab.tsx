@@ -12,6 +12,7 @@ import {
   ChipInput, ChipList, ErrorBox, errBox, Field, FILTER_CTRL, HUB_PAGE_SIZE, HubDrawer, HubFilterBar, Pager, RecentChanges, StateRow, TD, TH, TableCard, useAsync, useDebounced, type HubCtx,
 } from './hubUi'
 import { AliasesDialog, ReclassifyDialog, RenameCategoryDialog } from './CostItemDialogs'
+import { ActiveStatus, FILTER_SEARCH, HIDE_LG, HubToolbarEnd, ICON_BTN, ResetButton, UsedBy } from './hubUi'
 
 const METHOD_LABEL: Record<string, string> = {
   alias_vendor: 'Learned alias (vendor)', alias: 'Learned alias', alias_pattern: 'Learned alias (pattern)', keyword: 'Keyword', keyword_synonym: 'Keyword (synonym)', history: 'Similar history', none: 'No match',
@@ -53,15 +54,16 @@ export default function CostItemsTab({ ctx }: { ctx: HubCtx }) {
       <TestPanel vendors={vendors} />
 
       <HubFilterBar>
-        <div className="w-[260px] flex"><FilterSearch value={search} onChange={setSearch} placeholder="Code / name / keyword…" /></div>
+        <div className={FILTER_SEARCH}><FilterSearch value={search} onChange={setSearch} placeholder="Code / name / keyword…" /></div>
         <select aria-label="Status" className={FILTER_CTRL} value={active} onChange={e => setActive(e.target.value)}>
           <option value="">All status</option><option value="true">Active</option><option value="false">Inactive</option>
         </select>
-        <button type="button" className={SA_BTN_OUTLINE} onClick={() => { setSearch(''); setActive(''); setCategory('') }}>Reset</button>
-        <span className="ml-auto text-[12px] text-[#6E5E70]">{data ? `${fmtNumber(all.length, 0)} cost items` : ''}{!ctx.editable ? ' · View only' : ''}</span>
-        <button type="button" className={SA_BTN_OUTLINE} onClick={() => setAliasFor({ id: null, title: 'all cost items' })}><Library size={13} /> Learned aliases</button>
-        {ctx.editable && <button type="button" className={SA_BTN_OUTLINE} onClick={() => setReclassFor({ id: null, label: '' })}><RefreshCw size={13} /> Re-classify open invoices…</button>}
-        {ctx.editable && <button type="button" className={SA_BTN_PRIMARY} onClick={() => setDrawer({ id: null, init: { code: '', name: '', category: '', gl_account: '', priority: '500', keywords: [], is_active: true }, system: false })}><Plus size={13} /> Add cost item</button>}
+        <ResetButton onClick={() => { setSearch(''); setActive(''); setCategory('') }} />
+        <HubToolbarEnd count={data ? `${fmtNumber(all.length, 0)} cost items` : ''} viewOnly={!ctx.editable}>
+          <button type="button" className={SA_BTN_OUTLINE} onClick={() => setAliasFor({ id: null, title: 'all cost items' })}><Library size={13} /> Learned aliases</button>
+          {ctx.editable && <button type="button" className={SA_BTN_OUTLINE} onClick={() => setReclassFor({ id: null, label: '' })}><RefreshCw size={13} /> Re-classify open invoices…</button>}
+          {ctx.editable && <button type="button" className={SA_BTN_PRIMARY} onClick={() => setDrawer({ id: null, init: { code: '', name: '', category: '', gl_account: '', priority: '500', keywords: [], is_active: true }, system: false })}><Plus size={13} /> Add cost item</button>}
+        </HubToolbarEnd>
       </HubFilterBar>
 
       {categories.length > 0 && (
@@ -80,7 +82,7 @@ export default function CostItemsTab({ ctx }: { ctx: HubCtx }) {
 
       <TableCard>
         <table className="min-w-full">
-          <thead><tr>{['Code', 'Name', 'Category', 'GL account', 'Priority', 'Keywords', 'Used by', 'Active', ''].map((h, i) => <th key={h || 'a'} className={`${TH} ${i === 4 ? 'text-right' : ''}`}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Code', 'Name', 'Category', 'GL account', 'Priority', 'Keywords', 'Used by', 'Active', ''].map((h, i) => <th key={h || 'a'} className={`${TH} ${i === 4 ? 'text-right' : ''} ${i === 3 ? HIDE_LG : ''}`}>{h}</th>)}</tr></thead>
           <tbody>
             <StateRow colSpan={9} loading={loading} error={error} onRetry={reload} empty={rows.length === 0} emptyText="No cost items match the filter" />
             {!loading && !error && rows.map(i => (
@@ -90,15 +92,15 @@ export default function CostItemsTab({ ctx }: { ctx: HubCtx }) {
                 </td>
                 <td className={`${TD} font-semibold min-w-[160px]`}>{i.name}</td>
                 <td className={TD}>{i.category ? <Chip tone="plum">{i.category}</Chip> : '—'}</td>
-                <td className={`${TD} whitespace-nowrap`}>{i.gl_account || '—'}</td>
+                <td className={`${TD} whitespace-nowrap ${HIDE_LG}`}>{i.gl_account || '—'}</td>
                 <td className={`${TD} text-right tabular-nums`}>{i.priority ?? '—'}</td>
                 <td className={TD}><ChipList items={i.keywords} max={4} tone="blue" /></td>
-                <td className={`${TD} text-[11.5px] text-[#6E5E70] min-w-[200px]`}>{i.lines_count ?? 0} lines · {i.history_count ?? 0} history · {i.alias_count ?? 0} aliases</td>
-                <td className={TD}>{i.is_active ? <Chip tone="green">Active</Chip> : <Chip tone="grey">Inactive</Chip>}</td>
+                <td className={`${TD} min-w-[140px]`}><UsedBy items={[{ n: i.lines_count, label: 'lines' }, { n: i.history_count, label: 'history rows', short: 'history' }, { n: i.alias_count, label: 'aliases' }]} /></td>
+                <td className={TD}><ActiveStatus active={i.is_active} /></td>
                 <td className={`${TD} whitespace-nowrap`}>
                   <div className="flex gap-1">
-                    {ctx.editable && <button type="button" className={`${SA_BTN_OUTLINE} h-7 px-2`} title="Edit" aria-label={`Edit ${i.code}`} onClick={() => setDrawer({ id: i.id, init: toForm(i), system: !!i.is_system })}><Pencil size={12} /></button>}
-                    <button type="button" className={`${SA_BTN_OUTLINE} h-7 px-2`} title="Learned aliases" onClick={() => setAliasFor({ id: i.id, title: `${i.code} ${i.name}` })}><Library size={12} /> Aliases</button>
+                    {ctx.editable && <button type="button" className={ICON_BTN} title="Edit" aria-label={`Edit ${i.code}`} onClick={() => setDrawer({ id: i.id, init: toForm(i), system: !!i.is_system })}><Pencil size={12} /></button>}
+                    <button type="button" className={ICON_BTN} title="Learned aliases" onClick={() => setAliasFor({ id: i.id, title: `${i.code} ${i.name}` })}><Library size={12} /> Aliases</button>
                   </div>
                 </td>
               </tr>

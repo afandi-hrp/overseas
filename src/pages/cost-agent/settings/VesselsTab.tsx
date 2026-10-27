@@ -13,6 +13,7 @@ import {
   BulkBar, ChipInput, ChipList, ConfirmModal, errBox, Field, FILTER_CTRL, HUB_PAGE_SIZE, HubDrawer, HubFilterBar, isDuplicateError, MergeModal, OfficeBadge, Pager,
   RecentChanges, StateRow, TD, TH, TableCard, useAsync, useDebounced, useSelection, type HubCtx,
 } from './hubUi'
+import { ActiveStatus, FILTER_SEARCH, HIDE_LG, HIDE_XL, HubToolbarEnd, ICON_BTN, ICON_BTN_DANGER, ResetButton, UsedBy } from './hubUi'
 
 const PREFIXES = ['MV', 'MT', 'TB', 'LPGC', 'LNGC', 'SV', 'BG', 'KM', 'SPOB', 'OB', 'AHTS', 'TK', 'KMP']
 const MISSING_VALUES = ['dwt', 'company', 'type', 'office']
@@ -104,7 +105,7 @@ export default function VesselsTab({ ctx }: { ctx: HubCtx }) {
   return (
     <div className="space-y-3" data-hub-vessels>
       <HubFilterBar>
-        <div className="w-[240px] flex"><FilterSearch value={search} onChange={setSearch} placeholder="Name / short code / alias…" /></div>
+        <div className={FILTER_SEARCH}><FilterSearch value={search} onChange={setSearch} placeholder="Name / short code / alias…" /></div>
         <select aria-label="Company" className={FILTER_CTRL} value={company} onChange={e => setCompany(e.target.value)}>
           <option value="">All PT</option>{companies.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
         </select>
@@ -117,9 +118,10 @@ export default function VesselsTab({ ctx }: { ctx: HubCtx }) {
         <select aria-label="Missing data" className={FILTER_CTRL} value={missing} onChange={e => setMissing(e.target.value)}>
           <option value="">Missing data: any</option><option value="dwt">Missing DWT</option><option value="company">Missing company</option><option value="type">Missing type</option><option value="office">Missing office</option>
         </select>
-        <button type="button" className={SA_BTN_OUTLINE} onClick={reset}>Reset</button>
-        <span className="ml-auto text-[12px] text-[#6E5E70]">{data ? `${fmtNumber(data.total, 0)} vessels` : ''}{!ctx.editable ? ' · View only' : ''}</span>
-        {ctx.editable && <button type="button" className={SA_BTN_PRIMARY} onClick={() => { setDrawer({ id: null, init: blankForm() }); setDialogError(null) }}><Plus size={13} /> Add vessel</button>}
+        <ResetButton onClick={reset} />
+        <HubToolbarEnd count={data ? `${fmtNumber(data.total, 0)} vessels` : ''} viewOnly={!ctx.editable}>
+          {ctx.editable && <button type="button" className={SA_BTN_PRIMARY} onClick={() => { setDrawer({ id: null, init: blankForm() }); setDialogError(null) }}><Plus size={13} /> Add vessel</button>}
+        </HubToolbarEnd>
       </HubFilterBar>
 
       {ctx.editable && (
@@ -137,7 +139,7 @@ export default function VesselsTab({ ctx }: { ctx: HubCtx }) {
           <thead>
             <tr>
               {ctx.editable && <th className={`${TH} w-8`}><input type="checkbox" aria-label="Select all on this page" className="accent-[#6B3470]" checked={allOn} onChange={e => selection.setAll(ids, e.target.checked)} disabled={ids.length === 0} /></th>}
-              {['Name', 'Type', 'DWT', 'GT', 'HP', 'Company', 'Office', 'Short code', 'Aliases', 'Used by', 'Status'].map((h, i) => <th key={h} className={`${TH} ${i >= 2 && i <= 4 ? 'text-right' : ''}`}>{h}</th>)}
+              {['Name', 'Type', 'DWT', 'GT', 'HP', 'Company', 'Office', 'Short code', 'Aliases', 'Used by', 'Status'].map((h, i) => <th key={h} className={`${TH} ${i >= 2 && i <= 4 ? 'text-right' : ''} ${i === 3 || i === 4 || i === 8 ? HIDE_XL : i === 7 ? HIDE_LG : ''}`}>{h}</th>)}
               {ctx.editable && <th className={TH}></th>}
             </tr>
           </thead>
@@ -154,8 +156,8 @@ export default function VesselsTab({ ctx }: { ctx: HubCtx }) {
                   </td>
                   <td className={`${TD} whitespace-nowrap`}>{v.vessel_type || '—'}</td>
                   <td className={`${TD} text-right tabular-nums`}>{num(v.dwt)}</td>
-                  <td className={`${TD} text-right tabular-nums`}>{num(v.gt)}</td>
-                  <td className={`${TD} text-right tabular-nums`}>{num(v.hp)}</td>
+                  <td className={`${TD} text-right tabular-nums ${HIDE_XL}`}>{num(v.gt)}</td>
+                  <td className={`${TD} text-right tabular-nums ${HIDE_XL}`}>{num(v.hp)}</td>
                   <td className={TD}>{v.company_code || <span className="text-[#8A7A8B]">—</span>}</td>
                   <td className={`${TD} whitespace-nowrap`}>
                     <span className="inline-flex items-center gap-1.5 flex-wrap">
@@ -167,16 +169,16 @@ export default function VesselsTab({ ctx }: { ctx: HubCtx }) {
                         : <Chip tone="grey" title="Suggested from voyage reports: Noon Report = Jakarta, SOF / Time Sheet = Medan.">Suggested: {OFFICE_LABEL[v.office_hint]}</Chip>)}
                     </span>
                   </td>
-                  <td className={`${TD} font-mono text-[11.5px]`}>{v.short_code || '—'}</td>
-                  <td className={TD}><ChipList items={v.aliases} /></td>
-                  <td className={`${TD} text-[11.5px] text-[#6E5E70] min-w-[170px]`}>{v.invoices_count} invoices · {v.voyages_count} voyages · {v.history_count} history rows</td>
-                  <td className={TD}>{v.is_active ? <Chip tone="green">Active</Chip> : <Chip tone="grey">Inactive</Chip>}</td>
+                  <td className={`${TD} font-mono text-[11.5px] ${HIDE_LG}`}>{v.short_code || '—'}</td>
+                  <td className={`${TD} ${HIDE_XL}`}><ChipList items={v.aliases} /></td>
+                  <td className={`${TD} min-w-[140px]`}><UsedBy items={[{ n: v.invoices_count, label: 'invoices' }, { n: v.voyages_count, label: 'voyages' }, { n: v.history_count, label: 'history rows', short: 'history' }]} /></td>
+                  <td className={TD}><ActiveStatus active={v.is_active} /></td>
                   {ctx.editable && (
                     <td className={`${TD} whitespace-nowrap`}>
                       <div className="flex gap-1">
-                        <button type="button" className={`${SA_BTN_OUTLINE} h-7 px-2`} title="Edit" aria-label={`Edit ${v.name}`} onClick={() => { setDrawer({ id: v.id, init: toForm(v) }); setDialogError(null) }}><Pencil size={12} /></button>
-                        <button type="button" className={`${SA_BTN_OUTLINE} h-7 px-2`} title="Merge into…" aria-label={`Merge ${v.name}`} onClick={() => setMergeFor(v)}><GitMerge size={12} /></button>
-                        <button type="button" className={`${SA_BTN_OUTLINE} h-7 px-2 text-[#A8231A]`} aria-label={`Delete ${v.name}`} disabled={!isUnused(v)}
+                        <button type="button" className={ICON_BTN} title="Edit" aria-label={`Edit ${v.name}`} onClick={() => { setDrawer({ id: v.id, init: toForm(v) }); setDialogError(null) }}><Pencil size={12} /></button>
+                        <button type="button" className={ICON_BTN} title="Merge into…" aria-label={`Merge ${v.name}`} onClick={() => setMergeFor(v)}><GitMerge size={12} /></button>
+                        <button type="button" className={ICON_BTN_DANGER} aria-label={`Delete ${v.name}`} disabled={!isUnused(v)}
                           title={isUnused(v) ? 'Delete' : 'In use — deactivate or merge it'} onClick={() => { setDelFor(v); setDialogError(null) }}><Trash2 size={12} /></button>
                       </div>
                     </td>

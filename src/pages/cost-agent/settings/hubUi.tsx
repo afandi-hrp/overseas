@@ -18,9 +18,11 @@ export const TD = 'px-2.5 py-1.5 text-[12.5px] text-[#3B1B3D] align-top'
 // Konteks dari shell: hak ubah, toast, parameter URL (preset filter dari tautan Dashboard) dan pindah tab.
 export interface HubCtx {
   editable: boolean
-  toast: (msg: string, tone?: 'ok' | 'warn' | 'err') => void
+  toast: (msg: React.ReactNode, tone?: 'ok' | 'warn' | 'err') => void
   params: URLSearchParams
   goTab: (tab: string, extra?: Record<string, string>) => void
+  // Bagian "Documents without invoice" (Dashboard) melapor jumlah pending -> badge di label tab Dashboard.
+  setPendingDocs: (n: number) => void
 }
 
 export function useDebounced<T>(value: T, ms = 300): T {
@@ -92,9 +94,99 @@ export function HubFilterBar({ children }: { children: React.ReactNode }) {
 }
 // Kotak select / input kecil di bar filter.
 export const FILTER_CTRL = 'h-9 rounded-xl border border-[#EADFD6] bg-white px-2.5 text-xs font-bold text-[#3B1B3D] focus:outline-none focus:border-[#6B3470]'
+// Pembungkus kolom pencarian: melebar mengisi sisa baris (min 180px, maks 320px) -- BUKAN lebar tetap, supaya bar tetap rapi di semua monitor.
+export const FILTER_SEARCH = 'flex flex-1 min-w-[180px] max-w-[320px]'
 
+// Ujung kanan toolbar: jumlah data + (View only) + tombol utama dalam SATU kelompok, supaya saat bar membungkus
+// kelompok ini pindah utuh ke baris berikutnya (bukan terpecah acak).
+export function HubToolbarEnd({ count, viewOnly, children }: { count?: string; viewOnly?: boolean; children?: React.ReactNode }) {
+  return (
+    <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
+      {(count || viewOnly) && (
+        <span className="text-[12px] text-[#6E5E70] tabular-nums whitespace-nowrap">
+          {count}{viewOnly && <span className="ml-1.5 px-1.5 py-0.5 rounded-md bg-[#F3EEEA] text-[10.5px] font-bold text-[#6E5E70]">View only</span>}
+        </span>
+      )}
+      {children}
+    </div>
+  )
+}
+// Tombol "Reset" tanpa border (ghost) -- tidak menyaingi tombol utama.
+export function ResetButton({ onClick }: { onClick: () => void }) {
+  return <button type="button" onClick={onClick} className="h-9 px-2.5 rounded-xl text-xs font-semibold text-[#6E5E70] hover:text-[#6B3470] hover:bg-[#F5EDF3]">Reset</button>
+}
+
+// Kartu tabel: `@container` supaya kolom sekunder bisa disembunyikan menurut LEBAR KARTU (HIDE_* di bawah), bukan lebar layar; baris menyala saat disorot.
 export function TableCard({ children }: { children: React.ReactNode }) {
-  return <section className={`${SA_CARD} overflow-hidden`}><div className="overflow-x-auto">{children}</div></section>
+  return <section className={`${SA_CARD} overflow-hidden @container`}><div className="overflow-x-auto [&_tbody_tr:hover]:bg-[#FBF7F4]">{children}</div></section>
+}
+// Kolom sekunder: tampil mulai lebar kartu tertentu (pasangkan di <th> DAN <td>). Datanya tetap ada di drawer Edit.
+export const HIDE_LG = 'hidden @min-[1000px]:table-cell'
+export const HIDE_XL = 'hidden @min-[1250px]:table-cell'
+
+// Tombol ikon di baris tabel: tanpa border (ghost), terang saat disorot. Dipakai sbg `className={ICON_BTN}` pada <button> yang sudah ada.
+export const ICON_BTN = 'inline-flex items-center justify-center gap-1 h-7 min-w-7 px-1.5 rounded-lg text-[11.5px] font-semibold text-[#6E5E70] hover:bg-[#F5EDF3] hover:text-[#6B3470] transition-colors disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-[#6E5E70] disabled:cursor-not-allowed'
+export const ICON_BTN_DANGER = 'inline-flex items-center justify-center gap-1 h-7 min-w-7 px-1.5 rounded-lg text-[11.5px] font-semibold text-[#A8231A]/80 hover:bg-[#FDE7E4] hover:text-[#A8231A] transition-colors disabled:opacity-35 disabled:hover:bg-transparent disabled:cursor-not-allowed'
+
+// Status Active / Inactive sebagai titik kecil + teks (pengganti chip hijau di tiap baris -- jauh lebih tenang).
+export function ActiveStatus({ active }: { active: boolean }) {
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-[12px] font-semibold whitespace-nowrap ${active ? 'text-[#17663D]' : 'text-[#8A7A8B]'}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-[#2F9E63]' : 'bg-[#C9BFCB]'}`} />{active ? 'Active' : 'Inactive'}
+    </span>
+  )
+}
+
+// "Used by": hanya hitungan yang > 0, ringkas ("12 invoices · 40 history"); semua nol = "Not used" (tanda aman dihapus). Tooltip memuat rincian lengkap.
+export function UsedBy({ items }: { items: { n: number | null | undefined; label: string; short?: string }[] }) {
+  const used = items.filter(i => (Number(i.n) || 0) > 0)
+  const full = items.map(i => `${Number(i.n) || 0} ${i.label}`).join('\n')
+  if (used.length === 0) return <span className="text-[11.5px] text-[#8A7A8B]" title={full}>Not used</span>
+  return (
+    <span className="inline-flex flex-wrap gap-x-2 gap-y-0.5 text-[11.5px] text-[#6E5E70]" title={full}>
+      {used.map(i => <span key={i.label} className="whitespace-nowrap"><b className="text-[#3B1B3D] tabular-nums">{Number(i.n).toLocaleString('id-ID')}</b> {i.short || i.label}</span>)}
+    </span>
+  )
+}
+
+// Judul bagian (kartu): kalimat biasa, tebal, + keterangan kecil opsional. SATU gaya utk Dashboard, Approval Matrix, Recent changes.
+export function SectionTitle({ children, hint, right }: { children: React.ReactNode; hint?: React.ReactNode; right?: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-2 mb-2.5 flex-wrap">
+      <div className="min-w-0">
+        <h3 className="text-[14px] font-bold text-[#3B1B3D] leading-tight inline-flex items-center gap-1.5">{children}</h3>
+        {hint && <p className="text-[12px] text-[#6E5E70] mt-0.5">{hint}</p>}
+      </div>
+      {right}
+    </div>
+  )
+}
+
+// Deretan angka ringkas (Dashboard): garis tipis antar sel (gap-px di atas latar garis), tanpa kotak ber-border satu per satu.
+// Sel bisa bernada (red / amber) dan bisa menjadi tombol (onClick). Responsif lewat kelas `cols` (container query).
+export interface StatCell { key: string; label: string; value: React.ReactNode; sub?: React.ReactNode; tone?: 'red' | 'amber' | 'plain'; dim?: boolean; dot?: string; onClick?: () => void; title?: string }
+export function StatGrid({ cells, cols, attr = 'data-attention' }: { cells: StatCell[]; cols: string; attr?: string }) {
+  return (
+    <div className={`grid ${cols} gap-px bg-[#EADFD6] rounded-xl overflow-hidden border border-[#EADFD6]`}>
+      {cells.map(c => {
+        const bg = c.tone === 'red' ? 'bg-[#FDF0EE]' : c.tone === 'amber' ? 'bg-[#FFF8E6]' : 'bg-white'
+        const num = c.tone === 'red' ? 'text-[#A8231A]' : c.tone === 'amber' ? 'text-[#7A4F00]' : 'text-[#3B1B3D]'
+        const inner = (
+          <>
+            <div className={`text-[20px] font-bold leading-none tabular-nums ${num}`}>{c.value}</div>
+            <div className="mt-1.5 text-[11.5px] font-semibold text-[#6E5E70] leading-tight inline-flex items-center gap-1.5">
+              {c.dot && <span className="w-2 h-2 rounded-full shrink-0" style={{ background: c.dot }} />}{c.label}
+            </div>
+            {c.sub && <div className="mt-0.5 text-[10.5px] text-[#8A7A8B] tabular-nums">{c.sub}</div>}
+          </>
+        )
+        const cls = `${bg} px-3 py-2.5 text-left ${c.dim ? 'opacity-55' : ''}`
+        return c.onClick
+          ? <button key={c.key} type="button" onClick={c.onClick} title={c.title} {...{ [attr]: c.key }} className={`${cls} hover:brightness-95 cursor-pointer`}>{inner}</button>
+          : <div key={c.key} className={cls} title={c.title} {...{ [attr]: c.key }}>{inner}</div>
+      })}
+    </div>
+  )
 }
 
 export function Pager({ total, page, onPage, loading }: { total: number; page: number; onPage: (p: number) => void; loading?: boolean }) {
@@ -279,7 +371,7 @@ export function RecentChanges({ entities, reloadKey }: { entities: string[]; rel
     <section className={`${SA_CARD} overflow-hidden`} data-recent-changes>
       <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open} className="w-full px-4 py-2.5 flex items-center gap-2 text-left hover:bg-[#FBF7F4]">
         <ChevronDown size={14} className={`text-[#8A7A8B] transition-transform ${open ? '' : '-rotate-90'}`} />
-        <span className="text-[12.5px] font-bold uppercase tracking-[0.05em] text-[#6B3470]">Recent changes</span>
+        <span className="text-[13px] font-bold text-[#3B1B3D]">Recent changes</span>
       </button>
       {open && (
         <div className="border-t border-[#EADFD6]">
