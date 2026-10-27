@@ -4308,6 +4308,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     if (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') {
       if (courierRecapKpi === 'not_submitted') query = query.is('submit_date', null).is('tgl_lunas', null);
       else if (courierRecapKpi === 'submitted_unpaid') query = query.not('submit_date', 'is', null).is('tgl_lunas', null);
+      else if (courierRecapKpi === 'submitted') query = query.not('submit_date', 'is', null);
     }
 
     // Apply Filter by Impor An (Audit Courier)
@@ -5347,6 +5348,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
     if (activeMainTab === 'courier' && activeSubTab === 'courier_rekapan') {
       if (courierRecapKpi === 'not_submitted') query = query.is('submit_date', null).is('tgl_lunas', null);
       else if (courierRecapKpi === 'submitted_unpaid') query = query.not('submit_date', 'is', null).is('tgl_lunas', null);
+      else if (courierRecapKpi === 'submitted') query = query.not('submit_date', 'is', null);
     }
 
     // Apply Filter by Impor An (Audit Courier)
@@ -7395,6 +7397,7 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
                 validationTabs={courierValidationTabs}
                 enrichAudit={enrichRecapAudit}
                 onValidation={(g, t) => openCourierRecapPanel(g, t)}
+                onClosePanel={closeCourierRecapPanel}
                 onLoaded={groups => {
                   setCourierRecapPanel(prev => {
                     if (!prev) return prev

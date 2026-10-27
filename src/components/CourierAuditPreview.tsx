@@ -10,6 +10,7 @@
 // (`colOk`). Validasi = info saja, TIDAK pernah mengunci Mark as audited.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { X, Printer, ChevronRight, ExternalLink } from 'lucide-react'
+import { supabase } from '../lib/supabase'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_GREEN, Chip } from './SeaAirAuditUi'
 import { fmtRp, fmtValas, fmtDateShort, fmtPctShort, buildGoodsLines, splitMoneyEvenly, companyFullName } from '../utils/SeaAirAuditHelpers'
 import {
@@ -37,10 +38,11 @@ const PreviewSection: React.FC<{ n: number; title: React.ReactNode; right?: Reac
   </div>
 )
 // Baris "label ........ nilai" (nilai rata kanan).
-const LRow: React.FC<{ label: React.ReactNode; children: React.ReactNode; strong?: boolean; tone?: 'plain' | 'total' | 'hl' }> = ({ label, children, strong, tone = 'plain' }) => (
-  <div className={`flex items-baseline justify-between gap-3 px-3.5 py-2 border-b border-[#F6F0EB] last:border-b-0 text-[12.5px] ${tone === 'total' ? 'bg-[#FBF7F4]' : ''}`}>
-    <span className={`${tone === 'total' ? 'font-bold text-[#3B1B3D] text-[13px]' : 'text-[#6E5E70]'} min-w-0`}>{label}</span>
-    <span className={`${strong || tone !== 'plain' ? 'font-bold' : 'font-medium'} ${tone === 'hl' ? 'text-[#3B1B3D]' : 'text-[#3B1B3D]'} text-right [overflow-wrap:anywhere] tabular-nums`}>{children}</span>
+// `alert` (2026-10-27) = baris ditandai MERAH (nilai tak cocok dgn dokumen sumber); isinya = tooltip penjelasan.
+const LRow: React.FC<{ label: React.ReactNode; children: React.ReactNode; strong?: boolean; tone?: 'plain' | 'total' | 'hl'; alert?: string }> = ({ label, children, strong, tone = 'plain', alert }) => (
+  <div title={alert} data-row-alert={alert ? '1' : undefined} className={`flex items-baseline justify-between gap-3 px-3.5 py-2 border-b border-[#F6F0EB] last:border-b-0 text-[12.5px] ${alert ? 'bg-[#FDE7E4]' : tone === 'total' ? 'bg-[#FBF7F4]' : ''}`}>
+    <span className={`${alert ? 'font-semibold text-[#A8231A]' : tone === 'total' ? 'font-bold text-[#3B1B3D] text-[13px]' : 'text-[#6E5E70]'} min-w-0`}>{label}</span>
+    <span className={`${strong || tone !== 'plain' || alert ? 'font-bold' : 'font-medium'} ${alert ? 'text-[#A8231A]' : 'text-[#3B1B3D]'} text-right [overflow-wrap:anywhere] tabular-nums`}>{children}</span>
   </div>
 )
 const GroupLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -155,6 +157,34 @@ export default function CourierAuditPreview({
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [])
+
+  // Pembanding Valas DPP (2026-10-27, permintaan user), dari dokumen hasil baca AI (dokumen_validasi.data_validasi_raw):
+  //   CN  -> `sppb_v.total_nilai_pabean` (SPPBMCP)      PIB -> `perhitungan_pib_v.aktual_nilai_pabean` (dokumen PIB)
+  // (kolom itu memang diisi n8n dari field tsb: cocok 67/68 CN & 53/53 PIB di production). Dibaca SEKALI per baris; edit Valas DPP langsung
+  // menyalakan / mematikan merah karena yang dibandingkan = rec.valas_dpp terbaru. Gagal baca / tak ada nilai = tanpa highlight (tidak mengunci apa pun).
+  const [valasDocRef, setValasDocRef] = useState<number | null>(null)
+  const valasCheckOn = colOk('valas_dpp') && !!rec?.id
+  const valasDocName = docType === 'CN' ? 'SPPBMCP' : 'PIB'
+  useEffect(() => {
+    setValasDocRef(null)
+    if (!valasCheckOn) return
+    let alive = true
+    ;(async () => {
+      try {
+        const { data, error } = await supabase.from('dokumen_validasi').select('data_validasi_raw').eq(docType === 'CN' ? 'cn_id' : 'pib_id', rec.id).limit(1)
+        if (error || !data || data.length === 0) return
+        let raw: any = data[0].data_validasi_raw
+        if (typeof raw === 'string') { try { raw = JSON.parse(raw) } catch { raw = null } }
+        const v = docType === 'CN' ? raw?.sppb_v?.total_nilai_pabean : raw?.perhitungan_pib_v?.aktual_nilai_pabean
+        const s = v === null || v === undefined ? '' : String(v).replace(/,/g, '').trim()
+        const num = s !== '' && Number.isFinite(Number(s)) ? Number(s) : null
+        if (alive) setValasDocRef(num)
+      } catch (e) { console.error('[CourierAuditPreview] baca dokumen pembanding Valas DPP gagal', e) }
+    })()
+    return () => { alive = false }
+  }, [valasCheckOn, docType, rec?.id])
+  // Beda > 0,005 (2 desimal) = merah; salah satu kosong = tidak dibandingkan.
+  const valasMismatch = valasCheckOn && valasDocRef !== null && hasVal(rec.valas_dpp) && Math.abs((Number(String(rec.valas_dpp).replace(/,/g, '')) || 0) - valasDocRef) > 0.005
 
   // ── Angka tampilan ──
   const build = computeCourierBuildUp(rec)
@@ -383,7 +413,12 @@ export default function CourierAuditPreview({
                 {(colOk('valas_dpp') || colOk('kurs_ndpbm') || colOk('total_nilai_pabean')) && (
                   <>
                     <GroupLabel>Customs Value</GroupLabel>
-                    {colOk('valas_dpp') && <LRow label="Valas DPP">{hasVal(rec.valas_dpp) ? `${curLabel && docType !== 'CN' ? `${curLabel} ` : ''}${fmtValas(rec.valas_dpp)}` : <Dash />}</LRow>}
+                    {colOk('valas_dpp') && (
+                      <LRow label="Valas DPP" alert={valasMismatch ? `Valas DPP differs from ${docType === 'CN' ? 'Total Nilai Pabean' : 'Aktual Nilai Pabean'} on the ${valasDocName} (${fmtValas(valasDocRef)}). Check the document.` : undefined}>
+                        {valasMismatch && <span className="mr-2 text-[10.5px] font-semibold" data-valas-doc-ref>{valasDocName} {fmtValas(valasDocRef)} ≠</span>}
+                        {hasVal(rec.valas_dpp) ? `${curLabel && docType !== 'CN' ? `${curLabel} ` : ''}${fmtValas(rec.valas_dpp)}` : <Dash />}
+                      </LRow>
+                    )}
                     {colOk('kurs_ndpbm') && <LRow label="Kurs NDPBM">{hasVal(rec.kurs_ndpbm) ? fmtValas(rec.kurs_ndpbm) : <Dash />}</LRow>}
                     {colOk('total_nilai_pabean') && <LRow label="Total Customs Value" tone="hl">{fmtRp(build.cv)}</LRow>}
                   </>

@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="id"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Invoice Recap – Prototype</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg1:#fff1e6;--bg2:#fde0cc;--card:#fff;--tx:#2b1d3d;--tx2:#4a3a5c;--mut:#8a7b9b;--line:#eee6f5;--pur:#4a2a6b;--hd:#3b2260;--soft:#f3eefa;--inp:#fff}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg1:#1d1428;--bg2:#2a1a33;--card:#2b2038;--tx:#f1eaf8;--tx2:#d6c9e6;--mut:#a597b8;--line:#42345a;--pur:#c9a9f0;--hd:#efe4fb;--soft:#3a2d4f;--inp:#2b2038}}
+:root[data-theme="dark"]{--bg1:#1d1428;--bg2:#2a1a33;--card:#2b2038;--tx:#f1eaf8;--tx2:#d6c9e6;--mut:#a597b8;--line:#42345a;--pur:#c9a9f0;--hd:#efe4fb;--soft:#3a2d4f;--inp:#2b2038}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:linear-gradient(135deg,var(--bg1),var(--bg2));color:var(--tx);font:13px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;background-color:var(--bg1)}
+.wrap{max-width:1440px;margin:0 auto;padding:22px 24px;display:flex;flex-direction:column;gap:14px}
+.hd{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}.hd h1{margin:0;font-size:26px;color:var(--pur)}.hd p{margin:3px 0 0;color:var(--tx2)}
+.kr{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+.kpi{background:var(--card);border-radius:14px;padding:14px;display:flex;gap:12px;align-items:flex-start;position:relative}
+.ki{width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex:none}
+.kl{font-size:12px;font-weight:600;color:var(--tx2)}.kv{font-size:24px;font-weight:800;color:var(--hd)}.ks{font-size:11px;color:var(--mut)}
+.tg{margin-top:4px;border:0;background:var(--soft);color:var(--pur);border-radius:8px;padding:5px 9px;font:600 11px inherit;font-family:inherit;cursor:pointer;min-height:28px}
+.pop{position:absolute;top:calc(100% + 6px);left:0;z-index:20;width:min(420px,92vw);background:var(--card);border-radius:14px;box-shadow:0 12px 32px rgba(60,30,90,.25);padding:8px 14px;display:none}
+.pop.on{display:block}.pop.pr{left:auto;right:0;width:min(640px,94vw)}
+table{width:100%;border-collapse:collapse}th{font-weight:500;color:var(--mut);text-align:right;padding:8px 6px;border-bottom:1px solid var(--line)}td{text-align:right;padding:8px 6px;border-bottom:1px dashed var(--line)}
+th:first-child,td:first-child{text-align:left}tr.tt td{font-weight:800;color:var(--hd);border-bottom:0}
+.fb{background:var(--card);border-radius:14px;padding:10px 14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.srch{flex:1;min-width:200px;border:1px solid var(--line);border-radius:10px;padding:8px 12px;color:var(--mut);background:var(--inp)}
+.chip{padding:7px 12px;border-radius:999px;background:var(--soft);color:var(--tx2);font-size:12px}.chip.on{background:var(--pur);color:var(--card)}
+.main{display:grid;grid-template-columns:1fr;gap:14px;align-items:start}.main.has{grid-template-columns:minmax(380px,34%) 1fr}.rows{display:flex;flex-direction:column;gap:10px;container-type:inline-size;min-width:0}
+.item{background:var(--card);border-radius:14px;border:2px solid transparent}.item.act{border-color:var(--pur)}.item.subm{background:#fffaeb;border:1px solid #f3dca6;border-left:5px solid #e0a21a}.item.subm.act{border-color:var(--pur);border-left-color:#e0a21a;border-width:2px 2px 2px 5px}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .item.subm{background:#3a2f22;border-color:#6b5426;border-left-color:#e0a21a}}
+:root[data-theme="dark"] .item.subm{background:#3a2f22;border-color:#6b5426;border-left-color:#e0a21a}
+.row{padding:14px 18px;display:grid;grid-template-columns:1.25fr 1.05fr 1.85fr .95fr 150px 130px 110px;gap:16px;align-items:center}
+.sep{border-left:1px solid rgba(138,123,155,.18);padding-left:16px}
+.awb{font-size:15px;font-weight:800;color:var(--hd)}.vend{font-size:11px;color:var(--mut);margin:3px 0 6px}
+.lb{font-size:11px;color:var(--mut);display:flex;gap:5px;align-items:center}.v{font-weight:500;color:var(--tx2)}.mt{margin-top:6px}
+.pl{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:5px}
+.pl.pv{flex-direction:column;align-items:flex-start;flex-wrap:nowrap;margin-bottom:0}.pl.pv .pill{white-space:nowrap}
+.sep2{border-left:1px solid var(--line);padding-left:16px;opacity:1}.sep2{border-left-color:rgba(138,123,155,.18)}
+.pill{display:inline-block;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:600}
+.b{background:#dbeafe;color:#1d4ed8}.y{background:#fef0c7;color:#9a6700}.g{background:#ece9f1;color:#4a3a5c}.p{background:#ede9fe;color:#5b3fb0}
+.gr{background:#d5f5e6;color:#0d7a55}.r{background:#fde2e4;color:#c0262d;padding:6px 11px}.nfa{background:#fff0f0;color:#b4232a;border:1px solid #f6c9cc}
+.ex{display:inline-block;width:14px;height:14px;line-height:14px;text-align:center;border-radius:50%;background:#e03040;color:#fff;font-size:10px}
+.c5{display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+.okc{display:inline-flex;width:34px;height:34px;border-radius:50%;background:#d5f5e6;align-items:center;justify-content:center;color:#0d8a5f;font-weight:800}
+.tot{font-size:18px;font-weight:800;color:var(--hd)}
+.open{border:1.5px solid var(--pur);background:transparent;color:var(--pur);border-radius:999px;padding:9px 16px;font:700 13px inherit;font-family:inherit;min-height:44px;cursor:pointer}
+.open.on{background:var(--soft);color:var(--tx2)}
+.dp{display:flex;flex-direction:column;gap:12px;background:var(--card);border-radius:16px;padding:16px 18px;position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto}
+.dh{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start}
+.btn{border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-weight:600;color:var(--hd);background:var(--card);font-size:12px}
+.tabs{display:flex;gap:8px;flex-wrap:wrap}.tab{border:0;font:600 12px inherit;font-family:inherit;padding:9px 14px;border-radius:10px;background:var(--soft);color:var(--tx2);cursor:pointer;min-height:40px}
+.tab.on{background:#fff3dc;color:#9a6700;border:1px solid #f1d9a6}
+.info{background:var(--soft);border-radius:8px;padding:8px 12px;display:flex;gap:22px;flex-wrap:wrap;color:var(--tx2)}
+.ck{border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.bar{height:8px;border-radius:999px;background:var(--line)}.bar i{display:block;height:8px;border-radius:999px;background:#e0a21a}
+.note{background:#fff8e8;border:1px solid #f1d9a6;border-radius:12px;padding:12px;color:#6b4e00}
+.miss{background:#fde2e4;color:#b4232a;font-weight:700;border-radius:8px;padding:9px 12px}
+.dg{display:grid;grid-template-columns:1fr 1fr;gap:8px}.dc{background:#e6f7ee;border:1px solid #bfe8d2;border-radius:8px;padding:10px 12px;font-weight:600;color:#0d5c40}.dc.m{background:#fde8e8;border-color:#f6c9cc;color:#b4232a}
+.scroll{overflow-x:auto}
+@container (max-width:720px){.row{grid-template-columns:1fr 1fr;grid-template-areas:'a1 a2' 'a3 a4' 'a5 a6' 'a5 a7';gap:10px 14px;padding:14px;align-items:start}.sep,.sep2{border-left:0;padding-left:0}.awb{font-size:14px}.a3,.a4,.a5,.a6{border-top:1px solid rgba(138,123,155,.18);padding-top:10px}.a1{grid-area:a1}.a2{grid-area:a2}.a3{grid-area:a3}.a4{grid-area:a4}.a5{grid-area:a5}.a6{grid-area:a6}.a7{grid-area:a7}}
+@media (max-width:1100px){.main.has{grid-template-columns:1fr}.dp{position:static;max-height:none}}
+@media (max-width:1100px){.kr{grid-template-columns:repeat(2,1fr)}.row{grid-template-columns:1fr 1fr}.sep{border-left:0;padding-left:0}.dg{grid-template-columns:1fr}}
+</style></head>
+<body><div class="wrap">
+<div class="hd"><div><h1>Invoice Recap</h1><p>Courier invoices per AWB (freight, duty &amp; credit notes) — review the amounts, then submit to Finance.</p></div><div style="text-align:right"><b style="color:var(--pur);font-size:16px">Good afternoon, Fera</b><br>Monday, October 26, 2026</div></div>
+<div class="kr" id="kr"></div>
+<div class="fb"><span class="chip on">All PPJK</span><span class="chip">DHL</span><span class="chip">EMS</span><span class="chip">FEDEX</span><span class="chip">UPS</span><div class="srch">Search AWB, invoice no., PO, vendor, PIB no., NTPN</div><span class="chip">Email date: From – To</span><span class="chip">Company: All</span><span class="chip" style="color:#c0262d">● Needs attention</span><span class="chip on">Card</span><span class="chip">List</span><span class="chip">⟳</span><span class="chip" style="color:#0d7a55">Export</span><span class="chip on">+ Add</span></div>
+<div class="main" id="main"><div><div class="rows" id="rows"></div><div class="fb" style="margin-top:10px;justify-content:space-between"><span>Showing 1–10 of 126 AWB</span><span>Rows 10 ▾ &nbsp; ‹ <b class="chip on">1</b> 2 3 4 … 13 ›</span></div></div><div id="panel"></div></div>
+</div>
+<script>
+var ICO={a:'<path d="M10.5 13.5 3 11l1-2 8 .5L17 4l2 1-3 6 5 3-1 2-6-1-3 6-2-1z"/>',b:'<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/>',c:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',d:'<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',e:'<circle cx="10" cy="10" r="6"/><path d="M14 14a6 6 0 1 0 6 6 6 6 0 0 0-6-6z"/>'};
+function ic(k,bg){return '<div class="ki" style="background:'+bg+'"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#4a2a6b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+ICO[k]+'</svg></div>'}
+var S={pop:false,pop2:false,open:-1,tab:'ck'};
+var DOCS=['Invoice Freight','FP Invoice Freight','Invoice Duty','FP Invoice Duty','SPPBMCP','Billing DJBC','PIB','BL / AWB','Packing List','Commercial Invoice','Final Invoice','BT Vendor'];
+var R=[
+{c:'FEDEX',awb:'876085252248',v:'MAGIC LINE CORPORATION',co:'WNS',po:'TIDAK ADA PO',o:'Philippines',inv:[['Freight','28 Sep 2026'],['Duty','23 Oct 2026']],dr:'CN - Draft',sub:null,due:'28 Oct 2026',tot:'9.589.455',miss:['Invoice Freight','FP Invoice Freight','Final Invoice','BT Vendor'],cv:50,dv:91},
+{c:'DHL',awb:'7021774152',v:'SHINHANG MARINE TECHNOLOGY CO., LTD',co:'IMI',po:'I.PO/IMI.MDN/2610/0007',o:'China',inv:[['Duty','23 Oct 2026']],dr:'CN - Draft',sub:null,due:'20 Nov 2026',tot:'998.917',miss:['BT Vendor'],cv:100,dv:97},
+{c:'FEDEX',awb:'878418271103',v:'SHENZHEN GAOXINSHENG ELECTRONIC CO., LTD',co:'IMI',po:'I.PO/IMI.MDN/2609/0098 +3 PO',o:'China',inv:[['Freight','14 Oct 2026'],['Duty','22 Oct 2026']],dr:'PIB - Draft',sub:'23 Oct 2026',due:'12 Nov 2026',tot:'1.348.672',miss:[],cv:100,dv:100},
+{c:'DHL',awb:'1886820110',v:'GIGA INDUSTRY CO.',co:'TTP',po:'I.PO/IMI.MDN/2607/0099',o:'Korea',inv:[['Freight','23 Sep 2026'],['Duty','22 Oct 2026'],['Credit Note Freight','30 Sep 2026'],['Credit Note Duty','30 Sep 2026 & 05 Oct 2026']],dr:null,sub:'22 Oct 2026',due:'22 Oct 2026',tot:'22.199.771',miss:['Final Invoice'],cv:100,dv:88},
+{c:'FEDEX',awb:'877392309670',v:'GUANGZHOU BAOLILAI HYDRAULIC MACHINERY CO., LTD',co:'IMI',po:'I.PO/IMI.MDN/2609/0041',o:'China',inv:[['Freight','18 Sep 2026'],['Duty','22 Sep 2026']],dr:'CN',sub:'19 Oct 2026',due:'19 Nov 2026',tot:'2.149.036',miss:[],cv:100,dv:100},
+{c:'UPS',awb:'1ZX1651A6799112975',v:'WANCUN INTERNATIONAL TRADING LTD',co:'IMI',po:'I.PO/IMI.MDN/2609/0053',o:'China',inv:[['Freight','20 Sep 2026']],dr:null,sub:null,due:'20 Oct 2026',tot:'1.204.500',miss:['Invoice Duty','FP Invoice Duty'],cv:100,dv:100}];
+var PC={'Freight':'b','Duty':'y','Credit Note Freight':'g','Credit Note Duty':'g','CN - Draft':'g','PIB - Draft':'p','CN':'g','PIB':'p'};
+var ENV='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px;margin:0 3px 0 5px"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>';
+function pills(a){return a.map(function(x){return '<span class="pill '+PC[x[0]]+'">'+x[0]+ENV+x[1]+'</span>'}).join('')}
+function kpis(){
+ var pop='<div class="pop'+(S.pop?' on':'')+'"><table><tr><th>Kurir</th><th>AWB</th><th>Invoice Docs</th></tr><tr><td>FedEx</td><td>58</td><td>98</td></tr><tr><td>DHL</td><td>41</td><td>72</td></tr><tr><td>EMS</td><td>17</td><td>28</td></tr><tr><td>UPS</td><td>10</td><td>14</td></tr><tr class="tt"><td>Total</td><td>126</td><td>212</td></tr></table></div>';
+ var pop2='<div class="pop pr'+(S.pop2?' on':'')+'"><div class="scroll"><table><tr><th>PPJK</th><th>Courier Adm Fee</th><th>Total Duty Tax</th><th>Total Freight</th><th>Credit Note</th><th>Total Amount</th></tr><tr><td>FedEx</td><td>6.120.400</td><td>398.450.218</td><td>107.769.500</td><td>−821.828</td><td>511.518.290</td></tr><tr><td>DHL</td><td>4.315.400</td><td>301.900.000</td><td>83.000.000</td><td>−600.000</td><td>388.615.400</td></tr><tr><td>EMS</td><td>829.039</td><td>52.000.000</td><td>22.000.000</td><td>0</td><td>74.829.039</td></tr><tr><td>UPS</td><td>1.200.200</td><td>41.000.000</td><td>21.000.000</td><td>0</td><td>63.200.200</td></tr><tr class="tt"><td>Total</td><td>12.465.039</td><td>793.350.218</td><td>233.769.500</td><td>−1.421.828</td><td>1.038.162.929</td></tr></table></div><div class="ks" style="padding:6px 0">Total Amount = Courier Adm Fee + Total Duty Tax + Total Freight (dikurangi Credit Note)</div></div>';
+ document.getElementById('kr').innerHTML=
+ '<div class="kpi">'+ic('a','#dbeafe')+'<div><div class="kl">Total Shipments (AWB)</div><div class="kv">126</div><div class="ks">Unique shipments</div><button class="tg" data-a="pop" aria-expanded="'+S.pop+'">'+(S.pop?'Hide per courier ▴':'Show per courier ▾')+'</button></div>'+pop+'</div>'+
+ '<div class="kpi">'+ic('b','#ede9fe')+'<div><div class="kl">Total Invoice Documents</div><div class="kv">212</div><div class="ks">Freight &amp; duty (excl. credit notes)</div></div></div>'+
+ '<div class="kpi">'+ic('c','#fef3c7')+'<div><div class="kl">Pending Submission</div><div class="kv">26</div><div class="ks">Not yet submitted to Finance</div></div></div>'+
+ '<div class="kpi">'+ic('d','#d1fae5')+'<div><div class="kl">Submitted to Finance</div><div class="kv">190</div><div class="ks" style="color:#0d8a5f">Unpaid: 171 | Paid: 19</div></div></div>'+
+ '<div class="kpi">'+ic('e','#f3e8ff')+'<div><div class="kl">Total Invoice Amount (Incl. CN)</div><div class="kv" style="font-size:20px">Rp 1.038.162.929</div><div class="ks">incl. credit notes (−Rp 1.421.828)</div><button class="tg" data-a="pop2" aria-expanded="'+S.pop2+'">'+(S.pop2?'Hide per PPJK ▴':'Show per PPJK ▾')+'</button></div>'+pop2+'</div>';
+}
+function dot(p){return '<i style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:'+(p>=100?'#16a36a':'#f08a24')+'"></i>'}
+function detail(r,i){
+ var pct=Math.round((12-r.miss.length)/12*100),T=S.tab,h='',lock=(r.cv<100||r.dv<100);
+ var tabs=[['ck',dot(pct)+'Checklist '+pct+'%'],['cv',dot(r.cv)+'Cost Validation '+r.cv+'%'],['dv',dot(r.dv)+'Doc Validation '+r.dv+'%'],['iv','Invoices (2)'],['au','Audit trail']].map(function(t){return '<button class="tab'+(T==t[0]?' on':'')+'" data-a="tab" data-t="'+t[0]+'">'+t[1]+'</button>'}).join('');
+ if(T=='ck'){h='<div class="ck"><div style="display:flex;justify-content:space-between;font-size:16px;font-weight:800"><span>Checklist <span class="pill '+(r.miss.length?'y':'gr')+'">'+(r.miss.length?'Incomplete':'Complete')+'</span></span><span>'+pct+'%</span></div><div class="bar"><i style="width:'+pct+'%"></i></div><div class="ks">'+(12-r.miss.length)+' of 12 required documents</div><span class="btn" style="align-self:flex-start">Upload additional doc</span>'+(r.miss.length?'<div class="note"><b>Checklist Note</b><br>Required to accept a missing document. Same as the Remarks column in the List view.<div class="ta">e.g. Final Invoice &amp; BT Vendor were not issued by the vendor for this sample shipment…</div></div><div class="miss">Missing: '+r.miss.join(', ')+'</div>':'')+'<div class="lb" style="justify-content:space-between"><span>REQUIRED</span><span>'+(12-r.miss.length)+'/12</span></div><div class="dg">'+DOCS.map(function(d){var m=r.miss.indexOf(d)>-1;return '<div class="dc'+(m?' m':'')+'">'+(m?'✕ ':'✓ ')+d+(m?'<br><span class="pill" style="background:#fff;color:#b4232a;border:1px solid #f6c9cc;margin-top:6px">Accept with note</span>':'')+'</div>'}).join('')+'</div></div>'}
+ else if(T=='cv'){h='<div class="ck scroll"><table><tr><th>Komponen</th><th>Invoice</th><th>Sistem</th><th>Selisih</th></tr><tr><td>Freight</td><td>6.100.000</td><td>6.100.000</td><td>0</td></tr><tr><td>Duty</td><td>'+r.tot+'</td><td>'+r.tot+'</td><td>'+(r.cv<100?'tidak sesuai':'0')+'</td></tr><tr class="tt"><td>Status</td><td></td><td></td><td>'+r.cv+'% match</td></tr></table></div>'}
+ else if(T=='dv'){h='<div class="ck">Validasi dokumen '+r.dv+'%'+(r.dv<100?' — ada field yang perlu dicek.':' — lengkap.')+'</div>'}
+ else if(T=='iv'){h='<div class="ck">Invoice Freight — Rp 6.100.000<br>Invoice Duty — Rp '+r.tot+'</div>'}
+ else{h='<div class="ck">22 Oct 2026 — Email invoice diterima<br>'+(r.sub?r.sub+' — Submitted to Finance':'Belum disubmit')+'</div>'}
+ return '<div class="dp"><div class="dh"><div class="pl" style="align-items:center"><span class="pill g" style="background:#3b2260;color:#fff">'+r.co+'</span>'+(r.sub?'<span class="btn">Unlock all (Admin)</span>':'<span class="btn" style="opacity:.5">Submit all to Finance</span>')+'<span class="btn">View in Audit</span><span class="btn">Edit in List</span></div><div style="display:flex;gap:12px;align-items:flex-start"><div style="text-align:right"><div class="lb" style="justify-content:flex-end">Total Invoice</div><div class="tot">Rp '+r.tot+'</div>'+(r.sub?'<span class="pill gr">Submitted · '+r.sub+'</span>':'<span class="pill g">Not Submitted</span>')+'</div><button class="tab" data-a="close" aria-label="Tutup preview">✕</button></div></div>'+
+ (lock&&!r.sub?'<div class="info">🔒 Submit &amp; Paid Date are locked until validation is complete: Cost Validation '+r.cv+'% · Doc Validation '+r.dv+'% (Checklist not required)</div>':'')+
+ '<div class="tabs">'+tabs+'</div><div class="info" style="justify-content:space-between"><span>AWB <b>'+r.c+' NO. '+r.awb+'</b> &nbsp; Vendor <b>'+r.v+'</b> &nbsp; Chargeable <b>—</b></span><span>Show all shipment info ▾</span></div>'+h+'</div>';
+}
+function rows(){
+ document.getElementById('rows').innerHTML=R.map(function(r,i){
+  var on=S.open==i;r.st=(r.cv<100||r.dv<100)?'na':'ok';
+  var au=r.dr?'<span class="pill '+PC[r.dr]+'">'+r.dr+'</span>':'<span class="pill nfa">Not Found in Audit</span>';
+  var st=(r.st=='na'?'<span class="pill r"><b class="ex">!</b> Need Attention</span>':'<span class="okc">✓</span>');
+  var sp=r.sub?'<span class="pill gr">Submitted · '+r.sub+'</span>':'<span class="pill y">Not Submitted</span>';
+  return '<div class="item'+(on?' act':'')+(r.sub?' subm':'')+'"><div class="row"><div class="a1"><div class="awb">'+r.c+' NO. '+r.awb+'</div><div class="vend">'+r.v+'</div><div class="pl" style="margin:0"><span class="pill g">'+r.co+'</span>'+au+'</div></div>'+
+  '<div class="sep a2"><div class="v">'+r.po+'</div><div class="lb mt">Origin <span class="v">'+r.o+'</span></div></div>'+
+  '<div class="sep a3"><div class="pl pv">'+pills(r.inv)+'</div></div>'+
+  '<div class="sep2 a4"><div class="pl pv">'+sp+'<span class="pill g">Due '+r.due+'</span></div></div>'+
+  '<div class="c5 a5">'+st+'</div><div class="a6"><div class="lb">Total Expenses</div><div class="tot">Rp '+r.tot+'</div></div>'+
+  '<div class="a7"><button class="open'+(on?' on':'')+'" data-a="open" data-i="'+i+'" aria-expanded="'+on+'">'+(on?'Opened ✓':'Open ›')+'</button></div></div>'+''+'</div>';
+ }).join('');
+}
+document.addEventListener('click',function(e){
+ var t=e.target.closest('[data-a]');
+ if(!t){if(S.pop||S.pop2){S.pop=false;S.pop2=false;kpis()}return}
+ var a=t.getAttribute('data-a');
+ if(a=='pop'){S.pop=!S.pop;S.pop2=false;kpis()}
+ else if(a=='pop2'){S.pop2=!S.pop2;S.pop=false;kpis()}
+ else if(a=='open'){var i=+t.getAttribute('data-i');S.open=S.open==i?-1:i;S.tab='ck';rows();panel()}
+ else if(a=='close'){S.open=-1;rows();panel()}
+ else if(a=='tab'){S.tab=t.getAttribute('data-t');panel()}
+});
+function panel(){var m=document.getElementById('main');m.className='main'+(S.open>-1?' has':'');document.getElementById('panel').innerHTML=S.open>-1?detail(R[S.open],S.open):''}
+kpis();rows();panel();
+</script></body></html>
