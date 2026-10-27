@@ -12,6 +12,7 @@ import {
   type ApprovalStep, type SignerConfig, type MemoLogEntry, type PicEligibleUser,
 } from '../utils/FarOverseasAirHelpers';
 import FarOverseasMemoPaper, { MemoPaymentLine } from './FarOverseasMemoPaper';
+import { fetchMySignaturePath } from '../utils/SignatureHelpers';
 import FarOverseasAirCostValidationModal from './FarOverseasAirCostValidationModal';
 import FarOverseasAirDocumentsModal, { getMemoDocs } from './FarOverseasAirDocumentsModal';
 
@@ -372,6 +373,15 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
       <Stamp size={14} /> {submitting ? 'Saving...' : signLabel}
     </button>
   );
+  // Petunjuk (sql/083): user yang SIAP menekan Sign tapi belum punya tanda tangan di profil -> garis tanda tangannya kosong di memo. Tidak memblokir approval.
+  const [hasMySignature, setHasMySignature] = useState<boolean | null>(null);
+  const readyToSign = !!signStep && !signDisabled;
+  useEffect(() => {
+    if (!readyToSign || !user?.id || hasMySignature !== null) return;
+    let alive = true;
+    fetchMySignaturePath(user.id).then(p => { if (alive) setHasMySignature(!!p); });
+    return () => { alive = false; };
+  }, [readyToSign, user?.id, hasMySignature]);
   const rejectBtn = (extra: string) => canReject && (
     <button onClick={() => setShowReject(true)} disabled={submitting} className={`${extra} flex items-center justify-center gap-1.5 px-3 rounded-xl border border-rose-300 text-rose-600 text-xs font-semibold hover:bg-rose-50 disabled:opacity-50`}>
       <Ban size={14} /> Reject
@@ -603,6 +613,12 @@ export default function FarOverseasAirDetailModal({ record, onClose, onChanged, 
               </div>
             </div>
 
+            {readyToSign && hasMySignature === false && (
+              <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-2 text-xs text-amber-900 print:hidden" data-no-signature-hint>
+                You have no signature on file, so your signature line stays empty on this memo.{' '}
+                <a href="/account" target="_blank" rel="noopener noreferrer" className="font-bold underline">Add it in My Account</a>
+              </div>
+            )}
             <div className="bg-white rounded-2xl border border-[#EADFD6] px-4 py-3 grid grid-cols-2 md:grid-cols-4 gap-3 print:hidden">
               {STEP_ORDER.map((step, i) => {
                 const info = stepInfo(step);

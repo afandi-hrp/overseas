@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import { X, Save, Lock, Minus, Plus, FileText, Eye } from 'lucide-react';
 import {
-  parseRouteNote, mapModeToJenisLayanan, vendorTargetFromShipVia, formatMoney, formatDateShort, getDueInfo,
+  parseRouteNote, mapModeToJenisLayanan, findingLabel, vendorTargetFromShipVia, resolveShipmentVendor, activeTarifVendorNames, jenisOptionsFor, jenisLayananEquals, formatMoney, formatDateShort, getDueInfo,
   getPoList, implicitFxRate, ensureFarFont, FAR_FONT_FAMILY, computeDueDate, computeOnHold, getMemoDueValue,
   getPoNumbers, parseJsonField, DEFAULT_FX, getBreakdownUnit, memoWeightIn, withBreakdownUnit, buildWeightBreakdownDisplay,
   recomputeDominantCompany, isAutoSplitCase, splitEvenly, WEIGHT_UNITS,
@@ -36,6 +36,9 @@ export type EditMemoCtx = {
   nonPoKindOptions: string[];
   addNonPoKindOption: (kind: string) => void;
   tarifVendorRows: RateRow[];
+  // Vendor yang dicocokkan n8n ke quotation aktif + catatan cost validation (utk dropdown NOTE 1 & pesan "vendor belum cocok").
+  vendorMatched?: string | null;
+  costCatatan?: string | null;
   costCity: string;
   // SQL tahap 2 sudah terpasang (kolom payment_type/due_date/dst ada). false -> field tahap 2
   // disembunyikan (RPC lama akan melewati kolom yang tidak ada di whitelist-nya).
@@ -60,8 +63,6 @@ export function validateMemoEdits(merged: any, phase2: boolean): string | null {
   }
   return null;
 }
-
-const KNOWN_FORWARDERS = ['OCTAGON LOGISTIC', 'PT. JIANQIAO LOGISTICS INDONESIA'];
 
 // NOTE 3 format baku "BARANG DITERIMA LOG {KOTA} {DD/MM/YYYY}" -- kota otomatis dari
 // `cost_validasi_far_overseas_air.rate_row_used.tujuan`, tanggal = "Goods received date".
@@ -135,36 +136,45 @@ function MemoTitleSelect({ value, options, onChange, onAddOption, disabled }: {
   );
 }
 
-// NOTE 1 = 3 dropdown (Origin / Destination / Via) dari tarif aktif vendor yang cocok `ship_via`
-// (`vendorTargetFromShipVia`). Nilai awal di-parse dari `route_note` tersimpan; kalau tidak cocok
-// opsi mana pun, dropdown dibiarkan KOSONG. `route_note` baru di-commit HANYA kalau ketiganya
-// terisi (format baku butuh ketiganya) -- `parseRouteNote()` regex WAJIB tetap cocok.
-function RouteNoteSelects({ value, shipVia, tarifVendorRows, onChange, disabled }: {
-  value: string | null; shipVia: string | null | undefined; tarifVendorRows: RateRow[]; onChange: (v: string | null) => void; disabled?: boolean;
+// NOTE 1 = 3 dropdown (Origin / Destination / Via) dari tarif aktif VENDOR SHIPMENT (`resolveShipmentVendor`, 2026-10-27): `ship_via` yang sama
+// persis dgn nama vendor ber-quotation aktif (pilihan manual), selain itu `vendor_matched` dari cost validation (diisi n8n utk SEMUA vendor
+// ber-quotation aktif) -- TIDAK lagi menebak "OCTAGON"/"JIANQIAO" dari teks ship_via. Nilai awal di-parse dari `route_note` tersimpan; kalau
+// tidak cocok opsi mana pun, dropdown dibiarkan KOSONG. `route_note` baru di-commit HANYA kalau ketiganya terisi (format baku butuh
+// ketiganya, jenis HURUF BESAR mis. "(REGULER)") -- `parseRouteNote()` regex WAJIB tetap cocok.
+function RouteNoteSelects({ value, shipVia, vendorMatched, costCatatan, tarifVendorRows, onChange, disabled }: {
+  value: string | null; shipVia: string | null | undefined; vendorMatched: string | null | undefined; costCatatan: string | null | undefined
+  tarifVendorRows: RateRow[]; onChange: (v: string | null) => void; disabled?: boolean;
 }) {
-  const vendorTarget = vendorTargetFromShipVia(shipVia);
-  const vendorRows = tarifVendorRows.filter(t => t.vendor_name === vendorTarget && t.aktif !== false);
+  const vendor = resolveShipmentVendor({ shipVia, vendorMatched, vendorNames: activeTarifVendorNames(tarifVendorRows) });
+  const vendorUpper = (vendor.name || '').toUpperCase();
+  const vendorRows = vendorUpper ? tarifVendorRows.filter(t => (t.vendor_name || '').trim().toUpperCase() === vendorUpper && t.aktif !== false) : [];
   const originOptions = Array.from(new Set(vendorRows.map(t => t.origin).filter(Boolean) as string[])).sort();
   const tujuanOptions = Array.from(new Set(vendorRows.map(t => t.tujuan).filter(Boolean) as string[])).sort();
-  // Via / service dibatasi 2 pilihan (2026-10-21, permintaan user) -- bukan lagi dari jenis_layanan tarif.
-  const jenisOptions = ['Air Freight', 'Sea Freight'];
+  // Jenis layanan: Air / Sea / Reguler / Express / Economy + jenis lain yang ada di tarif vendor ini. Nama lama ("Sea Freight") tetap terbaca (jenisLayananEquals).
+  const jenisOptions = jenisOptionsFor(vendorRows);
 
   const parsed = parseRouteNote(value);
   const findMatch = (options: string[], parsedVal: string | undefined): string => {
     if (!parsedVal) return '';
     return options.find(o => o.toUpperCase() === parsedVal.toUpperCase()) || '';
   };
+  const findJenis = (parsedVal: string | null | undefined): string => (parsedVal ? jenisOptions.find(o => jenisLayananEquals(o, parsedVal)) || '' : '');
   const originSel = findMatch(originOptions, parsed?.origin);
   const tujuanSel = findMatch(tujuanOptions, parsed?.destination);
-  const jenisSel = findMatch(jenisOptions, parsed?.mode) || findMatch(jenisOptions, mapModeToJenisLayanan(parsed?.mode) || undefined);
+  const jenisSel = findJenis(parsed?.mode) || findJenis(mapModeToJenisLayanan(parsed?.mode));
 
   const commit = (o: string, t: string, j: string) => {
     if (!o || !t || !j) return;
     onChange(`PENGIRIMAN DARI ${o.toUpperCase()} KE ${t.toUpperCase()} (${j.toUpperCase()})`);
   };
 
-  if (!vendorTarget) {
-    return <p className="text-xs text-amber-800 bg-amber-50 rounded-xl px-3 py-2">Route options come from Vendor Rates — set "Ship via" to OCTAGON or JIANQIAO first.</p>;
+  if (!vendor.name) {
+    return (
+      <div className="text-xs text-amber-800 bg-amber-50 rounded-xl px-3 py-2 space-y-1" data-route-vendor-missing>
+        <p>Vendor is not matched to any active quotation yet — check the vendor name and that the quotation is active in Vendor Rates, or pick the vendor in “Ship via”.</p>
+        {costCatatan && <p className="text-[#6E5E70]">Cost validation note: <span className="font-semibold">{costCatatan}</span></p>}
+      </div>
+    );
   }
   return (
     <div className="grid grid-cols-3 gap-2">
@@ -214,8 +224,10 @@ const joinVessels = (list: PoListEntry[]): string | null => {
   return uniq.length ? uniq.join(' + ') : null;
 };
 const cellInputCls = 'w-full border border-[#EADFD6] rounded-xl px-3 py-2 text-xs text-[#2A1A2C] bg-white focus:outline-none focus:ring-2 focus:ring-[#6B3470]/25 focus:border-[#6B3470] disabled:bg-[#FBF3EC] disabled:text-[#6E5E70]';
-function PoVesselWeightTable({ row, merged, poList, readOnly, setVal, getVal, badge, companyCodes }: {
+function PoVesselWeightTable({ row, merged, poList, readOnly, setVal, getVal, badge, companyCodes, hideVesselBox = false }: {
   row: any; merged: any; poList: PoListEntry[]; readOnly: boolean;
+  // Memo Non-PO tanpa po_list (2026-10-27): kotak "PO · Vessel" DIHAPUS -- kapal diisi lewat field Remark (NOTE 2), lihat `nonPoRemark`.
+  hideVesselBox?: boolean;
   setVal: (r: any, field: string, value: any) => void; getVal: (r: any, field: string) => any; badge: React.ReactNode;
   companyCodes: string[];
 }) {
@@ -273,6 +285,7 @@ function PoVesselWeightTable({ row, merged, poList, readOnly, setVal, getVal, ba
   const fromAi = getPoList(row).length > 0 && !(Array.isArray(row.edited_fields) && row.edited_fields.includes('po_list'));
 
   if (poList.length === 0) {
+    if (hideVesselBox) return null;
     return (
       <div className="md:col-span-2 rounded-2xl border border-[#EADFD6] px-4 py-3">
         <p className="text-xs font-semibold text-[#2A1A2C] flex items-center gap-1.5">PO · Vessel {badge}</p>
@@ -548,6 +561,8 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
   // Non-PO (tahap 2): field PO number disembunyikan (nilai lama TIDAK dihapus).
   const effType = effectivePaymentType(merged);
   const hidePoNumber = ctx.phase2 && effType === 'NON_PO';
+  // Non-PO tanpa daftar PO: field Remark (NOTE 2) = KAPAL memo juga (ditulis ke `item_description_manual` DAN `vessel_internal_note`; fungsi kotak "PO · Vessel" yang dihapus).
+  const nonPoRemark = hidePoNumber && poList.length === 0;
   const companyCodes = ctx.companyOptions.length > 0 ? ctx.companyOptions.map(c => c.company_code) : COMPANY_CODES;
   // "PO number(s)" diedit -> tabel PO · Vessel · KG ikut (2026-10-05, permintaan user): PO baru dibuat dgn
   // vendor = Vendor memo & PT dari kode nomor PO; PO lama membawa kapal/KG-nya.
@@ -720,7 +735,7 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
                   </div>
                 )}
                 {Array.isArray(aiFindings) && aiFindings.length > 0 && (
-                  <p className="mt-2 text-[11px] text-[#6E5E70]">AI findings confirmed: {aiFindings.map((f: any) => `${String(f.finding).toLowerCase()} (“${f.note}”)`).join(', ')}</p>
+                  <p className="mt-2 text-[11px] text-[#6E5E70]">AI findings confirmed: {aiFindings.map((f: any) => `${findingLabel(f.finding)} (“${f.note}”)`).join(', ')}</p>
                 )}
               </section>
             )}
@@ -728,7 +743,7 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
             <section>
               <SectionTitle>Document</SectionTitle>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <PoVesselWeightTable row={row} merged={merged} poList={poList} readOnly={readOnly} setVal={setVal} getVal={getVal} companyCodes={companyCodes}
+                <PoVesselWeightTable row={row} merged={merged} poList={poList} readOnly={readOnly} setVal={setVal} getVal={getVal} companyCodes={companyCodes} hideVesselBox={hidePoNumber}
                   badge={isPending('po_list') || isPending('vessel_internal_note') ? <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#6B3470] text-white">UNSAVED</span> : null} />
                 <label className="block md:col-span-2"><Label field="memo_title">Memo title</Label>
                   <MemoTitleSelect value={getVal(row, 'memo_title')} options={ctx.memoTitleOptions} disabled={readOnly} onChange={v => setVal(row, 'memo_title', v)} onAddOption={ctx.addMemoTitleOption} />
@@ -749,7 +764,8 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
                       setVal(row, 'ship_via', v);
                       if (merged.invoice_received_date || effectiveGoods()) recomputeDue(v, merged.invoice_received_date, effectiveGoods());
                     }} className={inputCls} />
-                  <datalist id="far-known-forwarders">{KNOWN_FORWARDERS.map(f => <option key={f} value={f} />)}</datalist>
+                  {/* Dropdown vendor = vendor yang punya quotation AKTIF (bukan lagi daftar hardcode 2 vendor); teks bebas tetap boleh (Payable to). */}
+                  <datalist id="far-known-forwarders">{activeTarifVendorNames(ctx.tarifVendorRows).map(f => <option key={f} value={f} />)}</datalist>
                 </label>
                 <label className="block"><Label field="no_invoice">Invoice no</Label>{text('no_invoice')}</label>
                 <label className="block"><Label field="invoice_date">Invoice date</Label>{date('invoice_date')}</label>
@@ -939,7 +955,7 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
                   <span className="w-6 h-6 rounded-full bg-[#3B1B3D] text-white text-xs font-bold flex items-center justify-center shrink-0">1</span>
                   <div className="flex-1 min-w-0">
                     <Label field="route_note">Route</Label>
-                    <RouteNoteSelects value={getVal(row, 'route_note')} shipVia={merged.ship_via} tarifVendorRows={ctx.tarifVendorRows} disabled={readOnly} onChange={v => setVal(row, 'route_note', v)} />
+                    <RouteNoteSelects value={getVal(row, 'route_note')} shipVia={merged.ship_via} vendorMatched={ctx.vendorMatched} costCatatan={ctx.costCatatan} tarifVendorRows={ctx.tarifVendorRows} disabled={readOnly} onChange={v => setVal(row, 'route_note', v)} />
                     <NotePreview>{getVal(row, 'route_note') || '—'}</NotePreview>
                   </div>
                 </div>
@@ -947,7 +963,23 @@ export default function FarOverseasAirEditMemoModal({ row, ctx, readOnly, readOn
                   <span className="w-6 h-6 rounded-full bg-[#3B1B3D] text-white text-xs font-bold flex items-center justify-center shrink-0">2</span>
                   <div className="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-3 gap-2">
                     <label className="block md:col-span-2"><Label field="item_description">Items</Label>{area('item_description', 2)}</label>
-                    <label className="block"><Label field="item_description_manual" hint="(in brackets)">Remark</Label>{text('item_description_manual', 'LARTAS / SECONDHAND')}</label>
+                    <label className="block"><Label field="item_description_manual" hint={nonPoRemark ? '(in brackets · also the memo vessel)' : '(in brackets)'}>Remark</Label>
+                      {nonPoRemark ? (
+                        <>
+                          <input type="text" value={getVal(row, 'item_description_manual') ?? ''} placeholder="Vessel name / LARTAS / SECONDHAND" disabled={readOnly}
+                            onChange={e => {
+                              // Remark = kapal memo Non-PO: tulis ke dua kolom sekaligus (vessel_internal_note dibaca laporan Cost by Vessel & syarat "Vessel is not filled in").
+                              const v = e.target.value === '' ? null : e.target.value;
+                              setVal(row, 'item_description_manual', v);
+                              setVal(row, 'vessel_internal_note', v);
+                            }}
+                            className={`${inputCls} ${!String(getVal(row, 'vessel_internal_note') || '').trim() ? 'border-amber-300' : ''}`} data-nonpo-remark />
+                          {String(getVal(row, 'vessel_internal_note') || '').trim() && String(getVal(row, 'vessel_internal_note')).trim() !== String(getVal(row, 'item_description_manual') || '').trim() && (
+                            <span className="block text-[11px] text-[#6E5E70] mt-1">Vessel on record: <b>{String(getVal(row, 'vessel_internal_note'))}</b> — typing here replaces it.</span>
+                          )}
+                        </>
+                      ) : text('item_description_manual', 'LARTAS / SECONDHAND')}
+                    </label>
                     <div className="md:col-span-3"><NotePreview>ITEMS : {merged.item_description || ''}{merged.item_description_manual ? ` (${merged.item_description_manual})` : ''}</NotePreview></div>
                   </div>
                 </div>

@@ -94,6 +94,12 @@ export function getConfirmedFinding(rec: any, finding: string): ConfirmedFinding
   if (!Array.isArray(list)) return null;
   return list.find((x: any) => x?.finding === finding) || null;
 }
+// Nama temuan utk tampilan (kunci disimpan di ai_findings_confirmed): OVERCHARGE / UNDERCHARGE / DUPLICATE + per baris cost (sql/082).
+const FINDING_LABEL: Record<string, string> = {
+  OVERCHARGE: 'overcharge', UNDERCHARGE: 'undercharge', DUPLICATE: 'possible duplicate',
+  ROW_KG: 'weight check', ROW_UNIT_PRICE: 'unit price check', ROW_OTHER_CHARGES: 'other charges check',
+};
+export const findingLabel = (key: string | null | undefined): string => FINDING_LABEL[String(key || '')] ?? String(key || '').toLowerCase();
 export function isCostStatusConfirmed(rec: any, status: string | null | undefined): boolean {
   return (status === 'OVERCHARGE' || status === 'UNDERCHARGE') && !!getConfirmedFinding(rec, status);
 }
@@ -483,18 +489,53 @@ export function mapModeToJenisLayanan(modeText: string | null | undefined): stri
   if (!modeText) return null;
   const trimmed = modeText.trim();
   const upper = trimmed.toUpperCase();
-  if (upper.includes('REGULER') || upper === 'REG') return 'Reguler Freight';
+  // Nama jenis sejak 2026-10-27: Air / Sea / Reguler (dulu "Air Freight" / "Sea Freight" / "Reguler Freight"; SQL 25 di n8n mengganti data tarif).
+  if (upper.includes('REGULER') || upper === 'REG') return 'Reguler';
   if (upper.includes('ECONOMY')) return 'Economy';
   if (upper.includes('EXPRESS')) return 'Express';
-  if (upper.includes('SEA')) return 'Sea Freight';
-  if (upper.includes('AIR')) return 'Air Freight';
+  if (upper.includes('SEA')) return 'Sea';
+  if (upper.includes('AIR')) return 'Air';
   return trimmed || null;
 }
 
-// Vendor tarif (`far_overseas_tarif_vendor.vendor_name`) yang cocok dgn `ship_via` shipment --
-// SATU-SATUNYA tempat pemetaan OCTAGON/JIANQIAO (dipakai `rematchTarif` di bawah DAN
-// `RouteNoteEditCell` utk membangun opsi 3 dropdown NOTE 1 per-baris) -- JANGAN duplikat logic
-// pemetaan ini di tempat lain.
+// Jenis layanan standar di dropdown (NOTE 1 & Kelola Quotation). Jenis lain yang sudah ada di data tarif ikut ditampilkan (lihat `jenisOptionsFor`).
+export const JENIS_LAYANAN_STANDARD = ['Air', 'Sea', 'Reguler', 'Express', 'Economy'];
+// Kunci banding jenis: huruf besar tanpa akhiran " FREIGHT" -> "Sea Freight" (nama LAMA, mis. snapshot `rate_row_used` lama) == "Sea" (nama baru).
+export const normJenisLayanan = (v: string | null | undefined): string => String(v ?? '').trim().toUpperCase().replace(/\s+FREIGHT$/, '');
+export const jenisLayananEquals = (a: string | null | undefined, b: string | null | undefined): boolean => !!normJenisLayanan(a) && normJenisLayanan(a) === normJenisLayanan(b);
+// "Sea" / "Sea Freight" (case-insensitive) -- dipakai kondisi field Kategori Barang Jianqiao.
+export const isSeaJenis = (v: string | null | undefined): boolean => /^sea( freight)?$/i.test(String(v ?? '').trim());
+// Opsi dropdown Jenis Layanan: 5 standar + jenis lain yang ADA di tarif vendor itu (nama lama "... Freight" dilipat ke nama baru, tanpa dobel).
+export function jenisOptionsFor(vendorRows: { jenis_layanan?: string | null }[]): string[] {
+  const out = [...JENIS_LAYANAN_STANDARD];
+  vendorRows.forEach(r => {
+    const j = String(r.jenis_layanan ?? '').trim();
+    if (j && !out.some(o => jenisLayananEquals(o, j))) out.push(j);
+  });
+  return out;
+}
+
+// Vendor shipment utk NOTE 1 / pencocokan tarif (2026-10-27, perbaikan "vendor baru"): TIDAK lagi menebak dari teks ship_via ("OCTAGON"/"JIANQIAO").
+//   1. `ship_via` yang SAMA PERSIS (case-insensitive) dgn nama vendor ber-quotation aktif = pilihan manual user (dropdown Ship via) -> dipakai.
+//   2. selain itu `cost_validasi_far_overseas_air.vendor_matched` (diisi n8n generik utk SEMUA vendor ber-quotation aktif).
+//   3. keduanya tak ada -> null (UI menampilkan pesan "Vendor belum cocok…" + catatan cost validation).
+// Nama dikembalikan PERSIS seperti di tarif (`vendor_name`), supaya `.eq('vendor_name', …)` / perbandingan langsung cocok.
+export function resolveShipmentVendor({ shipVia, vendorMatched, vendorNames }: {
+  shipVia: string | null | undefined; vendorMatched: string | null | undefined; vendorNames: string[];
+}): { name: string | null; source: 'ship_via' | 'vendor_matched' | null } {
+  const eq = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.trim().toUpperCase() === b.trim().toUpperCase();
+  const byShipVia = vendorNames.find(n => eq(n, shipVia));
+  if (byShipVia) return { name: byShipVia, source: 'ship_via' };
+  const matched = String(vendorMatched ?? '').trim();
+  if (matched) return { name: vendorNames.find(n => eq(n, matched)) ?? matched, source: 'vendor_matched' };
+  return { name: null, source: null };
+}
+// Daftar nama vendor yang punya quotation AKTIF (dari `fetchActiveTarifRateRows`) -- sumber dropdown "Ship via" & pencocokan nama.
+export const activeTarifVendorNames = (rows: { vendor_name?: string | null; aktif?: boolean | null }[]): string[] =>
+  Array.from(new Set(rows.filter(r => r.aktif !== false).map(r => String(r.vendor_name ?? '').trim()).filter(Boolean))).sort();
+
+// Target vendor khusus aturan BISNIS Octagon/Jianqiao (due date, goods received date) dari teks `ship_via`. BUKAN lagi dipakai utk dropdown
+// NOTE 1 / pencocokan tarif (itu `resolveShipmentVendor`) -- aturan due date memang hanya utk 2 vendor ini.
 export function vendorTargetFromShipVia(shipVia: string | null | undefined): string | null {
   const shipViaUpper = (shipVia || '').toUpperCase();
   if (shipViaUpper.includes('OCTAGON')) return 'OCTAGON LOGISTIC';
@@ -510,25 +551,24 @@ export function vendorTargetFromShipVia(shipVia: string | null | undefined): str
 // baik oleh alur re-kalkulasi otomatis setelah edit NOTE 1 (`FarOverseasAirPage.tsx`) maupun
 // (kalau nanti dibutuhkan) fitur pilih-rate-manual, supaya logic-nya tidak pernah pecah jadi 2
 // salinan berbeda. Return array kandidat: 0 = tidak ketemu, 1 = pasti, >1 = ambigu (user pilih manual).
-export function rematchTarif({ vendorRows, shipVia, jenisLayananSaatIni, origin, tujuan, qty }: {
+export function rematchTarif({ vendorRows, vendorName, jenisLayananSaatIni, origin, tujuan, qty }: {
   vendorRows: RateRow[];
-  shipVia: string | null | undefined;
+  // Vendor shipment = hasil `resolveShipmentVendor` (ship_via pilihan manual, atau vendor_matched dari n8n). null -> tidak ada kandidat.
+  vendorName: string | null | undefined;
   jenisLayananSaatIni: string | null | undefined;
   origin: string | null | undefined;
   tujuan: string | null | undefined;
   qty: number | null;
 }): RateRow[] {
-  const vendorTarget = vendorTargetFromShipVia(shipVia);
+  const vendorUpper = (vendorName || '').trim().toUpperCase();
 
-  let candidates = vendorRows.filter(t => t.vendor_name === vendorTarget && t.aktif !== false);
+  let candidates = vendorUpper ? vendorRows.filter(t => (t.vendor_name || '').trim().toUpperCase() === vendorUpper && t.aktif !== false) : [];
 
   if (jenisLayananSaatIni) {
     // Case-INSENSITIVE (2026-09, GANTI dari `===` strict) -- simetris dgn matching origin/tujuan
-    // di bawah. NOTE 1 dikomposisi UPPERCASE dari dropdown Jenis Layanan (lihat
-    // `RouteNoteEditCell`/`mapModeToJenisLayanan`), sementara `jenis_layanan` di tabel tarif bisa
-    // apa saja casing-nya (mis. "Air Freight") -- strict match akan gagal walau isinya sama.
-    const jenisUpper = jenisLayananSaatIni.toUpperCase();
-    const byJenis = candidates.filter(t => t.jenis_layanan && t.jenis_layanan.toUpperCase() === jenisUpper);
+    // di bawah. NOTE 1 dikomposisi UPPERCASE dari dropdown Jenis Layanan, sementara `jenis_layanan` di tabel tarif bisa
+    // apa saja casing-nya. Sejak 2026-10-27 nama lama "Sea Freight" == "Sea" (`jenisLayananEquals`, akhiran " FREIGHT" diabaikan).
+    const byJenis = candidates.filter(t => jenisLayananEquals(t.jenis_layanan, jenisLayananSaatIni));
     if (byJenis.length > 0) candidates = byJenis;
   }
 
@@ -574,7 +614,8 @@ export function computeCostStatus(totalExpected: number | null, totalActual: num
 // ═══════════════════════════════════════════════════════════════════════════════════════════
 
 export type ApprovalStep = 'TIER1' | 'PIC' | 'TIER2' | 'TIER3';
-export type ApprovalEntry = { tier: number | 'PIC'; nama: string; jabatan: string; approved_at: string; user_email?: string | null };
+// `signature_path` (sql/083) = SNAPSHOT tanda tangan penanda tangan saat Sign (path file di bucket `user-signatures`); kosong = tanpa tanda tangan (garis kosong di memo).
+export type ApprovalEntry = { tier: number | 'PIC'; nama: string; jabatan: string; approved_at: string; user_email?: string | null; signature_path?: string | null };
 
 export const STEP_ORDER: ApprovalStep[] = ['TIER1', 'PIC', 'TIER2', 'TIER3'];
 // Nama jabatan per tahap (UI). TIER2 = Exim Supervisor & TIER3 = Director utk PT biasa --
@@ -922,6 +963,8 @@ export type CostInfo = {
   notesManual: string | null;
   unitPriceStatus: string | null;
   catatan: string | null;
+  // Vendor yang dicocokkan n8n ke quotation aktif (`vendor_matched`); null = belum cocok. Dipakai dropdown NOTE 1 (`resolveShipmentVendor`).
+  vendorMatched?: string | null;
 };
 
 // Ringkasan `cost_validasi_far_overseas_air` per memo -- 1 query batch (dipakai card/list/My
@@ -932,7 +975,7 @@ export async function fetchCostInfoMap(ids: (string | number)[]): Promise<Record
   if (!ids.length) return out;
   const { data, error } = await supabase
     .from('cost_validasi_far_overseas_air')
-    .select('far_overseas_id, status, rate_row_used, notes_manual, cost_validation, catatan')
+    .select('far_overseas_id, status, rate_row_used, notes_manual, cost_validation, catatan, vendor_matched')
     .in('far_overseas_id', ids);
   if (error) { console.error('fetchCostInfoMap failed:', error); return out; }
   (data || []).forEach((c: any) => {
@@ -948,6 +991,7 @@ export async function fetchCostInfoMap(ids: (string | number)[]): Promise<Record
       notesManual: c.notes_manual ?? null,
       unitPriceStatus: computeCostStatus(exp, act),
       catatan: c.catatan ?? null,
+      vendorMatched: c.vendor_matched ?? null,
     };
   });
   return out;
@@ -1129,6 +1173,53 @@ export function isPaymentAlarmActive(rec: any): boolean {
   if (st === 'REJECTED') return false;
   if (st === 'APPROVED') return !!rec?.finance_received_at && !rec?.paid_at;
   return true;
+}
+
+// ─── Lonceng "Payment due alerts" (2026-10-27, permintaan user) ────────────────────────────────────────────
+// 4 bagian (urut tetap): Approval reminder (menunggu approval melewati batas hari kerja) | Overdue | Due within N days | On hold (barang belum diterima).
+// SATU memo boleh muncul di lebih dari satu bagian (mis. overdue DAN menunggu approval) -- badge lonceng = jumlah memo UNIK (`uniqueIds`).
+// Aturan SAMA dgn alarm lama: memo REJECTED / sudah Paid tidak ikut (`isPaymentAlarmActive`); on hold efektif = `isOnHold` (Urgent tidak pernah on hold).
+export type PaymentAlertKind = 'approval' | 'overdue' | 'soon' | 'onHold';
+export type PaymentAlertItem = { id: string; rec: any; kind: PaymentAlertKind; ref: string; party: string; line: string; dueSort: string };
+export type PaymentAlerts = { approval: PaymentAlertItem[]; overdue: PaymentAlertItem[]; soon: PaymentAlertItem[]; onHold: PaymentAlertItem[]; uniqueIds: string[] };
+
+// Tanggal 2 digit di lonceng ("02 Oct 2026"), termasuk catatan "Moved from …" yang tersimpan tanpa nol di depan.
+const pad2Day = (t: string) => t.replace(/(^|[^0-9])([0-9]) (?=[A-Z][a-z]{2} [0-9]{4})/g, (_m, pre: string, d: string) => `${pre}0${d} `);
+const fmtAlertDate = (d: Date) => pad2Day(formatDateShort(d));
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
+
+export function buildPaymentAlerts(recs: any[], windowDays: number, now: Date = new Date()): PaymentAlerts {
+  const out: PaymentAlerts = { approval: [], overdue: [], soon: [], onHold: [], uniqueIds: [] };
+  const seen = new Set<string>();
+  const mk = (rec: any, kind: PaymentAlertKind, line: string): PaymentAlertItem => ({
+    id: String(rec.id), rec, kind,
+    ref: rec.memo_no || rec.memo_title || 'Untitled memo',
+    party: String(rec.ship_via || rec.vendor || '').trim(),
+    line, dueSort: getMemoDueValue(rec) || '9999-12-31',
+  });
+  const push = (list: PaymentAlertItem[], item: PaymentAlertItem) => { list.push(item); seen.add(item.id); };
+  (recs || []).forEach(rec => {
+    if (!rec?.id || rec.approval_status === 'REJECTED') return;
+    const wait = isInApprovalPipeline(rec.approval_status) ? getWaitInfo(rec, now) : null;
+    if (wait?.overLimit) push(out.approval, mk(rec, 'approval', `Waiting for ${STEP_LABEL[wait.step]} · ${plural(wait.days ?? 0, 'working day')} · limit ${wait.limit}`));
+    if (!isPaymentAlarmActive(rec)) return;
+    const dueVal = getMemoDueValue(rec);
+    const due = getDueInfo(dueVal, windowDays, now);
+    if (isOnHold(rec)) {
+      const moved = typeof rec.due_date_note === 'string' && rec.due_date_note.startsWith('Moved from') ? ` ${pad2Day(rec.due_date_note.replace(/ to Friday.*$/, ' to Friday.'))}` : '';
+      push(out.onHold, mk(rec, 'onHold', due
+        ? `Due ${fmtAlertDate(due.date)} — On hold — goods must already be received.${moved}`
+        : 'On hold — goods not received yet.'));
+      return;
+    }
+    if (!due) return;
+    if (due.level === 'overdue') push(out.overdue, mk(rec, 'overdue', `Due ${fmtAlertDate(due.date)} — Overdue by ${plural(-due.daysLeft, 'day')}.`));
+    else if (due.level === 'today') push(out.soon, mk(rec, 'soon', `Due ${fmtAlertDate(due.date)} — Due today.`));
+    else if (due.level === 'soon') push(out.soon, mk(rec, 'soon', `Due ${fmtAlertDate(due.date)} — Due in ${plural(due.daysLeft, 'day')}.`));
+  });
+  (['overdue', 'soon', 'onHold'] as const).forEach(k => out[k].sort((a, b) => a.dueSort.localeCompare(b.dueSort)));
+  out.uniqueIds = Array.from(seen);
+  return out;
 }
 
 // Penandatangan tahap 3/4 per PT (`far_overseas_step_signers`). null = tabel belum ada.

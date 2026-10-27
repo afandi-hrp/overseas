@@ -4,8 +4,10 @@ import { useAuth } from '../lib/AuthContext';
 import { PlaneTakeoff, ChevronDown, ChevronRight as ChevronRightIcon, ChevronLeft, Plus, Settings2, X, RotateCcw } from 'lucide-react';
 import Greeting from '../components/Greeting';
 import { LoadingState } from '../components/LoadingState';
+import { JENIS_LAYANAN_STANDARD, isSeaJenis, jenisLayananEquals } from '../utils/FarOverseasAirHelpers';
 
-const JENIS_LAYANAN_OPTIONS = ['Air Freight', 'Sea Freight', 'Reguler Freight', 'Express', 'Economy'];
+// Air / Sea / Reguler / Express / Economy (2026-10-27: dulu "Air Freight" / "Sea Freight" / "Reguler Freight"; data diganti SQL 25 di n8n). Jenis lain yang sudah ada di data tetap ditampilkan saat edit.
+const JENIS_LAYANAN_OPTIONS = JENIS_LAYANAN_STANDARD;
 const MATA_UANG_OPTIONS = ['IDR', 'USD', 'RMB'];
 // "BATTERY" -> "ELECTRONICS" (2026-09, permintaan user) -- lingkup diperluas dari cuma baterai
 // jadi barang elektronik pada umumnya (sensor/controller/relay/dst). Value ini disimpan APA
@@ -46,7 +48,7 @@ type QuotationDetail = {
 
 // Level 1 (Card): vendor+origin+tujuan SAJA -- 1 card = 1 rute, TIDAK peduli jenis layanan
 // (2026-09, permintaan user "1 card per Vendor+Origin+Tujuan"). Level 2 (Sub-section, di
-// DALAM card): jenis_layanan(+kategori_barang, khusus Jianqiao Sea Freight yang py beberapa
+// DALAM card): jenis_layanan(+kategori_barang, khusus Jianqiao Sea yang py beberapa
 // tarif beda per kategori barang dalam jenis layanan yang sama -- TETAP dipisah sub-section
 // biar tidak nyampur 2 tarif berbeda, spek asli cuma sebut "jenis_layanan" tapi kategori_barang
 // perlu ikut supaya data tidak salah gabung).
@@ -183,7 +185,8 @@ export default function FarOverseasVendorTarifPage() {
   const [detailForms, setDetailForms] = useState<Record<string, DetailForm | null>>({});
   const [savingDetailFor, setSavingDetailFor] = useState<string | null>(null);
 
-  const showKategoriBarang = qVendorName === JIANQIAO_VENDOR_NAME && qJenisLayanan === 'Sea Freight';
+  // Case-insensitive & toleran nama lama ("Sea Freight" / "Sea").
+  const showKategoriBarang = qVendorName === JIANQIAO_VENDOR_NAME && isSeaJenis(qJenisLayanan);
 
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
@@ -883,7 +886,7 @@ export default function FarOverseasVendorTarifPage() {
               <div>
                 <label className="block text-xs font-semibold text-[#5A305A] mb-1">Jenis Layanan <span className="text-red-500">*</span></label>
                 <select required disabled={!!qCloseOldId} value={qJenisLayanan} onChange={e => setQJenisLayanan(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm disabled:bg-slate-100">
-                  {JENIS_LAYANAN_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                  {[...JENIS_LAYANAN_OPTIONS, ...(qJenisLayanan && !JENIS_LAYANAN_OPTIONS.some(o => jenisLayananEquals(o, qJenisLayanan)) ? [qJenisLayanan] : [])].map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
               </div>
 
@@ -905,7 +908,7 @@ export default function FarOverseasVendorTarifPage() {
                     <option value="">(Tidak spesifik)</option>
                     {KATEGORI_BARANG_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
-                  <p className="text-[11px] text-[#5A305A] leading-tight mt-1">Khusus Jianqiao Sea Freight — kategori barang menentukan tarif yang berbeda.</p>
+                  <p className="text-[11px] text-[#5A305A] leading-tight mt-1">Khusus Jianqiao Sea — kategori barang menentukan tarif yang berbeda.</p>
                 </div>
               )}
 

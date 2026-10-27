@@ -4,7 +4,7 @@ import { authorize, type UserAccess } from '../auth';
 import {
   DB_GATEWAY_APIKEY, DB_GATEWAY_LOG, DB_GATEWAY_MODE, DB_RATE_LIMIT_PER_MIN, SUPABASE_INTERNAL_URL,
 } from '../config';
-import { RPC_WHITELIST, STORAGE_BUCKET_WHITELIST, TABLE_WHITELIST, type DbOp } from '../db/whitelist';
+import { RPC_WHITELIST, STORAGE_BUCKET_WHITELIST, STORAGE_UPLOAD_BUCKET_WHITELIST, TABLE_WHITELIST, type DbOp } from '../db/whitelist';
 
 // ── Data Gateway (Fase 1, docs/claude/backend-plan.md) ─────────────────────────────────────────────────────────
 // Browser (supabase-js, fetch kustom di src/lib/supabase.ts saat VITE_DB_GATEWAY=on) -> /api/db/rest/v1/* &
@@ -28,7 +28,7 @@ const FORWARD_RES_HEADERS = ['content-type', 'content-range', 'preference-applie
   'cache-control', 'etag', 'last-modified'];
 
 type Target =
-  | { ok: true; kind: 'table' | 'rpc' | 'storage'; name: string; op: DbOp | 'rpc' | 'storage-read' | 'storage-sign'; listed: boolean }
+  | { ok: true; kind: 'table' | 'rpc' | 'storage'; name: string; op: DbOp | 'rpc' | 'storage-read' | 'storage-sign' | 'storage-write'; listed: boolean }
   | { ok: false; status: number; pesan: string };
 
 function classifyRest(sub: string, req: express.Request): Target {
@@ -61,7 +61,12 @@ function classifyStorage(sub: string, req: express.Request): Target {
   if (read && (req.method === 'GET' || req.method === 'HEAD') && read[1] !== 'sign' && read[1] !== 'public') {
     return { ok: true, kind: 'storage', name: read[1], op: 'storage-read', listed: STORAGE_BUCKET_WHITELIST.has(read[1]) };
   }
-  // Selain itu (upload, list, hapus, bucket admin, dst) belum pernah dipakai app -> dicatat sbg UNLISTED.
+  // Upload (POST / PUT object/<bucket>/<path>): hanya bucket di STORAGE_UPLOAD_BUCKET_WHITELIST (tanda tangan user, sql/083).
+  const write = /^object\/([^/]+)\/.+$/.exec(sub);
+  if (write && (req.method === 'POST' || req.method === 'PUT') && write[1] !== 'sign' && write[1] !== 'public' && write[1] !== 'authenticated') {
+    return { ok: true, kind: 'storage', name: write[1], op: 'storage-write', listed: STORAGE_UPLOAD_BUCKET_WHITELIST.has(write[1]) };
+  }
+  // Selain itu (list, hapus, bucket admin, dst) belum pernah dipakai app -> dicatat sbg UNLISTED.
   return { ok: true, kind: 'storage', name: sub.split('/').slice(0, 2).join('/') || '(root)', op: 'storage-read', listed: false };
 }
 

@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { downloadSignatureUrl } from '../utils/SignatureHelpers';
 import {
   formatMoney, formatDateMemo, LOGO_ASSETS, getApprovalEntries, findApprovalEntry, implicitFxRate,
   type SignerConfig, type ApprovalEntry,
@@ -33,11 +34,34 @@ function MemoField({ label, value, bold, labelWidth = 'w-32' }: { label: string;
   );
 }
 
-function SignatureColumn({ label, role, entry, nama }: { label: string; role: string | null; entry?: ApprovalEntry; nama: string | null }) {
+// Gambar tanda tangan (snapshot, `approvals[].signature_path`) diunduh berotentikasi -> object URL (sql/083). Gagal / tanpa tanda tangan = tidak ada gambar (garis kosong).
+function useSignatureUrls(paths: string[]): Record<string, string> {
+  const key = paths.join('|');
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!key) { setUrls({}); return; }
+    let alive = true;
+    const created: string[] = [];
+    (async () => {
+      const out: Record<string, string> = {};
+      await Promise.all(key.split('|').map(async p => { const u = await downloadSignatureUrl(p); if (u) { created.push(u); out[p] = u; } }));
+      if (alive) setUrls(out);
+    })();
+    return () => { alive = false; created.forEach(u => URL.revokeObjectURL(u)); };
+  }, [key]);
+  return urls;
+}
+
+function SignatureColumn({ label, role, entry, nama, signatureUrl }: { label: string; role: string | null; entry?: ApprovalEntry; nama: string | null; signatureUrl?: string | null }) {
   return (
     <div className="flex-1 min-w-0 text-center px-1.5">
-      <p className="text-[11px] mb-12 min-h-[16px]">{label}</p>
-      <div className="border-b border-[#2A1A2C] mb-1 h-6" />
+      <div className="relative">
+        <p className="text-[11px] mb-12 min-h-[16px]">{label}</p>
+        <div className="border-b border-[#2A1A2C] h-6" />
+        {/* Tanda tangan di atas garis, di atas nama (area label + ruang kosong = 64px). */}
+        {signatureUrl && <img src={signatureUrl} alt={`Signature of ${nama || 'approver'}`} data-memo-signature className="absolute left-1/2 -translate-x-1/2 bottom-[2px] max-h-[62px] max-w-[88%] object-contain pointer-events-none" />}
+      </div>
+      <div className="mb-1" />
       <p className="text-[11px] font-bold uppercase break-words">{nama || '( _______________ )'}</p>
       <p className="text-[10px] text-[#6E5E70] mt-0.5 uppercase">{role || '-'}</p>
       <p className="text-[10px] text-[#6E5E70] mt-1">{entry?.approved_at ? `Date: ${formatDateMemo(entry.approved_at)}` : ' '}</p>
@@ -54,6 +78,11 @@ export default function FarOverseasMemoPaper({ rec, signer }: { rec: any; signer
   const fx = implicitFxRate(rec);
   const hasOther = rec.clearance_other_total != null && rec.clearance_other_total !== '' && Number(rec.clearance_other_total) !== 0;
   const preparedRole = signer?.tier1_role || 'EXIM OFFICER';
+  // PIC Shipment OPSIONAL (sql/072): kolom tanda tangan PIC (kolom ke-2 "Exim Officer") HANYA tampil bila PIC dipilih (`pic_user_id`) atau tahap PIC sudah
+  // benar-benar ditandatangani (data lama). Skip -> disembunyikan, juga di cetak & preview Edit memo (rec = memo + perubahan belum tersimpan).
+  const showPicColumn = !!rec.pic_user_id || !!picEntry;
+  const sigUrls = useSignatureUrls([eximEntry, showPicColumn ? picEntry : undefined, tier2Entry, tier3Entry].map(e => e?.signature_path || '').filter(Boolean));
+  const sigOf = (e?: ApprovalEntry) => (e?.signature_path ? sigUrls[e.signature_path] || null : null);
 
   return (
     <div className="bg-white border-2 border-[#2A1A2C] text-[#2A1A2C] print:border-[#2A1A2C]">
@@ -132,12 +161,19 @@ export default function FarOverseasMemoPaper({ rec, signer }: { rec: any; signer
           `far_overseas_signer_config` (sama perilaku lama). */}
       <div className="border-t-2 border-[#2A1A2C] pt-4 pb-3 px-2">
         <div className="flex">
-          <div className="flex-[2] min-w-0 flex border-r border-dashed border-[#EADFD6] print:border-transparent">
-            <SignatureColumn label="Prepared By," role={preparedRole} entry={eximEntry} nama={eximEntry?.nama || null} />
-            <SignatureColumn label="" role={preparedRole} entry={picEntry} nama={picEntry?.nama || null} />
-          </div>
-          <SignatureColumn label="Checked By," role={signer?.tier2_role || null} entry={tier2Entry} nama={tier2Entry?.nama || signer?.tier2_name || null} />
-          <SignatureColumn label="Checked By," role={signer?.tier3_role || null} entry={tier3Entry} nama={tier3Entry?.nama || signer?.tier3_name || null} />
+          {showPicColumn ? (
+            <div className="flex-[2] min-w-0 flex border-r border-dashed border-[#EADFD6] print:border-transparent">
+              <SignatureColumn label="Prepared By," role={preparedRole} entry={eximEntry} nama={eximEntry?.nama || null} signatureUrl={sigOf(eximEntry)} />
+              <SignatureColumn label="" role={preparedRole} entry={picEntry} nama={picEntry?.nama || null} signatureUrl={sigOf(picEntry)} />
+            </div>
+          ) : (
+            /* PIC Shipment dilewati (skip): kolom tanda tangan PIC disembunyikan -> 3 kolom sama lebar (Prepared By, Checked By x2). */
+            <div className="flex-1 min-w-0 flex border-r border-dashed border-[#EADFD6] print:border-transparent" data-memo-no-pic>
+              <SignatureColumn label="Prepared By," role={preparedRole} entry={eximEntry} nama={eximEntry?.nama || null} signatureUrl={sigOf(eximEntry)} />
+            </div>
+          )}
+          <SignatureColumn label="Checked By," role={signer?.tier2_role || null} entry={tier2Entry} nama={tier2Entry?.nama || signer?.tier2_name || null} signatureUrl={sigOf(tier2Entry)} />
+          <SignatureColumn label="Checked By," role={signer?.tier3_role || null} entry={tier3Entry} nama={tier3Entry?.nama || signer?.tier3_name || null} signatureUrl={sigOf(tier3Entry)} />
         </div>
       </div>
     </div>

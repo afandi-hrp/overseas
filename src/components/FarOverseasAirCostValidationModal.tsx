@@ -12,9 +12,9 @@ import {
   ensureFarFont, FAR_FONT_FAMILY, type RateRow, type PoListEntry, type WeightUnit,
 } from '../utils/FarOverseasAirHelpers';
 import { isAutoSplitCase } from '../utils/FarOverseasAirHelpers';
+import { rowCheck, deriveRowFindings, type CostValRow } from '../utils/FarOverseasAirCostRows';
 
 type DocValRow = { po_no?: string | null; company_code?: string | null; po_document_ditemukan?: boolean | null; edited?: boolean; po_no_dari_remark_invoice?: string | null };
-type CostValRow = { row_key: string; expected?: any; actual?: any; notes?: string | null; edited?: boolean };
 
 const COST_ROW_LABELS: Record<string, string> = {
   KG: 'KG',
@@ -57,27 +57,6 @@ function DocStatusBadge({ status }: { status: 'SESUAI' | 'TIDAK SESUAI' | '-' })
       {isMatch ? <CheckCircle2 size={11} /> : <AlertTriangle size={11} />} {isMatch ? 'Match' : 'Mismatch'}
     </span>
   );
-}
-
-// Status per baris tabel biaya (spek: Match / Above / Below) -- Unit price & TOTAL pakai
-// `computeCostStatus()` (SATU-SATUNYA fungsi status cost, toleransi 3%).
-function rowCheck(row: CostValRow): { label: string; cls: string } | null {
-  const exp = row.expected != null && row.expected !== '' ? Number(row.expected) : null;
-  const act = row.actual != null && row.actual !== '' ? Number(row.actual) : null;
-  if (row.row_key === 'KG') {
-    if (exp == null || act == null || isNaN(exp) || isNaN(act)) return null;
-    return act >= exp ? { label: 'OK', cls: 'bg-emerald-50 text-emerald-700' } : { label: 'Below min.', cls: 'bg-amber-50 text-amber-800' };
-  }
-  if (row.row_key === 'OTHER_CHARGES') {
-    if (act == null || act === 0) return { label: 'OK', cls: 'bg-emerald-50 text-emerald-700' };
-    if (exp == null) return { label: 'Not in quotation', cls: 'bg-rose-50 text-rose-700' };
-  }
-  if (exp == null || act == null || isNaN(exp) || isNaN(act)) return null;
-  const st = computeCostStatus(exp, act);
-  if (st === 'MATCH') return { label: 'Match', cls: 'bg-emerald-50 text-emerald-700' };
-  if (st === 'OVERCHARGE') return { label: 'Above', cls: 'bg-rose-50 text-rose-700' };
-  if (st === 'UNDERCHARGE') return { label: 'Below', cls: 'bg-amber-50 text-amber-800' };
-  return null;
 }
 
 function EditableCell({ value, onChange, editable = false, align = 'right', placeholder = '—', warn = false }: {
@@ -560,6 +539,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                   const refs = dupMemos.map(d => `${d.memo_no || d.memo_title || 'memo'}${d.no_invoice ? ` (invoice ${d.no_invoice})` : d.po_ori ? ` (PO ${d.po_ori})` : ''}`);
                   findings.push({ key: 'DUPLICATE', title: 'Possible duplicate', detail: `${memoRow.no_invoice ? 'Same invoice number' : 'Same PO number'} as ${refs.length > 0 ? refs.join(', ') : `${dup.length} other memo${dup.length === 1 ? '' : 's'}`} — make sure this invoice is not paid twice.` });
                 }
+                deriveRowFindings(orderedCostRows, memoQtyUnit).forEach(f => findings.push(f));
                 if (findings.length === 0) return null;
                 const canConfirm = canEditDirectLoading && !kgLocked;
                 return (
@@ -600,7 +580,7 @@ export default function FarOverseasAirCostValidationModal({ farOverseasId, onClo
                                   setConfirmingFinding(f.key);
                                   const { data, error } = await supabase.rpc('fn_far_overseas_confirm_ai_finding', { p_id: memoRow.id, p_finding: f.key, p_note: note.trim() });
                                   setConfirmingFinding(null);
-                                  if (error) { showToast('Failed to confirm: ' + error.message, 'error'); return; }
+                                  if (error) { showToast(/Unknown finding/i.test(error.message) && f.key.startsWith('ROW_') ? 'This confirmation needs the latest database update (sql/082). Ask an admin to run it.' : 'Failed to confirm: ' + error.message, 'error'); return; }
                                   setMemoRow((m: any) => ({ ...m, ai_findings_confirmed: data?.ai_findings_confirmed ?? m.ai_findings_confirmed }));
                                   showToast(`${f.title} confirmed.`, 'success');
                                   onChanged?.();
