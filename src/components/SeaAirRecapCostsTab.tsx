@@ -412,7 +412,7 @@ export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, is
                   <div className="flex flex-wrap items-center justify-between gap-2 px-4 pt-2">
                     <span className="text-[11px] text-[#8A7A8B]">Freight is validated against the quotation for this BL.</span>
                     {susulan && !financeView && (
-                      <SeaAirUploadSusulanButton variant="link" label="+ Add quotation" context="quotation" rec={susulan.rec} seaairId={seaairId} onCompleted={susulan.onCompleted} />
+                      <SeaAirUploadSusulanButton inline variant="link" label="+ Add quotation" context="quotation" rec={susulan.rec} seaairId={seaairId} onCompleted={susulan.onCompleted} />
                     )}
                   </div>
                 )}

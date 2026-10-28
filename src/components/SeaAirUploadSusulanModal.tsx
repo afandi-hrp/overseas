@@ -5,9 +5,12 @@
 // Dialog HANYA mengirim; polling status job, indikator "processing", dan refresh data ada di
 // SeaAirUploadSusulanButton.tsx (dialog boleh ditutup saat proses berjalan -- prosesnya di backend n8n).
 // Frontend TIDAK menulis ke tabel hasil apa pun untuk fitur ini; semua lewat webhook.
+// `inline` (2026-10-28, permintaan user: tab Documents & "+ Add quotation" di Invoice Recap TIDAK boleh popup): komponen yang sama
+// dirender sbg panel di tempat (tanpa portal/overlay), error kirim tampil inline, + tempel gambar (Ctrl+V / tombol "Paste image").
+// Tanpa `inline` = modal lama (masih dipakai SeaAirChecklistModal / Audit PIB).
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { UploadCloud, FolderOpen, CheckCircle2, FileText, X, AlertTriangle, RotateCcw, ChevronDown, ChevronRight, XCircle, Loader2, Send } from 'lucide-react'
+import { UploadCloud, FolderOpen, CheckCircle2, FileText, X, AlertTriangle, RotateCcw, ChevronDown, ChevronRight, XCircle, Loader2, Send, ClipboardPaste } from 'lucide-react'
 import { apiFetch } from '../lib/apiFetch'
 import { supabase } from '../lib/supabase'
 import { SA_LABEL, SA_BTN_PRIMARY, SA_BTN_OUTLINE, Chip } from './SeaAirAuditUi'
@@ -96,13 +99,14 @@ const FileRow: React.FC<{ file: File; index: number; disabled: boolean; onRemove
 
 export type SusulanAck = { job_id?: string; status?: string; mode?: string; awb?: string }
 
-export default function SeaAirUploadSusulanModal({ awb, noAju, vendor, seaairId, checklist, context, onClose, onJobStarted, onSentNoJob }: {
+export default function SeaAirUploadSusulanModal({ awb, noAju, vendor, seaairId, checklist, context, inline = false, onClose, onJobStarted, onSentNoJob }: {
   awb: string                       // kolom `awb` shipment yang dibuka (WAJIB; bukan input bebas)
   noAju?: string | null
   vendor?: string | null
   seaairId?: any
   checklist?: any                   // baris dokumen_checklist_seaair dari induk; undefined = dimuat sendiri
   context?: 'quotation'             // dibuka dari "+ Add quotation" (Cost Validation › Freight): tampilkan petunjuk khusus (tanpa `replace` otomatis)
+  inline?: boolean                  // true = panel di tempat (tanpa popup), lihat catatan atas
   onClose: () => void
   onJobStarted: (jobId: string, ack: SusulanAck) => void
   onSentNoJob: (message: string, isWarning: boolean) => void
@@ -118,6 +122,8 @@ export default function SeaAirUploadSusulanModal({ awb, noAju, vendor, seaairId,
   const [ownChecklist, setOwnChecklist] = useState<any | null | undefined>(undefined)
   const inputRef = useRef<HTMLInputElement>(null)
   const dropRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const [pasteNotice, setPasteNotice] = useState<string | null>(null)
 
   // Kelengkapan: pakai data induk bila ada; kalau tidak, baca sendiri (read-only, hanya informasi).
   useEffect(() => {
@@ -130,17 +136,19 @@ export default function SeaAirUploadSusulanModal({ awb, noAju, vendor, seaairId,
   const cl = checklist !== undefined ? checklist : ownChecklist
 
   useEffect(() => { dropRef.current?.focus() }, [])
-  // Esc: tutup modal error dulu; dialog tidak bisa ditutup saat sedang mengirim.
+  // Esc: tutup modal error dulu; dialog tidak bisa ditutup saat sedang mengirim. Mode inline: hanya bila fokus di dalam panel
+  // (kalau tidak, Esc milik jendela induk -- jangan dibajak).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
+      if (inline && !panelRef.current?.contains(document.activeElement)) return
       e.stopPropagation()
       if (errorModal) setErrorModal(null)
       else if (!uploading) onClose()
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [errorModal, uploading, onClose])
+  }, [errorModal, uploading, onClose, inline])
 
   const addFiles = useCallback((list: FileList | File[] | null) => {
     if (!list) return
@@ -167,6 +175,45 @@ export default function SeaAirUploadSusulanModal({ awb, noAju, vendor, seaairId,
   }, [])
 
   const removeFile = (i: number) => { setFiles(prev => prev.filter((_, idx) => idx !== i)); setFileNotice(null) }
+
+  // Tempel gambar (screenshot) dari clipboard -> diperlakukan sbg file biasa (PNG/JPG) yang ikut terkirim ke n8n.
+  // Nama dibuat unik (jam + urutan) krn tempelan screenshot selalu bernama "image.png" dan duplikat dibuang oleh addFiles (nama+ukuran).
+  const pasteSeq = useRef(0)
+  const toPastedFiles = (blobs: Blob[]): File[] => blobs.map(b => {
+    const ext = b.type === 'image/jpeg' || b.type === 'image/jpg' ? 'jpg' : 'png'
+    const d = new Date()
+    const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}${String(d.getSeconds()).padStart(2, '0')}`
+    return new File([b], `pasted-image-${stamp}-${++pasteSeq.current}.${ext}`, { type: b.type || 'image/png' })
+  })
+  const handlePaste = (e: React.ClipboardEvent) => {
+    if (uploading) return
+    const t = e.target as HTMLElement | null
+    if (t && t.closest('textarea, input:not([type=checkbox]):not([type=file])')) return   // tempel teks di kolom isian: biarkan
+    const blobs: Blob[] = []
+    for (const it of Array.from<DataTransferItem>(e.clipboardData?.items || [] as any)) {
+      if (it.kind === 'file' && it.type.startsWith('image/')) { const f = it.getAsFile(); if (f) blobs.push(f) }
+    }
+    if (!blobs.length) return
+    e.preventDefault()
+    setPasteNotice(null)
+    addFiles(toPastedFiles(blobs))
+  }
+  // Tombol "Paste image" (cadangan Ctrl+V; butuh izin clipboard browser).
+  const pasteFromClipboard = async () => {
+    setPasteNotice(null)
+    try {
+      const items = await (navigator.clipboard as any).read()
+      const blobs: Blob[] = []
+      for (const it of items) {
+        const type = (it.types as string[]).find(x => x.startsWith('image/'))
+        if (type) blobs.push(await it.getType(type))
+      }
+      if (!blobs.length) { setPasteNotice('No image found on the clipboard. Copy or screenshot an image first, then try again.'); return }
+      addFiles(toPastedFiles(blobs))
+    } catch {
+      setPasteNotice('Could not read the clipboard. Click this box and press Ctrl+V instead.')
+    }
+  }
   const handleDrop = (e: React.DragEvent) => { e.preventDefault(); setDragging(false); if (!uploading) addFiles(e.dataTransfer.files) }
   const toggleReplace = (v: string) => setReplaceSel(prev => (prev.includes(v) ? prev.filter(x => x !== v) : [...prev, v]))
 
@@ -231,36 +278,36 @@ export default function SeaAirUploadSusulanModal({ awb, noAju, vendor, seaairId,
     )
   }
 
-  return createPortal(
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex justify-center items-center p-2 sm:p-4"
-      onMouseDown={e => { if (e.target === e.currentTarget && !uploading && !errorModal) onClose() }}>
-      <div role="dialog" aria-modal="true" aria-labelledby="sa-susulan-title" className="bg-white w-full max-w-3xl max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-        <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-[#EADFD6] shrink-0">
-          <div>
-            <h2 id="sa-susulan-title" className="text-base font-bold tracking-tight text-[#5A305A]">Upload Additional Document — Sea &amp; Air</h2>
-            <p className="text-xs font-light text-[#5A305A] mt-0.5">For documents that arrived after the first upload, or corrected versions of documents already sent</p>
+  if (inline) {
+    return (
+      <div ref={panelRef} tabIndex={-1} onPaste={handlePaste} role="group" aria-label="Upload additional document"
+        className="w-full rounded-xl border border-[#D9C7DA] bg-white shadow-sm overflow-hidden focus:outline-none">
+        <div className="flex justify-between items-center px-3 py-2 border-b border-[#EADFD6] bg-[#FCF8FB]">
+          <div className="min-w-0">
+            <div className="text-[12.5px] font-bold text-[#5A305A]">Upload Additional Document — Sea &amp; Air</div>
+            <div className="text-[11px] text-[#6E5E70]">For documents that arrived after the first upload, or corrected versions of documents already sent</div>
           </div>
-          <button type="button" onClick={onClose} disabled={uploading} aria-label="Close" className="p-2 hover:bg-slate-100 rounded-full text-[#5A305A] transition-colors disabled:opacity-50"><X size={20} /></button>
+          <button type="button" onClick={onClose} disabled={uploading} aria-label="Close" className="p-1.5 hover:bg-slate-100 rounded-full text-[#5A305A] disabled:opacity-50"><X size={16} /></button>
         </div>
-
-        <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4">
+        <div className={inline ? 'p-3 flex flex-col gap-3' : 'flex-1 overflow-y-auto p-5 flex flex-col gap-4'}>
           {context === 'quotation' && (
             <div className="rounded-xl bg-[#EEF1FA] border border-[#CFE0F7] px-3 py-2 text-[12px] text-[#2F4FA8]">
               Upload the <b>freight quotation</b> for this BL. After processing, the Freight section in Cost Validation is compared against it.
             </div>
           )}
+          {inline && <div className="text-[11.5px] text-[#6E5E70] [overflow-wrap:anywhere]"><b className="text-[#3B1B3D]">AWB {awb || '—'}</b>{noAju ? ` · Aju ${noAju}` : ''}{vendor ? ` · ${vendor}` : ''}</div>}
           {/* 1. Info shipment (read-only) */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-[#E4D3E2] rounded-xl overflow-hidden border border-[#D9C7DA]">
+          {!inline && <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-[#E4D3E2] rounded-xl overflow-hidden border border-[#D9C7DA]">
             {([['AWB', awb], ['No. aju', noAju], ['Vendor', vendor]] as const).map(([l, v]) => (
               <div key={l} className="bg-[#FCF8FB] px-3 py-2 min-w-0">
                 <p className="text-[9.5px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B] leading-none mb-1">{l}</p>
                 <p className="text-[12.5px] font-semibold text-[#3B1B3D] [overflow-wrap:anywhere]">{v || '—'}</p>
               </div>
             ))}
-          </div>
+          </div>}
 
-          {/* 2. Kelengkapan dokumen */}
-          <div>
+          {/* 2. Kelengkapan dokumen (inline: sudah tampak di kartu Checklist di atasnya) */}
+          {!inline && <div>
             <div className={`${SA_LABEL} mb-1.5`}>Document completeness</div>
             {cl === undefined ? (
               <div className="text-[12px] text-[#6E5E70] inline-flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Loading…</div>
@@ -272,7 +319,7 @@ export default function SeaAirUploadSusulanModal({ awb, noAju, vendor, seaairId,
                 {CHECK_OPTIONAL.filter(([k]) => ALWAYS_SHOW_OPTIONAL.has(k) || Object.prototype.hasOwnProperty.call(cl, k)).map(([k, l]) => checkRow(k, l, false))}
               </div>
             )}
-          </div>
+          </div>}
 
           {/* 3. Pemilih file */}
           <div>
@@ -307,7 +354,176 @@ export default function SeaAirUploadSusulanModal({ awb, noAju, vendor, seaairId,
                 {dragging ? 'Drop the files here...' : files.length === 0 ? 'Click or drag & drop files (PDF, JPG, PNG)' : 'Click to add more files'}
               </p>
               <p className="text-xs text-[#6E5E70] mt-1">At least 1 file. Upload only the missing or corrected document(s) — no need to resend everything.</p>
+              <p className="text-[11px] text-[#8A7A8B] mt-1">Have a screenshot? Press <b>Ctrl+V</b> anywhere in this box to paste it.</p>
             </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button type="button" disabled={uploading} onClick={pasteFromClipboard} className={SA_BTN_OUTLINE}><ClipboardPaste size={13} /> Paste image</button>
+              <span className="text-[11px] text-[#8A7A8B]">Pasted images are sent to the automation server like any uploaded file.</span>
+            </div>
+            {pasteNotice && <div className="mt-2 rounded-lg bg-[#FFF8EA] border border-[#F3D9A4] px-3 py-1.5 text-[11.5px] text-[#7A4F00]">{pasteNotice}</div>}
+            {fileNotice && <div className="mt-2 rounded-lg bg-[#FFF8EA] border border-[#F3D9A4] px-3 py-1.5 text-[11.5px] text-[#7A4F00]">{fileNotice}</div>}
+            {files.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {files.map((f, i) => <FileRow key={f.name + '_' + f.size} file={f} index={i} disabled={uploading} onRemove={removeFile} />)}
+                <button type="button" disabled={uploading} onClick={() => { setFiles([]); setFileNotice(null) }}
+                  className="w-full py-2 text-xs text-[#5A305A] hover:text-red-500 border border-dashed border-slate-200 hover:border-red-300 rounded-xl transition-all disabled:opacity-50">
+                  Remove all files
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 4. Advanced options */}
+          <div className="rounded-xl border border-[#EADFD6]">
+            <button type="button" onClick={() => setAdvOpen(v => !v)} aria-expanded={advOpen}
+              className="w-full flex items-center gap-1.5 px-3 py-2 text-[12px] font-semibold text-[#5A305A] hover:bg-[#FBF7F4] rounded-xl">
+              {advOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Advanced options
+              {replaceOn && replaceSel.length > 0 && <Chip tone="amber">Replace · {replaceSel.length}</Chip>}
+            </button>
+            {advOpen && (
+              <div className="px-3 pb-3 flex flex-col gap-2">
+                <label className="inline-flex items-center gap-2 text-[12.5px] font-semibold text-[#3B1B3D] cursor-pointer">
+                  <input type="checkbox" checked={replaceOn} disabled={uploading} onChange={e => setReplaceOn(e.target.checked)} className="accent-[#5A305A]" />
+                  Replace existing document (instead of adding)
+                </label>
+                {replaceOn && (
+                  <>
+                    <div className="rounded-lg bg-[#FFF8EA] border border-[#F3D9A4] px-3 py-2 text-[11.5px] text-[#7A4F00]">
+                      The existing data for this document type will be discarded and replaced by the files you upload now.
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+                      {SEA_AIR_REPLACE_OPTIONS.map(o => (
+                        <label key={o.value} className="inline-flex items-center gap-2 text-[12px] text-[#3B1B3D] cursor-pointer">
+                          <input type="checkbox" checked={replaceSel.includes(o.value)} disabled={uploading} onChange={() => toggleReplace(o.value)} className="accent-[#5A305A]" />
+                          {o.label}
+                        </label>
+                      ))}
+                    </div>
+                    {replaceInvalid && <div className="text-[11.5px] font-semibold text-[#A8231A]">Select at least one document type to replace.</div>}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 5 & 6. Teks bantuan + catatan */}
+          <div className="rounded-xl bg-[#F5EDF3] border border-[#D9C7DA] px-3 py-2.5 text-[11.5px] text-[#3B1B3D] flex flex-col gap-1.5">
+            <p>For installment payments (DP 1, DP 2, balance), upload each transfer proof — amounts are added up automatically. Re-uploading the same transfer proof is not counted twice.</p>
+            <p>Commercial invoices / packing lists and final invoices are matched by invoice number: new numbers are added to the shipment, the same number replaces the earlier document.</p>
+            <p className="font-semibold">After processing, this shipment returns to Draft and needs to be audited again. Your manual edits are kept.</p>
+          </div>
+        </div>
+
+        {errorModal && (
+          <div role="alert" className="mx-3 mb-3 rounded-xl border border-[#F4C3BC] bg-[#FDE7E4] px-3 py-2.5 text-[12px] text-[#A8231A]">
+            <div className="flex items-start gap-2">
+              <AlertTriangle size={15} className="mt-[1px] shrink-0" />
+              <div className="min-w-0">
+                <div className="font-bold">Failed to send document</div>
+                <div className="whitespace-pre-wrap [overflow-wrap:anywhere]">{errorModal.friendly}</div>
+                <div className="mt-1 font-mono text-[10.5px] opacity-80 break-words">{errorModal.raw}</div>
+              </div>
+              <button type="button" onClick={() => setErrorModal(null)} aria-label="Dismiss" className="ml-auto p-1 rounded-full hover:bg-black/5 shrink-0"><X size={13} /></button>
+            </div>
+            <div className="mt-2 ml-[23px]">
+              <button type="button" onClick={() => { setErrorModal(null); handleSubmit() }} className="inline-flex items-center gap-1 text-[11.5px] font-bold hover:underline"><RotateCcw size={12} /> Try Again</button>
+            </div>
+          </div>
+        )}
+        <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-[#EADFD6] bg-[#FBF7F4]">
+          <button type="button" className={SA_BTN_OUTLINE} onClick={onClose} disabled={uploading}>Cancel</button>
+          <button type="button" className={SA_BTN_PRIMARY} onClick={handleSubmit} disabled={!canSend}>
+            {uploading ? <><Loader2 size={13} className="animate-spin" /> Sending…</> : <><Send size={13} /> Send{files.length ? ` ${files.length} file${files.length === 1 ? '' : 's'}` : ''}</>}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[80] flex justify-center items-center p-2 sm:p-4"
+      onMouseDown={e => { if (e.target === e.currentTarget && !uploading && !errorModal) onClose() }}>
+      <div ref={panelRef} onPaste={handlePaste} role="dialog" aria-modal="true" aria-labelledby="sa-susulan-title" className="bg-white w-full max-w-3xl max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+        <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-[#EADFD6] shrink-0">
+          <div>
+            <h2 id="sa-susulan-title" className="text-base font-bold tracking-tight text-[#5A305A]">Upload Additional Document — Sea &amp; Air</h2>
+            <p className="text-xs font-light text-[#5A305A] mt-0.5">For documents that arrived after the first upload, or corrected versions of documents already sent</p>
+          </div>
+          <button type="button" onClick={onClose} disabled={uploading} aria-label="Close" className="p-2 hover:bg-slate-100 rounded-full text-[#5A305A] transition-colors disabled:opacity-50"><X size={20} /></button>
+        </div>
+
+        <div className={inline ? 'p-3 flex flex-col gap-3' : 'flex-1 overflow-y-auto p-5 flex flex-col gap-4'}>
+          {context === 'quotation' && (
+            <div className="rounded-xl bg-[#EEF1FA] border border-[#CFE0F7] px-3 py-2 text-[12px] text-[#2F4FA8]">
+              Upload the <b>freight quotation</b> for this BL. After processing, the Freight section in Cost Validation is compared against it.
+            </div>
+          )}
+          {inline && <div className="text-[11.5px] text-[#6E5E70] [overflow-wrap:anywhere]"><b className="text-[#3B1B3D]">AWB {awb || '—'}</b>{noAju ? ` · Aju ${noAju}` : ''}{vendor ? ` · ${vendor}` : ''}</div>}
+          {/* 1. Info shipment (read-only) */}
+          {!inline && <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-[#E4D3E2] rounded-xl overflow-hidden border border-[#D9C7DA]">
+            {([['AWB', awb], ['No. aju', noAju], ['Vendor', vendor]] as const).map(([l, v]) => (
+              <div key={l} className="bg-[#FCF8FB] px-3 py-2 min-w-0">
+                <p className="text-[9.5px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B] leading-none mb-1">{l}</p>
+                <p className="text-[12.5px] font-semibold text-[#3B1B3D] [overflow-wrap:anywhere]">{v || '—'}</p>
+              </div>
+            ))}
+          </div>}
+
+          {/* 2. Kelengkapan dokumen (inline: sudah tampak di kartu Checklist di atasnya) */}
+          {!inline && <div>
+            <div className={`${SA_LABEL} mb-1.5`}>Document completeness</div>
+            {cl === undefined ? (
+              <div className="text-[12px] text-[#6E5E70] inline-flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Loading…</div>
+            ) : cl === null ? (
+              <div className="text-[12px] text-[#6E5E70]">No checklist recorded for this shipment yet.</div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                {CHECK_REQUIRED.map(([k, l]) => checkRow(k, l, true))}
+                {CHECK_OPTIONAL.filter(([k]) => ALWAYS_SHOW_OPTIONAL.has(k) || Object.prototype.hasOwnProperty.call(cl, k)).map(([k, l]) => checkRow(k, l, false))}
+              </div>
+            )}
+          </div>}
+
+          {/* 3. Pemilih file */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] font-bold text-[#5A305A] uppercase tracking-widest">Select files</p>
+              {files.length > 0 && <Chip tone="green">{files.length} file{files.length === 1 ? '' : 's'} · {fmtSize(totalBytes)}</Chip>}
+            </div>
+            <div
+              ref={dropRef}
+              tabIndex={0}
+              role="button"
+              aria-label="Select files to upload"
+              onDrop={handleDrop}
+              onDragOver={e => { e.preventDefault(); setDragging(true) }}
+              onDragLeave={() => setDragging(false)}
+              onClick={() => { if (!uploading) inputRef.current?.click() }}
+              onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && !uploading) { e.preventDefault(); inputRef.current?.click() } }}
+              className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#6B3470]/40 ${
+                dragging ? 'border-[#5A305A] bg-[#5A305A]/5' :
+                files.length > 0 ? 'border-emerald-300 bg-emerald-50/50 hover:border-emerald-400' :
+                'border-slate-200 bg-slate-50 hover:border-[#5A305A]/40 hover:bg-[#5A305A]/5'
+              }`}
+            >
+              <input ref={inputRef} type="file" accept="application/pdf,image/jpeg,image/png" multiple className="hidden"
+                onChange={e => { addFiles(e.target.files); e.target.value = '' }} />
+              <div className={`w-12 h-12 rounded-full mx-auto mb-2 flex items-center justify-center transition-colors ${
+                dragging ? 'bg-[#5A305A] text-white' : files.length > 0 ? 'bg-emerald-500 text-white' : 'bg-[#5A305A]/10 text-[#5A305A]'
+              }`}>
+                {dragging ? <FolderOpen size={20} strokeWidth={1.75} /> : files.length > 0 ? <CheckCircle2 size={20} strokeWidth={1.75} /> : <UploadCloud size={20} strokeWidth={1.75} />}
+              </div>
+              <p className="font-semibold text-sm text-[#5A305A]">
+                {dragging ? 'Drop the files here...' : files.length === 0 ? 'Click or drag & drop files (PDF, JPG, PNG)' : 'Click to add more files'}
+              </p>
+              <p className="text-xs text-[#6E5E70] mt-1">At least 1 file. Upload only the missing or corrected document(s) — no need to resend everything.</p>
+              <p className="text-[11px] text-[#8A7A8B] mt-1">Have a screenshot? Press <b>Ctrl+V</b> anywhere in this box to paste it.</p>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button type="button" disabled={uploading} onClick={pasteFromClipboard} className={SA_BTN_OUTLINE}><ClipboardPaste size={13} /> Paste image</button>
+              <span className="text-[11px] text-[#8A7A8B]">Pasted images are sent to the automation server like any uploaded file.</span>
+            </div>
+            {pasteNotice && <div className="mt-2 rounded-lg bg-[#FFF8EA] border border-[#F3D9A4] px-3 py-1.5 text-[11.5px] text-[#7A4F00]">{pasteNotice}</div>}
             {fileNotice && <div className="mt-2 rounded-lg bg-[#FFF8EA] border border-[#F3D9A4] px-3 py-1.5 text-[11.5px] text-[#7A4F00]">{fileNotice}</div>}
             {files.length > 0 && (
               <div className="mt-3 space-y-2">

@@ -188,20 +188,27 @@ export function recapAwbHeading(g: RecapGroup): string {
   const carrier = m ? m[1].toUpperCase() : (g.ppjks.map(ppjkCode).find(Boolean) || '')
   return carrier ? `${carrier} NO. ${g.awb}` : g.awb
 }
-// Pil invoice: SATU pil per jenis dokumen (Freight / Duty / Credit Note Freight / Credit Note Duty), urut tetap. Tanggal = Email Received tiap
-// dokumen jenis itu, urut lama -> baru, tanggal kembar digabung. Jenis yang tidak ada tidak ditampilkan.
+// Pil invoice: SATU pil per jenis dokumen (Freight / Duty / Credit Note Freight / Credit Note Duty), urut tetap. REVISI 2026-10-28 (permintaan user):
+// isi pil BUKAN lagi Email Received, melainkan pasangan "Invoice PPJK Date (`tgl_invoice`) · FP Report Date (`tgl_lapor_fp`)" per dokumen jenis itu;
+// lebih dari satu dokumen -> beberapa pasangan (lama -> baru, pasangan kembar digabung). Pasangan yang kedua tanggalnya kosong dilewati; satu sisi
+// kosong -> sisi itu "—". Jenis yang tidak ada tidak ditampilkan.
 export const RECAP_PILL_ORDER = ['Freight', 'Duty', 'Credit Note Freight', 'Credit Note Duty'] as const
-export type RecapInvoicePill = { label: (typeof RECAP_PILL_ORDER)[number]; dates: string[] }
+export type RecapDatePair = { invoice: string; fp: string }   // '' = belum ada
+export type RecapInvoicePill = { label: (typeof RECAP_PILL_ORDER)[number]; pairs: RecapDatePair[] }
 export function recapInvoicePills(g: RecapGroup): RecapInvoicePill[] {
-  const by = new Map<string, string[]>()
+  const by = new Map<string, Map<string, RecapDatePair>>()
   g.rows.forEach(r => {
     const label = invoiceKindFullLabel(r)
-    const d = String(r.tgl_terima_email || '').slice(0, 10)
-    const list = by.get(label) || []
-    if (d) list.push(d)
-    by.set(label, list)
+    const m = by.get(label) || new Map<string, RecapDatePair>()
+    const invoice = String(r.tgl_invoice || '').slice(0, 10)
+    const fp = String(r.tgl_lapor_fp || '').slice(0, 10)
+    if (invoice || fp) m.set(`${invoice}|${fp}`, { invoice, fp })
+    by.set(label, m)
   })
-  return RECAP_PILL_ORDER.filter(l => by.has(l)).map(label => ({ label, dates: Array.from(new Set(by.get(label)!)).sort() }))
+  return RECAP_PILL_ORDER.filter(l => by.has(l)).map(label => ({
+    label,
+    pairs: Array.from(by.get(label)!.values()).sort((a, b) => (a.invoice || '9999').localeCompare(b.invoice || '9999') || (a.fp || '9999').localeCompare(b.fp || '9999')),
+  }))
 }
 
 // Status kartu (Submit to Finance per invoice).

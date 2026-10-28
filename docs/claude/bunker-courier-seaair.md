@@ -1163,6 +1163,18 @@ apa pun** -- semua lewat webhook Sea & Air yang sama dgn upload normal. Tanpa SQ
   payments (goods)" belum ada (hanya teks placeholder di tab Doc Validation) sehingga belum ada yang dimuat ulang; tombol "+ Add quotation" di Cost Validation (Freight) KINI membuka dialog susulan yang sama
   (`SeaAirUploadSusulanButton variant="link" context="quotation"`, prop `susulan` di `SeaAirRecapCostsTab`; petunjuk khusus quotation, TANPA `replace` otomatis -- user boleh memilihnya sendiri
   di Advanced options). Tab Costs dimuat ulang "diam-diam" (`quietReload`) supaya strip status job tidak hilang.
+- **Revisi 2026-10-28 (permintaan user, Invoice Recap): TANPA POPUP + tempel gambar.** Prop baru `inline` di `SeaAirUploadSusulanButton` & `SeaAirUploadSusulanModal`: tombol
+  jadi toggle, panel upload terbuka DI BAWAH tombol (tab Documents kartu Checklist & "+ Add quotation" di Freight Origin/Destination), strip loading/hasil n8n tampil di tempat yang
+  sama (wrapper melebar `basis-full` saat ada strip/panel). Mode inline menyembunyikan info shipment & kelengkapan (sudah terlihat di kartu), error kirim tampil inline + Try Again, Esc
+  hanya menutup panel bila fokus di dalamnya. Tanpa `inline` = modal lama, MASIH dipakai `SeaAirChecklistModal` (Audit PIB). **Paste gambar** (kedua mode): Ctrl+V di dalam panel
+  (handler `onPaste` di kontainer; diabaikan bila fokus di textarea/input teks, mis. Checklist Note) + tombol "Paste image" (`navigator.clipboard.read()`, butuh izin browser). Gambar
+  tempelan jadi `File` bernama `pasted-image-<tgl-jam>-<n>.png` dan dikirim lewat jalur yang SAMA (`file_N`, `mode=susulan`) -- tidak ada perubahan backend/n8n.
+- **Doc Validation tab (2026-10-28)**: section **Faktur pajak** di `SeaAirRecapDocumentsTab` TETAP gaya daftar per-baris seperti section lain (keputusan user: JANGAN dijadikan matriks
+  seperti List -- sempat dicoba lalu dikembalikan), tapi diperjelas: tiap sel menampilkan dua nilai berdampingan berlabel **"On faktur pajak"** vs **"On invoice"** (= `values.ref` per sel;
+  dulu hanya SATU "Reference" di kolom kiri, menyesatkan krn referensi beda per kolom -> baris itu disembunyikan utk Faktur pajak), badge status di lebar tetap, nilai faktur merah tebal
+  saat Mismatch, aksi (Mark mismatch / ✓ Checked — accept / Correct / Undo) di kanan lebar tetap. Section lain tidak berubah. Cabang khusus `sec.key === 'FAKTUR_PAJAK'` di render sel.
+- **Export Excel preview (`ExportModal.tsx`, 2026-10-28)**: scrollbar disembunyikan global (`index.css`) sehingga bar geser samping tak tampak -> container tabel preview pakai
+  `scrollbar-x-visible` + tinggi dikunci (`min-h-0`/`overflow-hidden` di pembungkus) supaya bar menempel di dasar area preview. Berlaku semua pemanggil ExportModal.
 
 ## Sea & Air — panel "Vendor payments (goods)" (2026-10-20, permintaan user)
 

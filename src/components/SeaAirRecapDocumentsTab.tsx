@@ -403,7 +403,7 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
         </div>
         <div className="h-2 rounded-full bg-[#F3EEEA] overflow-hidden mt-2"><div className={`h-full ${complete ? 'bg-[#17663D]' : 'bg-[#E0A526]'}`} style={{ width: `${pct || 0}%` }} /></div>
         {!financeView && susulan && (
-          <SeaAirUploadSusulanButton className="mt-3" rec={susulan.rec} seaairId={seaairId} checklist={checklist} onCompleted={susulan.onCompleted} />
+          <SeaAirUploadSusulanButton inline className="mt-3" rec={susulan.rec} seaairId={seaairId} checklist={checklist} onCompleted={susulan.onCompleted} />
         )}
         {/* Kotak "Checklist Note" (2026-10-13, permintaan user: SAMA tab Checklist Courier -- kartu kuning, judul + keterangan, kotak teks, baris
             keterangan biru) SELALU tampil. Isinya = catatan per shipment (tabel seaair_form_e_note, sql/044) yang tersinkron dgn kolom Remarks
@@ -545,7 +545,7 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
                           <div key={r.db} className="px-4 py-2.5 grid grid-cols-1 @2xl:grid-cols-[210px_minmax(0,1fr)] gap-3">
                             <div className="min-w-0">
                               <div className="text-[12.5px] font-semibold text-[#3B1B3D]">{r.label}</div>
-                              {ref != null && <div className="text-[11px] text-[#6E5E70] [overflow-wrap:anywhere]">Reference: {sec.key === 'PIB' && r.db === 'TOTAL CIPL (PIB No. 23)' ? fmtForeign(toNum(ref)) : fmtValue(refKind, ref)}</div>}
+                              {ref != null && sec.key !== 'FAKTUR_PAJAK' && <div className="text-[11px] text-[#6E5E70] [overflow-wrap:anywhere]">Reference: {sec.key === 'PIB' && r.db === 'TOTAL CIPL (PIB No. 23)' ? fmtForeign(toNum(ref)) : fmtValue(refKind, ref)}</div>}
                               {sec.toggle === 'row' && (
                                 <div className="flex flex-wrap items-center gap-1.5 mt-1">
                                   <MatchChip m={rowAgg} manual={r.cells.some((c: any) => c.manual)} />
@@ -570,6 +570,51 @@ export default function SeaAirRecapDocumentsTab({ seaairId, canEdit: canEditPage
                                 }
                                 const showStatus = sec.toggle !== 'none' && !(sec.noStatus && sec.noStatus(r.db))
                                 const changed = isChanged(c)
+                                if (sec.key === 'FAKTUR_PAJAK') {
+                                  // Faktur pajak (2026-10-28, permintaan user: gaya SAMA tabel lain tapi terbaca): tiap sel menampilkan DUA nilai berdampingan --
+                                  // "On faktur pajak" vs "On invoice" -- karena referensi (nilai invoice) BEDA per kolom; dulu hanya satu "Reference" di kiri yg menyesatkan.
+                                  // Mismatch: nilai faktur dicetak merah tebal. Kolom lebar tetap supaya sejajar antar baris; aksi di kanan.
+                                  const refV = c.values?.ref
+                                  const hasRef = showStatus && refV != null && String(refV).trim() !== ''
+                                  const bad = cellMatch === false && showStatus
+                                  const valueBlock = (label: string, body: React.ReactNode) => (
+                                    <div className="flex-1 min-w-[150px] basis-[150px]">
+                                      <div className="text-[9.5px] font-semibold uppercase tracking-[0.06em] text-[#8A7A8B] leading-none mb-0.5">{label}</div>
+                                      {body}
+                                    </div>
+                                  )
+                                  return (
+                                    <div key={k} className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 px-2.5 py-1.5 rounded-lg border ${bad ? 'border-[#F4C3BC] bg-[#FFF8F7]' : 'border-[#F1E8E1] bg-white'}`}>
+                                      <span className="text-[11.5px] font-bold text-[#3B1B3D] w-[120px] shrink-0 truncate" title={c.col}>{c.col}</span>
+                                      <span className="w-[96px] shrink-0">{showStatus && <MatchChip m={cellMatch} manual={c.manual} />}</span>
+                                      {valueBlock('On faktur pajak', editing?.key === k ? (
+                                        <input
+                                          autoFocus
+                                          value={editing.value}
+                                          onChange={e => setEditing({ key: k, value: e.target.value })}
+                                          onKeyDown={e => {
+                                            if (e.key === 'Enter') { const orig = doc === null || doc === undefined ? '' : String(doc); if (editing.value !== orig) updateCheckValue(c.section, c.row, c.col, parseValue(kind, editing.value)); setEditing(null) }
+                                            if (e.key === 'Escape') setEditing(null)
+                                          }}
+                                          onBlur={() => { const orig = doc === null || doc === undefined ? '' : String(doc); if (editing.value !== orig) updateCheckValue(c.section, c.row, c.col, parseValue(kind, editing.value)); setEditing(null) }}
+                                          className="w-full h-8 px-2 rounded-md border border-[#6B3470] text-[12px] focus:outline-none"
+                                        />
+                                      ) : (
+                                        <div className={`text-[12.5px] [overflow-wrap:anywhere] ${bad ? 'font-bold text-[#A8231A]' : 'font-semibold text-[#3B1B3D]'}`}>{fmtValue(kind, doc)}</div>
+                                      ))}
+                                      {showStatus && valueBlock('On invoice', <div className="text-[12.5px] font-medium text-[#4A3A5C] [overflow-wrap:anywhere]">{hasRef ? fmtValue(kind, refV) : '—'}</div>)}
+                                      {canEdit && editing?.key !== k && (
+                                        <span className="flex items-center justify-end gap-2.5 text-[11px] font-semibold w-[190px] shrink-0 ml-auto">
+                                          {showStatus && (c.match === true
+                                            ? <button type="button" className="text-[#A8231A] hover:underline" onClick={() => toggleCheckStatus(c.section, c.row, c.col)}>Mark mismatch</button>
+                                            : <button type="button" className="text-[#17663D] hover:underline" onClick={() => toggleCheckStatus(c.section, c.row, c.col)}>✓ Checked — accept</button>)}
+                                          <button type="button" className="text-[#6B3470] hover:underline inline-flex items-center gap-0.5" title="AI read it wrong — correct the value on this document" onClick={() => setEditing({ key: k, value: doc === null || doc === undefined ? '' : String(doc) })}><Pencil size={10} />Correct</button>
+                                          {changed && <button type="button" className="text-[#6E5E70] hover:underline inline-flex items-center gap-0.5" onClick={() => undoCells([c])}><RotateCcw size={10} />Undo</button>}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )
+                                }
                                 return (
                                   <div key={k} className={`flex flex-wrap items-center gap-2 px-2.5 py-1.5 rounded-lg border ${cellMatch === false && showStatus ? 'border-[#F4C3BC] bg-[#FFF8F7]' : 'border-[#F1E8E1] bg-white'}`}>
                                     <span className="text-[11px] font-semibold text-[#6E5E70] w-[150px] shrink-0 truncate" title={c.col}>{c.col}</span>

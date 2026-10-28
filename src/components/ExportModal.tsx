@@ -548,7 +548,7 @@ export default function ExportModal({
           </div>
         )}
 
-        <div className="flex-1 overflow-auto p-0 bg-slate-50/50 relative">
+        <div className="flex-1 min-h-0 overflow-hidden p-0 bg-slate-50/50 relative">
           {loading ? (
              <LoadingState />
           ) : err ? (
@@ -558,7 +558,9 @@ export default function ExportModal({
                </div>
              </div>
           ) : (
-            <div className="overflow-auto h-full p-6">
+            // scrollbar-x-visible: scrollbar disembunyikan global (index.css); tabel preview lebar -> bar geser samping WAJIB tampil.
+            // Tinggi dikunci (outer min-h-0 + overflow-hidden) supaya bar menempel di dasar area preview, bukan di ujung konten.
+            <div className="overflow-auto h-full p-6 scrollbar-x-visible">
               <div className="min-w-max border rounded-xl overflow-hidden shadow-sm bg-white">
                 <table className="w-full text-sm text-left">
                   <thead className="bg-slate-100 text-[#5A305A] font-bold sticky top-0 z-10 shadow-sm border-b border-slate-200">

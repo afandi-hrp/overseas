@@ -5,10 +5,11 @@
 // 2026-10-05 (keputusan user): panel Validation samping (CourierRecapValidationPanel) di kanan daftar; kartu tanpa pasangan Audit -> panel tab
 // Invoices. Kartu memakai container query (@container) supaya otomatis ringkas saat lebarnya berbagi dgn panel.
 // 2026-10-27 (revisi tampilan user, prototype Invoice_Recap_Prototype_revisi.html): 5 KPI ber-ikon (+ rincian show/hide per courier / per PPJK) dan
-// kartu AWB disusun ulang (AWB+PT+Audit | PO+Origin | pil invoice ber-Email Received | Submit+Due | Need Attention | Total Expenses + Open ›).
+// kartu AWB disusun ulang (AWB+PT+Audit | PO+Origin | pil invoice | Submit+Due | Need Attention | Total Expenses + Open ›).
+// 2026-10-28: isi pil invoice = 🧾 Invoice PPJK Date · 🏛️ FP Report Date (bukan lagi Email Received).
 // Warna kartu submitted = kuning baris submitted versi List (#FFF5C5). Logika bisnis, data, filter, search, paginasi & versi List TIDAK berubah.
 import React, { useEffect, useRef, useState } from 'react'
-import { Check, CheckCircle2, Clock, FileText, Mail, Plane, Wallet } from 'lucide-react'
+import { Check, CheckCircle2, Clock, FileText, Landmark, Plane, Receipt, Wallet } from 'lucide-react'
 import PaginationFooter from './PaginationFooter'
 import { SA_CARD, Pill } from './SeaAirAuditUi'
 import { fmtRp, fmtDateShort, companyFullName } from '../utils/SeaAirAuditHelpers'
@@ -203,7 +204,7 @@ export const CourierRecapGroupCard: React.FC<{
 
   return (
     <div className={`${cardCls} overflow-hidden @container ${selected ? 'ring-2 ring-[#6B3470]' : ''}`} data-recap-card={g.key} data-submitted={submitted ? '1' : undefined}>
-      <div className={`grid grid-cols-2 gap-x-3.5 gap-y-2.5 px-3.5 py-3 items-start @min-[1180px]:grid-cols-[minmax(150px,1.3fr)_minmax(100px,1fr)_auto_minmax(110px,0.9fr)_130px_120px_100px] @min-[1180px]:gap-x-4 @min-[1180px]:px-4 @min-[1180px]:py-3.5 @min-[1180px]:items-center`}>
+      <div className={`grid grid-cols-2 gap-x-3.5 gap-y-2.5 px-3.5 py-3 items-start @min-[1180px]:grid-cols-[minmax(150px,1.3fr)_minmax(100px,1fr)_346px_minmax(110px,0.9fr)_130px_120px_100px] @min-[1180px]:gap-x-4 @min-[1180px]:px-4 @min-[1180px]:py-3.5 @min-[1180px]:items-center`}>
         {/* a1. AWB, Vendor, pil PT + pil Audit (hanya satu pil Audit) */}
         <div className="min-w-0">
           <div className="text-[14px] @min-[1180px]:text-[15px] font-extrabold text-[#3B2260] tabular-nums leading-tight [overflow-wrap:anywhere]" title={g.awbRaw}>{recapAwbHeading(g)}</div>
@@ -242,15 +243,24 @@ export const CourierRecapGroupCard: React.FC<{
           {colOk('origin') && <div className="text-[11px] text-[#8A7A8B] mt-1.5 truncate">Origin <span className="font-medium text-[#4A3A5C]">{g.origin || '—'}</span></div>}
         </div>
 
-        {/* a3. Pil invoice (satu per jenis dokumen) + Email Received di dalam pil; tidak boleh terpotong ke baris baru */}
+        {/* a3. Pil invoice (satu per jenis dokumen) + "🧾 Invoice PPJK Date · 🏛️ FP Report Date" di dalam pil (beberapa dokumen: dipisah " | "); tidak boleh terpotong ke baris baru */}
         <div className={`min-w-0 ${sepV} ${sepH}`}>
           <div className="flex flex-col items-start gap-1.5" data-invoice-pills>
-            {pills.map(p => (
-              <Pill key={p.label} tone={INVOICE_PILL_TONE[p.label]} title={p.dates.length ? `Email received: ${p.dates.map(fmtDateShort).join(' & ')}` : 'Email received date not available'}>
-                {p.label}
-                {p.dates.length > 0 && <><Mail size={11} className="inline mx-0.5" aria-hidden="true" /> {p.dates.map(fmtDateShort).join(' & ')}</>}
+            {/* Simetris antar kartu: label lebar tetap + dua blok tanggal lebar tetap, pil melebar penuh kolom (kolom grid berlebar tetap).
+                Beberapa dokumen sejenis (mis. 2 Credit Note Duty) = satu pil per pasangan, label diulang, bukan satu pil panjang. */}
+            {pills.flatMap(p => (p.pairs.length ? p.pairs : [null]).map((x, i) => (
+              <Pill key={`${p.label}-${i}`} tone={INVOICE_PILL_TONE[p.label]} className="@min-[1180px]:w-full"
+                title={x ? `Invoice PPJK Date: ${x.invoice ? fmtDateShort(x.invoice) : '—'} · FP Report Date: ${x.fp ? fmtDateShort(x.fp) : '—'}` : 'Invoice PPJK Date and FP Report Date not available yet'}>
+                <span className="w-[108px] shrink-0 text-left">{p.label}</span>
+                {x && (
+                  <>
+                    <span className="inline-flex items-center gap-1 w-[90px] shrink-0 tabular-nums"><Receipt size={11} className="shrink-0" aria-label="Invoice PPJK Date" /> {x.invoice ? fmtDateShort(x.invoice) : '—'}</span>
+                    <span className="opacity-60" aria-hidden="true">·</span>
+                    <span className="inline-flex items-center gap-1 w-[90px] shrink-0 tabular-nums"><Landmark size={11} className="shrink-0" aria-label="FP Report Date" /> {x.fp ? fmtDateShort(x.fp) : '—'}</span>
+                  </>
+                )}
               </Pill>
-            ))}
+            )))}
           </div>
         </div>
 

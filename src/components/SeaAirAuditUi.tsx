@@ -39,8 +39,8 @@ export const Chip: React.FC<{ tone?: Tone; children: React.ReactNode; className?
   <span title={title} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-bold whitespace-nowrap ${TONE[tone]} ${className}`}>{children}</span>
 )
 
-export const Pill: React.FC<{ tone?: Tone; children: React.ReactNode; title?: string }> = ({ tone = 'grey', children, title }) => (
-  <span title={title} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap ${TONE[tone]}`}>{children}</span>
+export const Pill: React.FC<{ tone?: Tone; children: React.ReactNode; title?: string; className?: string }> = ({ tone = 'grey', children, title, className = '' }) => (
+  <span title={title} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap ${TONE[tone]} ${className}`}>{children}</span>
 )
 
 export const StatusPill: React.FC<{ draft: boolean }> = ({ draft }) => (

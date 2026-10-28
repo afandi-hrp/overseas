@@ -5,6 +5,8 @@
 // supaya induk memuat ulang data. Dialog boleh ditutup saat proses berjalan: prosesnya di backend; saat komponen ini dipasang
 // ulang, job PENDING/PROCESSING utk AWB yang sama ditemukan lagi lewat `seaair_awb_hint` sehingga indikator tetap benar.
 // Frontend TIDAK menulis ke tabel hasil -- hanya membaca status job.
+// `inline` (2026-10-28, permintaan user): panel upload TIDAK popup -- terbuka di bawah tombol (toggle), strip loading/hasil n8n tampil di
+// tempat yang sama (tab Documents / Cost Validation). Tanpa `inline` = dialog modal lama (SeaAirChecklistModal / Audit PIB).
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Info, Loader2, RotateCcw, UploadCloud, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -34,7 +36,7 @@ export const SUSULAN_LOCKED_MSG = 'Locked — already submitted to Finance. Ask 
 
 export type SusulanRec = { awb?: string | null; no_aju?: string | null; vendor?: string | null; tgl_submit_finance?: any }
 
-export default function SeaAirUploadSusulanButton({ rec, seaairId, checklist, onCompleted, className = '', label = 'Upload Additional Document', variant = 'button', context }: {
+export default function SeaAirUploadSusulanButton({ rec, seaairId, checklist, onCompleted, className = '', label = 'Upload Additional Document', variant = 'button', context, inline = false }: {
   rec: SusulanRec | null | undefined
   seaairId?: any
   checklist?: any                       // baris dokumen_checklist_seaair dari induk (opsional; dialog memuat sendiri bila undefined)
@@ -43,6 +45,7 @@ export default function SeaAirUploadSusulanButton({ rec, seaairId, checklist, on
   label?: string
   variant?: 'button' | 'link'         // 'link' = teks ungu kecil (mis. "+ Add quotation" di Cost Validation)
   context?: 'quotation'               // diteruskan ke dialog (petunjuk khusus quotation freight)
+  inline?: boolean                    // true = panel di tempat (tanpa popup)
 }) {
   const { canEdit } = useAuth()           // canEdit() sudah true utk Admin; SAMA dgn kunci server UPLOAD_ACCESS.sea_air (sea_air_audit, edit)
   const awb = String(rec?.awb ?? '').trim()
@@ -220,11 +223,11 @@ export default function SeaAirUploadSusulanButton({ rec, seaairId, checklist, on
   })()
 
   return (
-    <div className={`flex flex-col gap-2 ${className}`}>
+    <div className={`flex flex-col gap-2 ${className} ${inline && (job || dialogOpen) ? 'basis-full w-full' : ''}`}>
       {strip}
-      <span title={reason || undefined} className="inline-flex self-start">
+      <span title={reason || undefined} className={`inline-flex ${inline && variant === 'link' ? 'self-end' : 'self-start'}`}>
         <button ref={btnRef} type="button" className={variant === 'link' ? 'text-[12px] font-semibold text-[#6B3470] hover:underline disabled:opacity-50 disabled:no-underline disabled:cursor-not-allowed' : SA_BTN_OUTLINE} disabled={!!reason}
-          onClick={() => setDialogOpen(true)} data-susulan-button>
+          onClick={() => (inline ? (dialogOpen ? closeDialog() : setDialogOpen(true)) : setDialogOpen(true))} aria-expanded={inline ? dialogOpen : undefined} data-susulan-button>
           {variant === 'button' && <UploadCloud size={13} />} {label}
         </button>
       </span>
@@ -237,6 +240,7 @@ export default function SeaAirUploadSusulanButton({ rec, seaairId, checklist, on
           seaairId={seaairId}
           checklist={checklist}
           context={context}
+          inline={inline}
           onClose={closeDialog}
           onJobStarted={handleJobStarted}
           onSentNoJob={handleSentNoJob}
