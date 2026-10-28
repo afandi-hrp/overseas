@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
 import Greeting from '../components/Greeting';
 import { PASSWORD_MIN_LENGTH, validateNewPassword } from '../utils/passwordPolicy';
+import AccountSignatureCard from '../components/AccountSignatureCard';
 
 export default function AccountPage() {
   const { user, profile, refreshProfile } = useAuth();
@@ -65,7 +66,7 @@ export default function AccountPage() {
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h1 className="font-bold text-2xl text-[#5A305A] leading-none">My Account</h1>
-            <p className="text-[#5A305A] font-light text-sm mt-1">Manage your profile info and login password.</p>
+            <p className="text-[#5A305A] font-light text-sm mt-1">Manage your profile info, signature and login password.</p>
           </div>
           <Greeting />
         </div>
@@ -138,6 +139,8 @@ export default function AccountPage() {
               {savingPw ? 'Processing...' : 'Change Password'}
             </button>
           </div>
+
+          <AccountSignatureCard userId={user?.id} />
         </div>
       </main>
     </div>

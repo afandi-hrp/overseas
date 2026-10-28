@@ -16,6 +16,7 @@ import {
 } from '../../../utils/CostAgentHelpers'
 import { OFFICE_LABEL, OFFICE_OPTIONS } from './hubApi'
 import { ErrorBox, OfficeBadge, type HubCtx } from './hubUi'
+import { ActiveStatus, HIDE_LG, HIDE_XL, ICON_BTN, ICON_BTN_DANGER } from './hubUi'
 
 const TH = 'px-3 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[#6E5E70] whitespace-nowrap bg-[#FBF7F4] border-b border-[#EADFD6]'
 const TD = 'px-3 py-2 text-[12.5px] text-[#3B1B3D] align-top'
@@ -146,10 +147,10 @@ export default function MatrixTab({ ctx }: { ctx: HubCtx }) {
               )}
             </section>
 
-            <section className={`${SA_CARD} overflow-hidden`}>
-              <div className="overflow-x-auto">
+            <section className={`${SA_CARD} overflow-hidden @container`}>
+              <div className="overflow-x-auto [&_tbody_tr:hover]:bg-[#FBF7F4]">
                 <table className="min-w-full">
-                  <thead><tr>{['Rule name', 'Company', 'Office', 'Vendor', 'Min', 'Max', 'Step', 'Approver', 'Approver emails', 'Role', 'Active', ''].map(h => <th key={h} className={TH}>{h}</th>)}</tr></thead>
+                  <thead><tr>{['Rule name', 'Company', 'Office', 'Vendor', 'Min', 'Max', 'Step', 'Approver', 'Approver emails', 'Role', 'Active', ''].map((h, i) => <th key={h || 'a'} className={`${TH} ${i === 9 ? HIDE_XL : i === 7 ? HIDE_LG : ''}`}>{h}</th>)}</tr></thead>
                   <tbody>
                     {shown.length === 0 && <tr><td colSpan={12} className="px-4 py-8 text-center text-sm text-[#6E5E70] italic">No rules{editable ? ' — click "Add rule".' : '.'}</td></tr>}
                     {shown.map(r => (
@@ -161,16 +162,16 @@ export default function MatrixTab({ ctx }: { ctx: HubCtx }) {
                         <td className={`${TD} text-right tabular-nums whitespace-nowrap`}>{fmtRupiah(r.min_amount)}</td>
                         <td className={`${TD} text-right tabular-nums whitespace-nowrap`}>{r.max_amount === null ? <span className="text-[#8A7A8B]">No limit</span> : fmtRupiah(r.max_amount)}</td>
                         <td className={`${TD} text-center`}>{r.step_no}</td>
-                        <td className={TD}>{r.approver_label}</td>
+                        <td className={`${TD} ${HIDE_LG}`}>{r.approver_label}</td>
                         <td className={`${TD} min-w-[200px]`}><div className="flex flex-wrap gap-1">{(r.approver_emails || []).map(e => <Chip key={e} tone="blue">{e}</Chip>)}</div></td>
-                        <td className={TD}>{r.approver_role || '—'}</td>
-                        <td className={TD}>{r.is_active ? <Chip tone="green">Active</Chip> : <Chip tone="grey">Inactive</Chip>}</td>
+                        <td className={`${TD} ${HIDE_XL}`}>{r.approver_role || '—'}</td>
+                        <td className={TD}><ActiveStatus active={r.is_active} /></td>
                         <td className={`${TD} whitespace-nowrap`}>
                           {editable && (
                             <div className="flex gap-1">
-                              <button type="button" aria-label="Edit rule" title="Edit" className={`${SA_BTN_OUTLINE} h-7 px-2`} onClick={() => setForm({ id: r.id, init: toInput(r) })}><Pencil size={12} /></button>
-                              <button type="button" aria-label="Duplicate rule" title="Duplicate" className={`${SA_BTN_OUTLINE} h-7 px-2`} onClick={() => setForm({ id: null, init: { ...toInput(r), name: `${r.name} (copy)`, created_by: user?.email ?? null } })}><Copy size={12} /></button>
-                              <button type="button" aria-label="Delete rule" title="Delete" className={`${SA_BTN_OUTLINE} h-7 px-2 text-[#A8231A]`} onClick={() => remove(r)}><Trash2 size={12} /></button>
+                              <button type="button" aria-label="Edit rule" title="Edit" className={ICON_BTN} onClick={() => setForm({ id: r.id, init: toInput(r) })}><Pencil size={12} /></button>
+                              <button type="button" aria-label="Duplicate rule" title="Duplicate" className={ICON_BTN} onClick={() => setForm({ id: null, init: { ...toInput(r), name: `${r.name} (copy)`, created_by: user?.email ?? null } })}><Copy size={12} /></button>
+                              <button type="button" aria-label="Delete rule" title="Delete" className={ICON_BTN_DANGER} onClick={() => remove(r)}><Trash2 size={12} /></button>
                             </div>
                           )}
                         </td>

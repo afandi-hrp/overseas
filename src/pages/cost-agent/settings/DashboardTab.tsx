@@ -1,18 +1,19 @@
 // Tab "Dashboard" hub Cost Agent Settings (2026-10-26) -- fn_cost_agent_dashboard(p_filter {office, company_code, months}). READ-ONLY (tanpa tombol ubah).
-// Bagian: Needs attention | Pipeline | Monthly trend | Cost vs history | Top 8 | Waiting for approval | Failed processing | Master data health.
+// Bagian: Needs attention | Documents without invoice (UnmatchedDocsSection, bisa mengubah: Attach / Dismiss) | Pipeline | Monthly trend | Cost vs history | Top 8 | Waiting for approval | Failed processing | Master data health.
 // Halaman Agency Invoices tidak punya filter status lewat URL -> kartu "Needs attention" hanya angka (satu-satunya tautan: "Vessel office not set" ->
 // tab Vessels ?missing=office). Baris invoice menaut ke /cost-agent/invoice/:id (route yang sudah ada). Grafik = batang CSS (belum ada library chart).
 import React, { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { RefreshCw } from 'lucide-react'
-import { Chip, SA_BTN_OUTLINE, SA_CARD, type Tone } from '../../../components/SeaAirAuditUi'
+import { Chip, SA_BTN_OUTLINE, SA_CARD } from '../../../components/SeaAirAuditUi'
 import { LoadingState } from '../../../components/LoadingState'
 import {
-  fetchCostAgentCompanies, fmtMoney, fmtNumber, fmtPct, fmtShortAmount, fmtDateTimePort, INVOICE_STATUS_META,
+  fetchCostAgentCompanies, fmtMoney, fmtNumber, fmtPct, fmtShortAmount, fmtDateTimePort,
   type CostAgentCompany, type CostAgentInvoiceStatus,
 } from '../../../utils/CostAgentHelpers'
 import { hubDashboard, OFFICE_LABEL } from './hubApi'
-import { ErrorBox, FILTER_CTRL, OfficeBadge, TD, TH, useAsync, type HubCtx } from './hubUi'
+import { ErrorBox, FILTER_CTRL, OfficeBadge, SectionTitle, StatGrid, TD, TH, useAsync, type HubCtx, type StatCell } from './hubUi'
+import UnmatchedDocsSection from './UnmatchedDocsSection'
 
 const ATTENTION: { key: string; label: string; tone?: 'red' | 'amber' }[] = [
   { key: 'failed_invoices', label: 'Failed invoices' },
@@ -41,15 +42,18 @@ const SERIES: { key: string; label: string; color: string }[] = [
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const monthLabel = (m: string) => { const [y, mm] = m.split('-'); return `${MON[Number(mm) - 1] || mm} ${String(y).slice(2)}` }
 
-function Section({ title, right, children, className = '' }: { title: string; right?: React.ReactNode; children: React.ReactNode; className?: string }) {
+function Section({ title, hint, right, children, className = '' }: { title: string; hint?: React.ReactNode; right?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
     <section className={`${SA_CARD} p-4 ${className}`}>
-      <div className="flex items-center justify-between gap-2 mb-2.5">
-        <h3 className="text-[12.5px] font-bold uppercase tracking-[0.05em] text-[#6B3470]">{title}</h3>{right}
-      </div>
+      <SectionTitle hint={hint} right={right}>{title}</SectionTitle>
       {children}
     </section>
   )
+}
+// Warna titik status Pipeline (selaras nada INVOICE_STATUS_META).
+const PIPE_DOT: Record<CostAgentInvoiceStatus, string> = {
+  processing: '#3F6FD1', failed: '#D9483B', verification: '#D9A441', waiting_approval: '#8E5CC7', rejected: '#D9483B',
+  approved: '#2F9E63', journal: '#6B3470', paid: '#17663D', cancelled: '#A99AAB',
 }
 const InvLink = ({ id, no }: { id: number; no: string | null }) => (
   <Link to={`/cost-agent/invoice/${id}`} className="font-semibold text-[#6B3470] hover:underline">{no || `#${id}`}</Link>
@@ -86,6 +90,19 @@ export default function DashboardTab({ ctx }: { ctx: HubCtx }) {
   const att = d?.attention || {}
   const health = d?.master_health || {}
 
+  const attentionCells: StatCell[] = ATTENTION.map(a => {
+    const n = Number(att[a.key]) || 0
+    const link = a.key === 'office_missing' && n > 0
+    return {
+      key: a.key, label: a.label, value: fmtNumber(n, 0), dim: n === 0, tone: n > 0 ? a.tone : undefined,
+      onClick: link ? () => ctx.goTab('vessels', { missing: 'office' }) : undefined, title: link ? 'Open Vessels without owner office' : undefined,
+    }
+  })
+  const pipelineCells: StatCell[] = PIPELINE.map(p => {
+    const st = statusMap.get(p.status)
+    return { key: p.status, label: p.label, value: fmtNumber(st?.count ?? 0, 0), sub: fmtMoney(st?.total ?? 0), dim: !st?.count, dot: PIPE_DOT[p.status] }
+  })
+
   const healthLinks: { key: string; label: string; tab: string; extra?: Record<string, string>; red?: boolean }[] = [
     { key: 'vessels_no_office', label: 'Vessels without owner office', tab: 'vessels', extra: { missing: 'office' } },
     { key: 'vessels_no_dwt', label: 'Vessels without DWT', tab: 'vessels', extra: { missing: 'dwt' } },
@@ -116,37 +133,14 @@ export default function DashboardTab({ ctx }: { ctx: HubCtx }) {
 
       {loading && !d ? <LoadingState fullHeight={false} /> : error ? <ErrorBox message={error} onRetry={reload} /> : d && (
         <div className={loading ? 'opacity-60 transition-opacity space-y-3' : 'space-y-3'}>
-          <Section title="Needs attention">
-            <div className="grid grid-cols-2 @min-[900px]:grid-cols-5 gap-2">
-              {ATTENTION.map(a => {
-                const n = Number(att[a.key]) || 0
-                const hot = n > 0 && a.tone
-                const box = `rounded-xl border px-3 py-2 text-left ${n === 0 ? 'opacity-50 border-[#EADFD6] bg-white' : hot && a.tone === 'red' ? 'border-[#F4C3BC] bg-[#FDE7E4]' : hot ? 'border-[#F2D58A] bg-[#FFF8E6]' : 'border-[#EADFD6] bg-white'}`
-                const inner = (<>
-                  <div className={`text-[22px] font-bold leading-none tabular-nums ${n > 0 && a.tone === 'red' ? 'text-[#A8231A]' : n > 0 && a.tone === 'amber' ? 'text-[#7A4F00]' : 'text-[#3B1B3D]'}`}>{fmtNumber(n, 0)}</div>
-                  <div className="mt-1 text-[11.5px] font-semibold text-[#6E5E70]">{a.label}</div>
-                </>)
-                return a.key === 'office_missing' && n > 0
-                  ? <button key={a.key} type="button" className={`${box} hover:brightness-95`} onClick={() => ctx.goTab('vessels', { missing: 'office' })} title="Open Vessels without owner office" data-attention={a.key}>{inner}</button>
-                  : <div key={a.key} className={box} data-attention={a.key}>{inner}</div>
-              })}
-            </div>
+          <Section title="Needs attention" hint="Open work that needs a person. Dimmed tiles are clear.">
+            <StatGrid cols="grid-cols-2 @min-[700px]:grid-cols-5" cells={attentionCells} />
           </Section>
 
-          <Section title="Pipeline">
-            <div className="grid grid-cols-3 @min-[900px]:grid-cols-9 gap-2">
-              {PIPELINE.map(p => {
-                const s = statusMap.get(p.status)
-                const tone: Tone = INVOICE_STATUS_META[p.status]?.tone || 'grey'
-                return (
-                  <div key={p.status} className={`rounded-xl border border-[#EADFD6] px-2.5 py-2 ${s?.count ? '' : 'opacity-50'}`} data-pipeline={p.status}>
-                    <Chip tone={tone}>{p.label}</Chip>
-                    <div className="mt-1.5 text-[18px] font-bold leading-none tabular-nums text-[#3B1B3D]">{fmtNumber(s?.count ?? 0, 0)}</div>
-                    <div className="mt-0.5 text-[10.5px] text-[#6E5E70] tabular-nums">{fmtMoney(s?.total ?? 0)}</div>
-                  </div>
-                )
-              })}
-            </div>
+          <UnmatchedDocsSection ctx={ctx} />
+
+          <Section title="Pipeline" hint="Agency invoices by status, with the total amount in each.">
+            <StatGrid cols="grid-cols-3 @min-[900px]:grid-cols-9" attr="data-pipeline" cells={pipelineCells} />
           </Section>
 
           <div className="grid grid-cols-1 @min-[1100px]:grid-cols-2 gap-3">

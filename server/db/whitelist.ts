@@ -67,6 +67,8 @@ export const TABLE_WHITELIST: Record<string, DbOp[]> = {
   table_column_order: ['select', 'upsert'],
   tarif_kontrak_seaair: ['select', 'upsert'],
   user_approval_tiers: ['delete', 'select', 'upsert'],
+  // Penunjuk tanda tangan terbaru per user (sql/083) -- DITULIS hanya lewat RPC fn_set_my_signature.
+  user_signatures: ['select'],
   user_roles: ['delete', 'insert', 'select'],
   v_audit_trail: ['select'],
 };
@@ -194,7 +196,11 @@ for (const [t, ops] of Object.entries(MANUAL_TABLES)) {
   // Sea & Air panel Vendor payments (goods) (2026-10-20): ambil hasil + 5 aksi
   'fn_vp_ambil_seaair', 'fn_vp_tambah_bukti_seaair', 'fn_vp_hapus_bukti_seaair', 'fn_vp_konfirmasi_ref_seaair',
   'fn_vp_terima_review_seaair', 'fn_vp_batal_terima_seaair',
+  // Tanda tangan per user (sql/083): simpan / hapus penunjuk tanda tangan milik sendiri
+  'fn_set_my_signature',
 ].forEach(r => RPC_WHITELIST.add(r));
 
 // Bucket Storage yang boleh diakses lewat gateway (FarOverseasAirDocumentsModal: download + signed URL bukti bayar).
-export const STORAGE_BUCKET_WHITELIST = new Set<string>(['far-overseas-payment-proofs']);
+export const STORAGE_BUCKET_WHITELIST = new Set<string>(['far-overseas-payment-proofs', 'user-signatures']);
+// Bucket yang boleh di-UPLOAD lewat gateway (POST/PUT object/<bucket>/<path>) -- tanda tangan user (sql/083, halaman Account); kebijakan Storage membatasi ke folder sendiri.
+export const STORAGE_UPLOAD_BUCKET_WHITELIST = new Set<string>(['user-signatures']);

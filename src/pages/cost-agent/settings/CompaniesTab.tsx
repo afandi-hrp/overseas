@@ -5,7 +5,8 @@ import { Pencil, Plus } from 'lucide-react'
 import { Chip, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_INPUT } from '../../../components/SeaAirAuditUi'
 import { fmtNumber } from '../../../utils/CostAgentHelpers'
 import { hubListCompanies, hubSaveCompany, npwpError, type HubCompany } from './hubApi'
-import { errBox, Field, HubDrawer, RecentChanges, StateRow, TD, TH, TableCard, useAsync, type HubCtx } from './hubUi'
+import { errBox, Field, HubDrawer, HubFilterBar, RecentChanges, StateRow, TD, TH, TableCard, useAsync, type HubCtx } from './hubUi'
+import { ActiveStatus, HubToolbarEnd, ICON_BTN, UsedBy } from './hubUi'
 
 interface Form { code: string; name: string; npwp: string; is_active: boolean }
 
@@ -17,10 +18,11 @@ export default function CompaniesTab({ ctx }: { ctx: HubCtx }) {
 
   return (
     <div className="space-y-3" data-hub-companies>
-      <div className="flex items-center gap-3 flex-wrap bg-white rounded-[14px] border border-[#EADFD6] shadow-sm px-3 py-2.5">
-        <span className="text-[12.5px] text-[#6E5E70]">{rows.length ? `${fmtNumber(rows.length, 0)} companies` : ''}{!ctx.editable ? ' · View only' : ''}</span>
-        {ctx.editable && <button type="button" className={`${SA_BTN_PRIMARY} ml-auto`} onClick={() => setDrawer({ isNew: true, init: { code: '', name: '', npwp: '', is_active: true } })}><Plus size={13} /> Add company</button>}
-      </div>
+      <HubFilterBar>
+        <HubToolbarEnd count={rows.length ? `${fmtNumber(rows.length, 0)} companies` : ''} viewOnly={!ctx.editable}>
+          {ctx.editable && <button type="button" className={SA_BTN_PRIMARY} onClick={() => setDrawer({ isNew: true, init: { code: '', name: '', npwp: '', is_active: true } })}><Plus size={13} /> Add company</button>}
+        </HubToolbarEnd>
+      </HubFilterBar>
 
       <TableCard>
         <table className="min-w-full">
@@ -32,10 +34,10 @@ export default function CompaniesTab({ ctx }: { ctx: HubCtx }) {
                 <td className={`${TD} font-mono text-[12px] font-bold`}>{c.code}</td>
                 <td className={`${TD} font-semibold min-w-[200px]`}>{c.name || '—'}</td>
                 <td className={`${TD} tabular-nums whitespace-nowrap`}>{c.npwp ? c.npwp : <Chip tone="amber">No NPWP</Chip>}</td>
-                <td className={TD}>{c.is_active ? <Chip tone="green">Active</Chip> : <Chip tone="grey">Inactive</Chip>}</td>
-                <td className={`${TD} text-[11.5px] text-[#6E5E70] min-w-[240px]`}>{c.vessels_count} vessels · {c.invoices_count} invoices · {c.rules_count} approval rules</td>
+                <td className={TD}><ActiveStatus active={c.is_active} /></td>
+                <td className={`${TD} min-w-[150px]`}><UsedBy items={[{ n: c.vessels_count, label: 'vessels' }, { n: c.invoices_count, label: 'invoices' }, { n: c.rules_count, label: 'approval rules', short: 'rules' }]} /></td>
                 <td className={`${TD} whitespace-nowrap`}>
-                  {ctx.editable && <button type="button" className={`${SA_BTN_OUTLINE} h-7 px-2`} title="Edit" aria-label={`Edit ${c.code}`}
+                  {ctx.editable && <button type="button" className={ICON_BTN} title="Edit" aria-label={`Edit ${c.code}`}
                     onClick={() => setDrawer({ isNew: false, init: { code: c.code, name: c.name || '', npwp: c.npwp || '', is_active: c.is_active } })}><Pencil size={12} /></button>}
                 </td>
               </tr>

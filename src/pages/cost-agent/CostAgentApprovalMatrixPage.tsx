@@ -10,6 +10,7 @@ import { useAuth } from '../../lib/AuthContext'
 import { LoadingState } from '../../components/LoadingState'
 import { CostAgentPageHeader } from '../../components/CostAgentUi'
 import type { HubCtx } from './settings/hubUi'
+import { hubListUnmatchedDocs } from './settings/hubApi'
 
 type TabComp = React.ComponentType<{ ctx: HubCtx }>
 const TABS: { key: string; label: string; Comp: React.LazyExoticComponent<TabComp> }[] = [
@@ -35,10 +36,15 @@ export default function CostAgentApprovalMatrixPage() {
   const active = TABS.find(t => t.key === params.get('tab')) || TABS[0]
   const goTab = useCallback((tab: string, extra: Record<string, string> = {}) => setParams({ tab, ...extra }), [setParams])
 
-  const [toast, setToast] = useState<{ msg: string; tone: 'ok' | 'warn' | 'err' } | null>(null)
-  const showToast = useCallback((msg: string, tone: 'ok' | 'warn' | 'err' = 'ok') => { setToast({ msg, tone }); setTimeout(() => setToast(null), 5000) }, [])
+  const [toast, setToast] = useState<{ msg: React.ReactNode; tone: 'ok' | 'warn' | 'err' } | null>(null)
+  const showToast = useCallback((msg: React.ReactNode, tone: 'ok' | 'warn' | 'err' = 'ok') => { setToast({ msg, tone }); setTimeout(() => setToast(null), 5000) }, [])
 
-  const ctx: HubCtx = useMemo(() => ({ editable, toast: showToast, params, goTab }), [editable, showToast, params, goTab])
+  // Jumlah "Documents without invoice" yang menunggu (badge tab Dashboard). null = belum dimuat -> badge tidak tampil.
+  // Dimuat sekali di sini (limit 1 = murah) supaya badge ada juga saat tab lain yang dibuka; bagian Dashboard memperbaruinya.
+  const [pendingDocs, setPendingDocs] = useState<number | null>(null)
+  useEffect(() => { hubListUnmatchedDocs('pending', 1).then(r => setPendingDocs(r.pending_count)).catch(() => { /* badge tidak tampil */ }) }, [])
+
+  const ctx: HubCtx = useMemo(() => ({ editable, toast: showToast, params, goTab, setPendingDocs }), [editable, showToast, params, goTab])
   const Comp = active.Comp
 
   return (
@@ -53,17 +59,22 @@ export default function CostAgentApprovalMatrixPage() {
       <div className="flex-1 h-full overflow-y-auto min-w-0 pb-10">
         <CostAgentPageHeader title="Cost Agent Settings" subtitle="Dashboard, cost history and master data for agency invoices." />
         <main className="px-3 pt-2 space-y-3">
-          <div className="overflow-x-auto" data-hub-tabs>
-            <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-[#F5EDF3]" role="tablist" aria-label="Cost Agent Settings">
+          {/* Tab bergaris bawah: ringan, 8 tab tetap muat 1 baris di laptop 14"; di layar sempit bisa digeser. */}
+          <div className="overflow-x-auto rounded-xl bg-white/80 border border-[#EADFD6] shadow-sm" data-hub-tabs>
+            <div className="flex items-stretch gap-0.5 px-1.5 min-w-max" role="tablist" aria-label="Cost Agent Settings">
               {TABS.map(t => (
                 <button key={t.key} type="button" role="tab" aria-selected={active.key === t.key} onClick={() => goTab(t.key)}
-                  className={`px-3 h-8 rounded-lg text-xs font-bold whitespace-nowrap transition-colors ${active.key === t.key ? 'bg-[#3B1B3D] text-white shadow-sm' : 'text-[#3B1B3D] hover:bg-white'}`}>
+                  className={`relative px-3.5 h-10 text-[13px] whitespace-nowrap transition-colors after:absolute after:left-2.5 after:right-2.5 after:bottom-0 after:h-[3px] after:rounded-full ${active.key === t.key ? 'font-bold text-[#5A305A] after:bg-[#6B3470]' : 'font-semibold text-[#6E5E70] hover:text-[#3B1B3D] after:bg-transparent hover:after:bg-[#EADFD6]'}`}>
                   {t.label}
+                  {t.key === 'dashboard' && pendingDocs !== null && pendingDocs > 0 && (
+                    <span className="ml-1.5 px-1.5 min-w-[18px] h-[18px] inline-flex items-center justify-center rounded-full bg-amber-500 text-white text-[10.5px] font-bold tabular-nums"
+                      title={`${pendingDocs} email document${pendingDocs === 1 ? '' : 's'} waiting for an invoice`} data-pending-docs-badge>{pendingDocs}</span>
+                  )}
                 </button>
               ))}
             </div>
           </div>
-          {!editable && <p className="text-[12px] text-[#6E5E70]" data-view-only>View only — you have no edit access to Cost Agent Settings.</p>}
+          {!editable && <p className="text-[12px] text-[#6E5E70] px-1" data-view-only>View only — you have no edit access to Cost Agent Settings.</p>}
           <Suspense fallback={<LoadingState fullHeight={false} />}>
             <Comp key={active.key} ctx={ctx} />
           </Suspense>

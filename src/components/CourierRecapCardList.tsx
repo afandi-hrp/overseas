@@ -2,78 +2,169 @@
 // digabung), pola kartu Invoice Recap Sea & Air (token SeaAirAuditUi). Data diambil SENDIRI per halaman AWB
 // (fetchCourierRecapPage: RPC sql/037 opsi B, fallback di browser) -- BUKAN `records` tabel List.
 // Kolom yang tidak diizinkan role (getAllowedColumns 'courier_rekapan') TIDAK ditampilkan (`colOk`).
-// 2026-10-05 (keputusan user): tombol Open DIHAPUS -- tinggal tombol Validation yang membuka PANEL SAMPING
-// (CourierRecapValidationPanel) di kanan daftar; kartu tanpa pasangan Audit -> panel tab Invoices. Kartu memakai
-// container query (@container) supaya otomatis ringkas saat lebarnya berbagi dgn panel.
+// 2026-10-05 (keputusan user): panel Validation samping (CourierRecapValidationPanel) di kanan daftar; kartu tanpa pasangan Audit -> panel tab
+// Invoices. Kartu memakai container query (@container) supaya otomatis ringkas saat lebarnya berbagi dgn panel.
+// 2026-10-27 (revisi tampilan user, prototype Invoice_Recap_Prototype_revisi.html): 5 KPI ber-ikon (+ rincian show/hide per courier / per PPJK) dan
+// kartu AWB disusun ulang (AWB+PT+Audit | PO+Origin | pil invoice ber-Email Received | Submit+Due | Need Attention | Total Expenses + Open ›).
+// Warna kartu submitted = kuning baris submitted versi List (#FFF5C5). Logika bisnis, data, filter, search, paginasi & versi List TIDAK berubah.
 import React, { useEffect, useRef, useState } from 'react'
+import { Check, CheckCircle2, Clock, FileText, Mail, Plane, Wallet } from 'lucide-react'
 import PaginationFooter from './PaginationFooter'
-import { SA_CARD, SA_LABEL, Chip, Pill } from './SeaAirAuditUi'
+import { SA_CARD, Pill } from './SeaAirAuditUi'
 import { fmtRp, fmtDateShort, companyFullName } from '../utils/SeaAirAuditHelpers'
 import { todayLocalIso } from '../utils/SeaAirRecapHelpers'
 import { courierDocNo, isCourierDraft } from '../utils/CourierAuditHelpers'
 import {
-  fetchCourierRecapPage, fetchRecapAuditLinks, fetchCourierRecapAttentionGroups, fetchCourierRecapKpiGroups, recapGroupStatus, recapGroupDue, ppjkCode, INVOICE_KIND_LABEL, COURIER_DUE_DAYS,
-  type RecapFilters, type RecapGroup, type RecapSummaryCourier, type InvoiceKind, type RecapKpiFilter,
+  fetchCourierRecapPage, fetchRecapAuditLinks, fetchCourierRecapAttentionGroups, fetchCourierRecapKpiGroups, recapGroupDue, recapAwbHeading, recapInvoicePills,
+  INVOICE_KIND_LABEL, COURIER_DUE_DAYS,
+  type RecapFilters, type RecapGroup, type RecapSummaryCourier, type RecapKpiFilter,
 } from '../utils/CourierRecapHelpers'
+import { rowValidationPct } from '../utils/CourierValidationPct'
 import { attachCourierGrandTotals } from '../utils/CourierTotalBreakdown'
 import { LoadingState, UpdatingBadge } from './LoadingState'
 import type { ValidationTabKey } from './CourierValidationWindow'
 import type { RecapPanelTab } from './CourierRecapValidationPanel'
 
 // ─── KPI ──────────────────────────────────────────────────────────────────────
-// 2026-10-05 (keputusan user): 4 kartu -- AWB | Freight + Duty (BERSIH: − credit notes) | Not submitted | Submitted · unpaid;
-// rupiah PENUH (tanpa singkatan). Kartu "Total (− credit notes)" dihapus (nilainya kini di Freight + Duty).
-// 2026-10-07 (keputusan user): "Freight + Duty" / "Not submitted to Finance" / "Submitted · unpaid" bisa diklik = filter KPI
-// (berlaku List & Card, ikut tab PPJK & filter aktif; "Freight + Duty" = semua invoice). "AWB" tidak bisa diklik. KPI aktif
-// diberi border; klik lagi = kembali ke semua data.
+// 2026-10-27 (revisi user): 5 kartu ber-ikon di kiri -- Total Shipments (AWB) | Total Invoice Documents | Pending Submission | Submitted to Finance |
+// Total Invoice Amount (Incl. CN). Kartu 1 & 5 punya tombol show/hide rincian (per courier / per PPJK): tertutup sampai diklik, tutup lagi saat
+// tombol diklik lagi / klik di luar / Esc, hanya SATU terbuka; angkanya dari ringkasan RPC yang SAMA dgn angka utama (sql/081) -> ikut filter
+// aktif & totalnya = angka utama. Rumus angka utama TIDAK berubah. Klik kartu = filter KPI (2026-10-07): "Total Invoice Amount" = semua invoice,
+// "Pending Submission" = belum Submit, "Submitted to Finance" = sudah Submit (unpaid + paid); AWB & Total Invoice Documents tidak bisa diklik.
+const idr = (n: number) => `${n < 0 ? '−' : ''}${Math.abs(Math.round(n)).toLocaleString('id-ID')}`
+const TH_POP = 'px-1.5 py-2 text-right first:text-left text-[11.5px] font-medium text-[#8A7A8B] border-b border-[#EEE6F5] whitespace-nowrap'
+const TD_POP = 'px-1.5 py-2 text-right first:text-left text-[12.5px] text-[#3B1B3D] tabular-nums border-b border-dashed border-[#EEE6F5] whitespace-nowrap'
+const TT_POP = 'font-extrabold text-[#3B1B3D] !border-b-0'
+
 export const CourierRecapKpiCards: React.FC<{ summary: RecapSummaryCourier | null; loading: boolean; colOk: (k: string) => boolean; kpi?: RecapKpiFilter; onKpi?: (k: RecapKpiFilter) => void }> = ({ summary, loading, colOk, kpi = null, onKpi }) => {
   const v = (fn: (s: RecapSummaryCourier) => React.ReactNode) => (summary ? fn(summary) : loading ? '…' : '—')
-  const card = (label: string, value: React.ReactNode, sub: React.ReactNode, valueClass = 'text-[#3B1B3D]', key?: Exclude<RecapKpiFilter, null>) => {
+  const [pop, setPop] = useState<null | 'courier' | 'ppjk'>(null)
+  // Rincian tertutup saat klik di luar (tombol toggle & isi rincian dikecualikan) atau Esc.
+  useEffect(() => {
+    if (!pop) return
+    const down = (e: MouseEvent) => { const t = e.target as Element | null; if (t && t.closest('[data-kpi-pop],[data-kpi-toggle]')) return; setPop(null) }
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setPop(null) }
+    document.addEventListener('mousedown', down)
+    document.addEventListener('keydown', key)
+    return () => { document.removeEventListener('mousedown', down); document.removeEventListener('keydown', key) }
+  }, [pop])
+
+  const amountOk = colOk('total_amount')
+  const byCourier = summary?.by_courier
+  const byPpjk = summary?.by_ppjk
+
+  const card = (o: {
+    icon: React.ReactNode; tint: string; label: string; value: React.ReactNode; sub?: React.ReactNode; valueClass?: string; subClass?: string
+    filterKey?: Exclude<RecapKpiFilter, null>; toggle?: { which: 'courier' | 'ppjk'; show: string; hide: string }
+  }) => {
+    const active = !!o.filterKey && kpi === o.filterKey
     const body = (
       <>
-        <div className="text-[11.5px] font-semibold text-[#6E5E70]">{label}</div>
-        <div className={`text-[22px] leading-tight font-bold mt-0.5 tabular-nums truncate ${valueClass}`}>{value}</div>
-        <div className="text-[11px] text-[#8A7A8B] mt-0.5 truncate">{sub}</div>
+        <div className="text-[12px] font-semibold text-[#4A3A5C] leading-tight">{o.label}</div>
+        <div className={`text-[22px] @min-[270px]:text-[24px] leading-tight font-extrabold mt-0.5 tabular-nums whitespace-nowrap ${o.valueClass || 'text-[#3B2260]'}`}>{o.value}</div>
+        {o.sub && <div className={`text-[11px] leading-tight mt-0.5 ${o.subClass || 'text-[#8A7A8B]'}`}>{o.sub}</div>}
       </>
     )
-    if (!key || !onKpi) return <div className={`${SA_CARD} px-4 py-3 min-w-0`}>{body}</div>
-    const active = kpi === key
+    const open = !!o.toggle && pop === o.toggle.which
     return (
-      <button type="button" aria-pressed={active} data-kpi={key} onClick={() => onKpi(active ? null : key)}
-        title={active ? 'Click again to show all data' : 'Click to filter'}
-        className={`${SA_CARD} px-4 py-3 min-w-0 text-left transition-colors ${active ? 'ring-2 ring-[#6B3470] border-transparent' : 'hover:border-[#6B3470]/40'}`}>
-        {body}
-      </button>
+      <div className={`${SA_CARD} p-3.5 min-w-0 flex items-start gap-3 @container ${active ? 'ring-2 ring-[#6B3470] border-transparent' : ''}`}>
+        <div className="w-9 h-9 @min-[230px]:w-[42px] @min-[230px]:h-[42px] rounded-xl flex items-center justify-center shrink-0 text-[#4A2A6B]" style={{ background: o.tint }} aria-hidden="true">{o.icon}</div>
+        <div className="min-w-0 flex-1">
+          {o.filterKey && onKpi ? (
+            <button type="button" aria-pressed={active} data-kpi={o.filterKey} onClick={() => onKpi(active ? null : o.filterKey!)}
+              title={active ? 'Click again to show all data' : 'Click to filter'} className="block w-full text-left hover:opacity-80 transition-opacity">{body}</button>
+          ) : <div>{body}</div>}
+          {o.toggle && (
+            <button type="button" data-kpi-toggle={o.toggle.which} aria-expanded={open} onClick={() => setPop(open ? null : o.toggle!.which)}
+              className="mt-1.5 inline-flex items-center min-h-7 px-2.5 rounded-lg bg-[#F3EEFA] hover:bg-[#EAE0F7] text-[#4A2A6B] text-[11px] font-semibold transition-colors">{open ? o.toggle.hide : o.toggle.show}</button>
+          )}
+        </div>
+      </div>
     )
   }
-  const amountOk = colOk('total_amount')
+
+  const courierTotalAwb = summary?.awb ?? 0
+  const courierTotalDocs = summary?.invoices_excl_cn ?? 0
+  const ppjkSum = (f: (r: NonNullable<typeof byPpjk>[number]) => number) => (byPpjk || []).reduce((s, r) => s + f(r), 0)
+
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      {card('AWB', v(s => s.awb), v(s => `${s.invoices} invoice${s.invoices === 1 ? '' : 's'}${s.not_in_audit > 0 ? ` · ${s.not_in_audit} not found in Audit` : ''}`))}
-      {amountOk
-        ? card('Freight + Duty', v(s => fmtRp(s.charges - s.credit_notes)), v(s => `all invoices incl. credit notes (−${fmtRp(s.credit_notes)})`), undefined, 'all')
-        : card('Freight + Duty', '—', 'Hidden for your role', undefined, 'all')}
-      {card('Not submitted to Finance', v(s => s.not_submitted), 'invoices without Submit Date', 'text-[#7A4F00]', 'not_submitted')}
-      {card('Submitted · unpaid', v(s => s.submitted_unpaid), v(s => `${s.paid} paid`), 'text-[#2F4FA8]', 'submitted_unpaid')}
+    <div className="relative @container">
+      <div className="grid grid-cols-2 @min-[720px]:grid-cols-3 @min-[1180px]:grid-cols-5 gap-3">
+        {card({
+          icon: <Plane size={20} />, tint: '#DBEAFE', label: 'Total Shipments (AWB)', value: v(s => s.awb), sub: 'Unique shipments',
+          toggle: byCourier && byCourier.length > 0 ? { which: 'courier', show: 'Show per courier ▾', hide: 'Hide per courier ▴' } : undefined,
+        })}
+        {card({ icon: <FileText size={20} />, tint: '#EDE9FE', label: 'Total Invoice Documents', value: v(s => (s.invoices_excl_cn === undefined ? '—' : s.invoices_excl_cn)), sub: 'Freight & duty (excl. credit notes)' })}
+        {card({ icon: <Clock size={20} />, tint: '#FEF3C7', label: 'Pending Submission', value: v(s => s.not_submitted), sub: 'Not yet submitted to Finance', valueClass: 'text-[#7A4F00]', filterKey: 'not_submitted' })}
+        {card({
+          icon: <CheckCircle2 size={20} />, tint: '#D1FAE5', label: 'Submitted to Finance', value: v(s => s.submitted_unpaid + s.paid),
+          sub: v(s => `Unpaid: ${s.submitted_unpaid} | Paid: ${s.paid}`), subClass: 'text-[#0D8A5F]', valueClass: 'text-[#2F4FA8]', filterKey: 'submitted',
+        })}
+        {amountOk
+          ? card({
+            icon: <Wallet size={20} />, tint: '#F3E8FF', label: 'Total Invoice Amount (Incl. CN)', value: v(s => fmtRp(s.charges - s.credit_notes)),
+            sub: v(s => `incl. credit notes (−${fmtRp(s.credit_notes)})`), valueClass: 'text-[#3B2260] !text-[19px] @min-[270px]:!text-[20px]', filterKey: 'all',
+            toggle: byPpjk && byPpjk.length > 0 ? { which: 'ppjk', show: 'Show per PPJK ▾', hide: 'Hide per PPJK ▴' } : undefined,
+          })
+          : card({ icon: <Wallet size={20} />, tint: '#F3E8FF', label: 'Total Invoice Amount (Incl. CN)', value: '—', sub: 'Hidden for your role', filterKey: 'all' })}
+      </div>
+
+      {pop === 'courier' && byCourier && (
+        <div data-kpi-pop="courier" className="absolute left-0 top-[calc(100%+6px)] z-30 w-[min(420px,100%)] bg-white rounded-[14px] border border-[#EADFD6] shadow-[0_12px_32px_rgba(60,30,90,0.25)] px-3.5 py-2">
+          <table className="w-full border-collapse">
+            <thead><tr><th className={TH_POP}>Kurir</th><th className={TH_POP}>AWB</th><th className={TH_POP}>Invoice Docs</th></tr></thead>
+            <tbody>
+              {byCourier.map(r => <tr key={r.courier}><td className={TD_POP}>{r.courier}</td><td className={TD_POP}>{idr(r.awb)}</td><td className={TD_POP}>{idr(r.docs)}</td></tr>)}
+              <tr><td className={`${TD_POP} ${TT_POP}`}>Total</td><td className={`${TD_POP} ${TT_POP}`}>{idr(courierTotalAwb)}</td><td className={`${TD_POP} ${TT_POP}`}>{idr(courierTotalDocs)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+      {pop === 'ppjk' && byPpjk && (
+        <div data-kpi-pop="ppjk" className="absolute right-0 top-[calc(100%+6px)] z-30 w-[min(640px,100%)] bg-white rounded-[14px] border border-[#EADFD6] shadow-[0_12px_32px_rgba(60,30,90,0.25)] px-3.5 py-2">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead><tr>{['PPJK', 'Courier Adm Fee', 'Total Duty Tax', 'Total Freight', 'Credit Note', 'Total Amount'].map(h => <th key={h} className={TH_POP}>{h}</th>)}</tr></thead>
+              <tbody>
+                {byPpjk.map(r => (
+                  <tr key={r.ppjk}><td className={TD_POP}>{r.ppjk}</td><td className={TD_POP}>{idr(r.adm)}</td><td className={TD_POP}>{idr(r.duty)}</td><td className={TD_POP}>{idr(r.freight)}</td><td className={TD_POP}>{idr(r.credit_note)}</td><td className={TD_POP}>{idr(r.total)}</td></tr>
+                ))}
+                <tr>
+                  <td className={`${TD_POP} ${TT_POP}`}>Total</td>
+                  <td className={`${TD_POP} ${TT_POP}`}>{idr(ppjkSum(r => r.adm))}</td><td className={`${TD_POP} ${TT_POP}`}>{idr(ppjkSum(r => r.duty))}</td><td className={`${TD_POP} ${TT_POP}`}>{idr(ppjkSum(r => r.freight))}</td>
+                  <td className={`${TD_POP} ${TT_POP}`}>{idr(ppjkSum(r => r.credit_note))}</td><td className={`${TD_POP} ${TT_POP}`}>{idr(ppjkSum(r => r.total))}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div className="text-[11px] text-[#8A7A8B] py-1.5">Total Amount = Courier Adm Fee + Total Duty Tax + Total Freight (minus Credit Note)</div>
+        </div>
+      )}
     </div>
   )
 }
 
 // ─── Kartu 1 AWB ──────────────────────────────────────────────────────────────
-// Susunan (2026-10-05, keputusan user): baris atas "PPJK · PT" + tag Freight/Duty; AWB; Vendor | Email received (kecil),
-// PO, Origin | status Submit + PIB/CN Draft/Audited + Due Date (Tgl Invoice + 30 hari, menggantikan titik validasi) |
-// GRAND TOTAL + Validation. Berat & Vessel DIHAPUS dari kartu.
-const kindChip = (k: InvoiceKind, n: number) => (n > 0 ? (
-  <Chip key={k} tone={k === 'freight' ? 'blue' : k === 'duty' ? 'amber' : 'purple'}>{INVOICE_KIND_LABEL[k]}{n > 1 ? ` ×${n}` : ''}</Chip>
-) : null)
-
-export const RecapDueChip: React.FC<{ g: RecapGroup }> = ({ g }) => {
+// Susunan (revisi 2026-10-27): [AWB / vendor / pil PT + pil Audit] | [PO · Origin] | [pil invoice + Email Received] | [Submit · Due] | [Status] | [Total Expenses] | [Open ›].
+// Lebar kartu >= 1180px: 7 kolom, pembatas VERTIKAL samar; lebih sempit (mis. saat panel samping terbuka): 2 kolom 4 baris, pembatas jadi HORIZONTAL samar.
+const SEP = 'border-[rgba(138,123,155,0.18)]'
+const DuePill: React.FC<{ g: RecapGroup }> = ({ g }) => {
   const d = recapGroupDue(g, todayLocalIso())
   if (d.allPaid) return null
   const title = d.perInvoice.map(p => `${INVOICE_KIND_LABEL[p.kind]} ${p.no}: ${p.due ? `due ${fmtDateShort(p.due)}` : 'no Invoice PPJK Date yet'}${p.paid ? ' (paid)' : ''}`).join('\n')
-  if (!d.due) return <Chip tone="grey" title={`Invoice PPJK Date not available yet — due date = earliest Invoice PPJK Date + ${COURIER_DUE_DAYS} days\n${title}`}>Due —</Chip>
-  return <Chip tone={d.overdue ? 'red' : 'grey'} title={title}>{d.overdue ? 'Overdue · ' : 'Due '}{fmtDateShort(d.due)}</Chip>
+  if (!d.due) return <Pill tone="grey" title={`Invoice PPJK Date not available yet — due date = earliest Invoice PPJK Date + ${COURIER_DUE_DAYS} days\n${title}`}>Due —</Pill>
+  return <Pill tone={d.overdue ? 'red' : 'grey'} title={title}>{d.overdue ? 'Overdue · ' : 'Due '}{fmtDateShort(d.due)}</Pill>
 }
+// Pil Submit: Not Submitted / Submitted · [tanggal terakhir Submit] (sebagian: "k/n submitted"; ada yang Paid: "· k/n paid"; semua Paid: "Paid").
+function submitPill(g: RecapGroup): { label: string; tone: 'green' | 'amber' | 'grey' } {
+  const n = g.rows.length
+  if (n > 0 && g.paid === n) return { label: 'Paid', tone: 'green' }
+  const last = g.rows.map(r => r.submit_date).filter(Boolean).map(String).sort().pop()
+  if (n > 0 && g.submitted === n) return { label: `Submitted · ${fmtDateShort(last)}${g.paid > 0 ? ` · ${g.paid}/${n} paid` : ''}`, tone: 'green' }
+  if (g.submitted > 0) return { label: `${g.submitted}/${n} submitted · ${fmtDateShort(last)}`, tone: 'amber' }
+  return { label: 'Not Submitted', tone: 'amber' }
+}
+const INVOICE_PILL_TONE = { 'Freight': 'blue', 'Duty': 'amber', 'Credit Note Freight': 'grey', 'Credit Note Duty': 'grey' } as const
 
 export const CourierRecapGroupCard: React.FC<{
   g: RecapGroup
@@ -82,41 +173,60 @@ export const CourierRecapGroupCard: React.FC<{
   validationTabs: ValidationTabKey[]
   selected?: boolean
   onValidation: (g: RecapGroup, tab?: RecapPanelTab) => void
-}> = ({ g, companyNames, colOk, validationTabs, selected = false, onValidation }) => {
+  onClose?: () => void
+}> = ({ g, companyNames, colOk, validationTabs, selected = false, onValidation, onClose }) => {
   const [expanded, setExpanded] = useState(false)
-  const status = recapGroupStatus(g)
   // Sama dgn baris Grand Total tabel Total di panel; `syncedTotal` kosong (belum/gagal dihitung) -> rumus lama.
   const grand = g.syncedTotal ? g.syncedTotal.grand : g.finalTotal
   const cnTotal = g.syncedTotal ? g.syncedTotal.cn : g.cn
   const audit = g.audit
   const draft = audit ? isCourierDraft(audit.rec) : false
-  const border = status.tone === 'green' ? 'border-l-[#17663D]' : status.tone === 'blue' ? 'border-l-[#2F4FA8]' : status.tone === 'amber' ? 'border-l-[#E0A526]' : 'border-l-[#D9CFD6]'
-  const ppjks = Array.from(new Set(g.ppjks.map(ppjkCode).filter(Boolean)))
   const pos = colOk('po_pt_imi') ? g.pos : []
-  const emailRange = g.firstEmail && g.lastEmail && g.firstEmail !== g.lastEmail ? `${fmtDateShort(g.firstEmail)} – ${fmtDateShort(g.lastEmail)}` : fmtDateShort(g.firstEmail)
   const vendor = colOk('vendor') ? (g.rows.map(r => r.vendor).find(v => v && String(v).trim()) || '') : ''
-  const ppjkPt = [ppjks.join(' / '), colOk('an') ? g.an : ''].filter(Boolean).join(' · ')
+  const submitted = g.submitted > 0 // ada Submit Date -> kartu kuning (sama baris submitted versi List)
+  const sub = submitPill(g)
+  const pills = recapInvoicePills(g)
+
+  // Need Attention: Cost Validation ATAU Doc Validation belum 100% (Checklist tidak dihitung; aturan SAMA kunci Submit/Paid Date:
+  // tanpa pasangan PIB/CN di Audit = belum tervalidasi). Hanya untuk role yang boleh melihat tab Doc / Cost Validation.
+  const valTabs = validationTabs.filter((t): t is Exclude<ValidationTabKey, 'checklist'> => t !== 'checklist')
+  const pct = audit ? rowValidationPct(audit.rec) : null
+  const needAttention = valTabs.length > 0 && (!audit || valTabs.some(t => pct![t] === null || (pct![t] as number) < 100))
+  const attentionTitle = !audit ? 'No PIB / CN with this AWB in Audit yet — cannot be validated'
+    : `Cost Validation ${pct!.cost ?? 0}% · Doc Validation ${pct!.doc ?? 0}% (Checklist not counted)`
+
+  const cardCls = submitted
+    ? 'bg-[#FFF5C5] border border-[#F0DC8C] border-l-[5px] border-l-[#E0A21A] rounded-[14px] shadow-[0_1px_2px_rgba(59,27,61,0.04)]'
+    : SA_CARD
+  const sepV = `@min-[1180px]:border-l @min-[1180px]:pl-4 ${SEP}` // pembatas vertikal (layout lebar)
+  const sepH = `border-t pt-2.5 @min-[1180px]:border-t-0 @min-[1180px]:pt-0 ${SEP}` // pembatas horizontal (layout ringkas)
 
   return (
-    <div className={`${SA_CARD} border-l-4 ${border} overflow-hidden @container ${selected ? 'ring-2 ring-[#6B3470]' : ''}`} data-recap-card={g.key}>
-      {/* 2 kolom (2x2) mulai lebar kartu 448px (@md; 2026-10-12, permintaan user: laptop 14", daftar 35% saat panel terbuka tidak
-          lagi menumpuk 4 blok ke bawah): [identitas | email·PO·origin] / [status | grand total + tombol]. */}
-      <div className="grid grid-cols-1 @md:grid-cols-2 @4xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_minmax(0,1fr)_200px] gap-x-4 @4xl:gap-x-5 gap-y-3 px-3.5 @4xl:px-4 py-3 @4xl:py-3.5 items-center">
-        {/* 1. PPJK · PT + jenis invoice, AWB, Vendor */}
+    <div className={`${cardCls} overflow-hidden @container ${selected ? 'ring-2 ring-[#6B3470]' : ''}`} data-recap-card={g.key} data-submitted={submitted ? '1' : undefined}>
+      <div className={`grid grid-cols-2 gap-x-3.5 gap-y-2.5 px-3.5 py-3 items-start @min-[1180px]:grid-cols-[minmax(150px,1.3fr)_minmax(100px,1fr)_auto_minmax(110px,0.9fr)_130px_120px_100px] @min-[1180px]:gap-x-4 @min-[1180px]:px-4 @min-[1180px]:py-3.5 @min-[1180px]:items-center`}>
+        {/* a1. AWB, Vendor, pil PT + pil Audit (hanya satu pil Audit) */}
         <div className="min-w-0">
+          <div className="text-[14px] @min-[1180px]:text-[15px] font-extrabold text-[#3B2260] tabular-nums leading-tight [overflow-wrap:anywhere]" title={g.awbRaw}>{recapAwbHeading(g)}</div>
+          {vendor && <div className="text-[11px] text-[#8A7A8B] mt-0.5 mb-1.5 line-clamp-2" title={vendor}>{vendor}</div>}
           <div className="flex flex-wrap items-center gap-1.5">
-            {ppjkPt && <Chip tone="grey" title={colOk('an') && g.an ? companyFullName(companyNames, g.an) : undefined}>{ppjkPt}</Chip>}
-            {(['freight', 'duty', 'cn'] as InvoiceKind[]).map(k => kindChip(k, g.byKind[k].length))}
+            {colOk('an') && g.an && <Pill tone="grey" title={companyFullName(companyNames, g.an)}>{g.an}</Pill>}
+            {audit ? (
+              <>
+                <Pill tone={audit.docType === 'PIB' ? 'purple' : 'grey'} title={`${audit.docType} ${courierDocNo(audit.rec, audit.docType) || ''}`.trim()}>{audit.docType}{draft ? ' - Draft' : ''}</Pill>
+                {audit.rec.reaudit_reason && <Pill tone="purple" title={audit.rec.reaudit_reason}>↻ Re-audit</Pill>}
+              </>
+            ) : g.key.startsWith('ID:') ? (
+              <Pill tone="grey">No AWB</Pill>
+            ) : (
+              <Pill tone="red" title="No PIB / CN with this AWB was found in Audit Courier">Not Found in Audit</Pill>
+            )}
           </div>
-          <div className="text-[15px] font-bold text-[#3B1B3D] truncate tabular-nums mt-1" title={g.awbRaw}>{g.awb}</div>
-          {vendor && <div className="text-[12px] font-semibold text-[#6E5E70] truncate" title={vendor}>{vendor}</div>}
         </div>
 
-        {/* 2. Email received, PO, Origin */}
-        <div className="min-w-0">
-          <div className="text-[10.5px] text-[#8A7A8B]">Email received {emailRange}</div>
+        {/* a2. PO & Origin */}
+        <div className={`min-w-0 ${sepV}`}>
           {colOk('po_pt_imi') && (
-            <div className="text-[11.5px] text-[#3B1B3D] min-w-0 mt-0.5">
+            <div className="text-[12.5px] font-medium text-[#4A3A5C] min-w-0">
               {pos.length === 0 ? <span className="text-[#6E5E70]">No PO</span> : (
                 <div className="flex items-start gap-1.5 min-w-0">
                   <div className="min-w-0">{(expanded ? pos : pos.slice(0, 1)).map((p, i) => <div key={i} className="truncate" title={p}>{p}</div>)}</div>
@@ -129,42 +239,59 @@ export const CourierRecapGroupCard: React.FC<{
               )}
             </div>
           )}
-          {colOk('origin') && <div className="text-[11.5px] text-[#6E5E70] truncate mt-0.5">Origin: {g.origin || '—'}</div>}
+          {colOk('origin') && <div className="text-[11px] text-[#8A7A8B] mt-1.5 truncate">Origin <span className="font-medium text-[#4A3A5C]">{g.origin || '—'}</span></div>}
         </div>
 
-        {/* 3. Status, PIB/CN, Due Date */}
-        <div className="min-w-0 flex flex-col gap-1.5 items-start">
-          <Pill tone={status.tone}>{status.label}</Pill>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {audit ? (
-              <>
-                <Chip tone={draft ? 'amber' : 'green'} title={`${audit.docType} ${courierDocNo(audit.rec, audit.docType) || ''}`.trim()}>{audit.docType} · {draft ? 'Draft' : 'Audited'}</Chip>
-                {audit.rec.reaudit_reason && <Chip tone="purple" title={audit.rec.reaudit_reason}>↻ Re-audit</Chip>}
-              </>
-            ) : g.key.startsWith('ID:') ? (
-              <Chip tone="grey">No AWB</Chip>
-            ) : (
-              <Chip tone="red" title="No PIB / CN with this AWB was found in Audit Courier">Not found in Audit</Chip>
-            )}
-            <RecapDueChip g={g} />
+        {/* a3. Pil invoice (satu per jenis dokumen) + Email Received di dalam pil; tidak boleh terpotong ke baris baru */}
+        <div className={`min-w-0 ${sepV} ${sepH}`}>
+          <div className="flex flex-col items-start gap-1.5" data-invoice-pills>
+            {pills.map(p => (
+              <Pill key={p.label} tone={INVOICE_PILL_TONE[p.label]} title={p.dates.length ? `Email received: ${p.dates.map(fmtDateShort).join(' & ')}` : 'Email received date not available'}>
+                {p.label}
+                {p.dates.length > 0 && <><Mail size={11} className="inline mx-0.5" aria-hidden="true" /> {p.dates.map(fmtDateShort).join(' & ')}</>}
+              </Pill>
+            ))}
           </div>
         </div>
 
-        {/* 4. GRAND TOTAL + Validation */}
-        <div className="min-w-0 flex flex-col @4xl:items-end gap-1.5">
+        {/* a4. Submit & Due */}
+        <div className={`min-w-0 ${sepV} ${sepH}`}>
+          <div className="flex flex-col items-start gap-1.5">
+            <Pill tone={sub.tone}>{sub.label}</Pill>
+            <DuePill g={g} />
+          </div>
+        </div>
+
+        {/* a5. Status: ! Need Attention / centang hijau (row-span-2 di layout ringkas) */}
+        <div className={`min-w-0 row-span-2 @min-[1180px]:row-span-1 ${sepH}`}>
+          {valTabs.length > 0 && (needAttention ? (
+            <span title={attentionTitle} data-need-attention className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-[#FDE2E4] text-[#C0262D] text-[11px] font-bold whitespace-nowrap">
+              <span className="inline-flex w-3.5 h-3.5 items-center justify-center rounded-full bg-[#E03040] text-white text-[10px] leading-none" aria-hidden="true">!</span> Need Attention
+            </span>
+          ) : (
+            <span title={attentionTitle} data-validation-ok className="inline-flex w-8 h-8 items-center justify-center rounded-full bg-[#D5F5E6] text-[#0D8A5F]"><Check size={17} strokeWidth={3} aria-hidden="true" /></span>
+          ))}
+        </div>
+
+        {/* a6. Total Expenses */}
+        <div className={`min-w-0 ${sepH}`}>
           {colOk('total_amount') ? (
             <>
-              <div className={SA_LABEL}>Grand total</div>
-              <div className="text-[18px] font-bold text-[#3B1B3D] tabular-nums leading-tight" data-card-grand-total>{fmtRp(grand)}</div>
-              {cnTotal > 0 && <div className="text-[11px] text-[#6E5E70] tabular-nums">{fmtRp(grand + cnTotal)} − {fmtRp(cnTotal)} CN</div>}
+              <div className="text-[11px] text-[#8A7A8B]">Total Expenses</div>
+              <div className="text-[17px] @min-[1180px]:text-[18px] font-extrabold text-[#3B2260] tabular-nums leading-tight whitespace-nowrap" data-card-grand-total>{fmtRp(grand)}</div>
+              {cnTotal > 0 && <div className="text-[11px] text-[#6E5E70] tabular-nums whitespace-nowrap">{fmtRp(grand + cnTotal)} − {fmtRp(cnTotal)} CN</div>}
             </>
           ) : <div className="text-[11px] text-[#8A7A8B]">Amounts hidden for your role</div>}
-          <div className="flex items-center gap-1.5">
-            {/* Tanpa pasangan Audit (atau tanpa hak lihat validasi) -> panel langsung tab Invoices. */}
-            <button type="button" onClick={() => onValidation(g, audit && validationTabs.length > 0 ? undefined : 'invoices')}
-              aria-pressed={selected}
-              className={`inline-flex items-center justify-center px-4 h-8 rounded-xl text-xs font-semibold ${selected ? 'bg-[#3B1B3D] text-white' : 'bg-[#6B3470] hover:bg-[#5A2A5E] text-white'}`}>Validation</button>
-          </div>
+        </div>
+
+        {/* a7. Open › / Opened ✓ (klik saat terbuka = tutup panel) */}
+        <div className="min-w-0 flex @min-[1180px]:justify-end">
+          {/* Tanpa pasangan Audit (atau tanpa hak lihat validasi) -> panel langsung tab Invoices. */}
+          <button type="button" aria-pressed={selected} aria-expanded={selected} data-open-card
+            onClick={() => (selected ? onClose?.() : onValidation(g, audit && validationTabs.length > 0 ? undefined : 'invoices'))}
+            className={`inline-flex items-center justify-center px-4 h-9 rounded-full border-[1.5px] border-[#6B3470] text-[13px] font-bold whitespace-nowrap transition-colors ${selected ? 'bg-[#F5EDF3] text-[#4A3A5C]' : 'bg-transparent text-[#6B3470] hover:bg-[#F5EDF3]'}`}>
+            {selected ? 'Opened ✓' : 'Open ›'}
+          </button>
         </div>
       </div>
     </div>
@@ -184,6 +311,8 @@ export const CourierRecapCardView: React.FC<{
   validationTabs: ValidationTabKey[]
   enrichAudit: (recs: any[]) => Promise<void>
   onValidation: (g: RecapGroup, tab?: RecapPanelTab) => void
+  // Tombol "Opened ✓" di kartu aktif menutup panel samping (sama tombol ✕ panel; konfirmasi perubahan belum tersimpan tetap berlaku).
+  onClosePanel?: () => void
   onLoaded?: (groups: RecapGroup[]) => void
   // Panel Validation samping (2026-10-05) -- null = daftar lebar penuh.
   selectedKey?: string | null
@@ -192,9 +321,9 @@ export const CourierRecapCardView: React.FC<{
   attentionOnly?: boolean
   // Filter KPI (2026-10-07): AWB dgn minimal 1 invoice berstatus itu (isi kartu tetap lengkap), dihitung di browser.
   kpiFilter?: RecapKpiFilter
-}> = ({ filters, nonce, companyNames, colOk, validationTabs, enrichAudit, onValidation, onLoaded, attentionOnly = false, kpiFilter = null, selectedKey = null, panel = null }) => {
+}> = ({ filters, nonce, companyNames, colOk, validationTabs, enrichAudit, onValidation, onClosePanel, onLoaded, attentionOnly = false, kpiFilter = null, selectedKey = null, panel = null }) => {
   const [pageSize, setPageSize] = useState(COURIER_RECAP_PAGE_SIZE)
-  const kpiStatus = kpiFilter === 'not_submitted' || kpiFilter === 'submitted_unpaid' ? kpiFilter : null
+  const kpiStatus = kpiFilter === 'not_submitted' || kpiFilter === 'submitted' || kpiFilter === 'submitted_unpaid' ? kpiFilter : null
   const filterKey = JSON.stringify(filters) + (attentionOnly ? ':attention' : '') + (kpiStatus ? `:kpi-${kpiStatus}` : '') + ':' + pageSize
   const [page, setPage] = useState(1)
   const [groups, setGroups] = useState<RecapGroup[] | null>(null)
@@ -257,13 +386,13 @@ export const CourierRecapCardView: React.FC<{
         {groups === null && loading ? <LoadingState /> : error ? (
           <div className="text-center py-16 text-[#A8231A] text-[13px]">Failed to load Invoice Recap: {error}</div>
         ) : (groups || []).length === 0 ? (
-          <div className="text-center py-20 text-[#6E5E70] text-[13px]">{attentionOnly ? 'No AWB needs attention — every open invoice has 100% validation.' : kpiStatus === 'not_submitted' ? 'No AWB with invoices not yet submitted to Finance.' : kpiStatus === 'submitted_unpaid' ? 'No AWB with submitted, unpaid invoices.' : 'No AWB matches the current filters.'}</div>
+          <div className="text-center py-20 text-[#6E5E70] text-[13px]">{attentionOnly ? 'No AWB needs attention — every open invoice has 100% validation.' : kpiStatus === 'not_submitted' ? 'No AWB with invoices not yet submitted to Finance.' : kpiStatus === 'submitted' ? 'No AWB with invoices submitted to Finance.' : kpiStatus === 'submitted_unpaid' ? 'No AWB with submitted, unpaid invoices.' : 'No AWB matches the current filters.'}</div>
         ) : (
           <>
             {/* Baris "N AWB · newest email received first" DIHAPUS 2026-10-02 (permintaan user) -- jumlah ada di footer. */}
             <div className="flex flex-col gap-2.5" aria-busy={updating}>
               {(groups || []).map(g => (
-                <CourierRecapGroupCard key={g.key} g={g} companyNames={companyNames} colOk={colOk} validationTabs={validationTabs} selected={selectedKey === g.key} onValidation={onValidation} />
+                <CourierRecapGroupCard key={g.key} g={g} companyNames={companyNames} colOk={colOk} validationTabs={validationTabs} selected={selectedKey === g.key} onValidation={onValidation} onClose={onClosePanel} />
               ))}
             </div>
           </>

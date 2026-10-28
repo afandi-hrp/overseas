@@ -14,7 +14,7 @@ import {
   isPaymentAlarmActive, getMemoDueValue, getStatusLabel, getFinanceStage, fetchStepSigners, mySignableSteps, canSignStep, probePhase2,
   allocateByVessel, memoRefLabel, isMemoLocked, completedStepCount, nextStepForStatus, getRouteDisplay, getPoNumbers, totalInIdr, formatIdr,
   formatDateShort, implicitFxRate, toLocalDay, STEP_ORDER, ensureFarFont, FAR_FONT_FAMILY, getApprovalEntries, getPoList,
-  isOnHold, isCostStatusConfirmed, costStatusLabel,
+  isOnHold, isCostStatusConfirmed, costStatusLabel, resolveShipmentVendor, activeTarifVendorNames, buildPaymentAlerts, type PaymentAlerts,
   type PicEligibleUser, type RateRow, type CompanyOption, type CostInfo, type ApprovalStep, type MemoWarning, type StepSignerMap,
 } from '../utils/FarOverseasAirHelpers';
 import FarOverseasAirDetailModal from '../components/FarOverseasAirDetailModal';
@@ -23,6 +23,7 @@ import FarOverseasAirDocumentsModal, { getMemoDocs } from '../components/FarOver
 import FarOverseasAirUploadModal from '../components/FarOverseasAirUploadModal';
 import FarOverseasAirEditMemoModal, { validateMemoEdits, NON_PO_KIND_BUILTIN } from '../components/FarOverseasAirEditMemoModal';
 import FarOverseasAirMyApprovals from '../components/FarOverseasAirMyApprovals';
+import FarOverseasAirAlertsBell from '../components/FarOverseasAirAlertsBell';
 import ExportModal from '../components/ExportModal';
 import Greeting from '../components/Greeting';
 import { LoadingState, LoadingTableRow } from '../components/LoadingState';
@@ -406,8 +407,6 @@ type StatusFilter = 'ALL' | ApprovalStep | 'APPROVED' | 'REJECTED' | 'FINANCE' |
 const STATUS_FILTER_VALUE: Record<Exclude<StatusFilter, 'ALL'>, string> = {
   TIER1: 'PENDING', PIC: 'TIER1_DONE', TIER2: 'PIC_DONE', TIER3: 'TIER2_DONE', APPROVED: 'APPROVED', REJECTED: 'REJECTED', FINANCE: 'APPROVED', PAID: 'APPROVED',
 };
-// Batas kandidat mode "Show them" (alarm due) -- disaring & dipaginasi di client.
-const DUE_CANDIDATE_LIMIT = 1000;
 type SortBy = 'NEWEST' | 'OLDEST' | 'DUE_SOON' | 'INVOICE_NEW';
 const SORT_LABEL: Record<SortBy, string> = { NEWEST: 'Newest upload', OLDEST: 'Oldest upload', DUE_SOON: 'Due date soonest', INVOICE_NEW: 'Invoice date newest' };
 type GroupBy = 'DATE' | 'MONTH' | 'YEAR' | 'OFF';
@@ -575,16 +574,15 @@ export default function FarOverseasAirPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
-  // Alarm pembayaran: memo yang MASIH di rantai approval & due <= N hari (spek N = 1/3/5/7).
+  // Lonceng "Payment due alerts" (2026-10-27): "Remind N days before" (1/3/5/7) + 4 bagian (approval reminder / overdue / due within N / on hold).
+  // `alertIds` = "Show these memos in the list" -> daftar difilter ke memo-memo alert (null = tidak difilter).
   const [dueWindow, setDueWindow] = useState(3);
-  const [dueOnly, setDueOnly] = useState(false);
-  // Lonceng header (2026-10-21): hanya memo yang SUDAH overdue (banner "Show them" tetap overdue + segera jatuh tempo).
-  const [dueOverdueOnly, setDueOverdueOnly] = useState(false);
-  const [dueAlert, setDueAlert] = useState<{ overdue: number; soon: number; onHold: number }>({ overdue: 0, soon: 0, onHold: 0 });
+  const [alertIds, setAlertIds] = useState<string[] | null>(null);
+  const [alerts, setAlerts] = useState<PaymentAlerts>({ approval: [], overdue: [], soon: [], onHold: [], uniqueIds: [] });
   const [myApprovalsCount, setMyApprovalsCount] = useState(0);
   const [myApprovalsRefreshKey, setMyApprovalsRefreshKey] = useState(0);
 
-  useEffect(() => { setPage(1); }, [searchTerm, filters, statusFilter, sortBy, dueOnly, dueOverdueOnly, dueWindow]);
+  useEffect(() => { setPage(1); }, [searchTerm, filters, statusFilter, sortBy, alertIds]);
 
   const [queue, setQueue] = useState<any[]>([]);
   const [picUsers, setPicUsers] = useState<PicEligibleUser[]>([]);
@@ -646,14 +644,8 @@ export default function FarOverseasAirPage() {
     if (filters.remark) query = query.ilike('item_description_manual', `%${escLike(filters.remark)}%`);
     if (filters.startDate) query = query.gte('invoice_date', filters.startDate);
     if (filters.endDate) query = query.lte('invoice_date', filters.endDate);
-    const dueLimitIso = (() => { const d = new Date(); d.setDate(d.getDate() + dueWindow); return localIso(d); })();
-    if (dueOnly) {
-      // Kandidat longgar di server, disaring & dipaginasi di client (`isPaymentAlarmActive` +
-      // due efektif `due_date ?? expected_payment_date` tidak bisa diekspresikan 1 filter REST).
-      query = query.neq('approval_status', 'REJECTED');
-      if (phase2) query = query.is('paid_at', null);
-      else query = query.not('expected_payment_date', 'is', null).lte('expected_payment_date', dueLimitIso);
-    }
+    // "Show these memos in the list" dari lonceng: hanya memo alert (maks 200 id), filter lain tetap berlaku.
+    if (alertIds) query = query.in('id', alertIds.slice(0, 200));
     if (sortBy === 'NEWEST') query = query.order('created_at', { ascending: false });
     else if (sortBy === 'OLDEST') query = query.order('created_at', { ascending: true });
     else if (sortBy === 'DUE_SOON') query = query.order('expected_payment_date', { ascending: true, nullsFirst: false }).order('created_at', { ascending: false });
@@ -661,15 +653,7 @@ export default function FarOverseasAirPage() {
 
     const seq = ++fetchSeqRef.current;
     let data: any[] | null; let error: any; let count: number | null;
-    if (dueOnly) {
-      const res = await query.limit(DUE_CANDIDATE_LIMIT);
-      const all = (res.data || []).filter((r: any) => {
-        if (!isPaymentAlarmActive(r) || isOnHold(r)) return false;
-        const d = getDueInfo(getMemoDueValue(r), dueWindow);
-        return !!d && (dueOverdueOnly ? d.level === 'overdue' : d.level !== 'later');
-      });
-      data = all.slice(startIndex, startIndex + pageSize); error = res.error; count = all.length;
-    } else {
+    {
       const res = await query.range(startIndex, startIndex + pageSize - 1);
       data = res.data; error = res.error; count = res.count;
     }
@@ -689,7 +673,7 @@ export default function FarOverseasAirPage() {
       setTotalRecords(count || 0);
     }
     setLoadingList(false);
-  }, [page, statusFilter, searchTerm, filters, dueOnly, dueOverdueOnly, dueWindow, sortBy, phase2]);
+  }, [page, statusFilter, searchTerm, filters, alertIds, sortBy, phase2]);
 
   const fetchApprovalCounts = useCallback(async () => {
     const res = await Promise.all(STEP_ORDER.map(step =>
@@ -698,34 +682,25 @@ export default function FarOverseasAirPage() {
     setApprovalCounts({ TIER1: res[0].count || 0, PIC: res[1].count || 0, TIER2: res[2].count || 0, TIER3: res[3].count || 0 });
   }, []);
 
+  // Data lonceng: (1) memo jatuh tempo <= N hari / overdue / on hold, (2) memo yang masih di rantai approval (utk Approval reminder).
+  // Digabung per id lalu dibagi ke 4 bagian oleh `buildPaymentAlerts` (aturan: REJECTED & Paid tidak ikut; on hold efektif = bukan Urgent).
   const fetchDueAlert = useCallback(async () => {
     const limit = new Date(); limit.setDate(limit.getDate() + dueWindow);
     const limitIso = localIso(limit);
-    // Tahap 2: due efektif = due_date ?? expected_payment_date; berhenti setelah Paid; on hold
-    // dihitung terpisah (abu). Tahap 1: hanya memo di rantai approval.
-    let res: { data: any[] | null; error: any };
-    if (phase2) {
-      res = await supabase.from('rekapan_far_overseas_air').select('*')
+    const dueQuery = phase2
+      ? supabase.from('rekapan_far_overseas_air').select('*')
         .neq('approval_status', 'REJECTED').is('paid_at', null)
         .or(`due_date.lte.${limitIso},expected_payment_date.lte.${limitIso},on_hold.eq.true`)
-        .limit(2000);
-    } else {
-      res = await supabase.from('rekapan_far_overseas_air').select('id, approval_status, expected_payment_date')
+        .limit(2000)
+      : supabase.from('rekapan_far_overseas_air').select('*')
         .not('approval_status', 'in', '(APPROVED,REJECTED)').not('expected_payment_date', 'is', null).lte('expected_payment_date', limitIso)
         .limit(2000);
-    }
-    const { data, error } = res;
-    if (error) { console.error('fetchDueAlert failed:', error); return; }
-    let overdue = 0; let soon = 0; let onHold = 0;
-    (data || []).forEach((r: any) => {
-      if (!isPaymentAlarmActive(r)) return;
-      if (isOnHold(r)) { onHold++; return; }
-      const due = getDueInfo(getMemoDueValue(r), dueWindow);
-      if (!due) return;
-      if (due.level === 'overdue') overdue++;
-      else if (due.level === 'today' || due.level === 'soon') soon++;
-    });
-    setDueAlert({ overdue, soon, onHold });
+    const pipelineQuery = supabase.from('rekapan_far_overseas_air').select('*').not('approval_status', 'in', '(APPROVED,REJECTED)').limit(1000);
+    const [dueRes, pipeRes] = await Promise.all([dueQuery, pipelineQuery]);
+    if (dueRes.error || pipeRes.error) { console.error('fetchDueAlert failed:', dueRes.error || pipeRes.error); return; }
+    const byId = new Map<string, any>();
+    [...(dueRes.data || []), ...(pipeRes.data || [])].forEach((r: any) => { if (r?.id) byId.set(String(r.id), r); });
+    setAlerts(buildPaymentAlerts([...byId.values()], dueWindow));
   }, [dueWindow, phase2]);
 
   // Hitungan "menunggu saya" -- aturan SAMA dgn tab My Approvals (PIC per memo, penandatangan
@@ -851,7 +826,7 @@ export default function FarOverseasAirPage() {
 
     const { data: cvRow, error: cvErr } = await supabase
       .from('cost_validasi_far_overseas_air')
-      .select('id, cost_validation, rate_row_used, status')
+      .select('id, cost_validation, rate_row_used, status, vendor_matched')
       .eq('far_overseas_id', rekapanId)
       .maybeSingle();
     if (cvErr || !cvRow) return { skipped: true as const, reason: 'no_cost_validasi' as const };
@@ -872,7 +847,9 @@ export default function FarOverseasAirPage() {
     const actualTotal = totalRow?.actual != null && totalRow.actual !== '' ? Number(totalRow.actual) : null;
 
     const tarifRows = await fetchActiveTarifRateRows();
-    const candidates = rematchTarif({ vendorRows: tarifRows, shipVia, jenisLayananSaatIni, origin: parsed.origin, tujuan: parsed.destination, qty });
+    // Vendor shipment (2026-10-27): ship_via pilihan manual, atau vendor_matched dari n8n -- BUKAN tebakan teks OCTAGON/JIANQIAO.
+    const vendorName = resolveShipmentVendor({ shipVia, vendorMatched: cvRow.vendor_matched, vendorNames: activeTarifVendorNames(tarifRows) }).name;
+    const candidates = rematchTarif({ vendorRows: tarifRows, vendorName, jenisLayananSaatIni, origin: parsed.origin, tujuan: parsed.destination, qty });
 
     let newCostValidation = costValidation;
     let newRateRowUsed: any = null;
@@ -1113,7 +1090,7 @@ export default function FarOverseasAirPage() {
   const listStartIndex = (validPage - 1) * pageSize;
   const pageIdr = rows.reduce((s, r) => s + (totalInIdr(r) || 0), 0);
   const groupingActive = groupBy !== 'OFF' && (sortBy === 'NEWEST' || sortBy === 'OLDEST');
-  const anyFilterActive = activeFilterCount > 0 || statusFilter !== 'ALL' || !!searchInput || dueOnly;
+  const anyFilterActive = activeFilterCount > 0 || statusFilter !== 'ALL' || !!searchInput || !!alertIds;
 
   // Kelompok berurutan (rows sudah terurut upload) -- total per kelompok = memo di halaman ini.
   const groups = useMemo(() => {
@@ -1127,7 +1104,7 @@ export default function FarOverseasAirPage() {
     return out;
   }, [rows, groupBy, groupingActive]);
 
-  const clearAllFilters = () => { setFilters(EMPTY_FILTERS); setStatusFilter('ALL'); setSearchInput(''); setDueOnly(false); };
+  const clearAllFilters = () => { setFilters(EMPTY_FILTERS); setStatusFilter('ALL'); setSearchInput(''); setAlertIds(null); };
 
   const selectCls = 'h-9 border border-[#EADFD6] rounded-xl px-2.5 text-xs text-[#2A1A2C] bg-white focus:outline-none focus:ring-2 focus:ring-[#6B3470]/25';
 
@@ -1250,17 +1227,16 @@ export default function FarOverseasAirPage() {
               )}
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              {/* Lonceng = alarm memo yang SUDAH overdue (bukan lagi antrean approval -- itu ada di tab My Approvals). Klik = filter overdue / tampilkan semua. */}
-              <button
-                onClick={() => {
-                  if (dueOnly && dueOverdueOnly) { setDueOnly(false); setDueOverdueOnly(false); return; }
-                  setTab('MEMOS'); setDueOverdueOnly(true); setDueOnly(true); setSortBy('DUE_SOON');
-                }}
-                title={dueAlert.overdue > 0 ? `${dueAlert.overdue} overdue memo${dueAlert.overdue === 1 ? '' : 's'}` : 'No overdue memos'} aria-label="Overdue memos"
-                className={`relative h-9 w-9 flex items-center justify-center rounded-xl border hover:bg-[#F5EDF3] ${dueOnly && dueOverdueOnly ? 'bg-rose-50 border-rose-300 text-rose-700' : 'bg-white border-[#EADFD6] text-[#2A1A2C]'}`}>
-                <Bell size={15} />
-                {dueAlert.overdue > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-rose-600 text-[10px] font-bold text-white">{dueAlert.overdue}</span>}
-              </button>
+              {/* Lonceng "Payment due alerts" (popover 4 bagian; menggantikan lonceng-filter lama & banner merah). */}
+              <FarOverseasAirAlertsBell
+                alerts={alerts}
+                windowDays={dueWindow}
+                onWindowChange={setDueWindow}
+                filterActive={!!alertIds}
+                onShowInList={ids => { setTab('MEMOS'); setStatusFilter('ALL'); setAlertIds(ids); setSortBy('DUE_SOON'); }}
+                onShowAll={() => setAlertIds(null)}
+                onOpenMemo={openMemo}
+              />
               <button onClick={() => setShowQueuePanel(true)} className="h-9 flex items-center gap-1.5 px-3 rounded-xl bg-white border border-[#EADFD6] text-xs font-semibold text-[#2A1A2C] hover:bg-[#F5EDF3]">
                 <Clock size={14} /> Processing Queue
                 <span className={`text-[10px] font-bold px-1.5 rounded-full ${queue.length > 0 ? 'bg-rose-600 text-white' : 'bg-[#F5EDF3] text-[#6E5E70]'}`}>{queue.length}</span>
@@ -1415,23 +1391,6 @@ export default function FarOverseasAirPage() {
                 </div>
               )}
 
-              {canEditDirectLoading && (dueAlert.overdue > 0 || dueAlert.soon > 0 || dueAlert.onHold > 0 || dueOnly) && (
-                <div className="border-t border-rose-200 bg-rose-50/70 px-4 py-2 flex items-center justify-between gap-3 flex-wrap">
-                  <p className="text-xs text-rose-800 flex items-center gap-2 flex-wrap">
-                    <Bell size={14} className="shrink-0" />
-                    <span className="font-bold">Payment due alert:</span>
-                    {dueAlert.overdue} overdue · {dueAlert.soon} due within
-                    <select value={dueWindow} onChange={e => setDueWindow(Number(e.target.value))} className="border border-rose-200 bg-white rounded-md px-1 py-0.5 text-xs">
-                      {[1, 3, 5, 7].map(n => <option key={n} value={n}>{n}</option>)}
-                    </select>
-                    days{dueAlert.onHold > 0 ? ` · ${dueAlert.onHold} on hold (goods)` : ''} <span className="text-rose-700/70">{phase2 ? '(stops once paid)' : '(memos still in approval)'}</span>
-                  </p>
-                  <button onClick={() => { const next = !(dueOnly && !dueOverdueOnly); setDueOverdueOnly(false); setDueOnly(next); if (next) setSortBy('DUE_SOON'); }} className="px-3 py-1 rounded-lg border border-rose-300 bg-white text-xs font-bold text-rose-700 hover:bg-rose-100">
-                    {dueOnly && !dueOverdueOnly ? 'Show all memos' : 'Show them'}
-                  </button>
-                </div>
-              )}
-
               </div>
 
               {/* KARTU KONTEN (tabel/card) -- header ringkasan + group by, area scroll, pagination. */}
@@ -1540,7 +1499,7 @@ export default function FarOverseasAirPage() {
           row={editRow}
           ctx={{
             getVal, setVal, pendingForRow: pendingEdits[editRow.id], picUsers, preparedByUsers, companyOptions, memoTitleOptions, addMemoTitleOption, nonPoKindOptions, addNonPoKindOption,
-            tarifVendorRows, costCity: costMap[editRow.id]?.destinationCity || '', phase2,
+            tarifVendorRows, costCity: costMap[editRow.id]?.destinationCity || '', vendorMatched: costMap[editRow.id]?.vendorMatched ?? null, costCatatan: costMap[editRow.id]?.catatan ?? null, phase2,
           }}
           readOnly={!canEditDirectLoading || isMemoLocked(editRow.approval_status)}
           readOnlyReason={!canEditDirectLoading ? 'View only — you do not have edit access to FAR Overseas.' : 'Locked — Prepared By has signed. The memo opens again only after a Reject.'}

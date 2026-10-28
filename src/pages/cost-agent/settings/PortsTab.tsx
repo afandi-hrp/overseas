@@ -10,6 +10,7 @@ import {
   BulkBar, ChipInput, ChipList, ConfirmModal, errBox, Field, FILTER_CTRL, HUB_PAGE_SIZE, HubDrawer, HubFilterBar, MergeModal, Pager, RecentChanges, StateRow, TD, TH, TableCard,
   isInUseError, useAsync, useDebounced, useSelection, type HubCtx,
 } from './hubUi'
+import { FILTER_SEARCH, HIDE_LG, HIDE_XL, HubToolbarEnd, ICON_BTN, ICON_BTN_DANGER, ResetButton, UsedBy } from './hubUi'
 
 const isUnused = (p: HubPort) => !p.invoices_count && !p.history_count && !p.calls_count
 const coord = (v: number | null) => (v === null || v === undefined ? '—' : Number(v).toFixed(4))
@@ -62,7 +63,7 @@ export default function PortsTab({ ctx }: { ctx: HubCtx }) {
   return (
     <div className="space-y-3" data-hub-ports>
       <HubFilterBar>
-        <div className="w-[240px] flex"><FilterSearch value={search} onChange={setSearch} placeholder="Code / name / alias…" /></div>
+        <div className={FILTER_SEARCH}><FilterSearch value={search} onChange={setSearch} placeholder="Code / name / alias…" /></div>
         <select aria-label="Verified" className={FILTER_CTRL} value={verified} onChange={e => setVerified(e.target.value)}>
           <option value="">All</option><option value="true">Verified</option><option value="false">Not verified</option>
         </select>
@@ -72,9 +73,10 @@ export default function PortsTab({ ctx }: { ctx: HubCtx }) {
         <select aria-label="Source" className={FILTER_CTRL} value={source} onChange={e => setSource(e.target.value)}>
           <option value="">All sources</option>{(data?.sources || []).map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-        <button type="button" className={SA_BTN_OUTLINE} onClick={() => { setSearch(''); setVerified(''); setProvince(''); setSource('') }}>Reset</button>
-        <span className="ml-auto text-[12px] text-[#6E5E70]">{data ? `${fmtNumber(data.total, 0)} ports` : ''}{!ctx.editable ? ' · View only' : ''}</span>
-        {ctx.editable && <button type="button" className={SA_BTN_PRIMARY} onClick={() => setDrawer({ id: null, init: { code: '', name: '', province: '', lat: '', lon: '', tz: 'Asia/Jakarta', aliases: [], is_verified: false, notes: '' } })}><Plus size={13} /> Add port</button>}
+        <ResetButton onClick={() => { setSearch(''); setVerified(''); setProvince(''); setSource('') }} />
+        <HubToolbarEnd count={data ? `${fmtNumber(data.total, 0)} ports` : ''} viewOnly={!ctx.editable}>
+          {ctx.editable && <button type="button" className={SA_BTN_PRIMARY} onClick={() => setDrawer({ id: null, init: { code: '', name: '', province: '', lat: '', lon: '', tz: 'Asia/Jakarta', aliases: [], is_verified: false, notes: '' } })}><Plus size={13} /> Add port</button>}
+        </HubToolbarEnd>
       </HubFilterBar>
 
       {ctx.editable && (
@@ -89,7 +91,7 @@ export default function PortsTab({ ctx }: { ctx: HubCtx }) {
           <thead>
             <tr>
               {ctx.editable && <th className={`${TH} w-8`}><input type="checkbox" aria-label="Select all on this page" className="accent-[#6B3470]" checked={allOn} onChange={e => selection.setAll(ids, e.target.checked)} disabled={ids.length === 0} /></th>}
-              {['Code', 'Name', 'Province', 'Time zone', 'Lat / Lon', 'Verified', 'Aliases', 'Used by'].map(h => <th key={h} className={TH}>{h}</th>)}
+              {['Code', 'Name', 'Province', 'Time zone', 'Lat / Lon', 'Verified', 'Aliases', 'Used by'].map((h, i) => <th key={h} className={`${TH} ${i === 4 ? HIDE_XL : i === 6 ? HIDE_LG : ''}`}>{h}</th>)}
               {ctx.editable && <th className={TH}></th>}
             </tr>
           </thead>
@@ -102,16 +104,16 @@ export default function PortsTab({ ctx }: { ctx: HubCtx }) {
                 <td className={`${TD} font-semibold min-w-[160px]`}>{p.name}</td>
                 <td className={TD}>{p.province || '—'}</td>
                 <td className={TD}>{tzShort(p.tz)}</td>
-                <td className={`${TD} whitespace-nowrap tabular-nums text-[11.5px]`}>{coord(p.lat)} / {coord(p.lon)}</td>
+                <td className={`${TD} whitespace-nowrap tabular-nums text-[11.5px] ${HIDE_XL}`}>{coord(p.lat)} / {coord(p.lon)}</td>
                 <td className={TD}>{p.is_verified ? <Chip tone="green">Verified</Chip> : <Chip tone="amber">Not verified</Chip>}</td>
-                <td className={TD}><ChipList items={p.aliases} /></td>
-                <td className={`${TD} text-[11.5px] text-[#6E5E70] min-w-[200px]`}>{p.invoices_count} invoices · {p.history_count} history rows · {p.calls_count} voyage calls</td>
+                <td className={`${TD} ${HIDE_LG}`}><ChipList items={p.aliases} /></td>
+                <td className={`${TD} min-w-[150px]`}><UsedBy items={[{ n: p.invoices_count, label: 'invoices' }, { n: p.history_count, label: 'history rows', short: 'history' }, { n: p.calls_count, label: 'voyage calls', short: 'calls' }]} /></td>
                 {ctx.editable && (
                   <td className={`${TD} whitespace-nowrap`}>
                     <div className="flex gap-1">
-                      <button type="button" className={`${SA_BTN_OUTLINE} h-7 px-2`} title="Edit" aria-label={`Edit ${p.code}`} onClick={() => setDrawer({ id: p.id, init: toForm(p) })}><Pencil size={12} /></button>
-                      <button type="button" className={`${SA_BTN_OUTLINE} h-7 px-2`} title="Merge into…" aria-label={`Merge ${p.code}`} onClick={() => setMergeFor(p)}><GitMerge size={12} /></button>
-                      <button type="button" className={`${SA_BTN_OUTLINE} h-7 px-2 text-[#A8231A]`} aria-label={`Delete ${p.code}`} disabled={!isUnused(p)}
+                      <button type="button" className={ICON_BTN} title="Edit" aria-label={`Edit ${p.code}`} onClick={() => setDrawer({ id: p.id, init: toForm(p) })}><Pencil size={12} /></button>
+                      <button type="button" className={ICON_BTN} title="Merge into…" aria-label={`Merge ${p.code}`} onClick={() => setMergeFor(p)}><GitMerge size={12} /></button>
+                      <button type="button" className={ICON_BTN_DANGER} aria-label={`Delete ${p.code}`} disabled={!isUnused(p)}
                         title={isUnused(p) ? 'Delete' : 'In use — deactivate or merge it'} onClick={() => setDelFor(p)}><Trash2 size={12} /></button>
                     </div>
                   </td>

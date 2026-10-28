@@ -181,6 +181,29 @@ export function recapGroupDue(g: RecapGroup, todayIso: string): RecapDue {
   return { due, overdue: !!due && due < todayIso, allPaid: g.rows.length > 0 && open.length === 0, missing: perInvoice.filter(p => !p.due).length, perInvoice }
 }
 
+// ─── Isi kartu (revisi 2026-10-27, prototype Invoice_Recap_Prototype_revisi.html) ───────────────────────────
+// Judul AWB: "FEDEX NO. 876085252248". Prefix kurir diambil dari AWB mentah ("DHL NO. 702…"); kalau tak ada -> kode PPJK baris pertama.
+export function recapAwbHeading(g: RecapGroup): string {
+  const m = /^(DHL|FEDEX|UPS|EMS)\s*NO\.?\s*:?\s*/i.exec(String(g.awbRaw || '').trim())
+  const carrier = m ? m[1].toUpperCase() : (g.ppjks.map(ppjkCode).find(Boolean) || '')
+  return carrier ? `${carrier} NO. ${g.awb}` : g.awb
+}
+// Pil invoice: SATU pil per jenis dokumen (Freight / Duty / Credit Note Freight / Credit Note Duty), urut tetap. Tanggal = Email Received tiap
+// dokumen jenis itu, urut lama -> baru, tanggal kembar digabung. Jenis yang tidak ada tidak ditampilkan.
+export const RECAP_PILL_ORDER = ['Freight', 'Duty', 'Credit Note Freight', 'Credit Note Duty'] as const
+export type RecapInvoicePill = { label: (typeof RECAP_PILL_ORDER)[number]; dates: string[] }
+export function recapInvoicePills(g: RecapGroup): RecapInvoicePill[] {
+  const by = new Map<string, string[]>()
+  g.rows.forEach(r => {
+    const label = invoiceKindFullLabel(r)
+    const d = String(r.tgl_terima_email || '').slice(0, 10)
+    const list = by.get(label) || []
+    if (d) list.push(d)
+    by.set(label, list)
+  })
+  return RECAP_PILL_ORDER.filter(l => by.has(l)).map(label => ({ label, dates: Array.from(new Set(by.get(label)!)).sort() }))
+}
+
 // Status kartu (Submit to Finance per invoice).
 export function recapGroupStatus(g: RecapGroup): { label: string; tone: 'green' | 'amber' | 'blue' | 'grey' } {
   const n = g.rows.length
@@ -290,7 +313,13 @@ export function splitPerVessel(rows: any[]): VesselSplit[] {
 
 // ─── Query halaman kartu ─────────────────────────────────────────────────────────────────────────
 export type RecapFilters = { ppjk: string | null; an: string | null; from: string | null; to: string | null; search: string; searchCols: string[] }
-export type RecapSummaryCourier = { awb: number; invoices: number; charges: number; credit_notes: number; not_submitted: number; submitted_unpaid: number; paid: number; not_in_audit: number }
+// Key `invoices_excl_cn` / `by_courier` / `by_ppjk` baru dari sql/081 (2026-10-27); opsional -- RPC lama (sql/074) tidak mengirimnya (kartu menampilkan "—").
+export type RecapCourierBreakdown = { courier: string; awb: number; docs: number }
+export type RecapPpjkBreakdown = { ppjk: string; adm: number; duty: number; freight: number; credit_note: number; total: number }
+export type RecapSummaryCourier = {
+  awb: number; invoices: number; charges: number; credit_notes: number; not_submitted: number; submitted_unpaid: number; paid: number; not_in_audit: number
+  invoices_excl_cn?: number; by_courier?: RecapCourierBreakdown[]; by_ppjk?: RecapPpjkBreakdown[]
+}
 
 const PAGE = 1000
 const rpcMissing = (e: any) => !!e && (e.code === 'PGRST202' || e.code === '42883' || /could not find the function|does not exist/i.test(e.message || ''))
@@ -374,6 +403,9 @@ export async function fetchCourierRecapSummary(f: RecapFilters): Promise<RecapSu
       awb: Number(data.awb) || 0, invoices: Number(data.invoices) || 0, charges: Number(data.charges) || 0, credit_notes: Number(data.credit_notes) || 0,
       not_submitted: Number(data.not_submitted) || 0, submitted_unpaid: Number(data.submitted_unpaid) || 0, paid: Number(data.paid) || 0,
       not_in_audit: Number(data.not_in_audit) || 0,
+      invoices_excl_cn: data.invoices_excl_cn === undefined || data.invoices_excl_cn === null ? undefined : Number(data.invoices_excl_cn) || 0,
+      by_courier: Array.isArray(data.by_courier) ? data.by_courier.map((x: any) => ({ courier: String(x.courier ?? '—'), awb: Number(x.awb) || 0, docs: Number(x.docs) || 0 })) : undefined,
+      by_ppjk: Array.isArray(data.by_ppjk) ? data.by_ppjk.map((x: any) => ({ ppjk: String(x.ppjk ?? '—'), adm: Number(x.adm) || 0, duty: Number(x.duty) || 0, freight: Number(x.freight) || 0, credit_note: Number(x.credit_note) || 0, total: Number(x.total) || 0 })) : undefined,
     }
   }
   if (error && !rpcMissing(error)) { console.error('[CourierRecap] ringkasan gagal', error); return null }
@@ -492,11 +524,12 @@ export async function fetchCourierRecapAttentionGroups(f: RecapFilters, tabs: Va
 // List: filter per invoice di query (SharedDataTable). Card: AWB yang punya MINIMAL 1 invoice berstatus itu, isi kartu
 // tetap lengkap (semua invoice & Grand Total). Dihitung di browser (aturan kelompok & filter halaman SAMA fallback RPC),
 // pola SAMA "Needs attention" -- tanpa SQL/RPC baru. KPI aktif mematikan "Needs attention" & sebaliknya.
-export type RecapKpiFilter = 'all' | 'not_submitted' | 'submitted_unpaid' | null
+export type RecapKpiFilter = 'all' | 'not_submitted' | 'submitted' | 'submitted_unpaid' | null
 export const recapRowMatchesKpi = (r: any, k: RecapKpiFilter): boolean =>
   k === 'not_submitted' ? !r.submit_date && !r.tgl_lunas
     : k === 'submitted_unpaid' ? !!r.submit_date && !r.tgl_lunas
-      : true
+      : k === 'submitted' ? !!r.submit_date
+        : true
 export async function fetchCourierRecapKpiGroups(f: RecapFilters, k: Exclude<RecapKpiFilter, 'all' | null>): Promise<RecapGroup[]> {
   const groups = (await fallbackGroups(f)).map(g => buildRecapGroup(g.key, g.rows.map(applyCalc)))
   return groups.filter(g => g.rows.some(r => recapRowMatchesKpi(r, k)))

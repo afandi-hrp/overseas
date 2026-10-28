@@ -10,6 +10,7 @@ import {
   ChipInput, ChipList, ConfirmModal, errBox, Field, FILTER_CTRL, HUB_PAGE_SIZE, HubDrawer, HubFilterBar, MergeModal, Pager, RecentChanges, StateRow, TD, TH, TableCard,
   isInUseError, useAsync, useDebounced, type HubCtx,
 } from './hubUi'
+import { ActiveStatus, FILTER_SEARCH, HubToolbarEnd, ICON_BTN, ICON_BTN_DANGER, ResetButton, UsedBy } from './hubUi'
 
 const isUnused = (v: HubVendor) => !v.invoices_count && !v.history_count && !v.rules_count && !v.alias_count
 interface Form { name: string; npwp: string; aliases: string[]; is_active: boolean }
@@ -49,16 +50,17 @@ export default function VendorsTab({ ctx }: { ctx: HubCtx }) {
   return (
     <div className="space-y-3" data-hub-vendors>
       <HubFilterBar>
-        <div className="w-[260px] flex"><FilterSearch value={search} onChange={setSearch} placeholder="Name / alias / NPWP (min. 6 digits)…" /></div>
+        <div className={FILTER_SEARCH}><FilterSearch value={search} onChange={setSearch} placeholder="Name / alias / NPWP (min. 6 digits)…" /></div>
         <select aria-label="Status" className={FILTER_CTRL} value={active} onChange={e => setActive(e.target.value)}>
           <option value="">All status</option><option value="true">Active</option><option value="false">Inactive</option>
         </select>
         <select aria-label="Missing data" className={FILTER_CTRL} value={missing} onChange={e => setMissing(e.target.value)}>
           <option value="">Missing data: any</option><option value="npwp">Missing NPWP</option>
         </select>
-        <button type="button" className={SA_BTN_OUTLINE} onClick={() => { setSearch(''); setActive(''); setMissing('') }}>Reset</button>
-        <span className="ml-auto text-[12px] text-[#6E5E70]">{data ? `${fmtNumber(data.total, 0)} vendors` : ''}{!ctx.editable ? ' · View only' : ''}</span>
-        {ctx.editable && <button type="button" className={SA_BTN_PRIMARY} onClick={() => setDrawer({ id: null, init: { name: '', npwp: '', aliases: [], is_active: true } })}><Plus size={13} /> Add vendor</button>}
+        <ResetButton onClick={() => { setSearch(''); setActive(''); setMissing('') }} />
+        <HubToolbarEnd count={data ? `${fmtNumber(data.total, 0)} vendors` : ''} viewOnly={!ctx.editable}>
+          {ctx.editable && <button type="button" className={SA_BTN_PRIMARY} onClick={() => setDrawer({ id: null, init: { name: '', npwp: '', aliases: [], is_active: true } })}><Plus size={13} /> Add vendor</button>}
+        </HubToolbarEnd>
       </HubFilterBar>
 
       <TableCard>
@@ -71,14 +73,14 @@ export default function VendorsTab({ ctx }: { ctx: HubCtx }) {
                 <td className={`${TD} font-semibold min-w-[200px]`}>{v.name}</td>
                 <td className={`${TD} whitespace-nowrap tabular-nums`}>{v.npwp ? v.npwp : <Chip tone="amber">No NPWP</Chip>}</td>
                 <td className={TD}><ChipList items={v.aliases} /></td>
-                <td className={`${TD} text-[11.5px] text-[#6E5E70] min-w-[220px]`}>{v.invoices_count} invoices · {v.history_count} history rows · {v.rules_count} approval rules · {v.alias_count} learned aliases</td>
-                <td className={TD}>{v.is_active ? <Chip tone="green">Active</Chip> : <Chip tone="grey">Inactive</Chip>}</td>
+                <td className={`${TD} min-w-[150px]`}><UsedBy items={[{ n: v.invoices_count, label: 'invoices' }, { n: v.history_count, label: 'history rows', short: 'history' }, { n: v.rules_count, label: 'approval rules', short: 'rules' }, { n: v.alias_count, label: 'learned aliases', short: 'aliases' }]} /></td>
+                <td className={TD}><ActiveStatus active={v.is_active} /></td>
                 <td className={`${TD} whitespace-nowrap`}>
                   {ctx.editable && (
                     <div className="flex gap-1">
-                      <button type="button" className={`${SA_BTN_OUTLINE} h-7 px-2`} title="Edit" aria-label={`Edit ${v.name}`} onClick={() => setDrawer({ id: v.id, init: { name: v.name, npwp: v.npwp || '', aliases: v.aliases || [], is_active: v.is_active } })}><Pencil size={12} /></button>
-                      <button type="button" className={`${SA_BTN_OUTLINE} h-7 px-2`} title="Merge into…" aria-label={`Merge ${v.name}`} onClick={() => setMergeFor(v)}><GitMerge size={12} /></button>
-                      <button type="button" className={`${SA_BTN_OUTLINE} h-7 px-2 text-[#A8231A]`} aria-label={`Delete ${v.name}`} disabled={!isUnused(v)}
+                      <button type="button" className={ICON_BTN} title="Edit" aria-label={`Edit ${v.name}`} onClick={() => setDrawer({ id: v.id, init: { name: v.name, npwp: v.npwp || '', aliases: v.aliases || [], is_active: v.is_active } })}><Pencil size={12} /></button>
+                      <button type="button" className={ICON_BTN} title="Merge into…" aria-label={`Merge ${v.name}`} onClick={() => setMergeFor(v)}><GitMerge size={12} /></button>
+                      <button type="button" className={ICON_BTN_DANGER} aria-label={`Delete ${v.name}`} disabled={!isUnused(v)}
                         title={isUnused(v) ? 'Delete' : 'In use — deactivate or merge it'} onClick={() => setDelFor(v)}><Trash2 size={12} /></button>
                     </div>
                   )}
