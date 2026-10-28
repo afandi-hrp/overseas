@@ -9,6 +9,7 @@ import { healthRouter } from './server/routes/health';
 import { n8nRouter, ALLOWED_WEBHOOK_ORIGINS } from './server/routes/n8n';
 import { driveRouter } from './server/routes/drive';
 import { dbGatewayRouter } from './server/routes/dbGateway';
+import { leanRouter } from './server/routes/lean';
 
 // Entry backend BeeHive: menyajikan SPA (Vite dev / dist) + endpoint /api/*. Logika ada di folder server/
 // (config, auth = authorize()/rate limit, security headers, logging, routes/*). Endpoint baru WAJIB lewat
@@ -23,6 +24,7 @@ app.use('/api', healthRouter);
 app.use('/api', n8nRouter);
 app.use('/api', driveRouter);
 app.use('/api', dbGatewayRouter);
+app.use('/api', leanRouter);
 
 // /api/* yang tidak dikenal -> 404 JSON (dulu jatuh ke SPA fallback & balikin index.html).
 app.use('/api', (_req, res) => {

@@ -30,3 +30,8 @@ export const DB_GATEWAY_MODE: 'log' | 'enforce' = process.env.DB_GATEWAY_MODE ==
 export const DB_GATEWAY_LOG: 'all' | 'unlisted' = process.env.DB_GATEWAY_LOG === 'unlisted' ? 'unlisted' : 'all';
 // Kuota terpisah dari /api lain (1 halaman list bisa memicu puluhan query).
 export const DB_RATE_LIMIT_PER_MIN = Number(process.env.DB_RATE_LIMIT_PER_MIN) || 1500;
+
+// ── lean-api (Noon Report SQL Server) ── dipanggil server-ke-server lewat /api/lean/*; API key TIDAK pernah ke browser.
+// Kosong = /api/lean/* dijawab 503.
+export const LEAN_API_URL = (process.env.LEAN_API_URL || '').replace(/\/+$/, '');
+export const LEAN_API_KEY = process.env.LEAN_API_KEY || '';
