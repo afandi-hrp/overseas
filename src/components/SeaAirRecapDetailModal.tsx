@@ -12,14 +12,13 @@
 // masih ada perubahan -> konfirmasi.
 import React, { useCallback, useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X, MoreHorizontal, Pencil, Send, ChevronDown, ChevronUp, ChevronRight, Lock, Unlock, PlusCircle, Trash2, History, FileInput, Maximize2, Minimize2 } from 'lucide-react'
+import { X, Pencil, Send, ChevronDown, ChevronUp, ChevronRight, Lock, Unlock, PlusCircle, History, FileInput, Maximize2, Minimize2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, SA_BTN_GREEN, Chip, Pill, PtBadge, type Tone } from './SeaAirAuditUi'
 import SeaAirRecapCostsTab from './SeaAirRecapCostsTab'
 import SeaAirRecapDocumentsTab from './SeaAirRecapDocumentsTab'
-import { CostMixBar, containerLabel } from './SeaAirRecapCardList'
+import { CostMixBar } from './SeaAirRecapCardList'
 import SeaAirActivityTrail from './SeaAirActivityTrail'
-import SeaAirEditAwbButton from './SeaAirEditAwbDialog'
 import SeaAirVendorPaymentsPanel, { VP_PANEL_ID } from './SeaAirVendorPaymentsPanel'
 import { fmtRp, fmtDateShort, fmtValas, companyFullName, notifySeaAirAuditChanged } from '../utils/SeaAirAuditHelpers'
 import {
@@ -94,8 +93,8 @@ const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, 
 )
 
 export default function SeaAirRecapDetailModal({
-  rec, companyNames, canEdit, canSeeCosts, canEditCosts, canSeeDocs, canEditDocs, isAdmin = false, onUnlock, onClose, onEdit, onSubmit, onToggleDraft, onDelete, onChanged,
-  variant = 'modal', onToggleVariant, onAnyDirtyChange, onAwbChanged,
+  rec, companyNames, canEdit, canSeeCosts, canEditCosts, canSeeDocs, canEditDocs, isAdmin = false, onUnlock, onClose, onEdit, onSubmit, onToggleDraft, onChanged,
+  variant = 'modal', onToggleVariant, onAnyDirtyChange,
 }: {
   rec: any
   companyNames: Record<string, string>
@@ -129,7 +128,6 @@ export default function SeaAirRecapDetailModal({
   })
   const [visited, setVisited] = useState<Record<string, boolean>>({ overview: true })
   const [dirtyTabs, setDirtyTabs] = useState<Record<string, boolean>>({})
-  const [menuOpen, setMenuOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [auditRow, setAuditRow] = useState<any>(null)
   const [log, setLog] = useState<RecapLogEntry[] | null>(null)
@@ -189,13 +187,6 @@ export default function SeaAirRecapDetailModal({
     setVpNonce(n => n + 1)
     if (anyDirty) setStaleBanner(true)
     else setTabsNonce(n => n + 1)
-  }
-  // AWB diubah (RPC fn_ubah_awb_seaair): data yang sama berubah seperti setelah susulan (Audit PIB, Checklist, Doc Validation, Costs,
-  // Vendor payments, daftar Recap) -> pakai jalur muat-ulang yang sama; induk menambal snapshot supaya judul & tombol Upload Additional
-  // Document langsung memakai AWB baru walau baris sudah tidak cocok dengan filter pencarian lama.
-  const handleAwbChanged = (newAwb: string) => {
-    onAwbChanged?.(newAwb)
-    handleSusulanCompleted()
   }
   const reloadAfterSusulan = () => {
     if (anyDirty && !window.confirm('Reloading discards your unsaved changes in Doc Validation / Cost Validation. Continue?')) return
@@ -304,8 +295,12 @@ export default function SeaAirRecapDetailModal({
 
   // Tombol header ringkas di panel; label Edit disembunyikan bila panel sempit (container < @5xl, mis. laptop 14").
   const btnSm = isPanel ? ' !h-8 !px-2.5' : ''
-  const btnLabel = isPanel ? 'hidden @5xl:inline' : ''
   const iconBtn = isPanel ? 'h-8 w-8' : 'h-9 w-9'
+  // Tombol Edit shipment kini di strip Shipment info, di kiri "Show/Hide shipment info" (2026-10-29, permintaan user).
+  const editBtn = canEdit ? (
+    <button type="button" className={`${SA_BTN_OUTLINE} !h-7 !px-2.5 !text-[11.5px] !bg-transparent !border-[#D9C7DA] hover:!bg-[#EBDDEA]`} onClick={() => onEdit(rec)} disabled={locked} aria-label="Edit"
+      title={locked ? 'Locked — submitted to Finance. Ask an Admin to unlock it first.' : 'Edit'}><Pencil size={12} /> Edit</button>
+  ) : null
 
   const content = (
       <div className={isPanel
@@ -315,24 +310,23 @@ export default function SeaAirRecapDetailModal({
             padding/judul lebih kecil, tombol h-8, label Edit jadi ikon bila panel sempit (< @5xl), judul `flex-1` supaya aksi tetap 1 baris. */}
         <div className={`border-b border-[#EADFD6] shrink-0 ${isPanel ? 'px-4 pt-2.5 pb-0' : 'px-5 pt-4 pb-0'}`}>
           <div className={`flex flex-wrap items-start justify-between ${isPanel ? 'gap-x-3 gap-y-1.5' : 'gap-3'}`}>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className={`${isPanel ? 'text-[16px]' : 'text-[18px]'} font-bold text-[#3B1B3D] [overflow-wrap:anywhere]`}>{rec.awb || '—'}</h2>
-                <SeaAirEditAwbButton seaairId={seaairId} awb={rec.awb} locked={locked} onChanged={handleAwbChanged} className="-ml-1" />
-                <Chip tone="blue">{containerLabel(rec)}</Chip>
-                {rec.a_n && <PtBadge code={rec.a_n} title={ptName} />}
-                {rec.duplicate_of && <Chip tone="red" title="Another Invoice Recap row with the same BL / AWB already exists">Possible duplicate upload</Chip>}
-                {locked && <Chip tone="grey" title="Submitted to Finance — read-only"><Lock size={10} /> Locked</Chip>}
-              </div>
-              {/* Teks origin → destination header DIHAPUS 2026-10-14 (permintaan user) -- ada di strip Shipment info. */}
-              {/* Chip ATD / ATA header DIHAPUS 2026-10-14 (permintaan user) -- tanggalnya ada di strip Shipment info (ATD → ATA). */}
-            </div>
-            <div className={`flex items-center flex-wrap justify-end ${isPanel ? 'gap-1.5' : 'gap-2'}`}>
-              <div className={`text-right ${isPanel ? 'mr-1' : 'mr-2'}`}>
-                <div className={SA_LABEL}>Landed cost</div>
-                <div className={`${isPanel ? 'text-[17px]' : 'text-[20px]'} font-bold text-[#3B1B3D] tabular-nums leading-tight whitespace-nowrap`}>{fmtRp(lc.landed)}</div>
-              </div>
-              {canEdit && <button type="button" className={`${SA_BTN_OUTLINE}${btnSm} disabled:opacity-50 disabled:cursor-not-allowed`} onClick={() => onEdit(rec)} disabled={locked} aria-label="Edit" title={locked ? 'Locked — submitted to Finance. Ask an Admin to unlock it first.' : 'Edit'}><Pencil size={13} /> <span className={btnLabel}>Edit</span></button>}
+            {/* 2026-10-29 (permintaan user): judul AWB + pensil Edit AWB + chip jenis/PT + Landed cost DIHAPUS dari header (AWB/PT/Landed cost sudah di kartu
+                & tab Overview); tombol menu "..." dikeluarkan jadi tombol biasa di KIRI bersama Submit to Finance; tombol Edit pindah ke strip Shipment info.
+                Edit AWB (SeaAirEditAwbButton) masih ada di detail Audit PIB. Chip Possible duplicate / Locked tetap tampil bila berlaku. */}
+            <div className={`min-w-0 flex-1 flex items-center flex-wrap ${isPanel ? 'gap-1.5' : 'gap-2'}`}>
+              {rec.a_n && <PtBadge code={rec.a_n} title={ptName} />}
+              {canEdit && seaairId && (() => {
+                // Keputusan user: PIB baru boleh Audited kalau Recap sudah bisa Submit to Finance (0 issue).
+                const toAudited = rec.audit_status === 'ARCHIVED'
+                const blocked = toAudited && issues.length > 0
+                return (
+                  <button type="button" disabled={blocked} onClick={() => onToggleDraft(rec)}
+                    title={blocked ? `${issues.length} open issue${issues.length === 1 ? '' : 's'} must be confirmed by an Admin first — fix the open issues first` : toAudited ? 'Moves the PIB to Audited (Audit PIB)' : 'Moves the PIB back to Draft (Audit PIB)'}
+                    className={`${SA_BTN_OUTLINE}${btnSm}`}>
+                    View in Audit PIB
+                  </button>
+                )
+              })()}
               {canEdit && !submitted && (
                 <button type="button" onClick={handleSubmit} disabled={submitting || !!submitBlocker}
                   title={submitBlocker ? `${submitBlocker}${issues.length ? '\n' + issues.map(i => `• ${i.text}`).join('\n') : ''}` : undefined}
@@ -341,32 +335,10 @@ export default function SeaAirRecapDetailModal({
                 </button>
               )}
               {submitted && <Pill tone="green">{status.label}</Pill>}
-              {canEdit && (
-                <div className="relative">
-                  <button type="button" aria-label="More actions" onClick={() => setMenuOpen(v => !v)} className={`inline-flex items-center justify-center ${iconBtn} rounded-xl border border-[#EADFD6] text-[#3B1B3D] hover:bg-[#F6EFEA]`}><MoreHorizontal size={16} /></button>
-                  {menuOpen && (
-                    <div className="absolute right-0 mt-1 w-56 rounded-xl border border-[#EADFD6] bg-white shadow-lg z-10 py-1 text-[12.5px]">
-                      {seaairId && (() => {
-                        // Keputusan user: PIB baru boleh Audited kalau Recap sudah bisa Submit to Finance (0 issue).
-                        const toAudited = rec.audit_status === 'ARCHIVED'
-                        const blocked = toAudited && issues.length > 0
-                        return (
-                          <button type="button" disabled={blocked}
-                            title={blocked ? `${issues.length} open issue${issues.length === 1 ? '' : 's'} must be confirmed by an Admin first` : undefined}
-                            className="w-full text-left px-3 py-2 hover:bg-[#F6EFEA] text-[#3B1B3D] disabled:text-[#B7A9B8] disabled:hover:bg-transparent disabled:cursor-not-allowed"
-                            onClick={() => { setMenuOpen(false); onToggleDraft(rec) }}>
-                            {toAudited ? 'Move PIB to Audited (Audit PIB)' : 'Move PIB back to Draft (Audit PIB)'}
-                            {blocked && <div className="text-[10.5px]">Fix the open issues first</div>}
-                          </button>
-                        )
-                      })()}
-                      <button type="button" disabled={locked} title={locked ? 'Locked — submitted to Finance' : undefined}
-                        className="w-full text-left px-3 py-2 hover:bg-[#FDE7E4] text-[#A8231A] disabled:text-[#D9B3AE] disabled:hover:bg-transparent disabled:cursor-not-allowed"
-                        onClick={() => { setMenuOpen(false); onDelete(rec) }}>Delete shipment</button>
-                    </div>
-                  )}
-                </div>
-              )}
+              {rec.duplicate_of && <Chip tone="red" title="Another Invoice Recap row with the same BL / AWB already exists">Possible duplicate upload</Chip>}
+              {locked && <Chip tone="grey" title="Submitted to Finance — read-only"><Lock size={10} /> Locked</Chip>}
+            </div>
+            <div className={`flex items-center flex-wrap justify-end ${isPanel ? 'gap-1.5' : 'gap-2'}`}>
               {onToggleVariant && (
                 <button type="button" onClick={onToggleVariant} aria-label={isPanel ? 'Expand to full window' : 'Collapse to side panel'} title={isPanel ? 'Expand to full window' : 'Collapse to side panel'}
                   className={`inline-flex items-center justify-center ${iconBtn} rounded-xl text-[#6E5E70] hover:bg-[#F6EFEA]`} data-variant-toggle>
@@ -404,13 +376,17 @@ export default function SeaAirRecapDetailModal({
                 <span className="min-w-0"><span className="text-[#8A7A8B]">Supplier </span><b className="text-[#3B1B3D] [overflow-wrap:anywhere]">{rec.vendor || '—'}</b></span>
                 <span className="min-w-0"><span className="text-[#8A7A8B]">Invoice no </span><b className="text-[#3B1B3D] [overflow-wrap:anywhere]">{rec.no_invoice || '—'}</b></span>
                 <span className="min-w-0"><span className="text-[#8A7A8B]">Type </span><b className="text-[#3B1B3D]">{typeLabel}</b></span>
-                <button type="button" onClick={toggleShipInfo} className="ml-auto inline-flex items-center gap-1 text-[11.5px] font-semibold text-[#6B3470] hover:underline shrink-0">
-                  Show all shipment info <ChevronDown size={13} />
-                </button>
+                <div className="ml-auto flex items-center gap-3 shrink-0">
+                  {editBtn}
+                  <button type="button" onClick={toggleShipInfo} className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-[#6B3470] hover:underline shrink-0">
+                    Show all shipment info <ChevronDown size={13} />
+                  </button>
+                </div>
               </div>
             ) : (
               <>
-                <div className="flex justify-end mb-1">
+                <div className="flex justify-end items-center gap-3 mb-1">
+                  {editBtn}
                   <button type="button" onClick={toggleShipInfo} className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#6B3470] hover:underline">
                     Hide shipment info <ChevronUp size={13} />
                   </button>

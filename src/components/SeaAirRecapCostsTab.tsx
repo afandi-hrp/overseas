@@ -393,15 +393,17 @@ export default function SeaAirRecapCostsTab({ seaairId, canEdit: canEditPage, is
 
         return (
           <div key={sec.key} className={`${SA_CARD} overflow-hidden`}>
-            <button type="button" onClick={() => setOpen(p => ({ ...p, [sec.key]: !isOpen }))} className="w-full flex flex-wrap items-center gap-3 px-4 py-3 text-left hover:bg-[#FBF7F4]">
-              {isOpen ? <ChevronDown size={15} className="text-[#6E5E70]" /> : <ChevronRight size={15} className="text-[#6E5E70]" />}
-              <div className="mr-auto min-w-0">
-                <div className="text-[13.5px] font-bold text-[#3B1B3D]">{sec.label}</div>
+            <button type="button" onClick={() => setOpen(p => ({ ...p, [sec.key]: !isOpen }))} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[#FBF7F4]">
+              {isOpen ? <ChevronDown size={15} className="text-[#6E5E70] shrink-0" /> : <ChevronRight size={15} className="text-[#6E5E70] shrink-0" />}
+              <div className="mr-auto min-w-0 flex-1">
+                <div className="text-[13.5px] font-bold text-[#3B1B3D] truncate">{sec.label}</div>
                 <div className="text-[11.5px] text-[#6E5E70] truncate">{vendor || '—'}</div>
               </div>
-              {overSum > 0 && <span className="text-[12px] font-bold text-[#A8231A] tabular-nums">+{fmtAmount(amountRow, overSum).replace(/^Rp /, '')} over</span>}
-              <span className="text-[14px] font-bold text-[#3B1B3D] tabular-nums">{fmtAmount(amountRow, amount)}</span>
-              <Pill tone={pill.tone}>{pill.text}</Pill>
+              {/* 2026-10-29 (permintaan user): kolom "over" / nominal / status LEBAR TETAP & rata kanan supaya sejajar antar segmen
+                  (saat tabel di-hide, sebelumnya posisi bergeser mengikuti panjang angka & label status). */}
+              <span className="shrink-0 w-[130px] text-right text-[12px] font-bold text-[#A8231A] tabular-nums">{overSum > 0 ? `+${fmtAmount(amountRow, overSum).replace(/^Rp /, '')} over` : ''}</span>
+              <span className="shrink-0 w-[150px] text-right text-[14px] font-bold text-[#3B1B3D] tabular-nums">{fmtAmount(amountRow, amount)}</span>
+              <span className="shrink-0 w-[150px] flex justify-end"><Pill tone={pill.tone}>{pill.text}</Pill></span>
             </button>
 
             {isOpen && (

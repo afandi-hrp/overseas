@@ -21,6 +21,18 @@
 - Kartu lebar (`SeaAirRecapCardList.tsx`): teks tetap rata KIRI per kolom (revisi: rata tengah teks ditolak user); di @7xl (zoom out / monitor lebar) semua kolom berlebar `fr` (1 : 1,4 : 1 : 1 : 1)
   sehingga kolom-kolom tersebar rata di badan kartu & skor tidak menempel NO. PO. Chip status ("Ready to submit" / "⚠ N issues" / Submitted) di ATAS titik skor; kolom kanan hanya Landed cost + Validation.
 
+- **Revisi 2026-10-29 (permintaan user, kartu LEBAR saja; kartu ringkas/compact tidak diubah)**: chip PT (WSI) di KIRI chip jenis/kontainer (FCL · 4×40 GP); tombol **Validation dihapus** (seluruh kartu tetap
+  klik = buka detail); **NO. PO ditukar dgn ATD/ATA**: kolom 2 = vendor, rute, `PO: <no>` (+N PO); kolom ATD/ATA (+ETD/ETA) sempat dipindah ke kolom 3 lalu **DIHAPUS dari kartu lebar** (susulan, permintaan user; tetap ada di detail/kartu ringkas). Kolom 2 (susulan): baris rute jadi `Origin: <origin>` saja (tujuan/destination dihapus dari tampilan, tetap ada di tooltip), label "PO:" dihapus (nomor PO langsung). Grid kini 4 kolom: [chip/AWB/Upload | vendor+rute+PO (2,4fr @5xl, 2fr @7xl) | skor 275px / minmax(300px,1fr) | Landed cost] supaya rute panjang tidak terpotong & rapi saat zoom in/out.
+
+- **Header detail Invoice Recap (`SeaAirRecapDetailModal.tsx`, 2026-10-29, permintaan user)**: judul AWB + pensil Edit AWB + chip jenis/PT + Landed cost DIHAPUS dari header; menu "..." dibongkar jadi tombol biasa di KIRI
+  header (`View in Audit PIB` (label baru 2026-10-29, aksi tetap pindah status Draft<->Audited; tooltip menjelaskan), `Delete shipment`, lalu `Submit to Finance`); kanan = expand + close. Tombol **Edit** pindah ke strip Shipment info (kiri "Show/Hide shipment info").
+  Chip "Possible duplicate upload" & "Locked" tetap tampil bila berlaku. Edit AWB (`SeaAirEditAwbButton`) kini HANYA di detail Audit PIB; prop `onAwbChanged` modal ini tak dipakai lagi (induk masih mengirim).
+
+- **Susulan 2026-10-29 (permintaan user, saat panel detail terbuka)**: kartu RINGKAS (kiri) tanpa ATD/ATA, Origin & tombol Validation; kolom kanan = Uploaded, Landed cost, lalu status
+  (Not submitted + N issues/Ready) DI BAWAH angka Landed cost. Header detail: tombol **Delete shipment DIHAPUS** (prop `onDelete` masih dikirim induk, tidak dipakai modal) dan **chip PT (PtBadge, ungu) di KIRI tombol Move PIB (paling kiri header)**.
+
+- **Tab Cost Validation (`SeaAirRecapCostsTab.tsx`, 2026-10-29, permintaan user)**: baris header tiap segmen (tabel di-hide) memakai 3 kolom LEBAR TETAP rata kanan -- "+N over" 130px, nominal 150px, pil status 150px -- supaya nominal & status sejajar antar segmen (dulu bergeser mengikuti panjang angka/label). Header tidak `flex-wrap` lagi; judul segmen yang menyusut dipotong (`truncate`).
+
 ## Doc Validation Courier — BT Vendor GABUNGAN (1 BT utk beberapa shipment, 2026-10-21, permintaan user; mockup `mockup_bt_pib_cn.html`)
 
 - Hanya LOGIKA aplikasi (ekstraksi AI tak berubah). Logika murni di `src/utils/BtVendorCombined.ts` (`computeBtCombined`, `applyBtVendorRows`) dipakai
