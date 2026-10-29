@@ -9,7 +9,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
-import { X, Pencil, Send, CheckCircle2, Maximize2, Minimize2, AlertTriangle, RotateCcw, PanelLeftClose, PanelLeftOpen, FileText, Wallet, ShieldCheck, Trash2, Plus, ChevronDown, ChevronUp, Ban } from 'lucide-react'
+import { X, Pencil, Send, CheckCircle2, Maximize2, Minimize2, AlertTriangle, RotateCcw, PanelLeftClose, PanelLeftOpen, FileText, Wallet, ShieldCheck, Trash2, Plus, ChevronDown, ChevronUp, Ban, Clock } from 'lucide-react'
 import { StatusChip, CostAgentCombobox, CostAgentModal, FieldLabel, type ComboOption } from './CostAgentUi'
 import { Chip, PtBadge, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_BTN_GREEN, SA_INPUT, SA_LABEL, SA_CARD } from './SeaAirAuditUi'
 import { LoadingState, LoadingSpinner } from './LoadingState'
@@ -190,7 +190,11 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
   const [voidDlg, setVoidDlg] = useState(false)
   const [voidBusy, setVoidBusy] = useState(false)
   const [voidErr, setVoidErr] = useState<string | null>(null)
-  const canVoid = !!inv && ['failed', 'verification', 'rejected', 'waiting_approval'].includes(inv.status) && (canEdit || !!wf?.me.can_verify)
+  // Void (2026-10-29, permintaan user): failed / verification / rejected = Maker seperti sebelumnya; saat waiting_approval HANYA approver langkah yang sedang aktif
+  // (atau penggantinya -> me.can_approve) -- Maker tidak lagi. Server menegakkan di fn_cost_agent_void_invoice (SQL 103).
+  const canVoid = !!inv && (inv.status === 'waiting_approval'
+    ? !!wf && (wf.me.can_approve || isApproverOf(activeApprovalStep(data?.approvals || []), actor))
+    : ['failed', 'verification', 'rejected'].includes(inv.status) && (canEdit || !!wf?.me.can_verify))
   const doVoid = async (reason: string) => {
     if (!inv) return
     setVoidBusy(true); setVoidErr(null)
@@ -361,6 +365,14 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
         <div className="flex-1 min-h-0 overflow-hidden bg-[#FBF7F4]">
           {loading ? <LoadingState /> : error ? <p className="p-5 text-sm text-[#A8231A]">{error}</p> : !data ? null : tab === 'lines' ? (
             <div className="h-full p-2.5 min-h-0 flex flex-col gap-2">
+              {/* Validasi checker belum bisa dilakukan akun ini (mis. "SoD: you submitted or approved this invoice"): alasan dari server apa adanya, supaya
+                  tombol Validate / Split yang tidak muncul tidak membingungkan. Hanya saat validasi masih menunggu. */}
+              {inv?.status === 'waiting_approval' && wf?.validation?.status === 'pending' && !wf.me.can_validate && wf.me.blocked_reason && (
+                <div className="shrink-0 rounded-lg border border-[#F2D58A] bg-[#FFF8E6] px-3 py-2 text-[12.5px] text-[#7A4F00] flex items-start gap-2" data-checker-blocked role="status">
+                  <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                  <span className="min-w-0 [overflow-wrap:anywhere]"><b>You cannot validate this invoice:</b> {wf.me.blocked_reason}</span>
+                </div>
+              )}
               <div className={`${SA_CARD} flex-1 flex min-h-0 overflow-hidden`}>
               {showViewer && (
                 <div className="w-[33%] max-w-[600px] min-w-[280px] border-r border-[#EADFD6] flex flex-col min-h-0 max-lg:hidden">
@@ -460,9 +472,16 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
             <AmountsBar inv={inv} editable={headerEditable} bad={linesMismatch} warn={notesFor('total').length > 0} actor={actor} onSaved={reload} onToast={onToast} />
             {actionError && <span className="text-[12.5px] text-[#A8231A] flex items-center gap-1.5"><AlertTriangle size={13} /> {actionError}</span>}
             {inv.status === 'waiting_approval' && (
-              <span className="text-[12.5px] text-[#5B2E8C]">Waiting for approval{activeStep ? ` — step ${activeStep.step_no}: ${activeStep.approver_label}` : ''}.</span>
+              // Semua level sudah approve tetapi validasi checker belum: jangan tulis "Waiting for approval" (2026-10-29, permintaan user). Chip berikon, satu baris, memotong bila sempit.
+              <span className="inline-flex items-center gap-1.5 h-7 px-3 rounded-full bg-[#EFE7F7] text-[#5B2E8C] text-[12px] font-semibold min-w-0 max-w-full" data-footer-waiting
+                title={!activeStep && wf?.validation?.status === 'pending' ? 'All approvals done — waiting for the checker to validate.' : undefined}>
+                <Clock size={12} className="shrink-0" />
+                <span className="truncate">{!activeStep && wf?.validation?.status === 'pending'
+                  ? 'All approvals done — waiting for the checker to validate'
+                  : <>Waiting for approval{activeStep ? ` — step ${activeStep.step_no}: ${activeStep.approver_label}` : ''}</>}</span>
+              </span>
             )}
-            {inv.status === 'paid' && <span className="text-[12.5px] text-[#17663D]">Paid {fmtDate(inv.paid_at)}{inv.paid_ref ? ` · ref ${inv.paid_ref}` : ''}</span>}
+            {inv.status === 'paid' && <span className="inline-flex items-center gap-1.5 h-7 px-3 rounded-full bg-[#EAF6EF] text-[#17663D] text-[12px] font-semibold"><CheckCircle2 size={12} className="shrink-0" /> Paid {fmtDate(inv.paid_at)}{inv.paid_ref ? ` · ref ${inv.paid_ref}` : ''}</span>}
             <div className="ml-auto flex items-center gap-2">
               {inv.status === 'waiting_approval' && (wf ? (wf.me.can_approve || wf.me.can_validate) : iAmApprover && canEdit) && tab !== 'approval' && (
                 <button type="button" className={SA_BTN_GREEN} onClick={() => setTab('approval')}><ShieldCheck size={13} /> Review &amp; decide</button>
@@ -619,12 +638,14 @@ function InfoStrip({ inv, open, onToggle, vesselWarn, portWarn, voyageWarn, call
   )
 }
 
+// Grand total (2026-10-29, permintaan user: footer dirapikan): label di atas dan angka sebaris dengan bubble Cost lines / VAT / WHT (struktur label-atas-isian-bawah SAMA),
+// dipisah garis tipis dari kelompok bubble.
 function GrandTotal({ value }: { value: string }) {
   return (
-    <span className="inline-flex items-baseline gap-2 whitespace-nowrap" data-grand-total>
-      <span className={SA_LABEL}>Grand total</span>
-      <span className="text-[16px] font-bold text-[#3B1B3D] tabular-nums">{value}</span>
-    </span>
+    <div className="min-w-0 border-l border-[#E4D3E2] pl-4 ml-1 whitespace-nowrap" data-grand-total>
+      <div className={`${SA_LABEL} mb-0.5`}>Grand total</div>
+      <div className="text-[17px] leading-[22px] font-extrabold text-[#3B2260] tabular-nums">{value}</div>
+    </div>
   )
 }
 

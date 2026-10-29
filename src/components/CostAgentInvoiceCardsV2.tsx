@@ -136,14 +136,16 @@ interface RowActions {
 }
 
 // ─── Kartu ──────────────────────────────────────────────────────────────────────────────────────────────────────
-// Tampilan kartu mengikuti kartu Invoice Recap Courier (2026-10-29, permintaan user; CourierRecapCardList): judul tebal ungu + vendor kecil + pil PT |
-// kapal & pelabuhan | pil berwarna (Voyage, Invoice date) | stepper 4 tahap | status + Needs attention | Grand total | tombol bulat "Open ›".
-// Container query pada lebar KARTU: >= 1240px TUJUH kolom dengan pembatas vertikal samar (+ kolom hapus untuk Admin); lebih sempit 2 kolom dengan
-// pembatas horizontal samar, stepper selebar kartu. Hanya tampilan -- semua nilai apa adanya dari fn_cost_agent_invoice_cards.
+// Tampilan kartu mengikuti kartu Invoice Recap Courier (2026-10-29, permintaan user; CourierRecapCardList): judul tebal ungu + vendor kecil + pil PT + kapal · pelabuhan |
+// pil berwarna (Voyage, Invoice date) | stepper 4 tahap | status + Need Attention | Grand total | tombol bulat "Open ›".
+// Revisi 2026-10-29 (laporan user: jelek di laptop 14"): kapal & pelabuhan digabung ke kolom identitas (6 kolom, bukan 7), kolom punya lebar MINIMUM yang cukup (jumlah
+// minimum + jarak = 1166px < ambang 1180px, jadi tidak pernah meluap), judul maksimal 2 baris. Container query pada lebar KARTU: >= 1180px enam kolom + pembatas vertikal samar
+// (+ kolom hapus Admin); lebih sempit dua kolom (identitas penuh | pil + status | stepper penuh | total + tombol) dengan pembatas horizontal samar.
+// Hanya tampilan -- semua nilai apa adanya dari fn_cost_agent_invoice_cards.
 const SEP = 'border-[rgba(138,123,155,0.18)]'
-const sepV = `@min-[1240px]:border-l @min-[1240px]:pl-4 ${SEP}`
-const sepH = `border-t pt-2.5 @min-[1240px]:border-t-0 @min-[1240px]:pt-0 ${SEP}`
-const PILL_LABEL = 'w-[84px] shrink-0 text-left'
+const sepV = `@min-[1180px]:border-l @min-[1180px]:pl-4 ${SEP}`
+const sepH = `border-t pt-2.5 @min-[1180px]:border-t-0 @min-[1180px]:pt-0 ${SEP}`
+const PILL_LABEL = 'w-[74px] shrink-0 text-left'
 
 export function InvoiceCardV2({ c, a }: { c: InvoiceCard; a: RowActions }) {
   const wait = waitingText(c)
@@ -151,48 +153,46 @@ export function InvoiceCardV2({ c, a }: { c: InvoiceCard; a: RowActions }) {
   const hasDelete = !!a.onDelete
   const quiet = c.findings === 0 && !['void', 'failed', 'processing'].includes(c.bucket) // tidak ada temuan -> centang hijau seperti kartu Courier
   const grid = hasDelete
-    ? `@min-[1240px]:grid-cols-[minmax(170px,1.3fr)_minmax(120px,0.9fr)_minmax(190px,0.9fr)_minmax(250px,1.2fr)_minmax(120px,0.8fr)_120px_100px_36px]`
-    : `@min-[1240px]:grid-cols-[minmax(170px,1.3fr)_minmax(120px,0.9fr)_minmax(190px,0.9fr)_minmax(250px,1.2fr)_minmax(120px,0.8fr)_120px_100px]`
+    ? '@min-[1180px]:grid-cols-[minmax(200px,1.5fr)_208px_minmax(250px,1.4fr)_150px_150px_96px_36px]'
+    : '@min-[1180px]:grid-cols-[minmax(200px,1.5fr)_208px_minmax(250px,1.4fr)_150px_150px_96px]'
+  const where = [c.vessel.name, [c.port.code, c.port.name].filter(Boolean).join(' ')].filter(Boolean).join(' · ')
   return (
     <div className={`@container relative shrink-0 ${SA_CARD} border-l-4 ${EDGE[c.bucket] || EDGE.void} overflow-hidden cursor-pointer ${a.openId === c.id ? 'ring-2 ring-[#6B3470]' : 'hover:border-[#D9C7DA] hover:shadow-md'} transition-shadow ${c.bucket === 'void' ? 'opacity-75' : ''}`}
       onClick={a.onOpen} data-invoice-card={c.id} aria-current={a.openId === c.id || undefined}>
-      <div className={`grid grid-cols-2 gap-x-3.5 gap-y-2.5 px-3.5 py-3 items-start ${grid} @min-[1240px]:gap-x-4 @min-[1240px]:px-4 @min-[1240px]:py-3.5 @min-[1240px]:items-center`}>
-        {/* 1. Judul (no. invoice), vendor, pil PT */}
-        <div className={`min-w-0 flex items-start gap-2.5 ${hasDelete ? 'pr-8' : ''} @min-[1240px]:pr-0 @min-[1240px]:[grid-column:1] @min-[1240px]:[grid-row:1]`}>
+      <div className={`grid grid-cols-2 gap-x-3.5 gap-y-2.5 px-3.5 py-3 items-start ${grid} @min-[1180px]:gap-x-4 @min-[1180px]:px-4 @min-[1180px]:py-3.5 @min-[1180px]:items-center`}>
+        {/* 1. Judul (no. invoice, maks 2 baris), vendor, pil PT + kapal · pelabuhan */}
+        <div className={`min-w-0 col-span-2 flex items-start gap-2.5 ${hasDelete ? 'pr-8' : ''} @min-[1180px]:col-span-1 @min-[1180px]:pr-0 @min-[1180px]:[grid-column:1] @min-[1180px]:[grid-row:1]`}>
           {a.checkbox && (
             <input type="checkbox" aria-label={`Select invoice ${c.invoice_no || c.id}`} className="mt-1 w-4 h-4 accent-[#6B3470] shrink-0" checked={a.checkbox.checked}
               onClick={e => e.stopPropagation()} onChange={e => a.checkbox!.onChange(e.target.checked)} />
           )}
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[14px] @min-[1240px]:text-[15px] font-extrabold text-[#3B2260] tabular-nums leading-tight [overflow-wrap:anywhere]">{c.invoice_no || <span className="text-[#8A7A8B]">#{c.id}</span>}</span>
-              {c.duplicate_of && <span className="inline-flex text-[#B7791F]" title={`Possible duplicate: same vendor and invoice number as #${c.duplicate_of}`} aria-label="Possible duplicate" data-duplicate><AlertTriangle size={14} /></span>}
+            <div className="flex items-start gap-1.5">
+              <span className="min-w-0 text-[13.5px] font-extrabold text-[#3B2260] tabular-nums leading-snug line-clamp-2 [overflow-wrap:anywhere]" title={c.invoice_no || undefined}>{c.invoice_no || <span className="text-[#8A7A8B]">#{c.id}</span>}</span>
+              {c.duplicate_of && <span className="inline-flex shrink-0 text-[#B7791F]" title={`Possible duplicate: same vendor and invoice number as #${c.duplicate_of}`} aria-label="Possible duplicate" data-duplicate><AlertTriangle size={14} /></span>}
             </div>
-            <div className="text-[11.5px] text-[#8A7A8B] mt-0.5 mb-1.5 line-clamp-2" title={c.vendor.name || undefined}>{c.vendor.name || 'Unknown vendor'}</div>
-            <div className="flex flex-wrap items-center gap-1.5">{c.company && <Pill tone="grey">{c.company}</Pill>}</div>
+            <div className="text-[11.5px] text-[#8A7A8B] mt-0.5 truncate" title={c.vendor.name || undefined}>{c.vendor.name || 'Unknown vendor'}</div>
+            <div className="mt-1.5 flex items-center gap-2 min-w-0">
+              {c.company && <Pill tone="grey" className="shrink-0">{c.company}</Pill>}
+              <span className="min-w-0 truncate text-[11.5px] text-[#6E5E70]" title={where || undefined} data-vessel-port>{where || '—'}</span>
+            </div>
           </div>
         </div>
 
-        {/* 2. Kapal & pelabuhan (susunan sama kolom PO & Origin di kartu Courier) */}
-        <div className={`min-w-0 ${sepV} @min-[1240px]:[grid-column:2] @min-[1240px]:[grid-row:1]`}>
-          <div className="text-[12.5px] font-medium text-[#4A3A5C] truncate" title={c.vessel.name || undefined}>{c.vessel.name || <span className="text-[#6E5E70]">No vessel</span>}</div>
-          <div className="text-[11px] text-[#8A7A8B] mt-1.5 truncate" title={c.port.name || undefined}>Port <span className="font-medium text-[#4A3A5C]">{[c.port.code, c.port.name].filter(Boolean).join(' · ') || '—'}</span></div>
-        </div>
-
-        {/* 3. Pil berwarna: Voyage + Invoice date (label lebar tetap supaya rata antar kartu) */}
-        <div className={`min-w-0 ${sepV} ${sepH} @min-[1240px]:[grid-column:3] @min-[1240px]:[grid-row:1]`}>
+        {/* 2. Pil berwarna: Voyage + Invoice date (label lebar tetap supaya rata antar kartu) */}
+        <div className={`min-w-0 ${sepV} ${sepH} @min-[1180px]:[grid-column:2] @min-[1180px]:[grid-row:1]`}>
           <div className="flex flex-col items-start gap-1.5" data-invoice-pills>
-            <Pill tone={voy ? 'green' : 'grey'} className={`@min-[1240px]:w-full`} title={voy ? VOY_TYPE[voy.type] || 'Voyage' : 'Not linked to a voyage'}>
-              <span className={PILL_LABEL}>Voyage</span><Navigation size={11} className="shrink-0" />{voy ? `VOY ${voy.no || voy.id}` : 'No voyage'}
+            <Pill tone={voy ? 'green' : 'grey'} className="@min-[1180px]:w-full" title={voy ? VOY_TYPE[voy.type] || 'Voyage' : 'Not linked to a voyage'}>
+              <span className={PILL_LABEL}>Voyage</span><Navigation size={11} className="shrink-0" /><span className="truncate">{voy ? `VOY ${voy.no || voy.id}` : 'No voyage'}</span>
             </Pill>
-            <Pill tone="blue" className={`@min-[1240px]:w-full`} title="Invoice date">
+            <Pill tone="blue" className="@min-[1180px]:w-full" title="Invoice date">
               <span className={PILL_LABEL}>Invoice date</span><CalendarDays size={11} className="shrink-0" /><span className="tabular-nums">{fmtDate(c.invoice_date)}</span>
             </Pill>
           </div>
         </div>
 
-        {/* 5. Status + Needs attention (di layar sempit tampil di samping pil, sebelum stepper) */}
-        <div className={`min-w-0 ${sepH} @min-[1240px]:[grid-column:5] @min-[1240px]:[grid-row:1]`}>
+        {/* 4. Status + Needs attention (layar sempit: di samping pil; lebar: kolom ke-4) */}
+        <div className={`min-w-0 ${sepH} @min-[1180px]:[grid-column:4] @min-[1180px]:[grid-row:1]`}>
           <div className="flex flex-col items-start gap-1.5" onClick={e => e.stopPropagation()}>
             <StatusPill bucket={c.bucket} />
             <AttentionBadge card={c} onGo={a.onOpenAt} />
@@ -200,8 +200,8 @@ export function InvoiceCardV2({ c, a }: { c: InvoiceCard; a: RowActions }) {
           </div>
         </div>
 
-        {/* 4. Stepper 4 tahap (+ lama menunggu, error) */}
-        <div className={`min-w-0 col-span-2 @min-[1240px]:col-span-1 space-y-2 ${sepV} ${sepH} @min-[1240px]:[grid-column:4] @min-[1240px]:[grid-row:1]`}>
+        {/* 3. Stepper 4 tahap (+ lama menunggu, error) */}
+        <div className={`min-w-0 col-span-2 @min-[1180px]:col-span-1 space-y-2 ${sepV} ${sepH} @min-[1180px]:[grid-column:3] @min-[1180px]:[grid-row:1]`}>
           <StageStepper stages={c.stages} />
           {(wait || c.bucket === 'failed') && (
             <div className="flex items-center justify-center gap-3 flex-wrap" onClick={e => e.stopPropagation()}>
@@ -216,23 +216,23 @@ export function InvoiceCardV2({ c, a }: { c: InvoiceCard; a: RowActions }) {
           )}
         </div>
 
-        {/* 6. Grand total */}
-        <div className={`min-w-0 ${sepH} @min-[1240px]:[grid-column:6] @min-[1240px]:[grid-row:1]`}>
+        {/* 5. Grand total (lebar kolom tetap 150px: muat "Rp 31.106.500" 18px tanpa menabrak tombol) */}
+        <div className={`min-w-0 ${sepH} @min-[1180px]:[grid-column:5] @min-[1180px]:[grid-row:1]`}>
           <div className="text-[11px] text-[#8A7A8B]">Grand total</div>
-          <div className="text-[17px] @min-[1240px]:text-[18px] font-extrabold text-[#3B2260] tabular-nums leading-tight whitespace-nowrap" title={pphTitle(c)} data-invoice-amount>{c.amounts.grand_total === null ? '—' : fmtRupiah(c.amounts.grand_total)}</div>
+          <div className="text-[16px] @min-[1180px]:text-[17px] font-extrabold text-[#3B2260] tabular-nums leading-tight whitespace-nowrap" title={pphTitle(c)} data-invoice-amount>{c.amounts.grand_total === null ? '—' : fmtRupiah(c.amounts.grand_total)}</div>
         </div>
 
-        {/* 7. Tombol aksi: label mengikuti tugas saya (Verify / Validate / Approve); tanpa tugas = Review (View bila read-only). Klik = buka detail, sama dgn klik kartu. */}
-        <div className={`min-w-0 flex @min-[1240px]:justify-end @min-[1240px]:[grid-column:7] @min-[1240px]:[grid-row:1]`}>
+        {/* 6. Tombol aksi: label mengikuti tugas saya (Verify / Validate / Approve); tanpa tugas = Review (View bila read-only). Klik = buka detail, sama dgn klik kartu. */}
+        <div className={`min-w-0 flex @min-[1180px]:justify-end ${sepH} @min-[1180px]:[grid-column:6] @min-[1180px]:[grid-row:1]`}>
           <button type="button" onClick={e => { e.stopPropagation(); a.onOpen() }} data-card-action
-            className={`inline-flex items-center justify-center px-4 h-9 rounded-full border-[1.5px] border-[#6B3470] text-[13px] font-bold whitespace-nowrap transition-colors ${c.task.kinds.length > 0 ? 'bg-[#6B3470] text-white hover:bg-[#5A305A] shadow-sm' : 'bg-transparent text-[#6B3470] hover:bg-[#F5EDF3]'}`}>
+            className={`inline-flex items-center justify-center px-3.5 h-9 rounded-full border-[1.5px] border-[#6B3470] text-[13px] font-bold whitespace-nowrap transition-colors ${c.task.kinds.length > 0 ? 'bg-[#6B3470] text-white hover:bg-[#5A305A] shadow-sm' : 'bg-transparent text-[#6B3470] hover:bg-[#F5EDF3]'}`}>
             {c.task.kinds.length > 0 ? TASK_LABEL[c.task.kinds[0]] : a.readOnly ? 'View' : 'Review'} ›
           </button>
         </div>
 
-        {/* 8. Hapus: ujung kanan kartu (Admin, masa uji coba) */}
+        {/* 7. Hapus: ujung kanan kartu (Admin, masa uji coba) */}
         {a.onDelete && (
-          <div className={`absolute top-2.5 right-2.5 @min-[1240px]:static @min-[1240px]:[grid-column:8] @min-[1240px]:[grid-row:1] @min-[1240px]:flex @min-[1240px]:justify-end`} onClick={e => e.stopPropagation()}>
+          <div className="absolute top-2.5 right-2.5 @min-[1180px]:static @min-[1180px]:[grid-column:7] @min-[1180px]:[grid-row:1] @min-[1180px]:flex @min-[1180px]:justify-end" onClick={e => e.stopPropagation()}>
             <button type="button" aria-label={`Delete invoice ${c.invoice_no || c.id}`} title="Delete (Admin, trial data)" disabled={a.deleting} onClick={a.onDelete}
               className="w-8 h-8 inline-flex items-center justify-center rounded-lg text-[#9A8A9C] hover:text-[#A8231A] hover:bg-[#FDE7E4] disabled:opacity-50 transition-colors">
               {a.deleting ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
