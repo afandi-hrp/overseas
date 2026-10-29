@@ -23,6 +23,8 @@ export interface HubCtx {
   goTab: (tab: string, extra?: Record<string, string>) => void
   // Bagian "Documents without invoice" (Dashboard) melapor jumlah pending -> badge di label tab Dashboard.
   setPendingDocs: (n: number) => void
+  // Tab "My tasks" (sql/088) melapor jumlah tugas -> badge di label tab.
+  setMyTasks?: (n: number) => void
 }
 
 export function useDebounced<T>(value: T, ms = 300): T {

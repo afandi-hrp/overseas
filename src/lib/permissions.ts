@@ -135,6 +135,8 @@ export const PAGE_REGISTRY: PageEntry[] = [
   { key: 'cost_agent_invoice', label: 'Agency Invoices (Cost Agent)', menuLabel: 'Agency Invoices', path: '/cost-agent/invoice', group: 'Cost Agent' },
   // Fitur di dalam Agency Invoices (AP Note / PV + Mark paid) -- bukan route sendiri.
   { key: 'cost_agent_payment', label: 'Payment / AP-PV (Cost Agent)', menuLabel: 'Payment / AP-PV', parent: 'Agency Invoices', group: 'Cost Agent' },
+  // 2026-10-29: kunci peran lama (cost_agent_maker/checker/approver/apnote/treasury, SQL 088) DIPENSIUNKAN dari matrix -- peran per user kini di Cost Agent Settings > User roles (SQL 092);
+  // pemberian lamanya dipindah & baris role_page_access-nya dihapus oleh sql/095. Fungsi DB (fn_cost_agent_has_role) masih membaca kunci itu bila ada, tapi tidak ada layar yang menetapkannya lagi.
   { key: 'cost_agent_approval_matrix', label: 'Approval Matrix (Cost Agent)', menuLabel: 'Approval Matrix', path: '/cost-agent/approval-matrix', group: 'Cost Agent' },
 ];
 

@@ -3,8 +3,8 @@
 // daftar berbagi lebar dgn panel samping). Murni tampilan: baris = hasil query daftar yang SAMA dgn mode List (view
 // cost_agent_voyage_list_v / cost_agent_invoice_list_v), tanpa query tambahan.
 import React from 'react'
-import { Loader2, RotateCcw, Trash2, FileText, ShieldCheck, Check, X, Ship, MapPin, Navigation, ChevronRight, Clock, Sparkles, Cloud, FileSpreadsheet, Pencil, Anchor } from 'lucide-react'
-import { SA_CARD, SA_LABEL, SA_BTN_OUTLINE, Chip, Pill, PtBadge, type Tone } from './SeaAirAuditUi'
+import { Loader2, RotateCcw, Trash2, FileText, ShieldCheck, Check, X, Ship, MapPin, Navigation, Sparkles, Cloud, FileSpreadsheet, Pencil, Anchor } from 'lucide-react'
+import { SA_CARD, SA_BTN_OUTLINE, Chip, Pill, PtBadge, type Tone } from './SeaAirAuditUi'
 import { LoadingState } from './LoadingState'
 import {
   fmtDate, fmtMoney, fmtNumber, fmtReportMonth, fmtDateTimeCompact, fmtDateTimePort, tzAbbrev, routePorts,
@@ -31,9 +31,10 @@ export const CostAgentCardScroller: React.FC<{ loading: boolean; error: string |
 )
 
 // ─── Voyage ──────────────────────────────────────────────────────────────────────────────────────────────────
-// Kartu voyage (dipercantik 2026-10-23, permintaan user "terlalu simple"): 4 blok -- (1) identitas: ubin ikon kapal + nama + chip Voy / seq / charter / tipe,
-// (2) jalur rute bertitik (hijau = pelabuhan pertama, biru = terakhir) + Arrival / Departure, (3) angka: Cargo sbg sorotan + tile Invoices & Next ETA,
-// (4) status + source + terakhir diperbarui + panah buka. Data = baris view yang SAMA (tanpa query tambahan). Rute > 6 pelabuhan: bagian tengah diringkas "+n".
+// Kartu voyage (2026-10-29, permintaan user: samakan dgn kartu Invoice Recap Courier -- CourierRecapGroupCard): nama kapal tebal ungu + bulan laporan kecil + pil (PT, Voy #seq,
+// charter, tipe, Noon Report) | rute (kode pelabuhan, hijau = pertama, biru = terakhir) | pil berwarna Arrival / Departure (label lebar tetap) | status + source | Updated | tombol bulat "Open ›".
+// Container query pada lebar KARTU: >= 1180px enam kolom + pembatas vertikal samar; lebih sempit dua kolom + pembatas horizontal. Data = baris view yang SAMA (tanpa query tambahan).
+// Rute > 6 pelabuhan: bagian tengah diringkas "+n".
 const MAX_ROUTE_NODES = 6
 const routeNodes = (hops: string[]): { code: string; kind: 'first' | 'mid' | 'last' | 'more' }[] => {
   const kind = (i: number, n: number) => (i === 0 ? 'first' : i === n - 1 ? 'last' : 'mid') as 'first' | 'mid' | 'last'
@@ -47,92 +48,90 @@ const routeNodes = (hops: string[]): { code: string; kind: 'first' | 'mid' | 'la
 // Source voyage: ikon + nada chip (AI ungu, API biru, Import hijau, Manual abu).
 const SOURCE_ICON: Record<string, React.ElementType> = { ai: Sparkles, api: Cloud, import: FileSpreadsheet, manual: Pencil }
 const SOURCE_TONE: Record<string, Tone> = { ai: 'purple', api: 'blue', import: 'green', manual: 'grey' }
-const NODE_DOT: Record<'first' | 'mid' | 'last' | 'more', string> = {
-  first: 'bg-[#17663D] border-[#17663D]', last: 'bg-[#2F4FA8] border-[#2F4FA8]', mid: 'bg-white border-[#B9A9BA]', more: 'bg-[#F3EEEA] border-[#D9CFD6]',
-}
 const NODE_TEXT: Record<'first' | 'mid' | 'last' | 'more', string> = {
   first: 'text-[#17663D]', last: 'text-[#2F4FA8]', mid: 'text-[#3B1B3D]', more: 'text-[#8A7A8B]',
 }
+
+const VSEP = 'border-[rgba(138,123,155,0.18)]'
+const V_PILL_LABEL = 'w-[74px] shrink-0 text-left'
 
 export const CostAgentVoyageCard: React.FC<{ r: CostAgentVoyageListRow; tzByCode: Map<string, string>; selected: boolean; onOpen: () => void }> = ({ r, tzByCode, selected, onOpen }) => {
   const st = VOYAGE_STATUS_META[r.status]
   const hops = routePorts(r.route)
   const nodes = routeNodes(hops)
   const tzFirst = tzByCode.get(hops[0]), tzLast = tzByCode.get(hops[hops.length - 1])
-  const tzNext = r.next_port_code ? tzByCode.get(r.next_port_code) : undefined
   const noon = r.input_source === 'noon_report'
   const draft = r.status === 'draft'
+  const SrcIcon = SOURCE_ICON[r.source] || Pencil
+  const sepV = `@min-[1180px]:border-l @min-[1180px]:pl-4 ${VSEP}`
+  const sepH = `border-t pt-2.5 @min-[1180px]:border-t-0 @min-[1180px]:pt-0 ${VSEP}`
   return (
     <div className={`${cardCls(st?.tone || 'grey', selected)} group`} onClick={onOpen} data-voyage-card={r.id} aria-current={selected || undefined}>
-      <div className={`grid grid-cols-1 @md:grid-cols-2 @5xl:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1fr)] gap-x-5 gap-y-3 px-4 py-3.5 items-center ${draft ? 'bg-[#FFFDF6]' : ''}`}>
-        {/* 1. Identitas */}
-        <div className="min-w-0 flex items-start gap-3">
-          <span className="w-10 h-10 rounded-xl bg-[#F5EDF3] text-[#6B3470] inline-flex items-center justify-center shrink-0" aria-hidden><Ship size={20} /></span>
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 flex-wrap text-[11px] font-semibold text-[#6E5E70]">
-              {r.company_code && <PtBadge code={r.company_code} />}
-              <span>{fmtReportMonth(r.report_month)}</span>
-            </div>
-            <div className="mt-1 flex items-center gap-1.5 min-w-0">
-              <span className="text-[15px] font-bold text-[#3B1B3D] truncate leading-tight" title={r.vessel_name}>{r.vessel_name}</span>
-            </div>
-            <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#EAF6EF] text-[#17663D] text-[12px] font-bold whitespace-nowrap" title="Voyage number">
-                <Navigation size={11} className="shrink-0" />Voy {r.voyage_no}{r.seq_in_report != null && <span className="font-semibold opacity-70" title="Sequence in the monthly report">#{r.seq_in_report}</span>}
-              </span>
-              {r.charter_type && <Chip tone="plum" title="Charter type">{r.charter_type}</Chip>}
-              {r.vessel_type && <Chip tone="amber" title="Vessel type" className="!text-[11px] !px-2 border border-[#F0D9A0]"><Anchor size={11} className="shrink-0" aria-hidden />{r.vessel_type}</Chip>}
-              {noon && <Chip tone="blue" title="Created from a Noon Report">Noon Report</Chip>}
-            </div>
+      <div className={`grid grid-cols-2 gap-x-3.5 gap-y-2.5 px-3.5 py-3 items-start @min-[1180px]:grid-cols-[minmax(200px,1.4fr)_minmax(140px,1fr)_260px_minmax(110px,0.8fr)_100px_100px] @min-[1180px]:gap-x-4 @min-[1180px]:px-4 @min-[1180px]:py-3.5 @min-[1180px]:items-center ${draft ? 'bg-[#FFFDF6]' : ''}`}>
+        {/* 1. Nama kapal, bulan laporan, pil PT / Voy / charter / tipe / Noon Report */}
+        <div className="min-w-0">
+          <div className="text-[14px] @min-[1180px]:text-[15px] font-extrabold text-[#3B2260] leading-tight truncate" title={r.vessel_name}>{r.vessel_name}</div>
+          <div className="text-[11.5px] text-[#8A7A8B] mt-0.5 mb-1.5">{fmtReportMonth(r.report_month)}</div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {r.company_code && <Pill tone="grey">{r.company_code}</Pill>}
+            <Pill tone="green" title="Voyage number"><Navigation size={11} className="shrink-0" />Voy {r.voyage_no}{r.seq_in_report != null && <span className="opacity-70" title="Sequence in the monthly report">#{r.seq_in_report}</span>}</Pill>
+            {r.charter_type && <Pill tone="plum" title="Charter type">{r.charter_type}</Pill>}
+            {r.vessel_type && <Pill tone="amber" title="Vessel type"><Anchor size={11} className="shrink-0" aria-hidden />{r.vessel_type}</Pill>}
+            {noon && <Pill tone="blue" title="Created from a Noon Report">Noon Report</Pill>}
           </div>
         </div>
 
-        {/* 2. Jalur rute -- di TENGAH badan kartu (kolom kiri/kanan sama lebar), garis dibatasi lebar agar tidak melebar sampai ke tepi */}
-        <div className="min-w-0 w-full @5xl:max-w-[560px] mx-auto" data-voyage-route>
-          <div className={`${SA_LABEL} text-center`}>Route</div>
-          {nodes.length === 0 ? <div className="mt-1 text-center text-[12px] text-[#8A7A8B]">—</div> : (
-            <div className="mt-2 flex items-start" title={r.route || undefined}>
+        {/* 2. Rute: kode pelabuhan berurutan (hijau = pertama, biru = terakhir), gaya kolom PO · Origin di kartu Courier */}
+        <div className={`min-w-0 ${sepV}`} data-voyage-route>
+          <div className="text-[11px] text-[#8A7A8B]">Route</div>
+          {nodes.length === 0 ? <div className="mt-0.5 text-[12.5px] text-[#8A7A8B]">—</div> : (
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[12.5px] font-bold" title={r.route || undefined}>
               {nodes.map((n, i) => (
                 <React.Fragment key={i}>
-                  {i > 0 && <span className="h-[2px] flex-1 min-w-[12px] mt-[8px] rounded-full bg-[#D9CFD6]" aria-hidden />}
-                  <span className="flex flex-col items-center gap-1 shrink-0">
-                    <span className={`w-[18px] h-[18px] rounded-full border-2 ${NODE_DOT[n.kind]}`} aria-hidden />
-                    <span className={`text-[10.5px] font-bold leading-none ${NODE_TEXT[n.kind]}`}>{n.code}</span>
-                  </span>
+                  {i > 0 && <span className="text-[#B9A9BA] font-normal" aria-hidden>›</span>}
+                  <span className={NODE_TEXT[n.kind]}>{n.code}</span>
                 </React.Fragment>
               ))}
             </div>
           )}
-          {/* Arrival rata kiri (di bawah titik pertama), Departure rata kanan (di bawah titik terakhir) */}
-          <div className="mt-2.5 flex items-start justify-between gap-3 text-[11.5px] tabular-nums">
-            <div className="min-w-0" title={fmtDateTimePort(r.first_arrival, tzFirst)}>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[#17663D]">Arrival</div>
-              <div className="text-[#3B1B3D] font-semibold truncate">{fmtDateTimeCompact(r.first_arrival, tzFirst)}{r.first_arrival && <span className="ml-1 text-[10.5px] font-normal text-[#8A7A8B]">{tzAbbrev(tzFirst)}</span>}</div>
-            </div>
-            <div className="min-w-0 text-right" title={fmtDateTimePort(r.last_departure, tzLast)}>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[#2F4FA8]">Departure</div>
-              <div className="text-[#3B1B3D] font-semibold truncate">{fmtDateTimeCompact(r.last_departure, tzLast)}{r.last_departure && <span className="ml-1 text-[10.5px] font-normal text-[#8A7A8B]">{tzAbbrev(tzLast)}</span>}</div>
-            </div>
+        </div>
+
+        {/* 3. Pil Arrival / Departure (label lebar tetap supaya rata antar kartu); zona waktu pelabuhan pertama / terakhir */}
+        <div className={`min-w-0 ${sepV} ${sepH}`} data-voyage-times>
+          <div className="flex flex-col items-start gap-1.5">
+            <Pill tone="green" className="@min-[1180px]:w-full" title={fmtDateTimePort(r.first_arrival, tzFirst)}>
+              <span className={V_PILL_LABEL}>Arrival</span>
+              <span className="tabular-nums truncate">{r.first_arrival ? fmtDateTimeCompact(r.first_arrival, tzFirst) : '—'}</span>{r.first_arrival && <span className="text-[10px] font-normal opacity-70">{tzAbbrev(tzFirst)}</span>}
+            </Pill>
+            <Pill tone="blue" className="@min-[1180px]:w-full" title={fmtDateTimePort(r.last_departure, tzLast)}>
+              <span className={V_PILL_LABEL}>Departure</span>
+              <span className="tabular-nums truncate">{r.last_departure ? fmtDateTimeCompact(r.last_departure, tzLast) : '—'}</span>{r.last_departure && <span className="text-[10px] font-normal opacity-70">{tzAbbrev(tzLast)}</span>}
+            </Pill>
           </div>
         </div>
 
-        {/* 3. Status: pil status (+ titik utk Draft) -> source berikon -> tanggal diperbarui; tombol panah bulat di ujung kanan */}
-        <div className="flex items-center @5xl:justify-end justify-between gap-3 @md:col-span-2 @5xl:col-span-1 min-w-0">
-          <div className="flex @5xl:flex-col @5xl:items-end items-center gap-x-2.5 gap-y-1.5 flex-wrap min-w-0">
+        {/* 4. Status (+ titik utk Draft) dan source berikon */}
+        <div className={`min-w-0 ${sepV} ${sepH}`}>
+          <div className="flex flex-col items-start gap-1.5">
             <Pill tone={st?.tone || 'grey'} title={draft ? 'Draft — needs review' : st?.hint}>
               {draft && <span className="w-1.5 h-1.5 rounded-full bg-current" aria-hidden />}{st?.label || r.status}
             </Pill>
-            <Chip tone={SOURCE_TONE[r.source] || 'grey'} title="Source of this voyage">
-              {(() => { const SrcIcon = SOURCE_ICON[r.source] || Pencil; return <SrcIcon size={11} className="shrink-0" aria-hidden /> })()}
-              {VOYAGE_SOURCE_LABEL[r.source] || r.source}
-            </Chip>
-            <span className="inline-flex items-center gap-1 text-[10.5px] text-[#8A7A8B] whitespace-nowrap" title={`Last updated ${fmtDate(r.updated_at)}`}>
-              <Clock size={11} className="shrink-0" aria-hidden />{fmtDate(r.updated_at)}
-            </span>
+            <Pill tone={SOURCE_TONE[r.source] || 'grey'} title="Source of this voyage"><SrcIcon size={11} className="shrink-0" aria-hidden />{VOYAGE_SOURCE_LABEL[r.source] || r.source}</Pill>
           </div>
-          <span className="w-8 h-8 rounded-full border border-[#EADFD6] bg-white inline-flex items-center justify-center shrink-0 text-[#8A7A8B] group-hover:bg-[#F5EDF3] group-hover:border-[#C9A9C4] group-hover:text-[#6B3470] transition-colors" aria-hidden>
-            <ChevronRight size={16} />
-          </span>
+        </div>
+
+        {/* 5. Terakhir diperbarui (slot "Total Expenses" kartu Courier) */}
+        <div className={`min-w-0 ${sepH}`}>
+          <div className="text-[11px] text-[#8A7A8B]">Updated</div>
+          <div className="text-[14px] @min-[1180px]:text-[15px] font-extrabold text-[#3B2260] tabular-nums leading-tight whitespace-nowrap" title={`Last updated ${fmtDate(r.updated_at)}`}>{fmtDate(r.updated_at)}</div>
+        </div>
+
+        {/* 6. Open › / Opened ✓ */}
+        <div className="min-w-0 flex @min-[1180px]:justify-end">
+          <button type="button" aria-pressed={selected} data-open-card onClick={e => { e.stopPropagation(); onOpen() }}
+            className={`inline-flex items-center justify-center px-4 h-9 rounded-full border-[1.5px] border-[#6B3470] text-[13px] font-bold whitespace-nowrap transition-colors ${selected ? 'bg-[#F5EDF3] text-[#4A3A5C]' : 'bg-transparent text-[#6B3470] hover:bg-[#F5EDF3]'}`}>
+            {selected ? 'Opened ✓' : 'Open ›'}
+          </button>
         </div>
       </div>
     </div>

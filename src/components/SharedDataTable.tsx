@@ -22,7 +22,7 @@ import SeaAirValidasiModal from '../components/SeaAirValidasiModal'
 import ValidasiShipmentInvoiceLengkap from '../components/ValidasiShipmentInvoiceLengkap'
 import { computeLiveCostSummary } from '../utils/CostValidationHelpers'
 import { mergeChecklistFields, fetchCourierValidationBadgePct, enrichCourierValidationPct } from '../utils/CourierValidationPct'
-import { courierRowUnderRules, courierValidationLock, courierLockTitle, courierRecapColumnLocked, COURIER_RECAP_LOCKED_COLUMNS } from '../utils/CourierRecapRules'
+import { courierRowUnderRules, courierValidationLock, courierLockTitle, courierRecapColumnLocked, COURIER_RECAP_LOCKED_COLUMNS, toDatetimeLocalValue } from '../utils/CourierRecapRules'
 import { relaxSeaAirDocChecks, countedDocChecks } from '../utils/SeaAirValidasiHelpers'
 import { computeSeaAirCostGlobalStats } from '../utils/SeaAirCostValidasiHelpers'
 import { SECTIONS, computeStatus } from '../utils/ValidasiHelper'
@@ -3023,6 +3023,8 @@ const CourierRekapanRowGroup: React.FC<{
   // diedit/dihapus (DB juga menolak) -- Admin membuka kunci lewat jendela Open (Unlock + alasan).
   // 2026-10-23: Submit Date terisi TIDAK lagi mengunci seluruh baris -- hanya kolom di COURIER_RECAP_LOCKED_COLUMNS (baca-saja di bawah) & hapus.
   const recapLocked = !!rec.submit_date;
+  // 2026-10-29 (sql/094): Admin boleh mengedit SEMUA kolom (termasuk baris Submit & Created At) di Edit Mode tanpa Unlock; perubahan dicatat Audit trail oleh trigger DB.
+  const { isAdmin: isAdminUser } = useAuth();
   const canBulkEdit = !!(getVal && setVal);
   const editingThisRow = (!!editMode || rowEditOn) && canBulkEdit;
 
@@ -3148,10 +3150,13 @@ const CourierRekapanRowGroup: React.FC<{
                 );
               }
 
-              if (editingThisRow && canBulkEdit && isInlineEditable(c.key) && !courierRecapColumnLocked(rec, c.key) && (!isRepeating || isFirst) && c.key !== 'po_no' && c.key !== 'vessel' && c.key !== 'po_ori' && c.key !== 'vendor_inv_no' && c.key !== 'po_harga_detail') {
+              if (editingThisRow && canBulkEdit && (isInlineEditable(c.key) || (isAdminUser && c.key === 'created_at')) && !courierRecapColumnLocked(rec, c.key, isAdminUser) && (!isRepeating || isFirst) && c.key !== 'po_no' && c.key !== 'vessel' && c.key !== 'po_ori' && c.key !== 'vendor_inv_no' && c.key !== 'po_harga_detail') {
                 const cellVal = getVal!(rec, c.key);
                 let inputEl;
-                if (c.type === 'date' || c.type === 'date_dash_if_null' || c.type === 'datetime' || c.type === 'date_badge_if_null') {
+                if (c.key === 'created_at') {
+                  // Admin saja (sql/094): tanggal + jam supaya jam asli tidak ikut terhapus; nilai tersimpan ISO (UTC).
+                  inputEl = <input type="datetime-local" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={toDatetimeLocalValue(cellVal)} onChange={e => { const d = e.target.value ? new Date(e.target.value) : null; if (d && !isNaN(d.getTime())) setVal!(rec, c.key, d.toISOString()); }} />;
+                } else if (c.type === 'date' || c.type === 'date_dash_if_null' || c.type === 'datetime' || c.type === 'date_badge_if_null') {
                   const val = cellVal ? String(cellVal).substring(0, 10) : '';
                   inputEl = <input type="date" className="w-full text-[10px] p-1 border border-blue-400 rounded outline-none text-[#5A305A]" value={val} onChange={e => setVal!(rec, c.key, e.target.value)} />;
                 } else if (c.type === 'num' || c.type === 'num_dash_null' || c.type === 'num_dash_null_2dec' || c.type === 'num_dash_if_null' || c.type === 'num_bold' || c.type === 'num_highlight') {
@@ -3227,7 +3232,7 @@ const CourierRekapanRowGroup: React.FC<{
                             </button>
                           )}
                           {recapLocked && (
-                            <span title="Submitted to Finance — invoice no., amounts, taxes, NTPN, AWB, breakdown columns and Created At are locked (other columns can be edited, the invoice cannot be deleted). An Admin can unlock it from the Card view (Open › Invoices)." className="w-[80px] text-center text-[10px] font-bold px-2 py-1.5 rounded-md border border-slate-200 bg-white text-slate-500">🔒 Locked</span>
+                            <span title={isAdminUser ? 'Submitted to Finance — as Admin you can edit every column in Edit Mode (changes are recorded in the Audit trail). The invoice cannot be deleted.' : 'Submitted to Finance — invoice no., amounts, taxes, NTPN, AWB, breakdown columns and Created At are locked (other columns can be edited, the invoice cannot be deleted). An Admin can edit them or unlock it from the Card view (Open › Invoices).'} className="w-[80px] text-center text-[10px] font-bold px-2 py-1.5 rounded-md border border-slate-200 bg-white text-slate-500">🔒 Locked</span>
                           )}
                         </div>
                       )}
@@ -5576,12 +5581,19 @@ export default function SharedDataTable({ defaultMainTab = 'courier', defaultSub
         // 6 kolom turunan Rekapan Courier (lihat COURIER_REKAPAN_CALC_FIELDS) -- pola sama
         // persis dgn courier_audit di atas: hitung ulang dari gabungan record lama + perubahan
         // baru, field kalkulasi yg diketik langsung ditandai override permanen.
-        if (record?.submit_date) {
+        // 2026-10-29 (sql/094): Admin boleh mengubah kolom terkunci pada invoice Submit -> TIDAK dibuang dari payload. Kolom turunan (total_amount & breakdown) dihitung ulang
+        // HANYA bila payload menyentuh kolom yang jadi masukan/hasil rumus (kalau tidak, nilai tersimpan invoice Submit tidak disentuh); kolom turunan yang diketik langsung
+        // ditandai override permanen seperti pada baris belum Submit. Jejak Audit trail = trigger DB (kolom, lama -> baru, user, waktu).
+        const CALC_TOUCH = new Set<string>([...COURIER_REKAPAN_CALC_FIELDS, 'courier_adm_fee', 'total_duty_tax', 'total_freight', 'bm', 'ppn', 'pph', 'vessel']);
+        const adminEditsSubmitted = !!record?.submit_date && isAdmin;
+        if (record?.submit_date && !isAdmin) {
           // Invoice sudah Submit (2026-10-23): kolom terkunci (COURIER_RECAP_LOCKED_COLUMNS) TIDAK PERNAH dikirim & kolom turunan (total/breakdown) TIDAK dihitung ulang --
           // DB (sql/075) menolak perubahan kolom itu. Kolom lain (mis. vessel, notes, tanggal) disimpan normal.
           COURIER_RECAP_LOCKED_COLUMNS.forEach(k => { delete cleanedPayload[k]; });
           Object.keys(cleanedPayload).forEach(k => { if (cleanedPayload[k] === '') cleanedPayload[k] = null; });
           if (Object.keys(cleanedPayload).length === 0) return true;
+        } else if (adminEditsSubmitted && !Object.keys(cleanedPayload).some(k => CALC_TOUCH.has(k))) {
+          Object.keys(cleanedPayload).forEach(k => { if (cleanedPayload[k] === '') cleanedPayload[k] = null; });
         } else if (record) {
           const existingOverrides: string[] = Array.isArray(record.manual_override_fields) ? record.manual_override_fields : [];
           const newlyOverridden = COURIER_REKAPAN_CALC_FIELDS.filter(f => f in cleanedPayload);

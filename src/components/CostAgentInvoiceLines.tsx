@@ -12,18 +12,29 @@
 // DILIPAT bila flag sesuai + pembanding same_line + bukan compare_check (toggle "Show all compares" / "Show only differences").
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Plus, CheckCheck, AlertTriangle, History, RotateCcw, Pin, Pencil, Check, CheckCircle2, MessageSquare, Info, ArrowUp, ArrowDown, Equal } from 'lucide-react'
+import { Plus, CheckCheck, AlertTriangle, History, RotateCcw, Pin, Pencil, Check, CheckCircle2, MessageSquare, Info, ArrowUp, ArrowDown, Equal, Scissors, Percent } from 'lucide-react'
 import { CompareFlagChip, MatchLevelLabel, CostAgentModal, FieldLabel } from './CostAgentUi'
 import { SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_INPUT, Chip } from './SeaAirAuditUi'
+import { DOC_GATE_TOAST, isDocGateError } from '../utils/CostAgentGate'
+import { costAgentCheckerSetCostItem, costAgentCheckerSetLineRemark, costAgentCheckerValidateLine, costAgentCheckerValidateLines, isSodError } from '../utils/CostAgentWorkflow'
+import { originalOf } from '../utils/CostAgentLinesView'
+import { LineTaxDialog, SplitLineDialog } from './CostAgentLineDialogs'
+import { classifyCostLine, classifyCostLines, costKey } from './CostAgentValidationReports'
+import { VerifyReasonIcon, VerifyReasonsToggle, VerifyReasonsList } from './CostAgentVerifyReasons'
+import { reasonByLine, type LineVerifyReasons } from '../utils/CostAgentVerifyReasons'
 import CostAgentCostItemPicker from './CostAgentCostItemPicker'
 import CostAgentHistoryBrowser, { LineMatchBadge, ChosenByUserLabel, type HistoryCache } from './CostAgentHistoryBrowser'
 import {
   costAgentVerifyLine, costAgentAddCostItem, costAgentSetLineReference, costAgentUpdateLine, COST_AGENT_LINE_DESCRIPTION_MAX,
-  MATCH_METHOD_LABEL, matchLevelLabel, fmtMoney, fmtNumber, fmtPct, fmtDate, daysDiffLabel,
+  MATCH_METHOD_LABEL, matchLevelLabel, fmtMoney, fmtRupiah, fmtNumber, fmtPct, fmtDate, daysDiffLabel,
   type CostAgentInvoiceLine, type CostAgentLineHistory, type CostAgentCostItem, type CostAgentPort,
   type CostAgentVessel, type CostAgentVendor,
 } from '../utils/CostAgentHelpers'
 
+// Grid tampilan ringkas gaya Cost validation (header kolom tampil >= 870px = laptop 14" saat file tampil): >= 870px SATU baris enam kolom kompak (jarak kolom 8px); >= 1200px lebih lega (jarak 16px, Action 248px + label Split/Tax); 640-869px: baris 1 Validation penuh, baris 2 Expected | Actual | Difference | Status, baris 3 Action rata kanan; < 640px bertumpuk. Kolom: Validation | Expected | Actual | Difference | Status | Action.
+const SUM_GRID = 'grid-cols-3 @min-[640px]:grid-cols-[repeat(3,minmax(0,1fr))_auto] @min-[870px]:grid-cols-[minmax(190px,1.5fr)_minmax(96px,0.6fr)_minmax(96px,0.6fr)_minmax(104px,0.65fr)_minmax(84px,0.6fr)_204px] @min-[1200px]:grid-cols-[minmax(260px,1.7fr)_minmax(112px,0.65fr)_minmax(112px,0.65fr)_minmax(128px,0.7fr)_minmax(132px,0.8fr)_248px]'
+const CV_CHIP: Record<string, string> = { ok: 'bg-[#EAF6EF] text-[#17663D]', accepted: 'bg-[#FFF1D6] text-[#7A4F00]', difference: 'bg-[#FDE7E4] text-[#A8231A]', above: 'bg-[#FDE7E4] text-[#A8231A]', under: 'bg-[#EEF1FA] text-[#2F4FA8]', na: 'bg-[#F3EEEA] text-[#6E5E70]' }
+const CV_LABEL: Record<string, string> = { ok: 'OK', accepted: 'Accepted', difference: 'Difference', above: 'Above', under: 'Under', na: 'N/A' }
 const CATEGORIES = ['PORT', 'AGENCY', 'CREW', 'DOCUMENT', 'WATER', 'ADMIN', 'TAX', 'OTHER']
 // Tautan aksi kecil = chip lembut (2026-10-20, permintaan user: tombol/ikon lebih cantik) -- fungsi tetap.
 const LINK = 'h-6 px-2 rounded-full border border-[#E4D3E2] bg-[#F5EDF3] text-[11px] font-semibold text-[#6B3470] hover:bg-[#EFE2EC] hover:border-[#C9A9C4] inline-flex items-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
@@ -40,7 +51,7 @@ function pickComparators(l: CostAgentInvoiceLine): { main: CostAgentLineHistory 
 }
 
 
-export default function CostAgentInvoiceLines({ lines, currency, costItems, editable, actor, onChanged, onToast, footerRight, toolbarLeft, invoice, ports, vessels, vendors, historyCache }: {
+export default function CostAgentInvoiceLines({ lines, currency, costItems, editable, actor, onChanged, onToast, footerRight, toolbarLeft, invoice, ports, vessels, vendors, historyCache, verifyBlock, onGateBlocked, checkerMode, variant = 'detailed', viewSwitch, verifyReasons }: {
   lines: CostAgentInvoiceLine[]
   currency: string
   costItems: CostAgentCostItem[]
@@ -56,6 +67,18 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
   vessels: CostAgentVessel[]
   vendors: CostAgentVendor[]
   historyCache: HistoryCache
+  // Gerbang dokumen (sql/087): bila terisi, Verify (per baris & "Verify all") dinonaktifkan dgn teks ini sbg tooltip; Unverify tetap boleh.
+  verifyBlock?: string | null
+  // Dipanggil saat server menolak dgn "DOC_GATE:" (gerbang berubah sejak terakhir dimuat) -> induk memuat ulang gerbang.
+  onGateBlocked?: () => void
+  // Mode checker (sql/088 + sql/101): invoice menunggu validasi & user boleh memvalidasi -> jenis biaya bisa diganti (fn_cost_agent_checker_set_cost_item),
+  // edit teks + nominal (fn_cost_agent_update_line), remark checker, Validate / Validated per baris, Split dan Tax. Maker: HANYA jenis biaya, tambah jenis biaya, Verify, Remark.
+  checkerMode?: boolean
+  // Tahap 3b: 'summary' = baris ringkas 4 kolom (bawaan tab Cost lines); 'detailed' = tampilan lengkap (modal "Cost lines — detailed"). Logika & aksi SAMA.
+  variant?: 'summary' | 'detailed'
+  viewSwitch?: React.ReactNode // switch Summary | Detailed (di samping "Cost validation")
+  // Alasan "kenapa belum auto-verified" dari RPC (null = tidak ada / gagal diambil -> ikon & ringkasan tidak tampil).
+  verifyReasons?: LineVerifyReasons | null
 }) {
   const [busy, setBusy] = useState<number | 'all' | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -63,18 +86,28 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
   const [addFor, setAddFor] = useState<CostAgentInvoiceLine | null>(null)
   const [editFor, setEditFor] = useState<CostAgentInvoiceLine | null>(null)
   const [browseFor, setBrowseFor] = useState<CostAgentInvoiceLine | null>(null)
+  const [splitFor, setSplitFor] = useState<CostAgentInvoiceLine | null>(null)
+  const [taxFor, setTaxFor] = useState<CostAgentInvoiceLine | null>(null)
+  const canSplit = !!checkerMode // 2026-10-29 (permintaan user): Split hanya milik checker; maker tidak lagi bisa memecah baris
+  const [reasonsOpen, setReasonsOpen] = useState(false) // daftar baris needs_user (dibuka dari ringkasan di toolbar)
   const [onlyCheck, setOnlyCheck] = useState(false) // footer "Needs check": tampilkan hanya baris compare_check
   // sql/065 E: "Show only differences" (baris tenang dilipat) = SATU-SATUNYA mode. Toggle "Show all compares" DIHAPUS 2026-10-23 (permintaan user);
   // pembanding lain tetap bisa dibuka lewat "+n more reference" per baris.
   const showAllCompares = false
   const [remarkOpen, setRemarkOpen] = useState<Set<number>>(() => new Set()) // textarea remark sedang dibuka
   const [moreOpen, setMoreOpen] = useState<Set<number>>(() => new Set()) // "+n more reference" dibuka
+  const [openRows, setOpenRows] = useState<Set<number>>(() => new Set()) // tampilan ringkas: panel Main reference dibuka segitiga
 
   const items = useMemo(() => costItems.filter(c => c.is_active !== false), [costItems])
+  const reasons = useMemo(() => reasonByLine(verifyReasons), [verifyReasons])
 
   const run = async (key: number | 'all', fn: () => Promise<unknown>) => {
     setBusy(key); setError(null)
-    try { await fn(); await onChanged() } catch (e: any) { setError(e.message || String(e)) } finally { setBusy(null) }
+    try { await fn(); await onChanged() } catch (e: any) {
+      if (isDocGateError(e)) { onToast?.(DOC_GATE_TOAST, 'warn'); onGateBlocked?.() } // jangan tampilkan teks mentah yang panjang
+      else if (isSodError(e)) onToast?.(e.message, 'warn') // pemisahan tugas: pesan server apa adanya
+      else setError(e.message || String(e))
+    } finally { setBusy(null) }
   }
   const verify = (l: CostAgentInvoiceLine, patch: { costItemId?: number | null; isVerified?: boolean; remark?: string | null; learnAlias?: boolean }) =>
     costAgentVerifyLine({
@@ -96,27 +129,77 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
   })
 
   return (
-    <div className="flex flex-col min-h-0 h-full">
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-[#EADFD6] shrink-0 flex-wrap">
-        <div className="text-[12.5px] text-[#3B1B3D] flex items-center gap-3 flex-wrap">
-          {toolbarLeft}
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {editable && (
-            <button type="button" className={`${SA_BTN_OUTLINE} !border-[#BFE3CD] !bg-[#EAF6EF] !text-[#17663D] hover:!bg-[#DDF0E5]`} disabled={!matching.length || busy !== null} onClick={verifyAllMatching}
-              title="Verify every line whose amount is in line with history (lines without a cost item are skipped)">
-              <CheckCheck size={13} /> {busy === 'all' ? 'Verifying…' : `Verify all matching (${matching.length})`}
+    <div className="flex flex-col min-h-0 h-full @container">
+      {variant === 'summary' ? (() => {
+        // 2026-10-29 (permintaan user): SATU baris -- Show file | chip OK / Accepted / Above / Under / N/A / Accuracy | ringkasan auto-verify | Verify all matching.
+        // Tombol "Cost validation" dihapus; kalimat "n above / under not reviewed by the maker" jadi tooltip chip (angkanya sudah di chip Above / Under).
+        const cs = lines.length > 0 ? classifyCostLines(lines) : null
+        const chips: { k: string; label: string; n: number }[] = cs ? [{ k: 'ok', label: 'OK', n: cs.counts.ok }, { k: 'accepted', label: 'Accepted', n: cs.counts.accepted }, { k: 'above', label: 'Above', n: cs.above }, { k: 'under', label: 'Under', n: cs.under }, { k: 'na', label: 'N/A', n: cs.counts.na }] : []
+        const unreviewed = cs && cs.counts.difference > 0 ? `${cs.counts.difference} above / under not reviewed by the maker` : 'All reviewed'
+        return (
+          <>
+            <div className="flex items-center gap-x-2 gap-y-1.5 px-3 py-2 border-b border-[#EADFD6] shrink-0 flex-wrap" data-lines-toolbar>
+              {toolbarLeft}
+              {cs && (
+                <div className="flex items-center gap-1.5 flex-wrap" data-cost-validation-strip title={unreviewed}>
+                  {chips.map(c => <span key={c.k} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold ${CV_CHIP[c.k]}`}>{c.label} <b className="tabular-nums">{c.n}</b></span>)}
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#F5EDF3] text-[#6B3470]"><span className="hidden @min-[1100px]:inline">Accuracy</span><span className="@min-[1100px]:hidden" title="Accuracy">Acc.</span> <b className="tabular-nums" data-accuracy>{cs.accuracy === null ? '—' : `${cs.accuracy}%`}</b></span>
+                </div>
+              )}
+              {verifyReasons ? <VerifyReasonsToggle reasons={verifyReasons} open={reasonsOpen} onToggle={() => setReasonsOpen(o => !o)} />
+                : checkerMode ? <span className="text-[11.5px] font-semibold text-[#6E5E70] whitespace-nowrap" data-lines-summary-text>{lines.filter(x => x.is_validated).length}/{lines.length} validated</span>
+                : <span className="text-[11.5px] font-semibold text-[#6E5E70] whitespace-nowrap" data-lines-summary-text>{lines.filter(x => x.is_verified).length}/{lines.length} verified</span>}
+              <div className="ml-auto flex items-center gap-2 flex-wrap">
+                {viewSwitch}
+                {checkerMode && (
+                  <button type="button" className={`${SA_BTN_OUTLINE} !border-[#BFE3CD] !bg-[#EAF6EF] !text-[#17663D] hover:!bg-[#DDF0E5]`} data-validate-all-lines
+                    disabled={busy !== null || lines.length === 0 || lines.every(x => x.is_validated)} title="Mark every line that has a cost item as validated"
+                    onClick={() => run('all', async () => {
+                      const r = await costAgentCheckerValidateLines(lines[0].invoice_id, actor)
+                      onToast?.(r.skipped_without_cost_item > 0 ? `${r.validated} line${r.validated === 1 ? '' : 's'} validated · ${r.skipped_without_cost_item} without a cost item skipped` : `${r.validated} line${r.validated === 1 ? '' : 's'} validated`, r.skipped_without_cost_item > 0 ? 'warn' : 'ok')
+                    })}>
+                    <CheckCheck size={13} /> {busy === 'all' ? 'Validating…' : <><span className="hidden @min-[1100px]:inline">Validate all lines</span><span className="@min-[1100px]:hidden">Validate all</span></>}
+                  </button>
+                )}
+                {editable && (
+            <button type="button" className={`${SA_BTN_OUTLINE} !border-[#BFE3CD] !bg-[#EAF6EF] !text-[#17663D] hover:!bg-[#DDF0E5]`} disabled={!matching.length || busy !== null || !!verifyBlock} onClick={verifyAllMatching}
+              title={verifyBlock ?? 'Verify every line whose amount is in line with history (lines without a cost item are skipped)'}>
+              <CheckCheck size={13} /> {busy === 'all' ? 'Verifying…' : <><span className="hidden @min-[1100px]:inline">Verify all matching</span><span className="@min-[1100px]:hidden">Verify all</span> ({matching.length})</>}
             </button>
-          )}
+                )}
+              </div>
+            </div>
+            {reasonsOpen && verifyReasons && <VerifyReasonsList reasons={verifyReasons} />}
+          </>
+        )
+      })() : (
+        <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-[#EADFD6] shrink-0 flex-wrap">
+          <div className="text-[12.5px] text-[#3B1B3D] flex items-center gap-3 flex-wrap">{toolbarLeft}</div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {viewSwitch}
+            {editable && (
+            <button type="button" className={`${SA_BTN_OUTLINE} !border-[#BFE3CD] !bg-[#EAF6EF] !text-[#17663D] hover:!bg-[#DDF0E5]`} disabled={!matching.length || busy !== null || !!verifyBlock} onClick={verifyAllMatching}
+              title={verifyBlock ?? 'Verify every line whose amount is in line with history (lines without a cost item are skipped)'}>
+              <CheckCheck size={13} /> {busy === 'all' ? 'Verifying…' : <><span className="hidden @min-[1100px]:inline">Verify all matching</span><span className="@min-[1100px]:hidden">Verify all</span> ({matching.length})</>}
+            </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
       {error && <div className="mx-3 mt-2 rounded-lg border border-[#F4C3BC] bg-[#FDE7E4] px-3 py-1.5 text-[12px] text-[#A8231A] flex items-start gap-1.5 shrink-0"><AlertTriangle size={13} className="mt-0.5" /> {error}</div>}
       {/* 2026-10-16 v9 (permintaan user): "3 kolom" = Invoice line | Invoice vs history (Invoice · % · History dalam SATU kolom) |
           Main reference -- + # & Action, garis pemisah antar kolom. Tata letak SAMA saat file/PDF tampil (hanya lebar kolom menyesuaikan,
           Main reference TIDAK turun ke bawah): panel >= 640px `grid-cols-[28px_minmax(0,0.9fr)_296px_minmax(0,1fr)_128px]`, >= 1200px `grid-cols-[28px_minmax(0,1fr)_320px_minmax(0,1.2fr)_132px]`; < 640px bertumpuk.
           Posisi sel memakai [grid-column]/[grid-row] eksplisit (col-span/row-span Tailwind v4 menimpa col-start). */}
       <div className="overflow-auto flex-1 min-h-0 @container bg-[#FBF7F4] pb-2.5" data-lines-scroll>
-        {lines.length > 0 && (
+        {lines.length > 0 && variant === 'summary' && (
+          <div className="hidden @min-[870px]:block sticky top-0 z-10 bg-[#FBF7F4] px-2.5 pt-2.5 pb-2" data-lines-header-wrap>
+            <div className={`grid ${SUM_GRID} gap-x-2 @min-[1200px]:gap-x-4 items-center rounded-xl border border-transparent border-l-4 border-l-transparent bg-[#F5EDF3] px-3 py-2 text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#6B3470] whitespace-nowrap`} data-lines-header>
+              <span className="pl-[60px]">Validation</span><span className="text-center">Expected (history)</span><span className="text-center">Actual</span><span className="text-center">Difference</span><span className="text-center">Status</span><span className="text-center">Action</span>
+            </div>
+          </div>
+        )}
+        {lines.length > 0 && variant !== 'summary' && (
           <div className="hidden @min-[640px]:block sticky top-0 z-10 bg-[#FBF7F4] px-2.5 pt-2.5 pb-2" data-lines-header-wrap>
             <div className="grid grid-cols-[28px_minmax(0,0.9fr)_296px_minmax(0,1fr)_128px] @min-[1200px]:grid-cols-[28px_minmax(0,1fr)_320px_minmax(0,1.2fr)_132px] rounded-xl border border-transparent border-l-4 border-l-transparent bg-[#F5EDF3] text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#6B3470]" data-lines-header>
               <span className="px-2 py-2">#</span>
@@ -134,13 +217,177 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
           const { main, others } = pickComparators(l)
           const newItem = !l.cost_item_id || l.compare_flag === 'item_baru'
           const noCostItem = !l.cost_item_id
-          const remarkVal = remarks[l.id] ?? (l.remark || '')
-          const editingRemark = editable && remarkOpen.has(l.id)
+          // Remark: maker menulis `remark` (verify_line); checker menulis `checker_remark` (sql/101) dan hanya membaca remark maker. Approver tidak menerima checker_remark.
+          const remarkBase = checkerMode ? (l.checker_remark || '') : (l.remark || '')
+          const remarkVal = remarks[l.id] ?? remarkBase
+          const editingRemark = (editable || !!checkerMode) && remarkOpen.has(l.id)
+          const orig = originalOf(l) // versi asli maker bila checker mengubah teks / nominal
+          const isSplitPart = l.origin_line_id != null
           const remarkRows = Math.min(6, Math.max(1, remarkVal.split('\n').reduce((n, ln) => n + Math.max(1, Math.ceil(ln.length / 90)), 0)))
           // Pembanding lain (next / alternative) tampil otomatis bila compare_check (alasan cek) atau "Show all compares".
           const othersOpen = showAllCompares || !!l.compare_check || moreOpen.has(l.id)
-          const verifyTitle = !l.is_verified && noCostItem ? 'Choose a cost item first (or LAIN_LAIN)' : l.is_verified ? `Verified${l.verified_by ? ` by ${l.verified_by}` : ''} — click to undo` : 'Mark this line as verified'
+          const autoVerified = l.is_verified && l.verified_by === 'system'
+          const gateBlocked = !l.is_verified && !!verifyBlock
+          const verifyTitle = gateBlocked ? verifyBlock! : !l.is_verified && noCostItem ? 'Choose a cost item first (or LAIN_LAIN)' : l.is_verified ? `${autoVerified ? 'Auto-verified by the system' : `Verified${l.verified_by ? ` by ${l.verified_by}` : ''}`} — click to undo` : 'Mark this line as verified'
           const mainDiff = main ? diffOf(l, main) : null
+          if (variant === 'summary') {
+            // Tampilan RINGKAS = gaya "Cost validation" (Tahap 3b, revisi 2026-10-28): Validation | Expected (history) | Actual | Difference | Status | Action.
+            // Rincian MAIN REFERENCE (pembanding utama, View history, +n more reference, remark) ada di panel yang dibuka segitiga di kiri baris. Logika & aksi SAMA dgn Detailed.
+            const cv = classifyCostLine(l)
+            const edge = noCostItem ? 'border-l-[#A8231A]' : l.is_verified ? 'border-l-[#17663D]' : (l.compare_check || cv.status === 'difference') ? 'border-l-[#E0A526]' : 'border-l-transparent'
+            const expected = l.compare_ref_amount ?? null
+            const diff = expected === null ? null : Number(l.amount || 0) - Number(expected)
+            const expanded = openRows.has(l.id) || editingRemark
+            const colLabel = 'text-[10px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B] @min-[870px]:hidden'
+            const ck = costKey(cv.status, cv.dir)
+            const chip = CV_CHIP[ck]
+            return (
+              <div key={l.id} data-line-id={l.id} data-summary-row data-cv-status={cv.status}
+                className={`rounded-xl border border-[#EADFD6] border-l-4 ${edge} bg-white shadow-[0_1px_2px_rgba(59,27,61,0.04)] ${rowBusy ? 'opacity-60' : ''}`}>
+                <div className={`grid ${SUM_GRID} gap-x-2 @min-[1200px]:gap-x-4 gap-y-2.5 items-center px-3 py-3`}>
+                  {/* Validation: segitiga + no + deskripsi + jenis biaya */}
+                  <div className="col-span-3 @min-[640px]:col-span-4 @min-[870px]:col-span-1 min-w-0 flex items-start gap-2">
+                    <button type="button" onClick={() => setOpenRows(p => { const n = new Set(p); if (n.has(l.id)) n.delete(l.id); else n.add(l.id); return n })}
+                      aria-expanded={expanded} aria-label={expanded ? 'Hide main reference' : 'Show main reference'} title={expanded ? 'Hide main reference' : 'Show main reference'} data-toggle-reference
+                      className={`shrink-0 mt-px w-6 h-6 inline-flex items-center justify-center rounded-md text-[12px] leading-none transition-colors ${expanded ? 'bg-[#EFE2EC] text-[#6B3470]' : 'text-[#8A7A8B] hover:bg-[#F5EDF3] hover:text-[#6B3470]'}`}>{expanded ? '▼' : '▶'}</button>
+                    <span className="shrink-0 mt-0.5 inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#3B1B3D] text-[10.5px] font-bold text-white tabular-nums">{l.line_no}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start gap-1.5">
+                        <div className="min-w-0 text-[12.5px] font-semibold text-[#3B1B3D] leading-snug line-clamp-2 [overflow-wrap:anywhere]" title={l.description_raw}>{l.description_raw}</div>
+                        {(l.remark || l.checker_remark) && <MessageSquare size={12} className="mt-0.5 shrink-0 text-[#B7791F]" aria-label="Has a remark" />}
+                        {checkerMode && <button type="button" data-action="edit-line" disabled={rowBusy} onClick={() => setEditFor(l)} title="Edit line text or amount" aria-label="Edit line"
+                          className="shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-full border border-[#E4D3E2] bg-[#F5EDF3] text-[#6B3470] hover:bg-[#EFE2EC] disabled:opacity-40"><Pencil size={10} /></button>}
+                        {!l.is_verified && reasons.get(l.id) && <VerifyReasonIcon reason={reasons.get(l.id)!} />}
+                      </div>
+                      {orig && (
+                        <div className="mt-0.5 text-[11px] text-[#8A7A8B] [overflow-wrap:anywhere]" data-line-original title="The version the maker submitted">
+                          Original: {orig.description != null && <i>{orig.description}</i>}{orig.description != null && orig.amount != null ? ' · ' : ''}{orig.amount != null && <span className="tabular-nums">{fmtRupiah(orig.amount)}</span>}
+                        </div>
+                      )}
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        {isSplitPart && <Chip tone="plum" title="This line was created by splitting another line">Split</Chip>}
+                        {noCostItem && <Chip tone="red" title="Choose a cost item (or LAIN_LAIN) before verifying and submitting">Not mapped</Chip>}
+                        {(editable || checkerMode) ? (
+                          <div className="w-full min-w-[170px] max-w-[340px]"><CostAgentCostItemPicker items={items} value={l.cost_item_id ?? null} disabled={rowBusy}
+                            onChange={id => (checkerMode ? (id !== null ? run(l.id, () => costAgentCheckerSetCostItem(l.id, id, true, actor)) : undefined) : run(l.id, () => verify(l, { costItemId: id, learnAlias: id !== null })))} /></div>
+                        ) : !noCostItem && <Chip tone="plum" title={l.cost_item_code ? `${l.cost_item_code} — ${l.cost_item_name}` : undefined}>{l.cost_item_name || l.cost_item_code}</Chip>}
+                        {editable && newItem && <button type="button" className={LINK} onClick={() => setAddFor(l)}><Plus size={11} /> Add as new cost item</button>}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Expected / Actual / Difference (satu baris, tidak membungkus) */}
+                  <div className="min-w-0 @min-[870px]:text-center"><div className={colLabel}>Expected (history)</div>
+                    <div className="text-[12.5px] tabular-nums text-[#6E5E70] whitespace-nowrap">{expected === null ? '—' : fmtRupiah(expected)}</div></div>
+                  <div className="min-w-0 @min-[870px]:text-center"><div className={colLabel}>Actual</div>
+                    <div className="text-[13px] font-extrabold tabular-nums text-[#3B1B3D] whitespace-nowrap" data-invoice-amount>{fmtRupiah(l.amount)}</div></div>
+                  <div className="min-w-0 @min-[870px]:text-center"><div className={colLabel}>Difference</div>
+                    <div className={`text-[12.5px] font-semibold tabular-nums whitespace-nowrap ${diff ? (diff > 0 ? 'text-[#A8231A]' : 'text-[#17663D]') : 'text-[#6E5E70]'}`}>
+                      {diff === null ? '—' : diff === 0 ? 'Rp 0' : `${diff > 0 ? '+' : '−'}${fmtRupiah(Math.abs(diff))}`}</div></div>
+
+                  {/* Status */}
+                  <div className="col-span-3 @min-[640px]:col-span-1 min-w-0 flex items-center gap-1.5 flex-wrap @min-[870px]:justify-center">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold ${chip}`} data-compare-pill={cv.status}>{CV_LABEL[ck]}</span>
+                    {cv.reason && <span className="text-[11px] text-[#6E5E70]">{cv.reason}</span>}
+                    {l.compare_check && <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10.5px] font-bold bg-[#FFF1D6] text-[#7A4F00]" title="Differs from the alternative reference by more than 5%" data-compare-check><AlertTriangle size={10} /> Check</span>}
+                  </div>
+
+                  {/* Action */}
+                  <div className="col-span-3 @min-[640px]:col-span-4 @min-[870px]:col-span-1 flex flex-row flex-nowrap items-center gap-1.5 justify-start @min-[640px]:justify-end @min-[870px]:justify-center" data-line-actions>
+                    {editable ? (
+                      <>
+                        <button type="button" data-verify-line disabled={rowBusy || (!l.is_verified && noCostItem) || gateBlocked}
+                          title={autoVerified ? 'Verified automatically: same as history — click to undo' : verifyTitle}
+                          onClick={() => run(l.id, () => verify(l, { isVerified: !l.is_verified, learnAlias: !l.is_verified && !!l.cost_item_id }))}
+                          className={`inline-flex items-center justify-center gap-1.5 h-8 w-[128px] px-3 rounded-xl text-[12px] font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0 ${l.is_verified ? 'bg-[#17663D] text-white shadow-sm hover:bg-[#12522F]' : 'border border-[#9FD3B4] bg-[#EAF6EF] text-[#17663D] hover:bg-[#DDF0E5]'}`}>
+                          {l.is_verified ? <CheckCircle2 size={14} /> : <Check size={14} />} {l.is_verified ? 'Verified' : 'Verify'}{autoVerified && <span data-auto-verified className="ml-0.5 px-1.5 rounded bg-white/20 text-[9.5px] font-bold uppercase tracking-wide">Auto</span>}
+                        </button>
+                      </>
+                    ) : checkerMode ? (
+                      // sql/101: checker memvalidasi PER BARIS. "Validate" -> "Validated" (hijau, klik lagi membatalkan). Aturan (wajib/tidak, SoD) diputuskan server; pesan error tampil apa adanya.
+                      <button type="button" data-validate-line disabled={rowBusy || (!l.is_validated && noCostItem)}
+                        title={l.is_validated ? `Validated${l.validated_by ? ` by ${l.validated_by}` : ''} — click to undo` : noCostItem ? 'Choose a cost item first' : 'Mark this line as validated'}
+                        onClick={() => run(l.id, () => costAgentCheckerValidateLine(l.id, !l.is_validated, actor))}
+                        className={`inline-flex items-center justify-center gap-1.5 h-8 w-[128px] px-3 rounded-xl text-[12px] font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0 ${l.is_validated ? 'bg-[#17663D] text-white shadow-sm hover:bg-[#12522F]' : 'border border-[#9FD3B4] bg-[#EAF6EF] text-[#17663D] hover:bg-[#DDF0E5]'}`}>
+                        {l.is_validated ? <CheckCircle2 size={14} /> : <Check size={14} />} {l.is_validated ? 'Validated' : 'Validate'}
+                      </button>
+                    ) : (
+                      <Chip tone={l.is_verified ? 'green' : 'grey'} className="h-8" title={l.verified_by ? `By ${l.verified_by}` : undefined}>
+                        {l.is_verified ? <><Check size={10} /> {autoVerified ? 'Auto-verified' : 'Verified by maker'}</> : 'Not verified'}
+                      </Chip>
+                    )}
+                    {(editable || checkerMode) && (
+                      <button type="button" data-action="remark" onClick={() => { setRemarkOpen(p => new Set(p).add(l.id)); setOpenRows(p => new Set(p).add(l.id)) }} title={remarkBase || 'Add a remark'} aria-label={remarkBase ? 'Edit remark' : 'Add remark'}
+                        className={`inline-flex items-center justify-center w-8 h-8 shrink-0 rounded-xl border transition-colors ${editingRemark || remarkBase ? 'border-[#C9A9C4] bg-[#F5EDF3] text-[#6B3470]' : 'border-[#E4D3E2] bg-white text-[#6E5E70] hover:bg-[#F5EDF3] hover:text-[#6B3470] hover:border-[#C9A9C4]'}`}>
+                        <MessageSquare size={13} />
+                      </button>
+                    )}
+                    {canSplit && (
+                      <button type="button" data-action="split" disabled={rowBusy} onClick={() => setSplitFor(l)} title="Split this line into several lines (the total does not change)"
+                        className="inline-flex items-center justify-center gap-1 h-8 min-w-8 px-2 @min-[1200px]:px-2.5 shrink-0 rounded-xl border border-[#E4D3E2] bg-white text-[12px] font-bold text-[#6E5E70] hover:bg-[#F5EDF3] hover:text-[#6B3470] hover:border-[#C9A9C4] disabled:opacity-50" aria-label="Split line"><Scissors size={13} /><span className="hidden @min-[1200px]:inline">Split</span></button>
+                    )}
+                    {checkerMode && (
+                      <button type="button" data-action="line-tax" disabled={rowBusy} onClick={() => setTaxFor(l)} title="Change PPN / PPh of this line"
+                        className="inline-flex items-center justify-center gap-1 h-8 min-w-8 px-2 @min-[1200px]:px-2.5 shrink-0 rounded-xl border border-[#E4D3E2] bg-white text-[12px] font-bold text-[#6E5E70] hover:bg-[#F5EDF3] hover:text-[#6B3470] hover:border-[#C9A9C4] disabled:opacity-50" aria-label="Change tax"><Percent size={13} /><span className="hidden @min-[1200px]:inline">Tax</span></button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Rincian MAIN REFERENCE (dibuka segitiga) */}
+                {expanded && (
+                  <div className="border-t border-[#F3EEEA] bg-[#FBF7F4] px-4 py-3 rounded-b-xl" data-reference-panel>
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B] mb-1">Main reference</div>
+                    {!main ? (
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <span className="text-[12px] text-[#8A7A8B]">Nothing to compare</span>
+                        <button type="button" className={LINK} onClick={() => setBrowseFor(l)} data-action="browse-history"><History size={11} /> Browse history</button>
+                      </div>
+                    ) : (
+                      <div data-comparator="main" className="max-w-3xl">
+                        <RefWhere h={main} strong />
+                        <div className="text-[11px] text-[#8A7A8B]">{fmtDate(main.service_date)}{main.invoice_no ? ` · ${main.invoice_no}` : ''} · <b className="tabular-nums text-[#3B1B3D]">{fmtRupiah(main.amount)}</b></div>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                          <button type="button" className={LINK} onClick={() => setBrowseFor(l)} data-action="browse-history"><History size={11} /> View history</button>
+                          {others.length > 0 && <button type="button" className={LINK} onClick={() => toggleMore(l.id)}>{othersOpen ? 'Hide other reference' : `+${others.length} more reference${others.length > 1 ? 's' : ''}`}</button>}
+                          {editable && l.ref_history_id != null && <button type="button" className={`${LINK} !text-[#6E5E70]`} disabled={rowBusy} onClick={() => run(l.id, () => costAgentSetLineReference(l.id, null, actor))} title="Reset comparison — go back to the automatically chosen history"><RotateCcw size={11} /> Reset to automatic</button>}
+                        </div>
+                        {(othersOpen || l.compare_check) && others.length > 0 && (
+                          <div className="mt-2 flex flex-col gap-1.5 border-t border-dashed border-[#EADFD6] pt-2">
+                            {others.map(o => (
+                              <React.Fragment key={`${o.pick}-${o.history_id}`}><OtherReference line={l} h={o} currency={currency}
+                                onUse={o.pick === 'alternative' && editable ? () => run(l.id, () => costAgentSetLineReference(l.id, o.history_id, actor)) : undefined} useDisabled={busy !== null} /></React.Fragment>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {editingRemark ? (
+                      <div className="mt-2.5" data-line-remark>
+                        <textarea className={`${SA_INPUT} !h-auto min-h-7 py-1 text-[12px] leading-snug resize-y`} rows={remarkRows} value={remarkVal} disabled={rowBusy} placeholder="Remark — saved when you leave the box" aria-label="Remark" autoFocus
+                          onChange={e => setRemarks(p => ({ ...p, [l.id]: e.target.value }))}
+                          onBlur={() => {
+                            const v = remarkVal.trim()
+                            setRemarkOpen(p => { const n = new Set(p); n.delete(l.id); return n })
+                            if (v !== remarkBase) run(l.id, () => (checkerMode ? costAgentCheckerSetLineRemark(l.id, v, actor) : verify(l, { remark: v })))
+                          }} />
+                      </div>
+                    ) : null}
+                    {/* Remark maker (selalu terbaca) dan remark checker (hanya view 'full'; approver tidak menerimanya). Saat checker mengetik remark-nya, remark maker tetap tampil. */}
+                    {l.remark && !(editingRemark && !checkerMode) && (
+                      <div className="mt-2.5 flex items-start gap-1.5 rounded-lg bg-[#FFF8E6] border border-[#F2D58A] px-2 py-1 text-[11.5px] text-[#7A4F00] [overflow-wrap:anywhere] whitespace-pre-wrap" data-line-remark>
+                        <MessageSquare size={12} className="mt-0.5 shrink-0 text-[#B7791F]" /><span className="min-w-0">{l.checker_remark || checkerMode ? <b>Maker: </b> : null}{l.remark}</span>
+                      </div>
+                    )}
+                    {l.checker_remark && !(editingRemark && checkerMode) && (
+                      <div className="mt-2 flex items-start gap-1.5 rounded-lg bg-[#EEF1FA] border border-[#C9D3F0] px-2 py-1 text-[11.5px] text-[#2F4FA8] [overflow-wrap:anywhere] whitespace-pre-wrap" data-checker-remark>
+                        <MessageSquare size={12} className="mt-0.5 shrink-0" /><span className="min-w-0"><b>Checker: </b>{l.checker_remark}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          }
           return (
             <div key={l.id} data-line-id={l.id}
               className={`grid grid-cols-[28px_minmax(0,1fr)_112px] @min-[640px]:grid-cols-[28px_minmax(0,0.9fr)_296px_minmax(0,1fr)_128px] @min-[1200px]:grid-cols-[28px_minmax(0,1fr)_320px_minmax(0,1.2fr)_132px] rounded-xl border border-[#EADFD6] border-l-4 shadow-[0_1px_2px_rgba(59,27,61,0.04)] transition-colors ${l.is_verified ? 'bg-[#F8FCFA] border-l-[#17663D]' : noCostItem ? 'bg-white border-l-[#E0A526] hover:bg-[#FFFEFB]' : 'bg-white border-l-[#D9CFD6] hover:bg-[#FDFBFA]'} ${rowBusy ? 'opacity-60' : ''}`}>
@@ -153,7 +400,7 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
               <div className="min-w-0 px-3 pt-3 pb-2 @min-[640px]:pb-3 @min-[640px]:self-center [grid-column:2] [grid-row:1]" data-line-left>
                 <div className="flex items-start gap-2">
                   <div className="min-w-0 text-[13px] font-bold text-[#3B1B3D] leading-snug [overflow-wrap:anywhere]">{l.description_raw}</div>
-                  {editable && (
+                  {checkerMode && (
                     <button type="button" data-action="edit-line" disabled={rowBusy} onClick={() => setEditFor(l)} title="Edit line text, qty, price or amount"
                       className="shrink-0 -mt-0.5 inline-flex items-center gap-1 h-6 px-2 rounded-full border border-[#E4D3E2] bg-[#F5EDF3] text-[11px] font-semibold text-[#6B3470] hover:bg-[#EFE2EC] hover:border-[#C9A9C4] transition-colors disabled:opacity-40">
                       <Pencil size={11} /> Edit
@@ -161,9 +408,9 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                   )}
                 </div>
                 <div className="mt-1.5 max-w-[260px]">
-                  {editable ? (
+                  {editable || checkerMode ? (
                     <CostAgentCostItemPicker items={items} value={l.cost_item_id ?? null} disabled={rowBusy}
-                      onChange={id => run(l.id, () => verify(l, { costItemId: id, learnAlias: id !== null }))} />
+                      onChange={id => (checkerMode ? (id !== null ? run(l.id, () => costAgentCheckerSetCostItem(l.id, id, true, actor)) : undefined) : run(l.id, () => verify(l, { costItemId: id, learnAlias: id !== null })))} />
                   ) : (
                     <span className="text-[12px] text-[#3B1B3D] truncate block">{l.cost_item_code ? `${l.cost_item_code} — ${l.cost_item_name}` : '—'}</span>
                   )}
@@ -261,8 +508,9 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
 
               {/* Action: Verify + Remark */}
               <div className="[grid-column:3] [grid-row:1/span_3] px-2 py-3 flex flex-col items-stretch gap-1.5 @min-[640px]:justify-center @min-[640px]:[grid-column:5] @min-[640px]:[grid-row:1] @min-[640px]:px-3 @min-[640px]:border-l @min-[640px]:border-[#EFE6E0]" data-line-actions>
+                {autoVerified && <span className="self-center" data-auto-verified><Chip tone="blue" title="Auto-verified: documents complete and amount not above history">Auto</Chip></span>}
                 {editable ? (
-                  <button type="button" data-verify-line disabled={rowBusy || (!l.is_verified && noCostItem)} title={verifyTitle}
+                  <button type="button" data-verify-line disabled={rowBusy || (!l.is_verified && noCostItem) || gateBlocked} title={verifyTitle}
                     onClick={() => run(l.id, () => verify(l, { isVerified: !l.is_verified, learnAlias: !l.is_verified && !!l.cost_item_id }))}
                     className={`inline-flex items-center justify-center gap-1.5 h-8 rounded-xl text-[12px] font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${l.is_verified ? 'bg-[#17663D] text-white shadow-sm hover:bg-[#12522F]' : 'border border-[#9FD3B4] bg-[#EAF6EF] text-[#17663D] hover:bg-[#DDF0E5]'}`}>
                     {l.is_verified ? <CheckCircle2 size={14} /> : <Check size={14} />} {l.is_verified ? 'Verified' : 'Verify'}
@@ -274,6 +522,18 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                   <button type="button" data-action="remark" onClick={() => setRemarkOpen(p => new Set(p).add(l.id))} title={l.remark || 'Add a remark'}
                     className={`inline-flex items-center justify-center gap-1.5 h-8 rounded-xl border text-[12px] font-bold whitespace-nowrap transition-colors ${editingRemark || l.remark ? 'border-[#C9A9C4] bg-[#F5EDF3] text-[#6B3470]' : 'border-[#E4D3E2] bg-white text-[#6E5E70] hover:bg-[#F5EDF3] hover:text-[#6B3470] hover:border-[#C9A9C4]'}`}>
                     <MessageSquare size={13} /> {l.remark ? 'Edit remark' : 'Remark'}
+                  </button>
+                )}
+                {canSplit && (
+                  <button type="button" data-action="split" disabled={rowBusy} onClick={() => setSplitFor(l)} title="Split this line into several lines (the total does not change)"
+                    className="inline-flex items-center justify-center gap-1.5 h-8 rounded-xl border border-[#E4D3E2] bg-white text-[12px] font-bold whitespace-nowrap text-[#6E5E70] hover:bg-[#F5EDF3] hover:text-[#6B3470] hover:border-[#C9A9C4] disabled:opacity-50">
+                    <Scissors size={13} /> Split
+                  </button>
+                )}
+                {checkerMode && (
+                  <button type="button" data-action="line-tax" disabled={rowBusy} onClick={() => setTaxFor(l)} title="Change PPN / PPh of this line"
+                    className="inline-flex items-center justify-center gap-1.5 h-8 rounded-xl border border-[#E4D3E2] bg-white text-[12px] font-bold whitespace-nowrap text-[#6E5E70] hover:bg-[#F5EDF3] hover:text-[#6B3470] hover:border-[#C9A9C4] disabled:opacity-50">
+                    <Percent size={13} /> Tax
                   </button>
                 )}
               </div>
@@ -312,12 +572,16 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
         setAddFor(null)
         await run(l.id, () => verify(l, { costItemId: id, isVerified: true, learnAlias: true }))
       }} />}
-      {editFor && <EditLineModal line={editFor} currency={currency} actor={actor} onClose={() => setEditFor(null)} onSaved={async changed => {
+      {splitFor && <SplitLineDialog line={lines.find(x => x.id === splitFor.id) || splitFor} costItems={items} currency={currency} actor={actor} mode={checkerMode ? 'checker' : 'maker'} onClose={() => setSplitFor(null)}
+        onSaved={async () => { setSplitFor(null); await run('all', async () => {}); onToast?.(checkerMode ? 'Line split.' : 'Line split — please verify the new lines') }} />}
+      {taxFor && <LineTaxDialog line={lines.find(x => x.id === taxFor.id) || taxFor} onClose={() => setTaxFor(null)}
+        onSaved={async () => { setTaxFor(null); await run('all', async () => {}); onToast?.('Line tax saved.') }} />}
+      {editFor && <EditLineModal line={lines.find(x => x.id === editFor.id) || editFor} currency={currency} actor={actor} checker={!!checkerMode} onClose={() => setEditFor(null)} onSaved={async changed => {
         const l = editFor
         setEditFor(null)
         if (!changed) { onToast?.('No changes to save.', 'warn'); return }
         await run(l.id, async () => {})
-        onToast?.('Line updated — please verify again')
+        onToast?.(checkerMode ? 'Line updated — validate it again' : 'Line updated — please verify again')
       }} />}
     </div>
   )
@@ -497,8 +761,9 @@ function parseAmountInput(v: string): number | null {
 const numStr = (v: number | null | undefined) => (v === null || v === undefined || isNaN(Number(v)) ? '' : String(Number(v)))
 
 // sql/065 C: edit manual baris -> fn_cost_agent_update_line. Amount otomatis qty × unit price saat keduanya diisi (tetap bisa diubah).
-function EditLineModal({ line, currency, actor, onClose, onSaved }: {
-  line: CostAgentInvoiceLine; currency: string; actor: string | null; onClose: () => void; onSaved: (changed: boolean) => void
+// sql/101: hanya CHECKER yang boleh mengedit (teks + nominal; saat nominal berubah qty / harga dikosongkan server), jadi bentuk checker menyembunyikan Qty / Unit price.
+function EditLineModal({ line, currency, actor, checker = false, onClose, onSaved }: {
+  line: CostAgentInvoiceLine; currency: string; actor: string | null; checker?: boolean; onClose: () => void; onSaved: (changed: boolean) => void
 }) {
   const [desc, setDesc] = useState(line.description_raw || '')
   const [qty, setQty] = useState(numStr(line.qty))
@@ -530,7 +795,7 @@ function EditLineModal({ line, currency, actor, onClose, onSaved }: {
 
   return (
     <CostAgentModal z="z-[80]" maxWidth="max-w-xl" onClose={() => { if (!busy) onClose() }} title={`Edit line ${line.line_no}`}
-      subtitle="After saving, the line must be verified again; the cost item may be re-detected from the new text."
+      subtitle={checker ? 'After saving, the line is no longer validated. The invoice total must match the submitted total again before it can be validated.' : 'After saving, the line must be verified again; the cost item may be re-detected from the new text.'}
       footer={<>
         <button type="button" className={SA_BTN_OUTLINE} onClick={onClose} disabled={busy}>Cancel</button>
         <button type="button" className={SA_BTN_PRIMARY} onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
@@ -541,11 +806,11 @@ function EditLineModal({ line, currency, actor, onClose, onSaved }: {
           <textarea className={`${SA_INPUT} !h-auto py-1.5 leading-snug resize-y`} rows={3} maxLength={COST_AGENT_LINE_DESCRIPTION_MAX} value={desc} autoFocus
             onChange={e => setDesc(e.target.value)} />
         </div>
-        <div>
+        <div className={checker ? 'hidden' : ''}>
           <FieldLabel>Qty</FieldLabel>
           <input className={SA_INPUT} inputMode="decimal" value={qty} placeholder="optional" onChange={e => { setQty(e.target.value); recalc(e.target.value, price) }} />
         </div>
-        <div>
+        <div className={checker ? 'hidden' : ''}>
           <FieldLabel>Unit price</FieldLabel>
           <input className={SA_INPUT} inputMode="decimal" value={price} placeholder="optional" onChange={e => { setPrice(e.target.value); recalc(qty, e.target.value) }} />
         </div>
@@ -557,7 +822,7 @@ function EditLineModal({ line, currency, actor, onClose, onSaved }: {
           <p className="mt-1 text-[11px] text-[#6E5E70] tabular-nums">{amountN !== null ? fmtMoney(amountN) : amount.trim() ? 'Not a valid number' : '—'}</p>
         </div>
         <div className="col-span-2 rounded-lg border border-[#EADFD6] bg-[#FBF7F4] px-3 py-2 text-[11px] text-[#6E5E70] [overflow-wrap:anywhere]" data-original>
-          Original: <i>{line.description_raw}</i> · {line.qty != null || line.unit_price != null ? `${fmtNumber(line.qty, 3)} × ${fmtNumber(line.unit_price)} · ` : ''}{fmtMoney(line.amount)}
+          Original: <i>{checker ? line.maker_description ?? line.description_raw : line.description_raw}</i> · {(checker ? line.maker_qty ?? line.qty : line.qty) != null || (checker ? line.maker_unit_price ?? line.unit_price : line.unit_price) != null ? `${fmtNumber(checker ? line.maker_qty ?? line.qty : line.qty, 3)} × ${fmtNumber(checker ? line.maker_unit_price ?? line.unit_price : line.unit_price)} · ` : ''}{fmtMoney(checker ? line.maker_amount ?? line.amount : line.amount)}
         </div>
         {error && <div className="col-span-2 rounded-lg border border-[#F4C3BC] bg-[#FDE7E4] px-3 py-2 text-[12.5px] text-[#A8231A]">{error}</div>}
       </div>

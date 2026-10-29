@@ -3,20 +3,27 @@
 // cost_agent_approval_matrix (RLS: baca has_page_access, tulis has_edit_access('cost_agent_approval_matrix')); edit hanya bila ctx.editable.
 // Aturan paling spesifik per step menang (dihitung SERVER, jangan diimplementasi ulang): vendor > office > PT > umum. Aturan khusus office yg
 // aktif + kapal invoice belum punya office => pengajuan approval ditolak server.
+// Approval Matrix v2 (2026-10-28, sql/090): aturan dikelompokkan per (PT, office, vendor, rentang) dgn langkah berurutan + tombol naik/turun (fn_cost_agent_reorder_matrix),
+// field "Level name" (approver_label) & "Mode" (any / all -- kolom approval_mode), kartu Simulate (fn_cost_agent_simulate_matrix) dan kartu Substitutes (delegasi).
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Pencil, Copy, Trash2, AlertTriangle, FlaskConical, X, EyeOff } from 'lucide-react'
+import { Plus, Pencil, Copy, Trash2, AlertTriangle, FlaskConical, X, EyeOff, ArrowUp, ArrowDown, UserRoundCog } from 'lucide-react'
 import { useAuth } from '../../../lib/AuthContext'
 import { LoadingState } from '../../../components/LoadingState'
 import { CostAgentModal, CostAgentCombobox, FieldLabel, FilterPanel, FilterField, FilterButton, FILTER_SELECT, type ComboOption } from '../../../components/CostAgentUi'
 import { Chip, PtBadge, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_CARD, SA_INPUT, SA_LABEL } from '../../../components/SeaAirAuditUi'
 import {
   fetchCostAgentApprovalMatrix, saveCostAgentMatrixRule, deleteCostAgentMatrixRule, fetchCostAgentCompanies, fetchCostAgentVendors,
-  fetchAppUserEmails, costAgentMatrixFor, matrixCoverageGaps, fmtShortAmount, fmtRupiah, parseQtyInput,
-  type CostAgentApprovalMatrixRow, type CostAgentCompany, type CostAgentVendor, type CostAgentMatrixStep, type CostAgentMatrixInput,
+  fetchAppUserEmails, matrixCoverageGaps, fmtShortAmount, fmtRupiah, fmtDate, parseQtyInput,
+  type CostAgentApprovalMatrixRow, type CostAgentCompany, type CostAgentVendor, type CostAgentMatrixInput,
 } from '../../../utils/CostAgentHelpers'
+import {
+  costAgentDeleteDelegation, costAgentListDelegations, costAgentReorderMatrix, costAgentSaveDelegation, costAgentSimulateMatrix,
+  type ApprovalRoute, type Delegation,
+} from '../../../utils/CostAgentWorkflow'
+import { ApprovalRouteView } from '../../../components/CostAgentApprovalRoute'
 import { OFFICE_LABEL, OFFICE_OPTIONS } from './hubApi'
-import { ErrorBox, OfficeBadge, type HubCtx } from './hubUi'
-import { ActiveStatus, HIDE_LG, HIDE_XL, ICON_BTN, ICON_BTN_DANGER } from './hubUi'
+import { ErrorBox, OfficeBadge, useAsync, type HubCtx } from './hubUi'
+import { ActiveStatus, ICON_BTN, ICON_BTN_DANGER } from './hubUi'
 
 const TH = 'px-3 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[#6E5E70] whitespace-nowrap bg-[#FBF7F4] border-b border-[#EADFD6]'
 const TD = 'px-3 py-2 text-[12.5px] text-[#3B1B3D] align-top'
@@ -51,15 +58,15 @@ export default function MatrixTab({ ctx }: { ctx: HubCtx }) {
   const vendorName = (id: number | null) => (id === null ? 'All vendors' : vendors.find(v => v.id === id)?.name || `Vendor #${id}`)
   const shown = rules.filter(r => (showInactive || r.is_active) && (!companyFilter || r.company_code === companyFilter || r.company_code === null))
 
-  // Ladder: kelompok (PT, office, vendor, rentang) -> step berurutan.
-  const ladders = useMemo(() => {
-    const m = new Map<string, { company: string | null; office: string | null; vendor: number | null; min: number; max: number | null; steps: CostAgentApprovalMatrixRow[] }>()
-    shown.filter(r => r.is_active).forEach(r => {
+  // Kelompok = SATU aturan (PT, office, vendor, rentang nilai) -> langkah berurutan. Nonaktif ikut tampil bila "Show inactive".
+  const groups = useMemo(() => {
+    const m = new Map<string, { key: string; company: string | null; office: string | null; vendor: number | null; min: number; max: number | null; steps: CostAgentApprovalMatrixRow[] }>()
+    shown.forEach(r => {
       const k = `${r.company_code ?? '*'}|${r.office ?? '*'}|${r.vendor_id ?? '*'}|${r.min_amount}|${r.max_amount ?? '∞'}`
-      if (!m.has(k)) m.set(k, { company: r.company_code, office: r.office ?? null, vendor: r.vendor_id, min: Number(r.min_amount), max: r.max_amount === null ? null : Number(r.max_amount), steps: [] })
+      if (!m.has(k)) m.set(k, { key: k, company: r.company_code, office: r.office ?? null, vendor: r.vendor_id, min: Number(r.min_amount), max: r.max_amount === null ? null : Number(r.max_amount), steps: [] })
       m.get(k)!.steps.push(r)
     })
-    return [...m.values()].map(l => ({ ...l, steps: l.steps.sort((a, b) => a.step_no - b.step_no) }))
+    return [...m.values()].map(l => ({ ...l, steps: l.steps.sort((a, b) => a.step_no - b.step_no || a.id - b.id) }))
       .sort((a, b) => (a.company ?? '').localeCompare(b.company ?? '') || (a.office ?? '').localeCompare(b.office ?? '') || (a.vendor ?? 0) - (b.vendor ?? 0) || a.min - b.min)
   }, [shown])
 
@@ -80,17 +87,26 @@ export default function MatrixTab({ ctx }: { ctx: HubCtx }) {
   }, [rules, companies, companyFilter, hasOfficeRules])
   const noActiveRule = !rules.some(r => r.is_active)
 
+  // Naik / turun satu langkah: kirim urutan id baru dari SATU aturan -> step_no 1..n dihitung database.
+  const move = async (g: { steps: CostAgentApprovalMatrixRow[] }, idx: number, dir: -1 | 1) => {
+    const ids = g.steps.map(x => x.id)
+    const j = idx + dir
+    if (j < 0 || j >= ids.length) return
+    ;[ids[idx], ids[j]] = [ids[j], ids[idx]]
+    try { await costAgentReorderMatrix(ids); ctx.toast('Order saved.'); setReloadKey(k => k + 1) } catch (e: any) { ctx.toast(e.message || String(e), 'err') }
+  }
+
   const remove = async (r: CostAgentApprovalMatrixRow) => {
     if (!window.confirm(`Delete rule "${r.name}" (step ${r.step_no})?`)) return
     try { await deleteCostAgentMatrixRule(r.id); ctx.toast('Rule deleted.'); setReloadKey(k => k + 1) } catch (e: any) { ctx.toast(e.message || String(e), 'err') }
   }
   const blank = (): CostAgentMatrixInput => ({
     name: '', company_code: companyFilter || null, vendor_id: null, office: null, min_amount: 0, max_amount: null, step_no: 1,
-    approver_label: '', approver_emails: [], approver_role: null, is_active: true, created_by: user?.email ?? null,
+    approver_label: '', approver_emails: [], approver_role: null, approval_mode: 'any', is_active: true, created_by: user?.email ?? null,
   })
   const toInput = (r: CostAgentApprovalMatrixRow): CostAgentMatrixInput => ({
     name: r.name, company_code: r.company_code, vendor_id: r.vendor_id, office: r.office ?? null, min_amount: Number(r.min_amount), max_amount: r.max_amount === null ? null : Number(r.max_amount),
-    step_no: r.step_no, approver_label: r.approver_label, approver_emails: r.approver_emails || [], approver_role: r.approver_role, is_active: r.is_active, created_by: r.created_by ?? null,
+    step_no: r.step_no, approver_label: r.approver_label, approver_emails: r.approver_emails || [], approver_role: r.approver_role, approval_mode: r.approval_mode ?? 'any', is_active: r.is_active, created_by: r.created_by ?? null,
   })
 
   return (
@@ -129,61 +145,51 @@ export default function MatrixTab({ ctx }: { ctx: HubCtx }) {
               </div>
             )}
 
-            <section className={`${SA_CARD} p-4`}>
-              <h3 className="text-[14px] font-bold text-[#3B1B3D] mb-2">Ladder</h3>
-              {ladders.length === 0 ? <p className="text-[12.5px] text-[#6E5E70] italic">No active rules.</p> : (
-                <ul className="space-y-1.5">
-                  {ladders.map((l, i) => (
-                    <li key={i} className="flex items-start gap-2 flex-wrap text-[12.5px]">
-                      {l.company ? <PtBadge code={l.company} /> : <Chip tone="grey">All PT</Chip>}
-                      {l.office ? <OfficeBadge office={l.office} /> : <Chip tone="grey">All offices</Chip>}
-                      {l.vendor !== null && <Chip tone="purple">{vendorName(l.vendor)}</Chip>}
-                      <span className="font-semibold text-[#3B1B3D] tabular-nums">{l.max === null ? (l.min > 0 ? `> ${fmtShortAmount(l.min)}` : 'Any amount') : `${fmtShortAmount(l.min)} – ${fmtShortAmount(l.max)}`}</span>
-                      <span className="text-[#8A7A8B]">:</span>
-                      <span className="text-[#3B1B3D]">{l.steps.map(s => `Step ${s.step_no} ${s.approver_label}`).join(' → ')}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            <section className={`${SA_CARD} overflow-hidden @container`}>
-              <div className="overflow-x-auto [&_tbody_tr:hover]:bg-[#FBF7F4]">
-                <table className="min-w-full">
-                  <thead><tr>{['Rule name', 'Company', 'Office', 'Vendor', 'Min', 'Max', 'Step', 'Approver', 'Approver emails', 'Role', 'Active', ''].map((h, i) => <th key={h || 'a'} className={`${TH} ${i === 9 ? HIDE_XL : i === 7 ? HIDE_LG : ''}`}>{h}</th>)}</tr></thead>
-                  <tbody>
-                    {shown.length === 0 && <tr><td colSpan={12} className="px-4 py-8 text-center text-sm text-[#6E5E70] italic">No rules{editable ? ' — click "Add rule".' : '.'}</td></tr>}
-                    {shown.map(r => (
-                      <tr key={r.id} className={`border-b border-[#F3EEEA] ${r.is_active ? '' : 'opacity-50'}`}>
-                        <td className={`${TD} font-semibold min-w-[160px]`}>{r.name}</td>
-                        <td className={TD}>{r.company_code || <span className="text-[#8A7A8B]">All</span>}</td>
-                        <td className={TD}>{r.office ? <OfficeBadge office={r.office} /> : <span className="text-[#8A7A8B]">All</span>}</td>
-                        <td className={`${TD} min-w-[140px]`}>{r.vendor_id === null ? <span className="text-[#8A7A8B]">All</span> : vendorName(r.vendor_id)}</td>
-                        <td className={`${TD} text-right tabular-nums whitespace-nowrap`}>{fmtRupiah(r.min_amount)}</td>
-                        <td className={`${TD} text-right tabular-nums whitespace-nowrap`}>{r.max_amount === null ? <span className="text-[#8A7A8B]">No limit</span> : fmtRupiah(r.max_amount)}</td>
-                        <td className={`${TD} text-center`}>{r.step_no}</td>
-                        <td className={`${TD} ${HIDE_LG}`}>{r.approver_label}</td>
-                        <td className={`${TD} min-w-[200px]`}><div className="flex flex-wrap gap-1">{(r.approver_emails || []).map(e => <Chip key={e} tone="blue">{e}</Chip>)}</div></td>
-                        <td className={`${TD} ${HIDE_XL}`}>{r.approver_role || '—'}</td>
-                        <td className={TD}><ActiveStatus active={r.is_active} /></td>
-                        <td className={`${TD} whitespace-nowrap`}>
-                          {editable && (
-                            <div className="flex gap-1">
-                              <button type="button" aria-label="Edit rule" title="Edit" className={ICON_BTN} onClick={() => setForm({ id: r.id, init: toInput(r) })}><Pencil size={12} /></button>
-                              <button type="button" aria-label="Duplicate rule" title="Duplicate" className={ICON_BTN} onClick={() => setForm({ id: null, init: { ...toInput(r), name: `${r.name} (copy)`, created_by: user?.email ?? null } })}><Copy size={12} /></button>
-                              <button type="button" aria-label="Delete rule" title="Delete" className={ICON_BTN_DANGER} onClick={() => remove(r)}><Trash2 size={12} /></button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
+            {groups.length === 0 && <section className={`${SA_CARD} px-4 py-8 text-center text-sm text-[#6E5E70] italic`}>No rules{editable ? ' — click "Add".' : '.'}</section>}
+            {groups.map(g => (
+              <section key={g.key} className={`${SA_CARD} overflow-hidden @container`} data-rule-group>
+                <div className="px-4 py-2.5 border-b border-[#F3EEEA] bg-[#FBF7F4] flex items-center gap-2 flex-wrap text-[12.5px]">
+                  {g.company ? <PtBadge code={g.company} /> : <Chip tone="grey">All PT</Chip>}
+                  {g.office ? <OfficeBadge office={g.office} /> : <Chip tone="grey">All offices</Chip>}
+                  {g.vendor !== null && <Chip tone="purple">{vendorName(g.vendor)}</Chip>}
+                  <span className="font-semibold text-[#3B1B3D] tabular-nums">{g.max === null ? (g.min > 0 ? `≥ ${fmtShortAmount(g.min)}` : 'Any amount') : `${fmtShortAmount(g.min)} – ${fmtShortAmount(g.max)}`}</span>
+                  <span className="text-[#8A7A8B] text-[11.5px]">{g.steps.length} step{g.steps.length === 1 ? '' : 's'}</span>
+                </div>
+                <div className="overflow-x-auto [&_tbody_tr:hover]:bg-[#FBF7F4]">
+                  <table className="min-w-full">
+                    <thead><tr>{['Step', 'Level name', 'Mode', 'Approver emails', 'Active', ''].map(h => <th key={h || 'a'} className={TH}>{h}</th>)}</tr></thead>
+                    <tbody>
+                      {g.steps.map((r, idx) => (
+                        <tr key={r.id} className={`border-b border-[#F3EEEA] last:border-b-0 ${r.is_active ? '' : 'opacity-50'}`} data-matrix-step={r.id}>
+                          <td className={`${TD} text-center font-bold tabular-nums`}>{r.step_no}</td>
+                          <td className={`${TD} min-w-[170px]`}><div className="font-semibold">{r.approver_label}</div><div className="text-[11px] text-[#8A7A8B]">{r.name}{r.approver_role ? ` · ${r.approver_role}` : ''}</div></td>
+                          <td className={TD}>{r.approval_mode === 'all' ? <Chip tone="purple" title="Every listed person has to approve this step">All must approve</Chip> : <Chip tone="grey" title="Any one of the listed people can approve">Any one</Chip>}</td>
+                          <td className={`${TD} min-w-[200px]`}><div className="flex flex-wrap gap-1">{(r.approver_emails || []).map(e => <Chip key={e} tone="blue">{e}</Chip>)}</div></td>
+                          <td className={TD}><ActiveStatus active={r.is_active} /></td>
+                          <td className={`${TD} whitespace-nowrap`}>
+                            {editable && (
+                              <div className="flex gap-1">
+                                <button type="button" aria-label="Move step up" title="Move up" className={ICON_BTN} disabled={idx === 0} onClick={() => move(g, idx, -1)}><ArrowUp size={12} /></button>
+                                <button type="button" aria-label="Move step down" title="Move down" className={ICON_BTN} disabled={idx === g.steps.length - 1} onClick={() => move(g, idx, 1)}><ArrowDown size={12} /></button>
+                                <button type="button" aria-label="Edit rule" title="Edit" className={ICON_BTN} onClick={() => setForm({ id: r.id, init: toInput(r) })}><Pencil size={12} /></button>
+                                <button type="button" aria-label="Duplicate rule" title="Duplicate" className={ICON_BTN} onClick={() => setForm({ id: null, init: { ...toInput(r), name: `${r.name} (copy)`, created_by: user?.email ?? null } })}><Copy size={12} /></button>
+                                <button type="button" aria-label="Delete rule" title="Delete" className={ICON_BTN_DANGER} onClick={() => remove(r)}><Trash2 size={12} /></button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            ))}
           </div>
 
-          <SimulatePanel companies={companies} vendors={vendors} />
+          <div className="space-y-3 min-w-0">
+            <SimulatePanel companies={companies} vendors={vendors} />
+            <DelegationsCard master={editable} myEmail={user?.email ?? ''} userEmails={userEmails} toast={ctx.toast} />
+          </div>
         </div></div>
       )}
 
@@ -201,7 +207,7 @@ function SimulatePanel({ companies, vendors }: { companies: CostAgentCompany[]; 
   const [vendorId, setVendorId] = useState<number | null>(null)
   const [office, setOffice] = useState('')
   const [amount, setAmount] = useState('')
-  const [steps, setSteps] = useState<CostAgentMatrixStep[] | null>(null)
+  const [route, setRoute] = useState<ApprovalRoute | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const vendorOpts: ComboOption[] = useMemo(() => vendors.map(v => ({ value: v.id, label: v.name })), [vendors])
@@ -210,13 +216,13 @@ function SimulatePanel({ companies, vendors }: { companies: CostAgentCompany[]; 
     const n = parseQtyInput(amount)
     if (n === null) { setError('Enter a valid amount.'); return }
     setBusy(true); setError(null)
-    try { setSteps(await costAgentMatrixFor(company || null, vendorId, n, office || null)) } catch (e: any) { setError(e.message || String(e)) } finally { setBusy(false) }
+    try { setRoute(await costAgentSimulateMatrix(company || null, vendorId, n, office || null)) } catch (e: any) { setError(e.message || String(e)) } finally { setBusy(false) }
   }
 
   return (
-    <aside className={`${SA_CARD} p-4 space-y-3 @min-[1100px]:sticky @min-[1100px]:top-2`}>
+    <aside className={`${SA_CARD} p-4 space-y-3`} data-simulate>
       <h3 className="text-[14px] font-bold text-[#3B1B3D] flex items-center gap-1.5"><FlaskConical size={15} /> Simulate</h3>
-      <p className="text-[12px] text-[#6E5E70]">Shows the approval steps an invoice would get when submitted.</p>
+      <p className="text-[12px] text-[#6E5E70]">Shows the approval steps an invoice would get when submitted (level, mode, approvers and active substitutes).</p>
       <div><FieldLabel>Company</FieldLabel><select className={SA_INPUT} value={company} onChange={e => setCompany(e.target.value)}><option value="">—</option>{companies.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}</select></div>
       <div><FieldLabel>Vendor</FieldLabel><CostAgentCombobox options={vendorOpts} value={vendorId} onChange={v => setVendorId(v === null ? null : Number(v))} placeholder="Any vendor" /></div>
       <div>
@@ -230,19 +236,91 @@ function SimulatePanel({ companies, vendors }: { companies: CostAgentCompany[]; 
       <div><FieldLabel>Amount (grand total)</FieldLabel><input className={`${SA_INPUT} text-right tabular-nums`} inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)} placeholder="e.g. 75.000.000" onKeyDown={e => { if (e.key === 'Enter') run() }} /></div>
       <button type="button" className={`${SA_BTN_PRIMARY} w-full`} onClick={run} disabled={busy}>{busy ? 'Checking…' : 'Simulate'}</button>
       {error && <p className="text-[12px] text-[#A8231A]">{error}</p>}
-      {steps && (steps.length === 0 ? (
-        <div className="rounded-lg border border-[#F4C3BC] bg-[#FDE7E4] px-3 py-2 text-[12.5px] text-[#A8231A]">No matching rule — submitting this invoice would fail.</div>
-      ) : (
-        <ol className="space-y-1.5">
-          {steps.map(s => (
-            <li key={s.step_no} className="rounded-lg border border-[#EADFD6] px-3 py-2 text-[12.5px]">
-              <div className="font-semibold text-[#3B1B3D]">Step {s.step_no} · {s.approver_label}</div>
-              <div className="text-[#6E5E70] text-[11.5px]">{(s.approver_emails || []).join(', ') || <span className="text-[#A8231A]">No approver email — any editor could approve</span>}</div>
-            </li>
-          ))}
-        </ol>
-      ))}
+      {route && <ApprovalRouteView route={route} />}
     </aside>
+  )
+}
+
+// Kartu "Substitutes" (pengganti approver): daftar fn_cost_agent_list_delegations + Add / Delete. Master (hak edit matriks) melihat & mengelola semua;
+// approver biasa hanya miliknya (dari/ke dirinya) dan hanya boleh menunjuk pengganti untuk dirinya sendiri -- diputuskan database.
+function DelegationsCard({ master, myEmail, userEmails, toast }: { master: boolean; myEmail: string; userEmails: { email: string; name: string | null }[]; toast: HubCtx['toast'] }) {
+  const list = useAsync(() => costAgentListDelegations(false), [])
+  const [dlg, setDlg] = useState(false)
+  const rows: Delegation[] = list.data ?? []
+  const remove = async (d: Delegation) => {
+    if (!window.confirm(`Remove the substitute ${d.to} for ${d.from}?`)) return
+    try { await costAgentDeleteDelegation(d.id); toast('Substitute removed.'); list.reload() } catch (e: any) { toast(e.message || String(e), 'err') }
+  }
+  return (
+    <aside className={`${SA_CARD} p-4 space-y-3`} data-delegations>
+      <div className="flex items-center gap-2">
+        <h3 className="text-[14px] font-bold text-[#3B1B3D] flex items-center gap-1.5"><UserRoundCog size={15} /> Substitutes</h3>
+        <button type="button" className={`${SA_BTN_OUTLINE} !h-7 !px-2.5 ml-auto`} onClick={() => setDlg(true)}><Plus size={12} /> Add</button>
+      </div>
+      <p className="text-[12px] text-[#6E5E70]">While a substitute is valid, that person can approve on behalf of the approver.{master ? '' : ' You can only set a substitute for yourself.'}</p>
+      {list.error && <p className="text-[12px] text-[#A8231A]">{list.error}</p>}
+      {!list.error && rows.length === 0 && <p className="text-[12.5px] text-[#6E5E70] italic">{list.loading ? 'Loading…' : 'No substitutes.'}</p>}
+      <ul className="space-y-1.5">
+        {rows.map(d => (
+          <li key={d.id} className="rounded-lg border border-[#EADFD6] px-3 py-2 text-[12.5px]">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-[#3B1B3D] [overflow-wrap:anywhere]">{d.to}</span>
+              <span className="text-[#8A7A8B]">for</span>
+              <span className="[overflow-wrap:anywhere]">{d.from}</span>
+              {d.active_now && <Chip tone="green">Active now</Chip>}
+              {(master || d.from.toLowerCase() === myEmail.toLowerCase()) && (
+                <button type="button" className={`${ICON_BTN_DANGER} ml-auto`} aria-label="Delete substitute" title="Delete" onClick={() => remove(d)}><Trash2 size={12} /></button>
+              )}
+            </div>
+            <div className="text-[11.5px] text-[#6E5E70]">{fmtDate(d.valid_from)} – {fmtDate(d.valid_to)}{d.reason ? ` · ${d.reason}` : ''}</div>
+          </li>
+        ))}
+      </ul>
+      {dlg && <DelegationModal master={master} myEmail={myEmail} userEmails={userEmails} onClose={() => setDlg(false)} onSaved={() => { setDlg(false); toast('Substitute saved.'); list.reload() }} />}
+    </aside>
+  )
+}
+
+const isoDay = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+function DelegationModal({ master, myEmail, userEmails, onClose, onSaved }: {
+  master: boolean; myEmail: string; userEmails: { email: string; name: string | null }[]; onClose: () => void; onSaved: () => void
+}) {
+  const today = new Date()
+  const [from, setFrom] = useState(myEmail)
+  const [to, setTo] = useState('')
+  const [validFrom, setValidFrom] = useState(isoDay(today))
+  const [validTo, setValidTo] = useState(isoDay(new Date(today.getTime() + 7 * 86400000)))
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const save = async () => {
+    const f = from.trim().toLowerCase(); const t = to.trim().toLowerCase()
+    if (!EMAIL_RE.test(f) || !EMAIL_RE.test(t)) return setError('Enter valid email addresses.')
+    if (f === t) return setError('The substitute must be a different person.')
+    if (!validFrom || !validTo) return setError('Valid from and valid to are required.')
+    if (validTo < validFrom) return setError('Valid to cannot be earlier than valid from.')
+    if ((new Date(validTo).getTime() - new Date(validFrom).getTime()) / 86400000 > 366) return setError('A substitute can be set for at most one year.')
+    setBusy(true); setError(null)
+    try { await costAgentSaveDelegation(null, f, t, validFrom, validTo, reason.trim() || null); onSaved() } catch (e: any) { setError(e.message || String(e)); setBusy(false) }
+  }
+  return (
+    <CostAgentModal maxWidth="max-w-md" z="z-[90]" onClose={() => { if (!busy) onClose() }} title="Add substitute" subtitle="The substitute can approve on behalf of the approver during this period."
+      footer={<>
+        <button type="button" className={SA_BTN_OUTLINE} onClick={onClose} disabled={busy}>Cancel</button>
+        <button type="button" className={SA_BTN_PRIMARY} onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+      </>}>
+      <div className="p-5 space-y-3">
+        <datalist id="delegation-emails">{userEmails.map(u => <option key={u.email} value={u.email}>{u.name || ''}</option>)}</datalist>
+        <div><FieldLabel required>Approver (from)</FieldLabel><input className={SA_INPUT} value={from} onChange={e => setFrom(e.target.value)} disabled={!master || busy} list="delegation-emails" /></div>
+        <div><FieldLabel required>Substitute</FieldLabel><input className={SA_INPUT} value={to} onChange={e => setTo(e.target.value)} disabled={busy} list="delegation-emails" placeholder="name@company.com" autoFocus /></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><FieldLabel required>Valid from</FieldLabel><input type="date" className={SA_INPUT} value={validFrom} onChange={e => setValidFrom(e.target.value)} disabled={busy} /></div>
+          <div><FieldLabel required>Valid to</FieldLabel><input type="date" className={SA_INPUT} value={validTo} min={validFrom} onChange={e => setValidTo(e.target.value)} disabled={busy} /></div>
+        </div>
+        <div><FieldLabel>Reason</FieldLabel><input className={SA_INPUT} value={reason} maxLength={200} onChange={e => setReason(e.target.value)} disabled={busy} placeholder="e.g. Annual leave" /></div>
+        {error && <div className="rounded-lg border border-[#F4C3BC] bg-[#FDE7E4] px-3 py-2 text-[12.5px] text-[#A8231A] [overflow-wrap:anywhere]" role="alert">{error}</div>}
+      </div>
+    </CostAgentModal>
   )
 }
 
@@ -277,7 +355,7 @@ function RuleModal({ id, init, companies, vendors, userEmails, onClose, onSaved 
     const min = parseQtyInput(minStr)
     const max = maxStr.trim() === '' ? null : parseQtyInput(maxStr)
     if (!v.name.trim()) return setError('Rule name is required.')
-    if (!v.approver_label.trim()) return setError('Approver label is required.')
+    if (!v.approver_label.trim()) return setError('Level name is required.')
     if (min === null || min < 0) return setError('Min amount must be a number ≥ 0.')
     if (maxStr.trim() !== '' && max === null) return setError('Max amount must be a number (or empty for no limit).')
     if (max !== null && max < min) return setError('Max must be greater than or equal to min.')
@@ -315,7 +393,7 @@ function RuleModal({ id, init, companies, vendors, userEmails, onClose, onSaved 
         <div><FieldLabel required>Min amount</FieldLabel><input className={`${SA_INPUT} text-right tabular-nums`} inputMode="decimal" value={minStr} onChange={e => setMinStr(e.target.value)} /></div>
         <div><FieldLabel hint="empty = no limit">Max amount</FieldLabel><input className={`${SA_INPUT} text-right tabular-nums`} inputMode="decimal" value={maxStr} onChange={e => setMaxStr(e.target.value)} /></div>
         <div><FieldLabel required>Step</FieldLabel><input className={SA_INPUT} type="number" min={1} max={10} value={v.step_no} onChange={e => set('step_no', Number(e.target.value))} /></div>
-        <div><FieldLabel required>Approver label</FieldLabel><input className={SA_INPUT} value={v.approver_label} onChange={e => set('approver_label', e.target.value)} placeholder="e.g. Finance Supervisor" /></div>
+        <div><FieldLabel required>Level name</FieldLabel><input className={SA_INPUT} value={v.approver_label} onChange={e => set('approver_label', e.target.value)} placeholder="e.g. Finance Supervisor" /></div>
         <div className="sm:col-span-2">
           <FieldLabel required hint="Enter to add">Approver emails</FieldLabel>
           <div className="flex flex-wrap gap-1 mb-1.5">
@@ -339,10 +417,18 @@ function RuleModal({ id, init, companies, vendors, userEmails, onClose, onSaved 
             )}
           </div>
         </div>
+        <div className="sm:col-span-2">
+          <FieldLabel required>Mode</FieldLabel>
+          <select className={SA_INPUT} value={v.approval_mode ?? 'any'} onChange={e => set('approval_mode', e.target.value as 'any' | 'all')} aria-label="Approval mode">
+            <option value="any">Any one of the list</option>
+            <option value="all">All must approve</option>
+          </select>
+          <p className="mt-1 text-[11px] text-[#6E5E70]">All must approve: every listed person has to approve this step.</p>
+        </div>
         <div><FieldLabel>Role (optional)</FieldLabel><input className={SA_INPUT} value={v.approver_role ?? ''} onChange={e => set('approver_role', e.target.value)} /></div>
         <div className="flex items-end"><label className="flex items-center gap-2 text-[12.5px] font-semibold text-[#3B1B3D] h-9"><input type="checkbox" checked={v.is_active} onChange={e => set('is_active', e.target.checked)} className="w-4 h-4 accent-[#17663D]" /> Active</label></div>
         {error && <div className="sm:col-span-2 rounded-lg border border-[#F4C3BC] bg-[#FDE7E4] px-3 py-2 text-[12.5px] text-[#A8231A]">{error}</div>}
-        <p className={`sm:col-span-2 ${SA_LABEL} normal-case tracking-normal font-normal`}>Each step of the same company / vendor / range needs its own rule (step 1, step 2, …).</p>
+        <p className={`sm:col-span-2 ${SA_LABEL} normal-case tracking-normal font-normal`}>Each step of the same company / vendor / range needs its own rule (step 1, step 2, …). Use the arrows on the Approval Matrix to change the order.</p>
       </div>
     </CostAgentModal>
   )

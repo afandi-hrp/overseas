@@ -9,15 +9,24 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
-import { X, Pencil, Send, CheckCircle2, Maximize2, Minimize2, AlertTriangle, RotateCcw, PanelLeftClose, PanelLeftOpen, FileText, Wallet, ShieldCheck, Trash2, Plus, ChevronDown, ChevronUp } from 'lucide-react'
+import { X, Pencil, Send, CheckCircle2, Maximize2, Minimize2, AlertTriangle, RotateCcw, PanelLeftClose, PanelLeftOpen, FileText, Wallet, ShieldCheck, Trash2, Plus, ChevronDown, ChevronUp, Ban } from 'lucide-react'
 import { StatusChip, CostAgentCombobox, CostAgentModal, FieldLabel, type ComboOption } from './CostAgentUi'
 import { Chip, PtBadge, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_BTN_GREEN, SA_INPUT, SA_LABEL, SA_CARD } from './SeaAirAuditUi'
 import { LoadingState, LoadingSpinner } from './LoadingState'
 import CostAgentInvoiceLines from './CostAgentInvoiceLines'
 import { noteText, noteMsg } from '../utils/CostAgentNotes'
-import CostAgentInvoiceDocuments from './CostAgentInvoiceDocuments'
 import CostAgentApprovalPanel from './CostAgentApprovalPanel'
 import CostAgentPaymentsPanel from './CostAgentPaymentsPanel'
+import CostAgentFinanceMappingCard from './CostAgentFinanceMappingCard'
+import { DocGateBanner, InvoicePeriod, useInvoiceGate, verifyBlockReason } from './CostAgentDocGate'
+import { DOC_GATE_TOAST, isDocGateError } from '../utils/CostAgentGate'
+import { CheckerPanel, ReasonDialog, WorkflowStepper, useInvoiceWorkflow } from './CostAgentWorkflow'
+import { ApprovalRouteView, useApprovalRoute } from './CostAgentApprovalRoute'
+import CostAgentDocsSummary from './CostAgentDocsSummary'
+import { useLineVerifyReasons } from './CostAgentVerifyReasons'
+import { costAgentVoidInvoice, getMyRoles, getReminderAfterDays, isSodError } from '../utils/CostAgentWorkflow'
+import { canSeePaymentsTab, type MyRoles } from '../utils/CostAgentRolesLogic'
+import { submitBlockReason } from '../utils/CostAgentGateView'
 import CostAgentPaymentModal from './CostAgentPaymentModal'
 import type { HistoryCache } from './CostAgentHistoryBrowser'
 import {
@@ -46,7 +55,7 @@ const initialInfoOpen = (): boolean => {
 const DOT_CLS = { ok: 'bg-[#17663D]', warn: 'bg-[#E0A526]', bad: 'bg-[#A8231A]' }
 type Dot = keyof typeof DOT_CLS | null
 
-export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vendors, vessels, ports, costItems, canEdit, canPay, actor, onClose, onChanged, onToast, onDelete }: {
+export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vendors, vessels, ports, costItems, canEdit, canPay, actor, onClose, onChanged, onToast, onDelete, initialTab, focusLines }: {
   invoiceId: number
   companies: CostAgentCompany[]
   vendors: CostAgentVendor[]
@@ -60,6 +69,9 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
   onChanged: () => void // segarkan daftar
   onToast: (msg: string, tone?: 'ok' | 'warn') => void
   onDelete?: (inv: { id: number; invoice_no: string | null; status: string }) => void // Admin, masa uji coba (sql/056)
+  // Dari popover "Needs attention" daftar (Tahap 3a): buka langsung di tab ini, dan sorot baris bernomor ini di tab Cost lines.
+  initialTab?: Tab
+  focusLines?: number[]
 }) {
   const [data, setData] = useState<CostAgentInvoiceHistory | null>(null)
   const [loading, setLoading] = useState(true)
@@ -101,10 +113,31 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
     if (!data || initialTabSet.current) return
     initialTabSet.current = true
     const st = data.invoice.status
-    if (st === 'waiting_approval') setTab('approval')
+    if (initialTab) setTab(initialTab)
+    else if (st === 'waiting_approval') setTab('approval')
     else if (st === 'approved' || st === 'journal' || st === 'paid') setTab('payments')
   }, [data])
-  const reload = useCallback(async () => { await load(true); onChangedRef.current() }, [load])
+  // reloadData = muat ulang data saja. reload = data + gerbang dokumen (BACA SAJA, tanpa auto-verify: baris yang baru di-Unverify tidak boleh langsung diverifikasi ulang sistem).
+  const gateRefreshRef = useRef<() => void>(() => {})
+  const wfRefreshRef = useRef<() => void>(() => {}) // status alur kerja (sql/088) ikut dimuat ulang tiap aksi
+  const reloadData = useCallback(async () => { await load(true); onChangedRef.current() }, [load])
+  const reload = useCallback(async () => { await reloadData(); gateRefreshRef.current(); wfRefreshRef.current() }, [reloadData])
+  // Sorot baris yang ditunjuk temuan (sekali, setelah tab Cost lines tampil): gulir ke tengah + cincin ungu 2,5 dtk.
+  const focusDone = useRef(false)
+  useEffect(() => {
+    if (focusDone.current || !data || tab !== 'lines' || !focusLines?.length) return
+    const ln = data.lines.find(l => focusLines.includes(l.line_no))
+    if (!ln) return
+    focusDone.current = true
+    const t = setTimeout(() => {
+      const el = document.querySelector<HTMLElement>(`[data-line-id="${ln.id}"]`)
+      if (!el) return
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      el.classList.add('ring-2', 'ring-[#6B3470]')
+      setTimeout(() => el.classList.remove('ring-2', 'ring-[#6B3470]'), 2500)
+    }, 350)
+    return () => clearTimeout(t)
+  }, [data, tab, focusLines])
 
   // Invoice masih diproses AI -> muat ulang tiap 5 dtk sampai status berubah.
   const status = data?.invoice.status
@@ -121,9 +154,55 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
   }, [onClose, fullView])
 
   const inv = data?.invoice
-  const editable = !!inv && canEdit && isInvoiceEditable(inv.status)
+  // Alur kerja (sql/088): tombol aksi MENGIKUTI workflow.me.can_* (role + SoD dihitung server). Sebelum termuat / status lain dipakai hak edit lama.
+  const workflow = useInvoiceWorkflow(invoiceId, inv?.status)
+  const wf = workflow.wf
+  wfRefreshRef.current = workflow.refresh
+  const makerCan = !!inv && (wf && isInvoiceEditable(inv.status) ? wf.me.can_verify : canEdit)
+  const checkerMode = !!inv && inv.status === 'waiting_approval' && !!wf?.me.can_validate
+  const editable = !!inv && makerCan && isInvoiceEditable(inv.status)
   // Koreksi header (sql/058 update): verification / rejected / failed. Baris tetap hanya verification/rejected (`editable`).
-  const headerEditable = !!inv && canEdit && (isInvoiceEditable(inv.status) || inv.status === 'failed')
+  const headerEditable = !!inv && makerCan && (isInvoiceEditable(inv.status) || inv.status === 'failed')
+  // Gerbang kelengkapan dokumen (sql/087): run_checks SEKALI saat dibuka; selanjutnya baca saja kecuali Re-check / dokumen susulan / periode / header.
+  const gate = useInvoiceGate({ invoiceId, status: inv?.status, canEdit: makerCan, onToast, onLinesChanged: reloadData })
+  gateRefreshRef.current = gate.refresh
+  const gateActive = !!inv && (inv.status === 'verification' || inv.status === 'rejected' || (inv.status === 'waiting_approval' && wf?.validation?.status === 'pending'))
+  const gateBlock = gateActive && inv?.status !== 'waiting_approval' ? verifyBlockReason(gate.gate) : null
+  const gateIncomplete = gateActive && inv?.status !== 'waiting_approval' && !!gate.gate && gate.gate.enabled && gate.gate.blockers.length > 0
+  // Approval Matrix v2 (sql/090): pratinjau rute sebelum Submit; tanpa aturan yang cocok -> Submit nonaktif (alasan dari database).
+  const routeState = useApprovalRoute(invoiceId, [inv?.company_code, inv?.vendor_id, inv?.vessel_id, inv?.grand_total, inv?.lines_total, data?.lines.length].join('|'), editable || inv?.status === 'verification' || inv?.status === 'rejected')
+  const routeBlock = routeState.route && !routeState.route.matched ? (routeState.route.reason || 'No approval rule matches this invoice') : null
+  // SATU alasan Submit nonaktif (yang pertama berlaku): SoD/peran dari server -> PT -> jenis biaya -> verifikasi -> gerbang dokumen -> rute approval.
+  const submitReason = submitBlockReason({ blockedReason: wf?.me.blocked_reason ?? null, companyMissing: !!inv && !inv.company_code, unmapped: (data?.lines || []).filter(l => !l.cost_item_id).length, unverified: (data?.lines || []).filter(l => !l.is_verified).length, gateFirst: gateIncomplete ? (gate.gate?.blockers[0]?.label ?? 'see Documents & Tax') : null, routeBlock })
+  // Lonceng peringatan di header: catatan header + dokumen belum lengkap (gerbang) + rute approval tidak cocok -- tidak lagi memakan ruang di tab Cost lines.
+  const gateBlockers = gateActive && gate.gate && gate.gate.enabled ? gate.gate.blockers.length : 0
+  const bellCount = (inv?.check_notes || []).filter(n => n.type !== 'susulan_mismatch').length + gateBlockers + (routeBlock ? 1 : 0)
+  // Alasan "kenapa belum auto-verified" (RPC hanya baca): sekali saat dibuka (verification / rejected) + ulang bila baris / gerbang dokumen berubah. Tanpa polling; gagal = diam.
+  const reasonsSig = (data?.lines || []).map(l => `${l.id}:${l.is_verified ? 1 : 0}:${l.cost_item_id ?? ''}:${l.amount}:${l.compare_flag ?? ''}:${l.compare_ref_amount ?? ''}:${l.compare_check ? 1 : 0}`).join('|') + `#${gate.gate?.complete ?? ''}:${gate.gate?.blockers.length ?? ''}`
+  const verifyReasons = useLineVerifyReasons(invoiceId, !!inv && (inv.status === 'verification' || inv.status === 'rejected'), reasonsSig)
+  // Tab Payments tidak tampil untuk Maker / Approver (permintaan user 2026-10-29). Peran dibaca sekali dari cache sesi; gagal baca = tab tetap tampil.
+  const [myRoles, setMyRoles] = useState<MyRoles | null>(null)
+  useEffect(() => { let alive = true; getMyRoles().then(r => { if (alive) setMyRoles(r) }).catch(() => { /* tab tetap tampil */ }); return () => { alive = false } }, [])
+  const showPayments = canSeePaymentsTab(myRoles)
+  useEffect(() => { if (!showPayments && tab === 'payments') setTab(inv?.status === 'waiting_approval' ? 'approval' : 'lines') }, [showPayments, tab, inv?.status])
+  const [reminderDays, setReminderDays] = useState(3)
+  useEffect(() => { getReminderAfterDays().then(setReminderDays) }, [])
+  const [voidDlg, setVoidDlg] = useState(false)
+  const [voidBusy, setVoidBusy] = useState(false)
+  const [voidErr, setVoidErr] = useState<string | null>(null)
+  const canVoid = !!inv && ['failed', 'verification', 'rejected', 'waiting_approval'].includes(inv.status) && (canEdit || !!wf?.me.can_verify)
+  const doVoid = async (reason: string) => {
+    if (!inv) return
+    setVoidBusy(true); setVoidErr(null)
+    try { await costAgentVoidInvoice(inv.id, reason, actor); setVoidDlg(false); await reload(); notifyCostAgentApprovalsChanged(); onToast('Invoice voided.', 'warn') }
+    catch (e: any) { if (isSodError(e)) onToast(e.message, 'warn'); setVoidErr(e?.message || String(e)) } finally { setVoidBusy(false) }
+  }
+  const [periodOpen, setPeriodOpen] = useState(false)
+  const goToLine = (lineNo: number) => {
+    const id = data?.lines.find(l => l.line_no === lineNo)?.id
+    setTab('lines')
+    if (id !== undefined) setTimeout(() => document.querySelector(`[data-line-id="${id}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 150)
+  }
   const files = useMemo(() => {
     if (!inv) return [] as { name: string; url: string | null }[]
     const list = (inv.files || []).map((f, i) => ({ name: f.file_name || `File ${i + 1}`, url: f.file_url || null }))
@@ -162,10 +241,13 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
   }
 
   const submit = async () => {
-    if (!inv || unverified > 0 || unmapped > 0 || companyMissing) return
+    if (!inv || submitReason) return
     if (!window.confirm(`Submit invoice ${inv.invoice_no || '#' + inv.id} for approval?`)) return
     setBusy(true); setActionError(null)
-    try { await costAgentSubmitForApproval(inv.id, actor); await reload(); notifyCostAgentApprovalsChanged(); onToast('Submitted for approval.'); setTab('approval') } catch (e: any) { setActionError(e.message || String(e)) } finally { setBusy(false) }
+    try { await costAgentSubmitForApproval(inv.id, actor); await reload(); notifyCostAgentApprovalsChanged(); onToast('Submitted for approval.'); setTab('approval') } catch (e: any) {
+      if (isDocGateError(e)) { onToast(DOC_GATE_TOAST, 'warn'); gate.refresh(); setTab('lines') } // teks mentah server panjang: cukup toast + muat ulang gerbang
+      else setActionError(e.message || String(e))
+    } finally { setBusy(false) }
   }
   const reprocess = async () => {
     if (!inv) return
@@ -191,7 +273,12 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
                 {inv && <StatusChip status={inv.status} />}
                 {inv?.duplicate_of && <Link to={`/cost-agent/invoice/${inv.duplicate_of}`}><Chip tone="red">Duplicate of #{inv.duplicate_of}</Chip></Link>}
               </div>
-              {inv && <div className="text-[12px] text-[#6E5E70] mt-0.5">Invoice date {fmtDate(inv.invoice_date)} · Service date {fmtDate(inv.service_date)} · Uploaded by {inv.uploaded_by || '—'}</div>}
+              {inv && <div className="text-[12px] text-[#6E5E70] mt-0.5 flex items-center gap-x-1.5 flex-wrap">
+                <span>Invoice date {fmtDate(inv.invoice_date)} · Service date {fmtDate(inv.service_date)} · Uploaded by {inv.uploaded_by || '—'}</span>
+                <span className="text-[#C9BFCB]">·</span>
+                <InvoicePeriod invoiceId={inv.id} gate={gate.gate} canChange={headerEditable} actor={actor} open={periodOpen} onOpenChange={setPeriodOpen} onToast={onToast}
+                  onSaved={async () => { await gate.recheck(); await reloadData() }} />
+              </div>}
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               {/* Ringkasan verifikasi baris (2026-10-23, permintaan user: pindah dari toolbar Cost lines ke header; tombol Submit tidak lagi
@@ -204,8 +291,25 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
                   {unmapped > 0 && <span data-unmapped-count><Chip tone="red">{unmapped} without cost item</Chip></span>}
                 </span>
               )}
-              {inv && allNotes.length > 0 && (
-                <AlertsButton notes={allNotes} inv={inv} onFix={fixHeader} />
+              {inv && bellCount > 0 && (
+                <AlertsButton notes={allNotes} inv={inv} onFix={fixHeader} count={bellCount}
+                  extra={close => (
+                    <>
+                      {gateActive && (!!gate.error || (gate.gate && (gate.gate.blockers.length > 0 || gate.gate.warnings.length > 0))) && (
+                        <div data-bell-documents>
+                          <div className="px-1 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B]">Documents</div>
+                          <DocGateBanner gate={gate.gate} error={gate.error} busy={gate.busy} onRecheck={gate.recheck} onGoToLine={n => { close(); goToLine(n) }}
+                            onOpenDocs={() => { close(); setTab('documents') }} onSetPeriod={headerEditable ? () => { close(); setPeriodOpen(true) } : undefined} />
+                        </div>
+                      )}
+                      {editable && routeState.route && (
+                        <div data-bell-route>
+                          <div className="px-1 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B]">Approval route</div>
+                          <ApprovalRouteView route={routeState.route} />
+                        </div>
+                      )}
+                    </>
+                  )} />
               )}
               {headerEditable && !editHeader && (
                 <button type="button" className={`${SA_BTN_OUTLINE} !px-2.5`} onClick={() => setEditHeader(true)} aria-label="Correct header" title="Correct header (vendor, vessel, port call, company)"><Pencil size={13} /></button>
@@ -236,7 +340,7 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
 
           <div className="flex items-end gap-1.5 mt-2 overflow-x-auto" role="tablist">
             {([['lines', `Cost lines${data ? ` (${data.lines.length})` : ''}`], ['documents', `Documents & Tax${data?.tax_checks.length ? ` (${data.tax_checks.length})` : ''}`],
-              ['approval', `Approval${iAmApprover ? ' •' : ''}`], ['payments', `Payments${data?.payments.length ? ` (${data.payments.length})` : ''}`], ['timeline', 'Timeline']] as [Tab, string][]).map(([k, label]) => (
+              ['approval', `Approval${iAmApprover ? ' •' : ''}`], ['payments', `Payments${data?.payments.length ? ` (${data.payments.length})` : ''}`], ['timeline', 'Timeline']] as [Tab, string][]).filter(([k]) => k !== 'payments' || showPayments).map(([k, label]) => (
               <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
                 className={`shrink-0 flex items-center gap-1.5 px-3 pt-1.5 pb-1.5 rounded-t-lg text-[12.5px] font-semibold border-b-[3px] transition-colors ${tab === k ? 'bg-[#F5EDF3] text-[#6B3470] border-[#6B3470] font-bold' : 'bg-[#F3EEEA] text-[#3B1B3D] border-transparent opacity-80 hover:opacity-100'}`}>
                 {tabDot[k] && <span className={`w-2 h-2 rounded-full shrink-0 ${DOT_CLS[tabDot[k]!]}`} />}
@@ -256,9 +360,10 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
         {/* Body */}
         <div className="flex-1 min-h-0 overflow-hidden bg-[#FBF7F4]">
           {loading ? <LoadingState /> : error ? <p className="p-5 text-sm text-[#A8231A]">{error}</p> : !data ? null : tab === 'lines' ? (
-            <div className="h-full p-2.5 min-h-0"><div className={`${SA_CARD} h-full flex min-h-0 overflow-hidden`}>
+            <div className="h-full p-2.5 min-h-0 flex flex-col gap-2">
+              <div className={`${SA_CARD} flex-1 flex min-h-0 overflow-hidden`}>
               {showViewer && (
-                <div className="w-[36%] max-w-[640px] min-w-[280px] border-r border-[#EADFD6] flex flex-col min-h-0 max-lg:hidden">
+                <div className="w-[33%] max-w-[600px] min-w-[280px] border-r border-[#EADFD6] flex flex-col min-h-0 max-lg:hidden">
                   <div className="flex items-center gap-1.5 px-3 py-2 border-b border-[#EADFD6] shrink-0 flex-wrap">
                     {files.length === 0 ? <span className="text-[12px] text-[#8A7A8B]">No file</span> : files.map((f, i) => (
                       <button key={i} type="button" onClick={() => setFileIdx(i)} title={f.name}
@@ -274,8 +379,9 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
               )}
               <div className="flex-1 min-w-0 flex flex-col min-h-0">
                 <div className="flex-1 min-h-0">
-                  <CostAgentInvoiceLines lines={data.lines} currency={data.invoice.currency} costItems={costItems} editable={editable} actor={actor} onChanged={reload} onToast={onToast}
+                  <CostAgentInvoiceLines variant="summary" lines={data.lines} currency={data.invoice.currency} costItems={costItems} editable={editable} actor={actor} onChanged={reload} onToast={onToast}
                     invoice={data.invoice} ports={ports} vessels={vessels} vendors={vendors} historyCache={historyCache.current}
+                    verifyBlock={gateBlock} onGateBlocked={gate.refresh} checkerMode={checkerMode} verifyReasons={verifyReasons}
                     toolbarLeft={
                       <button type="button" className="text-[11.5px] text-[#6E5E70] hover:text-[#6B3470] inline-flex items-center gap-1 max-lg:hidden" onClick={() => setShowViewer(v => !v)}
                         title={showViewer ? 'Hide the invoice file' : 'Show the invoice file'}>
@@ -287,20 +393,46 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
             </div></div>
           ) : tab === 'approval' ? (
             <div className="h-full overflow-y-auto">
-              <CostAgentApprovalPanel data={data} email={actor} canEdit={canEdit} actor={actor} onDecided={async (r, decision) => {
+              {wf && !['processing', 'failed', 'verification'].includes(data.invoice.status) && (
+                <div className="px-4 pt-4 space-y-4">
+                  <WorkflowStepper wf={wf} reminderDays={reminderDays} />
+                  <CheckerPanel invoiceId={data.invoice.id} wf={wf} actor={actor} onToast={onToast} onGateBlocked={() => { gate.refresh(); setTab('lines') }}
+                    onDone={async msg => { await reload(); notifyCostAgentApprovalsChanged(); onToast(msg) }} />
+                </div>
+              )}
+              <CostAgentApprovalPanel data={data} email={actor} canEdit={canEdit} actor={actor} workflow={wf} onToast={onToast} routePreview={routeState.route} onDecided={async (r, decision) => {
                 await reload(); notifyCostAgentApprovalsChanged()
                 if (decision === 'rejected') onToast('Invoice rejected.', 'warn')
                 else if (r?.status === 'approved') onToast(`Invoice approved — ${r.history_rows ?? 0} line${r.history_rows === 1 ? '' : 's'} saved as cost reference.`)
+                else if (r?.forwarded) onToast('Forwarded — the Director gets the final approval.')
+                else if (r?.votes !== undefined && r?.of) onToast(`${r.votes} of ${r.of} approved — waiting for the others.`)
+                else if (r?.waiting_for === 'checker') onToast('All approvals done — waiting for checker validation.')
                 else onToast('Step approved — waiting for the next approver.')
               }} />
             </div>
           ) : tab === 'payments' ? (
             <div className="h-full overflow-y-auto">
+              <div className="px-4 pt-4 -mb-2">
+                <CostAgentFinanceMappingCard invoiceId={data.invoice.id} vendorName={data.invoice.vendor_name}
+                  vendorNpwp={vendors.find(v => v.id === data.invoice.vendor_id)?.npwp ?? null} vesselName={data.invoice.vessel_name}
+                  canEdit={canEdit} onToast={onToast}
+                  onGoToLine={(_n, lineId) => {
+                    setTab('lines')
+                    if (lineId !== null) setTimeout(() => document.querySelector(`[data-line-id="${lineId}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 150)
+                  }} />
+              </div>
               <CostAgentPaymentsPanel data={data} canPay={canPay} actor={actor} onCreate={() => setShowPay(true)}
                 onChanged={async msg => { await reload(); if (msg) onToast(msg) }} />
             </div>
           ) : tab === 'documents' ? (
-            <div className="h-full overflow-y-auto"><CostAgentInvoiceDocuments data={data} canUpload={canEdit && canUploadSupporting(data.invoice.status)} actor={actor} onChanged={reload} onToast={onToast} /></div>
+            <div className="h-full overflow-y-auto">
+              <div className="p-3">
+                <CostAgentDocsSummary data={data} gate={gate.gate} gateError={gate.error} gateBusy={gate.busy} onRecheck={gate.recheck} actor={actor}
+                  canUpload={makerCan && canUploadSupporting(data.invoice.status)}
+                  onChanged={async () => { await reloadData(); await gate.recheck() }} onToast={onToast}
+                  onGoToLine={goToLine} onSetPeriod={headerEditable ? () => setPeriodOpen(true) : undefined} />
+              </div>
+            </div>
           ) : (
             <div className="h-full overflow-y-auto p-3"><div className={`${SA_CARD} p-5`}>
               {data.timeline.length === 0 ? <p className="text-sm text-[#6E5E70] italic">No status history.</p> : (
@@ -332,30 +464,45 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
             )}
             {inv.status === 'paid' && <span className="text-[12.5px] text-[#17663D]">Paid {fmtDate(inv.paid_at)}{inv.paid_ref ? ` · ref ${inv.paid_ref}` : ''}</span>}
             <div className="ml-auto flex items-center gap-2">
-              {inv.status === 'waiting_approval' && iAmApprover && canEdit && tab !== 'approval' && (
+              {inv.status === 'waiting_approval' && (wf ? (wf.me.can_approve || wf.me.can_validate) : iAmApprover && canEdit) && tab !== 'approval' && (
                 <button type="button" className={SA_BTN_GREEN} onClick={() => setTab('approval')}><ShieldCheck size={13} /> Review &amp; decide</button>
               )}
-              {inv.status === 'approved' && canPay && !hasActivePayment && (
+              {inv.status === 'approved' && canPay && showPayments && !hasActivePayment && (
                 <button type="button" className={SA_BTN_GREEN} onClick={() => setShowPay(true)}><Wallet size={13} /> Create AP Note / PV</button>
               )}
-              {inv.status === 'journal' && canPay && tab !== 'payments' && (
+              {inv.status === 'journal' && canPay && showPayments && tab !== 'payments' && (
                 <button type="button" className={SA_BTN_OUTLINE} onClick={() => setTab('payments')}><Wallet size={13} /> Mark as paid</button>
+              )}
+              {editable && submitReason && (
+                <span className="text-[12px] font-semibold text-[#7A4F00] inline-flex items-center gap-1.5 max-w-[360px] max-md:max-w-full" data-submit-reason title={submitReason}>
+                  <AlertTriangle size={13} className="shrink-0" /><span className="truncate">{submitReason}</span>
+                </span>
+              )}
+              {editable && !submitReason && routeState.route?.matched && (
+                <span className="text-[11.5px] text-[#6E5E70] max-w-[300px] truncate max-md:hidden" title={routeState.route.steps.map(s => `${s.label}${s.mode === 'all' ? ' (all must approve)' : ''}`).join(' → ')} data-route-summary>
+                  Route: {routeState.route.steps.map(s => s.label).join(' → ')}
+                </span>
               )}
               {editable && (
                 // 2026-10-23 (permintaan user): tombol TANPA alert (ringkasan "N/M not verified" ada di header). Belum siap = abu (nonaktif,
                 // alasan di tooltip); siap = hijau pekat. (2026-10-16: dulu kotak kuning dgn chip alasan di dalam tombol.)
-                <button type="button" disabled={busy || unverified > 0 || unmapped > 0 || companyMissing} onClick={submit} data-submit-approval
-                  title={companyMissing ? 'Choose the company first' : unmapped ? 'Choose a cost item (or LAIN_LAIN) for every line first' : unverified ? 'Verify every cost line first' : undefined}
-                  className={unverified || unmapped || companyMissing
+                <button type="button" disabled={busy || !!submitReason} onClick={submit} data-submit-approval
+                  title={submitReason ?? undefined}
+                  className={submitReason
                     ? 'inline-flex items-center gap-2 h-10 px-5 rounded-xl border border-[#D9D1CB] bg-[#EDE8E4] text-[#8A7A8B] text-[13px] font-bold cursor-not-allowed'
                     : 'inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-[#17663D] hover:bg-[#12532F] text-white text-[13px] font-bold shadow-md ring-2 ring-[#17663D]/20 disabled:opacity-60'}>
                   <Send size={15} /> {busy ? 'Submitting…' : 'Submit for approval'}
                 </button>
               )}
+              {canVoid && (
+                <button type="button" className={`${SA_BTN_OUTLINE} text-[#A8231A] hover:border-[#F4C3BC] hover:bg-[#FDE7E4]`} onClick={() => { setVoidErr(null); setVoidDlg(true) }} data-void-invoice title="Cancel this invoice (a reason is required)"><Ban size={13} /> Void invoice</button>
+              )}
               <button type="button" className={SA_BTN_PRIMARY} onClick={onClose}>Close</button>
             </div>
           </div>
         )}
+        {voidDlg && <ReasonDialog title="Void invoice" label="Reason" confirmLabel="Void invoice" danger busy={voidBusy} error={voidErr} onConfirm={doVoid} onClose={() => setVoidDlg(false)}
+          notice="The invoice is cancelled and leaves the approval flow. This cannot be undone." />}
       </div>
       {fullView && current?.url && createPortal(
         <div className="fixed inset-0 z-[85] bg-slate-900/70 backdrop-blur-sm flex flex-col p-3 max-[1600px]:p-2" data-file-fullscreen
@@ -482,7 +629,12 @@ function GrandTotal({ value }: { value: string }) {
 }
 
 // Tombol alert (2026-10-20): ikon peringatan + jumlah catatan di samping tombol edit header; klik -> daftar catatan (+ Fix).
-function AlertsButton({ notes, inv, onFix }: { notes: CostAgentInvoiceHistory['invoice']['check_notes']; inv: CostAgentInvoiceHistory['invoice']; onFix?: () => void }) {
+function AlertsButton({ notes, inv, onFix, count, extra }: {
+  notes: CostAgentInvoiceHistory['invoice']['check_notes']; inv: CostAgentInvoiceHistory['invoice']; onFix?: () => void
+  count?: number // total peringatan di lencana (catatan header + dokumen + rute); bawaan = jumlah catatan
+  extra?: (close: () => void) => React.ReactNode // bagian tambahan (Documents, Approval route)
+}) {
+  const total = count ?? notes.length
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -493,13 +645,13 @@ function AlertsButton({ notes, inv, onFix }: { notes: CostAgentInvoiceHistory['i
   }, [open])
   return (
     <div className="relative" ref={ref} data-header-alerts>
-      <button type="button" onClick={() => setOpen(o => !o)} aria-label={`${notes.length} alert${notes.length === 1 ? '' : 's'}`} aria-expanded={open}
+      <button type="button" onClick={() => setOpen(o => !o)} aria-label={`${total} alert${total === 1 ? '' : 's'}`} aria-expanded={open}
         className="relative h-9 w-9 inline-flex items-center justify-center rounded-lg border border-[#F2D58A] bg-[#FFF3CF] text-[#7A4F00] hover:bg-[#FFE9A8]">
         <AlertTriangle size={16} />
-        <span className="absolute -top-1.5 -right-1.5 min-w-[17px] h-[17px] px-1 rounded-full bg-[#A8231A] text-white text-[10px] font-bold inline-flex items-center justify-center">{notes.length}</span>
+        <span className="absolute -top-1.5 -right-1.5 min-w-[17px] h-[17px] px-1 rounded-full bg-[#A8231A] text-white text-[10px] font-bold inline-flex items-center justify-center">{total}</span>
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1.5 z-[90] w-[min(440px,86vw)] rounded-xl border border-[#F2D58A] bg-white shadow-xl p-2 flex flex-col gap-1">
+        <div className={`absolute right-0 top-full mt-1.5 z-[90] ${extra ? 'w-[min(620px,92vw)]' : 'w-[min(440px,86vw)]'} max-h-[72vh] overflow-y-auto rounded-xl border border-[#F2D58A] bg-white shadow-xl p-2 flex flex-col gap-2`}>
           {notes.map((n, i) => {
             const fixable = !!onFix && FIXABLE_NOTES.has(n.type || '')
             return (
@@ -515,6 +667,7 @@ function AlertsButton({ notes, inv, onFix }: { notes: CostAgentInvoiceHistory['i
               </div>
             )
           })}
+          {extra?.(() => setOpen(false))}
         </div>
       )}
     </div>

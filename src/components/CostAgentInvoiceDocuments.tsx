@@ -16,11 +16,13 @@ import { CostAgentFileDrop, FieldLabel } from './CostAgentUi'
 import { Chip, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_INPUT, SA_LABEL, SA_CARD } from './SeaAirAuditUi'
 import type { Tone } from './SeaAirAuditUi'
 import { LoadingSpinner } from './LoadingState'
+import { defaultOnlyCheck, hasDiff, needsCheck, sideState, LUMP_SUM_LABEL, type SideKind } from '../utils/CostAgentDocLines'
+import { coveredReasonText, docTypeLabel, pageText, rangesText } from '../utils/CostAgentDocCards'
 import { noteText, noteMsg } from '../utils/CostAgentNotes'
 import {
   costAgentUpload, costAgentGetInvoiceDocuments, costAgentStartRedo, costAgentRedoDocs, fetchCostAgentJobSnapshot,
   fmtDate, fmtMoney, fmtNumber, fmtDateTimePort, DOC_TYPE_LABEL, TAX_STATUS_META,
-  type CostAgentInvoiceHistory, type CostAgentDocCompare, type DocCmpLine, type DocCmpLineSide, type DocCmpPart, type DocCmpOrphan,
+  type CostAgentInvoiceHistory, type CostAgentDocCompare, type DocCmpLine, type DocCmpLineSide, type DocCmpPart, type DocCmpOrphan, type DocCmpOrphanCovered,
   type DocCmpHeaderCheck, type DocCmpDateCheck, type DocCmpCompleteness,
 } from '../utils/CostAgentHelpers'
 
@@ -57,6 +59,7 @@ const cellVal = (v: unknown) => (v === null || v === undefined || v === '' ? '�
 const partLabel = (p?: DocCmpPart | null) => (p ? `${DOC_TYPE_LABEL[p.doc_type as keyof typeof DOC_TYPE_LABEL] || p.doc_type || 'Document'}${p.doc_no ? ` · ${p.doc_no}` : ''}` : 'Document')
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 
+// TH sudah memuat text-left, jadi perataan lain WAJIB memakai tanda seru (!text-center) -- tanpa itu header kolom tengah tetap rata kiri dan tidak sejajar dengan isinya (2026-10-29).
 const TH = 'px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-[0.06em] text-[#6E5E70] whitespace-nowrap bg-[#FBF7F4] border-b border-[#EADFD6] sticky top-0 z-[1]'
 const TD = 'px-2 py-1.5 text-[12px] text-[#3B1B3D] align-top'
 const SCROLL = 'max-h-[22rem] overflow-y-auto' // tabel > ~12 baris scroll di dalam
@@ -85,20 +88,19 @@ const checkStatus = (n: number, okText: string, tone: Tone = 'red') =>
 const Note = ({ children }: { children: React.ReactNode }) => <p className="px-4 py-2.5 text-[12px] text-[#6E5E70]">{children}</p>
 
 // ─── Komponen utama ───────────────────────────────────────────────────────────────────────────────────────────────
-export default function CostAgentInvoiceDocuments({ data, canUpload, actor, onChanged, onToast }: {
+export default function CostAgentInvoiceDocuments({ data, canUpload, actor, onChanged, onToast, showLines = true }: {
   data: CostAgentInvoiceHistory
   canUpload: boolean
   actor?: string | null
   onChanged: () => Promise<void> | void
   onToast?: (msg: string, tone?: 'ok' | 'warn') => void
+  showLines?: boolean // false = tabel per baris tidak ditampilkan di sini (dipasang langsung di tab Documents & Tax)
 }) {
   const inv = data.invoice
   const [cmp, setCmp] = useState<CostAgentDocCompare | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [onlyCheck, setOnlyCheck] = useState<boolean | null>(null) // null = otomatis (ON bila overall='attention')
   const [openMap, setOpenMap] = useState<Record<string, boolean | undefined>>({})
-  const [detail, setDetail] = useState<DocCmpLine | null>(null)
   const [showUpload, setShowUpload] = useState(false)
   const [files, setFiles] = useState<File[]>([])
   const [hint, setHint] = useState('')
@@ -246,19 +248,19 @@ export default function CostAgentInvoiceDocuments({ data, canUpload, actor, onCh
 
       {cmp && analysed && (
         <>
-          <LineComparison lines={lines} orphans={cmp.orphans} onlyCheck={onlyCheck ?? attention} setOnlyCheck={setOnlyCheck} onOpen={setDetail} />
+          {showLines && <DocLineComparison cmp={cmp} />}
 
           <div className="space-y-2" data-checks-group>
             <Accordion id="header" title="Header checks" status={headerChecks.length === 0 ? <span className="text-[#8A7A8B]">— no data</span> : checkStatus(headerIssues, 'all match')}
-              open={isOpen('header', attention && headerIssues > 0)} onToggle={() => toggle('header', attention && headerIssues > 0)}>
+              open={isOpen('header', false)} onToggle={() => toggle('header', false)}>
               <HeaderChecks checks={headerChecks} partById={partById} />
             </Accordion>
             <Accordion id="dates" title="Dates" status={dateChecks.length === 0 ? <span className="text-[#8A7A8B]">— no data</span> : checkStatus(dateIssues, 'all consistent')}
-              open={isOpen('dates', attention && dateIssues > 0)} onToggle={() => toggle('dates', attention && dateIssues > 0)}>
+              open={isOpen('dates', false)} onToggle={() => toggle('dates', false)}>
               <DatesChecks checks={dateChecks} />
             </Accordion>
-            <Accordion id="tax" title="Tax totals" status={!tt && parts.filter(p => p.is_tax_equivalent).length === 0 && data.tax_checks.length === 0 ? <span className="text-[#8A7A8B]">— no tax invoice yet</span> : checkStatus(taxIssues, 'all match')}
-              open={isOpen('tax', attention && taxIssues > 0)} onToggle={() => toggle('tax', attention && taxIssues > 0)}>
+            <Accordion id="tax" title="Tax totals" status={!tt && parts.filter(p => p.doc_type === 'faktur_pajak').length === 0 && data.tax_checks.length === 0 ? <span className="text-[#8A7A8B]">— no tax invoice yet</span> : checkStatus(taxIssues, 'all match')}
+              open={isOpen('tax', false)} onToggle={() => toggle('tax', false)}>
               <TaxTotals cmp={cmp} parts={parts} data={data} />
             </Accordion>
           </div>
@@ -273,24 +275,19 @@ export default function CostAgentInvoiceDocuments({ data, canUpload, actor, onCh
         </Accordion>
       )}
 
-      {detail && <LineDrawer line={detail} partById={partById} onClose={() => setDetail(null)} />}
     </div>
   )
 }
 
 // ─── 1. Summary card ──────────────────────────────────────────────────────────────────────────────────────────────
+// Hitungan baris untuk ringkasan: "differences" = baris dengan sel Diff (merah); "to check" = sisanya yang punya sel Missing (kuning) yang diharapkan. Baris netral tidak dihitung.
+const lineCounts = (lines: DocCmpLine[]) => ({ diffs: lines.filter(hasDiff).length, check: lines.filter(l => needsCheck(l) && !hasDiff(l)).length })
 function resultSentence(overall: string, lines: DocCmpLine[], completeness: DocCmpCompleteness[]): string {
   if (overall === 'ok') return 'All lines match the attachments and tax invoice.'
   if (overall === 'attention') {
-    let d = 0, x = 0
-    lines.forEach(l => {
-      if (l.attachment?.status === 'diff' || l.tax?.status === 'diff') d++
-      else if (l.attachment?.status === 'none' || l.tax?.status === 'none') x++
-    })
-    const n = d + x
-    if (n === 0) return 'Some document checks need attention.'
-    const bits = [d > 0 && `${d} different amount${d === 1 ? '' : 's'}`, x > 0 && `${x} not found`].filter(Boolean)
-    return `${n} need${n === 1 ? 's' : ''} checking: ${bits.join(', ')}.`
+    const { diffs, check } = lineCounts(lines)
+    const bits = [diffs > 0 && plural(diffs, 'difference'), check > 0 && `${check} to check`].filter(Boolean)
+    return bits.length ? `${bits.join(' · ')}.` : 'Some document checks need attention.'
   }
   if (overall === 'incomplete') {
     const pending = completeness.filter(c => c.status === 'pending').map(c => c.label.toLowerCase())
@@ -337,8 +334,9 @@ function SummaryCard({ cmp, loading, analysed, overall, lines, busyJob, redoBusy
   cmp: CostAgentDocCompare | null; loading: boolean; analysed: boolean; overall: string; lines: DocCmpLine[]; busyJob: boolean; redoBusy: boolean
   canUpload: boolean; sending: boolean; hasFiles: boolean; onToggleUpload: () => void; onAnalyse: () => void
 }) {
-  const meta = OVERALL_META[overall] || OVERALL_META.not_analysed
-  const redFlags = cmp?.summary?.red_flags ?? 0
+  const baseMeta = OVERALL_META[overall] || OVERALL_META.not_analysed
+  const { diffs, check } = lineCounts(lines)
+  const meta = overall === 'attention' && diffs === 0 ? { ...baseMeta, tone: 'amber' as Tone } : baseMeta // kuning bila tidak ada Diff (jangan merah utk peringatan)
   const buttons = canUpload && (
     <div className="ml-auto flex items-center gap-2 flex-wrap">
       <button type="button" className={SA_BTN_OUTLINE} onClick={onToggleUpload} disabled={sending || busyJob}><FilePlus2 size={13} /> Add documents</button>
@@ -368,7 +366,8 @@ function SummaryCard({ cmp, loading, analysed, overall, lines, busyJob, redoBusy
       <div className="flex items-center gap-2 flex-wrap">
         <Chip tone={meta.tone} className="!text-[12px] !px-2.5 !py-1">{loading && !cmp ? 'Loading…' : meta.label}</Chip>
         {sentence && <span className="text-[12.5px] font-semibold text-[#3B1B3D] min-w-0">{sentence}</span>}
-        {analysed && redFlags > 0 && <Chip tone="red">{plural(redFlags, 'red flag')}</Chip>}
+        {analysed && diffs > 0 && <Chip tone="red">{plural(diffs, 'difference')}</Chip>}
+        {analysed && check > 0 && <Chip tone="amber">{check} to check</Chip>}
         {busyJob && <span className="inline-flex items-center gap-1.5 text-[12px] text-[#2F4FA8]"><LoadingSpinner className="shrink-0" /> Reading the documents…</span>}
         {buttons}
       </div>
@@ -390,69 +389,90 @@ const docAmountOf = (side: DocCmpLineSide | null, invoiceAmount: number | null):
   if (side.diff != null && invoiceAmount != null) return Number(invoiceAmount) - Number(side.diff)
   return null
 }
-// Sel perbandingan (2026-10-23, permintaan user): chip status + ANGKA DARI DOKUMENNYA (bukan selisih, yang membingungkan). Selisih hanya di tooltip & drawer.
-function SideChip({ side, invoiceAmount }: { side: DocCmpLineSide | null; invoiceAmount: number | null }) {
-  if (!side) return <span className="text-[#8A7A8B]">—</span>
-  const chip = LINE_CHIP[side.status] || { label: side.status, tone: 'grey' as Tone }
-  const note = side.status === 'match_gross' ? side.note : null // rincian "harga jual + PPN (+ materai)"
-  const tip = side.status === 'match_sum' ? `Matches the sum of ${(side.refs || []).length} items` : note || chip.tip
+// Sel perbandingan (Tahap 3c, 2026-10-28): SATU chip per sisi -- OK / Diff (+selisih) / Missing / n/a. Nominal dokumen & rujukan (nomor dokumen) hanya di tooltip dan di drawer baris.
+// Selisih = nilai invoice - nilai dokumen (kontrak server). Tidak ada aturan baru: status dibaca apa adanya dari fn_cost_agent_get_invoice_documents.
+function SideChip({ side, kind, expect, invoiceAmount, partById }: { side: DocCmpLineSide | null; kind: SideKind; expect?: DocCmpLine['expect']; invoiceAmount: number | null; partById: Map<number, DocCmpPart> }) {
+  if (!side) return <Chip tone="grey" title="No comparison">n/a</Chip>
+  const v = sideState(side, kind, expect) // Missing -> n/a netral bila dokumen itu tidak diharapkan (expect, SQL 093)
+  const meta = LINE_CHIP[side.status]
   const amount = docAmountOf(side, invoiceAmount)
-  const diffTip = side.status === 'diff' && side.diff != null ? `Difference vs invoice: ${fmtNumber(side.diff, 0)}` : undefined
+  const refs = (side.refs || []).map(r => { const p = partById.get(r.part_id); return partLabel(p) !== 'Document' ? partLabel(p) : [DOC_TYPE_LABEL[r.doc_type as keyof typeof DOC_TYPE_LABEL] || r.doc_type, r.doc_no].filter(Boolean).join(' · ') }).filter(Boolean)
+  const lump = kind === 'tax' && side.status === 'match_agg' // FP lumpsum (SQL 097): label & tooltip dari server (tax.note), tanpa teks 'Combined in one row'
+  const tip = (lump ? [v.tip, amount != null ? `Document amount: ${fmtMoney(amount)}` : null, ...Array.from(new Set(refs))] : [v.tip, meta?.label, meta?.tip, side.status === 'match_gross' ? side.note : null, amount != null ? `Document amount: ${fmtMoney(amount)}` : null, ...Array.from(new Set(refs))]).filter(Boolean).join('\n')
+  return <Chip tone={v.tone} title={tip || undefined} className={lump ? '!whitespace-normal text-center leading-tight' : ''}>{v.label}</Chip>
+}
+
+// Tabel per baris yang berdiri sendiri (Tahap 3c, 2026-10-28): dipasang langsung di tab Documents & Tax (bukan di popup). Menyimpan sendiri filter "Show only items to check"
+// (otomatis ON bila overall='attention') dan drawer rujukan per baris. Data = cmp dari fn_cost_agent_get_invoice_documents.
+export function DocLineComparison({ cmp }: { cmp: CostAgentDocCompare | null }) {
+  const [onlyCheck, setOnlyCheck] = useState<boolean | null>(null)
+  const [detail, setDetail] = useState<DocCmpLine | null>(null)
+  const parts = cmp?.parts || []
+  const partById = useMemo(() => new Map(parts.map(p => [p.id, p])), [parts])
+  const lines = cmp?.lines || []
+  if (!cmp || !cmp.analysed || lines.length === 0) return null
   return (
-    <span className="inline-flex flex-col gap-0.5">
-      <span className="inline-flex items-center gap-1.5 flex-wrap">
-        <Chip tone={chip.tone} title={tip}>{chip.label}</Chip>
-        {amount != null && <span className={`text-[12px] tabular-nums whitespace-nowrap ${side.status === 'diff' ? 'font-bold text-[#A8231A]' : 'font-semibold text-[#3B1B3D]'}`} title={diffTip} data-doc-amount>{fmtMoney(amount)}</span>}
-      </span>
-      {note && <span className="max-w-[240px] text-[10.5px] leading-snug text-[#8A7A8B] [overflow-wrap:anywhere]" data-side-note>{note}</span>}
-    </span>
+    <>
+      <LineComparison lines={lines} orphans={cmp.orphans} onlyCheck={onlyCheck ?? defaultOnlyCheck(lines)} setOnlyCheck={setOnlyCheck} onOpen={setDetail} partById={partById} />
+      {detail && <LineDrawer line={detail} partById={partById} onClose={() => setDetail(null)} />}
+    </>
   )
 }
 
-function LineComparison({ lines, orphans, onlyCheck, setOnlyCheck, onOpen }: {
-  lines: DocCmpLine[]; orphans: { attachment: DocCmpOrphan[] | null; tax: DocCmpOrphan[] | null } | null
-  onlyCheck: boolean; setOnlyCheck: (v: boolean) => void; onOpen: (l: DocCmpLine) => void
+function LineComparison({ lines, orphans, onlyCheck, setOnlyCheck, onOpen, partById }: {
+  lines: DocCmpLine[]; orphans: { attachment: DocCmpOrphan[] | null; tax: DocCmpOrphan[] | null; attachment_covered?: DocCmpOrphanCovered[] | null } | null
+  onlyCheck: boolean; setOnlyCheck: (v: boolean) => void; onOpen: (l: DocCmpLine) => void; partById: Map<number, DocCmpPart>
 }) {
-  const shown = onlyCheck ? lines.filter(hasIssue) : lines
+  const shown = onlyCheck ? lines.filter(needsCheck) : lines
   const hidden = lines.length - shown.length
   const att = orphans?.attachment || [], tax = orphans?.tax || []
   const orphanN = att.length + tax.length
+  const covered = orphans?.attachment_covered || [] // SQL 098: bukti ganda dari baris yang sudah cocok (netral, bukan orphan)
   const [orphanOpen, setOrphanOpen] = useState(false)
+  const [coveredOpen, setCoveredOpen] = useState(false)
+  const issues = lines.filter(needsCheck).length
+  const anyDiff = lines.some(hasDiff)
   return (
     <section className={`${SA_CARD} overflow-hidden`} data-line-compare-card>
-      <div className="px-4 pt-2.5 pb-2 flex items-center justify-between gap-3 flex-wrap">
-        <h3 className="text-[12.5px] font-bold uppercase tracking-[0.05em] text-[#6B3470]">Line comparison</h3>
-        <label className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#3B1B3D] cursor-pointer select-none">
+      <div className="px-4 py-2.5 flex items-center gap-2.5 flex-wrap">
+        <h3 className="text-[14px] font-bold text-[#3B1B3D]">Per-line comparison</h3>
+        <span className="text-[11.5px] text-[#6E5E70] tabular-nums">{plural(lines.length, 'line')}</span>
+        {issues > 0 ? <Chip tone={anyDiff ? 'red' : 'amber'}>{issues} to check</Chip> : <Chip tone="green">all match</Chip>}
+        <label className="ml-auto inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#3B1B3D] cursor-pointer select-none">
           <input type="checkbox" className="accent-[#6B3470]" checked={onlyCheck} onChange={e => setOnlyCheck(e.target.checked)} data-only-check /> Show only items to check
         </label>
       </div>
-      {lines.length === 0 ? <p className="px-4 pb-3 text-[12px] text-[#8A7A8B] italic">No invoice lines.</p> : (
-        <div className={`${SCROLL} border-t border-[#EADFD6]`}>
-          <table className="w-full min-w-[640px]" data-line-compare>
-            <thead><tr><th className={`${TH} w-9`}>No</th><th className={TH}>Invoice line</th><th className={`${TH} text-right`}>Amount</th><th className={TH}>Attachment</th><th className={TH}>Tax invoice</th></tr></thead>
-            <tbody>
-              {shown.length === 0 && <tr><td colSpan={5} className="px-4 py-3 text-center text-[12px] text-[#17663D] font-semibold">Nothing to check — all lines match.</td></tr>}
-              {shown.map(l => {
-                const diff = l.attachment?.status === 'diff' || l.tax?.status === 'diff'
-                const none = !diff && (l.attachment?.status === 'none' || l.tax?.status === 'none')
-                return (
-                  <tr key={l.line_id} onClick={() => onOpen(l)} data-line-row={l.line_no} data-line-state={diff ? 'diff' : none ? 'none' : 'ok'}
-                    className={`border-t border-[#F3EEEA] cursor-pointer hover:bg-[#FBF7F4] border-l-4 ${diff ? 'border-l-[#A8231A] bg-[#FFFAF9]' : none ? 'border-l-[#E0A526] bg-[#FFFDF6]' : 'border-l-transparent'}`}>
-                    <td className={`${TD} text-[#8A7A8B] tabular-nums`}>{l.line_no}</td>
-                    <td className={`${TD} min-w-[200px]`}>
-                      <div className="font-semibold [overflow-wrap:anywhere]">{l.description || '—'}</div>
-                      <div className="text-[10.5px] text-[#8A7A8B]">{l.cost_item || 'No cost item'}</div>
-                    </td>
-                    <td className={`${TD} text-right tabular-nums whitespace-nowrap font-semibold`}>{fmtMoney(l.amount)}</td>
-                    <td className={TD}><SideChip side={l.attachment} invoiceAmount={l.amount} /></td>
-                    <td className={TD}><span className="inline-flex items-center gap-1"><SideChip side={l.tax} invoiceAmount={l.amount} /><ChevronRight size={12} className="text-[#B9A9BA]" /></span></td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <div className="max-h-[26rem] overflow-auto border-t border-[#EADFD6]">
+        <table className="w-full min-w-[640px] table-fixed" data-line-compare>
+          <colgroup><col className="w-[48px]" /><col className="w-[38%]" /><col className="w-[17%]" /><col className="w-[15%]" /><col className="w-[24%]" /><col className="w-[28px]" /></colgroup>
+          <thead><tr>
+            <th className={`${TH} !text-center`}>Line</th><th className={TH}>Description</th><th className={`${TH} text-right pr-[10%]`}>Invoice</th>
+            <th className={`${TH} !text-center`}>Attachment</th><th className={`${TH} !text-center`}>Tax invoice</th><th className={TH} aria-label="Details" />
+          </tr></thead>
+          <tbody>
+            {shown.length === 0 && <tr><td colSpan={6} className="px-4 py-4 text-center text-[12px] text-[#17663D] font-semibold">Nothing to check — all lines match.</td></tr>}
+            {shown.map(l => {
+              const diff = hasDiff(l)
+              const none = !diff && needsCheck(l)
+              const cell = 'px-2 py-2 align-middle text-[12px] text-[#3B1B3D]'
+              return (
+                <tr key={l.line_id} onClick={() => onOpen(l)} data-line-row={l.line_no} data-line-state={diff ? 'diff' : none ? 'none' : 'ok'} title="Click for the document references"
+                  className={`border-t border-[#F3EEEA] cursor-pointer hover:bg-[#F8F1EE] border-l-4 ${diff ? 'border-l-[#A8231A] bg-[#FFFAF9]' : none ? 'border-l-[#E0A526] bg-[#FFFDF6]' : 'border-l-transparent odd:bg-white even:bg-[#FCFAF8]'}`}>
+                  <td className={`${cell} text-center text-[#8A7A8B] tabular-nums`}>{l.line_no}</td>
+                  <td className={`${cell} min-w-0`}>
+                    <span className="font-semibold [overflow-wrap:anywhere]">{l.description || '—'}</span>
+                    {l.cost_item && <span className="ml-2 align-middle inline-block rounded bg-[#F3EEEA] px-1.5 py-px font-mono text-[10px] text-[#6E5E70] whitespace-nowrap">{l.cost_item}</span>}
+                  </td>
+                  <td className={`${cell} text-right tabular-nums whitespace-nowrap font-semibold pr-[10%]`}>{fmtMoney(l.amount)}</td>
+                  <td className={`${cell} text-center`}><SideChip side={l.attachment} kind="attachment" expect={l.expect} invoiceAmount={l.amount} partById={partById} /></td>
+                  <td className={`${cell} text-center`}><SideChip side={l.tax} kind="tax" expect={l.expect} invoiceAmount={l.amount} partById={partById} /></td>
+                  <td className={`${cell} text-[#B9A9BA]`}><ChevronRight size={13} /></td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
       {onlyCheck && hidden > 0 && <div className="px-4 py-1.5 border-t border-[#F3EEEA] bg-[#FBF7F4] text-[11.5px] text-[#6E5E70]" data-hidden-lines>{plural(hidden, 'matching line')} hidden</div>}
       {orphanN > 0 && (
         <div className="border-t border-[#EADFD6] bg-[#FBF7F4]" data-orphans>
@@ -462,7 +482,29 @@ function LineComparison({ lines, orphans, onlyCheck, setOnlyCheck, onOpen }: {
           {orphanOpen && <OrphanLists att={att} tax={tax} />}
         </div>
       )}
+      {covered.length > 0 && (
+        <div className="border-t border-[#EADFD6] bg-white" data-orphans-covered>
+          <button type="button" onClick={() => setCoveredOpen(v => !v)} aria-expanded={coveredOpen} className="w-full px-4 py-1.5 flex items-center gap-1.5 text-left text-[12px] font-semibold text-[#6E5E70] hover:underline">
+            <ChevronDown size={13} className={`transition-transform ${coveredOpen ? '' : '-rotate-90'}`} /> Also supports an invoice line ({covered.length})
+          </button>
+          {coveredOpen && <CoveredList items={covered} />}
+        </div>
+      )}
     </section>
+  )
+}
+
+// Item lampiran yang HANYA bukti ganda baris invoice yang sudah cocok (SQL 098): jenis · nomor · uraian · nominal + keterangan kecil dari `reason`. Warna netral.
+function CoveredList({ items }: { items: DocCmpOrphanCovered[] }) {
+  return (
+    <ul className="px-4 pb-3 space-y-1 text-[12px] text-[#3B1B3D] max-h-[14rem] overflow-y-auto" data-covered-list>
+      {items.map((o, i) => (
+        <li key={`${o.item_id ?? o.part_id}-${i}`} className="min-w-0" data-covered-reason={o.reason ?? ''}>
+          <div className="flex items-start gap-2"><span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{[DOC_TYPE_LABEL[o.doc_type as keyof typeof DOC_TYPE_LABEL] || o.doc_type, o.doc_no, o.description].filter(Boolean).join(' · ')}</span><b className="tabular-nums whitespace-nowrap">{fmtMoney(o.amount)}</b></div>
+          {coveredReasonText(o.reason) && <div className="text-[11px] text-[#8A7A8B]">{coveredReasonText(o.reason)}</div>}
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -488,7 +530,8 @@ function LineDrawer({ line, partById, onClose }: { line: DocCmpLine; partById: M
     return () => window.removeEventListener('keydown', h)
   }, [onClose])
   const side = (title: string, s: DocCmpLineSide | null) => {
-    const chip = s ? (LINE_CHIP[s.status] || { label: s.status, tone: 'grey' as Tone }) : null
+    const lump = title === 'Tax invoice' && s?.status === 'match_agg'
+    const chip = s ? (lump ? { label: LUMP_SUM_LABEL, tone: 'green' as Tone, tip: s.note ?? undefined } : (LINE_CHIP[s.status] || { label: s.status, tone: 'grey' as Tone })) : null
     const gross = s?.status === 'match_gross'
     const shownAmount = s?.matched_amount ?? (gross ? line.amount : null) // match_gross: nominal baris itu sendiri, bukan jumlah refs
     return (
@@ -496,7 +539,7 @@ function LineDrawer({ line, partById, onClose }: { line: DocCmpLine; partById: M
         <div className="flex items-center gap-2 flex-wrap"><span className="text-[12.5px] font-bold text-[#3B1B3D]">{title}</span>{chip && <Chip tone={chip.tone} title={chip.tip}>{chip.label}</Chip>}
           {shownAmount != null && <span className="tabular-nums text-[12px] font-semibold">{fmtMoney(shownAmount)}</span>}
           {s?.status === 'diff' && s.diff != null && <span className="text-[11.5px] font-semibold text-[#A8231A] tabular-nums">Difference vs invoice: {fmtNumber(s.diff, 0)}</span>}</div>
-        {gross && (s?.note || s?.base != null) && (
+        {(gross || lump) && (s?.note || s?.base != null) && (
           <p className="mt-1.5 text-[12px] text-[#6E5E70] [overflow-wrap:anywhere]" data-side-note>
             {s?.note}{s?.base != null && <span className="block text-[11px] text-[#8A7A8B]">Before VAT: <b className="tabular-nums text-[#3B1B3D]">{fmtMoney(s.base)}</b></span>}
           </p>
@@ -548,7 +591,7 @@ function HeaderChecks({ checks, partById }: { checks: DocCmpHeaderCheck[]; partB
       {rows.length === 0 ? <Note>All consistent — {plural(okN, 'field')} match.</Note> : (
         <div className={SCROLL}>
           <table className="w-full min-w-[560px]">
-            <thead><tr><th className={`${TH} w-9`}>No</th><th className={TH}>Field</th><th className={TH}>Invoice data</th><th className={TH}>Document data</th><th className={`${TH} text-center`}>Status</th></tr></thead>
+            <thead><tr><th className={`${TH} w-9`}>No</th><th className={TH}>Field</th><th className={TH}>Invoice data</th><th className={TH}>Document data</th><th className={`${TH} !text-center`}>Status</th></tr></thead>
             <tbody>
               {order.map(k => {
                 const first = rows.find(r => keyOf(r) === k)!
@@ -593,7 +636,7 @@ function DatesChecks({ checks }: { checks: DocCmpDateCheck[] }) {
       {rows.length === 0 ? <Note>All consistent — {plural(okN, 'date')} consistent.</Note> : (
         <div className={SCROLL}>
           <table className="w-full min-w-[520px]">
-            <thead><tr><th className={TH}>Source</th><th className={TH}>Label</th><th className={TH}>Date</th><th className={TH}>Compared to</th><th className={`${TH} text-right`}>Gap</th><th className={`${TH} text-center`}>Status</th></tr></thead>
+            <thead><tr><th className={TH}>Source</th><th className={TH}>Label</th><th className={TH}>Date</th><th className={TH}>Compared to</th><th className={`${TH} text-right`}>Gap</th><th className={`${TH} !text-center`}>Status</th></tr></thead>
             <tbody>
               {rows.map((r, i) => (
                 <tr key={i} className="border-t border-[#F3EEEA]" title={r.note || undefined}>
@@ -622,7 +665,9 @@ function DatesChecks({ checks }: { checks: DocCmpDateCheck[] }) {
 // ─── 3c. Tax totals (+ 3d pemeriksaan faktur pajak lama sbg sub-bagian) ──────────────────────────────────────────
 function TaxTotals({ cmp, parts, data }: { cmp: CostAgentDocCompare; parts: DocCmpPart[]; data: CostAgentInvoiceHistory }) {
   const t = cmp.tax_totals
-  const fps = parts.filter(p => p.is_tax_equivalent)
+  const fps = parts.filter(p => p.doc_type === 'faktur_pajak') // SQL 097: hanya dokumen resmi (e-Faktur / Coretax); nota Pelindo = lampiran (Port note)
+  // FP lumpsum: baris invoice yang tercakup = baris ber-`tax.status = match_agg` (daftar singkat; nomor dari status baris, bukan dihitung ulang)
+  const covered = (cmp.lines || []).filter(l => l.tax?.status === 'match_agg').map(l => l.line_no)
   const checks = t?.checks || [], rates = t?.rate_checks || []
   const failed = [...checks.filter(c => isIssueStatus(c.status)).map(c => ({ kind: 'check' as const, c })), ...rates.filter(c => isIssueStatus(c.status)).map(c => ({ kind: 'rate' as const, c }))]
   const passed = checks.length + rates.length - failed.length
@@ -641,16 +686,20 @@ function TaxTotals({ cmp, parts, data }: { cmp: CostAgentDocCompare; parts: DocC
                 <div className="flex items-center gap-2 flex-wrap"><b className="text-[#3B1B3D] tabular-nums">{p.doc_no || 'No serial number'}</b><span className="text-[#6E5E70]">{fmtDate(p.doc_date)}</span>
                   <Chip tone={collected ? 'green' : 'grey'} className="ml-auto">{collected ? 'VAT collected' : 'VAT not collected'}</Chip></div>
                 <div className="mt-1 text-[11.5px] text-[#6E5E70]">Selling price <b className="text-[#3B1B3D] tabular-nums">{fmtMoney(p.total_amount)}</b>{collected && <> · VAT <b className="text-[#3B1B3D] tabular-nums">{fmtMoney(p.ppn)}</b></>}{Number(p.stamp_duty || 0) > 0 && <> · Stamp duty <b className="text-[#3B1B3D] tabular-nums">{fmtMoney(p.stamp_duty)}</b></>}</div>
+                {pageText(p.page_from, p.page_to) && <div className="mt-0.5 text-[11px] text-[#8A7A8B]">{p.file_name ? `${p.file_name} · ` : ''}{pageText(p.page_from, p.page_to)}</div>}
                 {dup && <p className="mt-1 text-[11px] text-[#8A7A8B]">Duplicate of #{p.duplicate_of} — not used in comparison</p>}
               </div>
             )
           })}
         </div>
       )}
+      {covered.length > 0 && (
+        <p className="text-[12px] text-[#17663D] font-semibold" data-lump-covered>Covered by the lump-sum tax invoice: {plural(covered.length, 'line')} <span className="font-normal text-[#6E5E70]">({rangesText(covered)})</span></p>
+      )}
       {failed.length > 0 && (
         <div className={`${SCROLL} rounded-lg border border-[#EADFD6]`}>
           <table className="w-full min-w-[520px]">
-            <thead><tr><th className={TH}>Check</th><th className={`${TH} text-right`}>Invoice</th><th className={`${TH} text-right`}>Document</th><th className={`${TH} text-right`}>Difference</th><th className={`${TH} text-center`}>Status</th></tr></thead>
+            <thead><tr><th className={TH}>Check</th><th className={`${TH} text-right`}>Invoice</th><th className={`${TH} text-right`}>Document</th><th className={`${TH} text-right`}>Difference</th><th className={`${TH} !text-center`}>Status</th></tr></thead>
             <tbody>
               {failed.map((f, i) => f.kind === 'check' ? (
                 <tr key={i} className="border-t border-[#F3EEEA]" title={f.c.note || undefined}>
@@ -722,6 +771,8 @@ const ANALYSIS_CHIP: Record<string, { label: string; tone: Tone }> = {
 function FilesList({ cmp, canUpload, busy, onAnalyse }: { cmp: CostAgentDocCompare; canUpload: boolean; busy: boolean; onAnalyse: () => void }) {
   const files = cmp.files || []
   const dupsOf = (fileId: number) => (cmp.parts || []).filter(p => p.file_id === fileId && p.duplicate_of != null)
+  // Dokumen logis di dalam file (file campuran): jenis, nomor & halaman; duplikat tidak ikut (ditampilkan terpisah di bawah).
+  const docsIn = (fileId: number) => (cmp.parts || []).filter(p => p.file_id === fileId && p.duplicate_of == null).sort((a, b) => (a.page_from ?? 0) - (b.page_from ?? 0))
   if (files.length === 0) return <Note>No files yet.</Note>
   return (
     <div className={`${SCROLL} divide-y divide-[#F3EEEA]`} data-doc-files>
@@ -744,6 +795,7 @@ function FilesList({ cmp, canUpload, busy, onAnalyse }: { cmp: CostAgentDocCompa
                 {canUpload && <button type="button" className={`${SA_BTN_OUTLINE} h-6 px-2 shrink-0`} onClick={onAnalyse} disabled={busy}><RefreshCw size={11} /> Analyse again</button>}
               </div>
             )}
+            {docsIn(f.id).length > 0 && <div className="mt-0.5 text-[11px] text-[#6E5E70]" data-file-docs>{docsIn(f.id).map(p => `${docTypeLabel(p.doc_type)}${p.doc_no ? ` ${p.doc_no}` : ''}${pageText(p.page_from, p.page_to) ? ` (${pageText(p.page_from, p.page_to)})` : ''}`).join(' · ')}</div>}
             {dups.map(p => <div key={p.id} className="mt-0.5 text-[11px] text-[#8A7A8B]" data-part-row="duplicate">{partLabel(p)} — Duplicate of #{p.duplicate_of} — not used in comparison</div>)}
           </div>
         )

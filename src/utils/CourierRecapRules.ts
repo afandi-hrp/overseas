@@ -16,7 +16,16 @@ export const COURIER_RECAP_LOCKED_COLUMNS: readonly string[] = [
   'breakdown_courier_adm_vessel', 'breakdown_duty_vessel', 'breakdown_freight_vessel', 'breakdown_bm_vessel', 'breakdown_ppnpph_vessel', 'created_at',
   'submit_date', // keputusan user 2026-10-23: Submit Date ikut terkunci (mengosongkannya = membuka kunci tanpa Unlock Admin & alasan) -- DB: sql/076
 ]
-export const courierRecapColumnLocked = (r: any, key: string): boolean => !!r?.submit_date && COURIER_RECAP_LOCKED_COLUMNS.includes(key)
+// 2026-10-29 (permintaan user, DB: sql/094): role ADMIN tidak terkena kunci kolom ini di Edit Mode List (semua kolom bisa diedit tanpa Unlock); selain Admin tetap terkunci.
+export const courierRecapColumnLocked = (r: any, key: string, isAdmin = false): boolean => !isAdmin && !!r?.submit_date && COURIER_RECAP_LOCKED_COLUMNS.includes(key)
+// Nilai <input type="datetime-local"> (waktu lokal browser) dari timestamp ISO; kosong/invalid -> ''.
+export const toDatetimeLocalValue = (v: any): string => {
+  if (!v) return ''
+  const d = new Date(v)
+  if (isNaN(d.getTime())) return ''
+  const p = (x: number) => String(x).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+}
 
 // Tanggal fitur aktif (jam lokal WIB). Data yang dibuat sebelum ini TIDAK terkena aturan kunci & syarat CN/storage.
 export const COURIER_RECAP_RULES_FROM = '2026-10-14T00:00:00+07:00'

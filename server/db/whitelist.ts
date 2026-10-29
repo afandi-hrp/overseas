@@ -189,6 +189,28 @@ for (const [t, ops] of Object.entries(MANUAL_TABLES)) {
   'fn_cost_agent_list_companies', 'fn_cost_agent_save_company', 'fn_cost_agent_list_master_log',
   // Cost Agent: label hasil belajar AI Noon Report (sql/078)
   'fn_cost_agent_noon_alias_list', 'fn_cost_agent_noon_alias_set_active', 'fn_cost_agent_noon_alias_add',
+  // Cost Agent: Finance mapping Ascend + aturan pajak (sql/084)
+  'fn_cost_agent_finance_pick', 'fn_cost_agent_finance_save_map', 'fn_cost_agent_finance_delete_map', 'fn_cost_agent_finance_list_map',
+  'fn_cost_agent_finance_check', 'fn_cost_agent_set_finance_alias', 'fn_cost_agent_save_tax_rule', 'fn_cost_agent_delete_tax_rule',
+  'fn_cost_agent_list_tax_rules', 'fn_cost_agent_apply_tax_rules', 'fn_cost_agent_override_line_tax',
+  // Cost Agent: pratinjau AP Note (sql/085)
+  'fn_cost_agent_apnote_preview',
+  // Cost Agent: gerbang dokumen, periode invoice, auto-verify (sql/087)
+  'fn_cost_agent_get_doc_gate', 'fn_cost_agent_run_checks', 'fn_cost_agent_set_invoice_period',
+  // Cost Agent: alasan per baris "kenapa belum auto-verified" (hanya baca; sql/095 versi user)
+  'fn_cost_agent_get_line_verify_reasons',
+  // Cost Agent: role maker/checker/approver, jalur paralel, split, void, settings, My tasks (sql/088)
+  'fn_cost_agent_get_workflow', 'fn_cost_agent_my_tasks', 'fn_cost_agent_checker_validate', 'fn_cost_agent_checker_set_cost_item',
+  // Cost Agent: aturan cost line per peran (sql/101): baris menurut peran (approver = versi maker), Validated per baris, remark checker. fn_cost_agent_checker_return DIHAPUS di sql/101.
+  'fn_cost_agent_get_invoice_lines', 'fn_cost_agent_checker_validate_line', 'fn_cost_agent_checker_validate_lines', 'fn_cost_agent_checker_set_line_remark',
+  'fn_cost_agent_split_line', 'fn_cost_agent_void_invoice', 'fn_cost_agent_list_settings', 'fn_cost_agent_save_setting',
+  // Cost Agent: Approval Matrix v2 -- urutan, pengganti, pratinjau, simulasi, teruskan ke Director (sql/090). fn_cost_agent_due_reminders / mark_reminded KHUSUS n8n: JANGAN masuk whitelist.
+  'fn_cost_agent_reorder_matrix', 'fn_cost_agent_save_delegation', 'fn_cost_agent_delete_delegation', 'fn_cost_agent_list_delegations',
+  'fn_cost_agent_approval_preview', 'fn_cost_agent_simulate_matrix', 'fn_cost_agent_forward_approval',
+  // Cost Agent: daftar Agency Invoices v2 -- kartu + stepper, temuan "Needs attention" (sql/091)
+  'fn_cost_agent_invoice_cards', 'fn_cost_agent_invoice_attention',
+  // Cost Agent: peran per user di Settings > User roles + gerbang yang hanya memblokir kode di gate_block_codes (sql/092)
+  'fn_cost_agent_list_user_roles', 'fn_cost_agent_save_user_roles', 'fn_cost_agent_my_roles',
   // Admin: tandai/lepas wajib ganti password (sql/066) & reset password user (sql/067)
   'fn_set_must_change_password', 'fn_admin_reset_user_password',
   // Finance Handover Courier: undo Paid (sql/068)

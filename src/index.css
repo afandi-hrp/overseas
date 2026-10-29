@@ -553,3 +553,40 @@
     break-inside: avoid;
   }
 }
+
+/* Laporan validasi detail invoice Cost Agent (Tahap 3b, 2026-10-28): popup "Cost validation" dan "Document validation report" (CostAgentValidationReports).
+   Pola sama dgn #bunker-print-area: sembunyikan semua elemen body lain, tampilkan hanya area ber-id (portal ke body), position:absolute supaya mengalir ke banyak halaman. */
+@media print {
+  #cost-validation-print-area,
+  #cost-validation-print-area *,
+  #doc-validation-print-area,
+  #doc-validation-print-area * {
+    visibility: visible;
+  }
+  #cost-validation-print-area,
+  #doc-validation-print-area {
+    position: absolute !important;
+    inset: auto !important;
+    left: 0 !important;
+    top: 0 !important;
+    margin: 0 !important;
+    padding: 0 12px !important;
+    width: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+  }
+  #cost-validation-print-area .print-hide,
+  #doc-validation-print-area .print-hide {
+    display: none !important;
+  }
+  #cost-validation-print-area tr,
+  #doc-validation-print-area tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  #cost-validation-print-area thead,
+  #doc-validation-print-area thead {
+    display: table-header-group;
+  }
+}

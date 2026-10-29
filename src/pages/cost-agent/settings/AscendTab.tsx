@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Columns3, ChevronUp, ChevronDown, RefreshCw } from 'lucide-react'
 import { FilterSearch } from '../../../components/CostAgentUi'
 import { Chip, SA_BTN_OUTLINE } from '../../../components/SeaAirAuditUi'
-import { apiFetch } from '../../../lib/apiFetch'
+import { odata } from './ascendApi' // panggilan Ascend dipakai bersama tab Finance mapping & kartu invoice
 import { fmtNumber } from '../../../utils/CostAgentHelpers'
 import { FILTER_CTRL, HUB_PAGE_SIZE, HubFilterBar, Pager, StateRow, TD, TH, TableCard, useAsync, useDebounced, type HubCtx } from './hubUi'
 
@@ -19,13 +19,6 @@ interface Meta { entities: Record<string, { key: string[]; columns: { name: stri
 type Row = Record<string, unknown>
 
 const metaCache = new Map<string, Promise<Meta>>()
-
-async function odata<T>(path: string, params: Record<string, string>): Promise<T> {
-  const res = await apiFetch(`/api/lean/odata/${path}?${new URLSearchParams(params)}`)
-  const body = await res.json().catch(() => null)
-  if (!res.ok) throw new Error(body?.error?.message || body?.pesan || `Request failed (HTTP ${res.status})`)
-  return body as T
-}
 
 function getMeta(database: string): Promise<Meta> {
   let p = metaCache.get(database)

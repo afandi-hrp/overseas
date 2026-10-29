@@ -1,52 +1,59 @@
 // Agency Invoices Cost Agent (/cost-agent/invoice/:id?) -- 2026-10-13, Prompt 3. 1 route dgn :id opsional (pola FAR): :id =
-// invoice yg dibuka di review modal (buka/tutup = ganti URL tanpa remount halaman). `?upload=1&call=<voyage_call_id>` (dari
-// drawer Voyage) membuka upload dgn port call terisi. Daftar = cost_agent_invoice_list_v (pagination server-side), tab status
-// + jumlah, polling 5 dtk HANYA selama ada baris processing / dokumen processing (pola Bunker). Failed -> error + Reprocess
-// (proxy cost_agent tanpa file, cost_agent_meta {reprocess_invoice_id}). Tulis HANYA lewat RPC berguard / n8n.
-// Prompt 4: tab "My Approvals" (invoice waiting_approval yg step aktifnya memuat email user). Prompt 5: tab Approved bisa
-// multi-select -> "Create AP Note / PV" (antrean, 1 request per invoice) bila canEdit('cost_agent_payment').
-// 2026-10-14 (keputusan user): tampilan Card = DEFAULT (List tetap ada, toggle Card | List); klik kartu tetap membuka modal review
-// besar (viewer file + tabel baris terlalu lebar utk panel samping). Kartu = data & aksi SAMA baris List (checkbox Approved, hapus
-// Admin, Reprocess, chip flags).
+// invoice yg dibuka di review modal (buka/tutup = ganti URL tanpa remount halaman; query string daftar IKUT DIPERTAHANKAN).
+// `?upload=1&call=<voyage_call_id>` (dari drawer Voyage) membuka upload dgn port call terisi. Tulis HANYA lewat RPC berguard / n8n.
+// DAFTAR v2 (Tahap 3a, 2026-10-28, SQL 091): kartu + stepper 4 tahap (Completed | Verified | Approved | Paid), filter & urut berlevel, "My tasks", popover
+// "Needs attention". Satu halaman kartu = SATU panggilan fn_cost_agent_invoice_cards (pencarian, filter, urut, halaman, jumlah per status dikerjakan database);
+// klien TIDAK menghitung status / stepper / temuan. State daftar ada di query string URL (?q=&co=&st=&my=1&void=1&p=&size=&f=&s=) -> tautan bisa dibagikan, Back bekerja.
+// Tetap dari versi lama: Upload (pelacak hasil), Create AP Note / PV (multi-pilih bucket "Waiting for payment"), Reprocess (failed), hapus Admin (masa uji coba),
+// polling 5 dtk selama ada invoice processing, muat ulang saat event approval berubah. Detail: docs/claude/cost-agent.md ("Invoice list v2").
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { RefreshCw, UploadCloud, X, RotateCcw, FileText, Loader2, Wallet, ShieldCheck, Trash2, AlertTriangle } from 'lucide-react'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { RefreshCw, UploadCloud, X, Wallet, ListChecks, Trash2, AlertTriangle, Loader2, RotateCcw } from 'lucide-react'
 import { useAuth } from '../../lib/AuthContext'
 import PaginationFooter from '../../components/PaginationFooter'
-import { LoadingTableRow } from '../../components/LoadingState'
-import { CostAgentPageHeader, CostAgentModal, StatusChip, FilterPanel, FilterSearch, FilterField, FilterButton, FilterSegment, FILTER_SELECT, FILTER_SELECT_WIDE } from '../../components/CostAgentUi'
-import { CostAgentCardScroller, CostAgentInvoiceCard } from '../../components/CostAgentCards'
-import { Chip, SA_BTN_OUTLINE, SA_CARD, SA_INPUT } from '../../components/SeaAirAuditUi'
+import CostAgentMyRoles from '../../components/CostAgentMyRoles'
+import { CostAgentPageHeader, CostAgentModal, FilterPanel, FilterSearch, FilterField, FilterButton, FilterSegment, FILTER_SELECT, FILTER_SELECT_WIDE } from '../../components/CostAgentUi'
+import { SA_BTN_OUTLINE, SA_INPUT } from '../../components/SeaAirAuditUi'
+import { CardSkeleton, InvoiceCardV2, InvoiceTableV2 } from '../../components/CostAgentInvoiceCardsV2'
+import CostAgentInvoiceFilterPanel from '../../components/CostAgentInvoiceFilterPanel'
 import CostAgentUploadModal from '../../components/CostAgentUploadModal'
 import { useCostAgentUploadTracker } from '../../components/CostAgentUploadResultDialog'
 import CostAgentInvoiceReviewModal from '../../components/CostAgentInvoiceReviewModal'
 import CostAgentPaymentModal from '../../components/CostAgentPaymentModal'
 import {
-  fetchCostAgentInvoiceList, fetchCostAgentInvoiceStatusCounts, fetchCostAgentInvoiceErrors, costAgentUpload,
-  fetchCostAgentCompanies, fetchCostAgentVendors, fetchCostAgentVessels, fetchCostAgentPorts, fetchCostAgentCostItems,
-  fmtDate, fmtMoney, INVOICE_STATUS_ORDER, INVOICE_STATUS_META, TAX_STATUS_META, fetchMyApprovalInvoiceIds,
-  COST_AGENT_APPROVALS_CHANGED_EVENT, canDeleteInvoice, costAgentDeleteInvoice,
-  type CostAgentInvoiceListRow, type CostAgentInvoiceStatus, type CostAgentCompany, type CostAgentVendor,
-  type CostAgentVessel, type CostAgentPort, type CostAgentCostItem,
+  costAgentUpload, fetchCostAgentCompanies, fetchCostAgentVendors, fetchCostAgentVessels, fetchCostAgentPorts, fetchCostAgentCostItems,
+  fetchCostAgentInvoiceErrors, INVOICE_STATUS_META, COST_AGENT_APPROVALS_CHANGED_EVENT, canDeleteInvoice, costAgentDeleteInvoice,
+  type CostAgentInvoiceStatus, type CostAgentCompany, type CostAgentVendor, type CostAgentVessel, type CostAgentPort, type CostAgentCostItem,
 } from '../../utils/CostAgentHelpers'
+import {
+  DEFAULT_SORT_DIR, PAGE_SIZES, STATUS_OPTIONS, costAgentInvoiceCards, parseListState, toCardParams, writeListState,
+  type AttentionItem, type InvoiceCard, type InvoiceCardsResult, type ListState, type SortField,
+} from '../../utils/CostAgentInvoiceCards'
 
-const TH = 'px-2.5 py-2.5 text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[#6E5E70] whitespace-nowrap bg-[#FBF7F4] border-b border-[#EADFD6]'
-const TD = 'px-2.5 py-2 text-[12.5px] text-[#3B1B3D] align-top'
-const COLS = 11
+const VIEW_KEY = 'beehive_cost_agent_invoice_view'
+type View = 'card' | 'list'
+const GO_TAB = { docs: 'documents', lines: 'lines', workflow: 'approval' } as const
 
 export default function CostAgentInvoicePage() {
   const { canEdit, user, isAdmin } = useAuth()
   const canEditInvoice = canEdit('cost_agent_invoice')
+  // Ponsel (< 640px): placeholder pencarian dipendekkan supaya tidak terpotong.
+  const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 639px)'); const h = () => setNarrow(mq.matches)
+    mq.addEventListener('change', h); return () => mq.removeEventListener('change', h)
+  }, [])
   const canPay = canEdit('cost_agent_payment')
   const actor = user?.email ?? null
   const { id: idParam } = useParams()
   const openId = idParam && /^\d+$/.test(idParam) ? Number(idParam) : null
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
 
   useEffect(() => { document.title = 'Agency Invoices · BeeHive' }, [])
 
-  // ── Master (dropdown review & upload) ──
+  // ── Master (dropdown review, upload & filter) ──
   const [companies, setCompanies] = useState<CostAgentCompany[]>([])
   const [vendors, setVendors] = useState<CostAgentVendor[]>([])
   const [vessels, setVessels] = useState<CostAgentVessel[]>([])
@@ -70,83 +77,85 @@ export default function CostAgentInvoicePage() {
     setSearchParams(prev => { const n = new URLSearchParams(prev); n.delete('upload'); n.delete('call'); return n }, { replace: true })
   }, [searchParams, setSearchParams, canEditInvoice])
 
-  // ── Filter ──
-  const [search, setSearch] = useState('')
-  const [debounced, setDebounced] = useState('')
-  useEffect(() => { const t = setTimeout(() => setDebounced(search.trim()), 350); return () => clearTimeout(t) }, [search])
-  const [company, setCompany] = useState('')
-  const [statusTab, setStatusTab] = useState<'all' | 'mine' | CostAgentInvoiceStatus>('all')
-  const [view, setView] = useState<'card' | 'list'>('card')
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(20)
-  useEffect(() => { setPage(1) }, [debounced, company, statusTab, pageSize])
+  // ── State daftar = query string URL ──
+  const st = useMemo(() => parseListState(searchParams), [searchParams])
+  const update = useCallback((patch: Partial<ListState>, replace = false) => {
+    setSearchParams(prev => writeListState(prev, { ...parseListState(prev), page: 1, ...patch }), { replace })
+  }, [setSearchParams])
+  const resetAll = () => setSearchParams(prev => writeListState(prev, { q: '', co: '', st: 'all', my: false, showVoid: false, page: 1, size: parseListState(prev).size, rules: [], sorts: [] }))
+
+  const [text, setText] = useState(st.q)
+  useEffect(() => { setText(st.q) }, [st.q]) // Back / tautan -> kotak cari
+  useEffect(() => {
+    const t = setTimeout(() => { if (text.trim() !== st.q.trim()) update({ q: text }, true) }, 300)
+    return () => clearTimeout(t)
+  }, [text]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [view, setView] = useState<View>(() => { try { return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'card' } catch { return 'card' } })
+  const changeView = (v: View) => { setView(v); try { localStorage.setItem(VIEW_KEY, v) } catch { /* private mode */ } }
+
+  // ── Toast ──
+  const [toast, setToast] = useState<{ msg: string; tone: 'ok' | 'warn' } | null>(null)
+  const showToast = useCallback((msg: string, tone: 'ok' | 'warn' = 'ok') => { setToast({ msg, tone }); setTimeout(() => setToast(null), 5000) }, [])
 
   // ── Data ──
-  const [rows, setRows] = useState<CostAgentInvoiceListRow[]>([])
-  const [total, setTotal] = useState(0)
-  const [counts, setCounts] = useState<Record<string, number>>({})
+  const [data, setData] = useState<InvoiceCardsResult | null>(null)
   const [errors, setErrors] = useState<Record<number, string | null>>({})
   const [loading, setLoading] = useState(true)
   const [listError, setListError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
-  const [myIds, setMyIds] = useState<number[] | null>(null)
   const [selected, setSelected] = useState<number[]>([])
   const [payIds, setPayIds] = useState<number[] | null>(null)
-  useEffect(() => { setSelected([]) }, [statusTab, page, pageSize, debounced, company])
   const seqRef = useRef(0)
+  const paramsRef = useRef(toCardParams(st))
+  paramsRef.current = toCardParams(st)
+  const paramsKey = JSON.stringify(paramsRef.current)
+
   const fetchList = useCallback(async (silent = false) => {
     const seq = ++seqRef.current
     if (!silent) setLoading(true)
     try {
-      // My Approvals: id invoice yg step aktifnya memuat email user (dihitung tiap refresh).
-      const mine = await fetchMyApprovalInvoiceIds(actor).catch(() => [] as number[])
-      const [r, c] = await Promise.all([
-        statusTab === 'mine' && mine.length === 0
-          ? Promise.resolve({ rows: [] as CostAgentInvoiceListRow[], count: 0 })
-          : fetchCostAgentInvoiceList({
-            page, pageSize, search: debounced,
-            eq: { company_code: company, status: statusTab === 'all' || statusTab === 'mine' ? null : statusTab, id: statusTab === 'mine' ? mine : null },
-            orderBy: 'created_at', ascending: false,
-          }),
-        fetchCostAgentInvoiceStatusCounts({ company, search: debounced }),
-      ])
+      const r = await costAgentInvoiceCards(paramsRef.current)
       if (seq !== seqRef.current) return
-      setMyIds(mine)
-      setRows(r.rows); setTotal(r.count); setCounts(c); setListError(null)
-      const failedIds = r.rows.filter(x => x.status === 'failed').map(x => x.id)
-      setErrors(failedIds.length ? await fetchCostAgentInvoiceErrors(failedIds) : {})
+      // Halaman di luar jangkauan (mis. filter menyempit): kembali ke halaman terakhir.
+      if (r.items.length === 0 && r.total > 0 && (paramsRef.current.offset ?? 0) > 0) { update({ page: Math.max(1, Math.ceil(r.total / (paramsRef.current.limit ?? 20))) }, true); return }
+      setData(r); setListError(null)
+      const failedIds = r.items.filter(x => x.bucket === 'failed').map(x => x.id)
+      if (failedIds.length) fetchCostAgentInvoiceErrors(failedIds).then(e => { if (seq === seqRef.current) setErrors(e) }).catch(() => { /* teks default */ })
     } catch (e: any) {
-      if (seq === seqRef.current && !silent) { setRows([]); setTotal(0); setListError(e.message || String(e)) }
+      if (seq === seqRef.current && !silent) { const m = e.message || String(e); setListError(m); showToast(m, 'warn') }
     } finally {
       if (seq === seqRef.current) setLoading(false)
     }
-  }, [page, pageSize, debounced, company, statusTab, actor])
-  useEffect(() => { fetchList() }, [fetchList, reloadKey])
-  // Keputusan / submit approval di modal -> segarkan (tab My Approvals & badge).
-  useEffect(() => {
-    const h = () => fetchList(true)
-    window.addEventListener(COST_AGENT_APPROVALS_CHANGED_EVENT, h)
-    return () => window.removeEventListener(COST_AGENT_APPROVALS_CHANGED_EVENT, h)
-  }, [fetchList])
+  }, [update, showToast])
+  useEffect(() => { setSelected([]); fetchList() }, [paramsKey, reloadKey]) // eslint-disable-line react-hooks/exhaustive-deps
   const refresh = useCallback(() => setReloadKey(k => k + 1), [])
 
-  // Polling 5 dtk HANYA selama ada invoice processing / dokumen processing (berhenti otomatis).
-  const needPoll = rows.some(r => r.status === 'processing' || (r.documents_processing ?? 0) > 0)
+  // Muat ulang senyap: event approval berubah, tab browser aktif lagi, dan polling 5 dtk selama ada invoice processing.
+  useEffect(() => {
+    const h = () => fetchList(true)
+    const vis = () => { if (document.visibilityState === 'visible') fetchList(true) }
+    window.addEventListener(COST_AGENT_APPROVALS_CHANGED_EVENT, h)
+    document.addEventListener('visibilitychange', vis)
+    return () => { window.removeEventListener(COST_AGENT_APPROVALS_CHANGED_EVENT, h); document.removeEventListener('visibilitychange', vis) }
+  }, [fetchList])
+  const items: InvoiceCard[] = data?.items ?? []
+  const needPoll = items.some(r => r.bucket === 'processing')
   useEffect(() => {
     if (!needPoll) return
     const iv = setInterval(() => fetchList(true), 5000)
     return () => clearInterval(iv)
   }, [needPoll, fetchList])
 
-  // ── Toast ──
-  const [toast, setToast] = useState<{ msg: string; tone: 'ok' | 'warn' } | null>(null)
-  const showToast = (msg: string, tone: 'ok' | 'warn' = 'ok') => { setToast({ msg, tone }); setTimeout(() => setToast(null), 5000) }
-
+  // ── Aksi lama: reprocess, hapus (Admin, masa uji coba) ──
   const [reprocessing, setReprocessing] = useState<number | null>(null)
-  // Hapus invoice (masa uji coba, sql/056): Admin saja, status journal/paid tidak bisa. Anak invoice ikut terhapus.
+  const reprocess = async (id: number) => {
+    setReprocessing(id)
+    try { await costAgentUpload('cost_agent', [], { reprocess_invoice_id: id }); showToast(`Invoice #${id} sent for reprocessing.`); refresh() }
+    catch (e: any) { showToast(e.message || String(e), 'warn') } finally { setReprocessing(null) }
+  }
   const canDelete = isAdmin && canEditInvoice
   const [deleting, setDeleting] = useState<number | null>(null)
-  // Konfirmasi lewat modal (bukan window.confirm); error RPC tampil di dalam modal.
   const [confirmDelete, setConfirmDelete] = useState<{ id: number; invoice_no: string | null; status: string } | null>(null)
   const [deleteReason, setDeleteReason] = useState('')
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -157,211 +166,146 @@ export default function CostAgentInvoicePage() {
     setDeleting(r.id); setDeleteError(null)
     try {
       await costAgentDeleteInvoice(r.id, deleteReason.trim() || 'Hapus data uji coba')
-      setConfirmDelete(null)
-      showToast(`Invoice ${r.invoice_no || '#' + r.id} deleted.`)
+      setConfirmDelete(null); showToast(`Invoice ${r.invoice_no || '#' + r.id} deleted.`)
       if (openId === r.id) closeInvoice()
       fetchList(true)
-    } catch (e: any) {
-      setDeleteError(e.message || String(e))
-    } finally {
-      setDeleting(null)
-    }
+    } catch (e: any) { setDeleteError(e.message || String(e)) } finally { setDeleting(null) }
   }
 
-  const reprocess = async (id: number) => {
-    setReprocessing(id)
-    try {
-      await costAgentUpload('cost_agent', [], { reprocess_invoice_id: id })
-      showToast(`Invoice #${id} sent for reprocessing.`)
-      refresh()
-    } catch (e: any) {
-      showToast(e.message || String(e), 'warn')
-    } finally {
-      setReprocessing(null)
-    }
-  }
-
-  const totalPages = Math.max(1, Math.ceil(total / pageSize))
-  const selectable = statusTab === 'approved' && canPay
-  const cols = COLS + (selectable ? 1 : 0)
-  const allCount = useMemo(() => Object.values(counts).reduce<number>((a, b) => a + Number(b || 0), 0), [counts])
-  const openInvoice = (id: number) => navigate(`/cost-agent/invoice/${id}`)
-  const closeInvoice = useCallback(() => navigate('/cost-agent/invoice'), [navigate])
-  // Hasil upload (2026-10-23): modal menutup begitu n8n membalas {job_id, invoice_id}; pelacak polling 5 dtk -> toast / buka invoice / dialog daftar invoice.
+  // ── Buka / tutup detail: query string daftar dipertahankan ──
+  const [openAt, setOpenAt] = useState<{ id: number; tab: 'documents' | 'lines' | 'approval'; lines: number[] } | null>(null)
+  const openInvoice = useCallback((id: number) => { setOpenAt(null); navigate(`/cost-agent/invoice/${id}${location.search}`) }, [navigate, location.search])
+  const openFinding = (c: InvoiceCard, it: AttentionItem) => { setOpenAt({ id: c.id, tab: GO_TAB[it.go] ?? 'lines', lines: it.lines ?? [] }); navigate(`/cost-agent/invoice/${c.id}${location.search}`) }
+  const closeInvoice = useCallback(() => { setOpenAt(null); navigate(`/cost-agent/invoice${location.search}`) }, [navigate, location.search])
   const uploadTracker = useCostAgentUploadTracker({ onToast: showToast, onOpenInvoice: openInvoice, onRefresh: () => fetchList(true) })
+
+  // ── Turunan tampilan ──
+  const counts = data?.status_counts ?? {}
+  const allCount = Object.entries(counts).reduce((a, [k, n]) => a + (k === 'void' && !st.showVoid ? 0 : Number(n || 0)), 0)
+  const voidHidden = st.st === 'all' && !st.showVoid ? Number(counts.void ?? 0) : 0
+  const total = data?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / st.size))
+  const selectable = st.st === 'approved' && canPay
+  const sortBy = (f: SortField) => {
+    const cur = st.sorts[0] ?? { f: 'date' as SortField, dir: 'desc' as const }
+    const dir = cur.f === f ? (cur.dir === 'asc' ? 'desc' : 'asc') : DEFAULT_SORT_DIR[f]
+    update({ sorts: [{ f, dir }, ...st.sorts.filter(s => s.f !== f)] })
+  }
+  const actionsFor = (c: InvoiceCard) => ({
+    openId,
+    checkbox: selectable ? { checked: selected.includes(c.id), onChange: (v: boolean) => setSelected(p => (v ? [...p, c.id] : p.filter(x => x !== c.id))) } : undefined,
+    error: errors[c.id],
+    onOpen: () => openInvoice(c.id),
+    readOnly: !canEditInvoice,
+    onOpenAt: (it: AttentionItem) => openFinding(c, it),
+    onReprocess: canEditInvoice ? () => reprocess(c.id) : undefined,
+    reprocessing: reprocessing === c.id,
+    onDelete: canDelete && canDeleteInvoice(c.status) ? () => deleteInvoice({ id: c.id, invoice_no: c.invoice_no, status: c.status }) : undefined,
+    deleting: deleting === c.id,
+  })
+  const initialLoad = loading && !data
 
   return (
     <>
       {toast && (
         <div className="fixed top-5 right-5 bg-slate-900 border border-slate-700 text-white px-5 py-3.5 rounded-xl shadow-2xl flex items-center gap-3 font-medium text-sm z-[9999] min-w-[300px]">
           <span className={toast.tone === 'warn' ? 'text-amber-400' : 'text-emerald-400'}>{toast.tone === 'warn' ? '⚠️' : '✅'}</span>
-          <span className="leading-tight max-w-[400px]">{toast.msg}</span>
+          <span className="leading-tight max-w-[400px] [overflow-wrap:anywhere]">{toast.msg}</span>
           <button type="button" onClick={() => setToast(null)} className="ml-auto text-slate-400 hover:text-white"><X size={14} /></button>
         </div>
       )}
 
       <div className="flex-1 h-full flex flex-col overflow-hidden min-w-0">
-        <CostAgentPageHeader title="Agency Invoices" />
+        <CostAgentPageHeader title="Agency Invoices" right={<CostAgentMyRoles />} />
 
         <main className="px-3 pt-2 pb-0 flex-1 flex flex-col overflow-hidden gap-3 min-h-0">
           {masterError && <div className="rounded-lg border border-[#F4C3BC] bg-[#FDE7E4] px-3 py-2 text-[12.5px] text-[#A8231A] shrink-0">Failed to load master data: {masterError}</div>}
 
-          {/* Filter 1 baris di laptop 14" (FilterPanel). Status = select ber-jumlah (10 tab tidak muat 1 baris), My Approvals =
-              toggle; aksi halaman (Create AP/PV, Upload) di ujung kanan panel. */}
           <FilterPanel>
-            <FilterSearch value={search} onChange={setSearch} placeholder="Search invoice no / vendor / vessel / port / voy…" />
-            <FilterField label="Status">
-              <select aria-label="Status" className={FILTER_SELECT_WIDE} value={statusTab} onChange={e => setStatusTab(e.target.value as any)}>
-                <option value="all">All ({allCount})</option>
-                <option value="mine">My Approvals ({myIds?.length ?? 0})</option>
-                {INVOICE_STATUS_ORDER.map(st => <option key={st} value={st}>{INVOICE_STATUS_META[st].label} ({counts[st] ?? 0})</option>)}
-              </select>
-            </FilterField>
+            <FilterSearch value={text} onChange={setText} placeholder={narrow ? 'Search invoices' : 'Search invoice no / vendor / vessel / port / voy…'} />
             <FilterField label="Company">
-              <select aria-label="Company" className={FILTER_SELECT} value={company} onChange={e => setCompany(e.target.value)}>
+              <select aria-label="Company" className={FILTER_SELECT} value={st.co} onChange={e => update({ co: e.target.value })}>
                 <option value="">All PT</option>
                 {companies.map(c => <option key={c.code} value={c.code}>{c.code}</option>)}
               </select>
             </FilterField>
-            <FilterButton icon={ShieldCheck} label="My Approvals" short="Mine" active={statusTab === 'mine'}
-              title="Invoices waiting for your approval" onClick={() => setStatusTab(t => (t === 'mine' ? 'all' : 'mine'))}>
-              {(myIds?.length ?? 0) > 0 && <span className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-[#5B2E8C] text-white text-[10.5px] flex items-center justify-center">{myIds!.length}</span>}
+            <FilterField label="Status">
+              <select aria-label="Status" className={FILTER_SELECT_WIDE} value={st.st} onChange={e => update({ st: e.target.value })}>
+                <option value="all">All ({allCount})</option>
+                {STATUS_OPTIONS.filter(o => Number(counts[o.value as keyof typeof counts] ?? 0) > 0 || o.value === st.st).map(o => (
+                  <option key={o.value} value={o.value}>{o.label} ({Number(counts[o.value as keyof typeof counts] ?? 0)})</option>
+                ))}
+              </select>
+            </FilterField>
+            {voidHidden > 0 && (
+              <button type="button" className="text-[11.5px] font-semibold text-[#6E5E70] hover:text-[#6B3470] hover:underline shrink-0 whitespace-nowrap" onClick={() => update({ st: 'void' })} data-void-hidden>{voidHidden} void hidden</button>
+            )}
+            <FilterButton icon={ListChecks} label="My tasks" short="Mine" active={st.my} title="Invoices waiting for you" onClick={() => update({ my: !st.my })}>
+              {(data?.my_count ?? 0) > 0 && <span className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-[#5B2E8C] text-white text-[10.5px] flex items-center justify-center tabular-nums" data-my-count>{data!.my_count}</span>}
             </FilterButton>
+            <CostAgentInvoiceFilterPanel rules={st.rules} sorts={st.sorts} showVoid={st.showVoid} vendors={vendors} vessels={vessels} ports={ports}
+              onApply={(rules, sorts, showVoid) => update({ rules, sorts, showVoid })}
+              onReset={() => update({ rules: [], sorts: [], showVoid: false })} />
             {needPoll && <span className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-[#2F4FA8] shrink-0" title="AI is processing — the list refreshes automatically"><Loader2 size={13} className="animate-spin" /><span className="hidden @min-[1650px]:inline">AI processing</span></span>}
-            <FilterSegment value={view} onChange={setView} options={[{ value: 'card', label: 'Card' }, { value: 'list', label: 'List' }]} />
+            <FilterSegment value={view} onChange={changeView} options={[{ value: 'card', label: 'Card' }, { value: 'list', label: 'List' }]} />
             <FilterButton icon={RefreshCw} label="Refresh" labelFrom={1650} onClick={refresh} disabled={loading} spin={loading} />
-            {statusTab === 'approved' && canPay && (
+            {selectable && (
               <FilterButton icon={Wallet} label={`Create AP Note / PV${selected.length ? ` (${selected.length})` : ''}`} short={`AP/PV${selected.length ? ` (${selected.length})` : ''}`}
-                variant="primary" disabled={!selected.length} title="Select approved invoices first" onClick={() => setPayIds(selected)} />
+                variant="primary" disabled={!selected.length} title="Select invoices first" onClick={() => setPayIds(selected)} />
             )}
             {canEditInvoice && <FilterButton icon={UploadCloud} label="Upload invoice" short="Upload" variant="primary" onClick={() => setUpload({ callId: null })} />}
           </FilterPanel>
 
-          {view === 'card' ? (
-            <div className="rounded-[14px] border border-[#EADFD6] bg-[#FBF7F4] flex-1 min-h-0 flex flex-col overflow-hidden">
-              <CostAgentCardScroller loading={loading} error={listError} count={rows.length}
-                empty={statusTab === 'mine' ? 'Nothing waiting for your approval.' : `No invoices.${canEditInvoice ? ' Click "Upload invoice" to add one.' : ''}`}
-                header={selectable && rows.length > 0 && !loading ? (
-                  <label className="flex items-center gap-2 px-1 text-[12px] font-semibold text-[#3B1B3D] shrink-0">
-                    <input type="checkbox" aria-label="Select all" className="w-4 h-4 accent-[#6B3470]" checked={rows.length > 0 && selected.length === rows.length}
-                      onChange={e => setSelected(e.target.checked ? rows.map(r => r.id) : [])} />
-                    Select all on this page{selected.length ? ` · ${selected.length} selected` : ''}
-                  </label>
-                ) : undefined}>
-                {rows.map(r => (
-                  <CostAgentInvoiceCard key={r.id} r={r} selected={r.id === openId} onOpen={() => openInvoice(r.id)} mine={r.status === 'waiting_approval' && !!myIds?.includes(r.id)}
-                    checkbox={selectable ? { checked: selected.includes(r.id), onChange: v => setSelected(p => (v ? [...p, r.id] : p.filter(x => x !== r.id))) } : undefined}
-                    error={errors[r.id]} onReprocess={canEditInvoice ? () => reprocess(r.id) : undefined} reprocessing={reprocessing === r.id}
-                    onDelete={canDelete && canDeleteInvoice(r.status) ? () => deleteInvoice(r) : undefined} deleting={deleting === r.id} />
-                ))}
-              </CostAgentCardScroller>
-              <PaginationFooter start={(page - 1) * pageSize + 1} end={Math.min(page * pageSize, total)} total={total} unit="invoices"
-                page={page} totalPages={totalPages} onPage={setPage} pageSize={pageSize} onPageSize={setPageSize} />
-            </div>
-          ) : (
-          <div className={`${SA_CARD} flex-1 min-h-0 flex flex-col overflow-hidden`}>
-            <div className="overflow-auto flex-1 min-h-0">
-              <table className="min-w-full">
-                <thead className="sticky top-0 z-20">
-                  <tr>
+          <div className="rounded-[14px] border border-[#EADFD6] bg-[#FBF7F4] flex-1 min-h-0 flex flex-col overflow-hidden">
+            <div className={`flex-1 min-h-0 overflow-auto ${view === 'card' ? 'p-2.5 flex flex-col gap-2.5' : ''}`}>
+              {initialLoad || (loading && view === 'card') ? <CardSkeleton n={Math.min(6, st.size)} />
+                : listError && !data ? (
+                  <div className="m-3 rounded-lg border border-[#F4C3BC] bg-[#FDE7E4] px-3 py-2 text-[12.5px] text-[#A8231A] flex items-center gap-3" role="alert">
+                    <AlertTriangle size={14} className="shrink-0" /><span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{listError}</span>
+                    <button type="button" className={`${SA_BTN_OUTLINE} !h-7 !px-2.5`} onClick={refresh}><RotateCcw size={12} /> Retry</button>
+                  </div>
+                ) : items.length === 0 ? (
+                  <div className="px-2 py-12 text-center text-sm text-[#6E5E70]">
+                    <p className="italic">No invoices match these filters</p>
+                    <button type="button" className={`${SA_BTN_OUTLINE} mt-3`} onClick={resetAll}>Reset</button>
+                  </div>
+                ) : view === 'card' ? (
+                  <>
                     {selectable && (
-                      <th className={`${TH} w-8`}>
-                        <input type="checkbox" aria-label="Select all" className="accent-[#6B3470]" checked={rows.length > 0 && selected.length === rows.length}
-                          onChange={e => setSelected(e.target.checked ? rows.map(r => r.id) : [])} />
-                      </th>
+                      <label className="flex items-center gap-2 px-1 text-[12px] font-semibold text-[#3B1B3D] shrink-0">
+                        <input type="checkbox" aria-label="Select all" className="w-4 h-4 accent-[#6B3470]" checked={items.length > 0 && selected.length === items.length}
+                          onChange={e => setSelected(e.target.checked ? items.map(r => r.id) : [])} />
+                        Select all on this page{selected.length ? ` · ${selected.length} selected` : ''}
+                      </label>
                     )}
-                    {['Date', 'Vendor', 'Invoice No', 'Vessel', 'Port', 'Voyage', 'Total', 'Flags', 'PO', 'Docs', 'Status'].map(h => (
-                      <th key={h} className={`${TH} ${h === 'Total' ? 'text-right' : ''}`}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {loading ? <LoadingTableRow colSpan={cols} /> : listError ? (
-                    <tr><td colSpan={cols} className="px-4 py-8 text-center text-sm text-[#A8231A]">{listError}</td></tr>
-                  ) : rows.length === 0 ? (
-                    <tr><td colSpan={cols} className="px-4 py-10 text-center text-sm text-[#6E5E70] italic">{statusTab === 'mine' ? 'Nothing waiting for your approval.' : `No invoices.${canEditInvoice ? ' Click "Upload invoice" to add one.' : ''}`}</td></tr>
-                  ) : rows.map(r => {
-                    const tax = r.tax_status ? TAX_STATUS_META[r.tax_status] : null
-                    return (
-                      <tr key={r.id} onClick={() => openInvoice(r.id)} className={`border-b border-[#F3EEEA] cursor-pointer hover:bg-[#FBF7F4] ${r.id === openId ? 'bg-[#F5EDF3]' : ''}`}>
-                        {selectable && (
-                          <td className={TD} onClick={e => e.stopPropagation()}>
-                            <input type="checkbox" aria-label={`Select invoice ${r.invoice_no || r.id}`} className="accent-[#6B3470]" checked={selected.includes(r.id)}
-                              onChange={e => setSelected(p => (e.target.checked ? [...p, r.id] : p.filter(x => x !== r.id)))} />
-                          </td>
-                        )}
-                        <td className={`${TD} whitespace-nowrap`}>{fmtDate(r.invoice_date)}</td>
-                        <td className={`${TD} font-semibold min-w-[160px]`}>{r.vendor_name || <span className="text-[#8A7A8B] font-normal">—</span>}</td>
-                        <td className={`${TD} whitespace-nowrap max-w-[260px]`}>
-                          {r.invoice_no || <span className="text-[#8A7A8B]">#{r.id}</span>}
-                          {r.description && <div className="text-[11px] text-[#8A7A8B] truncate" title={r.description} data-invoice-desc>{r.description}</div>}
-                        </td>
-                        <td className={`${TD} whitespace-nowrap`}>{r.vessel_name || '—'}</td>
-                        <td className={`${TD} whitespace-nowrap`} title={r.port_name || undefined}>{r.port_code || '—'}</td>
-                        <td className={`${TD} whitespace-nowrap`}>{r.voyage_no ? `Voy ${r.voyage_no}` : '—'}</td>
-                        <td className={`${TD} text-right whitespace-nowrap tabular-nums font-semibold`}>{fmtMoney(r.grand_total, r.currency)}</td>
-                        <td className={TD}>
-                          <div className="flex flex-wrap gap-1">
-                            {r.naik_count > 0 && <Chip tone="red">▲ {r.naik_count} higher</Chip>}
-                            {r.baru_count > 0 && <Chip tone="amber">{r.baru_count} new item{r.baru_count > 1 ? 's' : ''}</Chip>}
-                            {r.duplicate_of && <Chip tone="red">Duplicate of #{r.duplicate_of}</Chip>}
-                            <Chip tone={tax?.tone || 'grey'}>Tax: {tax ? tax.label.toLowerCase() : '—'}</Chip>
-                            {r.status === 'verification' && r.unverified_count > 0 && <Chip tone="grey">{r.unverified_count} to verify</Chip>}
-                          </div>
-                          {r.status === 'failed' && (
-                            <div className="mt-1.5 flex items-start gap-2">
-                              <span className="text-[11.5px] text-[#A8231A] max-w-[280px]">{errors[r.id] || 'AI processing failed.'}</span>
-                              {canEditInvoice && (
-                                <button type="button" className={`${SA_BTN_OUTLINE} h-7 px-2`} disabled={reprocessing === r.id}
-                                  onClick={e => { e.stopPropagation(); reprocess(r.id) }}><RotateCcw size={12} /> {reprocessing === r.id ? 'Sending…' : 'Reprocess'}</button>
-                              )}
-                            </div>
-                          )}
-                        </td>
-                        <td className={TD}>
-                          {r.po_numbers?.length ? <div className="flex flex-wrap gap-1">{r.po_numbers.slice(0, 3).map(p => <Chip key={p} tone="plum">{p}</Chip>)}{r.po_numbers.length > 3 && <Chip tone="grey">+{r.po_numbers.length - 3}</Chip>}</div> : <span className="text-[#8A7A8B]">—</span>}
-                        </td>
-                        <td className={`${TD} whitespace-nowrap`}>
-                          {(r.documents_processing ?? 0) > 0 ? <span className="inline-flex items-center gap-1 text-[#2F4FA8]" title="Documents being processed"><Loader2 size={13} className="animate-spin" /> {r.document_count ?? ''}</span>
-                            : r.document_count != null ? <span className="inline-flex items-center gap-1 text-[#6E5E70]"><FileText size={13} /> {r.document_count}</span> : <span className="text-[#8A7A8B]">—</span>}
-                        </td>
-                        <td className={TD}>
-                          <div className="flex items-center gap-1.5">
-                            <StatusChip status={r.status} />
-                            {canDelete && canDeleteInvoice(r.status) && (
-                              <button type="button" aria-label={`Delete invoice ${r.invoice_no || r.id}`} title="Delete (Admin, trial data)" disabled={deleting === r.id}
-                                onClick={e => { e.stopPropagation(); deleteInvoice(r) }}
-                                className="ml-auto p-1.5 rounded-lg text-[#8A7A8B] hover:text-[#A8231A] hover:bg-[#FDE7E4] disabled:opacity-50">
-                                {deleting === r.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+                    {items.map(c => <React.Fragment key={c.id}><InvoiceCardV2 c={c} a={actionsFor(c)} /></React.Fragment>)}
+                  </>
+                ) : (
+                  <div className={loading ? 'opacity-60' : ''}>
+                    <InvoiceTableV2 rows={items} sorts={st.sorts} onSort={sortBy} makeActions={actionsFor} selectable={selectable}
+                      allChecked={items.length > 0 && selected.length === items.length} onCheckAll={v => setSelected(v ? items.map(r => r.id) : [])} />
+                  </div>
+                )}
             </div>
-            <PaginationFooter start={(page - 1) * pageSize + 1} end={Math.min(page * pageSize, total)} total={total} unit="invoices"
-              page={page} totalPages={totalPages} onPage={setPage} pageSize={pageSize} onPageSize={setPageSize} />
+            <PaginationFooter start={(st.page - 1) * st.size + 1} end={Math.min(st.page * st.size, total)} total={total} unit="invoices"
+              page={st.page} totalPages={totalPages} onPage={p => update({ page: p })} pageSize={st.size} pageSizeOptions={PAGE_SIZES} onPageSize={n => update({ size: n })} />
           </div>
-          )}
         </main>
       </div>
 
       {upload && (
         <CostAgentUploadModal presetCallId={upload.callId}
           onClose={() => setUpload(null)}
-          onSent={() => { setStatusTab('all'); refresh() }}
-          onJob={job => { uploadTracker.track(job); setStatusTab('all'); refresh() }} />
+          onSent={() => { update({ st: 'all' }); refresh() }}
+          onJob={job => { uploadTracker.track(job); update({ st: 'all' }); refresh() }} />
       )}
       {uploadTracker.dialog}
       {openId !== null && (
         // key per invoice -- state modal bersih saat pindah invoice (mis. link "Duplicate of #id").
         <React.Fragment key={openId}><CostAgentInvoiceReviewModal invoiceId={openId} companies={companies} vendors={vendors} vessels={vessels} ports={ports}
           costItems={costItems} canEdit={canEditInvoice} canPay={canPay} actor={actor} onClose={closeInvoice} onChanged={() => fetchList(true)}
-          onToast={showToast} onDelete={canDelete ? deleteInvoice : undefined} /></React.Fragment>
+          onToast={showToast} onDelete={canDelete ? deleteInvoice : undefined}
+          initialTab={openAt?.id === openId ? openAt.tab : undefined} focusLines={openAt?.id === openId ? openAt.lines : undefined} /></React.Fragment>
       )}
       {confirmDelete && (
         <CostAgentModal z="z-[85]" maxWidth="max-w-md" onClose={() => { if (deleting === null) setConfirmDelete(null) }}
@@ -392,3 +336,4 @@ export default function CostAgentInvoicePage() {
     </>
   )
 }
+

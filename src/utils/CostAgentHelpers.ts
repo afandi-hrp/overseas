@@ -5,6 +5,7 @@
 import { supabase } from '../lib/supabase'
 import { apiFetch } from '../lib/apiFetch'
 import { orSafe } from './supabaseQueryHelpers'
+import { mergeLinesView, type InvoiceLinesResponse } from './CostAgentLinesView'
 import type { Tone } from '../components/SeaAirAuditUi'
 
 // ─── Nilai enum (nilai DB apa adanya; label Inggris lewat *_META) ───────────────────────────────────────────────
@@ -112,6 +113,7 @@ export interface CostAgentApprovalMatrixRow {
   approver_label: string
   approver_emails: string[]
   approver_role: string | null
+  approval_mode?: 'any' | 'all' // sql/090: 'any' (bawaan) salah satu email cukup; 'all' semua email harus setuju. approver_label = nama level.
   is_active: boolean
   created_by?: string | null
   created_at?: string
@@ -274,6 +276,22 @@ export interface CostAgentInvoiceLine {
   compare_similarity?: number | null // sql/057: kemiripan teks vs pembanding terpakai 0..1
   compare_alt_amount?: number | null // sql/061: nominal pembanding alternatif (baris same_line di tempat lain)
   compare_check?: boolean | null // sql/061: alternatif beda > 5% dari pembanding utama -> perlu dicek manual
+  // sql/084: pajak per baris (pecahan, mis. 0.11); null = belum dihitung. Dibaca toleran (RPC riwayat mungkin belum membawanya).
+  ppn_rate?: number | null
+  pph_type?: string | null
+  pph_rate?: number | null
+  tax_source?: 'rule' | 'manual' | null
+  // sql/101 (aturan cost line per peran): hanya ada pada view 'full'. Versi ASLI maker (maker_*) terisi bila checker mengubah / memecah baris;
+  // origin_line_id terisi pada bagian hasil split (menunjuk baris yang dipecah). Approver (view 'maker') tidak menerima kolom-kolom ini.
+  origin_line_id?: number | null
+  maker_description?: string | null
+  maker_amount?: number | null
+  maker_qty?: number | null
+  maker_unit_price?: number | null
+  is_validated?: boolean
+  validated_by?: string | null
+  validated_at?: string | null
+  checker_remark?: string | null
   history: CostAgentLineHistory[]
 }
 // check_notes dari fn_cost_agent_ingest_invoice: {type, msg} -- type vendor_unknown | vessel_unknown | port_unknown |
@@ -364,6 +382,7 @@ export interface CostAgentInvoiceDocument {
 export interface CostAgentInvoiceHistory {
   invoice: CostAgentInvoice
   lines: CostAgentInvoiceLine[]
+  lines_view?: 'full' | 'maker' // sql/101: 'maker' = pengguna HANYA berperan approver (baris asli maker, tanpa split / kolom checker)
   approvals: CostAgentApproval[]
   tax_checks: CostAgentTaxCheck[]
   payments: CostAgentPaymentRequest[]
@@ -459,8 +478,16 @@ export const costAgentDeleteVoyage = (voyageId: number, reason?: string | null) 
   callCostAgentRpc<{ deleted: number; status: string; calls: number; cargo: number; noon_days: number }>('fn_cost_agent_delete_voyage', { p_voyage_id: voyageId, p_reason: reason ?? null })
 export const costAgentUpsertVoyages =(rows: unknown[], actor?: string | null) =>
   callCostAgentRpc<CostAgentUpsertVoyagesResult>('fn_cost_agent_upsert_voyages', { p_rows: rows, p_source: 'import', p_actor: actor ?? null })
-export const costAgentGetInvoiceHistory = (invoiceId: number) =>
-  callCostAgentRpc<CostAgentInvoiceHistory | null>('fn_cost_agent_get_invoice_history', { p_invoice_id: invoiceId })
+// Detail invoice = fn_cost_agent_get_invoice_history (header, history per baris, approval ...) + fn_cost_agent_get_invoice_lines (sql/101: baris MENURUT PERAN).
+// Daftar baris yang dipakai UI selalu dari RPC kedua: approver (saja) menerima versi maker; baris dari RPC pertama tidak ada di versi itu dibuang (mergeLinesView).
+// Gagal membaca baris -> error (tidak jatuh ke baris RPC pertama, supaya split checker tidak bocor ke approver).
+export async function costAgentGetInvoiceHistory(invoiceId: number): Promise<CostAgentInvoiceHistory | null> {
+  const [h, r] = await Promise.all([
+    callCostAgentRpc<CostAgentInvoiceHistory | null>('fn_cost_agent_get_invoice_history', { p_invoice_id: invoiceId }),
+    callCostAgentRpc<InvoiceLinesResponse>('fn_cost_agent_get_invoice_lines', { p_invoice_id: invoiceId }),
+  ])
+  return mergeLinesView(h, r)
+}
 // ─── Perbandingan dokumen (sql/072: fn_cost_agent_get_invoice_documents / fn_cost_agent_start_redo) ──────────────
 export type DocCmpOverall = 'not_analysed' | 'incomplete' | 'attention' | 'ok'
 export type DocCmpStatus = 'ok' | 'diff' | 'warn' | 'na'
@@ -471,7 +498,7 @@ export interface DocCmpFile {
   mode: string | null; job_id: string | null; analysis: 'analysed' | 'processing' | 'failed' | 'not_analysed' | string; analysis_error: string | null; created_at: string
 }
 export interface DocCmpPart {
-  id: number; file_id: number | null; file_name: string | null; doc_type: string | null; is_tax_equivalent: boolean | null; doc_no: string | null; doc_date: string | null
+  id: number; file_id: number | null; file_name: string | null; doc_type: string | null; is_tax_equivalent: boolean | null /* SQL 097: selalu false -- JANGAN dipakai utk tampilan; faktur pajak = doc_type faktur_pajak */; doc_no: string | null; doc_date: string | null
   issuer_name: string | null; buyer_name: string | null; vessel_name: string | null; total_amount: number | null; dpp: number | null; ppn: number | null; tax_status: string | null
   invoice_ref: string | null; dates: Record<string, string | null> | null; page_from: number | null; page_to: number | null; summary: string | null
   duplicate_of: number | null; items_n: number | null; items_sum: number | null
@@ -486,8 +513,11 @@ export interface DocCmpDateCheck { part_id: number | null; source: string | null
 // match_gross = nominal baris invoice = harga jual + PPN (+ materai) sebuah nota/faktur pajak, atau item-item nota beserta PPN-nya.
 // `matched_amount` = nominal baris itu sendiri (sudah termasuk PPN, JANGAN dijumlahkan ulang dari refs); `base` = bagian harga jual sebelum PPN; `note` = rincian teks.
 export interface DocCmpLineSide { status: DocCmpLineStatus | string; matched_amount: number | null; diff: number | null; refs: DocCmpRef[] | null; base?: number | null; note?: string | null }
-export interface DocCmpLine { line_id: number; line_no: number; description: string | null; cost_item: string | null; amount: number | null; attachment: DocCmpLineSide | null; tax: DocCmpLineSide | null }
+// expect (SQL 093): dokumen yang DIHARAPKAN per baris -- attachment=false utk jenis biaya tanpa lampiran wajib; tax=true hanya bila baris kena PPN menurut tax rule. Tidak ada = data lama.
+export interface DocCmpLine { line_id: number; line_no: number; description: string | null; cost_item: string | null; amount: number | null; attachment: DocCmpLineSide | null; tax: DocCmpLineSide | null; expect?: { attachment: boolean; tax: boolean } | null }
 export interface DocCmpOrphan { part_id: number; item_id: number | null; doc_type: string | null; doc_no: string | null; description: string | null; amount: number | null }
+// SQL 098: item lampiran yang hanya BUKTI GANDA dari baris invoice yang sudah cocok (bukan orphan). `reason`: same_amount_as_line | total_of_document_items; `line_id` bisa null.
+export interface DocCmpOrphanCovered extends DocCmpOrphan { reason: 'same_amount_as_line' | 'total_of_document_items' | string | null; line_id: number | null }
 export interface DocCmpTaxTotals {
   fp_count: number | null; selling_price: number | null; covered_lines: number | null; dpp: number | null; ppn_collected: number | null; ppn_not_collected: number | null
   checks: { label: string; invoice_value: number | string | null; doc_value: number | string | null; diff: number | null; status: DocCmpStatus | string; note: string | null }[] | null
@@ -503,7 +533,7 @@ export interface CostAgentDocCompare {
   header_checks: DocCmpHeaderCheck[] | null
   date_checks: DocCmpDateCheck[] | null
   lines: DocCmpLine[] | null
-  orphans: { attachment: DocCmpOrphan[] | null; tax: DocCmpOrphan[] | null } | null
+  orphans: { attachment: DocCmpOrphan[] | null; tax: DocCmpOrphan[] | null; attachment_covered?: DocCmpOrphanCovered[] | null } | null
   tax_totals: DocCmpTaxTotals | null
 }
 export const costAgentGetInvoiceDocuments = (invoiceId: number) =>
