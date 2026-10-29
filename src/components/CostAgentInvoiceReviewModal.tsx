@@ -9,9 +9,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
-import { X, Pencil, Send, CheckCircle2, Maximize2, Minimize2, AlertTriangle, RotateCcw, PanelLeftClose, PanelLeftOpen, FileText, Wallet, ShieldCheck, Trash2, Plus, ChevronDown, ChevronUp, Ban, Clock } from 'lucide-react'
+import { X, Pencil, Send, CheckCircle2, Maximize2, Minimize2, AlertTriangle, RotateCcw, PanelLeftClose, PanelLeftOpen, FileText, Wallet, ShieldCheck, Plus, ChevronDown, ChevronUp, Ban, Clock } from 'lucide-react'
 import { StatusChip, CostAgentCombobox, CostAgentModal, FieldLabel, type ComboOption } from './CostAgentUi'
-import { Chip, PtBadge, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_BTN_GREEN, SA_INPUT, SA_LABEL, SA_CARD } from './SeaAirAuditUi'
+import { Chip, Pill, PtBadge, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_BTN_GREEN, SA_INPUT, SA_LABEL, SA_CARD } from './SeaAirAuditUi'
 import { LoadingState, LoadingSpinner } from './LoadingState'
 import CostAgentInvoiceLines from './CostAgentInvoiceLines'
 import { noteText, noteMsg } from '../utils/CostAgentNotes'
@@ -26,14 +26,15 @@ import CostAgentDocsSummary from './CostAgentDocsSummary'
 import { useLineVerifyReasons } from './CostAgentVerifyReasons'
 import { costAgentVoidInvoice, getMyRoles, getReminderAfterDays, isSodError } from '../utils/CostAgentWorkflow'
 import { canSeePaymentsTab, type MyRoles } from '../utils/CostAgentRolesLogic'
+import { verifiedPercent, voyageRouteText } from '../utils/CostAgentInvoiceHeader'
 import { submitBlockReason } from '../utils/CostAgentGateView'
 import CostAgentPaymentModal from './CostAgentPaymentModal'
 import type { HistoryCache } from './CostAgentHistoryBrowser'
 import {
-  costAgentGetInvoiceHistory, costAgentUpdateInvoiceHeader, costAgentUpdateInvoiceAmounts, costAgentSubmitForApproval, costAgentUpload,
+  costAgentGetInvoiceHistory, costAgentGetVoyage, costAgentUpdateInvoiceHeader, costAgentSubmitForApproval, costAgentUpload,
   costAgentAddVendor, searchCostAgentVendors, formatNpwp, costAgentSetInvoiceDescription, COST_AGENT_DESCRIPTION_MAX,
   fetchCostAgentCallOptions, callOptionLabel, drivePreviewUrl, isInvoiceEditable, canUploadSupporting,
-  fmtMoney, fmtDate, fmtDateTimePort, fmtDateTimeCompact, tzAbbrev, fmtNumber, canDeleteInvoice, activeApprovalStep, isApproverOf, notifyCostAgentApprovalsChanged,
+  fmtMoney, fmtDate, fmtDateTimePort, fmtDateTimeCompact, tzAbbrev, fmtNumber, INVOICE_STATUS_META, activeApprovalStep, isApproverOf, notifyCostAgentApprovalsChanged,
   type CostAgentInvoiceHistory, type CostAgentCompany, type CostAgentVendor, type CostAgentVessel, type CostAgentPort,
   type CostAgentCostItem, type CostAgentCallOption,
 } from '../utils/CostAgentHelpers'
@@ -55,7 +56,7 @@ const initialInfoOpen = (): boolean => {
 const DOT_CLS = { ok: 'bg-[#17663D]', warn: 'bg-[#E0A526]', bad: 'bg-[#A8231A]' }
 type Dot = keyof typeof DOT_CLS | null
 
-export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vendors, vessels, ports, costItems, canEdit, canPay, actor, onClose, onChanged, onToast, onDelete, initialTab, focusLines }: {
+export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vendors, vessels, ports, costItems, canEdit, canPay, actor, onClose, onChanged, onToast, initialTab, focusLines }: {
   invoiceId: number
   companies: CostAgentCompany[]
   vendors: CostAgentVendor[]
@@ -68,7 +69,6 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
   onClose: () => void
   onChanged: () => void // segarkan daftar
   onToast: (msg: string, tone?: 'ok' | 'warn') => void
-  onDelete?: (inv: { id: number; invoice_no: string | null; status: string }) => void // Admin, masa uji coba (sql/056)
   // Dari popover "Needs attention" daftar (Tahap 3a): buka langsung di tab ini, dan sorot baris bernomor ini di tab Cost lines.
   initialTab?: Tab
   focusLines?: number[]
@@ -184,6 +184,16 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
   const [myRoles, setMyRoles] = useState<MyRoles | null>(null)
   useEffect(() => { let alive = true; getMyRoles().then(r => { if (alive) setMyRoles(r) }).catch(() => { /* tab tetap tampil */ }); return () => { alive = false } }, [])
   const showPayments = canSeePaymentsTab(myRoles)
+  // "Voyage route" di grid info: pelabuhan voyage berurutan (fn_cost_agent_get_voyage, butuh hak baca Voyages; gagal = "—", tidak mengganggu).
+  const [voyageRoute, setVoyageRoute] = useState<string | null>(null)
+  const voyageIdForRoute = inv?.voyage_id ?? null
+  useEffect(() => {
+    setVoyageRoute(null)
+    if (!voyageIdForRoute) return
+    let alive = true
+    costAgentGetVoyage(voyageIdForRoute).then(v => { if (alive) setVoyageRoute(voyageRouteText(v?.calls)) }).catch(() => { /* hanya informasi */ })
+    return () => { alive = false }
+  }, [voyageIdForRoute])
   useEffect(() => { if (!showPayments && tab === 'payments') setTab(inv?.status === 'waiting_approval' ? 'approval' : 'lines') }, [showPayments, tab, inv?.status])
   const [reminderDays, setReminderDays] = useState(3)
   useEffect(() => { getReminderAfterDays().then(setReminderDays) }, [])
@@ -202,6 +212,8 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
     catch (e: any) { if (isSodError(e)) onToast(e.message, 'warn'); setVoidErr(e?.message || String(e)) } finally { setVoidBusy(false) }
   }
   const [periodOpen, setPeriodOpen] = useState(false)
+  // Editor periode ada di sel "Period" grid info: dibuka dari tab Documents / lonceng saat grid terlipat -> grid ikut terbuka (tanpa menyimpan pilihan lipat).
+  useEffect(() => { if (periodOpen) setInfoOpen(true) }, [periodOpen])
   const goToLine = (lineNo: number) => {
     const id = data?.lines.find(l => l.line_no === lineNo)?.id
     setTab('lines')
@@ -221,19 +233,16 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
   const allNotes = (inv?.check_notes || []).filter(n => n.type !== 'susulan_mismatch')
   const notesFor = (field: NoteField) => allNotes.filter(n => noteField(n.type) === field)
   const fixHeader = headerEditable && !editHeader ? () => setEditHeader(true) : undefined
-  // 2026-10-23 (sql/071): lines_total = jumlah SEMUA baris termasuk materai; subtotal = biaya TANPA materai. Cocok bila lines_total = subtotal
-  // (data lama, materai belum jadi baris) ATAU subtotal + materai. Toleransi Rp 1 per baris (sen dibuang di database).
-  const linesMismatch = !!inv && inv.lines_total != null && inv.subtotal != null && (() => {
-    const lt = Number(inv.lines_total), st = Number(inv.subtotal), mt = Number(inv.materai || 0)
-    const tol = Math.max(1, (data?.lines.length || 0))
-    return Math.abs(lt - st) > tol && Math.abs(lt - (st + mt)) > tol
-  })()
   // PT kosong (tak bisa ditentukan dari kapal -> catatan company_unknown): Submit nonaktif sampai dipilih di Correct header.
   const companyMissing = !!inv && !inv.company_code
   const call = inv?.voyage_call as any
   const callTz = call?.port_id ? ports.find(p => p.id === call.port_id)?.tz : null
   const activeStep = inv?.status === 'waiting_approval' ? activeApprovalStep(data?.approvals || []) : null
   const iAmApprover = isApproverOf(activeStep, actor)
+  // Rincian status yang digabung ke chip status di header (2026-10-29): waiting_approval = langkah aktif, atau semua approval selesai tapi validasi checker belum; paid = tanggal + ref.
+  const statusDetail: string | null = !inv ? null
+    : inv.status === 'waiting_approval' ? (!activeStep && wf?.validation?.status === 'pending' ? 'all approvals done, waiting for the checker' : activeStep ? `step ${activeStep.step_no}: ${activeStep.approver_label}` : null)
+    : inv.status === 'paid' ? `${fmtDate(inv.paid_at)}${inv.paid_ref ? ` · ref ${inv.paid_ref}` : ''}` : null
   const hasActivePayment = (data?.payments || []).some(p => ['draft', 'submitted', 'posted', 'paid'].includes(p.status))
   // Titik status di tab (tampilan saja).
   const tabDot: Record<Tab, Dot> = {
@@ -264,34 +273,34 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
   return createPortal(
     <div className="fixed inset-0 z-[70] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-3 max-[1600px]:p-2" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[1560px] h-[94vh] max-[1600px]:max-w-none max-[1600px]:h-full flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="px-5 pt-3 pb-0 border-b border-[#EADFD6] shrink-0">
-          {/* Header (2026-10-20, permintaan user): kiri judul, kanan = tombol alert (jumlah catatan) + pensil Correct header + Delete + tutup;
-              baris pil Vessel / Port / Voyage / Description di bawahnya. Nominal (Subtotal/VAT/WHT/Stamp) pindah ke footer. */}
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                {inv?.company_code && <PtBadge code={inv.company_code} />}
-                <h2 className="text-[18px] font-bold text-[#3B1B3D]">{title}</h2>
-                {inv && <span className="text-[12px] font-semibold text-[#6E5E70] px-2 py-0.5 rounded-md bg-[#F3EEEA]">{inv.invoice_no || `#${inv.id}`}</span>}
-                {inv && <StatusChip status={inv.status} />}
-                {inv?.duplicate_of && <Link to={`/cost-agent/invoice/${inv.duplicate_of}`}><Chip tone="red">Duplicate of #{inv.duplicate_of}</Chip></Link>}
-              </div>
-              {inv && <div className="text-[12px] text-[#6E5E70] mt-0.5 flex items-center gap-x-1.5 flex-wrap">
-                <span>Invoice date {fmtDate(inv.invoice_date)} · Service date {fmtDate(inv.service_date)} · Uploaded by {inv.uploaded_by || '—'}</span>
-                <span className="text-[#C9BFCB]">·</span>
-                <InvoicePeriod invoiceId={inv.id} gate={gate.gate} canChange={headerEditable} actor={actor} open={periodOpen} onOpenChange={setPeriodOpen} onToast={onToast}
-                  onSaved={async () => { await gate.recheck(); await reloadData() }} />
-              </div>}
+        {/* Header (2026-10-29, permintaan user: tampilan atas mengikuti gambar referensi): kiri = pil PT + nama vendor besar + status; kanan = Grand total, bilah
+            progres "x/y verified", lonceng alert, pensil Correct header, Delete (Admin), Submit, tutup. No. invoice, kapal, pelabuhan, voyage, periode, dst. ada di grid info di bawahnya. */}
+        <div className="px-5 pt-3 pb-2.5 shrink-0 bg-white">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <div className="min-w-0 flex items-center gap-2 flex-wrap">
+              {inv?.company_code && <PtBadge code={inv.company_code} />}
+              <h2 className="text-[18px] font-bold text-[#3B1B3D] leading-tight [overflow-wrap:anywhere]" title={inv?.invoice_no || undefined}>{title}</h2>
+              {/* Status + rincian dalam SATU chip (2026-10-29, permintaan user): Waiting Approval · step N / semua approval selesai, menunggu checker; Paid · tanggal · ref. */}
+              {inv && (statusDetail
+                ? <Pill tone={INVOICE_STATUS_META[inv.status as keyof typeof INVOICE_STATUS_META]?.tone || 'grey'} title={`${INVOICE_STATUS_META[inv.status as keyof typeof INVOICE_STATUS_META]?.label ?? inv.status} · ${statusDetail}`} className="max-w-full" data-footer-waiting={inv.status === 'waiting_approval' ? '1' : undefined}>
+                    {inv.status === 'waiting_approval' && <Clock size={12} className="shrink-0" />}
+                    <span className="shrink-0">{INVOICE_STATUS_META[inv.status as keyof typeof INVOICE_STATUS_META]?.label ?? inv.status}</span>
+                    <span className="opacity-60" aria-hidden>·</span>
+                    <span className="truncate font-medium">{statusDetail}</span>
+                  </Pill>
+                : <StatusChip status={inv.status} />)}
+              {inv?.duplicate_of && <Link to={`/cost-agent/invoice/${inv.duplicate_of}`}><Chip tone="red">Duplicate of #{inv.duplicate_of}</Chip></Link>}
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {/* Ringkasan verifikasi baris (2026-10-23, permintaan user: pindah dari toolbar Cost lines ke header; tombol Submit tidak lagi
-                  memuat alert). "10/12 not verified" = baris belum diverifikasi / total baris; chip "N without cost item" ikut pindah. */}
+            <div className="flex items-center gap-x-2.5 gap-y-2 flex-wrap" data-header-actions>
+              {inv && <span className="text-[18px] font-bold text-[#3B1B3D] tabular-nums whitespace-nowrap leading-tight" title="Grand total" data-header-total>{fmtMoney(inv.grand_total)}</span>}
+              {/* Bilah progres verifikasi baris (menggantikan chip "N/M not verified"); "N without cost item" tetap sebagai chip merah. */}
               {inv && data && data.lines.length > 0 && (
-                <span className="inline-flex items-center gap-1.5 flex-wrap" data-lines-summary>
-                  <Chip tone={unverified ? 'amber' : 'green'} title={`${unverified} of ${data.lines.length} cost lines not verified`}>
-                    {unverified ? <AlertTriangle size={10} /> : <CheckCircle2 size={10} />}{unverified ? `${unverified}/${data.lines.length} not verified` : 'all verified'}
-                  </Chip>
+                <span className="inline-flex items-center gap-2 flex-wrap" data-lines-summary>
+                  <span className="w-[110px] h-1.5 rounded-full bg-[#EDE5E0] overflow-hidden" role="progressbar" aria-valuemin={0} aria-valuemax={data.lines.length} aria-valuenow={data.lines.length - unverified}
+                    title={`${unverified} of ${data.lines.length} cost lines not verified`}>
+                    <span className="block h-full rounded-full bg-[#17663D] transition-all" style={{ width: `${verifiedPercent(data.lines.length - unverified, data.lines.length)}%` }} />
+                  </span>
+                  <span className="text-[11.5px] font-semibold text-[#6E5E70] whitespace-nowrap">{data.lines.length - unverified}/{data.lines.length} verified</span>
                   {unmapped > 0 && <span data-unmapped-count><Chip tone="red">{unmapped} without cost item</Chip></span>}
                 </span>
               )}
@@ -318,13 +327,49 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
               {headerEditable && !editHeader && (
                 <button type="button" className={`${SA_BTN_OUTLINE} !px-2.5`} onClick={() => setEditHeader(true)} aria-label="Correct header" title="Correct header (vendor, vessel, port call, company)"><Pencil size={13} /></button>
               )}
-              {onDelete && inv && canDeleteInvoice(inv.status) && (
-                <button type="button" className={`${SA_BTN_OUTLINE} text-[#A8231A] hover:border-[#F4C3BC] hover:bg-[#FDE7E4]`} title="Delete this invoice (Admin, trial data)"
-                  onClick={() => onDelete({ id: inv.id, invoice_no: inv.invoice_no, status: inv.status })}><Trash2 size={13} /> Delete</button>
+              {/* Tombol bekas footer (2026-10-29, permintaan user: footer dihapus): Review & decide / Create AP Note / PV / Mark as paid, lalu Submit, Void invoice. */}
+              {inv && inv.status === 'waiting_approval' && (wf ? (wf.me.can_approve || wf.me.can_validate) : iAmApprover && canEdit) && tab !== 'approval' && (
+                <button type="button" className={`${SA_BTN_GREEN} !h-9`} onClick={() => setTab('approval')}><ShieldCheck size={13} /> Review &amp; decide</button>
+              )}
+              {inv && inv.status === 'approved' && canPay && showPayments && !hasActivePayment && (
+                <button type="button" className={`${SA_BTN_GREEN} !h-9`} onClick={() => setShowPay(true)}><Wallet size={13} /> Create AP Note / PV</button>
+              )}
+              {inv && inv.status === 'journal' && canPay && showPayments && tab !== 'payments' && (
+                <button type="button" className={`${SA_BTN_OUTLINE} !h-9`} onClick={() => setTab('payments')}><Wallet size={13} /> Mark as paid</button>
+              )}
+              {editable && (
+                // Submit pindah dari footer ke header (gambar referensi). Belum siap = abu (nonaktif, alasan di tooltip dan di footer); siap = hijau pekat.
+                <button type="button" disabled={busy || !!submitReason} onClick={submit} data-submit-approval
+                  title={submitReason ?? 'Submit for approval'}
+                  className={submitReason
+                    ? 'inline-flex items-center gap-1.5 h-9 px-4 rounded-xl border border-[#D9D1CB] bg-[#EDE8E4] text-[#8A7A8B] text-[13px] font-bold cursor-not-allowed'
+                    : 'inline-flex items-center gap-1.5 h-9 px-4 rounded-xl bg-[#17663D] hover:bg-[#12532F] text-white text-[13px] font-bold shadow-md ring-2 ring-[#17663D]/20 disabled:opacity-60'}>
+                  <Send size={14} /> {busy ? 'Submitting…' : 'Submit'}
+                </button>
+              )}
+              {canVoid && (
+                <button type="button" className={`${SA_BTN_OUTLINE} !h-9 text-[#A8231A] hover:border-[#F4C3BC] hover:bg-[#FDE7E4]`} onClick={() => { setVoidErr(null); setVoidDlg(true) }} data-void-invoice title="Cancel this invoice (a reason is required)"><Ban size={13} /> Void invoice</button>
               )}
               <button type="button" onClick={onClose} aria-label="Close" className={`${SA_BTN_OUTLINE} !px-2.5`}><X size={15} /></button>
             </div>
           </div>
+
+          {/* Baris keterangan di bawah judul (bekas teks footer): alasan Submit belum siap, ringkasan rute approval, error aksi. Status alur & Paid ada di chip status. */}
+          {inv && (actionError || (editable && (submitReason || routeState.route?.matched))) && (
+            <div className="mt-1.5 flex items-center gap-x-3 gap-y-1 flex-wrap text-[12px]" data-header-notes>
+              {actionError && <span className="text-[#A8231A] flex items-center gap-1.5"><AlertTriangle size={13} /> {actionError}</span>}
+              {editable && submitReason && (
+                <span className="font-semibold text-[#7A4F00] inline-flex items-center gap-1.5 min-w-0 max-w-full" data-submit-reason title={submitReason}>
+                  <AlertTriangle size={13} className="shrink-0" /><span className="truncate">{submitReason}</span>
+                </span>
+              )}
+              {editable && !submitReason && routeState.route?.matched && (
+                <span className="text-[11.5px] text-[#6E5E70] truncate max-w-full" title={routeState.route.steps.map(s => `${s.label}${s.mode === 'all' ? ' (all must approve)' : ''}`).join(' → ')} data-route-summary>
+                  Route: {routeState.route.steps.map(s => s.label).join(' → ')}
+                </span>
+              )}
+            </div>
+          )}
 
           {inv && (
             <>
@@ -341,8 +386,21 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
                 onCancel={() => setEditHeader(false)} onSaved={async () => { setEditHeader(false); await reload() }} />}
             </>
           )}
+        </div>
 
-          <div className="flex items-end gap-1.5 mt-2 overflow-x-auto" role="tablist">
+        {/* Strip info = grid info (2026-10-29, gambar referensi): Invoice | Vessel | Port | Voy / Company | Voyage route | TA | TD / tanggal & periode / Description. */}
+        {inv && (
+          <InfoStrip inv={inv} open={infoOpen} onToggle={toggleInfo} vesselWarn={notesFor('vessel').length > 0} portWarn={notesFor('port').length > 0}
+            voyageWarn={notesFor('voyage').length > 0} call={call} callTz={callTz}
+            companyName={companies.find(c => c.code === inv.company_code)?.name || inv.company_code || '—'} voyageRoute={voyageRoute}
+            period={<InvoicePeriod bare invoiceId={inv.id} gate={gate.gate} canChange={headerEditable} actor={actor} open={periodOpen} onOpenChange={setPeriodOpen} onToast={onToast}
+              onSaved={async () => { await gate.recheck(); await reloadData() }} />}
+            description={<InvoiceDescription inv={inv} editable={headerEditable} actor={actor} onSaved={reload} onToast={onToast} />} />
+        )}
+
+        {/* Tab (di bawah strip info) */}
+        <div className="px-5 pt-1.5 border-b border-[#EADFD6] bg-white shrink-0">
+          <div className="flex items-end gap-1.5 overflow-x-auto" role="tablist">
             {([['lines', `Cost lines${data ? ` (${data.lines.length})` : ''}`], ['documents', `Documents & Tax${data?.tax_checks.length ? ` (${data.tax_checks.length})` : ''}`],
               ['approval', `Approval${iAmApprover ? ' •' : ''}`], ['payments', `Payments${data?.payments.length ? ` (${data.payments.length})` : ''}`], ['timeline', 'Timeline']] as [Tab, string][]).filter(([k]) => k !== 'payments' || showPayments).map(([k, label]) => (
               <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
@@ -353,13 +411,6 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
             ))}
           </div>
         </div>
-
-        {/* Strip info (2026-10-20, permintaan user "cantikkan" -- pola Shipment Info panel Validation Courier): latar ungu muda, sel berlabel. */}
-        {inv && (
-          <InfoStrip inv={inv} open={infoOpen} onToggle={toggleInfo} vesselWarn={notesFor('vessel').length > 0} portWarn={notesFor('port').length > 0}
-            voyageWarn={notesFor('voyage').length > 0} call={call} callTz={callTz}
-            description={<InvoiceDescription inv={inv} editable={headerEditable} actor={actor} onSaved={reload} onToast={onToast} />} />
-        )}
 
         {/* Body */}
         <div className="flex-1 min-h-0 overflow-hidden bg-[#FBF7F4]">
@@ -466,60 +517,6 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
           )}
         </div>
 
-        {/* Footer aksi */}
-        {inv && (
-          <div className="px-5 py-2.5 border-t border-[#EADFD6] bg-[#FBF7F4] flex items-center gap-3 flex-wrap shrink-0">
-            <AmountsBar inv={inv} editable={headerEditable} bad={linesMismatch} warn={notesFor('total').length > 0} actor={actor} onSaved={reload} onToast={onToast} />
-            {actionError && <span className="text-[12.5px] text-[#A8231A] flex items-center gap-1.5"><AlertTriangle size={13} /> {actionError}</span>}
-            {inv.status === 'waiting_approval' && (
-              // Semua level sudah approve tetapi validasi checker belum: jangan tulis "Waiting for approval" (2026-10-29, permintaan user). Chip berikon, satu baris, memotong bila sempit.
-              <span className="inline-flex items-center gap-1.5 h-7 px-3 rounded-full bg-[#EFE7F7] text-[#5B2E8C] text-[12px] font-semibold min-w-0 max-w-full" data-footer-waiting
-                title={!activeStep && wf?.validation?.status === 'pending' ? 'All approvals done — waiting for the checker to validate.' : undefined}>
-                <Clock size={12} className="shrink-0" />
-                <span className="truncate">{!activeStep && wf?.validation?.status === 'pending'
-                  ? 'All approvals done — waiting for the checker to validate'
-                  : <>Waiting for approval{activeStep ? ` — step ${activeStep.step_no}: ${activeStep.approver_label}` : ''}</>}</span>
-              </span>
-            )}
-            {inv.status === 'paid' && <span className="inline-flex items-center gap-1.5 h-7 px-3 rounded-full bg-[#EAF6EF] text-[#17663D] text-[12px] font-semibold"><CheckCircle2 size={12} className="shrink-0" /> Paid {fmtDate(inv.paid_at)}{inv.paid_ref ? ` · ref ${inv.paid_ref}` : ''}</span>}
-            <div className="ml-auto flex items-center gap-2">
-              {inv.status === 'waiting_approval' && (wf ? (wf.me.can_approve || wf.me.can_validate) : iAmApprover && canEdit) && tab !== 'approval' && (
-                <button type="button" className={SA_BTN_GREEN} onClick={() => setTab('approval')}><ShieldCheck size={13} /> Review &amp; decide</button>
-              )}
-              {inv.status === 'approved' && canPay && showPayments && !hasActivePayment && (
-                <button type="button" className={SA_BTN_GREEN} onClick={() => setShowPay(true)}><Wallet size={13} /> Create AP Note / PV</button>
-              )}
-              {inv.status === 'journal' && canPay && showPayments && tab !== 'payments' && (
-                <button type="button" className={SA_BTN_OUTLINE} onClick={() => setTab('payments')}><Wallet size={13} /> Mark as paid</button>
-              )}
-              {editable && submitReason && (
-                <span className="text-[12px] font-semibold text-[#7A4F00] inline-flex items-center gap-1.5 max-w-[360px] max-md:max-w-full" data-submit-reason title={submitReason}>
-                  <AlertTriangle size={13} className="shrink-0" /><span className="truncate">{submitReason}</span>
-                </span>
-              )}
-              {editable && !submitReason && routeState.route?.matched && (
-                <span className="text-[11.5px] text-[#6E5E70] max-w-[300px] truncate max-md:hidden" title={routeState.route.steps.map(s => `${s.label}${s.mode === 'all' ? ' (all must approve)' : ''}`).join(' → ')} data-route-summary>
-                  Route: {routeState.route.steps.map(s => s.label).join(' → ')}
-                </span>
-              )}
-              {editable && (
-                // 2026-10-23 (permintaan user): tombol TANPA alert (ringkasan "N/M not verified" ada di header). Belum siap = abu (nonaktif,
-                // alasan di tooltip); siap = hijau pekat. (2026-10-16: dulu kotak kuning dgn chip alasan di dalam tombol.)
-                <button type="button" disabled={busy || !!submitReason} onClick={submit} data-submit-approval
-                  title={submitReason ?? undefined}
-                  className={submitReason
-                    ? 'inline-flex items-center gap-2 h-10 px-5 rounded-xl border border-[#D9D1CB] bg-[#EDE8E4] text-[#8A7A8B] text-[13px] font-bold cursor-not-allowed'
-                    : 'inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-[#17663D] hover:bg-[#12532F] text-white text-[13px] font-bold shadow-md ring-2 ring-[#17663D]/20 disabled:opacity-60'}>
-                  <Send size={15} /> {busy ? 'Submitting…' : 'Submit for approval'}
-                </button>
-              )}
-              {canVoid && (
-                <button type="button" className={`${SA_BTN_OUTLINE} text-[#A8231A] hover:border-[#F4C3BC] hover:bg-[#FDE7E4]`} onClick={() => { setVoidErr(null); setVoidDlg(true) }} data-void-invoice title="Cancel this invoice (a reason is required)"><Ban size={13} /> Void invoice</button>
-              )}
-              <button type="button" className={SA_BTN_PRIMARY} onClick={onClose}>Close</button>
-            </div>
-          </div>
-        )}
         {voidDlg && <ReasonDialog title="Void invoice" label="Reason" confirmLabel="Void invoice" danger busy={voidBusy} error={voidErr} onConfirm={doVoid} onClose={() => setVoidDlg(false)}
           notice="The invoice is cancelled and leaves the approval flow. This cannot be undone." />}
       </div>
@@ -561,25 +558,12 @@ const noteField = (type: string | undefined): NoteField => NOTE_FIELD[type || ''
 // Catatan yg bisa dibereskan lewat Correct header (vendor/kapal/pelabuhan/voyage).
 const FIXABLE_NOTES = new Set(['vendor_unknown', 'vessel_unknown', 'vessel_fuzzy', 'port_unknown', 'voyage_unmatched', 'company_unknown'])
 
-function InfoBubble({ label, children, warn, title, money, bad, small, action, muted }: {
-  label: string; children: React.ReactNode; warn?: boolean; title?: string; money?: boolean; bad?: boolean; small?: boolean; action?: React.ReactNode; muted?: boolean
-}) {
-  // v2 (2026-10-16, permintaan user): label polos di atas, bubble (pill) HANYA membungkus isian.
-  warn = warn || bad
-  return (
-    <div className="min-w-0" title={title} data-bubble={label}>
-      <div className={`${SA_LABEL} mb-0.5 pl-1`}>{label}</div>
-      <div className={`inline-block max-w-full rounded-full border ${small ? 'px-2.5 text-[11.5px]' : 'px-3'} py-0.5 whitespace-nowrap leading-snug ${warn ? 'border-[#F2D58A] bg-[#FFFBF0]' : 'border-[#EADFD6] bg-[#FBF7F4]'} ${money ? 'tabular-nums' : 'font-medium'} ${bad ? 'text-[#A8231A] font-semibold' : muted ? 'text-[#8A7A8B]' : 'text-[#3B1B3D]'}`} data-bubble-value>{children}{action}</div>
-    </div>
-  )
-}
-
-// Sel strip info (pola InfoCell panel Validation Courier). `warn` = ada catatan check_notes untuk field ini.
+// Sel grid info (2026-10-29, gambar referensi): kotak putih, label kecil huruf besar abu di atas, isi tebal di bawah. `warn` = ada catatan check_notes untuk field ini.
 function InfoCell({ label, children, warn, title, extra, className = '', ...rest }: {
   label: string; children: React.ReactNode; warn?: boolean; title?: string; extra?: React.ReactNode; className?: string
 } & Record<`data-${string}`, string | undefined>) {
   return (
-    <div className={`min-w-0 px-2.5 py-1.5 ${warn ? 'bg-[#FFFBF0]' : 'bg-[#FCF8FB]'} ${className}`} title={title} data-cell={label} {...rest}>
+    <div className={`min-w-0 px-2.5 py-1.5 ${warn ? 'bg-[#FFFBF0]' : 'bg-white'} ${className}`} title={title} data-cell={label} {...rest}>
       <div className="flex items-center gap-1.5 mb-1">
         <p className="text-[9.5px] font-semibold uppercase tracking-[0.07em] text-[#8A7A8B] leading-none">{label}</p>
         {warn && <AlertTriangle size={10} className="text-[#B7791F]" />}
@@ -590,21 +574,22 @@ function InfoCell({ label, children, warn, title, extra, className = '', ...rest
   )
 }
 
-// Strip info di bawah header modal: Vessel / Port / Voyage · port call / Description. Bisa dilipat jadi 1 baris ringkas.
-function InfoStrip({ inv, open, onToggle, vesselWarn, portWarn, voyageWarn, call, callTz, description }: {
+// Grid info di bawah header modal (gambar referensi 2026-10-29): Invoice | Vessel | Port | Voy / Company | Voyage route | TA (Arrival) | TD (Departure) / Invoice date | Service date | Period |
+// Uploaded by / Description. Bisa dilipat jadi 1 baris ringkas ("Hide full info" / "Show all info").
+function InfoStrip({ inv, open, onToggle, vesselWarn, portWarn, voyageWarn, call, callTz, description, companyName, voyageRoute, period }: {
   inv: CostAgentInvoiceHistory['invoice']; open: boolean; onToggle: () => void; vesselWarn: boolean; portWarn: boolean; voyageWarn: boolean
-  call: any; callTz: string | null | undefined; description: React.ReactNode
+  call: any; callTz: string | null | undefined; description: React.ReactNode; companyName: string; voyageRoute: string | null; period: React.ReactNode
 }) {
   const bad = (t: string) => <span className="text-[#A8231A]">{t}</span>
   const vessel = inv.vessel_name || bad(`${inv.vessel_name_raw || '—'} (unmatched)`)
   const port = inv.port_code ? `${inv.port_code} — ${inv.port_name}` : bad(`${inv.port_name_raw || '—'} (unmatched)`)
   const voyage = inv.voyage ? `Voy ${(inv.voyage as any).voyage_no}` : bad(inv.voyage_no_raw ? `Voy ${inv.voyage_no_raw} (unmatched)` : 'Not matched')
-  const callText = call ? `${fmtDateTimeCompact(call.arrived_at, callTz)} → ${fmtDateTimeCompact(call.departed_at, callTz)} ${tzAbbrev(callTz)}` : null
-  const callTitle = call ? `${fmtDateTimePort(call.arrived_at, callTz)} → ${fmtDateTimePort(call.departed_at, callTz)}` : undefined
+  const at = (iso: string | null | undefined) => (call && iso ? `${fmtDateTimeCompact(iso, callTz)} ${tzAbbrev(callTz)}` : '—')
   return (
-    <div className="shrink-0 px-3 py-2 bg-[#F5EDF3] border-b border-[#D9C7DA] @container" data-header-info>
+    <div className="shrink-0 px-3 py-2 bg-[#F5EDF3] border-t border-[#EADFD6] @container" data-header-info>
       {!open ? (
         <div className="flex items-center gap-x-4 gap-y-1 flex-wrap text-[11.5px]" data-info-collapsed>
+          <span className="min-w-0"><span className="text-[#8A7A8B]">Invoice </span><b className="text-[#3B1B3D]">{inv.invoice_no || `#${inv.id}`}</b></span>
           <span className="min-w-0"><span className="text-[#8A7A8B]">Vessel </span><b className="text-[#3B1B3D]">{vessel}</b></span>
           <span className="min-w-0"><span className="text-[#8A7A8B]">Port </span><b className="text-[#3B1B3D]">{port}</b></span>
           <span className="min-w-0"><span className="text-[#8A7A8B]">Voyage </span><b className="text-[#3B1B3D]">{voyage}</b></span>
@@ -616,35 +601,31 @@ function InfoStrip({ inv, open, onToggle, vesselWarn, portWarn, voyageWarn, call
         <>
           <div className="flex justify-end mb-1">
             <button type="button" onClick={onToggle} className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#6B3470] hover:underline">
-              Hide info <ChevronUp size={13} />
+              Hide full info <ChevronUp size={13} />
             </button>
           </div>
-          <div className="rounded-[12px] border border-[#D9C7DA] overflow-hidden">
-            <div className="grid grid-cols-2 @4xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.5fr)] gap-px bg-[#E4D3E2]" data-header-bubbles>
+          <div className="rounded-[12px] border border-[#D9C7DA] overflow-hidden bg-white">
+            <div className="grid grid-cols-2 @4xl:grid-cols-4 gap-px bg-[#EADFD6]" data-header-bubbles>
+              <InfoCell label="Invoice" title={inv.invoice_no || undefined}>{inv.invoice_no || `#${inv.id}`}</InfoCell>
               <InfoCell label="Vessel" warn={vesselWarn}
                 title={[inv.vessel_name || inv.vessel_name_raw, inv.vessel_type, inv.vessel_dwt ? `DWT ${fmtNumber(inv.vessel_dwt, 0)}` : null].filter(Boolean).join(' · ')}>
                 {vessel}{inv.vessel_dwt ? <span className="text-[#6E5E70] font-normal"> · DWT {fmtNumber(inv.vessel_dwt, 0)}</span> : null}
               </InfoCell>
               <InfoCell label="Port" warn={portWarn} title={inv.port_name || inv.port_name_raw || undefined}>{port}</InfoCell>
-              <InfoCell label="Voyage · port call" warn={voyageWarn} title={callTitle} className="col-span-2 @4xl:col-span-1">
-                {voyage}{callText && <span className="text-[#6E5E70] font-normal"> · {callText}</span>}
-              </InfoCell>
+              <InfoCell label="Voy" warn={voyageWarn}>{voyage}</InfoCell>
+              <InfoCell label="Company" title={companyName}>{companyName}</InfoCell>
+              <InfoCell label="Voyage route" title="Ports of the voyage in order (activity: L = loading, D = discharging)">{voyageRoute ?? <span className="text-[#8A7A8B] font-normal">—</span>}</InfoCell>
+              <InfoCell label="TA (Arrival)" warn={voyageWarn} title={call ? fmtDateTimePort(call.arrived_at, callTz) : undefined}>{at(call?.arrived_at)}</InfoCell>
+              <InfoCell label="TD (Departure)" warn={voyageWarn} title={call ? fmtDateTimePort(call.departed_at, callTz) : undefined}>{at(call?.departed_at)}</InfoCell>
+              <InfoCell label="Invoice date">{fmtDate(inv.invoice_date)}</InfoCell>
+              <InfoCell label="Service date">{fmtDate(inv.service_date)}</InfoCell>
+              <InfoCell label="Period">{period}</InfoCell>
+              <InfoCell label="Uploaded by">{inv.uploaded_by || '—'}</InfoCell>
               {description}
             </div>
           </div>
         </>
       )}
-    </div>
-  )
-}
-
-// Grand total (2026-10-29, permintaan user: footer dirapikan): label di atas dan angka sebaris dengan bubble Cost lines / VAT / WHT (struktur label-atas-isian-bawah SAMA),
-// dipisah garis tipis dari kelompok bubble.
-function GrandTotal({ value }: { value: string }) {
-  return (
-    <div className="min-w-0 border-l border-[#E4D3E2] pl-4 ml-1 whitespace-nowrap" data-grand-total>
-      <div className={`${SA_LABEL} mb-0.5`}>Grand total</div>
-      <div className="text-[17px] leading-[22px] font-extrabold text-[#3B2260] tabular-nums">{value}</div>
     </div>
   )
 }
@@ -691,76 +672,6 @@ function AlertsButton({ notes, inv, onFix, count, extra }: {
           {extra?.(() => setOpen(false))}
         </div>
       )}
-    </div>
-  )
-}
-
-// Footer nominal (2026-10-23, sql/071): urutan Cost lines (incl. stamp duty) = lines_total | VAT = ppn | VAT not collected = ppn_not_collected (abu-abu, hanya bila > 0,
-// "Already deducted from VAT") | WHT = pph | Grand total. Bea materai BUKAN lagi kelompok pajak: ia baris biasa (cost item MATERAI) dan sudah ada di Cost lines.
-// Pensil -> VAT & WHT bisa diubah (fn_cost_agent_update_invoice_amounts, sql/069; subtotal & materai dikirim apa adanya); Grand total = subtotal + VAT + materai - WHT
-// (dihitung server, pratinjau live saat edit). Semua nominal rupiah bulat tanpa desimal.
-function AmountsBar({ inv, editable, bad, warn, actor, onSaved, onToast }: {
-  inv: CostAgentInvoiceHistory['invoice']; editable: boolean; bad: boolean; warn: boolean; actor: string | null
-  onSaved: () => Promise<void> | void; onToast: (msg: string, tone?: 'ok' | 'warn') => void
-}) {
-  const [editing, setEditing] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [f, setF] = useState({ ppn: '', pph: '' })
-  const start = () => {
-    const v = (n: number | null) => (n == null ? '' : String(Math.trunc(Number(n))))
-    setF({ ppn: v(inv.ppn), pph: v(inv.pph) }); setError(null); setEditing(true)
-  }
-  const num = (t: string) => (t.trim() === '' ? 0 : Number(t))
-  const subtotalFixed = inv.subtotal == null ? null : Number(inv.subtotal)
-  const materaiFixed = Number(inv.materai || 0)
-  const valid = subtotalFixed != null && Number.isFinite(subtotalFixed) && [f.ppn, f.pph].every(t => Number.isFinite(num(t)) && num(t) >= 0)
-  const preview = (subtotalFixed ?? 0) + num(f.ppn) + materaiFixed - num(f.pph)
-  const save = async () => {
-    if (!valid) { setError('Amounts cannot be negative.'); return }
-    setBusy(true); setError(null)
-    try {
-      await costAgentUpdateInvoiceAmounts({ invoiceId: inv.id, subtotal: subtotalFixed as number, ppn: num(f.ppn), pph: num(f.pph), materai: materaiFixed, actor })
-      setEditing(false); await onSaved(); onToast('Amounts saved.')
-    } catch (e: any) { setError(e.message || String(e)) } finally { setBusy(false) }
-  }
-  const linesBubble = (
-    <InfoBubble label="Cost lines (incl. stamp duty)" money small warn={warn} bad={bad}
-      title={bad ? `Cost lines total ${fmtMoney(inv.lines_total)} differs from the subtotal (+ stamp duty)` : 'Sum of all cost lines, including stamp duty'}>{fmtMoney(inv.lines_total)}</InfoBubble>
-  )
-  if (editing) {
-    const fields: [keyof typeof f, string][] = [['ppn', 'VAT'], ['pph', 'WHT']]
-    return (
-      <div className="flex flex-wrap items-end gap-2" data-amounts-edit>
-        {linesBubble}
-        {fields.map(([k, label]) => (
-          <div key={k}>
-            <div className={`${SA_LABEL} mb-0.5 pl-1`}>{label}</div>
-            <input type="number" min={0} step={1} inputMode="numeric" className={`${SA_INPUT} w-[130px] tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`} value={f[k]} disabled={busy} aria-label={label}
-              onChange={e => setF(p => ({ ...p, [k]: e.target.value.includes('.') ? e.target.value.split('.')[0] : e.target.value }))}
-              onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); setEditing(false) } }} />
-          </div>
-        ))}
-        <GrandTotal value={fmtMoney(valid ? preview : null)} />
-        <button type="button" className={SA_BTN_OUTLINE} disabled={busy} onClick={() => setEditing(false)}>Cancel</button>
-        <button type="button" className={SA_BTN_PRIMARY} disabled={busy || !valid} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
-        {error && <span className="basis-full text-[12px] text-[#A8231A]">{error}</span>}
-      </div>
-    )
-  }
-  const notCollected = Number(inv.ppn_not_collected || 0)
-  return (
-    <div className="flex flex-wrap items-end gap-x-3 gap-y-1.5" data-header-amounts>
-      {linesBubble}
-      <InfoBubble label="VAT" money small>{fmtMoney(inv.ppn)}</InfoBubble>
-      {notCollected > 0 && (
-        <InfoBubble label="VAT not collected" money small muted title="Already deducted from VAT">{fmtMoney(notCollected)}</InfoBubble>
-      )}
-      <InfoBubble label="WHT" money small>{fmtMoney(inv.pph)}</InfoBubble>
-      {editable && (
-        <button type="button" onClick={start} aria-label="Edit amounts" title="Edit VAT / WHT" className="mb-0.5 p-1.5 rounded-lg text-[#6B3470] hover:bg-[#F5EDF3]"><Pencil size={13} /></button>
-      )}
-      <GrandTotal value={fmtMoney(inv.grand_total)} />
     </div>
   )
 }
@@ -1034,7 +945,7 @@ function InvoiceDescription({ inv, editable, actor, onSaved, onToast }: {
   }
   return (
     // 2026-10-20 (permintaan user "cantikkan"): jadi sel strip info (InfoCell) -- label + badge Auto/Edited di atas, isi di bawah.
-    <InfoCell label="Description" className="col-span-2 @4xl:col-span-1" data-invoice-description="true"
+    <InfoCell label="Description" className="col-span-2 @4xl:col-span-4" data-invoice-description="true"
       extra={<>
         <span className={`px-1.5 py-[1px] rounded text-[10px] font-bold normal-case tracking-normal leading-none ${auto ? 'bg-[#EEF1FA] text-[#2F4FA8]' : 'bg-[#F5EDF3] text-[#6B3470]'}`} data-description-badge>{auto ? 'Auto' : 'Edited'}</span>
         {editable && !auto && (

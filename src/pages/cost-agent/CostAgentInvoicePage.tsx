@@ -304,7 +304,7 @@ export default function CostAgentInvoicePage() {
         // key per invoice -- state modal bersih saat pindah invoice (mis. link "Duplicate of #id").
         <React.Fragment key={openId}><CostAgentInvoiceReviewModal invoiceId={openId} companies={companies} vendors={vendors} vessels={vessels} ports={ports}
           costItems={costItems} canEdit={canEditInvoice} canPay={canPay} actor={actor} onClose={closeInvoice} onChanged={() => fetchList(true)}
-          onToast={showToast} onDelete={canDelete ? deleteInvoice : undefined}
+          onToast={showToast}
           initialTab={openAt?.id === openId ? openAt.tab : undefined} focusLines={openAt?.id === openId ? openAt.lines : undefined} /></React.Fragment>
       )}
       {confirmDelete && (

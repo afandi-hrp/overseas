@@ -98,3 +98,19 @@ test('Akses ditolak karena peran dikenali (jatuh ke baca gerbang); error lain ti
   assert.equal(isAccessDeniedError(new Error('SoD: the person who submitted this invoice cannot validate it')), false)
   assert.equal(isAccessDeniedError(null), false)
 })
+
+// ─── Bagian atas modal detail invoice ────────────────────────────────────────────────────────────────────────────
+import { verifiedPercent, voyageRouteText } from './CostAgentInvoiceHeader'
+test('Voyage route: urut seq, kode pelabuhan + aktivitas; kosong -> null', () => {
+  assert.equal(voyageRouteText([{ seq: 2, port_code: 'MLH', activity: 'D' }, { seq: 1, port_code: 'PAD', activity: 'L' }]), 'PAD (L) → MLH (D)')
+  assert.equal(voyageRouteText([{ seq: 1, port_code: 'BLW', activity: null }, { seq: 2, port_code: '' }]), 'BLW')
+  assert.equal(voyageRouteText([]), null)
+  assert.equal(voyageRouteText(undefined), null)
+})
+test('Bilah progres verified: persen dibulatkan, batas 0..100, total 0 -> 0', () => {
+  assert.equal(verifiedPercent(7, 12), 58)
+  assert.equal(verifiedPercent(12, 12), 100)
+  assert.equal(verifiedPercent(0, 12), 0)
+  assert.equal(verifiedPercent(5, 0), 0)
+  assert.equal(verifiedPercent(20, 12), 100)
+})

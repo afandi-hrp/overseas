@@ -191,7 +191,8 @@ export function PeriodCheckCard({ gate }: { gate: DocGate | null }) {
 }
 
 // ─── Periode invoice di header (tampil + pensil) ────────────────────────────────────────────────────────────────
-export function InvoicePeriod({ invoiceId, gate, canChange, actor, open, onOpenChange, onSaved, onToast }: {
+export function InvoicePeriod({ invoiceId, gate, canChange, actor, open, onOpenChange, onSaved, onToast, bare = false }: {
+  bare?: boolean // true = tanpa awalan "Period:" (dipakai di sel berlabel "Period" pada grid info modal)
   invoiceId: number
   gate: DocGate | null
   canChange: boolean // canEdit && status verification / rejected / failed
@@ -232,8 +233,8 @@ export function InvoicePeriod({ invoiceId, gate, canChange, actor, open, onOpenC
   return (
     <span className="inline-flex items-center gap-1 flex-wrap" data-invoice-period>
       {has
-        ? <span title={p?.source ? PERIOD_SOURCE_TEXT[p.source] : undefined}>Period: <b className="text-[#3B1B3D]">{fmtDate(p?.from)} - {fmtDate(p?.to)}</b></span>
-        : <span title="The gate needs the invoice period (arrival – departure)"><Chip tone="amber">Period: not set</Chip></span>}
+        ? <span title={p?.source ? PERIOD_SOURCE_TEXT[p.source] : undefined}>{bare ? null : 'Period: '}<b className="text-[#3B1B3D]">{fmtDate(p?.from)} - {fmtDate(p?.to)}</b></span>
+        : <span title="The gate needs the invoice period (arrival – departure)"><Chip tone="amber">{bare ? 'Not set' : 'Period: not set'}</Chip></span>}
       {pencil}
       {open && canChange && (
         <span className="inline-flex items-center gap-1.5 flex-wrap ml-1 px-2 py-1 rounded-lg bg-white border border-[#EADFD6]">
