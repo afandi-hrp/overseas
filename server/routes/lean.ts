@@ -28,7 +28,7 @@ const NOON_PATHS: RegExp[] = [
 const ODATA_PATHS: RegExp[] = [
   /^$/,
   /^\$metadata$/,
-  /^(AP_Suppliers|IC_InventoryUsers|IC_InventoryUsers_Fleet|FI_ExpenseTypes|FI_ExpenseTypes_Account)(\([\w.'-]{1,64}\))?$/,
+  /^(AP_Suppliers|IC_InventoryUsers|IC_InventoryUsers_Fleet|FI_ExpenseTypes|FI_ExpenseTypes_Account|AC_Accounts)(\([\w.'-]{1,64}\))?$/,
 ];
 
 async function forward(req: express.Request, res: express.Response, prefix: string, allowed: RegExp[], odata = false) {

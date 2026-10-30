@@ -1,4 +1,4 @@
-// Tab "Vessel (Ascend)", "Supplier (Ascend)", "Expense Type (Ascend)" hub Cost Agent Settings (2026-10-27) -- master data Ascend (SQL Server)
+// Tab "Vessel (Ascend)", "Supplier (Ascend)", "COA (Ascend)" hub Cost Agent Settings (2026-10-27) -- master data Ascend (SQL Server)
 // yang dibaca READ-ONLY lewat lean-api OData: browser -> /api/lean/odata/* (server/routes/lean.ts, X-Api-Key diisi server) -> lean-api /odata.
 // Kolom TIDAK ditulis manual: daftar kolom dari $metadata lean-api, user boleh memilih kolom yang tampil (dikirim sbg $select).
 // Setiap panggilan WAJIB membawa ?database= (13 database Ascend); pilihan terakhir diingat di localStorage.
@@ -56,6 +56,7 @@ const TEST_DB = /_T(EST|SET)$/
 
 // Tab Supplier: database dikunci ke AS_MJS (dropdown disabled) & kolom tetap 3.
 const SUPPLIER_COLS = ['SupplierID', 'SupplierCode', 'SupplierName']
+const COA_COLS = ['AccountID', 'AccountCode', 'AccountName', 'IsDisabled']
 
 function AscendTable({ ctx, entity, label, noun, fixedCols, noTest, fixedDb }: { ctx: HubCtx; entity: string; label: string; noun: string; fixedCols?: string[]; noTest?: boolean; fixedDb?: string }) {
   const dbs = useMemo(() => (fixedDb ? [fixedDb] : noTest ? DATABASES.filter(d => !TEST_DB.test(d)) : DATABASES), [noTest, fixedDb])
@@ -75,7 +76,8 @@ function AscendTable({ ctx, entity, label, noun, fixedCols, noTest, fixedDb }: {
   const meta = useAsync(() => getMeta(database), [database])
   const ent = meta.data?.entities[entity]
   const allCols = ent?.columns ?? []
-  const hasDisabled = allCols.some(c => c.name === 'Disabled')
+  const disabledCol = allCols.find(c => c.name === 'Disabled' || c.name === 'IsDisabled')?.name
+  const hasDisabled = !!disabledCol
   // Kolom tetap yang tidak ada di metadata entity dibuang (hindari $select error); sebelum meta termuat tetap daftar penuh.
   const cols = useMemo(() => (fixedCols ? (allCols.length ? fixedCols.filter(c => allCols.some(a => a.name === c)) : fixedCols) : picked ?? defaultColumns(allCols, ent?.key ?? [])), [fixedCols, picked, allCols, ent])
   const colsKey = cols.join(',')
@@ -90,7 +92,7 @@ function AscendTable({ ctx, entity, label, noun, fixedCols, noTest, fixedDb }: {
       database, $select: colsKey, $top: String(HUB_PAGE_SIZE), $skip: String((page - 1) * HUB_PAGE_SIZE), $count: 'true',
     }
     if (q) params.$search = q
-    if (hasDisabled && status) params.$filter = `Disabled eq ${status === 'disabled'}`
+    if (hasDisabled && status) params.$filter = `${disabledCol} eq ${status === 'disabled'}`
     if (sort) params.$orderby = `${sort.col} ${sort.dir}`
     const r = await odata<{ value: Row[]; '@odata.count'?: number }>(entity, params)
     return { rows: r.value, total: r['@odata.count'] ?? r.value.length }
@@ -162,4 +164,5 @@ function AscendTable({ ctx, entity, label, noun, fixedCols, noTest, fixedDb }: {
 
 export function VesselAscendTab({ ctx }: { ctx: HubCtx }) { return <AscendTable ctx={ctx} entity="IC_InventoryUsers_Fleet" label="IC_InventoryUsers + Fleet" noun="vessels / inventory users" fixedCols={VESSEL_COLS} noTest /> }
 export function SupplierAscendTab({ ctx }: { ctx: HubCtx }) { return <AscendTable ctx={ctx} entity="AP_Suppliers" label="AP_Suppliers" noun="suppliers" fixedCols={SUPPLIER_COLS} fixedDb="AS_MJS" /> }
-export function ExpenseTypeAscendTab({ ctx }: { ctx: HubCtx }) { return <AscendTable ctx={ctx} entity="FI_ExpenseTypes_Account" label="FI_ExpenseTypes + AC_Accounts" noun="expense types" fixedCols={['ExpenseTypeID', 'ExpenseTypeDescription', 'AccountName', 'Disabled']} /> }
+// Tab COA: tabel AC_Accounts (kolom dari katalog lean-api; kolom tetap yang tak ada di metadata dibuang). Flag nonaktif bernama IsDisabled.
+export function CoaAscendTab({ ctx }: { ctx: HubCtx }) { return <AscendTable ctx={ctx} entity="AC_Accounts" label="AC_Accounts" noun="accounts" fixedCols={COA_COLS} /> }

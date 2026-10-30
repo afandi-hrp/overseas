@@ -29,7 +29,7 @@ const TABS: { key: string; label: string; Comp: React.LazyExoticComponent<TabCom
   { key: 'settings', label: 'Settings', Comp: lazy(() => import('./settings/SettingsTab')) },
   { key: 'ascend-vessel', label: 'Vessel (Ascend)', Comp: lazy(() => import('./settings/AscendTab').then(m => ({ default: m.VesselAscendTab }))) },
   { key: 'ascend-supplier', label: 'Supplier (Ascend)', Comp: lazy(() => import('./settings/AscendTab').then(m => ({ default: m.SupplierAscendTab }))) },
-  { key: 'ascend-expense-type', label: 'Expense Type (Ascend)', Comp: lazy(() => import('./settings/AscendTab').then(m => ({ default: m.ExpenseTypeAscendTab }))) },
+  { key: 'ascend-coa', label: 'COA (Ascend)', Comp: lazy(() => import('./settings/AscendTab').then(m => ({ default: m.CoaAscendTab }))) },
 ]
 
 export default function CostAgentApprovalMatrixPage() {

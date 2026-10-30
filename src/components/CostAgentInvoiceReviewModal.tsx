@@ -18,6 +18,7 @@ import { noteText, noteMsg } from '../utils/CostAgentNotes'
 import CostAgentApprovalPanel from './CostAgentApprovalPanel'
 import CostAgentPaymentsPanel from './CostAgentPaymentsPanel'
 import CostAgentFinanceMappingCard from './CostAgentFinanceMappingCard'
+import CostAgentApNoteDraftCard from './CostAgentApNoteDraftCard'
 import { DocGateBanner, InvoicePeriod, useInvoiceGate, verifyBlockReason } from './CostAgentDocGate'
 import { DOC_GATE_TOAST, isDocGateError } from '../utils/CostAgentGate'
 import { CheckerPanel, ReasonDialog, WorkflowStepper, useInvoiceWorkflow } from './CostAgentWorkflow'
@@ -484,6 +485,11 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
                     if (lineId !== null) setTimeout(() => document.querySelector(`[data-line-id="${lineId}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 150)
                   }} />
               </div>
+              {['approved', 'journal', 'paid'].includes(data.invoice.status) && (
+                <div className="px-4 pt-6 -mb-2">
+                  <CostAgentApNoteDraftCard invoiceId={data.invoice.id} invoiceStatus={data.invoice.status} canEdit={canPay} actor={actor} onToast={onToast} />
+                </div>
+              )}
               <CostAgentPaymentsPanel data={data} canPay={canPay} actor={actor} onCreate={() => setShowPay(true)}
                 onChanged={async msg => { await reload(); if (msg) onToast(msg) }} />
             </div>

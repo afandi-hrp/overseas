@@ -12,6 +12,8 @@ export const TABLE_WHITELIST: Record<string, DbOp[]> = {
   bunker_dokumen: ['delete', 'select', 'update'],
   bunker_processing_queue: ['delete', 'select'],
   cost_agent_approval_matrix: ['delete', 'insert', 'select', 'update'],
+  cost_agent_apnote_draft_lines: ['delete', 'insert', 'select', 'update'],
+  cost_agent_apnote_drafts: ['delete', 'insert', 'select', 'update'],
   cost_agent_approvals: ['select'],
   cost_agent_invoice_documents: ['select'],
   cost_agent_invoice_list_v: ['select'],

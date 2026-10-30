@@ -927,6 +927,11 @@ Tujuan: memetakan master kita ke master Ascend supaya AP Note nanti bisa dibuat 
   Kolom diminta lewat `$select` aman saja: AP_Suppliers `SupplierID,SupplierCode,SupplierName,NPWP,Disabled`; IC_InventoryUsers_Fleet
   `InventoryUserID,InventoryUserCode,InventoryUserName,FleetName,Disabled,IsVessel`; FI_ExpenseTypes_Account `ExpenseTypeID,ExpenseTypeDescription,AccountName,Disabled`.
   Kolom bank/rekening/KTP/alamat TIDAK PERNAH diminta atau disimpan.
+  **Tab "Expense Type (Ascend)" diganti "COA (Ascend)" (2026-10-30, `CoaAscendTab`, key `ascend-coa`)**: membaca entity lean-api `AC_Accounts` (tabel apa adanya, kolom dari
+  katalog; tampil `AccountID, AccountCode, AccountName, IsDisabled` -- flag nonaktif bernama `IsDisabled`, `AscendTable` mendeteksi `Disabled`/`IsDisabled`). Diizinkan di
+  `ODATA_PATHS` (`server/routes/lean.ts`) tapi TIDAK di `SAFE_ODATA_COLUMNS` -> user yang hanya punya `cost_agent_invoice` tidak bisa membacanya. Entity
+  `FI_ExpenseTypes_Account` TETAP ada (dipakai Finance mapping & kartu invoice; keputusan user: mapping jenis biaya belum diganti COA).
+  lean-api perlu di-build ulang/redeploy agar entity `AC_Accounts` aktif; dokumen `docs/api/coa-ascend.md` di repo lean-api.
 - **Nama database Ascend** = kolom `ascend_db` dari server (`AS_` + kode PT, prefix di setting `ascend_db_prefix`) -- JANGAN dihitung di frontend. Baris jenis biaya JUGA membawa `ascend_db` (sejak SQL 085), jadi segmen
   Cost items tidak punya dropdown database -- hanya teks kecil "Ascend database: AS_XXX" di toolbar.
 - **Jenis biaya SELALU per PT (SQL 086, keputusan user 2026-10-28): ID expense type di Ascend BERBEDA di tiap PT (database).** Tidak ada lagi pemetaan "semua PT" (baris lama dihapus oleh SQL 086, dicatat di `cost_agent_master_log`;
@@ -989,6 +994,14 @@ Tujuan: memetakan master kita ke master Ascend supaya AP Note nanti bisa dibuat 
   Tombol aktif walau ada error, dgn peringatan "This file is incomplete".
 - **Send to Ascend**: tampil tapi NONAKTIF (tooltip "Waiting for the Ascend AP Note endpoint"); tidak ada panggilan apa pun sampai endpoint tersedia.
 - Perubahan 085 di Finance mapping: baris jenis biaya membawa `ascend_db` (lihat bagian Finance mapping di atas) dan pencarian kandidat ke Ascend diubah (NPWP digit + kata khas, nama kapal, alias lalu nama biaya).
+
+## AP Note draft (2026-10-30, permintaan user; SQL `104_cost_agent_apnote_draft.sql` BELUM DIJALANKAN -- file lokal `sql/`)
+
+- Tabel penampung `cost_agent_apnote_drafts` + `cost_agent_apnote_draft_lines` (1 draft aktif per invoice, unique index parsial; status draft|posting|posted|failed|cancelled). **CRUD murni dari frontend**
+  (`utils/CostAgentApNoteDraft.ts`, supabase-js + RLS, TANPA RPC; keduanya di `server/db/whitelist.ts`). Baca = `has_page_access('cost_agent_invoice')`; tulis = `has_edit_access('cost_agent_payment')` & hanya saat status draft/failed.
+- Kartu `CostAgentApNoteDraftCard.tsx` di tab Payments (di bawah Finance mapping): invoice `approved` + `canPay` -> draft terbentuk OTOMATIS saat tab dibuka (sekali per invoice), isinya dari `fn_cost_agent_apnote_preview` (RPC lama, hanya baca).
+  Edit: FPNo, Remarks, deskripsi/qty/harga baris, hapus baris, "Rebuild from invoice" (ganti seluruh isi; dipakai setelah mapping/pajak berubah). Error/warning = snapshot saat build.
+- **Post to Ascend NONAKTIF** (endpoint server -> lean-api `POST /v1/ap-notes` belum dibuat). Validasi sisi server tetap wajib saat endpoint dibuat (RLS tidak memvalidasi isi).
 
 ## Document gate and auto-verify (Tahap 2a, 2026-10-28, permintaan user; SQL `087_cost_agent_doc_gate_autoverify.sql` SUDAH DIJALANKAN, 3 RPC terbaca di production)
 
