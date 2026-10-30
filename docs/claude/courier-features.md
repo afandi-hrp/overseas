@@ -1640,6 +1640,18 @@ Release Date lewat `.update()` langsung ke `tabel_cost_validasi` (`cv_storage_we
 ulang otomatis isi Actual/Billing Days live (Actual/Billing Days sendiri TIDAK disimpan sbg
 kolom terpisah).
 
+## Audit Courier (Card) — kartu disamakan gayanya dgn kartu Invoice Recap Courier (2026-10-30, permintaan user)
+
+`CourierAuditRowCard` ditulis ulang SEBAGAI TAMPILAN (data, sumber angka, colOk per role, Reorder Mode, klik kartu = panel preview TIDAK berubah). Gaya = `CourierRecapGroupCard`: AWB tebal ungu `#3B2260`
+(fallback No. PIB/jalur bila kolom AWB disembunyikan) + vendor kecil abu + **pil** PT (abu) · jalur (PIB ungu / CN abu) · delivery term (plum); pembatas samar `rgba(138,123,155,.18)`; angka KPI besar ungu.
+- Layout lebar (lebar kartu >= **1000px**, container query): 6 kolom `[AWB/vendor/pil] | [No. PIB (hanya PIB) + "PPJK <tgl>"] | Total Expenses | Total Duty Tax | Final Check | [status]`.
+  Layout ringkas (panel preview terbuka): 2 kolom — baris 1 AWB | status (kanan atas), baris 2 No. PIB·PPJK | Total Expenses, baris 3 Total Duty Tax | Final Check; sel di-reset di layar lebar dgn `@min-[1000px]:[grid-area:auto]`.
+- Status = pil **Draft** (amber) / **Audited** (hijau) + pil "Accepted <tgl>" (Doc Acceptance) + chip "↻ Changed in Invoice Recap — please re-audit" (boleh turun baris); selektor `data-courier-card-status` tetap.
+- **Tombol Open/Opened DIHAPUS** (seperti Recap): seluruh kartu klik / Enter / Spasi = buka panel; klik tombol di dalam kartu & memilih teks tidak membuka. Saat Reorder Mode kartu tetap tak bisa dibuka.
+- **Pelajaran (bug 2026-10-30)**: versi pertama memakai `const WIDE = '@min-[1000px]'` lalu `${WIDE}:grid-cols-...` -> Tailwind TIDAK membuat kelas yang dirangkai lewat interpolasi string, jadi kartu selalu tampil
+  layout ringkas walau lebar. Tulis varian container query LITERAL penuh (`@min-[1000px]:...`) di setiap kelas; verifikasi dgn `vite build` + cari kelasnya di CSS hasil build.
+- Aksen kiri (kuning Draft / hijau NAS submitted / ungu) & latar hijau muda bila NAS submitted dipertahankan.
+
 ## Invoice Recap Courier — kartu ringkas (panel terbuka) & header panel Validation dirapikan (2026-10-30, permintaan user)
 
 - **Kartu ringkas** (`CourierRecapGroupCard`, lebar kartu < 1180px = saat panel samping terbuka / laptop 14"): dulu 2 kolom auto-flow, pil invoice (label 108px + 2 tanggal 90px) lebih lebar dari setengah kartu
