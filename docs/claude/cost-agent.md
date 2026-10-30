@@ -932,6 +932,18 @@ Tujuan: memetakan master kita ke master Ascend supaya AP Note nanti bisa dibuat 
   `ODATA_PATHS` (`server/routes/lean.ts`) tapi TIDAK di `SAFE_ODATA_COLUMNS` -> user yang hanya punya `cost_agent_invoice` tidak bisa membacanya. Entity
   `FI_ExpenseTypes_Account` TETAP ada (dipakai Finance mapping & kartu invoice; keputusan user: mapping jenis biaya belum diganti COA).
   lean-api perlu di-build ulang/redeploy agar entity `AC_Accounts` aktif; dokumen `docs/api/coa-ascend.md` di repo lean-api.
+  **Tombol "Map to Ascend" di tab Vendors (2026-10-30, `AscendReviewModal.tsx` kind `supplier`, komponen yang sama dgn Vessels)**: semua vendor aktif (`fn_cost_agent_list_vendors`, ikut alias) yang belum
+  punya pemetaan supplier di PT mana pun, dicari HANYA di `AS_MJS` (keputusan user) dan disimpan Manual dgn `p_company='MJS'` (dicek ada di Companies; kalau tidak, dialog menampilkan error).
+  Alias vendor ikut dicari (`MasterQuery.aliases`, maks 3 kata khas unik; hanya jalur dialog ini, Auto-map Finance mapping tidak berubah). Mayoritas vendor tanpa NPWP -> banyak hasil "Choose".
+  Catatan: pemetaan tersimpan di PT MJS saja; bila `fn_cost_agent_finance_check` membaca pemetaan supplier per PT invoice, invoice PT lain belum menganggapnya mapped.
+  **Kolom "Ascend" di tab Vessels & Vendors (2026-10-30, `AscendMapBadge.tsx` + `finMappedIndex` di `financeApi.ts`)**: chip Mapped (kode - nama Ascend, gembok = Manual, "+N" bila di beberapa PT;
+  tooltip merinci per PT) atau Not mapped. Data = satu pembacaan `list_map` status mapped (semua PT), dimuat ulang setelah Save di dialog Map to Ascend. Hanya tampilan; belum ada filter Mapped/Not mapped
+  (daftar tab dipaginasi server oleh `fn_cost_agent_list_*`, filter butuh perubahan RPC).
+  **Tombol "Map to Ascend" di tab Vessels (2026-10-30, `AscendReviewModal.tsx` kind `vessel`; sebelumnya `VesselAscendReviewModal.tsx`)**: mencari padanan SEMUA kapal aktif di tabel `cost_agent_vessels` (`fetchCostAgentVessels`, bukan
+  hanya yang dipakai invoice; bukan `master_vessel` = Reporting) yang belum terpetakan (dibuang bila ada di `list_map` status mapped) ke Ascend. Database Ascend per PT = `ascend_db` dari baris
+  list_map; PT tanpa baris memakai `AS_<kode>` hanya bila ada di `ASCEND_DATABASES` (`ascendApi.ts`); kapal tanpa PT dilewati. Pencarian (`candidatesForMaster` -> `fn_cost_agent_finance_pick`, 3 paralel) lalu menampilkan REVIEW; tidak ada yang disimpan sebelum Save. Baris `auto` dicentang otomatis,
+  `ambiguous` dipilih user dari daftar kandidat, `none` dilewati. Yang dicentang disimpan lewat `fn_cost_agent_finance_save_map(..., 'user')` = Manual/terkunci
+  ke `cost_agent_finance_vessel_map` (keputusan user); baris yang sudah Manual dilaporkan "skipped". Kapal di PT tanpa `ascend_db` dilewati (jumlahnya ditampilkan). Tanpa SQL baru.
 - **Nama database Ascend** = kolom `ascend_db` dari server (`AS_` + kode PT, prefix di setting `ascend_db_prefix`) -- JANGAN dihitung di frontend. Baris jenis biaya JUGA membawa `ascend_db` (sejak SQL 085), jadi segmen
   Cost items tidak punya dropdown database -- hanya teks kecil "Ascend database: AS_XXX" di toolbar.
 - **Jenis biaya SELALU per PT (SQL 086, keputusan user 2026-10-28): ID expense type di Ascend BERBEDA di tiap PT (database).** Tidak ada lagi pemetaan "semua PT" (baris lama dihapus oleh SQL 086, dicatat di `cost_agent_master_log`;

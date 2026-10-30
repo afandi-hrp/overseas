@@ -4,6 +4,11 @@
 // server/leanPolicy.ts) -- JANGAN menambah kolom bank/rekening/alamat.
 import { apiFetch } from '../../../lib/apiFetch'
 
+// 13 database Ascend yang dikenal (dipakai tab Ascend & dialog Map vessels to Ascend). AS_MJS_TSET = penulisan asli di lean-api.
+export const ASCEND_DATABASES = [
+  'AS_WNS', 'AS_WNS_TEST', 'AS_MJS', 'AS_MJS_TSET', 'AS_AMT', 'AS_AMT_TEST', 'AS_IMI', 'AS_IMI_TEST', 'AS_GMI', 'AS_GMI_TEST', 'AS_TTP', 'AS_TTP_TEST', 'AS_GUN', 'AS_WSI',
+] as const
+
 export class AscendError extends Error {
   status: number | null
   constructor(message: string, status: number | null) { super(message); this.status = status }
@@ -124,7 +129,8 @@ async function searchByFilter(kind: AscendKind, database: string, filter: string
 
 export const searchAscend = (kind: AscendKind, database: string, term: string, top = 50) => searchByFilter(kind, database, buildAscendFilter(kind, term), top)
 
-export interface MasterQuery { name: string; npwp?: string | null; alias?: string | null }
+// `aliases` = alias vendor (dialog Map to Ascend massal): tiap alias menambah satu pencarian kata khas (maks 3 kata unik), hanya utk supplier.
+export interface MasterQuery { name: string; npwp?: string | null; alias?: string | null; aliases?: string[] | null }
 
 // Pencarian dari data master (Auto-map & pembukaan dialog), hasil digabung & dedup per id; yang memutuskan cocok-tidaknya = fn_cost_agent_finance_pick di database.
 //  - Supplier: NPWP (digit saja) bila vendor punya NPWP + satu kata paling khas dari nama vendor.
@@ -134,7 +140,9 @@ export function masterFilters(kind: AscendKind, m: MasterQuery): string[] {
   if (kind === 'supplier') {
     const f: string[] = []
     if (m.npwp && looksLikeNpwp(m.npwp)) f.push(npwpFilter(m.npwp))
-    f.push(`${ACTIVE} and contains(SupplierName,${lit(distinctiveWord(m.name))})`)
+    const words = new Set([distinctiveWord(m.name)])
+    for (const a of m.aliases ?? []) { if (words.size >= 3) break; if (a.trim()) words.add(distinctiveWord(a)) }
+    for (const w of words) f.push(`${ACTIVE} and contains(SupplierName,${lit(w)})`)
     return f
   }
   if (kind === 'vessel') return [buildAscendFilter('vessel', m.name)]

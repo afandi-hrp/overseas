@@ -1,7 +1,10 @@
 // Tab "Vendors" hub Cost Agent Settings (2026-10-26, sql/079) -- master vendor: fn_cost_agent_list_vendors / save_vendor / merge_vendors / delete_vendor.
 // Ubah hanya bila ctx.editable. NPWP 15 atau 16 digit (server juga memeriksa); duplikat nama / alias / NPWP ditolak server (pesan tampil inline di drawer).
 import { useEffect, useMemo, useState } from 'react'
-import { Pencil, Trash2, GitMerge, Plus } from 'lucide-react'
+import { Pencil, Trash2, GitMerge, Plus, Link2 } from 'lucide-react'
+import AscendReviewModal from './AscendReviewModal'
+import AscendMapBadge from './AscendMapBadge'
+import { finMappedIndex } from './financeApi'
 import { FilterSearch, type ComboOption } from '../../../components/CostAgentUi'
 import { Chip, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_INPUT } from '../../../components/SeaAirAuditUi'
 import { fetchCostAgentVendors, fmtNumber, type CostAgentVendor } from '../../../utils/CostAgentHelpers'
@@ -38,6 +41,8 @@ export default function VendorsTab({ ctx }: { ctx: HubCtx }) {
   const [drawer, setDrawer] = useState<{ id: number | null; init: Form } | null>(null)
   const [mergeFor, setMergeFor] = useState<HubVendor | null>(null)
   const [delFor, setDelFor] = useState<HubVendor | null>(null)
+  const [ascendMapOpen, setAscendMapOpen] = useState(false)
+  const ascendIdx = useAsync(() => finMappedIndex('supplier'), [])
   const [busy, setBusy] = useState(false)
   const runDelete = async () => {
     if (!delFor) return
@@ -45,7 +50,7 @@ export default function VendorsTab({ ctx }: { ctx: HubCtx }) {
     try { await hubDeleteVendor(delFor.id); ctx.toast(`Vendor ${delFor.name} deleted.`); setDelFor(null); refresh() }
     catch (e: any) { setDelFor(null); ctx.toast(e.message || String(e), 'err'); if (isInUseError(e)) refresh() } finally { setBusy(false) }
   }
-  const COLS = 6
+  const COLS = 7
 
   return (
     <div className="space-y-3" data-hub-vendors>
@@ -59,13 +64,16 @@ export default function VendorsTab({ ctx }: { ctx: HubCtx }) {
         </select>
         <ResetButton onClick={() => { setSearch(''); setActive(''); setMissing('') }} />
         <HubToolbarEnd count={data ? `${fmtNumber(data.total, 0)} vendors` : ''} viewOnly={!ctx.editable}>
+          {ctx.editable && <button type="button" className={SA_BTN_OUTLINE} onClick={() => setAscendMapOpen(true)} title="Find Ascend suppliers (AS_MJS) for every unmapped vendor and review before saving"><Link2 size={13} /> Map to Ascend</button>}
           {ctx.editable && <button type="button" className={SA_BTN_PRIMARY} onClick={() => setDrawer({ id: null, init: { name: '', npwp: '', aliases: [], is_active: true } })}><Plus size={13} /> Add vendor</button>}
         </HubToolbarEnd>
       </HubFilterBar>
 
+      {ascendMapOpen && <AscendReviewModal kind="supplier" onClose={() => setAscendMapOpen(false)} onSaved={() => ascendIdx.reload()} toast={ctx.toast} />}
+
       <TableCard>
         <table className="min-w-full">
-          <thead><tr>{['Name', 'NPWP', 'Aliases', 'Used by', 'Status', ''].map(h => <th key={h || 'actions'} className={TH}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Name', 'NPWP', 'Aliases', 'Used by', 'Status', 'Ascend', ''].map(h => <th key={h || 'actions'} className={TH}>{h}</th>)}</tr></thead>
           <tbody>
             <StateRow colSpan={COLS} loading={loading} error={error} onRetry={reload} empty={rows.length === 0} emptyText="No vendors match the filter" />
             {!loading && !error && rows.map(v => (
@@ -75,6 +83,7 @@ export default function VendorsTab({ ctx }: { ctx: HubCtx }) {
                 <td className={TD}><ChipList items={v.aliases} /></td>
                 <td className={`${TD} min-w-[150px]`}><UsedBy items={[{ n: v.invoices_count, label: 'invoices' }, { n: v.history_count, label: 'history rows', short: 'history' }, { n: v.rules_count, label: 'approval rules', short: 'rules' }, { n: v.alias_count, label: 'learned aliases', short: 'aliases' }]} /></td>
                 <td className={TD}><ActiveStatus active={v.is_active} /></td>
+                <td className={TD}><AscendMapBadge infos={ascendIdx.data?.get(v.id)} loading={ascendIdx.loading && !ascendIdx.data} failed={!!ascendIdx.error} /></td>
                 <td className={`${TD} whitespace-nowrap`}>
                   {ctx.editable && (
                     <div className="flex gap-1">

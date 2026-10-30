@@ -2,7 +2,10 @@
 // fn_cost_agent_list_vessels / save_vessel / set_vessels_office / merge_vessels / delete_vessel (delete = sql/076-077). Ubah hanya bila ctx.editable.
 // Saran office (office_hint) dari sumber voyage: Noon Report = Jakarta, SOF / Time Sheet = Medan -- dihitung server, di sini hanya ditampilkan.
 import { useEffect, useMemo, useState } from 'react'
-import { Pencil, Trash2, GitMerge, Plus, Sparkles } from 'lucide-react'
+import { Pencil, Trash2, GitMerge, Plus, Sparkles, Link2 } from 'lucide-react'
+import AscendReviewModal from './AscendReviewModal'
+import AscendMapBadge from './AscendMapBadge'
+import { finMappedIndex } from './financeApi'
 import { FilterSearch, type ComboOption } from '../../../components/CostAgentUi'
 import { Chip, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_INPUT } from '../../../components/SeaAirAuditUi'
 import { fetchCostAgentCompanies, fetchCostAgentVessels, fmtNumber, type CostAgentCompany, type CostAgentVessel } from '../../../utils/CostAgentHelpers'
@@ -69,6 +72,8 @@ export default function VesselsTab({ ctx }: { ctx: HubCtx }) {
   const [delFor, setDelFor] = useState<HubVessel | null>(null)
   const [bulkOffice, setBulkOffice] = useState<'MEDAN' | 'JAKARTA' | 'CLEAR' | null>(null)
   const [applyHints, setApplyHints] = useState(false)
+  const [ascendMapOpen, setAscendMapOpen] = useState(false)
+  const ascendIdx = useAsync(() => finMappedIndex('vessel'), [])
   const [busy, setBusy] = useState(false)
   const [dialogError, setDialogError] = useState<string | null>(null)
 
@@ -99,7 +104,7 @@ export default function VesselsTab({ ctx }: { ctx: HubCtx }) {
     catch (e: any) { setDelFor(null); ctx.toast(e.message || String(e), 'err') } finally { setBusy(false) }
   }
 
-  const COLS = 11 + (ctx.editable ? 2 : 0)
+  const COLS = 12 + (ctx.editable ? 2 : 0)
   const reset = () => { setSearch(''); setCompany(''); setOffice(''); setActive(''); setMissing('') }
 
   return (
@@ -120,9 +125,12 @@ export default function VesselsTab({ ctx }: { ctx: HubCtx }) {
         </select>
         <ResetButton onClick={reset} />
         <HubToolbarEnd count={data ? `${fmtNumber(data.total, 0)} vessels` : ''} viewOnly={!ctx.editable}>
+          {ctx.editable && <button type="button" className={SA_BTN_OUTLINE} onClick={() => setAscendMapOpen(true)} title="Find Ascend vessels for every unmapped vessel (all companies) and review before saving"><Link2 size={13} /> Map to Ascend</button>}
           {ctx.editable && <button type="button" className={SA_BTN_PRIMARY} onClick={() => { setDrawer({ id: null, init: blankForm() }); setDialogError(null) }}><Plus size={13} /> Add vessel</button>}
         </HubToolbarEnd>
       </HubFilterBar>
+
+      {ascendMapOpen && <AscendReviewModal kind="vessel" onClose={() => setAscendMapOpen(false)} onSaved={() => ascendIdx.reload()} toast={ctx.toast} />}
 
       {ctx.editable && (
         <BulkBar count={selRows.length} onClear={selection.clear}>
@@ -139,7 +147,7 @@ export default function VesselsTab({ ctx }: { ctx: HubCtx }) {
           <thead>
             <tr>
               {ctx.editable && <th className={`${TH} w-8`}><input type="checkbox" aria-label="Select all on this page" className="accent-[#6B3470]" checked={allOn} onChange={e => selection.setAll(ids, e.target.checked)} disabled={ids.length === 0} /></th>}
-              {['Name', 'Type', 'DWT', 'GT', 'HP', 'Company', 'Office', 'Short code', 'Aliases', 'Used by', 'Status'].map((h, i) => <th key={h} className={`${TH} ${i >= 2 && i <= 4 ? 'text-right' : ''} ${i === 3 || i === 4 || i === 8 ? HIDE_XL : i === 7 ? HIDE_LG : ''}`}>{h}</th>)}
+              {['Name', 'Type', 'DWT', 'GT', 'HP', 'Company', 'Office', 'Short code', 'Aliases', 'Used by', 'Status', 'Ascend'].map((h, i) => <th key={h} className={`${TH} ${i >= 2 && i <= 4 ? 'text-right' : ''} ${i === 3 || i === 4 || i === 8 ? HIDE_XL : i === 7 ? HIDE_LG : ''}`}>{h}</th>)}
               {ctx.editable && <th className={TH}></th>}
             </tr>
           </thead>
@@ -173,6 +181,7 @@ export default function VesselsTab({ ctx }: { ctx: HubCtx }) {
                   <td className={`${TD} ${HIDE_XL}`}><ChipList items={v.aliases} /></td>
                   <td className={`${TD} min-w-[140px]`}><UsedBy items={[{ n: v.invoices_count, label: 'invoices' }, { n: v.voyages_count, label: 'voyages' }, { n: v.history_count, label: 'history rows', short: 'history' }]} /></td>
                   <td className={TD}><ActiveStatus active={v.is_active} /></td>
+                  <td className={TD}><AscendMapBadge infos={ascendIdx.data?.get(v.id)} loading={ascendIdx.loading && !ascendIdx.data} failed={!!ascendIdx.error} /></td>
                   {ctx.editable && (
                     <td className={`${TD} whitespace-nowrap`}>
                       <div className="flex gap-1">

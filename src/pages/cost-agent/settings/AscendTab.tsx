@@ -6,13 +6,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { Columns3, ChevronUp, ChevronDown, RefreshCw } from 'lucide-react'
 import { FilterSearch } from '../../../components/CostAgentUi'
 import { Chip, SA_BTN_OUTLINE } from '../../../components/SeaAirAuditUi'
-import { odata } from './ascendApi' // panggilan Ascend dipakai bersama tab Finance mapping & kartu invoice
+import { ASCEND_DATABASES, odata } from './ascendApi' // panggilan Ascend dipakai bersama tab Finance mapping & kartu invoice
 import { fmtNumber } from '../../../utils/CostAgentHelpers'
 import { FILTER_CTRL, HUB_PAGE_SIZE, HubFilterBar, Pager, StateRow, TD, TH, TableCard, useAsync, useDebounced, type HubCtx } from './hubUi'
 
-const DATABASES = [
-  'AS_WNS', 'AS_WNS_TEST', 'AS_MJS', 'AS_MJS_TSET', 'AS_AMT', 'AS_AMT_TEST', 'AS_IMI', 'AS_IMI_TEST', 'AS_GMI', 'AS_GMI_TEST', 'AS_TTP', 'AS_TTP_TEST', 'AS_GUN', 'AS_WSI',
-]
+const DATABASES: string[] = [...ASCEND_DATABASES]
 const DB_KEY = 'ascend-odata-database'
 
 interface Meta { entities: Record<string, { key: string[]; columns: { name: string; type: string }[] }> }

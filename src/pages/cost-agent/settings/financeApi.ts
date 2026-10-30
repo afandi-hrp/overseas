@@ -40,6 +40,29 @@ export interface FinSaveResult { saved: boolean; reason?: 'locked'; map?: Record
 export const finSaveMap = (kind: FinKind, refId: number, company: string, c: AscendCandidate, source: FinSource) =>
   hubRpc<FinSaveResult>('fn_cost_agent_finance_save_map', { p_kind: kind, p_ref_id: refId, p_company: company, p_data: saveData(kind, c), p_source: source })
 
+// Indeks pemetaan yang sudah ada (semua PT) utk kolom "Ascend" di tab Vessels / Vendors: id master -> daftar pemetaan (satu per PT).
+export interface AscendMapInfo { company: string; code: string | null; name: string | null; source: FinSource | null }
+export async function finMappedIndex(kind: 'vessel' | 'supplier'): Promise<Map<number, AscendMapInfo[]>> {
+  const idx = new Map<number, AscendMapInfo[]>()
+  let seen = 0
+  for (let off = 0; off < 10000; off += 500) {
+    const r = await finListMap(kind, { company: null, status: 'mapped', limit: 500, offset: off })
+    for (const row of r.rows as (FinVesselRow | FinSupplierRow)[]) {
+      if (!row.mapped) continue
+      const v = row as FinVesselRow & FinSupplierRow
+      const id = kind === 'vessel' ? v.vessel_id : v.vendor_id
+      const info: AscendMapInfo = kind === 'vessel'
+        ? { company: v.company_code, code: v.vessel_code, name: v.vessel_name, source: v.source }
+        : { company: v.company_code, code: v.supplier_code, name: v.supplier_name, source: v.source }
+      const list = idx.get(id)
+      if (list) list.push(info); else idx.set(id, [info])
+    }
+    seen += r.rows.length
+    if (seen >= r.total || r.rows.length === 0) break
+  }
+  return idx
+}
+
 export const finDeleteMap = (kind: FinKind, id: number) => hubRpc<{ deleted: boolean }>('fn_cost_agent_finance_delete_map', { p_kind: kind, p_id: id })
 export const finSetAlias = (costItemId: number, alias: string) =>
   hubRpc<{ cost_item_id: number; finance_alias: string | null }>('fn_cost_agent_set_finance_alias', { p_cost_item_id: costItemId, p_alias: alias })
