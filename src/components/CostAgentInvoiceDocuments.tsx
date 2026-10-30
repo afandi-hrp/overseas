@@ -16,13 +16,16 @@ import { CostAgentFileDrop, FieldLabel } from './CostAgentUi'
 import { Chip, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_INPUT, SA_LABEL, SA_CARD } from './SeaAirAuditUi'
 import type { Tone } from './SeaAirAuditUi'
 import { LoadingSpinner } from './LoadingState'
+import CostAgentLinkDocumentDialog from './CostAgentLinkDocumentDialog'
+import { LineVatDialog } from './CostAgentLineDialogs'
+import { canLinkLine, manualTipLines, needsVatDecision, vatPctText, type VatChoice } from '../utils/CostAgentLinkLogic'
 import { defaultOnlyCheck, hasDiff, needsCheck, sideState, LUMP_SUM_LABEL, type SideKind } from '../utils/CostAgentDocLines'
 import { coveredReasonText, docTypeLabel, pageText, rangesText } from '../utils/CostAgentDocCards'
 import { noteText, noteMsg } from '../utils/CostAgentNotes'
 import {
   costAgentUpload, costAgentGetInvoiceDocuments, costAgentStartRedo, costAgentRedoDocs, fetchCostAgentJobSnapshot,
   fmtDate, fmtMoney, fmtNumber, fmtDateTimePort, DOC_TYPE_LABEL, TAX_STATUS_META,
-  type CostAgentInvoiceHistory, type CostAgentDocCompare, type DocCmpLine, type DocCmpLineSide, type DocCmpPart, type DocCmpOrphan, type DocCmpOrphanCovered,
+  type CostAgentInvoiceHistory, type CostAgentInvoiceLine, type CostAgentDocCompare, type DocCmpLine, type DocCmpLineSide, type DocCmpPart, type DocCmpOrphan, type DocCmpOrphanCovered,
   type DocCmpHeaderCheck, type DocCmpDateCheck, type DocCmpCompleteness,
 } from '../utils/CostAgentHelpers'
 
@@ -40,6 +43,7 @@ const LINE_CHIP: Record<string, { label: string; tone: Tone; tip?: string }> = {
   match_sum: { label: 'Match', tone: 'green', tip: 'Matches the sum of several items' },
   match_agg: { label: 'Match', tone: 'green', tip: 'Combined in one row' },
   match_gross: { label: 'Match · incl. VAT', tone: 'green', tip: 'Matches the document including VAT' },
+  manual: { label: 'Linked manually', tone: 'blue' }, // SQL 109
   diff: { label: 'Different', tone: 'red' },
   none: { label: 'Not in attachment', tone: 'amber' },
   not_in_fp: { label: 'Not in tax invoice', tone: 'grey' },
@@ -399,27 +403,44 @@ function SideChip({ side, kind, expect, invoiceAmount, partById }: { side: DocCm
   const refs = (side.refs || []).map(r => { const p = partById.get(r.part_id); return partLabel(p) !== 'Document' ? partLabel(p) : [DOC_TYPE_LABEL[r.doc_type as keyof typeof DOC_TYPE_LABEL] || r.doc_type, r.doc_no].filter(Boolean).join(' · ') }).filter(Boolean)
   const lump = kind === 'tax' && side.status === 'match_agg' // FP lumpsum (SQL 097): label & tooltip dari server (tax.note), tanpa teks 'Combined in one row'
   const tip = (lump ? [v.tip, amount != null ? `Document amount: ${fmtMoney(amount)}` : null, ...Array.from(new Set(refs))] : [v.tip, meta?.label, meta?.tip, side.status === 'match_gross' ? side.note : null, amount != null ? `Document amount: ${fmtMoney(amount)}` : null, ...Array.from(new Set(refs))]).filter(Boolean).join('\n')
-  return <Chip tone={v.tone} title={tip || undefined} className={lump ? '!whitespace-normal text-center leading-tight' : ''}>{v.label}</Chip>
+  const title = side.status === 'manual' ? [v.tip, amount != null ? `Document amount: ${fmtMoney(amount)}` : null, ...Array.from(new Set(refs))].filter(Boolean).join('\n') : tip
+  const chip = <Chip tone={v.tone} title={title || undefined} className={lump ? '!whitespace-normal text-center leading-tight' : ''}>{v.label}</Chip>
+  // Tautan manual: selisih (diff) tetap terlihat di bawah chip bila tidak 0.
+  return v.sub ? <span className="inline-flex flex-col items-center gap-0.5" data-manual-chip>{chip}<span className="text-[10.5px] font-semibold text-[#A8231A] tabular-nums" data-manual-diff>{v.sub}</span></span> : chip
 }
 
 // Tabel per baris yang berdiri sendiri (Tahap 3c, 2026-10-28): dipasang langsung di tab Documents & Tax (bukan di popup). Menyimpan sendiri filter "Show only items to check"
 // (otomatis ON bila overall='attention') dan drawer rujukan per baris. Data = cmp dari fn_cost_agent_get_invoice_documents.
-export function DocLineComparison({ cmp }: { cmp: CostAgentDocCompare | null }) {
+// Hak ubah bukti baris (SQL 108/109): evidence.canEdit dihitung dari peran + status (canEditLineEvidence); tanpa evidence / canEdit=false = tidak ada tombol (Approver hanya melihat).
+export interface LineEvidenceCtx {
+  canEdit: boolean
+  lines: CostAgentInvoiceLine[] // baris invoice: penanda amount_includes_vat dibaca dari sini
+  onChanged: () => Promise<void> | void
+  onToast: (msg: string, tone?: 'ok' | 'warn') => void
+}
+export function DocLineComparison({ cmp, evidence }: { cmp: CostAgentDocCompare | null; evidence?: LineEvidenceCtx }) {
   const [onlyCheck, setOnlyCheck] = useState<boolean | null>(null)
   const [detail, setDetail] = useState<DocCmpLine | null>(null)
+  const [linkFor, setLinkFor] = useState<DocCmpLine | null>(null)
+  const [vatFor, setVatFor] = useState<{ line: CostAgentInvoiceLine; preset: VatChoice } | null>(null)
   const parts = cmp?.parts || []
   const partById = useMemo(() => new Map(parts.map(p => [p.id, p])), [parts])
   const lines = cmp?.lines || []
   if (!cmp || !cmp.analysed || lines.length === 0) return null
   return (
     <>
-      <LineComparison lines={lines} orphans={cmp.orphans} onlyCheck={onlyCheck ?? defaultOnlyCheck(lines)} setOnlyCheck={setOnlyCheck} onOpen={setDetail} partById={partById} />
+      <LineComparison lines={lines} orphans={cmp.orphans} onlyCheck={onlyCheck ?? defaultOnlyCheck(lines)} setOnlyCheck={setOnlyCheck} onOpen={setDetail} partById={partById}
+        evidence={evidence} onLink={setLinkFor} onVat={(l, preset) => { const full = evidence?.lines.find(x => x.id === l.line_id); if (full) setVatFor({ line: full, preset }) }} />
       {detail && <LineDrawer line={detail} partById={partById} onClose={() => setDetail(null)} />}
+      {linkFor && evidence && <CostAgentLinkDocumentDialog line={linkFor} onClose={() => setLinkFor(null)} onChanged={evidence.onChanged} onToast={evidence.onToast} />}
+      {vatFor && evidence && <LineVatDialog line={vatFor.line} preset={vatFor.preset} onClose={() => setVatFor(null)}
+        onSaved={async () => { setVatFor(null); await evidence.onChanged(); evidence.onToast('VAT setting saved.') }} />}
     </>
   )
 }
 
-function LineComparison({ lines, orphans, onlyCheck, setOnlyCheck, onOpen, partById }: {
+function LineComparison({ lines, orphans, onlyCheck, setOnlyCheck, onOpen, partById, evidence, onLink, onVat }: {
+  evidence?: LineEvidenceCtx; onLink: (l: DocCmpLine) => void; onVat: (l: DocCmpLine, preset: VatChoice) => void
   lines: DocCmpLine[]; orphans: { attachment: DocCmpOrphan[] | null; tax: DocCmpOrphan[] | null; attachment_covered?: DocCmpOrphanCovered[] | null } | null
   onlyCheck: boolean; setOnlyCheck: (v: boolean) => void; onOpen: (l: DocCmpLine) => void; partById: Map<number, DocCmpPart>
 }) {
@@ -455,6 +476,7 @@ function LineComparison({ lines, orphans, onlyCheck, setOnlyCheck, onOpen, partB
               const diff = hasDiff(l)
               const none = !diff && needsCheck(l)
               const cell = 'px-2 py-2 align-middle text-[12px] text-[#3B1B3D]'
+              const vatDecision = !!evidence && needsVatDecision(l.includes_vat_hint, evidence.lines.find(x => x.id === l.line_id)?.amount_includes_vat)
               return (
                 <tr key={l.line_id} onClick={() => onOpen(l)} data-line-row={l.line_no} data-line-state={diff ? 'diff' : none ? 'none' : 'ok'} title="Click for the document references"
                   className={`border-t border-[#F3EEEA] cursor-pointer hover:bg-[#F8F1EE] border-l-4 ${diff ? 'border-l-[#A8231A] bg-[#FFFAF9]' : none ? 'border-l-[#E0A526] bg-[#FFFDF6]' : 'border-l-transparent odd:bg-white even:bg-[#FCFAF8]'}`}>
@@ -462,6 +484,24 @@ function LineComparison({ lines, orphans, onlyCheck, setOnlyCheck, onOpen, partB
                   <td className={`${cell} min-w-0`}>
                     <span className="font-semibold [overflow-wrap:anywhere]">{l.description || '—'}</span>
                     {l.cost_item && <span className="ml-2 align-middle inline-block rounded bg-[#F3EEEA] px-1.5 py-px font-mono text-[10px] text-[#6E5E70] whitespace-nowrap">{l.cost_item}</span>}
+                    {evidence && (vatDecision || (evidence.canEdit && canLinkLine(l))) && (
+                      <div className="mt-1 flex items-center gap-1.5 flex-wrap" onClick={e => e.stopPropagation()}>
+                        {vatDecision && (
+                          // Ringkas satu baris (2026-10-30, permintaan user): kalimat panjang pindah ke tooltip.
+                          <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-[#FFF1D6] pl-2 pr-1 py-0.5 text-[11px] font-semibold text-[#7A4F00]" data-vat-hint={l.line_no}
+                            title={`Matches the documents as price + VAT${vatPctText(l.vat_rate) ? ` (${vatPctText(l.vat_rate)})` : ''}: confirm whether the amount includes VAT`}>
+                            <AlertTriangle size={11} className="shrink-0" /> Includes VAT{vatPctText(l.vat_rate) ? ` ${vatPctText(l.vat_rate)}` : ''}?
+                            {evidence.canEdit && <>
+                              <button type="button" className="h-5 px-2 rounded-full border border-[#E0A526] bg-white text-[10.5px] font-bold hover:bg-[#FFF8E6]" data-vat-yes onClick={() => onVat(l, 'yes')}>Yes</button>
+                              <button type="button" className="h-5 px-2 rounded-full border border-[#E0A526] bg-white text-[10.5px] font-bold hover:bg-[#FFF8E6]" data-vat-no onClick={() => onVat(l, 'no')}>No</button>
+                            </>}
+                          </span>
+                        )}
+                        {evidence.canEdit && canLinkLine(l) && (
+                          <button type="button" data-link-document={l.line_no} onClick={() => onLink(l)} className="h-6 px-2 rounded-full border border-[#E4D3E2] bg-[#F5EDF3] text-[11px] font-semibold text-[#6B3470] hover:bg-[#EFE2EC] hover:border-[#C9A9C4]">Link document…</button>
+                        )}
+                      </div>
+                    )}
                   </td>
                   <td className={`${cell} text-right tabular-nums whitespace-nowrap font-semibold pr-[10%]`}>{fmtMoney(l.amount)}</td>
                   <td className={`${cell} text-center`}><SideChip side={l.attachment} kind="attachment" expect={l.expect} invoiceAmount={l.amount} partById={partById} /></td>
@@ -539,6 +579,12 @@ function LineDrawer({ line, partById, onClose }: { line: DocCmpLine; partById: M
         <div className="flex items-center gap-2 flex-wrap"><span className="text-[12.5px] font-bold text-[#3B1B3D]">{title}</span>{chip && <Chip tone={chip.tone} title={chip.tip}>{chip.label}</Chip>}
           {shownAmount != null && <span className="tabular-nums text-[12px] font-semibold">{fmtMoney(shownAmount)}</span>}
           {s?.status === 'diff' && s.diff != null && <span className="text-[11.5px] font-semibold text-[#A8231A] tabular-nums">Difference vs invoice: {fmtNumber(s.diff, 0)}</span>}</div>
+        {s?.status === 'manual' && (
+          <div className="mt-1.5 rounded-lg bg-[#EEF1FA] px-2.5 py-1.5 text-[12px] text-[#2F4FA8] [overflow-wrap:anywhere]" data-manual-info>
+            {manualTipLines(s.manual, a => fmtDateTimePort(a, null)).map((t, i) => <div key={i}>{t}</div>)}
+            {s.note && <div className="text-[11px] opacity-80">{s.note}</div>}
+          </div>
+        )}
         {(gross || lump) && (s?.note || s?.base != null) && (
           <p className="mt-1.5 text-[12px] text-[#6E5E70] [overflow-wrap:anywhere]" data-side-note>
             {s?.note}{s?.base != null && <span className="block text-[11px] text-[#8A7A8B]">Before VAT: <b className="tabular-nums text-[#3B1B3D]">{fmtMoney(s.base)}</b></span>}

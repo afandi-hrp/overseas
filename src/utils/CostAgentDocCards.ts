@@ -91,6 +91,7 @@ export const cardCount = (docs: CardDoc[]): number => docs.filter(d => d.duplica
 export const COVERED_REASON_TEXT: Record<string, string> = {
   same_amount_as_line: 'Same amount as an invoice line',
   total_of_document_items: 'Total of the items in a document',
+  components_of_line: 'Components of an invoice line', // SQL 107
 }
 export const coveredReasonText = (reason: string | null | undefined): string => COVERED_REASON_TEXT[String(reason ?? '')] ?? ''
 

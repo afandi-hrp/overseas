@@ -281,6 +281,10 @@ export interface CostAgentInvoiceLine {
   pph_type?: string | null
   pph_rate?: number | null
   tax_source?: 'rule' | 'manual' | null
+  // sql/108: nominal baris sudah termasuk PPN? null = belum diputuskan, true = termasuk, false = di luar PPN. ppn_amount / pph_amount SUDAH dihitung server (UI tidak menghitung ulang).
+  amount_includes_vat?: boolean | null
+  ppn_amount?: number | null
+  pph_amount?: number | null
   // sql/101 (aturan cost line per peran): hanya ada pada view 'full'. Versi ASLI maker (maker_*) terisi bila checker mengubah / memecah baris;
   // origin_line_id terisi pada bagian hasil split (menunjuk baris yang dipecah). Approver (view 'maker') tidak menerima kolom-kolom ini.
   origin_line_id?: number | null
@@ -491,7 +495,7 @@ export async function costAgentGetInvoiceHistory(invoiceId: number): Promise<Cos
 // ─── Perbandingan dokumen (sql/072: fn_cost_agent_get_invoice_documents / fn_cost_agent_start_redo) ──────────────
 export type DocCmpOverall = 'not_analysed' | 'incomplete' | 'attention' | 'ok'
 export type DocCmpStatus = 'ok' | 'diff' | 'warn' | 'na'
-export type DocCmpLineStatus = 'match' | 'match_group' | 'match_sum' | 'match_agg' | 'match_gross' | 'diff' | 'none' | 'no_doc' | 'not_in_fp' | 'pending' | 'not_required'
+export type DocCmpLineStatus = 'match' | 'match_group' | 'match_sum' | 'match_agg' | 'match_gross' | 'manual' | 'diff' | 'none' | 'no_doc' | 'not_in_fp' | 'pending' | 'not_required'
 export interface DocCmpRef { part_id: number; item_id: number | null; doc_type: string | null; doc_no: string | null; description: string | null; group_name: string | null; kind: string | null; amount: number | null }
 export interface DocCmpFile {
   id: number; seq: number | null; file_name: string | null; file_url: string | null; doc_type: CostAgentDocType | string; status: CostAgentDocStatus | string
@@ -512,9 +516,12 @@ export interface DocCmpHeaderCheck { group: 'tax' | 'attachment' | string; part_
 export interface DocCmpDateCheck { part_id: number | null; source: string | null; doc_no: string | null; label: string; date: string | null; compare_to: string | null; gap_days: number | null; status: DocCmpStatus | string; note: string | null }
 // match_gross = nominal baris invoice = harga jual + PPN (+ materai) sebuah nota/faktur pajak, atau item-item nota beserta PPN-nya.
 // `matched_amount` = nominal baris itu sendiri (sudah termasuk PPN, JANGAN dijumlahkan ulang dari refs); `base` = bagian harga jual sebelum PPN; `note` = rincian teks.
-export interface DocCmpLineSide { status: DocCmpLineStatus | string; matched_amount: number | null; diff: number | null; refs: DocCmpRef[] | null; base?: number | null; note?: string | null }
+// SQL 109: status 'manual' = ditautkan manual oleh user; `manual` memuat id item (cost_agent_invoice_doc_items), pelaku, waktu, alasan, dan incl (item + PPN). `diff` tetap diisi (tidak disembunyikan).
+export interface DocCmpManualLink { ids: number[]; by: string; at: string; reason: string; incl: boolean }
+export interface DocCmpLineSide { status: DocCmpLineStatus | string; matched_amount: number | null; diff: number | null; refs: DocCmpRef[] | null; base?: number | null; note?: string | null; manual?: DocCmpManualLink | null }
 // expect (SQL 093): dokumen yang DIHARAPKAN per baris -- attachment=false utk jenis biaya tanpa lampiran wajib; tax=true hanya bila baris kena PPN menurut tax rule. Tidak ada = data lama.
-export interface DocCmpLine { line_id: number; line_no: number; description: string | null; cost_item: string | null; amount: number | null; attachment: DocCmpLineSide | null; tax: DocCmpLineSide | null; expect?: { attachment: boolean; tax: boolean } | null }
+// SQL 107/108: includes_vat_hint = baris cocok dokumen sebagai harga + PPN (vat_rate = tarif pecahan yang dipakai, mis. 0.11 / null).
+export interface DocCmpLine { line_id: number; line_no: number; description: string | null; cost_item: string | null; amount: number | null; attachment: DocCmpLineSide | null; tax: DocCmpLineSide | null; expect?: { attachment: boolean; tax: boolean } | null; includes_vat_hint?: boolean; vat_rate?: number | null }
 export interface DocCmpOrphan { part_id: number; item_id: number | null; doc_type: string | null; doc_no: string | null; description: string | null; amount: number | null }
 // SQL 098: item lampiran yang hanya BUKTI GANDA dari baris invoice yang sudah cocok (bukan orphan). `reason`: same_amount_as_line | total_of_document_items; `line_id` bisa null.
 export interface DocCmpOrphanCovered extends DocCmpOrphan { reason: 'same_amount_as_line' | 'total_of_document_items' | string | null; line_id: number | null }

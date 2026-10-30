@@ -34,12 +34,13 @@ const GoLine = ({ n, onGo, label }: { n: number; onGo: (n: number) => void; labe
   <button type="button" className="shrink-0 underline text-[11.5px] font-semibold hover:no-underline" onClick={() => onGo(n)}>{label ?? `Go to line ${n}`}</button>
 )
 
-export default function CostAgentDocsSummary({ data, gate, gateError, gateBusy, canUpload, actor, onRecheck, onChanged, onToast, onGoToLine, onSetPeriod }: {
+export default function CostAgentDocsSummary({ data, gate, gateError, gateBusy, canUpload, canEditEvidence, actor, onRecheck, onChanged, onToast, onGoToLine, onSetPeriod }: {
   data: CostAgentInvoiceHistory
   gate: DocGate | null
   gateError: string | null
   gateBusy: boolean
   canUpload: boolean
+  canEditEvidence: boolean // SQL 109: tombol "Link document…" + Yes / No "Amount includes VAT" (peran + status; server tetap menegakkan)
   actor: string | null
   onRecheck: () => void
   onChanged: () => Promise<void> | void
@@ -221,7 +222,7 @@ export default function CostAgentDocsSummary({ data, gate, gateError, gateBusy, 
       )}
 
       {/* Tabel per baris (Invoice vs Attachment vs Tax invoice) langsung di tab, bukan di popup */}
-      <DocLineComparison cmp={cmp} />
+      <DocLineComparison cmp={cmp} evidence={{ canEdit: canEditEvidence, lines: data.lines, onChanged: async () => { await load(true); await onChangedRef.current() }, onToast }} />
 
       {/* 4. Notes (tertutup bawaan) */}
       {gate?.enabled && (

@@ -4,6 +4,7 @@
 import { callCostAgentRpc } from './CostAgentHelpers'
 import type { MyRoles, UserRolesList } from './CostAgentRolesLogic'
 import type { LineVerifyReasons } from './CostAgentVerifyReasons'
+import type { EvidenceSide, LinkCandidates } from './CostAgentLinkLogic'
 
 export type ValidationStatus = 'pending' | 'validated' | 'returned' | 'skipped'
 // Approval Matrix v2 (sql/090): mode 'any' (salah satu email cukup) | 'all' (SEMUA email harus setuju); votes = suara yang tercatat (by = yang menekan, for = email yang diwakili).
@@ -58,6 +59,19 @@ export const costAgentSplitLine = (lineId: number, parts: SplitPart[], actor?: s
 // Ubah pajak satu baris (checker / apnote): tarif PECAHAN (0.11), wajib alasan; baris ditandai tax_source = 'manual'.
 export const costAgentOverrideLineTax = (lineId: number, data: { ppn_rate: number | null; pph_type: string | null; pph_rate: number | null }, reason: string) =>
   callCostAgentRpc<unknown>('fn_cost_agent_override_line_tax', { p_line_id: lineId, p_data: data, p_reason: reason })
+
+// SQL 108: penanda "Amount includes VAT" per baris (true = sudah termasuk PPN, false = di luar PPN); alasan wajib. Server menghitung ulang ppn_amount / pph_amount.
+export interface SetLineIncludesVatResult { id: number; line_no: number; amount: number; amount_includes_vat: boolean | null; ppn_rate: number | null; ppn_amount: number | null; pph_rate: number | null; pph_amount: number | null }
+export const costAgentSetLineIncludesVat = (lineId: number, includes: boolean, reason: string) =>
+  callCostAgentRpc<SetLineIncludesVatResult>('fn_cost_agent_set_line_includes_vat', { p_line_id: lineId, p_includes: includes, p_reason: reason })
+
+// SQL 109: tautan manual baris <-> item dokumen. Kandidat diurutkan server (jangan diurutkan ulang). Simpan = SATU sisi per panggilan, 1..20 item, alasan wajib.
+export const costAgentLineLinkCandidates = (lineId: number) => callCostAgentRpc<LinkCandidates>('fn_cost_agent_line_link_candidates', { p_line_id: lineId })
+export const costAgentLinkLineItems = (lineId: number, side: EvidenceSide, itemIds: number[], reason: string, includesVat: boolean) =>
+  callCostAgentRpc<{ line_id: number; side: string; linked: number; includes_vat: boolean; validation_reset: boolean }>('fn_cost_agent_link_line_items',
+    { p_line_id: lineId, p_side: side, p_item_ids: itemIds, p_reason: reason, p_includes_vat: includesVat })
+export const costAgentUnlinkLineItems = (lineId: number, side: EvidenceSide, reason: string) =>
+  callCostAgentRpc<{ line_id: number; side: string; unlinked: number }>('fn_cost_agent_unlink_line_items', { p_line_id: lineId, p_side: side, p_reason: reason })
 
 export const costAgentVoidInvoice = (invoiceId: number, reason: string, actor?: string | null) =>
   callCostAgentRpc<{ status: string }>('fn_cost_agent_void_invoice', { p_invoice_id: invoiceId, p_reason: reason, p_actor: actor ?? null })

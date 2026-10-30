@@ -18,7 +18,7 @@ import { SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_INPUT, Chip } from './SeaAirAuditUi'
 import { DOC_GATE_TOAST, isDocGateError } from '../utils/CostAgentGate'
 import { costAgentCheckerSetCostItem, costAgentCheckerSetLineRemark, costAgentCheckerValidateLine, costAgentCheckerValidateLines, isSodError } from '../utils/CostAgentWorkflow'
 import { originalOf } from '../utils/CostAgentLinesView'
-import { LineTaxDialog, SplitLineDialog } from './CostAgentLineDialogs'
+import { LineTaxDialog, LineVatDialog, SplitLineDialog } from './CostAgentLineDialogs'
 import { classifyCostLine, classifyCostLines, costKey } from './CostAgentValidationReports'
 import { VerifyReasonIcon, VerifyReasonsToggle, VerifyReasonsList } from './CostAgentVerifyReasons'
 import { reasonByLine, type LineVerifyReasons } from '../utils/CostAgentVerifyReasons'
@@ -51,7 +51,7 @@ function pickComparators(l: CostAgentInvoiceLine): { main: CostAgentLineHistory 
 }
 
 
-export default function CostAgentInvoiceLines({ lines, currency, costItems, editable, actor, onChanged, onToast, footerRight, toolbarLeft, invoice, ports, vessels, vendors, historyCache, verifyBlock, onGateBlocked, checkerMode, variant = 'detailed', viewSwitch, verifyReasons }: {
+export default function CostAgentInvoiceLines({ lines, currency, costItems, editable, actor, onChanged, onToast, footerRight, toolbarLeft, invoice, ports, vessels, vendors, historyCache, verifyBlock, onGateBlocked, checkerMode, canEditEvidence, variant = 'detailed', viewSwitch, verifyReasons }: {
   lines: CostAgentInvoiceLine[]
   currency: string
   costItems: CostAgentCostItem[]
@@ -74,6 +74,8 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
   // Mode checker (sql/088 + sql/101): invoice menunggu validasi & user boleh memvalidasi -> jenis biaya bisa diganti (fn_cost_agent_checker_set_cost_item),
   // edit teks + nominal (fn_cost_agent_update_line), remark checker, Validate / Validated per baris, Split dan Tax. Maker: HANYA jenis biaya, tambah jenis biaya, Verify, Remark.
   checkerMode?: boolean
+  // SQL 108: boleh mengubah penanda "Amount includes VAT" (maker sebelum submit / checker saat validasi / AP Note; hanya hak TAMPIL, server menegakkan). Approver: hanya melihat lencana.
+  canEditEvidence?: boolean
   // Tahap 3b: 'summary' = baris ringkas 4 kolom (bawaan tab Cost lines); 'detailed' = tampilan lengkap (modal "Cost lines — detailed"). Logika & aksi SAMA.
   variant?: 'summary' | 'detailed'
   viewSwitch?: React.ReactNode // switch Summary | Detailed (di samping "Cost validation")
@@ -88,6 +90,7 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
   const [browseFor, setBrowseFor] = useState<CostAgentInvoiceLine | null>(null)
   const [splitFor, setSplitFor] = useState<CostAgentInvoiceLine | null>(null)
   const [taxFor, setTaxFor] = useState<CostAgentInvoiceLine | null>(null)
+  const [vatFor, setVatFor] = useState<CostAgentInvoiceLine | null>(null)
   const canSplit = !!checkerMode // 2026-10-29 (permintaan user): Split hanya milik checker; maker tidak lagi bisa memecah baris
   const [reasonsOpen, setReasonsOpen] = useState(false) // daftar baris needs_user (dibuka dari ringkasan di toolbar)
   const [onlyCheck, setOnlyCheck] = useState(false) // footer "Needs check": tampilkan hanya baris compare_check
@@ -272,6 +275,13 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                             onChange={id => (checkerMode ? (id !== null ? run(l.id, () => costAgentCheckerSetCostItem(l.id, id, true, actor)) : undefined) : run(l.id, () => verify(l, { costItemId: id, learnAlias: id !== null })))} /></div>
                         ) : !noCostItem && <Chip tone="plum" title={l.cost_item_code ? `${l.cost_item_code} — ${l.cost_item_name}` : undefined}>{l.cost_item_name || l.cost_item_code}</Chip>}
                         {editable && newItem && <button type="button" className={LINK} onClick={() => setAddFor(l)}><Plus size={11} /> Add as new cost item</button>}
+                        {/* SQL 108: "Incl. VAT" = nominal sudah termasuk PPN (PPN/PPh dihitung server). Yang boleh mengubah: tombol; lainnya hanya lencana. */}
+                        {l.amount_includes_vat === true && (canEditEvidence
+                          ? <button type="button" data-action="line-vat" disabled={rowBusy} onClick={() => setVatFor(l)} title="The amount includes VAT — click to change"><Chip tone="blue">Incl. VAT</Chip></button>
+                          : <Chip tone="blue" title="The amount includes VAT">Incl. VAT</Chip>)}
+                        {canEditEvidence && l.amount_includes_vat !== true && Number(l.ppn_rate ?? 0) > 0 && (
+                          <button type="button" className={LINK} data-action="line-vat" disabled={rowBusy} onClick={() => setVatFor(l)} title="Tell the system whether this amount already includes VAT">{l.amount_includes_vat === false ? 'VAT: excluded' : 'Incl. VAT?'}</button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -574,6 +584,8 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
       }} />}
       {splitFor && <SplitLineDialog line={lines.find(x => x.id === splitFor.id) || splitFor} costItems={items} currency={currency} actor={actor} mode={checkerMode ? 'checker' : 'maker'} onClose={() => setSplitFor(null)}
         onSaved={async () => { setSplitFor(null); await run('all', async () => {}); onToast?.(checkerMode ? 'Line split.' : 'Line split — please verify the new lines') }} />}
+      {vatFor && <LineVatDialog line={lines.find(x => x.id === vatFor.id) || vatFor} onClose={() => setVatFor(null)}
+        onSaved={async () => { setVatFor(null); await run('all', async () => {}); onToast?.('VAT setting saved.') }} />}
       {taxFor && <LineTaxDialog line={lines.find(x => x.id === taxFor.id) || taxFor} onClose={() => setTaxFor(null)}
         onSaved={async () => { setTaxFor(null); await run('all', async () => {}); onToast?.('Line tax saved.') }} />}
       {editFor && <EditLineModal line={lines.find(x => x.id === editFor.id) || editFor} currency={currency} actor={actor} checker={!!checkerMode} onClose={() => setEditFor(null)} onSaved={async changed => {
