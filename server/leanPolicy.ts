@@ -1,5 +1,5 @@
 // Pembatasan proxy lean-api /odata untuk user yang HANYA punya `cost_agent_invoice` (kartu "Finance mapping" di detail invoice,
-// 2026-10-28). Proxy meneruskan query apa adanya, sedangkan AP_Suppliers memuat kolom bank/KTP -> user ini hanya boleh membaca 3 entity
+// 2026-10-28). Proxy meneruskan query apa adanya, sedangkan AP_Suppliers memuat kolom bank/KTP -> user ini hanya boleh membaca 4 entity
 // dengan kolom aman, TANPA $search/$metadata/$expand, dan $filter/$orderby hanya boleh menyebut kolom aman.
 // User dengan cost_agent_approval_matrix / cost_agent_voyage / Admin TIDAK lewat sini (perilaku lama).
 // Modul murni (tanpa express) supaya bisa diuji: `npm test`.
@@ -8,6 +8,8 @@ export const SAFE_ODATA_COLUMNS: Record<string, readonly string[]> = {
   AP_Suppliers: ['SupplierID', 'SupplierCode', 'SupplierName', 'NPWP', 'Disabled'],
   IC_InventoryUsers_Fleet: ['InventoryUserID', 'InventoryUserCode', 'InventoryUserName', 'FleetName', 'Disabled', 'IsVessel'],
   FI_ExpenseTypes_Account: ['ExpenseTypeID', 'ExpenseTypeDescription', 'AccountName', 'Disabled'],
+  // Master COA (draft AP Note, 2026-10-30): tabel AC_Accounts apa adanya, flag nonaktifnya bernama IsDisabled (bukan Disabled).
+  AC_Accounts: ['AccountID', 'AccountCode', 'AccountName', 'IsDisabled'],
 };
 
 const ALLOWED_PARAMS = new Set(['database', '$select', '$filter', '$orderby', '$top', '$skip', '$count']);

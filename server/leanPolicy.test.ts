@@ -16,6 +16,12 @@ test('query sah lolos (3 entity, kolom aman, filter dengan literal & kata kunci 
   good('FI_ExpenseTypes_Account', 'database=AS_AMT&$select=ExpenseTypeID,ExpenseTypeDescription,AccountName,Disabled&$skip=100');
 });
 
+test('AC_Accounts (COA): kolom aman lolos, kolom lain ditolak', () => {
+  good('AC_Accounts', 'database=AS_WNS&$select=AccountID,AccountCode,AccountName,IsDisabled&$filter=' + encodeURIComponent("IsDisabled eq false and (contains(AccountName,'FUEL') or contains(AccountCode,'FUEL'))") + '&$orderby=AccountCode&$top=50');
+  bad('AC_Accounts', 'database=AS_WNS&$select=AccountID,Balance');
+  bad('AC_Accounts', 'database=AS_WNS&$select=AccountID&$filter=' + encodeURIComponent('Balance gt 0'));
+});
+
 test('literal berisi kata/kolom terlarang tidak diperiksa (diabaikan), tanda kutip ganda ("") sah', () => {
   good(SUP, base(`&$filter=${encodeURIComponent("contains(SupplierName,'BankAccount; DROP /x $y')")}`));
   good(SUP, base(`&$filter=${encodeURIComponent("contains(SupplierName,'O''Brien')")}`));

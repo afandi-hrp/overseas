@@ -14,8 +14,10 @@ export interface ApNoteDraft {
 }
 export interface ApNoteDraftLine {
   id: number; draft_id: number; line_no: number | null; invoice_line_id: number | null
+  cost_item_id: number | null // sql/106, dari baris invoice
   expense_type: string | null; expense_type_id: number | null; description: string | null
   qty: number; unit_price: number; ppn_rate: number | null; pph_rate: number | null; pph_type: string | null
+  account_id: number | null; account_code: string | null; account_name: string | null // COA Ascend (AC_Accounts) -- sql/105
 }
 export interface ApNoteDraftFull { draft: ApNoteDraft; lines: ApNoteDraftLine[] }
 
@@ -25,7 +27,7 @@ export async function fetchApNoteDraft(invoiceId: number): Promise<ApNoteDraftFu
   const { data: d, error } = await supabase.from('cost_agent_apnote_drafts').select('*').eq('invoice_id', invoiceId).neq('status', 'cancelled').maybeSingle()
   if (error) throw new Error(error.message)
   if (!d) return null
-  const { data: l, error: e2 } = await supabase.from('cost_agent_apnote_draft_lines').select('id,draft_id,line_no,invoice_line_id,expense_type,expense_type_id,description,qty,unit_price,ppn_rate,pph_rate,pph_type')
+  const { data: l, error: e2 } = await supabase.from('cost_agent_apnote_draft_lines').select('id,draft_id,line_no,invoice_line_id,cost_item_id,expense_type,expense_type_id,description,qty,unit_price,ppn_rate,pph_rate,pph_type,account_id,account_code,account_name')
     .eq('draft_id', d.id).order('sort_order')
   if (e2) throw new Error(e2.message)
   return { draft: d as ApNoteDraft, lines: (l ?? []) as ApNoteDraftLine[] }
@@ -45,33 +47,36 @@ const headerFrom = (p: ApNotePreview) => ({
   vessel_name: p.header.vessel_name, office: p.header.office, note_type: p.header.note_type, reference: p.header.reference,
   fp_no: p.header.fp_no, remarks: p.header.remarks, issues: p.issues, errors: p.errors, warnings: p.warnings,
 })
-const linesFrom = (p: ApNotePreview, draftId: number) => p.rows.map((r, i) => ({
-  draft_id: draftId, sort_order: i, line_no: num(r._line_no), invoice_line_id: num(r._line_id),
+/** invoice_line_id -> cost_item_id (dari baris invoice yang sudah dimuat modal). */
+export type CostItemOf = ReadonlyMap<number, number | null>
+const costItemFor = (m: CostItemOf | undefined, lineId: unknown): number | null => { const id = num(lineId); return id !== null && m ? (m.get(id) ?? null) : null }
+const linesFrom = (p: ApNotePreview, draftId: number, m?: CostItemOf) => p.rows.map((r, i) => ({
+  draft_id: draftId, sort_order: i, line_no: num(r._line_no), invoice_line_id: num(r._line_id), cost_item_id: costItemFor(m, r._line_id),
   expense_type: (r['Expense Type'] as string) || null, expense_type_id: num(r._expense_type_id),
   description: (r.Description as string) || null, qty: num(r.Qty) ?? 1, unit_price: num(r['Unit Price']) ?? 0,
   ppn_rate: num(r['PPN Rate']), pph_rate: num(r['PPh Rate']), pph_type: (r['PPh Type'] as string) || null, raw: r,
 }))
 
 /** Buat draft dari invoice yang sudah approved. Insert ganda (user lain lebih dulu) -> kembalikan draft yang sudah ada. */
-export async function createApNoteDraft(invoiceId: number, actor: string | null): Promise<ApNoteDraftFull | null> {
+export async function createApNoteDraft(invoiceId: number, actor: string | null, costItemOf?: CostItemOf): Promise<ApNoteDraftFull | null> {
   const p = await loadPreview(invoiceId)
   const { data: d, error } = await supabase.from('cost_agent_apnote_drafts')
     .insert({ invoice_id: invoiceId, status: 'draft', created_by: actor, updated_by: actor, ...headerFrom(p) }).select('id').single()
   if (error) { if (error.code === '23505') return fetchApNoteDraft(invoiceId); throw new Error(error.message) }
   if (p.rows.length) {
-    const { error: e2 } = await supabase.from('cost_agent_apnote_draft_lines').insert(linesFrom(p, d.id))
+    const { error: e2 } = await supabase.from('cost_agent_apnote_draft_lines').insert(linesFrom(p, d.id, costItemOf))
     if (e2) throw new Error(e2.message)
   }
   return fetchApNoteDraft(invoiceId)
 }
 
 /** Bangun ulang dari invoice (setelah mapping/pajak berubah): header & baris diganti, edit manual hilang. */
-export async function rebuildApNoteDraft(draftId: number, invoiceId: number, actor: string | null): Promise<ApNoteDraftFull | null> {
+export async function rebuildApNoteDraft(draftId: number, invoiceId: number, actor: string | null, costItemOf?: CostItemOf): Promise<ApNoteDraftFull | null> {
   const p = await loadPreview(invoiceId)
   const { error: e1 } = await supabase.from('cost_agent_apnote_draft_lines').delete().eq('draft_id', draftId)
   if (e1) throw new Error(e1.message)
   if (p.rows.length) {
-    const { error: e2 } = await supabase.from('cost_agent_apnote_draft_lines').insert(linesFrom(p, draftId))
+    const { error: e2 } = await supabase.from('cost_agent_apnote_draft_lines').insert(linesFrom(p, draftId, costItemOf))
     if (e2) throw new Error(e2.message)
   }
   const { error: e3 } = await supabase.from('cost_agent_apnote_drafts')
@@ -81,7 +86,7 @@ export async function rebuildApNoteDraft(draftId: number, invoiceId: number, act
 }
 
 /** Sinkron setelah mapping Finance berubah: header (tanpa FPNo/Remarks), isu, dan expense type per baris diperbarui; deskripsi/qty/harga hasil edit TIDAK ditimpa. */
-export async function syncApNoteDraftMapping(draftId: number, invoiceId: number, actor: string | null): Promise<ApNoteDraftFull | null> {
+export async function syncApNoteDraftMapping(draftId: number, invoiceId: number, actor: string | null, costItemOf?: CostItemOf): Promise<ApNoteDraftFull | null> {
   const p = await loadPreview(invoiceId)
   const { fp_no: _fp, remarks: _rm, ...hdr } = headerFrom(p)
   const { error } = await supabase.from('cost_agent_apnote_drafts').update({ ...hdr, updated_by: actor, updated_at: new Date().toISOString() }).eq('id', draftId)
@@ -92,6 +97,7 @@ export async function syncApNoteDraftMapping(draftId: number, invoiceId: number,
     const r = l.invoice_line_id !== null ? byLine.get(l.invoice_line_id) : undefined
     if (!r) return
     const { error: e } = await supabase.from('cost_agent_apnote_draft_lines').update({
+      cost_item_id: costItemFor(costItemOf, r._line_id),
       expense_type: (r['Expense Type'] as string) || null, expense_type_id: num(r._expense_type_id),
       ppn_rate: num(r['PPN Rate']), pph_rate: num(r['PPh Rate']), pph_type: (r['PPh Type'] as string) || null, raw: r,
     }).eq('id', l.id)
@@ -104,7 +110,7 @@ export async function updateApNoteDraftHeader(draftId: number, patch: { fp_no?: 
   const { error } = await supabase.from('cost_agent_apnote_drafts').update({ ...patch, updated_by: actor, updated_at: new Date().toISOString() }).eq('id', draftId)
   if (error) throw new Error(error.message)
 }
-export async function updateApNoteDraftLine(lineId: number, patch: Partial<Pick<ApNoteDraftLine, 'description' | 'qty' | 'unit_price'>>) {
+export async function updateApNoteDraftLine(lineId: number, patch: Partial<Pick<ApNoteDraftLine, 'description' | 'qty' | 'unit_price' | 'account_id' | 'account_code' | 'account_name'>>) {
   const { error } = await supabase.from('cost_agent_apnote_draft_lines').update(patch).eq('id', lineId)
   if (error) throw new Error(error.message)
 }
@@ -121,4 +127,12 @@ export function apNoteDraftTotals(lines: ApNoteDraftLine[]) {
     subtotal += amt; ppn += amt * (l.ppn_rate ?? 0); pph += amt * (l.pph_rate ?? 0)
   }
   return { subtotal, ppn, pph, totalWithPpn: subtotal + ppn, totalAfterPph: subtotal + ppn - pph }
+}
+
+/** Isu yang dipakai draft: kolom Expense type TIDAK dipakai lagi (diganti COA) -> isu baris soal expense type / jenis biaya belum dipetakan dibuang;
+ *  isu "COA belum dipilih" dihitung dari baris draft. Kembali: isu yang berlaku + jumlah error/warning. */
+export function effectiveApNoteIssues(d: ApNoteDraft, lines: ApNoteDraftLine[]) {
+  const issues = d.issues.filter(i => !(i.line_no !== undefined && /expense type|not mapped/i.test(i.message)))
+  for (const l of lines) if (!l.account_id) issues.push({ level: 'error', code: 'coa_missing', message: `Line ${l.line_no ?? '?'}: COA is not selected`, ...(l.line_no !== null ? { line_no: l.line_no } : {}) })
+  return { issues, errors: issues.filter(i => i.level === 'error').length, warnings: issues.filter(i => i.level === 'warning').length }
 }

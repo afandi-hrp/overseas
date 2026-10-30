@@ -2,6 +2,7 @@
 // Edit: FPNo, Remarks, deskripsi / qty / harga satuan per baris, Rebuild dari invoice. CRUD murni supabase-js (RLS). "Post to Ascend" nonaktif (endpoint menyusul).
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, RefreshCw, Send, Square, Wand2 } from 'lucide-react'
+import CostAgentCoaPicker from './CostAgentCoaPicker'
 import CostAgentApNotePreviewModal from './CostAgentApNotePreviewModal'
 import { LoadingState } from './LoadingState'
 import { Chip, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_CARD, SA_LABEL } from './SeaAirAuditUi'
@@ -10,18 +11,18 @@ import MapToAscendDialog, { type MapTarget } from '../pages/cost-agent/settings/
 import { autoMapAll, finCheck, finListMap, fracToPct, type AutoItem, type FinCheck } from '../pages/cost-agent/settings/financeApi'
 import { fmtNumber } from '../utils/CostAgentHelpers'
 import {
-  apNoteDraftTotals, createApNoteDraft, fetchApNoteDraft, rebuildApNoteDraft,
+  apNoteDraftTotals, createApNoteDraft, effectiveApNoteIssues, fetchApNoteDraft, rebuildApNoteDraft,
   syncApNoteDraftMapping, updateApNoteDraftHeader, updateApNoteDraftLine, type ApNoteDraftFull, type ApNoteDraftLine,
 } from '../utils/CostAgentApNoteDraft'
 
 type Issue = ApNoteDraftFull['draft']['issues'][number]
-type FieldKey = 'company' | 'supplier' | 'vessel' | 'note_type' | 'reference' | 'fp_no' | 'remarks' | 'description' | 'expense_type' | 'unit_price' | 'tax' | 'row'
+type FieldKey = 'company' | 'supplier' | 'vessel' | 'note_type' | 'reference' | 'fp_no' | 'remarks' | 'description' | 'coa' | 'unit_price' | 'tax' | 'row'
 // Isu dari RPC pratinjau (code + message + line_no) dipetakan ke field penyebabnya lewat teks pesan; tanpa kecocokan -> daftar "Other".
 function issueField(i: Issue): FieldKey | null {
   const m = i.message.toLowerCase()
   if (i.line_no !== undefined) {
+    if (m.includes('coa')) return 'coa'
     if (m.includes('ap note name')) return 'description'
-    if (m.includes('expense type') || m.includes('not mapped')) return 'expense_type'
     if (m.includes('tax') || m.includes('ppn') || m.includes('pph')) return 'tax'
     if (m.includes('amount') || m.includes('zero') || m.includes('negative')) return 'unit_price'
     return 'row'
@@ -43,11 +44,12 @@ const pct = (v: number | null) => (v === null ? '—' : `${fracToPct(v)}%`)
 const STATUS_TONE: Record<string, 'grey' | 'plum' | 'green' | 'red' | 'amber'> = { draft: 'amber', posting: 'plum', posted: 'green', failed: 'red', cancelled: 'grey' }
 const INPUT = 'w-full h-8 px-2 rounded-md border border-[#EADFD6] bg-white text-[12.5px] text-[#3B1B3D] focus:outline-none focus:border-[#6B3470] disabled:bg-[#F6EFEA] disabled:text-[#6E5E70]'
 
-export default function CostAgentApNoteDraftCard({ invoiceId, invoiceStatus, canEdit, actor, vendorName, vendorNpwp, vesselName, onToast }: {
+export default function CostAgentApNoteDraftCard({ invoiceId, invoiceStatus, canEdit, actor, vendorName, vendorNpwp, vesselName, invoiceLines, onToast }: {
   invoiceId: number
   vendorName: string | null
   vendorNpwp: string | null
   vesselName: string | null
+  invoiceLines: { id: number; cost_item_id: number | null }[] // baris invoice (modal) -> cost_item_id per baris draft
   invoiceStatus: string
   canEdit: boolean // canEdit('cost_agent_payment')
   actor: string | null
@@ -57,6 +59,8 @@ export default function CostAgentApNoteDraftCard({ invoiceId, invoiceStatus, can
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const costItemRef = useRef<Map<number, number | null>>(new Map())
+  costItemRef.current = new Map(invoiceLines.map(l => [l.id, l.cost_item_id]))
   const syncedFor = useRef<number | null>(null)
   const autoTried = useRef<number | null>(null) // auto-create hanya SEKALI per invoice (hindari loop bila gagal)
   // Antrean dialog "Map to Ascend": 1 item (klik sel merah) atau banyak (Resolve). Selesai/Skip semua -> draft disinkronkan.
@@ -65,6 +69,7 @@ export default function CostAgentApNoteDraftCard({ invoiceId, invoiceStatus, can
   const [mapDb, setMapDb] = useState<string | null>(null)
   const [auto, setAuto] = useState<{ done: number; total: number } | null>(null)
   const [showPreview, setShowPreview] = useState(false)
+  const [coaFor, setCoaFor] = useState<ApNoteDraftLine | null>(null)
   const stopRef = useRef(false)
   const aliasRef = useRef<Map<number, string>>(new Map())
   const [dirty, setDirty] = useState(false) // ada mapping tersimpan selama antrean berjalan -> sinkron saat antrean habis
@@ -99,7 +104,7 @@ export default function CostAgentApNoteDraftCard({ invoiceId, invoiceStatus, can
   }
   const syncDraft = async () => {
     setBusy(true)
-    try { setFull(await syncApNoteDraftMapping(full!.draft.id, invoiceId, actor)); onToast('Mapping saved — draft updated.') }
+    try { setFull(await syncApNoteDraftMapping(full!.draft.id, invoiceId, actor, costItemRef.current)); onToast('Mapping saved — draft updated.') }
     catch (e: any) { setError(e?.message || String(e)) } finally { setBusy(false) }
   }
   const nextInQueue = (saved: boolean) => {
@@ -140,12 +145,12 @@ export default function CostAgentApNoteDraftCard({ invoiceId, invoiceStatus, can
       let f = await fetchApNoteDraft(invoiceId)
       if (!f && canEdit && invoiceStatus === 'approved' && autoTried.current !== invoiceId) {
         autoTried.current = invoiceId
-        f = await createApNoteDraft(invoiceId, actor)
+        f = await createApNoteDraft(invoiceId, actor, costItemRef.current)
       }
       // Isu draft = snapshot saat dibangun; mapping bisa berubah sesudahnya -> sinkron diam-diam sekali saat tab dibuka (edit manual tidak ditimpa).
       if (f && canEdit && (f.draft.status === 'draft' || f.draft.status === 'failed') && syncedFor.current !== invoiceId) {
         syncedFor.current = invoiceId
-        try { f = (await syncApNoteDraftMapping(f.draft.id, invoiceId, actor)) ?? f } catch { /* tampilkan snapshot lama */ }
+        try { f = (await syncApNoteDraftMapping(f.draft.id, invoiceId, actor, costItemRef.current)) ?? f } catch { /* tampilkan snapshot lama */ }
       }
       setFull(f)
     } catch (e: any) { setError(e?.message || String(e)) } finally { setLoading(false) }
@@ -163,11 +168,11 @@ export default function CostAgentApNoteDraftCard({ invoiceId, invoiceStatus, can
   }
   const rebuild = () => {
     if (!full || !window.confirm('Rebuild the draft from the invoice? Manual edits to this draft will be replaced.')) return
-    void run(async () => setFull(await rebuildApNoteDraft(full.draft.id, invoiceId, actor)), 'Draft rebuilt from invoice.')
+    void run(async () => setFull(await rebuildApNoteDraft(full.draft.id, invoiceId, actor, costItemRef.current)), 'Draft rebuilt from invoice.')
   }
   const saveHeader = (patch: { fp_no?: string | null; remarks?: string | null }) =>
     run(async () => { await updateApNoteDraftHeader(full!.draft.id, patch, actor); setFull(f => f && { ...f, draft: { ...f.draft, ...patch } }) })
-  const saveLine = (l: ApNoteDraftLine, patch: Partial<Pick<ApNoteDraftLine, 'description' | 'qty' | 'unit_price'>>) =>
+  const saveLine = (l: ApNoteDraftLine, patch: Partial<Pick<ApNoteDraftLine, 'description' | 'qty' | 'unit_price' | 'account_id' | 'account_code' | 'account_name'>>) =>
     run(async () => { await updateApNoteDraftLine(l.id, patch); setFull(f => f && { ...f, lines: f.lines.map(x => x.id === l.id ? { ...x, ...patch } : x) }) })
 
   if (loading && !full) return <div className={`${SA_CARD} p-4`}><LoadingState fullHeight={false} /></div>
@@ -184,8 +189,10 @@ export default function CostAgentApNoteDraftCard({ invoiceId, invoiceStatus, can
   const { draft: d, lines } = full
   const editable = canEdit && (d.status === 'draft' || d.status === 'failed') && !busy
   const t = apNoteDraftTotals(lines)
-  const errors = d.issues.filter(i => i.level === 'error')
-  const warnings = d.issues.filter(i => i.level === 'warning')
+  // Expense type tidak dipakai lagi (diganti COA per baris): isu expense type dibuang, isu "COA belum dipilih" dihitung dari baris.
+  const eff = effectiveApNoteIssues(d, lines)
+  const errors = eff.issues.filter(i => i.level === 'error')
+  const warnings = eff.issues.filter(i => i.level === 'warning')
   const hMarks: Partial<Record<FieldKey, Mark>> = {}
   const lMarks: Record<number, Partial<Record<FieldKey, Mark>>> = {}
   const other: Issue[] = []
@@ -194,7 +201,7 @@ export default function CostAgentApNoteDraftCard({ invoiceId, invoiceStatus, can
     if (!cur) bag[f] = { level: i.level, msgs: [i.message] }
     else { cur.msgs.push(i.message); if (i.level === 'error') cur.level = 'error' }
   }
-  for (const i of d.issues) {
+  for (const i of eff.issues) {
     const f = issueField(i)
     if (!f) { other.push(i); continue }
     if (i.line_no !== undefined) put((lMarks[i.line_no] ??= {}), f, i)
@@ -202,7 +209,7 @@ export default function CostAgentApNoteDraftCard({ invoiceId, invoiceStatus, can
   }
   const cls = (m?: Mark) => (m ? MARK[m.level] : '')
   const tip = (m?: Mark) => m?.msgs.join('\n')
-  const mapBtn = (f: FieldKey, onClick: () => void, m: Mark | undefined = hMarks[f]) => (canEdit && !busy && m?.level === 'error' && (f === 'supplier' || f === 'vessel' || f === 'expense_type') && m.msgs.some(x => /not mapped/i.test(x))
+  const mapBtn = (f: FieldKey, onClick: () => void, m: Mark | undefined = hMarks[f]) => (canEdit && !busy && m?.level === 'error' && (f === 'supplier' || f === 'vessel') && m.msgs.some(x => /not mapped/i.test(x))
     ? <button type="button" className="mt-1 inline-flex items-center gap-1 text-[11.5px] font-semibold text-[#6B3470] underline hover:no-underline" onClick={onClick}><Link2 size={11} /> Map to Ascend</button> : null)
   const ascendInfo = (f: FieldKey) => {
     const name = !chk ? null : f === 'vessel' ? (chk.vessel.status === 'mapped' ? [chk.vessel.vessel_code, chk.vessel.vessel_name].filter(Boolean).join(' - ') : null)
@@ -210,7 +217,7 @@ export default function CostAgentApNoteDraftCard({ invoiceId, invoiceStatus, can
     return name ? <div className="mt-0.5 text-[11.5px] font-semibold text-[#17663D] flex items-center gap-1 wrap-anywhere" title="Mapped to this Ascend master"><Link2 size={11} className="shrink-0" /> Ascend: {name}</div> : null
   }
   const hNote = (f: FieldKey) => hMarks[f] && <div className={`mt-0.5 text-[11px] leading-tight ${hMarks[f]!.level === 'error' ? 'text-[#A8231A]' : 'text-[#7A4F00]'}`}>{hMarks[f]!.msgs[0]}</div>
-  const postable = d.status === 'draft' && d.errors === 0 && lines.length > 0
+  const postable = d.status === 'draft' && eff.errors === 0 && lines.length > 0
 
   return (
     <section className={`${SA_CARD} p-4 space-y-3`} data-apnote-draft>
@@ -238,7 +245,7 @@ export default function CostAgentApNoteDraftCard({ invoiceId, invoiceStatus, can
         <table className="min-w-full text-[12.5px] text-[#3B1B3D]">
           <thead>
             <tr className="bg-[#FBF7F4] border-b border-[#EADFD6] text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[#6E5E70]">
-              <th className="px-2.5 py-2 w-8">#</th><th className="px-2.5 py-2">Description</th><th className="px-2.5 py-2">Expense type</th>
+              <th className="px-2.5 py-2 w-8">#</th><th className="px-2.5 py-2">Description</th><th className="px-2.5 py-2">COA</th>
               <th className="px-2.5 py-2 text-right w-20">Qty</th><th className="px-2.5 py-2 text-right w-32">Unit price</th>
               <th className="px-2.5 py-2 text-right">PPN</th><th className="px-2.5 py-2 text-right">PPh</th><th className="px-2.5 py-2 text-right">Amount</th>
             </tr>
@@ -252,7 +259,12 @@ export default function CostAgentApNoteDraftCard({ invoiceId, invoiceStatus, can
                 <td className={`px-2.5 py-1.5 text-[#8A7A8B] ${cls(lm.row)}`} title={tip(lm.row)}>{l.line_no ?? '—'}</td>
                 <td className="px-2 py-1"><input className={`${INPUT} ${cls(lm.description)}`} title={tip(lm.description)} defaultValue={l.description ?? ''} disabled={!editable}
                   onBlur={e => { const v = e.target.value.trim(); if (v !== (l.description ?? '')) void saveLine(l, { description: v }) }} /></td>
-                <td className={`px-2.5 py-1.5 ${cls(lm.expense_type)}`} title={tip(lm.expense_type)}>{l.expense_type || <Chip tone="amber">Not mapped</Chip>}{l.line_no !== null && mapBtn('expense_type', () => openMap('expense', l.line_no!, lm.expense_type?.msgs), lm.expense_type)}</td>
+                <td className={`px-2 py-1 ${cls(lm.coa)}`} title={tip(lm.coa)}>
+                  <button type="button" disabled={!editable || !d.ascend_db} onClick={() => setCoaFor(l)} data-coa-cell
+                    className={`w-full text-left rounded-md px-2 py-1 text-[12.5px] disabled:cursor-default ${l.account_id ? 'text-[#3B1B3D] hover:bg-[#F6EFF7]' : 'font-semibold text-[#A8231A] underline hover:no-underline'}`}>
+                    {l.account_id ? <><span className="font-semibold tabular-nums text-[#5A305A]">{l.account_code}</span> <span className="text-[#6E5E70]">{l.account_name}</span></> : 'Select COA'}
+                  </button>
+                </td>
                 <td className="px-2 py-1"><input className={`${INPUT} text-right`} inputMode="decimal" defaultValue={String(l.qty)} disabled={!editable}
                   onBlur={e => { const v = Number(e.target.value.replace(',', '.')); if (Number.isFinite(v) && v >= 0 && v !== Number(l.qty)) void saveLine(l, { qty: v }); else e.target.value = String(l.qty) }} /></td>
                 <td className="px-2 py-1"><input className={`${INPUT} text-right ${cls(lm.unit_price)}`} title={tip(lm.unit_price)} inputMode="decimal" defaultValue={String(l.unit_price)} disabled={!editable}
@@ -316,6 +328,11 @@ export default function CostAgentApNoteDraftCard({ invoiceId, invoiceStatus, can
       {queue[0] && mapDb && (
         <MapToAscendDialog target={queue[0]} database={mapDb} progress={queueTotal > 1 ? `Item ${queueTotal - queue.length + 1} of ${queueTotal}` : undefined}
           toast={(m, tone) => onToast(m, tone === 'ok' ? 'ok' : 'warn')} onClose={() => nextInQueue(false)} onSaved={() => nextInQueue(true)} />
+      )}
+      {coaFor && d.ascend_db && (
+        <CostAgentCoaPicker database={d.ascend_db} title={`Line ${coaFor.line_no ?? ''} · ${coaFor.description ?? ''}`} current={{ id: coaFor.account_id, code: coaFor.account_code, name: coaFor.account_name }}
+          onClose={() => setCoaFor(null)}
+          onPick={a => { const l = coaFor; setCoaFor(null); void saveLine(l, { account_id: a.id, account_code: a.code, account_name: a.name }) }} />
       )}
       {showPreview && <CostAgentApNotePreviewModal invoiceId={invoiceId} onToast={onToast} onClose={() => setShowPreview(false)} />}
     </section>

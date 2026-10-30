@@ -36,6 +36,16 @@ export const ascendErrorText = (e: unknown): string => {
 // ─── Pencarian kandidat ─────────────────────────────────────────────────────────────────────────────────────────
 export type AscendKind = 'supplier' | 'vessel' | 'expense'
 
+// ─── Master COA (AC_Accounts) -- dipilih per baris draft AP Note ──────────────────────────────────────────────
+export interface AscendAccount { id: number; code: string | null; name: string | null }
+// Istilah dipecah per kata (semua harus ada, di kode ATAU nama akun); kosong = semua akun aktif urut kode.
+export async function searchAccounts(database: string, term: string, top = 50): Promise<AscendAccount[]> {
+  const toks = words(term).filter(w => w.length >= 2).slice(0, 4)
+  const filter = ['IsDisabled eq false', ...toks.map(w => `(contains(AccountName,${lit(w)}) or contains(AccountCode,${lit(w)}))`)].join(' and ')
+  const r = await odata<{ value: Record<string, unknown>[] }>('AC_Accounts', { database, $select: 'AccountID,AccountCode,AccountName,IsDisabled', $filter: filter, $orderby: 'AccountCode', $top: String(top) })
+  return (r.value || []).map(x => ({ id: Number(x.AccountID), code: x.AccountCode == null ? null : String(x.AccountCode), name: x.AccountName == null ? null : String(x.AccountName) }))
+}
+
 // Bentuk kandidat = bentuk yang dibaca fn_cost_agent_finance_pick & disimpan fn_cost_agent_finance_save_map.
 export interface AscendCandidate {
   id: string | number

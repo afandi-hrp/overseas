@@ -486,7 +486,8 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
               {['approved', 'journal', 'paid'].includes(data.invoice.status) && (
                 <div className="px-4 pt-4 -mb-2">
                   <CostAgentApNoteDraftCard invoiceId={data.invoice.id} invoiceStatus={data.invoice.status} canEdit={canPay} actor={actor} onToast={onToast}
-                    vendorName={data.invoice.vendor_name} vendorNpwp={vendors.find(v => v.id === data.invoice.vendor_id)?.npwp ?? null} vesselName={data.invoice.vessel_name} />
+                    vendorName={data.invoice.vendor_name} vendorNpwp={vendors.find(v => v.id === data.invoice.vendor_id)?.npwp ?? null} vesselName={data.invoice.vessel_name}
+                    invoiceLines={data.lines} />
                 </div>
               )}
               <CostAgentPaymentsPanel data={data} canPay={canPay} actor={actor}
