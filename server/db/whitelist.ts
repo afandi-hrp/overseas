@@ -158,6 +158,7 @@ const MANUAL_TABLES: Record<string, DbOp[]> = {
   cost_agent_cost_items: ['select'],
   cost_agent_ports: ['select'],
   cost_agent_vendor_bank: ['select'],
+  cost_agent_vendor_item_overrides: ['select'], // daftar override per vendor (tulis hanya lewat RPC, sql/111)
   cost_agent_vessels: ['select'],
   cost_agent_voyage_list_v: ['select'],
   // Wajib ganti password (sql/066) -- AuthContext membaca penanda milik sendiri
@@ -197,6 +198,9 @@ for (const [t, ops] of Object.entries(MANUAL_TABLES)) {
   'fn_cost_agent_list_tax_rules', 'fn_cost_agent_apply_tax_rules', 'fn_cost_agent_override_line_tax',
   // Cost Agent: pratinjau AP Note (sql/085)
   'fn_cost_agent_apnote_preview',
+  // Cost Agent: pemetaan akun Ascend per PT + override per vendor (sql/110/110b/111)
+  'fn_cost_agent_account_map_list', 'fn_cost_agent_account_map_save', 'fn_cost_agent_account_map_delete', 'fn_cost_agent_account_map_autofill',
+  'fn_cost_agent_save_vendor_item_override', 'fn_cost_agent_delete_vendor_item_override',
   // Cost Agent: gerbang dokumen, periode invoice, auto-verify (sql/087)
   'fn_cost_agent_get_doc_gate', 'fn_cost_agent_run_checks', 'fn_cost_agent_set_invoice_period',
   // Cost Agent: alasan per baris "kenapa belum auto-verified" (hanya baca; sql/095 versi user)

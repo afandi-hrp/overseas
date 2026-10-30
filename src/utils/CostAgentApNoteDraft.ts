@@ -132,7 +132,7 @@ export function apNoteDraftTotals(lines: ApNoteDraftLine[]) {
 /** Isu yang dipakai draft: kolom Expense type TIDAK dipakai lagi (diganti COA) -> isu baris soal expense type / jenis biaya belum dipetakan dibuang;
  *  isu "COA belum dipilih" dihitung dari baris draft. Kembali: isu yang berlaku + jumlah error/warning. */
 export function effectiveApNoteIssues(d: ApNoteDraft, lines: ApNoteDraftLine[]) {
-  const issues = d.issues.filter(i => !(i.line_no !== undefined && /expense type|not mapped/i.test(i.message)))
+  const issues = d.issues.filter(i => !(i.line_no !== undefined && !i.code?.startsWith('account_') && /expense type|not mapped/i.test(i.message))) // isu account_* (sql/111) selalu dipertahankan
   for (const l of lines) if (!l.account_id) issues.push({ level: 'error', code: 'coa_missing', message: `Line ${l.line_no ?? '?'}: COA is not selected`, ...(l.line_no !== null ? { line_no: l.line_no } : {}) })
   return { issues, errors: issues.filter(i => i.level === 'error').length, warnings: issues.filter(i => i.level === 'warning').length }
 }

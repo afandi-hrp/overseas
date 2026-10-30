@@ -19,8 +19,9 @@ const METHOD_LABEL: Record<string, string> = {
 }
 const WARN_KIND: Record<string, string> = { same: 'same keyword', overlap: 'overlapping phrase' }
 
-interface Form { code: string; name: string; category: string; gl_account: string; priority: string; keywords: string[]; is_active: boolean }
-const toForm = (i: HubCostItem): Form => ({ code: i.code, name: i.name, category: i.category || '', gl_account: i.gl_account || '', priority: i.priority == null ? '' : String(i.priority), keywords: i.keywords || [], is_active: i.is_active })
+interface Form { code: string; name: string; category: string; gl_account: string; ap_description: string; priority: string; keywords: string[]; is_active: boolean }
+const toForm = (i: HubCostItem): Form => ({ code: i.code, name: i.name, category: i.category || '', gl_account: i.gl_account || '', ap_description: i.ap_description || '', priority: i.priority == null ? '' : String(i.priority), keywords: i.keywords || [], is_active: i.is_active })
+const AP_DESC_MAX = 100
 
 export default function CostItemsTab({ ctx }: { ctx: HubCtx }) {
   const [search, setSearch] = useState('')
@@ -62,7 +63,7 @@ export default function CostItemsTab({ ctx }: { ctx: HubCtx }) {
         <HubToolbarEnd count={data ? `${fmtNumber(all.length, 0)} cost items` : ''} viewOnly={!ctx.editable}>
           <button type="button" className={SA_BTN_OUTLINE} onClick={() => setAliasFor({ id: null, title: 'all cost items' })}><Library size={13} /> Learned aliases</button>
           {ctx.editable && <button type="button" className={SA_BTN_OUTLINE} onClick={() => setReclassFor({ id: null, label: '' })}><RefreshCw size={13} /> Re-classify open invoices…</button>}
-          {ctx.editable && <button type="button" className={SA_BTN_PRIMARY} onClick={() => setDrawer({ id: null, init: { code: '', name: '', category: '', gl_account: '', priority: '500', keywords: [], is_active: true }, system: false })}><Plus size={13} /> Add cost item</button>}
+          {ctx.editable && <button type="button" className={SA_BTN_PRIMARY} onClick={() => setDrawer({ id: null, init: { code: '', name: '', category: '', gl_account: '', ap_description: '', priority: '500', keywords: [], is_active: true }, system: false })}><Plus size={13} /> Add cost item</button>}
         </HubToolbarEnd>
       </HubFilterBar>
 
@@ -82,9 +83,9 @@ export default function CostItemsTab({ ctx }: { ctx: HubCtx }) {
 
       <TableCard>
         <table className="min-w-full">
-          <thead><tr>{['Code', 'Name', 'Category', 'GL account', 'Priority', 'Keywords', 'Used by', 'Active', ''].map((h, i) => <th key={h || 'a'} className={`${TH} ${i === 4 ? 'text-right' : ''} ${i === 3 ? HIDE_LG : ''}`}>{h}</th>)}</tr></thead>
+          <thead><tr>{['Code', 'Name', 'Category', 'Account code', 'AP Note description', 'Priority', 'Keywords', 'Used by', 'Active', ''].map((h, i) => <th key={h || 'a'} className={`${TH} ${i === 5 ? 'text-right' : ''} ${i === 3 || i === 4 ? HIDE_LG : ''}`}>{h}</th>)}</tr></thead>
           <tbody>
-            <StateRow colSpan={9} loading={loading} error={error} onRetry={reload} empty={rows.length === 0} emptyText="No cost items match the filter" />
+            <StateRow colSpan={10} loading={loading} error={error} onRetry={reload} empty={rows.length === 0} emptyText="No cost items match the filter" />
             {!loading && !error && rows.map(i => (
               <tr key={i.id} className={`border-t border-[#F3EEEA] ${i.is_active ? '' : 'opacity-60 bg-[#FAF8F7]'}`} data-cost-item-row={i.id}>
                 <td className={`${TD} font-mono text-[11.5px] font-bold whitespace-nowrap`}>
@@ -93,6 +94,7 @@ export default function CostItemsTab({ ctx }: { ctx: HubCtx }) {
                 <td className={`${TD} font-semibold min-w-[160px]`}>{i.name}</td>
                 <td className={TD}>{i.category ? <Chip tone="plum">{i.category}</Chip> : '—'}</td>
                 <td className={`${TD} whitespace-nowrap ${HIDE_LG}`}>{i.gl_account || '—'}</td>
+                <td className={`${TD} min-w-[160px] ${HIDE_LG}`}>{i.ap_description || '—'}</td>
                 <td className={`${TD} text-right tabular-nums`}>{i.priority ?? '—'}</td>
                 <td className={TD}><ChipList items={i.keywords} max={4} tone="blue" /></td>
                 <td className={`${TD} min-w-[140px]`}><UsedBy items={[{ n: i.lines_count, label: 'lines' }, { n: i.history_count, label: 'history rows', short: 'history' }, { n: i.alias_count, label: 'aliases' }]} /></td>
@@ -193,10 +195,12 @@ function CostItemDrawer({ id, init, system, categories, onClose, onSaved, onClos
     if (id === null && !/^[A-Z0-9_]+$/.test(f.code)) return setError('Code is required: capital letters A-Z, digits and underscore only.')
     if (!f.name.trim()) return setError('Name is required.')
     if (pr !== null && (Number.isNaN(pr) || !Number.isInteger(pr) || pr < 1 || pr > 999)) return setError('Priority must be a whole number between 1 and 999.')
+    if (f.ap_description.trim().length > AP_DESC_MAX) return setError(`AP Note description is too long (max ${AP_DESC_MAX}).`)
     setBusy(true); setError(null)
     try {
       const r = await hubSaveCostItem(id, {
         ...(id === null ? { code: f.code } : {}), name: f.name.trim(), category: f.category.trim().toUpperCase() || null, gl_account: f.gl_account.trim() || null,
+        ap_description: f.ap_description.trim() || null, // server: huruf besar + spasi dirapikan (maks 100)
         priority: pr, keywords: f.keywords, is_active: system ? true : f.is_active,
       })
       onSaved()
@@ -236,9 +240,12 @@ function CostItemDrawer({ id, init, system, categories, onClose, onSaved, onClos
           <datalist id="hub-cost-categories">{categories.map(c => <option key={c} value={c} />)}</datalist>
         </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="GL account"><input className={SA_INPUT} value={f.gl_account} onChange={e => set('gl_account', e.target.value)} /></Field>
+          <Field label="Account code (Ascend)" helper="Matched to the Ascend AccountCode (Account mapping tab)"><input className={SA_INPUT} value={f.gl_account} onChange={e => set('gl_account', e.target.value)} /></Field>
           <Field label="Priority" hint="1-999" helper="Lower number is checked first"><input className={`${SA_INPUT} tabular-nums`} inputMode="numeric" value={f.priority} onChange={e => set('priority', e.target.value.replace(/\D/g, ''))} /></Field>
         </div>
+        <Field label="AP Note description" hint={`${f.ap_description.trim().length}/${AP_DESC_MAX}`} helper="The uniform name shown in the AP Note description. Saved in capital letters with spaces tidied.">
+          <input className={`${SA_INPUT} uppercase`} value={f.ap_description} maxLength={AP_DESC_MAX} onChange={e => set('ap_description', e.target.value)} />
+        </Field>
         <Field label="Keywords" helper="Words or phrases on the invoice line that identify this cost. Case and punctuation are ignored. A phrase of 3+ words wins over a single word.">
           <ChipInput values={f.keywords} onChange={v => set('keywords', v)} normalize={s => s.trim()} />
         </Field>

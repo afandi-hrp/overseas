@@ -1327,3 +1327,32 @@ Revisi (2026-10-29, permintaan user): rincian status **digabung ke chip status d
 
 Revisi (2026-10-30, permintaan user): isi kolom **Route** kartu Voyage dipusatkan horizontal di antara dua pembatas (padding kiri-kanan sama, teks + node rute rata tengah, >= 1180px). Kolom lain tidak diubah.
 Revisi (2026-10-30, permintaan user): label Route tidak lagi di atas -- sebaris "Route: BLW › LSM › KRR" (tetap di tengah pembatas; membungkus bila rute panjang).
+
+## AP Note: Description, AccountCode, pemetaan akun Ascend, override vendor, aturan pajak per pelabuhan (2026-10-30, permintaan user "PROMPT UPDATE 111"; SQL 110, 110b, 111 dari sisi lain, SUDAH DIJALANKAN -- 6 RPC baru + kolom `ap_description`/`port_id` terbaca di production per cek MCP; file lokal `sql/111_cost_agent_apnote_description_account.sql`, 110/110b tidak ada di repo)
+
+Backend: jenis biaya punya `ap_description` (nama seragam di AP Note; server membuat huruf besar & merapikan spasi, maks 100) dan `gl_account` (= AccountCode Ascend). Tabel `cost_agent_finance_account_map`
+(jenis biaya x PT -> akun Ascend; unique cost_item_id + company_code), `cost_agent_vendor_item_overrides` (vendor x jenis biaya -> akun / nama khusus), `cost_agent_tax_rules.port_id`.
+Prioritas di `fn_cost_agent_apnote_preview`: **AccountCode** = override vendor > akun hasil pemetaan PT > `gl_account` jenis biaya; **Description** = deskripsi baris manual > `ap_description` override vendor >
+`ap_description` jenis biaya > `finance_alias` > nama jenis biaya, lalu " - <vessel>". Issue baru: `account_code` (warning), `account_disabled` (ERROR, memblokir kirim), `account_mismatch` (warning);
+baris preview membawa `_account_id` (AccountID Ascend) untuk pengiriman nanti. Yang menimpa akun HANYA bila override tidak punya `gl_account` (server).
+
+- **Settings > Cost Items** (`CostItemsTab.tsx`): kolom & field **AP Note description** (maks 100, `ap_description` ikut `p_data` `fn_cost_agent_save_cost_item`); label `gl_account` jadi **Account code (Ascend)**.
+  `fn_cost_agent_list_cost_items` memakai `to_jsonb(ci)`, jadi `ap_description` ikut otomatis. Alias lama "AP Note name" (`finance_alias`, tab Finance mapping > Cost items) TETAP ada dan dipakai sebagai cadangan.
+- **Tab baru "Account mapping"** (key `account-mapping`, tepat setelah "Finance mapping"; `AccountMappingTab.tsx`, `ChooseAccountDialog.tsx`, `accountMapApi.ts`): pilih PT -> `fn_cost_agent_account_map_list`
+  (filter chip All / Mapped / Missing / Mismatch / No account code = `p_status`; lencana "Differs from item's default account" kuning, "Disabled in Ascend" merah, Auto / Manual + gembok). **Choose account** =
+  pencarian ke Ascend lewat proxy lean-api yang sudah ada (`AC_Accounts`, `database` = `ascend_db` baris, `$select=AccountID,AccountCode,AccountName,IsDisabled`, `$filter=IsDisabled eq false`, `$search`, `$top=50`)
+  -> `fn_cost_agent_account_map_save(..., p_source='user')` (Manual, terkunci). **Remove** = `fn_cost_agent_account_map_delete`. **Auto-map** = menarik SEMUA akun database PT itu (aktif & nonaktif, `$top=200`/`$skip`,
+  `$count=true`, `$orderby=AccountCode`, Stop tersedia selama pemuatan) lalu `fn_cost_agent_account_map_autofill(p_company, p_accounts)`; hasil: ringkasan + daftar Not in Ascend / Ambiguous / Disabled in Ascend
+  (+ override vendor yang akunnya tak ada di Ascend). UI tidak menebak akun bila kode tidak ada / ganda. Izin: list = `cost_agent_approval_matrix` (baca); save / delete / autofill = edit pada
+  `fn_cost_agent_feature_key('apnote')` (`cost_agent_invoice`, atau `cost_agent_apnote` bila peran terdaftar / roles_strict) -- tombol tampil bila `ctx.editable`, penolakan server tampil apa adanya.
+- **Aturan pajak per pelabuhan** (`TaxRulesTab.tsx`): kolom **Port** (kosong = "All ports"), pilihan Port di form (`fetchCostAgentPorts`), `port_id` ikut `fn_cost_agent_save_tax_rule`; `fn_cost_agent_list_tax_rules` mengembalikan
+  `port_id`/`port_name`. Aturan paling spesifik (vendor + jenis biaya + pelabuhan) dipilih server, UI tidak menghitung.
+- **Vendor overrides** (`VendorOverridesDialog.tsx`, tombol "Overrides" di tiap baris tab Vendors; semua yang boleh membuka tab bisa MELIHAT, ubah hanya bila `ctx.editable`): daftar dibaca langsung dari tabel
+  `cost_agent_vendor_item_overrides` (ditambahkan ke `server/db/whitelist.ts`, hanya select), simpan `fn_cost_agent_save_vendor_item_override(p_vendor_id, p_cost_item_id, p_data{gl_account, ap_description, note})`
+  (UI wajib salah satu dari gl_account / ap_description, kedua kunci selalu dikirim -> kosong = dikosongkan), hapus `fn_cost_agent_delete_vendor_item_override`.
+- **Pratinjau AP Note** (`CostAgentApNotePreviewModal.tsx`): kolom baru **Account code** (dari `AccountCode`), teks issue lewat `apNoteIssueText()` = `message` server apa adanya (kode tak dikenal / tanpa message tidak error).
+  Excel (`ApNoteExcel.ts`) otomatis ikut mengisi kolom AccountCode karena menulis semua `columns` dari RPC (catatan lama "AccountCode sengaja kosong" di bagian AP Note preview SUDAH TIDAK BERLAKU). `_account_id` tidak
+  ditampilkan; draft AP Note (sql/104) menyimpannya di kolom `raw` baris draft (tidak ada kolom akun di kartu draft). Kartu draft memetakan issue `account_*` ke tanda "row".
+- **Berkas**: `utils/CostAgentAccountMapLogic.ts` (logika murni) + `utils/costAgentAccountMap.test.ts` (10 tes: filter status, ringkasan Auto-map termasuk daftar kosong, lencana, penarikan semua akun, form override, kolom Port,
+  issue baru & kode tak dikenal; masuk `npm test`), `settings/accountMapApi.ts`, whitelist: 6 RPC baru + tabel overrides.
+- **Belum teruji manual di browser** (tidak bisa login dari sesi Claude): tampilan semua perubahan di atas dan pencarian `$search` ke `AC_Accounts` pada lean-api yang hidup (mengikuti prompt; tab COA (Ascend) yang sudah ada juga memakainya).

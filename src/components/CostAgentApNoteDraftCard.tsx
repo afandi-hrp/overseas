@@ -22,6 +22,7 @@ function issueField(i: Issue): FieldKey | null {
   const m = i.message.toLowerCase()
   if (i.line_no !== undefined) {
     if (m.includes('coa')) return 'coa'
+    if (i.code?.startsWith('account_')) return 'row' // sql/111: account_code / account_disabled / account_mismatch (pesan memuat kata "account", bukan kata kunci sel lain)
     if (m.includes('ap note name')) return 'description'
     if (m.includes('tax') || m.includes('ppn') || m.includes('pph')) return 'tax'
     if (m.includes('amount') || m.includes('zero') || m.includes('negative')) return 'unit_price'

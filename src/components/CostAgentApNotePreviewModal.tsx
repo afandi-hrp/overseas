@@ -8,6 +8,7 @@ import { Chip, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_CARD, SA_LABEL } from './SeaAi
 import { finApnotePreview, fracToPct, type ApNotePreview } from '../pages/cost-agent/settings/financeApi'
 import { downloadApNoteExcel } from '../utils/ApNoteExcel'
 import { fmtNumber } from '../utils/CostAgentHelpers'
+import { apNoteIssueText } from '../utils/CostAgentAccountMapLogic'
 
 const rate = (v: unknown) => (v === null || v === undefined || v === '' ? '—' : `${fracToPct(Number(v))}%`)
 const rp = (v: unknown) => (v === null || v === undefined || v === '' ? '—' : fmtNumber(v, 0))
@@ -48,7 +49,7 @@ export default function CostAgentApNotePreviewModal({ invoiceId, onClose, onGoTo
 
   // Pemetaan jenis biaya SELALU per PT (sql/086): pesan RPC "... is not mapped to an Ascend expense type" ditampilkan dgn nama PT invoice.
   const issueText = (i: ApNotePreview['issues'][number]) =>
-    i.code === 'expense_map' && h?.company_code ? i.message.replace(/ is not mapped to an Ascend expense type\s*$/, ` is not mapped for ${h.company_code}`) : i.message
+    apNoteIssueText(i, h?.company_code) // message dari server apa adanya (issue baru account_* & kode tak dikenal juga); expense_map ditulis "... not mapped for <PT>"
   const issueRow = (i: ApNotePreview['issues'][number], tone: 'err' | 'warn', key: number) => (
     <li key={key} className="flex items-start gap-2">
       <span className={tone === 'err' ? 'text-[#A8231A]' : 'text-[#7A4F00]'}>•</span>
@@ -116,16 +117,17 @@ export default function CostAgentApNotePreviewModal({ invoiceId, onClose, onGoTo
                 <table className="min-w-full text-[12.5px] text-[#3B1B3D]">
                   <thead>
                     <tr className="bg-[#FBF7F4] border-b border-[#EADFD6] text-left text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[#6E5E70]">
-                      <th className="px-2.5 py-2">Description</th><th className="px-2.5 py-2">Expense Type</th>
+                      <th className="px-2.5 py-2">Description</th><th className="px-2.5 py-2">Account code</th><th className="px-2.5 py-2">Expense Type</th>
                       <th className="px-2.5 py-2 text-right">Qty</th><th className="px-2.5 py-2 text-right">Unit Price</th>
                       <th className="px-2.5 py-2 text-right">PPN Rate</th><th className="px-2.5 py-2 text-right">PPh Rate</th><th className="px-2.5 py-2">PPh Type</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {data.rows.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-[#6E5E70] italic">No cost lines.</td></tr>}
+                    {data.rows.length === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-[#6E5E70] italic">No cost lines.</td></tr>}
                     {data.rows.map((r, n) => (
                       <tr key={n} className="border-t border-[#F3EEEA] align-top">
                         <td className="px-2.5 py-1.5 [overflow-wrap:anywhere]">{r.Description || '—'}</td>
+                        <td className="px-2.5 py-1.5 font-mono text-[12px] whitespace-nowrap" data-apnote-account>{r.AccountCode || <span className="text-[#8A7A8B]">—</span>}</td>
                         <td className="px-2.5 py-1.5">{r['Expense Type'] || <Chip tone="amber">Not mapped</Chip>}</td>
                         <td className="px-2.5 py-1.5 text-right tabular-nums">{rp(r.Qty)}</td>
                         <td className="px-2.5 py-1.5 text-right tabular-nums">{rp(r['Unit Price'])}</td>
