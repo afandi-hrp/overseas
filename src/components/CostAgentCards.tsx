@@ -52,7 +52,9 @@ const NODE_TEXT: Record<'first' | 'mid' | 'last' | 'more', string> = {
   first: 'text-[#17663D]', last: 'text-[#2F4FA8]', mid: 'text-[#3B1B3D]', more: 'text-[#8A7A8B]',
 }
 
-const VSEP = 'border-[rgba(138,123,155,0.18)]'
+// Pembatas kolom lebih tegas (0.38; dulu 0.18) dan SETINGGI baris kartu: kolom diregangkan (items-stretch) dan isinya dipusatkan vertikal, jadi semua garis sama panjang.
+const VSEP = 'border-[rgba(138,123,155,0.38)]'
+const V_CENTER = '@min-[1180px]:flex @min-[1180px]:flex-col @min-[1180px]:justify-center'
 const V_PILL_LABEL = 'w-[74px] shrink-0 text-left'
 
 export const CostAgentVoyageCard: React.FC<{ r: CostAgentVoyageListRow; tzByCode: Map<string, string>; selected: boolean; onOpen: () => void }> = ({ r, tzByCode, selected, onOpen }) => {
@@ -63,13 +65,13 @@ export const CostAgentVoyageCard: React.FC<{ r: CostAgentVoyageListRow; tzByCode
   const noon = r.input_source === 'noon_report'
   const draft = r.status === 'draft'
   const SrcIcon = SOURCE_ICON[r.source] || Pencil
-  const sepV = `@min-[1180px]:border-l @min-[1180px]:pl-4 ${VSEP}`
+  const sepV = `@min-[1180px]:border-l @min-[1180px]:pl-4 ${V_CENTER} ${VSEP}`
   const sepH = `border-t pt-2.5 @min-[1180px]:border-t-0 @min-[1180px]:pt-0 ${VSEP}`
   return (
     <div className={`${cardCls(st?.tone || 'grey', selected)} group`} onClick={onOpen} data-voyage-card={r.id} aria-current={selected || undefined}>
-      <div className={`grid grid-cols-2 gap-x-3.5 gap-y-2.5 px-3.5 py-3 items-start @min-[1180px]:grid-cols-[minmax(200px,1.4fr)_minmax(140px,1fr)_260px_minmax(110px,0.8fr)_100px_100px] @min-[1180px]:gap-x-4 @min-[1180px]:px-4 @min-[1180px]:py-3.5 @min-[1180px]:items-center ${draft ? 'bg-[#FFFDF6]' : ''}`}>
+      <div className={`grid grid-cols-2 gap-x-3.5 gap-y-2.5 px-3.5 py-3 items-start @min-[1180px]:grid-cols-[minmax(200px,1.4fr)_minmax(150px,0.8fr)_minmax(260px,1fr)_minmax(130px,0.6fr)_minmax(110px,0.5fr)_100px] @min-[1180px]:gap-x-4 @min-[1180px]:px-4 @min-[1180px]:py-3.5 @min-[1180px]:items-stretch ${draft ? 'bg-[#FFFDF6]' : ''}`}>
         {/* 1. Nama kapal, bulan laporan, pil PT / Voy / charter / tipe / Noon Report */}
-        <div className="min-w-0">
+        <div className={`min-w-0 ${V_CENTER}`}>
           <div className="text-[14px] @min-[1180px]:text-[15px] font-extrabold text-[#3B2260] leading-tight truncate" title={r.vessel_name}>{r.vessel_name}</div>
           <div className="text-[11.5px] text-[#8A7A8B] mt-0.5 mb-1.5">{fmtReportMonth(r.report_month)}</div>
           <div className="flex flex-wrap items-center gap-1.5">
@@ -82,18 +84,22 @@ export const CostAgentVoyageCard: React.FC<{ r: CostAgentVoyageListRow; tzByCode
         </div>
 
         {/* 2. Rute: kode pelabuhan berurutan (hijau = pertama, biru = terakhir), gaya kolom PO · Origin di kartu Courier */}
-        <div className={`min-w-0 ${sepV}`} data-voyage-route>
-          <div className="text-[11px] text-[#8A7A8B]">Route</div>
-          {nodes.length === 0 ? <div className="mt-0.5 text-[12.5px] text-[#8A7A8B]">—</div> : (
-            <div className="mt-0.5 flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[12.5px] font-bold" title={r.route || undefined}>
-              {nodes.map((n, i) => (
-                <React.Fragment key={i}>
-                  {i > 0 && <span className="text-[#B9A9BA] font-normal" aria-hidden>›</span>}
-                  <span className={NODE_TEXT[n.kind]}>{n.code}</span>
-                </React.Fragment>
-              ))}
-            </div>
-          )}
+        {/* Route di TENGAH antara dua pembatas (2026-10-30, permintaan user): padding kiri-kanan sama, teks & node dipusatkan (>= 1180px). */}
+        <div className={`min-w-0 @min-[1180px]:border-l @min-[1180px]:px-2 @min-[1180px]:items-center @min-[1180px]:text-center ${V_CENTER} ${VSEP}`} data-voyage-route>
+          {/* Sebaris: "Route: BLW › LSM › KRR" (2026-10-30, permintaan user: label tidak di atas) */}
+          <div className="flex flex-wrap items-baseline @min-[1180px]:justify-center gap-x-1.5 gap-y-0.5" title={r.route || undefined}>
+            <span className="text-[11px] text-[#8A7A8B]">Route:</span>
+            {nodes.length === 0 ? <span className="text-[12.5px] text-[#8A7A8B]">—</span> : (
+              <span className="inline-flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[12.5px] font-bold">
+                {nodes.map((n, k) => (
+                  <React.Fragment key={k}>
+                    {k > 0 && <span className="text-[#B9A9BA] font-normal" aria-hidden>›</span>}
+                    <span className={NODE_TEXT[n.kind]}>{n.code}</span>
+                  </React.Fragment>
+                ))}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* 3. Pil Arrival / Departure (label lebar tetap supaya rata antar kartu); zona waktu pelabuhan pertama / terakhir */}
@@ -121,13 +127,13 @@ export const CostAgentVoyageCard: React.FC<{ r: CostAgentVoyageListRow; tzByCode
         </div>
 
         {/* 5. Terakhir diperbarui (slot "Total Expenses" kartu Courier) */}
-        <div className={`min-w-0 ${sepH}`}>
+        <div className={`min-w-0 ${sepH} ${V_CENTER}`}>
           <div className="text-[11px] text-[#8A7A8B]">Updated</div>
           <div className="text-[14px] @min-[1180px]:text-[15px] font-extrabold text-[#3B2260] tabular-nums leading-tight whitespace-nowrap" title={`Last updated ${fmtDate(r.updated_at)}`}>{fmtDate(r.updated_at)}</div>
         </div>
 
         {/* 6. Open › / Opened ✓ */}
-        <div className="min-w-0 flex @min-[1180px]:justify-end">
+        <div className="min-w-0 flex @min-[1180px]:justify-end @min-[1180px]:items-center">
           <button type="button" aria-pressed={selected} data-open-card onClick={e => { e.stopPropagation(); onOpen() }}
             className={`inline-flex items-center justify-center px-4 h-9 rounded-full border-[1.5px] border-[#6B3470] text-[13px] font-bold whitespace-nowrap transition-colors ${selected ? 'bg-[#F5EDF3] text-[#4A3A5C]' : 'bg-transparent text-[#6B3470] hover:bg-[#F5EDF3]'}`}>
             {selected ? 'Opened ✓' : 'Open ›'}
