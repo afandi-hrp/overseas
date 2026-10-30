@@ -1,7 +1,8 @@
 // Tab "Vendors" hub Cost Agent Settings (2026-10-26, sql/079) -- master vendor: fn_cost_agent_list_vendors / save_vendor / merge_vendors / delete_vendor.
 // Ubah hanya bila ctx.editable. NPWP 15 atau 16 digit (server juga memeriksa); duplikat nama / alias / NPWP ditolak server (pesan tampil inline di drawer).
 import { useEffect, useMemo, useState } from 'react'
-import { Pencil, Trash2, GitMerge, Plus, Link2 } from 'lucide-react'
+import { Pencil, Trash2, GitMerge, Plus, Link2, ListChecks } from 'lucide-react'
+import VendorOverridesDialog from './VendorOverridesDialog'
 import AscendReviewModal from './AscendReviewModal'
 import AscendMapBadge from './AscendMapBadge'
 import { finMappedIndex } from './financeApi'
@@ -41,6 +42,7 @@ export default function VendorsTab({ ctx }: { ctx: HubCtx }) {
   const [drawer, setDrawer] = useState<{ id: number | null; init: Form } | null>(null)
   const [mergeFor, setMergeFor] = useState<HubVendor | null>(null)
   const [delFor, setDelFor] = useState<HubVendor | null>(null)
+  const [overridesFor, setOverridesFor] = useState<HubVendor | null>(null)
   const [ascendMapOpen, setAscendMapOpen] = useState(false)
   const ascendIdx = useAsync(() => finMappedIndex('supplier'), [])
   const [busy, setBusy] = useState(false)
@@ -85,14 +87,15 @@ export default function VendorsTab({ ctx }: { ctx: HubCtx }) {
                 <td className={TD}><ActiveStatus active={v.is_active} /></td>
                 <td className={TD}><AscendMapBadge infos={ascendIdx.data?.get(v.id)} loading={ascendIdx.loading && !ascendIdx.data} failed={!!ascendIdx.error} /></td>
                 <td className={`${TD} whitespace-nowrap`}>
-                  {ctx.editable && (
-                    <div className="flex gap-1">
+                  <div className="flex gap-1">
+                    <button type="button" className={ICON_BTN} title="Vendor overrides (account code / AP Note description for this vendor only)" aria-label={`Overrides of ${v.name}`} onClick={() => setOverridesFor(v)}><ListChecks size={12} /> Overrides</button>
+                    {ctx.editable && <>
                       <button type="button" className={ICON_BTN} title="Edit" aria-label={`Edit ${v.name}`} onClick={() => setDrawer({ id: v.id, init: { name: v.name, npwp: v.npwp || '', aliases: v.aliases || [], is_active: v.is_active } })}><Pencil size={12} /></button>
                       <button type="button" className={ICON_BTN} title="Merge into…" aria-label={`Merge ${v.name}`} onClick={() => setMergeFor(v)}><GitMerge size={12} /></button>
                       <button type="button" className={ICON_BTN_DANGER} aria-label={`Delete ${v.name}`} disabled={!isUnused(v)}
                         title={isUnused(v) ? 'Delete' : 'In use — deactivate or merge it'} onClick={() => setDelFor(v)}><Trash2 size={12} /></button>
-                    </div>
-                  )}
+                    </>}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -108,6 +111,7 @@ export default function VendorsTab({ ctx }: { ctx: HubCtx }) {
       {mergeFor && <MergeModal source={{ id: mergeFor.id, name: mergeFor.name }} options={mergeOpts} run={hubMergeVendors} toast={ctx.toast}
         describe={(a, b) => `All invoices, history rows, approval rules and learned aliases of ${a} move to ${b}. The name of ${a} becomes an alias of ${b}, an empty NPWP of ${b} is filled from ${a}, and ${a} is deleted. This cannot be undone.`}
         onClose={() => setMergeFor(null)} onDone={() => { setMergeFor(null); refresh() }} />}
+      {overridesFor && <VendorOverridesDialog vendor={{ id: overridesFor.id, name: overridesFor.name }} editable={ctx.editable} toast={ctx.toast} onClose={() => setOverridesFor(null)} />}
       {delFor && <ConfirmModal title="Delete vendor" confirmLabel="Delete" danger busy={busy} onClose={() => setDelFor(null)} onConfirm={runDelete}>
         <p>Delete <b>{delFor.name}</b>? It is not used by any invoice, history row, approval rule or learned alias. This cannot be undone.</p>
       </ConfirmModal>}

@@ -25,6 +25,7 @@ const TABS: { key: string; label: string; Comp: React.LazyExoticComponent<TabCom
   { key: 'ports', label: 'Ports', Comp: lazy(() => import('./settings/PortsTab')) },
   { key: 'companies', label: 'Companies', Comp: lazy(() => import('./settings/CompaniesTab')) },
   { key: 'finance-mapping', label: 'Finance mapping', Comp: lazy(() => import('./settings/FinanceMappingTab')) },
+  { key: 'account-mapping', label: 'Account mapping', Comp: lazy(() => import('./settings/AccountMappingTab')) },
   { key: 'tax-rules', label: 'Tax rules', Comp: lazy(() => import('./settings/TaxRulesTab')) },
   { key: 'settings', label: 'Settings', Comp: lazy(() => import('./settings/SettingsTab')) },
   { key: 'ascend-vessel', label: 'Vessel (Ascend)', Comp: lazy(() => import('./settings/AscendTab').then(m => ({ default: m.VesselAscendTab }))) },

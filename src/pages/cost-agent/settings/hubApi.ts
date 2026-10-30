@@ -150,6 +150,7 @@ export const hubDismissUnmatchedDocs = (id: number, note: string | null) =>
 // ─── Cost items (sql/076-077) -- field dibaca toleran ──────────────────────────────────────────────────────────
 export interface HubCostItem {
   id: number; code: string; name: string; category: string | null; gl_account: string | null; priority: number | null
+  ap_description?: string | null // sql/111: nama seragam di AP Note (huruf besar, maks 100); gl_account = AccountCode Ascend
   keywords: string[] | null; is_active: boolean; is_system?: boolean | null
   lines_count?: number | null; history_count?: number | null; alias_count?: number | null
 }

@@ -20,6 +20,7 @@ type FieldKey = 'company' | 'supplier' | 'vessel' | 'note_type' | 'reference' | 
 function issueField(i: Issue): FieldKey | null {
   const m = i.message.toLowerCase()
   if (i.line_no !== undefined) {
+    if (i.code?.startsWith('account_')) return 'row' // sql/111: account_code / account_disabled / account_mismatch (pesan memuat kata "account", bukan kata kunci sel lain)
     if (m.includes('ap note name')) return 'description'
     if (m.includes('expense type') || m.includes('not mapped')) return 'expense_type'
     if (m.includes('tax') || m.includes('ppn') || m.includes('pph')) return 'tax'

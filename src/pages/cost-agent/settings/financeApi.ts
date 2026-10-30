@@ -87,6 +87,7 @@ export interface TaxRule {
   ppn_applicable: boolean | null; ppn_rate: number | null; pph_type: string | null; pph_rate: number | null
   effective_from: string; is_active: boolean; note: string | null
   cost_item_name: string | null; vendor_name: string | null
+  port_id?: number | null; port_name?: string | null // sql/111: null = semua pelabuhan
 }
 export const taxListRules = () => hubRpc<TaxRule[]>('fn_cost_agent_list_tax_rules', { p_vendor_id: null, p_cost_item_id: null })
 // Tarif dikirim sebagai PECAHAN (11% = 0.11); tampilan memakai persen.
