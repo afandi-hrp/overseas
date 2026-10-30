@@ -1640,6 +1640,33 @@ Release Date lewat `.update()` langsung ke `tabel_cost_validasi` (`cv_storage_we
 ulang otomatis isi Actual/Billing Days live (Actual/Billing Days sendiri TIDAK disimpan sbg
 kolom terpisah).
 
+## Audit Courier (Card) — kartu disamakan gayanya dgn kartu Invoice Recap Courier (2026-10-30, permintaan user)
+
+`CourierAuditRowCard` ditulis ulang SEBAGAI TAMPILAN (data, sumber angka, colOk per role, Reorder Mode, klik kartu = panel preview TIDAK berubah). Gaya = `CourierRecapGroupCard`: AWB tebal ungu `#3B2260`
+(fallback No. PIB/jalur bila kolom AWB disembunyikan) + vendor kecil abu + **pil** PT (abu) · jalur (PIB ungu / CN abu) · delivery term (plum); pembatas samar `rgba(138,123,155,.18)`; angka KPI besar ungu.
+- Layout lebar (lebar kartu >= **1000px**, container query): 6 kolom `[AWB/vendor/pil] | [No. PIB (hanya PIB) + "PPJK <tgl>"] | Total Expenses | Total Duty Tax | Final Check | [status]`.
+  Layout ringkas (panel preview terbuka): 2 kolom — baris 1 AWB | status (kanan atas), baris 2 No. PIB·PPJK | Total Expenses, baris 3 Total Duty Tax | Final Check; sel di-reset di layar lebar dgn `@min-[1000px]:[grid-area:auto]`.
+- Status = pil **Draft** (amber) / **Audited** (hijau) + pil "Accepted <tgl>" (Doc Acceptance) + chip "↻ Changed in Invoice Recap — please re-audit" (boleh turun baris); selektor `data-courier-card-status` tetap.
+- **Tombol Open/Opened DIHAPUS** (seperti Recap): seluruh kartu klik / Enter / Spasi = buka panel; klik tombol di dalam kartu & memilih teks tidak membuka. Saat Reorder Mode kartu tetap tak bisa dibuka.
+- **Pelajaran (bug 2026-10-30)**: versi pertama memakai `const WIDE = '@min-[1000px]'` lalu `${WIDE}:grid-cols-...` -> Tailwind TIDAK membuat kelas yang dirangkai lewat interpolasi string, jadi kartu selalu tampil
+  layout ringkas walau lebar. Tulis varian container query LITERAL penuh (`@min-[1000px]:...`) di setiap kelas; verifikasi dgn `vite build` + cari kelasnya di CSS hasil build.
+- Aksen kiri (kuning Draft / hijau NAS submitted / ungu) & latar hijau muda bila NAS submitted dipertahankan.
+
+## Invoice Recap Courier — kartu ringkas (panel terbuka) & header panel Validation dirapikan (2026-10-30, permintaan user)
+
+- **Kartu ringkas** (`CourierRecapGroupCard`, lebar kartu < 1180px = saat panel samping terbuka / laptop 14"): dulu 2 kolom auto-flow, pil invoice (label 108px + 2 tanggal 90px) lebih lebar dari setengah kartu
+  -> menimpa pil Submit di kolom sebelah & centang status jatuh di kiri bawah. Sekarang penempatan EKSPLISIT: baris 1 = AWB/vendor/PT | **status (centang hijau / Need Attention) di kanan atas**;
+  baris 2 = PO·Origin | Total Expenses; baris 3 = pil invoice **selebar penuh kartu** (`col-span-2`); baris 4 = Submit·Due | Open ›. Layout lebar (>= 1180px, 7 kolom) TIDAK berubah:
+  tiap sel di-reset dgn `@min-[1180px]:[grid-area:auto]` (urutan DOM tetap a1..a7).
+- **Susulan 2026-10-30 (permintaan user)**: tombol **"Open ›/Opened ✓" DIHAPUS** -> seluruh kartu bisa diklik (`role=button`, Enter/Spasi) = buka panel Validation kanan (tab sama spt tombol lama: Invoices bila tanpa pasangan
+  Audit/hak validasi); klik tombol di dalam kartu (+N PO) / memilih teks tidak membuka; kartu yang sudah terbuka TIDAK menutup saat diklik (tutup lewat ✕ panel; prop `onClose` kartu tak dipakai lagi).
+  Grid lebar kini 6 kolom (kolom 100px Open dihapus, Total Expenses `minmax(140px,0.8fr)`). Layout ringkas: pil **Not Submitted + Due pindah ke SAMPING centang status** (kanan atas; salinan `data-submit-due-compact`,
+  kolom Submit·Due aslinya hanya tampil >= 1180px); baris 4 dihapus.
+- **Susulan 2 2026-10-30 (permintaan user)**: layout ringkas -- kanan atas `justify-between` (pil Not Submitted/Due di kiri kolom, centang di ujung kanan) sehingga tepi kiri pil SEJAJAR dgn Total Expenses di bawahnya;
+  pil invoice Freight/Duty memakai lebar label = label terpanjang di kartu (`--lw`, ±6,2px/huruf) & kolom tanggal 80px (layout lebar tetap 108/90px) supaya tidak renggang.
+- **Header panel Validation** (`CourierRecapValidationPanel.tsx`): baris tombol|Total Expenses tidak `flex-wrap` lagi; sisi kiri (`flex-1`) yang membungkus tombol, sisi kanan (`shrink-0`) = Total Expenses
+  (label + nominal 1 baris) + tombol tutup, jadi di laptop 14" Total Expenses tetap di pojok kanan atas, tidak turun jadi baris sendiri.
+
 ## Invoice Recap Courier — toolbar 1 baris & kartu 2x2 di laptop 14" (2026-10-12, permintaan user)
 
 - **Panel filter** (tab PPJK · Search · Email date · PT · Attention · Card/List · Refresh · Export): sebelumnya Export jatuh sendirian ke baris ke-2 di laptop 14". Sekarang pola

@@ -174,8 +174,8 @@ export const CourierRecapGroupCard: React.FC<{
   validationTabs: ValidationTabKey[]
   selected?: boolean
   onValidation: (g: RecapGroup, tab?: RecapPanelTab) => void
-  onClose?: () => void
-}> = ({ g, companyNames, colOk, validationTabs, selected = false, onValidation, onClose }) => {
+  onClose?: () => void // tak dipakai lagi (tombol Opened ✓ dihapus 2026-10-30); panel ditutup lewat ✕ di panel
+}> = ({ g, companyNames, colOk, validationTabs, selected = false, onValidation }) => {
   const [expanded, setExpanded] = useState(false)
   // Sama dgn baris Grand Total tabel Total di panel; `syncedTotal` kosong (belum/gagal dihitung) -> rumus lama.
   const grand = g.syncedTotal ? g.syncedTotal.grand : g.finalTotal
@@ -187,6 +187,9 @@ export const CourierRecapGroupCard: React.FC<{
   const submitted = g.submitted > 0 // ada Submit Date -> kartu kuning (sama baris submitted versi List)
   const sub = submitPill(g)
   const pills = recapInvoicePills(g)
+  // Layout ringkas (2026-10-30, permintaan user: jarak Freight/Duty terlalu lebar): lebar label = label TERPANJANG di kartu ini (bukan tetap 108px),
+  // supaya kolom tanggal antar pil tetap sejajar tapi rapat. Layout lebar tetap 108px (simetris antar kartu).
+  const labelW = Math.ceil(Math.max(0, ...pills.map(p => p.label.length)) * 6.2)
 
   // Need Attention: Cost Validation ATAU Doc Validation belum 100% (Checklist tidak dihitung; aturan SAMA kunci Submit/Paid Date:
   // tanpa pasangan PIB/CN di Audit = belum tervalidasi). Hanya untuk role yang boleh melihat tab Doc / Cost Validation.
@@ -202,11 +205,33 @@ export const CourierRecapGroupCard: React.FC<{
   const sepV = `@min-[1180px]:border-l @min-[1180px]:pl-4 ${SEP}` // pembatas vertikal (layout lebar)
   const sepH = `border-t pt-2.5 @min-[1180px]:border-t-0 @min-[1180px]:pt-0 ${SEP}` // pembatas horizontal (layout ringkas)
 
+  // Seluruh kartu bisa diklik = buka panel Validation di kanan (2026-10-30, permintaan user; tombol "Open ›/Opened ✓" dihapus). Klik di tombol/tautan di dalam kartu
+  // (+N PO) & memilih/menyalin teks tidak membuka; kartu yang sudah terbuka tidak menutup saat diklik (tutup lewat ✕ di panel).
+  const openCard = () => { if (!selected) onValidation(g, audit && validationTabs.length > 0 ? undefined : 'invoices') }
+  const onCardClick = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button, a, input, select, textarea')) return
+    if (typeof window !== 'undefined' && window.getSelection?.()?.toString()) return
+    openCard()
+  }
+  const onCardKey = (e: React.KeyboardEvent) => {
+    if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return
+    e.preventDefault()
+    openCard()
+  }
+  // Pil Submit + Due: kolom sendiri di layout lebar; di layout ringkas pindah ke samping centang status (kanan atas).
+  const submitDue = (
+    <div className="flex flex-col items-start gap-1.5">
+      <Pill tone={sub.tone}>{sub.label}</Pill>
+      <DuePill g={g} />
+    </div>
+  )
+
   return (
-    <div className={`${cardCls} overflow-hidden @container ${selected ? 'ring-2 ring-[#6B3470]' : ''}`} data-recap-card={g.key} data-submitted={submitted ? '1' : undefined}>
-      <div className={`grid grid-cols-2 gap-x-3.5 gap-y-2.5 px-3.5 py-3 items-start @min-[1180px]:grid-cols-[minmax(150px,1.3fr)_minmax(100px,1fr)_346px_minmax(110px,0.9fr)_130px_120px_100px] @min-[1180px]:gap-x-4 @min-[1180px]:px-4 @min-[1180px]:py-3.5 @min-[1180px]:items-center`}>
+    <div className={`${cardCls} overflow-hidden @container cursor-pointer ${selected ? 'ring-2 ring-[#6B3470]' : 'hover:shadow-[0_2px_8px_rgba(59,27,61,0.12)]'}`} data-recap-card={g.key} data-submitted={submitted ? '1' : undefined}
+      role="button" tabIndex={0} aria-pressed={selected} onClick={onCardClick} onKeyDown={onCardKey}>
+      <div className={`grid grid-cols-2 gap-x-3.5 gap-y-2.5 px-3.5 py-3 items-start @min-[1180px]:grid-cols-[minmax(150px,1.3fr)_minmax(100px,1fr)_346px_minmax(110px,0.9fr)_130px_minmax(140px,0.8fr)] @min-[1180px]:gap-x-4 @min-[1180px]:px-4 @min-[1180px]:py-3.5 @min-[1180px]:items-center`}>
         {/* a1. AWB, Vendor, pil PT + pil Audit (hanya satu pil Audit) */}
-        <div className="min-w-0">
+        <div className="min-w-0 col-start-1 row-start-1 @min-[1180px]:[grid-area:auto]">
           <div className="text-[14px] @min-[1180px]:text-[15px] font-extrabold text-[#3B2260] tabular-nums leading-tight [overflow-wrap:anywhere]" title={g.awbRaw}>{recapAwbHeading(g)}</div>
           {vendor && <div className="text-[11px] text-[#8A7A8B] mt-0.5 mb-1.5 line-clamp-2" title={vendor}>{vendor}</div>}
           <div className="flex flex-wrap items-center gap-1.5">
@@ -225,7 +250,7 @@ export const CourierRecapGroupCard: React.FC<{
         </div>
 
         {/* a2. PO & Origin */}
-        <div className={`min-w-0 ${sepV}`}>
+        <div className={`min-w-0 col-start-1 row-start-2 ${sepV} ${sepH} @min-[1180px]:[grid-area:auto]`}>
           {colOk('po_pt_imi') && (
             <div className="text-[12.5px] font-medium text-[#4A3A5C] min-w-0">
               {pos.length === 0 ? <span className="text-[#6E5E70]">No PO</span> : (
@@ -244,19 +269,19 @@ export const CourierRecapGroupCard: React.FC<{
         </div>
 
         {/* a3. Pil invoice (satu per jenis dokumen) + "🧾 Invoice PPJK Date · 🏛️ FP Report Date" di dalam pil (beberapa dokumen: dipisah " | "); tidak boleh terpotong ke baris baru */}
-        <div className={`min-w-0 ${sepV} ${sepH}`}>
-          <div className="flex flex-col items-start gap-1.5" data-invoice-pills>
+        <div className={`min-w-0 col-start-1 col-span-2 row-start-3 ${sepV} ${sepH} @min-[1180px]:[grid-area:auto]`}>
+          <div className="flex flex-col items-start gap-1.5" data-invoice-pills style={{ '--lw': `${labelW}px` } as React.CSSProperties}>
             {/* Simetris antar kartu: label lebar tetap + dua blok tanggal lebar tetap, pil melebar penuh kolom (kolom grid berlebar tetap).
                 Beberapa dokumen sejenis (mis. 2 Credit Note Duty) = satu pil per pasangan, label diulang, bukan satu pil panjang. */}
             {pills.flatMap(p => (p.pairs.length ? p.pairs : [null]).map((x, i) => (
               <Pill key={`${p.label}-${i}`} tone={INVOICE_PILL_TONE[p.label]} className="@min-[1180px]:w-full"
                 title={x ? `Invoice PPJK Date: ${x.invoice ? fmtDateShort(x.invoice) : '—'} · FP Report Date: ${x.fp ? fmtDateShort(x.fp) : '—'}` : 'Invoice PPJK Date and FP Report Date not available yet'}>
-                <span className="w-[108px] shrink-0 text-left">{p.label}</span>
+                <span className="w-[var(--lw)] @min-[1180px]:w-[108px] shrink-0 text-left">{p.label}</span>
                 {x && (
                   <>
-                    <span className="inline-flex items-center gap-1 w-[90px] shrink-0 tabular-nums"><Receipt size={11} className="shrink-0" aria-label="Invoice PPJK Date" /> {x.invoice ? fmtDateShort(x.invoice) : '—'}</span>
+                    <span className="inline-flex items-center gap-1 w-[80px] @min-[1180px]:w-[90px] shrink-0 tabular-nums"><Receipt size={11} className="shrink-0" aria-label="Invoice PPJK Date" /> {x.invoice ? fmtDateShort(x.invoice) : '—'}</span>
                     <span className="opacity-60" aria-hidden="true">·</span>
-                    <span className="inline-flex items-center gap-1 w-[90px] shrink-0 tabular-nums"><Landmark size={11} className="shrink-0" aria-label="FP Report Date" /> {x.fp ? fmtDateShort(x.fp) : '—'}</span>
+                    <span className="inline-flex items-center gap-1 w-[80px] @min-[1180px]:w-[90px] shrink-0 tabular-nums"><Landmark size={11} className="shrink-0" aria-label="FP Report Date" /> {x.fp ? fmtDateShort(x.fp) : '—'}</span>
                   </>
                 )}
               </Pill>
@@ -265,15 +290,13 @@ export const CourierRecapGroupCard: React.FC<{
         </div>
 
         {/* a4. Submit & Due */}
-        <div className={`min-w-0 ${sepV} ${sepH}`}>
-          <div className="flex flex-col items-start gap-1.5">
-            <Pill tone={sub.tone}>{sub.label}</Pill>
-            <DuePill g={g} />
-          </div>
+        <div className={`min-w-0 hidden @min-[1180px]:block ${sepV}`}>
+          {submitDue}
         </div>
 
-        {/* a5. Status: ! Need Attention / centang hijau (row-span-2 di layout ringkas) */}
-        <div className={`min-w-0 row-span-2 @min-[1180px]:row-span-1 ${sepH}`}>
+        {/* a5. Status: ! Need Attention / centang hijau. Layout ringkas: kanan atas, pil Submit + Due ditaruh di SAMPING-nya (2026-10-30, permintaan user). */}
+        <div className={`min-w-0 col-start-2 row-start-1 flex items-start justify-between gap-2.5 @min-[1180px]:justify-start @min-[1180px]:[grid-area:auto]`}>
+          <div className="min-w-0 @min-[1180px]:hidden" data-submit-due-compact>{submitDue}</div>
           {valTabs.length > 0 && (needAttention ? (
             <span title={attentionTitle} data-need-attention className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-[#FDE2E4] text-[#C0262D] text-[11px] font-bold whitespace-nowrap">
               <span className="inline-flex w-3.5 h-3.5 items-center justify-center rounded-full bg-[#E03040] text-white text-[10px] leading-none" aria-hidden="true">!</span> Need Attention
@@ -284,7 +307,7 @@ export const CourierRecapGroupCard: React.FC<{
         </div>
 
         {/* a6. Total Expenses */}
-        <div className={`min-w-0 ${sepH}`}>
+        <div className={`min-w-0 col-start-2 row-start-2 ${sepH} @min-[1180px]:[grid-area:auto]`}>
           {colOk('total_amount') ? (
             <>
               <div className="text-[11px] text-[#8A7A8B]">Total Expenses</div>
@@ -294,15 +317,6 @@ export const CourierRecapGroupCard: React.FC<{
           ) : <div className="text-[11px] text-[#8A7A8B]">Amounts hidden for your role</div>}
         </div>
 
-        {/* a7. Open › / Opened ✓ (klik saat terbuka = tutup panel) */}
-        <div className="min-w-0 flex @min-[1180px]:justify-end">
-          {/* Tanpa pasangan Audit (atau tanpa hak lihat validasi) -> panel langsung tab Invoices. */}
-          <button type="button" aria-pressed={selected} aria-expanded={selected} data-open-card
-            onClick={() => (selected ? onClose?.() : onValidation(g, audit && validationTabs.length > 0 ? undefined : 'invoices'))}
-            className={`inline-flex items-center justify-center px-4 h-9 rounded-full border-[1.5px] border-[#6B3470] text-[13px] font-bold whitespace-nowrap transition-colors ${selected ? 'bg-[#F5EDF3] text-[#4A3A5C]' : 'bg-transparent text-[#6B3470] hover:bg-[#F5EDF3]'}`}>
-            {selected ? 'Opened ✓' : 'Open ›'}
-          </button>
-        </div>
       </div>
     </div>
   )
@@ -321,7 +335,7 @@ export const CourierRecapCardView: React.FC<{
   validationTabs: ValidationTabKey[]
   enrichAudit: (recs: any[]) => Promise<void>
   onValidation: (g: RecapGroup, tab?: RecapPanelTab) => void
-  // Tombol "Opened ✓" di kartu aktif menutup panel samping (sama tombol ✕ panel; konfirmasi perubahan belum tersimpan tetap berlaku).
+  // (Tombol "Opened ✓" dihapus 2026-10-30: kartu diklik = buka panel; tutup lewat ✕ di panel, konfirmasi perubahan belum tersimpan tetap berlaku.)
   onClosePanel?: () => void
   onLoaded?: (groups: RecapGroup[]) => void
   // Panel Validation samping (2026-10-05) -- null = daftar lebar penuh.

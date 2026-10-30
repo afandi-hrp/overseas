@@ -181,3 +181,6 @@ Halaman tanpa `<header>` standar (LoginPage, LockScreen, FarOverseasMemoPaper) t
 ## Sidebar desktop -- ikon di tengah (2026-10-20, laporan user)
 - Sidebar menciut 80px: tombol menu utama `pl-[13px] pr-2.5` (10 padding container + 1 border + 13 + 16 = 40 = tengah), tautan footer (My Account / Settings / nama akun / Logout, tanpa border) `pl-[14px] pr-2.5`.
   Dulu `px-2.5` -> pusat ikon 3-4px di kiri tengah. Posisi ikon sama saat sidebar dibuka (tidak bergeser).
+
+## Latar halaman Login = video motion logo (2026-10-30, permintaan user)
+`LoginPage.tsx`: iframe animasi `public/login-bg.html` (kartu dokumen + hub AI) DIGANTI dua `<video autoPlay muted loop playsInline>` dari `public/videos/login-motion-*.mp4` (sama dgn `dist/videos`): desktop (`md+`) `login-motion-desktop.mp4`; mobile `login-motion-mobile-sm.mp4` (layar <= 420px) / `login-motion-mobile.mp4`. Wordmark "BeeHive" di atas video DIBUANG (video sudah memuat logo) dan jeda munculnya panel login kembali 8 detik (`PANEL_REVEAL_DELAY_MS`) supaya animasi logo selesai dulu. `public/login-bg.html` tidak dipakai lagi tapi file dibiarkan (kembali ke versi lama = pasang lagi iframe). Belum dilihat di browser (sesi Claude tak bisa login/memutar video): cek posisi panel kiri vs logo di video, dan atur jeda 8 detik bila terlalu lama/cepat.

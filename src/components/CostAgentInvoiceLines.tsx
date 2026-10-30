@@ -18,7 +18,7 @@ import { SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_INPUT, Chip } from './SeaAirAuditUi'
 import { DOC_GATE_TOAST, isDocGateError } from '../utils/CostAgentGate'
 import { costAgentCheckerSetCostItem, costAgentCheckerSetLineRemark, costAgentCheckerValidateLine, costAgentCheckerValidateLines, isSodError } from '../utils/CostAgentWorkflow'
 import { originalOf } from '../utils/CostAgentLinesView'
-import { LineTaxDialog, SplitLineDialog } from './CostAgentLineDialogs'
+import { LineTaxDialog, LineVatDialog, SplitLineDialog } from './CostAgentLineDialogs'
 import { classifyCostLine, classifyCostLines, costKey } from './CostAgentValidationReports'
 import { VerifyReasonIcon, VerifyReasonsToggle, VerifyReasonsList } from './CostAgentVerifyReasons'
 import { reasonByLine, type LineVerifyReasons } from '../utils/CostAgentVerifyReasons'
@@ -31,7 +31,7 @@ import {
   type CostAgentVessel, type CostAgentVendor,
 } from '../utils/CostAgentHelpers'
 
-// Grid tampilan ringkas gaya Cost validation (header kolom tampil >= 870px = laptop 14" saat file tampil): >= 870px SATU baris enam kolom kompak (jarak kolom 8px); >= 1200px lebih lega (jarak 16px, Action 248px + label Split/Tax); 640-869px: baris 1 Validation penuh, baris 2 Expected | Actual | Difference | Status, baris 3 Action rata kanan; < 640px bertumpuk. Kolom: Validation | Expected | Actual | Difference | Status | Action.
+// Grid tampilan ringkas gaya Cost validation (header kolom tampil >= 870px = laptop 14" saat file tampil): >= 870px SATU baris enam kolom kompak (jarak kolom 8px); >= 1200px lebih lega (jarak 16px, Action 248px + label Split/Tax); 640-869px: baris 1 Validation penuh, baris 2 Actual | Expected | Difference | Status, baris 3 Action rata kanan; < 640px bertumpuk. Kolom: Validation | Actual | Expected | Difference | Status | Action.
 const SUM_GRID = 'grid-cols-3 @min-[640px]:grid-cols-[repeat(3,minmax(0,1fr))_auto] @min-[870px]:grid-cols-[minmax(190px,1.5fr)_minmax(96px,0.6fr)_minmax(96px,0.6fr)_minmax(104px,0.65fr)_minmax(84px,0.6fr)_204px] @min-[1200px]:grid-cols-[minmax(260px,1.7fr)_minmax(112px,0.65fr)_minmax(112px,0.65fr)_minmax(128px,0.7fr)_minmax(132px,0.8fr)_248px]'
 const CV_CHIP: Record<string, string> = { ok: 'bg-[#EAF6EF] text-[#17663D]', accepted: 'bg-[#FFF1D6] text-[#7A4F00]', difference: 'bg-[#FDE7E4] text-[#A8231A]', above: 'bg-[#FDE7E4] text-[#A8231A]', under: 'bg-[#EEF1FA] text-[#2F4FA8]', na: 'bg-[#F3EEEA] text-[#6E5E70]' }
 const CV_LABEL: Record<string, string> = { ok: 'OK', accepted: 'Accepted', difference: 'Difference', above: 'Above', under: 'Under', na: 'N/A' }
@@ -51,7 +51,7 @@ function pickComparators(l: CostAgentInvoiceLine): { main: CostAgentLineHistory 
 }
 
 
-export default function CostAgentInvoiceLines({ lines, currency, costItems, editable, actor, onChanged, onToast, footerRight, toolbarLeft, invoice, ports, vessels, vendors, historyCache, verifyBlock, onGateBlocked, checkerMode, variant = 'detailed', viewSwitch, verifyReasons }: {
+export default function CostAgentInvoiceLines({ lines, currency, costItems, editable, actor, onChanged, onToast, footerRight, toolbarLeft, invoice, ports, vessels, vendors, historyCache, verifyBlock, onGateBlocked, checkerMode, canEditEvidence, variant = 'detailed', viewSwitch, verifyReasons }: {
   lines: CostAgentInvoiceLine[]
   currency: string
   costItems: CostAgentCostItem[]
@@ -74,6 +74,8 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
   // Mode checker (sql/088 + sql/101): invoice menunggu validasi & user boleh memvalidasi -> jenis biaya bisa diganti (fn_cost_agent_checker_set_cost_item),
   // edit teks + nominal (fn_cost_agent_update_line), remark checker, Validate / Validated per baris, Split dan Tax. Maker: HANYA jenis biaya, tambah jenis biaya, Verify, Remark.
   checkerMode?: boolean
+  // SQL 108: boleh mengubah penanda "Amount includes VAT" (maker sebelum submit / checker saat validasi / AP Note; hanya hak TAMPIL, server menegakkan). Approver: hanya melihat lencana.
+  canEditEvidence?: boolean
   // Tahap 3b: 'summary' = baris ringkas 4 kolom (bawaan tab Cost lines); 'detailed' = tampilan lengkap (modal "Cost lines — detailed"). Logika & aksi SAMA.
   variant?: 'summary' | 'detailed'
   viewSwitch?: React.ReactNode // switch Summary | Detailed (di samping "Cost validation")
@@ -88,6 +90,7 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
   const [browseFor, setBrowseFor] = useState<CostAgentInvoiceLine | null>(null)
   const [splitFor, setSplitFor] = useState<CostAgentInvoiceLine | null>(null)
   const [taxFor, setTaxFor] = useState<CostAgentInvoiceLine | null>(null)
+  const [vatFor, setVatFor] = useState<CostAgentInvoiceLine | null>(null)
   const canSplit = !!checkerMode // 2026-10-29 (permintaan user): Split hanya milik checker; maker tidak lagi bisa memecah baris
   const [reasonsOpen, setReasonsOpen] = useState(false) // daftar baris needs_user (dibuka dari ringkasan di toolbar)
   const [onlyCheck, setOnlyCheck] = useState(false) // footer "Needs check": tampilkan hanya baris compare_check
@@ -195,7 +198,7 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
         {lines.length > 0 && variant === 'summary' && (
           <div className="hidden @min-[870px]:block sticky top-0 z-10 bg-[#FBF7F4] px-2.5 pt-2.5 pb-2" data-lines-header-wrap>
             <div className={`grid ${SUM_GRID} gap-x-2 @min-[1200px]:gap-x-4 items-center rounded-xl border border-transparent border-l-4 border-l-transparent bg-[#F5EDF3] px-3 py-2 text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#6B3470] whitespace-nowrap`} data-lines-header>
-              <span className="pl-[60px]">Validation</span><span className="text-center">Expected (history)</span><span className="text-center">Actual</span><span className="text-center">Difference</span><span className="text-center">Status</span><span className="text-center">Action</span>
+              <span className="pl-[60px]">Validation</span><span className="text-center">Actual</span><span className="text-center">Expected (history)</span><span className="text-center">Difference</span><span className="text-center">Status</span><span className="text-center">Action</span>
             </div>
           </div>
         )}
@@ -231,7 +234,7 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
           const verifyTitle = gateBlocked ? verifyBlock! : !l.is_verified && noCostItem ? 'Choose a cost item first (or LAIN_LAIN)' : l.is_verified ? `${autoVerified ? 'Auto-verified by the system' : `Verified${l.verified_by ? ` by ${l.verified_by}` : ''}`} — click to undo` : 'Mark this line as verified'
           const mainDiff = main ? diffOf(l, main) : null
           if (variant === 'summary') {
-            // Tampilan RINGKAS = gaya "Cost validation" (Tahap 3b, revisi 2026-10-28): Validation | Expected (history) | Actual | Difference | Status | Action.
+            // Tampilan RINGKAS = gaya "Cost validation" (Tahap 3b, revisi 2026-10-28; Actual & Expected ditukar 2026-10-30): Validation | Actual | Expected (history) | Difference | Status | Action.
             // Rincian MAIN REFERENCE (pembanding utama, View history, +n more reference, remark) ada di panel yang dibuka segitiga di kiri baris. Logika & aksi SAMA dgn Detailed.
             const cv = classifyCostLine(l)
             const edge = noCostItem ? 'border-l-[#A8231A]' : l.is_verified ? 'border-l-[#17663D]' : (l.compare_check || cv.status === 'difference') ? 'border-l-[#E0A526]' : 'border-l-transparent'
@@ -272,15 +275,22 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                             onChange={id => (checkerMode ? (id !== null ? run(l.id, () => costAgentCheckerSetCostItem(l.id, id, true, actor)) : undefined) : run(l.id, () => verify(l, { costItemId: id, learnAlias: id !== null })))} /></div>
                         ) : !noCostItem && <Chip tone="plum" title={l.cost_item_code ? `${l.cost_item_code} — ${l.cost_item_name}` : undefined}>{l.cost_item_name || l.cost_item_code}</Chip>}
                         {editable && newItem && <button type="button" className={LINK} onClick={() => setAddFor(l)}><Plus size={11} /> Add as new cost item</button>}
+                        {/* SQL 108: "Incl. VAT" = nominal sudah termasuk PPN (PPN/PPh dihitung server). Yang boleh mengubah: tombol; lainnya hanya lencana. */}
+                        {l.amount_includes_vat === true && (canEditEvidence
+                          ? <button type="button" data-action="line-vat" disabled={rowBusy} onClick={() => setVatFor(l)} title="The amount includes VAT — click to change"><Chip tone="blue">Incl. VAT</Chip></button>
+                          : <Chip tone="blue" title="The amount includes VAT">Incl. VAT</Chip>)}
+                        {canEditEvidence && l.amount_includes_vat !== true && Number(l.ppn_rate ?? 0) > 0 && (
+                          <button type="button" className={LINK} data-action="line-vat" disabled={rowBusy} onClick={() => setVatFor(l)} title="Tell the system whether this amount already includes VAT">{l.amount_includes_vat === false ? 'VAT: excluded' : 'Incl. VAT?'}</button>
+                        )}
                       </div>
                     </div>
                   </div>
 
-                  {/* Expected / Actual / Difference (satu baris, tidak membungkus) */}
-                  <div className="min-w-0 @min-[870px]:text-center"><div className={colLabel}>Expected (history)</div>
-                    <div className="text-[12.5px] tabular-nums text-[#6E5E70] whitespace-nowrap">{expected === null ? '—' : fmtRupiah(expected)}</div></div>
+                  {/* Actual / Expected / Difference (satu baris, tidak membungkus; Actual di depan sejak 2026-10-30, permintaan user) */}
                   <div className="min-w-0 @min-[870px]:text-center"><div className={colLabel}>Actual</div>
                     <div className="text-[13px] font-extrabold tabular-nums text-[#3B1B3D] whitespace-nowrap" data-invoice-amount>{fmtRupiah(l.amount)}</div></div>
+                  <div className="min-w-0 @min-[870px]:text-center"><div className={colLabel}>Expected (history)</div>
+                    <div className="text-[12.5px] tabular-nums text-[#6E5E70] whitespace-nowrap">{expected === null ? '—' : fmtRupiah(expected)}</div></div>
                   <div className="min-w-0 @min-[870px]:text-center"><div className={colLabel}>Difference</div>
                     <div className={`text-[12.5px] font-semibold tabular-nums whitespace-nowrap ${diff ? (diff > 0 ? 'text-[#A8231A]' : 'text-[#17663D]') : 'text-[#6E5E70]'}`}>
                       {diff === null ? '—' : diff === 0 ? 'Rp 0' : `${diff > 0 ? '+' : '−'}${fmtRupiah(Math.abs(diff))}`}</div></div>
@@ -574,6 +584,8 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
       }} />}
       {splitFor && <SplitLineDialog line={lines.find(x => x.id === splitFor.id) || splitFor} costItems={items} currency={currency} actor={actor} mode={checkerMode ? 'checker' : 'maker'} onClose={() => setSplitFor(null)}
         onSaved={async () => { setSplitFor(null); await run('all', async () => {}); onToast?.(checkerMode ? 'Line split.' : 'Line split — please verify the new lines') }} />}
+      {vatFor && <LineVatDialog line={lines.find(x => x.id === vatFor.id) || vatFor} onClose={() => setVatFor(null)}
+        onSaved={async () => { setVatFor(null); await run('all', async () => {}); onToast?.('VAT setting saved.') }} />}
       {taxFor && <LineTaxDialog line={lines.find(x => x.id === taxFor.id) || taxFor} onClose={() => setTaxFor(null)}
         onSaved={async () => { setTaxFor(null); await run('all', async () => {}); onToast?.('Line tax saved.') }} />}
       {editFor && <EditLineModal line={lines.find(x => x.id === editFor.id) || editFor} currency={currency} actor={actor} checker={!!checkerMode} onClose={() => setEditFor(null)} onSaved={async changed => {

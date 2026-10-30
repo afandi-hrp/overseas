@@ -27,6 +27,7 @@ import CostAgentDocsSummary from './CostAgentDocsSummary'
 import { useLineVerifyReasons } from './CostAgentVerifyReasons'
 import { costAgentVoidInvoice, getMyRoles, getReminderAfterDays, isSodError } from '../utils/CostAgentWorkflow'
 import { canSeePaymentsTab, type MyRoles } from '../utils/CostAgentRolesLogic'
+import { canEditLineEvidence } from '../utils/CostAgentLinkLogic'
 import { verifiedPercent, voyageRouteText } from '../utils/CostAgentInvoiceHeader'
 import { submitBlockReason } from '../utils/CostAgentGateView'
 import CostAgentPaymentModal from './CostAgentPaymentModal'
@@ -185,6 +186,8 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
   const [myRoles, setMyRoles] = useState<MyRoles | null>(null)
   useEffect(() => { let alive = true; getMyRoles().then(r => { if (alive) setMyRoles(r) }).catch(() => { /* tab tetap tampil */ }); return () => { alive = false } }, [])
   const showPayments = canSeePaymentsTab(myRoles)
+  // SQL 108/109: ubah penanda "Amount includes VAT" & tautan manual baris <-> dokumen = maker (sebelum submit) / checker (validasi pending) / AP Note. Approver hanya melihat. Hanya hak TAMPIL; server menegakkan.
+  const canEditEvidence = !!inv && canEditLineEvidence({ status: inv.status, validationPending: wf?.validation?.status === 'pending', roles: myRoles })
   // "Voyage route" di grid info: pelabuhan voyage berurutan (fn_cost_agent_get_voyage, butuh hak baca Voyages; gagal = "—", tidak mengganggu).
   const [voyageRoute, setVoyageRoute] = useState<string | null>(null)
   const voyageIdForRoute = inv?.voyage_id ?? null
@@ -445,7 +448,7 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
                 <div className="flex-1 min-h-0">
                   <CostAgentInvoiceLines variant="summary" lines={data.lines} currency={data.invoice.currency} costItems={costItems} editable={editable} actor={actor} onChanged={reload} onToast={onToast}
                     invoice={data.invoice} ports={ports} vessels={vessels} vendors={vendors} historyCache={historyCache.current}
-                    verifyBlock={gateBlock} onGateBlocked={gate.refresh} checkerMode={checkerMode} verifyReasons={verifyReasons}
+                    verifyBlock={gateBlock} onGateBlocked={gate.refresh} checkerMode={checkerMode} verifyReasons={verifyReasons} canEditEvidence={canEditEvidence}
                     toolbarLeft={
                       <button type="button" className="text-[11.5px] text-[#6E5E70] hover:text-[#6B3470] inline-flex items-center gap-1 max-lg:hidden" onClick={() => setShowViewer(v => !v)}
                         title={showViewer ? 'Hide the invoice file' : 'Show the invoice file'}>
@@ -497,7 +500,7 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
             <div className="h-full overflow-y-auto">
               <div className="p-3">
                 <CostAgentDocsSummary data={data} gate={gate.gate} gateError={gate.error} gateBusy={gate.busy} onRecheck={gate.recheck} actor={actor}
-                  canUpload={makerCan && canUploadSupporting(data.invoice.status)}
+                  canUpload={makerCan && canUploadSupporting(data.invoice.status)} canEditEvidence={canEditEvidence}
                   onChanged={async () => { await reloadData(); await gate.recheck() }} onToast={onToast}
                   onGoToLine={goToLine} onSetPeriod={headerEditable ? () => setPeriodOpen(true) : undefined} />
               </div>

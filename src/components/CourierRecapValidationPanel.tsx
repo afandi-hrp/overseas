@@ -353,8 +353,10 @@ export default function CourierRecapValidationPanel({
       {/* Header (2026-10-05, keputusan user): baris judul/ikon/tag DIHAPUS. Kiri = tag PT + tombol aksi; kanan = GRAND
           Total Expenses (Freight + Duty − CN, ikut bertambah otomatis saat invoice baru masuk) + tutup. */}
       <div className="shrink-0 px-4 pt-3 border-b border-[#EADFD6]">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0 flex flex-wrap items-center gap-1.5 pt-0.5">
+        {/* 2026-10-30 (permintaan user, laptop 14"): baris TIDAK `flex-wrap` lagi -- dulu blok Total Expenses turun jadi baris sendiri di bawah tombol.
+            Sekarang kiri (`flex-1`) yang membungkus tombolnya, kanan (`shrink-0`) = Total Expenses + tutup, selalu 1 baris di pojok kanan atas. */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1 flex flex-wrap items-center gap-1.5 pt-0.5">
             {colOk('an') && g.an && <PtBadge code={g.an} title={companyFullName(companyNames, g.an)} />}
             {canEditRecap && unsubmitted.length > 0 && (validationLock ? (
               // Banner kunci DIHAPUS (2026-10-28, permintaan user): gembok di tombol + tooltip (hover / fokus / sentuh) dgn kalimat yang sama.
@@ -386,7 +388,7 @@ export default function CourierRecapValidationPanel({
             {canEditRecap && <button type="button" className={`${SA_BTN_OUTLINE} h-8`} onClick={onEditInList} title="Edit the invoices of this AWB in the List view"><Pencil size={12} /> Edit in List</button>}
             {isAdmin && onUnlockMany && g.rows.some(r => r.submit_date) && <UnlockAllControl rows={g.rows} busy={busy} onUnlockMany={onUnlockMany} />}
           </div>
-          <div className="flex items-start gap-1.5 ml-auto">
+          <div className="flex items-start gap-1.5 shrink-0">
             {/* Total Expenses (2026-10-28, permintaan user): label sama dgn kartu, label + nominal SATU baris; pil status Submit DIHAPUS (sudah di kartu). */}
             <div className="text-right flex flex-col items-end gap-1" data-grand-total>
               {colOk('total_amount') && (

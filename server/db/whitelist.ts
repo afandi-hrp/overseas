@@ -205,6 +205,8 @@ for (const [t, ops] of Object.entries(MANUAL_TABLES)) {
   'fn_cost_agent_get_workflow', 'fn_cost_agent_my_tasks', 'fn_cost_agent_checker_validate', 'fn_cost_agent_checker_set_cost_item',
   // Cost Agent: aturan cost line per peran (sql/101): baris menurut peran (approver = versi maker), Validated per baris, remark checker. fn_cost_agent_checker_return DIHAPUS di sql/101.
   'fn_cost_agent_get_invoice_lines', 'fn_cost_agent_checker_validate_line', 'fn_cost_agent_checker_validate_lines', 'fn_cost_agent_checker_set_line_remark',
+  // SQL 108/109 (2026-10-30): penanda "Amount includes VAT" per baris + tautan manual baris <-> item dokumen
+  'fn_cost_agent_set_line_includes_vat', 'fn_cost_agent_line_link_candidates', 'fn_cost_agent_link_line_items', 'fn_cost_agent_unlink_line_items',
   'fn_cost_agent_split_line', 'fn_cost_agent_void_invoice', 'fn_cost_agent_list_settings', 'fn_cost_agent_save_setting',
   // Cost Agent: Approval Matrix v2 -- urutan, pengganti, pratinjau, simulasi, teruskan ke Director (sql/090). fn_cost_agent_due_reminders / mark_reminded KHUSUS n8n: JANGAN masuk whitelist.
   'fn_cost_agent_reorder_matrix', 'fn_cost_agent_save_delegation', 'fn_cost_agent_delete_delegation', 'fn_cost_agent_list_delegations',

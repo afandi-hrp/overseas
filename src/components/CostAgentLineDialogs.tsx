@@ -1,5 +1,5 @@
 // Dialog baris invoice Cost Agent (Tahap 2b, 2026-10-28, SQL 088): "Split line" (maker saat verification/rejected; checker saat menunggu validasi) dan
-// "Line tax" (checker; fn_cost_agent_override_line_tax). Split: jumlah semua bagian HARUS sama dengan nilai baris asal, jadi total invoice tidak berubah;
+// "Line tax" (checker; fn_cost_agent_override_line_tax) dan "Amount includes VAT" (SQL 108, fn_cost_agent_set_line_includes_vat). Split: jumlah semua bagian HARUS sama dengan nilai baris asal, jadi total invoice tidak berubah;
 // bagian yang dibuat maker perlu di-Verify ulang, bagian yang dibuat checker tetap verified.
 import { useMemo, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
@@ -7,7 +7,8 @@ import { CostAgentModal, FieldLabel } from './CostAgentUi'
 import { Chip, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_INPUT } from './SeaAirAuditUi'
 import CostAgentCostItemPicker from './CostAgentCostItemPicker'
 import { fmtNumber, type CostAgentCostItem, type CostAgentInvoiceLine } from '../utils/CostAgentHelpers'
-import { costAgentOverrideLineTax, costAgentSplitLine, type SplitPart } from '../utils/CostAgentWorkflow'
+import { costAgentOverrideLineTax, costAgentSetLineIncludesVat, costAgentSplitLine, type SplitPart } from '../utils/CostAgentWorkflow'
+import { VAT_CHOICE_LABEL, vatChoiceOf, vatChoiceToBool, vatFormError, type VatChoice } from '../utils/CostAgentLinkLogic'
 import { clampSplitInput, splitRoom } from '../utils/CostAgentSplit'
 import { fracToPct, pctToFrac } from '../pages/cost-agent/settings/financeApi'
 
@@ -117,6 +118,62 @@ export function LineTaxDialog({ line, onClose, onSaved }: {
           <div><FieldLabel>PPh type</FieldLabel><input className={SA_INPUT} value={pphType} maxLength={20} placeholder="PPH23" onChange={e => setPphType(e.target.value)} disabled={busy} /></div>
           <div><FieldLabel>PPh rate (%)</FieldLabel><input className={`${SA_INPUT} text-right tabular-nums`} inputMode="decimal" value={pph} placeholder="0" onChange={e => setPph(e.target.value)} disabled={busy} /></div>
         </div>
+        <div><FieldLabel required>Reason</FieldLabel><textarea className={`${SA_INPUT} h-auto py-2`} rows={2} value={reason} maxLength={300} onChange={e => setReason(e.target.value)} disabled={busy} /></div>
+        {error && <div className={err} role="alert">{error}</div>}
+      </div>
+    </CostAgentModal>
+  )
+}
+
+// "Amount includes VAT" (SQL 108): tiga keadaan Not decided / Yes / No + alasan wajib. Not decided hanya keadaan awal (RPC tidak menerima null).
+// ppn_amount / pph_amount dihitung SERVER; dialog ini tidak menghitung PPN sendiri. Hak diubah (maker sebelum submit, checker saat validasi, AP Note) ditegakkan server; pesan error ditampilkan apa adanya.
+export function LineVatDialog({ line, preset, onClose, onSaved }: {
+  line: CostAgentInvoiceLine
+  preset?: VatChoice // dari tombol Yes / No pada peringatan baris
+  onClose: () => void
+  onSaved: () => Promise<void> | void
+}) {
+  const [choice, setChoice] = useState<VatChoice>(preset ?? vatChoiceOf(line.amount_includes_vat))
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const formError = vatFormError(choice, line.amount_includes_vat, reason)
+
+  const save = async () => {
+    if (formError) { setError(formError); return }
+    setBusy(true); setError(null)
+    try {
+      await costAgentSetLineIncludesVat(line.id, vatChoiceToBool(choice) === true, reason.trim())
+      await onSaved()
+    } catch (e: any) { setError(e?.message || String(e)) } finally { setBusy(false) }
+  }
+
+  return (
+    <CostAgentModal title={`Line ${line.line_no} VAT`} z="z-[90]" maxWidth="max-w-md" onClose={() => { if (!busy) onClose() }}
+      subtitle={preset ? undefined : 'Does this line amount already include PPN?'}
+      footer={<>
+        <button type="button" className={SA_BTN_OUTLINE} onClick={onClose} disabled={busy}>Cancel</button>
+        <button type="button" className={SA_BTN_PRIMARY} onClick={save} disabled={busy || !!formError} title={formError ?? undefined}>{busy ? 'Saving…' : 'Save'}</button>
+      </>}>
+      <div className="p-5 space-y-3" data-line-vat-dialog>
+        <div className="text-[12.5px] text-[#3B1B3D] [overflow-wrap:anywhere]"><span className="text-[#6E5E70]">Line:</span> <b>{line.description_raw}</b> · <b className="tabular-nums">{fmtNumber(Number(line.amount), 0)}</b></div>
+        {preset ? (
+          <div className="text-[13px] font-semibold text-[#3B1B3D]" data-vat-statement>Amount includes VAT: <span className="text-[#6B3470]">{VAT_CHOICE_LABEL[choice]}</span></div>
+        ) : (
+        <div>
+          <FieldLabel required>Amount includes VAT</FieldLabel>
+          <div className="inline-flex rounded-lg border border-[#E4D3E2] overflow-hidden" role="radiogroup" aria-label="Amount includes VAT">
+            {(['undecided', 'yes', 'no'] as VatChoice[]).map(c => (
+              <button key={c} type="button" role="radio" aria-checked={choice === c} data-vat-choice={c} disabled={busy || c === 'undecided'} onClick={() => setChoice(c)}
+                title={c === 'undecided' ? 'Not decided yet — choose Yes or No' : undefined}
+                className={`h-8 px-3.5 text-[12px] font-bold border-r border-[#E4D3E2] last:border-r-0 disabled:cursor-default ${choice === c ? 'bg-[#6B3470] text-white' : 'bg-white text-[#6E5E70] hover:bg-[#F5EDF3] disabled:opacity-50'}`}>
+                {VAT_CHOICE_LABEL[c]}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-[11.5px] text-[#8A7A8B]">Yes: the amount is price + PPN. No: PPN is added on top of the amount.</p>
+        </div>
+        )}
         <div><FieldLabel required>Reason</FieldLabel><textarea className={`${SA_INPUT} h-auto py-2`} rows={2} value={reason} maxLength={300} onChange={e => setReason(e.target.value)} disabled={busy} /></div>
         {error && <div className={err} role="alert">{error}</div>}
       </div>
