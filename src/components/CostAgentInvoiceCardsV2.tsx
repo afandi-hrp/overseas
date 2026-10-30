@@ -140,7 +140,7 @@ interface RowActions {
 // pil berwarna (Voyage, Invoice date) | stepper 4 tahap | status + Need Attention | Grand total | tombol bulat "Open ›".
 // Revisi 2026-10-29 (laporan user: jelek di laptop 14"): kapal & pelabuhan digabung ke kolom identitas (6 kolom, bukan 7), kolom punya lebar MINIMUM yang cukup (jumlah
 // minimum + jarak = 1166px < ambang 1180px, jadi tidak pernah meluap), judul maksimal 2 baris. Container query pada lebar KARTU: >= 1180px enam kolom + pembatas vertikal samar
-// (+ kolom hapus Admin); lebih sempit dua kolom (identitas penuh | pil + status | stepper penuh | total + tombol) dengan pembatas horizontal samar.
+// (+ kolom hapus Admin); revisi 2026-10-30 (permintaan user): lebar kolom = minimum + PECAHAN (fr) supaya saat layar lebar / zoom-out kolom melebar rata (bukan hanya identitas & stepper), stepper diberi padding kiri 24px agar label "Completed" tidak menimpa pembatas; lebih sempit dua kolom (identitas penuh | pil + status | stepper penuh | total + tombol) dengan pembatas horizontal samar.
 // Hanya tampilan -- semua nilai apa adanya dari fn_cost_agent_invoice_cards.
 const SEP = 'border-[rgba(138,123,155,0.18)]'
 const sepV = `@min-[1180px]:border-l @min-[1180px]:pl-4 ${SEP}`
@@ -153,8 +153,8 @@ export function InvoiceCardV2({ c, a }: { c: InvoiceCard; a: RowActions }) {
   const hasDelete = !!a.onDelete
   const quiet = c.findings === 0 && !['void', 'failed', 'processing'].includes(c.bucket) // tidak ada temuan -> centang hijau seperti kartu Courier
   const grid = hasDelete
-    ? '@min-[1180px]:grid-cols-[minmax(200px,1.5fr)_208px_minmax(250px,1.4fr)_150px_150px_96px_36px]'
-    : '@min-[1180px]:grid-cols-[minmax(200px,1.5fr)_208px_minmax(250px,1.4fr)_150px_150px_96px]'
+    ? '@min-[1180px]:grid-cols-[minmax(190px,1.5fr)_minmax(208px,0.9fr)_minmax(270px,1.6fr)_minmax(150px,0.7fr)_minmax(150px,0.7fr)_minmax(96px,0.4fr)_36px]'
+    : '@min-[1180px]:grid-cols-[minmax(190px,1.5fr)_minmax(208px,0.9fr)_minmax(270px,1.6fr)_minmax(150px,0.7fr)_minmax(150px,0.7fr)_minmax(96px,0.4fr)]'
   const where = [c.vessel.name, [c.port.code, c.port.name].filter(Boolean).join(' ')].filter(Boolean).join(' · ')
   return (
     <div className={`@container relative shrink-0 ${SA_CARD} border-l-4 ${EDGE[c.bucket] || EDGE.void} overflow-hidden cursor-pointer ${a.openId === c.id ? 'ring-2 ring-[#6B3470]' : 'hover:border-[#D9C7DA] hover:shadow-md'} transition-shadow ${c.bucket === 'void' ? 'opacity-75' : ''}`}
@@ -182,10 +182,10 @@ export function InvoiceCardV2({ c, a }: { c: InvoiceCard; a: RowActions }) {
         {/* 2. Pil berwarna: Voyage + Invoice date (label lebar tetap supaya rata antar kartu) */}
         <div className={`min-w-0 ${sepV} ${sepH} @min-[1180px]:[grid-column:2] @min-[1180px]:[grid-row:1]`}>
           <div className="flex flex-col items-start gap-1.5" data-invoice-pills>
-            <Pill tone={voy ? 'green' : 'grey'} className="@min-[1180px]:w-full" title={voy ? VOY_TYPE[voy.type] || 'Voyage' : 'Not linked to a voyage'}>
+            <Pill tone={voy ? 'green' : 'grey'} className="@min-[1180px]:w-full @min-[1180px]:max-w-[260px]" title={voy ? VOY_TYPE[voy.type] || 'Voyage' : 'Not linked to a voyage'}>
               <span className={PILL_LABEL}>Voyage</span><Navigation size={11} className="shrink-0" /><span className="truncate">{voy ? `VOY ${voy.no || voy.id}` : 'No voyage'}</span>
             </Pill>
-            <Pill tone="blue" className="@min-[1180px]:w-full" title="Invoice date">
+            <Pill tone="blue" className="@min-[1180px]:w-full @min-[1180px]:max-w-[260px]" title="Invoice date">
               <span className={PILL_LABEL}>Invoice date</span><CalendarDays size={11} className="shrink-0" /><span className="tabular-nums">{fmtDate(c.invoice_date)}</span>
             </Pill>
           </div>
@@ -201,7 +201,7 @@ export function InvoiceCardV2({ c, a }: { c: InvoiceCard; a: RowActions }) {
         </div>
 
         {/* 3. Stepper 4 tahap (+ lama menunggu, error) */}
-        <div className={`min-w-0 col-span-2 @min-[1180px]:col-span-1 space-y-2 ${sepV} ${sepH} @min-[1180px]:[grid-column:3] @min-[1180px]:[grid-row:1]`}>
+        <div className={`min-w-0 col-span-2 @min-[1180px]:col-span-1 space-y-2 @min-[1180px]:border-l @min-[1180px]:pl-6 @min-[1180px]:pr-3 ${sepH} @min-[1180px]:[grid-column:3] @min-[1180px]:[grid-row:1]`}>
           <StageStepper stages={c.stages} />
           {(wait || c.bucket === 'failed') && (
             <div className="flex items-center justify-center gap-3 flex-wrap" onClick={e => e.stopPropagation()}>
