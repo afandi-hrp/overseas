@@ -30,7 +30,6 @@ import { canSeePaymentsTab, type MyRoles } from '../utils/CostAgentRolesLogic'
 import { canEditLineEvidence } from '../utils/CostAgentLinkLogic'
 import { verifiedPercent, voyageRouteText } from '../utils/CostAgentInvoiceHeader'
 import { submitBlockReason } from '../utils/CostAgentGateView'
-import CostAgentPaymentModal from './CostAgentPaymentModal'
 import type { HistoryCache } from './CostAgentHistoryBrowser'
 import {
   costAgentGetInvoiceHistory, costAgentGetVoyage, costAgentUpdateInvoiceHeader, costAgentSubmitForApproval, costAgentUpload,
@@ -84,7 +83,6 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [editHeader, setEditHeader] = useState(false)
-  const [showPay, setShowPay] = useState(false)
   // Viewer file layar penuh DI HALAMAN INI (2026-10-14, permintaan user: jangan buka tab baru).
   const [fullView, setFullView] = useState(false)
   const [infoOpen, setInfoOpen] = useState<boolean>(initialInfoOpen)
@@ -247,7 +245,6 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
   const statusDetail: string | null = !inv ? null
     : inv.status === 'waiting_approval' ? (!activeStep && wf?.validation?.status === 'pending' ? 'all approvals done, waiting for the checker' : activeStep ? `step ${activeStep.step_no}: ${activeStep.approver_label}` : null)
     : inv.status === 'paid' ? `${fmtDate(inv.paid_at)}${inv.paid_ref ? ` · ref ${inv.paid_ref}` : ''}` : null
-  const hasActivePayment = (data?.payments || []).some(p => ['draft', 'submitted', 'posted', 'paid'].includes(p.status))
   // Titik status di tab (tampilan saja).
   const tabDot: Record<Tab, Dot> = {
     lines: !data || data.lines.length === 0 ? null : unverified > 0 || unmapped > 0 ? 'warn' : 'ok',
@@ -331,12 +328,9 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
               {headerEditable && !editHeader && (
                 <button type="button" className={`${SA_BTN_OUTLINE} !px-2.5`} onClick={() => setEditHeader(true)} aria-label="Correct header" title="Correct header (vendor, vessel, port call, company)"><Pencil size={13} /></button>
               )}
-              {/* Tombol bekas footer (2026-10-29, permintaan user: footer dihapus): Review & decide / Create AP Note / PV / Mark as paid, lalu Submit, Void invoice. */}
+              {/* Tombol bekas footer (2026-10-29, permintaan user: footer dihapus): Review & decide / Mark as paid, lalu Submit, Void invoice. */}
               {inv && inv.status === 'waiting_approval' && (wf ? (wf.me.can_approve || wf.me.can_validate) : iAmApprover && canEdit) && tab !== 'approval' && (
                 <button type="button" className={`${SA_BTN_GREEN} !h-9`} onClick={() => setTab('approval')}><ShieldCheck size={13} /> Review &amp; decide</button>
-              )}
-              {inv && inv.status === 'approved' && canPay && showPayments && !hasActivePayment && (
-                <button type="button" className={`${SA_BTN_GREEN} !h-9`} onClick={() => setShowPay(true)}><Wallet size={13} /> Create AP Note / PV</button>
               )}
               {inv && inv.status === 'journal' && canPay && showPayments && tab !== 'payments' && (
                 <button type="button" className={`${SA_BTN_OUTLINE} !h-9`} onClick={() => setTab('payments')}><Wallet size={13} /> Mark as paid</button>
@@ -479,7 +473,8 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
             </div>
           ) : tab === 'payments' ? (
             <div className="h-full overflow-y-auto">
-              <div className="px-4 pt-4 -mb-2">
+              {/* Setelah approved, Finance mapping (Resolve / Map / Preview) pindah ke kartu AP Note draft di bawah. */}
+              {!['approved', 'journal', 'paid'].includes(data.invoice.status) && <div className="px-4 pt-4 -mb-2">
                 <CostAgentFinanceMappingCard invoiceId={data.invoice.id} vendorName={data.invoice.vendor_name}
                   vendorNpwp={vendors.find(v => v.id === data.invoice.vendor_id)?.npwp ?? null} vesselName={data.invoice.vessel_name}
                   canEdit={canEdit} onToast={onToast}
@@ -487,13 +482,14 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
                     setTab('lines')
                     if (lineId !== null) setTimeout(() => document.querySelector(`[data-line-id="${lineId}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 150)
                   }} />
-              </div>
+              </div>}
               {['approved', 'journal', 'paid'].includes(data.invoice.status) && (
-                <div className="px-4 pt-6 -mb-2">
-                  <CostAgentApNoteDraftCard invoiceId={data.invoice.id} invoiceStatus={data.invoice.status} canEdit={canPay} actor={actor} onToast={onToast} />
+                <div className="px-4 pt-4 -mb-2">
+                  <CostAgentApNoteDraftCard invoiceId={data.invoice.id} invoiceStatus={data.invoice.status} canEdit={canPay} actor={actor} onToast={onToast}
+                    vendorName={data.invoice.vendor_name} vendorNpwp={vendors.find(v => v.id === data.invoice.vendor_id)?.npwp ?? null} vesselName={data.invoice.vessel_name} />
                 </div>
               )}
-              <CostAgentPaymentsPanel data={data} canPay={canPay} actor={actor} onCreate={() => setShowPay(true)}
+              <CostAgentPaymentsPanel data={data} canPay={canPay} actor={actor}
                 onChanged={async msg => { await reload(); if (msg) onToast(msg) }} />
             </div>
           ) : tab === 'documents' ? (
@@ -547,9 +543,6 @@ export default function CostAgentInvoiceReviewModal({ invoiceId, companies, vend
           </div>
         </div>,
         document.body,
-      )}
-      {showPay && inv && (
-        <CostAgentPaymentModal invoiceIds={[inv.id]} actor={actor} onClose={() => { setShowPay(false); setTab('payments') }} onDone={() => { reload() }} />
       )}
     </div>,
     document.body,

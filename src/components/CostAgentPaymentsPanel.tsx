@@ -3,9 +3,9 @@
 // "Mark as paid" (status journal & canEdit('cost_agent_payment')): tanggal bayar + referensi bank -> fn_cost_agent_mark_paid.
 // TANPA upload bukti bayar (keputusan owner). Semua aksi tulis butuh canEdit('cost_agent_payment').
 import { useState } from 'react'
-import { RotateCcw, Wallet, AlertTriangle } from 'lucide-react'
+import { RotateCcw, AlertTriangle } from 'lucide-react'
 import { FieldLabel } from './CostAgentUi'
-import { Chip, SA_BTN_OUTLINE, SA_BTN_GREEN, SA_BTN_PRIMARY, SA_CARD, SA_INPUT, SA_LABEL } from './SeaAirAuditUi'
+import { Chip, SA_BTN_OUTLINE, SA_BTN_GREEN, SA_CARD, SA_INPUT, SA_LABEL } from './SeaAirAuditUi'
 import {
   costAgentJsonAction, costAgentMarkPaid, fmtMoney, fmtDate, fmtDateTimePort, PAYMENT_STATUS_META,
   type CostAgentInvoiceHistory,
@@ -16,11 +16,10 @@ const todayIso = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-export default function CostAgentPaymentsPanel({ data, canPay, actor, onCreate, onChanged }: {
+export default function CostAgentPaymentsPanel({ data, canPay, actor, onChanged }: {
   data: CostAgentInvoiceHistory
   canPay: boolean
   actor: string | null
-  onCreate: () => void
   onChanged: (msg?: string) => Promise<void> | void
 }) {
   const inv = data.invoice
@@ -29,7 +28,6 @@ export default function CostAgentPaymentsPanel({ data, canPay, actor, onCreate, 
   const [paidAt, setPaidAt] = useState(todayIso())
   const [paidRef, setPaidRef] = useState('')
   const [paying, setPaying] = useState(false)
-  const activePayment = data.payments.find(p => ['draft', 'submitted', 'posted', 'paid'].includes(p.status))
 
   const resend = async (requestId: number) => {
     setBusyId(requestId); setError(null)
@@ -52,13 +50,6 @@ export default function CostAgentPaymentsPanel({ data, canPay, actor, onCreate, 
 
   return (
     <div className="p-4 space-y-4">
-      {canPay && inv.status === 'approved' && !activePayment && (
-        <div className={`${SA_CARD} p-4 flex items-center justify-between gap-3 flex-wrap`}>
-          <p className="text-[12.5px] text-[#3B1B3D]">This invoice is approved and ready for an AP Note / PV.</p>
-          <button type="button" className={SA_BTN_PRIMARY} onClick={onCreate}><Wallet size={13} /> Create AP Note / PV</button>
-        </div>
-      )}
-
       {canPay && inv.status === 'journal' && (
         <section className={`${SA_CARD} p-4 space-y-3`}>
           <h3 className="text-[14px] font-bold text-[#3B1B3D]">Mark as paid</h3>

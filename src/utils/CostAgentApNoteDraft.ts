@@ -31,6 +31,15 @@ export async function fetchApNoteDraft(invoiceId: number): Promise<ApNoteDraftFu
   return { draft: d as ApNoteDraft, lines: (l ?? []) as ApNoteDraftLine[] }
 }
 
+// PPN / PPh yang belum terisi di invoice dianggap 0% di DRAFT (invoice sendiri tidak diubah): tarif kosong -> 0, isu "tax ... is not set" turun dari error ke warning.
+async function loadPreview(invoiceId: number): Promise<ApNotePreview> {
+  const p = await finApnotePreview(invoiceId)
+  const rows = p.rows.map(r => ({ ...r, 'PPN Rate': r['PPN Rate'] ?? 0, 'PPh Rate': r['PPh Rate'] ?? 0 }))
+  const issues = p.issues.map(i => (i.level === 'error' && i.line_no !== undefined && /tax/i.test(i.message) && /not set/i.test(i.message))
+    ? { ...i, level: 'warning' as const, message: `${i.message} — treated as 0%` } : i)
+  return { ...p, rows, issues, errors: issues.filter(i => i.level === 'error').length, warnings: issues.filter(i => i.level === 'warning').length }
+}
+
 const headerFrom = (p: ApNotePreview) => ({
   ascend_db: p.header.ascend_db, company_code: p.header.company_code, supplier_code: p.header.supplier_code, supplier_name: p.header.supplier_name,
   vessel_name: p.header.vessel_name, office: p.header.office, note_type: p.header.note_type, reference: p.header.reference,
@@ -45,7 +54,7 @@ const linesFrom = (p: ApNotePreview, draftId: number) => p.rows.map((r, i) => ({
 
 /** Buat draft dari invoice yang sudah approved. Insert ganda (user lain lebih dulu) -> kembalikan draft yang sudah ada. */
 export async function createApNoteDraft(invoiceId: number, actor: string | null): Promise<ApNoteDraftFull | null> {
-  const p = await finApnotePreview(invoiceId)
+  const p = await loadPreview(invoiceId)
   const { data: d, error } = await supabase.from('cost_agent_apnote_drafts')
     .insert({ invoice_id: invoiceId, status: 'draft', created_by: actor, updated_by: actor, ...headerFrom(p) }).select('id').single()
   if (error) { if (error.code === '23505') return fetchApNoteDraft(invoiceId); throw new Error(error.message) }
@@ -58,7 +67,7 @@ export async function createApNoteDraft(invoiceId: number, actor: string | null)
 
 /** Bangun ulang dari invoice (setelah mapping/pajak berubah): header & baris diganti, edit manual hilang. */
 export async function rebuildApNoteDraft(draftId: number, invoiceId: number, actor: string | null): Promise<ApNoteDraftFull | null> {
-  const p = await finApnotePreview(invoiceId)
+  const p = await loadPreview(invoiceId)
   const { error: e1 } = await supabase.from('cost_agent_apnote_draft_lines').delete().eq('draft_id', draftId)
   if (e1) throw new Error(e1.message)
   if (p.rows.length) {
@@ -71,16 +80,32 @@ export async function rebuildApNoteDraft(draftId: number, invoiceId: number, act
   return fetchApNoteDraft(invoiceId)
 }
 
+/** Sinkron setelah mapping Finance berubah: header (tanpa FPNo/Remarks), isu, dan expense type per baris diperbarui; deskripsi/qty/harga hasil edit TIDAK ditimpa. */
+export async function syncApNoteDraftMapping(draftId: number, invoiceId: number, actor: string | null): Promise<ApNoteDraftFull | null> {
+  const p = await loadPreview(invoiceId)
+  const { fp_no: _fp, remarks: _rm, ...hdr } = headerFrom(p)
+  const { error } = await supabase.from('cost_agent_apnote_drafts').update({ ...hdr, updated_by: actor, updated_at: new Date().toISOString() }).eq('id', draftId)
+  if (error) throw new Error(error.message)
+  const cur = await fetchApNoteDraft(invoiceId)
+  const byLine = new Map(p.rows.map(r => [num(r._line_id), r]))
+  await Promise.all((cur?.lines ?? []).map(async l => {
+    const r = l.invoice_line_id !== null ? byLine.get(l.invoice_line_id) : undefined
+    if (!r) return
+    const { error: e } = await supabase.from('cost_agent_apnote_draft_lines').update({
+      expense_type: (r['Expense Type'] as string) || null, expense_type_id: num(r._expense_type_id),
+      ppn_rate: num(r['PPN Rate']), pph_rate: num(r['PPh Rate']), pph_type: (r['PPh Type'] as string) || null, raw: r,
+    }).eq('id', l.id)
+    if (e) throw new Error(e.message)
+  }))
+  return fetchApNoteDraft(invoiceId)
+}
+
 export async function updateApNoteDraftHeader(draftId: number, patch: { fp_no?: string | null; remarks?: string | null }, actor: string | null) {
   const { error } = await supabase.from('cost_agent_apnote_drafts').update({ ...patch, updated_by: actor, updated_at: new Date().toISOString() }).eq('id', draftId)
   if (error) throw new Error(error.message)
 }
 export async function updateApNoteDraftLine(lineId: number, patch: Partial<Pick<ApNoteDraftLine, 'description' | 'qty' | 'unit_price'>>) {
   const { error } = await supabase.from('cost_agent_apnote_draft_lines').update(patch).eq('id', lineId)
-  if (error) throw new Error(error.message)
-}
-export async function deleteApNoteDraftLine(lineId: number) {
-  const { error } = await supabase.from('cost_agent_apnote_draft_lines').delete().eq('id', lineId)
   if (error) throw new Error(error.message)
 }
 /** Hapus draft (hanya status draft/failed lewat RLS); baris ikut terhapus (cascade). Draft baru dibuat lagi saat tab dibuka. */

@@ -1012,7 +1012,10 @@ Tujuan: memetakan master kita ke master Ascend supaya AP Note nanti bisa dibuat 
 - Tabel penampung `cost_agent_apnote_drafts` + `cost_agent_apnote_draft_lines` (1 draft aktif per invoice, unique index parsial; status draft|posting|posted|failed|cancelled). **CRUD murni dari frontend**
   (`utils/CostAgentApNoteDraft.ts`, supabase-js + RLS, TANPA RPC; keduanya di `server/db/whitelist.ts`). Baca = `has_page_access('cost_agent_invoice')`; tulis = `has_edit_access('cost_agent_payment')` & hanya saat status draft/failed.
 - Kartu `CostAgentApNoteDraftCard.tsx` di tab Payments (di bawah Finance mapping): invoice `approved` + `canPay` -> draft terbentuk OTOMATIS saat tab dibuka (sekali per invoice), isinya dari `fn_cost_agent_apnote_preview` (RPC lama, hanya baca).
-  Edit: FPNo, Remarks, deskripsi/qty/harga baris, hapus baris, "Rebuild from invoice" (ganti seluruh isi; dipakai setelah mapping/pajak berubah). Error/warning = snapshot saat build.
+  Edit: FPNo, Remarks, deskripsi/qty/harga baris, "Rebuild from invoice" (ganti seluruh isi; dipakai setelah mapping/pajak berubah). Error/warning = snapshot saat build.
+- Isu error/warning dipetakan ke sel penyebabnya (`issueField()` di kartu, lewat kata kunci pesan RPC; tanpa kecocokan -> kotak "Other"). Sel merah Supplier / Vessel / Expense type yang "not mapped" punya tautan
+  **Map to Ascend** -> `MapToAscendDialog` untuk satu target (`finCheck` dulu utk ambil id master), lalu `syncApNoteDraftMapping` (header tanpa FPNo/Remarks, isu, expense type & pajak per baris; edit deskripsi/qty/harga TIDAK ditimpa).
+- **Baris draft TIDAK bisa dihapus**: 1 invoice = 1 AP Note utuh (semua baris invoice ikut). PPN/PPh kosong dianggap 0% di draft (isu "tax is not set" turun jadi warning).
 - **Post to Ascend NONAKTIF** (endpoint server -> lean-api `POST /v1/ap-notes` belum dibuat). Validasi sisi server tetap wajib saat endpoint dibuat (RLS tidak memvalidasi isi).
 
 ## Document gate and auto-verify (Tahap 2a, 2026-10-28, permintaan user; SQL `087_cost_agent_doc_gate_autoverify.sql` SUDAH DIJALANKAN, 3 RPC terbaca di production)
