@@ -5,10 +5,10 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
 import shipmentIcon from '../assets/beehive-icon.png';
 
-// Panel login baru muncul sekali di detik ke-2 (setelah animasi latar sempat diputar),
+// Panel login baru muncul sekali di detik ke-8 (setelah animasi logo pada video latar selesai),
 // lalu TETAP tampil walau animasinya loop terus -- cuma reset kalau halaman di-refresh
 // (karena state ini di-reset otomatis setiap component mount ulang).
-const PANEL_REVEAL_DELAY_MS = 2000;
+const PANEL_REVEAL_DELAY_MS = 8000;
 
 export default function LoginPage() {
   const { session, loading: authLoading } = useAuth();
@@ -61,26 +61,24 @@ export default function LoginPage() {
 
   return (
     <div className="relative min-h-screen w-full overflow-hidden bg-gradient-to-br from-[#FFF5C5] to-[#F58C77]">
-      {/* Animasi latar login -- AI scan dokumen (HTML/CSS/JS statis, di-embed via iframe) */}
-      <iframe
-        src="/login-bg.html"
-        title="Login background animation"
-        tabIndex={-1}
-        className="absolute inset-0 w-full h-full border-0 pointer-events-none"
-      />
+      {/* Latar login = video motion logo (public/videos/login-motion-*.mp4, 2026-10-30, permintaan user). Versi desktop di md+, versi mobile
+          di bawah md (resolusi 720p di layar <= 420px). Video sudah memuat logo, jadi wordmark BeeHive tidak dirender lagi. */}
+      <video autoPlay muted loop playsInline preload="auto" className="hidden md:block absolute inset-0 w-full h-full object-cover">
+        <source src="/videos/login-motion-desktop.mp4" type="video/mp4" />
+      </video>
+      <video autoPlay muted loop playsInline preload="auto" className="md:hidden absolute inset-0 w-full h-full object-cover">
+        <source src="/videos/login-motion-mobile-sm.mp4" media="(max-width: 420px)" type="video/mp4" />
+        <source src="/videos/login-motion-mobile.mp4" type="video/mp4" />
+      </video>
 
-      {/* Panel login + wordmark -- overlay di atas animasi latar, sebelah kiri (desktop) / bawah
-          (mobile) supaya animasinya tetap kelihatan. Muncul smooth di detik ke-2, lalu tetap
-          di tempatnya walau animasinya loop. Panel & wordmark diposisikan independen (bukan flex
-          yang saling dorong) supaya wordmark selalu mulai persis di batas kiri "scene" (30% lebar
-          layar, sama seperti login-space di public/login-bg.html) -- jadi lurus dengan kolom
-          kartu dokumen di semua ukuran layar, bukan ikut menempel ke lebar panel. */}
+      {/* Panel login -- overlay di atas video, sebelah kiri (desktop) / bawah (mobile) supaya animasi logo tetap kelihatan.
+          Muncul smooth di detik ke-8, lalu tetap di tempatnya walau videonya loop. */}
       <div
         className={`absolute inset-0 transition-opacity duration-700 ease-out
           ${showPanel ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
       >
         {/* Panel login -- lebar mengikuti layar (lebih besar di monitor 24" supaya proporsional
-            dengan wordmark & animasi di sebelahnya, bukan terlihat kecil sendirian). */}
+            dengan video di sebelahnya, bukan terlihat kecil sendirian). */}
         <div
           className={`flex items-center justify-center h-full px-4
             md:absolute md:inset-y-0 md:left-0 md:w-[30%] md:justify-center md:px-6
@@ -167,31 +165,6 @@ export default function LoginPage() {
 
           <p className="text-center text-xs 2xl:text-sm font-light text-[#5A305A] mt-6 2xl:mt-8">Powered by Waruna Group</p>
         </div>
-        </div>
-
-        {/* Wordmark -- logo bersih (transparan, tanpa kotak putih) di kiri + judul/subjudul di
-            kanan. Diposisikan sendiri dari md:left-[30%] (persis batas kiri "scene" tempat kartu
-            dokumen mulai) sampai md:right-[22%] (berhenti sebelum area hub AI di kanan) --
-            supaya lurus dengan kolom kartu dokumen, bukan ikut lebar panel. Ukuran font pakai
-            clamp(vw) dengan batas atas lebih tinggi supaya benar-benar mengisi pita kosong itu di
-            monitor 24" (bukan cuma mentok kecil lalu nyisa ruang kosong), tapi tetap wajar di
-            layar 14" karena vw-nya kecil di sana. "Bee" bold tegas + "Hive" bobot normal/lebih
-            ringan (pola 2 bobot dalam 1 kata, sama seperti "ATS" bold vs "WARUNA" reguler).
-            Text-shadow tipis supaya tetap terbaca di atas kartu animasi tanpa kotak latar opaque. */}
-        <div
-          className={`hidden md:flex md:absolute md:inset-y-0 md:left-[30%] md:right-[22%] md:items-center
-            transition-transform duration-700 ease-out
-            ${showPanel ? 'md:translate-x-0' : 'md:-translate-x-6'}`}
-        >
-          <div className="flex items-center gap-6 lg:gap-8 2xl:gap-10 min-w-0">
-            <img src={shipmentIcon} alt="BeeHive" className="h-[clamp(4rem,7vw,9rem)] w-[clamp(4rem,7vw,9rem)] object-contain shrink-0 [filter:drop-shadow(0_0_16px_rgba(90,48,90,0.5))_drop-shadow(0_0_5px_rgba(90,48,90,0.65))]" />
-            <div className="min-w-0">
-              <h2 className="leading-tight tracking-tight [text-shadow:0_2px_16px_rgba(255,248,220,0.65)]">
-                <span className="font-extrabold text-[clamp(2.75rem,7.5vw,9rem)] text-[#5A305A]">Bee</span><span className="font-normal text-[clamp(2.75rem,7.5vw,9rem)] text-[#73507B]">Hive</span>
-              </h2>
-              <p className="text-[#73507B] font-medium text-[clamp(1.1rem,2.4vw,2.5rem)] mt-2 leading-snug [text-shadow:0_2px_12px_rgba(255,248,220,0.6)]">AI Automation Waruna</p>
-            </div>
-          </div>
         </div>
       </div>
     </div>

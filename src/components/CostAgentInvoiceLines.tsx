@@ -31,7 +31,7 @@ import {
   type CostAgentVessel, type CostAgentVendor,
 } from '../utils/CostAgentHelpers'
 
-// Grid tampilan ringkas gaya Cost validation (header kolom tampil >= 870px = laptop 14" saat file tampil): >= 870px SATU baris enam kolom kompak (jarak kolom 8px); >= 1200px lebih lega (jarak 16px, Action 248px + label Split/Tax); 640-869px: baris 1 Validation penuh, baris 2 Expected | Actual | Difference | Status, baris 3 Action rata kanan; < 640px bertumpuk. Kolom: Validation | Expected | Actual | Difference | Status | Action.
+// Grid tampilan ringkas gaya Cost validation (header kolom tampil >= 870px = laptop 14" saat file tampil): >= 870px SATU baris enam kolom kompak (jarak kolom 8px); >= 1200px lebih lega (jarak 16px, Action 248px + label Split/Tax); 640-869px: baris 1 Validation penuh, baris 2 Actual | Expected | Difference | Status, baris 3 Action rata kanan; < 640px bertumpuk. Kolom: Validation | Actual | Expected | Difference | Status | Action.
 const SUM_GRID = 'grid-cols-3 @min-[640px]:grid-cols-[repeat(3,minmax(0,1fr))_auto] @min-[870px]:grid-cols-[minmax(190px,1.5fr)_minmax(96px,0.6fr)_minmax(96px,0.6fr)_minmax(104px,0.65fr)_minmax(84px,0.6fr)_204px] @min-[1200px]:grid-cols-[minmax(260px,1.7fr)_minmax(112px,0.65fr)_minmax(112px,0.65fr)_minmax(128px,0.7fr)_minmax(132px,0.8fr)_248px]'
 const CV_CHIP: Record<string, string> = { ok: 'bg-[#EAF6EF] text-[#17663D]', accepted: 'bg-[#FFF1D6] text-[#7A4F00]', difference: 'bg-[#FDE7E4] text-[#A8231A]', above: 'bg-[#FDE7E4] text-[#A8231A]', under: 'bg-[#EEF1FA] text-[#2F4FA8]', na: 'bg-[#F3EEEA] text-[#6E5E70]' }
 const CV_LABEL: Record<string, string> = { ok: 'OK', accepted: 'Accepted', difference: 'Difference', above: 'Above', under: 'Under', na: 'N/A' }
@@ -195,7 +195,7 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
         {lines.length > 0 && variant === 'summary' && (
           <div className="hidden @min-[870px]:block sticky top-0 z-10 bg-[#FBF7F4] px-2.5 pt-2.5 pb-2" data-lines-header-wrap>
             <div className={`grid ${SUM_GRID} gap-x-2 @min-[1200px]:gap-x-4 items-center rounded-xl border border-transparent border-l-4 border-l-transparent bg-[#F5EDF3] px-3 py-2 text-[10.5px] font-bold uppercase tracking-[0.07em] text-[#6B3470] whitespace-nowrap`} data-lines-header>
-              <span className="pl-[60px]">Validation</span><span className="text-center">Expected (history)</span><span className="text-center">Actual</span><span className="text-center">Difference</span><span className="text-center">Status</span><span className="text-center">Action</span>
+              <span className="pl-[60px]">Validation</span><span className="text-center">Actual</span><span className="text-center">Expected (history)</span><span className="text-center">Difference</span><span className="text-center">Status</span><span className="text-center">Action</span>
             </div>
           </div>
         )}
@@ -231,7 +231,7 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
           const verifyTitle = gateBlocked ? verifyBlock! : !l.is_verified && noCostItem ? 'Choose a cost item first (or LAIN_LAIN)' : l.is_verified ? `${autoVerified ? 'Auto-verified by the system' : `Verified${l.verified_by ? ` by ${l.verified_by}` : ''}`} — click to undo` : 'Mark this line as verified'
           const mainDiff = main ? diffOf(l, main) : null
           if (variant === 'summary') {
-            // Tampilan RINGKAS = gaya "Cost validation" (Tahap 3b, revisi 2026-10-28): Validation | Expected (history) | Actual | Difference | Status | Action.
+            // Tampilan RINGKAS = gaya "Cost validation" (Tahap 3b, revisi 2026-10-28; Actual & Expected ditukar 2026-10-30): Validation | Actual | Expected (history) | Difference | Status | Action.
             // Rincian MAIN REFERENCE (pembanding utama, View history, +n more reference, remark) ada di panel yang dibuka segitiga di kiri baris. Logika & aksi SAMA dgn Detailed.
             const cv = classifyCostLine(l)
             const edge = noCostItem ? 'border-l-[#A8231A]' : l.is_verified ? 'border-l-[#17663D]' : (l.compare_check || cv.status === 'difference') ? 'border-l-[#E0A526]' : 'border-l-transparent'
@@ -276,11 +276,11 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                     </div>
                   </div>
 
-                  {/* Expected / Actual / Difference (satu baris, tidak membungkus) */}
-                  <div className="min-w-0 @min-[870px]:text-center"><div className={colLabel}>Expected (history)</div>
-                    <div className="text-[12.5px] tabular-nums text-[#6E5E70] whitespace-nowrap">{expected === null ? '—' : fmtRupiah(expected)}</div></div>
+                  {/* Actual / Expected / Difference (satu baris, tidak membungkus; Actual di depan sejak 2026-10-30, permintaan user) */}
                   <div className="min-w-0 @min-[870px]:text-center"><div className={colLabel}>Actual</div>
                     <div className="text-[13px] font-extrabold tabular-nums text-[#3B1B3D] whitespace-nowrap" data-invoice-amount>{fmtRupiah(l.amount)}</div></div>
+                  <div className="min-w-0 @min-[870px]:text-center"><div className={colLabel}>Expected (history)</div>
+                    <div className="text-[12.5px] tabular-nums text-[#6E5E70] whitespace-nowrap">{expected === null ? '—' : fmtRupiah(expected)}</div></div>
                   <div className="min-w-0 @min-[870px]:text-center"><div className={colLabel}>Difference</div>
                     <div className={`text-[12.5px] font-semibold tabular-nums whitespace-nowrap ${diff ? (diff > 0 ? 'text-[#A8231A]' : 'text-[#17663D]') : 'text-[#6E5E70]'}`}>
                       {diff === null ? '—' : diff === 0 ? 'Rp 0' : `${diff > 0 ? '+' : '−'}${fmtRupiah(Math.abs(diff))}`}</div></div>
