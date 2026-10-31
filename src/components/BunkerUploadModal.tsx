@@ -47,11 +47,19 @@ const FileRow: React.FC<{ file: File; index: number; onRemove: (i: number) => vo
 // sistem coba baca No PO dari isi dokumen; (2) tombol "Upload dokumen susulan" di dalam modal
 // Kelengkapan Dokumen -- noPoHint WAJIB diisi (no_po baris itu) supaya dokumen yang tidak selalu
 // mencantumkan No PO di dalamnya sendiri (mis. Kwitansi) tetap bisa digabung ke baris yang benar.
-export default function BunkerUploadModal({ onClose, onJobStarted, onSentNoJob, noPoHint }: {
+//
+// Dokumen pembayaran (2026-10-31): `jenisHint` ('bt_dpp' | 'bt_ppn' | 'bpe' | 'a2') + `noPoHint` = no_po_key baris (dokumen pembayaran
+// tidak memuat No PO bunker). Bukti DPP & PPN tampilannya sama, jadi jenisnya WAJIB dikirim -- AI tidak boleh menebak. Satu upload = satu jenis.
+export type BunkerJenisHint = 'bt_dpp' | 'bt_ppn' | 'bpe' | 'a2';
+
+export default function BunkerUploadModal({ onClose, onJobStarted, onSentNoJob, noPoHint, jenisHint, jenisLabel, onUploaded }: {
   onClose: () => void;
   onJobStarted: (jobId: string) => void;
   onSentNoJob: (message: string, isWarning: boolean) => void;
   noPoHint?: string;
+  jenisHint?: BunkerJenisHint;
+  jenisLabel?: string;
+  onUploaded?: (fileNames: string[]) => void;
 }) {
   const [files, setFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -80,6 +88,7 @@ export default function BunkerUploadModal({ onClose, onJobStarted, onSentNoJob, 
     const formData = new FormData();
     files.forEach((file, i) => formData.append('file_' + i, file));
     if (noPoHint) formData.append('no_po_hint', noPoHint);
+    if (jenisHint) formData.append('jenis_hint', jenisHint);
     try {
       const customWebhook = localStorage.getItem('n8n_bunker_webhook_url');
       const headers: HeadersInit = { 'X-Webhook-Type': 'bunker' };
@@ -96,6 +105,7 @@ export default function BunkerUploadModal({ onClose, onJobStarted, onSentNoJob, 
       } else {
         onSentNoJob('Document sent to the processing queue successfully.', false);
       }
+      onUploaded?.(files.map(f => f.name));
       onClose();
     } catch (err: any) {
       const raw = err?.message || String(err);
@@ -111,8 +121,8 @@ export default function BunkerUploadModal({ onClose, onJobStarted, onSentNoJob, 
 
         <div className="flex justify-between items-center p-4 sm:px-6 sm:py-4 border-b border-slate-200 shrink-0">
           <div>
-            <h2 className="text-base font-bold tracking-tight text-[#5A305A]">Upload Document — Bunker</h2>
-            <p className="text-xs font-light text-[#5A305A] mt-0.5">PO, Invoice, Tax Invoice, Receipt, Bunker Receipt, Tank Sounding, Stock In, Official Report, Lab Results, Credit Note</p>
+            <h2 className="text-base font-bold tracking-tight text-[#5A305A]">{jenisHint ? `Upload ${jenisLabel || jenisHint} — Bunker` : 'Upload Document — Bunker'}</h2>
+            <p className="text-xs font-light text-[#5A305A] mt-0.5">{jenisHint ? 'Payment document: all files in this upload are treated as this one type' : 'PO, Invoice, Tax Invoice, Receipt, Bunker Receipt, Tank Sounding, Stock In, Official Report, Lab Results, Credit Note'}</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full text-[#5A305A] transition-colors">
             <X size={20} />

@@ -1,18 +1,25 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../lib/AuthContext';
-import { Fuel, UploadCloud, Clock, X, CheckCircle2, AlertTriangle, ClipboardList, FileCheck2, Trash2, Search, RefreshCw, History } from 'lucide-react';
+import { Fuel, UploadCloud, Clock, X, CheckCircle2, AlertTriangle, ClipboardList, FileCheck2, Trash2, Search, RefreshCw, History, Send } from 'lucide-react';
 import {
-  formatDateTimeID, effectiveSummaryStatusMeta, STATUS_WORKFLOW_OPTIONS, workflowMeta, updateBunkerDokumen,
+  formatDateTimeID, effectiveSummaryStatusMeta, workflowOptionsFor, workflowMeta, updateBunkerDokumen,
   computeMatrixMatchStats,
 } from '../utils/BunkerHelpers';
 import BunkerUploadModal from '../components/BunkerUploadModal';
 import BunkerKelengkapanModal from '../components/BunkerKelengkapanModal';
 import BunkerCompareDocModal from '../components/BunkerCompareDocModal';
 import BunkerAuditLogModal from '../components/BunkerAuditLogModal';
+import BunkerWorkflowModal from '../components/BunkerWorkflowModal';
+import {
+  fetchTahapMap, fetchIndeksDokumen, labStatusEfektif, LAB_META, PEMBAYARAN_META, TAHAP_META, TAHAP_ORDER,
+  type TahapBunker, type StatusPembayaran,
+} from '../utils/bunkerWorkflow';
 import Greeting from '../components/Greeting';
 import { LoadingState, LoadingTableRow } from '../components/LoadingState';
-import { ViewModeToggle, DocRow, RowEyebrow, RowTitle, RowChip, RowLabel, CardAction, useReviewMark, ReviewMarkPill, type CompareDocViewMode } from '../components/CompareDocCards';
+import { ViewModeToggle, CardAction, useReviewMark, ReviewMarkPill, type CompareDocViewMode } from '../components/CompareDocCards';
+import { BunkerCard } from '../components/BunkerCard';
+import { bersihkanNilai } from '../utils/bunkerBaText';
 
 // ── Kontrak data (Supabase, sudah dibuat backend n8n -- lihat BunkerHelpers.ts) ──
 // bunker_dokumen (1 baris = 1 No PO): no_po, no_po_key(unik, internal), vendor, kapal, lokasi,
@@ -112,6 +119,20 @@ function StatusBadge({ row }: { row: any }) {
   return <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${meta.badgeClass}`} title={meta.label === 'Reviewed' ? 'All Mismatch / Warning rows were confirmed manually' : undefined}>{meta.label}</span>;
 }
 
+// Badge alur BeeHive (2026-10-31): tahap menu (dari view bunker_dokumen_tahap), status lab (n8n / manual), status pembayaran (trigger DB).
+function FlowBadges({ row, tahap }: { row: any; tahap?: TahapBunker }) {
+  const lab = labStatusEfektif(row);
+  const bayar = PEMBAYARAN_META[(row.status_pembayaran as StatusPembayaran)] ?? null;
+  return (
+    <>
+      {tahap && <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${TAHAP_META[tahap].badgeClass}`}>{TAHAP_META[tahap].label}</span>}
+      {lab && <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${LAB_META[lab].badgeClass}`} title="Lab result status">{LAB_META[lab].label}</span>}
+      {row.perlu_test_lab === false && !lab && <span className="text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap bg-slate-100 text-slate-600" title="Test lab decision">No lab test</span>}
+      {bayar && row.submitted_to_finance_at && <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${bayar.badgeClass}`} title="Payment status">{bayar.label}</span>}
+    </>
+  );
+}
+
 function WorkflowSelect({ row, onChanged, canEdit }: { row: any; onChanged: () => void; canEdit: boolean }) {
   const [saving, setSaving] = useState(false);
   const meta = workflowMeta(row.status_workflow);
@@ -134,7 +155,7 @@ function WorkflowSelect({ row, onChanged, canEdit }: { row: any; onChanged: () =
       disabled={saving}
       className={`text-[10px] font-bold px-2 py-1 rounded-full border-0 outline-none cursor-pointer disabled:opacity-50 ${meta.badgeClass}`}
     >
-      {STATUS_WORKFLOW_OPTIONS.map(opt => (
+      {workflowOptionsFor(row.status_workflow).map(opt => (
         <option key={opt} value={opt}>{workflowMeta(opt).label}</option>
       ))}
     </select>
@@ -160,6 +181,13 @@ export default function BunkerPage() {
   const [totalRecords, setTotalRecords] = useState(0);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  // Tab tahap (2026-10-31): jumlah & isi tab dihitung dari view `bunker_dokumen_tahap` (aturan submit di DB), BUKAN dari status_workflow.
+  // '' = All (query lama apa adanya, tetap jalan walau view belum ada).
+  const [tahapTab, setTahapTab] = useState<TahapBunker | ''>('');
+  const [tahapMap, setTahapMap] = useState<Map<string, TahapBunker>>(new Map());
+  const [tahapError, setTahapError] = useState(false);
+  const tahapMapRef = useRef<Map<string, TahapBunker>>(new Map());
+  const [workflowRow, setWorkflowRow] = useState<any | null>(null);
 
   const [queue, setQueue] = useState<any[]>([]);
   const [kelengkapanRow, setKelengkapanRow] = useState<any | null>(null);
@@ -176,9 +204,35 @@ export default function BunkerPage() {
   // | List (tabel lama apa adanya). Data, filter, pagination & semua aksi SAMA di kedua mode.
   const [viewMode, setViewMode] = useState<CompareDocViewMode>('card');
 
+  const fetchTahap = useCallback(async () => {
+    const { data, error } = await fetchTahapMap();
+    setTahapError(!!error);
+    if (!error) { tahapMapRef.current = data; setTahapMap(data); }
+    return !error;
+  }, []);
+
   const fetchList = useCallback(async () => {
     setLoadingList(true);
     const startIndex = (page - 1) * pageSize;
+    if (tahapTab) {
+      // Mode tab: indeks ringan (id + updated_at, sudah kena pencarian/filter status) dipotong per tahap di klien,
+      // lalu HANYA baris halaman aktif yang diambil lengkap (by id) -- tidak membuat URL panjang.
+      const { data: idx, error: idxErr } = await fetchIndeksDokumen(search, statusFilter);
+      if (!idxErr) {
+        const ids = idx.filter(r => tahapMapRef.current.get(r.id) === tahapTab).map(r => r.id);
+        const pageIds = ids.slice(startIndex, startIndex + pageSize);
+        let pageRows: any[] = [];
+        if (pageIds.length) {
+          const { data } = await supabase.from('bunker_dokumen').select('*').in('id', pageIds);
+          const byId = new Map((data || []).map((r: any) => [r.id, r]));
+          pageRows = pageIds.map(id => byId.get(id)).filter(Boolean);
+        }
+        setRows(pageRows);
+        setTotalRecords(ids.length);
+      }
+      setLoadingList(false);
+      return;
+    }
     let query = supabase.from('bunker_dokumen').select('*', { count: 'exact' }).order('updated_at', { ascending: false });
     if (search.trim()) {
       const s = search.trim().replace(/[%,]/g, '');
@@ -191,7 +245,12 @@ export default function BunkerPage() {
       setTotalRecords(count || 0);
     }
     setLoadingList(false);
-  }, [page, pageSize, search, statusFilter]);
+  }, [page, pageSize, search, statusFilter, tahapTab]);
+
+  // Muat ulang peta tahap lalu daftar (setelah submit/pembayaran/upload dll.).
+  const refreshAll = useCallback(async () => { await fetchTahap(); await fetchList(); }, [fetchTahap, fetchList]);
+
+  useEffect(() => { fetchTahap(); }, [fetchTahap]);
 
   const fetchQueue = useCallback(async () => {
     const { data } = await supabase
@@ -224,7 +283,7 @@ export default function BunkerPage() {
       if (data) {
         if (data.status === 'SUCCESS') {
           setActiveJobStatus('SUCCESS');
-          fetchList();
+          refreshAll();
           fetchQueue();
         } else if (data.status === 'FAILED') {
           setActiveJobStatus('FAILED');
@@ -234,7 +293,7 @@ export default function BunkerPage() {
       }
     }, 4000);
     return () => clearInterval(iv);
-  }, [activeJobId, activeJobStatus, fetchList, fetchQueue]);
+  }, [activeJobId, activeJobStatus, refreshAll, fetchQueue]);
 
   const handleJobStarted = (jobId: string) => {
     setActiveJobId(jobId);
@@ -297,7 +356,7 @@ export default function BunkerPage() {
     setToastMessage('Data deleted successfully.');
     setTimeout(() => setToastMessage(null), 4000);
     setDeleteConfirmRow(null);
-    fetchList();
+    refreshAll();
   };
 
   const totalPages = Math.ceil(totalRecords / pageSize) || 1;
@@ -402,7 +461,7 @@ export default function BunkerPage() {
                   <option value="BUTUH REVIEW">Needs Review</option>
                 </select>
                 <button
-                  onClick={() => { fetchList(); fetchQueue(); }}
+                  onClick={() => { refreshAll(); fetchQueue(); }}
                   disabled={loadingList}
                   title="Refresh"
                   className="p-2 rounded-full bg-white border border-slate-200 hover:bg-slate-50 text-[#5A305A] transition-all flex items-center justify-center shrink-0 disabled:opacity-50 h-[34px] w-[34px]"
@@ -445,6 +504,24 @@ export default function BunkerPage() {
               </div>
             </div>
 
+            {/* Tab tahap alur BeeHive -- jumlah dari view bunker_dokumen_tahap */}
+            <div className="px-5 py-2 border-b border-white/60 flex items-center gap-1.5 flex-wrap shrink-0">
+              {([['', 'All', tahapMap.size] as const, ...TAHAP_ORDER.map(t => [t, TAHAP_META[t].label, [...tahapMap.values()].filter(v => v === t).length] as const)]).map(([key, label, n]) => {
+                const aktif = tahapTab === key;
+                return (
+                  <button
+                    key={key || 'all'}
+                    disabled={!!key && tahapError}
+                    onClick={() => { setTahapTab(key as TahapBunker | ''); setPage(1); }}
+                    className={`px-3 py-1.5 rounded-full text-[11px] font-semibold border transition-all disabled:opacity-40 disabled:cursor-not-allowed ${aktif ? 'bg-[#5A305A] border-[#5A305A] text-white shadow-sm' : 'bg-white border-slate-200 text-[#5A305A] hover:bg-slate-50'}`}
+                  >
+                    {label}{!tahapError && <span className={`ml-1.5 text-[10px] ${aktif ? 'opacity-80' : 'opacity-60'}`}>{n}</span>}
+                  </button>
+                );
+              })}
+              {tahapError && <span className="text-[10px] text-amber-700 ml-1">Stage tabs unavailable (view bunker_dokumen_tahap could not be read — has bunker_update_beehive.sql been run?)</span>}
+            </div>
+
             {viewMode === 'card' ? (
               <div className="overflow-y-auto flex-1 min-h-0 px-4 pt-3 pb-4 bg-slate-50/40">
                 {loadingList ? (
@@ -455,43 +532,25 @@ export default function BunkerPage() {
                   <div className="flex flex-col gap-2.5">
                     {rows.map(r => {
                       const matchStats = computeMatrixMatchStats(r.matrix_perbandingan);
-                      const pctClass = matchStats.pct >= 90 ? 'text-emerald-600' : matchStats.pct >= 60 ? 'text-amber-600' : 'text-red-600';
-                      return (
-                        <DocRow
+                                      return (
+                        <BunkerCard
                           key={r.id}
-                          alignTop
-                          rowId={r.id}
+                          row={r}
+                          tahap={tahapMap.get(r.id)}
+                          matchPct={matchStats.pct}
                           marked={reviewMark?.id === r.id ? reviewMark.title : null}
                           onClearMark={clearReviewMark}
-                          left={<>
-                            {/* Kiri (susunan final 2026-10-02, permintaan user): No PO paling atas (sejajar
-                                Vendor), Workflow Status sebaris labelnya, status sistem + Updated paling bawah. */}
-                            <RowTitle className="">{r.no_po || '-'}</RowTitle>
-                            <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-                              <span className="text-[9px] font-bold uppercase tracking-wide text-[#5A305A]/50">Workflow Status</span>
-                              <WorkflowSelect row={r} onChanged={fetchList} canEdit={canEditBunker} />
-                            </div>
-                            <div className="mt-2">
-                              <RowEyebrow><StatusBadge row={r} /><span>Updated {formatDateTimeID(r.updated_at)}</span></RowEyebrow>
-                            </div>
-                          </>}
-                          main={<>
-                            {/* Tengah = pihak & lokasi: Vendor, lalu chip Location & Vessel SEJAJAR 1 baris. */}
-                            <div className="font-bold text-[13px] text-[#5A305A] leading-snug break-words">{r.vendor || '-'}</div>
-                            <div className="flex flex-wrap gap-1.5 mt-1.5">
-                              <RowChip label="Location">{r.lokasi || '-'}</RowChip>
-                              <RowChip label="Vessel">{r.kapal || '-'}</RowChip>
-                            </div>
-                          </>}
-                          side={<>
-                            <RowLabel>Doc Match</RowLabel>
-                            <div className={`font-bold text-[20px] leading-tight ${pctClass}`}>{matchStats.pct}%</div>
-                          </>}
+                          workflow={<WorkflowSelect row={r} onChanged={fetchList} canEdit={canEditBunker} />}
+                          status={<StatusBadge row={r} />}
+                          updated={formatDateTimeID(r.updated_at)}
                           actions={<>
-                            <CardAction tone="primary" icon={FileCheck2} label="Completeness" title="Document Completeness" onClick={() => openKelengkapan(r)} />
-                            <CardAction tone="primary" icon={ClipboardList} label="Compare Doc" onClick={() => openCompare(r)} />
-                            <CardAction iconOnly tone="warn" icon={History} label="History" title="Change History" onClick={() => setAuditLogRow(r)} />
-                            {canEditBunker && <CardAction iconOnly icon={Trash2} label="Delete" tone="danger" onClick={() => openDeleteConfirm(r)} />}
+                            <CardAction fullWidth tone="primary" icon={FileCheck2} label="Completeness" title="Document Completeness" onClick={() => openKelengkapan(r)} />
+                            <CardAction fullWidth tone="primary" icon={Send} label="Submit & Payment" title="Submit to Finance, test lab decision, payment & Berita Acara" onClick={() => setWorkflowRow(r)} />
+                            <CardAction fullWidth tone="primary" icon={ClipboardList} label="Compare Doc" onClick={() => openCompare(r)} />
+                            <div className="grid grid-flow-col auto-cols-fr gap-1.5">
+                              <CardAction fullWidth iconOnly tone="warn" icon={History} label="History" title="Change History" onClick={() => setAuditLogRow(r)} />
+                              {canEditBunker && <CardAction fullWidth iconOnly icon={Trash2} label="Delete" tone="danger" onClick={() => openDeleteConfirm(r)} />}
+                            </div>
                           </>}
                         />
                       );
@@ -510,27 +569,29 @@ export default function BunkerPage() {
                     <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Location</th>
                     <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Status</th>
                     <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Workflow Status</th>
+                    <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Stage / Lab / Payment</th>
                     <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap">Last Updated</th>
                     <th className="text-left font-semibold px-3 py-2.5 whitespace-nowrap sticky right-0 top-0 bg-slate-50 shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-20 border-l border-slate-200">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {loadingList ? (
-                    <LoadingTableRow colSpan={8} />
+                    <LoadingTableRow colSpan={9} />
                   ) : rows.length === 0 ? (
-                    <tr><td colSpan={8} className="text-center py-10 text-[#5A305A] text-sm italic">No Bunker data yet. Click "Upload Document" to get started.</td></tr>
+                    <tr><td colSpan={9} className="text-center py-10 text-[#5A305A] text-sm italic">No Bunker data yet. Click "Upload Document" to get started.</td></tr>
                   ) : (
                     rows.map(r => {
                     const matchStats = computeMatrixMatchStats(r.matrix_perbandingan);
                     return (
                       <tr key={r.id} data-review-row={r.id} data-marked={reviewMark?.id === r.id ? 'true' : undefined}
                         className={`group transition-colors ${reviewMark?.id === r.id ? 'bg-[#F5EDF3] shadow-[inset_4px_0_0_#5A305A]' : 'bg-white hover:bg-slate-50'}`}>
-                        <td className="px-3 py-3 align-top text-[#5A305A] font-semibold whitespace-nowrap">{r.no_po || '-'}</td>
-                        <td className="px-3 py-3 align-top text-[#5A305A]">{r.vendor || '-'}</td>
-                        <td className="px-3 py-3 align-top text-[#5A305A]">{r.kapal || '-'}</td>
-                        <td className="px-3 py-3 align-top text-[#5A305A]">{r.lokasi || '-'}</td>
+                        <td className="px-3 py-3 align-top text-[#5A305A] font-semibold whitespace-nowrap">{bersihkanNilai(r.no_po) || '-'}</td>
+                        <td className="px-3 py-3 align-top text-[#5A305A]">{bersihkanNilai(r.vendor) || '-'}</td>
+                        <td className="px-3 py-3 align-top text-[#5A305A]">{bersihkanNilai(r.kapal) || '-'}</td>
+                        <td className="px-3 py-3 align-top text-[#5A305A]">{bersihkanNilai(r.lokasi) || '-'}</td>
                         <td className="px-3 py-3 align-top"><StatusBadge row={r} /></td>
                         <td className="px-3 py-3 align-top"><WorkflowSelect row={r} onChanged={fetchList} canEdit={canEditBunker} /></td>
+                        <td className="px-3 py-3 align-top"><div className="flex items-center gap-1.5 flex-wrap max-w-[220px]"><FlowBadges row={r} tahap={tahapMap.get(r.id)} /></div></td>
                         <td className="px-3 py-3 align-top text-[#5A305A] whitespace-nowrap">{formatDateTimeID(r.updated_at)}</td>
                         <td className="px-2 py-3 align-top sticky right-0 bg-white group-hover:bg-slate-50 group-data-[marked=true]:bg-[#F5EDF3] shadow-[-4px_0_10px_rgba(0,0,0,0.06)] z-10 border-l border-slate-200 transition-colors">
                           <div className="flex flex-col gap-1 w-[110px]">
@@ -540,6 +601,13 @@ export default function BunkerPage() {
                               className="w-full flex items-center gap-1 px-1.5 py-1 rounded-lg border border-slate-200 text-[9px] font-semibold text-[#5A305A] hover:bg-slate-100 transition-colors"
                             >
                               <FileCheck2 size={10} /> Completeness
+                            </button>
+                            <button
+                              onClick={() => setWorkflowRow(r)}
+                              title="Submit to Finance, test lab decision, payment & Berita Acara"
+                              className="w-full flex items-center gap-1 px-1.5 py-1 rounded-lg border border-slate-200 text-[9px] font-semibold text-[#5A305A] hover:bg-slate-100 transition-colors"
+                            >
+                              <Send size={10} /> Submit & Payment
                             </button>
                             <button
                               onClick={() => openCompare(r)}
@@ -611,14 +679,18 @@ export default function BunkerPage() {
       </div>
 
       {kelengkapanRow && (
-        <BunkerKelengkapanModal record={kelengkapanRow} onClose={() => setKelengkapanRow(null)} onChanged={fetchList} canEdit={canEditBunker} />
+        <BunkerKelengkapanModal record={kelengkapanRow} onClose={() => setKelengkapanRow(null)} onChanged={refreshAll} canEdit={canEditBunker} />
       )}
 
       {compareRow && (
-        <BunkerCompareDocModal record={compareRow} onClose={() => setCompareRow(null)} onChanged={fetchList} canEdit={canEditBunker} />
+        <BunkerCompareDocModal record={compareRow} onClose={() => setCompareRow(null)} onChanged={refreshAll} canEdit={canEditBunker} />
       )}
 
       <ReviewMarkPill {...reviewPill} hidden={!!compareRow || !!kelengkapanRow} />
+
+      {workflowRow && (
+        <BunkerWorkflowModal record={workflowRow} onClose={() => setWorkflowRow(null)} onChanged={refreshAll} canEdit={canEditBunker} />
+      )}
 
       {auditLogRow && (
         <BunkerAuditLogModal record={auditLogRow} onClose={() => setAuditLogRow(null)} />

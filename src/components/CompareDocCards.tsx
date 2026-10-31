@@ -232,15 +232,17 @@ const ACTION_TONE: Record<'default' | 'primary' | 'info' | 'warn' | 'danger', st
 
 // Tombol aksi baris. Tanpa `onClick` = tampil abu (mis. file PDF belum ada), sama dgn versi
 // `<span>` abu di panel Aksi tabel. `iconOnly` = tombol kotak kecil ikon saja (label jadi tooltip).
-export function CardAction({ icon: Icon, label, onClick, tone = 'default', title, iconOnly = false }: {
+export function CardAction({ icon: Icon, label, onClick, tone = 'default', title, iconOnly = false, fullWidth = false }: {
   icon: typeof List;
   label: string;
   onClick?: () => void;
   tone?: keyof typeof ACTION_TONE;
   title?: string;
   iconOnly?: boolean;
+  // true = mengisi lebar selnya (dipakai di grid aksi Bunker supaya tombol sejajar rata); default tidak mengubah halaman lain.
+  fullWidth?: boolean;
 }) {
-  const size = iconOnly ? 'h-8 w-8 justify-center' : 'h-8 px-3 gap-1.5';
+  const size = iconOnly ? (fullWidth ? 'h-8 w-full justify-center' : 'h-8 w-8 justify-center') : fullWidth ? 'h-8 w-full justify-center px-2 gap-1.5 whitespace-nowrap' : 'h-8 px-3 gap-1.5';
   if (!onClick) {
     return (
       <span title={title || label} className={`inline-flex items-center ${size} rounded-xl border border-slate-100 bg-white text-[11px] font-semibold text-slate-300`}>

@@ -659,6 +659,56 @@ dari batch query `dokumen_checklist_seaair`.
     for select using (tabel = 'bunker_dokumen' and public.has_page_access('bunker'));
   ```
 
+## Bunker — alur BeeHive (submit Finance, test lab, pembayaran) + Berita Acara (2026-10-31)
+
+Backend SUDAH LIVE di production (dicek MCP 2026-10-31): `bunker_update_beehive.sql` & `bunker_ba_app.sql` dijalankan user (file masih di ROOT repo, untracked --
+asalnya dari user; `bunker_ba_app.sql` memuat data awal `bunker_ba_pejabat`). Aplikasi HANYA memanggil/menampilkan; **aturan ada di DB** (jangan hitung ulang di frontend):
+`bunker_syarat_submit(p_id)` (kurang/info/lab_wajib/ba_wajib), `bunker_submit_ke_finance(p_id,p_user)`, `bunker_ringkasan_pembayaran(p_id)`, view `bunker_dokumen_tahap`
+(tahap menu), tabel `bunker_dokumen_wajib` (daftar dokumen wajib, `aktif` bisa diubah tanpa deploy), `bunker_pembayaran` (INSERT-only dari UI; trigger DB menolak tahap/urutan salah ->
+**pesan error DB ditampilkan apa adanya**), `bunker_ba` / `bunker_ba_pejabat` / `bunker_ba_pengaturan`, RPC `bunker_ba_nomor_berikutnya`, `bunker_ba_tipe_disarankan`.
+Kepemilikan kolom: n8n menulis `lab_status`, `lab_detail`, `ba_tipe`, `nilai_tagihan`, `kelengkapan_status`; APP menulis `perlu_test_lab`, `lab_menyusul(_alasan)`, `lab_status_manual`,
+`dokumen_manual` (merge, jangan timpa kunci lain); `status_pembayaran`/`tahun`/`urut` diisi trigger -> JANGAN ditulis dari app. Status 'PO baru' pada data production: 69 baris, belum ada
+yang terisi kolom n8n baru (workflow n8n belum mengisi saat dicek) -> UI harus tahan nilai kosong.
+
+**File**: `src/utils/bunkerWorkflow.ts` (tipe kontrak + semua pemanggilan Supabase/RPC + meta badge), `src/components/BunkerWorkflowModal.tsx` (modal "Submit & Payment" dari kartu/List),
+`src/components/BunkerBaFormModal.tsx` (form BA), `src/utils/bunkerBa.ts` (tipe `isi`, prefill, validasi -- murni, ada tes), `src/utils/bunkerBaText.ts` (terbilang, tanggal, templat teks BA, kalimat
+parameter; murni, tes di `bunkerBaText.test.ts`, masuk `npm test`), `src/utils/bunkerBaDocx.ts` (pembuat .docx, pustaka `docx`), `src/assets/ba-logo-waruna.png` (logo dari word/media contoh asli).
+Server: `server/routes/n8n.ts` meneruskan field `jenis_hint` (whitelist `bt_dpp|bt_ppn|bpe|a2`, hanya webhook type `bunker`; **restart dev server** tiap ubah file ini); `server/db/whitelist.ts`
+memuat tabel/RPC baru. `BunkerUploadModal` punya props `jenisHint`/`jenisLabel`/`onUploaded`.
+
+**Modal "Submit & Payment"** (gating `canEdit('bunker')`): (1) checklist dokumen wajib AKTIF dari `bunker_dokumen_wajib` (silang bila `kode` ada di `kurang[]`; Kwitansi = opsional, tak memblokir),
+baris syarat bersyarat (keputusan lab/lab/BA) + `info[]`; tombol "Send to Finance" nonaktif selama `boleh_submit=false`, error RPC ditampilkan apa adanya; setelah submit tampil "Sent to Finance on ... by ...".
+(2) Keputusan test lab (`perlu_test_lab`; terkunci setelah submit), "lab menyusul" + alasan wajib, pilihan ONSPEC/OFFSPEC manual HANYA bila lab ada tapi `lab_status` null, kartu ringkas `lab_detail`.
+(3) Berita Acara: tombol "Create Berita Acara" bila `ba_wajib` dan `kelengkapan_status.ba` belum true (tipe default dari `bunker_ba_tipe_disarankan`; null -> pilih manual + peringatan); daftar BA
+(Edit hanya DRAFT, Download Word dari data TERSIMPAN, Mark as printed = DRAFT->DICETAK dgn konfirmasi, Cancel); membuat/mengunduh BA TIDAK mengubah `kelengkapan_status.ba` -- BA dianggap ada setelah
+BA bertandatangan diupload (tombol "Upload signed BA" = upload biasa) dan dibaca n8n. (4) Dokumen manual SPB/Approval/Foto (`dokumen_manual`; saat ini `aktif=false` -> tak jadi kekurangan).
+(5) Pembayaran (setelah submit): ringkasan, slot upload dokumen pembayaran (`jenis_hint` + `no_po_hint` = **`no_po_key`**; BPE/A2 aktif setelah DPP tercatat, bukti PPN aktif bila `kelengkapan_status.bpe && a2`),
+form catat transfer (tahap mengikuti `ada_ppn`: true=DPP/PPN, false=FULL, tak ada=ketiganya), daftar transfer dgn tautan bukti dari `source_files` (cocok `bukti_filename`; tak ketemu = "Preview unavailable").
+Upload memakai polling `bunker_processing_queue` seperti modal Kelengkapan. Perubahan penting dicatat ke `audit_trail` (`logBunkerAudit`).
+
+**Kartu Bunker (revisi 2026-10-31, permintaan user "ambil preferensi dari kartu Invoice Recap Courier")**: `src/components/BunkerCard.tsx` (menggantikan `DocRow` HANYA di halaman Bunker). Pola `CourierRecapGroupCard`: `SA_CARD` + `Pill` (SeaAirAuditUi), grid container query lebar KARTU, pembatas tipis, aksen kiri 5px mengikuti tahap (kuning=Incomplete, biru=Bunker Team, ungu=Finance, hijau=Clear); kartu yang sedang direview = latar `#FBF5FA` + cincin ungu + chip "Sedang direview".
+**4 tingkat responsif** (revisi 2026-10-31 setelah dilihat di laptop 14" 1920x1080 skala Windows 150% + zoom app 90% => viewport CSS ±1420px, kartu ±1100px; versi lama jatuh ke susunan ringkas / tombol turun ke bawah padahal user ingin tombol tetap di kanan seperti kartu Invoice Recap): **A >= 1380px** 1 baris 6 kolom lega `minmax(220px,1.3fr) 210px minmax(170px,1fr) minmax(190px,.9fr) 96px 320px`, aksi = grid 2x2 rata di kolom kanan; **B 1040-1379px** (laptop 14") 1 baris 6 kolom KOMPAK `minmax(170px,1.2fr) 190px minmax(150px,1fr) minmax(150px,1fr) 80px 290px`, tombol tetap di kanan; **C 760-1039px** baris 1 = 5 kolom info, baris 2 = strip aksi 1 baris rata kanan dgn garis atas; **D < 760px** 2 kolom x 3 baris. Aksi memakai `CardAction` prop baru `fullWidth` (default mati, halaman lain tidak terpengaruh). No PO pecah hanya setelah "/" (`<wbr>`). Class container query WAJIB literal; urutan CSS `@container (min-width)` menaik (760 < 1040 < 1380) dicek di hasil build (override antar tingkat bergantung urutan itu). Teks kartu & kolom List dibersihkan dari sufiks "(Hal N)" (`bersihkanNilai`) -- data DB tidak diubah. `WorkflowSelect`/`StatusBadge` tetap milik `BunkerPage` (slot). `FlowBadges` kini hanya dipakai di List. Diuji: `tsc` bersih, `vite build` OK; BELUM dilihat di browser nyata setelah revisi tingkat B kompak.
+
+**Modal Document Comparison -- ringkasan atas dipadatkan (2026-10-31, permintaan user "yang atas terlalu besar")**: banner status besar + batang % + kartu Mismatches/Actions bertumpuk diganti SATU strip 1 baris (status | Match/Warning/Mismatch | batang % tipis 6px + angka) dan Mismatches & Actions disandingkan 2 kolom (`md:grid-cols-2`, 1 kolom bila hanya salah satu ada; di bawah `md` bertumpuk). Data, perhitungan (`computeMatrixMatchStats`) & kartu "Possibly Uploaded to the Wrong Row" TIDAK berubah. BELUM dilihat di browser.
+
+**Daftar PO**: tab tahap (All + 4 tahap) dgn jumlah dari view `bunker_dokumen_tahap`, BUKAN `status_workflow`. "All" = query lama apa adanya (tetap jalan walau view bermasalah; tab lain dinonaktifkan + peringatan).
+Mode tab: `fetchIndeksDokumen` (id+updated_at, kena pencarian/filter status) dipotong per tahap di klien lalu halaman aktif diambil by id (tidak membuat URL panjang). Badge tahap/lab/pembayaran di kartu & List.
+
+**Berita Acara** (FM-BA.PST-001): 2 tipe `TANPA_LAB` / `TANPA_POTONGAN`; `isi` = SNAPSHOT jsonb (bentuk di `bunkerBa.ts` `BaIsi`; tambahan `perbandingan_vendor.lokasi`). Nomor = teks bebas unik, saran dari
+`bunker_ba_nomor_berikutnya(tanggal)` (diambil ulang saat tanggal berubah SELAMA belum diedit manual); `23505` pada `bunker_ba_nomor_uq` -> "Nomor BA sudah dipakai" + tombol "Pakai nomor berikutnya".
+Prefill dari `bunker_dokumen` (**nilai `extracted_raw.docs.*` berisi sufiks "(Hal N)", "-" dan nilai ganda "A & B" -> `bersihkanNilai`/`pilihBersih`/`parseAngka` membersihkan & memakai nilai pertama**);
+spesifikasi ISO/Pertamina TIDAK ditebak (kolom kurung di `param_offspec` hanya ditampilkan sbg petunjuk). Terbilang dihitung app. Teks bawaan = konstanta di `bunkerBaText.ts` (header "Spesifikasi" dikoreksi dari "Speksifikasi";
+kalimat parameter memakai "maksimal/minimal" sesuai awalan Max/Min, angka tanpa awalan = minimal). Pejabat WAJIB dari `bunker_ba_pejabat` (dropdown per peran; default hanya bila peran punya TEPAT 1 orang aktif). Validasi form
+berbahasa Indonesia (permintaan user). `.docx`: A4, margin 2,54 cm, Times New Roman 12 pt, header tabel 3 kolom (logo | judul | kotak dokumen) di `Header`; builder menghapus karakter kontrol (NUL) dari isian
+(Word menolak file bila ada). Diuji: dokumen terbuka di Microsoft Word (otomasi COM) untuk kedua tipe, termasuk tabel parameter & perbandingan vendor; kemiripan visual dgn contoh asli BELUM dibandingkan secara visual.
+
+**SQL 113 (`sql/113_bunker_rls.sql`, lokal; SUDAH DIJALANKAN user 2026-10-31, belum diverifikasi via MCP)**: kedua file bunker_*.sql membuat 5 tabel baru TANPA RLS, sementara default ACL memberi `authenticated` hak penuh
+(`relrowsecurity=false`, dicek 2026-10-31) -> semua user login bisa baca/ubah via REST langsung. File 113: RLS 4 policy (SELECT=akses halaman `bunker`, INSERT/UPDATE=edit `bunker`, DELETE=Admin; tabel referensi tulis=Admin),
+cabut EXECUTE `bunker_hitung_status_pembayaran` (SECURITY DEFINER tanpa guard, hanya dipanggil trigger definer), grant SELECT ke `claude_ro`. **Uji sbg non-Admin setelah dijalankan** (insert pembayaran/BA harus tetap jalan utk role
+ber-edit `bunker`, dan Finance yang hanya perlu mencatat transfer butuh hak edit `bunker`).
+
+**Catatan lain**: `bunker_submit_ke_finance` mengisi `status_workflow='OUTSTANDING FINANCE'` -- nilai ini di luar `STATUS_WORKFLOW_OPTIONS` (BARU/DIPROSES/DISETUJUI/DIBAYAR); supaya `<select>` tidak salah menunjuk 'BARU', `workflowOptionsFor()` (BunkerHelpers) menambahkan nilai saat ini ke opsi dan `STATUS_WORKFLOW_META` punya label "Outstanding Finance" (tidak bisa dipilih manual). Edit/hapus transfer, integrasi Ascend/BeeSuite, batas ukuran foto = di luar scope.
+
 ## Courier — Document Validation, baris "Berat (kg)" (id04) SATU aturan (2026-10-09, permintaan user)
 
 Dulu diisi 3 salinan yang tidak sama: modal (`ValidasiModal`/`ValidasiModalLegacy`) memakai fallback berat Invoice Duty tapi `cmp` kosong tanpa Invoice Freight; `generateValues`

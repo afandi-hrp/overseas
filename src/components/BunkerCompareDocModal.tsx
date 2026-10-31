@@ -547,35 +547,27 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged, canE
         <div className="flex-1 overflow-y-auto custom-scrollbar print:overflow-visible print:block print:h-auto">
           <div className="p-4 md:p-6 space-y-5 print:p-0">
 
-            {/* Summary */}
-            <div className={`rounded-xl border p-4 ${statusMeta.bannerClass}`}>
-              <p className="text-base font-black">{statusMeta.label.toUpperCase()}</p>
-
-              {matrixRows.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-black/10">
-                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs xl:text-sm font-semibold">
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" /> Match: {matchCount}
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" /> Warning: {warningCount}
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" /> Mismatch: {mismatchCount}
-                    </span>
-                  </div>
-
-                  <div className="mt-2.5">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] xl:text-[11px] font-bold uppercase tracking-wider opacity-70">Match Percentage</span>
-                      <span className={`text-xs xl:text-sm font-black ${matchPctTextClass}`}>{matchPct}%</span>
+            {/* Summary -- strip ringkas 1 baris (2026-10-31, permintaan user: bagian atas terlalu besar): status | Match/Warning/Mismatch | bar % tipis */}
+            <div className={`rounded-xl border px-4 py-2.5 ${statusMeta.bannerClass}`}>
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
+                <p className="text-[13px] xl:text-sm font-black uppercase tracking-wide">{statusMeta.label}</p>
+                {matrixRows.length > 0 && (
+                  <>
+                    <div className="flex items-center gap-x-3.5 gap-y-1 flex-wrap text-xs xl:text-[13px] font-semibold">
+                      <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" /> Match: {matchCount}</span>
+                      <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" /> Warning: {warningCount}</span>
+                      <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-rose-500 shrink-0" /> Mismatch: {mismatchCount}</span>
                     </div>
-                    <div className="w-full h-2 rounded-full bg-white/60 overflow-hidden">
-                      <div className={`h-full rounded-full ${matchPctBarClass}`} style={{ width: `${matchPct}%` }} />
+                    <div className="flex items-center gap-2.5 flex-1 min-w-[220px]" title="Match Percentage">
+                      <span className="text-[10px] font-bold uppercase tracking-wider opacity-70 whitespace-nowrap">Match</span>
+                      <div className="flex-1 h-1.5 rounded-full bg-white/70 overflow-hidden">
+                        <div className={`h-full rounded-full ${matchPctBarClass}`} style={{ width: `${matchPct}%` }} />
+                      </div>
+                      <span className={`text-xs xl:text-sm font-black tabular-nums ${matchPctTextClass}`}>{matchPct}%</span>
                     </div>
-                  </div>
-                </div>
-              )}
+                  </>
+                )}
+              </div>
             </div>
 
             {wrongRowWarnings.length > 0 && (
@@ -591,26 +583,26 @@ export default function BunkerCompareDocModal({ record, onClose, onChanged, canE
             )}
 
             {(normalMismatches.length > 0 || actions.length > 0) && (
-              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <div className={`bg-white rounded-xl border border-slate-200 overflow-hidden grid ${normalMismatches.length > 0 && actions.length > 0 ? 'md:grid-cols-2 md:divide-x' : ''} divide-slate-100 max-md:divide-y`}>
                 {normalMismatches.length > 0 && (
-                  <div className="p-4 border-b border-slate-100">
-                    <div className="flex items-center gap-2 mb-2">
-                      <AlertTriangle size={15} className="text-amber-500 shrink-0" />
-                      <p className="text-xs font-bold text-[#5A305A] uppercase tracking-wider">Mismatches</p>
+                  <div className="px-4 py-3">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <AlertTriangle size={14} className="text-amber-500 shrink-0" />
+                      <p className="text-[11px] font-bold text-[#5A305A] uppercase tracking-wider">Mismatches</p>
                     </div>
-                    <ul className="space-y-1 list-disc list-inside">
-                      {normalMismatches.map((m, i) => <li key={i} className="text-xs xl:text-sm text-[#5A305A]">{m}</li>)}
+                    <ul className="space-y-0.5 list-disc list-inside">
+                      {normalMismatches.map((m, i) => <li key={i} className="text-xs xl:text-[13px] text-[#5A305A]">{m}</li>)}
                     </ul>
                   </div>
                 )}
                 {actions.length > 0 && (
-                  <div className="p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <ListChecks size={15} className="text-blue-500 shrink-0" />
-                      <p className="text-xs font-bold text-[#5A305A] uppercase tracking-wider">Actions</p>
+                  <div className="px-4 py-3">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <ListChecks size={14} className="text-blue-500 shrink-0" />
+                      <p className="text-[11px] font-bold text-[#5A305A] uppercase tracking-wider">Actions</p>
                     </div>
-                    <ul className="space-y-1 list-disc list-inside">
-                      {actions.map((a, i) => <li key={i} className="text-xs xl:text-sm text-[#5A305A]">{a}</li>)}
+                    <ul className="space-y-0.5 list-disc list-inside">
+                      {actions.map((a, i) => <li key={i} className="text-xs xl:text-[13px] text-[#5A305A]">{a}</li>)}
                     </ul>
                   </div>
                 )}

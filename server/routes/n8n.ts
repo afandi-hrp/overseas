@@ -133,6 +133,7 @@ const uploadRules = (req: express.Request): AccessRule[] | null => {
 // Tolak upload yang total ukurannya melebihi UPLOAD_MAX_TOTAL_MB SEBELUM multer mem-buffer ke RAM (multer hanya
 // membatasi per file). Nilainya disamakan dgn `client_max_body_size` nginx supaya pesan error konsisten.
 const MAX_UPLOAD_BYTES = UPLOAD_MAX_TOTAL_MB * 1024 * 1024;
+const BUNKER_JENIS_HINT = new Set(['bt_dpp', 'bt_ppn', 'bpe', 'a2']);
 function limitUploadSize(req: express.Request, res: express.Response, next: express.NextFunction) {
   const len = Number(req.headers['content-length'] || 0);
   if (len > MAX_UPLOAD_BYTES) {
@@ -168,6 +169,16 @@ n8nRouter.post('/n8n-proxy-start', limitUploadSize, requireAccess(uploadRules), 
       }
       const noPoHint = req.body?.no_po_hint;
       if (noPoHint) formData.append('no_po_hint', noPoHint);
+      // KHUSUS Bunker (2026-10-31): dokumen pembayaran Finance/pajak (bukti transfer DPP/PPN, BPE, Lampiran A2) WAJIB membawa
+      // `jenis_hint` -- bukti DPP & PPN tampilannya sama sehingga AI tidak boleh menebak jenisnya. Nilai di luar daftar ditolak.
+      // Satu upload = satu jenis. Upload dokumen Bunker biasa TIDAK mengirim field ini.
+      const jenisHint = req.body?.jenis_hint;
+      if (jenisHint !== undefined && jenisHint !== '') {
+        if (webhookType !== 'bunker' || typeof jenisHint !== 'string' || !BUNKER_JENIS_HINT.has(jenisHint)) {
+          return res.status(400).json({ status: 'error', pesan: 'Field jenis_hint tidak valid (hanya upload Bunker: bt_dpp, bt_ppn, bpe, a2).' });
+        }
+        formData.append('jenis_hint', jenisHint);
+      }
       // Dipakai tombol "Upload Additional Doc" di Document Completeness Checklist (Audit Courier,
       // CourierUploadSusulanModal.tsx) -- supaya dokumen susulan yang tidak selalu mencantumkan AWB (mis. Credit
       // Note) tetap bisa digabung n8n ke record PIB/CN yang benar berdasar AWB, bukan dianggap shipment baru.

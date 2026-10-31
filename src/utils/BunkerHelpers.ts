@@ -138,10 +138,17 @@ export const STATUS_WORKFLOW_META: Record<string, { label: string; badgeClass: s
   DIPROSES: { label: 'In Progress', badgeClass: 'bg-blue-100 text-blue-700' },
   DISETUJUI: { label: 'Approved', badgeClass: 'bg-emerald-100 text-emerald-700' },
   DIBAYAR: { label: 'Paid', badgeClass: 'bg-violet-100 text-violet-700' },
+  // Diisi RPC bunker_submit_ke_finance (2026-10-31), TIDAK untuk dipilih manual -> tidak masuk STATUS_WORKFLOW_OPTIONS.
+  'OUTSTANDING FINANCE': { label: 'Outstanding Finance', badgeClass: 'bg-violet-100 text-violet-700' },
 };
 
 export function workflowMeta(status: string | null | undefined) {
   return (status && STATUS_WORKFLOW_META[status]) || STATUS_WORKFLOW_META.BARU;
+}
+
+// Opsi dropdown: nilai saat ini yang di luar daftar (mis. 'OUTSTANDING FINANCE' dari submit) tetap ditampilkan agar <select> tidak salah menunjuk 'BARU'.
+export function workflowOptionsFor(current: string | null | undefined): string[] {
+  return current && !STATUS_WORKFLOW_OPTIONS.includes(current) ? [...STATUS_WORKFLOW_OPTIONS, current] : STATUS_WORKFLOW_OPTIONS;
 }
 
 export function rowStatusClass(status: string | null | undefined): string {

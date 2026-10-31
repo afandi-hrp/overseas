@@ -9,7 +9,13 @@ export const TABLE_WHITELIST: Record<string, DbOp[]> = {
   audit_po_apovs_comp: ['delete', 'insert', 'select', 'update'],
   audit_po_pi_local_comp: ['delete', 'insert', 'select', 'update'],
   audit_trail: ['insert', 'select'],
+  // Alur BeeHive Bunker + Berita Acara (2026-10-31): bunker_update_beehive.sql & bunker_ba_app.sql.
+  bunker_ba: ['insert', 'select', 'update'],
+  bunker_ba_pejabat: ['select'],
   bunker_dokumen: ['delete', 'select', 'update'],
+  bunker_dokumen_tahap: ['select'],
+  bunker_dokumen_wajib: ['select'],
+  bunker_pembayaran: ['insert', 'select'],
   bunker_processing_queue: ['delete', 'select'],
   cost_agent_approval_matrix: ['delete', 'insert', 'select', 'update'],
   cost_agent_apnote_draft_lines: ['delete', 'insert', 'select', 'update'],
@@ -77,6 +83,11 @@ export const TABLE_WHITELIST: Record<string, DbOp[]> = {
 
 export const RPC_WHITELIST = new Set<string>([
   'approve_far_overseas_air',
+  'bunker_ba_nomor_berikutnya',
+  'bunker_ba_tipe_disarankan',
+  'bunker_ringkasan_pembayaran',
+  'bunker_submit_ke_finance',
+  'bunker_syarat_submit',
   'fn_apply_credit_note',
   'fn_audit_trail_users',
   'fn_courier_finance_accept',
