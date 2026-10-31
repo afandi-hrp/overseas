@@ -5,7 +5,7 @@ import { callCostAgentRpc } from './CostAgentHelpers'
 export interface GateItem {
   code: string; label: string; detail?: string | null; line_no?: number | null; doc_type?: string | null; doc_no?: string | null
 }
-export type PeriodSource = 'invoice' | 'invoice_document' | 'service_date'
+export type PeriodSource = 'invoice' | 'invoice_document' | 'invoice_header' | 'service_date'
 export interface GatePeriod { from: string | null; to: string | null; source: PeriodSource | null }
 export interface DocGate {
   enabled: boolean
@@ -45,5 +45,6 @@ export const isDocumentsBlocker = (code: string): boolean =>
 export const PERIOD_SOURCE_TEXT: Record<string, string> = {
   invoice: 'Period saved on the invoice (read from the header or entered by hand)',
   invoice_document: 'Arrival / departure dates printed on the invoice document',
+  invoice_header: 'Invoice header (arrival/departure)', // SQL 112: tanggal tiba / berangkat yang dibaca dari header invoice
   service_date: 'Service date (no period found on the invoice)',
 }

@@ -46,7 +46,7 @@ export function AliasesDialog({ costItemId, title, items, editable, toast, onClo
         <input className={SA_INPUT} value={search} onChange={e => setSearch(e.target.value)} placeholder="Search alias text…" aria-label="Search aliases" />
         <div className="rounded-lg border border-[#EADFD6] overflow-x-auto max-h-[50vh] overflow-y-auto">
           <table className="min-w-full">
-            <thead><tr>{['Alias text', 'Vendor', 'Cost item', 'Created by', 'Created at', ''].map(h => <th key={h || 'a'} className={`${TH} sticky top-0`}>{h}</th>)}</tr></thead>
+            <thead><tr>{['Alias text', 'Vendor', 'Cost item', 'Created by', 'Created at', ''].map(h => <th key={h || 'a'} className={`${TH} sticky top-0 ${h ? 'z-10' : 'right-0 z-20 w-px'}`}>{h}</th>)}</tr></thead>
             <tbody>
               <StateRow colSpan={6} loading={loading} error={error} onRetry={reload} empty={rows.length === 0} emptyText="No learned aliases" />
               {!loading && !error && rows.map((r, i) => {
@@ -54,14 +54,14 @@ export function AliasesDialog({ costItemId, title, items, editable, toast, onClo
                 return (
                   <tr key={r.id ?? i} className="border-t border-[#F3EEEA]">
                     <td className={`${TD} font-semibold [overflow-wrap:anywhere]`}>{pick(r, 'alias_text', 'alias_norm', 'alias') ?? '—'}</td>
-                    <td className={TD}>{pick(r, 'vendor_name', 'vendor') ?? <span className="text-[#8A7A8B]">All vendors</span>}</td>
-                    <td className={TD}>{code ? <><b className="font-mono text-[11.5px]">{code}</b> <span className="text-[#6E5E70]">{name}</span></> : '—'}</td>
-                    <td className={TD}>{pick(r, 'created_by') ?? '—'}</td>
+                    <td className={`${TD} [overflow-wrap:anywhere]`}>{pick(r, 'vendor_name', 'vendor') ?? <span className="text-[#8A7A8B]">All vendors</span>}</td>
+                    <td className={`${TD} [overflow-wrap:anywhere]`}>{code ? <><b className="font-mono text-[11.5px]">{code}</b> <span className="text-[#6E5E70]">{name}</span></> : '—'}</td>
+                    <td className={`${TD} [overflow-wrap:anywhere]`}>{pick(r, 'created_by') ?? '—'}</td>
                     <td className={`${TD} whitespace-nowrap`}>{fmtDateTimePort(pick(r, 'created_at'), null, false)}</td>
-                    <td className={`${TD} whitespace-nowrap`}>
+                    <td className={`${TD} whitespace-nowrap sticky right-0 bg-white shadow-[-6px_0_6px_-6px_rgba(59,27,61,0.18)]`}>
                       {editable && (
                         <div className="flex gap-1">
-                          <button type="button" className={`${SA_BTN_OUTLINE} h-7 px-2`} onClick={() => { setMoveFor(r); setTarget(null); setDlgError(null) }}><MoveRight size={12} /> Move to…</button>
+                          <button type="button" className={`${SA_BTN_OUTLINE} h-7 px-2 whitespace-nowrap`} onClick={() => { setMoveFor(r); setTarget(null); setDlgError(null) }}><MoveRight size={12} /> Move to…</button>
                           <button type="button" className={`${SA_BTN_OUTLINE} h-7 px-2 text-[#A8231A]`} aria-label="Delete alias" onClick={() => { setDelFor(r); setDlgError(null) }}><Trash2 size={12} /></button>
                         </div>
                       )}
@@ -76,9 +76,9 @@ export function AliasesDialog({ costItemId, title, items, editable, toast, onClo
       </div>
 
       {moveFor && (
-        <ConfirmModal title="Move alias" confirmLabel="Move" busy={busy} error={dlgError} onClose={() => setMoveFor(null)} onConfirm={move} disabled={target === null}>
-          <p>Move alias <b>{pick(moveFor, 'alias_text', 'alias_norm', 'alias')}</b> to another cost item.</p>
-          <Field label="Cost item" required><CostAgentCombobox options={opts} value={target} onChange={v => setTarget(v === null ? null : Number(v))} placeholder="Search cost item…" allowClear={false} /></Field>
+        <ConfirmModal title="Move alias" confirmLabel="Move" maxWidth="max-w-2xl" bodyClassName="min-h-[min(420px,60vh)]" busy={busy} error={dlgError} onClose={() => setMoveFor(null)} onConfirm={move} disabled={target === null}>
+          <p className="[overflow-wrap:anywhere]">Move alias <b>{pick(moveFor, 'alias_text', 'alias_norm', 'alias')}</b> to another cost item.</p>
+          <Field label="Cost item" required><CostAgentCombobox options={opts} value={target} onChange={v => setTarget(v === null ? null : Number(v))} placeholder="Search cost item…" allowClear={false} wrapLabels /></Field>
         </ConfirmModal>
       )}
       {delFor && (

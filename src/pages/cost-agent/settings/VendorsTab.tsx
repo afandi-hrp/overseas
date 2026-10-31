@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Pencil, Trash2, GitMerge, Plus, Link2, ListChecks } from 'lucide-react'
 import VendorOverridesDialog from './VendorOverridesDialog'
+import NoAttachmentRulesSection from './NoAttachmentRulesSection'
 import AscendReviewModal from './AscendReviewModal'
 import AscendMapBadge from './AscendMapBadge'
 import { finMappedIndex } from './financeApi'
@@ -103,6 +104,8 @@ export default function VendorsTab({ ctx }: { ctx: HubCtx }) {
         </table>
         <Pager total={data?.total ?? 0} page={page} onPage={setPage} loading={loading} />
       </TableCard>
+
+      <NoAttachmentRulesSection ctx={ctx} />
 
       <RecentChanges entities={['vendor']} reloadKey={logKey} />
 

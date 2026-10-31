@@ -301,18 +301,19 @@ export function ChipInput({ values, onChange, placeholder, normalize, disabled }
   )
 }
 
-export function ConfirmModal({ title, children, confirmLabel = 'Confirm', danger = false, busy = false, error, onConfirm, onClose, disabled = false }: {
+export function ConfirmModal({ title, children, confirmLabel = 'Confirm', danger = false, busy = false, error, onConfirm, onClose, disabled = false, maxWidth = 'max-w-md', bodyClassName = '' }: {
   title: string; children: React.ReactNode; confirmLabel?: string; danger?: boolean; busy?: boolean; error?: string | null
   onConfirm: () => void; onClose: () => void; disabled?: boolean
+  maxWidth?: string; bodyClassName?: string // isi yang membuka daftar dropdown (combobox) butuh modal lebih lebar & tinggi minimum supaya daftar tidak terpotong
 }) {
   return (
-    <CostAgentModal maxWidth="max-w-md" z="z-[90]" title={title} onClose={() => { if (!busy) onClose() }}
+    <CostAgentModal maxWidth={maxWidth} z="z-[90]" title={title} onClose={() => { if (!busy) onClose() }}
       footer={<>
         <button type="button" className={SA_BTN_OUTLINE} onClick={onClose} disabled={busy}>Cancel</button>
         <button type="button" className={danger ? 'inline-flex items-center justify-center gap-1.5 px-3.5 h-9 rounded-xl bg-[#A8231A] hover:bg-[#8A1C14] text-white text-xs font-semibold disabled:opacity-50' : SA_BTN_PRIMARY}
           onClick={onConfirm} disabled={busy || disabled}>{busy ? 'Working…' : confirmLabel}</button>
       </>}>
-      <div className="p-5 space-y-3 text-[13px] text-[#3B1B3D]">
+      <div className={`p-5 space-y-3 text-[13px] text-[#3B1B3D] ${bodyClassName}`}>
         {children}
         {error && <div className={errBox} role="alert">{error}</div>}
       </div>

@@ -1,5 +1,5 @@
 // Tab "Documents & Tax" -- tampilan RINGKAS (Summary), disederhanakan di Tahap 3c (2026-10-28, SQL 092). Dari atas ke bawah, hanya empat hal
-// (+ strip PERIODE di paling atas, 2026-10-29: periode invoice & periode voyage report dari gerbang server, periode lampiran = rentang tanggal dokumen lampiran):
+// (strip PERIODE di paling atas DIHAPUS 2026-10-31 atas permintaan user; tiga kartu dokumen + tombol Re-check / Full comparison kini di baris paling atas; sesudah Must fix: daftar hijau "No attachment (confirmed)", tabel per baris, lalu kartu "Trip dates & vessel" 3 kolom):
 //   1. baris status HANYA untuk keadaan khusus (memeriksa / gagal / dimatikan / membaca dokumen); pil "Ready to submit" & hitungan dokumen/catatan dihapus 2026-10-29 (duplikat);
 //   2. tiga kartu dokumen SATU BARIS (urutan: Invoice, Tax invoice, Attachment): ikon, judul (+ jumlah), "Received <tanggal>" / "Not received", View (satu dokumen) / Upload / panah buka; rincian
 //      per dokumen logis (jenis, nomor, halaman "p. 3–5", View ke file MILIK dokumen itu + #page=N; duplikat berlabel "Duplicate") TERTUTUP sampai panah diklik -- SQL 097, utils/CostAgentDocCards.ts;
@@ -9,19 +9,22 @@
 // Semua rincian lain (tiga cek validasi + Accuracy, laporan 4 kolom + Print, tabel per baris, Header checks / Dates / Tax totals, Files, Add documents, Analyse again)
 // ada di modal "Full comparison". Data dari RPC yang sama (get_invoice_documents / get_doc_gate); tidak ada aturan bisnis di sini.
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, CalendarDays, ChevronDown, ExternalLink, FilePlus2, FileText, Maximize2, Pencil, RefreshCw } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ExternalLink, FilePlus2, FileText, Maximize2, Pencil, RefreshCw } from 'lucide-react'
 import { CostAgentFileDrop, CostAgentModal, FieldLabel } from './CostAgentUi'
 import { Chip, Pill, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_CARD, SA_INPUT } from './SeaAirAuditUi'
 import { LoadingSpinner } from './LoadingState'
 import CostAgentFullComparison from './CostAgentFullComparison'
 import { DocLineComparison } from './CostAgentInvoiceDocuments'
+import CostAgentTripChecks from './CostAgentTripChecks'
 import {
-  costAgentGetInvoiceDocuments, costAgentUpload, fetchCostAgentJobSnapshot, fmtDate,
-  type CostAgentDocCompare, type CostAgentInvoiceHistory, type DocCmpFile, type DocCmpPart,
+  costAgentGetInvoiceDocuments, costAgentUpload, fetchCostAgentJobSnapshot, fmtDate, fmtMoney,
+  type CostAgentDocCompare, type CostAgentInvoiceHistory, type DocCmpLine, type DocCmpFile, type DocCmpPart,
 } from '../utils/CostAgentHelpers'
-import { PERIOD_SOURCE_TEXT, type DocGate, type GateItem } from '../utils/CostAgentGate'
+import type { DocGate, GateItem } from '../utils/CostAgentGate'
+import { ConfirmNoAttachmentDialog } from './CostAgentNoAttachmentDialogs'
+import { canShowConfirmNone, confirmToast, isConfirmedNone } from '../utils/CostAgentNoAttachLogic'
 import { groupNotes, noteRowCount, visibleBlockers, MUST_FIX_LIMIT, type NoteRow } from '../utils/CostAgentGateView'
-import { attachmentDateRange, buildDocCards, cardCount, type CardKey } from '../utils/CostAgentDocCards'
+import { buildDocCards, cardCount, type CardKey } from '../utils/CostAgentDocCards'
 
 // Urutan kartu: Invoice dulu, lalu Tax invoice, lalu lampiran (Attachment: termasuk Port note / PNBP).
 const DOC_ROWS: { key: CardKey; title: string; upload: boolean }[] = [
@@ -57,6 +60,7 @@ export default function CostAgentDocsSummary({ data, gate, gateError, gateBusy, 
   const [full, setFull] = useState(false)
   const [showAll, setShowAll] = useState(false)
   const [notesOpen, setNotesOpen] = useState(false)
+  const [noneFor, setNoneFor] = useState<DocCmpLine | null>(null) // SQL 112: konfirmasi 'No attachment for this vendor' langsung dari Must fix
   const [openCards, setOpenCards] = useState<Record<string, boolean>>({})
   const onChangedRef = useRef(onChanged); onChangedRef.current = onChanged
 
@@ -87,13 +91,7 @@ export default function CostAgentDocsSummary({ data, gate, gateError, gateBusy, 
   // Faktur pajak = HANYA doc_type faktur_pajak (SQL 097; nota Pelindo = Port note di Attachment). `is_tax_equivalent` tidak dipakai lagi.
   const taxPart = (cmp?.parts || []).find(p => p.doc_type === 'faktur_pajak' && p.duplicate_of == null)
 
-  // Strip periode: invoice & voyage report apa adanya dari gerbang (fn_cost_agent_get_doc_gate); lampiran = rentang tanggal dokumen lampiran (attachmentDateRange).
-  const rangeText = (a: string | null | undefined, b: string | null | undefined): string | null => (a || b ? (a && b && a === b ? fmtDate(a) : `${fmtDate(a)} – ${fmtDate(b)}`) : null)
-  const invoicePeriod = rangeText(gate?.period?.from, gate?.period?.to)
-  const voyagePeriod = rangeText(gate?.voyage?.arrived, gate?.voyage?.departed)
-  const attRange = useMemo(() => attachmentDateRange(cmp?.parts), [cmp?.parts])
-  const attachmentPeriod = rangeText(attRange?.from, attRange?.to)
-
+  const confirmedNone = useMemo(() => (cmp?.lines ?? []).filter(l => isConfirmedNone(l.attachment)), [cmp?.lines])
   const blockers: GateItem[] = gate?.enabled ? (gate.blockers ?? []) : []
   const groups = useMemo(() => groupNotes(gate?.enabled ? gate.warnings : []), [gate])
   const notesN = noteRowCount(groups)
@@ -103,19 +101,74 @@ export default function CostAgentDocsSummary({ data, gate, gateError, gateBusy, 
     <div className="space-y-3" data-docs-summary>
       {error && <div className="rounded-lg border border-[#F4C3BC] bg-[#FDE7E4] px-3 py-2 text-[12.5px] text-[#A8231A]">{error}</div>}
 
-      {/* 0. Periode (paling atas) + tombol */}
-      <div className="flex items-center gap-x-2.5 gap-y-2 flex-wrap" data-period-strip>
-        <PeriodItem label="Invoice period" value={invoicePeriod} loading={!gate} emptyText="Not set" emptyTone="red" data-period="invoice"
-          title={gate?.period?.source ? PERIOD_SOURCE_TEXT[gate.period.source] : 'The period (arrival – departure) of the invoice'} onEdit={onSetPeriod} />
-        <PeriodItem label="Attachment period" value={attachmentPeriod} loading={loading && !cmp} emptyText="not found" emptyTone="grey" data-period="attachment"
-          title="Earliest – latest date of the attachment documents (port notes, PNBP, pre-invoices …)" />
-        <PeriodItem label="Voyage report" value={voyagePeriod} loading={!gate} emptyText="not linked" emptyTone="grey" data-period="voyage"
-          title="Arrival – departure of the linked voyage report" />
-        <div className="ml-auto flex items-center gap-2">
-          <button type="button" className={`${SA_BTN_OUTLINE} !h-8 !px-2.5`} onClick={onRecheck} disabled={gateBusy} title="Check the documents again" data-recheck>
-            <RefreshCw size={12} className={gateBusy ? 'animate-spin' : ''} /> Re-check
+      {/* 2. Tiga chip dokumen */}
+      <div className="flex items-start gap-2.5 flex-wrap" data-docs-top>
+        <div className="@container flex-1 min-w-[min(100%,560px)]">
+          {loading && !cmp ? <div className="py-4 flex justify-center"><LoadingSpinner /></div> : (
+            <div className="grid grid-cols-1 @min-[720px]:grid-cols-3 gap-2.5 items-start" data-docs-card>
+              {DOC_ROWS.map(r => {
+                const c = completeness.find(x => x.key === r.key)
+                const docs = cards[r.key]
+                const n = cardCount(docs)
+                const present = c?.status === 'present' || n > 0
+                const status = c?.status
+                const first = docs.find(d => d.duplicateOf == null) ?? docs[0]
+                const statusText = present ? (first?.received ? `Received ${fmtDate(first.received)}` : 'Received')
+                  : status === 'pending' ? 'Waiting' : status === 'not_required' ? 'Not required' : 'Not received'
+                const statusCls = present ? 'text-[#17663D]' : status === 'pending' ? 'text-[#2F4FA8]' : status === 'not_required' ? 'text-[#8A7A8B]' : 'text-[#A8231A]'
+                const hasFp = r.key === 'tax_invoice' && (!!taxPart || npwpChips.length > 0)
+                const expandable = docs.length > 1 || hasFp // satu dokumen tanpa rincian tambahan cukup satu baris (View di baris itu)
+                const open = !!openCards[r.key]
+                return (
+                  <div key={r.key} className={`rounded-xl border px-3 py-2 min-w-0 ${present ? 'border-[#EADFD6] bg-white' : 'border-dashed border-[#E4D3E2] bg-[#FBF7F4]'}`} data-doc-row={r.key} data-doc-count={n}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={`w-7 h-7 rounded-lg inline-flex items-center justify-center shrink-0 ${present ? 'bg-[#F5EDF3] text-[#6B3470]' : 'bg-white text-[#A99AAB] border border-[#EADFD6]'}`}>{present ? <FileText size={14} /> : <FilePlus2 size={14} />}</span>
+                      <div className="min-w-0 flex-1 truncate text-[12.5px]" title={`${r.title}${n > 1 ? ` · ${n}` : ''} — ${statusText}`}>
+                        <b className="text-[#3B1B3D]">{r.title}</b>{n > 1 && <span className="text-[11px] font-semibold text-[#8A7A8B]"> · {n}</span>}
+                        <span className={`ml-2 text-[11.5px] font-semibold ${statusCls}`}>{statusText}</span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {n === 1 && first?.url && <a href={first.url} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-[#EADFD6] bg-white text-[#6B3470] hover:bg-[#F5EDF3]" title="View the file" aria-label={`View ${r.title}`} data-doc-view><ExternalLink size={13} /></a>}
+                        {r.upload && canUpload && <button type="button" className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-[#EADFD6] bg-white text-[#6B3470] hover:bg-[#F5EDF3]" onClick={() => setUpload(true)} title={`Upload ${r.title.toLowerCase()}`} aria-label={`Upload ${r.title}`}><FilePlus2 size={13} /></button>}
+                        {expandable && <button type="button" className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-[#6E5E70] hover:bg-[#F5EDF3]" aria-expanded={open} aria-label={open ? `Hide ${r.title} details` : `Show ${r.title} details`} title={open ? 'Hide details' : 'Show details'} data-doc-toggle
+                          onClick={() => setOpenCards(o => ({ ...o, [r.key]: !o[r.key] }))}><ChevronDown size={14} className={`transition-transform ${open ? '' : '-rotate-90'}`} /></button>}
+                      </div>
+                    </div>
+                    {expandable && open && (
+                      <div className="mt-2 pt-2 border-t border-[#F3EEEA]">
+                        {docs.length > 0 && (
+                          <ul className="space-y-1 max-h-44 overflow-y-auto" data-doc-entries>
+                            {docs.map((d, i) => (
+                              <li key={d.partId ?? `f${i}`} data-doc-entry data-dup={d.duplicateOf != null ? '1' : '0'} title={[d.fileName, d.pages].filter(Boolean).join(' · ') || undefined}
+                                className={`flex items-center gap-1.5 min-w-0 text-[11.5px] ${d.duplicateOf != null ? 'text-[#8A7A8B]' : 'text-[#3B1B3D]'}`}>
+                                <span className="shrink-0 font-semibold">{d.label}</span>
+                                {d.docNo && <span className="min-w-0 truncate tabular-nums text-[#6E5E70]">{d.docNo}</span>}
+                                {d.pages && <span className="shrink-0 tabular-nums text-[#8A7A8B]" data-doc-pages>{d.pages}</span>}
+                                {d.duplicateOf != null && <Chip tone="grey" title="Same document as an earlier one (opens the original); not counted twice">Duplicate</Chip>}
+                                {d.url && <a href={d.url} target="_blank" rel="noreferrer" className="ml-auto shrink-0 inline-flex items-center gap-0.5 font-semibold text-[#6B3470] hover:underline" title={d.duplicateOf != null ? 'Open the original document' : 'Open the file at this document'}><ExternalLink size={11} /> View</a>}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        {hasFp && (
+                          <div className={`${docs.length > 0 ? 'mt-1.5 ' : ''}flex items-center gap-x-2 gap-y-1 flex-wrap text-[11.5px] text-[#6E5E70]`} data-fp-info>
+                            {taxPart && <span><b className="tabular-nums text-[#3B1B3D]">{taxPart.doc_no || '—'}</b>{taxPart.doc_date && <> · {fmtDate(taxPart.doc_date)}</>}</span>}
+                            {npwpChips.map((h, i) => <Chip key={i} tone={h.status === 'ok' ? 'green' : h.status === 'diff' ? 'red' : 'grey'}>{h.field} {h.status === 'ok' ? 'matches' : h.status === 'diff' ? 'differs' : 'n/a'}</Chip>)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+        <div className="ml-auto flex items-center gap-2 shrink-0" data-docs-actions>
+          <button type="button" className={`${SA_BTN_OUTLINE} !h-[46px] !rounded-xl !px-4 !text-[12.5px]`} onClick={onRecheck} disabled={gateBusy} title="Check the documents again" data-recheck>
+            <RefreshCw size={13} className={gateBusy ? 'animate-spin' : ''} /> Re-check
           </button>
-          <button type="button" className={`${SA_BTN_OUTLINE} !h-8 !px-3`} onClick={() => setFull(true)} data-full-comparison-btn><Maximize2 size={12} /> Full comparison</button>
+          <button type="button" className={`${SA_BTN_OUTLINE} !h-[46px] !rounded-xl !px-4 !text-[12.5px]`} onClick={() => setFull(true)} data-full-comparison-btn><Maximize2 size={13} /> Full comparison</button>
         </div>
       </div>
 
@@ -130,69 +183,6 @@ export default function CostAgentDocsSummary({ data, gate, gateError, gateBusy, 
         </section>
       ) : null}
 
-      {/* 2. Tiga chip dokumen */}
-      <div className="@container">
-        {loading && !cmp ? <div className="py-4 flex justify-center"><LoadingSpinner /></div> : (
-          <div className="grid grid-cols-1 @min-[720px]:grid-cols-3 gap-2.5 items-start" data-docs-card>
-            {DOC_ROWS.map(r => {
-              const c = completeness.find(x => x.key === r.key)
-              const docs = cards[r.key]
-              const n = cardCount(docs)
-              const present = c?.status === 'present' || n > 0
-              const status = c?.status
-              const first = docs.find(d => d.duplicateOf == null) ?? docs[0]
-              const statusText = present ? (first?.received ? `Received ${fmtDate(first.received)}` : 'Received')
-                : status === 'pending' ? 'Waiting' : status === 'not_required' ? 'Not required' : 'Not received'
-              const statusCls = present ? 'text-[#17663D]' : status === 'pending' ? 'text-[#2F4FA8]' : status === 'not_required' ? 'text-[#8A7A8B]' : 'text-[#A8231A]'
-              const hasFp = r.key === 'tax_invoice' && (!!taxPart || npwpChips.length > 0)
-              const expandable = docs.length > 1 || hasFp // satu dokumen tanpa rincian tambahan cukup satu baris (View di baris itu)
-              const open = !!openCards[r.key]
-              return (
-                <div key={r.key} className={`rounded-xl border px-3 py-2 min-w-0 ${present ? 'border-[#EADFD6] bg-white' : 'border-dashed border-[#E4D3E2] bg-[#FBF7F4]'}`} data-doc-row={r.key} data-doc-count={n}>
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className={`w-7 h-7 rounded-lg inline-flex items-center justify-center shrink-0 ${present ? 'bg-[#F5EDF3] text-[#6B3470]' : 'bg-white text-[#A99AAB] border border-[#EADFD6]'}`}>{present ? <FileText size={14} /> : <FilePlus2 size={14} />}</span>
-                    <div className="min-w-0 flex-1 truncate text-[12.5px]" title={`${r.title}${n > 1 ? ` · ${n}` : ''} — ${statusText}`}>
-                      <b className="text-[#3B1B3D]">{r.title}</b>{n > 1 && <span className="text-[11px] font-semibold text-[#8A7A8B]"> · {n}</span>}
-                      <span className={`ml-2 text-[11.5px] font-semibold ${statusCls}`}>{statusText}</span>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      {n === 1 && first?.url && <a href={first.url} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-[#EADFD6] bg-white text-[#6B3470] hover:bg-[#F5EDF3]" title="View the file" aria-label={`View ${r.title}`} data-doc-view><ExternalLink size={13} /></a>}
-                      {r.upload && canUpload && <button type="button" className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-[#EADFD6] bg-white text-[#6B3470] hover:bg-[#F5EDF3]" onClick={() => setUpload(true)} title={`Upload ${r.title.toLowerCase()}`} aria-label={`Upload ${r.title}`}><FilePlus2 size={13} /></button>}
-                      {expandable && <button type="button" className="inline-flex items-center justify-center w-7 h-7 rounded-lg text-[#6E5E70] hover:bg-[#F5EDF3]" aria-expanded={open} aria-label={open ? `Hide ${r.title} details` : `Show ${r.title} details`} title={open ? 'Hide details' : 'Show details'} data-doc-toggle
-                        onClick={() => setOpenCards(o => ({ ...o, [r.key]: !o[r.key] }))}><ChevronDown size={14} className={`transition-transform ${open ? '' : '-rotate-90'}`} /></button>}
-                    </div>
-                  </div>
-                  {expandable && open && (
-                    <div className="mt-2 pt-2 border-t border-[#F3EEEA]">
-                      {docs.length > 0 && (
-                        <ul className="space-y-1 max-h-44 overflow-y-auto" data-doc-entries>
-                          {docs.map((d, i) => (
-                            <li key={d.partId ?? `f${i}`} data-doc-entry data-dup={d.duplicateOf != null ? '1' : '0'} title={[d.fileName, d.pages].filter(Boolean).join(' · ') || undefined}
-                              className={`flex items-center gap-1.5 min-w-0 text-[11.5px] ${d.duplicateOf != null ? 'text-[#8A7A8B]' : 'text-[#3B1B3D]'}`}>
-                              <span className="shrink-0 font-semibold">{d.label}</span>
-                              {d.docNo && <span className="min-w-0 truncate tabular-nums text-[#6E5E70]">{d.docNo}</span>}
-                              {d.pages && <span className="shrink-0 tabular-nums text-[#8A7A8B]" data-doc-pages>{d.pages}</span>}
-                              {d.duplicateOf != null && <Chip tone="grey" title="Same document as an earlier one (opens the original); not counted twice">Duplicate</Chip>}
-                              {d.url && <a href={d.url} target="_blank" rel="noreferrer" className="ml-auto shrink-0 inline-flex items-center gap-0.5 font-semibold text-[#6B3470] hover:underline" title={d.duplicateOf != null ? 'Open the original document' : 'Open the file at this document'}><ExternalLink size={11} /> View</a>}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      {hasFp && (
-                        <div className={`${docs.length > 0 ? 'mt-1.5 ' : ''}flex items-center gap-x-2 gap-y-1 flex-wrap text-[11.5px] text-[#6E5E70]`} data-fp-info>
-                          {taxPart && <span><b className="tabular-nums text-[#3B1B3D]">{taxPart.doc_no || '—'}</b>{taxPart.doc_date && <> · {fmtDate(taxPart.doc_date)}</>}</span>}
-                          {npwpChips.map((h, i) => <Chip key={i} tone={h.status === 'ok' ? 'green' : h.status === 'diff' ? 'red' : 'grey'}>{h.field} {h.status === 'ok' ? 'matches' : h.status === 'diff' ? 'differs' : 'n/a'}</Chip>)}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-
       {/* 3. Must fix */}
       {gate?.enabled && blockers.length > 0 && (
         <section className={`${SA_CARD} p-4`} data-must-fix>
@@ -205,6 +195,14 @@ export default function CostAgentDocsSummary({ data, gate, gateError, gateBusy, 
                     <span>•</span>
                     <span className="min-w-0 flex-1 [overflow-wrap:anywhere]"><b>{b.label}</b>{b.detail ? <span className="block text-[11.5px] font-normal opacity-90">{b.detail}</span> : null}</span>
                     <span className="shrink-0 flex items-center gap-1.5">
+                      {(() => {
+                        // Baris tanpa lampiran yang boleh dikonfirmasi (keputusan server: can_confirm_none) -> konfirmasi langsung di sini, tanpa pindah ke tabel per baris.
+                        const l = b.line_no ? (cmp?.lines ?? []).find(x => x.line_no === b.line_no) : undefined
+                        return l && canShowConfirmNone(l)
+                          ? <button type="button" data-must-fix-confirm-none={l.line_no} onClick={() => setNoneFor(l)} title="This vendor never sends an attachment for this cost"
+                              className="h-6 px-2 rounded-full border border-[#C9D3F0] bg-[#EEF1FA] text-[11px] font-semibold text-[#2F4FA8] hover:bg-[#E2E8F7] whitespace-nowrap">No attachment for this vendor</button>
+                          : null
+                      })()}
                       {b.line_no ? <GoLine n={b.line_no} onGo={onGoToLine} label="Go to line" /> : null}
                       {onSetPeriod && b.code === 'period_missing' ? <button type="button" className={`${SA_BTN_OUTLINE} !h-7 !px-2 !text-[11.5px]`} onClick={onSetPeriod}><Pencil size={11} /> Set period</button> : null}
                     </span>
@@ -222,7 +220,26 @@ export default function CostAgentDocsSummary({ data, gate, gateError, gateBusy, 
       )}
 
       {/* Tabel per baris (Invoice vs Attachment vs Tax invoice) langsung di tab, bukan di popup */}
-      <DocLineComparison cmp={cmp} evidence={{ canEdit: canEditEvidence, lines: data.lines, onChanged: async () => { await load(true); await onChangedRef.current() }, onToast }} />
+      <DocLineComparison cmp={cmp} evidence={{ canEdit: canEditEvidence, lines: data.lines, vendorId: inv.vendor_id ?? null, vendorName: inv.vendor_name ?? null, onChanged: async () => { await load(true); await onChangedRef.current() }, onToast }} />
+
+      {confirmedNone.length > 0 && (
+        <section className={`${SA_CARD} p-4 border-[#BFE3CC]`} data-confirmed-none-list>
+          <div className="flex items-center gap-2 mb-2"><h3 className="text-[14px] font-bold text-[#17663D]">No attachment (confirmed)</h3><Chip tone="green">{confirmedNone.length}</Chip><span className="text-[11.5px] text-[#6E5E70]">does not block submit</span></div>
+          <ul className="space-y-1.5">
+            {confirmedNone.map(l => (
+              <li key={l.line_id} className="flex items-start gap-2 text-[12.5px] text-[#17663D]" data-confirmed-none-row={l.line_no}>
+                <span>•</span>
+                <span className="min-w-0 flex-1 [overflow-wrap:anywhere]"><b>Line {l.line_no}: no attachment (confirmed)</b>
+                  <span className="block text-[11.5px] font-normal opacity-90">{l.description || '—'} ({fmtMoney(l.amount)}){l.attachment?.note ? ` — ${l.attachment.note}` : ''}</span></span>
+                <GoLine n={l.line_no} onGo={onGoToLine} label="Go to line" />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* SQL 112: tanggal tiba / berangkat + nama kapal lintas voyage report, invoice & dokumen (di bawah tabel per baris) */}
+      {cmp?.analysed && <CostAgentTripChecks trip={cmp.trip_checks} />}
 
       {/* 4. Notes (tertutup bawaan) */}
       {gate?.enabled && (
@@ -250,26 +267,12 @@ export default function CostAgentDocsSummary({ data, gate, gateError, gateBusy, 
         </section>
       )}
 
+      {noneFor && <ConfirmNoAttachmentDialog line={noneFor} vendorName={inv.vendor_name} onClose={() => setNoneFor(null)}
+        onDone={async r => { setNoneFor(null); await load(true); await onChangedRef.current(); onToast(confirmToast(r)) }} />}
       {full && <CostAgentFullComparison data={data} cmp={cmp} gate={gate} canUpload={canUpload} actor={actor} onClose={() => setFull(false)} onToast={onToast}
         onChanged={async () => { await load(true); await onChangedRef.current() }} />}
       {upload && <SupportingUpload invoiceId={inv.id} onClose={() => setUpload(false)} onSent={id => { setUpload(false); if (id) setJob(id); else { onToast('Documents sent. Reload in a moment to see the comparison.'); load(true) } load(true) }} />}
     </div>
-  )
-}
-
-// Satu butir periode di strip puncak: ikon kalender + label + rentang tanggal (atau teks kosong berwarna). Hanya tampilan.
-function PeriodItem({ label, value, loading, emptyText, emptyTone, title, onEdit, ...rest }: {
-  label: string; value: string | null; loading: boolean; emptyText: string; emptyTone: 'red' | 'grey'; title?: string; onEdit?: () => void; 'data-period': string
-}) {
-  return (
-    <span className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg bg-white border border-[#EADFD6] text-[12px] whitespace-nowrap" title={title} data-period={rest['data-period']}>
-      <CalendarDays size={13} className="text-[#9A8A9C] shrink-0" />
-      <span className="text-[#6E5E70]">{label}</span>
-      {loading ? <span className="text-[#8A7A8B]">…</span>
-        : value ? <b className="text-[#3B1B3D] tabular-nums">{value}</b>
-          : <span className={emptyTone === 'red' ? 'font-semibold text-[#A8231A]' : 'italic text-[#8A7A8B]'}>{emptyText}</span>}
-      {onEdit && <button type="button" onClick={onEdit} className="p-0.5 rounded-md text-[#6E5E70] hover:bg-[#F6EFEA] hover:text-[#6B3470]" aria-label="Edit invoice period" title="Edit period (arrival – departure)"><Pencil size={11} /></button>}
-    </span>
   )
 }
 

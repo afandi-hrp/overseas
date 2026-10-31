@@ -16,6 +16,8 @@ export const NA_TAX_TIP = 'Not expected on the tax invoice: no VAT in its tax ru
 export const LUMP_SUM_LABEL = 'Covered by tax invoice (lump sum)'
 // SQL 109: baris ditautkan manual oleh user -> lencana netral/biru "Linked manually" (bukan merah), selisih tetap tampil bila tidak 0.
 export const MANUAL_LABEL = 'Linked manually'
+// SQL 112: vendor + jenis biaya ini sudah dikonfirmasi 'memang tanpa lampiran' -> peringatan TETAP tampil tetapi HIJAU (bukan Missing, tidak dihitung sebagai masalah); tooltip = side.note dari server.
+export const CONFIRMED_NONE_LABEL = 'No attachment (confirmed)'
 // Status yang dikenal tetapi tanpa perbandingan: chip abu-abu "n/a". Status LAIN yang tidak dikenal ditampilkan apa adanya (teks mentah), tidak error.
 const KNOWN_NEUTRAL = ['pending', 'not_required']
 
@@ -33,6 +35,7 @@ export function sideState(side: Pick<DocCmpLineSide, 'status' | 'diff'> & { note
     const tip = [...manualTipLines(side.manual), side.note ?? ''].filter(Boolean).join('\n')
     return { label: MANUAL_LABEL, tone: 'blue', neutral: false, tip: tip || undefined, sub: d ? `Diff (${signed(d)})` : undefined }
   }
+  if (st === 'confirmed_none') return { label: CONFIRMED_NONE_LABEL, tone: 'green', neutral: true, tip: side.note ?? undefined }
   if (st.startsWith('match')) return { label: 'OK', tone: 'green', neutral: false }
   if (st === 'diff') return { label: side.diff != null ? `Diff (${signed(Number(side.diff))})` : 'Diff', tone: 'red', neutral: false }
   if (MISSING.includes(st)) {

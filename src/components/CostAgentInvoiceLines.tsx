@@ -23,6 +23,7 @@ import { classifyCostLine, classifyCostLines, costKey } from './CostAgentValidat
 import { VerifyReasonIcon, VerifyReasonsToggle, VerifyReasonsList } from './CostAgentVerifyReasons'
 import { reasonByLine, type LineVerifyReasons } from '../utils/CostAgentVerifyReasons'
 import CostAgentCostItemPicker from './CostAgentCostItemPicker'
+import { ONLY_CHECKER_ADDS_TEXT, useCanAddCostItem } from '../utils/useCanAddCostItem'
 import CostAgentHistoryBrowser, { LineMatchBadge, ChosenByUserLabel, type HistoryCache } from './CostAgentHistoryBrowser'
 import {
   costAgentVerifyLine, costAgentAddCostItem, costAgentSetLineReference, costAgentUpdateLine, COST_AGENT_LINE_DESCRIPTION_MAX,
@@ -102,6 +103,11 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
   const [openRows, setOpenRows] = useState<Set<number>>(() => new Set()) // tampilan ringkas: panel Main reference dibuka segitiga
 
   const items = useMemo(() => costItems.filter(c => c.is_active !== false), [costItems])
+  // SQL 112: hanya checker / master yang boleh menambah jenis biaya baru (keputusan dari RPC fn_cost_agent_can_add_cost_item, sekali per sesi). Maker: teks petunjuk, tanpa tombol; memilih jenis biaya yang ada tetap bisa.
+  const canAddItem = useCanAddCostItem()
+  const addItemControl = (l: CostAgentInvoiceLine) => canAddItem === true
+    ? <button type="button" className={LINK} onClick={() => setAddFor(l)}><Plus size={11} /> Add as new cost item</button>
+    : canAddItem === false ? <span className="text-[11px] text-[#8A7A8B]" data-only-checker-adds>{ONLY_CHECKER_ADDS_TEXT}</span> : null
   const reasons = useMemo(() => reasonByLine(verifyReasons), [verifyReasons])
 
   const run = async (key: number | 'all', fn: () => Promise<unknown>) => {
@@ -274,7 +280,7 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                           <div className="w-full min-w-[170px] max-w-[340px]"><CostAgentCostItemPicker items={items} value={l.cost_item_id ?? null} disabled={rowBusy}
                             onChange={id => (checkerMode ? (id !== null ? run(l.id, () => costAgentCheckerSetCostItem(l.id, id, true, actor)) : undefined) : run(l.id, () => verify(l, { costItemId: id, learnAlias: id !== null })))} /></div>
                         ) : !noCostItem && <Chip tone="plum" title={l.cost_item_code ? `${l.cost_item_code} — ${l.cost_item_name}` : undefined}>{l.cost_item_name || l.cost_item_code}</Chip>}
-                        {editable && newItem && <button type="button" className={LINK} onClick={() => setAddFor(l)}><Plus size={11} /> Add as new cost item</button>}
+                        {editable && newItem && addItemControl(l)}
                         {/* SQL 108: "Incl. VAT" = nominal sudah termasuk PPN (PPN/PPh dihitung server). Yang boleh mengubah: tombol; lainnya hanya lencana. */}
                         {l.amount_includes_vat === true && (canEditEvidence
                           ? <button type="button" data-action="line-vat" disabled={rowBusy} onClick={() => setVatFor(l)} title="The amount includes VAT — click to change"><Chip tone="blue">Incl. VAT</Chip></button>
@@ -426,7 +432,7 @@ export default function CostAgentInvoiceLines({ lines, currency, costItems, edit
                   )}
                 </div>
                 {editable && newItem && (
-                  <div className="mt-1.5"><button type="button" className={LINK} onClick={() => setAddFor(l)}><Plus size={11} /> Add as new cost item</button></div>
+                  <div className="mt-1.5">{addItemControl(l)}</div>
                 )}
                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5 empty:hidden">
                   {noCostItem && <Chip tone="amber" title="Choose a cost item (or LAIN_LAIN) before verifying and submitting"><AlertTriangle size={10} /> Not in master record</Chip>}

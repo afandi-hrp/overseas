@@ -23,7 +23,7 @@ export interface NoteGroup { key: 'tax' | 'dates' | 'other'; title: string; hint
 
 export const TAX_NOTE_HINT = 'Notes do not block submit. Set a tax rule for a cost item to control which lines are expected on the tax invoice.'
 const codeOf = (i: GateItem): string => String(i.code ?? '').toLowerCase()
-const DATE_CODES = ['date_out_of_period', 'date_warn', 'invoice_date_diff', 'period_missing']
+const DATE_CODES = ['date_out_of_period', 'date_warn', 'invoice_date_diff', 'period_missing', 'trip_date_diff', 'trip_vessel_diff'] // trip_* = SQL 112 (tanggal tiba/berangkat & nama kapal antar sumber)
 const isTax = (c: string) => c === 'fp_missing' || c === 'line_not_in_fp' || c === 'tax_line_diff' || c === 'tax_total_diff' || c === 'tax_rate_diff'
 const isDates = (c: string) => DATE_CODES.includes(c) || c.startsWith('voyage_')
 

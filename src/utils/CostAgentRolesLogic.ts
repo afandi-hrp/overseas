@@ -79,6 +79,8 @@ export const GATE_CODE_GROUPS: GateCodeGroup[] = [
     { code: 'date_out_of_period', label: 'Port document date is outside the invoice period' },
     { code: 'voyage_missing', label: 'Invoice is not linked to a voyage report' },
     { code: 'voyage_period_diff', label: 'Voyage report period differs from the invoice period' },
+    { code: 'trip_date_diff', label: 'Arrival/departure date differs between sources' }, // SQL 112
+    { code: 'trip_vessel_diff', label: 'Vessel name differs between sources' }, // SQL 112
   ] },
 ]
 export const KNOWN_GATE_CODES: string[] = GATE_CODE_GROUPS.flatMap(g => g.codes.map(c => c.code))

@@ -17,8 +17,11 @@ import { Chip, SA_BTN_OUTLINE, SA_BTN_PRIMARY, SA_INPUT, SA_LABEL, SA_CARD } fro
 import type { Tone } from './SeaAirAuditUi'
 import { LoadingSpinner } from './LoadingState'
 import CostAgentLinkDocumentDialog from './CostAgentLinkDocumentDialog'
+import CostAgentTripChecks from './CostAgentTripChecks'
 import { LineVatDialog } from './CostAgentLineDialogs'
 import { canLinkLine, manualTipLines, needsVatDecision, vatPctText, type VatChoice } from '../utils/CostAgentLinkLogic'
+import { ConfirmNoAttachmentDialog, RevokeNoAttachmentDialog } from './CostAgentNoAttachmentDialogs'
+import { NEEDS_VENDOR_ITEM_HINT, canShowConfirmNone, confirmToast, confirmedRuleId, isConfirmedNone, needsVendorItemHint } from '../utils/CostAgentNoAttachLogic'
 import { defaultOnlyCheck, hasDiff, needsCheck, sideState, LUMP_SUM_LABEL, type SideKind } from '../utils/CostAgentDocLines'
 import { coveredReasonText, docTypeLabel, pageText, rangesText } from '../utils/CostAgentDocCards'
 import { noteText, noteMsg } from '../utils/CostAgentNotes'
@@ -50,6 +53,7 @@ const LINE_CHIP: Record<string, { label: string; tone: Tone; tip?: string }> = {
   pending: { label: 'Waiting', tone: 'blue', tip: 'Waiting for the tax invoice' },
   not_required: { label: 'No VAT', tone: 'grey' },
   no_doc: { label: 'No attachment', tone: 'grey' },
+  confirmed_none: { label: 'No attachment (confirmed)', tone: 'green' }, // SQL 112: peringatan tetap tampil, warnanya hijau
 }
 const CMP_MARK = { ok: ['✔', 'text-[#17663D]'], diff: ['✘', 'text-[#A8231A]'], warn: ['⚠', 'text-[#B7791F]'], na: ['–', 'text-[#8A7A8B]'] } as Record<string, [string, string]>
 const hasIssue = (l: DocCmpLine) => ['diff', 'none'].includes(l.attachment?.status || '') || ['diff', 'none'].includes(l.tax?.status || '')
@@ -253,6 +257,7 @@ export default function CostAgentInvoiceDocuments({ data, canUpload, actor, onCh
       {cmp && analysed && (
         <>
           {showLines && <DocLineComparison cmp={cmp} />}
+          <CostAgentTripChecks trip={cmp.trip_checks} />
 
           <div className="space-y-2" data-checks-group>
             <Accordion id="header" title="Header checks" status={headerChecks.length === 0 ? <span className="text-[#8A7A8B]">— no data</span> : checkStatus(headerIssues, 'all match')}
@@ -415,6 +420,8 @@ function SideChip({ side, kind, expect, invoiceAmount, partById }: { side: DocCm
 export interface LineEvidenceCtx {
   canEdit: boolean
   lines: CostAgentInvoiceLine[] // baris invoice: penanda amount_includes_vat dibaca dari sini
+  vendorId?: number | null // SQL 112: vendor invoice (petunjuk 'Choose the vendor and a specific cost item first.' bila kosong)
+  vendorName?: string | null
   onChanged: () => Promise<void> | void
   onToast: (msg: string, tone?: 'ok' | 'warn') => void
 }
@@ -423,6 +430,8 @@ export function DocLineComparison({ cmp, evidence }: { cmp: CostAgentDocCompare 
   const [detail, setDetail] = useState<DocCmpLine | null>(null)
   const [linkFor, setLinkFor] = useState<DocCmpLine | null>(null)
   const [vatFor, setVatFor] = useState<{ line: CostAgentInvoiceLine; preset: VatChoice } | null>(null)
+  const [noneFor, setNoneFor] = useState<DocCmpLine | null>(null) // SQL 112: konfirmasi 'No attachment for this vendor'
+  const [revokeFor, setRevokeFor] = useState<{ ruleId: number; what: string } | null>(null)
   const parts = cmp?.parts || []
   const partById = useMemo(() => new Map(parts.map(p => [p.id, p])), [parts])
   const lines = cmp?.lines || []
@@ -430,21 +439,27 @@ export function DocLineComparison({ cmp, evidence }: { cmp: CostAgentDocCompare 
   return (
     <>
       <LineComparison lines={lines} orphans={cmp.orphans} onlyCheck={onlyCheck ?? defaultOnlyCheck(lines)} setOnlyCheck={setOnlyCheck} onOpen={setDetail} partById={partById}
-        evidence={evidence} onLink={setLinkFor} onVat={(l, preset) => { const full = evidence?.lines.find(x => x.id === l.line_id); if (full) setVatFor({ line: full, preset }) }} />
+        evidence={evidence} onLink={setLinkFor} onConfirmNone={setNoneFor} onRevoke={l => { const id = confirmedRuleId(l.attachment); if (id !== null) setRevokeFor({ ruleId: id, what: l.cost_item || 'this line' }) }} onVat={(l, preset) => { const full = evidence?.lines.find(x => x.id === l.line_id); if (full) setVatFor({ line: full, preset }) }} />
       {detail && <LineDrawer line={detail} partById={partById} onClose={() => setDetail(null)} />}
       {linkFor && evidence && <CostAgentLinkDocumentDialog line={linkFor} onClose={() => setLinkFor(null)} onChanged={evidence.onChanged} onToast={evidence.onToast} />}
+      {noneFor && evidence && <ConfirmNoAttachmentDialog line={noneFor} vendorName={evidence.vendorName} onClose={() => setNoneFor(null)}
+        onDone={async r => { setNoneFor(null); await evidence.onChanged(); evidence.onToast(confirmToast(r)) }} />}
+      {revokeFor && evidence && <RevokeNoAttachmentDialog ruleId={revokeFor.ruleId} what={revokeFor.what} onClose={() => setRevokeFor(null)}
+        onDone={async () => { setRevokeFor(null); await evidence.onChanged(); evidence.onToast('Confirmation revoked.') }} />}
       {vatFor && evidence && <LineVatDialog line={vatFor.line} preset={vatFor.preset} onClose={() => setVatFor(null)}
         onSaved={async () => { setVatFor(null); await evidence.onChanged(); evidence.onToast('VAT setting saved.') }} />}
     </>
   )
 }
 
-function LineComparison({ lines, orphans, onlyCheck, setOnlyCheck, onOpen, partById, evidence, onLink, onVat }: {
+function LineComparison({ lines, orphans, onlyCheck, setOnlyCheck, onOpen, partById, evidence, onLink, onVat, onConfirmNone, onRevoke }: {
   evidence?: LineEvidenceCtx; onLink: (l: DocCmpLine) => void; onVat: (l: DocCmpLine, preset: VatChoice) => void
+  onConfirmNone: (l: DocCmpLine) => void; onRevoke: (l: DocCmpLine) => void
   lines: DocCmpLine[]; orphans: { attachment: DocCmpOrphan[] | null; tax: DocCmpOrphan[] | null; attachment_covered?: DocCmpOrphanCovered[] | null } | null
   onlyCheck: boolean; setOnlyCheck: (v: boolean) => void; onOpen: (l: DocCmpLine) => void; partById: Map<number, DocCmpPart>
 }) {
-  const shown = onlyCheck ? lines.filter(needsCheck) : lines
+  // Baris 'No attachment (confirmed)' (SQL 112) TETAP tampil di daftar 'items to check' tetapi HIJAU, dan tidak dihitung sebagai masalah.
+  const shown = onlyCheck ? lines.filter(l => needsCheck(l) || isConfirmedNone(l.attachment)) : lines
   const hidden = lines.length - shown.length
   const att = orphans?.attachment || [], tax = orphans?.tax || []
   const orphanN = att.length + tax.length
@@ -475,17 +490,23 @@ function LineComparison({ lines, orphans, onlyCheck, setOnlyCheck, onOpen, partB
             {shown.map(l => {
               const diff = hasDiff(l)
               const none = !diff && needsCheck(l)
+              const confirmed = !diff && !none && isConfirmedNone(l.attachment)
               const cell = 'px-2 py-2 align-middle text-[12px] text-[#3B1B3D]'
               const vatDecision = !!evidence && needsVatDecision(l.includes_vat_hint, evidence.lines.find(x => x.id === l.line_id)?.amount_includes_vat)
               return (
-                <tr key={l.line_id} onClick={() => onOpen(l)} data-line-row={l.line_no} data-line-state={diff ? 'diff' : none ? 'none' : 'ok'} title="Click for the document references"
-                  className={`border-t border-[#F3EEEA] cursor-pointer hover:bg-[#F8F1EE] border-l-4 ${diff ? 'border-l-[#A8231A] bg-[#FFFAF9]' : none ? 'border-l-[#E0A526] bg-[#FFFDF6]' : 'border-l-transparent odd:bg-white even:bg-[#FCFAF8]'}`}>
+                <tr key={l.line_id} onClick={() => onOpen(l)} data-line-row={l.line_no} data-line-state={diff ? 'diff' : none ? 'none' : confirmed ? 'confirmed' : 'ok'} title="Click for the document references"
+                  className={`border-t border-[#F3EEEA] cursor-pointer hover:bg-[#F8F1EE] border-l-4 ${diff ? 'border-l-[#A8231A] bg-[#FFFAF9]' : none ? 'border-l-[#E0A526] bg-[#FFFDF6]' : confirmed ? 'border-l-[#2E9E5E] bg-[#F7FCF9]' : 'border-l-transparent odd:bg-white even:bg-[#FCFAF8]'}`}>
                   <td className={`${cell} text-center text-[#8A7A8B] tabular-nums`}>{l.line_no}</td>
                   <td className={`${cell} min-w-0`}>
                     <span className="font-semibold [overflow-wrap:anywhere]">{l.description || '—'}</span>
                     {l.cost_item && <span className="ml-2 align-middle inline-block rounded bg-[#F3EEEA] px-1.5 py-px font-mono text-[10px] text-[#6E5E70] whitespace-nowrap">{l.cost_item}</span>}
-                    {evidence && (vatDecision || (evidence.canEdit && canLinkLine(l))) && (
+                    {evidence && (vatDecision || (evidence.canEdit && canLinkLine(l)) || canShowConfirmNone(l) || needsVendorItemHint(l, evidence.vendorId) || (evidence.canEdit && confirmedRuleId(l.attachment) !== null)) && (
                       <div className="mt-1 flex items-center gap-1.5 flex-wrap" onClick={e => e.stopPropagation()}>
+                        {canShowConfirmNone(l) && (
+                          <button type="button" data-confirm-no-attachment={l.line_no} onClick={() => onConfirmNone(l)} title="This vendor never sends an attachment for this cost"
+                            className="h-6 px-2 rounded-full border border-[#C9D3F0] bg-[#EEF1FA] text-[11px] font-semibold text-[#2F4FA8] hover:bg-[#E2E8F7]">No attachment for this vendor</button>
+                        )}
+                        {!canShowConfirmNone(l) && needsVendorItemHint(l, evidence.vendorId) && <span className="text-[11px] text-[#8A7A8B]" data-no-attachment-hint>{NEEDS_VENDOR_ITEM_HINT}</span>}
                         {vatDecision && (
                           // Ringkas satu baris (2026-10-30, permintaan user): kalimat panjang pindah ke tooltip.
                           <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-[#FFF1D6] pl-2 pr-1 py-0.5 text-[11px] font-semibold text-[#7A4F00]" data-vat-hint={l.line_no}
@@ -499,6 +520,9 @@ function LineComparison({ lines, orphans, onlyCheck, setOnlyCheck, onOpen, partB
                         )}
                         {evidence.canEdit && canLinkLine(l) && (
                           <button type="button" data-link-document={l.line_no} onClick={() => onLink(l)} className="h-6 px-2 rounded-full border border-[#E4D3E2] bg-[#F5EDF3] text-[11px] font-semibold text-[#6B3470] hover:bg-[#EFE2EC] hover:border-[#C9A9C4]">Link document…</button>
+                        )}
+                        {evidence.canEdit && confirmedRuleId(l.attachment) !== null && (
+                          <button type="button" data-revoke-no-attachment={l.line_no} onClick={() => onRevoke(l)} className="h-6 px-2 rounded-full border border-[#E4D3E2] bg-white text-[11px] font-semibold text-[#6E5E70] hover:bg-[#FBF7F4]">Revoke</button>
                         )}
                       </div>
                     )}
@@ -579,6 +603,7 @@ function LineDrawer({ line, partById, onClose }: { line: DocCmpLine; partById: M
         <div className="flex items-center gap-2 flex-wrap"><span className="text-[12.5px] font-bold text-[#3B1B3D]">{title}</span>{chip && <Chip tone={chip.tone} title={chip.tip}>{chip.label}</Chip>}
           {shownAmount != null && <span className="tabular-nums text-[12px] font-semibold">{fmtMoney(shownAmount)}</span>}
           {s?.status === 'diff' && s.diff != null && <span className="text-[11.5px] font-semibold text-[#A8231A] tabular-nums">Difference vs invoice: {fmtNumber(s.diff, 0)}</span>}</div>
+        {s?.status === 'confirmed_none' && s.note && <p className="mt-1.5 rounded-lg bg-[#EAF6EF] px-2.5 py-1.5 text-[12px] text-[#17663D] [overflow-wrap:anywhere]" data-confirmed-none-note>{s.note}</p>}
         {s?.status === 'manual' && (
           <div className="mt-1.5 rounded-lg bg-[#EEF1FA] px-2.5 py-1.5 text-[12px] text-[#2F4FA8] [overflow-wrap:anywhere]" data-manual-info>
             {manualTipLines(s.manual, a => fmtDateTimePort(a, null)).map((t, i) => <div key={i}>{t}</div>)}

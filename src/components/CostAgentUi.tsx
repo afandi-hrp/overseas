@@ -119,9 +119,10 @@ export const RouteBadges: React.FC<{ route: string | null | undefined }> = ({ ro
 
 // Combobox ringan dgn pencarian (kapal / pelabuhan). `keywords` ikut dicari (kode, alias).
 export type ComboOption = { value: number | string; label: string; sub?: string; keywords?: string; warn?: string }
-export function CostAgentCombobox({ options, value, onChange, placeholder = 'Search…', disabled = false, allowClear = true, className = '' }: {
+export function CostAgentCombobox({ options, value, onChange, placeholder = 'Search…', disabled = false, allowClear = true, className = '', wrapLabels = false }: {
   options: ComboOption[]; value: number | string | null | undefined; onChange: (v: number | string | null) => void
   placeholder?: string; disabled?: boolean; allowClear?: boolean; className?: string
+  wrapLabels?: boolean // true = label/sub panjang turun baris (bukan dipotong ...), utk dialog yang pilihannya harus terbaca utuh
 }) {
   const [open, setOpen] = React.useState(false)
   const [q, setQ] = React.useState('')
@@ -159,8 +160,8 @@ export function CostAgentCombobox({ options, value, onChange, placeholder = 'Sea
               className={`w-full text-left px-3 py-1.5 text-[12.5px] hover:bg-[#FBF7F4] flex items-start gap-1.5 ${String(o.value) === String(value ?? '') ? 'bg-[#F5EDF3]' : ''}`}>
               {o.warn && <span title={o.warn}><AlertTriangle size={12} className="text-[#B7791F] mt-0.5 shrink-0" /></span>}
               <span className="min-w-0">
-                <span className="block text-[#3B1B3D] font-medium truncate">{o.label}</span>
-                {o.sub && <span className="block text-[11px] text-[#6E5E70] truncate">{o.sub}</span>}
+                <span className={`block text-[#3B1B3D] font-medium ${wrapLabels ? '[overflow-wrap:anywhere]' : 'truncate'}`}>{o.label}</span>
+                {o.sub && <span className={`block text-[11px] text-[#6E5E70] ${wrapLabels ? '[overflow-wrap:anywhere]' : 'truncate'}`}>{o.sub}</span>}
               </span>
             </button>
           ))}

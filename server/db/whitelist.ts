@@ -201,6 +201,8 @@ for (const [t, ops] of Object.entries(MANUAL_TABLES)) {
   // Cost Agent: pemetaan akun Ascend per PT + override per vendor (sql/110/110b/111)
   'fn_cost_agent_account_map_list', 'fn_cost_agent_account_map_save', 'fn_cost_agent_account_map_delete', 'fn_cost_agent_account_map_autofill',
   'fn_cost_agent_save_vendor_item_override', 'fn_cost_agent_delete_vendor_item_override',
+  // Cost Agent: tanggal tiba/berangkat + nama kapal lintas dokumen, batas maker menambah jenis biaya, vendor tanpa lampiran (sql/112)
+  'fn_cost_agent_can_add_cost_item', 'fn_cost_agent_confirm_no_attachment', 'fn_cost_agent_revoke_no_attachment', 'fn_cost_agent_list_no_attachment_rules',
   // Cost Agent: gerbang dokumen, periode invoice, auto-verify (sql/087)
   'fn_cost_agent_get_doc_gate', 'fn_cost_agent_run_checks', 'fn_cost_agent_set_invoice_period',
   // Cost Agent: alasan per baris "kenapa belum auto-verified" (hanya baca; sql/095 versi user)

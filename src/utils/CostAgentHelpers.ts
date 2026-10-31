@@ -495,7 +495,7 @@ export async function costAgentGetInvoiceHistory(invoiceId: number): Promise<Cos
 // ─── Perbandingan dokumen (sql/072: fn_cost_agent_get_invoice_documents / fn_cost_agent_start_redo) ──────────────
 export type DocCmpOverall = 'not_analysed' | 'incomplete' | 'attention' | 'ok'
 export type DocCmpStatus = 'ok' | 'diff' | 'warn' | 'na'
-export type DocCmpLineStatus = 'match' | 'match_group' | 'match_sum' | 'match_agg' | 'match_gross' | 'manual' | 'diff' | 'none' | 'no_doc' | 'not_in_fp' | 'pending' | 'not_required'
+export type DocCmpLineStatus = 'match' | 'match_group' | 'match_sum' | 'match_agg' | 'match_gross' | 'manual' | 'diff' | 'none' | 'no_doc' | 'not_in_fp' | 'pending' | 'not_required' | 'confirmed_none'
 export interface DocCmpRef { part_id: number; item_id: number | null; doc_type: string | null; doc_no: string | null; description: string | null; group_name: string | null; kind: string | null; amount: number | null }
 export interface DocCmpFile {
   id: number; seq: number | null; file_name: string | null; file_url: string | null; doc_type: CostAgentDocType | string; status: CostAgentDocStatus | string
@@ -518,7 +518,12 @@ export interface DocCmpDateCheck { part_id: number | null; source: string | null
 // `matched_amount` = nominal baris itu sendiri (sudah termasuk PPN, JANGAN dijumlahkan ulang dari refs); `base` = bagian harga jual sebelum PPN; `note` = rincian teks.
 // SQL 109: status 'manual' = ditautkan manual oleh user; `manual` memuat id item (cost_agent_invoice_doc_items), pelaku, waktu, alasan, dan incl (item + PPN). `diff` tetap diisi (tidak disembunyikan).
 export interface DocCmpManualLink { ids: number[]; by: string; at: string; reason: string; incl: boolean }
-export interface DocCmpLineSide { status: DocCmpLineStatus | string; matched_amount: number | null; diff: number | null; refs: DocCmpRef[] | null; base?: number | null; note?: string | null; manual?: DocCmpManualLink | null }
+// SQL 112: sisi lampiran memuat can_confirm_none (tombol "No attachment for this vendor") dan, bila status 'confirmed_none', confirmation {rule_id, by, at, note} + original_status ('none' | 'no_doc').
+export interface DocCmpNoAttachConfirmation { rule_id: number | null; by?: string | null; at?: string | null; note?: string | null }
+export interface DocCmpLineSide {
+  status: DocCmpLineStatus | string; matched_amount: number | null; diff: number | null; refs: DocCmpRef[] | null; base?: number | null; note?: string | null; manual?: DocCmpManualLink | null
+  can_confirm_none?: boolean; confirmation?: DocCmpNoAttachConfirmation | null; original_status?: string | null
+}
 // expect (SQL 093): dokumen yang DIHARAPKAN per baris -- attachment=false utk jenis biaya tanpa lampiran wajib; tax=true hanya bila baris kena PPN menurut tax rule. Tidak ada = data lama.
 // SQL 107/108: includes_vat_hint = baris cocok dokumen sebagai harga + PPN (vat_rate = tarif pecahan yang dipakai, mis. 0.11 / null).
 export interface DocCmpLine { line_id: number; line_no: number; description: string | null; cost_item: string | null; amount: number | null; attachment: DocCmpLineSide | null; tax: DocCmpLineSide | null; expect?: { attachment: boolean; tax: boolean } | null; includes_vat_hint?: boolean; vat_rate?: number | null }
@@ -530,8 +535,25 @@ export interface DocCmpTaxTotals {
   checks: { label: string; invoice_value: number | string | null; doc_value: number | string | null; diff: number | null; status: DocCmpStatus | string; note: string | null }[] | null
   rate_checks: { doc_no: string | null; rate_pct: number | null; status: DocCmpStatus | string; note: string | null }[] | null
 }
+// SQL 112: perbandingan tanggal tiba / berangkat + nama kapal lintas voyage report, invoice dan tiap dokumen (fn_cost_agent_trip_checks, kunci trip_checks). Server yang memutuskan status; UI hanya menampilkan.
+export type TripSourceStatus = 'ref' | 'ok' | 'diff' | 'na' | 'missing' | 'not_linked'
+export type TripFieldStatus = 'ok' | 'diff' | 'warn' | 'missing' | 'single' | 'na'
+export interface TripSource {
+  kind: 'voyage' | 'invoice' | 'document' | string; label: string; part_id?: number | null; doc_type: string | null; doc_no: string | null; file_name: string | null
+  page: number | null; page_exact: boolean; page_from: number | null; page_to: number | null; location: string | null
+  value: string | null; status: TripSourceStatus | string; gap_days: number | null; manual: boolean
+}
+export interface TripField {
+  key: 'arrival' | 'departure' | 'vessel' | string; label: string; status: TripFieldStatus | string
+  reference: { label: string | null; value: string | null } | null; spread_days: number | null; sources: TripSource[]
+}
+export interface DocCmpTripChecks {
+  tolerance_days: number; voyage_linked: boolean; call_id: number | null
+  summary: { diff: number; warn: number; missing: number }; fields: TripField[]
+}
 export interface CostAgentDocCompare {
   analysed: boolean
+  trip_checks?: DocCmpTripChecks | null
   invoice?: Record<string, any> | null
   summary: { overall: DocCmpOverall; red_flags: number; attachment?: Record<string, number> | null; tax?: Record<string, number> | null } | null
   files: DocCmpFile[] | null
@@ -545,6 +567,21 @@ export interface CostAgentDocCompare {
 }
 export const costAgentGetInvoiceDocuments = (invoiceId: number) =>
   callCostAgentRpc<CostAgentDocCompare | null>('fn_cost_agent_get_invoice_documents', { p_invoice_id: invoiceId })
+// SQL 112: hanya checker / master yang boleh menambah jenis biaya baru. Keputusan SEPENUHNYA dari RPC ini (tanpa aturan peran di aplikasi); server tetap menolak 42501 bila dilanggar.
+export const costAgentCanAddCostItem = () => callCostAgentRpc<boolean>('fn_cost_agent_can_add_cost_item', {})
+// SQL 112: "vendor ini memang tanpa lampiran" per jenis biaya. Hasil confirm: { line_id, rule_id, already, validation_reset }.
+export interface NoAttachConfirmResult { line_id: number; rule_id: number | null; already?: boolean; validation_reset?: boolean }
+export const costAgentConfirmNoAttachment = (lineId: number, note: string) =>
+  callCostAgentRpc<NoAttachConfirmResult>('fn_cost_agent_confirm_no_attachment', { p_line_id: lineId, p_note: note })
+export const costAgentRevokeNoAttachment = (ruleId: number, reason: string) =>
+  callCostAgentRpc<{ rule_id: number; revoked: boolean }>('fn_cost_agent_revoke_no_attachment', { p_rule_id: ruleId, p_reason: reason })
+export interface NoAttachRule {
+  id: number; vendor_id: number; vendor_name: string | null; cost_item_id: number; cost_item_code: string | null; cost_item_name: string | null
+  note: string | null; is_active: boolean; confirmed_by: string | null; confirmed_at: string | null
+  source_invoice_id: number | null; source_invoice_no: string | null; revoked_by: string | null; revoked_at: string | null; revoke_reason: string | null
+}
+export const costAgentListNoAttachmentRules = (a: { vendorId?: number | null; q?: string; includeRevoked?: boolean; limit?: number } = {}) =>
+  callCostAgentRpc<NoAttachRule[] | null>('fn_cost_agent_list_no_attachment_rules', { p_vendor_id: a.vendorId ?? null, p_q: a.q?.trim() || null, p_include_revoked: !!a.includeRevoked, p_limit: a.limit ?? 200 })
 // Analisis ulang: job baru (invoice, baris & status TIDAK berubah). Lanjutkan dgn `costAgentRedoDocs` (webhook n8n) lalu polling.
 export const costAgentStartRedo = (invoiceId: number, actor?: string | null) =>
   callCostAgentRpc<{ job_id: string; invoice_id: number; files: number }>('fn_cost_agent_start_redo', { p_invoice_id: invoiceId, p_actor: actor ?? null })
